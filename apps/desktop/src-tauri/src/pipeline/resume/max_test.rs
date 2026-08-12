@@ -1829,41 +1829,35 @@ async fn a_faithful_repair_round_keeps_every_seeded_identity_line() {
     );
 }
 
-/// **ESCALATED — this test FAILS today, and it IS the escalation.** Run it with
-/// `cargo test -- --ignored`. It is `#[ignore]`d rather than deleted or
-/// weakened because what it asserts is what the pipeline promises and does not
-/// deliver; pinning what the code does instead would make the defect read as
-/// intended — the exact mistake
-/// `a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did` was
-/// making one module over.
+/// **The seeded identity survives a repair round that "improved" the count by
+/// deleting an employer.** This is the whole-loop version of the rule; the
+/// decision itself is pinned in
+/// `a_repair_round_that_introduces_an_absence_is_worse_whatever_the_count_says`.
 ///
-/// **The hole, executed rather than argued.** `repair_loop` accepts or reverts
-/// a round on `round_is_worse(before, after)`, which is `after > before` over
-/// the CRITICAL COUNT. The two guards above establish both halves of the trap:
-/// the assembled document carries TWO `factual.unsourced_metric` Criticals, and
-/// a rewrite that loses Globex Logistics carries ONE `factual.dropped_role`.
-/// 1 < 2, so the round is an improvement by the only measure the loop has — it
-/// is KEPT, the document is saved, and an employer the candidate actually
-/// worked for is gone from the résumé.
+/// The hole it closes, executed rather than argued: the two guards above
+/// establish both halves of the trap — the assembled document carries TWO
+/// `factual.unsourced_metric` Criticals, and a rewrite that loses Globex
+/// Logistics carries ONE `factual.dropped_role`. Under the old pure-count rule
+/// 1 < 2 was an improvement, so the round was KEPT, the document was saved, and
+/// an employer the candidate actually worked for was gone from the résumé.
 ///
-/// Three things make that worse than an ordinary count-versus-kind bug:
+/// Three things made that worse than an ordinary count-versus-kind bug, and
+/// they are why the count term alone was not enough:
 ///
 /// * the review panel cannot undo it — `factual.dropped_role` names an ABSENCE,
 ///   so it is deliberately not a reviewable finding (see
-///   `commands::resume_pipeline::resume_pipeline_resolve_fabrication`'s doc);
-///   the user is told the run needs review and shown nothing to act on;
+///   `commands::resume_pipeline::report::fabrications`); the user is told the
+///   run needs review and shown nothing to act on;
 /// * `repair` is the last content stage at quality depth and the last but one
 ///   at max, so the lossy document is the one `persist_document` writes;
 /// * max depth makes it far more reachable than quality depth ever was: the
 ///   collapsed Experience section now holds up to nine SEEDED entries, so one
 ///   free-text rewrite is one model answer away from dropping any of them.
 ///
-/// The fix is out of this round's scope — it changes a shipped rule shared with
-/// quality depth: `round_is_worse` has to stop being a pure count, because a
-/// round that INTRODUCES a `factual.dropped_role` is worse whatever the totals
-/// say.
+/// Mutation check: return `criticals_of(after) > criticals_of(before)` alone
+/// from `round_is_worse` and this fails — the lossy round is kept and Globex
+/// disappears from the document.
 #[tokio::test]
-#[ignore = "ESCALATED: repair_loop keeps a round that traded 2 fabrications for 1 dropped role"]
 async fn a_repair_round_that_loses_a_seeded_identity_line_is_reverted() {
     let document = assembled_with_a_fabricated_metric();
     let report = report_over(&document);
@@ -1893,6 +1887,81 @@ async fn a_repair_round_that_loses_a_seeded_identity_line_is_reverted() {
     assert!(
         repaired.contains(ACME_LINE) && repaired.contains(GLOBEX_LINE),
         "every seeded identity line must survive the round verbatim:\n{repaired}"
+    );
+}
+
+/// The SAME rule, on the other absence-shaped code: a repair round that loses a
+/// SOURCE PROJECT LINK is reverted even though it reduced the critical count.
+///
+/// A lost link is the same category of loss as a lost employer — the source
+/// says the project is at that URL, the output no longer does, and the finding
+/// names an absence the review panel deliberately will not offer a verdict on.
+/// Here the round genuinely fixes both invented figures in the project's
+/// description (2 Criticals → 1) and drops `.../janedoe/ledger` while doing it;
+/// the old pure count called that an improvement.
+///
+/// Mutation check: return the count comparison alone from `round_is_worse` and
+/// the round is kept — the assertion that the link survives fails; treat every
+/// `factual.altered_project_link` as an absence (drop the `!text.contains`
+/// test) and `only_the_absence_arm_of_an_altered_project_link_makes_a_round_worse`
+/// fails instead.
+#[tokio::test]
+async fn a_repair_round_that_loses_a_source_project_link_is_reverted() {
+    const SOURCE_LINK: &str = "https://github.com/janedoe/ledger";
+
+    let mut sections = assembled_sections();
+    let projects = sections
+        .iter_mut()
+        .find(|section| matches!(section.key, SectionKey::Projects))
+        .expect("the projects section");
+    if let SectionBody::Projects(list) = &mut projects.body {
+        list[0].description =
+            "A double-entry bookkeeping tool used by 240 small businesses across 310 teams."
+                .to_string();
+    }
+    let document = assemble(&sections, &[]);
+    let report = report_over(&document);
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .filter(|issue| issue.severity == Severity::Critical)
+            .count(),
+        2,
+        "the premise: two invented figures in the project description"
+    );
+    assert!(document.contains(SOURCE_LINK));
+
+    // The "correction": both figures gone, and the source link gone with them.
+    let lossy = "Projects\n\n**Ledger CLI** · https://ledger.example.dev\nRust · SQLite · \
+                 Clap\nA double-entry bookkeeping tool used by small businesses.\n\n\
+                 **CrossKit** · https://crosskit.example.dev\nTypeScript · Vite\n\n\
+                 • Dotfiles · https://github.com/janedoe/dotfiles";
+
+    let (repaired, _report, _letter, stats) = super::stages::repair_loop(
+        document,
+        report,
+        None,
+        2,
+        live_deadline(),
+        |key, document, _issues| {
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the section under repair");
+            let spliced = sections::splice(&document, section, lossy);
+            async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
+        },
+        max_revalidate,
+    )
+    .await
+    .expect("the loop only errors when re-validation cannot run");
+
+    assert!(
+        stats.reverted,
+        "losing a source project link is a LOSS, not a two-for-one improvement"
+    );
+    assert!(
+        repaired.contains(SOURCE_LINK),
+        "the source link must survive the round:\n{repaired}"
     );
 }
 

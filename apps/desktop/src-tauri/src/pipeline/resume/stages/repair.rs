@@ -9,12 +9,16 @@
 //! 3. **A truncated section is a FAILED attempt**, not a smaller section —
 //!    splicing one in deletes content silently (see
 //!    [`sections::is_usable_replacement`]).
-//! 4. **Strictly more criticals ⇒ revert and stop.** The repair is a bet that
-//!    the model can fix what it broke; when the bet loses, the honest move is
-//!    to hand back the draft that was merely wrong rather than the one that is
-//!    now wrong in more places. Equal is not worse — a round that swaps one
+//! 4. **A worse round ⇒ revert and stop**, where "worse" is strictly more
+//!    criticals OR a newly INTRODUCED absence. The repair is a bet that the
+//!    model can fix what it broke; when the bet loses, the honest move is to
+//!    hand back the draft that was merely wrong rather than the one that is now
+//!    wrong in more places. Equal is not worse — a round that swaps one
 //!    Critical for another has not lost ground, and stopping there would give
-//!    up the second round the budget allows.
+//!    up the second round the budget allows. But a count cannot express LOSS: a
+//!    rewrite that traded two fabricated metrics for one dropped employer
+//!    scored as an improvement and deleted a job from the résumé. See
+//!    [`round_is_worse`].
 //! 5. **No error here fails the run.** One section's provider error is a FAILED
 //!    ATTEMPT (the other sections still get their turn); the day's provider cap
 //!    refusing a call is [`StoppedReason::Budgeted`], which keeps the progress
@@ -29,7 +33,7 @@
 //! Never cached: a repair reads a validator verdict, and a cached correction to
 //! a document that no longer exists is the worst possible hit.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
 use async_trait::async_trait;
@@ -41,7 +45,9 @@ use crate::pipeline::resume::prompts::{repair_system, repair_user};
 use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{QualityCtx, RunDeadline};
 use crate::pipeline::{Completer, Stage};
-use crate::validate::content::{ContentIssue, ContentReport};
+use crate::validate::content::{
+    ContentIssue, ContentReport, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
+};
 use crate::validate::Severity;
 
 use super::sections;
@@ -133,18 +139,92 @@ pub(crate) fn criticals_by_section(
     ordered
 }
 
-/// Whether a repair round's candidate must be discarded: it produced STRICTLY
-/// more criticals than the draft it was trying to fix.
+/// Whether a repair round's candidate must be discarded.
 ///
-/// The strictness is the decision, and it has a gradient in both directions.
-/// `>=` would abandon a round that traded one Critical for another — no ground
-/// lost, and the budget's second round is exactly the chance to get it right.
-/// A looser rule (`after > before + n`) would let a repair ship a document that
-/// is measurably worse than the one it replaced, which is the failure mode the
-/// revert exists for. Named and tested rather than inlined so that choice is
-/// pinned instead of re-litigated by whoever next reads the comparison.
-pub(crate) fn round_is_worse(before: usize, after: usize) -> bool {
-    after > before
+/// TWO terms, and the second is not a count.
+///
+/// **The count term.** Strictly more criticals than the draft it was trying to
+/// fix. The strictness is a decision with a gradient in both directions: `>=`
+/// would abandon a round that traded one Critical for another — no ground lost,
+/// and the budget's second round is exactly the chance to get it right — while
+/// `after > before + n` would let a repair ship a document measurably worse
+/// than the one it replaced.
+///
+/// **The ABSENCE term, and why a count alone was not enough.** A repair round
+/// hands the model a whole section as free text and splices the answer back, so
+/// it can lose content the source had. Losing content is not commensurable with
+/// fixing a fabrication, and the count said it was: an assembled document
+/// carrying TWO `factual.unsourced_metric` Criticals, "repaired" by a rewrite
+/// that removed the invented figures and also dropped an employer, came back
+/// with ONE `factual.dropped_role` — 1 < 2, an improvement by the only measure
+/// the loop had. The round was kept, the document was saved, and an employer
+/// the candidate actually worked for was gone from the résumé. Worse still, the
+/// user could not undo it: an absence has no span, so it is deliberately not a
+/// reviewable finding (see `commands::resume_pipeline::report::fabrications`) —
+/// the run says "needs review" and the panel shows nothing to act on.
+///
+/// So a round that INTRODUCES an absence is worse whatever the totals say. The
+/// comparison is by `(code, evidence)` PAIR, not by code: a document that
+/// already lost a role must still be repairable (its own pair is carried, not
+/// new), while a round that swaps WHICH employer is missing has introduced a
+/// loss and is caught.
+///
+/// This is a compatible TIGHTENING of rule 4 in the module doc — that rule was
+/// always "never hand back a worse document"; this says what the count could
+/// not express. It fixes quality depth as well as max: quality's repair loop is
+/// the same loop, and its draft carries the same employers.
+pub(crate) fn round_is_worse(
+    before: &ContentReport,
+    before_text: &str,
+    after: &ContentReport,
+    after_text: &str,
+) -> bool {
+    if criticals_of(after) > criticals_of(before) {
+        return true;
+    }
+    let carried = absences(before, before_text);
+    absences(after, after_text)
+        .into_iter()
+        .any(|pair| !carried.contains(&pair))
+}
+
+/// The ABSENCE-shaped Criticals in one report, as `(code, evidence)` pairs.
+///
+/// An absence-shaped finding names something the document is MISSING, so its
+/// evidence is by definition not in the document — which is exactly why the
+/// review panel cannot offer a verdict on one, and why a repair round is not
+/// allowed to create one.
+///
+/// Two codes qualify, and the second only conditionally:
+///
+/// * `factual.dropped_role` — always. It names an employer the source has and
+///   the output does not.
+/// * `factual.altered_project_link` — only on its ABSENCE arm. That code is
+///   emitted from two: a link the model INVENTED sits in the generated text (a
+///   fabrication, reviewable, and a repair that produces one is caught by the
+///   count like any other), while a SOURCE link missing or altered in the
+///   output names a loss. The discriminator is the same one
+///   `commands::resume_pipeline::report::fabrications` uses to keep that arm out
+///   of the panel — is the evidence present in the document — so the two places
+///   that decide "is this an absence" cannot disagree.
+///
+/// Scoped to those two rather than a general "evidence not in the text" gate,
+/// for the reason `report::fabrications` records: `factual.unsourced_term`'s
+/// evidence is a NORMALIZED token ("kubernetes" for a document that says
+/// "Kubernetes"), so a blanket presence test would call ordinary fabrications
+/// absences and freeze the repair loop.
+fn absences<'a>(report: &'a ContentReport, text: &str) -> BTreeSet<(&'a str, &'a str)> {
+    report
+        .issues
+        .iter()
+        .filter(|issue| issue.severity == Severity::Critical)
+        .filter_map(|issue| {
+            let evidence = issue.evidence.as_deref()?.trim();
+            let absent = issue.code == FACTUAL_DROPPED_ROLE
+                || (issue.code == FACTUAL_ALTERED_PROJECT_LINK && !text.contains(evidence));
+            absent.then_some((issue.code, evidence))
+        })
+        .collect()
 }
 
 /// What ONE section-regeneration attempt did. Three outcomes, not two, because
@@ -266,7 +346,6 @@ where
         if grouped.is_empty() {
             break; // clean, or only document-wide criticals
         }
-        let before = criticals_of(&report);
 
         let mut candidate = draft.clone();
         let mut changed = false;
@@ -319,7 +398,10 @@ where
         let (candidate_report, candidate_letter) = revalidate(candidate.clone()).await?;
         let (_, after) = counts(&candidate_report);
 
-        if round_is_worse(before, after) {
+        // Both REPORTS and both TEXTS: the second term of the rule asks whether
+        // this round INTRODUCED an absence, and an absence is a property of a
+        // report read against the document it describes.
+        if round_is_worse(&report, &draft, &candidate_report, &candidate) {
             // Revert AND stop. Nothing has to be undone: `draft` was never
             // written — the round worked on a CLONE, and the clone is simply
             // dropped. That is what makes the revert total rather than a
