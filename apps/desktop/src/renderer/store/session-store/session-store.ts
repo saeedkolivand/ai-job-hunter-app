@@ -6,6 +6,7 @@ import type { WizardState } from '@/features/autopilot/types';
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import type {
   EmphasisId,
+  GenerationDepth,
   GenerationMeta,
   GenerationMode,
   LetterLayoutId,
@@ -49,6 +50,13 @@ interface AIGenerateSlice {
   /** Deterministic content-quality report for the most recent generation
    *  (ADR-007 addendum) — additive sibling to `meta`, never read by `stage`. */
   report: QualityReport | null;
+  /**
+   * Per-run generation-depth OVERRIDE. `undefined` (the default) means "follow
+   * the Settings default" — deliberately not a copy of it, so changing the
+   * default in Settings takes effect on a session the user never overrode,
+   * and a session the user DID override keeps their choice.
+   */
+  depth?: GenerationDepth;
 }
 
 type AnalyzeStage = 'idle' | 'running' | 'done';

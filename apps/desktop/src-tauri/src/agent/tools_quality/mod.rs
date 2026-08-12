@@ -31,6 +31,17 @@
 //! `salary_range_serializes_to_only_known_numeric_and_currency_fields`), so
 //! it skips neutralization and uses the plain [`envelope_result`] wrapper.
 //!
+//! **The clamp/fence primitives here are `pub(super)` and SHARED with
+//! [`super::tools_pipeline`]** (Phase 3's `analyze_job` / `get_quality_report`
+//! / `run_quality_pipeline`), which quotes the same untrusted résumé/posting/
+//! report text into the same transcript. `clamp_chars`/[`clamp_evidence`]/
+//! [`clamped_resume_text`]/[`clamped_job_text`]/[`shrink_to_summary_cap`]/
+//! [`neutralized_summary`] and the caps behind them are widened rather than
+//! copied for the same ADR-010 reason [`fenced`] itself is: a second copy of a
+//! bound is where the two drift, and a summary that skipped this module's
+//! measure-then-drop loop would hand the hard `chars().take(cap)` a JSON body
+//! to cut mid-string.
+//!
 //! LOW fix, PR #963 round 9 — these summaries used to be `<validate_resume_
 //! result>`-style tag-WRAPPED as well ([`fenced`]). That wrap was provably
 //! dead work: those three tags are registered in
@@ -88,18 +99,18 @@ const QUERY_CAP: usize = 200;
 /// "quoted, untrusted, job/résumé-derived token" shape (MEDIUM fix, PR #963
 /// round 4: `documents::keywords::keywords_normalized` only filters on
 /// `len() > 3`, so nothing upstream bounds how long a single keyword can be).
-const EVIDENCE_CAP: usize = 80;
+pub(super) const EVIDENCE_CAP: usize = 80;
 
 /// Cap on a validator issue's `message` in the compact summary — longer than
 /// [`EVIDENCE_CAP`] since guidance prose reads longer than a quoted span, but
 /// still bounded so a crafted draft that trips many long-message issues can't
 /// blow the tool-result budget.
-const MESSAGE_CAP: usize = 400;
+pub(super) const MESSAGE_CAP: usize = 400;
 
 /// Cap on a validator issue's `section` in the compact summary — section
 /// names are short labels ("Experience", "Skills"), never free-flowing text;
 /// a defensive backstop, not an expected truncation point.
-const SECTION_CAP: usize = 80;
+pub(super) const SECTION_CAP: usize = 80;
 
 /// Cap on a bullet's quoted `text` in a compact tool summary — same
 /// rationale as [`EVIDENCE_CAP`]: it quotes untrusted résumé text directly.
@@ -109,7 +120,7 @@ const BULLET_TEXT_CAP: usize = 200;
 /// draft that trips dozens of checks must not blow the tool-result budget —
 /// dropped issues are counted in the summary's `truncated` field, never a
 /// mid-string cut of the issue list.
-const MAX_ISSUES: usize = 20;
+pub(super) const MAX_ISSUES: usize = 20;
 
 /// Max entries kept in `skillsPresent`/`skillsAbsent` — a résumé with an
 /// unusually long skills section must not blow the tool-result budget
@@ -306,12 +317,12 @@ fn doc_kind_arg(args: &Value) -> AppResult<DocKind> {
 /// every per-field cap in this module reuses ([`clamp_evidence`], and the
 /// `message`/`section`/bullet-`text` clamps in [`compact_content_report`]/
 /// [`bullet_to_value`]), so every clamp behaves identically.
-fn clamp_chars(s: &str, cap: usize) -> String {
+pub(super) fn clamp_chars(s: &str, cap: usize) -> String {
     s.chars().take(cap).collect()
 }
 
 /// Cap `s` to [`EVIDENCE_CAP`] chars, char-boundary safe.
-fn clamp_evidence(s: &str) -> String {
+pub(super) fn clamp_evidence(s: &str) -> String {
     clamp_chars(s, EVIDENCE_CAP)
 }
 
@@ -329,7 +340,7 @@ fn clamp_evidence(s: &str) -> String {
 /// 2. **Perf (MEDIUM)** — a server-loaded résumé is otherwise unbounded, and
 ///    feeds a CPU-bound analysis pass (`validate_content`/`extract_evidence`/
 ///    `rank_bullets`) inline on the tokio runtime.
-fn clamped_resume_text(text: &str) -> String {
+pub(super) fn clamped_resume_text(text: &str) -> String {
     clamp_chars(text, RESUME_CAP)
 }
 
@@ -337,7 +348,7 @@ fn clamped_resume_text(text: &str) -> String {
 /// as [`clamped_resume_text`] — scraped posting text is unbounded too.
 /// Mirrors `super::tools::research_company_handler`'s own
 /// `.chars().take(JOB_CAP)` clamp.
-fn clamped_job_text(text: &str) -> String {
+pub(super) fn clamped_job_text(text: &str) -> String {
     clamp_chars(text, JOB_CAP)
 }
 
@@ -362,7 +373,7 @@ fn clamped_job_text(text: &str) -> String {
 /// [`compact_trim_suggestions`]'s bullets are already weakest-first — this
 /// drops from the end of that order, i.e. the least-weak of the selected
 /// set, keeping the weakest (most actionable) suggestions.
-fn shrink_to_summary_cap(len: usize, mut build: impl FnMut(usize) -> Value) -> Value {
+pub(super) fn shrink_to_summary_cap(len: usize, mut build: impl FnMut(usize) -> Value) -> Value {
     let mut kept = len;
     loop {
         let candidate = build(kept);
@@ -679,7 +690,7 @@ fn currency_for_location(location: &str) -> Option<&'static str> {
 /// re-cut a boundary it had just broken. In the normal case the shrink loop
 /// has already measured this exact serialization against `SUMMARY_CAP`, so
 /// the clamp is a no-op and the budget mechanism is unchanged.
-fn neutralized_summary(summary: &Value) -> Value {
+pub(super) fn neutralized_summary(summary: &Value) -> Value {
     let body = serde_json::to_string(summary).unwrap_or_default();
     let body: String = body.chars().take(SUMMARY_CAP).collect();
     json!({ "result": neutralize_transcript_boundaries(&body) })
@@ -729,7 +740,7 @@ fn envelope_result(value: Value) -> Value {
 /// for this store's blocking writes (`tauri::async_runtime::spawn_blocking`,
 /// never a bare `tokio::spawn`); generalized to `Value` here since every core
 /// in this module returns `AppResult<Value>`, not `documents`' `AppResult<()>`.
-async fn spawn_blocking_core<F>(f: F) -> AppResult<Value>
+pub(super) async fn spawn_blocking_core<F>(f: F) -> AppResult<Value>
 where
     F: FnOnce() -> AppResult<Value> + Send + 'static,
 {
@@ -743,13 +754,13 @@ where
 /// out so [`validate_resume_core`]/[`search_candidate_evidence_core`]/
 /// [`get_trim_suggestions_core`] can construct and test it without an
 /// `AppHandle`.
-fn resume_not_found(resume_id: &str) -> AppError {
+pub(super) fn resume_not_found(resume_id: &str) -> AppError {
     AppError::Validation(format!("resume not found: {resume_id}"))
 }
 
 /// The trusted "job not found" error, mirroring [`resume_not_found`] for the
 /// run's `ToolContext::job_id` against the live postings cache.
-fn job_not_found(job_id: &str) -> AppError {
+pub(super) fn job_not_found(job_id: &str) -> AppError {
     AppError::Validation(format!("job not found in cache: {job_id}"))
 }
 

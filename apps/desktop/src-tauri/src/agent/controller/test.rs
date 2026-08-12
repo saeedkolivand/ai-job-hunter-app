@@ -229,6 +229,34 @@ async fn always_calling_a_tool_terminates_at_max_steps() {
     assert_eq!(out.steps, MAX_AGENT_STEPS);
 }
 
+/// CHARACTERIZATION, not an endorsement: `Budget::max_tool_calls` is **not
+/// enforced by this loop** — see its field doc for why closing it needs a
+/// signature change rather than a counter, and what bounds spend meanwhile.
+///
+/// Pinned because the constant reads like a live ceiling: the run above makes
+/// one tool call per turn and therefore spends `MAX_AGENT_STEPS` (14) calls
+/// against a `max_tool_calls` of 12 without [`StoppedReason::MaxToolCalls`]
+/// ever being produced. When the tool count IS enforced this test must change
+/// — deliberately, so the change is visible rather than silent.
+#[tokio::test]
+async fn the_tool_call_ceiling_is_not_enforced_and_this_pins_that() {
+    let env = FakeEnv::new(vec![read_call("reader")]);
+    let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
+        .await
+        .unwrap();
+    let calls = env.reads.lock().len();
+    assert!(
+        calls > BUDGET.max_tool_calls,
+        "the loop spent {calls} tool calls against a nominal ceiling of {}",
+        BUDGET.max_tool_calls
+    );
+    assert_ne!(
+        out.stopped_reason,
+        StoppedReason::MaxToolCalls,
+        "nothing in the crate produces MaxToolCalls today"
+    );
+}
+
 /// M-5 fix: the tool-schema payload must count toward [`MAX_AGENT_TOKENS`]
 /// every turn, not just message/tool-result text — an oversized tool
 /// description alone (mimicking a heavy real-world whitelist) must trip

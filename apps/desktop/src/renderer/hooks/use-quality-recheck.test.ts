@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
-import type { ContentReportPayload } from '@ajh/shared/ipc';
+import type { ContentReportPayload, PipelineQualityReport } from '@ajh/shared/ipc';
 
 import type { GenerationMeta, QualityReport } from '@/lib/generate';
 
@@ -53,6 +53,35 @@ function payload(keywordCoverage: number): ContentReportPayload {
 
 /** A slot for the OTHER document, used to prove a re-check never drops it. */
 const COVER_SLOT = { report: payload(10), sourceTextHash: 42 };
+
+/**
+ * A wrapper as the staged Rust pipeline wrote it — the two surfaces share ONE
+ * `ai_generations` row per job url, so this is the report a "Re-check" lands
+ * on whenever the job also had a quality run.
+ */
+const QUALITY_WRAPPER: PipelineQualityReport = {
+  schemaVersion: 2,
+  pipeline: 'quality',
+  generatedAt: 1700,
+  resume: {
+    report: payload(50),
+    sourceTextHash: 1,
+    fabrications: [
+      {
+        issueKey: 'factual.unsupported_metric#0',
+        code: 'factual.unsupported_metric',
+        evidence: 'Cut p99 latency by 60%',
+        decision: 'remove',
+      },
+      {
+        issueKey: 'factual.unsupported_metric#1',
+        code: 'factual.unsupported_metric',
+        evidence: 'Led a team of 12',
+      },
+    ],
+  },
+  coverLetter: COVER_SLOT,
+};
 
 type Params = Parameters<typeof useQualityRecheck>[0];
 
@@ -178,6 +207,43 @@ describe('useQualityRecheck', () => {
     expect(request.jobAd).toBe('');
     expect(request.mode).toBe('');
     expect(request.topRequirements).toEqual([]);
+  });
+
+  // The kill chain this guards: the re-check writes the merged wrapper back to
+  // the shared row, so anything it drops is DELETED — and a wiped fabrication
+  // list leaves `resolveFabrication` (which only stamps existing entries) with
+  // nothing to stamp, stranding the run at `needsReview` for good.
+  it('re-checking a staged-pipeline run keeps its depth, fabrications and verdicts — in the session AND in what it persists', async () => {
+    const fresh = payload(90);
+    validateContentMock.mutateAsync = vi.fn().mockResolvedValue(fresh);
+    const onReportChange = vi.fn();
+    const { result } = renderHook((props: Params) => useQualityRecheck(props), {
+      initialProps: baseParams({ onReportChange, report: QUALITY_WRAPPER }),
+    });
+
+    act(() => result.current.recheck?.());
+    await flushMicrotasks();
+
+    const merged = onReportChange.mock.calls[0]?.[0] as QualityReport;
+    expect(merged.pipeline).toBe('quality');
+    // Only the two things the re-check actually produced changed — the slot is
+    // otherwise identical, key for key.
+    expect(merged.resume).toEqual({
+      ...QUALITY_WRAPPER.resume,
+      report: fresh,
+      sourceTextHash: expect.any(Number),
+    });
+    expect(merged.resume?.sourceTextHash).not.toBe(QUALITY_WRAPPER.resume?.sourceTextHash);
+    expect(merged.coverLetter).toEqual(COVER_SLOT);
+
+    // The persisted blob is the record's next value — assert on it, not just on
+    // the in-memory object.
+    const request = saveGenerationMock.mutate.mock.calls[0]?.[0];
+    const persisted = JSON.parse(String(request.qualityReport));
+    expect(persisted.pipeline).toBe('quality');
+    expect(persisted.resume.fabrications).toEqual(QUALITY_WRAPPER.resume?.fabrications);
+    expect(persisted.resume.report).toEqual(fresh);
+    expect(persisted.coverLetter).toEqual(COVER_SLOT);
   });
 
   it('keeps the re-check session-only when there is no jobUrl to merge onto', async () => {

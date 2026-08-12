@@ -343,6 +343,19 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       }),
     },
 
+    // Staged résumé pipeline. `run` resolves with ids (a test that asserts on a
+    // run has to override it anyway), `get` with `null` = "no such run", and
+    // `listForJob` with an empty history — the shapes a panel renders before
+    // anything has been generated.
+    resumePipeline: {
+      run: () => Promise.resolve({ runId: 'run-mock', jobId: 'job-mock' }),
+      get: () => Promise.resolve(null),
+      listForJob: emptyList,
+      regenerateSection: noop,
+      resolveFabrication: noop,
+      onStage: unsub,
+    },
+
     support: {
       exportDiagnostics: noop,
     },

@@ -1,0 +1,437 @@
+//! `repair` — up to [`Budget::max_repair_attempts`] rounds of section-scoped
+//! correction, and the rules that keep it from making things worse.
+//!
+//! 1. **Criticals only.** Warnings are advice; regenerating a section to chase
+//!    one spends a provider call to trade a stylistic nit for a fresh chance at
+//!    a factual error.
+//! 2. **Failing sections only**, spliced back in. A whole-document rewrite
+//!    would re-roll the sections that were already correct.
+//! 3. **A truncated section is a FAILED attempt**, not a smaller section —
+//!    splicing one in deletes content silently (see
+//!    [`sections::is_usable_replacement`]).
+//! 4. **Strictly more criticals ⇒ revert and stop.** The repair is a bet that
+//!    the model can fix what it broke; when the bet loses, the honest move is
+//!    to hand back the draft that was merely wrong rather than the one that is
+//!    now wrong in more places. Equal is not worse — a round that swaps one
+//!    Critical for another has not lost ground, and stopping there would give
+//!    up the second round the budget allows.
+//! 5. **No error here fails the run.** One section's provider error is a FAILED
+//!    ATTEMPT (the other sections still get their turn); the day's provider cap
+//!    refusing a call is [`StoppedReason::Budgeted`], which keeps the progress
+//!    already accumulated. A `?` on either used to throw away a document the
+//!    run had already produced — the exact opposite of what every
+//!    `StoppedReason` in this crate promises.
+//! 6. **The run deadline is checked HERE**, between rounds and between
+//!    per-section calls. `StageHooks::before` cannot bound this stage: it is
+//!    the last one, so there is no later boundary, and it is the only stage
+//!    that fans out (≤2 × 4 provider calls at up to `OLLAMA_COMPLETION` each).
+//!
+//! Never cached: a repair reads a validator verdict, and a cached correction to
+//! a document that no longer exists is the worst possible hit.
+
+use std::collections::BTreeMap;
+use std::future::Future;
+
+use async_trait::async_trait;
+use serde_json::json;
+
+use crate::error::{AppError, AppResult};
+use crate::pipeline::budget::StoppedReason;
+use crate::pipeline::resume::prompts::{repair_system, repair_user};
+use crate::pipeline::resume::types::SectionKey;
+use crate::pipeline::resume::{QualityCtx, RunDeadline};
+use crate::pipeline::{Completer, Stage};
+use crate::validate::content::{ContentIssue, ContentReport};
+use crate::validate::Severity;
+
+use super::sections;
+use super::validate::{counts, validate_documents};
+
+pub struct Repair;
+
+/// Sections one round may regenerate.
+///
+/// The round's cost is one provider call per section, and the run deadline is
+/// derived from exactly this number (`QUALITY_RUN_FIXED_SECS` counts
+/// `max_repair_attempts × MAX_SECTIONS_PER_ROUND` calls at
+/// `timeouts::OLLAMA_COMPLETION`), which is why
+/// `quality_run_deadline_clears_the_inner_per_call_bounds` reads this constant
+/// rather than a literal: raising it without raising the deadline fails that
+/// test. Four is every section a quality-depth draft actually has that can
+/// carry a factual Critical (summary, skills, experience, projects) — a bound,
+/// not a target: a round almost always touches one.
+pub const MAX_SECTIONS_PER_ROUND: usize = 4;
+
+/// One issue rendered for the prompt: the code, the human message, and the
+/// offending span. Content-bearing by necessity — this goes to the MODEL, not
+/// to a log — and it rides inside `<section_issues>`, fenced like everything
+/// else in the user turn.
+fn issue_line(issue: &ContentIssue) -> String {
+    match &issue.evidence {
+        Some(evidence) => format!(
+            "[{}] {} — offending text: {evidence}",
+            issue.code, issue.message
+        ),
+        None => format!("[{}] {}", issue.code, issue.message),
+    }
+}
+
+/// Group a report's CRITICALS by the section that has to be regenerated,
+/// WORST FIRST.
+///
+/// Two ways to locate one, in order:
+///
+/// 1. the validator's own `section` label, when it set one;
+/// 2. otherwise, the section whose text CONTAINS the offending span.
+///
+/// The fallback is load-bearing, not defensive: the `factual.*` family — the
+/// codes this loop exists for — reports `section: None` by design, because a
+/// fabricated metric is found by comparing the document's numbers against the
+/// source's, not by walking sections. Grouping on the label alone left the
+/// commonest Critical unrepairable, which is the silent version of a repair
+/// loop that does nothing.
+///
+/// A Critical that resolves to neither (a document-wide language mismatch, a
+/// finding in the leading band) is deliberately excluded: there is no section to
+/// regenerate, and re-running one at random would not fix it. Those survive to
+/// the terminal review.
+///
+/// **The ORDER is the reason this returns a `Vec` rather than the `BTreeMap` it
+/// builds.** A round can only afford [`MAX_SECTIONS_PER_ROUND`] sections, and a
+/// map is ordered by wire key — `education` < `experience:0` < `projects` <
+/// `skills` < `summary` — so a document with five failing sections would starve
+/// `summary` deterministically, every round, forever. Worst-first (most
+/// criticals, wire key as a stable tie-break) spends the budget where the
+/// document is most wrong.
+pub(crate) fn criticals_by_section(
+    document: &str,
+    report: &ContentReport,
+) -> Vec<(String, Vec<String>)> {
+    let split = sections::split(document);
+    let lines: Vec<&str> = document.lines().collect();
+    let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for issue in report
+        .issues
+        .iter()
+        .filter(|issue| issue.severity == Severity::Critical)
+    {
+        let key = sections::key_for_label(issue.section.as_deref()).or_else(|| {
+            let span = issue.evidence.as_deref()?;
+            sections::containing(&split, &lines, span)
+                .and_then(|section| sections::key_of(section.kind))
+        });
+        let Some(key) = key else { continue };
+        grouped
+            .entry(key.to_wire())
+            .or_default()
+            .push(issue_line(issue));
+    }
+    let mut ordered: Vec<(String, Vec<String>)> = grouped.into_iter().collect();
+    // `sort_by_key` is stable, and the input came out of a BTreeMap, so equal
+    // counts keep their wire-key order — deterministic without a second key.
+    ordered.sort_by_key(|(_, issues)| std::cmp::Reverse(issues.len()));
+    ordered
+}
+
+/// Whether a repair round's candidate must be discarded: it produced STRICTLY
+/// more criticals than the draft it was trying to fix.
+///
+/// The strictness is the decision, and it has a gradient in both directions.
+/// `>=` would abandon a round that traded one Critical for another — no ground
+/// lost, and the budget's second round is exactly the chance to get it right.
+/// A looser rule (`after > before + n`) would let a repair ship a document that
+/// is measurably worse than the one it replaced, which is the failure mode the
+/// revert exists for. Named and tested rather than inlined so that choice is
+/// pinned instead of re-litigated by whoever next reads the comparison.
+pub(crate) fn round_is_worse(before: usize, after: usize) -> bool {
+    after > before
+}
+
+/// What ONE section-regeneration attempt did. Three outcomes, not two, because
+/// the middle one costs a provider call and the last one does not — and
+/// counting a call that was never made inflates the run's own metrics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SectionOutcome {
+    /// The whole document, with the section replaced.
+    Replaced(String),
+    /// A call was made and its answer was unusable (truncated / heading-less).
+    /// A FAILED attempt, never spliced.
+    Unusable,
+    /// The document has no such section — nothing was asked of any provider.
+    Missing,
+}
+
+/// Regenerate ONE section against a list of issues and splice it back.
+///
+/// The shared primitive behind both the repair loop and the per-section
+/// regenerate button, which is why it takes plain values and returns the whole
+/// document rather than mutating a context.
+///
+/// Charges the per-provider daily ceiling itself: this goes through
+/// `Completer::complete`, which records spend but does not charge (its other
+/// callers charge at admission), and a repair round is exactly the fan-out that
+/// must not sit outside the day's cap.
+pub async fn regenerate_one_section(
+    completer: &Completer,
+    source_resume: &str,
+    target_language: &str,
+    document: &str,
+    key: SectionKey,
+    issues: &[String],
+    note: Option<&str>,
+) -> AppResult<SectionOutcome> {
+    let split = sections::split(document);
+    let Some(section) = sections::find(&split, key) else {
+        return Ok(SectionOutcome::Missing);
+    };
+    let lines: Vec<&str> = document.lines().collect();
+    let current = section.text(&lines);
+
+    completer.charge_daily()?;
+    let replacement = completer
+        .complete(
+            &repair_system(target_language),
+            &repair_user(source_resume, &current, issues, note),
+            None,
+        )
+        .await?;
+    let replacement = replacement.trim();
+    if !sections::is_usable_replacement(replacement) {
+        return Ok(SectionOutcome::Unusable);
+    }
+    Ok(SectionOutcome::Replaced(sections::splice(
+        document,
+        section,
+        replacement,
+    )))
+}
+
+/// What one whole repair loop did — everything the ledger and the stage
+/// artifact report, so the loop itself stays pure.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RepairStats {
+    pub rounds: u32,
+    pub reverted: bool,
+    /// Calls that came back truncated/heading-less.
+    pub truncated: u32,
+    /// Calls that errored (not a budget refusal).
+    pub failed: u32,
+    /// Provider round-trips actually made.
+    pub calls: u32,
+    /// The day's provider ceiling refused a call mid-loop.
+    pub budgeted: bool,
+    /// The run's wall clock ran out mid-loop.
+    pub timed_out: bool,
+}
+
+/// The whole repair loop, with the PROVIDER CALL injected.
+///
+/// Same seam shape, and the same reason, as
+/// [`complete_json_with`](crate::pipeline::complete_json_with) and
+/// `Completer::from_config`: a `Completer` is a concrete struct bound to an
+/// `AppHandle`, this crate has no Tauri harness, and the loop's decisions —
+/// revert-on-worse, per-section error policy, the deadline checks, worst-first
+/// ordering — are exactly the ones that must be provable by a test rather than
+/// by reading the code. `revalidate` is a seam too, but production and tests
+/// both pass the REAL [`validate_documents`]: it needs no provider, and a
+/// stubbed validator would let the loop's arithmetic pass against numbers no
+/// validator would ever produce.
+///
+/// Only a `revalidate` failure is an `Err` — that is a `spawn_blocking` join
+/// failure, i.e. the process, not the model.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn repair_loop<F, Fut, G, GFut>(
+    mut draft: String,
+    mut report: ContentReport,
+    mut letter: Option<ContentReport>,
+    max_rounds: u32,
+    deadline: RunDeadline,
+    mut regenerate: F,
+    mut revalidate: G,
+) -> AppResult<(String, ContentReport, Option<ContentReport>, RepairStats)>
+where
+    F: FnMut(SectionKey, String, Vec<String>) -> Fut,
+    Fut: Future<Output = AppResult<SectionOutcome>>,
+    G: FnMut(String) -> GFut,
+    GFut: Future<Output = AppResult<(ContentReport, Option<ContentReport>)>>,
+{
+    let mut stats = RepairStats::default();
+
+    while stats.rounds < max_rounds {
+        if deadline.passed() {
+            stats.timed_out = true;
+            break;
+        }
+        let grouped = criticals_by_section(&draft, &report);
+        if grouped.is_empty() {
+            break; // clean, or only document-wide criticals
+        }
+        let before = criticals_of(&report);
+
+        let mut candidate = draft.clone();
+        let mut changed = false;
+        for (wire_key, issues) in grouped.iter().take(MAX_SECTIONS_PER_ROUND) {
+            // Between calls, not just between rounds: four calls at up to
+            // `OLLAMA_COMPLETION` each is 20 minutes a round-granular check
+            // would not interrupt.
+            if deadline.passed() {
+                stats.timed_out = true;
+                break;
+            }
+            let Some(key) = SectionKey::from_wire(wire_key) else {
+                continue;
+            };
+            match regenerate(key, candidate.clone(), issues.clone()).await {
+                Ok(SectionOutcome::Replaced(spliced)) => {
+                    stats.calls += 1;
+                    candidate = spliced;
+                    changed = true;
+                }
+                Ok(SectionOutcome::Unusable) => {
+                    stats.calls += 1;
+                    stats.truncated += 1;
+                }
+                // No call was made, so nothing is counted — a metric that
+                // reported a round-trip here would over-report every run whose
+                // validator named a section the document does not have.
+                Ok(SectionOutcome::Missing) => {}
+                // The day's ceiling refused this call. Every later section
+                // would be refused the same way, and the run keeps whatever it
+                // has: that is what `Budgeted` means.
+                Err(AppError::RateLimited(_)) => {
+                    stats.budgeted = true;
+                    break;
+                }
+                // One section's provider error is one failed attempt. The
+                // remaining sections still get their turn; if they all fail,
+                // `changed` stays false and the loop ends on its own.
+                Err(_) => stats.failed += 1,
+            }
+        }
+        stats.rounds += 1;
+        if !changed {
+            // Every section in this round came back unusable, errored, or was
+            // refused. Another round would ask the same model the same
+            // question.
+            break;
+        }
+
+        let (candidate_report, candidate_letter) = revalidate(candidate.clone()).await?;
+        let (_, after) = counts(&candidate_report);
+
+        if round_is_worse(before, after) {
+            // Revert AND stop. Nothing has to be undone: `draft` was never
+            // written — the round worked on a CLONE, and the clone is simply
+            // dropped. That is what makes the revert total rather than a
+            // partial rollback of whichever sections landed first.
+            stats.reverted = true;
+            break;
+        }
+        draft = candidate;
+        report = candidate_report;
+        letter = candidate_letter;
+        // A round that ran out of time still KEEPS what it produced (it is not
+        // worse, and it is validated) — the deadline ends the loop, it does not
+        // discard the work.
+        if stats.timed_out || stats.budgeted || after == 0 {
+            break;
+        }
+    }
+
+    Ok((draft, report, letter, stats))
+}
+
+/// Criticals in one report — the same count [`counts`] returns, without
+/// re-walking for the total.
+fn criticals_of(report: &ContentReport) -> usize {
+    counts(report).1
+}
+
+#[async_trait]
+impl<'a> Stage<QualityCtx<'a>> for Repair {
+    fn name(&self) -> &'static str {
+        "repair"
+    }
+
+    async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
+        let Some(report) = ctx.report.take() else {
+            // validate did not run — nothing to repair against.
+            ctx.ledger.record("repair", json!({ "rounds": 0 }));
+            return Ok(());
+        };
+
+        // Copied out of `ctx` so the two closures below borrow neither it nor
+        // each other: `QualityInput` is `Copy` and `completer` is a shared ref.
+        let input = ctx.input;
+        let completer = ctx.completer;
+
+        let (draft, report, letter, stats) = repair_loop(
+            std::mem::take(&mut ctx.draft),
+            report,
+            ctx.letter_report.take(),
+            ctx.budget.max_repair_attempts as u32,
+            ctx.deadline,
+            |key, document, issues| async move {
+                regenerate_one_section(
+                    completer,
+                    input.source_resume,
+                    input.target_language,
+                    &document,
+                    key,
+                    &issues,
+                    None,
+                )
+                .await
+            },
+            |candidate| {
+                validate_documents(
+                    candidate,
+                    input.source_resume.to_string(),
+                    input.job_ad.to_string(),
+                    input.top_requirements.to_vec(),
+                    input.target_language.to_string(),
+                    input.cover_letter.to_string(),
+                )
+            },
+        )
+        .await?;
+
+        ctx.draft = draft;
+        ctx.report = Some(report);
+        ctx.letter_report = letter;
+
+        // Ordered most-specific first: `RunLedger::stop` keeps the EARLIEST
+        // reason, so a run already cancelled or already out of time upstream
+        // keeps its own, and `MaxRepairs` never masks a stop that has a
+        // remedy the user can act on.
+        if stats.timed_out {
+            ctx.ledger.stop(StoppedReason::RunTimeout);
+        }
+        if stats.budgeted {
+            ctx.ledger.stop(StoppedReason::Budgeted);
+        }
+        // Still failing after the budget: the run keeps its best document but
+        // must never present it as clean.
+        if ctx.critical_count() > 0 {
+            ctx.ledger.stop(StoppedReason::MaxRepairs);
+        }
+        for _ in 0..stats.calls {
+            ctx.ledger.count_call(false);
+        }
+        ctx.ledger.note_repair(stats.rounds, stats.reverted);
+        // Counts only (ADR-027).
+        ctx.ledger.record(
+            "repair",
+            json!({
+                "rounds": stats.rounds,
+                "reverted": stats.reverted,
+                "truncatedAttempts": stats.truncated,
+                "failedAttempts": stats.failed,
+                "budgeted": stats.budgeted,
+                "timedOut": stats.timed_out,
+                "criticalsRemaining": ctx.critical_count(),
+            }),
+        );
+        Ok(())
+    }
+}

@@ -14,6 +14,20 @@ interface Props {
   thinking: string;
   output: string;
   onCancel: () => void;
+  /**
+   * Staged-run progress, present only for a QUALITY-depth run: the live stage
+   * counter straight off `pipeline:stage`. When it's here the dots track the
+   * real pipeline (`index`/`total`) instead of the fast path's 2–3 document
+   * phases, and `stageLabel` names the stage under them.
+   *
+   * The panel stays otherwise identical — including `output`, which for a
+   * staged run is the draft stage's DISPLAY-ONLY stream. That stream ends
+   * several stages before the run does (validation and up to two repair rounds
+   * follow), so this panel is never the thing that decides a run is finished;
+   * its host leaves the generating stage on the run record's status.
+   */
+  pipelineStep?: { current: number; total: number } | null;
+  stageLabel?: string;
 }
 
 /**
@@ -41,7 +55,16 @@ const REASONING_HEAVY_RATIO = 5;
  * target skips one phase (2 dots): analyze=0 and the doc phase clamps to 1, so a
  * cover-only run lands on dot 1 (not 2, which would be out of range).
  */
-export function GeneratingPanel({ target, phase, phaseLabel, thinking, output, onCancel }: Props) {
+export function GeneratingPanel({
+  target,
+  phase,
+  phaseLabel,
+  thinking,
+  output,
+  onCancel,
+  pipelineStep,
+  stageLabel,
+}: Props) {
   const { t } = useTranslation();
 
   // "Is it stuck?" is the question a multi-minute silent run provokes, and the
@@ -50,8 +73,8 @@ export function GeneratingPanel({ target, phase, phaseLabel, thinking, output, o
     thinking.length >= REASONING_HEAVY_MIN_CHARS &&
     thinking.length > output.length * REASONING_HEAVY_RATIO;
 
-  const totalSteps = target === 'both' ? 3 : 2;
-  const currentStep =
+  const fastTotalSteps = target === 'both' ? 3 : 2;
+  const fastCurrentStep =
     phase === 'analyzing'
       ? 0
       : target === 'both'
@@ -61,13 +84,28 @@ export function GeneratingPanel({ target, phase, phaseLabel, thinking, output, o
         : // single-doc: the one doc phase is the second (and last) dot
           1;
 
+  // A staged run drives the dots off its own stage counter. `total` can be 0
+  // for a run reconnected from a persisted trail (the stored events carry no
+  // pipeline length), so fall back rather than render an empty dot row.
+  const staged = pipelineStep && pipelineStep.total > 0 ? pipelineStep : null;
+  const totalSteps = staged ? staged.total : fastTotalSteps;
+  const currentStep = staged ? Math.min(staged.current, staged.total - 1) : fastCurrentStep;
+
   return (
     <div className="flex h-full min-h-0 flex-col px-8 py-6">
       {/* Hero: anchors the empty/early phase so the stage reads as active work */}
       <div className="mx-auto mt-2 flex w-full max-w-2xl shrink-0 flex-col items-center text-center">
         <IconBadge icon={Wand2} size="lg" shape="circle" className="animate-pulse" />
         <StepDots currentStep={currentStep} totalSteps={totalSteps} className="mb-2 mt-4" />
-        <p className="text-[11px] font-medium text-brand-soft">{phaseLabel}</p>
+        <p className="text-[11px] font-medium text-brand-soft">{stageLabel || phaseLabel}</p>
+        {staged && (
+          <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-foreground/35">
+            {t('pipeline.stageCounter', {
+              current: staged.current + 1,
+              total: staged.total,
+            })}
+          </p>
+        )}
         <p className="mt-1 text-[11px] text-foreground/40">
           {reasoningHeavy
             ? t('autopilot.apply.reasoningHeavyHint')

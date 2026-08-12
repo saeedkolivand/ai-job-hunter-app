@@ -426,7 +426,8 @@
       "scrapeUrl": "URL scrape",
       "persistJob": "Interaction saved",
       "matchResume": "Resume match",
-      "autopilotRun": "Autopilot run"
+      "autopilotRun": "Autopilot run",
+      "resumePipelineRun": "Quality résumé run"
     },
     "activity": {
       "queued": "queued",
@@ -961,6 +962,10 @@
         "title": "AI spend"
       }
     },
+    "generationDepth": {
+      "title": "Generation depth",
+      "description": "How much work a résumé generation does by default. Every generate and tailor screen shows the same picker and can override this for one run."
+    },
     "outputTone": {
       "title": "AI Output Tone",
       "description": "Choose how AI responses should sound to match your communication style.",
@@ -1189,6 +1194,7 @@
     "subtitle": "Upload your resume and target job ad to generate tailored, ATS-optimized documents.",
     "thinking": "Thinking…",
     "reasoningComplete": "Reasoning complete",
+    "depthUnavailable": "Quality depth needs a saved résumé and a job from your job list. This page generates from pasted text, so it will run Fast — your choice is remembered for the surfaces that can use it.",
     "research": {
       "label": "Research the company",
       "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
@@ -1459,6 +1465,105 @@
     "letterLayoutNavy": "Navy",
     "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy."
   },
+  "generationDepth": {
+    "label": "Generation depth",
+    "option": {
+      "fast": {
+        "label": "Fast",
+        "tooltip": "One model call. Your résumé and the job ad go to the model once.",
+        "summary": "One pass, then the usual integrity check."
+      },
+      "quality": {
+        "label": "Quality",
+        "tooltip": "Six stages: analyse, match your evidence, plan, draft, check, auto-repair.",
+        "summary": "Slower and pricier, but grounded in your résumé and checked before you see it."
+      },
+      "max": {
+        "label": "Max",
+        "summary": "Section-by-section generation. Not available in this build yet.",
+        "unavailable": "Not available yet — arrives with section-by-section generation."
+      }
+    },
+    "info": {
+      "open": "What do these depths do?",
+      "title": "Generation depth",
+      "notYet": "(not available yet)",
+      "fast": {
+        "what": "One pass: your résumé and the job ad go to the model once and the answer is the document.",
+        "cost": "1 model call. Seconds to a minute."
+      },
+      "quality": {
+        "what": "Staged: the job ad is analysed, your evidence is matched and quoted verbatim from your résumé, a strategy is built, the résumé is drafted, then checked — and anything critical is regenerated automatically, up to 2 rounds.",
+        "cost": "4 model calls plus up to 2 repair rounds. Roughly +30–90 seconds on a cloud provider; several minutes on a local model, and up to ~10 minutes at high reasoning effort."
+      },
+      "max": {
+        "what": "Section by section, each grounded in its own evidence, plus an extra review pass.",
+        "cost": "7 calls plus up to 9 sequential section calls. Up to ~10 minutes locally at high reasoning effort."
+      },
+      "report": "Every depth ends with the same deterministic integrity report — rules, not an AI score. Quality depth adds the automatic repair and a per-bullet review of anything it could not ground in your résumé."
+    },
+    "smallModelWarning": "Quality depth asks the model for structured JSON at three stages, and small local models often get that shape wrong. The run re-asks once, then finishes and flags what it could not verify — it still works, but expect more to review."
+  },
+  "pipeline": {
+    "stage": {
+      "analyze_job": "Reading the job ad",
+      "match_evidence": "Matching your evidence",
+      "strategy": "Planning the résumé",
+      "draft": "Writing the résumé",
+      "validate": "Checking the result",
+      "repair": "Fixing what the check found"
+    },
+    "phase": {
+      "start": "started",
+      "finish": "finished",
+      "error": "failed"
+    },
+    "stageCounter": "Step {{current}} of {{total}}",
+    "state": {
+      "queued": "Waiting for a free slot…",
+      "preparing": "Preparing",
+      "drafting": "Writing",
+      "validating": "Checking",
+      "repairing": "Repairing"
+    },
+    "status": {
+      "running": "Running",
+      "completed": "Completed",
+      "needsReview": "Needs review",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "stopped": {
+      "done": "Finished",
+      "maxSteps": "Stopped at its step limit",
+      "maxTokens": "Stopped at its token limit",
+      "cancelled": "Cancelled",
+      "truncated": "Stopped — the answer was cut off",
+      "budgeted": "Stopped — the daily provider limit was reached",
+      "runTimeout": "Stopped — the run ran out of time",
+      "maxToolCalls": "Stopped at its tool-call limit",
+      "maxRepairs": "Stopped — the repair budget ran out",
+      "stopped": "Stopped"
+    },
+    "runs": {
+      "title": "Quality runs for this job",
+      "empty": "No staged runs yet for this posting.",
+      "retentionNote": "The three most recent runs are kept.",
+      "open": "Open report",
+      "openTimeline": "Show stage timeline",
+      "closeTimeline": "Hide stage timeline",
+      "metrics": "{{calls}} calls · {{repairs}} repair rounds",
+      "reverted": "last repair round reverted",
+      "documentNote": "Only the newest run's document is stored — older runs keep their own status and timeline."
+    },
+    "timeline": {
+      "empty": "No stage events recorded for this run.",
+      "liveOnly": "Live progress only — this run's stage trail is not stored yet."
+    },
+    "error": {
+      "notLatestRun": "Only the newest run for this job can be changed. Generate again to work on the current document."
+    }
+  },
   "quality": {
     "badge": {
       "clean": "Checked — no issues",
@@ -1479,6 +1584,41 @@
       "staleNotice": "This document has been edited since this report was generated — the issues below may no longer reflect the current text.",
       "recheck": "Re-check",
       "rechecking": "Checking…",
+      "sections": {
+        "title": "Section verdicts",
+        "clean": "No changes needed",
+        "issues_one": "{{count}} issue",
+        "issues_other": "{{count}} issues",
+        "criticals": "{{count}} critical",
+        "criticals_one": "{{count}} critical",
+        "criticals_other": "{{count}} critical",
+        "fix": "Fix this section",
+        "fixing": "Regenerating…",
+        "fixConfirm": "Regenerate this section",
+        "noteLabel": "What should change? (optional)",
+        "notePlaceholder": "e.g. lead with the platform migration",
+        "notAddressable": "This build can't re-generate this section on its own.",
+        "repaired_one": "{{count}} repair round ran automatically before you saw this.",
+        "repaired_other": "{{count}} repair rounds ran automatically before you saw this.",
+        "reverted": "The last repair round made things worse and was reverted.",
+        "perSectionNote": "Repairs are counted for the run — the check doesn't record which section each one touched."
+      },
+      "review": {
+        "title": "Claims to review",
+        "description": "These lines couldn't be traced back to your résumé. Nothing is removed automatically — decide each one and your choice is recorded on the report.",
+        "pending_one": "{{count}} claim still needs a decision",
+        "pending_other": "{{count}} claims still need a decision",
+        "allResolved": "Every flagged claim has a decision.",
+        "remove": "Remove",
+        "keep": "Keep",
+        "removed": "Marked for removal",
+        "kept": "Kept as accurate",
+        "orphaned": "No longer in the document",
+        "orphanedHint": "You edited this line out, or it changed after the check. Decide it anyway to clear the review.",
+        "removalPending": "Marked for removal — still in the document",
+        "removalPendingHint": "Your decision is recorded, but this line couldn't be deleted from here. Open the résumé saved on this posting's application and edit the line out there to finish.",
+        "failed": "Couldn't record that decision. Try again."
+      },
       "metrics": {
         "title": "Metrics",
         "keywordCoverage": "Keyword coverage",
@@ -1578,6 +1718,7 @@
       "infoLabel": "Board results"
     },
     "apply": {
+      "depthUnavailable": "Quality depth needs a saved résumé and a posting from your job list. This flow tailors the text in the wizard, so this run stays Fast — your choice is remembered.",
       "back": "Back to autopilot",
       "match": "match",
       "jobDescription": "Job description",
@@ -1919,6 +2060,46 @@
     "tailorHint": "Tailor your résumé & cover letter for this job",
     "tailorError": "Couldn't start tailoring. Please try again.",
     "saveError": "Couldn't save to tracking. Please try again.",
+    "tailored": {
+      "trigger": "Tailored résumé (Quality)",
+      "triggerHint": "Choose how much work the generation does. Quality depth analyses the ad, quotes evidence from your saved résumé, drafts, checks and auto-repairs.",
+      "modalTitle": "Tailored résumé",
+      "close": "Close",
+      "fastRoutes": "Fast opens the one-shot tailoring flow you already use — Start takes you there instead of running anything here.",
+      "usesResume": "Runs from your default saved résumé, “{{name}}”. Pick a different default in Documents.",
+      "unnamedResume": "your default saved résumé",
+      "savesTo": "The finished résumé is saved to this posting's application, where you can edit and export it.",
+      "needsResume": "Save a résumé first — quality depth reads it from your documents, not from this screen.",
+      "needsProvider": "Choose an AI provider in Settings → AI.",
+      "start": "Start",
+      "runAgain": "Run again",
+      "cancel": "Stop run",
+      "cancelHint": "Requests cancellation — stages stop at the next boundary, and whatever was written is kept.",
+      "cancelling": "Stopping…",
+      "draftNote": "Live draft — display only. Checking and up to two repair rounds still follow, so this is not the final résumé.",
+      "document": "Finished résumé",
+      "openReport": "Open integrity report",
+      "state": {
+        "done": "Completed",
+        "needsReview": "Needs your review",
+        "cancelled": "Stopped",
+        "error": "Failed"
+      },
+      "needsReviewTitle_one": "Not finished — {{count}} claim needs your verdict",
+      "needsReviewTitle_other": "Not finished — {{count}} claims need your verdict",
+      "needsReviewHint": "The résumé exists, but the checks couldn't trace these lines back to your saved résumé. Open the report and keep or remove each one.",
+      "completedHint": "Every check that could run has run. Open the report for the section verdicts and the details.",
+      "cancelledHint": "Whatever the run had already written was saved.",
+      "failedTitle": "The run failed",
+      "failedHint": "Nothing is retried automatically. A run is also refused rather than queued when too many are already in flight — try again in a moment.",
+      "fixFailed": "Couldn't regenerate that section. {{detail}}",
+      "resolveFailed": "Couldn't record that decision. {{detail}}",
+      "report": {
+        "source": "Generated from your saved résumé “{{name}}”.",
+        "removeHint": "Remove records your verdict here; the line itself is edited out in the application's résumé editor.",
+        "olderRun": "This is not the newest run for this posting. Every run of a posting shares one saved résumé, so nothing here can be changed."
+      }
+    },
     "prep": {
       "trigger": "Prep this application",
       "triggerHint": "Research the company, score your résumé, and draft a tailored cover letter + résumé + interview questions",

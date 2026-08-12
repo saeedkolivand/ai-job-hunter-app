@@ -11,6 +11,10 @@ import {
   type QualityReport,
 } from '@/lib/generate';
 import { resolveActiveProvider } from '@/lib/generate/provider-context';
+import type {
+  PipelineSectionStates,
+  PipelineStageProgress,
+} from '@/lib/machines/resume-pipeline.machine';
 
 /** Which document(s) a run produces. */
 export type TailorTarget = 'resume' | 'cover' | 'both';
@@ -39,6 +43,21 @@ export interface GenerationSession {
   /** Deterministic content-quality report for the most recent run (ADR-007
    *  addendum) — additive sibling to `meta`; never read by `phase`. */
   report: QualityReport | null;
+  /**
+   * Staged-pipeline ("quality depth") siblings — ADR-006 additive fields.
+   *
+   * All three are `null` for a FAST run and no code path on the fast side reads
+   * or writes them, which is the point: `phase`/`GenerationPhase` is untouched,
+   * so the one-shot path behaves exactly as before and a quality run layers its
+   * extra state alongside instead of widening the phase vocabulary.
+   */
+  /** `pipeline_runs.id` of the staged run this session is showing, if any —
+   *  the reconnect handle after a panel remounts mid-run. */
+  runId: string | null;
+  /** Live stage counter for the progress dots + stage caption. */
+  pipelineStage: PipelineStageProgress | null;
+  /** Per-section verdicts, populated after the run's `validate` stage. */
+  sectionStates: PipelineSectionStates | null;
 }
 
 /** Stable empty session — returned for unknown ids so selectors keep one reference. */
@@ -53,6 +72,9 @@ export const EMPTY_SESSION: GenerationSession = {
   meta: null,
   savedId: null,
   report: null,
+  runId: null,
+  pipelineStage: null,
+  sectionStates: null,
 };
 
 /** The finished documents + detected metadata, handed to {@link RunTailorParams.onComplete}. */
@@ -108,6 +130,17 @@ interface GenerationStore {
    *  re-validates one document and merges its fresh slot into the wrapper. */
   setReport: (id: string, report: QualityReport) => void;
   /**
+   * Write the staged-pipeline siblings for a session (ADR-006). One setter for
+   * all three because they change together — a run starts (`runId`), reports a
+   * stage (`pipelineStage`), and lands its verdicts (`sectionStates`) — and a
+   * partial patch keeps a caller from having to restate the two it didn't touch.
+   * Never called on the fast path.
+   */
+  setPipeline: (
+    id: string,
+    patch: Partial<Pick<GenerationSession, 'runId' | 'pipelineStage' | 'sectionStates'>>
+  ) => void;
+  /**
    * Seed a session from a persisted record so the flow opens on the results
    * (`done`) stage instead of the wizard. No-clobber + idempotent: writes ONLY
    * when the session is empty (not generating, no output, unsaved), so it is
@@ -161,6 +194,8 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
     setSavedId: (id, savedId) => patch(id, { savedId }),
 
     setReport: (id, report) => patch(id, { report }),
+
+    setPipeline: (id, next) => patch(id, next),
 
     hydrate: (id, seed) =>
       set((state) => {
