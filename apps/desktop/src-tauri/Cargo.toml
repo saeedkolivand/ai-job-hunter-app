@@ -108,7 +108,7 @@ sentry = { version = "0.42", default-features = false, features = [
 # `minidump` (default feature) pulls `sentry-rust-minidump`, which supervises the
 # app from a SEPARATE process. That is required, not a nicety: `[profile.release]`
 # sets `panic = "abort"`, so nothing in-process can outlive a crash to flush it.
-tauri-plugin-sentry = "0.5"
+tauri-plugin-sentry = "0.6"
 tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"
