@@ -647,21 +647,18 @@ pub fn ai_set_active_provider(app: AppHandle, provider: String) -> Value {
 /// loopback/LAN gateways stay allowed), and the context-window range. Returns
 /// the fresh active config, or `{ error }`.
 ///
-/// REPLACE semantics on all three fields — see
-/// [`AiConfigStore::set_provider_settings`](crate::ai_config::AiConfigStore::set_provider_settings).
-/// `contextWindow` is the window for the MODEL being saved (the renderer's own
-/// `modelLimits[model].contextWindow`); omitting it stores none, which leaves
-/// the provider on its own default.
+/// PATCH semantics per field — absent keeps the stored value, explicit `null`
+/// clears it, a value sets it. So a caller may send ONLY what changed, and
+/// omitting a field can never erase it. See
+/// [`ProviderSettingsPatch`](crate::ai_config::ProviderSettingsPatch) for why
+/// the request is a struct rather than loose arguments.
 #[tauri::command]
 pub fn ai_set_provider_settings(
     app: AppHandle,
-    provider: String,
-    model: Option<String>,
-    base_url: Option<String>,
-    context_window: Option<u32>,
+    req: crate::ai_config::ProviderSettingsPatch,
 ) -> Value {
     let store = app.state::<crate::ai_config::AiConfigStore>();
-    match store.set_provider_settings(&provider, model, base_url, context_window) {
+    match store.set_provider_settings(req) {
         Ok(()) => serde_json::to_value(store.active_config()).unwrap_or_else(|_| json!({})),
         Err(e) => json!({ "error": e.to_string() }),
     }

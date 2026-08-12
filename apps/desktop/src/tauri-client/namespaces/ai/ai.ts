@@ -17,19 +17,17 @@ export const ai = {
   activeConfig: () => invoke('ai_active_config'),
   setActiveProvider: ({ provider }: { provider: string }) =>
     invoke('ai_set_active_provider', { provider }),
-  // `contextWindow` is REPLACE-semantics like model/baseUrl — send the window
-  // held for the model being saved, or the backend stores none.
-  setProviderSettings: ({
-    provider,
-    model,
-    baseUrl,
-    contextWindow,
-  }: {
+  // PATCH semantics: an omitted key keeps the stored value, an explicit `null`
+  // clears it. Passed through as ONE `req` object rather than spread into
+  // separate command arguments, because only a struct field can carry the serde
+  // attribute that tells absent from null (a Tauri command parameter cannot).
+  // `undefined` fields drop out during serialization, which is exactly "absent".
+  setProviderSettings: (req: {
     provider: string;
-    model?: string;
-    baseUrl?: string;
-    contextWindow?: number;
-  }) => invoke('ai_set_provider_settings', { provider, model, baseUrl, contextWindow }),
+    model?: string | null;
+    baseUrl?: string | null;
+    contextWindow?: number | null;
+  }) => invoke('ai_set_provider_settings', { req }),
   seedActiveConfig: ({
     config,
   }: {

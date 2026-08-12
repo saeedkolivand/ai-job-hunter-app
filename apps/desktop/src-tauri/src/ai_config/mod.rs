@@ -51,7 +51,7 @@ use std::path::PathBuf;
 
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 pub mod stage_overrides;
 
@@ -123,6 +123,49 @@ pub struct ActiveAiConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u32>,
     pub providers: BTreeMap<String, ProviderConfig>,
+}
+
+/// A PATCH to one provider's settings — the shape the settings writer takes.
+///
+/// Per field: **absent = keep what is stored**, explicit `null` = clear, a value
+/// = set. Replace-everything semantics were the first design and they failed on
+/// first contact: three renderer call sites each saved one field and silently
+/// erased the other two, and a doc comment saying "send them all" is not a
+/// mechanism. Absence is what a caller produces by accident, so absence has to
+/// be the harmless answer.
+///
+/// Hand-written rather than emitted by `pnpm gen:ipc`: the whole point is the
+/// `Option<Option<T>>` + `deserialize_with` pair below, which the generator has
+/// no way to express. The TS counterpart is
+/// `AiContract.setProviderSettings` (`field?: T | null`) — keep the two in step
+/// by hand, and prefer adding a field HERE first so the compiler catches the
+/// store side.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSettingsPatch {
+    pub provider: String,
+    #[serde(default, deserialize_with = "double_option")]
+    pub model: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub base_url: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub context_window: Option<Option<u32>>,
+}
+
+/// Distinguish "the key was absent" (`None`) from "the key was present and
+/// null" (`Some(None)`).
+///
+/// Needed because a plain `Option<Option<T>>` collapses both to `None`: serde's
+/// `deserialize_option` visits `none` for a missing key AND for an explicit
+/// null. This is also why the command takes a struct rather than loose
+/// arguments — a Tauri command parameter has no serde attributes to hang this
+/// on.
+fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Option::deserialize(deserializer).map(Some)
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -263,22 +306,26 @@ impl AiConfigStore {
     /// provider). Server-side validation: known id, cross-family model check, and
     /// base_url provenance (scheme + cloud-metadata block).
     ///
-    /// REPLACE semantics on every field, `context_window` included: this is the
-    /// "save this provider's settings" writer, not a patch. A caller that omits
-    /// `context_window` is saying the model has none — which is exactly right
-    /// when the model itself just changed, and a footgun otherwise, so the
-    /// renderer sends the value it holds for the model it is saving.
-    pub fn set_provider_settings(
-        &self,
-        provider: &str,
-        model: Option<String>,
-        base_url: Option<String>,
-        context_window: Option<u32>,
-    ) -> AppResult<()> {
-        let provider_id = ProviderId::parse(provider)?;
-        let (model, base_url, context_window) =
-            Self::validate_settings(provider_id, model, base_url, context_window)?;
+    /// PATCH semantics, per field: absent keeps the stored value, explicit
+    /// `null` clears it, a value sets it — see [`ProviderSettingsPatch`]. The
+    /// merge happens under the SAME lock as the write, so two concurrent saves
+    /// cannot read the same "before" and each drop the other's field.
+    ///
+    /// The merged result is validated as a whole, not just the changed fields:
+    /// a patch that only changes the model must still be rejected if the model
+    /// is wrong for the STORED base_url's provider.
+    pub fn set_provider_settings(&self, patch: ProviderSettingsPatch) -> AppResult<()> {
+        let provider_id = ProviderId::parse(&patch.provider)?;
         let conn = self.conn.lock();
+        let stored = Self::providers_conn(&conn)
+            .remove(provider_id.as_str())
+            .unwrap_or_default();
+        let (model, base_url, context_window) = Self::validate_settings(
+            provider_id,
+            patch.model.unwrap_or(stored.model),
+            patch.base_url.unwrap_or(stored.base_url),
+            patch.context_window.unwrap_or(stored.context_window),
+        )?;
         Self::upsert_provider_conn(
             &conn,
             provider_id.as_str(),

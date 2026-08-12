@@ -43,23 +43,31 @@ export interface AiContract {
    *  Returns the fresh active config, or `{ error }` on an invalid id. */
   setActiveProvider(req: { provider: string }): Promise<ActiveAiConfig | { error: string }>;
 
-  /** Edit a (possibly non-active) provider's model/base_url/context window
-   *  without flipping the active provider (the "edit" half). Returns the fresh
-   *  active config, or `{ error }` when server-side validation rejects any of
-   *  them.
+  /**
+   * Edit a (possibly non-active) provider's model/base_url/context window
+   * without flipping the active provider (the "edit" half). Returns the fresh
+   * active config, or `{ error }` when server-side validation rejects any of
+   * them — including against fields it did NOT send (the merged row is what is
+   * validated, so patching in a cross-family model still fails).
    *
-   *  REPLACE semantics on every field, not patch. `contextWindow` is the window
-   *  for the MODEL being saved — the caller's own
-   *  `modelLimits[model].contextWindow` — so it moves with the model and is
-   *  omitted when the model has none (the provider then uses its own default).
-   *  Omitting it while keeping the same model CLEARS a previously-saved
-   *  window. */
+   * **PATCH semantics, per field:**
+   * - **omitted** → keep whatever is stored. Send only what changed.
+   * - **`null`** → clear the stored value.
+   * - **a value** → set it.
+   *
+   * Replace-everything was the first design and it erased fields at three call
+   * sites before the day was out; absence is what a caller produces by
+   * accident, so absence is the harmless case.
+   *
+   * `contextWindow` is the window for the MODEL in this entry, so send it
+   * alongside a model change and let it be `null` when the new model has none.
+   */
   setProviderSettings(req: {
     provider: string;
-    model?: string;
-    baseUrl?: string;
+    model?: string | null;
+    baseUrl?: string | null;
     /** 512–131072, validated server-side. Only Ollama acts on it (`num_ctx`). */
-    contextWindow?: number;
+    contextWindow?: number | null;
   }): Promise<ActiveAiConfig | { error: string }>;
 
   /** One-time first-run seed from the renderer's migrated Zustand config.
@@ -406,8 +414,11 @@ export interface AiSpendProviderTotals {
  * A model that never appears is not a model that does no reasoning — it is one
  * whose provider does not report the split. Anthropic counts thinking inside
  * its output tokens and Ollama's `eval_count` includes the thinking channel, so
- * neither ever appears here; OpenAI's reasoning models and Gemini's thinking
- * models do. Render absence as "not measured", never as zero.
+ * neither ever appears here. OpenAI and Gemini do report it — note that a
+ * current OpenAI model that did no reasoning reports a measured `0` rather than
+ * omitting the field, so it CAN appear here with a zero ratio, which is a real
+ * observation ("this model does not think") and not the same as absence.
+ * Render absence as "not measured", never as zero.
  */
 export interface AiSpendModelThinking {
   provider: string;
