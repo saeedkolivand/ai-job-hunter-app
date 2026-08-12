@@ -1,20 +1,18 @@
-import { useTranslation } from '@ajh/translations';
+import { Ruler } from 'lucide-react';
 
-import {
-  assessModelContextFit,
-  type ContextFitVerdict,
-  estimateTokensFromChars,
-  STAGE_WORST_CASE_CHARS,
-} from './context-fit';
+import { useTranslation } from '@ajh/translations';
+import { EmptyState, RowSkeleton } from '@ajh/ui';
+
+import { assessModelContextFit, type ContextFitVerdict, worstCaseStage } from './context-fit';
 import type { AdvisorStepProps } from './types';
 
 /** One token class per verdict — no `[#RRGGBB]`, and each state has its own
  *  visible treatment rather than only differing by wording. */
 const VERDICT_CLASS: Record<ContextFitVerdict, string> = {
-  fits: 'text-emerald-400/80',
-  tight: 'text-amber-400/80',
-  'too-small': 'text-red-400/80',
-  unknown: 'text-foreground/40',
+  fits: 'text-emerald-400',
+  tight: 'text-amber-400',
+  'too-small': 'text-red-400',
+  unknown: 'text-foreground/60',
 };
 
 /**
@@ -25,66 +23,90 @@ const VERDICT_CLASS: Record<ContextFitVerdict, string> = {
  * with no measured window reads "not measured": the app never assumes a size.
  */
 export function ContextFitStep({ ctx }: AdvisorStepProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
-  const draftTokens = estimateTokensFromChars(STAGE_WORST_CASE_CHARS.draft ?? 0);
+  // No local models at all (a cloud-only setup): say so, rather than leaving
+  // intro prose above an empty list and a footnote about truncation below it.
+  if (ctx.installedModels.length === 0) {
+    return (
+      <EmptyState
+        icon={Ruler}
+        title={t('settings.ai.advisor.fit.emptyTitle')}
+        description={t('settings.ai.advisor.fit.emptyDescription')}
+      />
+    );
+  }
+
+  // Which stage is the biggest is COMPUTED, not asserted — `sections` carries
+  // four artifacts and beats the draft turn.
+  const worst = worstCaseStage();
 
   return (
     <div className="space-y-3">
-      <p className="text-xs leading-relaxed text-foreground/55">
+      <p className="text-xs leading-relaxed text-foreground/60">
         {t('settings.ai.advisor.fit.intro', {
-          chars: (STAGE_WORST_CASE_CHARS.draft ?? 0).toLocaleString(),
-          tokens: draftTokens.toLocaleString(),
+          stage: t(`settings.ai.stages.names.${worst.stage}`),
+          chars: worst.chars.toLocaleString(i18n.language),
+          tokens: worst.tokens.toLocaleString(i18n.language),
         })}
       </p>
 
-      <ul className="space-y-2">
-        {ctx.installedModels.map((model) => {
-          const fit = assessModelContextFit({
-            model,
-            contextLength: ctx.inspections[model]?.contextLength,
-          });
-          const stageNames = fit.overflowStages
-            .map((stage) => t(`settings.ai.stages.names.${stage}`))
-            .join(', ');
+      {/* A window that has not been read yet is not a window of unknown size —
+          don't render either claim until the probes settle. */}
+      {ctx.inspectionsPending ? (
+        <div className="space-y-2" role="status" aria-live="polite">
+          <RowSkeleton />
+          <RowSkeleton />
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {ctx.installedModels.map((model) => {
+            const fit = assessModelContextFit({
+              model,
+              contextLength: ctx.inspections[model]?.contextLength,
+            });
+            const stageNames = fit.overflowStages
+              .map((stage) => t(`settings.ai.stages.names.${stage}`))
+              .join(', ');
 
-          return (
-            <li
-              key={model}
-              className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-foreground/80">{model}</span>
-                <span className={`text-[11px] ${VERDICT_CLASS[fit.verdict]}`}>
-                  {t(`settings.ai.advisor.fit.verdict.${fit.verdict}`)}
-                </span>
-              </div>
+            return (
+              <li
+                key={model}
+                className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-foreground/80">{model}</span>
+                  <span className={`text-[11px] ${VERDICT_CLASS[fit.verdict]}`}>
+                    {t(`settings.ai.advisor.fit.verdict.${fit.verdict}`)}
+                  </span>
+                </div>
 
-              {fit.verdict === 'unknown' ? (
-                <p className="mt-1 text-[11px] text-foreground/40">
-                  {t('settings.ai.advisor.fit.unknownHint')}
-                </p>
-              ) : (
-                <p className="mt-1 text-[11px] text-foreground/45">
-                  {t('settings.ai.advisor.fit.usable', {
-                    usable: (fit.usableInputTokens ?? 0).toLocaleString(),
-                    window: (fit.contextLength ?? 0).toLocaleString(),
-                  })}
-                </p>
-              )}
+                {fit.verdict === 'unknown' ? (
+                  <p className="mt-1 text-[11px] text-foreground/60">
+                    {t('settings.ai.advisor.fit.unknownHint')}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-foreground/60">
+                    {t('settings.ai.advisor.fit.usable', {
+                      usable: (fit.usableInputTokens ?? 0).toLocaleString(i18n.language),
+                      window: (fit.contextLength ?? 0).toLocaleString(i18n.language),
+                    })}
+                  </p>
+                )}
 
-              {/* Name the stage — "some stage won't fit" is not actionable. */}
-              {fit.overflowStages.length > 0 && (
-                <p className="mt-1 text-[11px] text-amber-400/80">
-                  {t('settings.ai.advisor.fit.overflow', { stages: stageNames })}
-                </p>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                {/* Name the stage — "some stage won't fit" is not actionable. */}
+                {fit.overflowStages.length > 0 && (
+                  <p className="mt-1 text-[11px] text-amber-400">
+                    {t('settings.ai.advisor.fit.overflow', { stages: stageNames })}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
-      <p className="text-[11px] leading-relaxed text-foreground/40">
+      <p className="text-[11px] leading-relaxed text-foreground/60">
         {t('settings.ai.advisor.fit.truncationNote')}
       </p>
     </div>

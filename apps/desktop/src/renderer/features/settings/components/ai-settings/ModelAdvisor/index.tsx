@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { useId, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, ModalShell, StepDots } from '@ajh/ui';
@@ -42,19 +43,12 @@ export function ModelAdvisor({
   const { t } = useTranslation();
   const [stepIndex, setStepIndex] = useState(0);
   const titleId = useId();
-  const stepRef = useRef<HTMLDivElement | null>(null);
+  const stepTitleId = useId();
 
   const inspections = useModelInspections(open ? installedModels : []);
   const { data: overrides = {} } = useStageOverrides();
   const { data: spend } = useSpendSummary();
   const zustand = useAiProviderConfig();
-
-  // Move focus to the new step's container so a keyboard/screen-reader user
-  // lands ON the content that just changed instead of keeping focus on the
-  // "Next" button while the panel silently swaps underneath it.
-  useEffect(() => {
-    if (open) stepRef.current?.focus();
-  }, [open, stepIndex]);
 
   const step = ADVISOR_STEPS[stepIndex] ?? ADVISOR_STEPS[0];
   if (!step) return null;
@@ -84,18 +78,37 @@ export function ModelAdvisor({
       maxWidth="max-w-xl"
       ariaLabelledby={titleId}
       header={
-        <div className="border-b border-foreground/10 px-5 py-4">
-          <h2 id={titleId} className="text-sm font-semibold text-foreground/90">
-            {t('settings.ai.advisor.title')}
-          </h2>
-          <p className="mt-1 text-xs text-foreground/45">
-            {t(`settings.ai.advisor.${step.id}.title`)}
-          </p>
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border-soft)] px-5 py-4">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-sm font-semibold text-foreground/90">
+              {t('settings.ai.advisor.title')}
+            </h2>
+            {/* The counter is computed from the step list, so adding a step
+                cannot leave eight translated strings claiming "of 4".
+                `aria-live` carries the step change to a screen reader without
+                yanking focus off the button the user just pressed. */}
+            <h3 id={stepTitleId} aria-live="polite" className="mt-1 text-xs text-foreground/60">
+              {t('settings.ai.advisor.stepCounter', {
+                current: stepIndex + 1,
+                total: ADVISOR_STEPS.length,
+              })}{' '}
+              — {t(`settings.ai.advisor.${step.id}.title`)}
+            </h3>
+          </div>
+          {/* Reachable on every step, not only the last one. */}
+          <Button
+            variant="ghost"
+            className="shrink-0"
+            aria-label={t('settings.ai.advisor.close')}
+            onClick={close}
+          >
+            <X size={14} aria-hidden="true" />
+          </Button>
         </div>
       }
       footer={
-        <div className="flex items-center justify-between gap-3 border-t border-foreground/10 px-5 py-3">
-          <StepDots currentStep={stepIndex} totalSteps={ADVISOR_STEPS.length} />
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-soft)] px-5 py-3">
+          <StepDots currentStep={stepIndex} totalSteps={ADVISOR_STEPS.length} className="my-0" />
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -111,7 +124,19 @@ export function ModelAdvisor({
         </div>
       }
     >
-      <div ref={stepRef} tabIndex={-1} aria-labelledby={titleId} className="px-5 py-4 outline-none">
+      {/* A labelled region, NOT a tab stop.
+       *
+       * Focusing the container was the first attempt and it broke the trap:
+       * `useFocusTrap` only intercepts Tab when the active element is the
+       * first/last of its FOCUSABLE query, which excludes `[tabindex="-1"]`, so
+       * Shift+Tab from a focused `-1` container landed on the page behind the
+       * overlay. Making it `tabIndex={0}` fixed that but turned a prose panel
+       * into an unexplained tab stop.
+       *
+       * Focus therefore stays on the control the user just pressed (Next/Back —
+       * both real, both inside the trap) and the step change is ANNOUNCED
+       * instead, via the polite live region on the heading above. */}
+      <div role="group" aria-labelledby={stepTitleId} className="px-5 py-4">
         <Current ctx={ctx} />
       </div>
     </ModalShell>

@@ -44,6 +44,10 @@ export const MEASURED_MIN_CALLS = 3;
 export type ThinkingRiskLevel =
   /** The provider reported a heavy reasoning:answer ratio for this model. */
   | 'measured-heavy'
+  /** The provider reported a ratio and it is FINE. The one state here that is
+   *  actual evidence of low risk — never conflate it with `unmeasured`, whose
+   *  copy explains that nothing was measured at all. */
+  | 'measured-light'
   /** A thinking-heavy family AND the effort level the loop reports cluster at. */
   | 'known-bad-combo'
   /** A thinking-heavy family at a lower effort — worth knowing, not alarming. */
@@ -74,10 +78,21 @@ export function assessThinkingRisk(input: ThinkingRiskInput): ThinkingRisk {
   const { model, effort, measured = [] } = input;
 
   const row = measured.find((m) => m.model === model);
-  if (row && row.calls >= MEASURED_MIN_CALLS && row.outputTokens > 0) {
-    const ratio = row.thinkingTokens / row.outputTokens;
-    if (ratio >= HEAVY_RATIO) {
-      return { model, level: 'measured-heavy', ratio, calls: row.calls, effort };
+  if (row && row.calls >= MEASURED_MIN_CALLS) {
+    if (row.outputTokens > 0) {
+      const ratio = row.thinkingTokens / row.outputTokens;
+      return {
+        model,
+        level: ratio >= HEAVY_RATIO ? 'measured-heavy' : 'measured-light',
+        ratio,
+        calls: row.calls,
+        effort,
+      };
+    }
+    // All thinking, no answer: the worst version of the failure, not a missing
+    // measurement. A ratio is undefined here, so the level carries the meaning.
+    if (row.thinkingTokens > 0) {
+      return { model, level: 'measured-heavy', calls: row.calls, effort };
     }
   }
 

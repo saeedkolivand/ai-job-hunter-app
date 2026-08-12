@@ -1,15 +1,17 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Gauge } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
+import { EmptyState } from '@ajh/ui';
 
 import { assessThinkingRisk, type ThinkingRiskLevel } from './thinking-risk';
 import type { AdvisorStepProps } from './types';
 
 const LEVEL_CLASS: Record<ThinkingRiskLevel, string> = {
-  'known-bad-combo': 'text-red-400/80',
-  'measured-heavy': 'text-amber-400/80',
-  'reasoning-heavy': 'text-amber-400/70',
-  unmeasured: 'text-foreground/45',
+  'known-bad-combo': 'text-red-400',
+  'measured-heavy': 'text-amber-400',
+  'reasoning-heavy': 'text-amber-400',
+  'measured-light': 'text-emerald-400',
+  unmeasured: 'text-foreground/60',
 };
 
 /**
@@ -34,9 +36,21 @@ export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
     ),
   ];
 
+  // Nothing selected anywhere (no active model, no overrides) — say that,
+  // rather than showing intro prose above an empty list.
+  if (models.length === 0) {
+    return (
+      <EmptyState
+        icon={Gauge}
+        title={t('settings.ai.advisor.risk.emptyTitle')}
+        description={t('settings.ai.advisor.risk.emptyDescription')}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
-      <p className="text-xs leading-relaxed text-foreground/55">
+      <p className="text-xs leading-relaxed text-foreground/60">
         {t('settings.ai.advisor.risk.intro')}
       </p>
 
@@ -63,25 +77,39 @@ export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
               </div>
 
               {risk.level === 'known-bad-combo' && (
-                <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+                <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">
                   {t('settings.ai.advisor.risk.badCombo', { effort: risk.effort })}
                 </p>
               )}
-              {risk.level === 'measured-heavy' && (
-                <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
-                  {t('settings.ai.advisor.risk.measured', {
+              {risk.level === 'measured-heavy' &&
+                (risk.ratio === undefined ? (
+                  // Thinking tokens with zero output: no ratio exists to quote.
+                  <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">
+                    {t('settings.ai.advisor.risk.measuredNoOutput', { calls: risk.calls ?? 0 })}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">
+                    {t('settings.ai.advisor.risk.measured', {
+                      ratio: risk.ratio.toFixed(1),
+                      calls: risk.calls ?? 0,
+                    })}
+                  </p>
+                ))}
+              {risk.level === 'measured-light' && (
+                <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">
+                  {t('settings.ai.advisor.risk.measuredLight', {
                     ratio: (risk.ratio ?? 0).toFixed(1),
                     calls: risk.calls ?? 0,
                   })}
                 </p>
               )}
               {risk.level === 'reasoning-heavy' && (
-                <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+                <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">
                   {t('settings.ai.advisor.risk.reasoningHeavy')}
                 </p>
               )}
               {risk.level === 'unmeasured' && (
-                <p className="mt-1 text-[11px] leading-relaxed text-foreground/45">
+                <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">
                   {t('settings.ai.advisor.risk.unmeasured')}
                 </p>
               )}
@@ -90,7 +118,7 @@ export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
         })}
       </ul>
 
-      <p className="text-[11px] leading-relaxed text-foreground/40">
+      <p className="text-[11px] leading-relaxed text-foreground/60">
         {t('settings.ai.advisor.risk.coverageNote')}
       </p>
     </div>

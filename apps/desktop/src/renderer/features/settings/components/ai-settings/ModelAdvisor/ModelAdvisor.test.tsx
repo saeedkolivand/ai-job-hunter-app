@@ -16,6 +16,8 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
       params ? `${key} ${Object.values(params).join(' ')}` : key,
+    // The steps format numbers against the ACTIVE app language, not the OS one.
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -79,15 +81,79 @@ describe('ModelAdvisor — shell', () => {
     expect(dialog).toHaveAccessibleName('settings.ai.advisor.title');
   });
 
-  it('moves focus onto the step content when the step changes', async () => {
+  it('keeps focus inside the dialog when the step changes', async () => {
     const user = userEvent.setup();
     render(<ModelAdvisor {...props} />);
 
     await next(user, 1);
 
-    // Focus follows the content that changed, not the button that changed it.
-    expect(document.activeElement).toHaveAttribute('tabindex', '-1');
-    expect(document.activeElement).toHaveTextContent('settings.ai.advisor.fit.intro');
+    // Focus stays on the real control the user pressed. It used to be moved to
+    // the step container, which — as a `tabindex="-1"` node — sat outside the
+    // focus trap's FOCUSABLE query, so Shift+Tab escaped to the page behind.
+    const dialog = screen.getByRole('dialog');
+    expect(document.activeElement).toBe(screen.getByText('settings.ai.advisor.next'));
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it('announces the new step instead of stealing focus for it', async () => {
+    const user = userEvent.setup();
+    render(<ModelAdvisor {...props} />);
+
+    const heading = screen.getByText(/settings\.ai\.advisor\.stepCounter 1 4/);
+    expect(heading).toHaveAttribute('aria-live', 'polite');
+
+    await next(user, 1);
+
+    // The same live region now carries step 2 — that is the announcement.
+    expect(screen.getByText(/settings\.ai\.advisor\.stepCounter 2 4/)).toHaveAttribute(
+      'aria-live',
+      'polite'
+    );
+  });
+
+  it('names the step region with the step heading', () => {
+    render(<ModelAdvisor {...props} />);
+
+    const region = screen.getByRole('group');
+    const heading = screen.getByText(/settings\.ai\.advisor\.stepCounter 1 4/);
+    expect(region).toHaveAttribute('aria-labelledby', heading.id);
+  });
+
+  it('renders the step counter from the step list, not from the copy', () => {
+    render(<ModelAdvisor {...props} />);
+
+    expect(screen.getByText(/settings\.ai\.advisor\.stepCounter 1 4/)).toBeVisible();
+  });
+
+  it('can be closed from any step, not only the last', async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<ModelAdvisor {...props} onClose={onClose} />);
+
+    await user.click(screen.getByLabelText('settings.ai.advisor.close'));
+
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('ModelAdvisor — a cloud-only machine (no local models)', () => {
+  it('says there is nothing to measure instead of showing an empty list', async () => {
+    const user = userEvent.setup();
+    render(<ModelAdvisor {...props} installedModels={[]} />);
+
+    expect(screen.getByText('settings.ai.advisor.models.emptyTitle')).toBeVisible();
+
+    await next(user, 1);
+    expect(screen.getByText('settings.ai.advisor.fit.emptyTitle')).toBeVisible();
+  });
+
+  it('says there is no model to assess when nothing is selected or pinned', async () => {
+    const user = userEvent.setup();
+    render(<ModelAdvisor {...props} installedModels={[]} activeModel={undefined} />);
+
+    await next(user, 3);
+
+    expect(screen.getByText('settings.ai.advisor.risk.emptyTitle')).toBeVisible();
   });
 });
 

@@ -32,10 +32,33 @@ describe('assessThinkingRisk — measured signal', () => {
     expect(risk.level).toBe('unmeasured');
   });
 
-  it('does not flag a model that reasons within the ratio threshold', () => {
+  it('reports a MEASURED-and-fine model as measured, not as unmeasured', () => {
     const risk = assessThinkingRisk({
       model: 'o4-mini',
       measured: [measuredRow({ thinkingTokens: (HEAVY_RATIO - 1) * 1_000 })],
+    });
+
+    // `unmeasured` copy says "local models never report a split" — claiming
+    // that about a model the provider DID measure is simply false.
+    expect(risk.level).toBe('measured-light');
+    expect(risk.ratio).toBe(HEAVY_RATIO - 1);
+  });
+
+  it('treats thinking with ZERO answer tokens as the heavy case', () => {
+    const risk = assessThinkingRisk({
+      model: 'o4-mini',
+      measured: [measuredRow({ outputTokens: 0, thinkingTokens: 50_000 })],
+    });
+
+    expect(risk.level).toBe('measured-heavy');
+    // No denominator exists, so no ratio may be invented for the copy.
+    expect(risk.ratio).toBeUndefined();
+  });
+
+  it('stays unmeasured when the row is all zeroes', () => {
+    const risk = assessThinkingRisk({
+      model: 'o4-mini',
+      measured: [measuredRow({ outputTokens: 0, thinkingTokens: 0 })],
     });
 
     expect(risk.level).toBe('unmeasured');

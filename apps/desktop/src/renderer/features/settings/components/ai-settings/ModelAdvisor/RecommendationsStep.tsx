@@ -3,6 +3,7 @@ import { Terminal } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 
 import { StageSuggestionBanner } from '../StageOverridesSettings/StageSuggestionBanner';
+import { suggestExtractionModel } from '../StageOverridesSettings/suggest-stage-models';
 import type { AdvisorStepProps } from './types';
 
 /** Server-level settings the app must NOT write. Shown as commands to run, with
@@ -23,25 +24,44 @@ const SERVER_ADVICE = ['OLLAMA_FLASH_ATTENTION=1', 'OLLAMA_KV_CACHE_TYPE=q8_0'] 
 export function RecommendationsStep({ ctx }: AdvisorStepProps) {
   const { t } = useTranslation();
 
+  // Same pure predicate the banner uses, on the same inputs — so the section
+  // header and its body can never disagree about whether advice exists.
+  const hasSuggestion =
+    suggestExtractionModel({
+      activeProvider: ctx.activeProvider,
+      activeModel: ctx.activeModel,
+      installedModels: ctx.installedModels,
+      inspections: ctx.inspections,
+      overrides: ctx.overrides,
+    }) !== null;
+
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
           {t('settings.ai.advisor.recommend.stagesHeading')}
         </h3>
-        <StageSuggestionBanner
-          activeProvider={ctx.activeProvider}
-          activeModel={ctx.activeModel}
-          installedModels={ctx.installedModels}
-          overrides={ctx.overrides}
-        />
+        {hasSuggestion ? (
+          <StageSuggestionBanner
+            activeProvider={ctx.activeProvider}
+            activeModel={ctx.activeModel}
+            installedModels={ctx.installedModels}
+            overrides={ctx.overrides}
+          />
+        ) : (
+          // An empty section reads as "the advisor has nothing to say and won't
+          // admit it" — say the actual finding instead.
+          <p className="text-xs leading-relaxed text-foreground/60">
+            {t('settings.ai.advisor.recommend.stagesNothing')}
+          </p>
+        )}
         <p className="text-xs leading-relaxed text-foreground/50">
           {t('settings.ai.advisor.recommend.stagesBody')}
         </p>
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
           {t('settings.ai.advisor.recommend.appHeading')}
         </h3>
         <p className="text-xs leading-relaxed text-foreground/50">
@@ -50,7 +70,7 @@ export function RecommendationsStep({ ctx }: AdvisorStepProps) {
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
           {t('settings.ai.advisor.recommend.serverHeading')}
         </h3>
         <p className="text-xs leading-relaxed text-foreground/50">
@@ -62,12 +82,12 @@ export function RecommendationsStep({ ctx }: AdvisorStepProps) {
               key={line}
               className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2"
             >
-              <Terminal size={12} className="shrink-0 text-foreground/40" aria-hidden="true" />
+              <Terminal size={12} className="shrink-0 text-foreground/60" aria-hidden="true" />
               <code className="font-mono text-[11px] text-foreground/70">{line}</code>
             </li>
           ))}
         </ul>
-        <p className="text-[11px] leading-relaxed text-foreground/40">
+        <p className="text-[11px] leading-relaxed text-foreground/60">
           {t('settings.ai.advisor.recommend.serverDisclaimer')}
         </p>
       </section>

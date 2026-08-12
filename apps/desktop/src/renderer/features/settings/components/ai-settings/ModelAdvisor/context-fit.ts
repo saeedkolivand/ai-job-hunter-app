@@ -110,6 +110,23 @@ export interface ContextFitInput {
   stages?: readonly PipelineStage[];
 }
 
+/**
+ * The stage with the largest worst-case prompt — COMPUTED, because the answer
+ * is not the obvious one: `sections` carries four artifacts and is 2.1× the
+ * draft turn, so naming `draft` in the copy (as an early version did) was
+ * simply false against this module's own table.
+ */
+export function worstCaseStage(): { stage: PipelineStage; chars: number; tokens: number } {
+  const [stage, chars] = Object.entries(STAGE_WORST_CASE_CHARS).reduce((a, b) =>
+    b[1] > a[1] ? b : a
+  );
+  return {
+    stage: stage as PipelineStage,
+    chars,
+    tokens: estimateTokensFromChars(chars),
+  };
+}
+
 /** Fit verdict for ONE model against the stage budgets. */
 export function assessModelContextFit(input: ContextFitInput): ModelContextFit {
   const { model, contextLength } = input;
@@ -119,7 +136,9 @@ export function assessModelContextFit(input: ContextFitInput): ModelContextFit {
     return { model, verdict: 'unknown', overflowStages: [] };
   }
 
-  const usableInputTokens = contextLength - ANSWER_HEADROOM_TOKENS;
+  // Clamped: a window smaller than the answer budget leaves ZERO for the
+  // prompt, not a negative amount of it.
+  const usableInputTokens = Math.max(0, contextLength - ANSWER_HEADROOM_TOKENS);
   const overflowStages = stages.filter(
     (stage) => usableInputTokens < estimateTokensFromChars(STAGE_WORST_CASE_CHARS[stage] ?? 0)
   );

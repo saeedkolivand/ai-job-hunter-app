@@ -6,6 +6,7 @@ import {
   estimateTokensFromChars,
   MIN_USABLE_INPUT_TOKENS,
   STAGE_WORST_CASE_CHARS,
+  worstCaseStage,
 } from './context-fit';
 
 describe('estimateTokensFromChars', () => {
@@ -23,6 +24,19 @@ describe('STAGE_WORST_CASE_CHARS', () => {
 
   it('charges analyze_job for the posting only', () => {
     expect(STAGE_WORST_CASE_CHARS.analyze_job).toBe(8_000);
+  });
+});
+
+describe('worstCaseStage', () => {
+  it('is COMPUTED, and it is not the draft stage', () => {
+    const worst = worstCaseStage();
+
+    // `sections` carries four artifacts — naming `draft` in the UI copy was
+    // false against this module's own table.
+    expect(worst.stage).toBe('sections');
+    expect(worst.chars).toBe(STAGE_WORST_CASE_CHARS.sections);
+    expect(worst.chars).toBeGreaterThan(STAGE_WORST_CASE_CHARS.draft ?? 0);
+    expect(worst.tokens).toBe(estimateTokensFromChars(worst.chars));
   });
 });
 
@@ -72,6 +86,14 @@ describe('assessModelContextFit', () => {
     });
 
     expect(fit.overflowStages).toEqual(['draft']);
+  });
+
+  it('never reports a negative prompt budget', () => {
+    // A window smaller than the answer headroom leaves ZERO for the prompt.
+    const fit = assessModelContextFit({ model: 'tiny', contextLength: 512 });
+
+    expect(fit.usableInputTokens).toBe(0);
+    expect(fit.verdict).toBe('too-small');
   });
 
   it('scopes the verdict to the stages it was asked about', () => {
