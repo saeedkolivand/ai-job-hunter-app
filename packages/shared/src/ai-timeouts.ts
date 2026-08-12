@@ -210,14 +210,20 @@ export function qualityRunClientTimeoutMs(effort?: string): number {
 /**
  * The EFFORT-INVARIANT half of one MAX-depth run's deadline, in seconds.
  *
- * 23 calls at the flat `timeouts::OLLAMA_COMPLETION` (300 s) bound: 3 JSON
+ * 24 calls at the flat `timeouts::OLLAMA_COMPLETION` (300 s) bound: 3 JSON
  * stages (analyze, evidence, strategy) + `Budget::RESUME_MAX.max_sections` (12)
- * section calls + `max_repair_attempts` (2) × `MAX_SECTIONS_PER_ROUND` (4)
- * repair rewrites. Unlike {@link QUALITY_RUN_FIXED_SECS} this covers nearly the
- * whole run rather than only its effort-invariant part, because **max depth
- * streams nothing** — every one of its calls goes through `Completer`, whose
- * timeouts are flat constants. The judge's single call is bought by the scaled
- * term below (see {@link maxRunDeadlineSecs}).
+ * section calls + the `llm_judge` stage's single call + `max_repair_attempts`
+ * (2) × `MAX_SECTIONS_PER_ROUND` (4) repair rewrites. Unlike
+ * {@link QUALITY_RUN_FIXED_SECS} this covers the WHOLE planned run rather than
+ * only its effort-invariant part, because **max depth streams nothing** — every
+ * one of its calls goes through `Completer`, whose timeouts are flat constants.
+ *
+ * **The judge is the 24th call and it is counted HERE**, not left to the scaled
+ * term. An earlier version of this constant (6 900 s) counted 23 and let the
+ * baseline tier's scaled 300 s cover the judge, which made the bottom tier
+ * exactly equal to its own fan-out — no slack at all, and a deadline that binds
+ * before the last call can return is the failure this whole derivation exists
+ * to prevent.
  *
  * The one allowed re-ask per JSON call is deliberately NOT counted, on both
  * sides — the same departure from the quality derivation the Rust twin records:
@@ -233,16 +239,17 @@ export function qualityRunClientTimeoutMs(effort?: string): number {
  * either constant should move it into `gen-ipc-rust.ts` alongside its quality
  * sibling and delete this copy.
  */
-export const MAX_RUN_FIXED_SECS = 6_900;
+export const MAX_RUN_FIXED_SECS = 7_200;
 
 /**
  * Effort-SCALED whole-document passes one max run may make: one.
  *
  * The fan-out writes the document once and streams nothing, but the run's real
  * duration still scales with the reasoning budget — this term is what keeps a
- * high-effort run from being stopped by a deadline sized for a fast one, and at
- * the bottom tier it is also what pays for the judge's call (the 24th, and the
- * one call {@link MAX_RUN_FIXED_SECS} does not count).
+ * high-effort run from being stopped by a deadline sized for a fast one. It
+ * buys no particular call: {@link MAX_RUN_FIXED_SECS} already covers all 24 of
+ * them, so this is headroom on top, which is what makes the bottom tier's
+ * deadline exceed its fan-out rather than merely equal it.
  */
 export const MAX_RUN_GENERATION_PASSES = 1;
 
@@ -253,13 +260,13 @@ export const MAX_RUN_GENERATION_PASSES = 1;
  *
  * | effort           | m   | fixed  | scaled | deadline         |
  * | ---------------- | --- | ------ | ------ | ---------------- |
- * | none/minimal/low | 1.0 | 6900 s | 300 s  | 7200 s (120 min) |
- * | medium           | 1.5 | 6900 s | 450 s  | 7350 s (123 min) |
- * | high             | 2.0 | 6900 s | 600 s  | 7500 s (125 min) |
- * | xhigh            | 2.5 | 6900 s | 750 s  | 7650 s (128 min) |
- * | max              | 3.0 | 6900 s | 900 s  | 7800 s (130 min) |
+ * | none/minimal/low | 1.0 | 7200 s | 300 s  | 7500 s (125 min) |
+ * | medium           | 1.5 | 7200 s | 450 s  | 7650 s (128 min) |
+ * | high             | 2.0 | 7200 s | 600 s  | 7800 s (130 min) |
+ * | xhigh            | 2.5 | 7200 s | 750 s  | 7950 s (133 min) |
+ * | max              | 3.0 | 7200 s | 900 s  | 8100 s (135 min) |
  *
- * The bottom tier equals `Budget::RESUME_MAX.run_timeout` (120 min) on purpose:
+ * The bottom tier equals `Budget::RESUME_MAX.run_timeout` (125 min) on purpose:
  * `resume::run_deadline` takes the LARGER of the budget floor and this, so a
  * disagreement would mean one of the two stops describing what runs.
  *

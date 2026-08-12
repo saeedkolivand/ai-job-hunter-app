@@ -178,32 +178,41 @@ describe('maxRunDeadlineSecs', () => {
     // `MAX_RUN_FIXED_SECS + 300 × 1 × multiplier`, matching Rust's
     // `timeouts::max_run_deadline` exactly — this side is a HAND MIRROR of that
     // constant (gen:ipc does not emit it), so the literals are the whole guard.
-    expect(maxRunDeadlineSecs(undefined)).toBe(7_200);
-    expect(maxRunDeadlineSecs('minimal')).toBe(7_200);
-    expect(maxRunDeadlineSecs('low')).toBe(7_200);
-    expect(maxRunDeadlineSecs('medium')).toBe(7_350);
-    expect(maxRunDeadlineSecs('high')).toBe(7_500);
-    expect(maxRunDeadlineSecs('xhigh')).toBe(7_650);
-    expect(maxRunDeadlineSecs('max')).toBe(7_800);
+    expect(maxRunDeadlineSecs(undefined)).toBe(7_500);
+    expect(maxRunDeadlineSecs('minimal')).toBe(7_500);
+    expect(maxRunDeadlineSecs('low')).toBe(7_500);
+    expect(maxRunDeadlineSecs('medium')).toBe(7_650);
+    expect(maxRunDeadlineSecs('high')).toBe(7_800);
+    expect(maxRunDeadlineSecs('xhigh')).toBe(7_950);
+    expect(maxRunDeadlineSecs('max')).toBe(8_100);
   });
 
   it('agrees with `Budget::RESUME_MAX.run_timeout` at the bottom tier', () => {
     // `resume::run_deadline` takes the LARGER of the budget floor and the
     // effort-scaled value, so a disagreement means one of the two has stopped
-    // describing what runs. 120 minutes is the budget constant.
-    expect(maxRunDeadlineSecs(undefined)).toBe(120 * 60);
+    // describing what runs. 125 minutes is the budget constant.
+    expect(maxRunDeadlineSecs(undefined)).toBe(125 * 60);
   });
 
   it('clears every call a max run PLANS to make, at every tier', () => {
-    // Max depth streams nothing, so all 24 calls carry the flat per-call bound.
-    // Mutation checks (both applied, both caught): MAX_RUN_FIXED_SECS
-    // 6_900 → 4_500 ⇒ every tier fails; MAX_RUN_GENERATION_PASSES 1 → 0 ⇒ the
-    // bottom tier fails (it is what pays for the judge's call).
+    // Max depth streams nothing, so all 24 calls carry the flat per-call bound,
+    // the judge's included — and the deadline must EXCEED that, not merely
+    // equal it: the backend notices its deadline between calls, so a bound that
+    // is exactly the fan-out leaves the last call no room to return.
+    //
+    // Mutation checks, all applied and reverted: MAX_RUN_FIXED_SECS
+    // 7_200 → 6_600 ⇒ fails; 7_200 → 6_900 (the pre-judge value, which counted
+    // 23 calls) ⇒ fails; MAX_RUN_GENERATION_PASSES 1 → 0 ⇒ fails.
+    //
+    // The 6_900 case is why this is `toBeGreaterThan` and not
+    // `toBeGreaterThanOrEqual`: it puts the bottom tier at exactly 7_200 s,
+    // dead level with the fan-out it is supposed to wrap, and a `>=` here would
+    // have called that fine.
     const planned =
       JSON_STAGES + MAX_SECTIONS + JUDGE_CALLS + REPAIR_ROUNDS * REPAIR_SECTIONS_PER_ROUND;
     const innerBounds = OLLAMA_COMPLETION_SECS * planned;
     for (const effort of TIERS) {
-      expect(maxRunDeadlineSecs(effort)).toBeGreaterThanOrEqual(innerBounds);
+      expect(maxRunDeadlineSecs(effort)).toBeGreaterThan(innerBounds);
     }
   });
 
