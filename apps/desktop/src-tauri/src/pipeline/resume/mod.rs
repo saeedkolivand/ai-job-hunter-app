@@ -36,7 +36,10 @@ pub mod prompt_blocks;
 pub mod prompts;
 pub mod stages;
 pub mod types;
+pub mod types_max;
 
+#[cfg(test)]
+mod max_test;
 #[cfg(test)]
 mod test;
 
