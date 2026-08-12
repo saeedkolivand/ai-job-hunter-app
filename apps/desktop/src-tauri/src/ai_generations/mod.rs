@@ -42,6 +42,16 @@ use crate::error::{AppError, AppResult};
 /// see `sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_escaped_worst_case_size`
 /// in `test.rs` for the corrected, measured version).
 ///
+/// **`MAX_CONTENT_ISSUES + 1` is the assumption, and it is enforced by the
+/// one capper.** The `+ 1` is `report.truncated`, and there is exactly one of
+/// it however many times a report is capped. That matters because a report is
+/// not written once: at max depth `pipeline::resume::stages::judge` merges up
+/// to `MAX_JUDGE_ITEMS` (6) advisory Warnings into an already-capped list
+/// AFTER `validate` produced it, which put this derivation's own bound out by
+/// six on every max run until the merge started re-applying
+/// `validate::content::cap_issues`. Any future stage that appends to
+/// `ContentReport::issues` owes the same call.
+///
 /// Dropping per-slot instead of the whole wrapper (persist whichever
 /// sub-report fits, drop only the other) was considered and rejected: it's
 /// real machinery (partial-parse, partial-merge, a partial-drop log) for a

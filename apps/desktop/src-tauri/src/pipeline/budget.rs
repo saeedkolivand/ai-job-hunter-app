@@ -268,13 +268,21 @@ impl Budget {
     /// re-ask and repair worst case ≈ 180k. Still unenforced — the live bounds
     /// are the per-provider daily ceiling and the run deadline.
     ///
-    /// **`run_timeout` = 120 min.** The effort-blind FLOOR, DERIVED like its
+    /// **`run_timeout` = 125 min.** The effort-blind FLOOR, DERIVED like its
     /// quality sibling and required to equal `timeouts::max_run_deadline(None)`
     /// (`max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`).
     /// Max depth streams nothing, so every call is bounded by the flat
-    /// `OLLAMA_COMPLETION` (300 s): 3 JSON stages + 12 sections + 2 repair
-    /// rounds × 4 sections = 23 calls = 6 900 s, plus one effort-scaled
-    /// whole-document pass (300 s at the bottom tier) = 7 200 s.
+    /// `OLLAMA_COMPLETION` (300 s): 4 single-call stages (analyze, evidence,
+    /// strategy, judge) + 12 sections + 2 repair rounds × 4 sections = 24 calls
+    /// = 7 200 s, plus one effort-scaled whole-document pass (300 s at the
+    /// bottom tier) = 7 500 s.
+    ///
+    /// The judge was missing from this count while the stage was already in the
+    /// pipeline, which put the fixed term at 6 900 s and made the total exactly
+    /// equal the 24 calls a run plans — a backstop with zero slack, and a pin
+    /// (`max_run_deadline_clears_the_inner_per_call_bounds`) that could not see
+    /// the problem because it transcribed "3 JSON stages" instead of reading
+    /// the pipeline.
     ///
     /// **The one re-ask per JSON call is deliberately NOT counted, which is
     /// where this derivation departs from `RESUME_QUALITY`'s.** Counting it
@@ -296,7 +304,7 @@ impl Budget {
         max_sections: DEFAULT_MAX_SECTIONS,
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
         step_timeout: Duration::from_secs(360),
-        run_timeout: Duration::from_secs(120 * 60),
+        run_timeout: Duration::from_secs(125 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
 }

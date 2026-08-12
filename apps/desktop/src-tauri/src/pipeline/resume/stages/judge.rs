@@ -204,6 +204,15 @@ impl<'a> Stage<QualityCtx<'a>> for Judge {
         );
         if let Some(report) = ctx.report.as_mut() {
             report.issues.extend(issues);
+            // …and re-apply the SAME cap `validate_content` applied, because
+            // this merge just put the list back over it. `MAX_CONTENT_ISSUES`
+            // is what `QUALITY_REPORT_MAX_BYTES` is derived from, and a report
+            // that overshoots it is truncated mid-JSON at the save path and
+            // silently discarded in favour of the previous one. Criticals-first
+            // is why a judge Warning can never be what evicts a real Critical —
+            // and calling the one capper again, rather than re-implementing the
+            // truncation here, is why there is still only one of them.
+            crate::validate::content::cap_issues(&mut report.issues);
             // `ok` is NOT recomputed, on purpose: it means "no Critical", the
             // judge cannot produce one, and a Warning has never flipped it.
         }

@@ -35,6 +35,7 @@ use crate::pipeline::budget::DEFAULT_MAX_SECTIONS;
 use crate::validate::content::{
     validate_content, ContentInput, DocKind, CONSISTENCY_PROJECT_STRUCTURE, CONTENT_ISSUE_CODES,
     FACTUAL_ALTERED_PROJECT_LINK, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES, JUDGE_NOTE,
+    MAX_CONTENT_ISSUES, REPORT_TRUNCATED,
 };
 use crate::validate::Severity;
 
@@ -1480,6 +1481,98 @@ fn the_judges_contribution_is_capped_and_clamped() {
     assert!(issues
         .iter()
         .all(|issue| issue.severity == Severity::Warning));
+}
+
+/// **The judge merges into an ALREADY-CAPPED list, so the cap is re-applied.**
+///
+/// `validate_content` bounds `report.issues` at `MAX_CONTENT_ISSUES` because
+/// `QUALITY_REPORT_MAX_BYTES` is derived from exactly that number — a report
+/// past it is truncated mid-JSON by the save path's clamp and then silently
+/// discarded in favour of the previous one. `stages::judge` runs after
+/// `validate` (and after `repair`, which re-validates), and it used to
+/// `extend` that list by up to `MAX_JUDGE_ITEMS` with no re-cap: the invariant
+/// the derivation rests on was false by up to six on every max run.
+///
+/// Criticals-first is what makes the re-cap safe: the class the judge appends
+/// is Warnings, which is exactly the class the sort evicts first.
+///
+/// Mutation check: drop the `cap_issues` call from `Judge::run` (or make
+/// `cap_issues` return early) and the length assertion fails; remove the
+/// criticals-first `sort_by_key` and the Critical is what gets cut.
+#[test]
+fn a_judge_merge_leaves_the_report_inside_the_cap_its_byte_budget_assumes() {
+    let judged = |mut issues: Vec<crate::validate::content::ContentIssue>| {
+        // Exactly what `Judge::run` does to `ctx.report.issues`.
+        issues.extend(
+            (0..MAX_JUDGE_ITEMS).map(|_| crate::validate::content::ContentIssue {
+                severity: Severity::Warning,
+                code: JUDGE_NOTE,
+                section: None,
+                message: "This bullet claims ownership without naming what shipped.".to_string(),
+                evidence: Some("Owned critical platform work".to_string()),
+            }),
+        );
+        crate::validate::content::cap_issues(&mut issues);
+        issues
+    };
+
+    // A report already AT the cap, with one real Critical in it.
+    let mut at_cap: Vec<crate::validate::content::ContentIssue> = (0..MAX_CONTENT_ISSUES)
+        .map(|_| crate::validate::content::ContentIssue {
+            severity: Severity::Warning,
+            code: JUDGE_NOTE,
+            section: None,
+            message: "a validator warning".to_string(),
+            evidence: None,
+        })
+        .collect();
+    at_cap[0].severity = Severity::Critical;
+    at_cap[0].code = FACTUAL_ALTERED_PROJECT_LINK;
+
+    let merged = judged(at_cap);
+    assert_eq!(
+        merged.len(),
+        MAX_CONTENT_ISSUES + 1,
+        "the cap plus exactly one truncation marker — what QUALITY_REPORT_MAX_BYTES assumes"
+    );
+    assert_eq!(
+        merged
+            .iter()
+            .filter(|issue| issue.severity == Severity::Critical)
+            .count(),
+        1,
+        "a judge WARNING may never be what evicts a real Critical"
+    );
+    let marker = merged.last().expect("a marker");
+    assert_eq!(marker.code, REPORT_TRUNCATED);
+    assert_eq!(marker.evidence.as_deref(), Some("6"));
+
+    // …and a report that was ALREADY truncated absorbs its old marker rather
+    // than growing a second one, with the two dropped counts summed.
+    let mut over_cap: Vec<crate::validate::content::ContentIssue> = (0..MAX_CONTENT_ISSUES + 50)
+        .map(|_| crate::validate::content::ContentIssue {
+            severity: Severity::Warning,
+            code: JUDGE_NOTE,
+            section: None,
+            message: "a validator warning".to_string(),
+            evidence: None,
+        })
+        .collect();
+    crate::validate::content::cap_issues(&mut over_cap);
+    let merged = judged(over_cap);
+    assert_eq!(
+        merged
+            .iter()
+            .filter(|issue| issue.code == REPORT_TRUNCATED)
+            .count(),
+        1,
+        "one marker, not one per capping pass"
+    );
+    assert_eq!(
+        merged.last().and_then(|issue| issue.evidence.as_deref()),
+        Some("56"),
+        "50 dropped by validate plus the 6 the judge pushed out"
+    );
 }
 
 // ── ADR-010 ──────────────────────────────────────────────────────────────────

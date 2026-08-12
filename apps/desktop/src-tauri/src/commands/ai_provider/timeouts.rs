@@ -217,11 +217,22 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
 /// The EFFORT-INVARIANT half of one MAX-depth run's deadline: every call it
 /// plans to make, once, at the flat [`OLLAMA_COMPLETION`] bound.
 ///
-/// 23 calls — 3 JSON stages (analyze, evidence, strategy) + `max_sections` (12)
-/// section calls + `max_repair_attempts` (2) × `MAX_SECTIONS_PER_ROUND` (4)
-/// repair rewrites — at 300 s each. Max depth streams nothing, so unlike
-/// [`QUALITY_RUN_FIXED_SECS`] this covers the WHOLE run rather than its
-/// effort-invariant part.
+/// 24 calls — 4 single-call stages (analyze, evidence, strategy, **and the
+/// judge**) + `max_sections` (12) section calls + `max_repair_attempts` (2) ×
+/// `MAX_SECTIONS_PER_ROUND` (4) repair rewrites — at 300 s each. Max depth
+/// streams nothing, so unlike [`QUALITY_RUN_FIXED_SECS`] this covers the WHOLE
+/// run rather than its effort-invariant part.
+///
+/// **The judge was missed once, and the arithmetic hid it.** At 23 calls this
+/// constant was 6 900 s, and the effort-scaled term (300 s at the bottom tier)
+/// brought `max_run_deadline(None)` to exactly 7 200 s = the 24 calls a max run
+/// really plans — so the "the deadline clears the inner bounds" pin passed with
+/// ZERO slack, on an equality it was never meant to sit on, and any tightening
+/// anywhere would have made a planned run unable to finish inside its own
+/// backstop. The pin now derives its call count from `max_pipeline()` itself
+/// (one call per stage that is not free and not a fan-out, plus each fan-out's
+/// own ceiling), so the next stage that makes a call fails it instead of
+/// silently eating the slack.
 ///
 /// **The one allowed re-ask per JSON call is not counted**, which is the one
 /// place this departs from the quality derivation. See
@@ -235,7 +246,7 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
 /// the renderer has no max-depth deadline yet; when it gains one it must EXCEED
 /// [`max_run_deadline`] at every tier, which is the invariant
 /// `renderer > backend` the quality pair already holds.
-const MAX_RUN_FIXED_SECS: u64 = 6_900;
+const MAX_RUN_FIXED_SECS: u64 = 7_200;
 
 /// Effort-SCALED whole-document passes one max run may make. One: the fan-out
 /// writes the document once, and although each section call is bounded by the
@@ -519,10 +530,21 @@ mod tests {
     // ── max_run_deadline ────────────────────────────────────────────────────
 
     /// The max deadline must clear the calls a max run PLANS to make, computed
-    /// from the fan-out constants rather than from the deadline's own terms:
-    /// three JSON stages, one call per section up to `max_sections`, and the
-    /// full repair fan-out — every one of them bounded by the flat
-    /// `OLLAMA_COMPLETION`, because max depth streams nothing.
+    /// from the PIPELINE and the fan-out constants rather than from the
+    /// deadline's own terms: one call per stage that is neither free nor a
+    /// fan-out, one call per section up to `max_sections`, and the full repair
+    /// fan-out — every one of them bounded by the flat `OLLAMA_COMPLETION`,
+    /// because max depth streams nothing.
+    ///
+    /// **The stage count is READ OFF `max_pipeline()`, not transcribed.** The
+    /// previous `const JSON_STAGES: u32 = 3` could not notice the judge, which
+    /// is a fourth single-call stage — so the pin passed on an exact equality
+    /// (24 planned calls × 300 s = 7 200 s = `max_run_deadline(None)`) with no
+    /// slack at all, and would have kept passing while the deadline was
+    /// genuinely short. `Pipeline::free_stage_names` is what makes "does this
+    /// stage cost a call" machine-readable; the two fan-out names are the only
+    /// stages whose count is not one, and they are named here because their
+    /// ceilings are the budget's, not the pipeline's.
     ///
     /// The re-ask is deliberately absent from BOTH sides (see
     /// `MAX_RUN_FIXED_SECS`), so this is a guard on the planned run, not on its
@@ -530,15 +552,35 @@ mod tests {
     ///
     /// Mutation checks (applied and reverted): `DEFAULT_MAX_SECTIONS` 12 → 14 ⇒
     /// every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier fails;
-    /// `MAX_RUN_FIXED_SECS` 6_900 → 4_500 ⇒ every tier fails.
+    /// `MAX_RUN_FIXED_SECS` 7_200 → 6_900 (the pre-judge value) ⇒ every tier
+    /// fails; add a stage that costs a call to `max_pipeline()` ⇒ every tier
+    /// fails.
     #[test]
     fn max_run_deadline_clears_the_inner_per_call_bounds() {
-        const JSON_STAGES: u32 = 3;
+        /// The two stages whose call count is a FAN-OUT rather than one.
+        const FANS_OUT: [&str; 2] = ["sections", "repair"];
         let budget = crate::pipeline::budget::Budget::RESUME_MAX;
-        let planned = JSON_STAGES
+        let pipeline = crate::pipeline::resume::max_pipeline();
+        let free = pipeline.free_stage_names();
+        let single_call_stages = pipeline
+            .stage_names()
+            .into_iter()
+            .filter(|stage| !free.contains(stage) && !FANS_OUT.contains(stage))
+            .count() as u32;
+        assert!(
+            FANS_OUT
+                .iter()
+                .all(|stage| pipeline.stage_names().contains(stage)),
+            "a fan-out stage was renamed; its ceiling is no longer being counted"
+        );
+        let planned = single_call_stages
             + budget.max_sections as u32
             + (budget.max_repair_attempts * crate::pipeline::resume::stages::MAX_SECTIONS_PER_ROUND)
                 as u32;
+        assert_eq!(
+            planned, 24,
+            "4 single-call stages + 12 sections + 2×4 repair rewrites"
+        );
         let inner = OLLAMA_COMPLETION * planned;
         for effort in [
             None,
@@ -550,6 +592,39 @@ mod tests {
             assert!(
                 max_run_deadline(effort) >= inner,
                 "max_run_deadline({effort:?}) must cover the calls a max run plans"
+            );
+        }
+        // …and with room to spare at the bottom tier, so the pin is not sitting
+        // on an equality the next constant change silently breaks.
+        assert!(
+            max_run_deadline(None) > inner,
+            "the backstop must clear the planned run, not merely equal it"
+        );
+    }
+
+    /// The per-tier table, spelled out — the max-depth twin of
+    /// `quality_run_deadline_pins_the_derived_table`.
+    ///
+    /// These five numbers are what the RENDERER's `maxRunDeadlineSecs` has to
+    /// EXCEED at every tier (`packages/shared/src/ai-timeouts.ts`), or the
+    /// client timeout fires before the backend can say why it stopped. A
+    /// derivation change that moves them must move that constant too, and a
+    /// table nobody wrote down is a table nobody notices moving.
+    #[test]
+    fn max_run_deadline_pins_the_derived_table() {
+        for (effort, secs) in [
+            (None, 7_500u64),
+            (Some("minimal"), 7_500),
+            (Some("low"), 7_500),
+            (Some("medium"), 7_650),
+            (Some("high"), 7_800),
+            (Some("xhigh"), 7_950),
+            (Some("max"), 8_100),
+        ] {
+            assert_eq!(
+                max_run_deadline(effort),
+                Duration::from_secs(secs),
+                "max_run_deadline({effort:?})"
             );
         }
     }

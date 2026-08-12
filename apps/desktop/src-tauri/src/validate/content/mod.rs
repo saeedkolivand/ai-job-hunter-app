@@ -1122,32 +1122,67 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
         true,
     );
 
-    // M-3 fix: cap the issue list at MAX_CONTENT_ISSUES (see its doc) so the
-    // serialized report can't blow the save path's byte clamp. Criticals sort
-    // first so a pathological warning flood can never push a real Critical
-    // out of the visible list — only warnings are ever silently cut, and the
-    // trailing REPORT_TRUNCATED marker says so instead of a silent drop.
-    if issues.len() > MAX_CONTENT_ISSUES {
-        let dropped = issues.len() - MAX_CONTENT_ISSUES;
-        issues.sort_by_key(|i| i.severity != Severity::Critical);
-        issues.truncate(MAX_CONTENT_ISSUES);
-        issues.push(issue(
-            REPORT_TRUNCATED,
-            None,
-            format!(
-                "{dropped} more issue{} found but not shown here — this document has an \
-                 unusually large number of findings.",
-                if dropped == 1 { "" } else { "s" }
-            ),
-            Some(dropped.to_string()),
-        ));
-    }
+    cap_issues(&mut issues);
 
     ContentReport {
         ok: criticals == 0,
         issues,
         metrics,
     }
+}
+
+/// Cap an issue list at [`MAX_CONTENT_ISSUES`], criticals first, with ONE
+/// visible truncation marker.
+///
+/// M-3: without this, a pathological/hostile "generated" document (thousands of
+/// forged roles, duplicate bullets) grows the serialized report past the save
+/// path's `QUALITY_REPORT_MAX_BYTES` clamp, which truncates mid-JSON and makes
+/// `merge_quality_report` silently keep the OLD stored report. Criticals sort
+/// first (a stable sort, so their relative order survives) so a warning flood
+/// can never push a real Critical out of the visible list — only Warnings are
+/// ever cut, and the trailing `REPORT_TRUNCATED` marker says so instead of a
+/// silent drop.
+///
+/// **A FUNCTION, and re-runnable, because the report is written twice.**
+/// `validate_content` caps what it found; `stages::judge` then merges up to
+/// [`MAX_JUDGE_ITEMS`](crate::pipeline::resume::stages::MAX_JUDGE_ITEMS) more
+/// into the SAME list at max depth, which put the list back over the bound the
+/// `QUALITY_REPORT_MAX_BYTES` derivation rests on — and did it by appending
+/// Warnings, exactly the class the criticals-first sort exists to cut first. An
+/// existing marker is ABSORBED (its own dropped count carried into the new one)
+/// rather than left beside a second one, so calling this again is safe and the
+/// count stays truthful.
+pub(crate) fn cap_issues(issues: &mut Vec<ContentIssue>) {
+    let mut dropped = 0usize;
+    issues.retain(|candidate| {
+        if candidate.code != REPORT_TRUNCATED {
+            return true;
+        }
+        dropped += candidate
+            .evidence
+            .as_deref()
+            .and_then(|count| count.parse::<usize>().ok())
+            .unwrap_or_default();
+        false
+    });
+    if issues.len() > MAX_CONTENT_ISSUES {
+        dropped += issues.len() - MAX_CONTENT_ISSUES;
+        issues.sort_by_key(|i| i.severity != Severity::Critical);
+        issues.truncate(MAX_CONTENT_ISSUES);
+    }
+    if dropped == 0 {
+        return;
+    }
+    issues.push(issue(
+        REPORT_TRUNCATED,
+        None,
+        format!(
+            "{dropped} more issue{} found but not shown here — this document has an \
+             unusually large number of findings.",
+            if dropped == 1 { "" } else { "s" }
+        ),
+        Some(dropped.to_string()),
+    ));
 }
 
 /// `content.language_mismatch` — the output is not in the language it was asked
