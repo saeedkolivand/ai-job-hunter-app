@@ -101,12 +101,17 @@ pub(crate) fn emitted_phases() -> [&'static str; 3] {
 /// `completed` exactly as the in-loop check already does — the run is stopped,
 /// and it is also honest about what it produced. `repair` and the judge still
 /// cost calls, so they are still refused.
+/// Takes the whole [`StageInfo`], not a `costs_a_call` boolean, so the ONE link
+/// in this chain that a test cannot reach is not a link at all: with a separate
+/// argument, `before` could pass a literal `true` and every guard in the suite
+/// stayed green — the stage's own answer never had to arrive. Handing over the
+/// value the pipeline built removes the place where the mis-wiring would live.
 pub(crate) fn apply_stop(
     ledger: &RunLedger,
     cancelled: bool,
     elapsed: Duration,
     deadline: Duration,
-    costs_a_call: bool,
+    stage: &StageInfo,
 ) -> AppResult<()> {
     if cancelled {
         ledger.stop(StoppedReason::Cancelled);
@@ -114,7 +119,7 @@ pub(crate) fn apply_stop(
     }
     if elapsed >= deadline {
         ledger.stop(StoppedReason::RunTimeout);
-        if costs_a_call {
+        if stage.costs_a_call {
             // The same text `pipeline::resume::guard_deadline` reports from
             // inside a stage: which enforcement point saw the clock first is an
             // implementation detail, not something to tell the user two ways.
@@ -490,7 +495,7 @@ impl StageHooks for RunHooks {
             self.cancel.is_cancelled(),
             self.deadline.elapsed(),
             self.deadline.limit(),
-            stage.costs_a_call,
+            stage,
         )?;
         // Recorded BEFORE the stage body runs, because the section-wise
         // generator reports from inside it.

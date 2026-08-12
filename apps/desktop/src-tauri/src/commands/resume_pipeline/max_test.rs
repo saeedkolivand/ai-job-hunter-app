@@ -361,3 +361,58 @@ fn a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did() {
     let row = with_detail(None, Some(detail.clone())).expect("a row artifact");
     assert_eq!(row.get(DETAIL_KEY), Some(&detail));
 }
+
+// ── The completeness floor on an overwrite ───────────────────────────────────
+
+/// **A stopped run may overwrite the saved document, but not with a résumé that
+/// has no work history.**
+///
+/// `persist_document` is an OVERWRITE — one `ai_generations` row per posting, no
+/// versioning — and since a deadline-stopped fan-out now keeps its sections
+/// (F3), a partial document can reach it. That trade is deliberate for a run
+/// that lost TAIL sections: the missing employer is a visible
+/// `factual.dropped_role`, the run lands `needsReview`, and the user can see the
+/// document is short. It is NOT acceptable for a document with no employment
+/// section at all — that is not a shorter résumé, and replacing a good previous
+/// one with it is a loss nothing in the panel can describe.
+///
+/// Mutation check: return `true` unconditionally from `is_persistable` and the
+/// stopped-and-empty case fails; drop the `stopped_early` guard and the
+/// COMPLETED run with no experience section stops being persistable.
+#[test]
+fn a_stopped_run_may_only_overwrite_the_saved_resume_with_a_document_that_has_work_history() {
+    use crate::pipeline::budget::StoppedReason;
+
+    const WITH_WORK: &str = "Professional Summary\n\nA payments engineer.\n\n\
+                             Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                             - Owned the settlement service\n";
+    const NO_WORK: &str = "Professional Summary\n\nA payments engineer.\n\nSkills\n\nGo, Rust\n";
+    const EMPTY_SECTION: &str = "Professional Summary\n\nA payments engineer.\n\nWork Experience\n";
+
+    // A run that REACHED THE END is never refused: a source résumé with no
+    // employment section is a real input, and the report is where that is said.
+    for stopped in [None, Some(StoppedReason::Done)] {
+        assert!(super::is_persistable(NO_WORK, stopped));
+        assert!(super::is_persistable(WITH_WORK, stopped));
+    }
+
+    // A run stopped EARLY keeps the trade only when it has work history.
+    for stopped in [
+        StoppedReason::RunTimeout,
+        StoppedReason::Budgeted,
+        StoppedReason::Cancelled,
+    ] {
+        assert!(
+            super::is_persistable(WITH_WORK, Some(stopped)),
+            "{stopped:?}: a short résumé beats discarding what the run paid for"
+        );
+        assert!(
+            !super::is_persistable(NO_WORK, Some(stopped)),
+            "{stopped:?}: a résumé with no work history must not replace a good one"
+        );
+        assert!(
+            !super::is_persistable(EMPTY_SECTION, Some(stopped)),
+            "{stopped:?}: a heading with nothing under it is not work history"
+        );
+    }
+}

@@ -447,6 +447,27 @@ async fn execute(
 /// `(job_url, kind)` — a permanent, invisible row holding a full résumé. The
 /// plan calls an unlinked generation session-only, and the run row + the stream
 /// the user watched are that session.
+///
+/// ## A STOPPED run overwrites the saved document, and what that trades
+///
+/// This save is an overwrite: there is one `ai_generations` row per posting and
+/// no versioning, so whatever a run persists REPLACES what the user had. Since
+/// a deadline-stopped fan-out now keeps its sections (`hooks::apply_stop` lets
+/// `assemble` and `validate` run past the clock), that includes PARTIAL
+/// documents — which is deliberate, and worth stating rather than discovering:
+///
+/// * **The kept trade.** A run stopped near the end loses tail sections
+///   (Education before Projects before an employment entry — `plan_sections`
+///   truncates from the tail for exactly this reason). A missing employer is a
+///   visible `factual.dropped_role` Critical, the run lands `needsReview`, and
+///   the user is looking at a document they can see is short. That beats
+///   throwing away eleven paid sections, which is the whole argument that sized
+///   `Budget::RESUME_MAX`'s deadline at the reachable number.
+/// * **The refused trade** ([`is_persistable`]). A stopped run whose document
+///   has no employment section at all is not a short résumé, it is not a résumé
+///   — and overwriting a good previous document with it is a loss the review
+///   panel cannot describe and the user cannot undo. That run keeps its
+///   `failed` status and the previous document survives.
 fn persist_document(
     app: &AppHandle,
     job_url: &str,
@@ -457,6 +478,9 @@ fn persist_document(
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
     if ctx.draft.trim().is_empty() || job_url.trim().is_empty() {
+        return None;
+    }
+    if !is_persistable(&ctx.draft, ctx.ledger.stopped()) {
         return None;
     }
     let wrapper = report::build(
@@ -493,6 +517,51 @@ fn persist_document(
             None
         }
     }
+}
+
+/// Whether a run's document may OVERWRITE the posting's saved one.
+///
+/// One rule, and it only bites a run that stopped early: **a stopped run must
+/// still have produced an employment section.** Everything else about
+/// completeness is a judgement the report already makes visible (a missing
+/// employer is a `factual.dropped_role` Critical and `needsReview`), but a
+/// document with no work history at all is not a shorter résumé — it is not one
+/// — and this save has no versioning to undo it with.
+///
+/// A run that reached the end is never refused, whatever it produced: a source
+/// résumé with no employment section is a real (if unusual) input, and the
+/// deterministic report is the honest place to say so.
+///
+/// Reads the DRAFT rather than `ctx.sections`, so it says the same thing at both
+/// depths — a quality run whose stream was cut off mid-document is the same
+/// hazard as a max fan-out stopped mid-roster.
+pub(crate) fn is_persistable(
+    draft: &str,
+    stopped: Option<crate::pipeline::budget::StoppedReason>,
+) -> bool {
+    use crate::pipeline::budget::StoppedReason;
+    let stopped_early = matches!(
+        stopped,
+        Some(StoppedReason::RunTimeout | StoppedReason::Budgeted | StoppedReason::Cancelled)
+    );
+    if !stopped_early {
+        return true;
+    }
+    // The section, with something under it — not `entry_range`, whose
+    // `LineKind::JobEntry` test an undated entry legitimately fails (see
+    // `assemble::DATE_COLUMN_GAP`); refusing to save one of those would be a
+    // false negative on a real document.
+    let split = crate::pipeline::resume::stages::sections::split(draft);
+    let lines: Vec<&str> = draft.lines().collect();
+    crate::pipeline::resume::stages::sections::find(&split, SectionKey::Experience(0)).is_some_and(
+        |section| {
+            section
+                .text(&lines)
+                .lines()
+                .skip(1)
+                .any(|line| !line.trim().is_empty())
+        },
+    )
 }
 
 /// The all-empty record the pipeline's own save fills three fields of.

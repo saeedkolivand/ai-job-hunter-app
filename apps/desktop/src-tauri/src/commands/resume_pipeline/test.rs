@@ -18,9 +18,24 @@ use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{RunLedger, QUALITY_STAGES};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow, RunRow};
+use crate::pipeline::StageInfo;
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
 };
+
+/// A [`StageInfo`] whose only interesting field is whether the stage costs a
+/// provider call — the shape `Pipeline::run_hooked` builds and hands to
+/// `before`. Written as a helper rather than a bare bool at each call site
+/// because `apply_stop` deliberately takes the whole struct (see its doc).
+fn stage_info(costs_a_call: bool) -> StageInfo {
+    StageInfo {
+        pipeline: "resume_max",
+        stage: if costs_a_call { "repair" } else { "validate" },
+        index: 0,
+        total: 1,
+        costs_a_call,
+    }
+}
 
 // ── Wire-contract locks ─────────────────────────────────────────────────────
 
@@ -673,7 +688,7 @@ fn a_cancelled_run_stops_at_the_next_stage_boundary() {
         true,
         Duration::from_secs(1),
         Duration::from_secs(600),
-        true,
+        &stage_info(true),
     );
     assert!(outcome.is_err(), "a cancelled run must not enter the stage");
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
@@ -687,7 +702,7 @@ fn a_cancelled_run_stops_at_the_next_stage_boundary() {
         true,
         Duration::from_secs(1),
         Duration::from_secs(600),
-        false
+        &stage_info(false)
     )
     .is_err());
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
@@ -704,7 +719,7 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
         false,
         Duration::from_secs(2_701),
         Duration::from_secs(2_700),
-        true,
+        &stage_info(true),
     );
     assert!(outcome.is_err());
     assert_eq!(ledger.stopped(), Some(StoppedReason::RunTimeout));
@@ -716,7 +731,7 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
         false,
         Duration::from_secs(1),
         Duration::from_secs(2_700),
-        true
+        &stage_info(true)
     )
     .is_ok());
     assert_eq!(ok.stopped(), None);
@@ -747,7 +762,7 @@ fn a_zero_call_stage_still_runs_after_the_deadline_and_the_run_still_says_so() {
         false,
         Duration::from_secs(2_701),
         Duration::from_secs(2_700),
-        false,
+        &stage_info(false),
     );
     assert!(
         outcome.is_ok(),
@@ -771,7 +786,7 @@ fn cancellation_outranks_the_deadline() {
         true,
         Duration::from_secs(9_999),
         Duration::ZERO,
-        true,
+        &stage_info(true),
     );
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
 }
