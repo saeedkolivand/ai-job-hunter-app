@@ -167,7 +167,11 @@ fn render_group(group: &SkillGroup) -> String {
 /// entry with no title is `Company  Dates`, and one with no dates is the bare
 /// label (exactly what the source itself would have looked like, since the
 /// identity was seeded from it).
-fn identity_line(company: &str, title: &str, dates: &str) -> String {
+/// `pub(crate)` for ONE reader: `stages::sections::named_entry_range` matches a
+/// condensed group by comparing this function's own output against the document
+/// line, because that group's "company" is a label and no parser can read it
+/// back. Calling the renderer is what makes that comparison exact.
+pub(crate) fn identity_line(company: &str, title: &str, dates: &str) -> String {
     let company = company.trim();
     let title = title.trim();
     let dates = dates.trim();

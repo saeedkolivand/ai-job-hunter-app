@@ -1559,6 +1559,168 @@ fn three_roles() -> Vec<CompanyPlan> {
     .per_company
 }
 
+/// Two stints at ONE employer — a promotion, the commonest roster shape after
+/// one — and the join has to tell them apart.
+fn two_acme_stints() -> Vec<CompanyPlan> {
+    strategy_for(&[
+        ("Acme Payments", "Staff Engineer", "2021 - 2024", false),
+        ("Acme Payments", "Backend Engineer", "2018 - 2021", false),
+        ("Initech", "Platform Engineer", "2015 - 2018", false),
+    ])
+    .per_company
+}
+
+/// **An employer NAME is not a primary key.**
+///
+/// The company-only join closed the shifted-index hole for three different
+/// employers and left it wide open for the shape that actually recurs: two
+/// stints at one company. Both entries answer to "Acme Payments", so an index
+/// shifted by a failed section still resolved — the senior stint was rebuilt
+/// over the junior one's lines, and `factual.dropped_role` could not fire
+/// afterwards because the company name was still in the document. Nothing
+/// downstream would ever have reported it.
+///
+/// `CompanyPlan`, `assemble::identity_line` and `split_entry` all carry
+/// `(company, title, dates)`; the join now compares all three, which is
+/// round-trip-safe by construction because the renderer and the reader are each
+/// other's inverse.
+///
+/// Each of the three fields carries its OWN case, which took running the
+/// mutations to get right — the promotion fixture differs in title AND dates,
+/// so either comparison alone caught it and neither was really pinned.
+///
+/// Mutation check: compare only the company and the promotion assertion fails;
+/// drop `title` and the HAND-EDITED-TITLE case fails (company and dates still
+/// match there); drop `dates` and the CONTRACT-RENEWAL case fails (same
+/// employer, same title).
+#[test]
+fn a_regenerate_tells_two_stints_at_one_employer_apart() {
+    let plans = two_acme_stints();
+
+    // The run's FIRST section never produced anything, so the document holds
+    // the junior Acme stint and Initech — and ordinal 0 is the junior stint.
+    let document = experience_document(&plans, &[0]);
+    let lines: Vec<&str> = document.lines().collect();
+    let at_zero = sections::entry_range(&document, 0).expect("the document has two entries");
+    assert!(
+        at_zero
+            .text(&lines)
+            .contains("Backend Engineer, Acme Payments"),
+        "the premise: position 0 is the JUNIOR stint's block\n{}",
+        at_zero.text(&lines)
+    );
+    assert!(
+        sections::named_entry_range(&document, 0, &plans[0]).is_none(),
+        "rebuilding the senior stint over the junior one deletes a role the \
+         dropped_role check can never see — the company name survives it"
+    );
+    // …and the stint that IS at that ordinal resolves.
+    assert!(sections::named_entry_range(&document, 0, &plans[1]).is_some());
+
+    // A hand-edited TITLE — the third divergence `ensure_latest_run`
+    // deliberately permits. Company and dates still match, so title is the only
+    // thing saying this line is no longer the one the plan wrote; rebuilding it
+    // would silently revert the user's own edit.
+    let edited = experience_document(&plans, &[]).replace(
+        "Staff Engineer, Acme Payments",
+        "Principal Engineer, Acme Payments",
+    );
+    assert!(
+        sections::named_entry_range(&edited, 0, &plans[0]).is_none(),
+        "a hand-edited title means the plan no longer describes that line:
+{edited}"
+    );
+
+    // Same employer, same TITLE, different dates — a contract renewal. Dates
+    // are the only thing left to tell these two apart.
+    let renewal = strategy_for(&[
+        ("Acme Payments", "Backend Engineer", "2021 - 2024", false),
+        ("Acme Payments", "Backend Engineer", "2018 - 2021", false),
+    ])
+    .per_company;
+    let document = experience_document(&renewal, &[0]);
+    assert!(
+        sections::named_entry_range(&document, 0, &renewal[0]).is_none(),
+        "two stints with one title are told apart by their dates and nothing else:
+{document}"
+    );
+    assert!(sections::named_entry_range(&document, 0, &renewal[1]).is_some());
+
+    // The same collision through the OTHER divergence: an undated plan renders
+    // without a date column, so it is not a JobEntry and every later index
+    // shifts onto an entry with the same employer name.
+    let mut undated = two_acme_stints();
+    undated[0].dates = String::new();
+    let document = experience_document(&undated, &[]);
+    assert!(
+        sections::named_entry_range(&document, 1, &undated[1]).is_none(),
+        "index 1 is Initech's block here, not the junior Acme stint's"
+    );
+
+    // The unedited document still resolves every slot, so the guard above is
+    // about the collision and not about refusing everything.
+    let document = experience_document(&plans, &[]);
+    for (index, plan) in plans.iter().enumerate() {
+        assert!(
+            sections::named_entry_range(&document, index as u8, plan).is_some(),
+            "slot {index} of the document the run assembled must resolve"
+        );
+    }
+}
+
+/// The CONDENSED group is matched on its rendered LINE, not on `split_entry`'s
+/// triple — and a German résumé is what proves it has to be.
+///
+/// The group's `company` is the `"Earlier roles"` LABEL and its `title` holds
+/// the employers it stands for, so the line reads
+/// `Initech, Nordwind Systeme GmbH, Earlier roles  2005 – 2015`. A trailing
+/// legal form in the head and none in the tail is exactly
+/// `split_two_space_label`'s company-first signal, so the parser reports the
+/// company as `Initech, Nordwind Systeme GmbH` — a triple that can never match
+/// the plan, which would route every DE résumé with a condensed group
+/// permanently onto the whole-section path.
+///
+/// Mutation check: drop the `plan.condensed` arm from `named_entry_range` and
+/// this fails.
+#[test]
+fn the_condensed_group_resolves_even_when_its_last_employer_is_a_gmbh() {
+    let plans = strategy_for(&[
+        (
+            "Acme Payments",
+            "Senior Backend Engineer",
+            "2021 - 2024",
+            false,
+        ),
+        (
+            "Earlier roles",
+            "Initech, Nordwind Systeme GmbH",
+            "2005 \u{2013} 2015",
+            true,
+        ),
+    ])
+    .per_company;
+    let document = experience_document(&plans, &[]);
+
+    // The premise: the parser really does read the label's own line as
+    // company-first, so the triple comparison cannot be what resolves it.
+    let parsed = parse_resume(&document);
+    let entry = sections::entry_range(&document, 1).expect("the condensed entry");
+    let (company, _title, _dates) = split_entry(&parsed.lines[entry.start]);
+    assert_ne!(
+        company.trim(),
+        "Earlier roles",
+        "the premise: split_entry does NOT read the label back as the company"
+    );
+
+    assert!(
+        sections::named_entry_range(&document, 1, &plans[1]).is_some(),
+        "the condensed group must stay regenerable:\n{document}"
+    );
+    // …and it is still an IDENTITY join: the same ordinal with the other plan
+    // is a miss.
+    assert!(sections::named_entry_range(&document, 1, &plans[0]).is_none());
+}
+
 /// **A roster ordinal is only valid inside the transaction that produced it.**
 ///
 /// The max-depth per-entry regenerate carries an index assigned by a run that
@@ -1586,12 +1748,12 @@ fn a_regenerate_refuses_an_entry_whose_identity_no_longer_matches_its_roster_slo
         by_position.text(&lines)
     );
     assert!(
-        sections::named_entry_range(&document, 1, &plans[1].company).is_none(),
+        sections::named_entry_range(&document, 1, &plans[1]).is_none(),
         "rebuilding Globex over Initech's lines would delete Initech from the résumé"
     );
     // …and the entry that IS still where the roster says resolves normally.
     assert!(
-        sections::named_entry_range(&document, 0, &plans[1].company).is_some(),
+        sections::named_entry_range(&document, 0, &plans[1]).is_some(),
         "Globex is the document's first entry now, and that range is its own"
     );
 
@@ -1610,7 +1772,7 @@ fn a_regenerate_refuses_an_entry_whose_identity_no_longer_matches_its_roster_slo
         "the premise: the undated entry is not a JobEntry"
     );
     assert!(
-        sections::named_entry_range(&document, 1, &undated[1].company).is_none(),
+        sections::named_entry_range(&document, 1, &undated[1]).is_none(),
         "index 1 is Initech's block here, not Globex's"
     );
 
@@ -1620,14 +1782,14 @@ fn a_regenerate_refuses_an_entry_whose_identity_no_longer_matches_its_roster_slo
     unattributed[0].company = String::new();
     let document = experience_document(&plans, &[]);
     assert!(
-        sections::named_entry_range(&document, 0, &unattributed[0].company).is_none(),
+        sections::named_entry_range(&document, 0, &unattributed[0]).is_none(),
         "an empty company can match nothing — unattributed beats invented"
     );
 
     // The happy path is untouched: an unedited document joins on every index.
     for (index, plan) in plans.iter().enumerate() {
         assert!(
-            sections::named_entry_range(&document, index as u8, &plan.company).is_some(),
+            sections::named_entry_range(&document, index as u8, plan).is_some(),
             "the document the run assembled must still resolve every roster slot"
         );
     }

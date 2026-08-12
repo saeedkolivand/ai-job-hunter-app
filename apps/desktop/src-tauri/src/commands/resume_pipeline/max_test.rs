@@ -150,23 +150,44 @@ fn only_the_zero_call_stages_may_run_after_the_deadline() {
 
 // ── The per-entry regenerate's identity join ─────────────────────────────────
 
-fn plan(company: &str, condensed: bool) -> CompanyPlan {
+/// A roster entry, with its title and dates SPELLABLE.
+///
+/// They used to be hard-coded, which is precisely why the company-only join
+/// survived a review: two stints at one employer — a promotion, the commonest
+/// roster shape after one — could not be written down with these helpers, so
+/// the case that breaks the join could not be tested.
+fn plan(company: &str, title: &str, dates: &str, condensed: bool) -> CompanyPlan {
     CompanyPlan {
         company: company.to_string(),
-        title: "Backend Engineer".to_string(),
-        dates: "2018 - 2021".to_string(),
+        title: title.to_string(),
+        dates: dates.to_string(),
         condensed,
         ..CompanyPlan::default()
     }
 }
 
-fn role(company: &str) -> EvidenceRole {
+fn role(company: &str, title: &str, dates: &str) -> EvidenceRole {
     EvidenceRole {
         company: company.to_string(),
-        title: "Backend Engineer".to_string(),
-        dates: "2018 - 2021".to_string(),
+        title: title.to_string(),
+        dates: dates.to_string(),
         bullets: Vec::new(),
     }
+}
+
+/// The two stints at ONE employer that the old fixtures could not express.
+fn junior() -> (CompanyPlan, EvidenceRole) {
+    (
+        plan("Acme Payments", "Backend Engineer", "2018 - 2021", false),
+        role("Acme Payments", "Backend Engineer", "2018 - 2021"),
+    )
+}
+
+fn senior() -> (CompanyPlan, EvidenceRole) {
+    (
+        plan("Acme Payments", "Staff Engineer", "2021 - Present", false),
+        role("Acme Payments", "Staff Engineer", "2021 - Present"),
+    )
 }
 
 /// The SOURCE half of the identity join. `section_gen::source_slice` reads the
@@ -176,22 +197,31 @@ fn role(company: &str) -> EvidenceRole {
 /// and the seeded-identity rule cannot catch that, because the identity is
 /// precisely the part that stays right.
 ///
-/// Mutation check: delete the `role_matches_plan` call from `regenerate_entry`
-/// (or make this function return `true` unconditionally) and the shifted-source
-/// assertion below fails.
+/// **Compared on the whole TRIPLE.** Company alone left the defect alive for
+/// two stints at one employer: both rows answer to "Acme Payments", so a
+/// shifted source still "matched" and the junior stint's bullets were used to
+/// rebuild the senior one.
+///
+/// Mutation check: compare `company` only and the promotion case below fails;
+/// make this return `true` unconditionally and the shifted-source case does.
+/// (`title` and `dates` are not separately pinned HERE — the promotion fixture
+/// differs in both, and the document-side twin
+/// `a_regenerate_tells_two_stints_at_one_employer_apart` is where each field
+/// carries its own case.)
 #[test]
 fn a_regenerate_refuses_a_source_role_that_is_no_longer_the_plans_employer() {
-    let roles = [role("Acme Payments"), role("Globex Logistics")];
+    let (junior_plan, junior_role) = junior();
+    let (senior_plan, senior_role) = senior();
+    let roles = [
+        role("Globex Logistics", "Backend Engineer", "2015 - 2018"),
+        junior_role.clone(),
+    ];
 
-    assert!(role_matches_plan(
-        &plan("Globex Logistics", false),
-        1,
-        &roles
-    ));
+    assert!(role_matches_plan(&junior_plan, 1, &roles));
     // Case-insensitively, because the roster and the reader both derive their
     // string from the same line but not necessarily from the same run.
     assert!(role_matches_plan(
-        &plan("globex logistics", false),
+        &plan("acme payments", "backend engineer", "2018 - 2021", false),
         1,
         &roles
     ));
@@ -200,31 +230,47 @@ fn a_regenerate_refuses_a_source_role_that_is_no_longer_the_plans_employer() {
     // rebuilding Acme from Globex's bullets is a fabrication with a truthful
     // identity line on top of it.
     let shifted = [
-        role("Initech"),
-        role("Acme Payments"),
-        role("Globex Logistics"),
+        role("Initech", "Platform Engineer", "2012 - 2015"),
+        role("Globex Logistics", "Backend Engineer", "2015 - 2018"),
+        junior_role.clone(),
     ];
-    assert!(!role_matches_plan(
-        &plan("Globex Logistics", false),
-        1,
-        &shifted
-    ));
+    assert!(!role_matches_plan(&junior_plan, 1, &shifted));
+
+    // **The promotion.** Both stints are at Acme Payments, so a company-only
+    // join cannot tell them apart — and the source order having shifted by one
+    // then rebuilds the SENIOR stint out of the JUNIOR stint's bullets, with a
+    // seeded identity line that stays correct the whole time.
+    let promotion = [senior_role.clone(), junior_role.clone()];
+    assert!(
+        role_matches_plan(&senior_plan, 0, &promotion)
+            && role_matches_plan(&junior_plan, 1, &promotion),
+        "the premise: in order, both stints resolve"
+    );
+    assert!(
+        !role_matches_plan(&senior_plan, 1, &promotion),
+        "an employer name is not a primary key — the title and dates say which stint"
+    );
+    assert!(!role_matches_plan(&junior_plan, 0, &promotion));
 
     // Past the end of a shortened source.
-    assert!(!role_matches_plan(
-        &plan("Globex Logistics", false),
-        5,
-        &roles
-    ));
+    assert!(!role_matches_plan(&junior_plan, 5, &roles));
     // Unattributed: nothing to join on, so it degrades rather than guessing.
-    assert!(!role_matches_plan(&plan("", false), 0, &roles));
+    assert!(!role_matches_plan(&plan("", "", "", false), 0, &roles));
 
     // The condensed group is exempt BY CONSTRUCTION: it stands for every role
     // past the cap, its slice is `roles[index..]`, and "Earlier roles" is a
     // label rather than an employer — so it can never match one.
-    assert!(role_matches_plan(&plan("Earlier roles", true), 1, &roles));
+    assert!(role_matches_plan(
+        &plan("Earlier roles", "Initech, Globex", "2005 - 2015", true),
+        1,
+        &roles
+    ));
     assert!(
-        !role_matches_plan(&plan("Earlier roles", false), 1, &roles),
+        !role_matches_plan(
+            &plan("Earlier roles", "Initech, Globex", "2005 - 2015", false),
+            1,
+            &roles
+        ),
         "the exemption must come from the condensed FLAG, not from the label"
     );
 }

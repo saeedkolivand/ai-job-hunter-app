@@ -14,7 +14,7 @@ use crate::documents::evidence::{classify_section, split_entry, SectionKind};
 use crate::export::parser::parse_resume;
 use crate::export::types::LineKind;
 
-use crate::pipeline::resume::types::SectionKey;
+use crate::pipeline::resume::types::{CompanyPlan, SectionKey};
 
 /// One section of a generated document, as a line range over the source text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +115,17 @@ pub fn find(sections: &[RawSection], key: SectionKey) -> Option<&RawSection> {
 /// alone says nothing about whether the entry at that position is still the one
 /// the caller means. See that function for the three ways they diverge.
 pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
+    entry_range_and_identity(document, index).map(|(range, _)| range)
+}
+
+/// [`entry_range`] plus the identity the document's own line at that range
+/// reads back as — `(company, title, dates)` per [`split_entry`], and the raw
+/// line itself.
+///
+/// One function because it is ONE parse: `named_entry_range` needs both halves,
+/// and asking for them separately re-ran `parse_resume` over the whole document
+/// a second time on every per-entry regenerate.
+fn entry_range_and_identity(document: &str, index: u8) -> Option<(RawSection, EntryIdentity)> {
     let split = split(document);
     let section = find(&split, SectionKey::Experience(index))?;
     let parsed = parse_resume(document);
@@ -139,16 +150,36 @@ pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
     {
         end -= 1;
     }
-    Some(RawSection {
-        heading: None,
-        kind: SectionKind::Experience,
-        start,
-        end,
-    })
+    let entry = parsed.lines.get(start)?;
+    let (company, title, dates) = split_entry(entry);
+    Some((
+        RawSection {
+            heading: None,
+            kind: SectionKind::Experience,
+            start,
+            end,
+        },
+        EntryIdentity {
+            company,
+            title,
+            dates,
+            line: lines.get(start).unwrap_or(&"").trim().to_string(),
+        },
+    ))
+}
+
+/// What one employment entry's first line SAYS it is.
+struct EntryIdentity {
+    company: String,
+    title: String,
+    dates: String,
+    /// The line verbatim (trimmed) — what a condensed group is matched on, see
+    /// [`named_entry_range`].
+    line: String,
 }
 
 /// The employment entry at `index`, but ONLY when the document's own identity
-/// line at that position names `company`.
+/// line at that position is the one this PLAN wrote.
 ///
 /// **An ordinal is only valid inside the transaction that produced it.**
 /// [`entry_range`] counts `LineKind::JobEntry` lines, and the roster index a
@@ -165,26 +196,63 @@ pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
 /// * a hand edit between the run and the click, which `ensure_latest_run`
 ///   deliberately permits.
 ///
-/// Joining on position alone therefore spliced role B's rebuilt entry over role
-/// C's lines: C deleted from the saved résumé, B duplicated, in one atomic
-/// write the user only learns about from a post-hoc `factual.dropped_role`
-/// Critical. A write path re-joining data across a time gap joins on IDENTITY —
-/// so the company is read back out of the document with the same
-/// [`split_entry`] that `assemble` renders the line for, and a mismatch is a
-/// soft `None` the caller degrades on.
+/// Joining on position alone spliced role B's rebuilt entry over role C's lines:
+/// C deleted from the saved résumé, B duplicated, in one atomic write the user
+/// only learns about from a post-hoc `factual.dropped_role` Critical.
 ///
-/// An empty `company` (an unattributed roster entry) can match nothing, so it
-/// is a miss too: unattributed beats invented, the same call
+/// **The whole seeded TRIPLE, because an employer name is not a primary key.**
+/// Comparing only the company left the same defect alive for the commonest
+/// roster shape there is — two stints at one employer (a promotion). Both
+/// entries answer to "Acme Payments", so a shifted index still resolved, the
+/// senior stint was spliced over the junior one, and `factual.dropped_role`
+/// could not fire because the company NAME was still in the document. The plan
+/// carries `(company, title, dates)`, `assemble::identity_line` writes all
+/// three, and [`split_entry`] reads all three back — so throwing two of them
+/// away at the join was giving up an identity the write path had already
+/// established.
+///
+/// Round-trip-safe by construction: this compares what `identity_line` WROTE
+/// against what `split_entry` READS, and those two are each other's inverse by
+/// design (see `identity_line`'s doc).
+///
+/// **The condensed group is matched on its rendered LINE instead**, because it
+/// is the one plan whose "company" is a label rather than an employer. Its title
+/// slot holds the employer list it stands for, so the line reads
+/// `Initech, Globex GmbH, Earlier roles  2005 – 2015` — and
+/// `split_two_space_label`'s company-first arm (a trailing legal form in the
+/// head, none in the tail) then reports the company as `Initech, Globex GmbH`.
+/// The triple can never match, which would route every German résumé with a
+/// condensed group permanently onto the whole-section path. A verbatim
+/// comparison against `identity_line`'s own output is exact for a line this code
+/// wrote and needs no parser agreement at all.
+///
+/// An empty `company` on a non-condensed plan (an unattributed roster entry) can
+/// match nothing, so it is a miss: unattributed beats invented, the same call
 /// `split_two_space_label` makes.
-pub fn named_entry_range(document: &str, index: u8, company: &str) -> Option<RawSection> {
-    let company = company.trim();
-    if company.is_empty() {
-        return None;
-    }
-    let entry = entry_range(document, index)?;
-    let parsed = parse_resume(document);
-    let (found, _title, _dates) = split_entry(parsed.lines.get(entry.start)?);
-    found.trim().eq_ignore_ascii_case(company).then_some(entry)
+pub fn named_entry_range(document: &str, index: u8, plan: &CompanyPlan) -> Option<RawSection> {
+    let (entry, identity) = entry_range_and_identity(document, index)?;
+    let matches = if plan.condensed {
+        identity.line
+            == crate::pipeline::resume::assemble::identity_line(
+                &plan.company,
+                &plan.title,
+                &plan.dates,
+            )
+    } else {
+        !plan.company.trim().is_empty()
+            && same(&identity.company, &plan.company)
+            && same(&identity.title, &plan.title)
+            && same(&identity.dates, &plan.dates)
+    };
+    matches.then_some(entry)
+}
+
+/// Two halves of one identity field, compared the way the render/parse pair
+/// round-trips them: trimmed and case-insensitively, because the roster and the
+/// document derive their copy from the same source line but not necessarily in
+/// the same run.
+fn same(left: &str, right: &str) -> bool {
+    left.trim().eq_ignore_ascii_case(right.trim())
 }
 
 /// The [`SectionKey`] for a section KIND, or `None` for a kind this grammar has

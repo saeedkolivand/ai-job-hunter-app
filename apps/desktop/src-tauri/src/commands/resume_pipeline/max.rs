@@ -170,7 +170,7 @@ pub(super) async fn regenerate_entry(
     let Some(plan) = artifacts.strategy.per_company.get(index as usize) else {
         return Ok(SectionOutcome::Missing);
     };
-    let Some(entry) = sections::named_entry_range(document, index, &plan.company) else {
+    let Some(entry) = sections::named_entry_range(document, index, plan) else {
         return Ok(SectionOutcome::Missing);
     };
     let roles = extract_evidence(source_resume, job_ad).roles;
@@ -225,6 +225,16 @@ pub(super) async fn regenerate_entry(
 /// fabrication the seeded-identity rule cannot catch, because the identity is
 /// exactly the part that stays right.
 ///
+/// **The whole seeded TRIPLE, for the reason
+/// [`sections::named_entry_range`] gives: an employer name is not a primary
+/// key.** Two stints at one employer are the commonest roster shape after one,
+/// and `roles[index]` for a shifted source then still "matched" — handing the
+/// prompt the junior stint's bullets to rebuild the senior one with, under a
+/// seeded identity line that stays correct the whole time. `CompanyPlan`,
+/// `EvidenceRole` and `split_entry` all carry `(company, title, dates)`;
+/// `seed_company_roster` copies all three off the role, so comparing all three
+/// is comparing what was actually seeded.
+///
 /// The CONDENSED group is exempt and cannot be checked: it stands for every
 /// role past the per-company cap, its slice is deliberately `roles[index..]`,
 /// and its `company` is the `"Earlier roles"` label rather than an employer. A
@@ -237,9 +247,11 @@ pub(super) fn role_matches_plan(plan: &CompanyPlan, index: u8, roles: &[Evidence
     if plan.condensed {
         return true;
     }
-    let company = plan.company.trim();
-    !company.is_empty()
-        && roles
-            .get(index as usize)
-            .is_some_and(|role| role.company.trim().eq_ignore_ascii_case(company))
+    let same = |left: &str, right: &str| left.trim().eq_ignore_ascii_case(right.trim());
+    !plan.company.trim().is_empty()
+        && roles.get(index as usize).is_some_and(|role| {
+            same(&role.company, &plan.company)
+                && same(&role.title, &plan.title)
+                && same(&role.dates, &plan.dates)
+        })
 }
