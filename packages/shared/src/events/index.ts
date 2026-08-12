@@ -33,6 +33,7 @@ import { JOBS_EVENTS } from './jobs.js';
 import { MENU_EVENTS } from './menu.js';
 import { NOTIFICATIONS_EVENTS } from './notifications.js';
 import {
+  isPayingPipelineStage,
   isPipelineSectionKey,
   isPipelineStage,
   PIPELINE_EVENTS,
@@ -105,6 +106,7 @@ export {
   BOARDS_EVENTS,
   type BoardsLoginStatusEvent,
   EXTENSION_BRIDGE_EVENTS,
+  isPayingPipelineStage,
   isPipelineSectionKey,
   isPipelineStage,
   JOBS_EVENTS,
