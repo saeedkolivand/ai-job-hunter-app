@@ -75,28 +75,43 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-log = "2"
 # Remote crash aggregation (ADR: crash reporting egress class). Pinned to the
-# `sentry` MAJOR the plugin itself depends on — `tauri-plugin-sentry` 0.5 builds
-# against `sentry = "0.42"`, and a newer `sentry` here would link a SECOND,
+# `sentry` MINOR the plugin itself depends on — `tauri-plugin-sentry` 0.6 builds
+# against `sentry = "0.49"`, and a different `sentry` here would link a SECOND,
 # type-incompatible copy of the SDK (the plugin's `init(&client)` would not accept
-# our `Client`). Bump both together or not at all.
+# our `Client`). sentry is pre-1.0, so each minor is a breaking major. Bump both
+# together or not at all: a solo bump of either side duplicates
+# sentry/sentry-core/sentry-types in the lock and fails to build — that is
+# exactly why dependabot's plugin-only PR #972 was closed.
 #
 # The plugin's browser side ships a custom transport that forwards WebView events
 # to the Rust SDK over `invoke`, so the renderer never egresses directly and the
-# CSP `connect-src` allowlist stays untouched.
+# CSP `connect-src` allowlist stays untouched. There is no paired npm package to
+# keep in step — that browser SDK is a `js_init_script` baked into the crate.
 #
-# Explicit features rather than defaults. The default `transport` feature is
-# `reqwest + native-tls`, and sentry 0.42 pins reqwest 0.12 — a SECOND copy
-# alongside the app's own 0.13, in a binary this project deliberately optimizes
-# for size (fat LTO, opt-level "s"). `ureq` is the lighter transport and also the
-# more correct one here: the reqwest transport pulls in tokio, but the minidump
-# supervisor is a bare forked process with no async runtime to send on.
-# `native-tls` is reused rather than adding a second TLS stack — reqwest 0.13
-# already brings that crate in.
+# Explicit features rather than defaults. sentry 0.49's default set is
+# `backtrace + contexts + debug-images + logs + metrics + panic + transport +
+# release-health`; we take neither `transport` nor the two new-in-0.49 telemetry
+# features:
+#   * `transport` = `reqwest + native-tls`, and sentry's `reqwest` feature also
+#     switches on `tokio` — but the minidump supervisor is a bare forked process
+#     with no async runtime to send on, so `ureq` is not merely the lighter
+#     transport, it is the correct one. (Size matters too: sentry 0.49 wants
+#     reqwest `0.13` with `blocking` + `json`. That is the app's own major, so it
+#     would no longer be the duplicate crate sentry 0.42's reqwest 0.12 was — but
+#     feature unification would still bolt `blocking` onto the shared client in a
+#     binary this project optimizes hard for size (fat LTO, opt-level "s").)
+#   * `logs` / `metrics` are structured-log and metric pipelines — new egress
+#     surfaces. ADR-0020 consented to crash reports, and nothing here emits
+#     either, so they stay off.
+# `native-tls` IS on, and is reused rather than adding a second TLS stack —
+# reqwest 0.13 already brings that crate in. In 0.49 the feature resolves to
+# `ureq?/native-tls` for our transport (`reqwest?/native-tls-no-alpn` stays
+# inert because `dep:reqwest` is never activated).
 #
 # Both `tauri-plugin-sentry` and `sentry-rust-minidump` declare sentry with
 # `default-features = false`, so this declaration alone decides which transport
 # the whole tree gets.
-sentry = { version = "0.42", default-features = false, features = [
+sentry = { version = "0.49", default-features = false, features = [
   "backtrace",
   "contexts",
   "debug-images",
@@ -105,10 +120,12 @@ sentry = { version = "0.42", default-features = false, features = [
   "ureq",
   "native-tls",
 ] }
-# `minidump` (default feature) pulls `sentry-rust-minidump`, which supervises the
-# app from a SEPARATE process. That is required, not a nicety: `[profile.release]`
-# sets `panic = "abort"`, so nothing in-process can outlive a crash to flush it.
-tauri-plugin-sentry = "0.5"
+# `minidump` (default feature) pulls `sentry-rust-minidump` — 0.17 for plugin
+# 0.6, transitively; we deliberately do not declare it ourselves — which
+# supervises the app from a SEPARATE process. That is required, not a nicety:
+# `[profile.release]` sets `panic = "abort"`, so nothing in-process can outlive a
+# crash to flush it.
+tauri-plugin-sentry = "0.6"
 tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"

@@ -50,7 +50,7 @@
 //! diagnostics bundle uses (ADR-027) rather than inventing a second, weaker one.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -212,32 +212,36 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
     }
     let dsn = DSN?;
 
+    // Builder rather than a struct literal: `ClientOptions` is `#[non_exhaustive]`
+    // as of sentry 0.49, so `..Default::default()` no longer compiles from a
+    // downstream crate. Every setter below is still one field, set explicitly —
+    // including the two the SDK now happens to default the same way, because a
+    // privacy-relevant value should be readable here, not inferred from an
+    // upstream default that can change under us.
     Some(sentry::init((
         dsn,
-        sentry::ClientOptions {
-            release: Some(env!("CARGO_PKG_VERSION").into()),
-            environment: Some(if cfg!(debug_assertions) {
-                "development".into()
+        sentry::ClientOptions::new()
+            .release(env!("CARGO_PKG_VERSION"))
+            .environment(if cfg!(debug_assertions) {
+                "development"
             } else {
-                "production".into()
-            }),
+                "production"
+            })
             // Release health: crash-free rate and version adoption. This is the
             // "usage" half of the feature — active installs per version — and it
             // needs no separate analytics vendor.
-            auto_session_tracking: true,
-            session_mode: sentry::SessionMode::Application,
+            .auto_session_tracking(true)
+            .session_mode(sentry::SessionMode::Application)
             // Never attach the request/user identity the SDK can infer.
-            send_default_pii: false,
+            .send_default_pii(false)
             // The SDK defaults this to the machine hostname, which on a personal
             // device is frequently the user's real name.
-            server_name: Some("redacted".into()),
-            before_send: Some(Arc::new(redact_event)),
-            before_breadcrumb: Some(Arc::new(|mut breadcrumb| {
+            .server_name("redacted")
+            .before_send(redact_event)
+            .before_breadcrumb(|mut breadcrumb| {
                 breadcrumb.message = breadcrumb.message.map(|m| redact_lines(&m));
                 Some(breadcrumb)
-            })),
-            ..Default::default()
-        },
+            }),
     )))
 }
 
