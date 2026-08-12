@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { PipelineStageEvent } from '@ajh/shared';
+import type { JobEvent, PipelineStageEvent } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 import type { ResumePipelineRunRequest } from '@ajh/shared/schemas';
 
@@ -13,7 +13,7 @@ import {
   stageToEvent,
   statusToEvent,
 } from '@/lib/machines/resume-pipeline.machine';
-import { useCancelJob } from '@/services/use-jobs';
+import { useCancelJob, useJobEvents } from '@/services/use-jobs';
 import {
   usePipelineDraftStream,
   usePipelineRun,
@@ -118,6 +118,47 @@ export function useResumePipelineSession(
 
   const appendDraft = useCallback((delta: string) => setDraft((prev) => prev + delta), []);
   usePipelineDraftStream(jobId, appendDraft);
+
+  /**
+   * The failures the run RECORD can never report, and the one job event that can.
+   *
+   * `resume_pipeline_run` returns its two ids immediately and writes the
+   * `pipeline_runs` row inside the spawned task — AFTER admission and after it
+   * resolves the depth, the provider, the résumé and the cached posting. Each of
+   * those five can fail (a full queue, no configured provider, a deleted résumé,
+   * a posting that is not in the live cache, `depth: "max"`) and lands on
+   * `job_fail` with NO row ever written; `get(runId)` then answers `null` — a
+   * real answer, so the poll correctly stops — and `detail.status`, the only
+   * completion signal this hook has, never exists. The same hole exists at the
+   * other end: if the final `upsert_run` is what failed, the row is left saying
+   * `running` forever. Either way the session spins on a run that has ended.
+   *
+   * So the umbrella job's `job.failed` is consumed WHILE THE MACHINE IS BUSY —
+   * not "while no record exists", which misses the stuck-`running` row. It is
+   * safe against the record because the backend's terminal arms are exclusive:
+   * `job_fail` is emitted only when the row is (or would be) `failed`; a
+   * cancelled run gets `job_cancel`, and a deadline-stopped run that still saved
+   * its document gets `job_complete` precisely so the renderer does not discard
+   * a document the row calls reviewable. A run that already reached a terminal
+   * state is left alone, error text included. `job.completed` is never read here
+   * for the reason the module doc gives: the draft stream fires it mid-run.
+   */
+  const jobIdRef = useRef(jobId);
+  jobIdRef.current = jobId;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const handleJobEvent = useCallback(
+    (event: JobEvent) => {
+      if (event.type !== 'job.failed') return;
+      if (!jobIdRef.current || event.jobId !== jobIdRef.current) return;
+      if (!busyRef.current) return;
+      console.error('[resumePipeline] the umbrella job failed', { jobId: event.jobId });
+      setError(typeof event.data === 'string' && event.data ? event.data : null);
+      send('ERROR');
+    },
+    [send]
+  );
+  useJobEvents(handleJobEvent);
 
   // Terminal detection, and the ONLY place it happens: the record's status.
   // Not the last stage's `finish` (a boundary stop never reaches one), not the

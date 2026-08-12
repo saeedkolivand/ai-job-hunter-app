@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import type { AiStreamChunk, PipelineStageEvent } from '@ajh/shared';
+import type { AiStreamChunk, JobEvent, PipelineStageEvent } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 
 import { useResumePipelineSession } from './use-resume-pipeline-session';
@@ -20,6 +20,7 @@ const cancelJobMock = vi.hoisted(() => ({ mutate: vi.fn() }));
 const bus = vi.hoisted(() => ({
   stage: null as ((e: PipelineStageEvent) => void) | null,
   delta: null as ((d: string) => void) | null,
+  job: null as ((e: JobEvent) => void) | null,
   detail: null as PipelineRunDetail | null,
   live: false,
   recordError: null as Error | null,
@@ -39,7 +40,12 @@ vi.mock('@/services/use-resume-pipeline', () => ({
   },
 }));
 
-vi.mock('@/services/use-jobs', () => ({ useCancelJob: () => cancelJobMock }));
+vi.mock('@/services/use-jobs', () => ({
+  useCancelJob: () => cancelJobMock,
+  useJobEvents: (handler?: (e: JobEvent) => void) => {
+    bus.job = handler ?? null;
+  },
+}));
 
 const RUN_ID = 'run-1';
 const JOB_ID = 'job-1';
@@ -75,6 +81,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   bus.stage = null;
   bus.delta = null;
+  bus.job = null;
   bus.detail = null;
   bus.live = false;
   bus.recordError = null;
@@ -226,6 +233,83 @@ describe('useResumePipelineSession', () => {
       await waitFor(() => expect(result.current.state).toBe('drafting'));
       expect(result.current.busy).toBe(true);
       expect(bus.live).toBe(true);
+    });
+  });
+
+  // ── The failure the record can't report ───────────────────────────────────
+  //
+  // `resume_pipeline_run` returns its ids immediately and writes the
+  // `pipeline_runs` row inside the spawned task, AFTER admission and after it
+  // resolves the depth, the provider, the résumé and the cached posting. Each of
+  // those failures calls `job_fail` with no row ever written, so `get(runId)`
+  // answers `null` forever — a real answer, so the poll stops — and the status,
+  // this hook's only completion signal, never exists. A failure of the FINAL
+  // `upsert_run` leaves the same hole from the other end: a row stuck at
+  // `running`. Drop the `job.failed` consumer and the session spins either way.
+  describe('a run that failed without a terminal record', () => {
+    const jobFailed = (jobId: string, data?: unknown): JobEvent => ({
+      type: 'job.failed',
+      jobId,
+      ...(data !== undefined ? { data } : {}),
+      ts: 1,
+    });
+
+    it('ends the session on the umbrella job failure when no record exists', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.job?.(jobFailed(JOB_ID, 'job not found in cache: posting-1')));
+
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.busy).toBe(false);
+      expect(result.current.error).toContain('job not found in cache');
+      consoleError.mockRestore();
+    });
+
+    it('ignores a failure belonging to another job', () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.job?.(jobFailed('someone-elses-job', 'boom')));
+      expect(result.current.state).toBe('queued');
+    });
+
+    // The other half of the hole: `execute` can fail ON its final `upsert_run`,
+    // leaving a row that says `running` for good. Gating on "no record yet"
+    // instead of "the machine is still busy" misses exactly this case.
+    it('ends the session when the record is stuck at running', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      bus.detail = detail('running');
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.stage?.(stage('draft', 'start', 3)));
+      expect(result.current.state).toBe('drafting');
+
+      act(() => bus.job?.(jobFailed(JOB_ID, 'writing the run row failed')));
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.error).toContain('writing the run row failed');
+      consoleError.mockRestore();
+    });
+
+    // A run that already reached a terminal state is left alone — error text
+    // included. The backend reports a deadline-stopped-but-saved run as complete
+    // on the JOB while the row says `needsReview`, so letting a late job event
+    // through would contradict a document the run's own row calls reviewable.
+    it('leaves a terminal run alone, error text included', async () => {
+      bus.detail = detail('needsReview');
+      const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      await waitFor(() => expect(result.current.state).toBe('needsReview'));
+
+      act(() => bus.job?.(jobFailed(JOB_ID, 'late failure')));
+      rerender();
+      expect(result.current.state).toBe('needsReview');
+      expect(result.current.error).toBeNull();
+    });
+
+    // `job.completed` fires the moment the draft's last delta lands — with
+    // validation and up to two repair rounds still ahead.
+    it('never treats the umbrella job COMPLETING as the run finishing', () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.stage?.(stage('draft', 'finish', 3)));
+      act(() => bus.job?.({ type: 'job.completed', jobId: JOB_ID, ts: 1 }));
+      expect(result.current.busy).toBe(true);
+      expect(result.current.state).not.toBe('done');
     });
   });
 

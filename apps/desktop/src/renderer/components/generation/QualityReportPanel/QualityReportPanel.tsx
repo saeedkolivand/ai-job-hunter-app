@@ -42,6 +42,16 @@ export interface QualityPipelineReview {
   resolveError?: string | null;
   repairRounds?: number;
   repairReverted?: boolean;
+  /**
+   * Provenance / limitation line for the staged block: which résumé the run
+   * started from, where a Remove has to be applied, or the fact that an OLDER
+   * run's document is no longer the stored one so nothing here can be changed.
+   *
+   * Plain text, deliberately NOT `role="alert"` — it describes the report the
+   * user just opened, it is not an event. Refusals that DID happen still go to
+   * `fixError`/`resolveError`, which are alerts.
+   */
+  note?: string;
 }
 
 export interface QualityReportPanelProps {
@@ -240,6 +250,11 @@ export function QualityReportPanel({
 
         {pipeline && (
           <>
+            {pipeline.note && (
+              <p className="border-t border-white/[0.06] pt-4 text-[10px] leading-relaxed text-foreground/45">
+                {pipeline.note}
+              </p>
+            )}
             <SectionVerdicts
               sections={pipeline.sections}
               onFixSection={pipeline.onFixSection}

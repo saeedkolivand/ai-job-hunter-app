@@ -118,10 +118,14 @@ vi.mock('@/features/jobs/components/RowMatchScore', () => ({
   RowMatchScore: () => <span data-testid="row-match-score" />,
 }));
 
-// ── PrepApplicationPanel — irrelevant to this suite, stubbed out ─────────────
+// ── Sibling action panels — irrelevant to this suite, stubbed out ───────────
 
 vi.mock('@/features/jobs/components/PrepApplicationPanel', () => ({
   PrepApplicationPanel: () => null,
+}));
+
+vi.mock('@/features/jobs/components/TailoredResumePanel', () => ({
+  TailoredResumePanel: () => null,
 }));
 
 // ── @ajh/shared ───────────────────────────────────────────────────────────────
