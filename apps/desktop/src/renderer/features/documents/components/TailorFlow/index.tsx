@@ -361,6 +361,13 @@ export function TailorFlow({
         jobUrl={job.url}
         canUse={canUse}
         reason={reason}
+        // `resumePipeline.run` resolves BOTH inputs server-side — a
+        // `DocumentStore` résumé id and a postings-cache job id. This flow
+        // tailors the free text in the wizard (which may have been pasted or
+        // hand-edited) against an `AutopilotFoundJob` that carries no posting
+        // id, so neither is available here. The picker still records the
+        // preference; it says out loud that THIS run stays Fast.
+        depthUnavailableReason={t('autopilot.apply.depthUnavailable')}
         onGenerate={startGeneration}
         jobAdSummary={jobAdSummary}
       />

@@ -252,6 +252,12 @@ export function OutputPanelDone({
             currentText={currentOutput}
             onRecheck={onRecheck}
             rechecking={rechecking}
+            // The editor's own change handler, so a "Remove" from the review
+            // is an ordinary edit (debounced commit → preview → save), not a
+            // side channel. Withheld while a generation is streaming — the
+            // editor is disabled then, and the review says so instead of
+            // silently dropping the edit.
+            onDocumentTextChange={isGenerating ? undefined : handleOutputChange}
           />
           <Button
             onClick={onCopy}

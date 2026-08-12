@@ -982,6 +982,12 @@ pub fn run() {
             // resume extraction + content-quality checks
             commands::resume::extract_resume,
             commands::resume::resume_validate_content,
+            // staged résumé pipeline (quality depth)
+            commands::resume_pipeline::resume_pipeline_run,
+            commands::resume_pipeline::resume_pipeline_get,
+            commands::resume_pipeline::resume_pipeline_list_for_job,
+            commands::resume_pipeline::resume_pipeline_regenerate_section,
+            commands::resume_pipeline::resume_pipeline_resolve_fabrication,
             // documents
             commands::documents::documents_list,
             commands::documents::documents_import,

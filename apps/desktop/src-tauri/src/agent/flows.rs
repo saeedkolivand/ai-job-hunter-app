@@ -23,6 +23,12 @@
 /// `flows::tests::prep_application_system_names_exactly_the_registered_prep_tools`
 /// is the drift guard in both directions.
 ///
+/// Phase 3 added two more (`analyze_job`, `get_quality_report` —
+/// [`crate::agent::tools_pipeline`]) at the SAME single ration rather than as
+/// new numbered steps, which is why the arithmetic below is unchanged at 13
+/// registered tools. The third Phase-3 tool, `run_quality_pipeline`, is not in
+/// this flow at all: see [`crate::agent::tools::improve_resume_tools`].
+///
 /// **Step budget.** The fixed sequence is 10 turns (a plan turn, 8 tool turns,
 /// a closing summary), plus AT MOST 2 extra tool turns the prompt itself
 /// rations: one `validate_resume` re-check after a fix, and one optional call.
@@ -58,11 +64,16 @@ application. Same WRITE-action rules as step 8: the user is asked to confirm (an
 the text), and may decline.\n\
 10. Finish with a short summary of what you prepared, what you fixed after step 6, and \
 anything it flagged that you could not fix.\n\
-Four OPTIONAL uses support that sequence. Spend AT MOST ONE of them in the whole run, once, \
+Six OPTIONAL uses support that sequence. Spend AT MOST ONE of them in the whole run, once, \
 and only when its own condition is actually met — the numbered steps are the job, these only \
 serve them:\n\
 - search_candidate_evidence, before step 4 or 5, when you need to know whether the résumé \
 really backs a specific claim or job requirement before you write it.\n\
+- analyze_job, before step 4 or 5, when the posting is long or vague and you need its \
+requirements listed out before you can tailor to them.\n\
+- get_quality_report, before step 5, when this application already has a saved résumé and you \
+want to know what the last check flagged before you rewrite it. A result marked stale describes \
+an earlier version of that document, so read it as history, not as the current state.\n\
 - validate_resume with docKind \"coverLetter\" and the drafted letter as draft, after step 4, \
 to check the letter against the cover-letter rules instead of the résumé ones.\n\
 - get_trim_suggestions, after step 5, when the drafted résumé runs long and you need to decide \

@@ -506,6 +506,21 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // W-1: ai_provider lives under commands/ today; consumers reach up until it is
     // relocated to a top-level module. autopilot_scheduler invokes the autopilot command.
     ("pipeline", "commands"),
+    // The résumé pipeline's stage prompts reuse the agent layer's pure
+    // prompt-safety primitives (`fenced`/`RESUME_CAP`/`JOB_CAP`) — read-only
+    // string construction, no controller, no tool. Identical to the
+    // `autopilot_helpers -> agent` edge below and carrying the same TODO(arch):
+    // relocate those primitives out of the L3 `agent` module (an L0/L1
+    // prompt-utils) and BOTH edges clear. Writing a second fence helper instead
+    // is the outcome ADR-010 exists to prevent — one boundary mechanism, and a
+    // second copy is where the neutralization list drifts.
+    ("pipeline", "agent"),
+    // …and the GENERATED cross-language constants: the `pipeline:stage`
+    // sectionKey grammar (`is_pipeline_section_key`), the depth vocabulary, and
+    // the run-deadline terms. Pure compile-time `&str`/`usize` literals emitted
+    // by `pnpm gen:ipc`, exactly like the `scraping -> ipc_contracts` edge
+    // below. Same TODO(arch): host the cross-language consts in an L0 module.
+    ("pipeline", "ipc_contracts"),
     ("documents", "commands"),
     // ai_config (L1) reads ProviderId/validate_model from commands::ai_provider,
     // exactly like documents::embed — same W-1 exception until ai_provider is

@@ -38,7 +38,12 @@ const MAX_NOTIFICATIONS: usize = 50;
 /// security review. Counted by CHARACTER (not byte) so a multi-byte UTF-8
 /// codepoint is never split.
 const MAX_TITLE_CHARS: usize = 200;
-const MAX_BODY_CHARS: usize = 500;
+/// `pub(crate)` so a SOURCE of notifications can budget its own body against
+/// the clamp it will actually be cut by, rather than against a second copy of
+/// the number (see `commands::resume_pipeline::notify::LABEL_CAP`, where a
+/// scraped posting title placed first in the body would otherwise displace the
+/// fixed clause behind it).
+pub(crate) const MAX_BODY_CHARS: usize = 500;
 
 // ── Data model ──────────────────────────────────────────────────────────────
 

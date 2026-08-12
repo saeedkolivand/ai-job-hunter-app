@@ -619,6 +619,22 @@ select:not(:disabled) {
   cursor: pointer;
 }
 
+/* `aria-disabled` is NOT `:disabled`. A control that only SAYS it is disabled
+   still matches `button:not(:disabled)` above and gets the pointer — the arrow
+   never comes back on its own, and the component's own Tailwind
+   `cursor-not-allowed` cannot win either, because an unlayered rule beats a
+   layered utility at any specificity.
+
+   Real for every aria-disabled control the app renders: they are all `<button>`
+   (SegmentedControl's radio options, and every `role="button"`/`role="radio"`
+   built on `@ajh/ui`'s Button), kept focusable on purpose so a screen reader can
+   reach an option that exists but is unavailable — a silently-missing option is
+   not an honest way to say "not available". Same specificity as the rule above
+   and declared after it, so it wins. */
+button[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
 /* ── Focus rings ─────────────────────────────────────────────────────────── */
 /* Visible default focus ring for every keyboard-focusable element. Components
    that render their own ring pair `focus-visible:outline-none` with it (higher

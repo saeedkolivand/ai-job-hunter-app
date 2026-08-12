@@ -24,6 +24,10 @@ export function useKindLabelMap(): Record<string, string> {
       'persist.job': t('monitoring.jobKinds.persistJob'),
       'match.resume': t('monitoring.jobKinds.matchResume'),
       'autopilot.run': t('monitoring.jobKinds.autopilotRun'),
+      // The staged résumé run's umbrella job (`resume_pipeline_run`) — the
+      // longest-lived job the app starts, so an unmapped kind renders as the
+      // raw `resumePipeline.run` token in the status bar for up to 75 minutes.
+      'resumePipeline.run': t('monitoring.jobKinds.resumePipelineRun'),
     }),
     [t]
   );

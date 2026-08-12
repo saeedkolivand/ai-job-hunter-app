@@ -18,20 +18,25 @@ pub async fn extract_resume(path: String) -> AppResult<ExtractedResume> {
     extraction::extract_resume(path).await
 }
 
+// The three server-side mirrors of this request's Zod caps. `pub(crate)`
+// because `commands::resume_pipeline` takes the SAME three fields on its own
+// run request and has to clamp them the same way — a second declaration of
+// "50 requirements, 300 bytes each" is how one of the two drifts.
+
 /// A hostile/buggy direct IPC caller could otherwise hand the analyzer an
 /// unbounded requirements list; the renderer's own JD-analysis step never
 /// produces more than a handful. Mirrors the item-count caps used elsewhere
 /// (e.g. `AutopilotTargetSchema.boards`).
-const TOP_REQUIREMENTS_CAP: usize = 50;
+pub(crate) const TOP_REQUIREMENTS_CAP: usize = 50;
 /// Per-requirement byte cap — matches the Zod schema's `.max(300)` (renderer-side
 /// only; this is the server-side mirror).
-const TOP_REQUIREMENT_BYTES_CAP: usize = 300;
+pub(crate) const TOP_REQUIREMENT_BYTES_CAP: usize = 300;
 /// Matches the Zod schema's `targetLanguage.max(32)` (renderer-side only;
 /// this is the server-side mirror) — the same trust-boundary treatment every
 /// other field on this command already gets. `normalize_language` itself
 /// only ever reads the first 2 alphanumeric characters, but a direct IPC
 /// caller could otherwise hand this an unbounded string.
-const TARGET_LANGUAGE_CAP: usize = 32;
+pub(crate) const TARGET_LANGUAGE_CAP: usize = 32;
 
 /// Deterministic content-quality checks (factual accuracy, ATS structure,
 /// AI-voice tells) on an already-generated résumé/letter against its source

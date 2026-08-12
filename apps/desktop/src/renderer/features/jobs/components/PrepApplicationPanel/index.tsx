@@ -29,6 +29,7 @@ import type { Posting } from '@/features/jobs/types';
 import { useMachine } from '@/hooks/use-machine';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { agentRunMachine, stepToEvent } from '@/lib/machines/agent-run.machine';
+import { STOPPED_SUFFIX, UNKNOWN_STOPPED_SUFFIX } from '@/lib/stopped-reason';
 import {
   useAgentRun,
   useAgentStepEvents,
@@ -69,49 +70,19 @@ const CHECKLIST: ChecklistItem[] = [
   { key: 'propose', tool: null },
 ];
 
-/** The `jobs.prep.stopped.*` suffixes this build knows how to label. */
-type StoppedSuffix =
-  | 'done'
-  | 'maxSteps'
-  | 'maxTokens'
-  | 'cancelled'
-  | 'truncated'
-  | 'budgeted'
-  | 'runTimeout'
-  | 'maxToolCalls'
-  | 'maxRepairs';
-
 /**
- * Rust `StoppedReason` (`pipeline::budget`, `#[serde(rename_all = "snake_case")]`)
- * → the `jobs.prep.stopped.*` key suffix. Every wire variant that can ride a
- * COMPLETED job result needs an entry here.
+ * `StoppedReason` → `jobs.prep.stopped.*` suffix.
  *
- * `timeout` is deliberately absent: `commands::agent` turns it into a job
- * FAILURE, so it surfaces as the ErrorState below and never reaches this tag —
- * and if that ever changes it lands on {@link UNKNOWN_STOPPED_SUFFIX}, which is
+ * The map itself is shared with the staged pipeline's own run labels
+ * (`@/lib/stopped-reason`) because the Rust enum is shared: a variant added to
+ * `pipeline::budget` needs ONE entry, not one per surface. Only the i18n
+ * NAMESPACE is per-surface — hence the local `jobs.prep.stopped.` prefix below.
+ *
+ * `timeout` is deliberately absent from the map: `commands::agent` turns it into
+ * a job FAILURE, so it surfaces as the ErrorState below and never reaches this
+ * tag — and if that ever changes it lands on `UNKNOWN_STOPPED_SUFFIX`, which is
  * honest, rather than on "Completed".
- */
-const STOPPED_SUFFIX: Record<string, StoppedSuffix> = {
-  done: 'done',
-  max_steps: 'maxSteps',
-  max_tokens: 'maxTokens',
-  cancelled: 'cancelled',
-  truncated: 'truncated',
-  budgeted: 'budgeted',
-  run_timeout: 'runTimeout',
-  max_tool_calls: 'maxToolCalls',
-  max_repairs: 'maxRepairs',
-};
 
-/**
- * Label for a reason this build doesn't know — a variant added to the Rust enum
- * after this renderer shipped.
- *
- * It must NEVER be `done`: `jobs.prep.stopped.done` exists, so an i18n
- * `defaultValue` can't rescue an unmapped reason, and a timed-out or
- * budget-exhausted run would render as "Completed". Vague beats wrong.
- */
-const UNKNOWN_STOPPED_SUFFIX = 'stopped';
 
 /**
  * Last step in the log matching `item` (a turn can revisit the same tool, or

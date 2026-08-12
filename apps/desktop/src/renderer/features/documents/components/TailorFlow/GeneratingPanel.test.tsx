@@ -207,3 +207,60 @@ describe('GeneratingPanel — reasoning-heavy hint', () => {
     expect(screen.getByText('autopilot.apply.generatingHint')).toBeInTheDocument();
   });
 });
+
+describe('GeneratingPanel — staged (quality-depth) run', () => {
+  it('drives the dots off the pipeline stage counter, not the document phases', () => {
+    render(
+      <GeneratingPanel
+        {...makeProps({
+          target: 'resume',
+          pipelineStep: { current: 3, total: 6 },
+          stageLabel: 'Writing the résumé',
+        })}
+      />
+    );
+    // The fast path would show 2 dots for a resume-only run; the staged run
+    // shows the pipeline's own six.
+    expect(stepDotsProps()).toEqual({ current: 3, total: 6 });
+  });
+
+  it('names the stage and its position', () => {
+    render(
+      <GeneratingPanel
+        {...makeProps({
+          pipelineStep: { current: 4, total: 6 },
+          stageLabel: 'Checking the result',
+        })}
+      />
+    );
+    expect(screen.getByText('Checking the result')).toBeInTheDocument();
+    expect(screen.getByText('pipeline.stageCounter')).toBeInTheDocument();
+  });
+
+  it('falls back to the document phases when a reconnected run has no length', () => {
+    // A run recovered from its persisted trail knows which stage it reached but
+    // not how many the pipeline has — an empty dot row would read as no progress.
+    render(
+      <GeneratingPanel
+        {...makeProps({
+          target: 'both',
+          phase: 'analyzing',
+          pipelineStep: { current: 0, total: 0 },
+        })}
+      />
+    );
+    expect(stepDotsProps()).toEqual({ current: 0, total: 3 });
+  });
+
+  it('leaves the fast path untouched when no staged progress is supplied', () => {
+    render(<GeneratingPanel {...makeProps({ target: 'both', phase: 'resume' })} />);
+    expect(stepDotsProps()).toEqual({ current: 1, total: 3 });
+    expect(screen.queryByText('pipeline.stageCounter')).not.toBeInTheDocument();
+    expect(screen.getByText('working…')).toBeInTheDocument();
+  });
+
+  it('never lets the dot index run past the last dot', () => {
+    render(<GeneratingPanel {...makeProps({ pipelineStep: { current: 6, total: 6 } })} />);
+    expect(stepDotsProps()).toEqual({ current: 5, total: 6 });
+  });
+});
