@@ -330,21 +330,12 @@ afterAll(() => rmSync(workDir, { recursive: true, force: true }));
 // case worth spelling out is only that "skipped" in that tally means aborted, not
 // "node:sqlite missing".
 describe('dump-run-metrics ↔ Rust contract', () => {
-  it('reads columns the schema still declares', () => {
+  it('extracted a schema that creates pipeline_runs', () => {
+    // Cheap sanity on the extraction itself, so a truncated read fails here and
+    // not as a confusing SQLite error later. The COLUMN set is checked against
+    // the created table in the seeded suite, where SQLite can answer exactly.
     expect(CREATE_SQL).toContain('CREATE TABLE IF NOT EXISTS pipeline_runs');
-    // The script's own SELECT list. A column renamed on the Rust side lands here
-    // rather than as a puzzling SQLite error inside the seeded suite.
-    for (const column of [
-      'depth',
-      'status',
-      'started_at',
-      'finished_at',
-      'stopped_reason',
-      'job_url',
-      'metrics_json',
-    ]) {
-      expect(CREATE_SQL, `pipeline_runs no longer has a ${column} column`).toContain(column);
-    }
+    expect(CREATE_SQL.trimEnd().endsWith(';')).toBe(true);
   });
 
   it('aggregates only metrics keys Rust still writes', () => {
@@ -357,6 +348,34 @@ describe('dump-run-metrics ↔ Rust contract', () => {
 });
 
 describeSqlite('dump-run-metrics', () => {
+  it('selects columns the created pipeline_runs table actually has', () => {
+    // `PRAGMA table_info`, not a substring search of the DDL: the literal holds
+    // BOTH tables, and `pipeline_run_events` shares fragments (`ts`, `stage`,
+    // `_json`), so `toContain('status')` could pass on a table that no longer
+    // has one. This asks SQLite what it built, and compares the exact set.
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    const columns = db
+      .prepare('SELECT name FROM pragma_table_info(?)')
+      .all('pipeline_runs')
+      .map((r) => r.name)
+      .sort();
+    db.close();
+
+    // The script's own SELECT list, plus the primary key and the discriminator
+    // it filters on — i.e. everything it depends on existing.
+    expect(columns).toEqual([
+      'depth',
+      'finished_at',
+      'id',
+      'job_url',
+      'kind',
+      'metrics_json',
+      'started_at',
+      'status',
+      'stopped_reason',
+    ]);
+  });
+
   it('documents the default app-data location in --help', () => {
     const out = run(['--help']);
     expect(out).toContain('pipeline_runs.db');
@@ -420,6 +439,35 @@ describeSqlite('dump-run-metrics', () => {
     expect(max.issuesMean).toBe(4);
     expect(max.revertedRuns).toBe(1);
     expect(max.statuses).toEqual({ completed: 2, running: 1 });
+  });
+
+  it('counts valid-JSON-but-not-an-object metrics as unreadable', () => {
+    // `JSON.parse` accepts all four of these. Before they were counted, such a
+    // row contributed to no column AND to no counter — it simply vanished from
+    // the aggregate while still inflating `runs`.
+    const oddDb = join(workDir, 'odd-metrics.db');
+    seed(
+      oddDb,
+      ['null', '123', '"x"', '[]'].map((json, i) => [
+        `o${i}`,
+        JOB_A,
+        'resume',
+        'fast',
+        'completed',
+        T0,
+        T0 + 1_000,
+        'done',
+        json,
+      ])
+    );
+    const [fast] = JSON.parse(run([oddDb, '--json'])).depths;
+    expect(fast.runs).toBe(4);
+    expect(fast.unparsedMetrics).toBe(4);
+    // Timestamps still bound them, so durations survive — that is the point of
+    // "contributed to counts only" rather than "dropped".
+    expect(fast.msMedian).toBe(1_000);
+    expect(fast.issuesMean).toBeNull();
+    expect(run([oddDb])).toContain('cannot read');
   });
 
   it('prints an em dash, not 0, for a flag no row reported', () => {

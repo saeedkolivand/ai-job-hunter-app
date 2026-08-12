@@ -192,11 +192,21 @@ function aggregate(depth, rows) {
     // row said.
     let metrics = null;
     try {
-      metrics = JSON.parse(row.metrics_json ?? '{}');
+      const parsed = JSON.parse(row.metrics_json ?? '{}');
+      // UNREADABLE and NOT-AN-OBJECT are the same outcome here, and both must be
+      // COUNTED. `JSON.parse` does not throw for `null`, `123`, `"x"` or `[]` —
+      // all valid JSON, none of them a metrics object — so testing only for a
+      // throw left those rows contributing to no column AND to no counter, i.e.
+      // invisible, which is the one thing `unparsedMetrics` exists to prevent.
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        metrics = parsed;
+      } else {
+        unparsedMetrics += 1;
+      }
     } catch {
       unparsedMetrics += 1;
     }
-    if (metrics && typeof metrics === 'object') {
+    if (metrics) {
       if (typeof metrics.ms === 'number') durations.push(metrics.ms);
       if (typeof metrics.issueCount === 'number') issues.push(metrics.issueCount);
       if (typeof metrics.criticalCount === 'number') criticals.push(metrics.criticalCount);
@@ -295,8 +305,9 @@ function printTable(aggregates, kind) {
   const unparsed = aggregates.reduce((sum, a) => sum + a.unparsedMetrics, 0);
   if (unparsed > 0) {
     console.log(
-      `\n${unparsed} run(s) carry unparseable metrics_json (clamped past ` +
-        `METRICS_CAP_BYTES) and contributed to counts only.`
+      `\n${unparsed} run(s) carry a metrics_json this dump cannot read — clamped past ` +
+        `METRICS_CAP_BYTES, or valid JSON that is not an object. They contributed to run ` +
+        `counts, statuses and (where timestamps allow) durations only.`
     );
   }
   console.log();
