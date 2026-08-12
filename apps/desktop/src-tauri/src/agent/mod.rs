@@ -25,6 +25,13 @@ pub mod controller;
 pub mod flows;
 pub mod gate;
 pub mod tools;
+/// Résumé-PIPELINE Read tools (`analyze_job`, `get_quality_report`,
+/// `run_quality_pipeline`) — a third file in the same registry, split from
+/// [`tools`]/[`tools_quality`] for the same R8 module-size reason those two are
+/// split from each other. [`tools::read_tools`] appends the two cheap ones;
+/// `run_quality_pipeline` is expensive enough that it has its own whitelist
+/// ([`tools::improve_resume_tools`]) — see that module's doc.
+pub(crate) mod tools_pipeline;
 /// Résumé-quality Read tools (`validate_resume`, `search_candidate_evidence`,
 /// `lookup_salary`, `get_trim_suggestions`) — split out of [`tools`] purely to
 /// stay under the R8 module-size cap (`docs/architecture-rules.md`); it is

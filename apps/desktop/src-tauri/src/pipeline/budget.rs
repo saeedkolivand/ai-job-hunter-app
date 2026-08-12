@@ -33,6 +33,35 @@ pub struct Budget {
     /// Tool invocations per run. Distinct from [`Self::max_steps`]: one turn can
     /// request several tool calls, and a loop that keeps calling tools without
     /// converging burns real money per call even while the step count crawls.
+    ///
+    /// **NOT ENFORCED ANYWHERE TODAY — the same honest note
+    /// [`Self::step_timeout`] carries, and a bigger gap.**
+    /// [`crate::agent::controller`] counts steps and tokens and stops on both;
+    /// it never counts calls, so [`StoppedReason::MaxToolCalls`] has no
+    /// producer in the crate and this value only feeds the compile-time
+    /// relations below. Verified by grep, not assumed; pinned from the
+    /// behavioural side by
+    /// `agent::controller::test::always_calling_a_tool_terminates_at_max_steps`,
+    /// whose comment names this gap.
+    ///
+    /// It is left unenforced on purpose rather than closed with a counter,
+    /// because a counter alone would make the WRONG stop the binding one:
+    /// [`Self::AGENT_PREP`] rations 12 calls under 14 steps precisely so a run
+    /// that runs out of calls "still has turns left to write its summary", and
+    /// a hard stop at the 12th call spends none of them — it also makes
+    /// [`StoppedReason::MaxSteps`] unreachable for every flow the relation
+    /// below holds for, trading one dead reason for another. The honest fix is
+    /// to stop OFFERING tools once the count is spent (an empty
+    /// [`crate::commands::ai_provider::ToolSpec`] list for the remaining
+    /// turns), which the loop cannot do today: the spec list is built once in
+    /// `LiveAgentEnv` and `AgentEnv::turn` takes only messages. That is a
+    /// signature change across the trait and both fakes, i.e. its own round.
+    ///
+    /// What DOES bound spend meanwhile: `max_steps`, `max_tokens` (which
+    /// counts the whole tool-schema payload every turn), the per-call
+    /// [`Self::step_timeout`] race, and
+    /// [`crate::limits::Limiter::charge_provider_daily`] on every provider
+    /// round-trip a tool makes.
     pub max_tool_calls: usize,
     /// Accumulated token estimate (~chars/4) across prompts + completions.
     pub max_tokens: usize,
@@ -77,10 +106,12 @@ impl Budget {
     /// turns (`research_company`, `match_resume`, `draft_cover_letter`,
     /// `draft_resume`, `validate_resume`, `suggest_interview_questions`,
     /// `save_cover_letter`, `save_resume`) plus a planning turn and a
-    /// closing-summary turn — a 10-turn floor. The whitelist carries 11 tools,
+    /// closing-summary turn — a 10-turn floor. The whitelist carries 13 tools,
     /// so the three remaining résumé-quality Read tools
-    /// ([`crate::agent::tools_quality::quality_tools`]) are reachable too; the
-    /// prompt NAMES and RATIONS them at one optional call plus one
+    /// ([`crate::agent::tools_quality::quality_tools`]) and the two cheap
+    /// pipeline tools ([`crate::agent::tools_pipeline`] — `analyze_job`,
+    /// `get_quality_report`) are reachable too; the prompt NAMES and RATIONS
+    /// them at one optional call plus one
     /// `validate_resume` re-check after a fix, so the worst case is 10 + 2 = 12
     /// turns and 14 leaves two turns of slack for a model that splits a step or
     /// retries a declined confirm. The prompt-side half of that arithmetic is
@@ -88,10 +119,25 @@ impl Budget {
     /// so a new numbered step fails a test instead of stranding a real run at
     /// [`StoppedReason::MaxSteps`] between the drafting spend and the saves.
     ///
+    /// **Phase 3 added tools and this budget did NOT move — the arithmetic
+    /// says so, rather than the omission being an oversight.** The plan's
+    /// "re-sized for the larger toolset" note was paid in Phase 1, when the
+    /// four quality tools took `max_steps` to 14 and `max_tool_calls` to 12.
+    /// Phase 3's two additions ride the SAME single optional ration the prompt
+    /// already grants — the ration is per RUN, not per tool — so the worst case
+    /// is still 12 turns and 10 calls no matter how many optional entries the
+    /// list grows. Only the per-turn TOKEN cost scales with the tool count
+    /// (every turn re-sends the whole schema payload), and two more
+    /// no-argument schemas are ~300 chars ≈ 75 tokens × ≤14 turns ≈ 1k against
+    /// `max_tokens` = 120 000. Widening the ration is what would need a
+    /// re-size, and the compile-time relations below would fail first.
+    ///
     /// **`max_tool_calls` = 12.** The same arithmetic counted in CALLS rather
     /// than turns: 8 fixed + 1 rationed optional + 1 re-check = 10, plus 2 of
-    /// slack. Deliberately below `max_steps` — a run that has spent 12 tool
-    /// calls still has turns left to write its summary.
+    /// slack. Deliberately below `max_steps` so a run that spends its calls
+    /// would still have turns left to write a summary — **an intent the loop
+    /// does not implement; read the field doc on
+    /// [`Budget::max_tool_calls`] before relying on this number.**
     ///
     /// **`max_tokens` = 120_000.** The drafted résumé is echoed through the
     /// accumulator TWICE — once as the `draft_resume` tool result, once as the
@@ -228,6 +274,11 @@ const _: () = assert!(
     Budget::AGENT_PREP.max_tool_calls >= PREP_WORST_CASE_TOOL_CALLS,
     "AGENT_PREP.max_tool_calls must admit the 10-call prep worst case"
 );
+// A RELATION between the two ceilings, not a claim about the loop: the summary
+// turns it reserves are only actually reachable once the tool count is enforced
+// by suppressing tools rather than by stopping (see [`Budget::max_tool_calls`]).
+// Kept because the relation is the precondition for that fix, and inverting it
+// would silently rule the fix out.
 const _: () = assert!(
     Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
     "a run that exhausts its tool calls must still have turns left to summarize"

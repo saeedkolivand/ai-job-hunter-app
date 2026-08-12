@@ -822,9 +822,17 @@ fn save_resume_schema() -> Value {
 /// The default read-only whitelist: company research + résumé/job matching +
 /// the four résumé-quality tools ([`super::tools_quality::quality_tools`] —
 /// `validate_resume`, `search_candidate_evidence`, `lookup_salary`,
-/// `get_trim_suggestions`), every one a thin adapter over an existing pure
-/// module or Tauri command (reused, not re-implemented). A per-flow caller
-/// picks the slice of tools it wants to expose.
+/// `get_trim_suggestions`) + the two CHEAP pipeline tools
+/// ([`super::tools_pipeline`] — `analyze_job`, `get_quality_report`), every one
+/// a thin adapter over an existing pure module or Tauri command (reused, not
+/// re-implemented). A per-flow caller picks the slice of tools it wants to
+/// expose.
+///
+/// **`run_quality_pipeline` is deliberately NOT here.** It is the one tool in
+/// the registry that cannot fit
+/// [`crate::pipeline::budget::Budget::AGENT_PREP`]'s `step_timeout`, which
+/// [`crate::agent::controller`] races every tool call against — see
+/// [`improve_resume_tools`].
 pub fn read_tools() -> Vec<AgentTool> {
     let mut tools = vec![
         AgentTool {
@@ -860,6 +868,8 @@ pub fn read_tools() -> Vec<AgentTool> {
         },
     ];
     tools.extend(super::tools_quality::quality_tools());
+    tools.push(super::tools_pipeline::analyze_job_tool());
+    tools.push(super::tools_pipeline::get_quality_report_tool());
     tools
 }
 
@@ -913,7 +923,16 @@ pub fn prep_application_tools() -> Vec<AgentTool> {
         kind: ToolKind::Write,
         handler: save_cover_letter_handler,
     });
-    tools.push(AgentTool {
+    tools.push(save_resume_tool());
+    tools
+}
+
+/// The ONE gated résumé-save, built in one place because two whitelists now
+/// carry it ([`prep_application_tools`] and [`improve_resume_tools`]) and a
+/// second copy of a Write tool's description/schema is a second thing to keep
+/// honest about what the confirm dialog will show.
+fn save_resume_tool() -> AgentTool {
+    AgentTool {
         name: "save_resume",
         description:
             "Save the finished tailored résumé to this application's documents. WRITE ACTION — \
@@ -923,7 +942,52 @@ pub fn prep_application_tools() -> Vec<AgentTool> {
         schema: save_resume_schema(),
         kind: ToolKind::Write,
         handler: save_resume_handler,
-    });
+    }
+}
+
+/// The `improve_resume` whitelist (Phase 7): review an EXISTING generation
+/// against its quality report and the candidate's evidence, then propose
+/// targeted fixes through the gated save.
+///
+/// **No flow drives this yet, and that is the point of it existing now.** The
+/// flow registry (`AgentFlow { kind, system, tools, budget }`) is Phase 7 work;
+/// what Phase 3 owes it is a HOME for `run_quality_pipeline`, because the tool
+/// must not go into [`prep_application_tools`]:
+/// [`crate::agent::controller`] races every tool call against the flow's
+/// `step_timeout`, `Budget::AGENT_PREP`'s is 360 s, and one quality run's own
+/// floor (`Budget::RESUME_QUALITY.run_timeout`) is 75 minutes — a prep run that
+/// called it would end at `StoppedReason::Timeout` after the drafting spend and
+/// before the saves. Pinned by
+/// `test::the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`,
+/// which derives the exclusion from those two constants rather than from a
+/// name list.
+///
+/// **Phase 7's obligations, written down here so they are not rediscovered:**
+/// this flow's `Budget.step_timeout` must clear a full quality run, and its
+/// system prompt must NAME every tool below — the drift guard for the prep
+/// flow (`agent::flows::tests::prep_application_system_names_exactly_the_registered_prep_tools`)
+/// exists because a registered-but-unnamed tool is paid for on every turn in
+/// schema tokens and never called.
+///
+/// Contents are the plan's own list: the three résumé-quality reads that
+/// operate on an existing document, the persisted report, the pipeline, and
+/// the gated save. Deliberately NOT the drafting tools (this flow improves a
+/// document rather than writing a new one), not `save_cover_letter` (no letter
+/// is in scope), and not `analyze_job`/`research_company`/`lookup_salary`
+/// (posting research belongs to the prep flow).
+pub fn improve_resume_tools() -> Vec<AgentTool> {
+    const REVIEW_TOOLS: [&str; 3] = [
+        "validate_resume",
+        "search_candidate_evidence",
+        "get_trim_suggestions",
+    ];
+    let mut tools: Vec<AgentTool> = super::tools_quality::quality_tools()
+        .into_iter()
+        .filter(|tool| REVIEW_TOOLS.contains(&tool.name))
+        .collect();
+    tools.push(super::tools_pipeline::get_quality_report_tool());
+    tools.push(super::tools_pipeline::run_quality_pipeline_tool());
+    tools.push(save_resume_tool());
     tools
 }
 

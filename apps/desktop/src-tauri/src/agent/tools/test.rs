@@ -42,7 +42,7 @@ fn research_company_schema_takes_no_model_supplied_arguments() {
     );
 }
 
-/// SECURITY: the prep flow must expose exactly the eleven expected tools, in
+/// SECURITY: the prep flow must expose exactly the thirteen expected tools, in
 /// order, and — critically — EXACTLY TWO Write tools (`save_cover_letter`,
 /// `save_resume`, the gated internal saves). No other write is reachable, and
 /// every write suspends for confirmation (enforced by the controller, not here).
@@ -59,13 +59,15 @@ fn prep_application_tools_have_exactly_two_gated_write_tools() {
             "search_candidate_evidence",
             "lookup_salary",
             "get_trim_suggestions",
+            "analyze_job",
+            "get_quality_report",
             "draft_cover_letter",
             "draft_resume",
             "suggest_interview_questions",
             "save_cover_letter",
             "save_resume",
         ],
-        "prep whitelist must be exactly these eleven tools in order"
+        "prep whitelist must be exactly these thirteen tools in order"
     );
     let writes: Vec<&str> = tools
         .iter()
@@ -78,7 +80,97 @@ fn prep_application_tools_have_exactly_two_gated_write_tools() {
         "exactly two Write tools — the gated internal cover-letter and résumé saves — may be reachable"
     );
     // The specs handed to the model carry every tool through unchanged.
-    assert_eq!(to_specs(&tools).len(), 11);
+    assert_eq!(to_specs(&tools).len(), 13);
+}
+
+/// LEAST PRIVILEGE, derived rather than listed: `run_quality_pipeline` must be
+/// absent from any flow whose per-step wall clock cannot cover one quality run.
+///
+/// [`crate::agent::controller`] races EVERY tool call against
+/// `Budget::step_timeout` and ends the WHOLE run at
+/// `StoppedReason::Timeout` when one overruns, so a prep run that called this
+/// tool would die between the drafting spend and the saves. Both halves are
+/// asserted: the arithmetic that makes the tool unaffordable there, and the
+/// absence itself — a name-list-only test would still pass if someone raised
+/// `AGENT_PREP.step_timeout` to 75 minutes (which is the OTHER way to break
+/// this, and a far worse one: it also stops a hung endpoint from being caught).
+///
+/// Mutation-checked: pushing `tools_pipeline::run_quality_pipeline_tool()` into
+/// `prep_application_tools` fails the second assertion; raising
+/// `AGENT_PREP.step_timeout` past the run floor fails the first.
+#[test]
+fn the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it() {
+    use crate::pipeline::budget::Budget;
+
+    assert!(
+        Budget::AGENT_PREP.step_timeout < Budget::RESUME_QUALITY.run_timeout,
+        "one agent step ({:?}) cannot cover one quality run ({:?}) — if that ever stops being \
+         true, re-derive where run_quality_pipeline belongs instead of deleting this test",
+        Budget::AGENT_PREP.step_timeout,
+        Budget::RESUME_QUALITY.run_timeout,
+    );
+    assert!(
+        !prep_application_tools()
+            .iter()
+            .any(|t| t.name == "run_quality_pipeline"),
+        "run_quality_pipeline must not be reachable from the prep flow"
+    );
+    assert!(
+        !read_tools()
+            .iter()
+            .any(|t| t.name == "run_quality_pipeline"),
+        "…nor from the default read whitelist every flow builds on"
+    );
+}
+
+/// The Phase-7 `improve_resume` whitelist: the plan's own list, exactly, and
+/// ONE gated Write. It is the only home `run_quality_pipeline` has, so a change
+/// here is a change to what that tool is reachable from.
+///
+/// Deliberately absent: the drafting tools (this flow improves an existing
+/// document rather than writing a new one), `save_cover_letter` (no letter is
+/// in scope), and `research_company`/`analyze_job`/`lookup_salary`/
+/// `match_resume` (posting research is the prep flow's job).
+#[test]
+fn improve_resume_tools_are_the_review_set_plus_one_gated_write() {
+    let tools = improve_resume_tools();
+    let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
+    assert_eq!(
+        names,
+        vec![
+            "validate_resume",
+            "search_candidate_evidence",
+            "get_trim_suggestions",
+            "get_quality_report",
+            "run_quality_pipeline",
+            "save_resume",
+        ],
+        "the improve_resume whitelist must be exactly the plan's list, in order"
+    );
+    let writes: Vec<&str> = tools
+        .iter()
+        .filter(|t| t.kind == ToolKind::Write)
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(
+        writes,
+        vec!["save_resume"],
+        "saving stays behind ONE gated Write — run_quality_pipeline returns data, never a save"
+    );
+}
+
+/// The two cheap pipeline tools ARE in the shared read whitelist, so the prep
+/// flow can use them; this is the positive half of the least-privilege split
+/// above (a test that only asserts absences passes on an empty registry).
+#[test]
+fn the_cheap_pipeline_tools_are_in_the_shared_read_whitelist() {
+    let names: Vec<&str> = read_tools().iter().map(|t| t.name).collect();
+    assert!(names.contains(&"analyze_job"));
+    assert!(names.contains(&"get_quality_report"));
+    assert!(
+        read_tools().iter().all(|t| t.kind == ToolKind::Read),
+        "the shared whitelist stays read-only"
+    );
 }
 
 /// The cover-letter Write tool accepts CONTENT only: its schema declares
