@@ -13,7 +13,8 @@ use serde_json::Value;
 use super::assemble::assemble;
 use super::section_prompts::{section_system, section_user, MAX_FENCE_TAGS};
 use super::stages::section_gen::{
-    generate_sections, ground_citations, merge, plan_sections, SectionAnswer, MAX_BULLETS_PER_ENTRY,
+    generate_sections, ground_citations, merge, plan_sections, scoped_evidence, SectionAnswer,
+    MAX_BULLETS_PER_ENTRY,
 };
 use super::stages::{
     issue_from, issues_from, sections, seed_company_roster, MAX_COMPANY_PLANS, MAX_JUDGE_ITEMS,
@@ -793,7 +794,12 @@ async fn a_failed_section_costs_one_section_and_the_daily_cap_stops_the_fan_out(
     assert!(stats.budgeted, "the daily cap is recorded, not swallowed");
     assert!(!stats.timed_out);
     assert_eq!(stats.kept, 2);
-    assert_eq!(stats.calls, 2);
+    // THREE calls, not two. `complete_json` charges the day's ceiling BEFORE
+    // each round-trip, so the section that errored had already been paid for —
+    // counting only the answers that came back made `metrics.calls` understate
+    // real spend, in the direction that hides it. The RateLimited section is
+    // the one that is NOT counted: admission refused it before any request.
+    assert_eq!(stats.calls, 3, "two answers plus the charged failure");
 
     let events = recorder.events.lock().clone();
     assert_eq!(
@@ -2503,4 +2509,225 @@ fn a_plan_trimmed_by_the_budget_says_how_many_sections_it_lost() {
         "the tail is cut first: Education before Projects before an employer"
     );
     assert!(capped.iter().any(|slot| slot.key == SectionKey::Projects));
+}
+
+// ── CodeRabbit round 1 ───────────────────────────────────────────────────────
+
+/// **Bullets with no identity line above them are not a section.**
+///
+/// `assemble::identity_line` returns `""` when the plan has neither a company
+/// nor a title, so the entry rendered as a bare bullet list — and
+/// `extract_evidence` reads bullets with no entry line above them as MORE
+/// BULLETS FOR THE PREVIOUS EMPLOYER. That is the same silent misattribution
+/// `DATE_COLUMN_GAP` documents, reached a different way. Reachable:
+/// `split_entry` returns an empty pair for a location-only entry label and
+/// `strategy::reseed` preserves it verbatim.
+///
+/// Mutation check: drop the identity term from `SectionResult::is_empty` and
+/// the assembled document gains a headless bullet block.
+#[test]
+fn an_entry_with_no_company_and_no_title_is_an_empty_section() {
+    let nameless = SectionResult {
+        key: SectionKey::Experience(0),
+        heading: "Work Experience".to_string(),
+        body: SectionBody::Entry {
+            plan: Box::new(CompanyPlan::default()),
+            bullets: vec!["Shipped the settlement service".to_string()],
+        },
+        used_evidence: Vec::new(),
+        dropped_citations: 0,
+        dropped_content: 0,
+        from_cache: false,
+    };
+    assert!(
+        nameless.is_empty(),
+        "no company and no title means no identity line, so there is nothing to hang bullets on"
+    );
+
+    let document = assemble(&nameless_plus_a_real_entry(), &[]);
+    assert!(
+        !document.contains("Shipped the settlement service"),
+        "the headless bullets must not reach the document:\n{document}"
+    );
+    assert!(
+        document.contains("Senior Backend Engineer, Acme Payments"),
+        "…and the entry that DOES have an identity line still renders:\n{document}"
+    );
+    // Dates alone are not an identity either — `identity_line` returns the
+    // empty label rather than a bare date column.
+    let dated = SectionResult {
+        body: SectionBody::Entry {
+            plan: Box::new(CompanyPlan {
+                dates: "2021 - Present".to_string(),
+                ..CompanyPlan::default()
+            }),
+            bullets: vec!["Shipped it".to_string()],
+        },
+        ..nameless
+    };
+    assert!(dated.is_empty());
+}
+
+fn nameless_plus_a_real_entry() -> Vec<SectionResult> {
+    let mut out = vec![SectionResult {
+        key: SectionKey::Experience(0),
+        heading: "Work Experience".to_string(),
+        body: SectionBody::Entry {
+            plan: Box::new(CompanyPlan::default()),
+            bullets: vec!["Shipped the settlement service".to_string()],
+        },
+        used_evidence: Vec::new(),
+        dropped_citations: 0,
+        dropped_content: 0,
+        from_cache: false,
+    }];
+    out.push(SectionResult {
+        key: SectionKey::Experience(1),
+        heading: "Work Experience".to_string(),
+        body: SectionBody::Entry {
+            plan: Box::new(CompanyPlan {
+                company: "Acme Payments".to_string(),
+                title: "Senior Backend Engineer".to_string(),
+                dates: "2021 - Present".to_string(),
+                ..CompanyPlan::default()
+            }),
+            bullets: vec!["Owned the settlement service".to_string()],
+        },
+        used_evidence: Vec::new(),
+        dropped_citations: 0,
+        dropped_content: 0,
+        from_cache: false,
+    });
+    out
+}
+
+/// **A project the source says nothing about beyond its NAME flags the
+/// document.**
+///
+/// `render_project`'s bottom rung emits `• {name}`; `parse_resume` strips the
+/// bullet marker, so `consistency::tier_of` sees a one-line entry with no
+/// separator and rejects it — the run's own validator reports
+/// `consistency.project_structure` against a document the run just built.
+/// Established by RUNNING the real validator, not by reading `tier_of`: it
+/// warns for `• Alpha` and does not for `• Alpha · https://…`.
+///
+/// Mutation check: drop the seed filter in `reseed_projects` and the warning
+/// comes back.
+#[test]
+fn a_project_with_nothing_but_a_name_is_not_rendered() {
+    let seeds = vec![
+        ProjectOut {
+            name: "Alpha".to_string(),
+            links: Vec::new(),
+            stack: Vec::new(),
+            description: String::new(),
+        },
+        ProjectOut {
+            name: "Dotfiles".to_string(),
+            links: vec!["https://github.com/janedoe/dotfiles".to_string()],
+            stack: Vec::new(),
+            description: String::new(),
+        },
+    ];
+    let slot = SectionSlot {
+        key: SectionKey::Projects,
+        heading: "Projects".to_string(),
+        seed: SectionSeed::Projects(seeds.clone()),
+    };
+    let answer = SectionAnswer::Projects(ProjectsOut {
+        projects: seeds.clone(),
+        used_evidence: Vec::new(),
+    });
+
+    let merged = merge(&slot, answer, SOURCE, &EvidenceMap::default());
+    let SectionBody::Projects(kept) = &merged.body else {
+        panic!("a projects body");
+    };
+    assert_eq!(kept.len(), 1, "the name-only project is not renderable");
+    assert_eq!(kept[0].name, "Dotfiles");
+    assert!(merged.dropped_content >= 1, "and the drop is counted");
+
+    // The real validator agrees: what survives raises no structure warning.
+    let document = assemble(&[merged], &[]);
+    assert!(
+        !report_over(&document)
+            .issues
+            .iter()
+            .any(|issue| issue.code == CONSISTENCY_PROJECT_STRUCTURE),
+        "the assembled projects section must not flag itself:\n{document}"
+    );
+}
+
+/// **A section prompt never sees a requirement the résumé cannot support.**
+///
+/// `scoped_evidence`'s filter dropped `Missing` items on the scoped path and
+/// both fallbacks cloned the map whole — so an employment entry WITH attributed
+/// evidence never saw an unsupported requirement while one with none saw all of
+/// them, and so did every non-experience section. Handing a generator a list of
+/// requirements nothing backs is the fabrication the grounding chain exists to
+/// prevent; `ground_citations` refuses to cite them either way, so the leak
+/// surfaced only as bullet content no quote backs.
+///
+/// Mutation check: filter `Missing` inside the scoped branch again and both
+/// fallback assertions fail.
+#[test]
+fn no_section_prompt_is_shown_a_requirement_the_resume_cannot_support() {
+    let evidence = EvidenceMap {
+        items: vec![
+            EvidenceItem {
+                requirement: "Kubernetes".to_string(),
+                status: EvidenceStatus::Covered,
+                source_quote: "Migrated 40 services to Kubernetes".to_string(),
+                source_company: "Acme Payments".to_string(),
+                strength: 3,
+            },
+            EvidenceItem {
+                requirement: "Kafka".to_string(),
+                status: EvidenceStatus::Missing,
+                source_quote: String::new(),
+                source_company: String::new(),
+                strength: 0,
+            },
+        ],
+    };
+    let missing_survived = |map: &EvidenceMap| {
+        map.items
+            .iter()
+            .any(|i| i.status == EvidenceStatus::Missing)
+    };
+
+    // (a) a NON-experience seed — the whole-map fallback.
+    let summary = SectionSlot {
+        key: SectionKey::Summary,
+        heading: "Professional Summary".to_string(),
+        seed: SectionSeed::Summary,
+    };
+    assert!(!missing_survived(&scoped_evidence(&summary, &evidence)));
+
+    // (b) an experience entry with NO attributed evidence — the empty-scope
+    //     fallback, which is the arm that showed a model everything.
+    let unattributed = SectionSlot {
+        key: SectionKey::Experience(0),
+        heading: "Work Experience".to_string(),
+        seed: SectionSeed::Experience(Box::new(CompanyPlan {
+            company: "Nobody Ltd".to_string(),
+            ..CompanyPlan::default()
+        })),
+    };
+    let scoped = scoped_evidence(&unattributed, &evidence);
+    assert!(!missing_survived(&scoped));
+    assert_eq!(scoped.items.len(), 1, "the grounded item is still offered");
+
+    // (c) the scoped path itself is unchanged.
+    let acme = SectionSlot {
+        key: SectionKey::Experience(0),
+        heading: "Work Experience".to_string(),
+        seed: SectionSeed::Experience(Box::new(CompanyPlan {
+            company: "Acme Payments".to_string(),
+            ..CompanyPlan::default()
+        })),
+    };
+    let scoped = scoped_evidence(&acme, &evidence);
+    assert_eq!(scoped.items.len(), 1);
+    assert_eq!(scoped.items[0].requirement, "Kubernetes");
 }

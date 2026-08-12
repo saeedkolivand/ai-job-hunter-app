@@ -480,6 +480,18 @@ fn reseed_projects(seeds: &[ProjectOut], answered: &[ProjectOut]) -> (Vec<Projec
         if out.iter().any(|kept| same_project(&kept.name, &seed.name)) {
             continue;
         }
+        // A project whose seed carries no links, no stack and no description is
+        // below the ladder's bottom rung, not on it: `render_project` emits a
+        // bare `• {name}`, `parse_resume` strips the marker, and
+        // `consistency::tier_of` then rejects the one-line entry — the document
+        // flags ITSELF with `consistency.project_structure`. Verified against
+        // the real validator, which warns for `• Alpha` and does not for
+        // `• Alpha · https://…`. Dropping it is the same call `reseed_projects`
+        // already makes about content the source cannot back.
+        if seed.links.is_empty() && seed.stack.is_empty() && seed.description.trim().is_empty() {
+            dropped += 1;
+            continue;
+        }
         let described = !seed.description.trim().is_empty();
         if !described && !project.description.trim().is_empty() {
             dropped += 1; // an invented blurb for a data-less project
@@ -670,6 +682,22 @@ where
                 break;
             }
             Err(_) => {
+                // Charged, then failed. `complete_json` calls `charge_daily`
+                // BEFORE each round-trip, so a provider, transport or parse
+                // failure has already cost the day's ceiling — counting only
+                // successes made `metrics.calls` understate real spend, in the
+                // direction that hides it.
+                //
+                // What this still cannot say, stated rather than implied: the
+                // seam returns one `AppResult` per SECTION, so a re-ask (a
+                // second charged round-trip) counts as one, and a deadline
+                // guard that refused before the first charge also counts as
+                // one. Separating them needs an attempt count threaded out of
+                // `complete_json`; the guard case is a microsecond window
+                // (the loop re-checks the same clock immediately above) and it
+                // is visible as `timedOut`, so one call per failed section is
+                // the closest honest number available here.
+                stats.calls += 1;
                 stats.failed += 1;
                 false
             }
@@ -939,27 +967,42 @@ impl<'a> Stage<QualityCtx<'a>> for Sections {
 /// empty, so a role with no attributed evidence can still cite what the résumé
 /// supports.
 pub fn scoped_evidence(slot: &SectionSlot, evidence: &EvidenceMap) -> EvidenceMap {
-    let SectionSeed::Experience(plan) = &slot.seed else {
-        return evidence.clone();
+    // MISSING items go first, on every path. They are requirements the résumé
+    // CANNOT support, and a section prompt that shows them is handing the model
+    // a list of things to write about that nothing backs — the fabrication the
+    // whole grounding chain exists to prevent. The scoped filter below always
+    // dropped them; the two fallbacks cloned the map whole, so an entry with
+    // attributed evidence never saw an unsupported requirement while an entry
+    // with none saw all of them. (`ground_citations` refuses a citation of a
+    // Missing item either way, so the leak surfaced only as bullet content no
+    // quote backs — the hardest kind to notice.)
+    let grounded = EvidenceMap {
+        items: evidence
+            .items
+            .iter()
+            .filter(|item| item.status != EvidenceStatus::Missing)
+            .cloned()
+            .collect(),
     };
-    let items: Vec<EvidenceItem> = evidence
+    let SectionSeed::Experience(plan) = &slot.seed else {
+        return grounded;
+    };
+    let items: Vec<EvidenceItem> = grounded
         .items
         .iter()
         .filter(|item| {
-            item.status != EvidenceStatus::Missing
-                && (item
-                    .source_company
-                    .trim()
-                    .eq_ignore_ascii_case(plan.company.trim())
-                    || plan
-                        .emphasis
-                        .iter()
-                        .any(|term| term.trim().eq_ignore_ascii_case(item.requirement.trim())))
+            item.source_company
+                .trim()
+                .eq_ignore_ascii_case(plan.company.trim())
+                || plan
+                    .emphasis
+                    .iter()
+                    .any(|term| term.trim().eq_ignore_ascii_case(item.requirement.trim()))
         })
         .cloned()
         .collect();
     if items.is_empty() {
-        return evidence.clone();
+        return grounded;
     }
     EvidenceMap { items }
 }

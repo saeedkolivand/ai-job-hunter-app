@@ -1162,6 +1162,62 @@ fn a_repair_round_that_introduces_an_absence_is_worse_whatever_the_count_says() 
     );
 }
 
+/// **An absence-shaped Critical with NO evidence is skipped, deliberately.**
+///
+/// `absences` keys on the `(code, evidence)` PAIR, so an issue without evidence
+/// has no pair and is dropped. That is what keeps a pre-existing absence
+/// carryable instead of a permanent block — but nothing exercised the branch,
+/// so turning the `?` into a default pair (making every evidence-less
+/// `factual.dropped_role` block repair forever) would have kept this file
+/// green. Both real emitters always carry evidence, which
+/// `a_repair_rewrite_that_drops_a_seeded_employer_raises_a_dropped_role_critical`
+/// pins against the actual validator; this pins what happens if one ever stops.
+///
+/// Mutation check: default the missing evidence to `""` instead of skipping and
+/// the improving round below is refused.
+#[test]
+fn an_absence_with_no_evidence_cannot_block_a_repair_round() {
+    let evidenceless = |severity| crate::validate::content::ContentIssue {
+        severity,
+        code: crate::validate::content::FACTUAL_DROPPED_ROLE,
+        section: None,
+        message: "an employer went missing".to_string(),
+        evidence: None,
+    };
+
+    let mut before = criticals(3);
+    before
+        .issues
+        .push(evidenceless(crate::validate::Severity::Critical));
+    let mut after = criticals(1);
+    after
+        .issues
+        .push(evidenceless(crate::validate::Severity::Critical));
+
+    assert!(
+        !round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "an issue with no evidence has no pair to compare, so it cannot be a NEW absence"
+    );
+    // …and it does not become one by appearing for the first time either.
+    let mut appeared = criticals(1);
+    appeared
+        .issues
+        .push(evidenceless(crate::validate::Severity::Critical));
+    assert!(!round_is_worse(
+        &criticals(3),
+        ANY_TEXT,
+        &appeared,
+        ANY_TEXT
+    ));
+    // The count term still governs it: three criticals becoming five is worse.
+    assert!(round_is_worse(
+        &criticals(3),
+        ANY_TEXT,
+        &criticals(5),
+        ANY_TEXT
+    ));
+}
+
 /// `factual.altered_project_link` is emitted from TWO arms and only one of them
 /// is an absence — the same split `commands::resume_pipeline::report` makes to
 /// decide whether the finding is reviewable at all.

@@ -388,7 +388,18 @@ impl SectionResult {
         match &self.body {
             SectionBody::Summary(text) => text.trim().is_empty(),
             SectionBody::Skills(groups) => groups.iter().all(|g| g.skills.is_empty()),
-            SectionBody::Entry { bullets, .. } => bullets.is_empty(),
+            // An entry with neither a company nor a title has no IDENTITY
+            // LINE: `assemble::identity_line` returns `""` for that pair, and
+            // the bullets would then render under nothing — which
+            // `extract_evidence` reads as more bullets for the PREVIOUS
+            // employer, the same silent misattribution `DATE_COLUMN_GAP`
+            // documents. Reachable: `split_entry` returns an empty pair for a
+            // location-only entry label, and `strategy::reseed` preserves it
+            // verbatim. Bullets with nowhere to hang are not a section.
+            SectionBody::Entry { plan, bullets } => {
+                bullets.is_empty()
+                    || (plan.company.trim().is_empty() && plan.title.trim().is_empty())
+            }
             SectionBody::Projects(projects) => projects.is_empty(),
             SectionBody::Lines(lines) => lines.is_empty(),
         }

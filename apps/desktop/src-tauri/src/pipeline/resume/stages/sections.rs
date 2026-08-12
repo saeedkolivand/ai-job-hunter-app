@@ -12,7 +12,7 @@
 
 use crate::documents::evidence::{classify_section, split_entry, SectionKind};
 use crate::export::parser::parse_resume;
-use crate::export::types::LineKind;
+use crate::export::types::{LineKind, ParsedDocument};
 
 use crate::pipeline::resume::types::{CompanyPlan, SectionKey};
 
@@ -39,8 +39,16 @@ impl RawSection {
 
 /// Split `text` at its section headings.
 pub fn split(text: &str) -> Vec<RawSection> {
+    split_parsed(text, &parse_resume(text))
+}
+
+/// [`split`] over an ALREADY-parsed document.
+///
+/// The seam exists because `parse_resume` is the expensive half and two callers
+/// need both products of it. `split` keeps its signature for everyone who only
+/// wants the sections.
+pub fn split_parsed(text: &str, parsed: &ParsedDocument) -> Vec<RawSection> {
     let lines: Vec<&str> = text.lines().collect();
-    let parsed = parse_resume(text);
     let mut out: Vec<RawSection> = Vec::new();
     for (index, line) in parsed.lines.iter().enumerate() {
         if matches!(line.kind, LineKind::SectionHeader) {
@@ -124,11 +132,14 @@ pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
 ///
 /// One function because it is ONE parse: `named_entry_range` needs both halves,
 /// and asking for them separately re-ran `parse_resume` over the whole document
-/// a second time on every per-entry regenerate.
+/// a second time on every per-entry regenerate. The parse is threaded into
+/// [`split_parsed`] rather than re-derived, which is what makes that sentence
+/// true — calling `split` here would have parsed it twice while claiming
+/// otherwise.
 fn entry_range_and_identity(document: &str, index: u8) -> Option<(RawSection, EntryIdentity)> {
-    let split = split(document);
-    let section = find(&split, SectionKey::Experience(index))?;
     let parsed = parse_resume(document);
+    let split = split_parsed(document, &parsed);
+    let section = find(&split, SectionKey::Experience(index))?;
     let starts: Vec<usize> = (section.start..section.end)
         .filter(|line| {
             parsed
