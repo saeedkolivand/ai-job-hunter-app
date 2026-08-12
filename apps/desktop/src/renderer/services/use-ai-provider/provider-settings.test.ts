@@ -1,53 +1,41 @@
 /**
- * `resolveProviderSettingsWrite` — the REPLACE-safety rule.
+ * `resolveProviderSettingsWrite` — what a one-field save actually sends.
  *
- * `ai_set_provider_settings` writes every field it is handed, NULL included, so
- * these assert what SURVIVES a save that only meant to change one thing. The
- * window is the field with no second home: dropping it makes a staged run fall
- * back to the provider's default while Settings still shows the slider value.
+ * `ai_set_provider_settings` is PATCH per field (omitted = keep, `null` =
+ * clear), so these assert two things: that the writer sends only what changed,
+ * and that a MODEL change never leaves the previous model's context window
+ * attached to it — the one case where "send nothing" is wrong.
  */
 import { describe, expect, it } from 'vitest';
 
 import { resolveProviderSettingsWrite } from './provider-settings';
 
 describe('resolveProviderSettingsWrite', () => {
-  it('keeps the stored window when an unrelated field is saved', () => {
+  it('sends only the field being changed', () => {
     const write = resolveProviderSettingsWrite({
       provider: 'openai-compatible',
       stored: { model: 'llama3', baseUrl: 'http://old', contextWindow: 16_384 },
       baseUrl: 'http://new',
     });
 
-    expect(write).toEqual({
-      provider: 'openai-compatible',
-      model: 'llama3',
-      baseUrl: 'http://new',
-      contextWindow: 16_384,
-    });
+    expect(write).toEqual({ provider: 'openai-compatible', baseUrl: 'http://new' });
+    // The stored model and window are untouched because they are not sent.
+    expect('model' in write).toBe(false);
+    expect('contextWindow' in write).toBe(false);
   });
 
-  it('keeps the stored base URL when only the model is saved', () => {
-    const write = resolveProviderSettingsWrite({
-      provider: 'openai-compatible',
-      stored: { model: 'old-model', baseUrl: 'http://lm-studio' },
-      model: 'new-model',
-    });
-
-    expect(write.baseUrl).toBe('http://lm-studio');
-    expect(write.model).toBe('new-model');
-  });
-
-  it('sends the window held for the model being saved', () => {
+  it('re-points the window at the model being saved', () => {
     const write = resolveProviderSettingsWrite({
       provider: 'ollama',
-      stored: { model: 'qwen3:8b' },
-      localWindows: { 'qwen3:8b': { contextWindow: 8192 } },
+      stored: { model: 'qwen3:8b', contextWindow: 32_768 },
+      model: 'llama3.2:1b',
+      localWindows: { 'llama3.2:1b': { contextWindow: 4096 } },
     });
 
-    expect(write.contextWindow).toBe(8192);
+    expect(write).toEqual({ provider: 'ollama', model: 'llama3.2:1b', contextWindow: 4096 });
   });
 
-  it('does NOT carry the previous model’s window onto a different model', () => {
+  it('CLEARS the window when the new model has none of its own', () => {
     const write = resolveProviderSettingsWrite({
       provider: 'ollama',
       stored: { model: 'qwen3:8b', contextWindow: 32_768 },
@@ -55,8 +43,19 @@ describe('resolveProviderSettingsWrite', () => {
       localWindows: { 'qwen3:8b': { contextWindow: 32_768 } },
     });
 
-    expect(write.model).toBe('llama3.2:1b');
-    expect(write.contextWindow).toBeUndefined();
+    // Explicit null, not omission: omitting would silently run the new model at
+    // the old model's num_ctx.
+    expect(write.contextWindow).toBeNull();
+  });
+
+  it('leaves the window alone when the model is re-saved unchanged', () => {
+    const write = resolveProviderSettingsWrite({
+      provider: 'ollama',
+      stored: { model: 'qwen3:8b', contextWindow: 32_768 },
+      model: 'qwen3:8b',
+    });
+
+    expect('contextWindow' in write).toBe(false);
   });
 
   it('prefers an explicitly chosen window (the slider) over the stored limit', () => {
@@ -71,28 +70,19 @@ describe('resolveProviderSettingsWrite', () => {
     expect(write.contextWindow).toBe(24_576);
   });
 
-  it('clears the base URL only when it is explicitly nulled', () => {
-    const stored = { model: 'm', baseUrl: 'http://x', contextWindow: 2048 };
-
+  it('passes an explicit clear straight through', () => {
     expect(
-      resolveProviderSettingsWrite({ provider: 'openai-compatible', stored, baseUrl: null })
-    ).toEqual({
-      provider: 'openai-compatible',
-      model: 'm',
-      baseUrl: undefined,
-      contextWindow: 2048,
-    });
-    expect(resolveProviderSettingsWrite({ provider: 'openai-compatible', stored }).baseUrl).toBe(
-      'http://x'
-    );
+      resolveProviderSettingsWrite({
+        provider: 'openai-compatible',
+        stored: { model: 'm', baseUrl: 'http://x', contextWindow: 2048 },
+        baseUrl: null,
+      })
+    ).toEqual({ provider: 'openai-compatible', baseUrl: null });
   });
 
-  it('writes nothing it was not given for an unseeded provider', () => {
+  it('sends nothing but the provider when nothing is being changed', () => {
     expect(resolveProviderSettingsWrite({ provider: 'anthropic' })).toEqual({
       provider: 'anthropic',
-      model: undefined,
-      baseUrl: undefined,
-      contextWindow: undefined,
     });
   });
 });

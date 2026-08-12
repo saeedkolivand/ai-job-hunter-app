@@ -203,12 +203,13 @@ describe('useConfigureActiveProvider — stops before setActiveProvider on a rej
 });
 
 /**
- * The REPLACE round-trip (the wiring defect this hook exists for): the backend
- * writes all four fields on every save, so a UI save that changes ONE field
- * must still carry the other three. Asserted on the payload that reaches the
- * client, which is the thing the backend sees.
+ * The save round-trip (the wiring defect this hook exists for). The command is
+ * PATCH per field, so "the window survives an unrelated save" means the writer
+ * did not send it — and a MODEL change must still re-point the window, since a
+ * stored one describes the model it was stored with. Asserted on the payload
+ * that reaches the client, which is what the backend sees.
  */
-describe('useSaveProviderSettings — REPLACE round-trip', () => {
+describe('useSaveProviderSettings — save round-trip', () => {
   afterEach(() => {
     // `resetPreferences` spreads the defaults, which have no `aiProviderConfig`
     // key at all — so it cannot clear one. Drop it explicitly or the local
@@ -224,10 +225,9 @@ describe('useSaveProviderSettings — REPLACE round-trip', () => {
       { client }
     );
 
-  it('keeps the window (and model) when an unrelated field is saved', async () => {
-    // 1. The user sets a window for the model — LocalModelLimits' slider write.
-    usePreferencesStore.getState().setLocalModelLimits('local-model', { contextWindow: 16_384 });
-
+  it('sends the slider’s window for the model it belongs to', async () => {
+    // The LocalModelLimits commit path: the user moved the slider for the model
+    // the ollama row is already on.
     const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
     const client = createMockClient({
       'ai.setProviderSettings': setProviderSettings,
@@ -239,33 +239,39 @@ describe('useSaveProviderSettings — REPLACE round-trip', () => {
       }),
     });
     const { result } = renderSaver(client);
-    // The stored row has to have loaded before a save can preserve it.
     await waitFor(() => expect(result.current.config.isSuccess).toBe(true));
 
-    // 2. Save something else entirely for the same provider row.
     await act(async () => {
-      result.current.saver.save({ provider: 'ollama', model: 'local-model' });
+      result.current.saver.save({
+        provider: 'ollama',
+        model: 'local-model',
+        contextWindow: 16_384,
+      });
       await Promise.resolve();
     });
 
-    // 3. The window survived.
     await waitFor(() =>
       expect(setProviderSettings).toHaveBeenCalledWith({
         provider: 'ollama',
         model: 'local-model',
-        baseUrl: undefined,
         contextWindow: 16_384,
       })
     );
   });
 
-  it('keeps the stored model when only the base URL is saved', async () => {
+  it('touches nothing but the base URL when that is all that changed', async () => {
     const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
     const client = createMockClient({
       'ai.setProviderSettings': setProviderSettings,
       'ai.activeConfig': vi.fn().mockResolvedValue({
         activeProvider: 'openai-compatible',
-        providers: { 'openai-compatible': { model: 'mistral-7b', baseUrl: 'http://old' } },
+        providers: {
+          'openai-compatible': {
+            model: 'mistral-7b',
+            baseUrl: 'http://old',
+            contextWindow: 20_480,
+          },
+        },
       }),
     });
     const { result } = renderSaver(client);
@@ -276,34 +282,68 @@ describe('useSaveProviderSettings — REPLACE round-trip', () => {
       await Promise.resolve();
     });
 
+    // The stored model + window survive precisely because they are not in the
+    // patch — under PATCH semantics, sending them is what would risk them.
     await waitFor(() =>
-      expect(setProviderSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'mistral-7b', baseUrl: 'http://new:1234/v1' })
-      )
+      expect(setProviderSettings).toHaveBeenCalledWith({
+        provider: 'openai-compatible',
+        baseUrl: 'http://new:1234/v1',
+      })
     );
   });
 
-  it('re-sends a window the backend already holds when the renderer has no local limit', async () => {
+  it('re-points the window when the MODEL changes, using the new model’s own limit', async () => {
+    usePreferencesStore.getState().setLocalModelLimits('llama3.2:1b', { contextWindow: 4096 });
     const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
     const client = createMockClient({
       'ai.setProviderSettings': setProviderSettings,
       'ai.activeConfig': vi.fn().mockResolvedValue({
         activeProvider: 'ollama',
-        providers: { ollama: { model: 'local-model', contextWindow: 20_480 } },
+        providers: { ollama: { model: 'qwen3:32b', contextWindow: 32_768 } },
       }),
     });
     const { result } = renderSaver(client);
     await waitFor(() => expect(result.current.config.isSuccess).toBe(true));
 
     await act(async () => {
-      result.current.saver.save({ provider: 'ollama' });
+      result.current.saver.save({ provider: 'ollama', model: 'llama3.2:1b' });
       await Promise.resolve();
     });
 
     await waitFor(() =>
-      expect(setProviderSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'local-model', contextWindow: 20_480 })
-      )
+      expect(setProviderSettings).toHaveBeenCalledWith({
+        provider: 'ollama',
+        model: 'llama3.2:1b',
+        contextWindow: 4096,
+      })
+    );
+  });
+
+  it('clears the window when switching to a model that has none', async () => {
+    const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
+    const client = createMockClient({
+      'ai.setProviderSettings': setProviderSettings,
+      'ai.activeConfig': vi.fn().mockResolvedValue({
+        activeProvider: 'ollama',
+        providers: { ollama: { model: 'qwen3:32b', contextWindow: 32_768 } },
+      }),
+    });
+    const { result } = renderSaver(client);
+    await waitFor(() => expect(result.current.config.isSuccess).toBe(true));
+
+    await act(async () => {
+      result.current.saver.save({ provider: 'ollama', model: 'llama3.2:1b' });
+      await Promise.resolve();
+    });
+
+    // An explicit null: otherwise the 1B model would silently run at the 32B
+    // model's num_ctx.
+    await waitFor(() =>
+      expect(setProviderSettings).toHaveBeenCalledWith({
+        provider: 'ollama',
+        model: 'llama3.2:1b',
+        contextWindow: null,
+      })
     );
   });
 });

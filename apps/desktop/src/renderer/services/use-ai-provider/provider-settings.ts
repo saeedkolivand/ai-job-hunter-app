@@ -1,22 +1,18 @@
 /**
  * Pure field resolution for `ai_set_provider_settings`.
  *
- * The backend command is **REPLACE on every field**, not a patch: whatever the
- * call omits is written as NULL. A UI that saves one field therefore has to
- * send the other three too, or saving a base URL silently drops the model and
- * saving a model silently drops the context window (which is exactly the bug
- * this exists to prevent — the window is the only one with no other home, so
- * losing it makes a staged run fall back to the provider's default with no
- * visible change in Settings).
+ * The command is **PATCH, per field**: an omitted field keeps what is stored,
+ * an explicit `null` clears it, a value sets it. So a caller sends only what it
+ * is changing — with ONE exception this function exists to enforce.
  *
- * Kept separate from the hook so the "what survives a save" rule is unit-
- * testable without React Query.
+ * **The window belongs to the model.** A stored `contextWindow` describes the
+ * model that was stored with it, so a save that CHANGES the model must also say
+ * what happens to the window: the new model's own window if the user has set
+ * one, otherwise an explicit `null`. Leaving it out would silently run the new
+ * model at the old model's `num_ctx` — the quietest of the failure modes,
+ * because Settings would still show the right numbers.
  *
- * If the command ever gains non-destructive absence (`field?: T | null`, where
- * absent = keep stored and `null` = clear), this function BODY is the only
- * thing that changes: callers already express intent as "what I am changing",
- * `null` already means "clear", and the hook would then send just those fields.
- * The `stored`/`localWindows` inputs become unnecessary, not wrong.
+ * Kept separate from the hook so the rule is unit-testable without React Query.
  */
 
 import type { AiProviderRouting } from '@ajh/shared';
@@ -27,49 +23,48 @@ export type LocalModelWindows = Record<string, { contextWindow?: number } | unde
 
 export interface ProviderSettingsWriteInput {
   provider: string;
-  /** The row as the backend holds it today (`activeConfig.providers[provider]`). */
+  /** The row as the backend holds it today (`activeConfig.providers[provider]`).
+   *  Read ONLY to tell whether the model is changing. */
   stored?: AiProviderRouting;
-  /** The model to save. Absent = keep the stored one. */
+  /** The model to save. Absent = not changing it. */
   model?: string;
-  /** `null` CLEARS the stored base URL; absent keeps it. (Only
+  /** `null` CLEARS the stored base URL; absent leaves it alone. (Only
    *  `openai-compatible` persists one — the backend nulls it for the rest.) */
   baseUrl?: string | null;
-  /** An explicitly chosen window (the Settings slider). Wins over the stored
-   *  per-model limit below. */
-  contextWindow?: number;
+  /** An explicitly chosen window (the Settings slider). Wins over the per-model
+   *  limit; `null` clears the stored one. */
+  contextWindow?: number | null;
   /** The renderer's `providers.ollama.modelLimits` — the only surface on which
    *  a user sets a window, keyed by model name. */
   localWindows?: LocalModelWindows;
 }
 
-/** Exactly the four fields `setProviderSettings` replaces. */
+/** The patch to send: only the keys that are actually changing. */
 export interface ProviderSettingsWrite {
   provider: string;
-  model?: string;
-  baseUrl?: string;
-  contextWindow?: number;
+  model?: string | null;
+  baseUrl?: string | null;
+  contextWindow?: number | null;
 }
 
-/**
- * Build the full REPLACE payload for one provider row.
- *
- * The window **belongs to the model**, so it is resolved from the model being
- * saved rather than carried along blindly: a stored window survives a save that
- * doesn't touch the model, and is dropped (never re-attached to a different
- * model) when the model changes and the new one has no window of its own.
- */
+/** Build the patch for one provider row — see the module doc for the one rule
+ *  that is not "pass the caller's intent through". */
 export function resolveProviderSettingsWrite(
   input: ProviderSettingsWriteInput
 ): ProviderSettingsWrite {
   const { provider, stored, localWindows } = input;
+  const write: ProviderSettingsWrite = { provider };
 
-  const model = input.model ?? stored?.model;
-  const baseUrl = input.baseUrl === null ? undefined : (input.baseUrl ?? stored?.baseUrl);
+  if (input.model !== undefined) write.model = input.model;
+  if (input.baseUrl !== undefined) write.baseUrl = input.baseUrl;
 
-  const modelChanged = model !== stored?.model;
-  const storedWindow = modelChanged ? undefined : stored?.contextWindow;
-  const modelWindow = model ? localWindows?.[model]?.contextWindow : undefined;
-  const contextWindow = input.contextWindow ?? modelWindow ?? storedWindow;
+  if (input.contextWindow !== undefined) {
+    write.contextWindow = input.contextWindow;
+  } else if (input.model !== undefined && input.model !== stored?.model) {
+    // The model is changing, so the stored window no longer describes it:
+    // replace it with the new model's own, or clear it outright.
+    write.contextWindow = localWindows?.[input.model]?.contextWindow ?? null;
+  }
 
-  return { provider, model, baseUrl, contextWindow };
+  return write;
 }

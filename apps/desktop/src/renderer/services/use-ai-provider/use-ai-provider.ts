@@ -333,18 +333,18 @@ export const useSetActiveProvider = () => {
  *  `useSetActiveProvider` — a server-side rejection (e.g. base_url provenance)
  *  must reject the mutation, not silently resolve.
  *
- *  RAW: every field is REPLACED, so a caller that omits one NULLs it. UI call
- *  sites want {@link useSaveProviderSettings}, which fills the fields it isn't
- *  changing; this stays exported for the flows that genuinely own all four. */
+ *  RAW patch: omitted keeps, `null` clears, a value sets. UI call sites want
+ *  {@link useSaveProviderSettings}, which also re-points the context window when
+ *  the model changes. */
 export const useSetProviderSettings = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (req: {
       provider: string;
-      model?: string;
-      baseUrl?: string;
-      contextWindow?: number;
+      model?: string | null;
+      baseUrl?: string | null;
+      contextWindow?: number | null;
     }) => {
       const result = await api.ai.setProviderSettings(req);
       if ('error' in result) throw new Error(result.error);
@@ -355,14 +355,13 @@ export const useSetProviderSettings = () => {
 };
 
 /**
- * The REPLACE-safe way to save one provider field.
+ * Save ONE provider field without thinking about the others.
  *
- * `save({ provider, model })` keeps that provider's stored base URL and the
- * window held for the model; `save({ provider, baseUrl })` keeps its model.
- * Pass `baseUrl: null` to clear a base URL on purpose. Field resolution is the
- * pure {@link resolveProviderSettingsWrite} — the rule lives there, tested,
- * rather than being re-derived at each call site (three of which used to omit
- * enough fields to erase one).
+ * `save({ provider, baseUrl })` sends only the base URL (`null` to clear it);
+ * `save({ provider, model })` also re-points the context window, because a
+ * stored window describes the model it was stored with. That rule lives in the
+ * pure {@link resolveProviderSettingsWrite}, tested, rather than being
+ * re-derived at each call site — three of them got it wrong the first time.
  */
 export const useSaveProviderSettings = () => {
   const mutation = useSetProviderSettings();
