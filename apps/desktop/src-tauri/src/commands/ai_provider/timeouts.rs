@@ -214,6 +214,50 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
     Duration::from_secs_f64(QUALITY_RUN_FIXED_SECS as f64 + generation.round())
 }
 
+/// The EFFORT-INVARIANT half of one MAX-depth run's deadline: every call it
+/// plans to make, once, at the flat [`OLLAMA_COMPLETION`] bound.
+///
+/// 23 calls — 3 JSON stages (analyze, evidence, strategy) + `max_sections` (12)
+/// section calls + `max_repair_attempts` (2) × `MAX_SECTIONS_PER_ROUND` (4)
+/// repair rewrites — at 300 s each. Max depth streams nothing, so unlike
+/// [`QUALITY_RUN_FIXED_SECS`] this covers the WHOLE run rather than its
+/// effort-invariant part.
+///
+/// **The one allowed re-ask per JSON call is not counted**, which is the one
+/// place this departs from the quality derivation. See
+/// [`Budget::RESUME_MAX`](crate::pipeline::budget::Budget::RESUME_MAX)'s doc
+/// for the argument: a re-ask is a parse-failure path guarded by the same
+/// clock, and a max run stopped mid-fan-out keeps the sections it already
+/// assembled — so buying the worst case here would only make the deadline
+/// unreachable.
+///
+/// Not generated from `packages/shared` (unlike its quality sibling) because
+/// the renderer has no max-depth deadline yet; when it gains one it must EXCEED
+/// [`max_run_deadline`] at every tier, which is the invariant
+/// `renderer > backend` the quality pair already holds.
+const MAX_RUN_FIXED_SECS: u64 = 6_900;
+
+/// Effort-SCALED whole-document passes one max run may make. One: the fan-out
+/// writes the document once, and although each section call is bounded by the
+/// FLAT `OLLAMA_COMPLETION`, the run's real duration still scales with the
+/// reasoning budget — this term is what keeps a high-effort run from being
+/// stopped by a deadline sized for a fast one.
+const MAX_RUN_GENERATION_PASSES: u64 = 1;
+
+/// Deadline for ONE WHOLE max-depth résumé run — the max-depth twin of
+/// [`quality_run_deadline`], and what makes `StoppedReason::RunTimeout`
+/// reachable at this depth.
+///
+/// Same `fixed + baseline × passes × multiplier` shape, with both terms
+/// documented above. Pinned by `max_run_deadline_clears_the_inner_per_call_bounds`
+/// (which recomputes the fixed half from the fan-out constants themselves) and
+/// by `max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`.
+pub fn max_run_deadline(effort: Option<&str>) -> Duration {
+    let generation =
+        STREAM.as_secs_f64() * MAX_RUN_GENERATION_PASSES as f64 * effort_multiplier(effort);
+    Duration::from_secs_f64(MAX_RUN_FIXED_SECS as f64 + generation.round())
+}
+
 // ── Model discovery & health ────────────────────────────────────────────────────
 
 /// Listing models / validating a key (`list_models`, `test_key`): a quick GET to
@@ -470,5 +514,87 @@ mod tests {
             quality_run_deadline(Some("ultra-mega-think")),
             quality_run_deadline(None)
         );
+    }
+
+    // ── max_run_deadline ────────────────────────────────────────────────────
+
+    /// The max deadline must clear the calls a max run PLANS to make, computed
+    /// from the fan-out constants rather than from the deadline's own terms:
+    /// three JSON stages, one call per section up to `max_sections`, and the
+    /// full repair fan-out — every one of them bounded by the flat
+    /// `OLLAMA_COMPLETION`, because max depth streams nothing.
+    ///
+    /// The re-ask is deliberately absent from BOTH sides (see
+    /// `MAX_RUN_FIXED_SECS`), so this is a guard on the planned run, not on its
+    /// pathological worst case.
+    ///
+    /// Mutation checks (applied and reverted): `DEFAULT_MAX_SECTIONS` 12 → 14 ⇒
+    /// every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier fails;
+    /// `MAX_RUN_FIXED_SECS` 6_900 → 4_500 ⇒ every tier fails.
+    #[test]
+    fn max_run_deadline_clears_the_inner_per_call_bounds() {
+        const JSON_STAGES: u32 = 3;
+        let budget = crate::pipeline::budget::Budget::RESUME_MAX;
+        let planned = JSON_STAGES
+            + budget.max_sections as u32
+            + (budget.max_repair_attempts * crate::pipeline::resume::stages::MAX_SECTIONS_PER_ROUND)
+                as u32;
+        let inner = OLLAMA_COMPLETION * planned;
+        for effort in [
+            None,
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+        ] {
+            assert!(
+                max_run_deadline(effort) >= inner,
+                "max_run_deadline({effort:?}) must cover the calls a max run plans"
+            );
+        }
+    }
+
+    /// Same rule as the quality pair: the budget constant is the floor the
+    /// effort-blind path falls back to through `resume::run_deadline`'s `max()`,
+    /// so a disagreement means one of the two stops describing what runs.
+    #[test]
+    fn max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier() {
+        assert_eq!(
+            max_run_deadline(None),
+            crate::pipeline::budget::Budget::RESUME_MAX.run_timeout
+        );
+    }
+
+    /// Max depth is strictly more work than quality depth at every tier, so its
+    /// deadline may never be the shorter of the two — the inversion
+    /// `effort_multiplier`'s own doc records for the `max`/`xhigh` tiers, one
+    /// level up.
+    #[test]
+    fn max_run_deadline_is_never_shorter_than_the_quality_one() {
+        for effort in [None, Some("medium"), Some("high"), Some("max")] {
+            assert!(
+                max_run_deadline(effort) >= quality_run_deadline(effort),
+                "max_run_deadline({effort:?}) is shorter than the quality deadline"
+            );
+        }
+    }
+
+    #[test]
+    fn max_run_deadline_is_monotonically_nondecreasing_by_effort_tier() {
+        let mut prev = Duration::from_secs(0);
+        for effort in [
+            None,
+            Some("minimal"),
+            Some("low"),
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+        ] {
+            let d = max_run_deadline(effort);
+            assert!(d >= prev, "max_run_deadline({effort:?}) = {d:?} < {prev:?}");
+            prev = d;
+        }
+        assert!(max_run_deadline(Some("max")) > max_run_deadline(None));
     }
 }

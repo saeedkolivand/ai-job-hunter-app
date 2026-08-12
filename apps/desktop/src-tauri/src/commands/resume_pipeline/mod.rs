@@ -55,9 +55,12 @@
 //!   `a_save_replaces_a_slot_whole_so_the_writer_owns_the_review_list`.
 
 pub mod hooks;
+pub mod max;
 pub mod notify;
 pub mod report;
 
+#[cfg(test)]
+mod max_test;
 #[cfg(test)]
 mod test;
 
@@ -77,13 +80,10 @@ use crate::ipc_contracts::resume_pipeline::{
     ResumePipelineRunRequest,
 };
 use crate::jobs::cancel::CancelRegistry;
-use crate::pipeline::budget::Budget;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::resume::stages::{regenerate_one_section, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
-use crate::pipeline::resume::{
-    quality_pipeline, run_deadline, QualityCtx, QualityInput, RunDeadline, RunLedger,
-};
+use crate::pipeline::resume::{QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
@@ -231,17 +231,11 @@ async fn execute(
 ) -> AppResult<()> {
     let depth = GenerationDepth::from_wire(&req.depth)
         .ok_or_else(|| AppError::Validation(format!("unknown generation depth: {}", req.depth)))?;
-    match depth {
-        GenerationDepth::Quality => {}
-        // `fast` is the untouched single-shot TS path — routing it here would
-        // silently change what the user asked for. `max` is Phase 4; accepting
-        // it and running the quality stages would be a lie about what ran.
-        GenerationDepth::Fast | GenerationDepth::Max => {
-            return Err(AppError::Validation(format!(
-                "the staged pipeline runs at quality depth; {} is not handled here",
-                depth.as_str()
-            )))
-        }
+    if !max::is_staged(depth) {
+        return Err(AppError::Validation(format!(
+            "the staged pipeline runs at quality or max depth; {} is not handled here",
+            depth.as_str()
+        )));
     }
 
     let clamped = clamp_request(req);
@@ -291,13 +285,11 @@ async fn execute(
     store.upsert_run(&row)?;
 
     let ledger = Arc::new(RunLedger::new());
-    // ONE clock for the whole run: the hook checks it at every stage boundary
-    // and the `repair` stage checks it between its own provider calls (it is
-    // the last stage, so there is no boundary after it — see `RunDeadline`).
-    let deadline = RunDeadline::starting_now(run_deadline(
-        Budget::RESUME_QUALITY,
-        timeouts::quality_run_deadline(req.effort.as_deref()),
-    ));
+    // ONE clock for the whole run: the hook checks it at every stage boundary,
+    // the `sections` stage checks it between its per-section calls, and the
+    // `repair` stage checks it between its own (it is the last stage, so there
+    // is no boundary after it — see `RunDeadline`).
+    let deadline = RunDeadline::starting_now(max::deadline_for(depth, req.effort.as_deref()));
     let hooks = RunHooks::new(
         app.clone(),
         run_id.to_string(),
@@ -323,8 +315,15 @@ async fn execute(
         deadline,
         Arc::clone(&ledger),
     );
+    if depth == GenerationDepth::Max {
+        // The hook is ALSO the section-wise observer: per-section events and
+        // the progressive document stream are emits, so they belong to the one
+        // layer allowed to emit. `RunHooks` outlives the context, and both
+        // borrows are shared.
+        ctx = ctx.for_max(Some(&hooks));
+    }
 
-    let outcome = quality_pipeline().run_hooked(&mut ctx, &hooks).await;
+    let outcome = max::pipeline_for(depth).run_hooked(&mut ctx, &hooks).await;
 
     // Persist whatever the run produced BEFORE deciding how it ended: a run
     // stopped at the repair stage still wrote a real document, and discarding

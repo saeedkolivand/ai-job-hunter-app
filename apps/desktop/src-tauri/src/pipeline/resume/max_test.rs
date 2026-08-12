@@ -1213,6 +1213,41 @@ impl SectionProgress for StreamRecorder {
 
 // ── ADR-010 ──────────────────────────────────────────────────────────────────
 
+/// Every key the per-section emitter can produce must pass the GENERATED wire
+/// grammar, because the emitter drops one that does not — silently, and the
+/// section it names then never appears on the timeline.
+///
+/// `Experience(255)` is the interesting case: it is the largest key the type
+/// can hold, and `experience:255` is exactly the longest legal wire form
+/// (`SECTION_KEY_MAX_LENGTH`).
+///
+/// Mutation check: change `SectionKey::to_wire`'s experience form to
+/// `experience-<n>` and this fails for every indexed key.
+#[test]
+fn every_section_key_the_emitter_can_produce_passes_the_wire_grammar() {
+    let keys = [
+        SectionKey::Summary,
+        SectionKey::Skills,
+        SectionKey::Projects,
+        SectionKey::Education,
+        SectionKey::Experience(0),
+        SectionKey::Experience(9),
+        SectionKey::Experience(u8::MAX),
+    ];
+    for key in keys {
+        let wire = key.to_wire();
+        assert!(
+            crate::ipc_contracts::events::is_pipeline_section_key(&wire),
+            "{wire} is not a key the wire grammar accepts"
+        );
+        assert_eq!(
+            SectionKey::from_wire(&wire),
+            Some(key),
+            "{wire} does not round-trip"
+        );
+    }
+}
+
 /// Every fence tag the max prompts introduce must be REGISTERED, or a forged
 /// sibling rides into a section turn inside another untrusted body. The
 /// highest-value one is `project_seed`: it carries the candidate's own links,

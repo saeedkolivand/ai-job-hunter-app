@@ -245,6 +245,60 @@ impl Budget {
         run_timeout: Duration::from_secs(75 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
+
+    /// MAX depth: the same pipeline with the whole-body draft replaced by one
+    /// structured call per section.
+    ///
+    /// **`max_steps` = 24.** One step per section
+    /// ([`DEFAULT_MAX_SECTIONS`] = 12) plus the six framing stages around the
+    /// fan-out (analyze, evidence, strategy, assemble, validate, repair) is 18;
+    /// 24 leaves room for the judge and for a stage split without stranding a
+    /// run at [`StoppedReason::MaxSteps`] with a half-written document. The
+    /// relation is asserted at COMPILE time against
+    /// `pipeline::resume::MAX_STAGES` itself, so adding a stage without raising
+    /// this fails the build rather than a run.
+    ///
+    /// **`max_tool_calls` = 0**, for the reason [`Self::RESUME_QUALITY`] gives:
+    /// this is stages, not an agentic loop.
+    ///
+    /// **`max_tokens` = 200_000.** Unchanged, and this is the flow the figure
+    /// was originally DERIVED for (see `RESUME_QUALITY`'s doc, which notes it
+    /// over-provisions quality depth by ~2.7× because it was sized for the max
+    /// fan-out): ~4k prompt + ~1k output per section × 12 ≈ 60k, tripled for the
+    /// re-ask and repair worst case ≈ 180k. Still unenforced — the live bounds
+    /// are the per-provider daily ceiling and the run deadline.
+    ///
+    /// **`run_timeout` = 120 min.** The effort-blind FLOOR, DERIVED like its
+    /// quality sibling and required to equal `timeouts::max_run_deadline(None)`
+    /// (`max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`).
+    /// Max depth streams nothing, so every call is bounded by the flat
+    /// `OLLAMA_COMPLETION` (300 s): 3 JSON stages + 12 sections + 2 repair
+    /// rounds × 4 sections = 23 calls = 6 900 s, plus one effort-scaled
+    /// whole-document pass (300 s at the bottom tier) = 7 200 s.
+    ///
+    /// **The one re-ask per JSON call is deliberately NOT counted, which is
+    /// where this derivation departs from `RESUME_QUALITY`'s.** Counting it
+    /// doubles the fan-out term to 12 000 s — 3 h 20 m, a "backstop" no user
+    /// would sit through and one that makes [`StoppedReason::RunTimeout`]
+    /// unreachable in practice. A re-ask happens only on a PARSE failure, it is
+    /// refused by the same `guard_deadline` the rest of the run is bounded by,
+    /// and — the part that only max depth can say — a run stopped mid-fan-out
+    /// KEEPS the sections it already assembled, because the deadline is checked
+    /// between section calls and `assemble` renders whatever the fan-out
+    /// produced. Stopping a max run early costs the tail of a document; stopping
+    /// a quality run early costs the whole draft, which is why that one had to
+    /// buy the worst case and this one does not. Cost of the choice, stated: a
+    /// run whose every call takes the full 300 s stops with the sections it has.
+    pub const RESUME_MAX: Self = Self {
+        max_steps: 24,
+        max_tool_calls: 0,
+        max_tokens: 200_000,
+        max_sections: DEFAULT_MAX_SECTIONS,
+        max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
+        step_timeout: Duration::from_secs(360),
+        run_timeout: Duration::from_secs(120 * 60),
+        confirm_timeout: Duration::from_secs(300),
+    };
 }
 
 // ── Compile-time budget relations ────────────────────────────────────────────

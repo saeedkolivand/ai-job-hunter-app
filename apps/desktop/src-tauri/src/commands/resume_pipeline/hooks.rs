@@ -12,14 +12,16 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, PIPELINE_STAGE};
+use crate::events::{emit_event, AiStreamChunk, AI_STREAM, PIPELINE_STAGE};
+use crate::ipc_contracts::events::is_pipeline_section_key;
 use crate::pipeline::budget::StoppedReason;
-use crate::pipeline::resume::{RunDeadline, RunLedger};
+use crate::pipeline::resume::types::SectionKey;
+use crate::pipeline::resume::{RunDeadline, RunLedger, SectionProgress};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow};
 use crate::pipeline::{StageHooks, StageInfo, StageOutcome};
 
@@ -185,6 +187,19 @@ fn stopped_wire(reason: StoppedReason) -> String {
         .unwrap_or_else(|| "done".to_string())
 }
 
+/// Which stage is currently running, as `before()` last saw it.
+///
+/// The section-wise generator reports up to twelve times from INSIDE one stage,
+/// and `SectionProgress` (L2) deliberately knows nothing about stage indices —
+/// so the position a per-section event carries is the one this observer already
+/// tracks. `None` before the first stage.
+#[derive(Debug, Clone, Copy, Default)]
+struct CurrentStage {
+    stage: Option<&'static str>,
+    index: usize,
+    total: usize,
+}
+
 /// Emits, persists, and stops. One instance per run.
 pub struct RunHooks {
     app: AppHandle,
@@ -197,6 +212,9 @@ pub struct RunHooks {
     /// `&self` — the trait is deliberately shaped so an observer cannot mutate
     /// the run.
     seq: AtomicU32,
+    /// The stage a per-section event belongs to. Behind a lock for the same
+    /// reason `seq` is atomic: both hook traits take `&self`.
+    current: parking_lot::Mutex<CurrentStage>,
 }
 
 impl RunHooks {
@@ -220,6 +238,7 @@ impl RunHooks {
             deadline,
             ledger,
             seq: AtomicU32::new(0),
+            current: parking_lot::Mutex::new(CurrentStage::default()),
         }
     }
 
@@ -227,6 +246,46 @@ impl RunHooks {
     /// duration without keeping a second `Instant`.
     pub fn elapsed_ms(&self) -> u64 {
         self.deadline.elapsed().as_millis() as u64
+    }
+
+    /// Emit ONE per-SECTION `pipeline:stage` event and append its durable twin.
+    ///
+    /// The stage NAME stays the fan-out's own (`sections`) and the index/total
+    /// stay the STAGE's position in the run: a timeline that re-scaled its
+    /// progress bar to the section count mid-run would jump backwards. What
+    /// makes these events per-section is `sectionKey`, which is also the ONE
+    /// model-derived value on this wire — so it goes through the GENERATED
+    /// [`is_pipeline_section_key`] grammar first, and an unrepresentable key is
+    /// dropped from the payload rather than shipped.
+    fn report_section(&self, key: SectionKey, phase: &'static str, artifact: Value) {
+        let current = *self.current.lock();
+        let Some(stage) = current.stage else {
+            return; // no stage is running: nothing to attribute this to
+        };
+        let wire = key.to_wire();
+        let section_key = is_pipeline_section_key(&wire).then_some(wire);
+        debug_assert!(
+            section_key.is_some(),
+            "SectionKey::to_wire must round-trip through the generated grammar"
+        );
+        emit_event(
+            &self.app,
+            PIPELINE_STAGE,
+            PipelineStageEvent {
+                run_id: self.run_id.clone(),
+                job_id: self.job_id.clone(),
+                stage: stage.to_string(),
+                phase,
+                index: current.index,
+                total: current.total,
+                attempt: 1,
+                section_key,
+                ms: None,
+                issue_count: None,
+                critical_count: None,
+            },
+        );
+        self.append(stage, phase, Some(artifact));
     }
 
     /// Emit ONE `pipeline:stage` event and append its durable twin.
@@ -285,19 +344,76 @@ impl RunHooks {
             },
         );
 
-        if let Some(store) = self.app.try_state::<PipelineRunStore>() {
-            let seq = self.seq.fetch_add(1, Ordering::Relaxed);
-            let _ = store.append_event(&RunEventRow {
-                run_id: self.run_id.clone(),
-                seq,
-                ts: crate::db::now_ms(),
-                stage: info.stage.to_string(),
-                phase: phase.to_string(),
-                artifact_json: artifact
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "{}".to_string()),
-            });
-        }
+        self.append(info.stage, phase, artifact);
+    }
+
+    /// Append ONE durable `pipeline_run_events` row. Best-effort: the run trail
+    /// is a debugging aid, and the store logs its own write failures.
+    fn append(&self, stage: &str, phase: &'static str, artifact: Option<Value>) {
+        let Some(store) = self.app.try_state::<PipelineRunStore>() else {
+            return;
+        };
+        let seq = self.seq.fetch_add(1, Ordering::Relaxed);
+        let _ = store.append_event(&RunEventRow {
+            run_id: self.run_id.clone(),
+            seq,
+            ts: crate::db::now_ms(),
+            stage: stage.to_string(),
+            phase: phase.to_string(),
+            artifact_json: artifact
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "{}".to_string()),
+        });
+    }
+}
+
+/// The section-wise half of the shell: per-section events, and the progressive
+/// document stream.
+///
+/// Implemented HERE rather than anywhere in `pipeline::resume` for the same
+/// reason [`StageHooks`] is: this is the only layer that may hold an
+/// `AppHandle` or name an event channel.
+impl SectionProgress for RunHooks {
+    fn section_started(&self, key: SectionKey, index: usize, total: usize) {
+        self.report_section(
+            key,
+            PHASE_START,
+            json!({ "section": index, "sections": total }),
+        );
+    }
+
+    fn section_finished(&self, key: SectionKey, index: usize, total: usize, produced: bool) {
+        // `produced=false` is a FINISH, not an error: the section was attempted
+        // and the document simply has nothing new for it. An `error` phase
+        // would tell the timeline the run is breaking when it is degrading —
+        // and the run's own failure is reported by the stage, not by a section.
+        self.report_section(
+            key,
+            PHASE_FINISH,
+            json!({ "section": index, "sections": total, "produced": produced }),
+        );
+    }
+
+    fn section_text(&self, text: &str) {
+        // The SAME `ai:stream` channel the quality draft streams on, under the
+        // run's umbrella job id — so the output pane builds progressively with
+        // no second event channel to subscribe to.
+        //
+        // `done: false`, always. The stream is DISPLAY-ONLY at both depths: the
+        // run's completion signal is its terminal `pipeline:stage` event, and a
+        // `done` here would resolve `awaitAiStream` while validate and repair
+        // are still ahead — presenting an unchecked document as the final one.
+        emit_event(
+            &self.app,
+            AI_STREAM,
+            AiStreamChunk {
+                job_id: self.job_id.clone(),
+                delta: text.to_string(),
+                done: false,
+                error: None,
+                thinking: None,
+            },
+        );
     }
 }
 
@@ -314,6 +430,13 @@ impl StageHooks for RunHooks {
             self.deadline.elapsed(),
             self.deadline.limit(),
         )?;
+        // Recorded BEFORE the stage body runs, because the section-wise
+        // generator reports from inside it.
+        *self.current.lock() = CurrentStage {
+            stage: Some(stage.stage),
+            index: stage.index,
+            total: stage.total,
+        };
         self.report(stage, PHASE_START, None, None);
         Ok(())
     }
