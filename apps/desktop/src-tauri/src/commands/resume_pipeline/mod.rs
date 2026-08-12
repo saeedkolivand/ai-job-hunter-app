@@ -329,15 +329,7 @@ async fn execute(
     // stopped at the repair stage still wrote a real document, and discarding
     // it because the report is not clean is the opposite of what the terminal
     // review is for.
-    let quality_report = persist_document(
-        app,
-        &job_url,
-        &meta,
-        &clamped,
-        &ctx,
-        depth.as_str(),
-        outcome.is_ok(),
-    );
+    let quality_report = persist_document(app, &job_url, &meta, &clamped, &ctx, depth.as_str());
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
@@ -471,11 +463,12 @@ async fn execute(
 ///   the user is looking at a document they can see is short. That beats
 ///   throwing away eleven paid sections, which is the whole argument that sized
 ///   `Budget::RESUME_MAX`'s deadline at the reachable number.
-/// * **The refused trade** ([`is_persistable`]). A stopped run whose document
-///   has no employment section at all is not a short résumé, it is not a résumé
-///   — and overwriting a good previous document with it is a loss the review
-///   panel cannot describe and the user cannot undo. That run keeps its
-///   `failed` status and the previous document survives.
+/// * **The refused trade** ([`is_persistable`]). A document that lost ALL of a
+///   work history the SOURCE has is not a short résumé, it is not a résumé —
+///   and overwriting a good previous document with it is a loss the review
+///   panel cannot describe and the user cannot undo. Nothing is saved, and the
+///   previous document survives. Source-RELATIVE on purpose: a candidate whose
+///   own résumé has no employment section is a real input, not a failure.
 fn persist_document(
     app: &AppHandle,
     job_url: &str,
@@ -483,13 +476,12 @@ fn persist_document(
     clamped: &ClampedRequest,
     ctx: &QualityCtx<'_>,
     depth: &str,
-    run_ok: bool,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
     if ctx.draft.trim().is_empty() || job_url.trim().is_empty() {
         return None;
     }
-    if !is_persistable(&ctx.draft, ctx.ledger.stopped(), run_ok) {
+    if !is_persistable(ctx.input.source_resume, &ctx.draft) {
         return None;
     }
     let wrapper = report::build(
@@ -530,52 +522,53 @@ fn persist_document(
 
 /// Whether a run's document may OVERWRITE the posting's saved one.
 ///
-/// One rule, and it only bites a run that DID NOT FINISH: **a run that was cut
-/// short must still have produced an employment section.** Everything else
-/// about completeness is a judgement the report already makes visible (a
-/// missing employer is a `factual.dropped_role` Critical and `needsReview`),
-/// but a document with no work history at all is not a shorter résumé — it is
-/// not one — and this save has no versioning to undo it with.
+/// One rule, and it is RELATIVE TO THE SOURCE: **refuse when the candidate's
+/// own résumé has an employment section and the generated document does not.**
+/// Everything else about completeness is a judgement the report already makes
+/// visible (a missing employer is a `factual.dropped_role` Critical and
+/// `needsReview`), but a document that lost ALL of a real work history is not a
+/// shorter résumé — it is not one — and this save has no versioning to undo it
+/// with.
 ///
-/// **"Cut short" is the OUTCOME plus the reason, never the reason alone.**
-/// `RunLedger::stop` is also how a stage records something it RECOVERED from:
-/// `stages::repair` writes `RunTimeout` for an in-loop timeout and `Budgeted`
-/// for a daily-cap refusal and then returns `Ok(())`, and repair is quality
-/// depth's LAST stage — so a run that completed normally can carry either
-/// reason. Reading the reason on its own therefore refused to save a perfectly
-/// good run whose source résumé simply has no employment section (a new
-/// graduate, an academic CV) the moment its repair round hit the daily cap:
-/// `terminal_state` said `completed`, and `persist_document` silently wrote
-/// nothing. A successful-looking run, an unchanged document, and no
-/// explanation anywhere is a worse outcome than the one this guard exists to
-/// prevent.
+/// **Why the source and not the run's outcome.** Two earlier versions of this
+/// gate read the run instead of the documents, and each was wrong in its own
+/// direction:
 ///
-/// So a run that reached the end is never refused, whatever it produced — and
-/// that sentence is now true of the code as well as of the intent.
+/// * keying on the recorded stop REASON refused a perfectly good run whose
+///   source simply has no employment section (a new graduate, an academic CV)
+///   the moment its repair round hit the daily cap — `stages::repair` records
+///   `Budgeted`/`RunTimeout` for a stop it RECOVERED from and then returns
+///   `Ok(())`. Status `completed`, document unchanged, no explanation anywhere;
+/// * keying on the run's OUTCOME missed the case the gate exists for. The
+///   sections fan-out treats a daily-cap refusal as `StoppedReason::Budgeted`,
+///   breaks, and returns `Ok(())` — and nothing downstream converts that into
+///   an `Err` (`apply_stop` errors only on the clock or a cancel, `assemble`
+///   and `validate` are free, `repair` returns `Ok` on `RateLimited`, the judge
+///   is skippable, and `run_hooked` never consults the ledger). So a max run
+///   that hit the cap right after Summary produced a summary-only document with
+///   `outcome == Ok`, and it overwrote the saved résumé.
 ///
-/// Reads the DRAFT rather than `ctx.sections`, so it says the same thing at both
-/// depths — a quality run whose stream was cut off mid-document is the same
-/// hazard as a max fan-out stopped mid-roster.
-pub(crate) fn is_persistable(
-    draft: &str,
-    stopped: Option<crate::pipeline::budget::StoppedReason>,
-    run_ok: bool,
-) -> bool {
-    use crate::pipeline::budget::StoppedReason;
-    let cut_short = !run_ok
-        && matches!(
-            stopped,
-            Some(StoppedReason::RunTimeout | StoppedReason::Budgeted | StoppedReason::Cancelled)
-        );
-    if !cut_short {
-        return true;
-    }
-    // The section, with something under it — not `entry_range`, whose
-    // `LineKind::JobEntry` test an undated entry legitimately fails (see
-    // `assemble::DATE_COLUMN_GAP`); refusing to save one of those would be a
-    // false negative on a real document.
-    let split = crate::pipeline::resume::stages::sections::split(draft);
-    let lines: Vec<&str> = draft.lines().collect();
+/// Comparing the two DOCUMENTS answers both at once and needs no run state:
+/// a source with no work history can never trip it, and a truncated fan-out
+/// over a real one always does — however the run happened to end.
+///
+/// Both sides go through the SAME [`sections::find`] seam, so the
+/// undated-entry caveat (`assemble::DATE_COLUMN_GAP`: an entry with no date
+/// column is not a `LineKind::JobEntry`) applies equally to each and cannot
+/// create a false asymmetry.
+pub(crate) fn is_persistable(source_resume: &str, draft: &str) -> bool {
+    has_work_history(draft) || !has_work_history(source_resume)
+}
+
+/// Whether `text` has an employment section with anything under it.
+///
+/// The SECTION with a body, not [`sections::entry_range`]: that one tests for
+/// `LineKind::JobEntry`, which an entry with no date column legitimately fails,
+/// and a résumé whose dates the source never carried is a real document rather
+/// than an empty one.
+fn has_work_history(text: &str) -> bool {
+    let split = crate::pipeline::resume::stages::sections::split(text);
+    let lines: Vec<&str> = text.lines().collect();
     crate::pipeline::resume::stages::sections::find(&split, SectionKey::Experience(0)).is_some_and(
         |section| {
             section

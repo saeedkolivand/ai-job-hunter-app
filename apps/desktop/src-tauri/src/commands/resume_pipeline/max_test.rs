@@ -364,74 +364,76 @@ fn a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did() {
 
 // ── The completeness floor on an overwrite ───────────────────────────────────
 
-/// **A stopped run may overwrite the saved document, but not with a résumé that
-/// has no work history.**
+/// **A run may overwrite the saved document, but not with a résumé that lost a
+/// work history the SOURCE has.**
 ///
 /// `persist_document` is an OVERWRITE — one `ai_generations` row per posting, no
 /// versioning — and since a deadline-stopped fan-out now keeps its sections
 /// (F3), a partial document can reach it. That trade is deliberate for a run
 /// that lost TAIL sections: the missing employer is a visible
 /// `factual.dropped_role`, the run lands `needsReview`, and the user can see the
-/// document is short. It is NOT acceptable for a document with no employment
-/// section at all — that is not a shorter résumé, and replacing a good previous
-/// one with it is a loss nothing in the panel can describe.
+/// document is short. It is NOT acceptable for a document that lost ALL of a
+/// real work history.
 ///
-/// Mutation check: return `true` unconditionally from `is_persistable` and the
-/// stopped-and-empty case fails; drop the `stopped_early` guard and the
-/// COMPLETED run with no experience section stops being persistable.
+/// **The discriminator is the SOURCE, and two earlier ones were not.** Keying
+/// on the recorded stop REASON refused a completed run over a source that has
+/// no employment section at all (a new graduate, an academic CV) the moment its
+/// repair round hit the daily cap — `stages::repair` records `Budgeted` for a
+/// stop it recovered from and returns `Ok(())`. Keying on the run's OUTCOME
+/// then missed the case the gate exists for: the sections fan-out treats a
+/// daily-cap refusal as `Budgeted`, breaks, and returns `Ok(())` too, and
+/// nothing downstream turns that into an `Err` — so a max run that hit the cap
+/// right after Summary had `outcome == Ok` and a summary-only document
+/// overwrote the saved résumé. The arm that asserted THAT was persistable
+/// pinned the defect, the same way round 1's `== None` did one module over.
+///
+/// Mutation check: drop the source-side term (refuse whenever the draft has no
+/// work history) and the new-graduate case fails; drop the draft-side term
+/// (always persist) and the truncated-fan-out case does.
 #[test]
-fn a_stopped_run_may_only_overwrite_the_saved_resume_with_a_document_that_has_work_history() {
-    use crate::pipeline::budget::StoppedReason;
-
+fn a_document_that_lost_the_sources_whole_work_history_may_not_overwrite_it() {
+    const SOURCE_WITH_WORK: &str = "Professional Summary\n\nA payments engineer.\n\n\
+                                    Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                                    - Owned the settlement service\n";
+    const SOURCE_NO_WORK: &str = "Professional Summary\n\nA recent graduate.\n\n\
+                                  Education\n\nMSc Computer Science, TU Berlin  2022 - 2024\n";
     const WITH_WORK: &str = "Professional Summary\n\nA payments engineer.\n\n\
                              Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
                              - Owned the settlement service\n";
     const NO_WORK: &str = "Professional Summary\n\nA payments engineer.\n\nSkills\n\nGo, Rust\n";
     const EMPTY_SECTION: &str = "Professional Summary\n\nA payments engineer.\n\nWork Experience\n";
 
-    // A run that REACHED THE END is never refused: a source résumé with no
-    // employment section is a real input, and the report is where that is said.
-    for stopped in [None, Some(StoppedReason::Done)] {
-        assert!(super::is_persistable(NO_WORK, stopped, true));
-        assert!(super::is_persistable(WITH_WORK, stopped, true));
-    }
+    // (a) The hazard: a fan-out refused by the daily cap right after Summary.
+    //     The run returns Ok — nothing converts `Budgeted` into an error — so
+    //     only the documents can tell that everything was lost.
+    assert!(
+        !super::is_persistable(SOURCE_WITH_WORK, NO_WORK),
+        "a document that dropped the source's entire work history must not overwrite it"
+    );
+    assert!(
+        !super::is_persistable(SOURCE_WITH_WORK, EMPTY_SECTION),
+        "a heading with nothing under it is not work history"
+    );
 
-    // **A recorded stop reason does NOT mean the run was cut short.**
-    // `stages::repair` writes `RunTimeout` for an in-loop timeout and
-    // `Budgeted` for a daily-cap refusal and then returns `Ok(())` — and repair
-    // is quality depth's LAST stage. Reading the reason alone silently refused
-    // to save a completed run over a source with no employment section (a new
-    // graduate, an academic CV) the moment its repair round hit the daily cap:
-    // `completed` status, unchanged document, no explanation anywhere.
-    for stopped in [
-        StoppedReason::RunTimeout,
-        StoppedReason::Budgeted,
-        StoppedReason::MaxRepairs,
-    ] {
-        assert!(
-            super::is_persistable(NO_WORK, Some(stopped), true),
-            "{stopped:?}: the pipeline finished Ok — a recovered stop is not a cut-short run"
-        );
-    }
+    // (b) The new graduate / academic CV: the source has no employment section
+    //     either, so there is nothing to have lost and the save proceeds. This
+    //     is the case a stop-reason gate silently refused — `completed` status,
+    //     unchanged document, no explanation anywhere.
+    assert!(
+        super::is_persistable(SOURCE_NO_WORK, NO_WORK),
+        "a source with no work history is a real input, not a truncated run"
+    );
+    assert!(super::is_persistable(SOURCE_NO_WORK, EMPTY_SECTION));
 
-    // A run that was genuinely CUT SHORT keeps the trade only when it has work
-    // history.
-    for stopped in [
-        StoppedReason::RunTimeout,
-        StoppedReason::Budgeted,
-        StoppedReason::Cancelled,
-    ] {
-        assert!(
-            super::is_persistable(WITH_WORK, Some(stopped), false),
-            "{stopped:?}: a short résumé beats discarding what the run paid for"
-        );
-        assert!(
-            !super::is_persistable(NO_WORK, Some(stopped), false),
-            "{stopped:?}: a résumé with no work history must not replace a good one"
-        );
-        assert!(
-            !super::is_persistable(EMPTY_SECTION, Some(stopped), false),
-            "{stopped:?}: a heading with nothing under it is not work history"
-        );
-    }
+    // A document that KEPT its work history is always fine, however short.
+    assert!(super::is_persistable(SOURCE_WITH_WORK, WITH_WORK));
+    assert!(super::is_persistable(SOURCE_NO_WORK, WITH_WORK));
+
+    // Both sides read through the SAME seam, so an undated entry — which is not
+    // a `LineKind::JobEntry` — counts as work history on both, and a source
+    // full of them cannot make every run unsaveable.
+    const UNDATED: &str =
+        "Work Experience\n\nStaff Engineer, Acme\n- Owned the settlement service\n";
+    assert!(super::is_persistable(UNDATED, UNDATED));
+    assert!(!super::is_persistable(UNDATED, NO_WORK));
 }

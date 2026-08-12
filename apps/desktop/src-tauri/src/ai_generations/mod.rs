@@ -728,6 +728,14 @@ impl AiGenerationStore {
     /// An empty url is skipped: an unlinked generation has no posting, and
     /// `PipelineRunStore::delete_for_job` would refuse it anyway (matching every
     /// empty-url run would delete other postings' history).
+    ///
+    /// **A failed READ degrades to "no urls", which is the accepted orphan
+    /// case.** A transient `SQLITE_BUSY` here is indistinguishable from a
+    /// generation that had no posting, so the cascade silently skips and the
+    /// trail outlives its owner — the same window the caller's own doc records
+    /// for a crash between the delete and the purge, reached a different way.
+    /// Returning an error instead would mean failing the DELETE the user asked
+    /// for because a bookkeeping read lost a race, which is the worse trade.
     pub fn job_urls_for(&self, ids: &[String]) -> Vec<String> {
         if ids.is_empty() {
             return Vec::new();
