@@ -15,7 +15,9 @@ use super::section_prompts::{section_system, section_user, MAX_FENCE_TAGS};
 use super::stages::section_gen::{
     generate_sections, ground_citations, merge, plan_sections, SectionAnswer, MAX_BULLETS_PER_ENTRY,
 };
-use super::stages::{sections, seed_company_roster, MAX_COMPANY_PLANS};
+use super::stages::{
+    issue_from, issues_from, sections, seed_company_roster, MAX_COMPANY_PLANS, MAX_JUDGE_ITEMS,
+};
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
     SectionKey, SkillGroup,
@@ -31,8 +33,8 @@ use crate::export::parser::parse_resume;
 use crate::export::types::LineKind;
 use crate::pipeline::budget::DEFAULT_MAX_SECTIONS;
 use crate::validate::content::{
-    validate_content, ContentInput, DocKind, CONSISTENCY_PROJECT_STRUCTURE,
-    FACTUAL_ALTERED_PROJECT_LINK,
+    validate_content, ContentInput, DocKind, CONSISTENCY_PROJECT_STRUCTURE, CONTENT_ISSUE_CODES,
+    FACTUAL_ALTERED_PROJECT_LINK, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES, JUDGE_NOTE,
 };
 use crate::validate::Severity;
 
@@ -1209,6 +1211,106 @@ impl SectionProgress for StreamRecorder {
     fn section_text(&self, text: &str) {
         self.text.lock().push(text.to_string());
     }
+}
+
+// ── The judge ────────────────────────────────────────────────────────────────
+
+fn remark(kind: &str, quote: &str) -> JudgeItem {
+    JudgeItem {
+        kind: kind.to_string(),
+        section: "Work Experience".to_string(),
+        note: "This bullet claims ownership without naming what shipped.".to_string(),
+        quote: quote.to_string(),
+    }
+}
+
+/// **A model may never emit a Critical**, and this is the one stage where a
+/// model's opinion reaches the report at all. Every issue the judge builds is a
+/// Warning, whatever the remark's `kind` is — including a kind the closed table
+/// has never heard of.
+///
+/// Mutation check: change `Severity::Warning` to `Severity::Critical` at
+/// `issue_from`'s construction site and this fails; read the severity from
+/// `severity_for(code)` instead and it passes today but stops being a guarantee
+/// — which is why the assertion is on the CONSTRUCTED value, not on the table.
+#[test]
+fn every_judge_remark_becomes_a_warning_whatever_it_claims() {
+    let document = "Work Experience\n\nOwned critical platform work at Acme.\n";
+    for kind in ["clarity", "evidence", "tailoring", "critical", "", "🔥"] {
+        let issue = issue_from(&remark(kind, "Owned critical platform work"), document)
+            .unwrap_or_else(|| panic!("a well-formed {kind:?} remark must produce an issue"));
+        assert_eq!(
+            issue.severity,
+            Severity::Warning,
+            "the judge produced a non-Warning for kind {kind:?}"
+        );
+        // …and the code it picked is a registered one, so the renderer has an
+        // i18n key for it and `severity_for` agrees with the construction site.
+        let registered = CONTENT_ISSUE_CODES
+            .iter()
+            .find(|(code, _)| *code == issue.code)
+            .unwrap_or_else(|| panic!("unregistered judge code: {}", issue.code));
+        assert_eq!(registered.1, Severity::Warning);
+    }
+    // A kind outside the closed set is not dropped — it becomes the generic
+    // note code, because the model's taxonomy is the least useful part of its
+    // remark.
+    assert_eq!(
+        issue_from(&remark("🔥", "Owned critical platform work"), document)
+            .expect("an issue")
+            .code,
+        JUDGE_NOTE
+    );
+}
+
+/// A remark the reader cannot locate is not advice. The `quote` must be in the
+/// document VERBATIM — the same rule `match_evidence` applies to a source
+/// quote, and for the same reason.
+///
+/// Mutation check: drop the `document.contains(quote)` test and the paraphrase
+/// survives; drop the empty-note test and a blank remark becomes an issue.
+#[test]
+fn a_judge_remark_the_document_does_not_contain_is_dropped() {
+    let document = "Work Experience\n\nOwned critical platform work at Acme.\n";
+    assert!(
+        issue_from(
+            &remark("clarity", "owned some important platform things"),
+            document
+        )
+        .is_none(),
+        "a paraphrase is not a quote"
+    );
+    assert!(issue_from(&remark("clarity", ""), document).is_none());
+    let mut blank = remark("clarity", "Owned critical platform work");
+    blank.note = "   ".to_string();
+    assert!(issue_from(&blank, document).is_none());
+}
+
+/// The judge's contribution is CAPPED and its text CLAMPED — it is model output
+/// landing in a report that is persisted per posting, and the caps are the same
+/// ones `validate::content::issue` applies to a validator's own spans.
+///
+/// Mutation check: drop the `.take(MAX_JUDGE_ITEMS)` and the count assertion
+/// fails; drop either `clamp` and the byte assertion fails.
+#[test]
+fn the_judges_contribution_is_capped_and_clamped() {
+    let quote = "Owned critical platform work";
+    let document = format!("Work Experience\n\n{quote} at Acme.\n");
+    let mut answer = JudgeOut {
+        items: (0..MAX_JUDGE_ITEMS + 8)
+            .map(|_| remark("evidence", quote))
+            .collect(),
+    };
+    answer.items[0].note = "x".repeat(5_000);
+    answer.items[0].section = "y".repeat(5_000);
+
+    let issues = issues_from(&answer, &document);
+    assert_eq!(issues.len(), MAX_JUDGE_ITEMS);
+    assert!(issues[0].message.len() <= ISSUE_MESSAGE_MAX_BYTES);
+    assert!(issues[0].section.as_ref().expect("a section").len() <= ISSUE_SECTION_MAX_BYTES);
+    assert!(issues
+        .iter()
+        .all(|issue| issue.severity == Severity::Warning));
 }
 
 // ── ADR-010 ──────────────────────────────────────────────────────────────────

@@ -113,6 +113,29 @@ pub const VOICE_GENERIC_LETTER: &str = "voice.generic_letter";
 /// code (i18n key + severity) rather than special-cased.
 pub const REPORT_TRUNCATED: &str = "report.truncated";
 
+// The `judge.*` family — the ONLY codes in this table that come from a model
+// rather than from a deterministic check, emitted by the max-depth
+// `pipeline::resume::stages::judge` stage.
+//
+// They are registered here so the vocabulary stays in one place (this module's
+// own rule: "every code lives in CONTENT_ISSUE_CODES"), and every one of them
+// is a Warning — but the judge does NOT read that severity back out of this
+// table. It writes `Severity::Warning` at its construction site, because "a
+// model may never emit a Critical" has to hold even if someone edits a row
+// here. The table entry is what the renderer enumerates for i18n; the
+// construction site is the guarantee.
+/// A sentence the reader has to re-read; a bullet saying two things at once.
+pub const JUDGE_CLARITY: &str = "judge.clarity";
+/// A claim that reads as unsupported — vague ownership, no result, a skill
+/// asserted but never demonstrated.
+pub const JUDGE_EVIDENCE: &str = "judge.evidence";
+/// Something the posting asks for that the document buries, or space spent on
+/// something it does not ask for.
+pub const JUDGE_TAILORING: &str = "judge.tailoring";
+/// A remark whose `kind` is outside the closed set above. Kept rather than
+/// dropped: the model's taxonomy is the least useful part of its remark.
+pub const JUDGE_NOTE: &str = "judge.note";
+
 /// Every code this module can emit, with its severity. The single table the
 /// renderer enumerates for i18n keys and the constructor reads for severity.
 ///
@@ -144,6 +167,10 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (VOICE_EM_DASH_OVERUSE, Severity::Warning),
     (VOICE_GENERIC_LETTER, Severity::Warning),
     (REPORT_TRUNCATED, Severity::Warning),
+    (JUDGE_CLARITY, Severity::Warning),
+    (JUDGE_EVIDENCE, Severity::Warning),
+    (JUDGE_TAILORING, Severity::Warning),
+    (JUDGE_NOTE, Severity::Warning),
 ];
 
 /// The severity registered for `code`.

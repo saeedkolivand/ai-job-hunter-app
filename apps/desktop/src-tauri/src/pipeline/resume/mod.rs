@@ -368,6 +368,7 @@ pub fn max_pipeline<'a>() -> Pipeline<QualityCtx<'a>> {
         .add(assemble::Assemble)
         .add(stages::Validate)
         .add(stages::Repair)
+        .add(stages::Judge)
 }
 
 /// The max-depth stage names, in pipeline order. Pinned by a test against
@@ -382,6 +383,7 @@ pub const MAX_STAGES: &[&str] = &[
     "assemble",
     "validate",
     "repair",
+    "llm_judge",
 ];
 
 // A max run must have a step for every section PLUS every framing stage, or it
