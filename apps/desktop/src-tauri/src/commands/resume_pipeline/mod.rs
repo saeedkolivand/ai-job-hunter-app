@@ -331,10 +331,12 @@ async fn execute(
     // it because the report is not clean is the opposite of what the terminal
     // review is for.
     let quality_report = persist_document(app, &job_url, &meta, &clamped, &ctx, depth.as_str());
-    let needs_review = quality_report
-        .as_deref()
-        .is_some_and(report::still_needs_review)
-        || ctx.critical_count() > 0;
+    // The same texts `persist_document` built the wrapper over — fresh entries
+    // carry no decisions yet, so the document-agreement half of the rule is
+    // vacuous here, but the signature keeps ONE definition of "unresolved".
+    let needs_review = quality_report.as_deref().is_some_and(|wrapper| {
+        report::still_needs_review(wrapper, &ctx.draft, &clamped.cover_letter)
+    }) || ctx.critical_count() > 0;
 
     // Status and reason together — see `hooks::terminal_state` for why a
     // cancelled draft used to come out `failed` + `"done"`, and why a run whose
@@ -391,9 +393,9 @@ async fn execute(
     notify::notify_terminal(
         app,
         status,
-        quality_report
-            .as_deref()
-            .map_or(0, report::unresolved_count),
+        quality_report.as_deref().map_or(0, |wrapper| {
+            report::unresolved_count(wrapper, &ctx.draft, &clamped.cover_letter)
+        }),
         &meta,
     );
 
@@ -796,6 +798,7 @@ pub async fn resume_pipeline_regenerate_section(
             .as_ref()
             .map(|letter| (letter, record.cover_letter_text.as_str())),
     );
+    let needs_review = report::still_needs_review(&wrapper, &spliced, &record.cover_letter_text);
     // ONE write, not two: the merge rule above says the text and its report
     // move together, and two statements leave a window where a crash (or a
     // failing second statement) persists a document with the PREVIOUS
@@ -810,7 +813,35 @@ pub async fn resume_pipeline_regenerate_section(
         true,
     );
 
+    // The mirror of `resolve_fabrication`'s clearing arm: a regenerated
+    // section can INTRODUCE a fresh finding on a run whose row still says
+    // `completed`, and the panel keys its headline (and whether the review
+    // block renders at all) on that row — so leaving it untouched would
+    // suppress the very review the regeneration just created.
+    if let Some(next) = recomputed_status(&row.status, needs_review) {
+        let mut row = row.clone();
+        row.status = next.to_string();
+        store.upsert_run(&row)?;
+        return Ok(detail(&app, &row));
+    }
     Ok(detail(&app, &row))
+}
+
+/// The status a run row should move to after its persisted wrapper changed —
+/// `None` when it should not move at all.
+///
+/// Only the two REVIEW-terminal states convert into each other: a wrapper
+/// write can un-clean a `completed` run (a regenerated section introducing a
+/// fresh fabrication) and can finish a `needsReview` one (the last verdict
+/// landing). `failed` and `cancelled` describe how the RUN ended, which no
+/// amount of report movement rewrites — and `running` is not terminal.
+fn recomputed_status(current: &str, needs_review: bool) -> Option<&'static str> {
+    let next = if needs_review {
+        STATUS_NEEDS_REVIEW
+    } else {
+        STATUS_COMPLETED
+    };
+    (matches!(current, STATUS_COMPLETED | STATUS_NEEDS_REVIEW) && current != next).then_some(next)
 }
 
 /// Record the user's Remove/Keep verdict on ONE surviving fabrication finding.
@@ -848,16 +879,20 @@ pub async fn resume_pipeline_resolve_fabrication(
         report::record_decision(&record.quality_report, &req.issue_key, &req.decision)
     {
         // The run leaves `needsReview` only when NOTHING is blocking any more:
-        // every flagged bullet decided AND no Critical the review cannot clear
+        // every flagged bullet decided — with the document AGREEING with every
+        // Remove (a recorded-but-unapplied removal is intent, not fact; see
+        // `report::entry_resolved`) — and no Critical the review cannot clear
         // (`factual.dropped_role` names an absence, so it is not in the panel —
         // and a run that flipped to `completed` because every *reviewable*
         // finding was decided would present a résumé that silently lost an
-        // employer as clean).
-        let cleared = !report::still_needs_review(&updated);
+        // employer as clean). `record.resume_text` is current: the live panel
+        // applies the removal edit BEFORE recording the verdict.
+        let needs_review =
+            report::still_needs_review(&updated, &record.resume_text, &record.cover_letter_text);
         generations.update_quality_report(&record.id, updated)?;
-        if cleared && row.status == STATUS_NEEDS_REVIEW {
+        if let Some(next) = recomputed_status(&row.status, needs_review) {
             let mut row = row.clone();
-            row.status = STATUS_COMPLETED.to_string();
+            row.status = next.to_string();
             store.upsert_run(&row)?;
             return Ok(detail(&app, &row));
         }

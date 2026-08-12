@@ -1616,7 +1616,7 @@
         "orphaned": "No longer in the document",
         "orphanedHint": "You edited this line out, or it changed after the check. Decide it anyway to clear the review.",
         "removalPending": "Marked for removal — still in the document",
-        "removalPendingHint": "Your decision is recorded, but this line couldn't be deleted from here. Edit it out of the document to finish.",
+        "removalPendingHint": "Your decision is recorded, but this line couldn't be deleted from here. Open the résumé saved on this posting's application and edit the line out there to finish.",
         "failed": "Couldn't record that decision. Try again."
       },
       "metrics": {

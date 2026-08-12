@@ -153,7 +153,7 @@ describe('QualityReportPanel — staged run extras', () => {
         />
       );
       expect(screen.getByText(/still in the document/i)).toBeInTheDocument();
-      expect(screen.getByText(/edit it out of the document to finish/i)).toBeInTheDocument();
+      expect(screen.getByText(/edit the line out there to finish/i)).toBeInTheDocument();
       expect(screen.getByText(/1 claim still needs a decision/i)).toBeInTheDocument();
     });
 
@@ -505,7 +505,7 @@ describe('QualityBadge — a needsReview run is never green', () => {
       // the row says exactly that rather than "Removed".
       rerender(badge([{ ...legacy, decision: 'remove' }]));
       expect(screen.getByText(/still in the document/i)).toBeInTheDocument();
-      expect(screen.getByText(/edit it out of the document to finish/i)).toBeInTheDocument();
+      expect(screen.getByText(/edit the line out there to finish/i)).toBeInTheDocument();
     });
   });
 

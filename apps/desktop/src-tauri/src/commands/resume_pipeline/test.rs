@@ -267,37 +267,54 @@ fn every_fabrication_entry_anchors_on_the_document_line_it_was_found_on() {
     );
 }
 
-/// A span occurring on several lines resolves to the FIRST one, every time.
+/// **A span occurring on several lines carries NO anchor at all.**
 ///
-/// Determinism is the whole point: the wrapper is re-issued on every re-check,
-/// and an anchor that moved between two equally-valid lines would land a
-/// recorded verdict on a bullet the user never looked at.
+/// Two of the reviewable codes routinely emit non-unique spans — a
+/// `factual.unsupported_date` is a bare year, a `factual.unsourced_metric` a
+/// bare figure — and an anchor picked by document order names whichever line
+/// happens to come FIRST: a year sitting in an education line would anchor the
+/// verdict for a flagged job entry, and the Remove would delete the education
+/// line. Determinism is not correctness; refusing is, and the renderer's
+/// `removeEvidenceLines` refuses safely on a missing anchor.
+///
+/// Mutation check: anchor on the first occurrence (the old behaviour) and the
+/// `is_none` assertions fail with the education line as the anchor.
 #[test]
-fn a_span_on_several_lines_anchors_on_the_first_one_deterministically() {
-    let text = "PROFESSIONAL SUMMARY\nCut costs by 250 hours a month.\n\nWORK EXPERIENCE\n- Saved 250 hours again.\n";
-    let report = fabrication_report("250");
+fn a_span_on_several_lines_carries_no_anchor() {
+    // The review's own scenario: the flagged year also sits in an education
+    // line that comes FIRST in document order.
+    let text = "EDUCATION\nB.Sc. Computer Science, 2019\n\nWORK EXPERIENCE\nEngineer | Acme | 2019 - Present\n";
+    let report = fabrication_report("2019");
     let wrapper = report::build("quality", 1, Some((&report, text)), None);
-    assert_eq!(
-        only_fabrication(&wrapper)["line"],
-        json!("Cut costs by 250 hours a month.")
+    let entry = only_fabrication(&wrapper);
+    assert!(
+        entry.get("line").is_none(),
+        "a non-unique span has no honest anchor: {entry}"
     );
-    // Re-issued from the same report + text: byte-identical, not merely equal
-    // in spirit.
+    // Still decidable — the entry survives, only the automatic apply is off.
+    let key = entry["issueKey"].as_str().expect("a key").to_string();
+    assert!(report::record_decision(&wrapper, &key, "remove").is_some());
+
+    // Re-issued from the same report + text: byte-identical — uniqueness is a
+    // property of the text, so the refusal is as deterministic as the anchor.
     assert_eq!(
         report::build("quality", 1, Some((&report, text)), None),
         wrapper
     );
 
-    // …and recording a verdict keeps the anchor: a stamp that rebuilt the entry
-    // would strand a "Remove" with nothing to apply it to.
-    let key = only_fabrication(&wrapper)["issueKey"]
-        .as_str()
-        .expect("a key")
-        .to_string();
-    let decided = report::record_decision(&wrapper, &key, "remove").expect("a known key");
+    // A bare-figure metric, same shape: "250" in the flagged bullet AND in a
+    // second line. Neither line may be guessed at.
+    let text = "PROFESSIONAL SUMMARY\nCut costs by 250 hours a month.\n\nWORK EXPERIENCE\n- Saved 250 hours again.\n";
+    let wrapper = report::build("quality", 1, Some((&fabrication_report("250"), text)), None);
+    assert!(only_fabrication(&wrapper).get("line").is_none());
+
+    // …and the SAME span twice on ONE line still anchors: the line is unique,
+    // which is the property the removal needs.
+    let text = "PROFESSIONAL SUMMARY\nCut 250 costs by 250 hours.\n";
+    let wrapper = report::build("quality", 1, Some((&fabrication_report("250"), text)), None);
     assert_eq!(
-        only_fabrication(&decided)["line"],
-        json!("Cut costs by 250 hours a month.")
+        only_fabrication(&wrapper)["line"],
+        json!("Cut 250 costs by 250 hours.")
     );
 }
 
@@ -374,7 +391,7 @@ fn a_clean_report_carries_no_review_list() {
     let wrapper = report::build("quality", 1, Some((&report, CLEAN_SOURCE)), None);
     let parsed: serde_json::Value = serde_json::from_str(&wrapper).expect("valid JSON");
     assert!(parsed["resume"].get("fabrications").is_none());
-    assert!(!report::has_unresolved(&wrapper));
+    assert!(!report::has_unresolved(&wrapper, CLEAN_SOURCE, ""));
 }
 
 /// **The run stays `needsReview` until every flagged bullet is decided.**
@@ -388,7 +405,7 @@ fn a_run_stays_in_review_until_every_finding_is_decided() {
     let report = report_for(FABRICATING_DRAFT, CLEAN_SOURCE);
     let wrapper = report::build("quality", 1, Some((&report, FABRICATING_DRAFT)), None);
     assert!(
-        report::has_unresolved(&wrapper),
+        report::has_unresolved(&wrapper, FABRICATING_DRAFT, ""),
         "a fresh finding is undecided"
     );
 
@@ -405,12 +422,12 @@ fn a_run_stays_in_review_until_every_finding_is_decided() {
     for (index, key) in keys.iter().enumerate() {
         // Still unresolved while ANY finding is undecided.
         if index > 0 {
-            assert!(report::has_unresolved(&current));
+            assert!(report::has_unresolved(&current, FABRICATING_DRAFT, ""));
         }
         current = report::record_decision(&current, key, "keep").expect("a known key resolves");
     }
     assert!(
-        !report::has_unresolved(&current),
+        !report::has_unresolved(&current, FABRICATING_DRAFT, ""),
         "deciding every finding must clear the review state"
     );
     // The verdict is RECORDED, not applied — nothing was deleted from any text.
@@ -464,15 +481,162 @@ fn an_unreviewable_critical_keeps_a_run_in_review_after_every_bullet_is_decided(
 
     let mut current = wrapper;
     for key in &keys {
-        current = report::record_decision(&current, key, "remove").expect("known key");
+        // "keep" rather than "remove": a Keep settles on the verdict alone,
+        // which isolates what this test is about — the dropped role blocking
+        // AFTER every reviewable finding is genuinely settled. (An unapplied
+        // Remove would now block on its own; that rule has its own test.)
+        current = report::record_decision(&current, key, "keep").expect("known key");
     }
     assert!(
-        !report::has_unresolved(&current),
+        !report::has_unresolved(&current, generated, ""),
         "every reviewable finding is decided"
     );
     assert!(
-        report::still_needs_review(&current),
+        report::still_needs_review(&current, generated, ""),
         "…but the dropped role still blocks: the run must not read as clean"
+    );
+}
+
+/// **A Remove is intent, the document is fact, and the run finishes only when
+/// they agree** — the renderer's `isFabricationResolved` rule, applied on the
+/// Rust side too, because the run row is what drives the panel's headline.
+///
+/// Without the document half of the rule, `resolveFabrication` flipped a run
+/// to `completed` on the last recorded Remove while the review panel — which
+/// checks the document — still showed the same entry as "removal pending": the
+/// two sides of one run disagreeing about whether it was finished.
+///
+/// Mutation check: count only decision-absence in `unresolved_count` (the old
+/// rule) and the first pair of assertions fails.
+#[test]
+fn a_recorded_but_unapplied_remove_keeps_the_run_unfinished() {
+    let report = report_for(FABRICATING_DRAFT, CLEAN_SOURCE);
+    let wrapper = report::build("quality", 1, Some((&report, FABRICATING_DRAFT)), None);
+    let keys = fabrication_keys(&wrapper);
+    let mut current = wrapper;
+    for key in &keys {
+        current = report::record_decision(&current, key, "remove").expect("known key");
+    }
+
+    // Every entry carries a verdict — and against the UNEDITED text the run is
+    // still unfinished, because every flagged span is still in the document.
+    assert_eq!(
+        report::unresolved_count(&current, FABRICATING_DRAFT, ""),
+        keys.len(),
+        "an unapplied Remove must keep counting"
+    );
+    assert!(report::still_needs_review(&current, FABRICATING_DRAFT, ""));
+
+    // The span leaving the document is what settles it.
+    let edited = FABRICATING_DRAFT.replace(
+        "A payments engineer who cut costs by 47% across 12 teams.\n",
+        "",
+    );
+    assert_eq!(report::unresolved_count(&current, &edited, ""), 0);
+    assert!(!report::still_needs_review(&current, &edited, ""));
+}
+
+/// **Only the INVENTED-link arm of `factual.altered_project_link` is
+/// reviewable.** The validator's other arm — a SOURCE link missing or altered
+/// in the output — names an ABSENCE, exactly like `factual.dropped_role`: its
+/// evidence is the source URL, which by definition is not in the generated
+/// document, so a Remove/Keep row would ask a question with no correct answer
+/// (and the panel would render it as "you may have edited this away", which is
+/// not what happened). It stays a Critical the review cannot clear, which is
+/// what keeps the run at `needsReview`.
+///
+/// Mutation check: drop the presence gate in `fabrications` and
+/// `only_fabrication` fails on two entries; gate EVERY code on presence
+/// instead and `an_entry_with_no_locatable_line_omits_the_anchor_but_stays_decidable`
+/// fails (an orphaned metric entry must stay decidable).
+#[test]
+fn an_absent_source_link_blocks_the_run_without_entering_the_review_panel() {
+    let generated = "PROJECTS\n**Tool** · https://example.test/invented\n";
+    let report = ContentReport {
+        ok: false,
+        issues: vec![
+            // Arm 1: the source URL the output lost — absent from `generated`.
+            ContentIssue {
+                severity: crate::validate::Severity::Critical,
+                code: crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
+                section: Some("Projects".to_string()),
+                message: "the project link from your source résumé is missing or altered"
+                    .to_string(),
+                evidence: Some("https://example.test/original".to_string()),
+            },
+            // Arm 2: a link the model invented — present in `generated`.
+            ContentIssue {
+                severity: crate::validate::Severity::Critical,
+                code: crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
+                section: Some("Projects".to_string()),
+                message: "links to a URL that is not in your source résumé".to_string(),
+                evidence: Some("https://example.test/invented".to_string()),
+            },
+        ],
+        metrics: ContentMetrics::default(),
+    };
+    let wrapper = report::build("quality", 1, Some((&report, generated)), None);
+    let entry = only_fabrication(&wrapper);
+    assert_eq!(
+        entry["evidence"],
+        json!("https://example.test/invented"),
+        "only the invented link is a decidable span: {entry}"
+    );
+
+    // Deciding the reviewable entry does NOT finish the run: the absence arm
+    // still blocks, as the Critical the review cannot clear.
+    let key = entry["issueKey"].as_str().expect("a key").to_string();
+    let decided = report::record_decision(&wrapper, &key, "keep").expect("a known key");
+    assert!(!report::has_unresolved(&decided, generated, ""));
+    assert!(
+        report::still_needs_review(&decided, generated, ""),
+        "the absent source link must keep the run in review"
+    );
+}
+
+/// **A wrapper write moves a run row only between the two review-terminal
+/// states** — `recomputed_status`, the decision both wrapper writers share.
+///
+/// The regenerate direction is the one that was missing: a regenerated section
+/// can introduce a fresh fabrication on a `completed` run, and a row left at
+/// `completed` makes the panel read "done" while suppressing the review block
+/// entirely. The resolve direction (needsReview → completed) already existed;
+/// one helper keeps the two from diverging.
+///
+/// Mutation check: guard on `STATUS_NEEDS_REVIEW` alone (the old resolve-only
+/// shape) and the completed→needsReview case fails; drop the terminal-state
+/// guard and the `failed` cases do.
+#[test]
+fn a_wrapper_write_moves_a_run_row_only_between_the_review_terminal_states() {
+    use super::recomputed_status;
+    // A fresh finding un-cleans a completed run…
+    assert_eq!(
+        recomputed_status(super::STATUS_COMPLETED, true),
+        Some(super::STATUS_NEEDS_REVIEW)
+    );
+    // …and the last agreeing verdict finishes a needsReview one.
+    assert_eq!(
+        recomputed_status(super::STATUS_NEEDS_REVIEW, false),
+        Some(super::STATUS_COMPLETED)
+    );
+    // Already right: nothing to write.
+    assert_eq!(recomputed_status(super::STATUS_COMPLETED, false), None);
+    assert_eq!(recomputed_status(super::STATUS_NEEDS_REVIEW, true), None);
+    // How the run ENDED is not the report's to rewrite — and `running` is not
+    // terminal.
+    assert_eq!(recomputed_status(super::STATUS_FAILED, true), None);
+    assert_eq!(recomputed_status(super::STATUS_FAILED, false), None);
+    assert_eq!(recomputed_status(super::STATUS_CANCELLED, false), None);
+    assert_eq!(recomputed_status("running", true), None);
+
+    // The call sites, grep-shaped (the commands need a Tauri harness this
+    // crate does not have): BOTH wrapper writers recompute the row.
+    assert!(
+        include_str!("mod.rs")
+            .matches("recomputed_status(&row.status")
+            .count()
+            >= 2,
+        "regenerate_section and resolve_fabrication must both recompute the run row"
     );
 }
 
@@ -1121,7 +1285,7 @@ fn an_edit_that_moves_the_document_leaves_every_verdict_landable() {
         "a text edit must not touch the report column — byte for byte"
     );
     assert_eq!(
-        report::unresolved_count(&after.quality_report),
+        report::unresolved_count(&after.quality_report, &after.resume_text, ""),
         keys.len(),
         "…so the review is still pending: an edit neither resolves nor wipes it"
     );
@@ -1152,8 +1316,10 @@ fn an_edit_that_moves_the_document_leaves_every_verdict_landable() {
         .find_for_job(DIVERGENCE_JOB_URL)
         .expect("row")
         .quality_report;
-    assert_eq!(report::unresolved_count(&settled), 0);
-    assert!(!report::still_needs_review(&settled));
+    // Against the EDITED text: the span is gone, so the Remove is fact as well
+    // as intent — the pair agrees, and the run may finish.
+    assert_eq!(report::unresolved_count(&settled, &edited, ""), 0);
+    assert!(!report::still_needs_review(&settled, &edited, ""));
 }
 
 /// **A save replaces a report SLOT whole — carrying the review list forward is
@@ -1194,7 +1360,7 @@ fn a_save_replaces_a_slot_whole_so_the_writer_owns_the_review_list() {
         .find_for_job(DIVERGENCE_JOB_URL)
         .expect("row")
         .quality_report;
-    assert_eq!(report::unresolved_count(&wiped), 0);
+    assert_eq!(report::unresolved_count(&wiped, FABRICATING_DRAFT, ""), 0);
     assert!(
         report::record_decision(&wiped, &keys[0], "remove").is_none(),
         "with the list gone there is nothing left to stamp — the silent-no-op state"
@@ -1371,12 +1537,15 @@ fn the_review_notification_counts_the_findings_the_panel_lists() {
     let report = report_for(FABRICATING_DRAFT, CLEAN_SOURCE);
     let wrapper = report::build("quality", 1, Some((&report, FABRICATING_DRAFT)), None);
     let keys = fabrication_keys(&wrapper);
-    assert_eq!(report::unresolved_count(&wrapper), keys.len());
-    assert!(report::has_unresolved(&wrapper));
+    assert_eq!(
+        report::unresolved_count(&wrapper, FABRICATING_DRAFT, ""),
+        keys.len()
+    );
+    assert!(report::has_unresolved(&wrapper, FABRICATING_DRAFT, ""));
 
     let body = run_notification(
         super::STATUS_NEEDS_REVIEW,
-        report::unresolved_count(&wrapper),
+        report::unresolved_count(&wrapper, FABRICATING_DRAFT, ""),
         "Engineer",
         "Acme",
     )
@@ -1388,12 +1557,12 @@ fn the_review_notification_counts_the_findings_the_panel_lists() {
     for key in &keys {
         current = report::record_decision(&current, key, "keep").expect("a known key");
     }
-    assert_eq!(report::unresolved_count(&current), 0);
-    assert!(!report::has_unresolved(&current));
+    assert_eq!(report::unresolved_count(&current, FABRICATING_DRAFT, ""), 0);
+    assert!(!report::has_unresolved(&current, FABRICATING_DRAFT, ""));
 
     // No report at all (a fast-path row, or a run that failed before validate)
     // counts nothing rather than inventing review work.
-    assert_eq!(report::unresolved_count(""), 0);
-    assert_eq!(report::unresolved_count("not json"), 0);
-    assert_eq!(report::unresolved_count("{}"), 0);
+    assert_eq!(report::unresolved_count("", "", ""), 0);
+    assert_eq!(report::unresolved_count("not json", "", ""), 0);
+    assert_eq!(report::unresolved_count("{}", "", ""), 0);
 }

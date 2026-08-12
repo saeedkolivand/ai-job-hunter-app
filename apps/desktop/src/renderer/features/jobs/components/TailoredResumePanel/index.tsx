@@ -497,6 +497,11 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
           // withheld ALWAYS: this surface has no editor for the saved résumé, so
           // a Remove records the verdict and the row honestly reports the line
           // as still present rather than claiming a deletion that never happened.
+          // The run row agrees: `report::unresolved_count` applies the same
+          // document-agreement rule as `isFabricationResolved`, so the run
+          // stays `needsReview` — headline and review row cannot disagree —
+          // until the user edits the line out where the document lives (the
+          // saved application, per the `savesTo` hint).
           ...(writable && shownRunId
             ? {
                 onFixSection: (sectionKey: PipelineSectionKey, noteText: string) =>

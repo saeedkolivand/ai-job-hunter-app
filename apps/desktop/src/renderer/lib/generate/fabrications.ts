@@ -175,9 +175,7 @@ export function unresolvedCount(entries: Fabrication[], documentText: string): n
  *
  * Line-granular rather than span-granular because the flagged unit IS a bullet:
  * excising the span alone would leave a mutilated half-sentence behind, which
- * is a worse document than either keeping or dropping the claim. EVERY line
- * equal to the anchor goes; leaving a second copy behind would strand the entry
- * at `markedForRemoval` with its buttons already spent.
+ * is a worse document than either keeping or dropping the claim.
  *
  * **Anchored on `entry.line`, by exact (whitespace-trimmed) line equality —
  * never by searching for `evidence`.** Locating the line by substring is how
@@ -189,17 +187,22 @@ export function unresolvedCount(entries: Fabrication[], documentText: string): n
  * there is none: the report says which line it meant, or nothing is deleted.
  *
  * Returns `null` — REFUSE, do not guess — when the entry carries no `line` (a
- * report persisted before the field existed) or when no line of the current text
- * matches it (the user already edited it away, or edited it into something else).
- * The caller's honest fallback is to record the verdict and let the entry render
- * as `markedForRemoval`: "still in the document, edit it out to finish".
+ * report persisted before the field existed), when no line of the current text
+ * matches it (the user already edited it away, or edited it into something
+ * else), or when MORE than one line matches it. The report only issues an
+ * anchor for a span that sat on exactly one line, so a duplicate here means the
+ * document moved after the report was built — and "the entry's own line" no
+ * longer names one line. Deleting every copy would silently edit more than the
+ * verdict covered (résumés legitimately repeat a bullet across employers).
+ * The caller's honest fallback in all three cases is to record the verdict and
+ * let the entry render as `markedForRemoval`: "still in the document, edit it
+ * out to finish".
  */
 export function removeEvidenceLines(documentText: string, entry: Fabrication): string | null {
   const anchor = entry.line?.trim();
   if (!anchor) return null;
   const lines = documentText.split('\n');
-  const kept = lines.filter((line) => line.trim() !== anchor);
-  // Nothing matched: the anchor describes a line this text no longer has.
-  if (kept.length === lines.length) return null;
-  return kept.join('\n');
+  const matches = lines.filter((line) => line.trim() === anchor).length;
+  if (matches !== 1) return null;
+  return lines.filter((line) => line.trim() !== anchor).join('\n');
 }

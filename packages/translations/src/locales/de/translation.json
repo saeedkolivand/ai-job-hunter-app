@@ -1620,7 +1620,7 @@
         "orphaned": "Steht nicht mehr im Dokument",
         "orphanedHint": "Du hast diese Zeile entfernt, oder sie hat sich seit der Prüfung geändert. Entscheide sie trotzdem, um die Prüfung abzuschließen.",
         "removalPending": "Zum Entfernen markiert — steht noch im Dokument",
-        "removalPendingHint": "Deine Entscheidung ist festgehalten, die Zeile ließ sich von hier aus aber nicht löschen. Entferne sie im Dokument, um es abzuschließen.",
+        "removalPendingHint": "Deine Entscheidung ist festgehalten, die Zeile ließ sich von hier aus aber nicht löschen. Öffne den bei der Bewerbung zu dieser Stelle gespeicherten Lebenslauf und entferne die Zeile dort, um es abzuschließen.",
         "failed": "Die Entscheidung konnte nicht gespeichert werden. Bitte erneut versuchen."
       },
       "metrics": {

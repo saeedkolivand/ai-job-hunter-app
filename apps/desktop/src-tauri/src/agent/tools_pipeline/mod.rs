@@ -242,8 +242,10 @@ fn stale_flag(slot: &Value, current_text: &str) -> Value {
 }
 
 /// One slot's fabrication review list, clamped, plus how many entries nobody
-/// has decided about yet. `decision` is `null` for an undecided entry — the
-/// same "absent means undecided" rule `report::unresolved_count` applies.
+/// has decided about yet. `decision` is `null` for an undecided entry.
+/// (`report::unresolved_count` applies a STRICTER run-level rule — a recorded
+/// Remove keeps counting until its span leaves the document — but `undecided`
+/// here is about the VERDICT, which is the part the model can act on.)
 ///
 /// `kept` is [`shrink_to_summary_cap`]'s, so this list shrinks WITH the issue
 /// list rather than sitting outside the budget: two slots' worth of

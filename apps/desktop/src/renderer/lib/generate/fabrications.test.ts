@@ -164,10 +164,13 @@ describe('removeEvidenceLines', () => {
     expect(removeEvidenceLines(document, anchored)).toBe('Summary\nShipped the rewrite.');
   });
 
-  it('removes EVERY copy of that line, so the entry can actually reach resolved', () => {
+  it('REFUSES when the anchor line is duplicated, rather than deleting both', () => {
+    // The report only issues an anchor for a span that sat on exactly one
+    // line, so a duplicate means the document moved after the report was
+    // built. Résumés legitimately repeat a bullet across employers — deleting
+    // every copy would silently edit more than the verdict covered.
     const twice = [BULLET, 'Summary', BULLET].join('\n');
-    const next = removeEvidenceLines(twice, anchored);
-    expect(next).toBe('Summary');
+    expect(removeEvidenceLines(twice, anchored)).toBeNull();
   });
 
   it('matches across leading/trailing whitespace drift', () => {
