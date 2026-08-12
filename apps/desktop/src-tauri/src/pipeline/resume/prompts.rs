@@ -67,15 +67,19 @@ use crate::validate::content::normalize_language;
 /// against a prompt that also carries the résumé and the posting
 /// ([`RESUME_CAP`] + [`JOB_CAP`] = 16 k chars), so the draft turn's worst case
 /// is ~32 k chars ≈ 8 k tokens — inside every model this app talks to.
-const ARTIFACT_CAP: usize = 16_000;
+pub(super) const ARTIFACT_CAP: usize = 16_000;
 
 /// Char cap on the free-text steer a user may attach to a section regenerate.
 /// Mirrors the wire schema's `.max(500)`; serde enforces nothing, so the prompt
 /// builder caps its own copy.
-const NOTE_CAP: usize = 500;
+///
+/// `pub(super)` for `section_prompts`, which fences the same field for the same
+/// command — it had a second `= 500` of its own, and two literals both claiming
+/// to mirror one schema are two literals that can drift apart.
+pub(super) const NOTE_CAP: usize = 500;
 
 /// Char cap on ONE section's current text on the repair path.
-const SECTION_CAP: usize = 4_000;
+pub(super) const SECTION_CAP: usize = 4_000;
 
 /// The language token that may reach a SYSTEM slot.
 ///
@@ -92,7 +96,7 @@ const SECTION_CAP: usize = 4_000;
 /// applies to derive its heading table, and the same one
 /// `validate::content` uses before this value reaches a span. The output is at
 /// most two alphanumeric characters — no newline, no instruction, no length.
-fn system_language(lang: &str) -> String {
+pub(super) fn system_language(lang: &str) -> String {
     normalize_language(lang)
 }
 
@@ -110,7 +114,7 @@ fn system_language(lang: &str) -> String {
 /// A serialization failure yields an empty block rather than an error: a stage
 /// that cannot show the previous artifact still has the source résumé, which is
 /// the only thing it is allowed to draw facts from anyway.
-fn fenced_artifact<T: Serialize>(tag: &str, artifact: &T) -> String {
+pub(super) fn fenced_artifact<T: Serialize>(tag: &str, artifact: &T) -> String {
     let json = serde_json::to_string(artifact).unwrap_or_default();
     fenced(tag, &json, ARTIFACT_CAP)
 }

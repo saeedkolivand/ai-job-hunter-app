@@ -354,8 +354,56 @@ pub async fn applications_delete(app: AppHandle, id: String, keep_documents: boo
             log::warn!("[applications] failed to detach child generations (non-fatal): {e}");
         }
     }
+
+    // The posting url of the PIPELINE RUN TRAIL to purge, read BEFORE the
+    // delete because the row is the only thing that can answer it — and used
+    // only if the delete SUCCEEDS (see the `Ok` arm).
+    //
+    // Why the trail is in scope at all: a max-depth run persists its full
+    // re-seeded strategy (the whole employment history) and its full evidence
+    // map (verbatim résumé quotes) in `pipeline_run_events.artifact_json`,
+    // deliberately — it is the only copy a per-entry regenerate can read hours
+    // later. Nothing else ever removes it (retention only evicts the FOURTH run
+    // of a posting still being run) and `DataStore::export` ships every event
+    // row into the user's backups.
+    //
+    // Only on the delete-everything arm: with `keep_documents` the trail is no
+    // more sensitive than the `ai_generations` row being kept on purpose, and it
+    // is what makes the kept document's own runs panel readable.
+    let job_url = (!keep_documents)
+        .then(|| s.get(&id).map(|application| application.job_url))
+        .flatten();
+
     match s.delete(&id, keep_documents) {
         Ok(()) => {
+            // AFTER the parent delete committed, never before. The trail is the
+            // one child here that cannot be reconstructed, and a `SQLITE_BUSY`
+            // or IO failure on `s.delete` would otherwise leave the application
+            // alive with its history already irreversibly gone — the user sees
+            // an error, retries, and the run trail they never asked to lose is
+            // simply absent. `ai_generations_remove`'s cascade refuses the same
+            // ordering for the same reason.
+            if let (Some(job_url), Some(runs)) = (
+                job_url,
+                app.try_state::<crate::pipeline::runs::PipelineRunStore>(),
+            ) {
+                // …unless a GENERATION still owns that posting. `ai_generations`
+                // has a unique partial index on `job_url`, so at most one row
+                // can, and `remove_for_application` above only deleted the rows
+                // still LINKED to this application — a generation detached by
+                // an earlier `keep_documents` delete survives on purpose and
+                // keeps the same url. Purging then takes the trail of a
+                // document the user explicitly chose to keep: its runs panel
+                // empties and per-entry regenerate loses the artifacts
+                // `artifacts_for` reads.
+                let still_owned = app
+                    .try_state::<crate::ai_generations::AiGenerationStore>()
+                    .and_then(|gens| gens.find_for_job(&job_url))
+                    .is_some();
+                if !still_owned {
+                    runs.delete_for_job(&job_url);
+                }
+            }
             span.end(true);
             json!({ "success": true })
         }

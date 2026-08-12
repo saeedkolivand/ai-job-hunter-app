@@ -8,8 +8,9 @@
  *    the opposite. Break the routing either way and both halves fail.
  *  - **The run request carries identity + inputs and nothing else.** No provider,
  *    model, base URL or budget field may appear — those are backend-owned — and
- *    `depth` is the literal `quality`, so the disabled `max` option can never
- *    reach the wire.
+ *    `depth` is the SELECTED staged depth (Phase 4: `max` runs too), never a
+ *    hardcoded one that would silently run a different pipeline than the one the
+ *    control claims.
  *  - **Terminal state is the machine's, never the draft's.** A busy session with
  *    a full draft still renders as running with its display-only caption.
  *  - **`needsReview` is not a finish** — it gets its own count-carrying headline
@@ -24,7 +25,7 @@
  * because those are the seams this component is wiring together.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { ContentReportPayload, PipelineRunDetail, PipelineRunSummary } from '@ajh/shared/ipc';
@@ -125,6 +126,7 @@ function makeSession(overrides: Partial<ResumePipelineSession> = {}): ResumePipe
     runId: null,
     jobId: null,
     stage: null,
+    sectionStates: {},
     draft: '',
     detail: null,
     error: null,
@@ -247,6 +249,18 @@ describe('TailoredResumePanel — depth routing', () => {
     expect(bus.handleTailor).not.toHaveBeenCalled();
   });
 
+  // Phase 4. Hardcode the request's `depth` back to `'quality'` (what this
+  // surface used to send, because the backend rejected `max`) and this fails:
+  // the control would say Max while a quality run went to the wire.
+  it('sends the depth the user actually picked, so max runs the max pipeline', async () => {
+    bus.depth = 'max';
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /^start$/i }));
+    expect(START).toHaveBeenCalledTimes(1);
+    expect((START.mock.calls[0]?.[0] as Record<string, unknown>).depth).toBe('max');
+    expect(bus.handleTailor).not.toHaveBeenCalled();
+  });
+
   it('sends identity + inputs only — never routing, budget or document text', async () => {
     await openPanel();
     await userEvent.click(screen.getByRole('button', { name: /^start$/i }));
@@ -258,8 +272,8 @@ describe('TailoredResumePanel — depth routing', () => {
       resumeId: 'doc-1',
       jobId: 'posting-1',
       jobUrl: POSTING.url,
-      // The literal, not the control's value: `max` is rejected at the boundary
-      // and must never reach the wire even if the option became selectable.
+      // The control's value (the bus is at `quality` here) — see the max case
+      // above for the other half of that.
       depth: 'quality',
       targetLanguage: 'en',
       topRequirements: [],
@@ -336,6 +350,39 @@ describe('TailoredResumePanel — a live run', () => {
     await userEvent.click(stop);
     expect(CANCEL).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /stopping/i })).toBeDisabled();
+  });
+
+  // ── The max-depth section timeline + progressive assembly ─────────────────
+  it('shows the per-section checklist and the progressively assembled text', async () => {
+    bus.depth = 'max';
+    bus.session = makeSession({
+      ...running(),
+      stage: { stage: 'sections', phase: 'start', index: 3, total: 8, attempt: 1 },
+      sectionStates: { summary: 'done', 'experience:0': 'generating' },
+      // At max depth the same display-only stream carries whole SECTIONS as
+      // `assemble` renders them, rather than draft tokens. The pane needs no
+      // branch for that — which is what this asserts.
+      draft: 'Summary\nBuilt the deployment pipeline.\n\nExperience\nAcme — Senior Engineer',
+      detail: detail({ status: 'running', stoppedReason: null, finishedAt: undefined }),
+    });
+    await openPanel();
+    expect(screen.getByText('Writing the résumé section by section')).toBeInTheDocument();
+    expect(screen.getByText('Step 4 of 8')).toBeInTheDocument();
+    const timeline = screen.getByTestId('section-timeline');
+    expect(within(timeline).getByText('Summary')).toBeInTheDocument();
+    expect(within(timeline).getByText('Experience 1')).toBeInTheDocument();
+    expect(screen.getByText(/Acme — Senior Engineer/)).toBeInTheDocument();
+    // Still display-only: the assembled text is not the finished résumé.
+    expect(screen.getByText(/display only/i)).toBeInTheDocument();
+    expect(screen.queryByText('Finished résumé')).not.toBeInTheDocument();
+  });
+
+  // Quality depth reports no sections at all, so the checklist must not leave
+  // an empty captioned box behind on the surface that hosts it unconditionally.
+  it('shows no checklist for a quality run', async () => {
+    bus.session = running();
+    await openPanel();
+    expect(screen.queryByTestId('section-timeline')).toBeNull();
   });
 });
 
@@ -614,7 +661,7 @@ describe('TailoredResumePanel — run history', () => {
   it('lists the posting’s retained runs', async () => {
     bus.runs = [summary(), summary({ runId: 'run-0', status: 'cancelled', stoppedReason: null })];
     await openPanel();
-    expect(screen.getByText(/quality runs for this job/i)).toBeInTheDocument();
+    expect(screen.getByText(/staged runs for this job/i)).toBeInTheDocument();
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
   });
 });

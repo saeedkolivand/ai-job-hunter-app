@@ -577,8 +577,19 @@ struct DeadlineHooks {
 
 #[async_trait]
 impl StageHooks for DeadlineHooks {
-    async fn before(&self, _stage: &StageInfo) -> AppResult<()> {
-        guard_deadline(&self.ledger, self.deadline)
+    async fn before(&self, stage: &StageInfo) -> AppResult<()> {
+        match guard_deadline(&self.ledger, self.deadline) {
+            // A stage that makes no provider call still runs — the same
+            // decision, and the same reasoning, as
+            // `commands::resume_pipeline::hooks::apply_stop`: stopping at a
+            // boundary is about not paying for the NEXT call, and `validate` is
+            // what turns an already-paid-for draft into something this tool may
+            // report on. The reason is recorded either way (`guard_deadline`
+            // writes it before returning), so `ledger.stopped()` still says
+            // `run_timeout`.
+            Err(_) if !stage.costs_a_call => Ok(()),
+            other => other,
+        }
     }
 
     async fn after(&self, _stage: &StageInfo, _outcome: StageOutcome) {}

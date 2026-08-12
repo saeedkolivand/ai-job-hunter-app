@@ -217,6 +217,83 @@ fn run_hooked_is_behaviorally_identical_to_run() {
     });
 }
 
+// ── The free-stage flag ──────────────────────────────────────────────────────
+
+/// A stage that makes no provider call.
+struct Free(&'static str);
+#[async_trait]
+impl Stage<Ctx> for Free {
+    fn name(&self) -> &'static str {
+        self.0
+    }
+    async fn run(&self, ctx: &mut Ctx) -> AppResult<()> {
+        ctx.log.push(self.0);
+        Ok(())
+    }
+    fn costs_a_provider_call(&self) -> bool {
+        false
+    }
+}
+
+/// The deadline half of `commands::resume_pipeline::hooks::RunHooks`, reduced
+/// to the one decision this test is about: refuse every stage that costs a
+/// call, let the free ones through.
+struct ExpiredClock;
+#[async_trait]
+impl StageHooks for ExpiredClock {
+    async fn before(&self, stage: &StageInfo) -> AppResult<()> {
+        if stage.costs_a_call {
+            return Err(AppError::Message("out of time".to_string()));
+        }
+        Ok(())
+    }
+    async fn after(&self, _stage: &StageInfo, _outcome: StageOutcome) {}
+}
+
+/// **A run whose clock expires mid-fan-out still renders and checks what it
+/// already paid for.**
+///
+/// `Stage::costs_a_provider_call` defaults to `true`, so a stage is refused
+/// unless it says otherwise; `run_hooked` is what carries that answer to the
+/// hook, and a boundary check that could not see it had to choose between
+/// stopping every stage (which discarded up to eleven paid section answers at
+/// max depth — empty draft, no report, `status=failed`) and stopping none.
+///
+/// Mutation check: drop `costs_a_call` from the `StageInfo` `run_hooked`
+/// builds (hard-code `true`) and the two free stages stop running; hard-code
+/// `false` and the paid stage after them runs too.
+#[test]
+fn run_hooked_tells_the_hook_which_stages_cost_a_provider_call() {
+    tauri::async_runtime::block_on(async {
+        let mut ctx = Ctx { log: Vec::new() };
+        // The shape of a max run stopped by its own clock inside `sections`:
+        // two free stages (render, check) and then one that would cost money.
+        let result = Pipeline::new("t")
+            .add(Free("assemble"))
+            .add(Free("validate"))
+            .add(Step("repair"))
+            .run_hooked(&mut ctx, &ExpiredClock)
+            .await;
+
+        assert!(result.is_err(), "the run is still stopped by its deadline");
+        assert_eq!(
+            ctx.log,
+            vec!["assemble", "validate"],
+            "the free stages run and the paid one does not"
+        );
+    });
+
+    // …and the flag is readable off the built pipeline, which is what the
+    // résumé pipelines' own pins compare against.
+    assert_eq!(
+        Pipeline::new("t")
+            .add(Free("assemble"))
+            .add(Step("repair"))
+            .free_stage_names(),
+        vec!["assemble"]
+    );
+}
+
 // ── Completer::complete_json (via its AppHandle-free core) ───────────────────────
 
 #[derive(Debug, serde::Deserialize, PartialEq)]

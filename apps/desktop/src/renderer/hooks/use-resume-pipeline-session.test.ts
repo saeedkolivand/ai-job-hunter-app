@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import type { AiStreamChunk, JobEvent, PipelineStageEvent } from '@ajh/shared';
+import type { AiStreamChunk, JobEvent, PipelineSectionKey, PipelineStageEvent } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 
 import { useResumePipelineSession } from './use-resume-pipeline-session';
@@ -59,6 +59,26 @@ function stage(
   runId = RUN_ID
 ): PipelineStageEvent {
   return { runId, jobId: JOB_ID, stage: name, phase, index, total: 6, attempt: 1 };
+}
+
+/** One per-section event of the max-depth `sections` stage (index 3 of 8). */
+function section(
+  sectionKey: PipelineSectionKey,
+  phase: PipelineStageEvent['phase'],
+  runId = RUN_ID
+): PipelineStageEvent {
+  return {
+    runId,
+    jobId: JOB_ID,
+    stage: 'sections',
+    phase,
+    // The STAGE's position, not the section's — that is what the Rust emitter
+    // copies in, and reading it as the section's would misdraw the timeline.
+    index: 3,
+    total: 8,
+    attempt: 1,
+    sectionKey,
+  };
 }
 
 function detail(status: PipelineRunDetail['status']): PipelineRunDetail {
@@ -122,6 +142,81 @@ describe('useResumePipelineSession', () => {
     expect(result.current.stage).toBeNull();
     // Still the reconnect's starting state — the other run moved nothing here.
     expect(result.current.state).toBe('queued');
+  });
+
+  // ── The max-depth section timeline ────────────────────────────────────────
+  //
+  // Per-section progress rides the SAME `pipeline:stage` channel as the coarse
+  // stage counter — `sectionKey` + phase — so the fold lives next to it here.
+  describe('per-section states at max depth', () => {
+    it('tracks each section through generating → done → checking → clean', () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => {
+        bus.stage?.(section('summary', 'start'));
+        bus.stage?.(section('summary', 'finish'));
+        bus.stage?.(section('experience:0', 'start'));
+      });
+      expect(result.current.sectionStates).toEqual({
+        summary: 'done',
+        'experience:0': 'generating',
+      });
+      // The coarse machine is unaffected by the per-section granularity: both
+      // are `sections`, which maps to `drafting`.
+      expect(result.current.state).toBe('drafting');
+
+      act(() => {
+        bus.stage?.(section('experience:0', 'finish'));
+        bus.stage?.(stage('validate', 'start', 5));
+      });
+      expect(result.current.sectionStates).toEqual({
+        summary: 'checking',
+        'experience:0': 'checking',
+      });
+
+      act(() => bus.stage?.({ ...stage('validate', 'finish', 5), issueCount: 0 }));
+      expect(result.current.sectionStates).toEqual({
+        summary: 'clean',
+        'experience:0': 'clean',
+      });
+    });
+
+    // Drop the `event.sectionKey` read from the fold and this fails: the
+    // sections would be indistinguishable and the timeline would show one row.
+    it('keeps a foreign run’s section events out of the map', () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.stage?.(section('skills', 'start', 'someone-elses-run')));
+      expect(result.current.sectionStates).toEqual({});
+    });
+
+    it('starts a new run with an empty map instead of the previous run’s', async () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.stage?.(section('summary', 'finish')));
+      expect(result.current.sectionStates).toEqual({ summary: 'done' });
+
+      await act(async () => {
+        await result.current.start({
+          resumeId: 'doc-1',
+          jobId: 'posting-1',
+          jobUrl: '',
+          depth: 'max',
+          targetLanguage: 'en',
+          topRequirements: [],
+          coverLetterText: '',
+        });
+      });
+      expect(result.current.sectionStates).toEqual({});
+    });
+
+    it('stays empty for a quality run — it has no section events at all', () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => {
+        STAGES.forEach((name, index) => {
+          bus.stage?.(stage(name, 'start', index));
+          bus.stage?.(stage(name, 'finish', index));
+        });
+      });
+      expect(result.current.sectionStates).toEqual({});
+    });
   });
 
   it('appends draft deltas for display', () => {

@@ -218,6 +218,20 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         "resume_section",
         "section_issues",
         "section_note",
+        // The MAX-depth section prompts (`pipeline::resume::section_prompts`).
+        // A max run composes up to twelve turns, each carrying the SOURCE
+        // slice a section is grounded in (`source_entry`) beside prior-stage
+        // model output — and the projects turn also carries `project_seed`,
+        // the candidate's own links. A forged `<project_seed>` inside a
+        // scraped posting is the highest-value forgery on this path: project
+        // links are the one field the generator copies through verbatim, so a
+        // planted one would be rendered into the document as the candidate's
+        // own repository. `generated_resume` is the assembled document the
+        // judge reads, which is model output and untrusted exactly like the
+        // three artifacts above it.
+        "source_entry",
+        "project_seed",
+        "generated_resume",
     ]
     .into_iter()
     .map(|tag| (tag, compile_fence_tag_pattern(tag)))

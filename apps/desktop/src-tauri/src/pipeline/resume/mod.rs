@@ -1,16 +1,23 @@
-//! The staged résumé pipeline — quality depth.
+//! The staged résumé pipeline — quality and max depth.
 //!
-//! One run is a [`Pipeline`](crate::pipeline::Pipeline) of six stages over one
-//! [`QualityCtx`]:
+//! One run is a [`Pipeline`](crate::pipeline::Pipeline) of stages over one
+//! [`QualityCtx`]. The two depths share every stage but the one that writes the
+//! document:
 //!
-//! | stage            | calls | what it produces                                  |
-//! | ---------------- | ----- | ------------------------------------------------- |
-//! | `analyze_job`    | 1     | [`JobAnalysis`] — what the posting asks for       |
-//! | `match_evidence` | 1     | [`EvidenceMap`] — what the RÉSUMÉ can vouch for   |
-//! | `strategy`       | 1     | [`ResumeStrategy`] — how to present it            |
-//! | `draft`          | 1     | the résumé body, streamed for display             |
-//! | `validate`       | 0     | the deterministic [`ContentReport`]               |
-//! | `repair`         | ≤2×N  | section-scoped corrections, spliced and re-checked|
+//! | stage            | quality | max  | what it produces                       |
+//! | ---------------- | ------- | ---- | -------------------------------------- |
+//! | `analyze_job`    | 1 call  | same | [`JobAnalysis`] — what the posting asks |
+//! | `match_evidence` | 1 call  | same | [`EvidenceMap`] — what the RÉSUMÉ backs |
+//! | `strategy`       | 1 call  | same | [`ResumeStrategy`] — how to present it  |
+//! | `draft`          | 1 call  | –    | the résumé body, streamed for display   |
+//! | `sections`       | –       | ≤12  | one typed answer per section            |
+//! | `assemble`       | –       | 0    | those sections as the same body         |
+//! | `validate`       | 0       | 0    | the deterministic [`ContentReport`]     |
+//! | `repair`         | ≤2×N    | same | section-scoped corrections, re-checked  |
+//!
+//! The three shared stages are the SAME values with the SAME cache keys at both
+//! depths, so a max run of a posting a quality run already analyzed pays for
+//! neither the analysis nor the evidence again.
 //!
 //! ## The rule the stage split exists to enforce
 //!
@@ -31,12 +38,18 @@
 //! implementation and therefore every `pipeline:stage` emit. What the stages
 //! need to tell that hook travels through the shared [`RunLedger`].
 
+pub mod assemble;
 pub mod cache;
 pub mod prompt_blocks;
 pub mod prompts;
+pub mod section_prompts;
+pub mod source;
 pub mod stages;
 pub mod types;
+pub mod types_max;
 
+#[cfg(test)]
+mod max_test;
 #[cfg(test)]
 mod test;
 
@@ -54,7 +67,8 @@ use crate::pipeline::{Completer, Pipeline};
 use crate::validate::content::ContentReport;
 
 use self::cache::StageCacheKey;
-use self::types::{EvidenceMap, JobAnalysis, ResumeStrategy};
+use self::types::{EvidenceMap, GenerationDepth, JobAnalysis, ResumeStrategy};
+use self::types_max::SectionResult;
 
 /// Everything one run is run AGAINST — all of it resolved server-side before
 /// the pipeline starts. Borrowed: a run reads these repeatedly and copying a
@@ -93,6 +107,7 @@ pub struct RunLedger {
 #[derive(Debug, Default)]
 struct LedgerState {
     artifacts: HashMap<&'static str, Value>,
+    details: HashMap<&'static str, Value>,
     stopped: Option<StoppedReason>,
     calls: u32,
     cached: u32,
@@ -115,6 +130,46 @@ impl RunLedger {
     /// The summary for `stage`, if it left one.
     pub fn artifact(&self, stage: &str) -> Option<Value> {
         self.state.lock().artifacts.get(stage).cloned()
+    }
+
+    /// Record one stage's FULL artifact, for the DB event row only.
+    ///
+    /// **The log boundary and the DB boundary are not the same boundary.**
+    /// ADR-027 governs the LOG: a log line carries codes, ids, hashes, counts
+    /// and durations, never résumé text — and [`record`](Self::record) is what
+    /// feeds it, so those lines stay counts-only at every depth. The database
+    /// already stores far more than this (`ai_generations.resume_text`, the
+    /// quality report's evidence spans), and a max run needs its `strategy` and
+    /// `match_evidence` artifacts back HOURS later, when the user clicks
+    /// "regenerate this role" — the KvCache cannot answer that (its key chain
+    /// is not reconstructible outside a run) and re-deriving them would mean
+    /// two fresh provider calls per click.
+    ///
+    /// So the detail rides in the persisted row beside the counts, and nowhere
+    /// else: it is not emitted on `pipeline:stage`, never reaches a `Span`, and
+    /// is stripped from the run-detail IPC response
+    /// (`commands::resume_pipeline::wire_artifact`). It is also CLAMPED by the
+    /// store like every other artifact — an oversized one becomes unparseable
+    /// by design, which the regenerate path treats as a soft miss.
+    ///
+    /// **It DOES ride into a backup, and that is accepted.**
+    /// `DataStore::export` ships every `pipeline_run_events` row, so a bundle
+    /// contains the strategy and evidence detail. Accepted because the bundle
+    /// already contains strictly more of the same material — `ai_generations`
+    /// holds the generated résumé itself and the quality report's evidence
+    /// spans — so excluding this one column would shrink nothing a user could
+    /// measure while making a restored backup unable to regenerate an entry.
+    /// What makes it bounded is that the rows now have an OWNER: deleting the
+    /// application (`applications_delete`) or the generated résumé
+    /// (`ai_generations_remove`) deletes them, so a bundle taken afterwards
+    /// does not carry them.
+    pub fn record_detail(&self, stage: &'static str, detail: Value) {
+        self.state.lock().details.insert(stage, detail);
+    }
+
+    /// The full artifact for `stage`, if it left one.
+    pub fn detail(&self, stage: &str) -> Option<Value> {
+        self.state.lock().details.get(stage).cloned()
     }
 
     /// Count one provider round-trip, and whether it was served from the stage
@@ -160,7 +215,38 @@ impl RunLedger {
     }
 }
 
+/// What a section-wise run tells the shell WHILE it is running.
+///
+/// Declared here (L2) and implemented only by the L3 shell, exactly like
+/// [`StageHooks`](crate::pipeline::StageHooks) and for the same reason: the
+/// `sections` stage has to report twelve times inside ONE stage, which the
+/// per-stage hook cannot express, and it must do so without holding an
+/// `AppHandle`, an event channel, or any Tauri type. A test implements this
+/// with an in-memory recorder.
+///
+/// `index`/`total` are the SECTION's position in the fan-out, not the stage's;
+/// the L3 implementor pairs them with the stage index it already tracks.
+pub trait SectionProgress: Send + Sync {
+    /// A section's generation is about to start.
+    fn section_started(&self, key: types::SectionKey, index: usize, total: usize);
+
+    /// It finished. `produced` is false for a section that errored, was refused
+    /// by the day's ceiling, or came back with nothing to render — the three
+    /// cases a timeline must show as "no changes" rather than as done.
+    fn section_finished(&self, key: types::SectionKey, index: usize, total: usize, produced: bool);
+
+    /// One finished section's rendered TEXT, for the progressive assembly the
+    /// output pane shows. Display-only: the run's completion signal is still
+    /// its terminal `pipeline:stage` event, never this.
+    fn section_text(&self, text: &str);
+}
+
 /// The mutable context one run threads through its stages.
+///
+/// Shared by BOTH staged depths. Quality fills [`Self::draft`] in one streamed
+/// call; max fills [`Self::sections`] one call at a time and `assemble` renders
+/// them into the same `draft` field — which is what keeps `validate`, `repair`,
+/// the report and every downstream reader identical across depths.
 pub struct QualityCtx<'a> {
     pub input: QualityInput<'a>,
     /// The resolved provider — routing is backend-owned, so a stage never
@@ -179,10 +265,25 @@ pub struct QualityCtx<'a> {
     /// produced, so a later stage's key depends on everything upstream.
     pub cache_key: StageCacheKey,
 
+    /// Which depth is running. Read by the stages that behave differently at
+    /// max — the artifact detail the run persists, and the judge's own
+    /// admission check — rather than by a second context type: `analyze_job`,
+    /// `match_evidence`, `strategy`, `validate` and `repair` are the SAME
+    /// stages at both depths, and a second context would mean a second copy of
+    /// each.
+    pub depth: GenerationDepth,
+    /// The L3 observer a section-wise run reports to. `None` for quality depth
+    /// and for every test that does not care.
+    pub progress: Option<&'a dyn SectionProgress>,
+    /// The finished sections, in render order — max depth only. `assemble`
+    /// turns these into [`Self::draft`].
+    pub sections: Vec<SectionResult>,
+
     pub analysis: JobAnalysis,
     pub evidence: EvidenceMap,
     pub strategy: ResumeStrategy,
-    /// The résumé body. Written by `draft`, spliced by `repair`.
+    /// The résumé body. Written by `draft` (quality) or `assemble` (max),
+    /// spliced by `repair`.
     pub draft: String,
     pub report: Option<ContentReport>,
     /// The letter's own report — present only when a letter was in scope.
@@ -215,6 +316,9 @@ impl<'a> QualityCtx<'a> {
             deadline,
             ledger,
             cache_key,
+            depth: GenerationDepth::Quality,
+            progress: None,
+            sections: Vec::new(),
             analysis: JobAnalysis::default(),
             evidence: EvidenceMap::default(),
             strategy: ResumeStrategy::default(),
@@ -222,6 +326,20 @@ impl<'a> QualityCtx<'a> {
             report: None,
             letter_report: None,
         }
+    }
+
+    /// Switch this context to MAX depth: the max budget, and the L3 observer
+    /// the section-wise generator reports to.
+    ///
+    /// A builder rather than a second constructor (or a second context type)
+    /// because everything else about a run is identical at both depths —
+    /// including the cache seed, which is deliberately depth-blind so the three
+    /// shared stages hit the SAME cache entries a quality run wrote.
+    pub fn for_max(mut self, progress: Option<&'a dyn SectionProgress>) -> Self {
+        self.depth = GenerationDepth::Max;
+        self.budget = Budget::RESUME_MAX;
+        self.progress = progress;
+        self
     }
 
     /// The run's deadline guard, ready to hand to
@@ -274,6 +392,51 @@ pub const QUALITY_STAGES: &[&str] = &[
     "validate",
     "repair",
 ];
+
+/// The MAX-depth stage list, in order.
+///
+/// The first three stages are the SAME `Stage` values quality depth runs, with
+/// the same cache keys — a max run of a posting a quality run already analyzed
+/// pays for neither the analysis nor the evidence again. What replaces `draft`
+/// is the pair `sections` + `assemble`: one structured call per section, then a
+/// pure renderer that produces the same plain-text body `draft` would have.
+pub fn max_pipeline<'a>() -> Pipeline<QualityCtx<'a>> {
+    Pipeline::new("resume_max")
+        .add(stages::AnalyzeJob)
+        .add(stages::MatchEvidence)
+        .add(stages::Strategy)
+        .add(stages::Sections)
+        .add(assemble::Assemble)
+        .add(stages::Validate)
+        .add(stages::Repair)
+        .add(stages::Judge)
+}
+
+/// The max-depth stage names, in pipeline order. Pinned by a test against
+/// [`max_pipeline`] for the same reason [`QUALITY_STAGES`] is: the renderer's
+/// timeline keys on them, and `stageToEvent` ignores a name it does not know —
+/// so a rename here is silent on the other side.
+pub const MAX_STAGES: &[&str] = &[
+    "analyze_job",
+    "match_evidence",
+    "strategy",
+    "sections",
+    "assemble",
+    "validate",
+    "repair",
+    "llm_judge",
+];
+
+// A max run must have a step for every section PLUS every framing stage, or it
+// dies at `StoppedReason::MaxSteps` with the document half-written. Asserted at
+// COMPILE time against the stage list itself rather than a transcribed number:
+// adding a stage without raising the budget then fails `cargo build`. The `- 1`
+// is `sections`, which is the per-section term rather than one of the framing
+// stages around it.
+const _: () = assert!(
+    Budget::RESUME_MAX.max_steps >= Budget::RESUME_MAX.max_sections + MAX_STAGES.len() - 1,
+    "RESUME_MAX.max_steps must fit one step per section PLUS every framing stage"
+);
 
 /// The wall-clock a run is allowed, given its reasoning effort — the trigger
 /// for [`StoppedReason::RunTimeout`].

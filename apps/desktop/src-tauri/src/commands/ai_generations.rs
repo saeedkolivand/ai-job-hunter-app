@@ -125,11 +125,53 @@ pub async fn ai_generations_update(app: AppHandle, req: AiGenerationUpdateReques
     }
 }
 
+/// Delete the PIPELINE RUN TRAIL of every posting these generations belonged
+/// to — the cascade a generation delete owes.
+///
+/// **This is the PRIMARY delete.** `applications_delete` cascades already, but
+/// the Documents page's "delete this generated résumé" is the button a user
+/// actually reaches for, and it removed the `ai_generations` row while leaving
+/// the run trail behind: a max-depth run persists its full re-seeded strategy
+/// (the whole employment history) and its full evidence map (verbatim résumé
+/// quotes) in `pipeline_run_events.artifact_json`. With the aggregate gone
+/// those rows have no owner, no UI, and no eviction — retention partitions on
+/// `(job_url, kind)` and only ever evicts the FOURTH run of a posting that is
+/// still being run, which a deleted one never is — and `DataStore::export`
+/// ships every one of them into the user's backups.
+///
+/// Called with the urls read BEFORE the delete (the row is what answers the
+/// question) and only AFTER it succeeded (a failed delete must not take the
+/// trail with it). Best-effort and non-fatal, like every other cascade here:
+/// the store logs its own failures, and the user's delete already happened.
+///
+/// **The crash window between the two is accepted.** A process death after the
+/// `ai_generations` row is gone and before this runs leaves an orphaned trail —
+/// the same shape as every other non-fatal cascade in this file and in
+/// `applications_delete`, and the same order they all use (the parent delete is
+/// the thing the user asked for and must not be held hostage to a child).
+/// A boot-time orphan sweep was considered and rejected: it is real machinery
+/// (a second definition of "orphaned", a scan on every start) for a window
+/// measured in microseconds, and the driver that actually produced orphans at
+/// scale — a restore binding raw job urls, which made EVERY cascade a silent
+/// no-op — is fixed at its own write site in `PipelineRunStore::import`.
+fn purge_run_trails(app: &AppHandle, job_urls: &[String]) {
+    if job_urls.is_empty() {
+        return;
+    }
+    if let Some(runs) = app.try_state::<crate::pipeline::runs::PipelineRunStore>() {
+        runs.delete_for_jobs(job_urls);
+    }
+}
+
 #[tauri::command]
 pub async fn ai_generations_remove(app: AppHandle, id: String) -> Value {
     let store = app.state::<crate::ai_generations::AiGenerationStore>();
+    let job_urls = store.job_urls_for(std::slice::from_ref(&id));
     match store.remove(&id) {
-        Ok(()) => json!({ "success": true }),
+        Ok(()) => {
+            purge_run_trails(&app, &job_urls);
+            json!({ "success": true })
+        }
         Err(e) => json!({ "error": e }),
     }
 }
@@ -137,8 +179,12 @@ pub async fn ai_generations_remove(app: AppHandle, id: String) -> Value {
 #[tauri::command]
 pub async fn ai_generations_remove_bulk(app: AppHandle, ids: Vec<String>) -> Value {
     let store = app.state::<crate::ai_generations::AiGenerationStore>();
+    let job_urls = store.job_urls_for(&ids);
     match store.remove_many(&ids) {
-        Ok(count) => json!({ "success": true, "count": count }),
+        Ok(count) => {
+            purge_run_trails(&app, &job_urls);
+            json!({ "success": true, "count": count })
+        }
         Err(e) => json!({ "error": e }),
     }
 }

@@ -925,7 +925,13 @@ pub fn canonical_link(raw: &str) -> String {
 /// project links to its package — and wrong on a stack line, where the same
 /// token is the ecosystem the project is written for. A path or a scheme is
 /// what tells the two apart; see [`project_links`].
-fn names_a_resource(url: &str) -> bool {
+///
+/// `pub` and re-exported from [`super`] because the max-depth pipeline SEEDS a
+/// project's links out of the same source section this check compares against:
+/// a second answer to "is this span a link" there would mean the generator
+/// omits a link the validator then reports as altered — a Critical produced by
+/// two graders disagreeing rather than by anything wrong with the document.
+pub fn names_a_resource(url: &str) -> bool {
     let lower = url.to_lowercase();
     lower.starts_with("https://")
         || lower.starts_with("http://")
