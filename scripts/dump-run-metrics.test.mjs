@@ -33,32 +33,84 @@ try {
 const describeSqlite = DatabaseSync ? describe : describe.skip;
 
 // Black-box test of the CLI (execFileSync), mirroring check-tech-radar.test.mjs /
-// ci-review-verdict.test.mjs. The fixture DB is created with the schema VERBATIM
-// from `CREATE_PIPELINE_RUNS_SQL` in apps/desktop/src-tauri/src/pipeline/runs/mod.rs
-// — a hand-simplified schema would let the script pass here and fail on a real
-// database.
-const CREATE_SQL = `CREATE TABLE IF NOT EXISTS pipeline_runs (
-        id             TEXT PRIMARY KEY NOT NULL,
-        job_url        TEXT NOT NULL,
-        kind           TEXT NOT NULL,
-        depth          TEXT NOT NULL,
-        status         TEXT NOT NULL,
-        started_at     INTEGER NOT NULL,
-        finished_at    INTEGER,
-        stopped_reason TEXT,
-        metrics_json   TEXT NOT NULL DEFAULT '{}'
-     );
-     CREATE INDEX IF NOT EXISTS idx_pipeline_runs_job
-         ON pipeline_runs(job_url, started_at DESC);
-     CREATE TABLE IF NOT EXISTS pipeline_run_events (
-        run_id        TEXT NOT NULL,
-        seq           INTEGER NOT NULL,
-        ts            INTEGER NOT NULL,
-        stage         TEXT NOT NULL,
-        phase         TEXT NOT NULL CHECK (phase IN ('start', 'finish', 'error')),
-        artifact_json TEXT NOT NULL,
-        PRIMARY KEY (run_id, seq)
-     );`;
+// ci-review-verdict.test.mjs.
+//
+// The fixture DB is created with the PRODUCT's schema, READ OUT OF THE RUST
+// SOURCE at test time rather than hand-copied. A copy would have made this suite
+// green against a shape the app no longer writes — the whole failure mode a
+// cross-language mirror has — so the Rust const is the single definition and this
+// file is a reader of it, the same spirit as
+// `phase_check_matches_the_generated_contract` on the Rust side.
+const REPO_ROOT = join(__dirname, '..');
+const RUNS_MOD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/pipeline/runs/mod.rs');
+const LEDGER_MOD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/pipeline/resume/mod.rs');
+const PIPELINE_CMD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/commands/resume_pipeline/mod.rs');
+
+/**
+ * Extract a `const NAME: &str = "…";` string literal from a Rust source file.
+ *
+ * Deliberately simple, and it VERIFIES its own assumption: the literal must
+ * contain no `"` and no backslash escape, which is true of the SQL consts here
+ * and is what makes "slice to the closing quote" correct. If either shows up the
+ * extraction throws rather than seeding a half-truncated schema and reporting a
+ * confusing SQLite error twenty lines later.
+ */
+function rustStringConst(path, name) {
+  const src = readFileSync(path, 'utf8');
+  const decl = src.indexOf(`const ${name}`);
+  if (decl < 0) throw new Error(`${name} not found in ${path} — was it renamed?`);
+  const open = src.indexOf('"', decl);
+  const close = src.indexOf('";', open);
+  if (open < 0 || close < 0) throw new Error(`could not read the ${name} literal in ${path}`);
+  const value = src.slice(open + 1, close);
+  if (value.includes('\\')) {
+    throw new Error(`${name} now contains an escape; this extractor cannot read it verbatim`);
+  }
+  return value;
+}
+
+const CREATE_SQL = rustStringConst(RUNS_MOD, 'CREATE_PIPELINE_RUNS_SQL');
+
+/**
+ * Every key the app writes into `metrics_json`, read out of the two Rust sites
+ * that write them: `RunLedger::metrics()` and the terminal-update block in
+ * `commands::resume_pipeline::execute`.
+ *
+ * The window around the command's block is deliberate — that file has other
+ * `object.insert` calls against other objects, and a file-wide regex picked one
+ * of them up.
+ */
+function rustMetricsKeys() {
+  const ledger = readFileSync(LEDGER_MOD, 'utf8');
+  const from = ledger.indexOf('pub fn metrics(&self) -> Value {');
+  const to = ledger.indexOf('\n    }', from);
+  if (from < 0 || to < 0) throw new Error(`RunLedger::metrics() not found in ${LEDGER_MOD}`);
+  const ledgerKeys = [...ledger.slice(from, to).matchAll(/"([A-Za-z]+)":/g)].map((m) => m[1]);
+
+  const cmd = readFileSync(PIPELINE_CMD, 'utf8');
+  const wFrom = cmd.indexOf('let mut metrics = ledger.metrics();');
+  const wTo = cmd.indexOf('row.metrics_json = metrics.to_string();', wFrom);
+  if (wFrom < 0 || wTo < 0) throw new Error(`the metrics block was not found in ${PIPELINE_CMD}`);
+  const added = [...cmd.slice(wFrom, wTo).matchAll(/object\.insert\(\s*"([A-Za-z]+)"/g)].map(
+    (m) => m[1]
+  );
+
+  if (ledgerKeys.length === 0 || added.length === 0) {
+    throw new Error('metrics-key extraction found nothing — the Rust shape moved');
+  }
+  return new Set([...ledgerKeys, ...added]);
+}
+
+/** The keys this dump reads. The guard below proves Rust still writes them. */
+const KEYS_THE_DUMP_READS = [
+  'calls',
+  'cached',
+  'criticalCount',
+  'issueCount',
+  'ms',
+  'repairRounds',
+  'reverted',
+];
 
 const workDir = join(tmpdir(), `dump-run-metrics-test-${Date.now()}`);
 const dbPath = join(workDir, 'pipeline_runs.db');
@@ -216,8 +268,11 @@ const ROWS = [
   ['a1', JOB_B, 'agent', 'full', 'completed', T0, T0 + 5_000, 'done', m({ calls: 2 })],
 ];
 
-function run(args) {
-  return execFileSync(process.execPath, [scriptPath, ...args], { encoding: 'utf8' });
+function run(args, env) {
+  return execFileSync(process.execPath, [scriptPath, ...args], {
+    encoding: 'utf8',
+    env: env ? { ...process.env, ...env } : process.env,
+  });
 }
 
 /** Run expecting a non-zero exit; returns `{ status, stderr }`. */
@@ -262,6 +317,44 @@ beforeAll(() => {
 });
 
 afterAll(() => rmSync(workDir, { recursive: true, force: true }));
+
+// Its OWN suite, with no sqlite gate, deliberately: this is the cross-language
+// contract, so it is checked even on a Node without `node:sqlite`, and a renamed
+// metrics KEY is reported as one failing assertion naming the key rather than as
+// fallout somewhere in the seeded suite.
+//
+// A renamed COLUMN is louder still, and not by this suite's doing: `seed()` then
+// cannot insert, vitest fails the FILE from `beforeAll` (message: "table
+// pipeline_runs has no column named …") and tallies the rest as skipped. That is
+// a hard red with the column named in it, which is the diagnosis you want — the
+// case worth spelling out is only that "skipped" in that tally means aborted, not
+// "node:sqlite missing".
+describe('dump-run-metrics ↔ Rust contract', () => {
+  it('reads columns the schema still declares', () => {
+    expect(CREATE_SQL).toContain('CREATE TABLE IF NOT EXISTS pipeline_runs');
+    // The script's own SELECT list. A column renamed on the Rust side lands here
+    // rather than as a puzzling SQLite error inside the seeded suite.
+    for (const column of [
+      'depth',
+      'status',
+      'started_at',
+      'finished_at',
+      'stopped_reason',
+      'job_url',
+      'metrics_json',
+    ]) {
+      expect(CREATE_SQL, `pipeline_runs no longer has a ${column} column`).toContain(column);
+    }
+  });
+
+  it('aggregates only metrics keys Rust still writes', () => {
+    // Renaming e.g. `repairRounds` in Rust leaves this dump averaging a key
+    // nobody writes — every cell would read `—` and nothing would say why.
+    const written = rustMetricsKeys();
+    const orphans = KEYS_THE_DUMP_READS.filter((k) => !written.has(k));
+    expect(orphans, 'metrics keys this dump reads that Rust no longer writes').toEqual([]);
+  });
+});
 
 describeSqlite('dump-run-metrics', () => {
   it('documents the default app-data location in --help', () => {
@@ -365,6 +458,22 @@ describeSqlite('dump-run-metrics', () => {
     expect(run(['--db', dbPath, '--json'])).toBe(run([dbPath, '--json']));
   });
 
+  it('falls back to AJH_DATA_DIR when no path is given', () => {
+    // The no-argument path is the one a developer actually types, and it is the
+    // only route through `defaultDataDir()`. AJH_DATA_DIR is the branch CI can
+    // exercise; the three per-OS branches under it stay hand-verified (they
+    // resolve %APPDATA% / ~/Library/Application Support / ~/.local/share, which
+    // a test could only restate).
+    const dataDir = join(workDir, 'as-app-data');
+    mkdirSync(dataDir, { recursive: true });
+    seed(join(dataDir, 'pipeline_runs.db'), [
+      ['e1', JOB_A, 'resume', 'fast', 'completed', T0, T0 + 7_000, 'done', m({ ms: 7_000 })],
+    ]);
+
+    const out = run(['--json'], { AJH_DATA_DIR: dataDir });
+    expect(JSON.parse(out).depths[0]).toMatchObject({ depth: 'fast', runs: 1, msMedian: 7_000 });
+  });
+
   it('never prints a posting url or a resume id (ADR-027)', () => {
     for (const out of [run([dbPath]), run([dbPath, '--json'])]) {
       expect(out).not.toContain(JOB_A);
@@ -435,5 +544,28 @@ describeSqlite('dump-run-metrics', () => {
       '--kind needs a value, got the flag --json'
     );
     expect(runFailing([dbPath, '--db']).stderr).toContain('--db needs a value');
+  });
+
+  it('refuses two paths in either order rather than silently picking one', () => {
+    // `one.db --db two.db` used to read two.db without a word; the reverse threw
+    // an unrelated "extra argument". Both are the same mistake and both are loud.
+    for (const args of [
+      [dbPath, '--db', dbPath],
+      ['--db', dbPath, dbPath],
+    ]) {
+      const { status, stderr } = runFailing(args);
+      expect(status).toBe(2);
+      expect(stderr).toContain('the database path was given twice');
+    }
+  });
+
+  it('reports an unopenable database instead of dumping a stack', () => {
+    // A directory is the realistic slip (tab-completing the data dir), and the
+    // adjacent case is a WAL database whose directory is not writable — both
+    // surface as an ERR_SQLITE_ERROR throw from the constructor.
+    const { status, stderr } = runFailing([workDir]);
+    expect(status).toBe(1);
+    expect(stderr).toContain('cannot open');
+    expect(stderr).not.toContain('at DatabaseSync');
   });
 });

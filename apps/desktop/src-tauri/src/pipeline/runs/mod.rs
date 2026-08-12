@@ -45,10 +45,15 @@
 //! **One reader lives outside this crate.** `scripts/dump-run-metrics.mjs` opens
 //! `pipeline_runs.db` read-only and aggregates `metrics_json` per `depth` for
 //! offline depth A/B (it never touches `pipeline_run_events`, whose
-//! `artifact_json` carries the strategy/evidence detail). It hard-codes this
-//! table's column names and the metrics keys written by
-//! `commands::resume_pipeline::execute`, so renaming either is a change to it as
-//! well — its own tests will fail, but only if `scripts/**` is in the PR.
+//! `artifact_json` carries the strategy/evidence detail).
+//!
+//! That mirror is MACHINE-CHECKED, not a hand copy: `dump-run-metrics.test.mjs`
+//! reads [`CREATE_PIPELINE_RUNS_SQL`] out of THIS FILE to build its fixture, and
+//! extracts the `metrics_json` keys out of `RunLedger::metrics` and
+//! `commands::resume_pipeline::execute` to check that every key the dump reads is
+//! still written. So renaming a column, that const, or a metrics key fails the JS
+//! suite — which the `rust` path filter runs, since `pnpm test:coverage` covers
+//! the whole workspace including the `scripts` project.
 
 use std::path::Path;
 
