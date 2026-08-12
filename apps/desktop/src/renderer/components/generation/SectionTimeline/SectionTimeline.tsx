@@ -2,7 +2,7 @@ import { AlertTriangle, Check, CheckCircle2, Circle, Loader2, Search } from 'luc
 
 import { PIPELINE_SECTION_EXPERIENCE_PREFIX, type PipelineSectionKey } from '@ajh/shared';
 import { type TFunction, useTranslation } from '@ajh/translations';
-import { Tag, type TagColor } from '@ajh/ui';
+import { Tag, type TagProps } from '@ajh/ui';
 
 import type {
   PipelineSectionState,
@@ -19,7 +19,7 @@ export interface SectionTimelineProps {
  *  colour utility escapes the light-theme remap (the Phase 3 contrast bug). */
 const STATE_STYLE: Record<
   PipelineSectionState,
-  { Icon: typeof Circle; tint: string; tag: TagColor; spin?: true }
+  { Icon: typeof Circle; tint: string; tag: TagProps['color']; spin?: true }
 > = {
   queued: { Icon: Circle, tint: 'text-foreground/25', tag: 'default' },
   generating: { Icon: Loader2, tint: 'text-brand-soft', tag: 'processing', spin: true },

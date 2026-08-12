@@ -77,7 +77,19 @@ export interface PipelineStageProgress {
  * only the stored report can attribute to a section, after the run.
  */
 export type PipelineSectionState =
-  'queued' | 'generating' | 'checking' | 'needsChanges' | 'repaired' | 'clean';
+  | 'queued'
+  | 'generating'
+  // Phase 4. The plan's ladder always had this rung — "written, not yet
+  // checked" — and it is the ONE state a section spends real time in at max
+  // depth: `sections` finishes each section long before `validate` starts.
+  // The Phase 3 type skipped it because no event could reach it then; folding
+  // `sections`/`finish` onto `checking` instead would claim a check that has
+  // not run.
+  | 'done'
+  | 'checking'
+  | 'needsChanges'
+  | 'repaired'
+  | 'clean';
 
 /** Per-section verdicts for one run, keyed by the closed section grammar. */
 export type PipelineSectionStates = Partial<Record<PipelineSectionKey, PipelineSectionState>>;
