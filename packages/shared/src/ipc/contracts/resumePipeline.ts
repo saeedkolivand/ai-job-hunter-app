@@ -37,11 +37,28 @@ export interface ResumePipelineContract {
    *
    * **`resumeText`/`report` come from the per-job AGGREGATE, not from this
    * run.** Every run of a posting merges into one `ai_generations` row (keyed by
-   * `jobUrl`), so `listForJob` can legitimately show three runs while only the
-   * NEWEST one's document exists. An older run's `status`, `metrics`, `events`
-   * and `stoppedReason` are genuinely its own; its `resumeText` is whatever the
-   * newest run produced. That is also why the two write calls below refuse an
-   * older run outright rather than silently editing the newest document.
+   * `jobUrl`), so `listForJob` can legitimately show three runs while only ONE
+   * document exists. An older run's `status`, `metrics`, `events` and
+   * `stoppedReason` are genuinely its own and never change again; its
+   * `resumeText` is whatever the aggregate holds RIGHT NOW. That is also why the
+   * two write calls below refuse an older run outright rather than silently
+   * editing the shared document.
+   *
+   * **The document may be newer than the run, and that is not an error.** Four
+   * things move it: a later run, {@link
+   * ResumePipelineContract.regenerateSection}, a re-check save, and the user's
+   * own editing — applying a fabrication "Remove" is an ordinary hand edit
+   * through the editor's save path. When that happens `report` keeps describing
+   * the version it validated and `report.<slot>.sourceTextHash` stops matching
+   * `resumeText`: render that as the existing "checked before your edits" state,
+   * not as a failure, and do not suppress the report. Verdicts already recorded
+   * survive it — {@link ResumePipelineContract.resolveFabrication} stamps by
+   * `issueKey` inside the stored report and reads no text.
+   *
+   * The one thing a WRITER must not do: persist a wrapper whose slot omits
+   * `fabrications`. The backend merges the wrapper per TOP-LEVEL key, so an
+   * incoming `resume` slot replaces the stored one whole — carrying the review
+   * list (and its decisions) forward belongs to whoever saves.
    */
   get(runId: string): Promise<PipelineRunDetail | null>;
 
@@ -143,11 +160,16 @@ export interface PipelineRunMetrics {
 export interface PipelineRunDetail extends PipelineRunSummary {
   events: PipelineRunEvent[];
   /**
-   * The run's deterministic content report for the résumé, and for the cover
-   * letter when one was in scope. `null` until the validate stage has run.
+   * The deterministic content report stored for this posting's résumé, and for
+   * the cover letter when one was in scope. `null` until the validate stage has
+   * run. Aggregate state, not a run snapshot — see {@link
+   * ResumePipelineContract.get}; compare `sourceTextHash` with `resumeText`
+   * before presenting it as current.
    */
   report: PipelineQualityReport | null;
-  /** The finished résumé body. Empty until the draft stage completes. */
+  /** The posting's résumé as stored right now. Empty until the draft stage
+   *  completes, and may carry later edits (see {@link
+   *  ResumePipelineContract.get}). */
   resumeText: string;
 }
 

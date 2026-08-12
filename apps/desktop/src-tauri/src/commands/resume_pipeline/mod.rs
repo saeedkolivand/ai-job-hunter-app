@@ -21,8 +21,41 @@
 //! live in `ai_generations`, keyed by the posting url, because that is already
 //! the per-job aggregate every other surface reads. `get`/`listForJob` join the
 //! two rather than storing a second copy of a résumé.
+//!
+//! ## The two halves diverge, on purpose (the settled semantics)
+//!
+//! A run row is IMMUTABLE history; the aggregate is LIVE state. So the document
+//! `get` returns is the posting's current résumé — which may be newer than the
+//! run that produced it, because four things can move it: a later run,
+//! [`resume_pipeline_regenerate_section`], the renderer's re-check save, and the
+//! user's own editing (applying a "Remove" verdict is an ordinary hand edit).
+//! Nothing tries to prevent that; the rules that make it coherent are:
+//!
+//! * **Run-owned, never overwritten:** `status`, `stoppedReason`, `metrics`,
+//!   `depth`, `startedAt`/`finishedAt` and the stage trail. They describe what
+//!   THIS run did.
+//! * **Aggregate-owned, always current:** `resumeText` and `report`. Both come
+//!   from `find_for_job`, so an older run's `get` shows the newest document — see
+//!   [`ensure_latest_run`] for why the write commands refuse rather than fork.
+//! * **`report.<slot>.sourceTextHash` is the join between them.** When it stops
+//!   matching `resumeText`, the report describes an EARLIER version of the
+//!   document; the renderer renders that as "checked before your edits" until a
+//!   re-check. Stale-and-labelled is the honest state, and it is why an edit
+//!   never has to invalidate a report.
+//! * **A verdict survives the move.** [`report::record_decision`] stamps by
+//!   `issueKey` inside the persisted wrapper and reads no text, and the editor's
+//!   save path (`AiGenerationStore::update_texts`) never touches
+//!   `quality_report`. What a caller must NOT do is write a fresh wrapper whose
+//!   slot drops `fabrications`: `merge_quality_report` merges per TOP-LEVEL key,
+//!   so an incoming `resume` slot replaces the stored one WHOLE. Carrying the
+//!   review list forward is the writer's obligation (the renderer's
+//!   `mergeRecheckedReport` does it; `report::build` reissues it from the fresh
+//!   report). Both halves are pinned by
+//!   `an_edit_that_moves_the_document_leaves_every_verdict_landable` and
+//!   `a_save_replaces_a_slot_whole_so_the_writer_owns_the_review_list`.
 
 pub mod hooks;
+pub mod notify;
 pub mod report;
 
 #[cfg(test)]
@@ -350,6 +383,20 @@ async fn execute(
         outcome.is_ok(),
     );
 
+    // ADR-016: the run is long enough that the user is normally elsewhere when
+    // it lands, so the terminal state goes to the Notification Center (plus an
+    // OS banner while the window is unfocused). Counts only — the honest
+    // "N claims still need a verdict" comes from the SAME `unresolved_count`
+    // the review panel reads, never from a second definition.
+    notify::notify_terminal(
+        app,
+        status,
+        quality_report
+            .as_deref()
+            .map_or(0, report::unresolved_count),
+        &meta,
+    );
+
     match outcome {
         Ok(()) => {
             crate::commands::jobs::job_complete(
@@ -484,8 +531,16 @@ fn empty_record() -> AiGenerationRecord {
 
 // ── Read surface ─────────────────────────────────────────────────────────────
 
-/// One run with its stage trail, its report and its document. `null` for an
-/// unknown id.
+/// One run with its stage trail, plus the posting's CURRENT document and report.
+/// `null` for an unknown id.
+///
+/// The two halves have different owners and different lifetimes — see the module
+/// doc. `status`/`stoppedReason`/`metrics`/`events` are this run's own and never
+/// change again; `resumeText`/`report` are the live `ai_generations` aggregate,
+/// so they may be newer than the run (a later run, a section regeneration, a
+/// re-check, or the user's own edit). A `report` whose `sourceTextHash` no longer
+/// matches `resumeText` is stale BY DESIGN, not corrupt: it is the verdict on an
+/// earlier version of the same document.
 #[tauri::command]
 pub async fn resume_pipeline_get(app: AppHandle, run_id: String) -> Value {
     let store = app.state::<PipelineRunStore>();
@@ -499,6 +554,10 @@ pub async fn resume_pipeline_get(app: AppHandle, run_id: String) -> Value {
 ///
 /// Filtered to this flow's own `kind`: the tables host every staged run, so an
 /// unfiltered list would show a future agent run in the résumé runs panel.
+///
+/// Every field of a summary is the RUN's own — there is no document or report
+/// here, so nothing in this list can go stale against the shared aggregate. Only
+/// [`resume_pipeline_get`] joins the two.
 #[tauri::command]
 pub async fn resume_pipeline_list_for_job(app: AppHandle, job_url: String) -> Value {
     let store = app.state::<PipelineRunStore>();
@@ -526,8 +585,10 @@ fn summary(row: &RunRow) -> Value {
     })
 }
 
-/// The full run: its summary, its stage trail, and the document + report it
-/// produced (joined from `ai_generations` — see the module doc).
+/// The full run: its summary, its stage trail, and the posting's CURRENT
+/// document + report (joined from `ai_generations` — see the module doc; the
+/// join is by `job_url`, so what comes back is the aggregate's state now, not a
+/// snapshot of what this run emitted).
 fn detail(app: &AppHandle, row: &RunRow) -> Value {
     let store = app.state::<PipelineRunStore>();
     let events: Vec<Value> = store
@@ -594,6 +655,14 @@ fn detail(app: &AppHandle, row: &RunRow) -> Value {
 ///
 /// An UNLINKED run (empty `job_url`) is exempt: it has no aggregate at all, so
 /// the "no saved résumé" error below is the accurate one.
+///
+/// **The rule is about newer RUNS, not about newer TEXT** — deliberately, and
+/// the message is worded that way. The user editing the document (applying a
+/// "Remove", or any hand edit) moves `ai_generations.resume_text` while this
+/// stays the newest run, so `resolveFabrication` and `regenerateSection` keep
+/// working on their own posting; the report simply reads stale until a re-check.
+/// Refusing an edited-but-latest run would strand the exact review the panel is
+/// asking the user to finish.
 fn ensure_latest_run(store: &PipelineRunStore, row: &RunRow) -> AppResult<()> {
     if row.job_url.trim().is_empty() {
         return Ok(());

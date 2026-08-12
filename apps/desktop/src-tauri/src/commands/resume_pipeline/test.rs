@@ -9,7 +9,9 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::hooks::apply_stop;
+use super::notify::run_notification;
 use super::report;
+use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
 use crate::ipc_contracts::events::PIPELINE_STAGE_PHASES;
 use crate::ipc_contracts::resume_pipeline::ResumePipelineRunRequest;
 use crate::pipeline::budget::{Budget, StoppedReason};
@@ -865,4 +867,302 @@ fn a_write_against_an_older_run_of_the_same_posting_is_refused() {
     };
     store.upsert_run(&unlinked).expect("unlinked run persists");
     assert!(super::ensure_latest_run(&store, &unlinked).is_ok());
+}
+
+// ── The run/document divergence ─────────────────────────────────────────────
+
+const DIVERGENCE_JOB_URL: &str = "https://boards.example/jobs/77";
+
+/// Every `issueKey` in a wrapper's résumé review list, in report order.
+fn fabrication_keys(wrapper: &str) -> Vec<String> {
+    let parsed: serde_json::Value = serde_json::from_str(wrapper).expect("valid JSON");
+    parsed["resume"]["fabrications"]
+        .as_array()
+        .expect("the fixture must flag something")
+        .iter()
+        .map(|entry| entry["issueKey"].as_str().expect("issueKey").to_string())
+        .collect()
+}
+
+/// One aggregate row for `DIVERGENCE_JOB_URL`, written the way the pipeline
+/// writes one. Returns the row id the merge is keyed to.
+fn seed_aggregate(store: &AiGenerationStore, text: &str, wrapper: &str) -> String {
+    store
+        .save_application(AiGenerationRecord {
+            id: "gen-divergence".to_string(),
+            created_at: 1_700_000_000_000,
+            job_url: DIVERGENCE_JOB_URL.to_string(),
+            resume_text: text.to_string(),
+            quality_report: wrapper.to_string(),
+            ..super::empty_record()
+        })
+        .expect("the aggregate is written")
+}
+
+/// **An applied "Remove" moves the document and must NOT cost the user their
+/// review.**
+///
+/// The live path: `FabricationReview` records the verdict and then deletes the
+/// flagged line through the editor's own change handler, which saves via
+/// `AiGenerationStore::update_texts` — text only, `quality_report` untouched. So
+/// `resume_text` moves away from the text the report was computed over while the
+/// report, its review list and every recorded verdict stay exactly as stored.
+/// The divergence is deliberate (see the module doc); what this pins is that it
+/// costs nothing but a stale hash.
+///
+/// The order is the live one: `FabricationReview` APPLIES the removal (a text
+/// edit) and only then records the verdict, so the decision is always stamped
+/// against a document that has already moved.
+///
+/// Mutation check: have `update_texts` also write `quality_report` and the
+/// byte-identical + still-pending + verdict-lands assertions all fail; make
+/// `unresolved_count` count decided entries too and the final `0` does.
+#[test]
+fn an_edit_that_moves_the_document_leaves_every_verdict_landable() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).expect("store opens");
+
+    let report = report_for(FABRICATING_DRAFT, CLEAN_SOURCE);
+    let wrapper = report::build("quality", 1, Some((&report, FABRICATING_DRAFT)), None);
+    let keys = fabrication_keys(&wrapper);
+    let id = seed_aggregate(&store, FABRICATING_DRAFT, &wrapper);
+
+    // The user APPLIES the removal first: the flagged line leaves the document
+    // through the ordinary editor save, which is text-only by design.
+    let edited = FABRICATING_DRAFT.replace(
+        "A payments engineer who cut costs by 47% across 12 teams.\n",
+        "",
+    );
+    assert_ne!(edited, FABRICATING_DRAFT, "the fixture line must be gone");
+    store
+        .update_texts(&id, Some(edited.clone()), None)
+        .expect("the edit is persisted");
+
+    let after = store
+        .find_for_job(DIVERGENCE_JOB_URL)
+        .expect("the aggregate is still there");
+    assert_eq!(after.resume_text, edited, "the document moved");
+    assert_eq!(
+        after.quality_report, wrapper,
+        "a text edit must not touch the report column — byte for byte"
+    );
+    assert_eq!(
+        report::unresolved_count(&after.quality_report),
+        keys.len(),
+        "…so the review is still pending: an edit neither resolves nor wipes it"
+    );
+
+    // The report now describes an EARLIER version of the document. That is the
+    // renderer's "checked before your edits" state, not corruption.
+    let parsed: serde_json::Value = serde_json::from_str(&after.quality_report).unwrap();
+    assert_eq!(
+        parsed["resume"]["sourceTextHash"],
+        json!(report::hash_text(FABRICATING_DRAFT))
+    );
+    assert_ne!(
+        parsed["resume"]["sourceTextHash"],
+        json!(report::hash_text(&edited)),
+        "the staleness anchor is what tells the panel to say so"
+    );
+
+    // …and THEN the verdict is recorded, against a document whose text no
+    // longer contains the evidence. It still lands: `record_decision` stamps by
+    // issueKey and reads no text. If it did not, every applied Remove would
+    // strand its run in `needsReview` forever.
+    let decided = report::record_decision(&after.quality_report, &keys[0], "remove")
+        .expect("an orphaned finding must stay decidable");
+    store
+        .update_quality_report(&id, decided)
+        .expect("the verdict is persisted");
+    let settled = store
+        .find_for_job(DIVERGENCE_JOB_URL)
+        .expect("row")
+        .quality_report;
+    assert_eq!(report::unresolved_count(&settled), 0);
+    assert!(!report::still_needs_review(&settled));
+}
+
+/// **A save replaces a report SLOT whole — carrying the review list forward is
+/// the writer's job, not the store's.**
+///
+/// `merge_quality_report` merges per TOP-LEVEL key, which protects the OTHER
+/// document's slot and nothing inside this one. So a writer that recomputes the
+/// résumé slot and drops `fabrications` wipes the review list and every verdict
+/// in it, after which `resolveFabrication` no-ops forever (the renderer's own
+/// `mergeRecheckedReport` overlays the previous slot's extra keys for exactly
+/// this reason — 3aad7d52). This test exists so that obligation is visible on
+/// the Rust side and a change to it has to be deliberate.
+///
+/// Mutation check: make `merge_quality_report` keep `existing` (the "protect the
+/// stored report" change someone will eventually reach for) and both wiped-list
+/// assertions fail — which is the honest signal that the contract documented in
+/// the module doc and in `resumePipeline.ts` moved.
+#[test]
+fn a_save_replaces_a_slot_whole_so_the_writer_owns_the_review_list() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).expect("store opens");
+
+    let report = report_for(FABRICATING_DRAFT, CLEAN_SOURCE);
+    let wrapper = report::build("quality", 1, Some((&report, FABRICATING_DRAFT)), None);
+    let keys = fabrication_keys(&wrapper);
+    let decided = report::record_decision(&wrapper, &keys[0], "keep").expect("a known key");
+    seed_aggregate(&store, FABRICATING_DRAFT, &decided);
+
+    // A re-check that rebuilds the slot from scratch: same report, no review
+    // list. The stored one does NOT survive underneath it.
+    let mut stripped: serde_json::Value = serde_json::from_str(&decided).unwrap();
+    stripped["resume"]
+        .as_object_mut()
+        .expect("the résumé slot")
+        .remove("fabrications");
+    seed_aggregate(&store, FABRICATING_DRAFT, &stripped.to_string());
+    let wiped = store
+        .find_for_job(DIVERGENCE_JOB_URL)
+        .expect("row")
+        .quality_report;
+    assert_eq!(report::unresolved_count(&wiped), 0);
+    assert!(
+        report::record_decision(&wiped, &keys[0], "remove").is_none(),
+        "with the list gone there is nothing left to stamp — the silent-no-op state"
+    );
+
+    // A writer that CARRIES the list forward keeps every verdict, which is what
+    // the renderer's re-check does.
+    seed_aggregate(&store, FABRICATING_DRAFT, &decided);
+    let carried = store
+        .find_for_job(DIVERGENCE_JOB_URL)
+        .expect("row")
+        .quality_report;
+    let parsed: serde_json::Value = serde_json::from_str(&carried).unwrap();
+    assert_eq!(
+        parsed["resume"]["fabrications"][0]["decision"],
+        json!("keep")
+    );
+    assert!(report::record_decision(&carried, &keys[0], "remove").is_some());
+}
+
+// ── The terminal notification (ADR-016) ─────────────────────────────────────
+
+/// **A finished run announces what it actually ended in.**
+///
+/// The four terminal states get four different cards, and a non-terminal status
+/// gets none — a run is announced once, when it is over. `needsReview` must not
+/// read as a failure (the document is usable) and `failed` must not read as
+/// ready.
+///
+/// Asserted on the pure builder: `push_and_notify` needs an `AppHandle` this
+/// crate has no harness for, so the SIDE EFFECT is one line at one call site
+/// while the whole decision is here (the same seam shape as `apply_stop` and
+/// `truncation_notification`).
+///
+/// Mutation check: return a card for `running` and the first assertion fails;
+/// collapse `needsReview` onto the `completed` title and the "not a failure /
+/// not clean" pair does; drop the singular arm from `review_note` and the
+/// "1 flagged claim" assertion does.
+#[test]
+fn the_terminal_notification_reports_the_state_the_run_ended_in() {
+    // Not terminal, and not a status this module knows: nothing to announce.
+    assert!(run_notification("running", 3, "Senior Engineer", "Acme").is_none());
+    assert!(run_notification("queued", 0, "Senior Engineer", "Acme").is_none());
+
+    let completed = run_notification(super::STATUS_COMPLETED, 0, "Senior Engineer", "Acme")
+        .expect("a terminal run is announced");
+    assert_eq!(completed.kind, "resume.pipeline_run");
+    assert_eq!(completed.body, "Senior Engineer · Acme");
+    assert!(completed
+        .route
+        .as_ref()
+        .is_some_and(|route| route.to == "/ai-generate"));
+
+    let review = run_notification(super::STATUS_NEEDS_REVIEW, 2, "Senior Engineer", "Acme")
+        .expect("needsReview is terminal");
+    assert!(
+        review.body.contains("2 flagged claims"),
+        "the user is told how much is left: {}",
+        review.body
+    );
+    assert!(
+        review.title.contains("ready"),
+        "needsReview is not a failure — the document exists"
+    );
+    assert_ne!(review.title, completed.title, "…and it is not clean either");
+
+    // One finding is not "1 flagged claims", and ZERO is the unreviewable
+    // Critical (`factual.dropped_role`), not "0 flagged claims".
+    let one = run_notification(super::STATUS_NEEDS_REVIEW, 1, "", "").expect("terminal");
+    assert!(one.body.contains("1 flagged claim needs"), "{}", one.body);
+    assert!(
+        one.body.starts_with("Untitled posting"),
+        "a posting with no title or company still names itself: {}",
+        one.body
+    );
+    let unreviewable = run_notification(super::STATUS_NEEDS_REVIEW, 0, "Engineer", "").unwrap();
+    assert!(!unreviewable.body.contains('0'), "{}", unreviewable.body);
+    assert!(unreviewable.body.contains("cannot clear"));
+    assert!(unreviewable.body.starts_with("Engineer — "));
+
+    let failed = run_notification(super::STATUS_FAILED, 0, "Senior Engineer", "Acme").unwrap();
+    let cancelled =
+        run_notification(super::STATUS_CANCELLED, 0, "Senior Engineer", "Acme").unwrap();
+    let titles = [
+        completed.title,
+        review.title,
+        failed.title,
+        cancelled.title.clone(),
+    ];
+    let mut unique = titles.to_vec();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), 4, "four outcomes, four cards: {titles:?}");
+    // The cancel card exists because a cancel lands at the next stage boundary,
+    // which can be minutes after the click — this is "it has stopped now".
+    assert!(cancelled.body.contains("has stopped"));
+
+    // The call SITE, grep-shaped for the same reason
+    // `every_provider_calling_command_admits_before_it_spends` is: `execute`
+    // needs a Tauri harness this crate does not have, so "a finished run
+    // actually announces itself" is otherwise provable only by reading the code
+    // — and the decision above is inert without the call.
+    assert!(
+        include_str!("mod.rs").contains("notify::notify_terminal("),
+        "execute must push the terminal notification"
+    );
+}
+
+/// The number in the notification is the number the review panel will show — one
+/// definition of "undecided", read from the persisted wrapper.
+///
+/// Mutation check: count every fabrication instead of the undecided ones and the
+/// post-verdict assertion fails; make `unresolved_count` panic-free-but-wrong on
+/// a bad blob (return 1) and the last assertion does.
+#[test]
+fn the_review_notification_counts_the_findings_the_panel_lists() {
+    let report = report_for(FABRICATING_DRAFT, CLEAN_SOURCE);
+    let wrapper = report::build("quality", 1, Some((&report, FABRICATING_DRAFT)), None);
+    let keys = fabrication_keys(&wrapper);
+    assert_eq!(report::unresolved_count(&wrapper), keys.len());
+    assert!(report::has_unresolved(&wrapper));
+
+    let body = run_notification(
+        super::STATUS_NEEDS_REVIEW,
+        report::unresolved_count(&wrapper),
+        "Engineer",
+        "Acme",
+    )
+    .expect("terminal")
+    .body;
+    assert!(body.contains(&keys.len().to_string()), "{body}");
+
+    let mut current = wrapper;
+    for key in &keys {
+        current = report::record_decision(&current, key, "keep").expect("a known key");
+    }
+    assert_eq!(report::unresolved_count(&current), 0);
+    assert!(!report::has_unresolved(&current));
+
+    // No report at all (a fast-path row, or a run that failed before validate)
+    // counts nothing rather than inventing review work.
+    assert_eq!(report::unresolved_count(""), 0);
+    assert_eq!(report::unresolved_count("not json"), 0);
+    assert_eq!(report::unresolved_count("{}"), 0);
 }

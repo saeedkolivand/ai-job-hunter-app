@@ -125,6 +125,15 @@ pub fn build(
 /// away by a later run), or an unparseable blob. `None` is a no-op at the
 /// command, never an error: a decision about a finding that no longer exists is
 /// stale, not wrong.
+///
+/// **Deliberately text-independent.** The stamp is matched on `issueKey` inside
+/// the PERSISTED wrapper and never reads a document, so a verdict still lands
+/// after the user has edited the résumé out from under the report — which is the
+/// normal case once a Remove is applied (the editor's save goes through
+/// `AiGenerationStore::update_texts`, which never touches `quality_report`). See
+/// the module doc of [`super`] for the settled divergence semantics: what goes
+/// stale is [`slot`]'s `sourceTextHash`, and that is display state, not a
+/// blocker.
 pub fn record_decision(wrapper: &str, issue_key: &str, decision: &str) -> Option<String> {
     let mut parsed: Value = serde_json::from_str(wrapper).ok()?;
     let mut matched = false;
@@ -148,21 +157,38 @@ pub fn record_decision(wrapper: &str, issue_key: &str, decision: &str) -> Option
     matched.then(|| serde_json::to_string(&parsed).unwrap_or_default())
 }
 
+/// How many findings in a persisted wrapper nobody has decided about yet,
+/// across both documents.
+///
+/// The COUNT rather than the bool because the terminal notification says how
+/// much work is left ("2 flagged claims need a Keep or Remove decision"), and
+/// deriving that number anywhere else would be a second definition of
+/// "undecided" to keep in step with this one.
+pub fn unresolved_count(wrapper: &str) -> usize {
+    let Ok(parsed) = serde_json::from_str::<Value>(wrapper) else {
+        return 0;
+    };
+    ["resume", "coverLetter"]
+        .iter()
+        .filter_map(|document| {
+            parsed
+                .get(document)
+                .and_then(|slot| slot.get("fabrications"))
+                .and_then(Value::as_array)
+        })
+        .flatten()
+        .filter(|entry| entry.get("decision").is_none())
+        .count()
+}
+
 /// Whether a persisted wrapper still has a finding nobody has decided about.
 ///
 /// This is what keeps a run at `needsReview`: nothing is ever removed silently,
 /// so a run with an undecided fabrication must never be presented as clean.
+/// Delegates to [`unresolved_count`] so the gate and the number the user is
+/// shown can never disagree.
 pub fn has_unresolved(wrapper: &str) -> bool {
-    let Ok(parsed) = serde_json::from_str::<Value>(wrapper) else {
-        return false;
-    };
-    ["resume", "coverLetter"].iter().any(|document| {
-        parsed
-            .get(document)
-            .and_then(|slot| slot.get("fabrications"))
-            .and_then(Value::as_array)
-            .is_some_and(|entries| entries.iter().any(|entry| entry.get("decision").is_none()))
-    })
+    unresolved_count(wrapper) > 0
 }
 
 /// Whether a report blocks: it carries at least one Critical.
