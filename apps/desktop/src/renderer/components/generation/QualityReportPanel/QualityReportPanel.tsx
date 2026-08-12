@@ -31,6 +31,13 @@ export interface QualityPipelineReview {
   fixingSection?: string | null;
   fixError?: string | null;
   onResolveFabrication?: (issueKey: string, decision: 'remove' | 'keep') => void;
+  /**
+   * Apply a Remove verdict to the document — see
+   * {@link FabricationReview}'s `onRemoveEvidence`. Supplied automatically by
+   * `QualityBadge` when the host gives it an `onDocumentTextChange` writer;
+   * omit on a surface whose document cannot be edited.
+   */
+  onRemoveEvidence?: (evidence: string) => void | Promise<void>;
   resolvingIssueKey?: string | null;
   resolveError?: string | null;
   repairRounds?: number;
@@ -245,6 +252,7 @@ export function QualityReportPanel({
               entries={pipeline.fabrications}
               documentText={pipeline.documentText}
               onResolve={pipeline.onResolveFabrication}
+              onRemoveEvidence={pipeline.onRemoveEvidence}
               resolvingIssueKey={pipeline.resolvingIssueKey}
               resolveError={pipeline.resolveError}
             />

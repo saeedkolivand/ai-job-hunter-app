@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseFabrications, presentFabrication, unresolvedCount } from './fabrications';
+import {
+  isFabricationResolved,
+  parseFabrications,
+  presentFabrication,
+  removeEvidenceLines,
+  unresolvedCount,
+} from './fabrications';
 
 const VALID = {
   issueKey: 'factual.unsourced_metric#0',
@@ -55,8 +61,19 @@ describe('presentFabrication', () => {
     expect(presentFabrication(VALID, document)).toBe('pending');
   });
 
-  it('is resolved once a verdict exists — even if the text has since gone', () => {
+  it('is resolved once Remove has actually taken the line out', () => {
     expect(presentFabrication({ ...VALID, decision: 'remove' }, 'unrelated')).toBe('resolved');
+  });
+
+  it('is resolved on Keep, whose whole point is that the text stays', () => {
+    expect(presentFabrication({ ...VALID, decision: 'keep' }, document)).toBe('resolved');
+  });
+
+  // The finding this state exists for: "Remove" recorded, nothing removed. A
+  // verdict is intent; the document is fact. Until they agree, the entry is not
+  // finished and must not read as if it were.
+  it('is markedForRemoval when Remove was recorded but the line is still there', () => {
+    expect(presentFabrication({ ...VALID, decision: 'remove' }, document)).toBe('markedForRemoval');
   });
 
   // A preserved entry can outlive the line it describes: the user hand-edited
@@ -72,14 +89,94 @@ describe('presentFabrication', () => {
   });
 });
 
+describe('isFabricationResolved', () => {
+  const document = 'Summary\nCut latency by 40% across the fleet.';
+
+  it('is false while undecided', () => {
+    expect(isFabricationResolved(VALID, document)).toBe(false);
+  });
+
+  it('is true for Keep — nothing has to change', () => {
+    expect(isFabricationResolved({ ...VALID, decision: 'keep' }, document)).toBe(true);
+  });
+
+  it('is true for Remove ONLY once the evidence is gone', () => {
+    const removed = { ...VALID, decision: 'remove' } as const;
+    expect(isFabricationResolved(removed, document)).toBe(false);
+    expect(isFabricationResolved(removed, 'Summary\nLed the migration.')).toBe(true);
+  });
+});
+
 describe('unresolvedCount', () => {
-  it('counts only the undecided entries — what keeps a run needsReview', () => {
+  const document = 'Summary\nCut latency by 40% across the fleet.\nShipped the rewrite.';
+
+  it('counts the undecided entries — what keeps a run needsReview', () => {
     expect(
-      unresolvedCount([
-        VALID,
-        { ...VALID, issueKey: 'a', decision: 'keep' },
-        { ...VALID, issueKey: 'b' },
-      ])
+      unresolvedCount(
+        [VALID, { ...VALID, issueKey: 'a', decision: 'keep' }, { ...VALID, issueKey: 'b' }],
+        document
+      )
     ).toBe(2);
+  });
+
+  // Mutation guard: count any `decision` as resolved (drop the absence check)
+  // and this is the assertion that fails — which is the whole point, because
+  // that mutation is what lets the integrity chip go green over a line the user
+  // is still looking at.
+  it('does NOT count a recorded-but-unapplied Remove as resolved', () => {
+    const marked = { ...VALID, decision: 'remove' } as const;
+    expect(unresolvedCount([marked], document)).toBe(1);
+    expect(unresolvedCount([marked], 'Summary\nShipped the rewrite.')).toBe(0);
+  });
+});
+
+describe('removeEvidenceLines', () => {
+  const document = ['Summary', 'Cut latency by 40% across the fleet.', 'Shipped the rewrite.'].join(
+    '\n'
+  );
+
+  it('deletes the whole line the evidence sits on, not just the span', () => {
+    // Excising the span alone would leave "across the fleet." dangling — a
+    // worse document than either verdict.
+    expect(removeEvidenceLines(document, 'Cut latency by 40%')).toBe(
+      'Summary\nShipped the rewrite.'
+    );
+  });
+
+  // The span rarely starts the line — a real bullet begins "- " or "• ". A cut
+  // anchored on the SPAN (rather than the line) leaves the orphaned marker
+  // glued to the next bullet; only a mid-line fixture can catch that.
+  it('takes the bullet marker with it when the evidence starts mid-line', () => {
+    const bulleted = ['Summary', '- Cut latency by 40% across the fleet.', '- Shipped it.'].join(
+      '\n'
+    );
+    expect(removeEvidenceLines(bulleted, 'Cut latency by 40%')).toBe('Summary\n- Shipped it.');
+  });
+
+  it('removes EVERY occurrence, so the entry can actually reach resolved', () => {
+    const twice = ['Cut latency by 40%.', 'Summary', 'Cut latency by 40% again.'].join('\n');
+    const next = removeEvidenceLines(twice, 'Cut latency by 40%');
+    expect(next).toBe('Summary');
+    expect(next?.includes('Cut latency by 40%')).toBe(false);
+  });
+
+  it('spans multiple lines when the evidence does', () => {
+    const wrapped = 'Summary\nCut latency\nby 40%\nShipped the rewrite.';
+    expect(removeEvidenceLines(wrapped, 'Cut latency\nby 40%')).toBe(
+      'Summary\nShipped the rewrite.'
+    );
+  });
+
+  it('drops the last line without leaving a trailing blank', () => {
+    expect(removeEvidenceLines('Summary\nCut latency by 40%', 'Cut latency by 40%')).toBe(
+      'Summary'
+    );
+  });
+
+  it.each([
+    ['evidence that is not in the document', 'Grew revenue 3x'],
+    ['blank evidence', '   '],
+  ])('returns null for %s rather than mangling the text', (_label, evidence) => {
+    expect(removeEvidenceLines(document, evidence)).toBeNull();
   });
 });

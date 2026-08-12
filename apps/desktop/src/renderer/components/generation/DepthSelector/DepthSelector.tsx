@@ -131,7 +131,7 @@ export function DepthSelector({
       </p>
 
       {value === 'quality' && unavailableReason && (
-        <p role="status" className="mt-1.5 text-[10px] leading-relaxed text-amber-300/70">
+        <p role="status" className="mt-1.5 text-[10px] leading-relaxed text-amber-400">
           {unavailableReason}
         </p>
       )}
@@ -142,7 +142,7 @@ export function DepthSelector({
           className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2"
         >
           <AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-400" />
-          <p className="text-[10px] leading-relaxed text-amber-400/80">
+          <p className="text-[10px] leading-relaxed text-amber-400">
             {t('generationDepth.smallModelWarning')}
           </p>
         </div>

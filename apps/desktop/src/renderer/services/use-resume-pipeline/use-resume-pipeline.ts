@@ -55,6 +55,13 @@ export const useStartResumePipelineRun = () => {
  * record is exactly what the poll is fetching. The query stops polling on its
  * own as soon as a fetched record reports a terminal status, so a caller that
  * forgets to flip `live` costs one extra request, never an endless poll.
+ *
+ * **No record yet keeps the poll ALIVE.** A gate written as
+ * `data?.status === 'running'` reads `undefined` — the state after a failed (or
+ * merely unfinished) FIRST fetch — as "not running" and shuts the poll down
+ * permanently: the one signal that ever ends the run is then never fetched
+ * again, and the caller waits forever on a request that already failed. Absence
+ * of a record is the opposite of a terminal status, so it must keep polling.
  */
 export const usePipelineRun = (runId: string | null | undefined, live = false) => {
   const api = useAppClient();
@@ -63,8 +70,15 @@ export const usePipelineRun = (runId: string | null | undefined, live = false) =
     queryFn: () => api.resumePipeline.get(runId ?? ''),
     enabled: !!runId,
     staleTime: live ? 0 : QUERY_TIMES.MEDIUM,
-    refetchInterval: (query) =>
-      live && query.state.data?.status === 'running' ? LIVE_RUN_POLL_MS : false,
+    refetchInterval: (query) => {
+      if (!live) return false;
+      const { data } = query.state;
+      // `undefined` = no fetch has SUCCEEDED yet (in flight, or it threw).
+      // `null` = the backend answered and has no such run — a real answer, and
+      // re-asking will not change it.
+      if (data === undefined) return LIVE_RUN_POLL_MS;
+      return data?.status === 'running' ? LIVE_RUN_POLL_MS : false;
+    },
   });
 };
 

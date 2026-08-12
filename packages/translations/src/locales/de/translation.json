@@ -1516,6 +1516,11 @@
       "validate": "Ergebnis wird geprüft",
       "repair": "Gefundene Probleme werden behoben"
     },
+    "phase": {
+      "start": "gestartet",
+      "finish": "abgeschlossen",
+      "error": "fehlgeschlagen"
+    },
     "stageCounter": "Schritt {{current}} von {{total}}",
     "state": {
       "queued": "Wartet auf einen freien Platz…",
@@ -1613,6 +1618,8 @@
         "kept": "Als zutreffend behalten",
         "orphaned": "Steht nicht mehr im Dokument",
         "orphanedHint": "Du hast diese Zeile entfernt, oder sie hat sich seit der Prüfung geändert. Entscheide sie trotzdem, um die Prüfung abzuschließen.",
+        "removalPending": "Zum Entfernen markiert — steht noch im Dokument",
+        "removalPendingHint": "Deine Entscheidung ist festgehalten, die Zeile ließ sich von hier aus aber nicht löschen. Entferne sie im Dokument, um es abzuschließen.",
         "failed": "Die Entscheidung konnte nicht gespeichert werden. Bitte erneut versuchen."
       },
       "metrics": {

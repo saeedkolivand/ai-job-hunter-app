@@ -73,7 +73,8 @@ export function sectionKeyForHeading(heading: string): PipelineSectionKey | null
 }
 
 export interface SectionVerdict {
-  /** The heading as the document (or the alias table) spells it — what the chip shows. */
+  /** The heading as the DOCUMENT spells it — what the chip shows. Never the
+   *  wire key: `experience:0` is an identifier, not a section name. */
   label: string;
   /**
    * The wire key `regenerateSection` takes, when the heading maps to one.
@@ -85,7 +86,13 @@ export interface SectionVerdict {
 }
 
 /**
- * Does the document contain a heading for `key`?
+ * The document's OWN heading line for `key`, or `null` when it has none.
+ *
+ * Returns the text rather than a boolean because that text is the chip's label:
+ * a clean section is named the way the document names it ("BERUFSERFAHRUNG",
+ * "Professional Experience"), exactly like a flagged one — never the internal
+ * wire key (`experience:0`), which is a machine identifier and means nothing to
+ * a reader.
  *
  * A heading line is short and carries no sentence punctuation — enough to
  * separate `## EXPERIENCE` / `Experience` from a bullet that merely mentions
@@ -93,15 +100,18 @@ export interface SectionVerdict {
  * (the section simply isn't listed), while a false one would assert a check
  * that never happened.
  */
-function documentHasSection(documentText: string, aliases: readonly string[]): boolean {
+function findSectionHeading(documentText: string, aliases: readonly string[]): string | null {
   const HEADING_MAX_CHARS = 48;
-  return documentText.split('\n').some((line) => {
+  for (const line of documentText.split('\n')) {
+    // Markdown/bullet furniture is stripped so the label reads as a heading,
+    // not as `## Experience`.
     const trimmed = line.replace(/^[#*\s]+/, '').trim();
-    if (!trimmed || trimmed.length > HEADING_MAX_CHARS) return false;
-    if (/[.!?,;]/.test(trimmed)) return false;
+    if (!trimmed || trimmed.length > HEADING_MAX_CHARS) continue;
+    if (/[.!?,;]/.test(trimmed)) continue;
     const lower = trimmed.toLowerCase();
-    return aliases.some((alias) => lower.includes(alias));
-  });
+    if (aliases.some((alias) => lower.includes(alias))) return trimmed;
+  }
+  return null;
 }
 
 /**
@@ -145,8 +155,12 @@ export function buildSectionVerdicts(
   const clean: SectionVerdict[] = [];
   for (const { key, aliases } of SECTION_ALIASES) {
     if (flaggedKeys.has(key)) continue;
-    if (!documentHasSection(documentText, aliases)) continue;
-    clean.push({ label: key, sectionKey: key, issues: 0, criticals: 0 });
+    // The heading is BOTH the existence proof and the label — a clean chip only
+    // exists because the document names the section, so there is never a case
+    // where the wire key has to stand in for a missing heading.
+    const heading = findSectionHeading(documentText, aliases);
+    if (!heading) continue;
+    clean.push({ label: heading, sectionKey: key, issues: 0, criticals: 0 });
   }
 
   return [...flagged.values(), ...clean];

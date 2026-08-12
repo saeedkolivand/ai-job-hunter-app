@@ -116,6 +116,30 @@ describe('buildSectionVerdicts', () => {
     expect(keys).not.toContain('projects');
   });
 
+  // The LABEL, not just the count. A status-count assertion passes happily
+  // while every clean chip reads `experience:0` at the user — the wire key is
+  // an identifier, and shipping it as a section name is the bug.
+  it('labels a clean section with the document’s own heading, never the wire key', () => {
+    const document = ['## PROFESSIONAL EXPERIENCE', 'Acme — Engineer', '', 'Kurzprofil', 'x'].join(
+      '\n'
+    );
+    const verdicts = buildSectionVerdicts(report([]), document);
+    const labels = verdicts.map((v) => v.label);
+
+    expect(labels).toEqual(expect.arrayContaining(['PROFESSIONAL EXPERIENCE', 'Kurzprofil']));
+    // Markdown furniture is stripped, and no label may be a machine key.
+    expect(labels).not.toContain('experience:0');
+    expect(labels.some((label) => label.includes('#'))).toBe(false);
+    expect(verdicts.find((v) => v.label === 'PROFESSIONAL EXPERIENCE')?.sectionKey).toBe(
+      'experience:0'
+    );
+  });
+
+  it('labels a clean section with the FIRST matching heading it finds', () => {
+    const document = ['Summary', 'A backend engineer', '', 'Profile', 'again'].join('\n');
+    expect(buildSectionVerdicts(report([]), document).map((v) => v.label)).toEqual(['Summary']);
+  });
+
   it('does not mistake a punctuated body line for a heading', () => {
     const prose = 'Experience\nLed the projects rewrite.';
     const keys = buildSectionVerdicts(report([]), prose).map((v) => v.sectionKey);

@@ -35,9 +35,15 @@ export interface Fabrication {
  *   it is the Rust side's call). Still DECIDABLE, because resolving it is what
  *   clears the review — but it must not be shown as a live "judge this bullet"
  *   prompt for text the user cannot find.
- * - `resolved` — carries a verdict.
+ * - `markedForRemoval` — the user chose Remove, the decision is recorded, and
+ *   the flagged span is STILL in the document: the edit could not be applied
+ *   (a read-only surface, or the write failed). The one state that must never
+ *   read as finished — "Remove" that removes nothing while the chip turns green
+ *   is the exact misreport this panel exists to prevent.
+ * - `resolved` — carries a verdict AND the document agrees with it (Keep, or a
+ *   Remove whose evidence is genuinely gone).
  */
-export type FabricationPresentation = 'pending' | 'orphaned' | 'resolved';
+export type FabricationPresentation = 'pending' | 'orphaned' | 'markedForRemoval' | 'resolved';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -84,25 +90,86 @@ export function parseFabrications(value: unknown): Fabrication[] {
 }
 
 /**
- * How to present one entry against the document as it stands NOW.
+ * Is this entry's flagged span still findable in the document as it stands NOW?
  *
  * The substring check is exact because `evidence` is a verbatim span of the
  * generated document — the same property that lets the Rust repair loop locate
  * a `section: None` finding by its evidence. Cheap enough to run at render
- * time; an empty evidence string can't be located and reads as orphaned rather
+ * time; an empty evidence string can't be located and reads as absent rather
  * than as a match against everything.
+ */
+function evidencePresent(entry: Fabrication, documentText: string): boolean {
+  const span = entry.evidence.trim();
+  return !!span && documentText.includes(span);
+}
+
+/**
+ * How to present one entry against the document as it stands NOW.
+ *
+ * A recorded `remove` is NOT enough to call the entry finished: the verdict is
+ * a record of intent, and the document is the record of fact. They agree only
+ * once the span is gone.
  */
 export function presentFabrication(
   entry: Fabrication,
   documentText: string
 ): FabricationPresentation {
-  if (entry.decision) return 'resolved';
-  const span = entry.evidence.trim();
-  if (!span || !documentText.includes(span)) return 'orphaned';
-  return 'pending';
+  const present = evidencePresent(entry, documentText);
+  if (entry.decision === 'keep') return 'resolved';
+  if (entry.decision === 'remove') return present ? 'markedForRemoval' : 'resolved';
+  return present ? 'pending' : 'orphaned';
 }
 
-/** How many entries still need a verdict — what keeps a run `needsReview`. */
-export function unresolvedCount(entries: Fabrication[]): number {
-  return entries.filter((entry) => !entry.decision).length;
+/**
+ * Is this entry genuinely settled?
+ *
+ * A decision alone is not enough. `keep` settles it outright (nothing has to
+ * change). `remove` settles it only when the flagged span is actually ABSENT
+ * from the current text — counting a recorded-but-unapplied removal as resolved
+ * is what lets the badge turn green over text that is still, verbatim, in the
+ * document.
+ */
+export function isFabricationResolved(entry: Fabrication, documentText: string): boolean {
+  if (!entry.decision) return false;
+  if (entry.decision === 'keep') return true;
+  return !evidencePresent(entry, documentText);
+}
+
+/** How many entries still need a verdict OR an applied removal — what keeps a
+ *  run `needsReview` and the integrity chip off green. */
+export function unresolvedCount(entries: Fabrication[], documentText: string): number {
+  return entries.filter((entry) => !isFabricationResolved(entry, documentText)).length;
+}
+
+/**
+ * Delete the line(s) carrying `evidence` from `documentText` — the edit a
+ * "Remove" verdict promises.
+ *
+ * Line-granular rather than span-granular because the flagged unit IS a bullet:
+ * excising the span alone would leave a mutilated half-sentence behind, which
+ * is a worse document than either keeping or dropping the claim. EVERY
+ * occurrence goes; leaving a second copy behind would strand the entry at
+ * `markedForRemoval` with its buttons already spent.
+ *
+ * Returns `null` when there is nothing to remove (blank evidence, or a span the
+ * document no longer contains) so the caller can tell "already gone" from
+ * "removed just now" without diffing strings.
+ */
+export function removeEvidenceLines(documentText: string, evidence: string): string | null {
+  const span = evidence.trim();
+  if (!span || !documentText.includes(span)) return null;
+  let text = documentText;
+  while (text.includes(span)) {
+    const at = text.indexOf(span);
+    // The span always lies inside the cut window, so each pass strictly
+    // shortens the text — the loop cannot spin.
+    const lineStart = text.lastIndexOf('\n', at) + 1;
+    const lineEnd = text.indexOf('\n', at + span.length);
+    // A last line with no trailing newline takes the newline BEFORE it instead,
+    // so removing it doesn't leave a dangling blank line at the end.
+    const cutFrom = lineEnd === -1 && lineStart > 0 ? lineStart - 1 : lineStart;
+    const cutTo = lineEnd === -1 ? text.length : lineEnd + 1;
+    text = text.slice(0, cutFrom) + text.slice(cutTo);
+  }
+  return text;
 }

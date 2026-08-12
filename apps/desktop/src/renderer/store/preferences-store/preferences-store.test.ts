@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
 
 // ── onboarding-mirror — mock so store tests are pure Zustand (no Tauri store) ──
 // vi.hoisted() ensures the spies are initialized before vi.mock() hoisting runs.
@@ -13,7 +14,7 @@ vi.mock('@/lib/onboarding-mirror', () => ({
   markOnboardingComplete: mockMarkOnboardingComplete,
 }));
 
-import { usePreferencesStore } from './preferences-store';
+import { useGenerationDepth, usePreferencesStore } from './preferences-store';
 
 beforeEach(() => {
   localStorage.clear();
@@ -129,5 +130,21 @@ describe('usePreferencesStore', () => {
     expect(recent).toHaveLength(5);
     expect(recent[0]).toBe('Vienna'); // newest first
     expect(recent).not.toContain('London'); // oldest dropped past the cap
+  });
+
+  // A stored depth this build cannot RUN (`max` — hand-edited, or written by a
+  // newer build and then downgraded) must not reach a generate surface. It
+  // falls back to `fast`, never to `quality`: silently upgrading someone into
+  // four provider calls plus repair rounds is the one wrong answer.
+  describe('useGenerationDepth', () => {
+    it.each([
+      ['a runnable stored depth', 'quality', 'quality'],
+      ['an unrunnable stored depth', 'max', 'fast'],
+      ['a pre-field persisted state', undefined, 'fast'],
+    ])('resolves %s to %s', (_label, stored, expected) => {
+      usePreferencesStore.setState({ generationDepth: stored as never });
+      const { result } = renderHook(() => useGenerationDepth());
+      expect(result.current).toBe(expected);
+    });
   });
 });

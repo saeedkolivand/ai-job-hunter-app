@@ -8,14 +8,21 @@ import { Button, cn } from '@ajh/ui';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { stoppedSuffix, UNKNOWN_STOPPED_SUFFIX } from '@/lib/stopped-reason';
 
-/** Status → the chip's colour family. `needsReview` gets its own (amber): it is
- *  neither a success nor a failure, and colouring it green is the misreport the
- *  terminal review exists to prevent. */
+/**
+ * Status → the chip's colour family. `needsReview` gets its own (amber): it is
+ * neither a success nor a failure, and colouring it green is the misreport the
+ * terminal review exists to prevent.
+ *
+ * The BARE `-400` step, never `-300` and never an opacity suffix: only the bare
+ * `-400` classes carry a light-scheme remap (`utilities.css`), and these chips
+ * are small semibold captions on a tinted fill — the exact case the remap was
+ * measured for.
+ */
 const STATUS_TONE: Record<PipelineRunStatus, string> = {
-  running: 'border-blue-400/25 bg-blue-400/10 text-blue-300',
-  completed: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300',
-  needsReview: 'border-amber-400/25 bg-amber-400/10 text-amber-300',
-  failed: 'border-red-400/25 bg-red-400/10 text-red-300',
+  running: 'border-blue-400/25 bg-blue-400/10 text-blue-400',
+  completed: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-400',
+  needsReview: 'border-amber-400/25 bg-amber-400/10 text-amber-400',
+  failed: 'border-red-400/25 bg-red-400/10 text-red-400',
   cancelled: 'border-white/10 bg-white/[0.04] text-foreground/55',
 };
 
@@ -79,6 +86,9 @@ export function PipelineRunsList({
           const suffix = stoppedSuffix(run.stoppedReason);
           const open = expanded === run.runId;
           const events = eventsByRun?.[run.runId];
+          // Only referenced while the region is actually rendered — an
+          // `aria-controls` pointing at absent DOM is a broken reference.
+          const timelineId = `pipeline-timeline-${run.runId}`;
           return (
             <li
               key={run.runId}
@@ -117,6 +127,7 @@ export function PipelineRunsList({
                   variant="ghost"
                   size="sm"
                   aria-expanded={open}
+                  aria-controls={open ? timelineId : undefined}
                   onClick={() => toggle(run.runId)}
                   className="shrink-0 text-[10px]"
                 >
@@ -137,18 +148,21 @@ export function PipelineRunsList({
 
               {open &&
                 (events?.length ? (
-                  <ol className="mt-2 space-y-1 border-l border-white/10 pl-3">
+                  <ol id={timelineId} className="mt-2 space-y-1 border-l border-white/10 pl-3">
                     {events.map((event) => (
                       <li key={event.seq} className="text-[10px] text-foreground/50">
                         <span className="text-foreground/70">
                           {t(`pipeline.stage.${event.stage}`, { defaultValue: event.stage })}
                         </span>{' '}
-                        · {event.phase}
+                        {/* `phase` is a Rust enum name (`start`/`finish`/`error`),
+                            not copy — a future phase this build predates falls
+                            back to the raw token rather than a missing-key. */}
+                        · {t(`pipeline.phase.${event.phase}`, { defaultValue: event.phase })}
                       </li>
                     ))}
                   </ol>
                 ) : (
-                  <p className="mt-2 text-[10px] text-foreground/35">
+                  <p id={timelineId} className="mt-2 text-[10px] text-foreground/35">
                     {events ? t('pipeline.timeline.empty') : t('pipeline.timeline.liveOnly')}
                   </p>
                 ))}

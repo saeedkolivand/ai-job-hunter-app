@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { GenerationDepth } from '@ajh/shared/schemas';
 
+import { resolveRunnableDepth } from '@/lib/generate/generation-depth';
 import { clearOnboardingMirror, markOnboardingComplete } from '@/lib/onboarding-mirror';
 
 import {
@@ -16,7 +17,7 @@ import {
 } from '../preferences-schema';
 
 // Migration function to handle version updates
-const STORE_VERSION = 4;
+const STORE_VERSION = 5;
 
 // Cap on the persisted "Recent locations" list (most-recent first).
 const MAX_RECENT_LOCATIONS = 5;
@@ -56,6 +57,17 @@ const migratePreferences = (state: Record<string, unknown>, version: number): Pr
       ...state,
       fetchCompanyLogos: false,
       version: 4,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  // v4 → v5: add generationDepth (DEFAULT `fast` — the depth every existing
+  // install has been running; upgrading must never silently multiply spend).
+  if (version < 5) {
+    state = {
+      ...state,
+      generationDepth: 'fast',
+      version: 5,
       lastUpdated: new Date().toISOString(),
     };
   }
@@ -363,12 +375,17 @@ export const useResolvedPerformanceProfile = (): PerformanceProfile =>
 export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');
 
 /**
- * The user's DEFAULT generation depth. `?? 'fast'` covers a persisted state
- * written before this field existed — an existing install must not start
- * spending four provider calls per generation because it upgraded.
+ * The user's DEFAULT generation depth, coerced to a depth this build can
+ * actually RUN.
+ *
+ * Two distinct holes, one guard: a persisted state written before this field
+ * existed (an upgraded install must not start spending four provider calls per
+ * generation), and a stored value naming a tier this build cannot run — `max`
+ * from a hand-edited store or a downgrade. Both land on `fast`;
+ * `resolveRunnableDepth` is the single place that decision is made.
  */
 export const useGenerationDepth = () =>
-  usePreferencesStore((state) => state.generationDepth ?? 'fast');
+  usePreferencesStore((state) => resolveRunnableDepth(state.generationDepth));
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);
 export const useSemanticScoring = () =>
   usePreferencesStore((state) => state.semanticScoring ?? false);

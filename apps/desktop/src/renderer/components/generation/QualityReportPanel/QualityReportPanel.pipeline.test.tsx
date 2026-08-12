@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { ContentReportPayload } from '@ajh/shared/ipc';
@@ -95,7 +95,7 @@ describe('QualityReportPanel — staged run extras', () => {
   });
 
   describe('terminal per-bullet review', () => {
-    it('lists each flagged claim with Remove and Keep, and removes nothing itself', async () => {
+    it('lists each flagged claim with Remove and Keep, and removes nothing unasked', async () => {
       const onResolveFabrication = vi.fn();
       renderPanel(pipeline({ onResolveFabrication }));
 
@@ -104,6 +104,73 @@ describe('QualityReportPanel — staged run extras', () => {
 
       await userEvent.click(screen.getByRole('button', { name: /remove/i }));
       expect(onResolveFabrication).toHaveBeenCalledWith(PENDING.issueKey, 'remove');
+    });
+
+    it('APPLIES the removal to the document before recording the verdict', async () => {
+      const order: string[] = [];
+      const onRemoveEvidence = vi.fn(() => {
+        order.push('apply');
+      });
+      const onResolveFabrication = vi.fn(() => {
+        order.push('record');
+      });
+      renderPanel(pipeline({ onRemoveEvidence, onResolveFabrication }));
+
+      await userEvent.click(screen.getByRole('button', { name: /remove/i }));
+      await waitFor(() => expect(onResolveFabrication).toHaveBeenCalled());
+      expect(onRemoveEvidence).toHaveBeenCalledWith(PENDING.evidence);
+      // Order matters: recording first would briefly claim the entry is settled
+      // while the line is still in the document.
+      expect(order).toEqual(['apply', 'record']);
+    });
+
+    it('keeps the verdict — and says the line is still there — when the apply fails', async () => {
+      const onResolveFabrication = vi.fn();
+      const onRemoveEvidence = vi.fn(() => Promise.reject(new Error('document is read-only')));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { rerender } = renderPanel(pipeline({ onRemoveEvidence, onResolveFabrication }));
+
+      await userEvent.click(screen.getByRole('button', { name: /remove/i }));
+      // The user's decision is never thrown away…
+      await waitFor(() =>
+        expect(onResolveFabrication).toHaveBeenCalledWith(PENDING.issueKey, 'remove')
+      );
+      consoleError.mockRestore();
+
+      // …and once it comes back on the record with the line STILL in the
+      // document, the row says exactly that instead of "Marked for removal".
+      rerender(
+        <QualityReportPanel
+          open
+          onClose={vi.fn()}
+          report={CLEAN_REPORT}
+          docKind="resume"
+          pipeline={pipeline({ fabrications: [{ ...PENDING, decision: 'remove' }] })}
+        />
+      );
+      expect(screen.getByText(/still in the document/i)).toBeInTheDocument();
+      expect(screen.getByText(/edit it out of the document to finish/i)).toBeInTheDocument();
+      expect(screen.getByText(/1 claim still needs a decision/i)).toBeInTheDocument();
+    });
+
+    it('records Keep without touching the document', async () => {
+      const onRemoveEvidence = vi.fn();
+      const onResolveFabrication = vi.fn();
+      renderPanel(pipeline({ onRemoveEvidence, onResolveFabrication }));
+
+      await userEvent.click(screen.getByRole('button', { name: /keep/i }));
+      expect(onResolveFabrication).toHaveBeenCalledWith(PENDING.issueKey, 'keep');
+      expect(onRemoveEvidence).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a failed resolve write in an alert, like the Fix twin does', () => {
+      renderPanel(
+        pipeline({
+          onResolveFabrication: vi.fn(),
+          resolveError: "Couldn't record that decision. Try again.",
+        })
+      );
+      expect(screen.getByRole('alert')).toHaveTextContent(/couldn't record that decision/i);
     });
 
     it('records Keep through the same command', async () => {
@@ -132,7 +199,13 @@ describe('QualityReportPanel — staged run extras', () => {
     });
 
     it('shows a decided entry as decided, with no second prompt', () => {
-      renderPanel(pipeline({ fabrications: [{ ...PENDING, decision: 'remove' }] }));
+      renderPanel(
+        pipeline({
+          // Applied: the verdict and the document agree.
+          documentText: 'Summary\nLed the platform migration.',
+          fabrications: [{ ...PENDING, decision: 'remove' }],
+        })
+      );
       expect(screen.getByText('Marked for removal')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^keep$/i })).not.toBeInTheDocument();
       expect(screen.getByText(/every flagged claim has a decision/i)).toBeInTheDocument();
@@ -152,19 +225,24 @@ describe('QualityReportPanel — staged run extras', () => {
 });
 
 describe('QualityBadge — a needsReview run is never green', () => {
-  const slot = { report: CLEAN_REPORT, sourceTextHash: 0 };
-  const wrapper = {
-    schemaVersion: 2 as const,
-    pipeline: 'quality' as const,
-    generatedAt: 0,
-    resume: { ...slot, sourceTextHash: hashOf(DOCUMENT) },
-  };
-
   function hashOf(text: string): number {
     let hash = 5381;
     for (let i = 0; i < text.length; i++) hash = (hash * 33) ^ text.charCodeAt(i);
     return hash >>> 0;
   }
+
+  /** A report whose slot hash matches `text`, so staleness stays out of the way
+   *  and the assertion is about the review alone. */
+  function wrapperFor(text: string) {
+    return {
+      schemaVersion: 2 as const,
+      pipeline: 'quality' as const,
+      generatedAt: 0,
+      resume: { report: CLEAN_REPORT, sourceTextHash: hashOf(text) },
+    };
+  }
+
+  const wrapper = wrapperFor(DOCUMENT);
 
   it('counts undecided claims as open issues even on an otherwise clean report', () => {
     render(
@@ -179,7 +257,7 @@ describe('QualityBadge — a needsReview run is never green', () => {
     expect(screen.getByRole('button', { name: /1 issue/i })).toBeInTheDocument();
   });
 
-  it('goes green only once every claim carries a verdict', () => {
+  it('goes green on Keep — the verdict and the document already agree', () => {
     render(
       <QualityBadge
         report={wrapper}
@@ -189,5 +267,106 @@ describe('QualityBadge — a needsReview run is never green', () => {
       />
     );
     expect(screen.getByText('Checked — no issues')).toBeInTheDocument();
+  });
+
+  // THE finding: a recorded "Remove" over text that is still, verbatim, in the
+  // document. Mutation-guard for `unresolvedCount` — count any decision as
+  // resolved and this assertion flips to green.
+  it('stays OFF green while a recorded Remove has not been applied', () => {
+    render(
+      <QualityBadge
+        report={wrapper}
+        docKind="resume"
+        currentText={DOCUMENT}
+        pipeline={pipeline({ fabrications: [{ ...PENDING, decision: 'remove' }] })}
+      />
+    );
+    expect(screen.queryByText('Checked — no issues')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /1 issue/i })).toBeInTheDocument();
+  });
+
+  it('goes green on Remove once the evidence is genuinely gone', () => {
+    const edited = 'Summary\n\nExperience\nAcme';
+    render(
+      <QualityBadge
+        report={wrapperFor(edited)}
+        docKind="resume"
+        currentText={edited}
+        pipeline={pipeline({
+          documentText: edited,
+          fabrications: [{ ...PENDING, decision: 'remove' }],
+        })}
+      />
+    );
+    expect(screen.getByText('Checked — no issues')).toBeInTheDocument();
+  });
+
+  // The LIVE text is the authority, not the bundle's snapshot. A host that
+  // still carries the run's original `documentText` after the user hand-edited
+  // the line away must not keep the chip red — and, worse, the mirror case
+  // (bundle already clean, line still on screen) would go green over text the
+  // user is looking at.
+  it('measures claims against the LIVE text, not the bundle’s snapshot', () => {
+    const edited = 'Summary\n\nExperience\nAcme';
+    render(
+      <QualityBadge
+        report={wrapperFor(edited)}
+        docKind="resume"
+        currentText={edited}
+        pipeline={pipeline({
+          // Stale: still the pre-edit document the run produced.
+          documentText: DOCUMENT,
+          fabrications: [{ ...PENDING, decision: 'remove' }],
+        })}
+      />
+    );
+    expect(screen.getByText('Checked — no issues')).toBeInTheDocument();
+  });
+
+  it('turns Remove into a real edit through the host’s document writer', async () => {
+    const onDocumentTextChange = vi.fn();
+    // The user typed a line AFTER the run produced its snapshot, so the live
+    // text and the bundle's `documentText` differ. The edit must be computed
+    // from the LIVE text — building it from the snapshot would write the
+    // hand-typed line back out of existence.
+    const live = `${DOCUMENT}\nHand-typed note`;
+    render(
+      <QualityBadge
+        report={wrapperFor(live)}
+        docKind="resume"
+        currentText={live}
+        pipeline={pipeline({ documentText: DOCUMENT, onResolveFabrication: vi.fn() })}
+        onDocumentTextChange={onDocumentTextChange}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /1 issue/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^remove$/i }));
+
+    // The flagged LINE is gone from the text handed to the host's save path,
+    // and nothing else is.
+    await waitFor(() =>
+      expect(onDocumentTextChange).toHaveBeenCalledWith(
+        'Summary\n\nExperience\nAcme\nHand-typed note'
+      )
+    );
+  });
+
+  it('records the verdict but writes nothing when the host has no writer', async () => {
+    const onResolveFabrication = vi.fn();
+    render(
+      <QualityBadge
+        report={wrapper}
+        docKind="resume"
+        currentText={DOCUMENT}
+        pipeline={pipeline({ onResolveFabrication })}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /1 issue/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^remove$/i }));
+    await waitFor(() =>
+      expect(onResolveFabrication).toHaveBeenCalledWith(PENDING.issueKey, 'remove')
+    );
   });
 });

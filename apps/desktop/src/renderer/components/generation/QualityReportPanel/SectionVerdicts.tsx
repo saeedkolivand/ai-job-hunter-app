@@ -73,15 +73,18 @@ export function SectionVerdicts({
           const noteOpen = openNoteFor === section.sectionKey;
           return (
             <li
-              key={section.label}
+              // Labels are the document's own heading text now, and one line
+              // can name two canonical sections ("Skills and Experience"), so
+              // the label alone is no longer a unique React key.
+              key={`${section.sectionKey ?? 'unmapped'}::${section.label}`}
               className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-foreground/80">
                   {clean ? (
-                    <CheckCircle2 size={11} className="shrink-0 text-emerald-400/80" />
+                    <CheckCircle2 size={11} className="shrink-0 text-emerald-400" />
                   ) : (
-                    <AlertTriangle size={11} className="shrink-0 text-amber-400/80" />
+                    <AlertTriangle size={11} className="shrink-0 text-amber-400" />
                   )}
                   <span className="truncate">{section.label}</span>
                 </span>
@@ -148,7 +151,7 @@ export function SectionVerdicts({
       </ul>
 
       {fixError && (
-        <p role="alert" className="mt-2 text-[10px] leading-relaxed text-red-300/80">
+        <p role="alert" className="mt-2 text-[10px] leading-relaxed text-red-400">
           {fixError}
         </p>
       )}

@@ -88,6 +88,32 @@ describe('PipelineRunsList', () => {
       expect(screen.getAllByText('Reading the job ad')).toHaveLength(2);
     });
 
+    // `phase` is a Rust enum name. Rendering it raw put `start`/`finish` — English
+    // identifiers — in front of a German user.
+    it('translates the phase instead of printing the raw enum name', async () => {
+      const { container } = render(
+        <PipelineRunsList runs={[run()]} eventsByRun={{ 'run-1': events }} />
+      );
+      await userEvent.click(screen.getByRole('button', { name: /show stage timeline/i }));
+      const trail = container.querySelector('ol')?.textContent ?? '';
+      expect(trail).toContain('started');
+      expect(trail).toContain('finished');
+    });
+
+    it('pairs aria-controls with the region it actually renders', async () => {
+      render(<PipelineRunsList runs={[run()]} eventsByRun={{ 'run-1': events }} />);
+      const toggle = screen.getByRole('button', { name: /show stage timeline/i });
+      // Collapsed: nothing to point AT, so no dangling reference.
+      expect(toggle).not.toHaveAttribute('aria-controls');
+
+      await userEvent.click(toggle);
+      const id = screen
+        .getByRole('button', { name: /hide stage timeline/i })
+        .getAttribute('aria-controls');
+      expect(id).toBeTruthy();
+      expect(document.getElementById(id ?? '')).toBeInTheDocument();
+    });
+
     // The list endpoint returns SUMMARIES, so a trail the caller never fetched
     // genuinely isn't known — say that instead of drawing an empty ladder that
     // reads as "this run did nothing".

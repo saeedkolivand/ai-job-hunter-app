@@ -2,8 +2,10 @@ export { buildFilename, exportDOCX, exportPDF, exportTXT, renderDocumentPreview 
 export {
   type Fabrication,
   type FabricationPresentation,
+  isFabricationResolved,
   parseFabrications,
   presentFabrication,
+  removeEvidenceLines,
   unresolvedCount,
 } from './fabrications';
 export {

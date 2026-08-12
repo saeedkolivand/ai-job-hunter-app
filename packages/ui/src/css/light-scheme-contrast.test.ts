@@ -64,7 +64,30 @@ function lightRules(cls: string): string[] {
   return [...CSS.matchAll(re)].map((m) => (m[1] ?? '').replace(/\s+/g, ' ').trim());
 }
 
+/**
+ * Every status TEXT class the light scheme remaps — including the two that
+ * still carry a literal (emerald/blue), which the token-indirection assertions
+ * below deliberately skip.
+ *
+ * They belong in the duplicate-rule check regardless: a second rule for any of
+ * these silently wins at equal specificity, which is the failure mode this file
+ * exists for. Callers must reach these through the BARE class — Tailwind v4
+ * compiles an opacity suffix (`text-amber-300/70`, `text-amber-400/80`) into a
+ * separate class over the RAW palette variable, which no remap here can touch.
+ */
+const REMAPPED_STATUS_TEXT = [
+  'text-emerald-400',
+  'text-blue-400',
+  'text-amber-400',
+  'text-red-400',
+  'text-brand-soft',
+] as const;
+
 describe('utilities.css — light-scheme status text remaps', () => {
+  it.each(REMAPPED_STATUS_TEXT)('.%s has exactly ONE light rule', (cls) => {
+    expect(lightRules(cls)).toHaveLength(1);
+  });
+
   it.each(LIGHT_REMAPS)('.$cls has exactly ONE light rule', ({ cls }) => {
     // Two rules at equal specificity ⇒ the later one silently wins and the
     // earlier one is dead. That is the bug this whole file exists to prevent.
@@ -95,6 +118,18 @@ describe('utilities.css — light-scheme status text remaps', () => {
     expect(TOKENS).not.toMatch(/--color-status-error-text:\s*var\(--color-red-600\)/);
     expect(TOKENS).not.toMatch(/--color-status-warning-text:\s*var\(--color-amber-700\)/);
   });
+
+  /**
+   * Not a contrast rule, but the same class of defect: a sitewide CSS selector
+   * list nothing else can see. ARIA widgets are `div`s, so they get the arrow
+   * cursor unless their role is named here — and a disabled one must keep it.
+   */
+  it.each(['button', 'tab', 'radio'])(
+    'gives [role=%s] the pointer cursor, disabled ones excepted',
+    (role) => {
+      expect(CSS).toContain(`[role='${role}']:not([aria-disabled='true'])`);
+    }
+  );
 
   it('scopes every remap to the light scheme only (dark is untouched)', () => {
     for (const { cls } of LIGHT_REMAPS) {

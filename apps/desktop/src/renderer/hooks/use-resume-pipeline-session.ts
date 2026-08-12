@@ -84,7 +84,11 @@ export function useResumePipelineSession(
   const cancelJob = useCancelJob();
 
   const busy = resumePipelineMachine.busyStates?.includes(state) ?? false;
-  const { data: detail = null } = usePipelineRun(runId, busy);
+  const {
+    data: detail = null,
+    isError: recordFailed,
+    error: recordError,
+  } = usePipelineRun(runId, busy);
 
   // `runId` is state, so the subscription handlers below need the CURRENT one
   // without re-subscribing on every change (a re-subscribe drops events in the
@@ -125,6 +129,29 @@ export function useResumePipelineSession(
     const next = statusToEvent(status);
     if (next) send(next);
   }, [status, send]);
+
+  /**
+   * The record read itself failed and NOTHING has been fetched yet.
+   *
+   * That combination is fatal to this session and has to be said out loud: the
+   * status is the only completion signal, so a session that never gets a first
+   * record has no way to ever leave a busy state — the panel spins forever on a
+   * request that already gave up. Surfacing it puts the machine in `error`,
+   * where the surface's existing retry (`start` again) and cancel affordances
+   * live.
+   *
+   * Gated on `!detail` deliberately: once a record HAS landed, a later poll
+   * failure is a blip, the run is still going, and react-query keeps polling —
+   * killing a live run over one dropped read would be the opposite mistake.
+   */
+  useEffect(() => {
+    if (!recordFailed || detail) return;
+    console.error('[resumePipeline] reading the run record failed', {
+      error: errorDetail(recordError),
+    });
+    setError(recordError instanceof Error ? recordError.message : String(recordError));
+    send('ERROR');
+  }, [recordFailed, detail, recordError, send]);
 
   // Replay a reconnected run's persisted stage trail so the counter is right
   // after a remount. Only while the machine is still at `idle`/`queued` — once

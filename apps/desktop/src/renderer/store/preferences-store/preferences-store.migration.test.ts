@@ -71,4 +71,19 @@ describe('preferences-store migrations', () => {
     const state = await hydrate();
     expect(state.fetchCompanyLogos).toBe(false);
   });
+
+  it('adds generationDepth=fast when migrating a v4 payload (never upgrade spend silently)', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ version: 4, state: { language: 'en', fetchCompanyLogos: true } })
+    );
+    const state = await hydrate();
+    // The VERSION MARKER is what proves the step ran. The field alone doesn't:
+    // zustand's merge already fills it from `defaultPreferences`, so a test
+    // asserting only `generationDepth === 'fast'` passes with the step deleted
+    // (verified by mutation) and guards nothing.
+    expect(state.version).toBe(5);
+    expect(state.generationDepth).toBe('fast');
+    expect(state.fetchCompanyLogos).toBe(true);
+  });
 });

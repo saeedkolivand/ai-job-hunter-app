@@ -611,6 +611,10 @@
 button:not(:disabled),
 [role='button']:not([aria-disabled='true']),
 [role='tab']:not([aria-disabled='true']),
+/* Radios in a SegmentedControl-style radiogroup are divs, so they never got the
+   browser's button cursor; a disabled option keeps the arrow, matching the
+   click it refuses. */
+[role='radio']:not([aria-disabled='true']),
 [role='option'],
 a[href],
 summary,

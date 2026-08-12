@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
-import { hashText, type QualityReport, unresolvedCount } from '@/lib/generate';
+import { hashText, type QualityReport, removeEvidenceLines, unresolvedCount } from '@/lib/generate';
 
 import { type QualityPipelineReview, QualityReportPanel } from './QualityReportPanel';
 
@@ -29,11 +29,23 @@ export interface QualityBadgeProps {
   className?: string;
   /**
    * Staged-run extras, forwarded to the panel. Their presence also changes the
-   * BADGE: while flagged claims are undecided the run is `needsReview`, and
+   * BADGE: while flagged claims are unsettled the run is `needsReview`, and
    * this chip must never read "no issues" for it — the document is usable but
    * unfinished, and that is the state the terminal review exists to surface.
    */
   pipeline?: QualityPipelineReview;
+  /**
+   * The host's ordinary document writer — the SAME one the editor calls, so a
+   * removal lands in the surface's normal edit/save path (debounced commit,
+   * preview refresh, persisted alongside a fresh report) instead of a private
+   * side channel.
+   *
+   * Supplying it is what turns the review's "Remove" from a recorded intention
+   * into an applied edit. Omit it (or pass `undefined` while the document is
+   * locked/streaming) and Remove still records the verdict — the entry then
+   * shows as "marked for removal", and the chip stays off green.
+   */
+  onDocumentTextChange?: (next: string) => void;
 }
 
 /**
@@ -56,6 +68,7 @@ export function QualityBadge({
   rechecking,
   className,
   pipeline,
+  onDocumentTextChange,
 }: QualityBadgeProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -69,10 +82,14 @@ export function QualityBadge({
   const stale = hashText(currentText) !== slot.sourceTextHash;
 
   const critical = docReport.issues.filter((issue) => issue.severity === 'critical').length;
-  // Undecided flagged claims count as open issues here even when the
+  // Unsettled flagged claims count as open issues here even when the
   // deterministic pass came back empty: the run is `needsReview`, and a green
   // "no issues" on it would be the exact misreport the review panel prevents.
-  const pendingClaims = pipeline ? unresolvedCount(pipeline.fabrications) : 0;
+  //
+  // "Unsettled" is measured against `currentText`, not against the decision
+  // alone — a Remove that was recorded but never applied leaves the claim
+  // verbatim in the document, and that is not a clean run.
+  const pendingClaims = pipeline ? unresolvedCount(pipeline.fabrications, currentText) : 0;
   const openIssues = docReport.issues.length + pendingClaims;
   const clean = openIssues === 0;
   const label = stale
@@ -80,6 +97,28 @@ export function QualityBadge({
     : clean
       ? t('quality.badge.clean')
       : t('quality.badge.issues', { count: openIssues, critical });
+
+  /**
+   * Turn the host's text writer into the review's removal port. Built from
+   * `currentText` — the live document, the same string staleness is measured
+   * against — never from `pipeline.documentText`, which the host may be holding
+   * at the run's snapshot; writing that back would undo the user's edits.
+   *
+   * An explicit `pipeline.onRemoveEvidence` wins, so a host with a different
+   * apply strategy is not overridden.
+   */
+  const panelPipeline =
+    pipeline && !pipeline.onRemoveEvidence && onDocumentTextChange
+      ? {
+          ...pipeline,
+          onRemoveEvidence: (evidence: string) => {
+            const next = removeEvidenceLines(currentText, evidence);
+            // `null` = nothing to remove (the line is already gone); the
+            // recorded verdict alone settles the entry.
+            if (next !== null) onDocumentTextChange(next);
+          },
+        }
+      : pipeline;
 
   return (
     <>
@@ -108,7 +147,7 @@ export function QualityBadge({
         stale={stale}
         onRecheck={onRecheck}
         rechecking={rechecking}
-        pipeline={pipeline}
+        pipeline={panelPipeline}
       />
     </>
   );

@@ -22,13 +22,14 @@ const bus = vi.hoisted(() => ({
   delta: null as ((d: string) => void) | null,
   detail: null as PipelineRunDetail | null,
   live: false,
+  recordError: null as Error | null,
 }));
 
 vi.mock('@/services/use-resume-pipeline', () => ({
   useStartResumePipelineRun: () => startMock,
   usePipelineRun: (_runId: string | null, live: boolean) => {
     bus.live = live;
-    return { data: bus.detail };
+    return { data: bus.detail, isError: !!bus.recordError, error: bus.recordError };
   },
   usePipelineStageEvents: (handler?: (e: PipelineStageEvent) => void) => {
     bus.stage = handler ?? null;
@@ -76,6 +77,7 @@ beforeEach(() => {
   bus.delta = null;
   bus.detail = null;
   bus.live = false;
+  bus.recordError = null;
   startMock.mutateAsync.mockResolvedValue({ runId: RUN_ID, jobId: JOB_ID });
 });
 
@@ -190,6 +192,41 @@ describe('useResumePipelineSession', () => {
     const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
     await waitFor(() => expect(result.current.state).toBe('done'));
     expect(result.current.runId).toBe(RUN_ID);
+  });
+
+  // ── A read that never succeeds must not read as "still working" ───────────
+  //
+  // The record's status is the ONLY completion signal, so a session that never
+  // gets a first record can never leave a busy state. Discard `isError` here
+  // and the machine spins forever on a request that already gave up — the exact
+  // silent death these two tests pin.
+  describe('a failing record read', () => {
+    it('errors the session when NO record has ever landed', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      bus.recordError = new Error('ipc channel closed');
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.busy).toBe(false);
+      expect(result.current.error).toContain('ipc channel closed');
+      consoleError.mockRestore();
+    });
+
+    it('does NOT kill a live run over one dropped read', async () => {
+      // A blip after a record has landed is a blip: the run is still going and
+      // the query keeps polling. Ending it here would be the opposite mistake.
+      bus.detail = detail('running');
+      const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.stage?.(stage('draft', 'start', 3)));
+      expect(result.current.state).toBe('drafting');
+
+      bus.recordError = new Error('blip');
+      rerender();
+
+      await waitFor(() => expect(result.current.state).toBe('drafting'));
+      expect(result.current.busy).toBe(true);
+      expect(bus.live).toBe(true);
+    });
   });
 
   it('surfaces a start failure instead of leaving the panel spinning', async () => {
