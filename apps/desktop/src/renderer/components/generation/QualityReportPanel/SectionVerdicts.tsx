@@ -36,6 +36,17 @@ export interface SectionVerdictsProps {
  * - "Auto-repaired" is reported once, for the RUN, not per section: the repair
  *   stage's artifact carries counts only (ADR-027 keeps section text out of it),
  *   so a per-section "repaired" chip would be invented.
+ *
+ * **Max depth does NOT change that second one, contrary to what this file's
+ * earlier note anticipated.** Phase 4 added per-section artifacts for
+ * GENERATION — `sections` emits `{section, sections, produced}` per section —
+ * but repair is unchanged at both depths: one `{rounds, reverted,
+ * truncatedAttempts, failedAttempts, budgeted, timedOut, criticalsRemaining}`
+ * record for the whole stage, with nothing naming a section. Which section a
+ * repair round touched is therefore still not recorded anywhere the renderer
+ * can read, so the run-level line below stays the honest answer for both
+ * depths. The per-section verdicts that DO exist are computed from the stored
+ * report (`buildSectionVerdicts`), which is what the rows above show.
  */
 export function SectionVerdicts({
   sections,

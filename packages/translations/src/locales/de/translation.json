@@ -1628,6 +1628,16 @@
         "reverted": "Die letzte Nachbesserung hat es verschlechtert und wurde zurückgenommen.",
         "perSectionNote": "Nachbesserungen werden für den gesamten Lauf gezählt — welcher Abschnitt betroffen war, hält die Prüfung nicht fest."
       },
+      "judge": {
+        "provenance": "KI-Review",
+        "hint": "Vom Modell geschrieben, nachdem es deinen fertigen Lebenslauf gelesen hat — ein Vorschlag, keine Regel der Prüfungen. Nichts davon blockiert oder ändert das Dokument.",
+        "kind": {
+          "clarity": "Klarheit",
+          "evidence": "Belege",
+          "tailoring": "Passung",
+          "note": "Hinweis"
+        }
+      },
       "review": {
         "title": "Aussagen zum Prüfen",
         "description": "Diese Zeilen ließen sich nicht auf deinen Lebenslauf zurückführen. Nichts wird automatisch entfernt — entscheide jede einzeln, deine Wahl wird im Bericht festgehalten.",

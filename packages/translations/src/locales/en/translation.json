@@ -1624,6 +1624,16 @@
         "reverted": "The last repair round made things worse and was reverted.",
         "perSectionNote": "Repairs are counted for the run — the check doesn't record which section each one touched."
       },
+      "judge": {
+        "provenance": "AI reviewer",
+        "hint": "Written by the model after reading your finished résumé — a suggestion, not a rule the checks enforce. Nothing here blocks or changes the document.",
+        "kind": {
+          "clarity": "Clarity",
+          "evidence": "Evidence",
+          "tailoring": "Tailoring",
+          "note": "Note"
+        }
+      },
       "review": {
         "title": "Claims to review",
         "description": "These lines couldn't be traced back to your résumé. Nothing is removed automatically — decide each one and your choice is recorded on the report.",

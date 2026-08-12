@@ -153,6 +153,96 @@ describe('QualityReportPanel', () => {
     expect(screen.queryByText(/unusual number of bullets/i)).toBeNull();
   });
 
+  // ── The max-depth judge ─────────────────────────────────────────────────────
+  //
+  // A `judge.*` issue is the ONLY finding in this panel whose message is
+  // free prose a model wrote about this specific document (already in the run's
+  // target language). Two things follow, and both are guarded here.
+  describe('a judge issue', () => {
+    const JUDGE_NOTE =
+      'The second bullet under Acme repeats the platform migration already claimed in the summary.';
+    const judgeReport = (code = 'judge.clarity'): ContentReportPayload => ({
+      ok: false,
+      issues: [
+        {
+          severity: 'warning',
+          code,
+          section: 'Experience',
+          message: JUDGE_NOTE,
+          evidence: 'Led the platform migration end to end',
+        },
+      ],
+      metrics: METRICS,
+    });
+
+    // THE guard. `messageFor` returns the translation and discards `message`
+    // for any code with a `quality.issue.<code>` key — so a catalog entry for a
+    // judge code would silently replace the whole remark with a canned
+    // sentence. The prefix short-circuits BEFORE that lookup: add
+    // `quality.issue.judge.clarity` to the catalog and this still passes, but
+    // delete the `isJudgeCode` branch from `messageFor` and add the key and it
+    // fails. (Both mutations were run.)
+    it('renders the model’s own note, never a catalog string', () => {
+      render(<QualityReportPanel open onClose={vi.fn()} report={judgeReport()} docKind="resume" />);
+      expect(screen.getByText(JUDGE_NOTE)).toBeInTheDocument();
+      expect(screen.queryByText(/deterministic check flagged this/i)).toBeNull();
+      expect(screen.queryByText('quality.issue.judge.clarity')).toBeNull();
+    });
+
+    // The note is model-authored prose derived from an untrusted job posting.
+    // It stays a TEXT node: no markdown, no linkification, no HTML.
+    it('renders the note as inert text, not as markup', () => {
+      const injected: ContentReportPayload = {
+        ok: false,
+        issues: [
+          {
+            severity: 'warning',
+            code: 'judge.note',
+            section: null,
+            message: '<img src=x onerror="alert(1)"> **bold** [link](https://evil.test)',
+            evidence: null,
+          },
+        ],
+        metrics: METRICS,
+      };
+      const { container } = render(
+        <QualityReportPanel open onClose={vi.fn()} report={injected} docKind="resume" />
+      );
+      expect(
+        screen.getByText(/<img src=x onerror="alert\(1\)"> \*\*bold\*\* \[link\]/)
+      ).toBeInTheDocument();
+      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('a[href*="evil.test"]')).toBeNull();
+    });
+
+    it('labels its provenance so it does not read as a validator finding', () => {
+      render(<QualityReportPanel open onClose={vi.fn()} report={judgeReport()} docKind="resume" />);
+      const badge = screen.getByText(/AI reviewer/);
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent('Clarity');
+      expect(badge).toHaveAttribute('title', expect.stringMatching(/a suggestion, not a rule/i));
+    });
+
+    it('keeps the badge — minus the kind — for a judge kind this build predates', () => {
+      render(
+        <QualityReportPanel
+          open
+          onClose={vi.fn()}
+          report={judgeReport('judge.some_future_kind')}
+          docKind="resume"
+        />
+      );
+      expect(screen.getByText(/AI reviewer/)).toBeInTheDocument();
+      // Never a raw i18n key on screen.
+      expect(screen.queryByText(/quality\.panel\.judge/)).toBeNull();
+    });
+
+    it('leaves a deterministic finding unbadged', () => {
+      render(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="resume" />);
+      expect(screen.queryByText(/AI reviewer/)).toBeNull();
+    });
+  });
+
   it('still renders the static translation for a code outside the lossy set, even though its Rust message has numbers (alignment.low_coverage)', () => {
     const withCoverageNumbers: ContentReportPayload = {
       ok: false,
