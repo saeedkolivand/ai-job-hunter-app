@@ -26,7 +26,7 @@ The quality-depth pipeline (Phases 2–4) enforces the core rule structurally an
 4. **Deterministic depth tiers:**
    - **Fast** — today's TS path + validators over its output (auto-report, no auto-repair).
    - **Quality** — analyze/evidence/strategy/draft/validate/repair pipeline (4 LLM calls + deterministic checks + ≤2 repair rounds).
-   - **Max** — quality + section-wise generation (7 calls + ≤9 sequential section stages).
+   - **Max** — quality + section-wise generation (≤9 sequential JSON calls for summary/skills/experience-per-company/projects/education) + assemble + validate + judge + repair. The judge runs last (after repair) to review the finished assembled document against source + job ad; all judge items are Warning-only (never Critical) and the stage is skippable (errors/timeout do not block). Strategy and evidence artifacts persist in full (clamp-truncated, fail hard if unparseable) for max depth only, enabling per-entry regenerate via stored CompanyPlan + evidence citations; a regenerate that cannot parse the artifact degrades to repair-style line replacement.
 
 5. **Repair is bounded and transparent.** Criticals group by section; ≤2 rounds; failing sections only. Re-validation happens after each round. Strictly-more-criticals ⇒ revert + stop. Terminal fabrications (surviving after repair) go to a per-bullet review panel; the user decides to keep or remove. Nothing is silently dropped.
 
