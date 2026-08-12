@@ -81,7 +81,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ajh_tauri::validate::content::{
-    severity_for, validate_content, ContentInput, ContentReport, DocKind,
+    severity_for, validate_content, ContentInput, ContentReport, DocKind, CONTENT_ISSUE_CODES,
 };
 use ajh_tauri::validate::Severity;
 
@@ -323,9 +323,15 @@ const CASES: &[Case] = &[
 ///
 /// Findings, not codes: one unit here is one line a user is shown about a
 /// document that is fine. The per-code table counts each code once per fixture
-/// — right for "which check over-fires", wrong for a budget, since one code can
-/// fire a dozen times in one document (the AI-tells letter carries 16 warnings
-/// from 2 codes).
+/// — right for "which check over-fires", wrong for a budget, because one code
+/// can fire many times in one document.
+///
+/// That skew is not hypothetical, though the fixture that demonstrates it is
+/// NOT in this budget: the AI-tells letter turns 2 codes into 16 findings, and
+/// it is `Planted`, so it never reaches `warning_fps`. It is the existence
+/// proof that a code-count and a finding-count differ by an order of magnitude
+/// on real output — which is why the budget counts the one a user would see, in
+/// advance of a truthful fixture ever exhibiting it.
 ///
 /// Zero today, and that is a measurement rather than an aspiration: the whole
 /// truthful set comes back completely clean. It is a BUDGET rather than a
@@ -333,6 +339,16 @@ const CASES: &[Case] = &[
 /// and it is asserted so the headline number in the printed table is a guard
 /// instead of a comment.
 const WARNING_FP_BUDGET: usize = 0;
+
+/// How many of the truthful fixtures the UNIT suite already pins to a completely
+/// empty report — the two `*_generated_clean.txt`, one test each
+/// (`clean_resume_produces_no_issues_at_all`,
+/// `clean_german_resume_produces_no_issues_at_all`).
+///
+/// Pinned as a number because the caveat line is computed by substring: without
+/// this, renaming or relabelling a clean fixture would silently shrink the
+/// caveat and make [`WARNING_FP_BUDGET`] read as a stronger result than it is.
+const EXPECTED_PINNED_EMPTY: usize = 2;
 
 /// The posting requirements each language's job ad is analysed into — the same
 /// lists `validate::content::test` passes, so alignment findings here mean what
@@ -429,13 +445,16 @@ fn severity_label(code: &str) -> &'static str {
 fn gradeable_fixture_files() -> BTreeSet<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(FIXTURES_SUBDIR);
     fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("read {dir:?}: {e}"))
+        // Repo-relative in the message, never `dir`: that is built from
+        // `CARGO_MANIFEST_DIR`, so printing it puts the developer's home
+        // directory (or the CI workspace root) in the failure output.
+        .unwrap_or_else(|e| panic!("read {FIXTURES_SUBDIR}: {e}"))
         .map(|entry| {
             // NOT `entry.ok()?`: an unreadable entry would silently SHRINK the
             // corpus this guard compares against, which is the one failure it
             // cannot be allowed to have.
             entry
-                .unwrap_or_else(|e| panic!("read a fixture dir entry in {dir:?}: {e}"))
+                .unwrap_or_else(|e| panic!("read a fixture dir entry in {FIXTURES_SUBDIR}: {e}"))
                 .file_name()
                 .to_string_lossy()
                 .into_owned()
@@ -611,9 +630,12 @@ fn validator_metrics_over_labelled_fixtures() {
 
     // FINDINGS, not codes. The per-code table above counts each code once per
     // fixture, which is the right shape for "which check over-fires" and the
-    // WRONG shape for a budget: the letter fixture alone carries 16 warnings from
-    // 2 codes, so a code-based sum understates by 8× exactly where it matters.
-    // What a user is shown is one line per finding, so that is what is budgeted.
+    // WRONG shape for a budget: what a user is shown is one line per finding.
+    // The gap between the two is 8× on the AI-tells letter (2 codes, 16
+    // findings) — a `Planted` fixture, so it is an illustration of the skew and
+    // not an input here. Every truthful fixture is clean today, so the two
+    // counts agree at 0; they would not agree the moment one stops being clean,
+    // and this is the one that would be honest then.
     let warning_fps: usize = outcomes
         .iter()
         .filter(|o| o.label == Label::Negative)
@@ -633,9 +655,35 @@ fn validator_metrics_over_labelled_fixtures() {
     );
 
     // ── Assert ──────────────────────────────────────────────────────────────
+
+    // The caveat sentence above is computed by SUBSTRING, so renaming a clean
+    // fixture (or relabelling one) would quietly shrink the number it prints
+    // rather than fail anything — a caveat that under-reports is worse than no
+    // caveat, because it makes the headline look stronger than it is.
+    assert_eq!(
+        pinned_empty, EXPECTED_PINNED_EMPTY,
+        "the caveat line found {pinned_empty} unit-suite-pinned negatives, expected \
+         {EXPECTED_PINNED_EMPTY} — if the clean fixtures were renamed or relabelled, update \
+         EXPECTED_PINNED_EMPTY and the two test names the caveat credits"
+    );
+
     for outcome in &outcomes {
         if let Label::Planted(codes) = outcome.label {
             for (code, expected) in codes {
+                // Registered AT ALL, before anything is read off the registry.
+                // `severity_for` degrades an unknown code to `Warning` behind a
+                // `debug_assert`, so with debug assertions compiled out the
+                // severity check below would accept a typo'd code labelled
+                // `Warning`. Recall would still fail (a code that does not exist
+                // cannot be reported) — but it would fail as "the validator
+                // missed it", sending the reader after a validator bug instead of
+                // a typo on this line.
+                assert!(
+                    CONTENT_ISSUE_CODES.iter().any(|(c, _)| c == code),
+                    "{}: {code} is not in CONTENT_ISSUE_CODES — a planted label must name a real \
+                     code, not one this file invented",
+                    outcome.file
+                );
                 // The severity this file CLAIMS, checked against the registry.
                 // A demotion (or promotion) is exactly the event this harness
                 // informs, so it must be re-stated here rather than absorbed.
