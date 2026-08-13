@@ -119,10 +119,16 @@ fn generate_cover_letter_docx_classic(
         // openings are not names.
         if is_first_line && !header_done {
             let is_header_name_line = !is_salutation && !is_signoff && !is_subject_line;
-            let name_text = meta
-                .and_then(|m| m.candidate_name.as_ref())
-                .map(|s| s.as_str())
-                .unwrap_or(&clean);
+            // Shared with the PDF parser via `resolve_letterhead_candidate`:
+            // an empty-string `candidate_name: Some("")` must fall through to
+            // `clean` exactly like `None` does. `meta...unwrap_or(&clean)`
+            // alone does NOT do that — `Some("")` is not `None`, so the plain
+            // `unwrap_or` chain returned `""` and suppressed a REAL name
+            // sitting right there on the letter's own first line.
+            let name_text = crate::export::typst_engine::resolve_letterhead_candidate(
+                meta.and_then(|m| m.candidate_name.as_deref()),
+                || clean.as_str(),
+            );
             let renders_name =
                 is_header_name_line && crate::export::typst_engine::is_letterhead_name(name_text);
 
@@ -578,10 +584,16 @@ fn generate_cover_letter_docx_layout(
         // openings are not names.
         if is_first_line && !header_done {
             let is_header_name_line = !is_salutation && !is_signoff && !is_subject_line;
-            let name_text = meta
-                .and_then(|m| m.candidate_name.as_ref())
-                .map(|s| s.as_str())
-                .unwrap_or(&clean);
+            // Shared with the PDF parser via `resolve_letterhead_candidate`:
+            // an empty-string `candidate_name: Some("")` must fall through to
+            // `clean` exactly like `None` does. `meta...unwrap_or(&clean)`
+            // alone does NOT do that — `Some("")` is not `None`, so the plain
+            // `unwrap_or` chain returned `""` and suppressed a REAL name
+            // sitting right there on the letter's own first line.
+            let name_text = crate::export::typst_engine::resolve_letterhead_candidate(
+                meta.and_then(|m| m.candidate_name.as_deref()),
+                || clean.as_str(),
+            );
             let renders_name =
                 is_header_name_line && crate::export::typst_engine::is_letterhead_name(name_text);
 

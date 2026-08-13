@@ -944,7 +944,11 @@ fn letterhead_less_letter_with_subject_line_keeps_subject_and_body() {
 /// device guard already refused it; the NAME TEXT itself didn't). Same defect
 /// class as `letterhead_less_letter_keeps_its_salutation_and_body`, now via
 /// `is_letterhead_name`'s date check. Covers all six layouts (`_classic` and
-/// `_layout`).
+/// `_layout`), and both shapes "no candidate name" actually arrives in —
+/// `None` and `Some(String::new())` — mirroring
+/// `monogram_docx_emits_no_device_for_a_date_opening`'s matrix; the two used
+/// to diverge before `resolve_letterhead_candidate` unified them (CodeRabbit
+/// round 1, item 1).
 #[test]
 fn letterhead_less_letter_with_date_opening_suppresses_the_name_not_the_date() {
     const DATE_FIRST: &str =
@@ -959,40 +963,115 @@ fn letterhead_less_letter_with_date_opening_suppresses_the_name_not_the_date() {
         LetterLayout::Sidebar,
         LetterLayout::Monogram,
     ] {
-        // No candidate name and no ContactProfile — the actual reachable
-        // shape: three renderer call sites pass an empty `candidate_name`.
-        let xml = document_xml(&generate_docx(&letter_request(DATE_FIRST, layout)).expect("docx"));
+        for candidate_name in [None, Some(String::new())] {
+            // No candidate name (either shape) and no ContactProfile — the
+            // actual reachable case: three renderer call sites pass an empty
+            // `candidate_name`.
+            let mut request = letter_request(DATE_FIRST, layout);
+            request.meta = candidate_name.clone().map(|candidate_name| GenerationMeta {
+                candidate_name: Some(candidate_name),
+                job_title: None,
+                company_name: None,
+                target_language: None,
+            });
+            let xml = document_xml(&generate_docx(&request).expect("docx"));
 
+            assert!(
+                xml.contains("12 March 2025"),
+                "{layout:?} candidate_name={candidate_name:?}: the date line must not be \
+                 dropped, just not treated as the name: {xml}"
+            );
+            assert!(
+                xml.contains("Dear Hiring Manager"),
+                "{layout:?} candidate_name={candidate_name:?}: the salutation must still \
+                 render normally"
+            );
+
+            // Strongest check: a real-name render of the SAME layout emits a
+            // name-sized (large) run for the header; the date-opening render
+            // must not — before this guard, "12 March 2025" WAS that run, at
+            // the same size as a real name.
+            let with_real_name = document_xml(
+                &generate_docx(&letter_request(REFINED_US_TEXT, layout)).expect("docx"),
+            );
+            assert!(
+                max_size(&xml) < max_size(&with_real_name),
+                "{layout:?} candidate_name={candidate_name:?}: a date opening must not emit a \
+                 name-sized header run (date-opening max size {}, real-name max size {})",
+                max_size(&xml),
+                max_size(&with_real_name)
+            );
+
+            // No header content means no decorative shading either — Banded's
+            // band / Sidebar's rail approximation / Monogram's device are all
+            // gated on the SAME header block that's now skipped, so none of
+            // them should paint an empty tinted box with nothing beside it.
+            assert!(
+                !xml.contains("w:shd"),
+                "{layout:?} candidate_name={candidate_name:?}: no header content means no \
+                 decorative shading either: {xml}"
+            );
+        }
+    }
+}
+
+/// The other half of the matrix above: an empty-string `candidate_name` must
+/// NOT suppress a REAL name that IS on the letter's own first line.
+///
+/// CodeRabbit round 1, item 1 (MAJOR, verified before fixing): both DOCX
+/// line-scanners resolved `candidate_name` via
+/// `meta.and_then(...).map(...).unwrap_or(&clean)`, with no empty-string
+/// filter — `Some("")` is not `None`, so that chain returned `""` rather
+/// than falling through to `clean`. The PDF parser already filtered blank
+/// `meta_name` before its own fallback (`letter.rs`'s
+/// `resolve_letterhead_candidate` call), so a nameless request whose letter
+/// opened with a real name rendered that name in PDF while DOCX silently
+/// suppressed it — the exact PDF/DOCX divergence this whole guard family
+/// exists to prevent. This is the red-first test for that fix: reverting
+/// `resolve_letterhead_candidate`'s empty-string filter (or re-nesting a
+/// bare `unwrap_or` at either DOCX call site) turns it red.
+#[test]
+fn empty_candidate_name_does_not_suppress_a_real_first_line_name() {
+    const NAMED_FIRST: &str =
+        "Jane Smith\n\nDear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+    let max_size = |xml: &str| all_font_sizes(xml).into_iter().max().unwrap_or(0);
+
+    for layout in [
+        LetterLayout::Classic,
+        LetterLayout::Refined,
+        LetterLayout::Banded,
+        LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ] {
+        let mut request = letter_request(NAMED_FIRST, layout);
+        request.meta = Some(GenerationMeta {
+            candidate_name: Some(String::new()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        });
+        let xml = document_xml(&generate_docx(&request).expect("docx"));
+
+        // Case-insensitive: Banded/Navy uppercase the name in DOCX
+        // (`LetterDocxStyle::uppercase_name`), matching their `.typ` small-
+        // caps treatment — "JANE SMITH", not "Jane Smith" — so the presence
+        // check must not assume a specific case.
         assert!(
-            xml.contains("12 March 2025"),
-            "{layout:?}: the date line must not be dropped, just not treated as the name: {xml}"
-        );
-        assert!(
-            xml.contains("Dear Hiring Manager"),
-            "{layout:?}: the salutation must still render normally"
+            xml.to_lowercase().contains("jane smith"),
+            "{layout:?}: candidate_name: Some(\"\") must fall through to the letter's own \
+             first line, not suppress a real name: {xml}"
         );
 
-        // Strongest check: a real-name render of the SAME layout emits a
-        // name-sized (large) run for the header; the date-opening render must
-        // not — before this guard, "12 March 2025" WAS that run, at the same
-        // size as a real name.
-        let with_real_name =
-            document_xml(&generate_docx(&letter_request(REFINED_US_TEXT, layout)).expect("docx"));
-        assert!(
-            max_size(&xml) < max_size(&with_real_name),
-            "{layout:?}: a date opening must not emit a name-sized header run \
-             (date-opening max size {}, real-name max size {})",
+        // Matching strength to the negative case above: the name must be
+        // NAME-SIZED, not merely present as body text somewhere.
+        let no_meta_baseline =
+            document_xml(&generate_docx(&letter_request(NAMED_FIRST, layout)).expect("docx"));
+        assert_eq!(
             max_size(&xml),
-            max_size(&with_real_name)
-        );
-
-        // No header content means no decorative shading either — Banded's
-        // band / Sidebar's rail approximation / Monogram's device are all
-        // gated on the SAME header block that's now skipped, so none of them
-        // should paint an empty tinted box with nothing beside it.
-        assert!(
-            !xml.contains("w:shd"),
-            "{layout:?}: no header content means no decorative shading either: {xml}"
+            max_size(&no_meta_baseline),
+            "{layout:?}: candidate_name: Some(\"\") must render the SAME name-sized header run \
+             as candidate_name: None does (both fall through to the same first line)"
         );
     }
 }

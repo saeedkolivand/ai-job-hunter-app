@@ -14,7 +14,9 @@
 
 use serde::Serialize;
 
-use super::letterhead::{is_letterhead_name, letterhead_initials, looks_like_date};
+use super::letterhead::{
+    is_letterhead_name, letterhead_initials, looks_like_date, resolve_letterhead_candidate,
+};
 use crate::contact_profile::ContactProfile;
 use crate::locale::letter::conventions;
 use crate::model::rich::{tokenize_rich, TextRun};
@@ -251,18 +253,21 @@ pub(super) fn parse_cover_letter(
     // B.2: an ALL-CAPS stored name adopts the contact profile's mixed-case
     // casing (when it matches case-insensitively) so the letterhead + signature
     // don't render shouted; no-op with no profile or a different-name profile.
+    //
+    // `resolve_letterhead_candidate` is the shared "prefer meta_name unless
+    // blank" decision — both DOCX line-scanners make the identical call, so
+    // an empty-string `Some("")` `meta_name` (the shape three renderer call
+    // sites actually send) degrades to the first-line fallback the same way
+    // in every format.
     let name_text: String = prefer_profile_casing(
-        meta_name
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| {
-                raw_lines
-                    .iter()
-                    .map(|l| l.trim())
-                    .find(|l| !l.is_empty())
-                    .unwrap_or("")
-                    .to_string()
-            }),
+        resolve_letterhead_candidate(meta_name, || {
+            raw_lines
+                .iter()
+                .map(|l| l.trim())
+                .find(|l| !l.is_empty())
+                .unwrap_or("")
+        })
+        .to_string(),
         contact,
     );
 

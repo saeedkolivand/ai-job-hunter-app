@@ -58,6 +58,12 @@ pub(crate) use letterhead::letterhead_initials;
 // line-scanners (DOCX has no shared `LetterModel` to funnel through), so every
 // format agrees on which openings are not names.
 pub(crate) use letterhead::is_letterhead_name;
+// The shared "prefer meta_name unless it's blank" resolution used by every
+// letterhead-name call site — the PDF parser and both DOCX line-scanners —
+// so an empty-string `Some("")` candidate name (the shape three renderer
+// call sites actually send) can never fall through to a REAL name on the
+// letter's first line in one format while the other renders it.
+pub(crate) use letterhead::resolve_letterhead_candidate;
 pub use photo::resolve_photo;
 pub use render::RenderOpts;
 // Single source of truth for document-accent hex validation, reused by the

@@ -32,13 +32,17 @@ pub(super) fn looks_like_date(s: &str) -> bool {
         return false;
     }
     // Must contain a year-like 4-digit run or a separator ( / . - space)
-    // alongside a digit to distinguish from plain phone numbers or IDs.
+    // alongside a digit to distinguish from plain phone numbers or IDs. The
+    // `has_digit` guard above already proved a digit is present by this
+    // point, so the rule really is just "a year, or a separator" — the
+    // stale `has_digit &&` on the old final expression was always true and
+    // said nothing.
     let has_year = t.split_whitespace().any(|w| {
         let digits: String = w.chars().filter(|c| c.is_ascii_digit()).collect();
         digits.len() == 4
     });
     let has_sep = t.contains('/') || t.contains('.') || t.contains('-');
-    has_year || (has_digit && has_sep)
+    has_year || has_sep
 }
 
 /// Up to **two** uppercase initials for a letterhead monogram device: the
@@ -152,6 +156,37 @@ pub(crate) fn letterhead_initials(name_text: &str) -> String {
         return String::new();
     }
     monogram_initials(name_text)
+}
+
+/// Resolve the candidate name used for the letterhead: prefer `meta_name`,
+/// but only when it is non-blank — an empty-string `Some("")` (the shape
+/// three renderer call sites actually send when no candidate name is known)
+/// must fall through to `fallback` exactly like a real `None`.
+///
+/// Without this, `Some("").unwrap_or(fallback)` returns `""`, not
+/// `fallback` — `Some` is not `None`, so a plain `unwrap_or`/`.or()` chain
+/// never reaches the fallback at all. That is precisely the shape CodeRabbit
+/// caught: both DOCX line-scanners resolved `candidate_name` this way
+/// (`meta.and_then(...).map(...).unwrap_or(&clean)`) with no empty-string
+/// filter, so a nameless request (`candidate_name: Some("")`) whose letter
+/// legitimately opened with a real name suppressed that name in DOCX while
+/// the PDF parser — which already filtered — still rendered it. One shared
+/// helper, so the PDF parser (`letter::parse_cover_letter`) and both DOCX
+/// line-scanners (`export/docx/mod.rs`) can never drift on this decision
+/// again — the same posture as [`is_letterhead_name`] above.
+///
+/// `fallback` is lazy (`FnOnce`, not a plain `&str`) so a caller whose
+/// fallback costs more than a field read — the PDF parser searches
+/// `raw_lines` for the first non-blank one — only pays for it when
+/// `meta_name` doesn't already win.
+pub(crate) fn resolve_letterhead_candidate<'a>(
+    meta_name: Option<&'a str>,
+    fallback: impl FnOnce() -> &'a str,
+) -> &'a str {
+    match meta_name {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => fallback(),
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -515,5 +550,54 @@ Software Engineer
         );
         assert_eq!(model.letterhead.name, "Jane Smith");
         assert_eq!(model.signature_name, "Jane Smith");
+    }
+
+    // ── resolve_letterhead_candidate ──────────────────────────────────────────
+    //
+    // CodeRabbit round 1, item 1 (MAJOR, verified before fixing): both DOCX
+    // line-scanners resolved `candidate_name` via `.unwrap_or(&clean)` with no
+    // empty-string filter, so `Some("")` — the shape three renderer call sites
+    // actually send — won over a REAL name on the letter's own first line,
+    // where the PDF parser (which already filtered) fell through correctly.
+    // These test the extracted helper directly, the cheapest point to catch a
+    // regression at — the DOCX integration test
+    // (`empty_candidate_name_does_not_suppress_a_real_first_line_name`) is the
+    // one that would have caught the ORIGINAL bug end-to-end.
+
+    #[test]
+    fn resolve_letterhead_candidate_prefers_a_real_meta_name() {
+        assert_eq!(
+            resolve_letterhead_candidate(Some("Jane Smith"), || "fallback"),
+            "Jane Smith"
+        );
+    }
+
+    #[test]
+    fn resolve_letterhead_candidate_falls_through_on_none() {
+        assert_eq!(
+            resolve_letterhead_candidate(None, || "fallback"),
+            "fallback"
+        );
+    }
+
+    /// The exact shape the bug was in: `Some("")` (and whitespace-only) must
+    /// behave identically to `None`, not win as if it were a real name.
+    #[test]
+    fn resolve_letterhead_candidate_treats_blank_some_like_none() {
+        for blank in [Some(""), Some("   "), Some("\t")] {
+            assert_eq!(
+                resolve_letterhead_candidate(blank, || "fallback"),
+                "fallback",
+                "{blank:?} must fall through to the fallback, exactly like None"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_letterhead_candidate_trims_a_real_name() {
+        assert_eq!(
+            resolve_letterhead_candidate(Some("  Jane Smith  "), || "fallback"),
+            "Jane Smith"
+        );
     }
 }
