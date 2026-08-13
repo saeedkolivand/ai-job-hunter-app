@@ -876,11 +876,11 @@ impl<'a> Stage<QualityCtx<'a>> for Sections {
         // Copied/borrowed out of `ctx` so the per-section closure below borrows
         // neither it nor itself; the shared borrows all end with the await.
         let input = ctx.input;
-        let completer = ctx.completer;
+        let completer = ctx.completer_for(NAME);
         let cache_handle = ctx.cache;
         let deadline = ctx.deadline;
         let progress = ctx.progress;
-        let base_key = ctx.cache_key.clone();
+        let base_key = ctx.stage_cache_key(NAME);
         let ledger = Arc::clone(&ctx.ledger);
         let analysis = &ctx.analysis;
         let strategy = &ctx.strategy;

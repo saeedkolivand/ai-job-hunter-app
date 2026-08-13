@@ -43,13 +43,31 @@ export interface AiContract {
    *  Returns the fresh active config, or `{ error }` on an invalid id. */
   setActiveProvider(req: { provider: string }): Promise<ActiveAiConfig | { error: string }>;
 
-  /** Edit a (possibly non-active) provider's model/base_url without flipping the
-   *  active provider (the "edit" half). Returns the fresh active config, or
-   *  `{ error }` when server-side validation rejects the model/base_url. */
+  /**
+   * Edit a (possibly non-active) provider's model/base_url/context window
+   * without flipping the active provider (the "edit" half). Returns the fresh
+   * active config, or `{ error }` when server-side validation rejects any of
+   * them — including against fields it did NOT send (the merged row is what is
+   * validated, so patching in a cross-family model still fails).
+   *
+   * **PATCH semantics, per field:**
+   * - **omitted** → keep whatever is stored. Send only what changed.
+   * - **`null`** → clear the stored value.
+   * - **a value** → set it.
+   *
+   * Replace-everything was the first design and it erased fields at three call
+   * sites before the day was out; absence is what a caller produces by
+   * accident, so absence is the harmless case.
+   *
+   * `contextWindow` is the window for the MODEL in this entry, so send it
+   * alongside a model change and let it be `null` when the new model has none.
+   */
   setProviderSettings(req: {
     provider: string;
-    model?: string;
-    baseUrl?: string;
+    model?: string | null;
+    baseUrl?: string | null;
+    /** 512–131072, validated server-side. Only Ollama acts on it (`num_ctx`). */
+    contextWindow?: number | null;
   }): Promise<ActiveAiConfig | { error: string }>;
 
   /** One-time first-run seed from the renderer's migrated Zustand config.
@@ -57,6 +75,44 @@ export interface AiContract {
   seedActiveConfig(req: {
     config: AiConfigSnapshot;
   }): Promise<{ seeded: boolean } | { error: string }>;
+
+  /**
+   * Every explicitly-set per-stage model override, keyed by pipeline stage
+   * name (the `PIPELINE_STAGES` vocabulary from `@ajh/shared`).
+   *
+   * **Absent means the active provider.** A stage with no entry is not
+   * "overridden to the default" — it was never configured, and the backend
+   * resolves it through the normal active-config path. Render the difference:
+   * a suggested value must be shown as a suggestion until the user applies it,
+   * because nothing here is applied on the user's behalf.
+   */
+  stageOverrides(): Promise<Record<string, AiStageOverride>>;
+
+  /**
+   * Point ONE stage at a provider + model. Returns the fresh override map, or
+   * `{ error }` when server-side validation rejects the stage name, the
+   * provider, the model (cross-family check) or the context window
+   * (512–131072).
+   *
+   * `model` may be empty ONLY for a CLI-agent provider, which runs on its own
+   * configured default.
+   *
+   * No base URL: the stage uses the one stored for `provider` — see
+   * {@link AiStageOverride}. Change it in that provider's settings and every
+   * override on it follows.
+   */
+  setStageOverride(req: {
+    stage: string;
+    provider: string;
+    model?: string;
+    contextWindow?: number;
+  }): Promise<Record<string, AiStageOverride> | { error: string }>;
+
+  /** Return ONE stage to the active provider. A no-op for a stage that has no
+   *  override. Returns the fresh override map. */
+  clearStageOverride(req: {
+    stage: string;
+  }): Promise<Record<string, AiStageOverride> | { error: string }>;
 
   /**
    * Stream a generation through the backend orchestration pipeline. Same wire
@@ -257,6 +313,36 @@ export interface EmbeddingConfig {
 export interface AiProviderRouting {
   model?: string;
   baseUrl?: string;
+  /**
+   * The context window (`num_ctx`) `model` is configured to run with, when the
+   * user set one. Belongs to the model in this entry, not to the provider.
+   *
+   * This is what a STAGED run reads: the backend builds its own requests, so
+   * the renderer's per-model limits map cannot reach it. Absent means the
+   * provider's own default — never a guessed size.
+   */
+  contextWindow?: number;
+}
+
+/**
+ * One pipeline stage's explicitly-chosen routing. Mirrors the Rust
+ * `StageOverride`.
+ *
+ * Provider AND model, not a bare model id: moving the judge to a cloud model
+ * while drafting locally is a change of provider, and a model-only shape would
+ * have to guess which provider it belonged to. `contextWindow` belongs to the
+ * model this entry names.
+ *
+ * There is deliberately NO `baseUrl`. The endpoint belongs to the PROVIDER, and
+ * the backend reads it from that provider's own settings row when the stage
+ * resolves — so an override always uses the URL Settings displays, and one
+ * cannot be pointed at an endpoint no screen shows.
+ */
+export interface AiStageOverride {
+  provider: string;
+  /** Empty only for a CLI-agent provider. */
+  model: string;
+  contextWindow?: number;
 }
 
 /** The persisted snapshot the renderer seeds the backend store from — 1:1 with
@@ -264,6 +350,8 @@ export interface AiProviderRouting {
 export interface AiConfigSnapshot {
   activeProvider?: string;
   providers: Record<string, AiProviderRouting>;
+  /** Per-stage overrides. Optional so a pre-override bundle still validates. */
+  stageOverrides?: Record<string, AiStageOverride>;
 }
 
 /** Backend-owned active generation config (task #16). The active provider's own
@@ -274,6 +362,8 @@ export interface ActiveAiConfig {
   activeProvider?: string;
   model?: string;
   baseUrl?: string;
+  /** The active provider entry's own {@link AiProviderRouting.contextWindow}. */
+  contextWindow?: number;
   providers: Record<string, AiProviderRouting>;
 }
 
@@ -318,10 +408,40 @@ export interface AiSpendProviderTotals {
   estCostUsd: number;
 }
 
-/** Today's real AI-spend totals, overall and per provider. */
+/**
+ * One model's OBSERVED reasoning overhead, over ALL history (not just today —
+ * "how much does this model think" does not reset at midnight).
+ *
+ * Only calls whose provider reported a DISTINCT reasoning-token count take
+ * part, so `outputTokens` is the denominator over exactly those calls and
+ * `thinkingTokens / outputTokens` is a like-for-like ratio. `calls` is the
+ * sample size: treat a ratio from one or two calls as noise.
+ *
+ * A model that never appears is not a model that does no reasoning — it is one
+ * whose provider does not report the split. Anthropic counts thinking inside
+ * its output tokens and Ollama's `eval_count` includes the thinking channel, so
+ * neither ever appears here. OpenAI and Gemini do report it — note that a
+ * current OpenAI model that did no reasoning reports a measured `0` rather than
+ * omitting the field, so it CAN appear here with a zero ratio, which is a real
+ * observation ("this model does not think") and not the same as absence.
+ * Render absence as "not measured", never as zero.
+ */
+export interface AiSpendModelThinking {
+  provider: string;
+  model: string;
+  calls: number;
+  thinkingTokens: number;
+  outputTokens: number;
+}
+
+/** Today's real AI-spend totals, overall and per provider, plus the all-history
+ *  per-model reasoning overhead where it was actually measured. */
 export interface AiSpendSummary {
   today: { inputTokens: number; outputTokens: number; estCostUsd: number };
   perProvider: AiSpendProviderTotals[];
+  /** Empty until a provider that reports the split has been used — see
+   *  {@link AiSpendModelThinking}. */
+  thinkingByModel: AiSpendModelThinking[];
 }
 
 export const AI_CHANNELS = {

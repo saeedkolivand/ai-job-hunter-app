@@ -57,6 +57,15 @@ pub struct SpendRow {
     pub model: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Reasoning tokens, when the provider reported them as a distinct number
+    /// — see [`crate::commands::ai_provider::Usage::thinking_tokens`]. `None`
+    /// means "not reported", which is what most rows will be; it is NOT zero,
+    /// and a reader averaging over rows must skip it rather than count it.
+    ///
+    /// A SUBSET of `output_tokens`, so `est_cost_usd` neither uses nor
+    /// double-counts it.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub thinking_tokens: Option<u32>,
     pub est_cost_usd: f64,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub run_id: Option<String>,
@@ -69,6 +78,9 @@ pub struct SpendRecord {
     pub model: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// See [`SpendRow::thinking_tokens`] — `None` unless the provider reported
+    /// a distinct count.
+    pub thinking_tokens: Option<u32>,
     pub run_id: Option<String>,
     /// The resolved base URL for an `openai-compatible` call, when known —
     /// used ONLY to decide the free/paid cost gate ([`is_free_call`]); never
@@ -94,16 +106,45 @@ pub struct ProviderTotals {
     pub est_cost_usd: f64,
 }
 
+/// One model's OBSERVED reasoning overhead — the aggregate behind
+/// [`SpendStore::thinking_by_model`].
+///
+/// Exists so a "which model should run which stage" advisor can answer from
+/// what this machine actually measured instead of from a hard-coded table of
+/// model reputations: a model that spends 20 tokens thinking per token of
+/// answer is a bad fit for a cheap mechanical stage, and that is a fact about
+/// the user's model, not about the model's name.
+///
+/// Rows with no reported count are EXCLUDED (see
+/// [`SpendRow::thinking_tokens`]), so `calls` is how many calls actually
+/// reported — the sample size the caller needs to decide whether the ratio
+/// means anything yet. A model that reports nothing is simply absent, which is
+/// the honest answer to "how much does it think".
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelThinking {
+    pub provider: String,
+    pub model: String,
+    /// How many calls reported a distinct thinking count.
+    pub calls: u64,
+    pub thinking_tokens: u64,
+    /// Total `output_tokens` over the SAME calls — the denominator, so a caller
+    /// computing a ratio compares like with like.
+    pub output_tokens: u64,
+}
+
 pub struct SpendStore {
     conn: Mutex<Connection>,
 }
 
 impl SpendStore {
-    const MIGRATIONS: &'static [Migration] = &[Migration {
-        name: "create_ai_spend",
-        up: |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS ai_spend (
+    /// APPEND-ONLY: position-indexed off `PRAGMA user_version`, so an existing
+    /// element must never be edited or reordered.
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_ai_spend",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS ai_spend (
                     id            TEXT PRIMARY KEY,
                     created_at    INTEGER NOT NULL,
                     provider      TEXT NOT NULL,
@@ -115,9 +156,21 @@ impl SpendStore {
                 );
                 CREATE INDEX IF NOT EXISTS idx_ai_spend_created_at ON ai_spend(created_at);
                 CREATE INDEX IF NOT EXISTS idx_ai_spend_provider ON ai_spend(provider);",
-            )
+                )
+            },
         },
-    }];
+        Migration {
+            name: "add_ai_spend_thinking_tokens",
+            up: |conn| {
+                // NULL, not `DEFAULT 0`: every row written before this column
+                // existed has an UNKNOWN thinking count, and a zero default
+                // would make the whole history read as "no model ever
+                // reasoned". The read model below filters on NOT NULL for the
+                // same reason.
+                conn.execute_batch("ALTER TABLE ai_spend ADD COLUMN thinking_tokens INTEGER;")
+            },
+        },
+    ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
@@ -152,8 +205,9 @@ impl SpendStore {
         // visibility", so at least log it.
         if let Err(e) = conn.execute(
             "INSERT INTO ai_spend
-             (id, created_at, provider, model, input_tokens, output_tokens, est_cost_usd, run_id)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+             (id, created_at, provider, model, input_tokens, output_tokens, thinking_tokens,
+              est_cost_usd, run_id)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![
                 id,
                 ts_to_db(now),
@@ -161,6 +215,7 @@ impl SpendStore {
                 rec.model,
                 rec.input_tokens,
                 rec.output_tokens,
+                rec.thinking_tokens,
                 est_cost_usd,
                 rec.run_id,
             ],
@@ -173,7 +228,8 @@ impl SpendStore {
     pub fn list(&self) -> Vec<SpendRow> {
         let conn = self.conn.lock();
         conn.prepare(
-            "SELECT id, created_at, provider, model, input_tokens, output_tokens, est_cost_usd, run_id
+            "SELECT id, created_at, provider, model, input_tokens, output_tokens, thinking_tokens,
+                    est_cost_usd, run_id
              FROM ai_spend ORDER BY created_at DESC",
         )
         .ok()
@@ -228,6 +284,43 @@ impl SpendStore {
         })
         .unwrap_or_default()
     }
+
+    /// Observed reasoning overhead per (provider, model), over ALL history —
+    /// not just today.
+    ///
+    /// All history on purpose: this answers "how does this model behave", which
+    /// does not reset at midnight, and a day-scoped window would give the
+    /// advisor nothing to say on the morning of a fresh day. Ordered by
+    /// thinking volume, heaviest first.
+    ///
+    /// Only rows that actually reported a count take part — `thinking_tokens IS
+    /// NOT NULL` — so the `output_tokens` denominator covers exactly the same
+    /// calls as the numerator, and a provider that reports nothing contributes
+    /// no misleading zero.
+    pub fn thinking_by_model(&self) -> Vec<ModelThinking> {
+        let conn = self.conn.lock();
+        conn.prepare(
+            "SELECT provider, model, COUNT(*), COALESCE(SUM(thinking_tokens),0),
+                    COALESCE(SUM(output_tokens),0)
+             FROM ai_spend WHERE thinking_tokens IS NOT NULL
+             GROUP BY provider, model ORDER BY SUM(thinking_tokens) DESC",
+        )
+        .ok()
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| {
+                Ok(ModelThinking {
+                    provider: row.get(0)?,
+                    model: row.get(1)?,
+                    calls: row.get::<_, i64>(2)? as u64,
+                    thinking_tokens: row.get::<_, i64>(3)? as u64,
+                    output_tokens: row.get::<_, i64>(4)? as u64,
+                })
+            })
+            .ok()
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default()
+    }
 }
 
 fn row_to_spend_row(row: &rusqlite::Row) -> rusqlite::Result<SpendRow> {
@@ -238,8 +331,9 @@ fn row_to_spend_row(row: &rusqlite::Row) -> rusqlite::Result<SpendRow> {
         model: row.get(3)?,
         input_tokens: row.get(4)?,
         output_tokens: row.get(5)?,
-        est_cost_usd: row.get(6)?,
-        run_id: row.get(7)?,
+        thinking_tokens: row.get(6)?,
+        est_cost_usd: row.get(7)?,
+        run_id: row.get(8)?,
     })
 }
 
@@ -272,8 +366,9 @@ impl DataStore for SpendStore {
         for row in &rows {
             tx.execute(
                 "INSERT INTO ai_spend
-                 (id, created_at, provider, model, input_tokens, output_tokens, est_cost_usd, run_id)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                 (id, created_at, provider, model, input_tokens, output_tokens, thinking_tokens,
+                  est_cost_usd, run_id)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     row.id,
                     ts_to_db(row.created_at),
@@ -281,6 +376,7 @@ impl DataStore for SpendStore {
                     row.model,
                     row.input_tokens,
                     row.output_tokens,
+                    row.thinking_tokens,
                     row.est_cost_usd,
                     row.run_id,
                 ],

@@ -554,6 +554,32 @@ fn parse_usage_is_none_when_absent() {
     assert!(parse_gemini_usage(&json!({})).is_none());
 }
 
+/// Sibling of the OpenAI adapter's guard: a `thoughtsTokenCount` too large for
+/// `u32` is no measurement, not a small one — `as u32` would wrap it into a
+/// plausible ledger entry.
+///
+/// Mutation check (executed): restore `.map(|v| v as u32)` and the oversized
+/// case records `Some(8)`.
+#[test]
+fn an_unrepresentable_thoughts_count_is_not_recorded() {
+    let with_thoughts = |v: serde_json::Value| {
+        json!({
+            "usageMetadata": {
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 2,
+                "thoughtsTokenCount": v,
+            }
+        })
+    };
+
+    let over =
+        parse_gemini_usage(&with_thoughts(json!(u32::MAX as u64 + 9))).expect("usage present");
+    assert_eq!(over.thinking_tokens, None);
+
+    let ok = parse_gemini_usage(&with_thoughts(json!(2_048))).expect("usage present");
+    assert_eq!(ok.thinking_tokens, Some(2_048));
+}
+
 #[test]
 fn parse_embed_usage_reads_prompt_token_count_when_present() {
     let data = json!({ "usageMetadata": { "promptTokenCount": 7 } });

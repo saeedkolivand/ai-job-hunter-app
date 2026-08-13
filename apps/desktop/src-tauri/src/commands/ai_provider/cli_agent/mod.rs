@@ -687,7 +687,16 @@ async fn run_stream(
     // `complete`/`agent_run` path needs no equivalent call: it goes through
     // `AiProvider::complete_with_usage`'s DEFAULT impl, which already reports
     // zero usage for any provider (like this one) that doesn't override it.
-    super::record_usage(app, backend.id().as_str(), model, 0, 0, None);
+    // A CLI agent reports no usage at all — `Usage::default()` is zeros on
+    // the counted fields and `None` on the thinking one, which says
+    // "nothing reported" rather than "no reasoning happened".
+    super::record_usage(
+        app,
+        backend.id().as_str(),
+        model,
+        super::Usage::default(),
+        None,
+    );
     // An agent that emitted a `Done` sentinel (or a whitespace-only delta) and
     // THEN exited non-zero skips the `!emitted_done && !success` guard above,
     // so without this it would report the generic "produced no answer content"

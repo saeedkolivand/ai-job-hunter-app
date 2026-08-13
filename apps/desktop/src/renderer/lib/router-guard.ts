@@ -27,8 +27,11 @@ export function installUnknownPathRedirect(router: AnyRouter): () => void {
     const leaf: AnyRouteMatch | undefined = matches[matches.length - 1];
 
     // A real (known) route produces a non-root leaf that isn't a not-found match.
+    // `globalNotFound` left AnyRouteMatch's public type in a router bump; read it
+    // structurally so the guard keeps working on versions that still set it.
+    const globalNotFound = !!(leaf as { globalNotFound?: boolean } | undefined)?.globalNotFound;
     const matched =
-      !!leaf && leaf.routeId !== rootRouteId && leaf.status !== 'notFound' && !leaf.globalNotFound;
+      !!leaf && leaf.routeId !== rootRouteId && leaf.status !== 'notFound' && !globalNotFound;
 
     if (router.state.location.pathname !== '/' && !matched) {
       void router.navigate({ to: '/', replace: true });
