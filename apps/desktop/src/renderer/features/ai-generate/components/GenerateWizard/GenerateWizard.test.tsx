@@ -211,4 +211,74 @@ describe('GenerateWizard — template selection side-effects', () => {
     expect(onTemplateChange).toHaveBeenCalledWith('lebenslauf');
     expect(onAtsModeChange).not.toHaveBeenCalled();
   });
+
+  // ── the decorated-letter branch of the clear guard ──────────────────────────
+  // A 'both' run exports a cover letter too, and the letter renderer reads the
+  // SAME atsMode flag (`data.opts.ats`) to drop its rail / tile / band. Under an
+  // ATS-tier résumé template the letter is the only document still reading it,
+  // so clearing on a template pick would take away the decoration's only off
+  // switch. Mirrors the StepTemplate / GenerationOutput / OutputPanelDone pairs.
+
+  it('does NOT reset ATS mode when an ATS-tier template is picked while a decorated letter is in the run', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    const onTemplateChange = vi.fn();
+    render(
+      <GenerateWizard
+        {...makeProps({
+          target: 'both',
+          letterLayoutId: 'monogram',
+          atsMode: true,
+          onTemplateChange,
+          onAtsModeChange,
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'select-classic' }));
+
+    expect(onTemplateChange).toHaveBeenCalledWith('classic');
+    expect(onAtsModeChange).not.toHaveBeenCalled();
+  });
+
+  it('DOES reset ATS mode on the same pick when the letter layout is undecorated', async () => {
+    // The control for the case above — and the only test here that drives the
+    // clear through handleTemplateChange itself (the "reset-ats" case above
+    // calls the prop straight from the stub, proving forwarding, not the guard).
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    render(
+      <GenerateWizard
+        {...makeProps({
+          target: 'both',
+          letterLayoutId: 'navy', // in-set, but nothing ATS mode can drop
+          atsMode: true,
+          onAtsModeChange,
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'select-classic' }));
+
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  it('ignores the letter layout for a résumé-only run — there is no letter to read the flag', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    render(
+      <GenerateWizard
+        {...makeProps({
+          target: 'resume',
+          letterLayoutId: 'monogram',
+          atsMode: true,
+          onAtsModeChange,
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'select-classic' }));
+
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
 });
