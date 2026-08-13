@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import type { AgentConfirmPayload, AgentFlowKind, AgentStepEvent, JobEvent } from '@ajh/shared';
 
 import { useMachine } from '@/hooks/use-machine';
 import { agentRunMachine, type AgentRunState, stepToEvent } from '@/lib/machines/agent-run.machine';
 import { useAgentRun, useAgentStepEvents, useCancelJob, useJob, useJobEvents } from '@/services';
+import { keys } from '@/services/query-client';
 
 export interface AgentRunSessionOptions {
   /** Which flow (`AGENT_FLOW_KINDS`) `start` runs. Stated, never defaulted —
@@ -106,9 +108,32 @@ export function useAgentRunSession({
   const [pendingConfirm, setPendingConfirm] = useState<AgentConfirmPayload | null>(null);
   const activeRef = useRef(false);
   const reconciledRef = useRef(false);
+  /** An approved Write whose effect has not been refetched yet — see
+   *  {@link refreshWrittenDocument}. */
+  const wroteRef = useRef(false);
 
   const runAgent = useAgentRun();
   const cancelJob = useCancelJob();
+  const queryClient = useQueryClient();
+
+  /**
+   * Refetch what an approved Write changed. Both gated writes land in the
+   * `ai_generations` aggregate for this posting, which is ALSO where the
+   * pipeline's run detail reads its résumé text and quality report from
+   * (`resume_pipeline_get` → `find_for_job`) — so a saved review leaves the
+   * panel showing the pre-save document with no way back: the run query has no
+   * interval once the run is terminal, and the client's refetch-on-focus and
+   * -reconnect are both off. The card would say "saved" next to text that
+   * disagrees with it, in one viewport.
+   *
+   * `keys.pipeline.all` is the PREFIX (`['pipeline']`), so it covers the run
+   * detail and the runs list in one call rather than relying on a key built
+   * from a possibly-null run id.
+   */
+  const refreshWrittenDocument = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: keys.pipeline.all });
+    void queryClient.invalidateQueries({ queryKey: keys.aiGenerations.all });
+  }, [queryClient]);
 
   const busy = state !== 'idle' && state !== 'done' && state !== 'error' && state !== 'cancelled';
   const interrupted = state === 'error' || state === 'cancelled';
@@ -120,10 +145,17 @@ export function useAgentRunSession({
       setPendingConfirm(
         event.kind === 'confirm_request' && event.confirm ? event.confirm : null // any other step supersedes a stale confirm
       );
+      // The write runs AFTER `agent.confirm` returns (the command only hands the
+      // decision to the suspended tool), so the refetch fired on approve can
+      // race it. The next step is proof the tool finished — refetch again, once.
+      if (wroteRef.current && event.kind !== 'confirm_request') {
+        wroteRef.current = false;
+        refreshWrittenDocument();
+      }
       const machineEvent = stepToEvent(event, kind);
       if (machineEvent) send(machineEvent);
     },
-    [runJobId, send, kind]
+    [runJobId, send, kind, refreshWrittenDocument]
   );
   useAgentStepEvents(handleStep);
 
@@ -133,6 +165,12 @@ export function useAgentRunSession({
     (outcome: 'completed' | 'failed' | 'cancelled', data?: unknown) => {
       activeRef.current = false;
       setPendingConfirm(null);
+      // Backstop for a run that ended without another step after the write
+      // (the summary turn is not guaranteed — a ceiling can end the loop first).
+      if (wroteRef.current) {
+        wroteRef.current = false;
+        refreshWrittenDocument();
+      }
       if (outcome === 'completed') {
         setStoppedReason(readStoppedReason(data));
         send('COMPLETE');
@@ -146,7 +184,7 @@ export function useAgentRunSession({
         send('CANCEL');
       }
     },
-    [send, fallbackError]
+    [send, fallbackError, refreshWrittenDocument]
   );
 
   const handleJobEvent = useCallback(
@@ -188,6 +226,7 @@ export function useAgentRunSession({
     setPendingConfirm(null);
     activeRef.current = true;
     reconciledRef.current = false;
+    wroteRef.current = false;
     send('START');
     try {
       // Routing (provider/model/baseUrl) is backend-owned — resolved server-side
@@ -221,9 +260,16 @@ export function useAgentRunSession({
   const resolveConfirm = useCallback(
     (event: 'APPROVE' | 'DENY') => {
       setPendingConfirm(null);
+      if (event === 'APPROVE') {
+        // Fire now for the common case, and remember it so the guaranteed-after
+        // refetch still happens (see `refreshWrittenDocument`). A DENY changed
+        // nothing, so it invalidates nothing.
+        wroteRef.current = true;
+        refreshWrittenDocument();
+      }
       send(event);
     },
-    [send]
+    [send, refreshWrittenDocument]
   );
 
   return {
