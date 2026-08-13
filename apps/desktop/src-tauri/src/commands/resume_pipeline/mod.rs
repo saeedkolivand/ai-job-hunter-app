@@ -1170,14 +1170,24 @@ pub(crate) fn sync_saved_resume_status(
     let Some(next) = recomputed_status(&row.status, needs_review) else {
         return;
     };
-    let mut row = row.clone();
-    row.status = next.to_string();
-    if let Err(e) = store.upsert_run(&row) {
-        log::warn!(
+    // `update_status_if_present`, NOT `upsert_run` (CodeRabbit, PR #986):
+    // `upsert_run` is an `INSERT OR REPLACE`, so a generation delete,
+    // application delete, or factory reset landing between the read above and
+    // this write would be UNDONE here — recreating an orphan run row the delete
+    // had just removed. A row-scoped `UPDATE` changes zero rows instead.
+    match store.update_status_if_present(&row.id, next) {
+        // The row was deleted while this save was in flight; the delete wins,
+        // and there is nothing left to show a status on.
+        Ok(false) => log::debug!(
+            "[resume_pipeline] sync_saved_resume_status: run row vanished before the status \
+             could move to {next}"
+        ),
+        Ok(true) => {}
+        Err(e) => log::warn!(
             "[resume_pipeline] sync_saved_resume_status: the résumé was saved but its run row \
              could not be moved to {next}: {}",
             e.code()
-        );
+        ),
     }
 }
 
