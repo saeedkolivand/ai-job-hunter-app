@@ -546,6 +546,61 @@ fn analyze_job_handler(
     Box::pin(async move { analyze_job_core(&app, &ctx).await })
 }
 
+/// What resolving a run's posting to its stored generation found.
+///
+/// Three outcomes, not an `Option`, because the two empty cases are different
+/// facts with different remedies and every caller so far has wanted to tell
+/// them apart: a posting with no url can never be linked to a generation at
+/// all, while a posting that simply has not been generated for yet names the
+/// one action that would change that.
+pub(crate) enum GenerationLookup {
+    /// The cached posting carries no url, so nothing in `ai_generations` — an
+    /// aggregate keyed by posting url — can be linked to it.
+    UnlinkedJob,
+    /// The posting has a url, but no generation is stored under it.
+    NotGenerated,
+    /// The stored generation aggregate for this posting. Boxed: the record is
+    /// large and the other two variants are unit, so an unboxed enum would be
+    /// record-sized everywhere it is returned.
+    Found(Box<AiGenerationRecord>),
+}
+
+/// Resolve THIS run's job id to the generation stored for its posting.
+///
+/// The one place the rule lives: posting id → cached posting url (trimmed,
+/// non-empty) → [`AiGenerationStore::find_for_job`], which tries the
+/// normalized url before the raw one. It was written twice — here and in
+/// `commands::agent`'s seed loader — and two copies of a resolution rule is
+/// how the report tool and the flow that acts on it would come to disagree
+/// about WHICH document is under review.
+///
+/// **Synchronous on purpose.** Both callers already own a `spawn_blocking`
+/// closure (the `find_for_job` hit is SQLite), and returning a future here
+/// would either add a second hop or drag each caller's own blocking work onto
+/// the async worker. `job_meta_for` is an in-memory `Mutex<PostingsCache>`
+/// lock, cheap on either pool (see this module's sibling note in
+/// `tools_quality`).
+///
+/// POLICY BELONGS TO THE CALLER. This says what is stored, never whether it is
+/// usable: `get_quality_report` reports on a generation of any size, while the
+/// review flow refuses one it cannot seed whole
+/// (`commands::agent::readable_generation_text`). A length rule pushed down
+/// here would break the report tool for exactly the documents it is most
+/// useful on.
+pub(crate) fn generation_for_job(app: &AppHandle, job_id: &str) -> AppResult<GenerationLookup> {
+    let meta = job_meta_for(app, job_id).ok_or_else(|| job_not_found(job_id))?;
+    let job_url = meta.url.trim().to_string();
+    if job_url.is_empty() {
+        return Ok(GenerationLookup::UnlinkedJob);
+    }
+    Ok(app
+        .try_state::<AiGenerationStore>()
+        .and_then(|store| store.find_for_job(&job_url))
+        .map_or(GenerationLookup::NotGenerated, |record| {
+            GenerationLookup::Found(Box::new(record))
+        }))
+}
+
 fn get_quality_report_handler(
     app: &AppHandle,
     ctx: &ToolContext,
@@ -554,24 +609,21 @@ fn get_quality_report_handler(
     let app = app.clone();
     let ctx = ctx.clone();
     Box::pin(async move {
-        // In-memory cache lock, not SQLite — stays inline, exactly like
-        // `tools_quality`'s handlers (see that module's round-10 perf note).
-        let meta = job_meta_for(&app, &ctx.job_id).ok_or_else(|| job_not_found(&ctx.job_id))?;
-        let job_url = meta.url.trim().to_string();
-        if job_url.is_empty() {
-            // The aggregate is keyed by posting url; a posting the cache has no
-            // url for has no report to find, and saying so beats "no report".
-            return Ok(neutralized_summary(
-                &json!({ "available": false, "reason": "unlinked_job" }),
-            ));
-        }
         spawn_blocking_core(move || {
-            let record = app
-                .try_state::<AiGenerationStore>()
-                .and_then(|store| store.find_for_job(&job_url));
-            Ok(neutralized_summary(&compact_quality_report(
-                record.as_ref(),
-            )))
+            match generation_for_job(&app, &ctx.job_id)? {
+                // The aggregate is keyed by posting url; a posting the cache has
+                // no url for has no report to find, and saying so beats "no
+                // report".
+                GenerationLookup::UnlinkedJob => Ok(neutralized_summary(
+                    &json!({ "available": false, "reason": "unlinked_job" }),
+                )),
+                GenerationLookup::NotGenerated => {
+                    Ok(neutralized_summary(&compact_quality_report(None)))
+                }
+                GenerationLookup::Found(record) => Ok(neutralized_summary(
+                    &compact_quality_report(Some(record.as_ref())),
+                )),
+            }
         })
         .await
     })

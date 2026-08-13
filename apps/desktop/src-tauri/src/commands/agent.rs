@@ -33,7 +33,7 @@ use crate::agent::controller::{run_agent_live, AgentStep, AgentStepKind, Stopped
 use crate::agent::flows;
 use crate::agent::gate::{AgentGate, Decision};
 use crate::agent::tools::{fenced, ToolContext, JOB_CAP, RESUME_CAP};
-use crate::ai_generations::AiGenerationStore;
+use crate::agent::tools_pipeline::{generation_for_job, GenerationLookup};
 use crate::commands::ai_provider::ModelCapabilities;
 use crate::db::new_job_id;
 use crate::documents::DocumentStore;
@@ -369,47 +369,74 @@ fn build_improve_user_message(
     )
 }
 
+/// The seed-side policy for the document the review flow reviews: what the
+/// flow will accept as the generation under review, given the text that is
+/// actually stored.
+///
+/// **FAIL CLOSED above [`RESUME_CAP`], rather than truncating** (CRITICAL, both
+/// Phase-7 reviewers). The round trip the flow performs is asymmetric and the
+/// asymmetry destroys data:
+///
+/// * the seed carries the generation through [`fenced`], which clamps at
+///   `RESUME_CAP` (8 000 chars) and leaves NO marker that it cut;
+/// * `validate_resume`'s own `draftTruncated` guard cannot fire on that,
+///   because the truncation happened a layer above the tool — the model
+///   receives 8 000 chars and every check calls them the whole document;
+/// * `save_resume` accepts up to `SAVED_RESUME_CAP` (40 000) and REPLACES the
+///   stored résumé on the same aggregate row.
+///
+/// So a 30 000-char generation would come back as an ~8 000-char stump, with
+/// the confirm dialog showing exactly the text being saved and disclosing
+/// nothing about the 22 000 characters that silently left the transcript, and
+/// no undo behind it. Raising the seed cap only moves the mismatch (the tool
+/// still reads its first `RESUME_CAP` chars), so the honest answer is to refuse
+/// the run before it starts and say why.
+///
+/// Pure (no `AppHandle`) so the rule is unit-testable in a crate with no Tauri
+/// test harness; [`generated_resume_for`] is the impure resolution around it.
+fn readable_generation_text(text: String) -> AppResult<String> {
+    if text.trim().is_empty() {
+        return Err(AppError::Validation(
+            "there is no generated résumé for this job yet — generate one first, then improve it"
+                .to_string(),
+        ));
+    }
+    let chars = text.chars().count();
+    if chars > RESUME_CAP {
+        return Err(AppError::Validation(format!(
+            "this generated résumé is longer than the review flow can read ({chars} characters, \
+             limit {RESUME_CAP}) — trim or regenerate it first"
+        )));
+    }
+    Ok(text)
+}
+
 /// The tailored résumé this app last generated for `job_id`'s posting — the
 /// document the review flow reviews.
 ///
-/// Resolved SERVER-side from the run's own job id, exactly like the
-/// `get_quality_report` tool that reports on the same record: posting id →
-/// cached posting url → the `ai_generations` aggregate (`find_for_job`, which
-/// tries the normalized url first). The renderer never supplies the text, so a
-/// compromised one cannot make the agent "improve" a document of its choosing
-/// and then offer it back through the gated save.
+/// Resolved SERVER-side from the run's own job id, through the SAME
+/// [`generation_for_job`] rule the `get_quality_report` tool reports on
+/// (posting id → cached posting url → the `ai_generations` aggregate), so the
+/// flow and the report can never disagree about which document is under
+/// review. The renderer never supplies the text, so a compromised one cannot
+/// make the agent "improve" a document of its choosing and then offer it back
+/// through the gated save.
 ///
-/// The two empty cases are separate errors on purpose: a posting with no url
-/// can never have a linked generation (nothing to fix by re-running), while a
-/// posting that simply has not been generated for yet tells the user the one
-/// action that would make this flow work.
+/// Every refusal is a typed [`AppError::Validation`] the run surfaces as its
+/// failure message — see [`readable_generation_text`] for the one that is
+/// load-bearing rather than merely explanatory.
 async fn generated_resume_for(app: &AppHandle, job_id: &str) -> AppResult<String> {
-    let meta = crate::commands::match_resume::job_meta_for(app, job_id)
-        .ok_or_else(|| AppError::Validation(format!("job not found in cache: {job_id}")))?;
-    let job_url = meta.url.trim().to_string();
-    if job_url.is_empty() {
-        return Err(AppError::Validation(
-            "this job has no posting URL, so no generated résumé is linked to it".to_string(),
-        ));
-    }
     let app = app.clone();
+    let job_id = job_id.to_string();
     // A SQLite read: off the tokio worker, same wrapper `agent::tools_quality`
     // uses for the identical store hit (`tauri::async_runtime::spawn_blocking`,
     // never a bare `tokio::spawn`).
-    tauri::async_runtime::spawn_blocking(move || {
-        let text = app
-            .try_state::<AiGenerationStore>()
-            .and_then(|store| store.find_for_job(&job_url))
-            .map(|record| record.resume_text)
-            .unwrap_or_default();
-        if text.trim().is_empty() {
-            return Err(AppError::Validation(
-                "there is no generated résumé for this job yet — generate one first, then \
-                 improve it"
-                    .to_string(),
-            ));
-        }
-        Ok(text)
+    tauri::async_runtime::spawn_blocking(move || match generation_for_job(&app, &job_id)? {
+        GenerationLookup::UnlinkedJob => Err(AppError::Validation(
+            "this job has no posting URL, so no generated résumé is linked to it".to_string(),
+        )),
+        GenerationLookup::NotGenerated => readable_generation_text(String::new()),
+        GenerationLookup::Found(record) => readable_generation_text(record.resume_text),
     })
     .await
     .map_err(|e| AppError::Storage(format!("generation lookup failed: {e}")))?
@@ -631,14 +658,86 @@ mod tests {
         assert!(msg.contains("<job_posting>\nthe job ad\n</job_posting>"));
     }
 
-    /// …and it is clamped by the same [`RESUME_CAP`] a `validate_resume` draft
-    /// is read at, so the model is never shown more of the generation than a
-    /// check would actually cover.
+    /// …and the seed's own clamp is still `RESUME_CAP` — which is WHY the
+    /// oversized case is refused upstream rather than seeded (see below).
     #[test]
     fn build_improve_user_message_caps_an_oversized_generation() {
         let huge = "z".repeat(20_000);
         let msg = build_improve_user_message("r", "j", "short", "short", &huge);
         assert!(msg.contains(&"z".repeat(RESUME_CAP)));
         assert!(!msg.contains(&"z".repeat(RESUME_CAP + 1)));
+    }
+
+    /// CRITICAL (both Phase-7 reviewers): the 8k → 40k round trip.
+    ///
+    /// The seed clamps at [`RESUME_CAP`] with no marker, `validate_resume`'s
+    /// `draftTruncated` flag cannot see a cut that happened above it, and
+    /// `save_resume` writes up to `SAVED_RESUME_CAP` over the SAME aggregate
+    /// row — so an accepted over-cap generation is silently replaced by a stump
+    /// the user approved without being told anything was missing. The flow
+    /// refuses the run instead.
+    ///
+    /// Mutation-checked, executed: deleting the `chars > RESUME_CAP` arm makes
+    /// `unwrap_err` panic here — and the second half of this test is the defect
+    /// it would let through, spelled out rather than described.
+    #[test]
+    fn an_unreadably_long_generation_is_refused_instead_of_truncated() {
+        let huge = "y".repeat(RESUME_CAP + 1);
+        let err = readable_generation_text(huge.clone()).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+        assert!(err
+            .to_string()
+            .contains("longer than the review flow can read"));
+        assert!(
+            err.to_string().contains(&(RESUME_CAP + 1).to_string()),
+            "the message must say how long it actually is: {err}"
+        );
+
+        // What acceptance would have meant: the seed can only carry `RESUME_CAP`
+        // of it, so the model would review — and `save_resume` would offer back —
+        // a document missing its tail.
+        let seeded = build_improve_user_message("r", "j", "master", "ad", &huge);
+        assert!(
+            !seeded.contains(&huge),
+            "the seed cannot carry an over-cap generation whole; that is the refusal's reason"
+        );
+    }
+
+    /// The boundary is inclusive and the accepted document is seeded WHOLE —
+    /// the other half of the fail-closed rule. A guard that refused everything
+    /// would also pass the test above.
+    #[test]
+    fn a_generation_at_the_cap_is_accepted_and_seeded_whole() {
+        let at_cap = "y".repeat(RESUME_CAP);
+        let accepted =
+            readable_generation_text(at_cap.clone()).expect("exactly at the cap is fine");
+        assert_eq!(accepted, at_cap);
+        let seeded = build_improve_user_message("r", "j", "master", "ad", &accepted);
+        assert!(
+            seeded.contains(&at_cap),
+            "an accepted generation is not cut"
+        );
+    }
+
+    /// Multi-byte text is measured in CHARS, the unit `fenced` clamps in — a
+    /// byte-length rule would refuse an accented résumé that fits perfectly
+    /// (and, the other way round, is not what the seed would have cut).
+    #[test]
+    fn the_generation_length_rule_counts_chars_not_bytes() {
+        let accented = "é".repeat(RESUME_CAP);
+        assert_eq!(accented.len(), RESUME_CAP * 2, "…so bytes would over-count");
+        assert!(readable_generation_text(accented).is_ok());
+        assert!(readable_generation_text("é".repeat(RESUME_CAP + 1)).is_err());
+    }
+
+    /// An absent or blank generation is its own refusal, with the message that
+    /// names the action that would fix it.
+    #[test]
+    fn a_missing_generation_is_refused_with_the_generate_first_message() {
+        for empty in ["", "   \n\t "] {
+            let err = readable_generation_text(empty.to_string()).unwrap_err();
+            assert!(matches!(err, AppError::Validation(_)));
+            assert!(err.to_string().contains("generate one first"));
+        }
     }
 }
