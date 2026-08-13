@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { Autopilot, AutopilotFoundJob, BoardScrapeSummary } from '@ajh/shared';
@@ -122,6 +122,36 @@ vi.mock('@ajh/ui', () => ({
       children
     ),
   ConfirmModal: () => null,
+  // One button per option (native, via createElement — same rule as Button
+  // above). `aria-pressed` marks the current value; clicking a button fires
+  // onChange directly — no open/close affordance needed for these tests.
+  Dropdown: ({
+    options,
+    value,
+    onChange,
+    'aria-label': ariaLabel,
+  }: {
+    options: { value: string; label: string }[];
+    value: string;
+    onChange: (value: string) => void;
+    'aria-label'?: string;
+  }) =>
+    React.createElement(
+      'div',
+      { role: 'group', 'aria-label': ariaLabel },
+      options.map((o) =>
+        React.createElement(
+          'button',
+          {
+            key: o.value,
+            type: 'button',
+            'aria-pressed': o.value === value,
+            onClick: () => onChange(o.value),
+          },
+          o.label
+        )
+      )
+    ),
   GlassCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   // Render both trigger and panel content so the badge label AND its hover
   // explainer are queryable in jsdom (no real hover needed).
@@ -235,7 +265,7 @@ vi.mock('@/components/job/AgencyChip', () => ({
 
 // ── component under test ──────────────────────────────────────────────────────
 
-import { AutopilotCard } from './index';
+import { AutopilotCard, sortFoundJobsByDate } from './index';
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -1211,5 +1241,228 @@ describe('AutopilotCard — cross-board clustering', () => {
     // memberKey = canonical key; otherKeys = the rest; autopilotId scopes the
     // per-record recompute (ADR-029 §h — only this call site sends it).
     expect(arg).toEqual({ memberKey: 'k1', otherKeys: ['k2'], autopilotId: 'ap-1' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// postedAt date chip — display precedent: same helper+namespace the Jobs page
+// uses (PostingListItem/index.tsx:121-122); absolute-time title tooltip mirrors
+// ApplicationRow:231. Several boards ship no publish date, so absence must
+// render nothing, not "NaN ago".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — postedAt date chip', () => {
+  it('renders the relative time + an absolute-time title tooltip for a dated job', async () => {
+    const postedAt = Date.now() - 5 * 60_000; // 5 minutes ago
+    const job = { ...makeJob('https://example.com/job/dated'), postedAt };
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    // The identity t() mock echoes the resolved i18n key back verbatim.
+    const chip = screen.getByText(/jobs\.timeMinutesAgo/);
+    expect(chip).toHaveAttribute('title', new Date(postedAt).toLocaleString());
+  });
+
+  it('renders no chip at all when postedAt is absent (board ships no publish date)', async () => {
+    const job = makeJob('https://example.com/job/undated'); // no postedAt
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    expect(screen.queryByText(/jobs\.time/)).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sortFoundJobsByDate — pure comparator: banding, tiebreak, non-mutation.
+// Tested directly (not through the component) so the ADR-020 mutation
+// invariant is pinned precisely: reverting `[...jobs].sort(...)` to an
+// in-place `jobs.sort(...)` must turn the non-mutation assertions red;
+// dropping the dated/undated banding must turn the banding assertions red.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('sortFoundJobsByDate', () => {
+  const dated = (url: string, postedAt: number): AutopilotFoundJob => ({
+    title: url,
+    company: 'Acme',
+    url,
+    foundAt: 0,
+    postedAt,
+  });
+  const undated = (url: string): AutopilotFoundJob => ({
+    title: url,
+    company: 'Acme',
+    url,
+    foundAt: 0,
+  });
+
+  it('bands dated jobs before undated jobs regardless of input order (sortBy="newest")', () => {
+    const input = [undated('u1'), dated('d1', 1000), undated('u2'), dated('d2', 2000)];
+    const result = sortFoundJobsByDate(input, 'newest');
+    expect(result.map((j) => j.url)).toEqual(['d2', 'd1', 'u1', 'u2']);
+  });
+
+  // A `postedAt ?? 0` fallback (instead of a real dated/undated branch) would
+  // pass the "newest" banding case above by accident — timestamp 0 sorts last
+  // in a descending comparator anyway — but breaks exactly here: ascending
+  // "oldest" would sort the undated 0-fallback rows to the FRONT, not the
+  // trailing band. This is the case that actually needs the explicit banding.
+  it('bands dated jobs before undated jobs regardless of input order (sortBy="oldest")', () => {
+    const input = [undated('u1'), dated('d1', 1000), undated('u2'), dated('d2', 2000)];
+    const result = sortFoundJobsByDate(input, 'oldest');
+    expect(result.map((j) => j.url)).toEqual(['d1', 'd2', 'u1', 'u2']);
+  });
+
+  it('orders the dated band newest-first for sortBy="newest"', () => {
+    const input = [dated('a', 1000), dated('b', 3000), dated('c', 2000)];
+    expect(sortFoundJobsByDate(input, 'newest').map((j) => j.url)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('orders the dated band oldest-first for sortBy="oldest"', () => {
+    const input = [dated('a', 1000), dated('b', 3000), dated('c', 2000)];
+    expect(sortFoundJobsByDate(input, 'oldest').map((j) => j.url)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('tiebreaks equal postedAt values by url, for a deterministic order across renders', () => {
+    const input = [dated('zzz', 1000), dated('aaa', 1000)];
+    expect(sortFoundJobsByDate(input, 'newest').map((j) => j.url)).toEqual(['aaa', 'zzz']);
+  });
+
+  it('tiebreaks two undated jobs by url', () => {
+    const input = [undated('zzz'), undated('aaa')];
+    expect(sortFoundJobsByDate(input, 'newest').map((j) => j.url)).toEqual(['aaa', 'zzz']);
+  });
+
+  it('does NOT mutate the input array (ADR-020: the persisted order feeds AI-note recipient selection)', () => {
+    const input = [dated('b', 3000), dated('a', 1000), undated('c')];
+    const originalOrder = input.map((j) => j.url);
+
+    const result = sortFoundJobsByDate(input, 'newest');
+
+    expect(input.map((j) => j.url)).toEqual(originalOrder); // input order untouched
+    expect(result).not.toBe(input); // a fresh array was returned, not the input reordered in place
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AutopilotCard — foundJobs honors its OWN local per-card sort state (owner
+// correction: sort is per-autopilot, not a shared session-store field — two
+// expanded cards must be sortable independently). The Dropdown lives in the
+// found-jobs panel header; option buttons are the mocked `@ajh/ui` Dropdown
+// above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — foundJobs honors its own per-card sort', () => {
+  /** DOM render order via the row's existing `data-job-url` seam. */
+  function domJobOrder(): (string | null)[] {
+    return Array.from(document.querySelectorAll('[data-job-url]')).map((el) =>
+      el.getAttribute('data-job-url')
+    );
+  }
+
+  function mixedJobs(): AutopilotFoundJob[] {
+    return [
+      { ...makeJob('https://example.com/c'), postedAt: 1_000 },
+      { ...makeJob('https://example.com/a'), postedAt: 3_000 },
+      makeJob('https://example.com/b'), // undated
+    ];
+  }
+
+  /** Expand the panel, then click the per-card Dropdown's "Newest" option. */
+  async function expandAndSelectNewest(user: ReturnType<typeof userEvent.setup>) {
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await user.click(header);
+    await user.click(screen.getByRole('button', { name: 'jobs.sortNewest' }));
+  }
+
+  it("defaults to relevance (today's stored rank order) — no reordering", async () => {
+    const user = userEvent.setup();
+    renderCard(makeAutopilot(mixedJobs()));
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await user.click(header);
+
+    expect(domJobOrder()).toEqual([
+      'https://example.com/c',
+      'https://example.com/a',
+      'https://example.com/b',
+    ]);
+  });
+
+  it('reorders newest-first (dated band leads, undated trails) once the user selects "Newest"', async () => {
+    const user = userEvent.setup();
+    renderCard(makeAutopilot(mixedJobs()));
+    await expandAndSelectNewest(user);
+
+    expect(domJobOrder()).toEqual([
+      'https://example.com/a', // postedAt 3000 — newest
+      'https://example.com/c', // postedAt 1000
+      'https://example.com/b', // undated — trailing band
+    ]);
+  });
+
+  it('does NOT mutate ap.foundJobs after selecting "Newest" (ADR-020)', async () => {
+    const user = userEvent.setup();
+    const fixture = mixedJobs();
+    const originalOrder = fixture.map((j) => j.url);
+
+    renderCard(makeAutopilot(fixture));
+    await expandAndSelectNewest(user);
+
+    expect(fixture.map((j) => j.url)).toEqual(originalOrder);
+  });
+
+  // The acceptance bar for the per-card requirement: two cards rendered at
+  // once must sort independently — selecting "Newest" on one must NOT affect
+  // the other, which stays at its own default (relevance).
+  it('two cards sort independently — card A "newest" leaves card B at "relevance"', async () => {
+    const user = userEvent.setup();
+    const jobsA: AutopilotFoundJob[] = [
+      { ...makeJob('https://example.com/a-c'), postedAt: 1_000 },
+      { ...makeJob('https://example.com/a-a'), postedAt: 3_000 },
+    ];
+    const jobsB: AutopilotFoundJob[] = [
+      { ...makeJob('https://example.com/b-c'), postedAt: 1_000 },
+      { ...makeJob('https://example.com/b-a'), postedAt: 3_000 },
+    ];
+    const autopilotA = makeAutopilot(jobsA);
+    const autopilotB = { ...makeAutopilot(jobsB), _id: 'ap-2', name: 'Second Autopilot' };
+
+    const { container } = render(
+      <>
+        <AutopilotCard autopilot={autopilotA} {...defaultProps} />
+        <AutopilotCard autopilot={autopilotB} {...defaultProps} />
+      </>
+    );
+
+    const headers = Array.from(container.querySelectorAll('[aria-expanded]'));
+    expect(headers).toHaveLength(2);
+    const [headerA, headerB] = headers;
+    if (!headerA || !headerB) throw new Error('both card headers must be present');
+    await user.click(headerA);
+    await user.click(headerB);
+
+    // Both cards' Dropdowns share the same accessible group name ("jobs.sort")
+    // — scope to the FIRST one (card A, DOM/render order) so only its sort
+    // changes.
+    const groups = screen.getAllByRole('group', { name: 'jobs.sort' });
+    expect(groups).toHaveLength(2);
+    const [groupA] = groups;
+    if (!groupA) throw new Error('card A sort group must be present');
+    await user.click(within(groupA).getByRole('button', { name: 'jobs.sortNewest' }));
+
+    const orderFor = (prefix: string) =>
+      domJobOrder().filter((url) => url?.includes(prefix)) as string[];
+
+    // Card A: reordered newest-first.
+    expect(orderFor('/a-')).toEqual(['https://example.com/a-a', 'https://example.com/a-c']);
+    // Card B: untouched — still its own stored (relevance) order.
+    expect(orderFor('/b-')).toEqual(['https://example.com/b-c', 'https://example.com/b-a']);
   });
 });

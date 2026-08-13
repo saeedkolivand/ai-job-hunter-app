@@ -3513,6 +3513,69 @@ fn dedup_cross_source_upgrades_description_and_extra_but_keeps_incumbent_identit
 }
 
 #[test]
+fn dedup_cross_source_backfills_posted_at_but_never_clobbers_a_known_date() {
+    // Mirrors `dedup_cross_source_upgrades_description_and_extra_but_keeps_incumbent_identity`
+    // for `posted_at`: an aggregator hit WITH a publish date, deduped against a
+    // dateless direct-board hit for the same canonical key, must not lose the
+    // date permanently once collapsed to one row.
+    let mut dateless_incumbent = dedup_posting(
+        "board",
+        "https://acme.example/jobs/42",
+        "Staff Engineer",
+        "Acme",
+        Some("short"),
+    );
+    dateless_incumbent.posted_at = None;
+
+    let mut dated_challenger = dedup_posting(
+        "aggregator",
+        "https://www.acme.example/jobs/42?utm_source=x",
+        "Staff Engineer",
+        "Acme",
+        Some("short"),
+    );
+    dated_challenger.posted_at = Some(1_700_000_000_000);
+
+    let out = dedup_cross_source(vec![dateless_incumbent, dated_challenger]);
+    assert_eq!(out.len(), 1, "same canonical key collapses to one");
+    assert_eq!(
+        out[0].posted_at,
+        Some(1_700_000_000_000),
+        "a dateless incumbent must backfill the challenger's posted_at, not lose it \
+         permanently once collapsed"
+    );
+
+    // The other direction: an incumbent that already has a date keeps its OWN
+    // date — a challenger's date (or lack of one) never overwrites a known one.
+    let mut dated_incumbent = dedup_posting(
+        "aggregator",
+        "https://www.acme.example/jobs/43?utm_source=x",
+        "Senior Engineer",
+        "Acme",
+        Some("short"),
+    );
+    dated_incumbent.posted_at = Some(1_650_000_000_000);
+
+    let mut dateless_challenger = dedup_posting(
+        "board",
+        "https://acme.example/jobs/43",
+        "Senior Engineer",
+        "Acme",
+        Some("a much longer full description that beats the snippet"),
+    );
+    dateless_challenger.posted_at = None;
+
+    let out = dedup_cross_source(vec![dated_incumbent, dateless_challenger]);
+    assert_eq!(out.len(), 1);
+    assert_eq!(
+        out[0].posted_at,
+        Some(1_650_000_000_000),
+        "an incumbent's known posted_at must survive a challenger with no date, \
+         even when the challenger wins the description upgrade"
+    );
+}
+
+#[test]
 fn dedup_cross_source_equal_description_length_keeps_incumbent_unchanged() {
     // Equal-length descriptions (both None here) → no description upgrade; and
     // incumbent identity (source/url/id) is NEVER swapped by dedup regardless of

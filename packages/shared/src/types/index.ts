@@ -329,6 +329,13 @@ export interface AutopilotFoundJob {
    *  Drives the metric label + the band's score thresholds (ADR-020 addendum). */
   scoreSource?: 'keyword' | 'combined';
   foundAt: number;
+  /** The posting's own publish date (epoch ms), copied from the source at
+   *  find-time — distinct from `foundAt` (when WE scraped it). Boards that
+   *  expose a publish date (the aggregator providers plus several direct
+   *  full-text boards) parse it from the upstream response; absent when the
+   *  board doesn't expose one, or on a record written before this field
+   *  existed. */
+  postedAt?: number;
   /** First surfaced in the most recent run — drives the "New" badge. */
   isNew?: boolean;
   /** The user has generated an application for this job (derived from a saved

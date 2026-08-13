@@ -1048,6 +1048,14 @@ fn dedup_cross_source(postings: Vec<JobPosting>) -> Vec<JobPosting> {
                 if desc_len(&p) > desc_len(&out[i]) {
                     out[i].description = p.description;
                 }
+                // Same fill-without-clobbering pattern as the `extra` union below:
+                // a dateless incumbent (e.g. a direct board with no publish-date
+                // field) picks up the challenger's date rather than losing it
+                // permanently once collapsed; an incumbent that already has one
+                // keeps it.
+                if out[i].posted_at.is_none() {
+                    out[i].posted_at = p.posted_at;
+                }
                 merge_extra(&mut out[i].extra, p.extra);
             }
             None => {
