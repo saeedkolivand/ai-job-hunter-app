@@ -23,6 +23,10 @@ const KEYS = [
   'settings.ai.stages.defaultModel',
   'settings.ai.stages.defaultNoModel',
   'settings.ai.stages.cliDefaultModel',
+  'settings.ai.stages.noModel',
+  'settings.ai.stages.changeFor',
+  'settings.ai.stages.changeCloseFor',
+  'settings.ai.stages.resetFor',
   'settings.ai.stages.change',
   'settings.ai.stages.changeClose',
   'settings.ai.stages.reset',
@@ -61,6 +65,7 @@ const KEYS = [
   'settings.ai.advisor.models.window',
   'settings.ai.advisor.models.active',
   'settings.ai.advisor.models.notMeasured',
+  'settings.ai.advisor.models.loading',
   'settings.ai.advisor.models.emptyTitle',
   'settings.ai.advisor.models.emptyDescription',
   'settings.ai.advisor.fit.title',
@@ -113,6 +118,16 @@ describe.each(LOCALES)('per-stage + advisor strings — %s', (locale) => {
   it('resolves every key to real copy', () => {
     const missing = KEYS.filter((key) => i18n.t(key) === key || i18n.t(key) === '');
     expect(missing).toEqual([]);
+  });
+
+  it('resolves both plural forms of every counted message', () => {
+    for (const key of ['settings.ai.advisor.models.loaded', 'settings.ai.advisor.fit.loaded']) {
+      const one = i18n.t(key, { count: 1 });
+      const many = i18n.t(key, { count: 4 });
+      expect(one).not.toContain(key.split('.').pop());
+      expect(one).not.toBe(many);
+      expect(many).toContain('4');
+    }
   });
 
   it('resolves both plural forms of the applied message', () => {
