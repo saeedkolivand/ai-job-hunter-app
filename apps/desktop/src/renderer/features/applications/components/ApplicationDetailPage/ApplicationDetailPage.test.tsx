@@ -53,12 +53,15 @@ vi.mock('@tanstack/react-router', () => ({
 // The active tab returned by `Route.useSearch()`. Defaults to overview; tests
 // that target the Documents tab override it via `mockTab`.
 let mockTab: 'overview' | 'timeline' | 'brief' | 'documents' = 'overview';
+// The `?from=` origin returned by `Route.useSearch()`. Defaults to unset; the
+// Back-navigation tests below override it per case.
+let mockFrom: 'jobs' | 'autopilot' | 'applications' | undefined = undefined;
 
 vi.mock('@/routes/applications.$id', () => ({
   DETAIL_TABS: ['overview', 'timeline', 'brief', 'documents'] as const,
   Route: {
     useParams: () => ({ id: 'app-1' }),
-    useSearch: () => ({ tab: mockTab }),
+    useSearch: () => ({ tab: mockTab, from: mockFrom }),
   },
 }));
 
@@ -253,6 +256,7 @@ import { ApplicationDetailPage } from './index';
 
 beforeEach(() => {
   mockTab = 'overview';
+  mockFrom = undefined;
   mockUseApplication.mockReset();
   mockUseAiGenerations.mockReset();
   // `mockReset` (not `mockClear`): the contact-rejection tests install an
@@ -840,6 +844,49 @@ describe('ApplicationDetailPage — ?tab= behaviour', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ApplicationDetailPage — Back navigation `resetScroll` seam
+//
+// `from === 'autopilot'` means Autopilot's own focus effect performs the ONE
+// scroll motion this return trip needs (re-expand + scrollIntoView the applied
+// job). The router's own scroll reset/restore must be skipped for that one
+// hop, or it fires first and produces a visible double-scroll. Mutation check:
+// dropping `resetScroll: from !== 'autopilot'` back to a bare `navigate({ to:
+// backTarget })` turns the first assertion red (no `resetScroll` key at all).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ApplicationDetailPage — Back navigation resetScroll seam', () => {
+  it('returning from Autopilot opts the navigation out of scroll restoration', async () => {
+    mockFrom = 'autopilot';
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-autopilot' });
+
+    await user.click(screen.getByText('applications.detail.backAutopilot'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/autopilot', resetScroll: false });
+  });
+
+  it('returning from Jobs keeps the default scroll reset (no compensating scroll effect there)', async () => {
+    mockFrom = 'jobs';
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-jobs' });
+
+    await user.click(screen.getByText('applications.detail.backJobs'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/jobs', resetScroll: true });
+  });
+
+  it('returning with no origin (plain applications list) also keeps the default scroll reset', async () => {
+    mockFrom = undefined;
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-default' });
+
+    await user.click(screen.getByText('applications.detail.back'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications', resetScroll: true });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ApplicationDetailPage — ActionMenu delete flows
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -873,7 +920,7 @@ describe('ApplicationDetailPage — ActionMenu delete flows', () => {
       keepDocuments: true,
     });
     // After deletion navigates back to /applications.
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications', resetScroll: true });
   });
 
   it('"delete everything" confirms with keepDocuments: false and navigates to /applications', async () => {
@@ -897,7 +944,7 @@ describe('ApplicationDetailPage — ActionMenu delete flows', () => {
       id: 'app-del-all',
       keepDocuments: false,
     });
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications', resetScroll: true });
   });
 
   it('cancelling the confirm modal does NOT call remove mutate', async () => {

@@ -173,7 +173,12 @@ export function ApplicationDetailPage() {
 
   const { from } = Route.useSearch();
   const backTarget = from ? BACK_TO[from] : '/applications';
-  const back = () => void navigate({ to: backTarget });
+  // Returning to Autopilot from an Apply: that page's own focus effect
+  // re-expands the source card and scrollIntoView's the applied job — the ONE
+  // scroll motion this trip needs. Skip the router's own scroll reset/restore
+  // for that hop only, or it fires first and the list visibly scrolls twice
+  // (an old/reset position, then the focus jump).
+  const back = () => void navigate({ to: backTarget, resetScroll: from !== 'autopilot' });
   const backLabel =
     from === 'jobs'
       ? t('applications.detail.backJobs')
