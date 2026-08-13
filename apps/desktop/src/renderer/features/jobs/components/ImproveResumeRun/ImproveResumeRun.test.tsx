@@ -441,6 +441,37 @@ describe('buildImproveRows', () => {
     expect(over.find((r) => r.key === 'save')?.status).toBe('skipped');
   });
 
+  // `AgentStep.tools` is what the model ASKED for, emitted before its calls run.
+  // Once the tool-call ceiling is spent the rest of the turn is refused without
+  // executing — and a Write among them is refused WITHOUT suspending, so the
+  // user is never asked. Keyed on the request alone, the save row would report
+  // "Done" for an offer that never reached anyone.
+  it('does not call a refused save "done" just because the model asked for it', () => {
+    const rows = buildImproveRows([turn(['validate_resume']), turn(['save_resume'])], {
+      busy: false,
+      interrupted: true,
+    });
+    expect(rows.find((r) => r.key === 'save')?.status).toBe('skipped');
+  });
+
+  it('still calls it done once the suspend proves it was offered', () => {
+    const rows = buildImproveRows([turn(['save_resume']), saveConfirm(), proposal()], {
+      busy: false,
+      interrupted: false,
+    });
+    expect(rows.find((r) => r.key === 'save')?.status).toBe('done');
+  });
+
+  // The live case must not regress into "pending": while the call is running,
+  // asking IS the progress.
+  it('shows the save in progress while the call that will suspend is running', () => {
+    const rows = buildImproveRows([turn(['validate_resume']), turn(['save_resume'])], {
+      busy: true,
+      interrupted: false,
+    });
+    expect(rows.find((r) => r.key === 'save')?.status).toBe('active');
+  });
+
   it('never calls the latest step of a finished run "in progress"', () => {
     const rows = buildImproveRows([turn(['get_quality_report']), proposal()], {
       busy: false,

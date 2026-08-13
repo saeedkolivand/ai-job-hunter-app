@@ -29,6 +29,15 @@ interface ImproveRowSpec {
    *  a `confirm_request` (whose `tools[]` is empty — the tool is in `confirm`),
    *  and the closing summary is the terminal `proposal` step. */
   matches: (step: AgentStepEvent) => boolean;
+  /**
+   * Proof the step actually HAPPENED, where "the model asked for it" is not
+   * proof. A turn's `tools[]` is emitted BEFORE its calls run, and a call can
+   * still be refused after that: once the tool-call ceiling is spent the
+   * remaining calls of the turn are refused without executing, and a Write
+   * among them is refused WITHOUT suspending — so the user is never asked.
+   * Without this, a save the run never offered would render "Done".
+   */
+  reached?: (step: AgentStepEvent) => boolean;
   /** The prompt rations AT MOST ONE of these per run, so a row that always
    *  rendered would sit at "Pending" through a healthy run and read as a step
    *  that never happened. Shown only once the run actually takes it. */
@@ -53,10 +62,13 @@ const IMPROVE_CHECKLIST: readonly ImproveRowSpec[] = [
   {
     key: 'save',
     // The turn that ASKS (a `turn` step naming the tool) and the suspend it
-    // produces (`confirm_request`, `tools` empty) are the same row.
+    // produces (`confirm_request`, `tools` empty) are the same row…
     matches: (s) =>
       s.tools.includes('save_resume') ||
       (s.kind === 'confirm_request' && s.confirm?.tool === 'save_resume'),
+    // …but only the suspend means the résumé was actually put in front of the
+    // user. This is the one row where asking and happening can come apart.
+    reached: (s) => s.kind === 'confirm_request' && s.confirm?.tool === 'save_resume',
   },
   { key: 'summary', matches: (s) => s.kind === 'proposal' },
 ];
@@ -81,6 +93,11 @@ export interface ImproveRow {
  *   run that has ended claims work that is still coming; a review stopped at
  *   its tool-call limit never reaches its last steps, and the user has to be
  *   able to see which checks did not run before trusting the résumé.
+ *
+ * …and a row that declares `reached` needs that evidence before it can be
+ * `done` at all: a turn's `tools[]` is what the model ASKED for, emitted before
+ * anything ran, so a save the ceiling refused would otherwise render as an
+ * offer that never happened.
  */
 export function buildImproveRows(
   steps: AgentStepEvent[],
@@ -99,6 +116,8 @@ export function buildImproveRows(
     }
     if (!match && spec.optional) continue;
     const isLatest = !!match && last === match;
+    /** Asked for, but never actually reached (see {@link ImproveRowSpec.reached}). */
+    const requestedOnly = !!match && !!spec.reached && !steps.some((step) => spec.reached?.(step));
     rows.push({
       key: spec.key,
       match,
@@ -107,10 +126,14 @@ export function buildImproveRows(
           ? 'pending'
           : 'skipped'
         : isLatest && busy
-          ? 'active'
-          : isLatest && interrupted
-            ? 'interrupted'
-            : 'done',
+          ? 'active' // the call is running right now — asking IS the progress
+          : requestedOnly
+            ? busy
+              ? 'pending' // it can still happen; this run is not over
+              : 'skipped' // asked for, refused, never offered to the user
+            : isLatest && interrupted
+              ? 'interrupted'
+              : 'done',
     });
   }
   return rows;
