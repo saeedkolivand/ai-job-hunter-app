@@ -95,6 +95,56 @@ describe('LocalModelLimits — committing the window', () => {
     expect(setLocalModelLimits).toHaveBeenCalledWith('model-a', { contextWindow: 16_384 });
   });
 
+  it('does NOT write while the slider is still being dragged', () => {
+    render(<LocalModelLimits selectedModel="model-a" />);
+
+    fireEvent.change(slider(), { target: { value: '16384' } });
+
+    // Commit-on-release is the whole contract of this file: writing per tick
+    // would be eighty round trips for one drag.
+    expect(save).not.toHaveBeenCalled();
+    expect(setLocalModelLimits).toHaveBeenCalled();
+  });
+
+  it('does not write when a release moved nothing (first touch included)', () => {
+    render(<LocalModelLimits selectedModel="model-a" />);
+
+    // A click on the thumb, or a Tab key-up: the value on screen is unchanged.
+    fireEvent.pointerUp(slider(), { target: { value: slider().value } });
+    fireEvent.keyUp(slider(), { target: { value: slider().value } });
+
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('commits the hardware suggestion through the same path', () => {
+    // A measured 32k window with 16 GB free suggests more than the 8192 shown,
+    // so accepting it is a real change.
+    inspectState.data = { contextLength: 32_768 };
+    inspectState.variables = { model: 'model-a' };
+    render(<LocalModelLimits selectedModel="model-a" />);
+
+    fireEvent.click(screen.getByText('settings.ai.localLimits.useSuggested'));
+
+    expect(setLocalModelLimits).toHaveBeenCalledWith(
+      'model-a',
+      expect.objectContaining({ contextWindow: 32_768 })
+    );
+    expect(save).toHaveBeenCalledWith(
+      { provider: 'ollama', model: 'model-a', contextWindow: 32_768 },
+      expect.anything()
+    );
+  });
+
+  it('writes nothing when the suggestion is already what is stored', () => {
+    // No measured maximum: the suggestion lands on the same 8192 the slider
+    // already shows, and a round trip that changes nothing is not worth making.
+    render(<LocalModelLimits selectedModel="model-a" />);
+
+    fireEvent.click(screen.getByText('settings.ai.localLimits.useSuggested'));
+
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it('does not re-send a release that moved nothing', () => {
     render(<LocalModelLimits selectedModel="model-a" />);
 

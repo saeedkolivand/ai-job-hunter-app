@@ -38,7 +38,18 @@ export function useProviderKeys() {
   const { save: saveProviderSettings } = useSaveProviderSettings();
   const setActiveProvider = (provider: AiProvider) => setActiveProviderMut.mutate(provider);
   const setProviderSettings = (provider: AiProvider, model: string) =>
-    saveProviderSettings({ provider, model });
+    saveProviderSettings(
+      { provider, model },
+      {
+        // Every other write in this hook reports through `notify`. Without this
+        // a server rejection left the row showing the model the user picked
+        // while the backend kept the old one — and a staged run used the old.
+        onError: (err) =>
+          notify.error({
+            message: err instanceof Error ? err.message : 'Failed to save the selected model.',
+          }),
+      }
+    );
 
   const activeProvider: AiProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
 

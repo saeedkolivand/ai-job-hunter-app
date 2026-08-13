@@ -118,8 +118,13 @@ export function LocalModelLimits({ selectedModel }: Props) {
     // Key-up and pointer-up both fire on a press that moved nothing — but the
     // de-duplication is PER MODEL, so the same number for a different model is
     // still a write.
-    if (value === committedWindows.current[selectedModel]) return;
+    //
+    // Seeded from the value on screen (which comes from the stored row), or the
+    // FIRST touch of each model — a click on the thumb, a Tab key-up — would
+    // commit a value the backend already has, once per model per mount.
+    const known = committedWindows.current[selectedModel] ?? contextWindow;
     committedWindows.current[selectedModel] = value;
+    if (value === known) return;
     saveProviderSettings(
       { provider: 'ollama', model: selectedModel, contextWindow: value },
       {

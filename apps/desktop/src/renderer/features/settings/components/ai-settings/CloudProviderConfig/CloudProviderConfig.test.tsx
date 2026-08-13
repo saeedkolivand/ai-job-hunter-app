@@ -50,9 +50,14 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 // `mutate` invokes the caller's `onError` synchronously so tests can simulate a
 // rejected `{error}`-union write without a real QueryClient/mutation lifecycle.
 
-const mockSaveProviderSettings = vi.fn((_req: unknown, opts?: { onError?: () => void }) =>
-  opts?.onError?.()
-);
+// Succeeds by default; a case that wants the rejection opts in with
+// `mockImplementationOnce`. A stub that fails EVERY save meant the payload
+// assertions all ran with the component in its error state.
+const mockSaveProviderSettings = vi.fn();
+const failNextSave = () =>
+  mockSaveProviderSettings.mockImplementationOnce(
+    (_req: unknown, opts?: { onError?: () => void }) => opts?.onError?.()
+  );
 
 // EffortPicker's capability probe — controllable per-test via this mutable
 // state object (avoids a real QueryClient/AppClientProvider in these focused
@@ -192,6 +197,8 @@ describe('CloudProviderConfig — base URL save surfaces a rejected write', () =
       <CloudProviderConfig {...baseProps} provider="openai-compatible" baseUrlInput="https://x" />
     );
 
+    failNextSave();
+
     await user.click(screen.getByText('settings.aiProvider.saveUrl'));
 
     expect(mockSaveProviderSettings).toHaveBeenCalledOnce();
@@ -212,6 +219,9 @@ describe('CloudProviderConfig — base URL save surfaces a rejected write', () =
       expect.objectContaining({ provider: 'openai-compatible', baseUrl: null }),
       expect.anything()
     );
+    // The default stub resolves, so this also covers the SUCCESS path: no error
+    // notification is raised for a write that worked.
+    expect(mockNotify.error).not.toHaveBeenCalled();
   });
 });
 
