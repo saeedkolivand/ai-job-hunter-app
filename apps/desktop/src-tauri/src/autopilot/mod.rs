@@ -983,11 +983,16 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
     // 1) Collapse duplicates WITHIN the incoming batch by canonical key. First
     //    occurrence keeps its position; a later duplicate carrying a longer
     //    description upgrades that one field (richer text for the tailor flow).
-    //    (The engine's dedup_cross_source runs upstream and — like this pass —
-    //    keeps the incumbent's identity and only upgrades description/extra
-    //    field-by-field, never a whole-posting replace; cross-source dupes are
-    //    already collapsed before they reach here, so this pass only ever sees
-    //    same-source within-batch repeats.)
+    //    (The engine's `dedup_cross_source` runs upstream over the FULL
+    //    multi-board batch, keyed on the exact same `canonical_job_key` that
+    //    `build_found_job` copies verbatim into `merge_key` (url/title/company
+    //    are never mutated in between) — so via the one production caller
+    //    (`commands::autopilot::autopilot_run`) this `Some(kept)` branch is
+    //    never actually hit: every duplicate, same-source or cross-source, was
+    //    already collapsed — including its `posted_at`, via the same
+    //    fill-without-clobbering pattern this file uses — before `incoming` was
+    //    built. This pass is `merge_found_jobs`'s own defensive contract for a
+    //    caller that hands it pre-existing duplicates directly, e.g. a test.)
     let mut order: Vec<String> = Vec::new();
     let mut by_key: HashMap<String, FoundJob> = HashMap::new();
     for job in incoming {
