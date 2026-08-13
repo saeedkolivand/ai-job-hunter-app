@@ -5,11 +5,22 @@ import { useRouter } from '@tanstack/react-router';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard } from '@ajh/ui';
 
+import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { ROUTES } from '@/constants/routes';
 import { useKindLabelMap } from '@/hooks/use-kind-label-map';
 import { useSystemHealth, useSystemMetrics, useWorkerActivity } from '@/services';
 import { keys, queryClient } from '@/services/query-client';
 import { invalidateHealth } from '@/services/use-system';
+
+/** Mirrors `AiSetupHint`'s `MESSAGE_KEY` — the copy for each `useCanUseAI` block
+ *  reason. Duplicated rather than imported: every other gating call site
+ *  (AnalyzeLeftPanel, LeftPanel, ReferralModal, StepModel…) inlines its own
+ *  copy of this tiny reason→key map instead of sharing one. */
+const AI_REASON_KEY: Record<string, string> = {
+  addApiKey: 'aiSetup.addApiKey',
+  selectModel: 'aiSetup.selectModel',
+  installCli: 'aiSetup.installCli',
+};
 
 export function AISystemStatus() {
   const { t } = useTranslation();
@@ -18,9 +29,18 @@ export function AISystemStatus() {
   const { data: metricsRaw } = useSystemMetrics();
   const activity = useWorkerActivity(useKindLabelMap());
   const [refreshing, setRefreshing] = useState(false);
+  // `system_health.ai.ready` (below, `h.ai`) only ever probes the LOCAL Ollama
+  // daemon — regardless of which provider is actually active — so a user on
+  // OpenAI/Anthropic/Gemini/a CLI agent (with local Ollama not even running)
+  // saw a false "AI Model not available" here. `useCanUseAI` is the
+  // provider-kind-aware source of truth already gating every other AI action
+  // in the app; reuse it for this row instead of the Ollama-only probe.
+  const { canUse: aiCanUse, reason: aiReason } = useCanUseAI();
+  const selectedModel = useSelectedModel();
 
+  // `ai` is deliberately absent: this row now reads `useCanUseAI` (above),
+  // not the Ollama-only `system_health.ai` probe.
   type Health = {
-    ai?: { ready: boolean; model?: string; memoryMB?: number };
     data?: { ready: boolean; sqlite: boolean; vector: boolean };
   };
   type Metrics = { processes?: Array<{ type: string; memory?: { workingSetSize: number } }> };
@@ -48,11 +68,14 @@ export function AISystemStatus() {
     {
       name: t('dashboard.status.aiModel'),
       icon: Cpu,
-      status: h == null ? 'loading' : h.ai?.ready ? 'ready' : 'error',
-      detail: h?.ai?.ready
-        ? (h.ai.model ?? 'Ready')
-        : h != null
-          ? t('dashboard.status.notAvailable')
+      // `aiReason` is `undefined` while `useActiveConfig` is still on its
+      // first (boot-prefetched) fetch — see `useCanUseAI`'s own "cold boot"
+      // branch — so that, not `h`, is this row's loading signal now.
+      status: aiCanUse ? 'ready' : aiReason == null ? 'loading' : 'error',
+      detail: aiCanUse
+        ? selectedModel || t('dashboard.status.ready')
+        : aiReason
+          ? t(AI_REASON_KEY[aiReason] ?? 'aiSetup.addApiKey')
           : t('dashboard.status.checking'),
       onClick: undefined as (() => void) | undefined,
     },
