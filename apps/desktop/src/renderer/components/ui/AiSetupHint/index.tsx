@@ -11,12 +11,13 @@ const MESSAGE_KEY: Record<string, string> = {
   addApiKey: 'aiSetup.addApiKey',
   selectModel: 'aiSetup.selectModel',
   installCli: 'aiSetup.installCli',
+  startOllama: 'aiSetup.startOllama',
 };
 
 interface Props {
   /** Whether AI is currently blocked (typically `!canUseAI`). */
   show: boolean;
-  /** The block reason from `useCanUseAI` (`addApiKey` | `selectModel` | `installCli`). */
+  /** The block reason from `useCanUseAI` (`addApiKey` | `selectModel` | `installCli` | `startOllama`). */
   reason?: string;
 }
 

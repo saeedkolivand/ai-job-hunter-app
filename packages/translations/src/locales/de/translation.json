@@ -246,6 +246,7 @@
     "addApiKey": "Füge einen KI-Anbieter-Schlüssel hinzu, um zu generieren.",
     "selectModel": "Wähle ein KI-Modell, um zu generieren.",
     "installCli": "Installiere deinen KI-CLI-Agenten, um fortzufahren.",
+    "startOllama": "Starte Ollama, um fortzufahren.",
     "action": "KI-Einstellungen öffnen"
   },
   "analyze": {

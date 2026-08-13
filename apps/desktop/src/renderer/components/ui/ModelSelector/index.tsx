@@ -323,7 +323,17 @@ export function useCanUseAI(): { canUse: boolean; reason?: string } {
     const detected = health?.cliAgents?.[activeProvider]?.detected ?? false;
     return detected ? { canUse: true } : { canUse: false, reason: 'installCli' };
   }
-  // local-server (Ollama) — the model now lives in the per-provider config.
+  // local-server (Ollama) — the model now lives in the per-provider config,
+  // but a configured model doesn't prove the daemon is actually reachable
+  // (crashed, still booting, or quit). `provider-meta.ts` documents this
+  // `kind` as "detected via a health probe" — this is that probe, reusing the
+  // same `useSystemHealth` query the cli-agent branch above already polls.
   if (!activeProviderModel) return { canUse: false, reason: 'selectModel' };
-  return { canUse: true };
+  // `health` is `undefined` only while the query is still in flight — the
+  // real backend command always resolves to a `RuntimeHealth` object, never
+  // `undefined`, so this can't be confused with a settled "not ready" read.
+  // Same "no reason yet" convention as the `isPending` cold-boot check above:
+  // block, but don't claim Ollama is down before we've actually checked.
+  if (health === undefined) return { canUse: false };
+  return health.ai.ready ? { canUse: true } : { canUse: false, reason: 'startOllama' };
 }

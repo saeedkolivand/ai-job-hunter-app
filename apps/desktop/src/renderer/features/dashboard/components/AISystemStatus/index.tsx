@@ -20,6 +20,7 @@ const AI_REASON_KEY: Record<string, string> = {
   addApiKey: 'aiSetup.addApiKey',
   selectModel: 'aiSetup.selectModel',
   installCli: 'aiSetup.installCli',
+  startOllama: 'aiSetup.startOllama',
 };
 
 export function AISystemStatus() {
