@@ -264,7 +264,9 @@ describe('ImproveResumeRun — every state has an action', () => {
     // The badge is a neutral LABEL; the reason is a sentence, at a readable size.
     const rows = screen.getByRole('group', { name: /résumé review progress/i });
     expect(screen.queryByText('Completed')).not.toBeInTheDocument();
-    expect(screen.getByText(/Stopped at its tool-call limit, so the checks after/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Stopped at its tool-call limit, so the checks after/)
+    ).toBeInTheDocument();
     expect(screen.queryByText(/The review is finished/)).not.toBeInTheDocument();
 
     // …and the checks it never reached say so. "Pending" on a run that has
@@ -337,7 +339,12 @@ describe('ImproveResumeRun — every state has an action', () => {
 
   it('hands focus back to the host when Dismiss unmounts the card', async () => {
     const onDismissed = vi.fn();
-    render(<ImproveResumeRun session={session({ state: 'done', busy: false })} onDismissed={onDismissed} />);
+    render(
+      <ImproveResumeRun
+        session={session({ state: 'done', busy: false })}
+        onDismissed={onDismissed}
+      />
+    );
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
 
     expect(dismiss).toHaveBeenCalledTimes(1);
