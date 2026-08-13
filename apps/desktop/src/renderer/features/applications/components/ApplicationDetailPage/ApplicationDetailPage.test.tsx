@@ -78,6 +78,9 @@ const mockSessionState: {
     applyForId: string | null;
   };
   setApplicationApply: typeof mockSetApplicationApply;
+  // Only `lastAppliedId` is read by the component (the resetScroll gate); kept
+  // minimal rather than mirroring the full autopilot slice.
+  autopilot: { lastAppliedId: string | null };
 } = {
   applicationApply: {
     applyWizardStep: 0,
@@ -87,6 +90,7 @@ const mockSessionState: {
     applyForId: null,
   },
   setApplicationApply: mockSetApplicationApply,
+  autopilot: { lastAppliedId: null },
 };
 
 vi.mock('@/store/session-store', () => ({
@@ -257,6 +261,7 @@ import { ApplicationDetailPage } from './index';
 beforeEach(() => {
   mockTab = 'overview';
   mockFrom = undefined;
+  mockSessionState.autopilot.lastAppliedId = null;
   mockUseApplication.mockReset();
   mockUseAiGenerations.mockReset();
   // `mockReset` (not `mockClear`): the contact-rejection tests install an
@@ -846,23 +851,37 @@ describe('ApplicationDetailPage — ?tab= behaviour', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // ApplicationDetailPage — Back navigation `resetScroll` seam
 //
-// `from === 'autopilot'` means Autopilot's own focus effect performs the ONE
-// scroll motion this return trip needs (re-expand + scrollIntoView the applied
-// job). The router's own scroll reset/restore must be skipped for that one
-// hop, or it fires first and produces a visible double-scroll. Mutation check:
-// dropping `resetScroll: from !== 'autopilot'` back to a bare `navigate({ to:
-// backTarget })` turns the first assertion red (no `resetScroll` key at all).
+// `from === 'autopilot'` ALONE isn't proof a compensating scroll will run:
+// `from` is a URL search param that survives native forward-navigation, while
+// `lastAppliedId` is the one-shot session-store field Autopilot's own focus
+// effect consumes on its next mount. The gate requires BOTH — `from ===
+// 'autopilot'` AND a pending `lastAppliedId` — before skipping the router's
+// scroll restoration. Mutation check: dropping either half of the `&&` (back
+// to a bare `from !== 'autopilot'`, or a bare `navigate({ to: backTarget })`)
+// turns the first two assertions below red.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('ApplicationDetailPage — Back navigation resetScroll seam', () => {
-  it('returning from Autopilot opts the navigation out of scroll restoration', async () => {
+  it('returning from Autopilot WITH a pending focus opts out of scroll restoration', async () => {
     mockFrom = 'autopilot';
+    mockSessionState.autopilot.lastAppliedId = 'ap-1';
     const user = userEvent.setup();
     renderLoaded({ id: 'app-back-autopilot' });
 
     await user.click(screen.getByText('applications.detail.backAutopilot'));
 
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/autopilot', resetScroll: false });
+  });
+
+  it('returning from Autopilot WITHOUT a pending focus (e.g. forward-nav replay) keeps the default reset', async () => {
+    mockFrom = 'autopilot';
+    mockSessionState.autopilot.lastAppliedId = null;
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-autopilot-stale' });
+
+    await user.click(screen.getByText('applications.detail.backAutopilot'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/autopilot', resetScroll: true });
   });
 
   it('returning from Jobs keeps the default scroll reset (no compensating scroll effect there)', async () => {
