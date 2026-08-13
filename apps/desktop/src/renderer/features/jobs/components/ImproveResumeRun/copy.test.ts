@@ -34,18 +34,21 @@ const KEYS: string[] = [
   `${IMPROVE}.starting`,
   `${IMPROVE}.liveRegionLabel`,
   `${IMPROVE}.confirmAnnouncement`,
+  `${IMPROVE}.optionalNote`,
+  `${IMPROVE}.pendingBadge`,
   `${IMPROVE}.summaryTitle`,
   `${IMPROVE}.doneHint`,
+  `${IMPROVE}.stoppedHint`,
   `${IMPROVE}.cancelledHint`,
   `${IMPROVE}.failedTitle`,
   `${IMPROVE}.stop`,
   `${IMPROVE}.stopHint`,
   `${IMPROVE}.stopping`,
   `${IMPROVE}.dismiss`,
-  ...(['running', 'waiting', 'done', 'cancelled', 'failed'] as const).map(
+  ...(['running', 'waiting', 'done', 'cancelled', 'stopped', 'failed'] as const).map(
     (state) => `${IMPROVE}.state.${state}`
   ),
-  ...(['pending', 'active', 'done', 'interrupted'] as const).map(
+  ...(['pending', 'active', 'done', 'interrupted', 'skipped'] as const).map(
     (status) => `${IMPROVE}.status.${status}`
   ),
   ...(['report', 'check', 'trim', 'rewrite', 'evidence', 'save', 'summary'] as const).map(
@@ -62,7 +65,9 @@ describe.each(LOCALES)('improve-resume copy — %s', (lng) => {
 
   it.each(KEYS)('%s is present in this locale and resolves', (key) => {
     expect(typeof i18n.getResource(lng, 'translation', key)).toBe('string');
-    const resolved = t(key, { max: 8000 });
+    // Every interpolation this namespace uses, so a key that wants one is not
+    // reported as a leftover placeholder by the check below.
+    const resolved = t(key, { max: '8,000', reason: 'Stopped at its step limit' });
     expect(resolved).not.toBe(key);
     expect(resolved.trim()).not.toBe('');
     // A leftover placeholder means the copy asks for a value the call sites
@@ -70,8 +75,27 @@ describe.each(LOCALES)('improve-resume copy — %s', (lng) => {
     expect(resolved).not.toMatch(/\{\{/);
   });
 
-  it('interpolates the review cap into the refusal copy', () => {
-    expect(t(`${IMPROVE}.tooLong`, { max: 8000 })).toContain('8000');
-    expect(t(`${IMPROVE}.tooLongHint`, { max: 8000 })).toContain('8000');
+  // The cap is formatted by the call site (`Intl.NumberFormat`), so the copy
+  // must place the string it is handed rather than a raw number.
+  it('places the locale-formatted review cap in the refusal copy', () => {
+    const max = new Intl.NumberFormat(lng).format(8000);
+    expect(t(`${IMPROVE}.tooLong`, { max })).toContain(max);
+    expect(t(`${IMPROVE}.tooLongHint`, { max })).toContain(max);
+  });
+
+  // The stop reason comes from the shared `pipeline.stopped.*` vocabulary, so
+  // that half of the sentence has to resolve in this locale too.
+  it('places the stop reason in the stopped-run explanation', () => {
+    const reason = t('pipeline.stopped.maxToolCalls');
+    expect(reason).not.toBe('pipeline.stopped.maxToolCalls');
+    expect(t(`${IMPROVE}.stoppedHint`, { reason })).toContain(reason);
+  });
+
+  // Both refusal surfaces name the SAME place to shorten the résumé as the
+  // report's own remove hint — one term for one editor, not two.
+  it('names the résumé editor the rest of the app names', () => {
+    const editorTerm = lng === 'de' ? /Lebenslauf-Editor/ : /résumé editor/;
+    expect(t(`${IMPROVE}.tooLong`, { max: '8,000' })).toMatch(editorTerm);
+    expect(t('jobs.tailored.report.removeHint')).toMatch(editorTerm);
   });
 });
