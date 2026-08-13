@@ -181,11 +181,12 @@ pub struct FoundJob {
     pub found_at: u64,
     /// The posting's own publish date (epoch ms), copied from
     /// `JobPosting.posted_at` at find-time — distinct from [`Self::found_at`]
-    /// (when WE scraped it). Every aggregator provider (Adzuna, JSearch,
-    /// Jooble, the Apify LinkedIn actor) parses this from the upstream
-    /// response; several full-text boards don't expose a publish date and
-    /// leave it `None`. `#[serde(default)]` so a record written before this
-    /// field existed loads as `None`.
+    /// (when WE scraped it). Every board that exposes a publish date (the
+    /// aggregator providers — Adzuna, JSearch, Jooble, the Apify LinkedIn
+    /// actor — plus several direct full-text boards) parses this from the
+    /// upstream response; a board with no publish-date field leaves it
+    /// `None`. `#[serde(default)]` so a record written before this field
+    /// existed loads as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub posted_at: Option<i64>,
     /// First surfaced in the most recent run (set by the dedup merge in

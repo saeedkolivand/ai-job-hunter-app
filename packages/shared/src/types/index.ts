@@ -330,10 +330,11 @@ export interface AutopilotFoundJob {
   scoreSource?: 'keyword' | 'combined';
   foundAt: number;
   /** The posting's own publish date (epoch ms), copied from the source at
-   *  find-time — distinct from `foundAt` (when WE scraped it). Every
-   *  aggregator provider parses it from the upstream response; absent when
-   *  the board doesn't expose a publish date, or on a record written before
-   *  this field existed. */
+   *  find-time — distinct from `foundAt` (when WE scraped it). Boards that
+   *  expose a publish date (the aggregator providers plus several direct
+   *  full-text boards) parse it from the upstream response; absent when the
+   *  board doesn't expose one, or on a record written before this field
+   *  existed. */
   postedAt?: number;
   /** First surfaced in the most recent run — drives the "New" badge. */
   isNew?: boolean;

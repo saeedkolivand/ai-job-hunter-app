@@ -1634,6 +1634,30 @@ fn merge_preserves_and_refreshes_posted_at_across_resurface() {
 }
 
 #[test]
+fn merge_keeps_a_known_posted_at_when_the_resurfaced_row_has_none() {
+    // The mirror of the backfill case above: a row with an already-known date
+    // must NOT lose it when the same job re-surfaces from a board/run that
+    // didn't report one this time (several boards send no date at all, and
+    // even a board that usually does can drop it on one page). The guard is
+    // `if inc.posted_at.is_some()` — an unconditional `row.posted_at =
+    // inc.posted_at` would silently erase a known date here.
+    let mut existing = found_job("https://a.com/1", 100);
+    existing.posted_at = Some(1_700_000_000_000); // known date from a prior run
+
+    let mut resurfaced = found_job("https://a.com/1", 999);
+    resurfaced.posted_at = None; // this run's copy has no date
+
+    let merged = merge_found_jobs(&[existing], vec![resurfaced]);
+
+    let a1 = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(
+        a1.posted_at,
+        Some(1_700_000_000_000),
+        "a known posted_at must survive a resurface that reports no date"
+    );
+}
+
+#[test]
 fn merge_score_provisional_moves_with_score_across_resurface() {
     // `score_provisional` describes WHICH score is on the row, so a resurface
     // that refreshes `score` must refresh the flag alongside it — in BOTH
