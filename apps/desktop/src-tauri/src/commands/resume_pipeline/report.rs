@@ -207,12 +207,31 @@ pub fn build(
 
 /// The `pipeline` label on a wrapper written by a gated agent save.
 ///
-/// Not the depth of whatever run produced the PREVIOUS document: this wrapper's
-/// report was computed here, by the deterministic validator, over text the
-/// agent proposed and the user approved. Labelling it `"quality"` because the
-/// row used to hold a quality run's report is the same lie the stale report
-/// itself was.
-pub const AGENT_SAVE_PIPELINE: &str = "agent";
+/// **A member of the shared depth vocabulary, not a new word.** This started as
+/// a literal `"agent"`, which was wrong in a way only the round trip shows
+/// (CodeRabbit, PR #986): the field's type IS `GenerationDepth` on the renderer
+/// side, and its parser maps anything outside `GENERATION_DEPTHS` to `'fast'`
+/// and then re-serializes it — so an agent-written label survived exactly until
+/// the next "Re-check", which silently PERSISTED the relabel. Inventing a value
+/// for a closed shared vocabulary is the same drift class this branch spent
+/// `AGENT_FLOW_KINDS` and `AGENT_RESUME_TEXT_CAP` closing.
+///
+/// Widening the vocabulary instead was the other option and is worse:
+/// `GENERATION_DEPTHS` is the DEPTH set (`fast`/`quality`/`max`) that also types
+/// `ResumePipelineRunSchema.depth` and `GenerationDepth::from_wire`, so adding
+/// `"agent"` would let a run REQUEST ask for a depth that is not one.
+///
+/// `fast` is the honest member: the field distinguishes "the staged pipeline
+/// produced this" from "a deterministic pass produced this", and that is
+/// exactly what this report is — the same `validate_content` the renderer's own
+/// fast pass runs. What must NOT happen is inheriting the previous document's
+/// `"quality"`/`"max"`, which would be the stale-label twin of the stale-report
+/// bug this function exists to fix.
+///
+/// Pinned by `the_saved_resume_label_round_trips_through_the_shared_vocabulary`.
+pub fn agent_save_pipeline() -> &'static str {
+    crate::pipeline::resume::types::GenerationDepth::Fast.as_str()
+}
 
 /// The wrapper a save that REPLACES `resume_text` must carry.
 ///
@@ -253,7 +272,7 @@ pub async fn for_saved_resume(
     )
     .await?;
     Ok(build(
-        AGENT_SAVE_PIPELINE,
+        agent_save_pipeline(),
         crate::db::now_ms(),
         Some((&report, resume_text)),
         None,
