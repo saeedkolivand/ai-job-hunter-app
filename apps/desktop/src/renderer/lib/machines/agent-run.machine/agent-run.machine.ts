@@ -1,17 +1,21 @@
-import type { AgentStepEvent } from '@ajh/shared';
+import type { AgentFlowKind, AgentStepEvent } from '@ajh/shared';
 
 import { createMachine } from '@/lib/machine';
 
 /**
- * Agent ("Prep this application") execution state machine.
+ * Agent run (`agent.run`) execution state machine — shared by every flow in
+ * `AGENT_FLOW_KINDS`.
  *
- * Tracks the lifecycle of a single `agent.run`: the agent plans, researches
- * the company, scores the résumé match, drafts a cover letter + interview
- * questions, then ends by PROPOSING a status update. When the agent wants to
- * perform a Write action (e.g. `save_cover_letter`) it SUSPENDS — the run
- * blocks until the user approves/denies via the Phase-3 confirm gate.
+ * Tracks the lifecycle of a single run. The `prep_application` flow plans,
+ * researches the company, scores the résumé match, drafts a cover letter +
+ * interview questions, then ends by PROPOSING a status update; the
+ * `improve_resume` flow reads the last quality report, re-checks the generated
+ * résumé against the candidate's own evidence, then offers the corrected text.
+ * When either wants to perform a Write action (`save_cover_letter`,
+ * `save_resume`) it SUSPENDS — the run blocks until the user approves/denies
+ * via the Phase-3 confirm gate.
  *
- *   idle → planning ⇄ researching ⇄ matching ⇄ drafting ⇄ proposing → done
+ *   idle → planning ⇄ researching ⇄ matching ⇄ drafting ⇄ reviewing ⇄ proposing → done
  *                  ↘ confirming (suspended, awaiting the user) ↗
  *                                                             ↘ cancelled
  *                                                             ↘ error
@@ -39,6 +43,9 @@ export type AgentRunState =
   | 'researching'
   | 'matching'
   | 'drafting'
+  /** The `improve_resume` flow's working state: reading the persisted quality
+   *  report, validating the generation, weighing evidence or trims. */
+  | 'reviewing'
   | 'proposing'
   | 'confirming'
   | 'done'
@@ -50,6 +57,7 @@ export type AgentRunEvent =
   | 'RESEARCH'
   | 'MATCH'
   | 'DRAFT'
+  | 'REVIEW'
   | 'PROPOSE'
   | 'CONFIRM_REQUEST'
   | 'APPROVE'
@@ -63,6 +71,7 @@ const BUSY_TRANSITIONS = {
   RESEARCH: 'researching',
   MATCH: 'matching',
   DRAFT: 'drafting',
+  REVIEW: 'reviewing',
   PROPOSE: 'proposing',
   CONFIRM_REQUEST: 'confirming',
   COMPLETE: 'done',
@@ -80,6 +89,7 @@ export const agentRunMachine = createMachine<AgentRunState, AgentRunEvent>({
     researching: { ...BUSY_TRANSITIONS },
     matching: { ...BUSY_TRANSITIONS },
     drafting: { ...BUSY_TRANSITIONS },
+    reviewing: { ...BUSY_TRANSITIONS },
     proposing: { ...BUSY_TRANSITIONS },
     // Resolving the suspended confirm (approve or deny) resumes the loop at
     // `planning` — a generic busy state; the next streamed step re-routes via
@@ -90,34 +100,84 @@ export const agentRunMachine = createMachine<AgentRunState, AgentRunEvent>({
     cancelled: { ...TERMINAL_TRANSITIONS },
     error: { ...TERMINAL_TRANSITIONS },
   },
-  busyStates: ['planning', 'researching', 'matching', 'drafting', 'proposing', 'confirming'],
+  busyStates: [
+    'planning',
+    'researching',
+    'matching',
+    'drafting',
+    'reviewing',
+    'proposing',
+    'confirming',
+  ],
   errorStates: ['error'],
 });
 
 /**
- * Map a streamed `agent:step` event to an {@link AgentRunEvent}. A
- * `confirm_request` step always maps to `CONFIRM_REQUEST` (the run is
- * suspended, awaiting `APPROVE`/`DENY` from the confirm UI). The terminal
- * `proposal` step always maps to `PROPOSE`. A `turn` step is keyed by its
- * `tools[]` (research → match → draft, where `draft_cover_letter`,
- * `draft_resume`, and `suggest_interview_questions` all fall under the single
- * `drafting` machine state — the panel's checklist tracks those separately
- * from the raw step log). A plan-only turn (no tool calls yet) maps to `null`
- * — the caller stays in whatever busy state it's already in. `CANCEL` is
- * never produced here — it's driven by the `jobs:event` `job.cancelled` type,
- * which carries no `tools`/`kind` shape to key off of.
+ * Tool name → machine event, PER FLOW. Each flow's whitelist is its own
+ * vocabulary (`agent::flows::FLOWS`), so the mapping is keyed by the run's
+ * `kind` rather than by tool name alone: a tool a flow cannot call must not
+ * move that flow's machine, and two flows may legitimately register the same
+ * name for different phases of their own sequence.
+ *
+ * Entries are ORDERED, and the first one whose tool appears in the step's
+ * `tools[]` wins — a turn that names two recognized tools resolves by this
+ * precedence rather than by the order the model happened to emit them in.
  */
-export function stepToEvent(step: AgentStepEvent): AgentRunEvent | null {
+const FLOW_TOOL_EVENTS: Record<
+  AgentFlowKind,
+  ReadonlyArray<readonly [tool: string, event: AgentRunEvent]>
+> = {
+  // Research → match → draft, where `draft_cover_letter`, `draft_resume` and
+  // `suggest_interview_questions` all fall under the single `drafting` state
+  // (`PrepApplicationPanel`'s checklist tracks those separately, off the raw
+  // step log).
+  prep_application: [
+    ['research_company', 'RESEARCH'],
+    ['match_resume', 'MATCH'],
+    ['draft_cover_letter', 'DRAFT'],
+    ['draft_resume', 'DRAFT'],
+    ['suggest_interview_questions', 'DRAFT'],
+  ],
+  // Every read tool of the review flow is one `reviewing` state: the sequence's
+  // granularity lives in the panel's checklist (which keys off the step log),
+  // and `validate_resume` legitimately appears TWICE in one run — the post-fix
+  // re-check. Mapping both appearances onto the same self-looping busy state is
+  // what makes that idempotent instead of a mis-sequence. `run_quality_pipeline`
+  // is here too: it can hold ONE step for up to 90 minutes
+  // (`Budget::AGENT_IMPROVE.step_timeout`), which is a healthy run, not a stall.
+  improve_resume: [
+    ['get_quality_report', 'REVIEW'],
+    ['validate_resume', 'REVIEW'],
+    ['search_candidate_evidence', 'REVIEW'],
+    ['get_trim_suggestions', 'REVIEW'],
+    ['run_quality_pipeline', 'REVIEW'],
+  ],
+};
+
+/**
+ * Map a streamed `agent:step` event to an {@link AgentRunEvent} for the flow
+ * that produced it. A `confirm_request` step always maps to `CONFIRM_REQUEST`
+ * (the run is suspended, awaiting `APPROVE`/`DENY` from the confirm UI) and
+ * the terminal `proposal` step always maps to `PROPOSE` — both are flow-
+ * independent step KINDS, which is why the gated writes (`save_cover_letter`,
+ * `save_resume`) need no entry in {@link FLOW_TOOL_EVENTS}. A `turn` step is
+ * keyed by its `tools[]` through that flow's map. A plan-only turn (no tool
+ * calls yet), or a tool the flow does not own, maps to `null` — the caller
+ * stays in whatever busy state it's already in. `CANCEL` is never produced
+ * here — it's driven by the `jobs:event` `job.cancelled` type, which carries
+ * no `tools`/`kind` shape to key off of.
+ *
+ * `kind` defaults to `prep_application` for the same reason the wire does: an
+ * older caller that names no flow gets the behaviour it always had.
+ */
+export function stepToEvent(
+  step: AgentStepEvent,
+  kind: AgentFlowKind = 'prep_application'
+): AgentRunEvent | null {
   if (step.kind === 'confirm_request') return 'CONFIRM_REQUEST';
   if (step.kind === 'proposal') return 'PROPOSE';
-  if (step.tools.includes('research_company')) return 'RESEARCH';
-  if (step.tools.includes('match_resume')) return 'MATCH';
-  if (
-    step.tools.includes('draft_cover_letter') ||
-    step.tools.includes('draft_resume') ||
-    step.tools.includes('suggest_interview_questions')
-  ) {
-    return 'DRAFT';
+  for (const [tool, event] of FLOW_TOOL_EVENTS[kind]) {
+    if (step.tools.includes(tool)) return event;
   }
   return null;
 }
