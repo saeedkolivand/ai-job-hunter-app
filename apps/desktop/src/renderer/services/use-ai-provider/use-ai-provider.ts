@@ -235,8 +235,10 @@ export const useModelInspections = (
       // loads model metadata on the same local server that is serving the user's
       // generation. Twenty installed models must not mean twenty simultaneous
       // probes — the cap lives in the query FUNCTION because React Query has no
-      // concurrency option of its own.
-      queryFn: () => inspectLimit(() => api.ai.inspectModel({ model })),
+      // concurrency option of its own. React Query's own `signal` rides along,
+      // so probes still QUEUED when the advisor closes are dropped rather than
+      // run for a result nobody will read.
+      queryFn: ({ signal }) => inspectLimit(() => api.ai.inspectModel({ model }), signal),
       staleTime: QUERY_TIMES.VERY_LONG,
       // An unreachable Ollama fails the same way for every model in the list;
       // retrying each one just multiplies the same timeout.

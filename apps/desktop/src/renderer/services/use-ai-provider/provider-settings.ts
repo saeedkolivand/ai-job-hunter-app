@@ -39,10 +39,17 @@ export interface ProviderSettingsWriteInput {
   localWindows?: LocalModelWindows;
 }
 
-/** The patch to send: only the keys that are actually changing. */
+/**
+ * The patch to send: only the keys that are actually changing.
+ *
+ * `model` is NOT nullable here even though the command accepts a clear: no
+ * renderer surface removes a model (you pick a different one), so the input
+ * type cannot express it either — an output state nothing can produce is an
+ * untestable branch, not a feature.
+ */
 export interface ProviderSettingsWrite {
   provider: string;
-  model?: string | null;
+  model?: string;
   baseUrl?: string | null;
   contextWindow?: number | null;
 }

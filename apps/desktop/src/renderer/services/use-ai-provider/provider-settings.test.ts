@@ -70,6 +70,20 @@ describe('resolveProviderSettingsWrite', () => {
     expect(write.contextWindow).toBe(24_576);
   });
 
+  it('passes an explicit WINDOW clear through, without recomputing it', () => {
+    const write = resolveProviderSettingsWrite({
+      provider: 'ollama',
+      stored: { model: 'qwen3:8b', contextWindow: 16_384 },
+      model: 'llama3.2:1b',
+      contextWindow: null,
+      // Present, and deliberately NOT used: an explicit clear outranks the
+      // model's own stored limit.
+      localWindows: { 'llama3.2:1b': { contextWindow: 4096 } },
+    });
+
+    expect(write.contextWindow).toBeNull();
+  });
+
   it('passes an explicit clear straight through', () => {
     expect(
       resolveProviderSettingsWrite({

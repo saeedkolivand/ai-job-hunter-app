@@ -138,6 +138,13 @@ describe('useSetProviderSettings — {error}-union rejection', () => {
 });
 
 describe('useConfigureActiveProvider — stops before setActiveProvider on a rejected settings write', () => {
+  afterEach(() => {
+    // One case seeds `modelLimits`; the store is a module singleton, so without
+    // this it leaks into every later case in the file (and the defaults spread
+    // by `resetPreferences` cannot clear a key it does not have).
+    usePreferencesStore.setState({ aiProviderConfig: undefined });
+  });
+
   it('does NOT call setActiveProvider when setProviderSettings returns { error }', async () => {
     const setActiveProvider = vi.fn().mockResolvedValue({ providers: {} });
     const client = createMockClient({
