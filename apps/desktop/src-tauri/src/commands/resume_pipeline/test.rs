@@ -1688,9 +1688,36 @@ fn paying_stages_never_includes_a_stage_that_makes_no_ai_call() {
     use crate::ipc_contracts::events::PIPELINE_STAGES_FREE;
     use crate::pipeline::resume::types::GenerationDepth;
 
-    for depth in [GenerationDepth::Quality, GenerationDepth::Max] {
+    // Pinned as LITERAL lists, in order. Deriving the expectation
+    // (`stage_names()` minus `free_stage_names()`) would restate the
+    // implementation and pass whatever it did; these fail if a paying stage is
+    // ever silently DROPPED, which is the costly direction — an override the
+    // user sets, Settings shows, and nothing ever resolves.
+    for (depth, expected) in [
+        (
+            GenerationDepth::Quality,
+            &[
+                "analyze_job",
+                "match_evidence",
+                "strategy",
+                "draft",
+                "repair",
+            ][..],
+        ),
+        (
+            GenerationDepth::Max,
+            &[
+                "analyze_job",
+                "match_evidence",
+                "strategy",
+                "sections",
+                "repair",
+                "llm_judge",
+            ][..],
+        ),
+    ] {
         let paying = max::paying_stages(depth);
-        assert!(!paying.is_empty(), "{depth:?} pays for nothing?");
+        assert_eq!(paying, expected, "{depth:?} lost or gained a paying stage");
         for free in PIPELINE_STAGES_FREE {
             assert!(
                 !paying.contains(free),

@@ -652,14 +652,22 @@ fn a_stage_override_is_validated_exactly_like_the_active_config() {
     // hand-edited-store threat model as the base_url above, and the one stored
     // number whose absurd value is an OOM rather than a wrong answer.
     //
+    // Matched on the MESSAGE, not merely `is_err`: "ollama"/"m" could also be
+    // refused by `validate_model`, and today only the call order makes a bare
+    // `is_err` sound. A reordering, or a tightened model rule, would keep both
+    // assertions green while they stopped guarding the window at all.
+    //
     // Mutation check (executed): drop the `validate_context_window` call from
     // `from_override` and both of these resolve.
-    assert!(Completer::from_override(with_window(Some(9_999_999)), None)
-        .map(|_| ())
-        .is_err());
-    assert!(Completer::from_override(with_window(Some(1)), None)
-        .map(|_| ())
-        .is_err());
+    for bad in [9_999_999, 1] {
+        let err = Completer::from_override(with_window(Some(bad)), None)
+            .map(|_| ())
+            .unwrap_err();
+        assert!(
+            format!("{err}").contains("context window"),
+            "{bad} must be refused BY THE WINDOW CHECK, got {err}"
+        );
+    }
 
     // The endpoint the caller read off the PROVIDER's row is what the resolved
     // completer routes to — the override contributes provider + model only.
@@ -740,13 +748,18 @@ fn rejects_a_tampered_active_context_window() {
     };
 
     // Absurdly large (the OOM case) and absurdly small (a window that cannot
-    // hold a prompt) are both refused rather than clamped.
-    assert!(Completer::from_config(with_window(Some(9_999_999)))
-        .map(|_| ())
-        .is_err());
-    assert!(Completer::from_config(with_window(Some(1)))
-        .map(|_| ())
-        .is_err());
+    // hold a prompt) are both refused rather than clamped — and refused BY THE
+    // WINDOW CHECK, which only the message proves (see the sibling override
+    // test for why `is_err` alone is not enough).
+    for bad in [9_999_999, 1] {
+        let err = Completer::from_config(with_window(Some(bad)))
+            .map(|_| ())
+            .unwrap_err();
+        assert!(
+            format!("{err}").contains("context window"),
+            "{bad} must be refused by the window check, got {err}"
+        );
+    }
 
     // An in-range window survives the gate and is what the completer carries.
     let (_provider, _model, _base_url, context_window) =
@@ -837,6 +850,21 @@ fn a_wire_request_context_window_is_bounded_like_a_stored_one() {
     let mut req = with(Some(32_768));
     assert!(super::vet_wire_request(&mut req).is_ok());
     assert_eq!(req.context_window, Some(32_768));
+
+    // The BOUNDS themselves, not just values far outside them: rejecting 511
+    // and accepting 32_768 stays green if someone widens the range to 256 or
+    // narrows it to 65_536. These two are the contract.
+    for edge in [
+        crate::ai_config::MIN_CONTEXT_WINDOW,
+        crate::ai_config::MAX_CONTEXT_WINDOW,
+    ] {
+        let mut req = with(Some(edge));
+        assert!(
+            super::vet_wire_request(&mut req).is_ok(),
+            "{edge} is the boundary and must be accepted"
+        );
+        assert_eq!(req.context_window, Some(edge));
+    }
     let mut req = with(None);
     assert!(super::vet_wire_request(&mut req).is_ok());
     assert_eq!(req.context_window, None);

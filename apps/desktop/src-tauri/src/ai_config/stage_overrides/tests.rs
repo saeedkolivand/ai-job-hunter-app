@@ -415,9 +415,9 @@ fn a_stage_that_makes_no_ai_call_cannot_be_overridden() {
 
     let (_dir, store) = new_store();
     for stage in PIPELINE_STAGES_FREE {
-        let err = store
-            .set_stage_override(stage, over("ollama", "small"))
-            .expect_err("{stage} makes no AI call");
+        let Err(err) = store.set_stage_override(stage, over("ollama", "small")) else {
+            panic!("{stage} makes no AI call, so the write must be refused")
+        };
         assert!(format!("{err}").contains("no AI call"), "got {err}");
         assert!(!is_overridable_stage(stage));
         // …and it is still a REAL stage — the two checks answer different

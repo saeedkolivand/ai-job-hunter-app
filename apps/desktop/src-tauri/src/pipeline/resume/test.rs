@@ -762,7 +762,8 @@ fn the_generated_free_stage_set_is_exactly_the_zero_call_stages() {
     for stage in &free_everywhere {
         assert!(
             PIPELINE_STAGES_FREE.contains(stage),
-            "{stage} makes no provider call but is not in the generated free set —              an override on it would be a control with no effect",
+            "{stage} makes no provider call but is not in the generated free set — \
+             an override on it would be a control with no effect",
         );
     }
     for stage in PIPELINE_STAGES_FREE {
