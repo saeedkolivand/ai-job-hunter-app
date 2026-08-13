@@ -329,12 +329,14 @@ export interface AutopilotFoundJob {
    *  Drives the metric label + the band's score thresholds (ADR-020 addendum). */
   scoreSource?: 'keyword' | 'combined';
   foundAt: number;
-  /** The posting's own publish date (epoch ms), copied from the source at
-   *  find-time — distinct from `foundAt` (when WE scraped it). Boards that
-   *  expose a publish date (the aggregator providers plus several direct
-   *  full-text boards) parse it from the upstream response; absent when the
-   *  board doesn't expose one, or on a record written before this field
-   *  existed. */
+  /** The posting's publish-or-last-updated date (epoch ms), as reported by
+   *  the board, copied from the source at find-time — distinct from
+   *  `foundAt` (when WE scraped it). Most boards report a genuine
+   *  creation/publish date; a few (Jooble, Comeet, the Bundesagentur für
+   *  Arbeit) only expose an "updated"/"current" timestamp upstream, so this
+   *  can read as more recent than the posting's true original publish date
+   *  for those. Absent when the board exposes no date field at all, or on a
+   *  record written before this field existed. */
   postedAt?: number;
   /** First surfaced in the most recent run — drives the "New" badge. */
   isNew?: boolean;

@@ -179,14 +179,18 @@ pub struct FoundJob {
     #[serde(default)]
     pub score_source: ScoreSource,
     pub found_at: u64,
-    /// The posting's own publish date (epoch ms), copied from
-    /// `JobPosting.posted_at` at find-time — distinct from [`Self::found_at`]
-    /// (when WE scraped it). Every board that exposes a publish date (the
-    /// aggregator providers — Adzuna, JSearch, Jooble, the Apify LinkedIn
-    /// actor — plus several direct full-text boards) parses this from the
-    /// upstream response; a board with no publish-date field leaves it
-    /// `None`. `#[serde(default)]` so a record written before this field
-    /// existed loads as `None`.
+    /// The posting's publish-or-last-updated date (epoch ms), as reported by
+    /// the board, copied from `JobPosting.posted_at` at find-time — distinct
+    /// from [`Self::found_at`] (when WE scraped it). Most sources report a
+    /// genuine creation/publish date (Adzuna, JSearch, the Apify LinkedIn
+    /// actor, Arbeitnow, Ashby, Breezy, Jobicy, Lever, GermanTechJobs,
+    /// BerlinStartupJobs, WeWorkRemotely, RemoteOK, Remotive, the HN "Who's
+    /// Hiring" feed); a few (Jooble, Comeet, the Bundesagentur für Arbeit)
+    /// only expose an "updated"/"current" timestamp upstream, so this can
+    /// read as more recent than the posting's true original publish date for
+    /// those. A board with no date field at all leaves it `None`.
+    /// `#[serde(default)]` so a record written before this field existed
+    /// loads as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub posted_at: Option<i64>,
     /// First surfaced in the most recent run (set by the dedup merge in
