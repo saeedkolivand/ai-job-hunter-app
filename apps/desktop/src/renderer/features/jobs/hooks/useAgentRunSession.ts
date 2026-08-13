@@ -198,6 +198,23 @@ export function useAgentRunSession({
   );
   useJobEvents(handleJobEvent);
 
+  /**
+   * No `refetchInterval`, deliberately — and not a one-shot either.
+   *
+   * `useJobEvents` (mounted above) invalidates `keys.jobs.all` on EVERY job
+   * event, and React Query invalidation is prefix-based, so `['jobs', id]` is
+   * marked stale on every transition of every job and this query refetches
+   * without a timer. `reconciledRef` latches only AFTER a terminal status has
+   * actually been seen, so each fresh reading gets its own chance: a record
+   * that still says `running` reconciles nothing and leaves the guard open.
+   *
+   * Polling a 120-minute run on a timer would therefore buy one case — the
+   * terminal event lost while NOTHING else is in flight to trigger a refetch —
+   * at the cost of an IPC + SQLite read every interval for two hours. That case
+   * shrank further when `useAgentStepEvents` was fixed to subscribe once:
+   * `useJobEvents` already did, so both channels now attach for the lifetime of
+   * the panel rather than re-attaching mid-run.
+   */
   const jobQuery = useJob(runJobId ?? '');
   useEffect(() => {
     if (!runJobId || reconciledRef.current || !busy) return;
