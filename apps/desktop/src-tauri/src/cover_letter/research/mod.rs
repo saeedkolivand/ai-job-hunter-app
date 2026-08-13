@@ -55,12 +55,25 @@ impl CompanyResearch {
         }
 
         let app = completer.app();
+        // ADR-017 key discipline: the brief is the OUTPUT of the active
+        // provider's own model doing web search + synthesis
+        // (`Completer::research` → either the provider's native search or
+        // `searched_research`'s `provider.complete(app, model, …)`), so
+        // provider + model are cache-key terms — the same reasoning
+        // `pipeline::resume::cache::StageIdentity` documents. Without them, a
+        // user who switches models kept getting the OLD model's cached brief
+        // for the full 7-day TTL. Still company-scoped WITHIN a (provider,
+        // model) pair (not per-request-scoped), so a cover letter +
+        // application answers in one session still share a single paid search.
+        let key = cache_key(
+            completer.provider_id().as_str(),
+            completer.model(),
+            &company,
+        );
 
-        // Fast path: cached brief younger than the TTL. Company-scoped (not
-        // provider-scoped) so a cover letter + application answers in one session
-        // share a single paid search.
+        // Fast path: cached brief younger than the TTL.
         if let Some(cache) = app.try_state::<KvCache>() {
-            if let Some(brief) = cache.get(CACHE_NS, &company, TTL_SECS) {
+            if let Some(brief) = cache.get(CACHE_NS, &key, TTL_SECS) {
                 tracing::info!(
                     company = %company,
                     source = "cache",
@@ -116,7 +129,7 @@ impl CompanyResearch {
             "research: company brief\n{brief}"
         );
         if let Some(cache) = app.try_state::<KvCache>() {
-            cache.set(CACHE_NS, &company, &brief);
+            cache.set(CACHE_NS, &key, &brief);
         }
 
         EnrichmentResult {
@@ -137,6 +150,16 @@ fn pick(override_value: Option<&str>, heuristic: &str) -> String {
         .to_string()
 }
 
+/// Build the `company_brief` cache key. Provider + model are cache-key terms
+/// (not just `company`) because the cached value is the OUTPUT of that
+/// provider's own model — see the ADR-017 note at the `cache_key` call site
+/// in [`CompanyResearch::enrich_with`]. Not case-folded: `company` is used
+/// verbatim elsewhere in this module, and folding it here would be an
+/// unrelated behavior change. Pure + unit-tested.
+fn cache_key(provider: &str, model: &str, company: &str) -> String {
+    format!("{provider}|{model}|{company}")
+}
+
 /// A brief the model couldn't actually fill: too short to be a real ~150-word
 /// brief, or an explicit "no information" disclaimer. Treated as empty. Pure +
 /// unit-tested.
@@ -153,7 +176,71 @@ fn is_no_info(brief: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_no_info;
+    use tempfile::TempDir;
+
+    use super::{cache_key, is_no_info, CACHE_NS, TTL_SECS};
+    use crate::pipeline::cache::KvCache;
+
+    // ── cache_key (ADR-017: provider + model are cache-key terms) ───────────
+
+    #[test]
+    fn cache_key_differs_by_model_so_a_model_switch_never_hits_the_old_brief() {
+        let ollama_a = cache_key("ollama", "llama3", "Acme");
+        let ollama_b = cache_key("ollama", "gpt-oss:20b", "Acme");
+        assert_ne!(
+            ollama_a, ollama_b,
+            "same provider + company but a different model must be a different key"
+        );
+    }
+
+    #[test]
+    fn cache_key_differs_by_provider_for_the_same_model_name() {
+        let openai = cache_key("openai", "gpt-4o", "Acme");
+        let compatible = cache_key("openai-compatible", "gpt-4o", "Acme");
+        assert_ne!(openai, compatible);
+    }
+
+    #[test]
+    fn cache_key_is_identical_for_the_same_provider_model_and_company() {
+        assert_eq!(
+            cache_key("ollama", "llama3", "Acme"),
+            cache_key("ollama", "llama3", "Acme")
+        );
+    }
+
+    // ── KvCache round-trip: proves the fix at the storage layer, not just the
+    // key-builder in isolation — this is what `enrich_with` actually does. ───
+
+    #[test]
+    fn switching_models_misses_the_other_models_cached_brief() {
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let old_key = cache_key("ollama", "llama3", "Acme");
+        cache.set(CACHE_NS, &old_key, "Acme is a fintech (llama3's brief).");
+
+        // The defect this fixes: before, both models shared the SAME row
+        // (keyed on company alone), so switching models kept serving the old
+        // model's brief for the whole 7-day TTL instead of recomputing.
+        let new_key = cache_key("ollama", "gpt-oss:20b", "Acme");
+        assert_eq!(
+            cache.get(CACHE_NS, &new_key, TTL_SECS),
+            None,
+            "a different model must MISS the other model's cached brief, forcing a fresh compute"
+        );
+    }
+
+    #[test]
+    fn the_same_model_still_hits_its_own_cached_brief() {
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let key = cache_key("ollama", "llama3", "Acme");
+        cache.set(CACHE_NS, &key, "Acme is a fintech (llama3's brief).");
+
+        assert_eq!(
+            cache.get(CACHE_NS, &key, TTL_SECS),
+            Some("Acme is a fintech (llama3's brief).".to_string())
+        );
+    }
 
     #[test]
     fn is_no_info_flags_empty_short_and_disclaimers() {
