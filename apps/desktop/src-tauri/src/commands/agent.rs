@@ -20,9 +20,9 @@ use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::controller::{run_agent_live, AgentStep, AgentStepKind, StoppedReason};
-use crate::agent::flows::PREP_APPLICATION_SYSTEM;
+use crate::agent::flows;
 use crate::agent::gate::{AgentGate, Decision};
-use crate::agent::tools::{fenced, prep_application_tools, ToolContext, JOB_CAP, RESUME_CAP};
+use crate::agent::tools::{fenced, ToolContext, JOB_CAP, RESUME_CAP};
 use crate::commands::ai_provider::ModelCapabilities;
 use crate::db::new_job_id;
 use crate::documents::DocumentStore;
@@ -95,6 +95,30 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
     tauri::async_runtime::spawn(async move {
         let _guard = guard; // release the concurrency slot when the run ends
 
+        // 0b. Resolve WHICH flow this run is — prompt, whitelist and budget as
+        // one registered value (`crate::agent::flows`). An unregistered kind is
+        // a validation failure, never a fallback to the default flow: running
+        // "prep this application" for a request that asked for something else
+        // spends a paid run on the wrong work and writes the wrong document
+        // (the same rule `GenerationDepth::from_wire` follows). Inside the
+        // spawn like every other fail-able step, so the terminal `jobs:event`
+        // can never fire before this command returns the job id.
+        // Phase 7: the flow rides on the request as `kind` in the next change;
+        // today the prep flow is the only production entry point, resolved
+        // through the same registry so the lookup — and its failure path — is
+        // the one the wire will use.
+        let kind = flows::PREP_APPLICATION_KIND;
+        let Some(flow) = flows::flow_for(kind) else {
+            fail_run(
+                &app_task,
+                &cancels_task,
+                &job_id_task,
+                format!("unknown agent flow: {kind}"),
+            )
+            .await;
+            return;
+        };
+
         // 1-2. Resolve the active provider into a Completer for the agent's own
         // turns from the BACKEND-OWNED store (task #25) — never renderer-supplied
         // provider/model/base_url. `from_active` runs provider-present → parse →
@@ -161,13 +185,11 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         };
         let user = build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text);
 
-        let tools = prep_application_tools();
         let outcome = run_agent_live(
             &app_task,
             &completer,
-            &tools,
+            flow,
             ctx,
-            PREP_APPLICATION_SYSTEM,
             &job_id_task,
             user,
             &cancel,

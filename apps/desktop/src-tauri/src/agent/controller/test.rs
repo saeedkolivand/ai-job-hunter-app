@@ -4,13 +4,12 @@ use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::VecDeque;
 
-// The loop's shipped ceilings, read from the ONE place they are declared
-// (`BUDGET` = `Budget::AGENT_PREP`) rather than re-typed here, so these tests
-// assert against whatever is actually configured.
-const MAX_AGENT_STEPS: usize = BUDGET.max_steps;
-const MAX_AGENT_TOKENS: usize = BUDGET.max_tokens;
-const AGENT_STEP_TIMEOUT: Duration = BUDGET.step_timeout;
-const CONFIRM_TIMEOUT: Duration = BUDGET.confirm_timeout;
+// The ceilings `run_agent` runs to, read from the ONE place they are declared
+// (`TEST_ENTRY_BUDGET` = `Budget::AGENT_PREP`) rather than re-typed here, so
+// these tests assert against a budget the app actually ships.
+const MAX_AGENT_STEPS: usize = TEST_ENTRY_BUDGET.max_steps;
+const MAX_AGENT_TOKENS: usize = TEST_ENTRY_BUDGET.max_tokens;
+const AGENT_STEP_TIMEOUT: Duration = TEST_ENTRY_BUDGET.step_timeout;
 
 /// A scripted fake: pops a canned [`AgentTurn`] per `turn()` (repeating the last
 /// one forever), records executed read tools + narrated steps + the exact
@@ -193,7 +192,7 @@ async fn run_agent_with_system_stamps_the_given_job_id_on_every_step() {
         &env,
         &whitelist(),
         &gate,
-        CONFIRM_TIMEOUT,
+        TEST_ENTRY_BUDGET,
         AGENT_SYSTEM,
         "job-42",
         "help".into(),
@@ -204,6 +203,45 @@ async fn run_agent_with_system_stamps_the_given_job_id_on_every_step() {
     let steps = env.steps.lock();
     assert!(!steps.is_empty());
     assert!(steps.iter().all(|s| s.job_id == "job-42"));
+}
+
+/// The loop enforces the budget it is HANDED, not a module constant.
+///
+/// This is the whole point of Phase 7's controller change: two flows ship two
+/// budgets (`AGENT_PREP`'s 14 steps / 6-minute step clock and `AGENT_IMPROVE`'s
+/// 10 steps / 90-minute one), and a loop that read a constant would run the
+/// review flow's whitelist against the prep flow's ceilings — silently, since
+/// both are plausible numbers. A caller-supplied `max_steps` of 2 must stop the
+/// run at 2.
+///
+/// Mutation-checked, executed: restoring `steps >= TEST_ENTRY_BUDGET.max_steps`
+/// in the loop makes this run to 14 steps and fails.
+#[tokio::test]
+async fn the_loop_stops_at_the_budget_it_was_given_not_a_shipped_constant() {
+    let env = FakeEnv::new(vec![read_call("reader")]);
+    let gate = AgentGate::default();
+    let budget = Budget {
+        max_steps: 2,
+        ..TEST_ENTRY_BUDGET
+    };
+    let out = run_agent_with_system(
+        &env,
+        &whitelist(),
+        &gate,
+        budget,
+        AGENT_SYSTEM,
+        "job-7",
+        "help".into(),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.stopped_reason, StoppedReason::MaxSteps);
+    assert_eq!(out.steps, 2);
+    assert!(
+        out.steps < MAX_AGENT_STEPS,
+        "the given budget must bind before the shipped one ({MAX_AGENT_STEPS})"
+    );
 }
 
 #[tokio::test]
@@ -246,9 +284,9 @@ async fn the_tool_call_ceiling_is_not_enforced_and_this_pins_that() {
         .unwrap();
     let calls = env.reads.lock().len();
     assert!(
-        calls > BUDGET.max_tool_calls,
+        calls > TEST_ENTRY_BUDGET.max_tool_calls,
         "the loop spent {calls} tool calls against a nominal ceiling of {}",
-        BUDGET.max_tool_calls
+        TEST_ENTRY_BUDGET.max_tool_calls
     );
     assert_ne!(
         out.stopped_reason,

@@ -532,6 +532,7 @@ mod tests {
     };
     use crate::agent::tools::{ToolContext, ToolKind};
     use crate::commands::ai_provider::{AgentTurn, ChatMsg, Role, StopReason, ToolCall, Usage};
+    use crate::pipeline::budget::Budget;
 
     /// A scripted fake: pops a canned [`AgentTurn`] per `turn()` (repeating the last
     /// one forever), records executed read AND write tools + narrated steps + the
@@ -696,6 +697,11 @@ mod tests {
     /// These tests suspend on a real Write, so they drive `run_agent_with_system`
     /// directly with a shared gate they can resolve. `confirm_timeout` lets the
     /// timeout test pass a tiny ceiling; approve/deny/edit tests pass a generous one.
+    ///
+    /// It rides in on a COPY of the shipped prep budget rather than as its own
+    /// argument, because that is how the loop now takes it — one budget per
+    /// flow, confirm wait included. Every other ceiling stays the real one, so
+    /// a test that shrinks the wait doesn't quietly shrink the step clock too.
     async fn run_gated(
         env: &FakeEnv,
         gate: &AgentGate,
@@ -703,11 +709,15 @@ mod tests {
         job_id: &str,
         cancel: &CancellationToken,
     ) -> AppResult<AgentOutcome> {
+        let budget = Budget {
+            confirm_timeout,
+            ..Budget::AGENT_PREP
+        };
         run_agent_with_system(
             env,
             &whitelist(),
             gate,
-            confirm_timeout,
+            budget,
             AGENT_SYSTEM,
             job_id,
             "prep this".into(),

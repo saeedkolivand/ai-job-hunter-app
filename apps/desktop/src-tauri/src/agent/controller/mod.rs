@@ -25,15 +25,26 @@ use crate::events::{emit_event, AGENT_STEP};
 use crate::pipeline::budget::Budget;
 use crate::pipeline::Completer;
 
+use super::flows::AgentFlow;
 use super::gate::{resolve_write, AgentGate, WriteResolution};
 use super::tools::{neutralize_transcript_boundaries, to_specs, AgentTool, ToolContext, ToolKind};
 
-/// This loop's ceilings. The four loose consts that used to live here (steps,
-/// tokens, step timeout, confirm timeout) are now fields of ONE budget in
-/// [`crate::pipeline::budget`], shared with the other multi-step runs in the
-/// app; see [`Budget::AGENT_PREP`] for the full sizing rationale, which moved
-/// with them.
-const BUDGET: Budget = Budget::AGENT_PREP;
+/// The budget [`run_agent`] runs to.
+///
+/// The loop's ceilings are a PARAMETER now, not a module constant: with a
+/// second flow ([`crate::agent::flows::FLOWS`]) they differ per flow, and a
+/// controller that reads one flow's budget while running another's whitelist
+/// is exactly the mismatch `AgentFlow` exists to make unrepresentable — the
+/// review flow's 90-minute step clock would have been unreachable, and its one
+/// affordable-only-there tool would have ended every run at
+/// [`StoppedReason::Timeout`].
+///
+/// This constant survives for the pure [`run_agent`] entry point alone, which
+/// has no flow to take a budget from (it drives scripted fakes in this module's
+/// tests and `agent::gate`'s harness). It borrows the prep flow's so those
+/// tests keep asserting against a REAL shipped budget rather than an invented
+/// one.
+const TEST_ENTRY_BUDGET: Budget = Budget::AGENT_PREP;
 
 /// Why a budgeted run stopped — re-exported at its historical path so every
 /// existing `agent::controller::StoppedReason` import (and the `stoppedReason`
@@ -220,11 +231,16 @@ fn tool_result_fence(name: &str, body: &str) -> String {
 
 /// The `final_text` stamped on a [`StoppedReason::Timeout`] outcome — surfaced
 /// verbatim as the job's failure message by `agent_run`'s spawn.
-fn step_timeout_message() -> String {
+///
+/// Takes the elapsed bound rather than reading a constant: the number in the
+/// message must be the one the run was actually raced against, or a review-flow
+/// timeout would tell the user "did not respond within 360s" after waiting 90
+/// minutes.
+fn step_timeout_message(step_timeout: Duration) -> String {
     format!(
         "The AI provider did not respond within {}s, so the run was stopped instead \
          of hanging indefinitely. Check the model/endpoint in Settings → AI and try again.",
-        BUDGET.step_timeout.as_secs()
+        step_timeout.as_secs()
     )
 }
 
@@ -262,7 +278,7 @@ pub async fn run_agent(
         env,
         tools,
         &gate,
-        BUDGET.confirm_timeout,
+        TEST_ENTRY_BUDGET,
         AGENT_SYSTEM,
         "test",
         user,
@@ -271,18 +287,26 @@ pub async fn run_agent(
     .await
 }
 
-/// [`run_agent`] with an explicit per-flow system prompt AND the run's `job_id`,
-/// stamped onto every emitted [`AgentStep`] so a caller with more than one run in
-/// flight (or a UI panel that outlived the run it started) can filter the shared
-/// `agent:step` channel. The `system` string is the ONLY trusted instruction
-/// source (see the module SECURITY invariant); every caller passes a fixed,
-/// trusted constant, never scraped/user/tool text.
+/// [`run_agent`] with an explicit per-flow system prompt, BUDGET, and the run's
+/// `job_id`, stamped onto every emitted [`AgentStep`] so a caller with more than
+/// one run in flight (or a UI panel that outlived the run it started) can filter
+/// the shared `agent:step` channel. The `system` string is the ONLY trusted
+/// instruction source (see the module SECURITY invariant); every caller passes a
+/// fixed, trusted constant, never scraped/user/tool text.
+///
+/// `budget` carries all four ceilings this loop enforces — `max_steps`,
+/// `max_tokens`, the per-turn/per-tool `step_timeout` race, and the
+/// `confirm_timeout` handed to the write gate. It arrives as ONE value (never
+/// four loose arguments) because they are sized against each other per flow,
+/// and it is a compile-time constant chosen by the backend from
+/// [`crate::agent::flows`] — never renderer-supplied (see `pipeline::budget`'s
+/// module doc and its lock test).
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_with_system(
     env: &dyn AgentEnv,
     tools: &[AgentTool],
     gate: &AgentGate,
-    confirm_timeout: Duration,
+    budget: Budget,
     system: &str,
     job_id: &str,
     user: String,
@@ -329,7 +353,7 @@ pub async fn run_agent_with_system(
                     stopped_reason: StoppedReason::Cancelled,
                 });
             }
-            result = tokio::time::timeout(BUDGET.step_timeout, env.turn(&messages)) => match result {
+            result = tokio::time::timeout(budget.step_timeout, env.turn(&messages)) => match result {
                 Ok(Ok(t)) => t,
                 // `LiveAgentEnv::turn` charges the per-provider daily ceiling before
                 // each request; hitting it on turn 3+ of an otherwise-successful run
@@ -343,11 +367,11 @@ pub async fn run_agent_with_system(
                 }
                 Ok(Err(e)) => return Err(e),
                 // Wall-clock backstop: the provider never responded within
-                // `BUDGET.step_timeout` — stop instead of hanging forever with no
+                // `budget.step_timeout` — stop instead of hanging forever with no
                 // terminal event.
                 Err(_elapsed) => {
                     return Ok(AgentOutcome {
-                        final_text: step_timeout_message(),
+                        final_text: step_timeout_message(budget.step_timeout),
                         steps,
                         stopped_reason: StoppedReason::Timeout,
                     });
@@ -428,17 +452,17 @@ pub async fn run_agent_with_system(
                             });
                         }
                         result = tokio::time::timeout(
-                            BUDGET.step_timeout,
+                            budget.step_timeout,
                             env.run_read_tool(&call.name, call.args.clone()),
                         ) => match result {
                             Ok(Ok(v)) => v.to_string(),
                             Ok(Err(e)) => format!("error: {e}"),
                             // Wall-clock backstop: this read tool (which may itself
                             // make a provider call, e.g. a drafting tool) never
-                            // returned within `BUDGET.step_timeout`.
+                            // returned within `budget.step_timeout`.
                             Err(_elapsed) => {
                                 return Ok(AgentOutcome {
-                                    final_text: step_timeout_message(),
+                                    final_text: step_timeout_message(budget.step_timeout),
                                     steps,
                                     stopped_reason: StoppedReason::Timeout,
                                 });
@@ -453,7 +477,7 @@ pub async fn run_agent_with_system(
                         env,
                         tools,
                         gate,
-                        confirm_timeout,
+                        budget.confirm_timeout,
                         job_id,
                         steps,
                         idx,
@@ -482,14 +506,14 @@ pub async fn run_agent_with_system(
         tokens += estimate_tokens(&combined);
         messages.push(ChatMsg::tool(combined));
 
-        if steps >= BUDGET.max_steps {
+        if steps >= budget.max_steps {
             return Ok(AgentOutcome {
                 final_text,
                 steps,
                 stopped_reason: StoppedReason::MaxSteps,
             });
         }
-        if tokens >= BUDGET.max_tokens {
+        if tokens >= budget.max_tokens {
             return Ok(AgentOutcome {
                 final_text,
                 steps,
@@ -573,22 +597,27 @@ impl AgentEnv for LiveAgentEnv<'_> {
     }
 }
 
-/// Production entry point for the agent loop: bind the active provider + a per-flow
-/// tool whitelist + a fixed flow `system` prompt + the trusted [`ToolContext`], and
-/// run to a budget. `job_id` is the caller's `agent_run` job id — stamped onto
-/// every `agent:step` this run emits (see [`AgentStep::job_id`]).
+/// Production entry point for the agent loop: bind the active provider + the
+/// trusted [`ToolContext`] to ONE registered [`AgentFlow`] and run it.
+/// `job_id` is the caller's `agent_run` job id — stamped onto every
+/// `agent:step` this run emits (see [`AgentStep::job_id`]).
+///
+/// The flow arrives as one value rather than as a whitelist, a prompt and a
+/// budget the caller assembles: those three are sized against each other
+/// ([`crate::agent::flows`]), and the only way to pair the wrong ones here is
+/// now to register them wrong there, where a test asserts the pairing. The
+/// whitelist is BUILT here, once per run, so the model is offered the flow's
+/// current tools and the loop and the env cannot be handed two different lists.
 ///
 /// The caller (`agent_run`) MUST first `acquire` the shared limiter with
 /// [`crate::limits::AGENT_RUN_RATE_MAX`] /
 /// [`crate::limits::AGENT_RUN_CONCURRENCY_MAX`] and hold the guard for the whole
 /// run; per-turn daily spend is charged inside [`LiveAgentEnv::turn`].
-#[allow(clippy::too_many_arguments)]
 pub async fn run_agent_live(
     app: &AppHandle,
     completer: &Completer,
-    tools: &[AgentTool],
+    flow: &AgentFlow,
     ctx: ToolContext,
-    system: &str,
     job_id: &str,
     user: String,
     cancel: &CancellationToken,
@@ -597,11 +626,12 @@ pub async fn run_agent_live(
         .state::<std::sync::Arc<crate::limits::Limiter>>()
         .inner()
         .clone();
+    let tools = (flow.tools)();
     let env = LiveAgentEnv {
         app,
         completer,
-        tools,
-        specs: to_specs(tools),
+        tools: &tools,
+        specs: to_specs(&tools),
         limiter,
         temperature: Some(0.2),
         ctx,
@@ -611,10 +641,10 @@ pub async fn run_agent_live(
     let gate = app.state::<AgentGate>();
     run_agent_with_system(
         &env,
-        tools,
+        &tools,
         gate.inner(),
-        BUDGET.confirm_timeout,
-        system,
+        flow.budget,
+        flow.system,
         job_id,
         user,
         cancel,
