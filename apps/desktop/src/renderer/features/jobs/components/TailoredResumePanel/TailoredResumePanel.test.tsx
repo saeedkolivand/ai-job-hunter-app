@@ -137,7 +137,7 @@ vi.mock('@/services', () => ({
   },
 }));
 
-import { canImproveGeneration, TailoredResumePanel } from './index';
+import { canImproveGeneration, type ImproveEligibility, TailoredResumePanel } from './index';
 
 const POSTING: Posting = {
   id: 'posting-1',
@@ -747,7 +747,7 @@ const improveButton = () => screen.queryByRole('button', { name: /improve this r
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('canImproveGeneration', () => {
-  const eligible = {
+  const eligible: ImproveEligibility = {
     terminal: true,
     runState: 'done',
     hasDetail: true,
@@ -761,7 +761,7 @@ describe('canImproveGeneration', () => {
     expect(canImproveGeneration({ ...eligible, runState: 'needsReview' })).toBe(true);
   });
 
-  it.each([
+  it.each<[string, Partial<ImproveEligibility>]>([
     ['still running', { terminal: false }],
     ['a failed run', { runState: 'error' }],
     ['a stopped run', { runState: 'cancelled' }],

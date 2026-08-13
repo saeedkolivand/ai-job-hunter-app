@@ -14,7 +14,10 @@ import { ImproveResumeRun } from '@/features/jobs/components/ImproveResumeRun';
 import { useAgentRunSession } from '@/features/jobs/hooks/useAgentRunSession';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
-import { useResumePipelineSession } from '@/hooks/use-resume-pipeline-session';
+import {
+  type ResumePipelineSession,
+  useResumePipelineSession,
+} from '@/hooks/use-resume-pipeline-session';
 import { useDefaultResume } from '@/hooks/useDefaultResumeId';
 import { errorDetail } from '@/lib/error-class';
 import {
@@ -54,8 +57,8 @@ const GENERATION_REVIEW_CAP = AGENT_RESUME_TEXT_CAP;
 export interface ImproveEligibility {
   /** The pipeline run being shown has ended (`session.state !== 'idle' && !busy`). */
   terminal: boolean;
-  /** That run's own outcome — `ResumePipelineSession['state']`. */
-  runState: string;
+  /** That run's own outcome. */
+  runState: ResumePipelineSession['state'];
   /** A run RECORD is loaded (not just a session that started one). */
   hasDetail: boolean;
   /** The record carries résumé text — i.e. a generation exists for this posting. */
