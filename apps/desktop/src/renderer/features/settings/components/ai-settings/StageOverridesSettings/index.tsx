@@ -11,7 +11,12 @@ import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
 
 import { ModelAdvisor } from '../ModelAdvisor';
-import { resolveActiveProblem, resolveStageRouting, type StageRouting } from './stage-routing';
+import {
+  providerNeedsModel,
+  resolveActiveProblem,
+  resolveStageRouting,
+  type StageRouting,
+} from './stage-routing';
 import { StageOverrideEditor } from './StageOverrideEditor';
 import { StageSuggestionBanner } from './StageSuggestionBanner';
 import { installedSetKey } from './suggest-stage-models';
@@ -87,13 +92,27 @@ export function StageOverridesSettings({
 
   const clear = (stage: PipelineStage) =>
     clearStageOverride.mutate(stage, {
+      // Clearing the override unmounts THIS button (it only exists while the
+      // row is overridden) — the same WCAG 2.4.3 drop the editor guards against.
+      onSuccess: () => changeButtons.current[stage]?.focus(),
       onError: (err) =>
         notify.error({ message: t('settings.ai.stages.clearFailed', { reason: err.message }) }),
     });
 
   const effectiveLabel = (row: StageRouting) =>
     row.override
-      ? `${providerLabel(row.override.provider)} · ${row.override.model || t('settings.ai.stages.cliDefaultModel')}`
+      ? // An empty model means "the CLI's own default" only where a CLI agent
+        // runs it. On a cloud provider it means NO model — labelling that
+        // "CLI default" told the user a broken row was configured, right next
+        // to the warning saying it will fail.
+        `${providerLabel(row.override.provider)} · ${
+          row.override.model ||
+          t(
+            providerNeedsModel(row.override.provider)
+              ? 'settings.ai.stages.noModel'
+              : 'settings.ai.stages.cliDefaultModel'
+          )
+        }`
       : activeModel
         ? t('settings.ai.stages.defaultModel', { model: activeModel })
         : t('settings.ai.stages.defaultNoModel');
@@ -160,6 +179,9 @@ export function StageOverridesSettings({
         {rows.map((row) => (
           <div
             key={row.stage}
+            // A stable hook for tests + the settings search: the row must not be
+            // findable only by a Tailwind class that styling is free to change.
+            data-stage-row={row.stage}
             className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -189,6 +211,15 @@ export function StageOverridesSettings({
                   }
                   aria-expanded={editing === row.stage}
                   aria-controls={`stage-editor-${row.stage}`}
+                  // Seven controls all named "Change" say nothing about WHICH
+                  // step they change. The stage name is interpolated by the
+                  // translation so word order stays the translator's call.
+                  aria-label={t(
+                    editing === row.stage
+                      ? 'settings.ai.stages.changeCloseFor'
+                      : 'settings.ai.stages.changeFor',
+                    { stage: t(`settings.ai.stages.names.${row.stage}`) }
+                  )}
                 >
                   {editing === row.stage
                     ? t('settings.ai.stages.changeClose')
@@ -199,6 +230,9 @@ export function StageOverridesSettings({
                     variant="ghost"
                     disabled={clearStageOverride.isPending}
                     onClick={() => clear(row.stage)}
+                    aria-label={t('settings.ai.stages.resetFor', {
+                      stage: t(`settings.ai.stages.names.${row.stage}`),
+                    })}
                   >
                     {t('settings.ai.stages.reset')}
                   </Button>

@@ -13,12 +13,12 @@ import type { AdvisorStepProps } from './types';
  *
  * `id` doubles as the i18n key segment for the step's title.
  */
-export const ADVISOR_STEPS: ReadonlyArray<{
-  id: string;
-  component: ComponentType<AdvisorStepProps>;
-}> = [
+export const ADVISOR_STEPS = [
   { id: 'models', component: InstalledModelsStep },
   { id: 'fit', component: ContextFitStep },
   { id: 'recommend', component: RecommendationsStep },
   { id: 'risk', component: ThinkingRiskStep },
-];
+] as const satisfies ReadonlyArray<{ id: string; component: ComponentType<AdvisorStepProps> }>;
+
+/** The step ids, kept as literals so an i18n key built from one is checkable. */
+export type AdvisorStepId = (typeof ADVISOR_STEPS)[number]['id'];

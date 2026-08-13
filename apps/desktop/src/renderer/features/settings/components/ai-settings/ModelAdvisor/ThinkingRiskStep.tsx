@@ -3,6 +3,9 @@ import { AlertTriangle, Gauge } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { EmptyState } from '@ajh/ui';
 
+import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import type { AiProvider } from '@/store/preferences-schema';
+
 import { assessThinkingRisk, type ThinkingRiskLevel } from './thinking-risk';
 import type { AdvisorStepProps } from './types';
 
@@ -28,12 +31,17 @@ const LEVEL_CLASS: Record<ThinkingRiskLevel, string> = {
 export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
   const { t } = useTranslation();
 
-  // Each model with the provider it will actually run on — a measurement only
-  // belongs to this row when both match.
-  const seen = new Map<string, string | undefined>();
-  if (ctx.activeModel) seen.set(ctx.activeModel, ctx.activeProvider);
+  // Keyed by PROVIDER + model, because that pair is what an assessment is about:
+  // a measurement counts only when both match. Keying by model alone let an
+  // override that names the active model on a different provider overwrite the
+  // provider for that key — one row silently dropped, and the survivor assessed
+  // against the wrong provider.
+  const seen = new Map<string, { model: string; provider?: string }>();
+  const add = (model: string, provider?: string) =>
+    seen.set(`${provider ?? ''}::${model}`, { model, provider });
+  if (ctx.activeModel) add(ctx.activeModel, ctx.activeProvider);
   for (const override of Object.values(ctx.overrides)) {
-    if (override.model) seen.set(override.model, override.provider);
+    if (override.model) add(override.model, override.provider);
   }
   const models = [...seen.entries()];
 
@@ -56,7 +64,7 @@ export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
       </p>
 
       <ul className="space-y-2">
-        {models.map(([model, provider]) => {
+        {models.map(([rowKey, { model, provider }]) => {
           const risk = assessThinkingRisk({
             model,
             provider,
@@ -67,11 +75,18 @@ export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
 
           return (
             <li
-              key={model}
+              key={rowKey}
               className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-foreground/80">{model}</span>
+                <span className="text-xs font-medium text-foreground/80">
+                  {model}
+                  {provider && provider !== ctx.activeProvider && (
+                    <span className="ml-1.5 text-foreground/60">
+                      ({PROVIDERS[provider as AiProvider]?.label ?? provider})
+                    </span>
+                  )}
+                </span>
                 <span className={`flex items-center gap-1 text-[11px] ${LEVEL_CLASS[risk.level]}`}>
                   {alarming && <AlertTriangle size={11} aria-hidden="true" />}
                   {t(`settings.ai.advisor.risk.level.${risk.level}`)}

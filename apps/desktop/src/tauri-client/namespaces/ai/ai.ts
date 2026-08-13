@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { type AiConfigSnapshot, EVENT_CHANNELS } from '@ajh/shared';
+import {
+  type AiConfigSnapshot,
+  type AiStageOverride,
+  EVENT_CHANNELS,
+  type PipelineStage,
+} from '@ajh/shared';
 import type { AiGenerateRequest, EmbedRequest } from '@ajh/shared/schemas';
 import type { AiStreamChunk } from '@ajh/shared/types';
 
@@ -36,19 +41,19 @@ export const ai = {
     invoke('ai_seed_active_config', { config }),
   // Per-stage model overrides. An absent key means "the active provider" —
   // never write one back just to mirror the default.
-  stageOverrides: () => invoke('ai_stage_overrides'),
+  stageOverrides: (): Promise<Record<string, AiStageOverride>> => invoke('ai_stage_overrides'),
   setStageOverride: ({
     stage,
     provider,
     model,
     contextWindow,
   }: {
-    stage: string;
+    stage: PipelineStage;
     provider: string;
     model?: string;
     contextWindow?: number;
   }) => invoke('ai_set_stage_override', { stage, provider, model, contextWindow }),
-  clearStageOverride: ({ stage }: { stage: string }) =>
+  clearStageOverride: ({ stage }: { stage: PipelineStage }) =>
     invoke('ai_clear_stage_override', { stage }),
   // `effort` on both research calls: the backend's deadline around
   // search + synthesis scales with it, the same way the generation stream

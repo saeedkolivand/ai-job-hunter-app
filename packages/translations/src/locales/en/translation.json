@@ -948,7 +948,10 @@
           "active": "Active",
           "notMeasured": "Not measured",
           "emptyTitle": "No local models found",
-          "emptyDescription": "Ollama reported no installed models. Start Ollama and download a model, then reopen the advisor."
+          "emptyDescription": "Ollama reported no installed models. Start Ollama and download a model, then reopen the advisor.",
+          "loading": "Reading model details…",
+          "loaded_one": "1 installed model read.",
+          "loaded_other": "{{count}} installed models read."
         },
         "fit": {
           "title": "Does it fit?",
@@ -964,7 +967,9 @@
             "tight": "Tight",
             "too-small": "Too small",
             "unknown": "Not measured"
-          }
+          },
+          "loaded_one": "Context fit checked for 1 model.",
+          "loaded_other": "Context fit checked for {{count}} models."
         },
         "recommend": {
           "title": "What to change",
@@ -1005,9 +1010,13 @@
         "defaultModel": "Default — {{model}}",
         "defaultNoModel": "Default — no model selected",
         "cliDefaultModel": "CLI default",
+        "noModel": "no model",
         "change": "Change",
+        "changeFor": "Change the model for {{stage}}",
         "changeClose": "Close",
+        "changeCloseFor": "Close the model settings for {{stage}}",
         "reset": "Use default",
+        "resetFor": "Use the default model for {{stage}}",
         "noProvider": "No provider",
         "warnActiveUnconfigured": "{{provider}} is not set up, so every step still on the default will fail. Set it up in the provider list above.",
         "warnActiveNoModel": "{{provider}} has no model selected, so every step still on the default will fail. Pick one in the provider list above.",

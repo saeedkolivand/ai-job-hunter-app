@@ -49,6 +49,14 @@ describe('isChatCapable', () => {
   it('accepts a chat family', () => {
     expect(isChatCapable('qwen3:8b', INSPECTIONS['qwen3:8b'])).toBe(true);
   });
+
+  it('falls back to the NAME when no family was reported', () => {
+    // Inspection missing entirely, or present without a family: the name is all
+    // there is, and it may only be used to REJECT.
+    expect(isChatCapable('nomic-embed-text', null)).toBe(false);
+    expect(isChatCapable('bge-large', undefined)).toBe(false);
+    expect(isChatCapable('qwen3:8b', { parameterSize: '8.2B' })).toBe(true);
+  });
 });
 
 describe('suggestExtractionModel', () => {
@@ -78,10 +86,30 @@ describe('suggestExtractionModel', () => {
     ).toBeNull();
   });
 
-  it('REGRESSION: never suggests a model the risk step flags as reasoning-heavy', () => {
-    // `qwq` is the same size as the active model, so the size gate alone stops
-    // it — the suggestion and the warning can no longer contradict each other.
+  it('rejects a same-size candidate (the size gate, not a reasoning check)', () => {
+    // `qwq` is 32.8B against a 32.8B active model, so SIZE rejects it. Named for
+    // what it proves: there is no reasoning filter in this module, and a
+    // reasoning-heavy model that is genuinely smaller is still suggested — see
+    // the case below, which pins that as the deliberate boundary.
     expect(suggestExtractionModel({ ...base, installedModels: ['qwen3:32b', 'qwq'] })).toBeNull();
+  });
+
+  it('does suggest a reasoning-heavy model that clears the size gate', () => {
+    // Deliberate: "smaller" is a size claim, and the advisor's risk step is
+    // where reasoning cost is reported. Pinning it here means a future
+    // reasoning filter has to change this test on purpose rather than by
+    // accident — and makes the current contradiction visible instead of
+    // hidden behind a test that passes for the wrong reason.
+    const suggestion = suggestExtractionModel({
+      ...base,
+      installedModels: ['qwen3:32b', 'deepseek-r1:14b'],
+      inspections: {
+        ...INSPECTIONS,
+        'deepseek-r1:14b': { parameterSize: '14.8B', family: 'qwen2' },
+      },
+    });
+
+    expect(suggestion?.model).toBe('deepseek-r1:14b');
   });
 
   it('is silent when the ACTIVE model has no measured size', () => {
@@ -104,15 +132,28 @@ describe('suggestExtractionModel', () => {
     ).toBeNull();
   });
 
-  it('ignores a candidate that is not meaningfully smaller', () => {
+  it('ignores a candidate just UNDER the 2x bar', () => {
+    // 4.2B against 8.2B is a ratio of 1.95 — the boundary itself, not a value
+    // any positive threshold would reject.
     expect(
       suggestExtractionModel({
         ...base,
         activeModel: 'qwen3:8b',
-        installedModels: ['qwen3:8b', 'qwen3-7b'],
-        inspections: { ...INSPECTIONS, 'qwen3-7b': { parameterSize: '7.6B', family: 'qwen3' } },
+        installedModels: ['qwen3:8b', 'qwen3-4b2'],
+        inspections: { ...INSPECTIONS, 'qwen3-4b2': { parameterSize: '4.2B', family: 'qwen3' } },
       })
     ).toBeNull();
+  });
+
+  it('accepts a candidate exactly AT the 2x bar', () => {
+    const suggestion = suggestExtractionModel({
+      ...base,
+      activeModel: 'qwen3:8b',
+      installedModels: ['qwen3:8b', 'qwen3-4b1'],
+      inspections: { ...INSPECTIONS, 'qwen3-4b1': { parameterSize: '4.1B', family: 'qwen3' } },
+    });
+
+    expect(suggestion?.model).toBe('qwen3-4b1');
   });
 
   it('picks the LARGEST model that clears the bar, not the tiniest thing installed', () => {

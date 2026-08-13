@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import type { AiSpendModelThinking } from '@ajh/shared';
+
 import { assessThinkingRisk, HEAVY_RATIO, MEASURED_MIN_CALLS } from './thinking-risk';
 
-const measuredRow = (over: Partial<Record<string, unknown>> = {}) => ({
+/** Typed against the shape the assessor reads, so a misspelled field is a
+ *  compile error rather than a silent fall-back to the default below. */
+const measuredRow = (over: Partial<AiSpendModelThinking> = {}): AiSpendModelThinking => ({
   provider: 'openai',
   model: 'o4-mini',
   calls: MEASURED_MIN_CALLS,
@@ -42,6 +46,18 @@ describe('assessThinkingRisk — measured signal', () => {
     // that about a model the provider DID measure is simply false.
     expect(risk.level).toBe('measured-light');
     expect(risk.ratio).toBe(HEAVY_RATIO - 1);
+  });
+
+  it('treats the ratio exactly AT the threshold as heavy', () => {
+    // The only thing separating the two measured levels: `>` vs `>=` passes
+    // every other case in this suite.
+    const risk = assessThinkingRisk({
+      model: 'o4-mini',
+      measured: [measuredRow({ thinkingTokens: HEAVY_RATIO * 1_000 })],
+    });
+
+    expect(risk.level).toBe('measured-heavy');
+    expect(risk.ratio).toBe(HEAVY_RATIO);
   });
 
   it('treats thinking with ZERO answer tokens as the heavy case', () => {

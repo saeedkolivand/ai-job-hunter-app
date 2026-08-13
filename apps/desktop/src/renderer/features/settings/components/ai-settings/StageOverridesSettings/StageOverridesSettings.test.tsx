@@ -10,7 +10,7 @@
  *  - reset              → clears exactly that stage.
  *  - stage vocabulary   → exactly the stages that make a provider call.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -58,6 +58,13 @@ vi.mock('../ModelAdvisor', () => ({
 }));
 
 import { StageOverridesSettings } from './index';
+
+// `clearMutate` / `setMutate` are module-scope spies reused by every case —
+// without this a "was it called" assertion can pass on a previous case's call.
+beforeEach(() => {
+  vi.clearAllMocks();
+  overridesState.data = {};
+});
 import { OVERRIDABLE_PIPELINE_STAGES } from './stage-routing';
 
 const baseProps = {
@@ -68,9 +75,10 @@ const baseProps = {
   configuredBaseUrl: undefined,
 };
 
+/** Scope to one stage's row through its stable data hook, not through a
+ *  Tailwind class a restyle would rename. */
 const rowFor = (stage: string) => {
-  const label = screen.getByText(`settings.ai.stages.names.${stage}`);
-  const row = label.closest('div.rounded-lg');
+  const row = document.querySelector(`[data-stage-row="${stage}"]`);
   if (!row) throw new Error(`no row rendered for stage ${stage}`);
   return within(row as HTMLElement);
 };

@@ -12,7 +12,7 @@
  * showing before a run rather than after one.
  */
 
-import { estimateTokens } from '@ajh/prompts/context-manager';
+import { estimateTokens } from '@ajh/prompts';
 import type { PipelineStage } from '@ajh/shared';
 
 /** Char caps, verbatim from the Rust constants that enforce them. */
@@ -41,7 +41,7 @@ const DOCUMENT = 12_000; // section_prompts.rs DOCUMENT_CAP — what the judge r
  * cases sit well under it (evidence_map 15 199 chars, strategy 7 553) — this is
  * a ceiling, and the UI says so rather than presenting it as what a run costs.
  */
-export const STAGE_WORST_CASE_CHARS: Record<string, number> = {
+export const STAGE_WORST_CASE_CHARS: Partial<Record<PipelineStage, number>> = {
   analyze_job: JOB,
   match_evidence: RESUME + ARTIFACT,
   strategy: RESUME + ARTIFACT * 2,
@@ -49,6 +49,9 @@ export const STAGE_WORST_CASE_CHARS: Record<string, number> = {
   sections: SECTION + ARTIFACT * 4 + NOTE,
   repair: RESUME + SECTION + ARTIFACT + NOTE,
   llm_judge: DOCUMENT + JOB + ARTIFACT,
+  // PARTIAL on purpose: the free stages (`assemble`, `validate`) send no prompt
+  // at all. Keyed by `PipelineStage` all the same, so a stage renamed upstream
+  // is a compile error here rather than a silently dead entry.
 };
 
 /**

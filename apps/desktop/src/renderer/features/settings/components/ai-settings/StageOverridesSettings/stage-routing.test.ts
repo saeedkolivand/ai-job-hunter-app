@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPayingPipelineStage, isPipelineStage, PIPELINE_STAGES } from '@ajh/shared';
+import {
+  type AiStageOverride,
+  isPayingPipelineStage,
+  isPipelineStage,
+  PIPELINE_STAGES,
+} from '@ajh/shared';
 
 import {
   OVERRIDABLE_PIPELINE_STAGES,
@@ -80,6 +85,20 @@ describe('resolveStageRouting', () => {
   it('flags an override on a configured provider with no model', () => {
     const [row] = resolveStageRouting({
       overrides: { strategy: { provider: 'openai', model: '' } },
+      active: { provider: 'ollama', model: 'qwen3:8b' },
+      isConfigured: allConfigured,
+      stages: ['strategy'],
+    });
+
+    expect(row?.problem).toBe('no-model');
+  });
+
+  it('flags an override whose model key is ABSENT, not just empty', () => {
+    // `override?.model ?? active.model` falls through only on null/undefined, so
+    // an absent key reports the ACTIVE model in `model` while still being
+    // broken — the row must not read as configured.
+    const [row] = resolveStageRouting({
+      overrides: { strategy: { provider: 'openai' } as AiStageOverride },
       active: { provider: 'ollama', model: 'qwen3:8b' },
       isConfigured: allConfigured,
       stages: ['strategy'],

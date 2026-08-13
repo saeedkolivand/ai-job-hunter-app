@@ -6,9 +6,10 @@
  * `setStageOverride` receives rather than on what the form looks like.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { CONTEXT_WINDOW_DEFAULT } from '@ajh/shared';
 import type * as AjhUi from '@ajh/ui';
 
 vi.mock('@ajh/translations', () => ({
@@ -34,10 +35,19 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 
 const setStageOverrideMutate = vi.fn();
 const providerModels: { data: { models: { name: string }[] } } = { data: { models: [] } };
+/** Records WHICH provider the editor asked for a catalogue — a mock that
+ *  ignores its arguments cannot fail when the editor asks for the wrong one. */
+const listProviderModels = vi.fn((provider: string, enabled: boolean, baseUrl?: string) => {
+  void enabled;
+  void baseUrl;
+  void provider;
+  return providerModels;
+});
 
 vi.mock('@/services', () => ({
   useSetStageOverride: () => ({ mutate: setStageOverrideMutate, isPending: false }),
-  useListProviderModels: () => providerModels,
+  useListProviderModels: (provider: string, enabled: boolean, baseUrl?: string) =>
+    listProviderModels(provider, enabled, baseUrl),
 }));
 
 import { StageOverrideEditor } from './StageOverrideEditor';
@@ -98,6 +108,23 @@ describe('StageOverrideEditor — the context-window switch', () => {
     expect(savedPayload()?.contextWindow).toBeUndefined();
   });
 
+  it('builds a window when the switch is turned ON', () => {
+    render(
+      <StageOverrideEditor
+        {...baseProps}
+        override={{ provider: 'ollama', model: 'qwen3:8b' }}
+        fallbackProvider="ollama"
+      />
+    );
+
+    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(screen.getByText('settings.ai.stages.editor.save'));
+
+    // The enable path is where a missing default would send NaN/0 into a
+    // range-validated field.
+    expect(savedPayload()?.contextWindow).toBe(CONTEXT_WINDOW_DEFAULT);
+  });
+
   it('starts with the switch off for an override that has no window', () => {
     render(
       <StageOverrideEditor
@@ -109,6 +136,19 @@ describe('StageOverrideEditor — the context-window switch', () => {
 
     expect(screen.getByRole('switch')).not.toBeChecked();
     expect(screen.getByText('settings.ai.stages.editor.windowDefault')).toBeVisible();
+  });
+});
+
+describe('StageOverrideEditor — listing models', () => {
+  it('asks for the catalogue of the SELECTED provider, and re-asks after a change', async () => {
+    const user = userEvent.setup();
+    render(<StageOverrideEditor {...baseProps} fallbackProvider="openai" />);
+
+    expect(listProviderModels).toHaveBeenCalledWith('openai', expect.anything(), undefined);
+
+    await pick(user, 'settings.ai.stages.editor.provider', 'Anthropic (Claude)');
+
+    expect(listProviderModels).toHaveBeenLastCalledWith('anthropic', expect.anything(), undefined);
   });
 });
 
@@ -126,8 +166,11 @@ describe('StageOverrideEditor — changing provider', () => {
     await pick(user, 'settings.ai.stages.editor.provider', 'OpenAI');
 
     // Carrying `qwen3:8b` to OpenAI is exactly what `validate_model` rejects.
-    const modelDropdown = screen.getByLabelText('settings.ai.stages.editor.model');
-    expect(within(modelDropdown).queryByText('qwen3:8b')).toBeNull();
+    // Asserted on the TRIGGER's own text: options render in a portal, so
+    // `within(trigger)` is empty either way and would pass vacuously.
+    expect(screen.getByLabelText('settings.ai.stages.editor.model')).not.toHaveTextContent(
+      'qwen3:8b'
+    );
     // With no model, saving is blocked rather than sending a doomed payload.
     expect(screen.getByText('settings.ai.stages.editor.save')).toBeDisabled();
   });
@@ -136,12 +179,20 @@ describe('StageOverrideEditor — changing provider', () => {
 describe('StageOverrideEditor — when saving is allowed', () => {
   it('allows a CLI agent with no model — it runs its own default', async () => {
     const user = userEvent.setup();
-    render(<StageOverrideEditor {...baseProps} fallbackProvider="claude-code" />);
+    const onDone = vi.fn();
+    // Drive the success callback the real mutation would invoke.
+    setStageOverrideMutate.mockImplementationOnce((_req, opts?: { onSuccess?: () => void }) =>
+      opts?.onSuccess?.()
+    );
+    render(<StageOverrideEditor {...baseProps} fallbackProvider="claude-code" onDone={onDone} />);
 
     await user.click(screen.getByText('settings.ai.stages.editor.save'));
 
     expect(savedPayload()).toMatchObject({ stage: 'draft', provider: 'claude-code' });
     expect(savedPayload()?.model).toBeUndefined();
+    // The editor's only exit signal: without it the editor stays open and the
+    // host's focus restoration never runs.
+    expect(onDone).toHaveBeenCalledOnce();
   });
 
   it('blocks saving against an unconfigured provider, and says why', () => {

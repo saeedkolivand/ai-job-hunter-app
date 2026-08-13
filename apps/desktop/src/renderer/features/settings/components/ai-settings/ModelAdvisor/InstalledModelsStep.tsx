@@ -31,11 +31,21 @@ export function InstalledModelsStep({ ctx }: AdvisorStepProps) {
         {t('settings.ai.advisor.models.intro')}
       </p>
 
+      {/* A live region announces its TEXT; skeletons are shapes, so the region
+          needs a sr-only message or it announces nothing — and it must stay
+          mounted once the probes settle, or the result is never announced
+          either. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {ctx.inspectionsPending
+          ? t('settings.ai.advisor.models.loading')
+          : t('settings.ai.advisor.models.loaded', { count: ctx.installedModels.length })}
+      </span>
+
       {/* Skeletons INSTEAD of the list: mid-flight, every model would render as
           "not measured", which is a claim about the model rather than about the
           request that has not come back yet. */}
       {ctx.inspectionsPending ? (
-        <div className="space-y-2" role="status" aria-live="polite">
+        <div className="space-y-2" aria-hidden="true">
           <RowSkeleton />
           <RowSkeleton />
         </div>

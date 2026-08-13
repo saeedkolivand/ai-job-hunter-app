@@ -1,6 +1,12 @@
 import { useState } from 'react';
 
-import type { AiStageOverride, PipelineStage } from '@ajh/shared';
+import {
+  type AiStageOverride,
+  CONTEXT_WINDOW_DEFAULT,
+  CONTEXT_WINDOW_MAX,
+  CONTEXT_WINDOW_MIN,
+  type PipelineStage,
+} from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, NumberField, Switch, useNotification } from '@ajh/ui';
 
@@ -10,11 +16,6 @@ import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
 
 import { providerNeedsModel } from './stage-routing';
-
-/** Backend bounds for `contextWindow` (`validate_context_window`). */
-const CTX_MIN = 512;
-const CTX_MAX = 131_072;
-const CTX_DEFAULT = 8192;
 
 interface Props {
   /** Wired to the row button's `aria-controls`. */
@@ -58,7 +59,9 @@ export function StageOverrideEditor({
   );
   const [model, setModel] = useState<string>(override?.model ?? '');
   const [windowOn, setWindowOn] = useState(override?.contextWindow !== undefined);
-  const [contextWindow, setContextWindow] = useState(override?.contextWindow ?? CTX_DEFAULT);
+  const [contextWindow, setContextWindow] = useState(
+    override?.contextWindow ?? CONTEXT_WINDOW_DEFAULT
+  );
 
   const kind = PROVIDERS[provider as AiProvider]?.kind;
   const configured = isConfigured(provider);
@@ -177,10 +180,10 @@ export function StageOverrideEditor({
             <NumberField
               value={contextWindow}
               onChange={setContextWindow}
-              min={CTX_MIN}
-              max={CTX_MAX}
+              min={CONTEXT_WINDOW_MIN}
+              max={CONTEXT_WINDOW_MAX}
               step={512}
-              fallback={CTX_DEFAULT}
+              fallback={CONTEXT_WINDOW_DEFAULT}
               aria-label={t('settings.ai.stages.editor.contextWindow')}
             />
           </div>

@@ -6,7 +6,7 @@
  * section is advice the user runs — the wizard writes no server config and
  * makes no provider call of its own.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -64,6 +64,12 @@ vi.mock('@/store/preferences-store', () => ({
 }));
 
 import { ModelAdvisor } from './index';
+
+// Module-scope spies are shared by every case here; clear the CALL HISTORY
+// between them (implementations are set per case where they matter).
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 const props = {
   open: true,

@@ -948,7 +948,10 @@
           "active": "Aktiv",
           "notMeasured": "Nicht ermittelt",
           "emptyTitle": "Keine lokalen Modelle gefunden",
-          "emptyDescription": "Ollama meldet keine installierten Modelle. Starten Sie Ollama, laden Sie ein Modell herunter und öffnen Sie den Berater erneut."
+          "emptyDescription": "Ollama meldet keine installierten Modelle. Starten Sie Ollama, laden Sie ein Modell herunter und öffnen Sie den Berater erneut.",
+          "loading": "Modelldetails werden gelesen…",
+          "loaded_one": "1 installiertes Modell gelesen.",
+          "loaded_other": "{{count}} installierte Modelle gelesen."
         },
         "fit": {
           "title": "Passt es?",
@@ -964,7 +967,9 @@
             "tight": "Knapp",
             "too-small": "Zu klein",
             "unknown": "Nicht ermittelt"
-          }
+          },
+          "loaded_one": "Kontextpassung für 1 Modell geprüft.",
+          "loaded_other": "Kontextpassung für {{count}} Modelle geprüft."
         },
         "recommend": {
           "title": "Was Sie ändern können",
@@ -1005,9 +1010,13 @@
         "defaultModel": "Standard — {{model}}",
         "defaultNoModel": "Standard — kein Modell ausgewählt",
         "cliDefaultModel": "CLI-Standard",
+        "noModel": "kein Modell",
         "change": "Ändern",
+        "changeFor": "Modell für {{stage}} ändern",
         "changeClose": "Schließen",
+        "changeCloseFor": "Modelleinstellungen für {{stage}} schließen",
         "reset": "Standard verwenden",
+        "resetFor": "Standardmodell für {{stage}} verwenden",
         "noProvider": "Kein Anbieter",
         "warnActiveUnconfigured": "{{provider}} ist nicht eingerichtet — jeder Schritt auf dem Standard schlägt fehl. Richten Sie den Anbieter in der Liste oben ein.",
         "warnActiveNoModel": "Für {{provider}} ist kein Modell ausgewählt — jeder Schritt auf dem Standard schlägt fehl. Wählen Sie oben eines aus.",

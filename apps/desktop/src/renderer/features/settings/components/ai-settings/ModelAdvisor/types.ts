@@ -1,5 +1,9 @@
-import type { AiSpendModelThinking, AiStageOverride } from '@ajh/shared';
-import type { ModelInspectResult } from '@ajh/shared/schemas';
+import type {
+  AiSpendModelThinking,
+  AiStageOverride,
+  ModelInspectResult,
+  PipelineStage,
+} from '@ajh/shared';
 
 /**
  * Everything the advisor's steps read, resolved ONCE by the wizard shell.
@@ -19,7 +23,7 @@ export interface AdvisorContext {
   inspectionsPending: boolean;
   /** Current per-stage overrides — the advisor recommends around what is
    *  already pinned and never re-suggests a pinned stage. */
-  overrides: Record<string, AiStageOverride>;
+  overrides: Partial<Record<PipelineStage, AiStageOverride>>;
   /** The active provider's configured reasoning effort, when it has one. */
   effort?: string;
   /** `spendSummary().thinkingByModel` — EMPTY for a local-only user. */

@@ -14,8 +14,7 @@
  * unsolicited advice, and unsolicited advice has to be right.
  */
 
-import type { AiStageOverride, PipelineStage } from '@ajh/shared';
-import type { ModelInspectResult } from '@ajh/shared/schemas';
+import type { AiStageOverride, ModelInspectResult, PipelineStage } from '@ajh/shared';
 
 /**
  * The three stages that only READ (the posting, the résumé) and answer in
@@ -66,11 +65,6 @@ export interface StageSuggestion {
 }
 
 /**
- * Parse Ollama's reported `parameter_size` ("8.0B", "1.2B", "596.05M") into
- * billions. Returns `null` for anything unrecognised — the whole point is that
- * an unparsed size disqualifies a model instead of defaulting it.
- */
-/**
  * Identity of the installed SET, for a host that remembers a declined
  * suggestion. Order-independent, so re-listing the same models is the same set
  * — but a new model on disk is new information and re-arms the offer.
@@ -79,6 +73,11 @@ export function installedSetKey(models: string[]): string {
   return [...models].sort().join('|');
 }
 
+/**
+ * Parse Ollama's reported `parameter_size` ("8.0B", "1.2B", "596.05M") into
+ * billions. Returns `null` for anything unrecognised — the whole point is that
+ * an unparsed size disqualifies a model instead of defaulting it.
+ */
 export function parseParameterSizeB(size: string | undefined): number | null {
   if (!size) return null;
   const match = /^\s*([\d.]+)\s*([BbMmKk])\s*$/.exec(size);

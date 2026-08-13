@@ -51,10 +51,19 @@ export function ContextFitStep({ ctx }: AdvisorStepProps) {
         })}
       </p>
 
+      {/* Same as step 1: the live region carries the words, the skeletons are
+          decoration, and the region survives the transition so the settled
+          result is announced too. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {ctx.inspectionsPending
+          ? t('settings.ai.advisor.models.loading')
+          : t('settings.ai.advisor.fit.loaded', { count: ctx.installedModels.length })}
+      </span>
+
       {/* A window that has not been read yet is not a window of unknown size —
           don't render either claim until the probes settle. */}
       {ctx.inspectionsPending ? (
-        <div className="space-y-2" role="status" aria-live="polite">
+        <div className="space-y-2" aria-hidden="true">
           <RowSkeleton />
           <RowSkeleton />
         </div>
@@ -81,15 +90,19 @@ export function ContextFitStep({ ctx }: AdvisorStepProps) {
                   </span>
                 </div>
 
-                {fit.verdict === 'unknown' ? (
+                {/* Missing numbers read as NOT MEASURED, never as zero: this
+                    step's whole promise is that it does not assume a size. */}
+                {fit.verdict === 'unknown' ||
+                fit.usableInputTokens === undefined ||
+                fit.contextLength === undefined ? (
                   <p className="mt-1 text-[11px] text-foreground/60">
                     {t('settings.ai.advisor.fit.unknownHint')}
                   </p>
                 ) : (
                   <p className="mt-1 text-[11px] text-foreground/60">
                     {t('settings.ai.advisor.fit.usable', {
-                      usable: (fit.usableInputTokens ?? 0).toLocaleString(i18n.language),
-                      window: (fit.contextLength ?? 0).toLocaleString(i18n.language),
+                      usable: fit.usableInputTokens.toLocaleString(i18n.language),
+                      window: fit.contextLength.toLocaleString(i18n.language),
                     })}
                   </p>
                 )}
