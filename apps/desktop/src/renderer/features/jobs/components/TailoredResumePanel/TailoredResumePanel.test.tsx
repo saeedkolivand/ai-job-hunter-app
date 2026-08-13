@@ -25,9 +25,10 @@
  * because those are the seams this component is wiring together.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import type { AgentStepEvent, JobEvent, JobRecord } from '@ajh/shared';
 import type { ContentReportPayload, PipelineRunDetail, PipelineRunSummary } from '@ajh/shared/ipc';
 
 import type { ResumePipelineSession } from '@/hooks/use-resume-pipeline-session';
@@ -52,6 +53,16 @@ interface TestBus {
   regenerate: MutationStub;
   resolve: MutationStub;
   handleTailor: ReturnType<typeof vi.fn>;
+  // ── the agent run behind "Improve this résumé" ────────────────────────────
+  agentRun: ReturnType<typeof vi.fn>;
+  cancelJob: ReturnType<typeof vi.fn>;
+  agentConfirm: ReturnType<typeof vi.fn>;
+  /** The live `agent:step` / `jobs:event` subscribers, so a test can drive a
+   *  run the way the backend does. */
+  onStep?: (event: AgentStepEvent) => void;
+  onJobEvent?: (event: JobEvent) => void;
+  /** Drives the reconciliation fallback — undefined unless a test needs it. */
+  jobRecord?: JobRecord;
 }
 
 const bus = vi.hoisted((): TestBus => ({
@@ -66,6 +77,9 @@ const bus = vi.hoisted((): TestBus => ({
   regenerate: { mutate: vi.fn(), isPending: false, error: null },
   resolve: { mutate: vi.fn(), isPending: false, error: null },
   handleTailor: vi.fn(),
+  agentRun: vi.fn(),
+  cancelJob: vi.fn(),
+  agentConfirm: vi.fn(),
 }));
 
 vi.mock('@/hooks/use-resume-pipeline-session', () => ({
@@ -91,6 +105,17 @@ vi.mock('@/services', () => ({
   usePipelineRunsForJob: () => ({ data: bus.runs }),
   useRegenerateSection: () => bus.regenerate,
   useResolveFabrication: () => bus.resolve,
+  // The agent-run session behind the improve entry (`useAgentRunSession`).
+  useAgentRun: () => ({ mutateAsync: bus.agentRun, isPending: false }),
+  useAgentConfirm: () => ({ mutateAsync: bus.agentConfirm, isPending: false }),
+  useAgentStepEvents: (cb: (event: AgentStepEvent) => void) => {
+    bus.onStep = cb;
+  },
+  useCancelJob: () => ({ mutateAsync: bus.cancelJob }),
+  useJob: () => ({ data: bus.jobRecord }),
+  useJobEvents: (cb: (event: JobEvent) => void) => {
+    bus.onJobEvent = cb;
+  },
 }));
 
 import { TailoredResumePanel } from './index';
@@ -194,6 +219,12 @@ beforeEach(() => {
   bus.details = {};
   bus.regenerate = { mutate: vi.fn(), isPending: false, error: null };
   bus.resolve = { mutate: vi.fn(), isPending: false, error: null };
+  bus.agentRun = vi.fn().mockResolvedValue({ jobId: 'agent-job-1' });
+  bus.cancelJob = vi.fn().mockResolvedValue(undefined);
+  bus.agentConfirm = vi.fn().mockResolvedValue({ ok: true });
+  bus.onStep = undefined;
+  bus.onJobEvent = undefined;
+  bus.jobRecord = undefined;
   START.mockResolvedValue('run-1');
 });
 
@@ -654,6 +685,219 @@ describe('TailoredResumePanel — the report', () => {
     await openPanel();
     await userEvent.click(screen.getByRole('button', { name: /open integrity report/i }));
     expect(screen.getByRole('alert')).toHaveTextContent(/there is a newer run for this posting/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "Improve this résumé" — the `improve_resume` flow's only entry point.
+//
+// Every rule below withholds the action rather than offering one the backend
+// would refuse: no generation to review, an older run, no résumé/provider, a
+// generation too long to be read whole. The refusal states are visible, not
+// silent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A finished run whose posting HAS a generated résumé — the shape the improve
+ *  entry needs (`resumeText` is `find_for_job`'s record, the same document the
+ *  run resolves server-side). */
+function finishedWithDocument(resumeText = 'Summary\nBuilt the deployment pipeline.') {
+  bus.session = makeSession({
+    state: 'done',
+    runId: 'run-1',
+    detail: detail({ resumeText }),
+  });
+  bus.runs = [summary({ runId: 'run-1' })];
+}
+
+const improveButton = () => screen.queryByRole('button', { name: /improve this résumé/i });
+
+describe('TailoredResumePanel — the improve entry', () => {
+  it('offers the action on a finished run of the newest generated résumé', async () => {
+    finishedWithDocument();
+    await openPanel();
+    expect(improveButton()).toBeEnabled();
+  });
+
+  it('starts the improve flow with the master résumé id and nothing else', async () => {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+
+    expect(bus.agentRun).toHaveBeenCalledTimes(1);
+    // `resumeId` is the candidate's MASTER résumé (the ground truth claims are
+    // checked against), never the generation's id; the document under review is
+    // resolved server-side from `jobId`. `kind` is stated, never defaulted.
+    expect(bus.agentRun).toHaveBeenCalledWith({
+      resumeId: 'doc-1',
+      jobId: 'posting-1',
+      kind: 'improve_resume',
+    });
+    // The run's own progress lands on this surface, not somewhere else.
+    expect(screen.getByRole('region', { name: /improving this résumé/i })).toBeInTheDocument();
+  });
+
+  it('withholds it while the pipeline is still running', async () => {
+    bus.session = makeSession({
+      state: 'drafting',
+      busy: true,
+      runId: 'run-1',
+      draft: 'Summary',
+      detail: detail({ status: 'running', stoppedReason: null, finishedAt: undefined }),
+    });
+    await openPanel();
+    expect(improveButton()).toBeNull();
+  });
+
+  // No generation for this posting means the run fails at "generate one first"
+  // — not offering it is the honest answer.
+  it('withholds it when the run produced no document to review', async () => {
+    bus.session = makeSession({
+      state: 'done',
+      runId: 'run-1',
+      detail: detail({ resumeText: '' }),
+    });
+    await openPanel();
+    expect(improveButton()).toBeNull();
+  });
+
+  // The improve flow's save merges into the SAME one-document-per-posting
+  // aggregate the pipeline's write actions do, so it carries the same
+  // newest-run rule (`writable`). What is observable from here is the composite:
+  // an older run is shown in the report, which REPLACES this modal (one dialog
+  // at a time), so no improve entry is reachable while looking at one — the
+  // `writable` term is belt-and-braces behind that, for a layout that ever
+  // renders this footer next to another run.
+  it('offers no improve entry while an older run is the one on screen', async () => {
+    const older = detail({ runId: 'run-0' });
+    bus.session = makeSession();
+    bus.runs = [summary({ runId: 'run-1' }), summary({ runId: 'run-0' })];
+    bus.details = { 'run-0': older };
+
+    await openPanel();
+    const [, olderOpen = null] = screen.getAllByRole('button', { name: /^open report$/i });
+    if (!olderOpen) throw new Error('expected an open-report action on the older run');
+    await userEvent.click(olderOpen);
+    expect(improveButton()).toBeNull();
+  });
+
+  it('withholds it without a provider to run it with', async () => {
+    finishedWithDocument();
+    bus.config = { provider: '', model: '' };
+    await openPanel();
+    expect(improveButton()).toBeNull();
+  });
+
+  it('withholds it without a saved résumé to check claims against', async () => {
+    finishedWithDocument();
+    bus.resume = null;
+    await openPanel();
+    expect(improveButton()).toBeNull();
+  });
+});
+
+describe('TailoredResumePanel — a generation too long to review', () => {
+  // The seed fences the generation at 8 000 characters. Reviewing a truncated
+  // copy and then offering it back through `save_resume` (cap 40 000) would
+  // overwrite the document with its own head, so the backend refuses the run —
+  // and this surface refuses the CLICK, with the reason said out loud.
+  const TOO_LONG = 'x'.repeat(8_001);
+
+  it('disables the action, says why, and points the description at that note', async () => {
+    finishedWithDocument(TOO_LONG);
+    await openPanel();
+
+    const button = improveButton();
+    expect(button).toBeDisabled();
+    const note = screen.getByText(/longer than the review can read/i);
+    expect(note).toHaveTextContent('8000');
+    expect(button).toHaveAttribute('aria-describedby', note.id);
+    // A dead disabled button with no reason is the failure this prevents.
+    expect(bus.agentRun).not.toHaveBeenCalled();
+  });
+
+  it('offers the way out next to the refusal: the generation can be run again', async () => {
+    finishedWithDocument(TOO_LONG);
+    await openPanel();
+    expect(screen.getByRole('button', { name: /run again/i })).toBeEnabled();
+  });
+
+  it('still runs at exactly the cap — the refusal is "longer than", not "as long as"', async () => {
+    finishedWithDocument('y'.repeat(8_000));
+    await openPanel();
+    expect(improveButton()).toBeEnabled();
+    expect(screen.queryByText(/longer than the review can read/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('TailoredResumePanel — an improve run that fails', () => {
+  // The pre-check reads the document this surface was SHOWN; the stored text is
+  // the authority, so a refusal that still comes back is surfaced verbatim
+  // rather than leaving the card spinning.
+  it('surfaces the backend refusal on the card instead of spinning', async () => {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+
+    await act(async () => {
+      bus.onJobEvent?.({
+        jobId: 'agent-job-1',
+        type: 'job.failed',
+        data: 'this résumé is longer than the review flow can read — trim or regenerate it first',
+      } as JobEvent);
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/longer than the review flow can read/i);
+    // A failed run is dismissable — the state has an action, not just a message.
+    expect(screen.getByRole('button', { name: /dismiss/i })).toBeInTheDocument();
+  });
+
+  // The backend can fail an improve run BEFORE `agent.run`'s round-trip
+  // resolves — before anything is listening — so the terminal event is dropped
+  // and the card would spin forever. Refusing fast is this flow's normal
+  // behaviour (no generation, no posting url, a generation too long), which
+  // makes the record reconciliation the likely path here, not the rare one.
+  it('reconciles a failure that beat the subscription, from the job record', async () => {
+    finishedWithDocument();
+    const failedRun: JobRecord = {
+      id: 'agent-job-1',
+      // The backend records this run as the free-form kind `"agent.run"`,
+      // which the shared `JobKind` union does not carry; reconciliation reads
+      // `status`/`error` only, so any member stands in for it here.
+      kind: 'ai.generate',
+      status: 'failed',
+      progress: 0,
+      payload: {},
+      error: 'this job has no posting URL, so no generated résumé is linked to it',
+      retries: 0,
+      maxRetries: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    bus.jobRecord = failedRun;
+
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+
+    // `find*`, not `get*`: reconciliation lands on the render AFTER the run id
+    // does, so a synchronous read races the effect rather than testing it.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no posting URL/i);
+  });
+
+  it('ignores a terminal event belonging to a different run', async () => {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+
+    await act(async () => {
+      bus.onJobEvent?.({
+        jobId: 'someone-elses-job',
+        type: 'job.failed',
+        data: 'nope',
+      } as JobEvent);
+    });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText(/starting the review/i)).toBeInTheDocument();
   });
 });
 

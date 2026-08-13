@@ -1,4 +1,4 @@
-import { FileText, Loader2, ShieldCheck, Square, X } from 'lucide-react';
+import { FileText, Loader2, ShieldCheck, Sparkles, Square, X } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { detectLanguage, type PipelineSectionKey } from '@ajh/shared';
@@ -10,6 +10,8 @@ import { DepthSelector, useSmallModelWarning } from '@/components/generation/Dep
 import { PipelineRunsList } from '@/components/generation/PipelineRunsList';
 import { QualityReportPanel } from '@/components/generation/QualityReportPanel';
 import { SectionTimeline } from '@/components/generation/SectionTimeline';
+import { ImproveResumeRun } from '@/features/jobs/components/ImproveResumeRun';
+import { useAgentRunSession } from '@/features/jobs/hooks/useAgentRunSession';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
 import { useResumePipelineSession } from '@/hooks/use-resume-pipeline-session';
@@ -30,6 +32,20 @@ import {
   useResolveFabrication,
 } from '@/services';
 import { useGenerationDepth } from '@/store/preferences-store';
+
+/**
+ * Longest generated résumé the `improve_resume` flow can review, in CHARACTERS
+ * — `agent::tools::RESUME_CAP`, the cap the run's seed message fences the
+ * generation at (the same one `validate_resume` reads a draft at).
+ *
+ * The backend REFUSES a longer one at run start rather than truncating: the
+ * flow would review the first 8 000 characters and then offer that corrected
+ * prefix through `save_resume`, whose own cap is 40 000 — an approve would
+ * overwrite the document with its own truncated head. Checked here as well so
+ * the action is withheld with a reason instead of failing on click; the stored
+ * text is still the authority, so the run's own error is handled either way.
+ */
+const GENERATION_REVIEW_CAP = 8_000;
 
 /**
  * The staged résumé pipeline's ENTRY POINT — the one surface that can honestly
@@ -212,8 +228,46 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     [expandedRunId, expandedRun.data]
   );
 
+  /**
+   * The agentic review of the document this pane just produced — a second flow
+   * behind the same `agent.run` command, started from here because this is the
+   * only surface holding BOTH ids it needs (`resumeId` is the candidate's
+   * MASTER résumé, the ground truth claims are checked against; the generation
+   * under review is resolved server-side from `jobId`). The session lives at
+   * this level, not inside the card it renders, so closing the modal mid-run
+   * does not throw away a suspended confirm.
+   */
+  const improve = useAgentRunSession({
+    kind: 'improve_resume',
+    resumeId: resume?.id ?? null,
+    jobId: posting.id,
+    fallbackError: t('jobs.tailored.improve.failedTitle'),
+  });
+
+  /**
+   * Count CODE POINTS, matching the Rust clamp (`chars().take(RESUME_CAP)`);
+   * `String.length` counts UTF-16 units and would over-report any text with an
+   * astral character in it.
+   */
+  const reviewLength = useMemo(() => [...documentText].length, [documentText]);
+  const tooLongToReview = reviewLength > GENERATION_REVIEW_CAP;
+  /**
+   * "Improve this résumé" is offered only where it can honestly run: on a
+   * TERMINAL run of the posting's NEWEST document (the same one-document rule
+   * `writable` encodes — every run of a posting merges into one saved résumé,
+   * and this flow's save merges into that same one), when a generation exists
+   * for it at all (`documentText` IS `find_for_job`'s record, which is exactly
+   * what the run resolves server-side — no generation means the run would fail
+   * with "generate one first"), and when there is a résumé + provider to run
+   * with. The jobless surfaces that also show a quality report
+   * (`TailorFlow`/`ai-generate`) get no entry: `agent.run` needs a real posting
+   * id and they have none.
+   */
+  const canImprove = terminal && !!shownDetail && !!documentText && writable && canRunStaged;
+
   const titleId = 'tailored-resume-modal-title';
   const gateNoteId = 'tailored-resume-gate';
+  const improveGateId = 'tailored-resume-improve-gate';
   /** A staged depth is selected but cannot run — the note below says which half
    *  is missing, and Start points at it rather than being silently dead. */
   const gated = !busy && depth !== 'fast' && !canRunStaged;
@@ -298,12 +352,38 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                     <FileText size={12} /> {t('jobs.tailored.openReport')}
                   </Button>
                 )}
+                {canImprove && (
+                  <Button
+                    variant="glass"
+                    // A run already in flight has its own Stop, in the card
+                    // below — this must not start a second one.
+                    disabled={tooLongToReview || improve.busy}
+                    onClick={() => void improve.start()}
+                    title={
+                      tooLongToReview
+                        ? t('jobs.tailored.improve.tooLongHint', { max: GENERATION_REVIEW_CAP })
+                        : t('jobs.tailored.improve.triggerHint')
+                    }
+                    // Same render guard as the note it points at — an
+                    // aria-describedby to DOM that isn't there is a broken
+                    // reference, not a hint.
+                    {...(tooLongToReview ? { 'aria-describedby': improveGateId } : {})}
+                    className="@sm:w-auto @sm:flex-1 w-full justify-center gap-1.5 text-brand-soft"
+                  >
+                    <Sparkles size={12} aria-hidden="true" /> {t('jobs.tailored.improve.trigger')}
+                  </Button>
+                )}
               </>
             )}
           </div>
         }
       >
         <div className="space-y-4 px-5 py-4">
+          {/* First in the body so the review's suspended confirm — the one thing
+              that blocks the run — is visible without scrolling past the
+              pipeline's own controls. */}
+          {improve.active && <ImproveResumeRun session={improve} />}
+
           {/* Shown while no run is in flight — including AFTER a terminal one, so
               "run again" can be run at a different depth without reopening. */}
           {!busy && (
@@ -478,6 +558,19 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                   <p className="mt-1 text-[10px] leading-relaxed text-foreground/35">
                     {t('jobs.tailored.savesTo')}
                   </p>
+                  {/* Why "Improve this résumé" is offered but disabled. Same
+                      guard as the button's `aria-describedby`, and it names the
+                      two ways out — one of which ("run the generation again")
+                      is the enabled button right next to it. */}
+                  {canImprove && tooLongToReview && (
+                    <p
+                      id={improveGateId}
+                      role="status"
+                      className="mt-1 text-[10px] leading-relaxed text-amber-400"
+                    >
+                      {t('jobs.tailored.improve.tooLong', { max: GENERATION_REVIEW_CAP })}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

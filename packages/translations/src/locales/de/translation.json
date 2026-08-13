@@ -2136,6 +2136,47 @@
         "source": "Erzeugt aus deinem gespeicherten Lebenslauf „{{name}}“.",
         "removeHint": "„Entfernen“ hält hier dein Urteil fest; die Zeile selbst löschst du im Lebenslauf-Editor der Bewerbung.",
         "olderRun": "Das ist nicht der neueste Lauf zu dieser Stelle. Alle Läufe einer Stelle teilen sich einen gespeicherten Lebenslauf, deshalb lässt sich hier nichts ändern."
+      },
+      "improve": {
+        "trigger": "Diesen Lebenslauf verbessern",
+        "triggerHint": "Der Agent prüft den erzeugten Lebenslauf noch einmal gegen den Bericht und deinen gespeicherten Lebenslauf und schlägt dir gezielte Korrekturen zur Freigabe vor.",
+        "tooLong": "Dieser erzeugte Lebenslauf ist länger, als die Prüfung lesen kann ({{max}} Zeichen) — eine gekürzte Kopie zu prüfen würde den Rest verwerfen. Erzeuge ihn neu oder kürze ihn in dieser Bewerbung und verbessere ihn dann.",
+        "tooLongHint": "Zu lang für die Prüfung — sie liest höchstens {{max}} Zeichen.",
+        "heading": "Lebenslauf wird verbessert",
+        "hint": "Der Agent prüft den erzeugten Lebenslauf erneut und schlägt Korrekturen vor. Gespeichert wird erst, wenn du zustimmst.",
+        "starting": "Prüfung wird gestartet…",
+        "liveRegionLabel": "Fortschritt der Lebenslauf-Prüfung",
+        "confirmAnnouncement": "Der Agent wartet auf deine Zustimmung, bevor er den korrigierten Lebenslauf speichert.",
+        "summaryTitle": "Was die Prüfung ergeben hat",
+        "doneHint": "Die Prüfung ist abgeschlossen. Was du freigegeben hast, wurde als Lebenslauf dieser Bewerbung gespeichert.",
+        "cancelledHint": "Gestoppt. Es wurde nichts gespeichert, außer du hattest bereits zugestimmt.",
+        "failedTitle": "Die Prüfung ist fehlgeschlagen",
+        "stop": "Prüfung stoppen",
+        "stopHint": "Fordert einen Abbruch an — der Lauf kann noch einen Moment weiterlaufen.",
+        "stopping": "Wird gestoppt…",
+        "dismiss": "Ausblenden",
+        "state": {
+          "running": "Läuft",
+          "waiting": "Wartet auf dich",
+          "done": "Abgeschlossen",
+          "cancelled": "Gestoppt",
+          "failed": "Fehlgeschlagen"
+        },
+        "status": {
+          "pending": "Ausstehend",
+          "active": "In Bearbeitung",
+          "done": "Fertig",
+          "interrupted": "Unterbrochen"
+        },
+        "steps": {
+          "report": "Letzte Qualitätsprüfung wird gelesen",
+          "check": "Erzeugter Lebenslauf wird geprüft",
+          "trim": "Kürzbare Stichpunkte werden bewertet",
+          "rewrite": "Neuschrift aus deinem gespeicherten Lebenslauf — das kann dauern",
+          "evidence": "Aussagen werden mit deinem Lebenslauf abgeglichen",
+          "save": "Korrigierter Lebenslauf wird vorgeschlagen",
+          "summary": "Änderungen werden zusammengefasst"
+        }
       }
     },
     "prep": {
