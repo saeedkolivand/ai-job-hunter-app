@@ -33,6 +33,14 @@ pub use engine::{
 // `render_pdf_from_source` is only used in tests (smoke tests and debugging).
 #[cfg(test)]
 pub use engine::render_pdf_from_source;
+// Single source of truth for the letterhead monogram initials, shared by the
+// Typst layout (via `LetterHead.initials`) and the DOCX approximation. Same
+// posture as `normalise_accent` below: one derivation, so PDF and DOCX can
+// never disagree about what the device says — or about which openings are not
+// names at all (salutation / sign-off / subject / date). The unguarded
+// `monogram_initials` is deliberately NOT exported: DOCX calling it directly
+// is how the date hole survived in one format after being closed in the other.
+pub(crate) use letter::letterhead_initials;
 pub use photo::resolve_photo;
 pub use render::RenderOpts;
 // Single source of truth for document-accent hex validation, reused by the

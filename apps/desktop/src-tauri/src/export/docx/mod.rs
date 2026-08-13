@@ -4,7 +4,7 @@ use docx_rs::*;
 use super::{
     parser::strip_md,
     templates::Template,
-    types::{DocumentType, ExportRequest, GenerationMeta, LetterLayout},
+    types::{DocumentType, ExportRequest, GenerationMeta, LetterLayout, LetterRender},
 };
 use crate::locale::LocaleProfile;
 
@@ -31,21 +31,23 @@ fn generate_cover_letter_docx(
     meta: Option<&GenerationMeta>,
     template: &Template,
     contact: Option<&crate::contact_profile::ContactProfile>,
-    lang: &str,
-    market: &str,
-    layout: LetterLayout,
+    req: LetterRender<'_>,
 ) -> Result<Docx> {
-    match layout {
+    match req.layout {
         LetterLayout::Classic => {
-            generate_cover_letter_docx_classic(text, meta, template, contact, lang)
+            generate_cover_letter_docx_classic(text, meta, template, contact, req.lang)
         }
-        // Navy joins the non-Classic path: like Refined/Banded it is an
-        // arrangement over the same model, and DOCX has no way to express the
-        // centred tracked-caps letterhead anyway — the shared layout renderer
-        // already degrades every non-Classic arrangement to the same
-        // parser-safe DOCX structure.
-        LetterLayout::Refined | LetterLayout::Banded | LetterLayout::Navy => {
-            generate_cover_letter_docx_layout(text, meta, template, contact, lang, market, layout)
+        // Every non-Classic layout is an arrangement over the same model, and
+        // DOCX cannot express any of them literally (no angled polygon, no
+        // margin rail, no inline device box) — the shared layout renderer
+        // degrades each to the same parser-safe DOCX structure, restyled from
+        // its own `LetterDocxStyle` row.
+        LetterLayout::Refined
+        | LetterLayout::Banded
+        | LetterLayout::Navy
+        | LetterLayout::Sidebar
+        | LetterLayout::Monogram => {
+            generate_cover_letter_docx_layout(text, meta, template, contact, req)
         }
     }
 }
@@ -263,6 +265,22 @@ fn generate_cover_letter_docx_classic(
 // - Banded's short (~28%-width) rule footer → docx-rs paragraph borders can't
 //   be width-limited without a table, so it's approximated as a full-width
 //   bottom border on the final paragraph.
+// - Sidebar's tinted full-height LEFT MARGIN rail is not expressible in DOCX at
+//   all (no margin-anchored frame that ATS parse safely, and a text box or
+//   two-column table would be exactly the multi-column trap the whole export
+//   avoids). Approximated the same way Banded's band is: paragraph SHADING in
+//   the same `band_tint_hex` accent tint behind the (left-aligned) name
+//   paragraph, with the contact stacked under it at the left margin rather than
+//   pulled right. Same tint, same words, one column.
+// - Monogram's initials device (a pale square before the name lockup) becomes a
+//   shaded RUN carrying the same initials at the head of the name paragraph, so
+//   both formats extract the identical "JS Jane Smith" — a separate shaded
+//   paragraph would have put the initials on their own line, which the PDF
+//   never does.
+//
+// ATS mode: every tint above is decorative and is suppressed when the request
+// sets `ats_mode`, mirroring the `.typ` side's `data.opts.ats` gate so the two
+// formats degrade together instead of one keeping a band the other dropped.
 /// Per-layout DOCX styling decisions, stated once instead of being re-derived
 /// from `matches!(layout, …)` at each of a dozen call sites.
 ///
@@ -281,10 +299,23 @@ struct LetterDocxStyle {
     uppercase_name: bool,
     /// Points added to the template's name size.
     name_pt_bonus: f32,
-    /// Shaded block behind the name (Banded only).
+    /// Shaded block behind the name (Banded's band, Sidebar's rail).
+    /// Decorative — suppressed under ATS mode.
     header_band: bool,
-    /// Name/title/contact centred (Navy only).
+    /// Shaded run carrying the letterhead initials at the head of the name
+    /// paragraph (Monogram only). Decorative — suppressed under ATS mode, which
+    /// is also what `letter_monogram.typ` does with the device it approximates.
+    monogram_device: bool,
+    /// Name/title centred (Navy only).
     centred_letterhead: bool,
+    /// Contact-line alignment. BOTH contact paths — profile-backed and the
+    /// no-profile fallback — read this ONE field, so they cannot drift apart
+    /// again; they did once, and the same letter then rendered differently
+    /// depending on whether a `ContactProfile` happened to be attached. It is a
+    /// stored value rather than a function of `centred_letterhead` because
+    /// Sidebar and Monogram left-align the contact while leaving the name
+    /// left-aligned too — a derived "centred or right" could not express that.
+    contact_align: AlignmentType,
     /// Role line under the name (Refined, Navy).
     shows_title: bool,
     /// Role line rendered uppercase + letter-spaced in the accent colour
@@ -324,7 +355,9 @@ impl LetterDocxStyle {
                 uppercase_name: false,
                 name_pt_bonus: 4.0,
                 header_band: false,
+                monogram_device: false,
                 centred_letterhead: false,
+                contact_align: AlignmentType::Right,
                 shows_title: true,
                 shows_subject_caption: true,
                 bolds_addressing: false,
@@ -340,7 +373,9 @@ impl LetterDocxStyle {
                 uppercase_name: true,
                 name_pt_bonus: 0.0,
                 header_band: true,
+                monogram_device: false,
                 centred_letterhead: false,
+                contact_align: AlignmentType::Right,
                 shows_title: false,
                 shows_subject_caption: false,
                 bolds_addressing: true,
@@ -356,7 +391,9 @@ impl LetterDocxStyle {
                 uppercase_name: true,
                 name_pt_bonus: 0.0,
                 header_band: false,
+                monogram_device: false,
                 centred_letterhead: true,
+                contact_align: AlignmentType::Center,
                 shows_title: true,
                 shows_subject_caption: true,
                 bolds_addressing: false,
@@ -366,16 +403,56 @@ impl LetterDocxStyle {
                 contact_space_after: 40,
                 signoff_space_after: 480,
             },
-        }
-    }
-
-    /// Contact-line alignment. Both contact paths (profile-backed and the
-    /// no-profile fallback) call this, so they cannot drift apart again.
-    fn contact_align(&self) -> AlignmentType {
-        if self.centred_letterhead {
-            AlignmentType::Center
-        } else {
-            AlignmentType::Right
+            // Sidebar — read off `letter_sidebar.typ`, feature by feature:
+            // name as written (no `upper()`), role line in the muted date
+            // colour and plain case, small-caps accent subject caption,
+            // unbolded date/recipient, no rule in design mode (the rail plays
+            // that part), no footer rule, no signature gap. The rail itself has
+            // no DOCX equivalent, so it becomes `header_band` — the same accent
+            // tint, behind the name — and the contact stays at the LEFT margin
+            // because the rail stacks it under the name rather than pulling it
+            // to the right edge.
+            LetterLayout::Sidebar => Self {
+                title_emphasised: false,
+                caption_uses_name_colour: false,
+                uppercase_name: false,
+                name_pt_bonus: 0.0,
+                header_band: true,
+                monogram_device: false,
+                centred_letterhead: false,
+                contact_align: AlignmentType::Left,
+                shows_title: true,
+                shows_subject_caption: true,
+                bolds_addressing: false,
+                header_rule: false,
+                footer_rule: false,
+                signature_gap: false,
+                contact_space_after: 80,
+                signoff_space_after: 480,
+            },
+            // Monogram — read off `letter_monogram.typ`: name as written with a
+            // +1pt lockup, muted plain-case role line, subject caption in the
+            // NAME colour (`c-name`, as the `.typ` uses), unbolded addressing,
+            // an accent rule under the header block, and the initials device as
+            // a shaded run instead of a shaded paragraph.
+            LetterLayout::Monogram => Self {
+                title_emphasised: false,
+                caption_uses_name_colour: true,
+                uppercase_name: false,
+                name_pt_bonus: 1.0,
+                header_band: false,
+                monogram_device: true,
+                centred_letterhead: false,
+                contact_align: AlignmentType::Left,
+                shows_title: true,
+                shows_subject_caption: true,
+                bolds_addressing: false,
+                header_rule: true,
+                footer_rule: false,
+                signature_gap: false,
+                contact_space_after: 80,
+                signoff_space_after: 480,
+            },
         }
     }
 }
@@ -385,21 +462,24 @@ fn generate_cover_letter_docx_layout(
     meta: Option<&GenerationMeta>,
     template: &Template,
     contact: Option<&crate::contact_profile::ContactProfile>,
-    lang: &str,
-    market: &str,
-    layout: LetterLayout,
+    req: LetterRender<'_>,
 ) -> Result<Docx> {
     debug_assert!(
-        !matches!(layout, LetterLayout::Classic),
-        "generate_cover_letter_docx_layout serves Refined, Banded and Navy"
+        !matches!(req.layout, LetterLayout::Classic),
+        "generate_cover_letter_docx_layout serves every non-Classic layout"
     );
-    let sty = LetterDocxStyle::for_layout(layout);
+    let sty = LetterDocxStyle::for_layout(req.layout);
+    // Decorative tints, dropped together with the `.typ` side's under ATS mode.
+    // Derived once here rather than `&& !ats` at each call site, so a future
+    // decoration cannot be added to only one of them.
+    let show_band = sty.header_band && !req.ats;
+    let show_device = sty.monogram_device && !req.ats;
 
     let mut docx = Docx::new();
 
     let profile_contact_md: Option<String> = contact
         .filter(|p| !p.is_effectively_empty())
-        .map(|p| p.header_markdown(lang));
+        .map(|p| p.header_markdown(req.lang));
 
     let page_margin = PageMargin::new()
         .top(inch_to_dxa(1.0))
@@ -418,7 +498,7 @@ fn generate_cover_letter_docx_layout(
     // label, so it matches the same market convention `letter_refined.typ`
     // reads from `data.opts.subject_line_label` (DOCX's scanner is otherwise
     // market-agnostic, same as Classic).
-    let subj_label = crate::locale::letter::conventions(market)
+    let subj_label = crate::locale::letter::conventions(req.market)
         .subject_line
         .label
         .clone();
@@ -476,7 +556,51 @@ fn generate_cover_letter_docx_layout(
             };
             let name_pt = template.name_pt + sty.name_pt_bonus;
 
-            let mut name_para = Paragraph::new()
+            let mut name_para = Paragraph::new();
+            // Monogram device approximation: the initials as a SHADED RUN at
+            // the head of the name paragraph, from the same
+            // `letterhead_initials` the `.typ` reads via
+            // `LetterHead.initials`, so the two formats can never disagree
+            // about what it says — nor about which openings are not names.
+            // The line filter above excludes a salutation, sign-off and
+            // subject, but NOT a date, so a letter opening "12 March 2025"
+            // reached here and put `12` in the device; the shared helper
+            // refuses all four. A run rather than its own paragraph because
+            // `letter_monogram.typ` sets the square BESIDE the name —
+            // extraction must read "JS Jane Smith", not "JS" on a line of
+            // its own.
+            if show_device {
+                let initials = crate::export::typst_engine::letterhead_initials(name_text);
+                if !initials.is_empty() {
+                    // TWO runs. The gap between the device and the name has to
+                    // be OUTSIDE the shading: docx-rs always writes
+                    // `xml:space="preserve"`, so spaces inside the shaded run
+                    // are painted, and the tile visibly ran on past the
+                    // initials — the `.typ` square stops at the glyphs.
+                    name_para = name_para
+                        .add_run(
+                            Run::new()
+                                .add_text(&initials)
+                                .size(pt_to_half_points(name_pt))
+                                .bold()
+                                .color(&accent_hex)
+                                .fonts(docx_run_fonts(name_family))
+                                .shading(
+                                    Shading::new()
+                                        .shd_type(ShdType::Clear)
+                                        .color("auto")
+                                        .fill(&band_hex),
+                                ),
+                        )
+                        .add_run(
+                            Run::new()
+                                .add_text("  ")
+                                .size(pt_to_half_points(name_pt))
+                                .fonts(docx_run_fonts(name_family)),
+                        );
+                }
+            }
+            name_para = name_para
                 .add_run(
                     Run::new()
                         .add_text(&display_name)
@@ -493,9 +617,10 @@ fn generate_cover_letter_docx_layout(
                 // line between the name and its own contact line.
                 name_para = name_para.align(AlignmentType::Center);
             }
-            if sty.header_band {
-                // Banded band approximation — see module-level doc comment.
-                // Navy is deliberately excluded: its design has no band.
+            if show_band {
+                // Banded's band / Sidebar's rail approximation — see the
+                // module-level doc comment. Navy and Monogram are deliberately
+                // excluded: neither design has a tinted block behind the name.
                 name_para.property = name_para.property.shading(
                     Shading::new()
                         .shd_type(ShdType::Clear)
@@ -541,7 +666,7 @@ fn generate_cover_letter_docx_layout(
             if let Some(md) = &profile_contact_md {
                 let mut contact_para =
                     super::docx_renderer::render_contact_line(md, template, &colors)
-                        .align(sty.contact_align())
+                        .align(sty.contact_align)
                         .line_spacing(LineSpacing::new().after(sty.contact_space_after));
                 if sty.header_rule {
                     // Full-width rule under the header — see approximation note.
@@ -584,7 +709,7 @@ fn generate_cover_letter_docx_layout(
             // happened to be attached.
             let mut para = Paragraph::new()
                 .add_run(run)
-                .align(sty.contact_align())
+                .align(sty.contact_align)
                 .line_spacing(LineSpacing::new().after(40));
             if sty.header_rule {
                 para.property = para.property.set_borders(bottom_rule(&rule_hex, 6));
@@ -878,14 +1003,21 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
             // `generate_cover_letter_docx_layout`'s doc comment); mirrors the
             // PDF cover-letter path's `market` computation in `pdf/mod.rs`.
             let market = request.locale.as_deref().unwrap_or("intl");
+            let lang = request.target_lang();
+            // `ats` mirrors the PDF cover-letter path: ATS mode drops each
+            // layout's decorative tint in BOTH formats, so a golden-parity
+            // check can't find a band in one and not the other.
             generate_cover_letter_docx(
                 text,
                 request.meta.as_ref(),
                 &single_column(),
                 request.contact.as_ref(),
-                &request.target_lang(),
-                market,
-                request.letter_layout,
+                LetterRender {
+                    market,
+                    lang: &lang,
+                    layout: request.letter_layout,
+                    ats: request.ats_mode,
+                },
             )
             .context("Failed to generate cover letter DOCX")?
         }

@@ -220,6 +220,7 @@ export {
   type ExportIssue,
   type ExportIssueSeverity,
   type ExportReport,
+  type LetterLayoutId,
   type ResumeField,
   type SectionSummary,
   type SourceSpan,

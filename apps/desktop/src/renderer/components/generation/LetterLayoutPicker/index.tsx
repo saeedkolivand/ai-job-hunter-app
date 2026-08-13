@@ -1,4 +1,12 @@
-import { AlignCenter, AlignLeft, type LucideIcon, PanelTop, PenLine } from 'lucide-react';
+import {
+  AlignCenter,
+  AlignLeft,
+  type LucideIcon,
+  PanelLeft,
+  PanelTop,
+  PenLine,
+  Square,
+} from 'lucide-react';
 import { useRef } from 'react';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -16,9 +24,10 @@ interface LayoutOption {
 }
 
 /**
- * The three cover-letter layouts. Order mirrors {@link LETTER_LAYOUT_IDS} so the
+ * The cover-letter layouts. Order mirrors {@link LETTER_LAYOUT_IDS} so the
  * roving-tabindex item order matches the rendered order. A layout owns only the
- * ARRANGEMENT — its palette/fonts inherit from the chosen résumé template.
+ * ARRANGEMENT — its palette/fonts inherit from the chosen résumé template, so
+ * the "pairs with …" hints in the descriptions are suggestions, not coupling.
  */
 const LAYOUTS = [
   {
@@ -45,6 +54,18 @@ const LAYOUTS = [
     labelKey: 'aiGenerate.letterLayoutNavy',
     descKey: 'aiGenerate.letterLayoutNavyDesc',
   },
+  {
+    id: 'sidebar',
+    icon: PanelLeft,
+    labelKey: 'aiGenerate.letterLayoutSidebar',
+    descKey: 'aiGenerate.letterLayoutSidebarDesc',
+  },
+  {
+    id: 'monogram',
+    icon: Square,
+    labelKey: 'aiGenerate.letterLayoutMonogram',
+    descKey: 'aiGenerate.letterLayoutMonogramDesc',
+  },
 ] as const satisfies readonly LayoutOption[];
 
 interface LetterLayoutPickerProps {
@@ -56,8 +77,8 @@ interface LetterLayoutPickerProps {
 }
 
 /**
- * Per-export **letter-layout** control: a labeled radiogroup of the three
- * arrangements (Classic / Refined / Banded). Selection is always in-set — an
+ * Per-export **letter-layout** control: a labeled radiogroup of the available
+ * arrangements ({@link LETTER_LAYOUT_IDS}). Selection is always in-set — an
  * unset `value` shows `classic` selected — so the APG roving-tabindex has exactly
  * one real tab stop and arrows never stall (simpler than {@link AccentPicker},
  * whose custom-hex value can sit outside the radio set). Text + icon options

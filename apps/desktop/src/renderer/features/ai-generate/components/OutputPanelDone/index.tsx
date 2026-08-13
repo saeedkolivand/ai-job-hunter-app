@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
+import { AtsModeToggle } from '@/components/generation/AtsModeToggle';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { HandEditNudge } from '@/components/generation/HandEditNudge';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
@@ -14,10 +15,12 @@ import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
   type GenerationMeta,
+  isDecoratedLetterLayout,
   type LetterLayoutId,
   MODES,
   type QualityReport,
   resolveMarket,
+  shouldClearAtsMode,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
@@ -49,6 +52,14 @@ interface OutputPanelDoneProps {
   accent?: string;
   /** Per-export cover-letter layout — must match the export so the cover preview is faithful. */
   letterLayoutId?: LetterLayoutId;
+  /**
+   * Flips ATS-safe mode from the cover tab. The layout picker below can put a
+   * DECORATED layout on the letter after generation (rail / monogram tile /
+   * band), and this panel replaces the wizard once the run is done — without
+   * this the only off switch for that decoration would be a regeneration.
+   * Omit to hide the toggle (hosts that don't own an atsMode setter).
+   */
+  onAtsModeChange?: (enabled: boolean) => void;
   /** Export market/locale — drives the cover-letter preview layout (#24). */
   locale?: string;
   onActiveOutChange: (out: 'resume' | 'cover') => void;
@@ -85,6 +96,7 @@ export function OutputPanelDone({
   locale,
   onActiveOutChange,
   onLetterLayoutChange,
+  onAtsModeChange,
   onCopy,
   onExport,
   onOutputChange,
@@ -201,6 +213,24 @@ export function OutputPanelDone({
     if (activeOut === 'cover' && !coverOut && resumeOut) onActiveOutChange('resume');
   }, [activeOut, resumeOut, coverOut, onActiveOutChange]);
 
+  // The cover tab's ATS switch, or null when it would be pointless: the host
+  // owns no atsMode setter, or the picked layout has no decoration to drop.
+  // Holding the CALLBACK (not a boolean) keeps the render site type-narrowed.
+  const atsToggleChange =
+    onAtsModeChange && isDecoratedLetterLayout(letterLayoutId) ? onAtsModeChange : null;
+
+  // Switching AWAY from a decorated layout releases the shared flag, so the next
+  // decorated layout does not come back silently pre-ATS'd — unless a design-tier
+  // résumé template is still reading it. `resumeOut` is the résumé-in-run fact
+  // here (a cover-only run never produces one), and without it a cover-only run
+  // under a design-tier template would keep the flag alive for a document that
+  // is not in the export.
+  const handleLetterLayoutChange = (id: LetterLayoutId) => {
+    onLetterLayoutChange?.(id);
+    const release = shouldClearAtsMode(templateId, isDecoratedLetterLayout(id), Boolean(resumeOut));
+    if (onAtsModeChange && release) onAtsModeChange(false);
+  };
+
   const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;
   // Committed text for the active doc — what PdfPreview actually renders.
   const committed = activeOut === 'resume' ? committedResume : committedCover;
@@ -309,10 +339,27 @@ export function OutputPanelDone({
       )}
 
       {/* Letter-layout picker — cover tab only (the layout only affects the letter;
-          mirrors GenerationOutput's cover-only strip). Threaded to preview + export. */}
+          mirrors GenerationOutput's cover-only strip). Threaded to preview + export.
+          The ATS-safe toggle rides along whenever the picked layout has a
+          decoration to drop, so choosing e.g. Monogram here never leaves its
+          initials tile (which extraction reads as "JS Jane Smith") switch-less. */}
       {activeOut === 'cover' && onLetterLayoutChange && (
-        <div className="shrink-0 border-b border-[var(--border-clear)] px-6 py-2">
-          <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+        <div className="shrink-0 space-y-2 border-b border-[var(--border-clear)] px-6 py-2">
+          <LetterLayoutPicker value={letterLayoutId} onChange={handleLetterLayoutChange} />
+          {atsToggleChange && (
+            <AtsModeToggle
+              checked={atsMode}
+              onChange={atsToggleChange}
+              hintKey="aiGenerate.atsModeHintLetter"
+              className="w-fit"
+            />
+          )}
+          {/* Announce the toggle's ARRIVAL — picking Monogram inserts it with no
+              other signal. Always mounted (a live region cannot announce its own
+              first render) and `sr-only`, so it costs no height. */}
+          <span role="status" aria-live="polite" className="sr-only">
+            {atsToggleChange ? t('aiGenerate.atsToggleAvailable') : ''}
+          </span>
         </div>
       )}
 

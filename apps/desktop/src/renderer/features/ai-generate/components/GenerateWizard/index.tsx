@@ -7,8 +7,9 @@ import { Button, StepDots, transition } from '@ajh/ui';
 import {
   type EmphasisId,
   type GenerationMode,
-  isDesignTier,
+  isDecoratedLetterLayout,
   type LetterLayoutId,
+  shouldClearAtsMode,
   type TemplateId,
 } from '@/lib/generate';
 import { useSessionStore } from '@/store/session-store';
@@ -73,9 +74,14 @@ export function GenerateWizard({
   const handleTemplateChange = (id: TemplateId) => {
     onTemplateChange(id);
     // ATS-tier templates have no ATS toggle — clear any stale atsMode.
-    // Design-tier templates (two-column OR photo, incl. Lebenslauf) keep it.
-    // Cover letters have no ATS toggle, so never touch atsMode there.
-    if (target !== 'cover' && !isDesignTier(id)) {
+    // Design-tier templates (two-column OR photo, incl. Lebenslauf) keep it, and
+    // so does a run whose cover letter uses a decorated layout: the same flag is
+    // what drops that letter's rail / tile / band. Cover-only runs never touch
+    // atsMode here (StepTemplate owns that surface's toggle).
+    if (
+      target !== 'cover' &&
+      shouldClearAtsMode(id, target === 'both' && isDecoratedLetterLayout(letterLayoutId))
+    ) {
       onAtsModeChange(false);
     }
   };
