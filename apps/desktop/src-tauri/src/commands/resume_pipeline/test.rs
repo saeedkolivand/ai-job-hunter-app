@@ -9,6 +9,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::hooks::{apply_stop, with_detail};
+use super::max;
 use super::notify::run_notification;
 use super::report;
 use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
@@ -1666,4 +1667,62 @@ fn the_review_notification_counts_the_findings_the_panel_lists() {
     assert_eq!(report::unresolved_count("", "", ""), 0);
     assert_eq!(report::unresolved_count("not json", "", ""), 0);
     assert_eq!(report::unresolved_count("{}", "", ""), 0);
+}
+
+// ── Per-stage routing is only resolved for stages that pay ──────────────────
+
+/// `max::paying_stages` is the belt that keeps a stored override on a stage
+/// which makes no AI call from ever being RESOLVED — and resolving propagates
+/// its error, so one bad row on an inert stage would abort a run before it
+/// started. The store refuses to write such a row (first belt); this is what
+/// holds when the row got there another way, e.g. a hand-edited database or a
+/// stage that stopped paying after the row was written.
+///
+/// Asserted for BOTH depths, because "free" is per-depth: the quality pipeline
+/// and the max pipeline do not run the same stages.
+///
+/// Mutation check (executed): neuter the filter to `|_| true` and both depths
+/// yield their free stages, failing here.
+#[test]
+fn paying_stages_never_includes_a_stage_that_makes_no_ai_call() {
+    use crate::ipc_contracts::events::PIPELINE_STAGES_FREE;
+    use crate::pipeline::resume::types::GenerationDepth;
+
+    // Pinned as LITERAL lists, in order. Deriving the expectation
+    // (`stage_names()` minus `free_stage_names()`) would restate the
+    // implementation and pass whatever it did; these fail if a paying stage is
+    // ever silently DROPPED, which is the costly direction — an override the
+    // user sets, Settings shows, and nothing ever resolves.
+    for (depth, expected) in [
+        (
+            GenerationDepth::Quality,
+            &[
+                "analyze_job",
+                "match_evidence",
+                "strategy",
+                "draft",
+                "repair",
+            ][..],
+        ),
+        (
+            GenerationDepth::Max,
+            &[
+                "analyze_job",
+                "match_evidence",
+                "strategy",
+                "sections",
+                "repair",
+                "llm_judge",
+            ][..],
+        ),
+    ] {
+        let paying = max::paying_stages(depth);
+        assert_eq!(paying, expected, "{depth:?} lost or gained a paying stage");
+        for free in PIPELINE_STAGES_FREE {
+            assert!(
+                !paying.contains(free),
+                "{depth:?} would resolve routing for the inert stage {free:?}"
+            );
+        }
+    }
 }

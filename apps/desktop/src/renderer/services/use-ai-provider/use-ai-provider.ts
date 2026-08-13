@@ -1,12 +1,14 @@
 import {
   useMutation,
   type UseMutationResult,
+  useQueries,
   useQuery,
   useQueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { ProviderModelInfo } from '@ajh/shared';
+import type { ActiveAiConfig, ProviderModelInfo } from '@ajh/shared';
+import type { ModelInspectResult } from '@ajh/shared/schemas';
 
 import { readModelListCache, writeModelListCache } from '@/lib/ai-providers/model-list-cache';
 import type { AppClient } from '@/lib/app-client';
@@ -15,6 +17,12 @@ import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig } from '@/store/preferences-store';
 
 import { keys, QUERY_TIMES } from '../query-client';
+import { createConcurrencyLimit } from './limit-concurrency';
+import { type ProviderSettingsWriteInput, resolveProviderSettingsWrite } from './provider-settings';
+
+/** How many `/api/show` probes may be in flight at once — see
+ *  {@link useModelInspections}. */
+const inspectLimit = createConcurrencyLimit(4);
 
 /** A cloud provider's model catalogue, plus whether it was served from the
  *  last-good local cache (a live fetch failed) rather than a fresh fetch. */
@@ -203,6 +211,46 @@ export const useInspectModel = () => {
   });
 };
 
+/**
+ * Inspect SEVERAL local models at once — the advisor's "what is installed and
+ * how big is its window" pass.
+ *
+ * A query rather than the on-demand mutation above: the advisor reads every
+ * installed model, `/api/show` is idempotent and its answer is a property of
+ * the model file (so it caches for a long time), and `useQueries` is the
+ * Rules-of-Hooks-safe way to fan out over a list whose length changes.
+ * `null` for a model Ollama can't describe — absent means NOT MEASURED.
+ */
+export const useModelInspections = (
+  models: string[] = []
+): { byModel: Record<string, ModelInspectResult | null>; isPending: boolean } => {
+  const api = useAppClient();
+  // Same guard as `useBoardStatuses`: the service smoke harness calls every
+  // exported hook with a single noop argument.
+  const safeModels = Array.isArray(models) ? models : [];
+  return useQueries({
+    queries: safeModels.map((model) => ({
+      queryKey: [...keys.ai.models, 'inspect', model],
+      // Capped fan-out: `useQueries` starts every query at once, and `/api/show`
+      // loads model metadata on the same local server that is serving the user's
+      // generation. Twenty installed models must not mean twenty simultaneous
+      // probes — the cap lives in the query FUNCTION because React Query has no
+      // concurrency option of its own. React Query's own `signal` rides along,
+      // so probes still QUEUED when the advisor closes are dropped rather than
+      // run for a result nobody will read.
+      queryFn: ({ signal }) => inspectLimit(() => api.ai.inspectModel({ model }), signal),
+      staleTime: QUERY_TIMES.VERY_LONG,
+      // An unreachable Ollama fails the same way for every model in the list;
+      // retrying each one just multiplies the same timeout.
+      retry: false,
+    })),
+    combine: (results) => ({
+      byModel: Object.fromEntries(safeModels.map((model, i) => [model, results[i]?.data ?? null])),
+      isPending: results.some((r) => r.isPending),
+    }),
+  });
+};
+
 /** Active embedding space, per-space vector counts, and document index coverage. */
 export const useEmbeddingStatus = () => {
   const api = useAppClient();
@@ -292,21 +340,61 @@ export const useSetActiveProvider = () => {
   });
 };
 
-/** Edit a provider's model/base_url WITHOUT flipping the active provider (the
- *  backend-owned "edit" half). Same `{ error }`-union narrowing as
+/** Edit a provider's model/base_url/context window WITHOUT flipping the active
+ *  provider (the backend-owned "edit" half). Same `{ error }`-union narrowing as
  *  `useSetActiveProvider` — a server-side rejection (e.g. base_url provenance)
- *  must reject the mutation, not silently resolve. */
+ *  must reject the mutation, not silently resolve.
+ *
+ *  RAW patch: omitted keeps, `null` clears, a value sets. UI call sites want
+ *  {@link useSaveProviderSettings}, which also re-points the context window when
+ *  the model changes. */
 export const useSetProviderSettings = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (req: { provider: string; model?: string; baseUrl?: string }) => {
+    mutationFn: async (req: {
+      provider: string;
+      model?: string | null;
+      baseUrl?: string | null;
+      contextWindow?: number | null;
+    }) => {
       const result = await api.ai.setProviderSettings(req);
       if ('error' in result) throw new Error(result.error);
       return result;
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.ai.activeConfig }),
   });
+};
+
+/**
+ * Save ONE provider field without thinking about the others.
+ *
+ * `save({ provider, baseUrl })` sends only the base URL (`null` to clear it);
+ * `save({ provider, model })` also re-points the context window, because a
+ * stored window describes the model it was stored with. That rule lives in the
+ * pure {@link resolveProviderSettingsWrite}, tested, rather than being
+ * re-derived at each call site — three of them got it wrong the first time.
+ */
+export const useSaveProviderSettings = () => {
+  const mutation = useSetProviderSettings();
+  const { data: activeConfig } = useActiveConfig();
+  const zustand = useAiProviderConfig();
+  const localWindows = zustand?.providers?.ollama?.modelLimits;
+
+  const save = (
+    input: Omit<ProviderSettingsWriteInput, 'stored' | 'localWindows'>,
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) =>
+    mutation.mutate(
+      resolveProviderSettingsWrite({
+        ...input,
+        stored: activeConfig?.providers?.[input.provider],
+        localWindows,
+      }),
+      options
+    );
+
+  return { save, isPending: mutation.isPending };
 };
 
 /** Set a provider's model (+ optional base_url) AND make it active in one step —
@@ -317,6 +405,8 @@ export const useSetProviderSettings = () => {
 export const useConfigureActiveProvider = () => {
   const api = useAppClient();
   const qc = useQueryClient();
+  const zustand = useAiProviderConfig();
+  const localWindows = zustand?.providers?.ollama?.modelLimits;
   return useMutation({
     mutationFn: async ({
       provider,
@@ -327,7 +417,18 @@ export const useConfigureActiveProvider = () => {
       model?: string;
       baseUrl?: string;
     }) => {
-      const settingsResult = await api.ai.setProviderSettings({ provider, model, baseUrl });
+      // Same patch rule as `useSaveProviderSettings`: this flow names the
+      // model, so the window it saves is the one held FOR THAT MODEL — never
+      // the previous model's, and never silently NULL when one exists.
+      const settingsResult = await api.ai.setProviderSettings(
+        resolveProviderSettingsWrite({
+          provider,
+          model,
+          baseUrl,
+          stored: qc.getQueryData<ActiveAiConfig>(keys.ai.activeConfig)?.providers?.[provider],
+          localWindows,
+        })
+      );
       if ('error' in settingsResult) throw new Error(settingsResult.error);
       const activeResult = await api.ai.setActiveProvider({ provider });
       if ('error' in activeResult) throw new Error(activeResult.error);

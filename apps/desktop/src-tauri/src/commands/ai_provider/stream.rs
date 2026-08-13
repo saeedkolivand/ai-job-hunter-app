@@ -382,14 +382,7 @@ fn finish(
                 stop_reason,
             );
             trace.end(Some(status), false);
-            super::record_usage(
-                app,
-                provider.as_str(),
-                model,
-                usage.input_tokens,
-                usage.output_tokens,
-                Some(base_url),
-            );
+            super::record_usage(app, provider.as_str(), model, usage, Some(base_url));
             Err(AppError::Provider(message.to_string()))
         }
         FinishOutcome::Complete { text, warning } => {
@@ -420,14 +413,7 @@ fn finish(
             );
             crate::commands::jobs::job_complete(app, job_id, json!({ "done": true, "text": text }));
             trace.end(Some(status), true);
-            super::record_usage(
-                app,
-                provider.as_str(),
-                model,
-                usage.input_tokens,
-                usage.output_tokens,
-                Some(base_url),
-            );
+            super::record_usage(app, provider.as_str(), model, usage, Some(base_url));
             Ok(())
         }
     }
@@ -734,14 +720,7 @@ where
             // `cancellation_after_a_usage_piece_still_carries_the_partial_usage`
             // in `drive_stream`'s test-only core below — that test is where
             // the assertion for this exact call site lives.
-            super::record_usage(
-                app,
-                provider.as_str(),
-                model,
-                usage.input_tokens,
-                usage.output_tokens,
-                Some(base_url),
-            );
+            super::record_usage(app, provider.as_str(), model, usage, Some(base_url));
             return Err(AppError::Message("Job cancelled".to_string()));
         }
 
@@ -789,14 +768,7 @@ where
                 // (this only runs INSIDE a read, that only runs BEFORE
                 // one), so a single stream can never double-record. Never
                 // estimated, zero when none was ever seen.
-                super::record_usage(
-                    app,
-                    provider.as_str(),
-                    model,
-                    usage.input_tokens,
-                    usage.output_tokens,
-                    Some(base_url),
-                );
+                super::record_usage(app, provider.as_str(), model, usage, Some(base_url));
                 return Err(AppError::Network(format!("Stream error: {e}")));
             }
         }

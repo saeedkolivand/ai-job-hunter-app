@@ -321,6 +321,7 @@ fn usage(n: u32) -> Usage {
     Usage {
         input_tokens: n * 10,
         output_tokens: n,
+        thinking_tokens: None,
     }
 }
 
@@ -568,8 +569,121 @@ fn active_cfg(
         active_provider: provider.map(str::to_string),
         model: model.map(str::to_string),
         base_url: base_url.map(str::to_string),
+        context_window: None,
         providers: Default::default(),
     }
+}
+
+/// The configured context window reaches the request the completer builds.
+///
+/// This is the whole of the fix: both call sites hard-coded `context_window:
+/// None`, so `modelLimits.contextWindow` reached the renderer's fast path and
+/// nothing else. The window is `num_ctx` on the Ollama body
+/// (`build_chat_stream_body`, separately tested), so "the request carries it"
+/// is the missing link, not the adapter.
+///
+/// Mutation check (executed): change `context_window` back to `None` in
+/// `text_request` and this fails; the `None` case fails if the builder ever
+/// invents a default.
+#[test]
+fn the_request_builder_forwards_the_configured_context_window() {
+    use crate::pipeline::text_request;
+
+    let req = text_request("m", "sys", "usr", Some(0.4), Some(256), Some(8_192));
+    assert_eq!(req.context_window, Some(8_192));
+    assert_eq!(req.max_tokens, Some(256));
+    assert_eq!(req.temperature, Some(0.4));
+    assert_eq!(req.model, "m");
+    assert_eq!(req.messages.len(), 2);
+    assert_eq!(req.messages[0].content, "sys");
+    assert_eq!(req.messages[1].content, "usr");
+
+    // Unconfigured stays unconfigured — the provider's own default, never a
+    // number this layer made up.
+    assert_eq!(
+        text_request("m", "s", "u", None, None, None).context_window,
+        None
+    );
+}
+
+/// The stage override's resolve seam takes the SAME steps as the active
+/// config's, in the same order — a per-stage row must not reach an endpoint the
+/// active config would have refused.
+///
+/// The URL is no longer carried BY the override (it is the provider's own
+/// stored one, passed in), but it is still store-supplied, so it still takes
+/// the egress check: a tampered `ai_provider_config` row is the same threat
+/// model as a tampered override row was.
+///
+/// Mutation check (executed): drop the `validate_provider_base_url` call from
+/// `from_override` and the first case resolves.
+#[test]
+fn a_stage_override_is_validated_exactly_like_the_active_config() {
+    use crate::ai_config::StageOverride;
+
+    let over = |provider: &str, model: &str| StageOverride {
+        provider: provider.to_string(),
+        model: model.to_string(),
+        context_window: None,
+    };
+    let with_window = |context_window: Option<u32>| StageOverride {
+        provider: "ollama".to_string(),
+        model: "m".to_string(),
+        context_window,
+    };
+
+    let err = Completer::from_override(
+        over("openai-compatible", "m"),
+        Some("http://169.254.169.254/latest/meta-data/".to_string()),
+    )
+    .map(|_| ())
+    .unwrap_err();
+    assert!(
+        format!("{err}").to_lowercase().contains("metadata"),
+        "got {err}"
+    );
+
+    let err = Completer::from_override(over("anthropic", ""), None)
+        .map(|_| ())
+        .unwrap_err();
+    assert!(format!("{err}").contains("No model selected"), "got {err}");
+
+    // A stored context window is re-validated on the way OUT too — the same
+    // hand-edited-store threat model as the base_url above, and the one stored
+    // number whose absurd value is an OOM rather than a wrong answer.
+    //
+    // Matched on the MESSAGE, not merely `is_err`: "ollama"/"m" could also be
+    // refused by `validate_model`, and today only the call order makes a bare
+    // `is_err` sound. A reordering, or a tightened model rule, would keep both
+    // assertions green while they stopped guarding the window at all.
+    //
+    // Mutation check (executed): drop the `validate_context_window` call from
+    // `from_override` and both of these resolve.
+    for bad in [9_999_999, 1] {
+        let err = Completer::from_override(with_window(Some(bad)), None)
+            .map(|_| ())
+            .unwrap_err();
+        assert!(
+            format!("{err}").contains("context window"),
+            "{bad} must be refused BY THE WINDOW CHECK, got {err}"
+        );
+    }
+
+    // The endpoint the caller read off the PROVIDER's row is what the resolved
+    // completer routes to — the override contributes provider + model only.
+    let (_provider, model, base_url, context_window) = Completer::from_override(
+        over("openai-compatible", "local-model"),
+        Some("http://127.0.0.1:1234/v1".to_string()),
+    )
+    .expect("a good override resolves");
+    assert_eq!(model, "local-model");
+    assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1234/v1"));
+    assert_eq!(context_window, None);
+
+    let (_provider, _model, _base_url, context_window) =
+        Completer::from_override(with_window(Some(8_192)), None)
+            .expect("an in-range window resolves");
+    assert_eq!(context_window, Some(8_192));
 }
 
 #[test]
@@ -610,9 +724,51 @@ fn resolves_openai_compatible_with_a_localhost_base_url() {
         Some("local-model"),
         Some("http://127.0.0.1:1234/v1"),
     );
-    let (_provider, model, base_url) = Completer::from_config(cfg).expect("should resolve");
+    let (_provider, model, base_url, _window) =
+        Completer::from_config(cfg).expect("should resolve");
     assert_eq!(model, "local-model");
     assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1234/v1"));
+}
+
+/// The stored context window is re-validated on the ACTIVE-CONFIG egress path,
+/// exactly as it is for a stage override — the same hand-edited-store threat
+/// model, and the same fail-closed answer. Without this the two paths could
+/// drift, which is how the override path came to be the only guarded one.
+///
+/// Mutation check (executed): replace the `validate_context_window` call in
+/// `from_config` with `cfg.context_window` and both rejections resolve.
+#[test]
+fn rejects_a_tampered_active_context_window() {
+    let with_window = |context_window: Option<u32>| ActiveAiConfig {
+        active_provider: Some("ollama".to_string()),
+        model: Some("m".to_string()),
+        base_url: None,
+        context_window,
+        providers: Default::default(),
+    };
+
+    // Absurdly large (the OOM case) and absurdly small (a window that cannot
+    // hold a prompt) are both refused rather than clamped — and refused BY THE
+    // WINDOW CHECK, which only the message proves (see the sibling override
+    // test for why `is_err` alone is not enough).
+    for bad in [9_999_999, 1] {
+        let err = Completer::from_config(with_window(Some(bad)))
+            .map(|_| ())
+            .unwrap_err();
+        assert!(
+            format!("{err}").contains("context window"),
+            "{bad} must be refused by the window check, got {err}"
+        );
+    }
+
+    // An in-range window survives the gate and is what the completer carries.
+    let (_provider, _model, _base_url, context_window) =
+        Completer::from_config(with_window(Some(8_192))).expect("an in-range window resolves");
+    assert_eq!(context_window, Some(8_192));
+    // No stored window stays None — the provider default, not a substituted one.
+    let (_provider, _model, _base_url, context_window) =
+        Completer::from_config(with_window(None)).expect("no window resolves");
+    assert_eq!(context_window, None);
 }
 
 #[test]
@@ -643,6 +799,74 @@ fn a_good_native_provider_resolves_and_ignores_base_url() {
         Some("claude-3-5-sonnet"),
         Some("https://example.com"),
     );
-    let (_provider, model, _base_url) = Completer::from_config(cfg).expect("should resolve");
+    let (_provider, model, _base_url, _window) =
+        Completer::from_config(cfg).expect("should resolve");
     assert_eq!(model, "claude-3-5-sonnet");
+}
+
+// ── The wire request's own bounds ───────────────────────────────────────────
+
+/// The FAST path carries the renderer's own `contextWindow`, which no store
+/// ever validated — `ai_generate` and `generate_pipeline` both hand their wire
+/// request to `Completer::stream`, which vets it here before it can reach
+/// `options.num_ctx`.
+///
+/// Mutation check (executed): make `vet_wire_request` return `Ok(())` without
+/// validating and every rejection below resolves.
+#[test]
+fn a_wire_request_context_window_is_bounded_like_a_stored_one() {
+    use crate::ipc_contracts::ai::{AiGenerateRequest, AiGenerateRequestMessage};
+
+    let with = |context_window: Option<u32>| AiGenerateRequest {
+        model: "llama3.1:8b".to_string(),
+        messages: vec![AiGenerateRequestMessage {
+            role: "user".to_string(),
+            content: "hi".to_string(),
+        }],
+        locale: "en".to_string(),
+        temperature: None,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        repeat_penalty: None,
+        max_tokens: None,
+        context_window,
+        effort: None,
+        intent: None,
+    };
+
+    // The same bounds the stored paths enforce — an OOM-sized window and one
+    // too small to hold a prompt are both refused, not clamped.
+    for bad in [1_u32, 511, 131_073, u32::MAX] {
+        let mut req = with(Some(bad));
+        assert!(
+            super::vet_wire_request(&mut req).is_err(),
+            "{bad} must not reach a provider"
+        );
+    }
+
+    // In-range and absent both pass, unchanged — absent means the provider's
+    // own default, never a substituted one.
+    let mut req = with(Some(32_768));
+    assert!(super::vet_wire_request(&mut req).is_ok());
+    assert_eq!(req.context_window, Some(32_768));
+
+    // The BOUNDS themselves, as LITERALS. Naming the constants here would be a
+    // tautology — the test would follow the bound wherever it moved, which is
+    // the opposite of pinning it (verified: with the named form, narrowing the
+    // minimum to 513 left this green). 512 is also accepted literally by
+    // `an_out_of_range_context_window_is_rejected`; 131_072 was accepted
+    // NOWHERE in the crate, so narrowing the maximum to 65_536 passed every
+    // test in the suite.
+    for edge in [512_u32, 131_072] {
+        let mut req = with(Some(edge));
+        assert!(
+            super::vet_wire_request(&mut req).is_ok(),
+            "{edge} is the boundary and must be accepted"
+        );
+        assert_eq!(req.context_window, Some(edge));
+    }
+    let mut req = with(None);
+    assert!(super::vet_wire_request(&mut req).is_ok());
+    assert_eq!(req.context_window, None);
 }

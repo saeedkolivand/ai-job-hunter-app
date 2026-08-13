@@ -13,9 +13,9 @@ import {
   useOpenExternal,
   usePullModel,
   useRemoveProviderKey,
+  useSaveProviderSettings,
   useSetActiveProvider,
   useSetProviderKey,
-  useSetProviderSettings,
   useSystemHealth,
   useTestProviderKey,
 } from '@/services';
@@ -33,10 +33,23 @@ export function useProviderKeys() {
   // via the switch/edit setters.
   const { data: providerConfig } = useActiveConfig();
   const setActiveProviderMut = useSetActiveProvider();
-  const setProviderSettingsMut = useSetProviderSettings();
+  // Patch writer: picking a model sends the model — and re-points the context
+  // window, which belongs to the model rather than to the provider row.
+  const { save: saveProviderSettings } = useSaveProviderSettings();
   const setActiveProvider = (provider: AiProvider) => setActiveProviderMut.mutate(provider);
   const setProviderSettings = (provider: AiProvider, model: string) =>
-    setProviderSettingsMut.mutate({ provider, model });
+    saveProviderSettings(
+      { provider, model },
+      {
+        // Every other write in this hook reports through `notify`. Without this
+        // a server rejection left the row showing the model the user picked
+        // while the backend kept the old one — and a staged run used the old.
+        onError: (err) =>
+          notify.error({
+            message: err instanceof Error ? err.message : 'Failed to save the selected model.',
+          }),
+      }
+    );
 
   const activeProvider: AiProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
 

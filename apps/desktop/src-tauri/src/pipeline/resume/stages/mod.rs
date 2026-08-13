@@ -21,6 +21,7 @@ pub use self::analyze::AnalyzeJob;
 pub use self::draft::Draft;
 pub use self::evidence::MatchEvidence;
 pub use self::judge::Judge;
+pub use self::repair::NAME as REPAIR_STAGE;
 pub use self::repair::{regenerate_one_section, Repair, SectionOutcome, MAX_SECTIONS_PER_ROUND};
 pub use self::section_gen::Sections;
 pub use self::strategy::{seed_company_roster, Strategy, MAX_COMPANY_PLANS};

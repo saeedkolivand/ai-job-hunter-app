@@ -75,6 +75,9 @@ export const keys = {
     spend: ['ai', 'spend'] as const,
     // Backend-owned active generation provider config (task #16).
     activeConfig: ['ai', 'activeConfig'] as const,
+    // Per-stage model overrides — a separate row set from `activeConfig`, so a
+    // separate key: changing one stage must not invalidate the active config.
+    stageOverrides: ['ai', 'stageOverrides'] as const,
   },
   documents: {
     all: ['documents'] as const,

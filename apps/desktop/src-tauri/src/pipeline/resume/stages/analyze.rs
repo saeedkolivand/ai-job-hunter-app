@@ -26,13 +26,16 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
     }
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
-        let cached: Option<JobAnalysis> = cache::get(ctx.cache, NAME, &ctx.cache_key);
+        // Bound to the model THIS stage runs on, not to the run's default —
+        // see `QualityCtx::stage_cache_key`.
+        let key = ctx.stage_cache_key(NAME);
+        let cached: Option<JobAnalysis> = cache::get(ctx.cache, NAME, &key);
         let from_cache = cached.is_some();
         let analysis = match cached {
             Some(analysis) => analysis,
             None => {
                 let analysis: JobAnalysis = ctx
-                    .completer
+                    .completer_for(NAME)
                     .complete_json(
                         // The re-ask is a second full provider call; a run
                         // already out of time must not pay for it.
@@ -62,7 +65,7 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
 
         let json = serde_json::to_string(&analysis).unwrap_or_default();
         if !from_cache {
-            cache::put(ctx.cache, NAME, &ctx.cache_key, &json);
+            cache::put(ctx.cache, NAME, &key, &json);
         }
         ctx.cache_key.extend(&json);
         ctx.ledger.count_call(from_cache);

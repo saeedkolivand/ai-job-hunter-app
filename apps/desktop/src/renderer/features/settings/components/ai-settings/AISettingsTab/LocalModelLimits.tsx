@@ -1,7 +1,9 @@
-import { useTranslation } from '@ajh/translations';
-import { Button, Switch } from '@ajh/ui';
+import { useRef } from 'react';
 
-import { useInspectModel, useSystemResources } from '@/services';
+import { useTranslation } from '@ajh/translations';
+import { Button, Switch, useNotification } from '@ajh/ui';
+
+import { useInspectModel, useSaveProviderSettings, useSystemResources } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { suggestLocalLimits } from './suggest-local-limits';
@@ -50,16 +52,34 @@ const TEMP_STEPS = [
  */
 export function LocalModelLimits({ selectedModel }: Props) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const inspect = useInspectModel();
   const { resources } = useSystemResources(selectedModel);
   const setLocalModelLimits = usePreferencesStore((s) => s.setLocalModelLimits);
+  const { save: saveProviderSettings } = useSaveProviderSettings();
+  /**
+   * Last value actually sent, PER MODEL.
+   *
+   * A single value here was a data bug, not an optimisation: this component is
+   * never remounted when the selected model changes (no `key` at the call
+   * site), so committing 16 384 for model A latched the number globally and the
+   * identical commit for model B was skipped — B's backend row kept its old
+   * window while Settings showed the new one, and every staged run used the
+   * stale value. "Use suggested" made it deterministic, because the suggestion
+   * is hardware-derived and therefore identical across un-inspected models.
+   */
+  const committedWindows = useRef<Record<string, number>>({});
   const limits = usePreferencesStore((s) =>
     selectedModel ? s.aiProviderConfig?.providers?.ollama?.modelLimits?.[selectedModel] : undefined
   );
 
   if (!selectedModel) return null;
 
-  const inspected = inspect.data;
+  // `inspect` is a mutation, so its result survives a model switch. Trust it
+  // only for the model it was actually run against — otherwise the previous
+  // model's trained maximum clamps the slider (and the committed value) for a
+  // model it says nothing about.
+  const inspected = inspect.variables?.model === selectedModel ? inspect.data : undefined;
   const detectedMax = inspected?.contextLength;
   const ctxMax = Math.min(CTX_MAX, detectedMax ?? CTX_MAX);
 
@@ -80,6 +100,41 @@ export function LocalModelLimits({ selectedModel }: Props) {
 
   // Mirror onboarding: warn when the chosen context exceeds what memory comfortably fits.
   const mightLag = contextWindow > suggestion.contextWindow;
+
+  /**
+   * Push the window to the BACKEND row for this model.
+   *
+   * The slider only ever wrote renderer preferences, which the fast path reads
+   * and a staged run cannot — so at quality/max depth it silently did nothing
+   * (`context_window: None` at all three request sites). Committed on release
+   * rather than on every `onChange` tick, so a drag is one write, not eighty;
+   * `onKeyUp` covers the arrow-key path so keyboard users commit too.
+   *
+   * A rejected write is surfaced: the slider would otherwise keep showing a
+   * value the backend never accepted, which is the same silent divergence this
+   * whole commit path exists to remove.
+   */
+  const commitWindow = (value: number) => {
+    // Key-up and pointer-up both fire on a press that moved nothing — but the
+    // de-duplication is PER MODEL, so the same number for a different model is
+    // still a write.
+    //
+    // Seeded from the value on screen (which comes from the stored row), or the
+    // FIRST touch of each model — a click on the thumb, a Tab key-up — would
+    // commit a value the backend already has, once per model per mount.
+    const known = committedWindows.current[selectedModel] ?? contextWindow;
+    committedWindows.current[selectedModel] = value;
+    if (value === known) return;
+    saveProviderSettings(
+      { provider: 'ollama', model: selectedModel, contextWindow: value },
+      {
+        onError: (err) =>
+          notify.error({
+            message: t('settings.ai.localLimits.windowSaveFailed', { reason: err.message }),
+          }),
+      }
+    );
+  };
 
   return (
     <div className="mt-2 space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-3">
@@ -128,6 +183,8 @@ export function LocalModelLimits({ selectedModel }: Props) {
           onChange={(e) =>
             setLocalModelLimits(selectedModel, { contextWindow: Number(e.target.value) })
           }
+          onPointerUp={(e) => commitWindow(Number(e.currentTarget.value))}
+          onKeyUp={(e) => commitWindow(Number(e.currentTarget.value))}
           className={SLIDER_CLASS}
         />
       </div>
@@ -152,7 +209,13 @@ export function LocalModelLimits({ selectedModel }: Props) {
       </div>
 
       <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={() => setLocalModelLimits(selectedModel, suggestion)}>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setLocalModelLimits(selectedModel, suggestion);
+            commitWindow(suggestion.contextWindow);
+          }}
+        >
           {t('settings.ai.localLimits.useSuggested')}
         </Button>
         <span className="text-xs text-foreground/35">
