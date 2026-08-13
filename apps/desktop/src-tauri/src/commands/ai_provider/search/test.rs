@@ -112,6 +112,79 @@ fn a_malformed_or_empty_body_yields_no_results_rather_than_an_error() {
     assert!(parse_exa_results(&json!({ "error": "bad key" }), 5).is_empty());
 }
 
+// ── CompanySearchRoute::resolve_via_backend: the PR #989 TOCTOU-fix pairing ──
+//
+// CodeRabbit MAJOR: the OLD shape resolved the company-research backend
+// TWICE for one pass — once to build the `company_brief` cache key, again
+// inside the fetch — with an `.await`ed provider call in between. If
+// credentials changed in that window (an Exa key added/removed mid-flight),
+// the two could disagree and mislabel a cached brief for 7 days.
+// `CompanySearchRoute::resolve` now resolves once; `resolve_via_backend` is
+// the pure half of that (its two candidates are ALREADY resolved, so it
+// takes no `AppHandle`), which is what makes every pairing a direct unit
+// test here rather than something only provable by inspection — this crate
+// has no `tauri::test` mock-app harness to exercise `resolve` itself (same
+// limitation `cover_letter::research`'s and `salary_research`'s test
+// modules document).
+
+use async_trait::async_trait;
+
+struct FakeSearcher;
+
+#[async_trait]
+impl WebSearcher for FakeSearcher {
+    async fn search(&self, _query: &str, _limit: usize) -> Vec<SearchResult> {
+        Vec::new()
+    }
+}
+
+fn fake_searcher() -> Option<Box<dyn WebSearcher>> {
+    Some(Box::new(FakeSearcher))
+}
+
+#[test]
+fn resolve_via_backend_never_prefers_exa_over_a_ready_native_searcher() {
+    // The SAME fallback-ONLY invariant `resolve_search_backend` guards, now
+    // pinned at the level that pairs the tag with the actual searcher a
+    // fetch would use — a Native tag must never be paired with `None` (or an
+    // Exa searcher) when a native one was available.
+    let route = CompanySearchRoute::resolve_via_backend(fake_searcher(), fake_searcher());
+    assert_eq!(route.backend(), SearchBackend::Native);
+    assert!(matches!(
+        route,
+        CompanySearchRoute::Backend(SearchBackend::Native, Some(_))
+    ));
+}
+
+#[test]
+fn resolve_via_backend_falls_back_to_exa_when_native_is_absent() {
+    let route = CompanySearchRoute::resolve_via_backend(None, fake_searcher());
+    assert_eq!(route.backend(), SearchBackend::Exa);
+    assert!(matches!(
+        route,
+        CompanySearchRoute::Backend(SearchBackend::Exa, Some(_))
+    ));
+}
+
+#[test]
+fn resolve_via_backend_is_none_when_nothing_is_configured() {
+    let route = CompanySearchRoute::resolve_via_backend(None, None);
+    assert_eq!(route.backend(), SearchBackend::None);
+    assert!(matches!(
+        route,
+        CompanySearchRoute::Backend(SearchBackend::None, None)
+    ));
+}
+
+#[test]
+fn the_native_route_never_carries_a_searcher() {
+    // The bypass variant: no separate `WebSearcher` at all — `backend()`
+    // still reports Native, matching the single arm `fetch_company_brief`
+    // takes for it (a direct `AiProvider::research` call, never touching
+    // `resolve_via_backend` at all).
+    assert_eq!(CompanySearchRoute::Native.backend(), SearchBackend::Native);
+}
+
 // ── has_native_search: the routing predicate ─────────────────────────────────
 //
 // `Completer::research*` asks this ONE question to decide native-call vs

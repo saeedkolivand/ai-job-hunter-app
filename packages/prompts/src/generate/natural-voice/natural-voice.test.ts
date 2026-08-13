@@ -79,14 +79,17 @@ import { buildRewritePrompt } from '../rewrite/index.js';
 import {
   AI_TELL_LEXICAL_WORDS_DE,
   AI_TELL_LEXICAL_WORDS_EN,
+  AI_TELL_LEXICAL_WORDS_IT,
   AI_TELL_PROSE_WORDS_DE,
   AI_TELL_PROSE_WORDS_EN,
+  AI_TELL_PROSE_WORDS_IT,
   antiAiTellLexical,
   antiAiTellProse,
   HUMANIZE_LEXICAL,
   HUMANIZE_PROSE,
   TEMPLATE_OPENERS_DE,
   TEMPLATE_OPENERS_EN,
+  TEMPLATE_OPENERS_IT,
   toneDirective,
 } from './natural-voice.js';
 
@@ -590,6 +593,43 @@ describe('antiAiTellLexical / antiAiTellProse — language-aware', () => {
     });
   });
 
+  describe('it — curated Italian lexicon, not a translation of the English or German list', () => {
+    it('carries Italian AI-tell bans, and NOT the English or German ban-lists', () => {
+      const it = antiAiTellLexical('it');
+      expect(it).toContain("all'avanguardia");
+      expect(it).toContain('spirito di squadra');
+      expect(it).not.toContain(LEXICAL_ANCHOR); // "Drop AI-vocabulary" is English-only
+      expect(it).not.toContain('delve');
+      expect(it).not.toContain('leverage');
+      expect(it).not.toContain('KI-Floskeln');
+      expect(it).not.toContain('darüber hinaus');
+    });
+
+    it('antiAiTellProse("it") composes the Italian lexicon plus Italian prose-flow rules', () => {
+      const prose = antiAiTellProse('it');
+      expect(prose).toContain(antiAiTellLexical('it'));
+      expect(prose).toMatch(/FLUSSO DEL TESTO/);
+      expect(prose).not.toContain('PROSE FLOW (anti-AI-tell, for connected writing)');
+    });
+
+    it('is dash-free (self-consistency)', () => {
+      expect(antiAiTellLexical('it')).not.toMatch(/[—–]/);
+      expect(antiAiTellProse('it')).not.toMatch(/[—–]/);
+    });
+
+    it('normalizes a longer/mixed-case locale value (e.g. "IT-CH") to Italian', () => {
+      expect(antiAiTellLexical('IT-CH')).toBe(antiAiTellLexical('it'));
+    });
+
+    // The letter-register openers must live ONLY in the prose addition, never
+    // in the block shared with the résumé prompt (see AI_TELL_PROSE_WORDS_IT's
+    // doc: neither phrase can occur in an ATS bullet).
+    it('the "state of the world" openers are prose-only, absent from the shared lexical block', () => {
+      expect(antiAiTellLexical('it')).not.toContain('nel panorama odierno');
+      expect(antiAiTellProse('it')).toContain('nel panorama odierno');
+    });
+  });
+
   describe('other locale (e.g. fr) — generic, language-referencing directive', () => {
     it('names the target language and does not invent a curated word list', () => {
       const fr = antiAiTellLexical('fr');
@@ -627,6 +667,24 @@ describe('language param reaches the resume / cover-letter / application-answer 
     const de = buildApplicationAnswerSystemPrompt(undefined, 'de');
     expect(de).toContain('KI-Floskeln');
     expect(de).not.toContain(LEXICAL_ANCHOR);
+  });
+
+  it('buildResumeSystemPrompt("it") carries the Italian lexicon, not the English list', () => {
+    const it = buildResumeSystemPrompt('ats', 'large', undefined, 'it');
+    expect(it).toContain("all'avanguardia");
+    expect(it).not.toContain(LEXICAL_ANCHOR);
+  });
+
+  it('buildCoverLetterSystemPrompt("it") carries the Italian prose ruleset', () => {
+    const it = buildCoverLetterSystemPrompt('recruiter', 'large', undefined, 'it');
+    expect(it).toContain("all'avanguardia");
+    expect(it).not.toContain(LEXICAL_ANCHOR);
+  });
+
+  it('buildApplicationAnswerSystemPrompt("it") carries the Italian prose ruleset', () => {
+    const it = buildApplicationAnswerSystemPrompt(undefined, 'it');
+    expect(it).toContain("all'avanguardia");
+    expect(it).not.toContain(LEXICAL_ANCHOR);
   });
 });
 
@@ -862,8 +920,10 @@ describe('cover-letter — opener-ban examples: distinct EN families + correctly
 describe('array -> prompt direction guard (AI_TELL_* — mirrors the existing prompt -> Rust codegen pin)', () => {
   const RESUME_EN = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'en');
   const RESUME_DE = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'de');
+  const RESUME_IT = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'it');
   const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
   const LETTER_DE = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'de');
+  const LETTER_IT = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'it');
 
   // "it's" / "it is" are both valid AI_TELL_PROSE_WORDS_EN entries (a generated
   // letter may spell the contraction either way), but the prompt prose only
@@ -886,6 +946,13 @@ describe('array -> prompt direction guard (AI_TELL_* — mirrors the existing pr
     }
   );
 
+  it.each(AI_TELL_LEXICAL_WORDS_IT)(
+    'AI_TELL_LEXICAL_WORDS_IT entry %j is banned by the resume prompt',
+    (entry) => {
+      expect(bannedBy(RESUME_IT, entry)).toBe(true);
+    }
+  );
+
   it.each(AI_TELL_PROSE_WORDS_EN)(
     'AI_TELL_PROSE_WORDS_EN entry %j is banned by the cover-letter prompt',
     (entry) => {
@@ -897,6 +964,13 @@ describe('array -> prompt direction guard (AI_TELL_* — mirrors the existing pr
     'AI_TELL_PROSE_WORDS_DE entry %j is banned by the cover-letter prompt',
     (entry) => {
       expect(bannedBy(LETTER_DE, entry)).toBe(true);
+    }
+  );
+
+  it.each(AI_TELL_PROSE_WORDS_IT)(
+    'AI_TELL_PROSE_WORDS_IT entry %j is banned by the cover-letter prompt',
+    (entry) => {
+      expect(bannedBy(LETTER_IT, entry)).toBe(true);
     }
   );
 });
@@ -1000,10 +1074,13 @@ describe('lexicon arrays — shape rules that keep an entry from being silently 
   const ARRAYS = {
     AI_TELL_LEXICAL_WORDS_EN,
     AI_TELL_LEXICAL_WORDS_DE,
+    AI_TELL_LEXICAL_WORDS_IT,
     AI_TELL_PROSE_WORDS_EN,
     AI_TELL_PROSE_WORDS_DE,
+    AI_TELL_PROSE_WORDS_IT,
     TEMPLATE_OPENERS_EN,
     TEMPLATE_OPENERS_DE,
+    TEMPLATE_OPENERS_IT,
   } as const;
 
   for (const [name, entries] of Object.entries(ARRAYS)) {
@@ -1053,6 +1130,7 @@ describe('lexicon arrays — shape rules that keep an entry from being silently 
     for (const [lexical, prose] of [
       [AI_TELL_LEXICAL_WORDS_EN, AI_TELL_PROSE_WORDS_EN],
       [AI_TELL_LEXICAL_WORDS_DE, AI_TELL_PROSE_WORDS_DE],
+      [AI_TELL_LEXICAL_WORDS_IT, AI_TELL_PROSE_WORDS_IT],
     ] as const) {
       expect(prose.filter((entry) => (lexical as readonly string[]).includes(entry))).toEqual([]);
     }
@@ -1258,6 +1336,27 @@ describe('no-ai-slop catalog — prompt-guidance tier (instructed, never validat
     expect(AI_TELL_LEXICAL_WORDS_DE).toContain('robust');
     // The DE prose tier is still empty for its own documented reason.
     expect(AI_TELL_PROSE_WORDS_DE).toEqual([]);
+  });
+
+  // Same constraint, the Italian side: a bulk translation of the English (or
+  // German) catalog would ban phrasing no Italian writer would produce.
+  it('the Italian arrays are not a bulk translation of the English or German catalogs', () => {
+    for (const english of [
+      'cutting-edge',
+      'proven track record',
+      'team player',
+      'results-driven',
+      'meticulous',
+      'detail-oriented',
+      'it is worth noting',
+      "in today's world",
+    ]) {
+      expect(AI_TELL_LEXICAL_WORDS_IT).not.toContain(english);
+      expect(AI_TELL_PROSE_WORDS_IT).not.toContain(english);
+    }
+    for (const german of ['robust', 'nahtlos', 'teamplayer', 'darüber hinaus', 'weltklasse']) {
+      expect(AI_TELL_LEXICAL_WORDS_IT).not.toContain(german);
+    }
   });
 });
 
@@ -1606,6 +1705,11 @@ describe('depth-aware anti-AI-tell tier (brief vs full/task)', () => {
     it.each(['brief', 'task', 'full'] as const)('de is unchanged at %j depth', (depth) => {
       expect(antiAiTellLexical('de', depth)).toBe(antiAiTellLexical('de'));
       expect(antiAiTellProse('de', depth)).toBe(antiAiTellProse('de'));
+    });
+
+    it.each(['brief', 'task', 'full'] as const)('it is unchanged at %j depth', (depth) => {
+      expect(antiAiTellLexical('it', depth)).toBe(antiAiTellLexical('it'));
+      expect(antiAiTellProse('it', depth)).toBe(antiAiTellProse('it'));
     });
 
     it('a generic locale is unchanged at brief depth', () => {

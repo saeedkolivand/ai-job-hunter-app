@@ -246,6 +246,8 @@
     "addApiKey": "Füge einen KI-Anbieter-Schlüssel hinzu, um zu generieren.",
     "selectModel": "Wähle ein KI-Modell, um zu generieren.",
     "installCli": "Installiere deinen KI-CLI-Agenten, um fortzufahren.",
+    "startOllama": "Starte Ollama, um fortzufahren.",
+    "healthUnavailable": "KI-Status konnte nicht geprüft werden. Versuche es in Kürze erneut.",
     "action": "KI-Einstellungen öffnen"
   },
   "analyze": {
@@ -1863,6 +1865,7 @@
     "resume": "Fortsetzen",
     "actions": "Aktionen",
     "foundJobs": "Gefundene Jobs",
+    "sortRelevance": "Relevanz",
     "collapse": "Einklappen",
     "viewJob": "Anzeige öffnen",
     "applyJob": "Bewerben",
