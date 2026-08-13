@@ -67,11 +67,24 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
  * free stage could still fail a whole run at resolve time. Filter these out of
  * any per-stage model UI.
  */
-export const PIPELINE_STAGES_FREE = ['assemble', 'validate'] as const;
+export const PIPELINE_STAGES_FREE = [
+  'assemble',
+  'validate',
+] as const satisfies readonly PipelineStage[];
+
+/**
+ * A stage that spends a provider call — the overridable subset, as a TYPE.
+ *
+ * Distinct from {@link PipelineStage} so a value that has been through
+ * {@link isPayingPipelineStage} cannot be passed somewhere a free stage would
+ * be wrong: narrowing to the wider type would have let `'assemble'` through the
+ * compiler on a path the runtime check had just excluded.
+ */
+export type PayingPipelineStage = Exclude<PipelineStage, (typeof PIPELINE_STAGES_FREE)[number]>;
 
 /** Whether a stage can actually spend a provider call — the set a per-stage
  *  model picker should offer. */
-export function isPayingPipelineStage(value: unknown): value is PipelineStage {
+export function isPayingPipelineStage(value: unknown): value is PayingPipelineStage {
   return isPipelineStage(value) && !(PIPELINE_STAGES_FREE as readonly string[]).includes(value);
 }
 
