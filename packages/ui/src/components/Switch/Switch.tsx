@@ -10,7 +10,13 @@ export interface SwitchProps {
   size?: 'sm' | 'md';
   /** When set, renders a row: label/description on the left, switch on the right. */
   label?: string;
-  /** Optional sub-text under the label. Only rendered when `label` is set. */
+  /**
+   * Hint exposed via `aria-describedby` — never part of the accessible NAME.
+   * With a `label` it is visible sub-text under it; without one (a compact
+   * control whose name comes from an external `<label htmlFor>` or `aria-label`)
+   * it is rendered visually hidden, so assistive tech still hears it and the
+   * `aria-describedby` never points at absent DOM.
+   */
   description?: string;
   disabled?: boolean;
   /** Accessible name for the switch when no `label` is provided. */
@@ -89,7 +95,21 @@ export function Switch({
     </Button>
   );
 
-  if (!label) return switchEl;
+  // No label row to hang the hint on — but `aria-describedby` above already
+  // points at descId, so the node MUST exist or the reference dangles. Ship it
+  // visually hidden (out of flow: a compact caller's layout is unchanged).
+  if (!label) {
+    return description ? (
+      <>
+        {switchEl}
+        <span id={descId} className="sr-only">
+          {description}
+        </span>
+      </>
+    ) : (
+      switchEl
+    );
+  }
 
   return (
     <div className="flex items-center justify-between gap-4">

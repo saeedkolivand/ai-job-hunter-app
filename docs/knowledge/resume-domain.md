@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -58,7 +58,7 @@ Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), me
 
 `render_letter_pdf` in `typst_engine/engine.rs`. Market conventions (date placement, recipient block, sign-off) come from `locale/letter.rs` (`LetterConventions`). **Cover letters inherit the resume template's visual style** (accent/fonts/sizes) via `style_from_template` (imported as `letter_style_from_template`, returns `LetterStyle`) in `typst_engine/letter.rs`. `parse_cover_letter` produces a `LetterModel` serialised to JSON — no user content concatenated into Typst markup.
 
-**Letter layouts** (`LetterLayout { Classic, Refined, Banded }`, wire `letterLayoutId` in `export/types.rs`) select the letter **arrangement** — orthogonal to the résumé template. `letter_source` dispatches to `letter.typ` / `letter_refined.typ` / `letter_banded.typ`. Layout owns composition; palette/fonts inherit via `LetterStyle`; market conventions (`data.opts`) own semantics — **layouts gate structural elements on `data.opts`, never on the layout id**. DOCX approximates (Banded's angled band → flat accent-tinted shading; PDF small-caps → uppercase). Caveat: bundled Source Serif 4 lacks `smcp`, so PDF small-caps are visually inert pending a font swap. See [`docs/EXPORT_TEMPLATES.md` § Letter layouts](../EXPORT_TEMPLATES.md#letter-layouts-classic--refined--banded).
+**Letter layouts** (`LetterLayout { Classic, Refined, Banded, Navy, Sidebar, Monogram }`, wire `letterLayoutId` in `export/types.rs`) select the letter **arrangement** — orthogonal to the résumé template. `letter_source` dispatches one `.typ` file per `LetterLayout` variant (those two symbols own the roster). Layout owns composition; palette/fonts inherit via `LetterStyle`; market conventions (`data.opts`) own semantics — **layouts gate structural elements on `data.opts`, never on the layout id**. Decorated layouts (Banded's band, Sidebar's rail, Monogram's initials device) drop their decoration under `ats_mode` while preserving core letterhead and body. DOCX approximates each layout (Banded's angled band → flat accent-tinted shading; PDF small-caps → uppercase). Caveat: bundled Source Serif 4 lacks `smcp`, so PDF small-caps are visually inert pending a font swap. See [`docs/EXPORT_TEMPLATES.md` § Letter layouts](../EXPORT_TEMPLATES.md#letter-layouts).
 
 **Template previews** (for the AI-Generate template picker) are **two separate pipelines**, each with its own generator, asset dir, and consumer module — don't cite one for the other. Both are per-template SVG (vector, no raster), owned by `export/typst_engine/`, and rendered by `#[ignore]`d offline tests in `typst_engine/test.rs`:
 

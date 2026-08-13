@@ -1482,9 +1482,12 @@
     "resumePlaceholder": "Paste your resume text here…",
     "atsMode": "ATS-safe mode",
     "atsModeHint": "Recommended for ATS submissions — linearizes the two-column layout",
-    "atsModeHintTwoColumn": "Recommended for ATS submissions — collapses the layout to a single column and removes any photo for maximum parser compatibility",
-    "atsModeHintPhoto": "Recommended for ATS submissions — removes the photo for a linear, parser-safe layout",
-    "atsModeHintDecorative": "Recommended for ATS submissions — drops the decorative color accents and section markers for a plain, parser-safe layout",
+    "atsModeHintTwoColumn": "Résumé: collapses the layout to a single column and removes any photo, for maximum parser compatibility",
+    "atsModeHintPhoto": "Résumé: removes the photo, for a linear parser-safe layout",
+    "atsModeHintDecorative": "Résumé: drops the decorative color accents and section markers, for a plain parser-safe layout",
+    "atsModeHintLetter": "Cover letter: drops the decoration — side rail, monogram tile or header band — so parsers read your name plainly",
+    "atsModeHintBothDocs": "This one switch applies to both documents.",
+    "atsToggleAvailable": "ATS-safe mode is available for this selection.",
     "tier": {
       "atsSafe": "ATS-Safe",
       "design": "Design",
@@ -1525,7 +1528,7 @@
     "letterLayoutRefined": "Refined",
     "letterLayoutRefinedDesc": "Minimalist — name and role up top, a reference line, airy spacing.",
     "letterLayoutBanded": "Banded",
-    "letterLayoutBandedDesc": "A soft accent band across the top of the first page.",
+    "letterLayoutBandedDesc": "A soft accent band across the top of the first page. The band is dropped by ATS-safe mode.",
     "wizard": {
       "steps": {
         "0": "What to create",
@@ -1596,7 +1599,11 @@
     "genStepCounter": "Step {{current}} of {{total}} — {{label}}",
     "loadingModel": "Loading model into memory…",
     "letterLayoutNavy": "Navy",
-    "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy."
+    "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy.",
+    "letterLayoutSidebar": "Sidebar",
+    "letterLayoutSidebarDesc": "Contact details in a tinted side rail. Pairs with Atelier, Aria, Saffron and Deedy. The rail is dropped by ATS-safe mode.",
+    "letterLayoutMonogram": "Monogram",
+    "letterLayoutMonogramDesc": "Your initials in an accent tile beside your name. Pairs with Awesome, Jake and Throughline. The tile is dropped by ATS-safe mode."
   },
   "generationDepth": {
     "label": "Generation depth",

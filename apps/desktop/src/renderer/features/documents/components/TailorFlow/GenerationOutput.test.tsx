@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 
-import { hashText, type QualityReport } from '@/lib/generate';
+import { hashText, type QualityReport, TEMPLATES } from '@/lib/generate';
 
 import { GenerationOutput } from './GenerationOutput';
 
@@ -525,9 +525,9 @@ describe('GenerationOutput', () => {
   });
 
   // ── 7. ATS toggle ─────────────────────────────────────────────────────────────
-  // The switch is rendered only on the résumé tab AND when isDesignTier(templateId)
-  // is true (two-column OR photo, incl. Lebenslauf) — ATS-safe mode is a résumé
-  // concept, so it never shows on the cover tab.
+  // One flag, shown on whichever tab it can still change: the résumé tab when
+  // isDesignTier(templateId) (two-column OR photo, incl. Lebenslauf), and the
+  // cover tab when the letter layout carries a decoration ATS mode drops.
 
   describe('ATS toggle', () => {
     it('renders a switch when a two-column template is active on the resume tab', () => {
@@ -554,13 +554,19 @@ describe('GenerationOutput', () => {
       'sets the toggle hint to the decorative-only copy for %s (not the false photo hint)',
       (id) => {
         render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: id })} />);
-        expect(screen.getByTitle('aiGenerate.atsModeHintDecorative')).toBeInTheDocument();
-        expect(screen.queryByTitle('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
+        // The accessible DESCRIPTION, not the hover title: a `title` on the
+        // role-less wrapper is never read out, so this is what a screen-reader
+        // user actually hears about which document the switch changes.
+        expect(screen.getByRole('switch')).toHaveAccessibleDescription(
+          'aiGenerate.atsModeHintDecorative'
+        );
       }
     );
 
-    it('is absent on the cover tab even for a two-column template', () => {
-      // The template picker still shows on the cover tab, but the ATS toggle does not.
+    it('is absent on the cover tab for a two-column template when the letter is undecorated', () => {
+      // The template picker still shows on the cover tab; the résumé's two columns
+      // are not what the cover tab's toggle would be about, and the default
+      // (classic) letter layout has no decoration to drop.
       render(
         <GenerationOutput
           {...makeProps({ target: 'both', activeOut: 'cover', templateId: 'atelier' })}
@@ -568,6 +574,171 @@ describe('GenerationOutput', () => {
       );
       expect(screen.getByTestId(TEST_IDS.documents.templatePicker)).toBeInTheDocument();
       expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    });
+
+    // ── the cover tab's own gate: a DECORATED letter layout ────────────────────
+    // The letter renderer reads the same flag (`data.opts.ats`), so the switch has
+    // to be reachable from the cover tab — including under an ATS-tier résumé
+    // template, where the letter is the ONLY thing the flag still changes.
+
+    it.each(['banded', 'sidebar', 'monogram'] as const)(
+      'renders on the cover tab for the decorated layout %s under an ATS-tier template',
+      (letterLayoutId) => {
+        render(
+          <GenerationOutput
+            {...makeProps({
+              target: 'both',
+              activeOut: 'cover',
+              templateId: 'classic',
+              letterLayoutId,
+            })}
+          />
+        );
+        expect(screen.getByRole('switch')).toHaveAccessibleDescription(
+          'aiGenerate.atsModeHintLetter'
+        );
+      }
+    );
+
+    it.each(['classic', 'refined', 'navy'] as const)(
+      'is absent on the cover tab for the undecorated layout %s',
+      (letterLayoutId) => {
+        render(
+          <GenerationOutput
+            {...makeProps({
+              target: 'both',
+              activeOut: 'cover',
+              templateId: 'classic',
+              letterLayoutId,
+            })}
+          />
+        );
+        expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+      }
+    );
+
+    it('uses the résumé hint (not the letter one) back on the résumé tab', () => {
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'resume',
+            templateId: 'atelier',
+            letterLayoutId: 'monogram',
+          })}
+        />
+      );
+      expect(screen.getByRole('switch')).toHaveAccessibleDescription(
+        'aiGenerate.atsModeHintTwoColumn'
+      );
+      expect(screen.getByRole('switch')).not.toHaveAccessibleDescription(
+        'aiGenerate.atsModeHintLetter'
+      );
+    });
+
+    it('flips atsMode from the cover tab — the reachable off switch for a monogram letter', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic',
+            letterLayoutId: 'monogram',
+            atsMode: false,
+            onAtsModeChange,
+          })}
+        />
+      );
+
+      await user.click(screen.getByRole('switch'));
+
+      expect(onAtsModeChange).toHaveBeenCalledWith(true);
+    });
+
+    it('reflects atsMode on the cover tab via aria-checked', () => {
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic',
+            letterLayoutId: 'monogram',
+            atsMode: true,
+          })}
+        />
+      );
+      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('keeps atsMode when an ATS-tier template is picked while the letter is decorated', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'atelier',
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+
+      // The template dropdown mock renders each option as a role="option" row.
+      await user.click(screen.getByRole('option', { name: TEMPLATES['classic'].name }));
+
+      expect(onAtsModeChange).not.toHaveBeenCalled();
+    });
+
+    // A silent DOM insertion otherwise: picking Monogram makes the switch appear
+    // with nothing announced. The region must be mounted BEFORE the change (a
+    // live region cannot announce its own first render), which is what the
+    // "empty while hidden" half of this pair pins.
+    it('announces the toggle becoming available, via an always-mounted live region', () => {
+      const { rerender } = render(
+        <GenerationOutput
+          {...makeProps({ target: 'both', activeOut: 'cover', templateId: 'classic' })}
+        />
+      );
+      const region = screen.getByRole('status');
+      expect(region).toHaveTextContent('');
+
+      rerender(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic',
+            letterLayoutId: 'monogram',
+          })}
+        />
+      );
+      expect(screen.getByRole('status')).toHaveTextContent('aiGenerate.atsToggleAvailable');
+    });
+
+    it('still clears atsMode on an ATS-tier pick when the letter layout is undecorated', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'atelier',
+            letterLayoutId: 'navy',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+
+      await user.click(screen.getByRole('option', { name: TEMPLATES['classic'].name }));
+
+      expect(onAtsModeChange).toHaveBeenCalledWith(false);
     });
 
     it('reflects atsMode=false via aria-checked="false"', () => {
@@ -666,6 +837,87 @@ describe('GenerationOutput', () => {
       );
       await user.click(screen.getByTestId(letterOption('refined')));
       expect(onLetterLayoutChange).toHaveBeenCalledWith('refined');
+    });
+
+    // Symmetry with the template picker: dropping to an undecorated layout has
+    // to RELEASE the shared atsMode, or the next decorated layout returns
+    // silently pre-ATS'd and the user exports a monogram-less Monogram letter.
+    it('releases atsMode when the new layout is undecorated and nothing else reads it', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic', // ATS-tier → no-op for the résumé
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('classic')));
+      expect(onAtsModeChange).toHaveBeenCalledWith(false);
+    });
+
+    it('keeps atsMode on the same change while a design-tier template reads it', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'atelier', // design-tier → the résumé genuinely uses it
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('classic')));
+      expect(onAtsModeChange).not.toHaveBeenCalled();
+    });
+
+    // target='cover': no résumé is exported, so the (design-tier) template must
+    // not hold the shared flag open once the letter stops reading it.
+    it("target='cover': releases atsMode even under a design-tier template", async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'cover',
+            activeOut: 'cover',
+            templateId: 'atelier',
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('classic')));
+      expect(onAtsModeChange).toHaveBeenCalledWith(false);
+    });
+
+    it('does not release atsMode when swapping between two DECORATED layouts', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic',
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('sidebar')));
+      expect(onAtsModeChange).not.toHaveBeenCalled();
     });
   });
 

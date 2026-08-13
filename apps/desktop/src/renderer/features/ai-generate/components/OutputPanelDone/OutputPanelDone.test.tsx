@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
+
+import type { LetterLayoutId } from '@/lib/generate';
 
 import { OutputPanelDone } from './index';
 
@@ -160,6 +163,164 @@ describe('OutputPanelDone — letter-layout picker (cover tab only)', () => {
       letterLayoutId: 'banded',
     });
     expect(screen.getByTestId(letterOption('banded'))).toHaveAttribute('aria-checked', 'true');
+  });
+
+  // ── ATS toggle beside the picker ────────────────────────────────────────────
+  // This panel REPLACES the wizard once a run is done, so a layout picked here
+  // must be undoable here: the letter renderer reads `atsMode` (`data.opts.ats`)
+  // and a decorated layout has no other off switch on this screen.
+
+  const coverProps = { activeOut: 'cover' as const, resumeOut: '', coverOut: 'Dear Team, ...' };
+
+  it.each(['banded', 'sidebar', 'monogram'] as const)(
+    'shows the ATS toggle on the cover tab for the decorated layout %s',
+    (letterLayoutId) => {
+      renderPanel({ ...coverProps, letterLayoutId, onAtsModeChange: vi.fn() });
+      expect(screen.getByRole('switch')).toBeInTheDocument();
+      expect(screen.getByText('ATS-safe mode')).toBeInTheDocument();
+      // The label alone never says WHICH document — the description does, and
+      // unlike the wrapper's hover `title` it is actually announced.
+      expect(screen.getByRole('switch')).toHaveAccessibleDescription(/^Cover letter: drops the/);
+    }
+  );
+
+  // Cover-only run (no résumé generated), so `resumeOut` is empty: a design-tier
+  // template must not keep the shared flag alive for a document that does not exist.
+  it('releases atsMode in a cover-only run even under a design-tier template', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({
+      ...coverProps,
+      resumeOut: '',
+      templateId: 'atelier',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+      onAtsModeChange,
+    });
+
+    await user.click(screen.getByTestId(letterOption('classic')));
+
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  it.each(['classic', 'refined', 'navy'] as const)(
+    'hides the ATS toggle for the undecorated layout %s (it would change nothing)',
+    (letterLayoutId) => {
+      renderPanel({ ...coverProps, letterLayoutId, onAtsModeChange: vi.fn() });
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    }
+  );
+
+  it('hides the ATS toggle on the résumé tab even when the letter is decorated', () => {
+    renderPanel({
+      activeOut: 'resume',
+      coverOut: 'Dear Team, ...',
+      letterLayoutId: 'monogram',
+      onAtsModeChange: vi.fn(),
+    });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('hides the ATS toggle when the host owns no atsMode setter', () => {
+    renderPanel({ ...coverProps, letterLayoutId: 'monogram' });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('flips atsMode on — the off switch for the monogram tile after generation', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({ ...coverProps, letterLayoutId: 'monogram', onAtsModeChange });
+
+    await user.click(screen.getByRole('switch'));
+
+    expect(onAtsModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it('flips atsMode back off and shows the current state via aria-checked', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({ ...coverProps, letterLayoutId: 'monogram', atsMode: true, onAtsModeChange });
+
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    await user.click(screen.getByRole('switch'));
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  // Real host state, so the announcement is driven by the actual user action
+  // (picking a layout) rather than a prop swap.
+  function StatefulCoverPanel() {
+    const [letterLayoutId, setLetterLayoutId] = useState<LetterLayoutId | undefined>(undefined);
+    return (
+      <OutputPanelDone
+        resumeOut=""
+        coverOut="Dear Team, ..."
+        activeOut="cover"
+        meta={null}
+        mode="ats"
+        templateId="classic"
+        atsMode={false}
+        letterLayoutId={letterLayoutId}
+        onActiveOutChange={vi.fn()}
+        onLetterLayoutChange={setLetterLayoutId}
+        onAtsModeChange={vi.fn()}
+        onCopy={vi.fn()}
+        onExport={vi.fn()}
+        onOutputChange={vi.fn()}
+        onRegenerate={vi.fn()}
+        copied={false}
+      />
+    );
+  }
+
+  it('announces the toggle becoming available from an always-mounted live region', async () => {
+    // The region has to exist BEFORE the toggle appears — a live region does not
+    // announce its own first render, so "empty while hidden" is the load-bearing
+    // half of this pair.
+    const user = userEvent.setup();
+    render(<StatefulCoverPanel />);
+    expect(screen.getByRole('status')).toHaveTextContent('');
+
+    await user.click(screen.getByTestId(letterOption('monogram')));
+
+    expect(screen.getByRole('switch')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('ATS-safe mode is available');
+  });
+
+  // Same symmetry as the other two surfaces: leaving a decorated layout releases
+  // the shared flag, so a re-picked Monogram is not silently already-ATS'd.
+  it('releases atsMode when the layout drops to classic and nothing else reads it', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({
+      ...coverProps,
+      templateId: 'classic',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+      onAtsModeChange,
+    });
+
+    await user.click(screen.getByTestId(letterOption('classic')));
+
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps atsMode on that change when a design-tier résumé template still reads it', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({
+      ...coverProps,
+      // A 'both' run — there IS a résumé, and Atelier linearizes under the flag,
+      // so the letter dropping its decoration must not switch it off.
+      resumeOut: 'Résumé body',
+      templateId: 'atelier',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+      onAtsModeChange,
+    });
+
+    await user.click(screen.getByTestId(letterOption('classic')));
+
+    expect(onAtsModeChange).not.toHaveBeenCalled();
   });
 
   it('a chosen layout reaches PdfPreview with the SAME value as the picker — export reads the same state', () => {

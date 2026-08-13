@@ -112,6 +112,41 @@ describe('exportDOCX / exportPDF', () => {
     );
   });
 
+  // The letter renderer reads `atsMode` as `data.opts.ats` (it is what drops
+  // Monogram's initials tile / Sidebar's rail / Banded's band), so the flag has
+  // to survive the trip on a COVER-LETTER request, not just a résumé one — an
+  // ATS toggle that never reaches the wire looks exactly like one that works.
+  it.each([true, false])(
+    'threads atsMode=%s into the cover-letter export request',
+    async (atsMode) => {
+      const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
+      _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+      await exportPDF(
+        '### COMPLETE COVER LETTER ###\nDear Team, ...',
+        'out.pdf',
+        'cover-letter',
+        meta,
+        // ATS-TIER résumé template + a decorated letter — the review's worst
+        // case: the flag is doing nothing for the résumé and everything for the
+        // letter, so it must still be on the request.
+        'classic',
+        atsMode,
+        'en',
+        undefined,
+        'monogram'
+      );
+
+      expect(exportAndSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          documentType: 'cover-letter',
+          letterLayoutId: 'monogram',
+          atsMode,
+        })
+      );
+    }
+  );
+
   it('omits the letter layout (undefined) so the backend defaults to classic', async () => {
     const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
     _registerClient(createMockClient({ documents: { exportAndSave } }));

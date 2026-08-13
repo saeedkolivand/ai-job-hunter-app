@@ -15,7 +15,7 @@ import {
   exportDOCX,
   exportPDF,
   exportTXT,
-  isDesignTier,
+  shouldClearAtsMode,
   type TemplateId,
 } from '@/lib/generate';
 import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
@@ -53,8 +53,13 @@ export function ResumeBuilderPage() {
   const [copied, setCopied] = useState(false);
 
   const onLanguageChange = (lng: string) => setResumeBuilder({ language: lng, locale: lng });
+  // The builder produces a résumé and nothing else, so no cover letter can be
+  // reading atsMode here — the helper's default (`letterAtsApplies = false`) is
+  // the whole story, and an ATS-tier template still clears the flag.
   const onTemplateChange = (id: TemplateId) =>
-    setResumeBuilder(isDesignTier(id) ? { templateId: id } : { templateId: id, atsMode: false });
+    setResumeBuilder(
+      shouldClearAtsMode(id) ? { templateId: id, atsMode: false } : { templateId: id }
+    );
   const onAtsModeChange = (enabled: boolean) => setResumeBuilder({ atsMode: enabled });
 
   const copyOutput = async () => {

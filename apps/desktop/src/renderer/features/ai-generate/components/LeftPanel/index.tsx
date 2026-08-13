@@ -12,8 +12,8 @@ import { GenerationMetadata } from '@/features/ai-generate/components/Generation
 import { TemplateRecommendation } from '@/features/ai-generate/components/TemplateRecommendation';
 import {
   type GenerationMeta,
-  isDesignTier,
   isTwoColumnTemplate,
+  shouldClearAtsMode,
   type TemplateId,
 } from '@/lib/generate';
 
@@ -35,6 +35,13 @@ interface Props {
   onJobAdImport: (text: string, provenance: JobAdProvenance) => void;
   setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
+  /**
+   * Whether this run produces a cover letter whose layout is decorated — i.e.
+   * whether `atsMode` still drives something after an ATS-tier template is
+   * applied. Computed by the host (it owns `target` + `letterLayoutId`);
+   * defaults to `false`, the pre-letter-layout behaviour.
+   */
+  letterAtsApplies?: boolean;
   setLocale: (v: string) => void;
   onUpload: (target: 'resume' | 'jobAd', file: File) => Promise<void>;
   onReset: () => void;
@@ -58,6 +65,7 @@ export function LeftPanel({
   onJobAdImport,
   setTemplateId,
   setAtsMode,
+  letterAtsApplies = false,
   setLocale,
   onUpload,
   onReset,
@@ -140,9 +148,11 @@ export function LeftPanel({
           setTemplateId(id);
           setLocale(recommendedLocale);
           if (atsSuggested && isTwoColumnTemplate(id)) setAtsMode(true);
-          // Reset gates on design-tier semantics like the other four surfaces;
-          // the auto-suggest guard above deliberately stays two-column-only.
-          else if (!isDesignTier(id)) setAtsMode(false);
+          // Reset gates on design-tier semantics like the other four surfaces —
+          // and, like them, keeps the flag when a decorated cover letter is the
+          // one thing still reading it. The auto-suggest guard above deliberately
+          // stays two-column-only.
+          else if (shouldClearAtsMode(id, letterAtsApplies)) setAtsMode(false);
         }}
       />
 

@@ -136,6 +136,34 @@ describe('Switch', () => {
     expect(sw).toHaveAttribute('aria-describedby', descEl.id);
   });
 
+  // Label-less mode (a compact control named by an external <label htmlFor> or
+  // aria-label) still sets aria-describedby, so the description node HAS to
+  // exist — pointing at absent DOM is a dangling reference, and AT then hears
+  // nothing at all. It ships visually hidden instead.
+  it('exposes the description without a label, visually hidden and really referenced', () => {
+    render(
+      <Switch
+        aria-label="ATS-safe mode"
+        description="Cover letter: drops the decoration"
+        checked={false}
+        onCheckedChange={() => {}}
+      />
+    );
+    const sw = screen.getByRole('switch', { name: 'ATS-safe mode' });
+    const descId = sw.getAttribute('aria-describedby');
+    expect(descId).toBeTruthy();
+    const descEl = document.getElementById(descId as string);
+    expect(descEl).not.toBeNull();
+    expect(descEl).toHaveClass('sr-only');
+    expect(sw).toHaveAccessibleDescription('Cover letter: drops the decoration');
+  });
+
+  it('adds no description node when a label-less switch has no description', () => {
+    render(<Switch aria-label="Toggle" checked={false} onCheckedChange={() => {}} />);
+    expect(screen.getByRole('switch')).not.toHaveAttribute('aria-describedby');
+    expect(screen.getByRole('switch')).toHaveAccessibleDescription('');
+  });
+
   it('honors the id prop on the switch button', () => {
     render(<Switch aria-label="Toggle" id="x" checked={false} onCheckedChange={() => {}} />);
     expect(screen.getByRole('switch', { name: 'Toggle' })).toHaveAttribute('id', 'x');

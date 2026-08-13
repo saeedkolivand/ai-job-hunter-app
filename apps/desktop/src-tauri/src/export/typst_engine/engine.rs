@@ -25,7 +25,7 @@ use typst_pdf::{pdf, PdfOptions};
 use crate::contact_profile::ContactProfile;
 use crate::error::{AppError, AppResult};
 use crate::export::templates::Template;
-use crate::export::types::{LetterLayout, TemplateId};
+use crate::export::types::{LetterLayout, LetterRender, TemplateId};
 use crate::model::document::DocumentModel;
 
 use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
@@ -100,26 +100,50 @@ const LETTER_BANDED_TYP: &str = include_str!("templates/letter_banded.typ");
 /// [`LETTER_TYP`].
 const LETTER_NAVY_TYP: &str = include_str!("templates/letter_navy.typ");
 
-/// The embedded letter Typst source for a given [`LetterLayout`]. All four
-/// layouts share the same `data.json` contract — only the arrangement differs.
+/// `LetterLayout::Sidebar` — tinted full-height contact rail in the widened
+/// left margin, letter body beside it. Same contract as [`LETTER_TYP`]; the rail
+/// is dropped under `data.opts.ats`.
+const LETTER_SIDEBAR_TYP: &str = include_str!("templates/letter_sidebar.typ");
+
+/// `LetterLayout::Monogram` — accent initials device beside a name lockup over a
+/// rule, body below. Same contract as [`LETTER_TYP`]; the device is dropped
+/// under `data.opts.ats`.
+const LETTER_MONOGRAM_TYP: &str = include_str!("templates/letter_monogram.typ");
+
+/// The embedded letter Typst source for a given [`LetterLayout`]. Every layout
+/// shares the same `data.json` contract — only the arrangement differs.
 const fn letter_source(layout: LetterLayout) -> &'static str {
     match layout {
         LetterLayout::Classic => LETTER_TYP,
         LetterLayout::Refined => LETTER_REFINED_TYP,
         LetterLayout::Banded => LETTER_BANDED_TYP,
         LetterLayout::Navy => LETTER_NAVY_TYP,
+        LetterLayout::Sidebar => LETTER_SIDEBAR_TYP,
+        LetterLayout::Monogram => LETTER_MONOGRAM_TYP,
     }
 }
 
-/// Test-only accessor for the embedded scale preamble plus all three letter
-/// layout sources so the offline `generate_cover_template_previews` test can
-/// build the exact same cover-letter Typst world as [`render_letter_pdf`]
-/// without duplicating the `include_str!` paths (the consts stay private to
-/// production code).
+/// Test-only accessors for the embedded letter sources, so the offline
+/// `generate_cover_template_previews` generator can build the exact same
+/// cover-letter Typst world as [`render_letter_pdf`] without duplicating the
+/// `include_str!` paths (the consts stay private to production code).
+///
+/// These delegate to [`letter_source`] rather than returning a fixed tuple of
+/// layout sources. The tuple version went stale the moment `Navy` was added —
+/// it still handed back only Classic/Refined/Banded, so a preview generator
+/// could not reach the newest layout at all, and being `#[ignore]`d nothing
+/// noticed. Routing through the production picker means a new layout is
+/// reachable here the moment it compiles.
 #[cfg(test)]
-pub(super) const fn letter_template_sources(
-) -> (&'static str, &'static str, &'static str, &'static str) {
-    (SCALE_TYP, LETTER_TYP, LETTER_REFINED_TYP, LETTER_BANDED_TYP)
+pub(super) const fn letter_source_for(layout: LetterLayout) -> &'static str {
+    letter_source(layout)
+}
+
+/// Test-only accessor for the shared spacing preamble (see
+/// [`letter_source_for`]).
+#[cfg(test)]
+pub(super) const fn letter_scale_source() -> &'static str {
+    SCALE_TYP
 }
 
 // ── Template enum (Typst-side) ────────────────────────────────────────────────
@@ -442,6 +466,8 @@ pub fn render_pdf_from_source(source: &str) -> AppResult<Vec<u8>> {
 /// - `market` — resolved job-market id (`"us"`, `"de"`, …); drives date position,
 ///   subject-line, and page size per locale conventions.
 /// - `lang` — BCP-47 language tag for font stack selection.
+/// - `ats` — the request's ATS mode; layouts drop their decorative,
+///   non-semantic elements when set (see `LetterOpts::ats`).
 ///
 /// All `typst`/`typst_pdf` types remain inside this file and `render.rs`/`world.rs`.
 /// No typst types appear in the public signature.
@@ -450,11 +476,9 @@ pub fn render_letter_pdf(
     template: &Template,
     contact: Option<&ContactProfile>,
     meta_name: Option<&str>,
-    market: &str,
-    lang: &str,
-    layout: LetterLayout,
+    req: LetterRender<'_>,
 ) -> AppResult<Vec<u8>> {
-    let world = build_letter_world(text, template, contact, meta_name, market, lang, layout)?;
+    let world = build_letter_world(text, template, contact, meta_name, req)?;
     compile_and_export(&world)
 }
 
@@ -474,12 +498,12 @@ fn build_letter_world(
     template: &Template,
     contact: Option<&ContactProfile>,
     meta_name: Option<&str>,
-    market: &str,
-    lang: &str,
-    layout: LetterLayout,
+    req: LetterRender<'_>,
 ) -> AppResult<ResumeWorld> {
     let style = letter_style_from_template(template);
-    let model = parse_cover_letter(text, contact, meta_name, market, lang, style);
+    let model = parse_cover_letter(
+        text, contact, meta_name, req.market, req.lang, style, req.ats,
+    );
 
     let data_json = serde_json::to_vec(&model).map_err(|e| {
         AppError::Parse(format!(
@@ -490,7 +514,7 @@ fn build_letter_world(
     // Prepend the document-meta preamble (PDF title + author + language) and the
     // shared spacing scale, then the selected letter layout source.
     let meta = document_meta_preamble("data.letterhead.name", "Cover Letter");
-    let letter_typ = letter_source(layout);
+    let letter_typ = letter_source(req.layout);
     let source = format!(
         "// Auto-generated cover-letter entry — do not edit.\n\
          #let data = json(\"data.json\")\n\
@@ -515,10 +539,8 @@ pub fn render_letter_svg_pages(
     template: &Template,
     contact: Option<&ContactProfile>,
     meta_name: Option<&str>,
-    market: &str,
-    lang: &str,
-    layout: LetterLayout,
+    req: LetterRender<'_>,
 ) -> AppResult<Vec<String>> {
-    let world = build_letter_world(text, template, contact, meta_name, market, lang, layout)?;
+    let world = build_letter_world(text, template, contact, meta_name, req)?;
     compile_and_svg(&world)
 }
