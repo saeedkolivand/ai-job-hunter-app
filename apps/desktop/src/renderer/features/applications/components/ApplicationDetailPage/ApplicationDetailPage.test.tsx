@@ -53,12 +53,15 @@ vi.mock('@tanstack/react-router', () => ({
 // The active tab returned by `Route.useSearch()`. Defaults to overview; tests
 // that target the Documents tab override it via `mockTab`.
 let mockTab: 'overview' | 'timeline' | 'brief' | 'documents' = 'overview';
+// The `?from=` origin returned by `Route.useSearch()`. Defaults to unset; the
+// Back-navigation tests below override it per case.
+let mockFrom: 'jobs' | 'autopilot' | 'applications' | undefined = undefined;
 
 vi.mock('@/routes/applications.$id', () => ({
   DETAIL_TABS: ['overview', 'timeline', 'brief', 'documents'] as const,
   Route: {
     useParams: () => ({ id: 'app-1' }),
-    useSearch: () => ({ tab: mockTab }),
+    useSearch: () => ({ tab: mockTab, from: mockFrom }),
   },
 }));
 
@@ -75,6 +78,9 @@ const mockSessionState: {
     applyForId: string | null;
   };
   setApplicationApply: typeof mockSetApplicationApply;
+  // Only `lastAppliedId` is read by the component (the resetScroll gate); kept
+  // minimal rather than mirroring the full autopilot slice.
+  autopilot: { lastAppliedId: string | null };
 } = {
   applicationApply: {
     applyWizardStep: 0,
@@ -84,6 +90,7 @@ const mockSessionState: {
     applyForId: null,
   },
   setApplicationApply: mockSetApplicationApply,
+  autopilot: { lastAppliedId: null },
 };
 
 vi.mock('@/store/session-store', () => ({
@@ -253,6 +260,8 @@ import { ApplicationDetailPage } from './index';
 
 beforeEach(() => {
   mockTab = 'overview';
+  mockFrom = undefined;
+  mockSessionState.autopilot.lastAppliedId = null;
   mockUseApplication.mockReset();
   mockUseAiGenerations.mockReset();
   // `mockReset` (not `mockClear`): the contact-rejection tests install an
@@ -840,6 +849,63 @@ describe('ApplicationDetailPage — ?tab= behaviour', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ApplicationDetailPage — Back navigation `resetScroll` seam
+//
+// `from === 'autopilot'` ALONE isn't proof a compensating scroll will run:
+// `from` is a URL search param that survives native forward-navigation, while
+// `lastAppliedId` is the one-shot session-store field Autopilot's own focus
+// effect consumes on its next mount. The gate requires BOTH — `from ===
+// 'autopilot'` AND a pending `lastAppliedId` — before skipping the router's
+// scroll restoration. Mutation check: dropping either half of the `&&` (back
+// to a bare `from !== 'autopilot'`, or a bare `navigate({ to: backTarget })`)
+// turns the first two assertions below red.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ApplicationDetailPage — Back navigation resetScroll seam', () => {
+  it('returning from Autopilot WITH a pending focus opts out of scroll restoration', async () => {
+    mockFrom = 'autopilot';
+    mockSessionState.autopilot.lastAppliedId = 'ap-1';
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-autopilot' });
+
+    await user.click(screen.getByText('applications.detail.backAutopilot'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/autopilot', resetScroll: false });
+  });
+
+  it('returning from Autopilot WITHOUT a pending focus (e.g. forward-nav replay) keeps the default reset', async () => {
+    mockFrom = 'autopilot';
+    mockSessionState.autopilot.lastAppliedId = null;
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-autopilot-stale' });
+
+    await user.click(screen.getByText('applications.detail.backAutopilot'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/autopilot', resetScroll: true });
+  });
+
+  it('returning from Jobs keeps the default scroll reset (no compensating scroll effect there)', async () => {
+    mockFrom = 'jobs';
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-jobs' });
+
+    await user.click(screen.getByText('applications.detail.backJobs'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/jobs', resetScroll: true });
+  });
+
+  it('returning with no origin (plain applications list) also keeps the default scroll reset', async () => {
+    mockFrom = undefined;
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-back-default' });
+
+    await user.click(screen.getByText('applications.detail.back'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications', resetScroll: true });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ApplicationDetailPage — ActionMenu delete flows
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -873,7 +939,7 @@ describe('ApplicationDetailPage — ActionMenu delete flows', () => {
       keepDocuments: true,
     });
     // After deletion navigates back to /applications.
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications', resetScroll: true });
   });
 
   it('"delete everything" confirms with keepDocuments: false and navigates to /applications', async () => {
@@ -897,7 +963,7 @@ describe('ApplicationDetailPage — ActionMenu delete flows', () => {
       id: 'app-del-all',
       keepDocuments: false,
     });
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications', resetScroll: true });
   });
 
   it('cancelling the confirm modal does NOT call remove mutate', async () => {
