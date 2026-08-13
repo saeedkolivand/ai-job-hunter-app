@@ -247,6 +247,7 @@
     "selectModel": "Choose an AI model to start generating.",
     "installCli": "Install your AI CLI agent to continue.",
     "startOllama": "Start Ollama to continue.",
+    "healthUnavailable": "Couldn't check AI status. Try again in a moment.",
     "action": "Open AI settings"
   },
   "analyze": {

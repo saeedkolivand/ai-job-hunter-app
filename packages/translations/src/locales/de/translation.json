@@ -247,6 +247,7 @@
     "selectModel": "Wähle ein KI-Modell, um zu generieren.",
     "installCli": "Installiere deinen KI-CLI-Agenten, um fortzufahren.",
     "startOllama": "Starte Ollama, um fortzufahren.",
+    "healthUnavailable": "KI-Status konnte nicht geprüft werden. Versuche es in Kürze erneut.",
     "action": "KI-Einstellungen öffnen"
   },
   "analyze": {

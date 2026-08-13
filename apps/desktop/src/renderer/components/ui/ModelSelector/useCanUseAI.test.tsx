@@ -92,6 +92,28 @@ describe('useCanUseAI — local-server (Ollama)', () => {
       expect(result.current).toEqual({ canUse: false });
     });
   });
+
+  it('model configured but the health probe REJECTS → the distinct "health unavailable" reason, not a silent "checking" forever', async () => {
+    // Before this fix: `health` stays `undefined` on a rejected query exactly
+    // like it does while pending, so this fell into the same branch as "still
+    // checking" — permanently, since a rejected query with `retry: false`
+    // never resolves on its own. A consumer rendering `AiSetupHint` with no
+    // `reason` then fell back to its own default (`aiSetup.addApiKey`) — a
+    // flatly wrong hint for an Ollama user mid network hiccup.
+    const client = createMockClient({
+      ai: {
+        activeConfig: async () => ({
+          activeProvider: 'ollama',
+          providers: { ollama: { model: 'llama3.2' } },
+        }),
+      },
+      system: { health: () => Promise.reject(new Error('health probe unreachable')) },
+    });
+    const { result } = renderHookWithClient(() => useCanUseAI(), { client });
+    await waitFor(() =>
+      expect(result.current).toEqual({ canUse: false, reason: 'healthUnavailable' })
+    );
+  });
 });
 
 describe('useCanUseAI — cli-agent', () => {
@@ -115,6 +137,17 @@ describe('useCanUseAI — cli-agent', () => {
     });
     const { result } = renderHookWithClient(() => useCanUseAI(), { client });
     await waitFor(() => expect(result.current).toEqual({ canUse: false, reason: 'installCli' }));
+  });
+
+  it('health probe REJECTS → "health unavailable", never a false "install the CLI"', async () => {
+    const client = createMockClient({
+      ai: { activeConfig: async () => ({ activeProvider: 'claude-code', providers: {} }) },
+      system: { health: () => Promise.reject(new Error('health probe unreachable')) },
+    });
+    const { result } = renderHookWithClient(() => useCanUseAI(), { client });
+    await waitFor(() =>
+      expect(result.current).toEqual({ canUse: false, reason: 'healthUnavailable' })
+    );
   });
 });
 

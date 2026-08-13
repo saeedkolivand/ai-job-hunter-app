@@ -21,6 +21,7 @@ const AI_REASON_KEY: Record<string, string> = {
   selectModel: 'aiSetup.selectModel',
   installCli: 'aiSetup.installCli',
   startOllama: 'aiSetup.startOllama',
+  healthUnavailable: 'aiSetup.healthUnavailable',
 };
 
 export function AISystemStatus() {

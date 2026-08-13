@@ -70,6 +70,8 @@ describe('AISystemStatus — AI-model row reads useCanUseAI, not the Ollama-only
     ['addApiKey', 'aiSetup.addApiKey'],
     ['selectModel', 'aiSetup.selectModel'],
     ['installCli', 'aiSetup.installCli'],
+    ['startOllama', 'aiSetup.startOllama'],
+    ['healthUnavailable', 'aiSetup.healthUnavailable'],
   ] as const)('renders the %s setup hint, not a generic "not available"', (reason, expectedKey) => {
     mockCanUseAI = { canUse: false, reason };
     mockSelectedModel = '';

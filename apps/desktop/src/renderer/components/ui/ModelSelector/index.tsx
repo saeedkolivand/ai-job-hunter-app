@@ -305,7 +305,7 @@ export function useCanUseAI(): { canUse: boolean; reason?: string } {
 
   // Hooks must run unconditionally regardless of which branch applies below.
   const providerKeyQuery = useHasProviderKey(activeProvider);
-  const { data: health } = useSystemHealth();
+  const { data: health, isError: healthIsError } = useSystemHealth();
 
   // Cold boot: while the backend config is first loading, block WITHOUT a concrete
   // reason so the button stays disabled but no scary "no provider" hint flashes
@@ -319,8 +319,13 @@ export function useCanUseAI(): { canUse: boolean; reason?: string } {
   }
   if (kind === 'cli-agent') {
     // Keyless; model optional (empty → the tool's default). Only gate on the
-    // binary being installed.
-    const detected = health?.cliAgents?.[activeProvider]?.detected ?? false;
+    // binary being installed — which needs a settled health read. A REJECTED
+    // health query (`isError`) is not "not installed": without this check it
+    // fell through `?? false` below and claimed `installCli` for a probe
+    // failure, not a missing binary.
+    if (healthIsError) return { canUse: false, reason: 'healthUnavailable' };
+    if (health === undefined) return { canUse: false }; // still checking
+    const detected = health.cliAgents?.[activeProvider]?.detected ?? false;
     return detected ? { canUse: true } : { canUse: false, reason: 'installCli' };
   }
   // local-server (Ollama) — the model now lives in the per-provider config,
@@ -329,11 +334,14 @@ export function useCanUseAI(): { canUse: boolean; reason?: string } {
   // `kind` as "detected via a health probe" — this is that probe, reusing the
   // same `useSystemHealth` query the cli-agent branch above already polls.
   if (!activeProviderModel) return { canUse: false, reason: 'selectModel' };
-  // `health` is `undefined` only while the query is still in flight — the
-  // real backend command always resolves to a `RuntimeHealth` object, never
-  // `undefined`, so this can't be confused with a settled "not ready" read.
-  // Same "no reason yet" convention as the `isPending` cold-boot check above:
-  // block, but don't claim Ollama is down before we've actually checked.
+  // Three states for `health`, not two: still fetching (`undefined`, no
+  // error) → "checking" (no reason, same cold-boot convention as `isPending`
+  // above); REJECTED (`isError`, `data` stays `undefined` forever with no
+  // retry) → a distinct `healthUnavailable` reason — NOT a silent, permanent
+  // "checking" that never resolves, and not a fall-through to whatever a
+  // reason-less consumer's default guidance happens to say (`AiSetupHint`
+  // defaults to `addApiKey`, which is simply wrong for this provider kind).
+  if (healthIsError) return { canUse: false, reason: 'healthUnavailable' };
   if (health === undefined) return { canUse: false };
   return health.ai.ready ? { canUse: true } : { canUse: false, reason: 'startOllama' };
 }
