@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { EVENT_CHANNELS } from '@ajh/shared';
+import {
+  type AiConfigSnapshot,
+  type AiStageOverride,
+  EVENT_CHANNELS,
+  type PipelineStage,
+} from '@ajh/shared';
 import type { AiGenerateRequest, EmbedRequest } from '@ajh/shared/schemas';
 import type { AiStreamChunk } from '@ajh/shared/types';
 
@@ -17,23 +22,39 @@ export const ai = {
   activeConfig: () => invoke('ai_active_config'),
   setActiveProvider: ({ provider }: { provider: string }) =>
     invoke('ai_set_active_provider', { provider }),
-  setProviderSettings: ({
+  // PATCH semantics: an omitted key keeps the stored value, an explicit `null`
+  // clears it. Passed through as ONE `req` object rather than spread into
+  // separate command arguments, because only a struct field can carry the serde
+  // attribute that tells absent from null (a Tauri command parameter cannot).
+  // `undefined` fields drop out during serialization, which is exactly "absent".
+  setProviderSettings: (req: {
+    provider: string;
+    model?: string | null;
+    baseUrl?: string | null;
+    contextWindow?: number | null;
+  }) => invoke('ai_set_provider_settings', { req }),
+  // Typed from the shared contract rather than re-declared: the local copy
+  // still carried a `baseUrl` on each stage override after the field was made
+  // deliberately unrepresentable (the endpoint belongs to the PROVIDER), so it
+  // advertised a field the backend would ignore.
+  seedActiveConfig: ({ config }: { config: AiConfigSnapshot }) =>
+    invoke('ai_seed_active_config', { config }),
+  // Per-stage model overrides. An absent key means "the active provider" —
+  // never write one back just to mirror the default.
+  stageOverrides: (): Promise<Record<string, AiStageOverride>> => invoke('ai_stage_overrides'),
+  setStageOverride: ({
+    stage,
     provider,
     model,
-    baseUrl,
+    contextWindow,
   }: {
+    stage: PipelineStage;
     provider: string;
     model?: string;
-    baseUrl?: string;
-  }) => invoke('ai_set_provider_settings', { provider, model, baseUrl }),
-  seedActiveConfig: ({
-    config,
-  }: {
-    config: {
-      activeProvider?: string;
-      providers: Record<string, { model?: string; baseUrl?: string }>;
-    };
-  }) => invoke('ai_seed_active_config', { config }),
+    contextWindow?: number;
+  }) => invoke('ai_set_stage_override', { stage, provider, model, contextWindow }),
+  clearStageOverride: ({ stage }: { stage: PipelineStage }) =>
+    invoke('ai_clear_stage_override', { stage }),
   // `effort` on both research calls: the backend's deadline around
   // search + synthesis scales with it, the same way the generation stream
   // deadline does. Omitting it leaves the unscaled baseline.

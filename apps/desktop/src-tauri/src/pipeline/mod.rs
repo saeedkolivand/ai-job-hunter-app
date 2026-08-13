@@ -46,6 +46,33 @@ pub struct Completer {
     /// [`record_usage`]'s free/paid cost gate; `None` for every other
     /// provider, which the gate ignores it for.
     base_url: Option<String>,
+    /// The context window the user configured for THIS resolved model, sent as
+    /// `options.num_ctx` on every request this completer builds.
+    ///
+    /// `None` means "the provider's own default" and is sent as nothing at all
+    /// — never a guessed size. A model's real trained window is knowable only
+    /// by asking the server (`ai_inspect_model` → `/api/show`), which is a
+    /// network call this resolution path must not make, so the honest source is
+    /// the value the user picked in Settings.
+    context_window: Option<u32>,
+}
+
+/// Bound-check the renderer-supplied fields of a wire [`AiGenerateRequest`]
+/// before it reaches a provider.
+///
+/// `context_window` is the one such field that survives into a provider call as
+/// a resource request rather than as text: Ollama passes it straight to
+/// `options.num_ctx`, where an absurd value is an out-of-memory kill of the
+/// user's machine. Every STORED path bounds it (the settings writer, the
+/// import scrub, both resolve seams), but the fast path carries the renderer's
+/// own number, which no store ever saw — so it is bounded here, at the single
+/// point every request funnels through on its way out.
+///
+/// Fail closed rather than clamp: a silently shrunk window is a truncated
+/// prompt, which reads as the model ignoring half its instructions.
+fn vet_wire_request(req: &mut AiGenerateRequest) -> AppResult<()> {
+    req.context_window = crate::ai_config::validate_context_window(req.context_window)?;
+    Ok(())
 }
 
 impl Completer {
@@ -92,34 +119,173 @@ impl Completer {
         let cfg = app
             .state::<crate::ai_config::AiConfigStore>()
             .active_config();
-        let (provider, model, base_url) = Self::from_config(cfg)?;
+        let (provider, model, base_url, context_window) = Self::from_config(cfg)?;
         Ok(Self {
             app: app.clone(),
             provider,
             model,
             base_url,
+            context_window,
         })
+    }
+
+    /// Resolve a `Completer` for ONE pipeline stage.
+    ///
+    /// An explicitly-set override for `stage` ([`crate::ai_config::StageOverride`])
+    /// wins; ANY other outcome — no row, or a stage nobody configured — falls
+    /// through to [`from_active`](Self::from_active) unchanged. There is no
+    /// third behaviour: a stage is never switched to a model the user did not
+    /// name, which is what lets a Settings UI *suggest* per-stage defaults
+    /// without applying them.
+    ///
+    /// The override takes the SAME chain as the active config — `base_url`
+    /// re-validated against `net::ssrf` on the egress path, then
+    /// [`resolve_parts`](Self::resolve_parts) — because a store row can also
+    /// come from a restored backup rather than from the settings writer. A row
+    /// that fails is an `Err`, never a quiet fallback to the active provider:
+    /// the run the user asked for is not the run they would get.
+    pub fn from_active_for_stage(app: &AppHandle, stage: &str) -> AppResult<Self> {
+        let over = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .stage_override(stage);
+        match over {
+            Some(over) => Self::from_override_row(app, over),
+            None => Self::from_active(app),
+        }
+    }
+
+    /// Build a `Completer` from an override row the caller ALREADY holds.
+    ///
+    /// Split out so [`for_stages`](Self::for_stages) can resolve from its own
+    /// snapshot instead of re-reading the store per stage — see the atomicity
+    /// note there.
+    fn from_override_row(
+        app: &AppHandle,
+        over: crate::ai_config::StageOverride,
+    ) -> AppResult<Self> {
+        // The endpoint FOLLOWS the named provider's own stored row, read at
+        // resolve time rather than snapshotted into the override — see
+        // `from_override`.
+        let base_url = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .provider_base_url(&over.provider);
+        let (provider, model, base_url, context_window) = Self::from_override(over, base_url)?;
+        Ok(Self {
+            app: app.clone(),
+            provider,
+            model,
+            base_url,
+            context_window,
+        })
+    }
+
+    /// The completers one RUN needs, resolved once up front: an entry for every
+    /// stage in `stages` that carries an override, and nothing else.
+    ///
+    /// Once, not per call, for two reasons. Resolving inside a stage would read
+    /// the store mid-run, so an override edited while a 40-minute run is in
+    /// flight would take effect halfway through it — a document written by two
+    /// different models with nothing recording which wrote what. And the map is
+    /// what the stage CACHE keys off (`QualityCtx::stage_cache_key`), so a
+    /// changing answer would mean a changing key.
+    ///
+    /// Stages with no override are ABSENT from the map rather than mapped to a
+    /// clone of the active completer — "absent means the default" is the
+    /// property every reader below depends on.
+    pub fn for_stages(
+        app: &AppHandle,
+        stages: &[&str],
+    ) -> AppResult<std::collections::HashMap<String, Self>> {
+        let mut overrides = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .stage_overrides();
+        let mut out = std::collections::HashMap::new();
+        for stage in stages {
+            // Resolved from the map READ ABOVE, not by re-reading the store per
+            // stage. Membership and content then come from one snapshot, so the
+            // "absent means the default" invariant below is true by
+            // construction: re-reading left a window in which a clear landing
+            // between the two reads put a stage in the map mapped to a clone of
+            // the ACTIVE completer — the one state this doc says cannot occur.
+            // Nothing observable moved today (that clone's routing identity
+            // equals the default's, so no cache key changes), but "the map says
+            // overridden" is exactly what a later reader would trust.
+            let Some(over) = overrides.remove(*stage) else {
+                continue;
+            };
+            out.insert((*stage).to_string(), Self::from_override_row(app, over)?);
+        }
+        Ok(out)
+    }
+
+    /// The `AppHandle`-free resolve seam for one stage override — the sibling of
+    /// [`from_config`](Self::from_config), doing the same steps in the same
+    /// order so a stage's routing cannot be validated more loosely than the
+    /// active provider's.
+    ///
+    /// `base_url` is NOT part of the override: it is the named provider's own
+    /// stored endpoint, passed in by the caller that could read it. So it
+    /// FOLLOWS that provider's settings rather than snapshotting them — there
+    /// is exactly one base URL per provider, the one Settings shows. A
+    /// snapshot would let an override keep pointing at an endpoint the user had
+    /// since changed, with no screen showing the difference.
+    #[allow(clippy::type_complexity)]
+    fn from_override(
+        over: crate::ai_config::StageOverride,
+        base_url: Option<String>,
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>, Option<u32>)> {
+        let crate::ai_config::StageOverride {
+            provider,
+            model,
+            context_window,
+        } = over;
+        if let Some(url) = base_url.as_deref() {
+            crate::net::ssrf::validate_provider_base_url(url)?;
+        }
+        // Every stored value this row carries goes through the same gate on the
+        // way OUT, not just the one that can reach a network: a hand-edited
+        // window is the same threat model as a hand-edited base_url, and the
+        // module doc promises both. The override's OWN window is used, never
+        // the active provider's — the override names a different model, so the
+        // default's window would be a wrong number rather than a missing one.
+        let context_window = crate::ai_config::validate_context_window(context_window)?;
+        let (provider, model, base_url) =
+            Self::resolve_parts(Some(&provider), Some(&model), base_url)?;
+        Ok((provider, model, base_url, context_window))
     }
 
     /// The `AppHandle`-free validated-resolve seam behind
     /// [`from_active`](Self::from_active): the defensive re-validate of the
     /// stored `base_url` on the egress path (the writer/seed/import all validate
     /// it, so this only ever fires on a tampered store — fail closed, never
-    /// silently fall back to the default endpoint), then the same
+    /// silently fall back to the default endpoint), the same defensive
+    /// re-validate of the stored context window, then the
     /// [`resolve_parts`](Self::resolve_parts) steps. Takes an already-read owned
     /// [`ActiveAiConfig`](crate::ai_config::ActiveAiConfig) — no store lock, no
     /// `AppHandle` — so it's directly unit-testable.
+    ///
+    /// Both defensive checks live HERE rather than in the `AppHandle`-bound
+    /// caller so a test can reach them: an egress guard that no test can call is
+    /// a guard nobody notices the deletion of.
+    #[allow(clippy::type_complexity)]
     fn from_config(
         cfg: crate::ai_config::ActiveAiConfig,
-    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>, Option<u32>)> {
         if let Some(url) = cfg.base_url.as_deref() {
             crate::net::ssrf::validate_provider_base_url(url)?;
         }
-        Self::resolve_parts(
+        // `num_ctx` is the one stored number whose absurd value is an
+        // out-of-memory kill of the user's machine rather than a wrong answer,
+        // so it takes the same gate as the base_url above, under the same
+        // hand-edited-store threat model. Fail closed; never silently
+        // substitute a default.
+        let context_window = crate::ai_config::validate_context_window(cfg.context_window)?;
+        let (provider, model, base_url) = Self::resolve_parts(
             cfg.active_provider.as_deref(),
             cfg.model.as_deref(),
             cfg.base_url,
-        )
+        )?;
+        Ok((provider, model, base_url, context_window))
     }
 
     /// Stream a full [`AiGenerateRequest`] through this resolved provider. Routing
@@ -130,6 +296,7 @@ impl Completer {
     /// knobs, effort, intent) is preserved.
     pub async fn stream(&self, job_id: &str, mut req: AiGenerateRequest) -> AppResult<()> {
         req.model = self.model.clone();
+        vet_wire_request(&mut req)?;
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
 
@@ -273,6 +440,15 @@ impl Completer {
         &self.model
     }
 
+    /// The configured context window for the resolved model, for a caller that
+    /// builds its own [`AiGenerateRequest`] rather than going through
+    /// [`stream_complete`](Self::stream_complete) / `complete_json` — today the
+    /// résumé pipeline's `draft` stage, which streams. `None` leaves the
+    /// provider on its own default.
+    pub fn context_window(&self) -> Option<u32> {
+        self.context_window
+    }
+
     /// Non-streaming completion through the active provider — the single-shot text
     /// analogue used by agentic text-generating tools (cover letter, interview
     /// questions) that need the whole response before returning. Reuses the same
@@ -300,8 +476,7 @@ impl Completer {
             &self.app,
             self.provider.id().as_str(),
             &self.model,
-            usage.input_tokens,
-            usage.output_tokens,
+            usage,
             self.base_url.as_deref(),
         );
         Ok(text)
@@ -334,32 +509,17 @@ impl Completer {
         temperature: Option<f64>,
         max_tokens: Option<u32>,
     ) -> AppResult<()> {
-        let req = AiGenerateRequest {
-            model: self.model.clone(),
-            messages: vec![
-                AiGenerateRequestMessage {
-                    role: "system".to_string(),
-                    content: system.to_string(),
-                },
-                AiGenerateRequestMessage {
-                    role: "user".to_string(),
-                    content: user.to_string(),
-                },
-            ],
-            locale: String::new(),
+        // No declared intent — this caller (agentic tool loop / extension
+        // bridge answer.assist) already passes its own explicit `temperature`,
+        // which wins over any adapter default regardless.
+        let req = text_request(
+            &self.model,
+            system,
+            user,
             temperature,
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
             max_tokens,
-            context_window: None,
-            effort: None,
-            // No declared intent — this caller (agentic tool loop / extension
-            // bridge answer.assist) already passes its own explicit
-            // `temperature`, which wins over any adapter default regardless.
-            intent: None,
-        };
+            self.context_window,
+        );
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
 
@@ -435,8 +595,7 @@ impl Completer {
             &self.app,
             self.provider.id().as_str(),
             &self.model,
-            turn.usage.input_tokens,
-            turn.usage.output_tokens,
+            turn.usage,
             self.base_url.as_deref(),
         );
         Ok(turn)
@@ -527,6 +686,17 @@ impl Completer {
     /// which records spend but does not charge): every provider call a
     /// multi-stage run makes has to hit this ceiling, or the run is the one
     /// fan-out shape that escapes the day's cap.
+    ///
+    /// **Per-stage models spread the charge across buckets.** The ceiling is
+    /// PER PROVIDER, and each call charges the provider THIS completer
+    /// resolved — so a run whose `strategy` stage is overridden to a cloud
+    /// provider charges that provider's bucket for the strategy call and the
+    /// active provider's for everything else. That is the intended reading of
+    /// a per-provider cap (an Ollama stage costs nothing and should not consume
+    /// an OpenAI allowance), but it does mean the number of calls a single run
+    /// may make grows with the number of DISTINCT providers it routes to. The
+    /// per-run ceilings that bound a run's total work are `Budget::max_steps`
+    /// and the `RunDeadline`, not this.
     pub(crate) fn charge_daily(&self) -> AppResult<()> {
         self.app
             .state::<std::sync::Arc<crate::limits::Limiter>>()
@@ -544,8 +714,7 @@ impl Completer {
             &self.app,
             self.provider.id().as_str(),
             &self.model,
-            usage.input_tokens,
-            usage.output_tokens,
+            usage,
             self.base_url.as_deref(),
         );
     }
@@ -576,32 +745,55 @@ impl Completer {
             Some(reask) => format!("{user}\n\n{reask}"),
             None => user.to_string(),
         };
-        let req = AiGenerateRequest {
-            model: self.model.clone(),
-            messages: vec![
-                AiGenerateRequestMessage {
-                    role: "system".to_string(),
-                    content: system.to_string(),
-                },
-                AiGenerateRequestMessage {
-                    role: "user".to_string(),
-                    content: user,
-                },
-            ],
-            locale: String::new(),
-            temperature: None,
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
-            max_tokens: None,
-            context_window: None,
-            effort: None,
-            intent: None,
-        };
+        // Temperature/max_tokens are deliberately absent (see above); the
+        // configured context window is not — a structured call reads the same
+        // oversized artifacts every other stage does.
+        let req = text_request(&self.model, system, &user, None, None, self.context_window);
         self.provider
             .complete_structured(&self.app, &req, schema_hint, schema)
             .await
+    }
+}
+
+/// The plain system+user [`AiGenerateRequest`] both non-`chat_stream` entry
+/// points build — [`Completer::stream_complete`] and
+/// [`Completer::structured_call`], which differed only in `temperature`/
+/// `max_tokens`.
+///
+/// Extracted so `context_window` has ONE place to be forwarded from. It was
+/// hard-coded `None` in both literals, which is how the user's configured
+/// window silently never reached a staged run while the renderer's own fast
+/// path honored it — a second literal is how that comes back.
+pub(crate) fn text_request(
+    model: &str,
+    system: &str,
+    user: &str,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    context_window: Option<u32>,
+) -> AiGenerateRequest {
+    AiGenerateRequest {
+        model: model.to_string(),
+        messages: vec![
+            AiGenerateRequestMessage {
+                role: "system".to_string(),
+                content: system.to_string(),
+            },
+            AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: user.to_string(),
+            },
+        ],
+        locale: String::new(),
+        temperature,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        repeat_penalty: None,
+        max_tokens,
+        context_window,
+        effort: None,
+        intent: None,
     }
 }
 

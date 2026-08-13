@@ -981,6 +981,10 @@ pub fn run() {
             commands::ai::ai_set_active_provider,
             commands::ai::ai_set_provider_settings,
             commands::ai::ai_seed_active_config,
+            // per-stage model overrides (same store, same validation chain)
+            commands::ai::ai_stage_overrides,
+            commands::ai::ai_set_stage_override,
+            commands::ai::ai_clear_stage_override,
             commands::pipeline::generate_pipeline,
             // agent ("prep this application" flow + human-in-the-loop confirm gate)
             commands::agent::agent_run,

@@ -183,6 +183,11 @@ fn parse_ollama_usage(data: &Value) -> Option<Usage> {
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
         output_tokens: data.get("eval_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        // Ollama reports no separate thinking count: `eval_count` covers the
+        // thinking channel and the answer together. The renderer's live
+        // thinking-vs-answer ratio is measured in CHARS off the stream, which
+        // is not this unit and is deliberately not laundered into it.
+        thinking_tokens: None,
     })
 }
 

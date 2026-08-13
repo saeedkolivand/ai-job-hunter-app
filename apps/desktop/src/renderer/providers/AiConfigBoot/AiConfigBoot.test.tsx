@@ -59,14 +59,60 @@ vi.mock('@/store/preferences-store', () => ({
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-function renderBoot(seedActiveConfig = vi.fn().mockResolvedValue({ seeded: true })) {
-  const client = createMockClient({ ai: { seedActiveConfig } });
+function renderBoot(
+  seedActiveConfig = vi.fn().mockResolvedValue({ seeded: true }),
+  extraAi: Record<string, unknown> = {}
+) {
+  const client = createMockClient({ ai: { seedActiveConfig, ...extraAi } });
   const utils = render(
     <AppClientProvider client={client}>
       <AiConfigBoot />
     </AppClientProvider>
   );
   return { ...utils, seedActiveConfig };
+}
+
+/**
+ * Boot with a backend row already present (the upgrade case the backfill
+ * exists for) and a renderer-side window for that row's model.
+ */
+function renderUpgradedBoot({
+  storedWindow,
+  localWindow,
+  activeProvider = 'ollama',
+  model = 'qwen3:8b',
+}: {
+  storedWindow?: number;
+  localWindow?: number;
+  activeProvider?: string;
+  model?: string;
+}) {
+  mockPersist.state.aiProviderConfig = {
+    activeProvider,
+    providers: {
+      [activeProvider]: {
+        model,
+        ...(localWindow === undefined
+          ? {}
+          : { modelLimits: { [model]: { contextWindow: localWindow } } }),
+      },
+    },
+  };
+  const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
+  const activeConfig = vi.fn().mockResolvedValue({
+    activeProvider,
+    providers: {
+      [activeProvider]: {
+        model,
+        ...(storedWindow === undefined ? {} : { contextWindow: storedWindow }),
+      },
+    },
+  });
+  const utils = renderBoot(vi.fn().mockResolvedValue({ seeded: false }), {
+    setProviderSettings,
+    activeConfig,
+  });
+  return { ...utils, setProviderSettings };
 }
 
 beforeEach(() => {
@@ -146,5 +192,67 @@ describe('AiConfigBoot — cache invalidation', () => {
     await waitFor(() =>
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: keys.ai.activeConfig })
     );
+  });
+});
+
+/**
+ * The upgrade path: these installs were seeded before the backend row could
+ * hold a context window, so the seed is refused for them (row presence) and
+ * their configured num_ctx never reaches a staged run.
+ */
+describe('AiConfigBoot — context-window backfill', () => {
+  it('promotes the renderer-held window when the backend row has none', async () => {
+    const { setProviderSettings } = renderUpgradedBoot({ localWindow: 16_384 });
+
+    await waitFor(() =>
+      expect(setProviderSettings).toHaveBeenCalledWith({
+        provider: 'ollama',
+        contextWindow: 16_384,
+      })
+    );
+    // A patch, so the model and base URL the backend already holds are untouched.
+    expect(setProviderSettings.mock.calls[0]?.[0]).not.toHaveProperty('model');
+  });
+
+  it('does nothing when the backend row already has a window', async () => {
+    const { setProviderSettings } = renderUpgradedBoot({
+      storedWindow: 8_192,
+      localWindow: 16_384,
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(setProviderSettings).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the renderer holds no window either', async () => {
+    const { setProviderSettings } = renderUpgradedBoot({});
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(setProviderSettings).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for a non-Ollama active provider (no local windows exist)', async () => {
+    const { setProviderSettings } = renderUpgradedBoot({
+      activeProvider: 'openai',
+      model: 'gpt-5.1',
+      localWindow: 16_384,
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(setProviderSettings).not.toHaveBeenCalled();
+  });
+
+  it('patches at most once per session', async () => {
+    mockPersist.state.hasHydrated = false;
+    const { setProviderSettings } = renderUpgradedBoot({ localWindow: 16_384 });
+
+    mockPersist.state.finishHydrationCb?.();
+    await waitFor(() => expect(setProviderSettings).toHaveBeenCalledOnce());
+
+    // A second hydration notification must not re-run the write.
+    mockPersist.state.finishHydrationCb?.();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(setProviderSettings).toHaveBeenCalledOnce();
   });
 });

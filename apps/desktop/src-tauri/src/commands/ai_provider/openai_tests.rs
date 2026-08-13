@@ -95,6 +95,38 @@ fn parse_usage_extracts_real_token_counts() {
     assert_eq!(usage.output_tokens, 17);
 }
 
+/// A reasoning count that cannot fit in `u32` is NO measurement, not a small
+/// one. `as u32` wraps, so `2^32 + 7` would be recorded as `7` — a plausible
+/// number in the spend ledger, sourced from a provider response.
+///
+/// Mutation check (executed): restore `.map(|v| v as u32)` and the oversized
+/// case records `Some(7)`.
+#[test]
+fn an_unrepresentable_reasoning_count_is_not_recorded() {
+    let with_reasoning = |v: serde_json::Value| {
+        json!({
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 2,
+                "completion_tokens_details": { "reasoning_tokens": v },
+            }
+        })
+    };
+
+    let over =
+        parse_openai_usage(&with_reasoning(json!(u32::MAX as u64 + 8))).expect("usage present");
+    assert_eq!(
+        over.thinking_tokens, None,
+        "an oversized count must not wrap into a plausible one"
+    );
+
+    // The ordinary counts still land, including the measured zero.
+    let ok = parse_openai_usage(&with_reasoning(json!(1_024))).expect("usage present");
+    assert_eq!(ok.thinking_tokens, Some(1_024));
+    let zero = parse_openai_usage(&with_reasoning(json!(0))).expect("usage present");
+    assert_eq!(zero.thinking_tokens, Some(0));
+}
+
 #[test]
 fn parse_usage_is_none_when_absent() {
     // Every streamed chunk except the final one has no `usage` field.

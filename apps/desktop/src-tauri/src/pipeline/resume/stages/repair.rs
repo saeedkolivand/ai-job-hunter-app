@@ -55,6 +55,11 @@ use super::validate::{counts, validate_documents};
 
 pub struct Repair;
 
+/// This stage's name — also the override a per-section REGENERATE click routes
+/// through when it takes the text-rewrite path, which is this stage's own
+/// prompt and grounding. See `commands::resume_pipeline::resume_pipeline_regenerate_section`.
+pub const NAME: &str = "repair";
+
 /// Sections one round may regenerate.
 ///
 /// The round's cost is one provider call per section, and the run deadline is
@@ -452,7 +457,7 @@ fn criticals_of(report: &ContentReport) -> usize {
 #[async_trait]
 impl<'a> Stage<QualityCtx<'a>> for Repair {
     fn name(&self) -> &'static str {
-        "repair"
+        NAME
     }
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
@@ -465,7 +470,7 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
         // Copied out of `ctx` so the two closures below borrow neither it nor
         // each other: `QualityInput` is `Copy` and `completer` is a shared ref.
         let input = ctx.input;
-        let completer = ctx.completer;
+        let completer = ctx.completer_for(NAME);
 
         let (draft, report, letter, stats) = repair_loop(
             std::mem::take(&mut ctx.draft),
