@@ -210,7 +210,11 @@ The renderer has ~1,100 `text-foreground/NN` usages; roughly 460 sit at steps (`
 nodes that the home-view scan actually measured, swapping them to the existing
 `text-muted-foreground` token (5.1:1 on white, 4.8:1 on `#f8f8f8`, and clear in dark too).
 (`/55` and `/60` no longer belong on this list — both are now centrally remapped in
-`packages/ui/src/css/utilities.css`, pinned by `light-scheme-contrast.test.ts`.)
+`packages/ui/src/css/utilities.css`, pinned by `light-scheme-contrast.test.ts`.
+Residual ordering wrinkles from that remap: raw `/65` (11 call sites) and raw `/70`
+(143 call sites — the most-used step in the ramp) both render *less* opaque than the
+newly-mapped `/60` at 72%. Both still clear AA on their own, so this is cosmetic
+token-ordering, not an accessibility failure — fold them into this sweep when it runs.)
 
 Every other view is unscanned and very likely carries the same defect. The fix is mechanical —
 swap sub-AA steps to `text-muted-foreground` — but it is a wide visual diff that needs its own
