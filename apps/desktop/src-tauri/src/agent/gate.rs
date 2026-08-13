@@ -716,6 +716,80 @@ mod tests {
         }
     }
 
+    /// A Write past the run's tool-call ceiling is refused WITHOUT suspending:
+    /// no gate entry, no `confirm_request`, no execution.
+    ///
+    /// The controller's per-call ceiling (Phase-7 delta round) short-circuits
+    /// the remaining calls of a turn once the budget is spent, and this is the
+    /// half that matters at the gate: the run is ending at `MaxToolCalls`
+    /// regardless, so suspending would ask the user to approve a save whose run
+    /// is already over — a confirm dialog whose Approve either does nothing or
+    /// writes a document from a run the user was told had stopped. The
+    /// controller-side count is pinned by
+    /// `a_parallel_tool_turn_cannot_spend_past_the_tool_call_ceiling`; this pins
+    /// the gate-side consequence, which that test cannot see.
+    ///
+    /// `max_tool_calls: 1` with a two-Write turn puts the second call exactly
+    /// past the ceiling, and NOTHING resolves the second one on purpose — a
+    /// regression suspends there. The budget's `confirm_timeout` is shortened
+    /// to five seconds for exactly that case: with the shipped 300 s a
+    /// regression would fail by HANGING for five minutes, and a test that fails
+    /// slowly and namelessly gets muted. Five seconds is far above the
+    /// resolver's own latency (it retries every yield) and turns the regression
+    /// into a named assertion failure.
+    ///
+    /// Mutation-checked, executed: moving the ceiling check back to the turn
+    /// boundary suspends on the second Write — with the shipped timeout the run
+    /// blocks (observed: killed at 120 s); with this one it fails on the
+    /// confirm-count assertion.
+    #[tokio::test]
+    async fn a_write_past_the_tool_call_ceiling_never_suspends() {
+        let env = FakeEnv::new(vec![double_write_call("writer")]);
+        let gate = Arc::new(AgentGate::default());
+        // The FIRST write is approved so the run reaches the second one.
+        spawn_resolver(gate.clone(), "job-1", "1-0-writer", Decision::Approve);
+        let budget = Budget {
+            max_tool_calls: 1,
+            confirm_timeout: Duration::from_secs(5),
+            ..Budget::AGENT_PREP
+        };
+        let out = run_agent_with_system(
+            &env,
+            &whitelist(),
+            &gate,
+            budget,
+            AGENT_SYSTEM,
+            "job-1",
+            "prep this".into(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+        let writes = env.writes.lock();
+        assert_eq!(
+            writes.len(),
+            1,
+            "only the affordable write executed, got {writes:?}"
+        );
+        assert_eq!(
+            env.steps
+                .lock()
+                .iter()
+                .filter(|s| s.kind == AgentStepKind::ConfirmRequest)
+                .count(),
+            1,
+            "the second Write must not have asked the user anything"
+        );
+        // …and it left no pending entry behind: resolving the id the second
+        // call WOULD have registered finds nothing.
+        assert!(
+            !gate.resolve("job-1", "1-1-writer", Decision::Approve),
+            "a refused Write must never have been registered with the gate"
+        );
+    }
+
     /// These tests suspend on a real Write, so they drive `run_agent_with_system`
     /// directly with a shared gate they can resolve. `confirm_timeout` lets the
     /// timeout test pass a tiny ceiling; approve/deny/edit tests pass a generous one.
