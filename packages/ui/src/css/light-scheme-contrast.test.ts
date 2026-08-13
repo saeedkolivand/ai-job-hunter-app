@@ -300,16 +300,19 @@ describe('utilities.css — text/border-foreground opacity remaps (contrast)', (
     }
   );
 
-  it.each(BORDER_STEPS)('border-foreground/%i clears 3:1 once boosted to its remapped alpha', (nn) => {
-    // Mirrors the text-foreground/55↔/60 pair: border only needs the 3:1
-    // floor, not text's 4.5:1, but a prior version of this block reused the
-    // TEXT taper's percentages verbatim — which cleared 4.5:1 for text at
-    // higher NN, but left four of these five border steps still short of the
-    // much lower 3:1 floor. Each step must clear it on its own.
-    const boosted = remappedAlphaPct(`border-foreground\\/${nn}`);
-    expect(boosted).not.toBeNull();
-    expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(3);
-  });
+  it.each(BORDER_STEPS)(
+    'border-foreground/%i clears 3:1 once boosted to its remapped alpha',
+    (nn) => {
+      // Mirrors the text-foreground/55↔/60 pair: border only needs the 3:1
+      // floor, not text's 4.5:1, but a prior version of this block reused the
+      // TEXT taper's percentages verbatim — which cleared 4.5:1 for text at
+      // higher NN, but left four of these five border steps still short of the
+      // much lower 3:1 floor. Each step must clear it on its own.
+      const boosted = remappedAlphaPct(`border-foreground\\/${nn}`);
+      expect(boosted).not.toBeNull();
+      expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(3);
+    }
+  );
 
   it('preserves ordering across border-foreground/10..25: each step maps to strictly MORE alpha than the last', () => {
     // Regression guard for the same defect class as the text /55↔/60 pair:

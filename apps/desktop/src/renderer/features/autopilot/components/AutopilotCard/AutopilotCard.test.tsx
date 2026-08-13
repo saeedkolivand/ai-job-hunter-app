@@ -1308,7 +1308,9 @@ describe('AutopilotCard — postedAt date chip', () => {
     expect(chip).not.toBeNull();
     expect(chip).toHaveAttribute('title', new Date(0).toLocaleString());
     // The footgun's tell: no bare "0" text node anywhere in the row.
-    expect(within(epochRow as HTMLElement).queryByText('0', { exact: true })).not.toBeInTheDocument();
+    expect(
+      within(epochRow as HTMLElement).queryByText('0', { exact: true })
+    ).not.toBeInTheDocument();
 
     // Sort half of the contract: the epoch job must band as DATED (ahead of
     // the undated one), not fall through to the undated/trailing band.
@@ -1364,7 +1366,7 @@ describe('sortFoundJobsByDate', () => {
   // must band as DATED, matching the render guard's `typeof === 'number'`
   // contract — a falsy-0 check anywhere in this pipeline would sink it into
   // the undated/trailing band instead.
-  it('treats postedAt: 0 as dated, not undated (shares the render guard\'s typeof contract)', () => {
+  it("treats postedAt: 0 as dated, not undated (shares the render guard's typeof contract)", () => {
     const input = [undated('u1'), dated('epoch', 0)];
     expect(sortFoundJobsByDate(input, 'newest').map((j) => j.url)).toEqual(['epoch', 'u1']);
   });
