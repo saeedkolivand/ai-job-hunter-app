@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.135.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.3...v0.135.0) (2026-08-13)
+
+### ✨ Features
+
+* add exa as a fallback web-search backend for company research ([#961](https://github.com/saeedkolivand/ai-job-hunter-app/issues/961)) ([cc73af9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cc73af992b74eeeeb2ed9378edeb646088997dd6)), closes [#960](https://github.com/saeedkolivand/ai-job-hunter-app/issues/960)
+* add jake, awesome and deedy resume templates from the latex classics ([#965](https://github.com/saeedkolivand/ai-job-hunter-app/issues/965)) ([3ca7d9c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3ca7d9cb6411670f85bbf5f63ecf3cc08a66b9d8)), closes [#953](https://github.com/saeedkolivand/ai-job-hunter-app/issues/953)
+* **agent:** phase 7 — the flow registry and the improve-resume flow ([#986](https://github.com/saeedkolivand/ai-job-hunter-app/issues/986)) ([3e37b7d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3e37b7d8392374f50b66c788eaa33ed775d3259c)), closes [#970](https://github.com/saeedkolivand/ai-job-hunter-app/issues/970)
+* autopilot adopts semantic scoring when enabled ([#966](https://github.com/saeedkolivand/ai-job-hunter-app/issues/966)) ([7e33146](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7e331463ef67c7b1b10dc449a8c547160e79fc01))
+* deterministic content validation and quality report for generated documents ([#963](https://github.com/saeedkolivand/ai-job-hunter-app/issues/963)) ([c438eda](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c438eda00ed37b9ed174cba1bf39b1010ddf088e)), closes [#1](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1)
+* **export:** phase 8 — sidebar and monogram letter layouts, and a reachable letter ATS toggle ([#988](https://github.com/saeedkolivand/ai-job-hunter-app/issues/988)) ([57f782f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/57f782f314e1f9ecb776827f4cc9792ab7d7bf2d))
+* integrate the no-ai-slop catalog into the anti-ai-tell system ([#967](https://github.com/saeedkolivand/ai-job-hunter-app/issues/967)) ([5dc1395](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5dc139577a3b6a76c2f2f4101d7a901197413080))
+* native structured output for openai, gemini and ollama with a hardened json parse module ([#964](https://github.com/saeedkolivand/ai-job-hunter-app/issues/964)) ([96cc9f9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/96cc9f9640992bc5ae019788fcedf717a896b307)), closes [#963](https://github.com/saeedkolivand/ai-job-hunter-app/issues/963)
+* **pipeline:** phase 2 run infrastructure ([#968](https://github.com/saeedkolivand/ai-job-hunter-app/issues/968)) ([0e0675c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0e0675c29121704665859c0f346ff31ec20c659e))
+* **pipeline:** phase 3 — the quality generation depth ([#969](https://github.com/saeedkolivand/ai-job-hunter-app/issues/969)) ([65d5f16](https://github.com/saeedkolivand/ai-job-hunter-app/commit/65d5f169ea0b9a59e38e7c46a0cae3bb2e0963ef))
+* **pipeline:** phase 4 — the max generation depth ([#970](https://github.com/saeedkolivand/ai-job-hunter-app/issues/970)) ([73dbd99](https://github.com/saeedkolivand/ai-job-hunter-app/commit/73dbd99b0c9e6b7b0a894a0944e1d5364a9185e0))
+* **pipeline:** phase 6 — per-stage models and the local-model advisor ([#985](https://github.com/saeedkolivand/ai-job-hunter-app/issues/985)) ([665505a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/665505a826fa7ff683736aae0db4b285c1ebd86a))
+* polish batch — letters sweep, cache keys, contrast, ai-status, italian tells, autopilot dates ([#989](https://github.com/saeedkolivand/ai-job-hunter-app/issues/989)) ([546fc36](https://github.com/saeedkolivand/ai-job-hunter-app/commit/546fc36df4ae75a216d0713284b4fe2e0968b53c)), closes [#985](https://github.com/saeedkolivand/ai-job-hunter-app/issues/985) [#set](https://github.com/saeedkolivand/ai-job-hunter-app/issues/set) [#10](https://github.com/saeedkolivand/ai-job-hunter-app/issues/10)
+
+### 🐛 Bug Fixes
+
+* **autopilot:** stop the double scroll when returning from an application ([#987](https://github.com/saeedkolivand/ai-job-hunter-app/issues/987)) ([8728a67](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8728a672e4f3a169c1d590f1ecb8090e1c73b433))
+* generation-burst reliability and the silent defects from the 2026-08-08 diagnostics bundle ([#960](https://github.com/saeedkolivand/ai-job-hunter-app/issues/960)) ([d367bcc](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d367bccacdde1b446cc6fb048b18db1dd0eb9fc7))
+* link orphaned landing routes from home and add sitemap lastmod ([#962](https://github.com/saeedkolivand/ai-job-hunter-app/issues/962)) ([d1eab7b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d1eab7b3c0d3de2031236650fa11a4f316c1991a)), closes [#934](https://github.com/saeedkolivand/ai-job-hunter-app/issues/934)
+
 ## [0.134.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.2...v0.134.3) (2026-08-08)
 
 ### 🐛 Bug Fixes
