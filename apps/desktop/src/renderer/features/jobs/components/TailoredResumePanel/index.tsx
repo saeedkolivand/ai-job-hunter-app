@@ -44,6 +44,13 @@ import { useGenerationDepth } from '@/store/preferences-store';
  * overwrite the document with its own truncated head. Checked here as well so
  * the action is withheld with a reason instead of failing on click; the stored
  * text is still the authority, so the run's own error is handled either way.
+ *
+ * TODO: import this from the shared contract once the backend exports the cap
+ * through `pnpm gen:ipc` (in flight on the Rust side). Until it lands, a copied
+ * literal is the honest state — and it is pinned from both ends: the panel test
+ * asserts the boundary here, and `readable_generation_text`'s own test asserts
+ * it there, so a divergence shows up as a red rather than as a run that fails
+ * on click.
  */
 const GENERATION_REVIEW_CAP = 8_000;
 
