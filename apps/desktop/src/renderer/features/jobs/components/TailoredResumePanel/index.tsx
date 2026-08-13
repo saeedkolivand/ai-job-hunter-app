@@ -342,7 +342,6 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     canRunStaged,
   });
 
-
   /** Where focus goes when the review card removes itself (see the card's
    *  `onDismissed`): the control that started it, which is still on screen. */
   const improveTriggerRef = useRef<HTMLButtonElement>(null);
