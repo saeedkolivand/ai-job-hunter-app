@@ -92,10 +92,12 @@ const bus = vi.hoisted((): TestBus => ({
 // invalidates, which the stub reports exactly.
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   // Everything else stays real (`@/services/query-client` builds a `QueryClient`
-  // at import time); only the hook the session uses is swapped. Typed off
-  // `unknown` rather than the module's own types — even a type-only import of
-  // those names trips the same boundary rule.
-  const actual = (await importOriginal());
+  // at import time); only the hook the session uses is swapped. Typed through
+  // the generic rather than the module's own types — even a type-only import of
+  // those names trips the same boundary rule — and as a type ARGUMENT rather
+  // than an assertion, which `no-unnecessary-type-assertion` autofixes away
+  // (leaving a spread of `unknown` that only `tsc` catches).
+  const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, useQueryClient: () => ({ invalidateQueries: bus.invalidate }) };
 });
 
