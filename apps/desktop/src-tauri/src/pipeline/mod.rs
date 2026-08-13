@@ -145,14 +145,30 @@ impl Completer {
     /// that fails is an `Err`, never a quiet fallback to the active provider:
     /// the run the user asked for is not the run they would get.
     pub fn from_active_for_stage(app: &AppHandle, stage: &str) -> AppResult<Self> {
-        let store = app.state::<crate::ai_config::AiConfigStore>();
-        let Some(over) = store.stage_override(stage) else {
-            return Self::from_active(app);
-        };
-        // The endpoint FOLLOWS the named provider's own stored row, read here
-        // at resolve time rather than snapshotted into the override — see
+        let over = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .stage_override(stage);
+        match over {
+            Some(over) => Self::from_override_row(app, over),
+            None => Self::from_active(app),
+        }
+    }
+
+    /// Build a `Completer` from an override row the caller ALREADY holds.
+    ///
+    /// Split out so [`for_stages`](Self::for_stages) can resolve from its own
+    /// snapshot instead of re-reading the store per stage — see the atomicity
+    /// note there.
+    fn from_override_row(
+        app: &AppHandle,
+        over: crate::ai_config::StageOverride,
+    ) -> AppResult<Self> {
+        // The endpoint FOLLOWS the named provider's own stored row, read at
+        // resolve time rather than snapshotted into the override — see
         // `from_override`.
-        let base_url = store.provider_base_url(&over.provider);
+        let base_url = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .provider_base_url(&over.provider);
         let (provider, model, base_url, context_window) = Self::from_override(over, base_url)?;
         Ok(Self {
             app: app.clone(),
@@ -180,15 +196,24 @@ impl Completer {
         app: &AppHandle,
         stages: &[&str],
     ) -> AppResult<std::collections::HashMap<String, Self>> {
-        let overrides = app
+        let mut overrides = app
             .state::<crate::ai_config::AiConfigStore>()
             .stage_overrides();
         let mut out = std::collections::HashMap::new();
-        for stage in stages.iter().filter(|s| overrides.contains_key(**s)) {
-            out.insert(
-                (*stage).to_string(),
-                Self::from_active_for_stage(app, stage)?,
-            );
+        for stage in stages {
+            // Resolved from the map READ ABOVE, not by re-reading the store per
+            // stage. Membership and content then come from one snapshot, so the
+            // "absent means the default" invariant below is true by
+            // construction: re-reading left a window in which a clear landing
+            // between the two reads put a stage in the map mapped to a clone of
+            // the ACTIVE completer — the one state this doc says cannot occur.
+            // Nothing observable moved today (that clone's routing identity
+            // equals the default's, so no cache key changes), but "the map says
+            // overridden" is exactly what a later reader would trust.
+            let Some(over) = overrides.remove(*stage) else {
+                continue;
+            };
+            out.insert((*stage).to_string(), Self::from_override_row(app, over)?);
         }
         Ok(out)
     }
