@@ -2631,7 +2631,8 @@ fn lexicon_uncurated_language_gets_no_list_rather_than_english() {
     let en_lexical = lexicon::ai_tell_lexical("en");
     assert!(!en_lexical.is_empty(), "English is curated");
     assert!(!lexicon::ai_tell_lexical("de").is_empty(), "German is too");
-    for lang in ["fr", "es", "it", "nl", "pt", "zz", ""] {
+    assert!(!lexicon::ai_tell_lexical("it").is_empty(), "Italian is too");
+    for lang in ["fr", "es", "nl", "pt", "zz", ""] {
         assert!(
             lexicon::ai_tell_lexical(lang).is_empty(),
             "{lang} has no curated lexicon — it must not borrow English's"
@@ -2639,10 +2640,19 @@ fn lexicon_uncurated_language_gets_no_list_rather_than_english() {
         assert!(lexicon::ai_tell_prose(lang).is_empty());
         assert!(lexicon::template_openers(lang).is_empty());
     }
-    // German is a genuinely different list, not just a fallback alias.
+    // German and Italian are genuinely different lists, not fallback aliases.
     assert_ne!(lexicon::ai_tell_lexical("de"), en_lexical);
+    assert_ne!(lexicon::ai_tell_lexical("it"), en_lexical);
+    assert_ne!(
+        lexicon::ai_tell_lexical("it"),
+        lexicon::ai_tell_lexical("de")
+    );
     assert_ne!(
         lexicon::template_openers("de"),
+        lexicon::template_openers("en")
+    );
+    assert_ne!(
+        lexicon::template_openers("it"),
         lexicon::template_openers("en")
     );
 }
@@ -2656,12 +2666,17 @@ fn lexicon_uncurated_language_gets_no_list_rather_than_english() {
 /// an empty list is the honest state, not a codegen accident.
 #[test]
 fn lexicon_every_entry_is_lowercase_and_non_empty() {
-    let curated: [&[&str]; 5] = [
+    let curated: [&[&str]; 8] = [
         lexicon::ai_tell_lexical("en"),
         lexicon::ai_tell_lexical("de"),
+        lexicon::ai_tell_lexical("it"),
         lexicon::ai_tell_prose("en"),
+        // Unlike DE, the Italian prose tier is non-empty (see
+        // AI_TELL_PROSE_WORDS_IT's doc), so it belongs in the mandatory list.
+        lexicon::ai_tell_prose("it"),
         lexicon::template_openers("en"),
         lexicon::template_openers("de"),
+        lexicon::template_openers("it"),
     ];
     for list in curated {
         assert!(!list.is_empty(), "no curated list may be empty");
@@ -2684,6 +2699,183 @@ fn lexicon_every_entry_is_lowercase_and_non_empty() {
             "lexicon entries must be lowercase; got {entry:?}"
         );
     }
+}
+
+// ── Italian lexicon (task: AI-tell support for Italian) ────────────────────
+//
+// `target_language` is a user-configurable output-language setting
+// (`OUTPUT_LANGUAGES` in the renderer), not a detected property of the text —
+// so Italian output reaches `ctx.lang == "it"` and these validators exactly
+// the same way German output does. Fixtures are inline literals rather than
+// shared `IT_SOURCE`/`IT_JOB_AD` fixture files (mirroring
+// `german_template_openers_are_unaffected_by_the_apostrophe_fold` above): a
+// short, generic `source_resume` keeps `content.language_mismatch` and the
+// per-phrase source exemption out of the way of what each test actually
+// checks.
+
+const IT_SOURCE_STUB: &str = "Maria Rossi\nSviluppatrice\nmaria@example.com\n";
+
+/// Every phrase the Italian curation pass added to the CHECKED tier fires, in
+/// one letter — the same "one fixture, every entry" discipline
+/// `no_ai_slop_checked_tier_fires_on_a_slop_letter` uses for English, so an
+/// entry that silently stopped matching cannot hide behind "some AI tell
+/// fired".
+#[test]
+fn italian_ai_tells_fire_on_a_slop_letter() {
+    let letter = "Egregio selezionatore,\n\n\
+                  Nel panorama odierno, in un mondo sempre più digitale, la vostra azienda \
+                  opera all'avanguardia con un ventaglio di soluzioni cloud. Ho uno spirito \
+                  di squadra genuino e sono orientato ai risultati; la mia collega è invece \
+                  orientata ai risultati in modo analogo. Sono una persona meticolosa e ho \
+                  lavorato con un team meticoloso su ogni rilascio. Porto con me una \
+                  comprovata esperienza nel settore dei pagamenti. Al fine di completare il \
+                  progetto in tempo, e in considerazione del fatto che le scadenze erano \
+                  strette, ho riorganizzato il team. Al momento attuale la piattaforma serve \
+                  molti clienti. È importante sottolineare che il sistema non si è mai \
+                  fermato, e vale la pena notare che ho scritto ogni riga del backend.\n\n\
+                  Cordiali saluti,\nMaria Rossi\n";
+    let report = validate_content(&ContentInput {
+        generated: letter,
+        source_resume: IT_SOURCE_STUB,
+        job_ad: "",
+        top_requirements: &[],
+        target_language: "it",
+        doc_kind: DocKind::CoverLetter,
+    });
+    let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    for entry in [
+        "all'avanguardia",
+        "un ventaglio di",
+        "spirito di squadra",
+        "orientato ai risultati",
+        "orientata ai risultati",
+        "meticoloso",
+        "meticolosa",
+        "comprovata esperienza",
+        "al fine di",
+        "in considerazione del fatto che",
+        "al momento attuale",
+        "nel panorama odierno",
+        "in un mondo sempre più",
+        "è importante sottolineare",
+        "vale la pena notare",
+    ] {
+        assert!(
+            evidence.contains(&entry),
+            "{entry:?} is on the prompt's own Italian ban list and must fire; got {evidence:?}"
+        );
+    }
+    assert!(
+        report.ok,
+        "voice findings stay advice — a model may never produce a Critical"
+    );
+}
+
+/// The mutation that matters for Italian specifically: elision
+/// (`all'avanguardia`, `all'annuncio`) puts an apostrophe INSIDE a checked
+/// phrase in ordinary, unremarkable Italian, unlike English where it only
+/// shows up in a handful of contractions. A model writes the typographic
+/// apostrophe (U+2019) about as often as the ASCII one; without
+/// `fold_apostrophes` on both `ai_tell_issues` and `template_opener_issues`,
+/// the typographic spelling of EITHER phrase below goes silently unmatched —
+/// which is exactly what this test would catch if the fold were removed.
+#[test]
+fn italian_ai_tells_and_openers_fire_with_either_apostrophe() {
+    let typographic = "Gentile Selezionatore,\n\n\
+                       In riferimento all\u{2019}annuncio per la posizione, la vostra azienda \
+                       opera all\u{2019}avanguardia nel settore dei pagamenti digitali. Ho \
+                       sviluppato il sistema di liquidazione che elabora le transazioni ogni \
+                       notte.\n\n\
+                       Cordiali saluti,\nMaria Rossi\n";
+    for (shape, letter) in [
+        ("typographic U+2019", typographic.to_string()),
+        ("ASCII U+0027", typographic.replace('\u{2019}', "'")),
+    ] {
+        let report = validate_content(&ContentInput {
+            generated: &letter,
+            source_resume: IT_SOURCE_STUB,
+            job_ad: "",
+            top_requirements: &[],
+            target_language: "it",
+            doc_kind: DocKind::CoverLetter,
+        });
+        assert_eq!(
+            first_evidence(&report, VOICE_TEMPLATE_OPENER),
+            Some("in riferimento all'annuncio"),
+            "{VOICE_TEMPLATE_OPENER} must report the opener on the {shape} spelling; the \
+             report carried {:?}",
+            codes(&report)
+        );
+        let lexical_evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+            .iter()
+            .filter_map(|i| i.evidence.as_deref())
+            .collect();
+        assert!(
+            lexical_evidence.contains(&"all'avanguardia"),
+            "\"all'avanguardia\" must fire on the {shape} spelling; got {lexical_evidence:?}"
+        );
+    }
+}
+
+/// The negative control: a truthful, professionally-written Italian letter
+/// that never reaches for a curated tell must stay silent on both voice
+/// codes — the same trust bar `no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator`
+/// holds English to.
+#[test]
+fn clean_professional_italian_letter_has_no_voice_ai_tell_or_opener_issues() {
+    let letter = "Gentile Dott.ssa Bianchi,\n\n\
+                  Ho seguito con attenzione la crescita della vostra piattaforma di pagamenti \
+                  negli ultimi due anni, in particolare il passaggio a un'architettura basata \
+                  su microservizi. Nel mio ruolo attuale gestisco il sistema di liquidazione \
+                  che elabora le transazioni notturne per Acme Pagamenti, e credo che la mia \
+                  esperienza con Kubernetes e PostgreSQL si adatti bene al vostro stack.\n\n\
+                  Cordiali saluti,\nMaria Rossi\n";
+    let report = validate_content(&ContentInput {
+        generated: letter,
+        source_resume: IT_SOURCE_STUB,
+        job_ad: "",
+        top_requirements: &[],
+        target_language: "it",
+        doc_kind: DocKind::CoverLetter,
+    });
+    silent(&report, VOICE_AI_TELL_LEXICAL);
+    silent(&report, VOICE_TEMPLATE_OPENER);
+}
+
+/// The résumé/letter tier split holds for Italian too:
+/// `voice::validate` (résumé path) runs the lexical tier only, so a
+/// LEXICAL-tier entry fires on a bullet while a PROSE-tier (letter-register)
+/// entry — one that cannot occur in an ATS bullet — never does.
+#[test]
+fn italian_lexical_tier_applies_to_resume_bullets_prose_tier_does_not() {
+    let source = "ESPERIENZA\n\nIngegnere Piattaforma | Acme Pagamenti | 2021 - Presente\n\
+                  - Gestisco il sistema di liquidazione\n";
+    let generated = "ESPERIENZA\n\nIngegnere Piattaforma | Acme Pagamenti | 2021 - Presente\n\
+                     - Un sistema di pagamenti all'avanguardia che elabora ogni notte le \
+                     transazioni, nel panorama odierno sempre più critico per il settore\n";
+    let report = validate_content(&ContentInput {
+        generated,
+        source_resume: source,
+        job_ad: "",
+        top_requirements: &[],
+        target_language: "it",
+        doc_kind: DocKind::Resume,
+    });
+    let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert!(
+        evidence.contains(&"all'avanguardia"),
+        "the lexical-tier entry must fire on a résumé bullet; got {evidence:?}"
+    );
+    assert!(
+        !evidence.contains(&"nel panorama odierno"),
+        "the prose-tier (letter-only) entry must NOT fire on a résumé bullet; got {evidence:?}"
+    );
 }
 
 // ── PR #963 round-5 findings ────────────────────────────────────────────────

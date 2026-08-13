@@ -36,6 +36,10 @@ import type { PromptDepth } from '../../provider/index.js';
  * - `de` — a curated German AI-tell (KI-Floskeln) lexicon + prose rules, not a
  *   translation of the English list (a literal translation would ban words no
  *   German writer would reach for and miss the actual German tells).
+ * - `it` — a curated Italian AI-tell lexicon + prose rules, same discipline as
+ *   `de`: real Italian AI-isms ("nel panorama odierno", "all'avanguardia",
+ *   "svolge un ruolo fondamentale"), not a translation of the English or
+ *   German catalogs.
  * - anything else — a generic, language-referencing directive (avoid stock AI
  *   phrasing / literal translations of English AI clichés, vary sentence length,
  *   use natural idiom for that language). We only curate a word list for a
@@ -211,6 +215,35 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
 - Konkret statt abstrakt: benenne die reale Sache und was sich geändert hat, nicht Adjektive.`;
 
 /**
+ * Curated Italian (it) equivalent of {@link ANTI_AI_TELL_LEXICAL_EN} — real
+ * Italian AI-isms ("all'avanguardia", "svolge un ruolo fondamentale"), not a
+ * translation of the English OR German catalogs (same discipline
+ * {@link ANTI_AI_TELL_LEXICAL_DE}'s doc states: a translated list bans phrasing
+ * no Italian writer would produce and misses the real ones).
+ *
+ * The letter-register openers ("nel panorama odierno", "in un mondo sempre
+ * più") are deliberately ABSENT here and live only in
+ * {@link ANTI_AI_TELL_PROSE_IT}'s own addition, for the same reason
+ * `AI_TELL_PROSE_WORDS_EN`'s doc gives for "in today's world": neither phrase
+ * can occur in an ATS bullet, so stating them in the block shared with the
+ * résumé prompt would be dead instruction on that path.
+ */
+const ANTI_AI_TELL_LEXICAL_IT = `NATURAL VOICE (anti-cliché IA, italiano). Si applica alle parole che INTRODUCI tu, mai alle parole chiave esatte dell'annuncio già presenti nel curriculum:
+- Evita i cliché da IA: "all'avanguardia", "un ventaglio di", "svolge un ruolo fondamentale", "implementare soluzioni innovative", "chiave di volta" (salvo che il testo parli letteralmente di architettura). Usa la parola concreta per la cosa reale.
+- Nessun autoelogio promozionale: "spirito di squadra", "orientato ai risultati" / "orientata ai risultati", "meticoloso" / "meticolosa", "comprovata esperienza", "eccellenti capacità comunicative".
+- Nessun riferimento vago o formula debole: "studi dimostrano", "gli esperti concordano", "come è noto a tutti".
+- Elimina il burocratese di riempimento: "al fine di" -> "per", "in considerazione del fatto che" -> "poiché", "al momento attuale" -> "ora".`;
+
+const ANTI_AI_TELL_PROSE_IT = `${ANTI_AI_TELL_LEXICAL_IT}
+FLUSSO DEL TESTO (anti-cliché IA, per la scrittura discorsiva):
+- Trattino lungo (mezzo o intero) vietato: mai usarlo, sostituiscilo con punto, virgola, due punti o parentesi.
+- Varia la lunghezza e il ritmo delle frasi; evita più frasi consecutive dalla stessa struttura.
+- Niente regola del tre: non forzare le idee in gruppi di tre.
+- Elimina gli incipit da IA sul "mondo di oggi": "nel panorama odierno", "in un mondo sempre più".
+- Elimina le premesse di cortesia vuote: "è importante sottolineare", "vale la pena notare".
+- Concreto invece che astratto: nomina la cosa reale e cosa è cambiato, non gli aggettivi.`;
+
+/**
  * Discrete, lowercase, substring-matchable word/phrase lists for the Rust
  * content validator's `voice.ai_tell_lexical` and `voice.template_opener`
  * checks (there is no separate prose code — `voice.rs::ai_tell_issues` reports
@@ -353,6 +386,77 @@ export const AI_TELL_LEXICAL_WORDS_DE = [
 ];
 
 /**
+ * Italian (it) twin of {@link AI_TELL_LEXICAL_WORDS_EN} — genuinely curated
+ * Italian AI-isms, not a translation. Every entry clears all four rules
+ * {@link AI_TELL_LEXICAL_WORDS_EN}'s doc states (fixed form, zero factual
+ * content, unconditional in the prompt, no hidden domain meaning); the
+ * per-entry note below is which rule was the deciding one.
+ *
+ * - `all'avanguardia` ("cutting-edge") and `un ventaglio di` ("an array of")
+ *   are pure decoration: rule 2 (deleting either removes a flourish, never a
+ *   claim). `all'avanguardia` also carries the ONE Italian elision
+ *   (`a` + `la` + vowel-initial noun) in this array on purpose: Italian
+ *   elision is exactly the U+2019/U+0027 apostrophe-fold case
+ *   `voice.rs::ai_tell_issues` already handles for the EN contraction twins,
+ *   and this array needs a real load-bearing example of it rather than an
+ *   untested assumption that Italian "just works" the same way.
+ * - The self-praise pairs (`orientato`/`orientata ai risultati`,
+ *   `meticoloso`/`meticolosa`) are the Italian analogs of `results-driven`
+ *   and `meticulous`/`detail-oriented` respectively (rule 2: vague
+ *   self-adjectives, not a specific fact). BOTH genders are carried as
+ *   separate entries for the same reason the EN contraction twins
+ *   (`it's worth noting` / `it is worth noting`) are: a fixed-form substring
+ *   check cannot bridge an `-o`/`-a` agreement, so a masculine-only entry
+ *   would be silently dead on every résumé written by (or describing) a
+ *   woman — the German-inflection defect class, sidestepped here by curating
+ *   both forms explicitly rather than teaching the matcher Italian
+ *   morphology. Plural forms (`orientati`/`orientate`) are a stated residual:
+ *   rare in a first-person CV/letter, and the codebase's own precedent
+ *   (German's `DE_INFLECTION_SUFFIXES`) is to bound the tolerance rather than
+ *   chase every inflected form.
+ * - `comprovata esperienza` ("proven track record") is rule 2 for the same
+ *   reason the EN phrase it parallels is checked: vague self-praise, not a
+ *   measurable claim.
+ * - `al fine di` / `in considerazione del fatto che` / `al momento attuale`
+ *   are Italian officialese filler ("in order to" / "due to the fact that" /
+ *   "at this point in time"), picked as the genuine Italian bureaucratic
+ *   tics style guides warn against, not as translations of the EN fillers
+ *   they happen to occupy the same slot as.
+ *
+ * Rejected, and why (four-rule bar, not "didn't think of it"):
+ * - `svolge un ruolo fondamentale` ("plays a fundamental role") fails rule 1:
+ *   Italian verb conjugation (svolge / svolgono / svolgeva / ha svolto) means
+ *   a fixed-form substring entry is silently dead on most of its real
+ *   occurrences — the same shape as the German inflection bug this codebase
+ *   already paid for once. Stays prompt-only, alongside the EN precedent
+ *   `plays a vital role` sets for the identical importance-puffery family.
+ * - `implementare soluzioni innovative` ("implement innovative solutions")
+ *   fails rule 2: it names a real action a real person may genuinely have
+ *   performed, the same reason `utilize`/`facilitate`/`spearhead` stay
+ *   prompt-only in EN rather than checked.
+ * - `chiave di volta` ("keystone") fails rule 4: it is a real
+ *   architecture/civil-engineering term, so a structural engineer's résumé
+ *   could truthfully use it literally — the `beacon`/`transformative`/
+ *   `paramount` domain-collision class.
+ */
+export const AI_TELL_LEXICAL_WORDS_IT = [
+  // AI vocabulary / decorative filler
+  "all'avanguardia",
+  'un ventaglio di',
+  // Promotional self-adjectives (gender twins — see the doc above)
+  'spirito di squadra',
+  'orientato ai risultati',
+  'orientata ai risultati',
+  'meticoloso',
+  'meticolosa',
+  'comprovata esperienza',
+  // Bureaucratic filler
+  'al fine di',
+  'in considerazione del fatto che',
+  'al momento attuale',
+];
+
+/**
  * Prose-only patterns (connected writing only) — the hedging preambles and
  * stock transitions {@link ANTI_AI_TELL_PROSE_EN} / {@link HUMANIZE_PROSE}
  * ban as PHRASES, wherever they appear.
@@ -449,6 +553,34 @@ export const AI_TELL_PROSE_WORDS_EN = [
 export const AI_TELL_PROSE_WORDS_DE: string[] = [];
 
 /**
+ * Italian (it) twin of {@link AI_TELL_PROSE_WORDS_EN} — letter-register
+ * hedging preambles and "state of the world" openers that cannot occur in an
+ * ATS bullet, which is why they live here and not in
+ * {@link AI_TELL_LEXICAL_WORDS_IT}: the same rule that keeps `"in today's
+ * world"` out of the EN lexical tier.
+ *
+ * - `nel panorama odierno` / `in un mondo sempre più` are the Italian
+ *   "state of the world" opener, direct functional (not literal) analogs of
+ *   EN's `"in today's world"` and DE's `in der heutigen zeit`/`welt` —
+ *   curated on the same evidence (Italian AI-generated cover letters reach
+ *   for this construction as an opener), not translated from either.
+ * - `è importante sottolineare` / `vale la pena notare` mirror EN's
+ *   `"it is important to note"` / `"it is worth noting"` hedging-preamble
+ *   family: fixed, zero factual content, unconditionally droppable filler.
+ *
+ * No apostrophe-bearing entry lives here (unlike EN's contraction twins):
+ * Italian elision is exercised instead by {@link AI_TELL_LEXICAL_WORDS_IT}'s
+ * `all'avanguardia`, which is checked on BOTH the résumé and letter path and
+ * is therefore the more load-bearing place to prove the fold.
+ */
+export const AI_TELL_PROSE_WORDS_IT = [
+  'nel panorama odierno',
+  'in un mondo sempre più',
+  'è importante sottolineare',
+  'vale la pena notare',
+];
+
+/**
  * Stock cover-letter openers — the phrases a letter that could have been
  * addressed to anyone starts with. Single source for BOTH the letter
  * prompt's opener ban (see `LETTER_SPECIFICS` in
@@ -491,6 +623,41 @@ export const TEMPLATE_OPENERS_DE = [
   'mit großem interesse habe ich gelesen',
   'auf ihre stellenanzeige hin',
   'wie ihrer stellenanzeige zu entnehmen ist',
+];
+
+/**
+ * Italian (it) twin of {@link TEMPLATE_OPENERS_EN} — the stock openers of an
+ * Italian cover letter that could have been addressed to anyone.
+ *
+ * `"egregi signori"` (the traditional "Dear Sirs" salutation) is deliberately
+ * ABSENT, on the same reasoning {@link TEMPLATE_OPENERS_DE} already applies by
+ * omitting `"sehr geehrte damen und herren"`: it is a standard formal
+ * SALUTATION, not a stock "tell" opener, and a properly-written human letter
+ * in the formal register begins with exactly this greeting. Flagging it would
+ * punish correct Italian business etiquette, the same false-positive cost
+ * this module refuses to pay elsewhere.
+ *
+ * `"spero che questa email la trovi bene"` ("I hope this email finds you
+ * well") is the one genuine anglicism-calque entry: Italian professional
+ * correspondence does not traditionally open this way, so its presence is
+ * itself a tell that the text is a literal English-to-Italian AI translation
+ * rather than native Italian phrasing.
+ *
+ * `"in riferimento all'annuncio"` carries Italian elision (`a` + `lo`/`la` +
+ * vowel-initial noun), matched with an ASCII apostrophe (U+0027) per the same
+ * one-directional shape rule {@link TEMPLATE_OPENERS_EN}'s doc states:
+ * `voice.rs::template_opener_issues` folds U+2019 onto U+0027 before
+ * matching, so this entry (like `AI_TELL_LEXICAL_WORDS_IT`'s
+ * `all'avanguardia`) covers whichever apostrophe a model actually writes.
+ */
+export const TEMPLATE_OPENERS_IT = [
+  'con la presente mi candido',
+  'vi scrivo per candidarmi',
+  "in riferimento all'annuncio",
+  'sono entusiasta di candidarmi',
+  'vorrei propormi per la posizione di',
+  'ho letto con grande interesse il vostro annuncio',
+  'spero che questa email la trovi bene',
 ];
 
 /**
@@ -585,6 +752,7 @@ function normalizeLanguageCode(language?: string): string {
 export function antiAiTellLexical(language?: string, depth: PromptDepth = 'full'): string {
   const code = normalizeLanguageCode(language);
   if (code === 'de') return ANTI_AI_TELL_LEXICAL_DE;
+  if (code === 'it') return ANTI_AI_TELL_LEXICAL_IT;
   if (code === 'en') return depth === 'brief' ? LEXICAL_CHECKED_EN : ANTI_AI_TELL_LEXICAL_EN;
   return genericAntiAiTellLexical(code);
 }
@@ -598,6 +766,7 @@ export function antiAiTellLexical(language?: string, depth: PromptDepth = 'full'
 export function antiAiTellProse(language?: string, depth: PromptDepth = 'full'): string {
   const code = normalizeLanguageCode(language);
   if (code === 'de') return ANTI_AI_TELL_PROSE_DE;
+  if (code === 'it') return ANTI_AI_TELL_PROSE_IT;
   if (code === 'en') return depth === 'brief' ? ANTI_AI_TELL_PROSE_BRIEF_EN : ANTI_AI_TELL_PROSE_EN;
   return genericAntiAiTellProse(code);
 }

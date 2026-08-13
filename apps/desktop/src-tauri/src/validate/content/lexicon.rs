@@ -8,7 +8,7 @@
 //! validator checks exactly what the prompt asked for. Run `pnpm gen:prompts`
 //! to regenerate after editing those arrays.
 //!
-//! `lang` is an ISO-639-1 code. `"en"`/`"de"` return their curated lists;
+//! `lang` is an ISO-639-1 code. `"en"`/`"de"`/`"it"` return their curated lists;
 //! every OTHER language returns an EMPTY slice, never the English list —
 //! `natural-voice.ts` sends an uncurated language a generic, wordless
 //! directive instead (see its `genericAntiAiTellLexical`/
@@ -23,6 +23,7 @@ pub fn ai_tell_lexical(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => AI_TELL_LEXICAL_DE,
         "en" => AI_TELL_LEXICAL_EN,
+        "it" => AI_TELL_LEXICAL_IT,
         // Every other language gets the prompt's generic, wordless directive
         // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
         // no curated list to check it against.
@@ -44,6 +45,7 @@ pub fn ai_tell_prose(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => AI_TELL_PROSE_DE,
         "en" => AI_TELL_PROSE_EN,
+        "it" => AI_TELL_PROSE_IT,
         // Every other language gets the prompt's generic, wordless directive
         // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
         // no curated list to check it against.
@@ -57,6 +59,7 @@ pub fn template_openers(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => TEMPLATE_OPENERS_DE,
         "en" => TEMPLATE_OPENERS_EN,
+        "it" => TEMPLATE_OPENERS_IT,
         // Every other language gets the prompt's generic, wordless directive
         // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
         // no curated list to check it against.
@@ -133,6 +136,20 @@ const AI_TELL_LEXICAL_DE: &[&str] = &[
     "es ist allgemein bekannt",
 ];
 
+const AI_TELL_LEXICAL_IT: &[&str] = &[
+    "all'avanguardia",
+    "un ventaglio di",
+    "spirito di squadra",
+    "orientato ai risultati",
+    "orientata ai risultati",
+    "meticoloso",
+    "meticolosa",
+    "comprovata esperienza",
+    "al fine di",
+    "in considerazione del fatto che",
+    "al momento attuale",
+];
+
 const AI_TELL_PROSE_EN: &[&str] = &[
     "it is important to note",
     "it's important to note",
@@ -145,6 +162,13 @@ const AI_TELL_PROSE_EN: &[&str] = &[
 ];
 
 const AI_TELL_PROSE_DE: &[&str] = &[];
+
+const AI_TELL_PROSE_IT: &[&str] = &[
+    "nel panorama odierno",
+    "in un mondo sempre più",
+    "è importante sottolineare",
+    "vale la pena notare",
+];
 
 const TEMPLATE_OPENERS_EN: &[&str] = &[
     "i am writing to apply",
@@ -167,4 +191,14 @@ const TEMPLATE_OPENERS_DE: &[&str] = &[
     "mit großem interesse habe ich gelesen",
     "auf ihre stellenanzeige hin",
     "wie ihrer stellenanzeige zu entnehmen ist",
+];
+
+const TEMPLATE_OPENERS_IT: &[&str] = &[
+    "con la presente mi candido",
+    "vi scrivo per candidarmi",
+    "in riferimento all'annuncio",
+    "sono entusiasta di candidarmi",
+    "vorrei propormi per la posizione di",
+    "ho letto con grande interesse il vostro annuncio",
+    "spero che questa email la trovi bene",
 ];
