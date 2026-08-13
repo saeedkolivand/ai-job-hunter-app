@@ -234,10 +234,12 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
 ///
 /// Two kinds of token are **not** names and are dropped:
 ///
-/// 1. Anything that does not START with an alphanumeric — a pronoun
-///    parenthetical, "—", a stray bullet. The first version searched each token
+/// 1. Anything that does not START with a LETTER — a pronoun parenthetical,
+///    "—", a stray bullet, or a number. The first version searched each token
 ///    for its first alphanumeric *anywhere*, so "(they/them)" contributed a
-///    `T`; "Jane Smith (they/them)" came out `JT`.
+///    `T`; "Jane Smith (they/them)" came out `JT`. Alphanumeric was still too
+///    loose: an initial is never a digit, so "12 March 2025" offered `12`
+///    as a monogram. Letters only.
 /// 2. A token that abbreviates a WORD — two or more letters before its period
 ///    ("Dr.", "Prof.", "Dipl.-Ing.", "Ph.D."). Those are titles and
 ///    qualifications; "Dr. Jane Smith" is `JS`, and the German
@@ -247,10 +249,11 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
 /// Never longer than two characters, so the device is a fixed-size square no
 /// matter how long the name is — a third initial would overflow it. Returns an
 /// empty string for a nameless letterhead; the template skips the device then.
-pub(crate) fn monogram_initials(name: &str) -> String {
-    /// Is this token a person's name, as opposed to punctuation or a title?
+fn monogram_initials(name: &str) -> String {
+    /// Is this token a person's name, as opposed to punctuation, a number or a
+    /// title?
     fn is_name_token(tok: &str) -> bool {
-        if !tok.starts_with(char::is_alphanumeric) {
+        if !tok.starts_with(char::is_alphabetic) {
             return false;
         }
         // Letters before the first period: 1 is an initial ("J."), 2+ is a
@@ -291,15 +294,25 @@ pub(crate) fn monogram_initials(name: &str) -> String {
 /// letterhead-less letter the first line is the salutation, which made the
 /// device read `DM`, from "Dear Hiring Manager,".
 ///
-/// The DOCX renderer already refused to treat an opening line as the name
-/// (`generate_cover_letter_docx_layout`'s `!is_salutation && !is_signoff &&
-/// !is_subject_line` guard); this is the PDF side of the same guard, so the two
-/// formats agree. Scoped to the DEVICE deliberately: what `letterhead.name`
-/// itself should show for a letterhead-less letter is a separate, pre-existing
-/// question, and widening this would change all six layouts' output.
-fn letterhead_initials(name_text: &str) -> String {
+/// A DATE is the fourth opening this has to refuse, and the one both formats
+/// missed: a letter whose first line is "12 March 2025" put `12` in the device.
+/// The DOCX line filter excluded salutation/sign-off/subject and nothing else,
+/// so it had the identical hole.
+///
+/// **Both renderers call THIS function** — the DOCX path used to call
+/// [`monogram_initials`] directly, which is how the two drifted in the first
+/// place. One guard, one place; a fifth opening kind gets added once.
+///
+/// Scoped to the DEVICE deliberately: what `letterhead.name` itself should show
+/// for a letterhead-less letter is a separate, pre-existing question, and
+/// widening this would change all six layouts' output.
+pub(crate) fn letterhead_initials(name_text: &str) -> String {
     use crate::locale::letter::{is_salutation, is_signoff, is_subject_line};
-    if is_salutation(name_text) || is_signoff(name_text) || is_subject_line(name_text) {
+    if is_salutation(name_text)
+        || is_signoff(name_text)
+        || is_subject_line(name_text)
+        || looks_like_date(name_text)
+    {
         return String::new();
     }
     monogram_initials(name_text)
@@ -1263,6 +1276,40 @@ Saeed Kolivand
                  the salutation — it rendered \"DM\" from \"Dear Hiring Manager,\""
             );
         }
+    }
+
+    /// A DATE opening is the fourth kind, and the one BOTH formats missed: the
+    /// DOCX line filter excluded salutation/sign-off/subject and nothing else,
+    /// so a letter starting "12 March 2025" put `12` in the device.
+    #[test]
+    fn no_device_initials_when_the_letter_opens_with_a_date() {
+        for opening in ["12 March 2025", "2. Juni 2025", "02/06/2025", "2025-06-02"] {
+            for meta in [None, Some("")] {
+                let model = parse_cover_letter(
+                    &format!("{opening}\n\nDear Hiring Manager,\n\nBody.\n\nSincerely,\n"),
+                    None,
+                    meta,
+                    "us",
+                    "en",
+                    dummy_style(),
+                    false,
+                );
+                assert_eq!(
+                    model.letterhead.initials, "",
+                    "{opening:?} (meta={meta:?}) is a date, not a name — the device must be empty"
+                );
+            }
+        }
+    }
+
+    /// Belt to the date guard's braces: a digit can never BE an initial, so even
+    /// a numeric opening the date heuristic does not recognise cannot produce
+    /// one. `is_name_token` requires a leading LETTER, not merely alphanumeric.
+    #[test]
+    fn monogram_initials_ignores_numeric_tokens() {
+        assert_eq!(monogram_initials("12 March 2025"), "M");
+        assert_eq!(monogram_initials("2025"), "");
+        assert_eq!(monogram_initials("42 Jane Smith 99"), "JS");
     }
 
     /// Same guard for the other two opening kinds the DOCX renderer already

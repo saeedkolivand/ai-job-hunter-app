@@ -559,28 +559,45 @@ fn generate_cover_letter_docx_layout(
             let mut name_para = Paragraph::new();
             // Monogram device approximation: the initials as a SHADED RUN at
             // the head of the name paragraph, from the same
-            // `monogram_initials` the `.typ` reads via `LetterHead.initials`,
-            // so the two formats can never disagree about what it says. A run
-            // rather than its own paragraph because `letter_monogram.typ` sets
-            // the square BESIDE the name — extraction must read
-            // "JS Jane Smith", not "JS" on a line of its own.
+            // `letterhead_initials` the `.typ` reads via
+            // `LetterHead.initials`, so the two formats can never disagree
+            // about what it says — nor about which openings are not names.
+            // The line filter above excludes a salutation, sign-off and
+            // subject, but NOT a date, so a letter opening "12 March 2025"
+            // reached here and put `12` in the device; the shared helper
+            // refuses all four. A run rather than its own paragraph because
+            // `letter_monogram.typ` sets the square BESIDE the name —
+            // extraction must read "JS Jane Smith", not "JS" on a line of
+            // its own.
             if show_device {
-                let initials = crate::export::typst_engine::monogram_initials(name_text);
+                let initials = crate::export::typst_engine::letterhead_initials(name_text);
                 if !initials.is_empty() {
-                    name_para = name_para.add_run(
-                        Run::new()
-                            .add_text(format!("{initials}  "))
-                            .size(pt_to_half_points(name_pt))
-                            .bold()
-                            .color(&accent_hex)
-                            .fonts(docx_run_fonts(name_family))
-                            .shading(
-                                Shading::new()
-                                    .shd_type(ShdType::Clear)
-                                    .color("auto")
-                                    .fill(&band_hex),
-                            ),
-                    );
+                    // TWO runs. The gap between the device and the name has to
+                    // be OUTSIDE the shading: docx-rs always writes
+                    // `xml:space="preserve"`, so spaces inside the shaded run
+                    // are painted, and the tile visibly ran on past the
+                    // initials — the `.typ` square stops at the glyphs.
+                    name_para = name_para
+                        .add_run(
+                            Run::new()
+                                .add_text(&initials)
+                                .size(pt_to_half_points(name_pt))
+                                .bold()
+                                .color(&accent_hex)
+                                .fonts(docx_run_fonts(name_family))
+                                .shading(
+                                    Shading::new()
+                                        .shd_type(ShdType::Clear)
+                                        .color("auto")
+                                        .fill(&band_hex),
+                                ),
+                        )
+                        .add_run(
+                            Run::new()
+                                .add_text("  ")
+                                .size(pt_to_half_points(name_pt))
+                                .fonts(docx_run_fonts(name_family)),
+                        );
                 }
             }
             name_para = name_para

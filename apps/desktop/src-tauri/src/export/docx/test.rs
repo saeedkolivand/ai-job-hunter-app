@@ -555,23 +555,35 @@ fn monogram_docx_prefixes_the_name_with_the_shaded_initials() {
     let xml = document_xml(
         &generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Monogram)).expect("monogram"),
     );
-    assert!(
-        xml.contains("JS  "),
-        "Monogram must emit the initials run before the name: {xml}"
-    );
-    assert!(
-        xml.contains("w:shd") && xml.contains(r#"w:fill="DEDEDE""#),
-        "the Monogram initials run must carry the accent-tint shading: {xml}"
-    );
     // Run shading, not paragraph shading: the initials sit BESIDE the name in
     // the `.typ`, so they must share its paragraph.
     let name_para = xml
         .split("<w:p>")
         .find(|p| p.contains("Jane Smith"))
         .expect("a paragraph containing the name");
+    let runs: Vec<&str> = name_para.split("<w:r>").collect();
+
+    let initials_run = runs
+        .iter()
+        .find(|r| r.contains(">JS<"))
+        .unwrap_or_else(|| panic!("no run carries the initials: {name_para}"));
     assert!(
-        name_para.contains("JS  "),
-        "the initials must live in the NAME paragraph, not one of their own: {name_para}"
+        initials_run.contains("w:shd") && initials_run.contains(r#"w:fill="DEDEDE""#),
+        "the Monogram initials run must carry the accent-tint shading: {initials_run}"
+    );
+
+    // The gap between device and name must sit OUTSIDE the tile. docx-rs always
+    // writes `xml:space="preserve"`, so spaces bundled into the shaded run get
+    // painted and the tile runs on past the initials — which the `.typ` square
+    // never does.
+    let sep_run = runs
+        .iter()
+        .find(|r| r.contains(">  <"))
+        .unwrap_or_else(|| panic!("no separator run between the device and the name: {name_para}"));
+    assert!(
+        !sep_run.contains("w:shd"),
+        "the separator spaces must NOT be shaded — the tint would extend past the \
+         initials: {sep_run}"
     );
     assert!(
         xml.contains(r#"w:jc w:val="left""#),
@@ -614,6 +626,46 @@ fn ats_mode_drops_every_letter_docx_tint() {
     }
 }
 
+/// A letter whose first line is a DATE has no letterhead name, and the device
+/// must not invent one from it.
+///
+/// This renderer's line filter excludes a salutation, a sign-off and a subject
+/// — and nothing else — so a date reached the name branch and `12 March 2025`
+/// put `12` in the device. Fixed by routing through the SHARED
+/// `letterhead_initials` the `.typ` side already used, rather than the
+/// unguarded `monogram_initials` this file used to call: one guard, so the two
+/// formats cannot disagree about which openings are not names.
+#[test]
+fn monogram_docx_emits_no_device_for_a_date_opening() {
+    const DATE_FIRST: &str =
+        "12 March 2025\n\nDear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+
+    for candidate_name in [None, Some(String::new())] {
+        let mut request = letter_request(DATE_FIRST, LetterLayout::Monogram);
+        request.meta = candidate_name.clone().map(|candidate_name| GenerationMeta {
+            candidate_name: Some(candidate_name),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        });
+        let xml = document_xml(&generate_docx(&request).expect("date-opening monogram docx"));
+        assert!(
+            !xml.contains(">12<"),
+            "candidate_name={candidate_name:?}: the device must not read `12` off the date line: {xml}"
+        );
+        // …and NO device at all, not merely a different one. Asserting only
+        // `!">12<"` passes on the `is_name_token` letters-only rule alone —
+        // that rule turns "12 March 2025" into `M`, a device built from the
+        // month. It is the date guard, not the token rule, that has to refuse
+        // the line outright, and only this assertion can tell them apart.
+        assert!(
+            !xml.contains("w:shd"),
+            "candidate_name={candidate_name:?}: a date opening must produce NO monogram device \
+             (found the shaded tile): {xml}"
+        );
+    }
+}
+
 /// The Monogram device is TEXT, so ATS mode must remove the initials
 /// themselves — not merely their shading.
 #[test]
@@ -622,7 +674,7 @@ fn ats_mode_drops_the_monogram_initials_from_docx() {
     request.ats_mode = true;
     let ats = document_xml(&generate_docx(&request).expect("ats monogram docx"));
     assert!(
-        !ats.contains("JS  "),
+        !ats.contains(">JS<"),
         "ATS-mode Monogram must not emit the initials run — they extract as noise \
          before the name: {ats}"
     );
