@@ -212,6 +212,40 @@ fn a_save_that_replaces_the_resume_cannot_be_built_without_a_report() {
     assert_eq!(req["companyName"], meta.company);
 }
 
+/// A save the store REFUSED is an error, not a result (CodeRabbit, PR #986).
+///
+/// `ai_generations_save` is a `#[tauri::command]` returning `Value`, so it
+/// reports failure in band as `{"error": …}`. The handler ignored that, told
+/// the model the résumé was saved, and — worse — went on to sync the run's
+/// review status, recording a verdict about a document that was never written.
+///
+/// Fail-closed on an unrecognized shape too: a failed save reported as success
+/// is silent data loss the user is told went fine; a success reported as failed
+/// costs a retry that merges onto the same row.
+///
+/// Mutation-checked, executed: returning `Ok(saved)` unconditionally (the shape
+/// before the fix) fails the first two cases here.
+#[test]
+fn a_store_refusal_is_an_error_not_a_successful_tool_result() {
+    let failed = saved_or_error(json!({ "error": "database is locked" }))
+        .expect_err("an error payload must not read as a saved résumé");
+    assert!(matches!(failed, AppError::Storage(_)));
+    assert!(failed.to_string().contains("could not be saved"));
+    assert!(
+        failed.to_string().contains("database is locked"),
+        "the store's own reason has to survive: {failed}"
+    );
+
+    // Neither key: an unexpected shape is a failure, not a pass.
+    assert!(saved_or_error(json!({ "id": "gen-1" })).is_err());
+    assert!(saved_or_error(json!(null)).is_err());
+
+    // The success shape passes through UNCHANGED — the tool result the model
+    // reads is still the command's own payload.
+    let ok = json!({ "id": "gen-1", "success": true });
+    assert_eq!(saved_or_error(ok.clone()).expect("a saved résumé"), ok);
+}
+
 /// …and the report it carries describes the text being SAVED, not the one
 /// being replaced.
 ///
@@ -226,7 +260,7 @@ fn a_save_that_replaces_the_resume_cannot_be_built_without_a_report() {
 /// stale-report shape) flips the two hash assertions.
 #[tokio::test]
 async fn the_saved_resume_report_describes_the_text_being_saved() {
-    use crate::commands::resume_pipeline::report::{hash_text, AGENT_SAVE_PIPELINE};
+    use crate::commands::resume_pipeline::report::{agent_save_pipeline, hash_text};
 
     let source = "Jane Doe\nSenior Backend Engineer | Acme | 2020 - Present\n- Shipped a payments service.\n";
     let replaced = "Jane Doe\nSenior Backend Engineer | Acme | 2020 - Present\n- Shipped a payments service handling refunds.\n";
@@ -258,8 +292,22 @@ async fn the_saved_resume_report_describes_the_text_being_saved() {
         "no letter key — the merge must leave the stored letter slot alone"
     );
     assert_eq!(
-        value["pipeline"], AGENT_SAVE_PIPELINE,
+        value["pipeline"],
+        json!(agent_save_pipeline()),
         "the label names what produced THIS report, not the run that produced the old document"
+    );
+
+    // …and it is a member of the SHARED depth vocabulary, so the renderer's
+    // `parseQualityReport` round-trips it instead of mapping it to `fast` and
+    // persisting that relabel on the next re-check (CodeRabbit, PR #986).
+    assert!(
+        crate::ipc_contracts::generation_depths::GENERATION_DEPTHS.contains(&agent_save_pipeline()),
+        "an invented label is silently rewritten by the renderer on re-check"
+    );
+    assert_ne!(
+        agent_save_pipeline(),
+        "quality",
+        "…and it must not inherit the previous document's depth either"
     );
 }
 

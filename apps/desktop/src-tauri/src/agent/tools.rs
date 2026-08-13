@@ -847,8 +847,10 @@ fn save_resume_handler(
         .await?;
         let req =
             serde_json::from_value(save_resume_request(&resume_text, &meta, &quality_report)?)?;
-        let saved = crate::commands::ai_generations::ai_generations_save(app.clone(), req).await;
-        // …and the row-side half of the same rule, once the write landed.
+        let saved = saved_or_error(
+            crate::commands::ai_generations::ai_generations_save(app.clone(), req).await,
+        )?;
+        // …and the row-side half of the same rule — ONLY once the write landed.
         crate::commands::resume_pipeline::sync_saved_resume_status(
             &app,
             &meta.url,
@@ -858,6 +860,35 @@ fn save_resume_handler(
         );
         Ok(saved)
     })
+}
+
+/// Turn `ai_generations_save`'s Value-encoded outcome into a `Result`.
+///
+/// **That command reports failure IN BAND** — `{"error": "…"}` instead of
+/// `{"id": …, "success": true}`, because it is a `#[tauri::command]` returning
+/// `Value` for a renderer that checks the key. A tool handler that ignores the
+/// distinction (CodeRabbit, PR #986) told the model the résumé was saved when
+/// the write had failed, and then synced a run's review status to describe text
+/// that was never persisted — a verdict about a document that does not exist.
+///
+/// **Fail CLOSED on any unrecognized shape**, not just on the `error` key. The
+/// two directions are not symmetric: a failed save reported as success is
+/// silent data loss the user is told went fine, while a successful save
+/// reported as failed costs a retry into a merge that lands on the same
+/// aggregate row. If this command ever grows a third shape, the retry is the
+/// side to be wrong on.
+fn saved_or_error(saved: Value) -> AppResult<Value> {
+    if saved.get("success").and_then(Value::as_bool) == Some(true) {
+        return Ok(saved);
+    }
+    let detail = saved
+        .get("error")
+        .and_then(Value::as_str)
+        .map(clamped_echo)
+        .unwrap_or_else(|| "the store returned no result".to_string());
+    Err(AppError::Storage(format!(
+        "the résumé could not be saved: {detail}"
+    )))
 }
 
 /// The grounding a gated résumé save needs to validate the text it persists.

@@ -428,22 +428,30 @@ mod tests {
     /// unaffordable again) fails here.
     #[test]
     fn the_registry_pairs_each_kind_with_its_own_prompt_whitelist_and_budget() {
+        // By NAME SET, not by length (CodeRabbit, PR #986): two whitelists of
+        // equal size are exactly the swap this test claims to catch, and a
+        // length compare sees nothing. Both entries are checked the same way —
+        // the improve half used to assert one name, which a swapped constructor
+        // could also satisfy by accident.
+        let names = |tools: Vec<AgentTool>| -> BTreeSet<String> {
+            tools.iter().map(|t| t.name.to_string()).collect()
+        };
+
         let prep = flow_for(PREP_APPLICATION_KIND).expect("the prep flow is registered");
         assert_eq!(prep.system, PREP_APPLICATION_SYSTEM);
         assert_eq!(prep.budget, Budget::AGENT_PREP);
         assert_eq!(
-            (prep.tools)().len(),
-            prep_application_tools().len(),
+            names((prep.tools)()),
+            names(prep_application_tools()),
             "the prep entry must build the prep whitelist"
         );
 
         let improve = flow_for(IMPROVE_RESUME_KIND).expect("the improve flow is registered");
         assert_eq!(improve.system, IMPROVE_RESUME_SYSTEM);
         assert_eq!(improve.budget, Budget::AGENT_IMPROVE);
-        assert!(
-            (improve.tools)()
-                .iter()
-                .any(|t| t.name == "run_quality_pipeline"),
+        assert_eq!(
+            names((improve.tools)()),
+            names(improve_resume_tools()),
             "the improve entry must build the improve whitelist"
         );
     }
