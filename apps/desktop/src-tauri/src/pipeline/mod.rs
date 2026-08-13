@@ -432,6 +432,25 @@ impl Completer {
         )
     }
 
+    /// The search backend that will serve the NEXT research pass through this
+    /// completer — the retrieval half of [`research`](Self::research)/
+    /// [`research_salary`](Self::research_salary)/
+    /// [`research_answer`](Self::research_answer). Delegates in one hop, like
+    /// [`research_available`](Self::research_available) above; see
+    /// [`crate::commands::ai_provider::search::search_backend_for`] for the
+    /// routing this mirrors. A `company_brief` cache-key term
+    /// (`cover_letter::research::cache_key`): `searcher_for` picks Native vs.
+    /// Exa from CREDENTIAL PRESENCE at call time, not from `(provider,
+    /// model)`, so the SAME provider + model can still retrieve from a
+    /// different backend between two calls.
+    pub fn search_backend(&self) -> crate::commands::ai_provider::search::SearchBackend {
+        crate::commands::ai_provider::search::search_backend_for(
+            &self.app,
+            self.provider.as_ref(),
+            &self.model,
+        )
+    }
+
     /// The resolved active model — so a caller can name it in a capability-gate
     /// error message after resolving, without re-deriving it from the (no longer
     /// trusted) request. See [`crate::commands::agent::agent_run`]'s

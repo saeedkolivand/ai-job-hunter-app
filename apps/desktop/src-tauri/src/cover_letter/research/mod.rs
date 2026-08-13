@@ -4,8 +4,10 @@ use std::time::Duration;
 
 use tauri::Manager;
 
+use crate::commands::ai_provider::search::SearchBackend;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::enrichment::EnrichmentResult;
+use crate::pipeline::resume::cache::StageIdentity;
 use crate::pipeline::Completer;
 
 const CACHE_NS: &str = "company_brief";
@@ -55,21 +57,15 @@ impl CompanyResearch {
         }
 
         let app = completer.app();
-        // ADR-017 key discipline: the brief is the OUTPUT of the active
-        // provider's own model doing web search + synthesis
-        // (`Completer::research` → either the provider's native search or
-        // `searched_research`'s `provider.complete(app, model, …)`), so
-        // provider + model are cache-key terms — the same reasoning
-        // `pipeline::resume::cache::StageIdentity` documents. Without them, a
-        // user who switches models kept getting the OLD model's cached brief
-        // for the full 7-day TTL. Still company-scoped WITHIN a (provider,
-        // model) pair (not per-request-scoped), so a cover letter +
-        // application answers in one session still share a single paid search.
-        let key = cache_key(
-            completer.provider_id().as_str(),
-            completer.model(),
-            &company,
-        );
+        // ADR-017 key discipline: built from the canonical `StageIdentity` a
+        // resolved `Completer` carries, plus the retrieval backend — see
+        // `cache_key`'s doc comment for the full term-by-term reasoning
+        // (including why `role` is deliberately NOT a term). Without
+        // provider + model, a user who switched models kept getting the OLD
+        // model's cached brief for the full 7-day TTL.
+        let identity = StageIdentity::of(completer);
+        let backend = completer.search_backend();
+        let key = cache_key(identity, backend, &company);
 
         // Fast path: cached brief younger than the TTL.
         if let Some(cache) = app.try_state::<KvCache>() {
@@ -150,14 +146,55 @@ fn pick(override_value: Option<&str>, heuristic: &str) -> String {
         .to_string()
 }
 
-/// Build the `company_brief` cache key. Provider + model are cache-key terms
-/// (not just `company`) because the cached value is the OUTPUT of that
-/// provider's own model — see the ADR-017 note at the `cache_key` call site
-/// in [`CompanyResearch::enrich_with`]. Not case-folded: `company` is used
-/// verbatim elsewhere in this module, and folding it here would be an
-/// unrelated behavior change. Pure + unit-tested.
-fn cache_key(provider: &str, model: &str, company: &str) -> String {
-    format!("{provider}|{model}|{company}")
+/// Field separator between key terms — a control character, not printable,
+/// so no provider id, model name, backend id or company name can contain it
+/// and shift field boundaries. Mirrors
+/// [`pipeline::resume::cache`](crate::pipeline::resume::cache)'s own
+/// `FIELD_SEPARATOR`, same reasoning.
+const FIELD_SEPARATOR: char = '\u{1f}';
+
+/// Build the `company_brief` cache key from the [`StageIdentity`] a resolved
+/// [`Completer`] carries — reused wholesale, not re-derived (see the
+/// cross-reference on [`StageIdentity`] itself), plus the two terms that
+/// identity type doesn't carry but this call DOES depend on:
+///
+/// * `backend` ([`SearchBackend`]) — the retrieval half of the brief.
+///   `searcher_for` picks Native vs. Exa from CREDENTIAL PRESENCE at call
+///   time, not from `(provider, model)`: the same provider and model can
+///   still retrieve from a different backend (an Exa key added or removed)
+///   and must not share a cache row.
+/// * `company` — the research subject.
+///
+/// `identity.context_window` is folded in even though
+/// [`Completer::research`] never reads it (search + synthesize doesn't touch
+/// `num_ctx`) — reusing the WHOLE identity keeps this key from silently
+/// drifting the day a new `StageIdentity` field starts mattering here too,
+/// at the cost of a harmless extra miss on a window-only change (ADR-017's
+/// own safe direction: a changed key can only cost a call, never serve a
+/// wrong answer).
+///
+/// `role` is deliberately NOT a term, even though it reaches the synthesis
+/// prompt: the brief is reused across roles at the same company by design
+/// (this module's doc comment — "reused by cover letters **and**
+/// application answers") — one paid search per company per (identity,
+/// backend), not per role. That is the documented cost tradeoff, not an
+/// oversight.
+///
+/// `company` is passed verbatim, not lowercased: `kv_cache`'s `key` column is
+/// `COLLATE NOCASE` ([`pipeline::cache`](crate::pipeline::cache)), so the
+/// storage layer already matches case-insensitively — folding it here would
+/// be redundant, not a behavior change. Pure + unit-tested.
+fn cache_key(identity: StageIdentity<'_>, backend: SearchBackend, company: &str) -> String {
+    let window = identity
+        .context_window
+        .map(|c| c.to_string())
+        .unwrap_or_default();
+    format!(
+        "{}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{window}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{company}",
+        identity.provider,
+        identity.model,
+        backend.as_str(),
+    )
 }
 
 /// A brief the model couldn't actually fill: too short to be a real ~150-word
@@ -174,19 +211,40 @@ fn is_no_info(brief: &str) -> bool {
         || b.contains("no relevant")
 }
 
+// This suite guards the `cache_key` builder and the `KvCache` storage layer
+// it writes through — NOT the `enrich_with` wiring that calls
+// `StageIdentity::of(completer)` / `completer.search_backend()`. This crate
+// has no `tauri::test` mock-app harness (see `SalaryResearch::enrich`'s doc
+// comment for the same limitation), so that wiring is unverified at the unit
+// level here; it is exercised in practice by manual/integration testing of
+// `ai_research_company`. An honest gap, not a fix skipped.
 #[cfg(test)]
 mod tests {
     use tempfile::TempDir;
 
-    use super::{cache_key, is_no_info, CACHE_NS, TTL_SECS};
+    use super::{cache_key, is_no_info, SearchBackend, StageIdentity, CACHE_NS, TTL_SECS};
     use crate::pipeline::cache::KvCache;
 
-    // ── cache_key (ADR-017: provider + model are cache-key terms) ───────────
+    /// A routing identity, for the key tests below — same helper shape as
+    /// `pipeline::resume::test::id`.
+    fn identity<'a>(provider: &'a str, model: &'a str) -> StageIdentity<'a> {
+        StageIdentity {
+            provider,
+            model,
+            context_window: None,
+        }
+    }
+
+    // ── cache_key (ADR-017: identity + search backend are cache-key terms) ──
 
     #[test]
     fn cache_key_differs_by_model_so_a_model_switch_never_hits_the_old_brief() {
-        let ollama_a = cache_key("ollama", "llama3", "Acme");
-        let ollama_b = cache_key("ollama", "gpt-oss:20b", "Acme");
+        let ollama_a = cache_key(identity("ollama", "llama3"), SearchBackend::Native, "Acme");
+        let ollama_b = cache_key(
+            identity("ollama", "gpt-oss:20b"),
+            SearchBackend::Native,
+            "Acme",
+        );
         assert_ne!(
             ollama_a, ollama_b,
             "same provider + company but a different model must be a different key"
@@ -195,16 +253,37 @@ mod tests {
 
     #[test]
     fn cache_key_differs_by_provider_for_the_same_model_name() {
-        let openai = cache_key("openai", "gpt-4o", "Acme");
-        let compatible = cache_key("openai-compatible", "gpt-4o", "Acme");
+        let openai = cache_key(identity("openai", "gpt-4o"), SearchBackend::Native, "Acme");
+        let compatible = cache_key(
+            identity("openai-compatible", "gpt-4o"),
+            SearchBackend::Native,
+            "Acme",
+        );
         assert_ne!(openai, compatible);
     }
 
     #[test]
-    fn cache_key_is_identical_for_the_same_provider_model_and_company() {
+    fn cache_key_differs_by_search_backend_for_the_same_provider_and_model() {
+        // The defect requirement #2 fixes: `searcher_for` resolves Native vs.
+        // Exa from CREDENTIAL PRESENCE at call time, not from (provider,
+        // model) — so the SAME provider + model (e.g. Ollama with no
+        // ollama.com account key) must still get a different key when the
+        // Exa key is added/removed/absent, since the retrieval channel (and
+        // therefore the brief) changed.
+        let id = identity("ollama", "llama3");
+        let native = cache_key(id, SearchBackend::Native, "Acme");
+        let exa = cache_key(id, SearchBackend::Exa, "Acme");
+        let none = cache_key(id, SearchBackend::None, "Acme");
+        assert_ne!(native, exa);
+        assert_ne!(native, none);
+        assert_ne!(exa, none);
+    }
+
+    #[test]
+    fn cache_key_is_identical_for_the_same_identity_backend_and_company() {
         assert_eq!(
-            cache_key("ollama", "llama3", "Acme"),
-            cache_key("ollama", "llama3", "Acme")
+            cache_key(identity("ollama", "llama3"), SearchBackend::Native, "Acme"),
+            cache_key(identity("ollama", "llama3"), SearchBackend::Native, "Acme")
         );
     }
 
@@ -215,13 +294,17 @@ mod tests {
     fn switching_models_misses_the_other_models_cached_brief() {
         let dir = TempDir::new().expect("tempdir");
         let cache = KvCache::open(dir.path()).expect("open cache");
-        let old_key = cache_key("ollama", "llama3", "Acme");
+        let old_key = cache_key(identity("ollama", "llama3"), SearchBackend::Native, "Acme");
         cache.set(CACHE_NS, &old_key, "Acme is a fintech (llama3's brief).");
 
         // The defect this fixes: before, both models shared the SAME row
         // (keyed on company alone), so switching models kept serving the old
         // model's brief for the whole 7-day TTL instead of recomputing.
-        let new_key = cache_key("ollama", "gpt-oss:20b", "Acme");
+        let new_key = cache_key(
+            identity("ollama", "gpt-oss:20b"),
+            SearchBackend::Native,
+            "Acme",
+        );
         assert_eq!(
             cache.get(CACHE_NS, &new_key, TTL_SECS),
             None,
@@ -233,7 +316,7 @@ mod tests {
     fn the_same_model_still_hits_its_own_cached_brief() {
         let dir = TempDir::new().expect("tempdir");
         let cache = KvCache::open(dir.path()).expect("open cache");
-        let key = cache_key("ollama", "llama3", "Acme");
+        let key = cache_key(identity("ollama", "llama3"), SearchBackend::Native, "Acme");
         cache.set(CACHE_NS, &key, "Acme is a fintech (llama3's brief).");
 
         assert_eq!(

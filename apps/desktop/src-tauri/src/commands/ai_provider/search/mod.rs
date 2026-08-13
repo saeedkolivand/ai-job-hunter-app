@@ -56,6 +56,19 @@ pub enum SearchBackend {
     None,
 }
 
+impl SearchBackend {
+    /// Stable string term for a cache key (e.g.
+    /// `cover_letter::research`'s `company_brief` key) — not `Debug`, so a
+    /// variant rename can't silently change every existing key.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Exa => "exa",
+            Self::None => "none",
+        }
+    }
+}
+
 /// Pick the backend for one research pass. Pure, so the policy is testable
 /// without an `AppHandle` — this crate has no `tauri::test` mock-app harness,
 /// and the same extraction is why `OpenAiClient::supports_web_search` and
@@ -280,6 +293,38 @@ pub fn research_available<P: super::AiProvider + ?Sized>(
 }
 
 // ── Backend resolution ────────────────────────────────────────────────────────
+
+/// The search backend that will actually serve the NEXT research pass for
+/// `provider`/`model` — the same routing [`crate::pipeline::Completer::research`]
+/// performs: the native bypass (`AiProvider::research` is called directly and
+/// never reaches this module at all) when [`super::AiProvider::has_native_search`]
+/// is true, otherwise the same [`resolve_search_backend`] resolution
+/// [`searcher_for`] uses below.
+///
+/// Exposed as its own function (rather than left implicit inside
+/// `searcher_for`) because a caller that only needs the IDENTITY of the
+/// backend — not a live [`WebSearcher`] — would otherwise have to construct
+/// one just to throw it away. [`crate::pipeline::Completer::search_backend`]
+/// is the one production caller: the retrieval half of a research call
+/// determines the brief just as much as the synthesizing model does, so it
+/// is a `company_brief` cache-key term
+/// (`cover_letter::research::cache_key`) — `searcher_for` picks Native vs.
+/// Exa from CREDENTIAL PRESENCE at call time, not from `(provider, model)`,
+/// so the SAME provider + model can still retrieve from a different backend
+/// (e.g. an Exa key added/removed) between two calls.
+pub fn search_backend_for<P: super::AiProvider + ?Sized>(
+    app: &AppHandle,
+    provider: &P,
+    model: &str,
+) -> SearchBackend {
+    if provider.has_native_search(model) {
+        return SearchBackend::Native;
+    }
+    resolve_search_backend(
+        provider.native_searcher(app, model).is_some(),
+        ExaSearcher::from_credentials(app).is_some(),
+    )
+}
 
 /// The search backend for one research pass, or `None` when nothing is
 /// configured (research then degrades to an empty brief).
