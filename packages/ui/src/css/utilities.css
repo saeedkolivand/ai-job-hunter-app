@@ -778,21 +778,30 @@ html[data-text-scale='large'] {
 [data-color-scheme='light'] .text-foreground\/50 {
   color: color-mix(in oklab, var(--color-foreground) 65%, transparent);
 }
-/* /55 is the one step ABOVE this block that still measures under raw (fails
-   ~3.8:1 unmapped — see docs/NEXT_ISSUES.md "the text-foreground/NN opacity
-   ramp"); /60 and up already clear 4.5:1 unmapped (near-black at ≥60% alpha
-   over white), so they are deliberately left unmapped — extending the curve
-   into a range that's already correct would be a no-op tinting shift across
-   hundreds of call sites for zero contrast gain. */
+/* /55 AND /60 are the two steps ABOVE this block that still measure under raw
+   (fails ~3.8:1 and ~4.45:1 unmapped respectively — NEITHER clears 4.5:1, see
+   docs/NEXT_ISSUES.md "the text-foreground/NN opacity ramp"). /60 must be
+   mapped too, not just /55: mapping /55 alone to a value ABOVE raw-60%
+   (needed to actually fix /55) would make /55 render darker than /60's own
+   raw 60% — a lower opacity step rendering MORE opaque than a higher one.
+   /65 and up already clear 4.5:1 unmapped (near-black at ≥65% alpha over
+   white) and are deliberately left unmapped — extending the curve further
+   would be a no-op tinting shift across hundreds of call sites for zero
+   contrast gain. (/65's raw 65% sits below the mapped /60 below — a much
+   smaller, purely cosmetic ordering wrinkle between two already-AA-passing
+   steps, not the "renders near-invisible" defect this block exists to fix.) */
 [data-color-scheme='light'] .text-foreground\/55 {
   color: color-mix(in oklab, var(--color-foreground) 69%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/60 {
+  color: color-mix(in oklab, var(--color-foreground) 72%, transparent);
 }
 
 /* border-foreground/NN is the SAME token, same asymmetry, and — unlike
    text-foreground — had ZERO light-scheme coverage: every one of these steps
    rendered at its raw (near-invisible, ~1.2–1.7:1) alpha on light. Only the
    steps actually in use get an entry; /70 already clears 3:1 (and 4.5:1)
-   unmapped, same reasoning as text-foreground/60+ above. */
+   unmapped, same reasoning as text-foreground/65+ above. */
 [data-color-scheme='light'] .border-foreground\/10 {
   border-color: color-mix(in oklab, var(--color-foreground) 37%, transparent);
 }

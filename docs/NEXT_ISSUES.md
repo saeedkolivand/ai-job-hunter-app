@@ -206,9 +206,11 @@ remains below is the unaudited surface area, not known failures. None blocks a r
 ## Desktop renderer — the `text-foreground/NN` opacity ramp (largest open item)
 
 The renderer has ~1,100 `text-foreground/NN` usages; roughly 460 sit at steps (`/30`, `/35`,
-`/40`, `/45`, `/55`) that measure **below 4.5:1** for small text. PR #924 fixed only the 11
+`/40`, `/45`) that measure **below 4.5:1** for small text. PR #924 fixed only the 11
 nodes that the home-view scan actually measured, swapping them to the existing
 `text-muted-foreground` token (5.1:1 on white, 4.8:1 on `#f8f8f8`, and clear in dark too).
+(`/55` and `/60` no longer belong on this list — both are now centrally remapped in
+`packages/ui/src/css/utilities.css`, pinned by `light-scheme-contrast.test.ts`.)
 
 Every other view is unscanned and very likely carries the same defect. The fix is mechanical —
 swap sub-AA steps to `text-muted-foreground` — but it is a wide visual diff that needs its own

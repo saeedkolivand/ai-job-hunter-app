@@ -219,7 +219,7 @@ describe('utilities.css — text/border-foreground opacity remaps (contrast)', (
     return m?.[1] ? Number(m[1]) : null;
   }
 
-  const TEXT_STEPS = [15, 20, 25, 30, 35, 40, 45, 50, 55] as const;
+  const TEXT_STEPS = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
   const BORDER_STEPS = [10, 12, 15, 20, 25] as const;
 
   it.each(TEXT_STEPS)('.text-foreground\\/%i has exactly ONE light rule', (nn) => {
@@ -230,7 +230,7 @@ describe('utilities.css — text/border-foreground opacity remaps (contrast)', (
     expect(lightRules(`border-foreground\\/${nn}`)).toHaveLength(1);
   });
 
-  it.each([15, 55] as const)(
+  it.each([15, 55, 60] as const)(
     '.text-foreground\\/%i is boosted strictly above its raw (unmapped) alpha',
     (nn) => {
       const boosted = remappedAlphaPct(`text-foreground\\/${nn}`);
@@ -248,26 +248,45 @@ describe('utilities.css — text/border-foreground opacity remaps (contrast)', (
     }
   );
 
-  it('text-foreground/55 raw (unmapped) alpha fails AA — the defect this remap fixes', () => {
-    expect(contrastAtAlpha(55)).toBeLessThan(4.5);
-  });
+  it.each([55, 60] as const)(
+    'text-foreground/%i raw (unmapped) alpha fails AA — the defect this remap fixes',
+    (nn) => {
+      // /60's raw contrast (~4.45:1) is JUST as sub-AA as /55's (~3.8:1) —
+      // neither clears 4.5:1 unmapped. A prior version of this comment
+      // claimed /60 "already clears 4.5" raw; it does not.
+      expect(contrastAtAlpha(nn)).toBeLessThan(4.5);
+    }
+  );
 
-  it('text-foreground/55 clears 4.5:1 once boosted to its remapped alpha', () => {
-    const boosted = remappedAlphaPct('text-foreground\\/55');
+  it.each([55, 60] as const)('text-foreground/%i clears 4.5:1 once boosted to its remapped alpha', (nn) => {
+    const boosted = remappedAlphaPct(`text-foreground\\/${nn}`);
     expect(boosted).not.toBeNull();
     expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('text-foreground/60 is left deliberately unmapped (nothing above /55 gets a rule)', () => {
-    // /60's raw contrast sits right at the AA-large / near-AA-normal floor
-    // (measured ~4.3-4.5:1 depending on the exact backdrop) and only improves
-    // from there — /65 upward is monotonically higher-contrast still, since
-    // more alpha of a near-black ink over a light backdrop can only raise
-    // contrast. Not asserting an exact ratio here: the boundary is background
-    // -dependent (card vs canvas) and this suite fixes what's raw-broken
-    // (fails even the 3:1 floor), not what's already at/above it.
-    expect(lightRules('text-foreground\\/60')).toHaveLength(0);
-    expect(contrastAtAlpha(60)).toBeGreaterThanOrEqual(3);
+  it('preserves ordering at the /55↔/60 seam: /60 must map to MORE alpha than /55, not less', () => {
+    // Regression guard for the exact defect this file's own history caught:
+    // /55 was boosted (69%) without also boosting /60, so a LOWER opacity
+    // step (55) briefly rendered MORE opaque than a HIGHER one (60, still raw
+    // at 60%) — the ordering a `text-foreground/NN` scale promises callers
+    // inverted at that one seam. Mapping /60 too restores it.
+    const alpha55 = remappedAlphaPct('text-foreground\\/55');
+    const alpha60 = remappedAlphaPct('text-foreground\\/60');
+    expect(alpha55).not.toBeNull();
+    expect(alpha60).not.toBeNull();
+    expect(alpha60 as number).toBeGreaterThan(alpha55 as number);
+  });
+
+  it('text-foreground/65 is left deliberately unmapped — it clears AA on its own raw alpha', () => {
+    // The new boundary (was /60 before this fix folded /60 into the remap
+    // above). /65's raw 65% alpha independently clears 4.5:1, so it needs no
+    // remap of its own — extending the curve further would re-tint hundreds
+    // of call sites for zero contrast gain. (Its raw 65% sits a little below
+    // the now-mapped /60's 72% — a much smaller, purely cosmetic ordering
+    // wrinkle between two already-AA-passing steps, not the "renders
+    // near-invisible" defect this file exists to fix; left as-is.)
+    expect(lightRules('text-foreground\\/65')).toHaveLength(0);
+    expect(contrastAtAlpha(65)).toBeGreaterThanOrEqual(4.5);
   });
 
   it.each(BORDER_STEPS)(
