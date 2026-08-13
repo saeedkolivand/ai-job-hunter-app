@@ -173,7 +173,28 @@ export function ApplicationDetailPage() {
 
   const { from } = Route.useSearch();
   const backTarget = from ? BACK_TO[from] : '/applications';
-  const back = () => void navigate({ to: backTarget });
+  // Gate on the ACTUAL compensating state, not just the `from` label: `from`
+  // is a URL search param that survives native forward-navigation (mouse
+  // forward / Alt+Right — nothing intercepts webview history), while
+  // `lastAppliedId` is the one-shot session-store field AutopilotPage's focus
+  // effect consumes on its NEXT mount. A second arrival at the same
+  // ?from=autopilot URL with no pending focus left must fall back to the
+  // router's default scroll reset — there's no compensating scroll to replace it.
+  const hasPendingAutopilotFocus = useSessionStore((s) => s.autopilot.lastAppliedId !== null);
+  // Returning to Autopilot from an Apply: that page's own focus effect
+  // re-expands the source card and scrollIntoView's the applied job — the ONE
+  // scroll motion this trip needs. Skip the router's own scroll reset/restore
+  // for that hop only, or it fires first and the list visibly scrolls twice
+  // (an old/reset position, then the focus jump). `from` alone isn't trusted
+  // here — it's only meaningful alongside `hasPendingAutopilotFocus` above (a
+  // backend/notification-driven `?from=autopilot` with no pending focus, e.g.
+  // routes/__root.tsx or use-notifications.ts, correctly falls through to the
+  // router's default reset since the state gate still requires it).
+  const back = () =>
+    void navigate({
+      to: backTarget,
+      resetScroll: !(from === 'autopilot' && hasPendingAutopilotFocus),
+    });
   const backLabel =
     from === 'jobs'
       ? t('applications.detail.backJobs')
