@@ -295,6 +295,10 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
       const { jobId } = await runAgent.mutateAsync({
         resumeId,
         jobId: posting.id,
+        // Which FLOW to run (`AGENT_FLOW_KINDS`). Stated rather than defaulted:
+        // this panel is the prep flow's entry point, and a second flow now
+        // exists behind the same command.
+        kind: 'prep_application',
       });
       setRunJobId(jobId);
     } catch (err) {

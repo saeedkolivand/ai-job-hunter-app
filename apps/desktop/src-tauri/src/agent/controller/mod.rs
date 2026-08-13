@@ -25,15 +25,26 @@ use crate::events::{emit_event, AGENT_STEP};
 use crate::pipeline::budget::Budget;
 use crate::pipeline::Completer;
 
+use super::flows::AgentFlow;
 use super::gate::{resolve_write, AgentGate, WriteResolution};
 use super::tools::{neutralize_transcript_boundaries, to_specs, AgentTool, ToolContext, ToolKind};
 
-/// This loop's ceilings. The four loose consts that used to live here (steps,
-/// tokens, step timeout, confirm timeout) are now fields of ONE budget in
-/// [`crate::pipeline::budget`], shared with the other multi-step runs in the
-/// app; see [`Budget::AGENT_PREP`] for the full sizing rationale, which moved
-/// with them.
-const BUDGET: Budget = Budget::AGENT_PREP;
+/// The budget [`run_agent`] runs to.
+///
+/// The loop's ceilings are a PARAMETER now, not a module constant: with a
+/// second flow ([`crate::agent::flows::FLOWS`]) they differ per flow, and a
+/// controller that reads one flow's budget while running another's whitelist
+/// is exactly the mismatch `AgentFlow` exists to make unrepresentable — the
+/// review flow's 90-minute step clock would have been unreachable, and its one
+/// affordable-only-there tool would have ended every run at
+/// [`StoppedReason::Timeout`].
+///
+/// This constant survives for the pure [`run_agent`] entry point alone, which
+/// has no flow to take a budget from (it drives scripted fakes in this module's
+/// tests and `agent::gate`'s harness). It borrows the prep flow's so those
+/// tests keep asserting against a REAL shipped budget rather than an invented
+/// one.
+const TEST_ENTRY_BUDGET: Budget = Budget::AGENT_PREP;
 
 /// Why a budgeted run stopped — re-exported at its historical path so every
 /// existing `agent::controller::StoppedReason` import (and the `stoppedReason`
@@ -165,6 +176,19 @@ fn tool_kind(tools: &[AgentTool], name: &str) -> Option<ToolKind> {
     tools.iter().find(|t| t.name == name).map(|t| t.kind)
 }
 
+/// The tool-result body for a call the run could not afford: its
+/// [`Budget::max_tool_calls`] was already spent when the call came up inside a
+/// multi-call turn.
+///
+/// Shaped like the loop's other refusals (`error: …`) so a model that reads it
+/// treats it as a failed call, not as a result. Today none does — the run
+/// returns [`StoppedReason::MaxToolCalls`] at the end of that same turn, so
+/// this body is transcript hygiene: it keeps the turn WHOLE (one fenced result
+/// per requested call) for the log, the token accounting, and any future
+/// variant of the loop that lets a run continue after refusing.
+const TOOL_BUDGET_EXHAUSTED: &str =
+    "error: this run's tool-call budget is exhausted; no further tools will run";
+
 /// Cap on the tool NAME interpolated into `[tool_result:{name}]` — every
 /// REAL registered tool name ([`AgentTool::name`]) is a short, fixed
 /// identifier (the longest today, `search_candidate_evidence`, is 26
@@ -220,12 +244,51 @@ fn tool_result_fence(name: &str, body: &str) -> String {
 
 /// The `final_text` stamped on a [`StoppedReason::Timeout`] outcome — surfaced
 /// verbatim as the job's failure message by `agent_run`'s spawn.
-fn step_timeout_message() -> String {
+///
+/// Takes the elapsed bound rather than reading a constant: the number in the
+/// message must be the one the run was actually raced against, or a review-flow
+/// timeout would tell the user "did not respond within 360s" after waiting 90
+/// minutes.
+///
+/// Two wording fixes that came with the second flow (LOW, Phase-7 review):
+///
+/// * **minutes above [`SECONDS_READABLE_UPTO`]** — this is read by a person
+///   deciding whether something is broken, and "5400s" makes them do arithmetic
+///   to find out they waited an hour and a half;
+/// * **it no longer blames "the AI provider"** — the same message is stamped
+///   when a TOOL overran the clock (a `run_quality_pipeline` call is minutes of
+///   pipeline work, not one provider response), so naming the provider sent the
+///   user to check a model and endpoint that were answering fine.
+fn step_timeout_message(step_timeout: Duration) -> String {
     format!(
-        "The AI provider did not respond within {}s, so the run was stopped instead \
-         of hanging indefinitely. Check the model/endpoint in Settings → AI and try again.",
-        BUDGET.step_timeout.as_secs()
+        "This step did not finish within {}, so the run was stopped instead of hanging \
+         indefinitely. A slow or unreachable model is the usual cause — check the \
+         model/endpoint in Settings → AI — and a very long résumé or job posting can \
+         also push one step past the limit.",
+        humanized_duration(step_timeout)
     )
+}
+
+/// Above this, a bound is spelled in minutes: ten minutes is about where a
+/// seconds figure stops being something a reader can size at a glance.
+const SECONDS_READABLE_UPTO: u64 = 600;
+
+/// A wall-clock bound as the user should read it — `360s`, `45 minutes`,
+/// `1h 30m` (the review flow's 90-minute clock crosses the hour, so it reads as
+/// the last of those, not the middle one). Whole units only; these are round
+/// budget constants, not measured elapsed times, so there is nothing to round
+/// off.
+fn humanized_duration(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs <= SECONDS_READABLE_UPTO {
+        return format!("{secs}s");
+    }
+    let minutes = secs / 60;
+    match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} minutes"),
+        (h, 0) => format!("{h}h"),
+        (h, m) => format!("{h}h {m}m"),
+    }
 }
 
 /// The budgeted, cancellable tool-calling loop. Pure control flow over
@@ -262,7 +325,7 @@ pub async fn run_agent(
         env,
         tools,
         &gate,
-        BUDGET.confirm_timeout,
+        TEST_ENTRY_BUDGET,
         AGENT_SYSTEM,
         "test",
         user,
@@ -271,18 +334,26 @@ pub async fn run_agent(
     .await
 }
 
-/// [`run_agent`] with an explicit per-flow system prompt AND the run's `job_id`,
-/// stamped onto every emitted [`AgentStep`] so a caller with more than one run in
-/// flight (or a UI panel that outlived the run it started) can filter the shared
-/// `agent:step` channel. The `system` string is the ONLY trusted instruction
-/// source (see the module SECURITY invariant); every caller passes a fixed,
-/// trusted constant, never scraped/user/tool text.
+/// [`run_agent`] with an explicit per-flow system prompt, BUDGET, and the run's
+/// `job_id`, stamped onto every emitted [`AgentStep`] so a caller with more than
+/// one run in flight (or a UI panel that outlived the run it started) can filter
+/// the shared `agent:step` channel. The `system` string is the ONLY trusted
+/// instruction source (see the module SECURITY invariant); every caller passes a
+/// fixed, trusted constant, never scraped/user/tool text.
+///
+/// `budget` carries all four ceilings this loop enforces — `max_steps`,
+/// `max_tokens`, the per-turn/per-tool `step_timeout` race, and the
+/// `confirm_timeout` handed to the write gate. It arrives as ONE value (never
+/// four loose arguments) because they are sized against each other per flow,
+/// and it is a compile-time constant chosen by the backend from
+/// [`crate::agent::flows`] — never renderer-supplied (see `pipeline::budget`'s
+/// module doc and its lock test).
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_with_system(
     env: &dyn AgentEnv,
     tools: &[AgentTool],
     gate: &AgentGate,
-    confirm_timeout: Duration,
+    budget: Budget,
     system: &str,
     job_id: &str,
     user: String,
@@ -291,6 +362,10 @@ pub async fn run_agent_with_system(
     let mut messages = vec![ChatMsg::system(system), ChatMsg::user(user)];
     let mut tokens: usize = messages.iter().map(|m| estimate_tokens(&m.content)).sum();
     let mut steps = 0usize;
+    // Tool invocations executed so far this run — the counter behind
+    // `Budget::max_tool_calls`, which was a documented ceiling with no
+    // enforcement anywhere in the crate until Phase 7.
+    let mut tool_calls = 0usize;
     let mut final_text = String::new();
 
     // M-5 fix: the tool-schema payload (name + description + JSON schema for
@@ -329,7 +404,7 @@ pub async fn run_agent_with_system(
                     stopped_reason: StoppedReason::Cancelled,
                 });
             }
-            result = tokio::time::timeout(BUDGET.step_timeout, env.turn(&messages)) => match result {
+            result = tokio::time::timeout(budget.step_timeout, env.turn(&messages)) => match result {
                 Ok(Ok(t)) => t,
                 // `LiveAgentEnv::turn` charges the per-provider daily ceiling before
                 // each request; hitting it on turn 3+ of an otherwise-successful run
@@ -343,11 +418,11 @@ pub async fn run_agent_with_system(
                 }
                 Ok(Err(e)) => return Err(e),
                 // Wall-clock backstop: the provider never responded within
-                // `BUDGET.step_timeout` — stop instead of hanging forever with no
+                // `budget.step_timeout` — stop instead of hanging forever with no
                 // terminal event.
                 Err(_elapsed) => {
                     return Ok(AgentOutcome {
-                        final_text: step_timeout_message(),
+                        final_text: step_timeout_message(budget.step_timeout),
                         steps,
                         stopped_reason: StoppedReason::Timeout,
                     });
@@ -413,66 +488,103 @@ pub async fn run_agent_with_system(
 
         let mut combined = String::new();
         for (idx, call) in turn.tool_calls.iter().enumerate() {
-            let body = match tool_kind(tools, &call.name) {
-                Some(ToolKind::Read) => {
-                    // Same race as the provider turn above: a text-drafting tool
-                    // (e.g. `draft_cover_letter`) makes its OWN provider call, so
-                    // Stop must interrupt it too, not just the outer turn.
-                    tokio::select! {
-                        biased;
-                        _ = cancel.cancelled() => {
-                            return Ok(AgentOutcome {
-                                final_text,
-                                steps,
-                                stopped_reason: StoppedReason::Cancelled,
-                            });
-                        }
-                        result = tokio::time::timeout(
-                            BUDGET.step_timeout,
-                            env.run_read_tool(&call.name, call.args.clone()),
-                        ) => match result {
-                            Ok(Ok(v)) => v.to_string(),
-                            Ok(Err(e)) => format!("error: {e}"),
-                            // Wall-clock backstop: this read tool (which may itself
-                            // make a provider call, e.g. a drafting tool) never
-                            // returned within `BUDGET.step_timeout`.
-                            Err(_elapsed) => {
+            // ── The tool-call ceiling, enforced PER CALL ──────────────────
+            //
+            // Not at the turn boundary, which is where this check first landed
+            // and where it is wrong: a provider may return SEVERAL tool calls in
+            // one turn (nothing in the app sets `parallel_tool_calls: false`,
+            // every adapter maps the whole `tool_calls[]` array, and
+            // `agent::gate`'s `double_write_call` already drives a 2-call turn).
+            // A boundary-only check therefore admits `max_tool_calls - 1 + K`
+            // calls for a K-call final turn, and since each executed call races
+            // `step_timeout` INDIVIDUALLY, K calls of a 90-minute tool cost
+            // K × 90 minutes. The whole point of the ceiling is that the product
+            // `max_tool_calls × step_timeout` is the bound.
+            //
+            // Once it is spent the remaining calls of the turn are REFUSED, not
+            // executed. The run ends at `MaxToolCalls` below either way, so
+            // executing them buys the user nothing and can cost hours; refusing
+            // them still leaves the turn WHOLE — every requested call gets a
+            // fenced result, so the transcript never shows a call that silently
+            // vanished. A Write among them is refused without suspending: the
+            // user is not asked to approve a save whose run is already over.
+            let body = if tool_calls >= budget.max_tool_calls {
+                TOOL_BUDGET_EXHAUSTED.to_string()
+            } else {
+                // Counted before the match, so an unknown-tool refusal costs a
+                // call too: a loop that keeps inventing tool names is exactly
+                // the runaway this ceiling is for, and refusals are not free
+                // (each one is a fenced result the next turn pays for in
+                // tokens). A budget-exhausted refusal above is NOT counted —
+                // there is nothing left to charge it against.
+                tool_calls += 1;
+                match tool_kind(tools, &call.name) {
+                    Some(ToolKind::Read) => {
+                        // Same race as the provider turn above: a text-drafting tool
+                        // (e.g. `draft_cover_letter`) makes its OWN provider call, so
+                        // Stop must interrupt it too, not just the outer turn.
+                        tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => {
                                 return Ok(AgentOutcome {
-                                    final_text: step_timeout_message(),
+                                    final_text,
                                     steps,
-                                    stopped_reason: StoppedReason::Timeout,
+                                    stopped_reason: StoppedReason::Cancelled,
                                 });
                             }
-                        },
-                    }
-                }
-                Some(ToolKind::Write) => {
-                    // Human-in-the-loop confirm gate: SUSPEND the run and execute
-                    // only after the user approves (Deny/timeout/cancel never act).
-                    match resolve_write(
-                        env,
-                        tools,
-                        gate,
-                        confirm_timeout,
-                        job_id,
-                        steps,
-                        idx,
-                        call,
-                        cancel,
-                    )
-                    .await
-                    {
-                        WriteResolution::Cancelled => {
-                            return Ok(AgentOutcome {
-                                final_text,
-                                steps,
-                                stopped_reason: StoppedReason::Cancelled,
-                            });
+                            result = tokio::time::timeout(
+                                budget.step_timeout,
+                                env.run_read_tool(&call.name, call.args.clone()),
+                            ) => match result {
+                                Ok(Ok(v)) => v.to_string(),
+                                Ok(Err(e)) => format!("error: {e}"),
+                                // Wall-clock backstop: this read tool (which may itself
+                                // make a provider call, e.g. a drafting tool) never
+                                // returned within `budget.step_timeout`.
+                                Err(_elapsed) => {
+                                    return Ok(AgentOutcome {
+                                        final_text: step_timeout_message(budget.step_timeout),
+                                        steps,
+                                        stopped_reason: StoppedReason::Timeout,
+                                    });
+                                }
+                            },
                         }
-                        WriteResolution::Body(body) => body,
                     }
+                    Some(ToolKind::Write) => {
+                        // Human-in-the-loop confirm gate: SUSPEND the run and execute
+                        // only after the user approves (Deny/timeout/cancel never act).
+                        match resolve_write(
+                            env,
+                            tools,
+                            gate,
+                            budget.confirm_timeout,
+                            job_id,
+                            steps,
+                            idx,
+                            call,
+                            cancel,
+                        )
+                        .await
+                        {
+                            WriteResolution::Cancelled => {
+                                return Ok(AgentOutcome {
+                                    final_text,
+                                    steps,
+                                    stopped_reason: StoppedReason::Cancelled,
+                                });
+                            }
+                            // An APPROVED write that FAILED ends the run, the
+                            // same handling a failed provider turn gets above.
+                            // Folding it into the transcript instead let the
+                            // model narrate a save that never happened into a
+                            // `Done` outcome — see `WriteResolution::Failed`.
+                            WriteResolution::Failed(e) => return Err(e),
+                            WriteResolution::Body(body) => body,
+                        }
+                    }
+                    None => format!("error: unknown tool '{}'", call.name),
                 }
-                None => format!("error: unknown tool '{}'", call.name),
             };
             if !combined.is_empty() {
                 combined.push_str("\n\n");
@@ -482,18 +594,41 @@ pub async fn run_agent_with_system(
         tokens += estimate_tokens(&combined);
         messages.push(ChatMsg::tool(combined));
 
-        if steps >= BUDGET.max_steps {
+        if steps >= budget.max_steps {
             return Ok(AgentOutcome {
                 final_text,
                 steps,
                 stopped_reason: StoppedReason::MaxSteps,
             });
         }
-        if tokens >= BUDGET.max_tokens {
+        if tokens >= budget.max_tokens {
             return Ok(AgentOutcome {
                 final_text,
                 steps,
                 stopped_reason: StoppedReason::MaxTokens,
+            });
+        }
+        // The tool-call ceiling, enforced (Phase 7) — see [`Budget::max_tool_calls`]
+        // for what it costs and why it is worth paying.
+        //
+        // It was a documented-but-dead constant, which the second flow turned
+        // into a real hole: `run_quality_pipeline` is a 75-minute call, the
+        // prompt's "spend AT MOST ONE of them" is PROSE the model may ignore or
+        // be talked out of by an injected posting (OWASP LLM01), and nothing
+        // else in the loop counts calls — so a steered improve run could spend
+        // its whole tool allowance on repeats of the most expensive tool the app
+        // has. Checked after the turn's calls have all executed — never
+        // mid-turn, which would leave a turn half-applied with its tool results
+        // already in the transcript. Ordered last of the three ceilings, so a
+        // turn that trips two reports the step/token reason; in practice this
+        // one fires on an EARLIER turn than `max_steps` can, because every
+        // shipped budget keeps `max_tool_calls < max_steps` and a tool-calling
+        // loop spends at least one call per turn.
+        if tool_calls >= budget.max_tool_calls {
+            return Ok(AgentOutcome {
+                final_text,
+                steps,
+                stopped_reason: StoppedReason::MaxToolCalls,
             });
         }
     }
@@ -573,22 +708,27 @@ impl AgentEnv for LiveAgentEnv<'_> {
     }
 }
 
-/// Production entry point for the agent loop: bind the active provider + a per-flow
-/// tool whitelist + a fixed flow `system` prompt + the trusted [`ToolContext`], and
-/// run to a budget. `job_id` is the caller's `agent_run` job id — stamped onto
-/// every `agent:step` this run emits (see [`AgentStep::job_id`]).
+/// Production entry point for the agent loop: bind the active provider + the
+/// trusted [`ToolContext`] to ONE registered [`AgentFlow`] and run it.
+/// `job_id` is the caller's `agent_run` job id — stamped onto every
+/// `agent:step` this run emits (see [`AgentStep::job_id`]).
+///
+/// The flow arrives as one value rather than as a whitelist, a prompt and a
+/// budget the caller assembles: those three are sized against each other
+/// ([`crate::agent::flows`]), and the only way to pair the wrong ones here is
+/// now to register them wrong there, where a test asserts the pairing. The
+/// whitelist is BUILT here, once per run, so the model is offered the flow's
+/// current tools and the loop and the env cannot be handed two different lists.
 ///
 /// The caller (`agent_run`) MUST first `acquire` the shared limiter with
 /// [`crate::limits::AGENT_RUN_RATE_MAX`] /
 /// [`crate::limits::AGENT_RUN_CONCURRENCY_MAX`] and hold the guard for the whole
 /// run; per-turn daily spend is charged inside [`LiveAgentEnv::turn`].
-#[allow(clippy::too_many_arguments)]
 pub async fn run_agent_live(
     app: &AppHandle,
     completer: &Completer,
-    tools: &[AgentTool],
+    flow: &AgentFlow,
     ctx: ToolContext,
-    system: &str,
     job_id: &str,
     user: String,
     cancel: &CancellationToken,
@@ -597,11 +737,12 @@ pub async fn run_agent_live(
         .state::<std::sync::Arc<crate::limits::Limiter>>()
         .inner()
         .clone();
+    let tools = (flow.tools)();
     let env = LiveAgentEnv {
         app,
         completer,
-        tools,
-        specs: to_specs(tools),
+        tools: &tools,
+        specs: to_specs(&tools),
         limiter,
         temperature: Some(0.2),
         ctx,
@@ -611,10 +752,10 @@ pub async fn run_agent_live(
     let gate = app.state::<AgentGate>();
     run_agent_with_system(
         &env,
-        tools,
+        &tools,
         gate.inner(),
-        BUDGET.confirm_timeout,
-        system,
+        flow.budget,
+        flow.system,
         job_id,
         user,
         cancel,

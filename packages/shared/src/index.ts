@@ -1,3 +1,4 @@
+export * from './agent-caps.js';
 export * from './ai-context-window.js';
 export * from './ai-models.js';
 export * from './ai-timeouts.js';

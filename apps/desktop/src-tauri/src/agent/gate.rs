@@ -118,10 +118,12 @@ impl AgentGate {
 // ── Suspend-and-execute mechanics for one Write call ─────────────────────────
 
 // How long a suspended Write confirmation may wait for the user before
-// `resolve_write` gives up and treats it as a DENY (never an execute) is
-// `Budget::AGENT_PREP.confirm_timeout` (`crate::pipeline::budget`) — the
-// controller passes it in as `confirm_timeout` rather than this module owning a
-// second number. A generous ceiling (the human is expected to answer in
+// `resolve_write` gives up and treats it as a DENY (never an execute) is the
+// RUNNING FLOW's `budget.confirm_timeout` (`crate::pipeline::budget`, chosen
+// per flow in `crate::agent::flows`) — the controller passes it in rather than
+// this module owning a second number. Every shipped flow currently sets the
+// same 300 s, but that is a fact about the budgets, not an assumption this
+// module may make. A generous ceiling (the human is expected to answer in
 // seconds) but bounded, so a forgotten prompt can never hang the run forever
 // nor hold an `AGENT_RUN_CONCURRENCY_MAX` slot indefinitely.
 
@@ -167,6 +169,25 @@ fn display_cap_for(tool: &str) -> usize {
 /// [`ToolContext`] and may NEVER be supplied (or overridden) through tool args —
 /// checked in both camelCase and snake_case so neither wire spelling slips a
 /// redirect past the gate. See the module SECURITY invariant.
+///
+/// **`kind` (the Phase-7 flow selector) is deliberately NOT on this list**, and
+/// the reason is worth stating because it looks like it belongs:
+///
+/// * It cannot do anything here. A flow is resolved ONCE, at run start, from
+///   `AgentRunRequest.kind` (`commands::agent`); by the time a Write suspends,
+///   the prompt, whitelist and budget are already bound and nothing re-reads a
+///   kind. An edited arg naming one would be inert even if it were accepted.
+/// * It is already rejected, by layer 2. No tool schema declares a `kind`
+///   property, so `validate_edited_args` refuses it as an unknown field —
+///   pinned by `edited_args_naming_a_flow_kind_are_refused_by_the_schema`.
+/// * Adding it would cost something real. This list is a blunt RECURSIVE
+///   key-name ban, and `kind` is an ordinary English word and the conventional
+///   name of a discriminator; banning it at every depth would refuse a
+///   legitimate future content arg (a `{ kind: "bullet" }` block) for no
+///   security gain.
+///
+/// The list stays what its name says: fields whose value would change WHERE a
+/// credentialed call goes or WHICH record it writes.
 ///
 /// [`ToolContext`]: super::tools::ToolContext
 fn is_routing_egress_key(key: &str) -> bool {
@@ -306,19 +327,38 @@ fn clamp_json_strings(v: &Value, cap: usize) -> Value {
     }
 }
 
-/// Outcome of suspending on the confirm gate for one Write call: either the run
-/// was cancelled while suspended (propagate `Cancelled`, do NOT act) or a
-/// tool-result body to fold into the transcript (the write ran, was declined, or
-/// timed out — all NON-cancelling).
+/// Outcome of suspending on the confirm gate for one Write call.
 pub(super) enum WriteResolution {
+    /// The run was cancelled while suspended — propagate, do NOT act.
     Cancelled,
+    /// A tool-result body to fold into the transcript: the write RAN, or the
+    /// user declined it, or the confirm timed out, or an edit was rejected
+    /// before anything was attempted. All non-cancelling, and all states the
+    /// model can honestly narrate.
     Body(String),
+    /// An APPROVED write failed to execute. The run ends with this error.
+    ///
+    /// Not a tool-result body, which is what it used to be, and the difference
+    /// is what the user sees. A failed READ is information the model can work
+    /// around; a failed approved WRITE is the flow's purpose not happening —
+    /// the user was asked, said yes, and nothing was written. Folded into the
+    /// transcript, the model summarized around it and the run still ended
+    /// `Done`, so `agent_run` emitted a terminal proposal and completed the
+    /// job: the renderer's card showed the save as done over an unchanged
+    /// document, with nothing on the wire to distinguish it from a real save.
+    ///
+    /// Propagated as `Err` instead, which is the SAME handling a failed
+    /// provider turn already gets, and which lands in `agent_run`'s existing
+    /// `Err(e) => job_fail(…)` arm — the failure travels on the job channel the
+    /// renderer already reads, so no new wire field exists to be ignored.
+    Failed(AppError),
 }
 
 /// SUSPEND the loop on a `ToolKind::Write` call: emit a `confirm_request` step,
 /// register a [`oneshot`] with the [`AgentGate`], then block on the user's decision
-/// raced against BOTH cancellation and [`crate::pipeline::budget::Budget::AGENT_PREP`]'s
-/// `confirm_timeout`. The gate entry is ALWAYS removed before returning (every branch).
+/// raced against BOTH cancellation and the running flow's own
+/// [`crate::pipeline::budget::Budget`] `confirm_timeout` (passed in by the
+/// controller). The gate entry is ALWAYS removed before returning (every branch).
 ///
 /// SECURITY: the write executes ONLY on `Approve`/`ApproveEdited`; `Deny`, a
 /// timeout, a closed channel, and cancel all default to NOT acting. `ApproveEdited`
@@ -387,7 +427,7 @@ pub(super) async fn resolve_write(
         Some(Decision::Approve) => {
             match run_write_raced(env, cancel, &call.name, call.args.clone()).await {
                 Some(Ok(v)) => v.to_string(),
-                Some(Err(e)) => format!("error: {e}"),
+                Some(Err(e)) => return WriteResolution::Failed(e),
                 None => return WriteResolution::Cancelled,
             }
         }
@@ -395,7 +435,7 @@ pub(super) async fn resolve_write(
         {
             Ok(()) => match run_write_raced(env, cancel, &call.name, edited).await {
                 Some(Ok(v)) => v.to_string(),
-                Some(Err(e)) => format!("error: {e}"),
+                Some(Err(e)) => return WriteResolution::Failed(e),
                 None => return WriteResolution::Cancelled,
             },
             // Fail-closed: an invalid edit is NOT executed.
@@ -532,6 +572,7 @@ mod tests {
     };
     use crate::agent::tools::{ToolContext, ToolKind};
     use crate::commands::ai_provider::{AgentTurn, ChatMsg, Role, StopReason, ToolCall, Usage};
+    use crate::pipeline::budget::Budget;
 
     /// A scripted fake: pops a canned [`AgentTurn`] per `turn()` (repeating the last
     /// one forever), records executed read AND write tools + narrated steps + the
@@ -547,6 +588,9 @@ mod tests {
         writes: Mutex<Vec<(String, Value)>>,
         steps: Mutex<Vec<AgentStep>>,
         transcripts: Mutex<Vec<Vec<ChatMsg>>>,
+        /// When set, an approved write RECORDS its args and then fails with
+        /// this message — the store-refused-after-approval case.
+        write_fails_with: Option<String>,
     }
 
     impl FakeEnv {
@@ -557,6 +601,7 @@ mod tests {
                 last,
                 reads: Mutex::new(Vec::new()),
                 writes: Mutex::new(Vec::new()),
+                write_fails_with: None,
                 steps: Mutex::new(Vec::new()),
                 transcripts: Mutex::new(Vec::new()),
             }
@@ -576,7 +621,12 @@ mod tests {
         }
         async fn run_write_tool(&self, name: &str, args: Value) -> AppResult<Value> {
             self.writes.lock().push((name.to_string(), args));
-            Ok(json!({ "wrote": name }))
+            match &self.write_fails_with {
+                // Recorded first, deliberately: the attempt happened, and the
+                // test asserts the run still reports failure despite it.
+                Some(message) => Err(AppError::Storage(message.clone())),
+                None => Ok(json!({ "wrote": name })),
+            }
         }
         fn on_step(&self, step: &AgentStep) {
             self.steps.lock().push(step.clone());
@@ -693,9 +743,147 @@ mod tests {
         }
     }
 
+    /// An APPROVED write that FAILS ends the run — the user must not be shown a
+    /// save that did not happen.
+    ///
+    /// Raised by the renderer track against `18dca96f`: once a store-refused
+    /// `save_resume` returns `Err` from the handler, the failure has to reach
+    /// the USER, not just the transcript. It previously became an
+    /// `error: …` tool-result body, so the model summarized around it, the run
+    /// ended `Done`, `agent_run` emitted a terminal proposal and completed the
+    /// job — and the renderer's save row (which keys on the confirm having been
+    /// resolved) showed the proposal as saved over an unchanged document, with
+    /// nothing on the wire able to tell the two apart.
+    ///
+    /// The fix invents no wire field: the error propagates as `Err`, exactly as
+    /// a failed provider turn already does, into `agent_run`'s existing
+    /// `Err(e) => job_fail(…)` arm. The renderer reads that channel today.
+    ///
+    /// Deliberately NOT extended to the other non-acting branches: Deny, a
+    /// timeout, and a rejected EDIT are all states the model can honestly
+    /// narrate and the user already knows about (they answered, or declined to)
+    /// — `write_declined_by_user_is_not_executed_and_run_continues` and its
+    /// siblings pin that those still continue.
+    ///
+    /// Mutation-checked, executed: folding the failure back into a
+    /// `WriteResolution::Body` makes the run finish `Done` and fails the first
+    /// two assertions here.
+    #[tokio::test]
+    async fn an_approved_write_that_fails_ends_the_run_instead_of_reporting_success() {
+        let mut env = FakeEnv::new(vec![write_call("writer"), final_turn("all saved!")]);
+        env.write_fails_with = Some("database is locked".to_string());
+        let gate = Arc::new(AgentGate::default());
+        spawn_resolver(gate.clone(), "job-1", "1-0-writer", Decision::Approve);
+
+        let outcome = run_gated(
+            &env,
+            &gate,
+            CONFIRM_TIMEOUT,
+            "job-1",
+            &CancellationToken::new(),
+        )
+        .await;
+
+        let err = outcome.expect_err("a failed approved write must not resolve as a finished run");
+        assert!(
+            err.to_string().contains("database is locked"),
+            "the store's reason must reach `agent_run`'s job_fail: {err}"
+        );
+        // The attempt DID happen — this is a failure, not a refusal to try.
+        assert_eq!(env.writes.lock().len(), 1);
+        // The user was asked exactly once, and no terminal narration followed.
+        assert_eq!(
+            env.steps
+                .lock()
+                .iter()
+                .filter(|s| s.kind == AgentStepKind::ConfirmRequest)
+                .count(),
+            1
+        );
+    }
+
+    /// A Write past the run's tool-call ceiling is refused WITHOUT suspending:
+    /// no gate entry, no `confirm_request`, no execution.
+    ///
+    /// The controller's per-call ceiling (Phase-7 delta round) short-circuits
+    /// the remaining calls of a turn once the budget is spent, and this is the
+    /// half that matters at the gate: the run is ending at `MaxToolCalls`
+    /// regardless, so suspending would ask the user to approve a save whose run
+    /// is already over — a confirm dialog whose Approve either does nothing or
+    /// writes a document from a run the user was told had stopped. The
+    /// controller-side count is pinned by
+    /// `a_parallel_tool_turn_cannot_spend_past_the_tool_call_ceiling`; this pins
+    /// the gate-side consequence, which that test cannot see.
+    ///
+    /// `max_tool_calls: 1` with a two-Write turn puts the second call exactly
+    /// past the ceiling, and NOTHING resolves the second one on purpose — a
+    /// regression suspends there. The budget's `confirm_timeout` is shortened
+    /// to five seconds for exactly that case: with the shipped 300 s a
+    /// regression would fail by HANGING for five minutes, and a test that fails
+    /// slowly and namelessly gets muted. Five seconds is far above the
+    /// resolver's own latency (it retries every yield) and turns the regression
+    /// into a named assertion failure.
+    ///
+    /// Mutation-checked, executed: moving the ceiling check back to the turn
+    /// boundary suspends on the second Write — with the shipped timeout the run
+    /// blocks (observed: killed at 120 s); with this one it fails on the
+    /// confirm-count assertion.
+    #[tokio::test]
+    async fn a_write_past_the_tool_call_ceiling_never_suspends() {
+        let env = FakeEnv::new(vec![double_write_call("writer")]);
+        let gate = Arc::new(AgentGate::default());
+        // The FIRST write is approved so the run reaches the second one.
+        spawn_resolver(gate.clone(), "job-1", "1-0-writer", Decision::Approve);
+        let budget = Budget {
+            max_tool_calls: 1,
+            confirm_timeout: Duration::from_secs(5),
+            ..Budget::AGENT_PREP
+        };
+        let out = run_agent_with_system(
+            &env,
+            &whitelist(),
+            &gate,
+            budget,
+            AGENT_SYSTEM,
+            "job-1",
+            "prep this".into(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+        let writes = env.writes.lock();
+        assert_eq!(
+            writes.len(),
+            1,
+            "only the affordable write executed, got {writes:?}"
+        );
+        assert_eq!(
+            env.steps
+                .lock()
+                .iter()
+                .filter(|s| s.kind == AgentStepKind::ConfirmRequest)
+                .count(),
+            1,
+            "the second Write must not have asked the user anything"
+        );
+        // …and it left no pending entry behind: resolving the id the second
+        // call WOULD have registered finds nothing.
+        assert!(
+            !gate.resolve("job-1", "1-1-writer", Decision::Approve),
+            "a refused Write must never have been registered with the gate"
+        );
+    }
+
     /// These tests suspend on a real Write, so they drive `run_agent_with_system`
     /// directly with a shared gate they can resolve. `confirm_timeout` lets the
     /// timeout test pass a tiny ceiling; approve/deny/edit tests pass a generous one.
+    ///
+    /// It rides in on a COPY of the shipped prep budget rather than as its own
+    /// argument, because that is how the loop now takes it — one budget per
+    /// flow, confirm wait included. Every other ceiling stays the real one, so
+    /// a test that shrinks the wait doesn't quietly shrink the step clock too.
     async fn run_gated(
         env: &FakeEnv,
         gate: &AgentGate,
@@ -703,11 +891,15 @@ mod tests {
         job_id: &str,
         cancel: &CancellationToken,
     ) -> AppResult<AgentOutcome> {
+        let budget = Budget {
+            confirm_timeout,
+            ..Budget::AGENT_PREP
+        };
         run_agent_with_system(
             env,
             &whitelist(),
             gate,
-            confirm_timeout,
+            budget,
             AGENT_SYSTEM,
             job_id,
             "prep this".into(),
@@ -1039,6 +1231,34 @@ mod tests {
             assert!(
                 validate_edited_args(&tools, "writer", &v).is_err(),
                 "routing/egress field '{key}' must be rejected"
+            );
+        }
+    }
+
+    /// Phase 7's denylist question, answered by test rather than by argument:
+    /// an edited-args payload smuggling the flow selector is refused, and it is
+    /// refused by LAYER 2 (the schema whitelist), which is why `kind` does not
+    /// need to join [`is_routing_egress_key`]'s recursive ban — see that
+    /// function's doc for the cost of adding a word this ordinary to it.
+    ///
+    /// The error message is asserted so the test can tell WHICH layer refused:
+    /// if `kind` were ever added to the denylist, this fails and the reader is
+    /// pointed at the decision instead of silently keeping a redundant ban.
+    ///
+    /// (Even accepted, it would be inert: the flow is resolved once at run
+    /// start, before any tool call, and nothing re-reads a kind afterwards.)
+    #[test]
+    fn edited_args_naming_a_flow_kind_are_refused_by_the_schema() {
+        let tools = whitelist();
+        for spelling in ["kind", "flowKind", "flow_kind"] {
+            let mut obj = serde_json::Map::new();
+            obj.insert("coverLetterText".into(), json!("ok"));
+            obj.insert(spelling.into(), json!("improve_resume"));
+            let err = validate_edited_args(&tools, "writer", &Value::Object(obj))
+                .expect_err("an undeclared field must be refused");
+            assert!(
+                err.to_string().contains("unknown field"),
+                "'{spelling}' must be refused as an undeclared schema field, got: {err}"
             );
         }
     }
