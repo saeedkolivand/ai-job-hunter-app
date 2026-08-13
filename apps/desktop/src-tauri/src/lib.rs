@@ -13,6 +13,7 @@
 pub mod agent;
 pub mod ai_config;
 pub mod ai_generations;
+pub mod ai_provider;
 pub mod applications;
 pub mod autopilot;
 pub mod autopilot_helpers;

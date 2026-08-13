@@ -37,6 +37,15 @@ use tauri::{AppHandle, Manager};
 use super::research::SearchResult;
 use super::{timeouts, ProviderId, RequestTrace};
 
+/// `SearchBackend` lives in the L1 `crate::ai_provider` module, not here —
+/// two L2 siblings (`pipeline::Completer::search_backend()` and
+/// `cover_letter::research::cache_key`) need to name it, and reaching up into
+/// this L3 module for a plain value type would be an upward (R7) layer
+/// violation. Re-exported so every existing consumer of
+/// `commands::ai_provider::search::SearchBackend` keeps compiling unchanged;
+/// see that module's doc comment for the full reasoning.
+pub use crate::ai_provider::SearchBackend;
+
 /// Credential slot for the Exa key: `ai:exa` in the OS keychain, via the same
 /// `ai_set_provider_key`/`ai_has_provider_key` commands every provider key uses.
 /// `ollama-cloud`'s account key is the precedent for a credential whose name is
@@ -44,30 +53,6 @@ use super::{timeouts, ProviderId, RequestTrace};
 pub const EXA_KEY: &str = "exa";
 
 const EXA_SEARCH_URL: &str = "https://api.exa.ai/search";
-
-/// Which backend serves one research pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SearchBackend {
-    /// The provider's own model-side search (or the Ollama Web Search API).
-    Native,
-    /// The user-configured fallback.
-    Exa,
-    /// Nothing configured — research degrades to an empty brief.
-    None,
-}
-
-impl SearchBackend {
-    /// Stable string term for a cache key (e.g.
-    /// `cover_letter::research`'s `company_brief` key) — not `Debug`, so a
-    /// variant rename can't silently change every existing key.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Native => "native",
-            Self::Exa => "exa",
-            Self::None => "none",
-        }
-    }
-}
 
 /// Pick the backend for one research pass. Pure, so the policy is testable
 /// without an `AppHandle` — this crate has no `tauri::test` mock-app harness,

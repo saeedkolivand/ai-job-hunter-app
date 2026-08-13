@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tauri::Manager;
 
-use crate::commands::ai_provider::search::SearchBackend;
+use crate::ai_provider::SearchBackend;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::enrichment::EnrichmentResult;
 use crate::pipeline::resume::cache::StageIdentity;

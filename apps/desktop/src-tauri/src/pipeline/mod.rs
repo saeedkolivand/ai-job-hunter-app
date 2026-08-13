@@ -443,7 +443,7 @@ impl Completer {
     /// Exa from CREDENTIAL PRESENCE at call time, not from `(provider,
     /// model)`, so the SAME provider + model can still retrieve from a
     /// different backend between two calls.
-    pub fn search_backend(&self) -> crate::commands::ai_provider::search::SearchBackend {
+    pub fn search_backend(&self) -> crate::ai_provider::SearchBackend {
         crate::commands::ai_provider::search::search_backend_for(
             &self.app,
             self.provider.as_ref(),
