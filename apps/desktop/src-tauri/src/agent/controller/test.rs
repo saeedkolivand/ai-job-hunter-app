@@ -133,6 +133,23 @@ fn never(
     Box::pin(async { Ok(Value::Null) })
 }
 
+/// A whitelist of Read tools with the given names, for the tests that need MORE
+/// distinct tools than the fixed [`whitelist`] carries (a parallel turn asking
+/// for four at once). Registered, so a refusal in those tests is the ceiling's
+/// doing and not an unknown-tool error wearing the same shape.
+fn read_whitelist(names: &[&'static str]) -> Vec<AgentTool> {
+    names
+        .iter()
+        .map(|name| AgentTool {
+            name,
+            description: "r".into(),
+            schema: json!({}),
+            kind: ToolKind::Read,
+            handler: never,
+        })
+        .collect()
+}
+
 fn whitelist() -> Vec<AgentTool> {
     vec![
         AgentTool {
@@ -370,6 +387,60 @@ async fn the_tool_call_ceiling_stops_a_runaway_tool_loop() {
         out.stopped_reason,
         StoppedReason::MaxToolCalls,
         "refused calls count too, or an unknown-name loop runs to the step ceiling"
+    );
+}
+
+/// HIGH (Phase-7 delta review): the ceiling is enforced PER CALL, so a turn
+/// that asks for several tools at once cannot spend past it.
+///
+/// Providers return `tool_calls[]`, plural — nothing in the app sets
+/// `parallel_tool_calls: false`, every adapter maps the whole array, and
+/// `agent::gate` already drives a 2-call turn. With the check only at the turn
+/// boundary, a K-call final turn executed `max_tool_calls - 1 + K` calls, and
+/// because each executed call races `step_timeout` INDIVIDUALLY, K calls of the
+/// review flow's 90-minute pipeline tool cost K × 90 minutes — the bound
+/// `max_tool_calls × step_timeout` is only true if the count is checked before
+/// each call.
+///
+/// The turn stays whole: the refused calls still get a fenced `error:` result
+/// (see `TOOL_BUDGET_EXHAUSTED`), so nothing vanishes from the transcript. That
+/// body is not observable from this fake — the run returns `MaxToolCalls` at the
+/// end of the same turn, so no later `turn()` is handed the transcript carrying
+/// it — which is why this asserts the executed NAMES instead: the ones past the
+/// ceiling never reached the env at all.
+///
+/// Mutation-checked, executed: moving the check back out of the per-call loop
+/// runs "d" too (4 executed against a ceiling of 3).
+#[tokio::test]
+async fn a_parallel_tool_turn_cannot_spend_past_the_tool_call_ceiling() {
+    let env = FakeEnv::new(vec![multi_read_call(&["a", "b", "c", "d"])]);
+    let gate = AgentGate::default();
+    let budget = Budget {
+        max_tool_calls: 3,
+        ..TEST_ENTRY_BUDGET
+    };
+    let out = run_agent_with_system(
+        &env,
+        &read_whitelist(&["a", "b", "c", "d"]),
+        &gate,
+        budget,
+        AGENT_SYSTEM,
+        "job-9",
+        "help".into(),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        *env.reads.lock(),
+        vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        "the fourth call of the turn must be refused, not executed"
+    );
+    assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+    assert_eq!(
+        out.steps, 1,
+        "one turn was enough to spend the whole budget"
     );
 }
 

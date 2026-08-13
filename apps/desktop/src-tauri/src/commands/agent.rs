@@ -122,7 +122,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                 &app_task,
                 &cancels_task,
                 &job_id_task,
-                format!("unknown agent flow: {}", clamped_kind_echo(kind)),
+                format!("unknown agent flow: {}", clamped_echo(kind)),
             )
             .await;
             return;
@@ -164,7 +164,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                 &app_task,
                 &cancels_task,
                 &job_id_task,
-                format!("resume not found: {}", req.resume_id),
+                format!("resume not found: {}", clamped_echo(&req.resume_id)),
             )
             .await;
             return;
@@ -175,7 +175,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                 &app_task,
                 &cancels_task,
                 &job_id_task,
-                format!("job not found in cache: {}", req.job_id),
+                format!("job not found in cache: {}", clamped_echo(&req.job_id)),
             )
             .await;
             return;
@@ -346,10 +346,14 @@ fn build_user_message(resume_id: &str, job_id: &str, resume: &str, job: &str) ->
 /// Three blocks rather than two because the flow compares three things that are
 /// genuinely different documents — the candidate's master résumé (what is
 /// TRUE), the posting (what is ASKED), and the tailored generation (what was
-/// WRITTEN) — and the tools only ever load the first two server-side. The
-/// generation is fenced under its own tag and clamped to the same
-/// [`RESUME_CAP`] `validate_resume` reads a `draft` at, so the model is never
-/// shown more of it than a check will actually cover.
+/// WRITTEN) — and the tools only ever load the first two server-side.
+///
+/// The generation's [`RESUME_CAP`] clamp here is DEFENCE IN DEPTH, not the
+/// protection: a generation this fence would actually cut never reaches this
+/// function, because [`readable_generation_text`] refuses the run first (see
+/// its doc for why a silent clamp on this particular value destroys data). What
+/// the clamp still buys is that the seed cannot exceed the bound a
+/// `validate_resume` `draft` is read at, however the text got here.
 fn build_improve_user_message(
     resume_id: &str,
     job_id: &str,
@@ -371,23 +375,26 @@ fn build_improve_user_message(
     )
 }
 
-/// Longest an unrecognized `kind` may be when it is echoed back in a failure
-/// message. The same 64 the controller clamps a model-chosen tool name to
-/// (`agent::controller`'s `TOOL_NAME_CAP`) and for the same reason: every REAL
-/// value is a short registry token, and the rejected ones are the only ones
-/// that reach the formatter.
-const KIND_ECHO_CAP: usize = 64;
+/// Longest a REQUEST-SUPPLIED value may be when this command echoes it back in
+/// a failure message. The same 64 the controller clamps a model-chosen tool
+/// name to (`agent::controller`'s `TOOL_NAME_CAP`) and for the same reason:
+/// every real value is a short id or registry token, so the only values that
+/// reach the formatter oversized are the rejected ones.
+const WIRE_ECHO_CAP: usize = 64;
 
-/// Clamp a rejected `kind` for the failure message.
+/// Clamp a request-supplied value for a failure message.
 ///
-/// The wire field is a bare `String` (the closed vocabulary is enforced by the
-/// renderer's schema and by [`flows::flow_for`], not by the DTO), so a
-/// compromised renderer can send a megabyte of text here and this is the one
-/// place it is interpolated — into a job-failure message that is stored,
-/// logged, and rendered. Chars, not bytes, so a multi-byte value is cut on a
-/// character boundary rather than panicking.
-fn clamped_kind_echo(kind: &str) -> String {
-    kind.chars().take(KIND_ECHO_CAP).collect()
+/// **All three of this command's echoed wire fields go through it** — `kind`,
+/// `resumeId`, `jobId` — because they share one threat model: each is an
+/// unvalidated `String` on the DTO (the closed vocabulary and the id lookups
+/// are enforced downstream, not by serde), each is interpolated ONLY on the
+/// path where it was already rejected, and each lands in a job-failure message
+/// that is stored, logged, and rendered. Clamping one and not the others just
+/// moves the hole (LOW, Phase-7 delta review).
+///
+/// Chars, not bytes, so a multi-byte value is cut on a character boundary.
+fn clamped_echo(value: &str) -> String {
+    value.chars().take(WIRE_ECHO_CAP).collect()
 }
 
 /// The seed-side policy for the document the review flow reviews: what the
@@ -751,23 +758,25 @@ mod tests {
         assert!(readable_generation_text("é".repeat(RESUME_CAP + 1)).is_err());
     }
 
-    /// A rejected `kind` is echoed back CLAMPED (LOW, both Phase-7 reviewers).
-    /// The DTO field is a bare `String`, so the only bound on what a compromised
-    /// renderer sends is applied here — and this message is stored on the job,
-    /// logged, and rendered. Same 64-char discipline the controller applies to a
-    /// model-chosen tool name, and clamped by CHARS so a multi-byte value cannot
-    /// be cut mid-sequence.
+    /// Every request-supplied value this command echoes back is CLAMPED (LOW,
+    /// both Phase-7 reviewers; widened from `kind` alone in the delta round).
+    /// Each is a bare `String` on the DTO, each is interpolated only where it
+    /// was already rejected, and each lands in a job-failure message that is
+    /// stored, logged, and rendered — so clamping one and not the others just
+    /// moved the hole. Chars, not bytes, so a multi-byte value is cut on a
+    /// character boundary.
     #[test]
-    fn a_rejected_flow_kind_is_echoed_back_clamped() {
+    fn every_echoed_wire_value_is_clamped() {
         let flood = "k".repeat(100_000);
-        assert_eq!(clamped_kind_echo(&flood).chars().count(), KIND_ECHO_CAP);
+        assert_eq!(clamped_echo(&flood).chars().count(), WIRE_ECHO_CAP);
 
-        let multibyte = "é".repeat(KIND_ECHO_CAP + 10);
-        assert_eq!(clamped_kind_echo(&multibyte).chars().count(), KIND_ECHO_CAP);
+        let multibyte = "é".repeat(WIRE_ECHO_CAP + 10);
+        assert_eq!(clamped_echo(&multibyte).chars().count(), WIRE_ECHO_CAP);
 
-        // A real (if unregistered) token passes through whole — the message has
-        // to stay useful for the ordinary typo case.
-        assert_eq!(clamped_kind_echo("improve_letter"), "improve_letter");
+        // A real (if unregistered) value passes through whole — the messages
+        // have to stay useful for the ordinary typo/missing-row case.
+        assert_eq!(clamped_echo("improve_letter"), "improve_letter");
+        assert_eq!(clamped_echo("res-1"), "res-1");
     }
 
     /// An absent or blank generation is its own refusal, with the message that

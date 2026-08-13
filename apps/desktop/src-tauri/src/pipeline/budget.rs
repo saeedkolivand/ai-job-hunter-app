@@ -232,13 +232,22 @@ impl Budget {
     /// then a second timing mechanism would sit above bounds that already fire
     /// with actionable errors.
     ///
-    /// **Reachable worst case, honestly.** `max_tool_calls` (8, enforced since
-    /// Phase 7) × a 90-minute call is ~12 h if a run somehow spent every call on
-    /// the pipeline tool — that is the ceiling the ENFORCED bounds admit, and
-    /// `run_timeout` below does not cut it down (nothing in the agent loop reads
-    /// it). What keeps a real run far under it: the prompt rations that tool to
-    /// at most one use, its own 4 500 s deadline, the per-provider daily
-    /// ceiling, and the user's Stop.
+    /// **Reachable worst case, honestly.** `max_tool_calls` (8) × a 90-minute
+    /// call is ~12 h if a run somehow spent every call on the pipeline tool —
+    /// that is the ceiling the ENFORCED bounds admit, and `run_timeout` below
+    /// does not cut it down (nothing in the agent loop reads it).
+    ///
+    /// The product is only a bound because the count is checked BEFORE EACH
+    /// CALL, not once per turn: providers may return several tool calls in one
+    /// turn, and each executed call races `step_timeout` on its own, so a
+    /// turn-boundary check would have admitted `max_tool_calls - 1 + K` calls —
+    /// an unbounded tail at 90 minutes apiece (HIGH, Phase-7 delta review; see
+    /// `agent::controller`'s per-call refusal and
+    /// `a_parallel_tool_turn_cannot_spend_past_the_tool_call_ceiling`).
+    ///
+    /// What keeps a real run far under the ceiling: the prompt rations that
+    /// tool to at most one use, its own 4 500 s deadline, the per-provider
+    /// daily ceiling, and the user's Stop.
     ///
     /// **`max_steps` = 10.** The prompt's fixed sequence is 7 turns (a plan
     /// turn, 5 tool turns — `get_quality_report`, `validate_resume`,
@@ -463,9 +472,15 @@ const _: () = assert!(
     Budget::AGENT_PREP.max_steps > PREP_WORST_CASE_TURNS,
     "AGENT_PREP.max_steps must leave slack above the 12-turn prep worst case"
 );
+// STRICTLY above the worst case, not equal to it. Equality was fine while the
+// ceiling was dead; with the count enforced it means the run STOPS the instant
+// the last planned call returns — for the prep flow, the moment `save_resume`
+// comes back, so the user gets `MaxToolCalls` and the pre-save text as the
+// proposal instead of the summary the prompt's last step writes. A ceiling has
+// to leave room for the call it is counting to be USED.
 const _: () = assert!(
-    Budget::AGENT_PREP.max_tool_calls >= PREP_WORST_CASE_TOOL_CALLS,
-    "AGENT_PREP.max_tool_calls must admit the 10-call prep worst case"
+    Budget::AGENT_PREP.max_tool_calls > PREP_WORST_CASE_TOOL_CALLS,
+    "AGENT_PREP.max_tool_calls must leave slack above the 10-call prep worst case"
 );
 // With the count enforced (Phase 7), this relation decides WHICH stop a runaway
 // tool loop gets: keeping `max_tool_calls` below `max_steps` means such a run
@@ -495,9 +510,14 @@ const _: () = assert!(
     Budget::AGENT_IMPROVE.max_steps > IMPROVE_WORST_CASE_TURNS,
     "AGENT_IMPROVE.max_steps must leave slack above the 8-turn improve worst case"
 );
+// Strict for the reason its prep sibling above states, and the review flow is
+// where it bites hardest: its last planned call IS `save_resume`, so an
+// exactly-equal ceiling would end the run the moment the save returns — with
+// the PRE-save text as the proposal, on the one flow whose whole purpose is the
+// corrected version. 8 > 6 holds with two calls of slack.
 const _: () = assert!(
-    Budget::AGENT_IMPROVE.max_tool_calls >= IMPROVE_WORST_CASE_TOOL_CALLS,
-    "AGENT_IMPROVE.max_tool_calls must admit the 6-call improve worst case"
+    Budget::AGENT_IMPROVE.max_tool_calls > IMPROVE_WORST_CASE_TOOL_CALLS,
+    "AGENT_IMPROVE.max_tool_calls must leave slack above the 6-call improve worst case"
 );
 const _: () = assert!(
     Budget::AGENT_IMPROVE.max_tool_calls < Budget::AGENT_IMPROVE.max_steps,

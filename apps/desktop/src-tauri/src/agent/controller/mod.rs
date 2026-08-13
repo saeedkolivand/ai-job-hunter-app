@@ -176,6 +176,19 @@ fn tool_kind(tools: &[AgentTool], name: &str) -> Option<ToolKind> {
     tools.iter().find(|t| t.name == name).map(|t| t.kind)
 }
 
+/// The tool-result body for a call the run could not afford: its
+/// [`Budget::max_tool_calls`] was already spent when the call came up inside a
+/// multi-call turn.
+///
+/// Shaped like the loop's other refusals (`error: …`) so a model that reads it
+/// treats it as a failed call, not as a result. Today none does — the run
+/// returns [`StoppedReason::MaxToolCalls`] at the end of that same turn, so
+/// this body is transcript hygiene: it keeps the turn WHOLE (one fenced result
+/// per requested call) for the log, the token accounting, and any future
+/// variant of the loop that lets a run continue after refusing.
+const TOOL_BUDGET_EXHAUSTED: &str =
+    "error: this run's tool-call budget is exhausted; no further tools will run";
+
 /// Cap on the tool NAME interpolated into `[tool_result:{name}]` — every
 /// REAL registered tool name ([`AgentTool::name`]) is a short, fixed
 /// identifier (the longest today, `search_candidate_evidence`, is 26
@@ -260,9 +273,11 @@ fn step_timeout_message(step_timeout: Duration) -> String {
 /// seconds figure stops being something a reader can size at a glance.
 const SECONDS_READABLE_UPTO: u64 = 600;
 
-/// A wall-clock bound as the user should read it — `360s`, `90 minutes`,
-/// `1h 30m`. Whole units only; these are round budget constants, not measured
-/// elapsed times, so there is nothing to round off.
+/// A wall-clock bound as the user should read it — `360s`, `45 minutes`,
+/// `1h 30m` (the review flow's 90-minute clock crosses the hour, so it reads as
+/// the last of those, not the middle one). Whole units only; these are round
+/// budget constants, not measured elapsed times, so there is nothing to round
+/// off.
 fn humanized_duration(d: Duration) -> String {
     let secs = d.as_secs();
     if secs <= SECONDS_READABLE_UPTO {
@@ -473,71 +488,97 @@ pub async fn run_agent_with_system(
 
         let mut combined = String::new();
         for (idx, call) in turn.tool_calls.iter().enumerate() {
-            // Counted before the match, so an unknown-tool refusal costs a call
-            // too: a loop that keeps inventing tool names is exactly the runaway
-            // this ceiling is for, and refusals are not free (each one is a
-            // fenced result the next turn pays for in tokens).
-            tool_calls += 1;
-            let body = match tool_kind(tools, &call.name) {
-                Some(ToolKind::Read) => {
-                    // Same race as the provider turn above: a text-drafting tool
-                    // (e.g. `draft_cover_letter`) makes its OWN provider call, so
-                    // Stop must interrupt it too, not just the outer turn.
-                    tokio::select! {
-                        biased;
-                        _ = cancel.cancelled() => {
-                            return Ok(AgentOutcome {
-                                final_text,
-                                steps,
-                                stopped_reason: StoppedReason::Cancelled,
-                            });
-                        }
-                        result = tokio::time::timeout(
-                            budget.step_timeout,
-                            env.run_read_tool(&call.name, call.args.clone()),
-                        ) => match result {
-                            Ok(Ok(v)) => v.to_string(),
-                            Ok(Err(e)) => format!("error: {e}"),
-                            // Wall-clock backstop: this read tool (which may itself
-                            // make a provider call, e.g. a drafting tool) never
-                            // returned within `budget.step_timeout`.
-                            Err(_elapsed) => {
+            // ── The tool-call ceiling, enforced PER CALL ──────────────────
+            //
+            // Not at the turn boundary, which is where this check first landed
+            // and where it is wrong: a provider may return SEVERAL tool calls in
+            // one turn (nothing in the app sets `parallel_tool_calls: false`,
+            // every adapter maps the whole `tool_calls[]` array, and
+            // `agent::gate`'s `double_write_call` already drives a 2-call turn).
+            // A boundary-only check therefore admits `max_tool_calls - 1 + K`
+            // calls for a K-call final turn, and since each executed call races
+            // `step_timeout` INDIVIDUALLY, K calls of a 90-minute tool cost
+            // K × 90 minutes. The whole point of the ceiling is that the product
+            // `max_tool_calls × step_timeout` is the bound.
+            //
+            // Once it is spent the remaining calls of the turn are REFUSED, not
+            // executed. The run ends at `MaxToolCalls` below either way, so
+            // executing them buys the user nothing and can cost hours; refusing
+            // them still leaves the turn WHOLE — every requested call gets a
+            // fenced result, so the transcript never shows a call that silently
+            // vanished. A Write among them is refused without suspending: the
+            // user is not asked to approve a save whose run is already over.
+            let body = if tool_calls >= budget.max_tool_calls {
+                TOOL_BUDGET_EXHAUSTED.to_string()
+            } else {
+                // Counted before the match, so an unknown-tool refusal costs a
+                // call too: a loop that keeps inventing tool names is exactly
+                // the runaway this ceiling is for, and refusals are not free
+                // (each one is a fenced result the next turn pays for in
+                // tokens). A budget-exhausted refusal above is NOT counted —
+                // there is nothing left to charge it against.
+                tool_calls += 1;
+                match tool_kind(tools, &call.name) {
+                    Some(ToolKind::Read) => {
+                        // Same race as the provider turn above: a text-drafting tool
+                        // (e.g. `draft_cover_letter`) makes its OWN provider call, so
+                        // Stop must interrupt it too, not just the outer turn.
+                        tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => {
                                 return Ok(AgentOutcome {
-                                    final_text: step_timeout_message(budget.step_timeout),
+                                    final_text,
                                     steps,
-                                    stopped_reason: StoppedReason::Timeout,
+                                    stopped_reason: StoppedReason::Cancelled,
                                 });
                             }
-                        },
-                    }
-                }
-                Some(ToolKind::Write) => {
-                    // Human-in-the-loop confirm gate: SUSPEND the run and execute
-                    // only after the user approves (Deny/timeout/cancel never act).
-                    match resolve_write(
-                        env,
-                        tools,
-                        gate,
-                        budget.confirm_timeout,
-                        job_id,
-                        steps,
-                        idx,
-                        call,
-                        cancel,
-                    )
-                    .await
-                    {
-                        WriteResolution::Cancelled => {
-                            return Ok(AgentOutcome {
-                                final_text,
-                                steps,
-                                stopped_reason: StoppedReason::Cancelled,
-                            });
+                            result = tokio::time::timeout(
+                                budget.step_timeout,
+                                env.run_read_tool(&call.name, call.args.clone()),
+                            ) => match result {
+                                Ok(Ok(v)) => v.to_string(),
+                                Ok(Err(e)) => format!("error: {e}"),
+                                // Wall-clock backstop: this read tool (which may itself
+                                // make a provider call, e.g. a drafting tool) never
+                                // returned within `budget.step_timeout`.
+                                Err(_elapsed) => {
+                                    return Ok(AgentOutcome {
+                                        final_text: step_timeout_message(budget.step_timeout),
+                                        steps,
+                                        stopped_reason: StoppedReason::Timeout,
+                                    });
+                                }
+                            },
                         }
-                        WriteResolution::Body(body) => body,
                     }
+                    Some(ToolKind::Write) => {
+                        // Human-in-the-loop confirm gate: SUSPEND the run and execute
+                        // only after the user approves (Deny/timeout/cancel never act).
+                        match resolve_write(
+                            env,
+                            tools,
+                            gate,
+                            budget.confirm_timeout,
+                            job_id,
+                            steps,
+                            idx,
+                            call,
+                            cancel,
+                        )
+                        .await
+                        {
+                            WriteResolution::Cancelled => {
+                                return Ok(AgentOutcome {
+                                    final_text,
+                                    steps,
+                                    stopped_reason: StoppedReason::Cancelled,
+                                });
+                            }
+                            WriteResolution::Body(body) => body,
+                        }
+                    }
+                    None => format!("error: unknown tool '{}'", call.name),
                 }
-                None => format!("error: unknown tool '{}'", call.name),
             };
             if !combined.is_empty() {
                 combined.push_str("\n\n");
