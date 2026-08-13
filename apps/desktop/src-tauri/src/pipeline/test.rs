@@ -851,13 +851,14 @@ fn a_wire_request_context_window_is_bounded_like_a_stored_one() {
     assert!(super::vet_wire_request(&mut req).is_ok());
     assert_eq!(req.context_window, Some(32_768));
 
-    // The BOUNDS themselves, not just values far outside them: rejecting 511
-    // and accepting 32_768 stays green if someone widens the range to 256 or
-    // narrows it to 65_536. These two are the contract.
-    for edge in [
-        crate::ai_config::MIN_CONTEXT_WINDOW,
-        crate::ai_config::MAX_CONTEXT_WINDOW,
-    ] {
+    // The BOUNDS themselves, as LITERALS. Naming the constants here would be a
+    // tautology — the test would follow the bound wherever it moved, which is
+    // the opposite of pinning it (verified: with the named form, narrowing the
+    // minimum to 513 left this green). 512 is also accepted literally by
+    // `an_out_of_range_context_window_is_rejected`; 131_072 was accepted
+    // NOWHERE in the crate, so narrowing the maximum to 65_536 passed every
+    // test in the suite.
+    for edge in [512_u32, 131_072] {
         let mut req = with(Some(edge));
         assert!(
             super::vet_wire_request(&mut req).is_ok(),
