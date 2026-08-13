@@ -1,7 +1,7 @@
 import { FileText, Loader2, ShieldCheck, Sparkles, Square, X } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { detectLanguage, type PipelineSectionKey } from '@ajh/shared';
+import { AGENT_RESUME_TEXT_CAP, detectLanguage, type PipelineSectionKey } from '@ajh/shared';
 import type { PipelineRunEvent } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, ModalShell, Skeleton, StepDots, Tag } from '@ajh/ui';
@@ -45,14 +45,11 @@ import { useGenerationDepth } from '@/store/preferences-store';
  * the action is withheld with a reason instead of failing on click; the stored
  * text is still the authority, so the run's own error is handled either way.
  *
- * TODO: import this from the shared contract once the backend exports the cap
- * through `pnpm gen:ipc` (in flight on the Rust side). Until it lands, a copied
- * literal is the honest state — and it is pinned from both ends: the panel test
- * asserts the boundary here, and `readable_generation_text`'s own test asserts
- * it there, so a divergence shows up as a red rather than as a run that fails
- * on click.
+ * One number: `AGENT_RESUME_TEXT_CAP` is the shared source the backend's
+ * `RESUME_CAP` is generated from (`pnpm gen:ipc`), so the gate here and the
+ * refusal there cannot drift.
  */
-const GENERATION_REVIEW_CAP = 8_000;
+const GENERATION_REVIEW_CAP = AGENT_RESUME_TEXT_CAP;
 
 /**
  * The staged résumé pipeline's ENTRY POINT — the one surface that can honestly
