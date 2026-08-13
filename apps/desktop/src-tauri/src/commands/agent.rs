@@ -1,9 +1,19 @@
-//! The "prep this application" agentic flow command.
+//! The agentic-flow commands.
 //!
-//! Wires the agent controller (`crate::agent`) to real Tauri commands. For one job
-//! and résumé the agent plans, researches the company, scores the résumé match,
-//! drafts a cover letter, suggests interview questions, and offers to SAVE the
-//! drafted cover letter — a Write tool that SUSPENDS the run for explicit user
+//! Wires the agent controller (`crate::agent`) to real Tauri commands. ONE
+//! command starts every flow: the request's `kind` selects one entry of the
+//! backend-owned registry (`crate::agent::flows::FLOWS`), which is what supplies
+//! the run's prompt, tool whitelist and budget — an unregistered kind fails the
+//! run rather than falling back to the default. Two flows ship today:
+//!
+//! * `prep_application` — for one job and résumé the agent plans, researches the
+//!   company, scores the match, drafts a cover letter and a résumé, suggests
+//!   interview questions, and offers to SAVE both.
+//! * `improve_resume` — reviews the résumé already generated for the job against
+//!   its quality report and the candidate's evidence, and offers a corrected
+//!   version.
+//!
+//! Every save is a Write tool that SUSPENDS the run for explicit user
 //! confirmation (`agent_confirm`) before it persists anything. Steps stream to the
 //! renderer as `agent:step` events (including `confirm_request` steps); the run
 //! completes as a `jobs:event`.
@@ -23,6 +33,7 @@ use crate::agent::controller::{run_agent_live, AgentStep, AgentStepKind, Stopped
 use crate::agent::flows;
 use crate::agent::gate::{AgentGate, Decision};
 use crate::agent::tools::{fenced, ToolContext, JOB_CAP, RESUME_CAP};
+use crate::ai_generations::AiGenerationStore;
 use crate::commands::ai_provider::ModelCapabilities;
 use crate::db::new_job_id;
 use crate::documents::DocumentStore;
@@ -103,11 +114,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         // (the same rule `GenerationDepth::from_wire` follows). Inside the
         // spawn like every other fail-able step, so the terminal `jobs:event`
         // can never fire before this command returns the job id.
-        // Phase 7: the flow rides on the request as `kind` in the next change;
-        // today the prep flow is the only production entry point, resolved
-        // through the same registry so the lookup — and its failure path — is
-        // the one the wire will use.
-        let kind = flows::PREP_APPLICATION_KIND;
+        let kind = req.kind.as_str();
         let Some(flow) = flows::flow_for(kind) else {
             fail_run(
                 &app_task,
@@ -142,7 +149,8 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         // disables the entry point for non-tool models; this is the server-side
         // guard. The model comes from the RESOLVED completer (the store), never the
         // request.
-        if let Err(e) = require_tool_capable(completer.capabilities(), completer.model()) {
+        if let Err(e) = require_tool_capable(completer.capabilities(), completer.model(), flow.kind)
+        {
             fail_run(&app_task, &cancels_task, &job_id_task, e.to_string()).await;
             return;
         }
@@ -183,7 +191,31 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
             job_id: req.job_id.clone(),
             resume_id: req.resume_id.clone(),
         };
-        let user = build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text);
+        // The review flow needs the document it reviews. Its prompt tells the
+        // model the generation is "fenced in the message below", and every
+        // quality tool falls back to the SAVED master résumé when its `draft`
+        // argument is empty — so a review seeded without it would report on the
+        // wrong document with no way for anything downstream to notice. Loaded
+        // only for the flows that say they need one, so the prep flow pays for
+        // no store read.
+        let user = if flow.reviews_an_existing_generation() {
+            let generated = match generated_resume_for(&app_task, &req.job_id).await {
+                Ok(text) => text,
+                Err(e) => {
+                    fail_run(&app_task, &cancels_task, &job_id_task, e.to_string()).await;
+                    return;
+                }
+            };
+            build_improve_user_message(
+                &req.resume_id,
+                &req.job_id,
+                &resume.text,
+                &job_text,
+                &generated,
+            )
+        } else {
+            build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text)
+        };
 
         let outcome = run_agent_live(
             &app_task,
@@ -304,17 +336,98 @@ fn build_user_message(resume_id: &str, job_id: &str, resume: &str, job: &str) ->
     )
 }
 
-/// Pure gate for HIGH-2: the prep flow needs native tool-calling — a non-tool
-/// model would silently fall back to `chat_with_tools`'s single-shot default,
-/// which could present a fabricated match score or invented company research as
-/// if the tools actually ran. Extracted as a pure function (no `AppHandle`) so it
-/// is unit-testable without the Tauri test harness this crate doesn't have.
-fn require_tool_capable(caps: ModelCapabilities, model: &str) -> AppResult<()> {
+/// [`build_user_message`] for the review flow: the same ids and the same two
+/// fenced blocks, plus the GENERATION under review as a third.
+///
+/// Three blocks rather than two because the flow compares three things that are
+/// genuinely different documents — the candidate's master résumé (what is
+/// TRUE), the posting (what is ASKED), and the tailored generation (what was
+/// WRITTEN) — and the tools only ever load the first two server-side. The
+/// generation is fenced under its own tag and clamped to the same
+/// [`RESUME_CAP`] `validate_resume` reads a `draft` at, so the model is never
+/// shown more of it than a check will actually cover.
+fn build_improve_user_message(
+    resume_id: &str,
+    job_id: &str,
+    resume: &str,
+    job: &str,
+    generated: &str,
+) -> String {
+    format!(
+        "Improve the tailored résumé already generated for this application. Use these exact \
+         ids when calling tools:\n\
+         résumé id: {resume_id}\n\
+         job id: {job_id}\n\n\
+         {}\n\n\
+         {}\n\n\
+         {}",
+        fenced("generated_resume", generated, RESUME_CAP),
+        fenced("candidate_resume", resume, RESUME_CAP),
+        fenced("job_posting", job, JOB_CAP)
+    )
+}
+
+/// The tailored résumé this app last generated for `job_id`'s posting — the
+/// document the review flow reviews.
+///
+/// Resolved SERVER-side from the run's own job id, exactly like the
+/// `get_quality_report` tool that reports on the same record: posting id →
+/// cached posting url → the `ai_generations` aggregate (`find_for_job`, which
+/// tries the normalized url first). The renderer never supplies the text, so a
+/// compromised one cannot make the agent "improve" a document of its choosing
+/// and then offer it back through the gated save.
+///
+/// The two empty cases are separate errors on purpose: a posting with no url
+/// can never have a linked generation (nothing to fix by re-running), while a
+/// posting that simply has not been generated for yet tells the user the one
+/// action that would make this flow work.
+async fn generated_resume_for(app: &AppHandle, job_id: &str) -> AppResult<String> {
+    let meta = crate::commands::match_resume::job_meta_for(app, job_id)
+        .ok_or_else(|| AppError::Validation(format!("job not found in cache: {job_id}")))?;
+    let job_url = meta.url.trim().to_string();
+    if job_url.is_empty() {
+        return Err(AppError::Validation(
+            "this job has no posting URL, so no generated résumé is linked to it".to_string(),
+        ));
+    }
+    let app = app.clone();
+    // A SQLite read: off the tokio worker, same wrapper `agent::tools_quality`
+    // uses for the identical store hit (`tauri::async_runtime::spawn_blocking`,
+    // never a bare `tokio::spawn`).
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = app
+            .try_state::<AiGenerationStore>()
+            .and_then(|store| store.find_for_job(&job_url))
+            .map(|record| record.resume_text)
+            .unwrap_or_default();
+        if text.trim().is_empty() {
+            return Err(AppError::Validation(
+                "there is no generated résumé for this job yet — generate one first, then \
+                 improve it"
+                    .to_string(),
+            ));
+        }
+        Ok(text)
+    })
+    .await
+    .map_err(|e| AppError::Storage(format!("generation lookup failed: {e}")))?
+}
+
+/// Pure gate for HIGH-2: every agentic flow needs native tool-calling — a
+/// non-tool model would silently fall back to `chat_with_tools`'s single-shot
+/// default, which could present a fabricated match score, invented company
+/// research, or a made-up quality verdict as if the tools actually ran.
+/// Extracted as a pure function (no `AppHandle`) so it is unit-testable without
+/// the Tauri test harness this crate doesn't have.
+///
+/// Takes the flow's `kind` so the message names the run the user actually
+/// started; it is a fixed registry token, never user text.
+fn require_tool_capable(caps: ModelCapabilities, model: &str, flow_kind: &str) -> AppResult<()> {
     if caps.supports_tools {
         Ok(())
     } else {
         Err(AppError::Validation(format!(
-            "The prep-application flow needs a tool-capable model — {model} does not support \
+            "The {flow_kind} flow needs a tool-capable model — {model} does not support \
              tool calling. Choose a different model in Settings → AI."
         )))
     }
@@ -390,7 +503,7 @@ mod tests {
     /// HIGH-2: a tool-capable model passes the gate.
     #[test]
     fn require_tool_capable_allows_a_tool_capable_model() {
-        assert!(require_tool_capable(caps(true), "gpt-4o").is_ok());
+        assert!(require_tool_capable(caps(true), "gpt-4o", flows::PREP_APPLICATION_KIND).is_ok());
     }
 
     /// HIGH-2: a non-tool model is rejected with a typed `AppError::Validation` —
@@ -399,32 +512,131 @@ mod tests {
     /// fallback that could present fabricated tool results as if they actually ran.
     #[test]
     fn require_tool_capable_rejects_a_non_tool_model() {
-        let err = require_tool_capable(caps(false), "llama3").unwrap_err();
+        let err =
+            require_tool_capable(caps(false), "llama3", flows::IMPROVE_RESUME_KIND).unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
         assert!(err.to_string().contains("llama3"));
         assert!(err.to_string().contains("tool-capable model"));
+        // The message names the flow the user actually started — it used to say
+        // "prep-application" for every run, which would be a lie the moment a
+        // second flow existed.
+        assert!(err.to_string().contains(flows::IMPROVE_RESUME_KIND));
     }
 
-    /// Wire-contract security lock (task #25): `AgentRunRequest` carries ONLY the
-    /// résumé + job identity. Routing is backend-owned — `agent_run` resolves the
-    /// provider/model/base_url via [`Completer::from_active`] (the store), so the
-    /// request struct has NO routing field. A compromised renderer that appends
-    /// `provider`/`model`/`baseUrl` can't redirect a credentialed agent turn: serde
-    /// silently drops the unknown keys because there is nowhere to bind them. This
-    /// is the same compile-time-removal lock #16 used to seal the base_url-exfil
-    /// class; the gate is `gen:ipc:check` (Rust↔TS parity) + this shape assertion.
+    /// Wire-contract security lock (task #25): `AgentRunRequest` carries the
+    /// résumé + job identity and WHICH FLOW to run — and no PROVIDER routing.
+    /// Provider/model/base_url are backend-owned: `agent_run` resolves them via
+    /// [`Completer::from_active`] (the store), so the request struct has no
+    /// field to bind them to and a compromised renderer that appends
+    /// `provider`/`model`/`baseUrl` can't redirect a credentialed agent turn —
+    /// serde drops the unknown keys. This is the same compile-time-removal lock
+    /// #16 used to seal the base_url-exfil class; the gate is `gen:ipc:check`
+    /// (Rust↔TS parity) + this shape assertion.
+    ///
+    /// **Phase 7 renamed this test rather than weakening it.** `kind` IS a
+    /// routing field in the ordinary sense — it selects which flow runs — so
+    /// "carries only identity" stopped being true. What the lock actually
+    /// protects is narrower and unchanged: a renderer may pick one of two
+    /// backend-declared flows (closed vocabulary, compile-time prompt +
+    /// whitelist + budget behind each), and may not name a provider, a model,
+    /// an endpoint, or a ceiling. Flow routing is a menu; provider routing
+    /// would be an egress.
     #[test]
-    fn agent_run_request_carries_only_identity_no_routing() {
+    fn agent_run_request_carries_identity_and_flow_but_no_provider_routing() {
         let req: AgentRunRequest = serde_json::from_value(json!({
             "resumeId": "res-1",
             "jobId": "job-9",
+            "kind": "improve_resume",
             // A compromised renderer's attempted egress redirect — ignored.
             "provider": "openai-compatible",
             "model": "evil",
             "baseUrl": "http://attacker.example",
         }))
-        .expect("deserializes from the identity-only wire shape, ignoring routing keys");
+        .expect("deserializes from the identity+flow wire shape, ignoring routing keys");
         assert_eq!(req.resume_id, "res-1");
         assert_eq!(req.job_id, "job-9");
+        assert_eq!(req.kind, "improve_resume");
+
+        // Re-serializing must not carry a routing key back — proof the values
+        // were dropped, not stashed in a catch-all field. Compared as a SET:
+        // `serde_json::Map` is a `BTreeMap` here, so key order is alphabetical,
+        // not declaration order.
+        let echoed = serde_json::to_value(&req).unwrap();
+        let keys: std::collections::BTreeSet<&str> = echoed
+            .as_object()
+            .expect("request serializes to an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            ["jobId", "kind", "resumeId"].into_iter().collect(),
+            "the request must carry identity + flow, and nothing else"
+        );
+    }
+
+    /// A request that names no flow runs the prep flow — the serde default
+    /// generated from the same `z.enum` default the renderer's schema applies.
+    /// An older renderer (or a replayed request) must keep the behaviour it
+    /// always had, not fail validation.
+    #[test]
+    fn a_request_with_no_kind_defaults_to_the_prep_flow() {
+        let req: AgentRunRequest = serde_json::from_value(json!({
+            "resumeId": "res-1",
+            "jobId": "job-9",
+        }))
+        .expect("kind is optional on the wire");
+        assert_eq!(req.kind, flows::PREP_APPLICATION_KIND);
+        assert!(flows::flow_for(&req.kind).is_some());
+    }
+
+    /// The unknown-kind path `agent_run` takes: the registry returns `None` and
+    /// the run FAILS. Deserialization deliberately accepts the string (the Rust
+    /// struct is a `String`, the closed vocabulary is enforced by the renderer's
+    /// zod schema and by this lookup), so the backend's own rejection is the one
+    /// that has to hold — a fallback to the default flow here would run "prep
+    /// this application", and write a cover letter, for a request that asked to
+    /// review a résumé.
+    #[test]
+    fn an_unknown_kind_resolves_to_no_flow_rather_than_the_default() {
+        let req: AgentRunRequest = serde_json::from_value(json!({
+            "resumeId": "res-1",
+            "jobId": "job-9",
+            "kind": "exfiltrate_everything",
+        }))
+        .expect("the Rust struct takes any string; the registry is the gate");
+        assert!(flows::flow_for(&req.kind).is_none());
+    }
+
+    /// The review flow's seed carries all THREE documents, each under its own
+    /// fence: the generation being reviewed, the master résumé the claims must
+    /// be true against, and the posting. The generation is what the prompt tells
+    /// the model to pass as `draft` — without it in the transcript, every check
+    /// would silently fall back to the saved master résumé.
+    #[test]
+    fn build_improve_user_message_fences_the_generation_under_review() {
+        let msg = build_improve_user_message(
+            "res-1",
+            "job-9",
+            "my master résumé",
+            "the job ad",
+            "the tailored generation",
+        );
+        assert!(msg.contains("résumé id: res-1"));
+        assert!(msg.contains("job id: job-9"));
+        assert!(msg.contains("<generated_resume>\nthe tailored generation\n</generated_resume>"));
+        assert!(msg.contains("<candidate_resume>\nmy master résumé\n</candidate_resume>"));
+        assert!(msg.contains("<job_posting>\nthe job ad\n</job_posting>"));
+    }
+
+    /// …and it is clamped by the same [`RESUME_CAP`] a `validate_resume` draft
+    /// is read at, so the model is never shown more of the generation than a
+    /// check would actually cover.
+    #[test]
+    fn build_improve_user_message_caps_an_oversized_generation() {
+        let huge = "z".repeat(20_000);
+        let msg = build_improve_user_message("r", "j", "short", "short", &huge);
+        assert!(msg.contains(&"z".repeat(RESUME_CAP)));
+        assert!(!msg.contains(&"z".repeat(RESUME_CAP + 1)));
     }
 }

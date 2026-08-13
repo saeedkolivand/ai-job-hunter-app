@@ -168,6 +168,25 @@ fn display_cap_for(tool: &str) -> usize {
 /// checked in both camelCase and snake_case so neither wire spelling slips a
 /// redirect past the gate. See the module SECURITY invariant.
 ///
+/// **`kind` (the Phase-7 flow selector) is deliberately NOT on this list**, and
+/// the reason is worth stating because it looks like it belongs:
+///
+/// * It cannot do anything here. A flow is resolved ONCE, at run start, from
+///   `AgentRunRequest.kind` (`commands::agent`); by the time a Write suspends,
+///   the prompt, whitelist and budget are already bound and nothing re-reads a
+///   kind. An edited arg naming one would be inert even if it were accepted.
+/// * It is already rejected, by layer 2. No tool schema declares a `kind`
+///   property, so `validate_edited_args` refuses it as an unknown field —
+///   pinned by `edited_args_naming_a_flow_kind_are_refused_by_the_schema`.
+/// * Adding it would cost something real. This list is a blunt RECURSIVE
+///   key-name ban, and `kind` is an ordinary English word and the conventional
+///   name of a discriminator; banning it at every depth would refuse a
+///   legitimate future content arg (a `{ kind: "bullet" }` block) for no
+///   security gain.
+///
+/// The list stays what its name says: fields whose value would change WHERE a
+/// credentialed call goes or WHICH record it writes.
+///
 /// [`ToolContext`]: super::tools::ToolContext
 fn is_routing_egress_key(key: &str) -> bool {
     matches!(
@@ -1049,6 +1068,34 @@ mod tests {
             assert!(
                 validate_edited_args(&tools, "writer", &v).is_err(),
                 "routing/egress field '{key}' must be rejected"
+            );
+        }
+    }
+
+    /// Phase 7's denylist question, answered by test rather than by argument:
+    /// an edited-args payload smuggling the flow selector is refused, and it is
+    /// refused by LAYER 2 (the schema whitelist), which is why `kind` does not
+    /// need to join [`is_routing_egress_key`]'s recursive ban — see that
+    /// function's doc for the cost of adding a word this ordinary to it.
+    ///
+    /// The error message is asserted so the test can tell WHICH layer refused:
+    /// if `kind` were ever added to the denylist, this fails and the reader is
+    /// pointed at the decision instead of silently keeping a redundant ban.
+    ///
+    /// (Even accepted, it would be inert: the flow is resolved once at run
+    /// start, before any tool call, and nothing re-reads a kind afterwards.)
+    #[test]
+    fn edited_args_naming_a_flow_kind_are_refused_by_the_schema() {
+        let tools = whitelist();
+        for spelling in ["kind", "flowKind", "flow_kind"] {
+            let mut obj = serde_json::Map::new();
+            obj.insert("coverLetterText".into(), json!("ok"));
+            obj.insert(spelling.into(), json!("improve_resume"));
+            let err = validate_edited_args(&tools, "writer", &Value::Object(obj))
+                .expect_err("an undeclared field must be refused");
+            assert!(
+                err.to_string().contains("unknown field"),
+                "'{spelling}' must be refused as an undeclared schema field, got: {err}"
             );
         }
     }

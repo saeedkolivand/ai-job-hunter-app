@@ -477,6 +477,39 @@ mod tests {
         }
     }
 
+    /// The registry and the WIRE must offer the same set of flows.
+    ///
+    /// `AGENT_FLOW_KINDS` is generated from the same `z.enum` the renderer's
+    /// request is validated against (`pnpm gen:ipc`), so this is the join
+    /// between the two halves of the contract. Both directions matter and
+    /// neither is caught anywhere else: a token in the schema with no flow
+    /// behind it is a selectable option that fails every run at "unknown agent
+    /// flow", and a flow registered here with no token is unreachable code that
+    /// still pays for its guards. `gen:ipc:check` pins the Rust copy to the TS
+    /// list; this pins the registry to the Rust copy.
+    ///
+    /// Mutation-checked: adding a third entry to `AGENT_FLOW_KINDS` in the TS
+    /// source and regenerating fails this test.
+    #[test]
+    fn the_registry_covers_the_whole_wire_vocabulary() {
+        let wire: BTreeSet<&str> = crate::ipc_contracts::agent_flow_kinds::AGENT_FLOW_KINDS
+            .iter()
+            .copied()
+            .collect();
+        let registered: BTreeSet<&str> = FLOWS.iter().map(|flow| flow.kind).collect();
+        assert_eq!(
+            registered, wire,
+            "every wire kind needs a flow, and every flow needs a wire kind"
+        );
+        // The generated list's FIRST entry is the serde default on
+        // `AgentRunRequest.kind`; a request that names no flow must land on the
+        // prep flow, not on whichever entry someone reordered to the front.
+        assert_eq!(
+            crate::ipc_contracts::agent_flow_kinds::AGENT_FLOW_KINDS.first(),
+            Some(&PREP_APPLICATION_KIND)
+        );
+    }
+
     /// Exactly one flow reviews an existing generation, and it is the one whose
     /// prompt tells the model that generation is fenced in the message —
     /// `commands::agent` reads this to decide whether to load one, so a wrong

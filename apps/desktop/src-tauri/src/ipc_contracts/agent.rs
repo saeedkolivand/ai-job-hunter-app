@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct AgentRunRequest {
     pub resume_id: String,
     pub job_id: String,
+    #[serde(default = "default_agent_run_request_kind")]
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -20,4 +22,8 @@ pub struct AgentConfirmRequest {
     pub decision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edited_args: Option<serde_json::Value>,
+}
+
+fn default_agent_run_request_kind() -> String {
+    "prep_application".to_string()
 }
