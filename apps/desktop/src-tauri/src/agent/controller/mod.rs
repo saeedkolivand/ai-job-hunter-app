@@ -574,6 +574,12 @@ pub async fn run_agent_with_system(
                                     stopped_reason: StoppedReason::Cancelled,
                                 });
                             }
+                            // An APPROVED write that FAILED ends the run, the
+                            // same handling a failed provider turn gets above.
+                            // Folding it into the transcript instead let the
+                            // model narrate a save that never happened into a
+                            // `Done` outcome — see `WriteResolution::Failed`.
+                            WriteResolution::Failed(e) => return Err(e),
                             WriteResolution::Body(body) => body,
                         }
                     }

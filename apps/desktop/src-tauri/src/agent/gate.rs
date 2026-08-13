@@ -327,13 +327,31 @@ fn clamp_json_strings(v: &Value, cap: usize) -> Value {
     }
 }
 
-/// Outcome of suspending on the confirm gate for one Write call: either the run
-/// was cancelled while suspended (propagate `Cancelled`, do NOT act) or a
-/// tool-result body to fold into the transcript (the write ran, was declined, or
-/// timed out — all NON-cancelling).
+/// Outcome of suspending on the confirm gate for one Write call.
 pub(super) enum WriteResolution {
+    /// The run was cancelled while suspended — propagate, do NOT act.
     Cancelled,
+    /// A tool-result body to fold into the transcript: the write RAN, or the
+    /// user declined it, or the confirm timed out, or an edit was rejected
+    /// before anything was attempted. All non-cancelling, and all states the
+    /// model can honestly narrate.
     Body(String),
+    /// An APPROVED write failed to execute. The run ends with this error.
+    ///
+    /// Not a tool-result body, which is what it used to be, and the difference
+    /// is what the user sees. A failed READ is information the model can work
+    /// around; a failed approved WRITE is the flow's purpose not happening —
+    /// the user was asked, said yes, and nothing was written. Folded into the
+    /// transcript, the model summarized around it and the run still ended
+    /// `Done`, so `agent_run` emitted a terminal proposal and completed the
+    /// job: the renderer's card showed the save as done over an unchanged
+    /// document, with nothing on the wire to distinguish it from a real save.
+    ///
+    /// Propagated as `Err` instead, which is the SAME handling a failed
+    /// provider turn already gets, and which lands in `agent_run`'s existing
+    /// `Err(e) => job_fail(…)` arm — the failure travels on the job channel the
+    /// renderer already reads, so no new wire field exists to be ignored.
+    Failed(AppError),
 }
 
 /// SUSPEND the loop on a `ToolKind::Write` call: emit a `confirm_request` step,
@@ -409,7 +427,7 @@ pub(super) async fn resolve_write(
         Some(Decision::Approve) => {
             match run_write_raced(env, cancel, &call.name, call.args.clone()).await {
                 Some(Ok(v)) => v.to_string(),
-                Some(Err(e)) => format!("error: {e}"),
+                Some(Err(e)) => return WriteResolution::Failed(e),
                 None => return WriteResolution::Cancelled,
             }
         }
@@ -417,7 +435,7 @@ pub(super) async fn resolve_write(
         {
             Ok(()) => match run_write_raced(env, cancel, &call.name, edited).await {
                 Some(Ok(v)) => v.to_string(),
-                Some(Err(e)) => format!("error: {e}"),
+                Some(Err(e)) => return WriteResolution::Failed(e),
                 None => return WriteResolution::Cancelled,
             },
             // Fail-closed: an invalid edit is NOT executed.
@@ -570,6 +588,9 @@ mod tests {
         writes: Mutex<Vec<(String, Value)>>,
         steps: Mutex<Vec<AgentStep>>,
         transcripts: Mutex<Vec<Vec<ChatMsg>>>,
+        /// When set, an approved write RECORDS its args and then fails with
+        /// this message — the store-refused-after-approval case.
+        write_fails_with: Option<String>,
     }
 
     impl FakeEnv {
@@ -580,6 +601,7 @@ mod tests {
                 last,
                 reads: Mutex::new(Vec::new()),
                 writes: Mutex::new(Vec::new()),
+                write_fails_with: None,
                 steps: Mutex::new(Vec::new()),
                 transcripts: Mutex::new(Vec::new()),
             }
@@ -599,7 +621,12 @@ mod tests {
         }
         async fn run_write_tool(&self, name: &str, args: Value) -> AppResult<Value> {
             self.writes.lock().push((name.to_string(), args));
-            Ok(json!({ "wrote": name }))
+            match &self.write_fails_with {
+                // Recorded first, deliberately: the attempt happened, and the
+                // test asserts the run still reports failure despite it.
+                Some(message) => Err(AppError::Storage(message.clone())),
+                None => Ok(json!({ "wrote": name })),
+            }
         }
         fn on_step(&self, step: &AgentStep) {
             self.steps.lock().push(step.clone());
@@ -714,6 +741,65 @@ mod tests {
             stop: StopReason::End,
             usage: Usage::default(),
         }
+    }
+
+    /// An APPROVED write that FAILS ends the run — the user must not be shown a
+    /// save that did not happen.
+    ///
+    /// Raised by the renderer track against `18dca96f`: once a store-refused
+    /// `save_resume` returns `Err` from the handler, the failure has to reach
+    /// the USER, not just the transcript. It previously became an
+    /// `error: …` tool-result body, so the model summarized around it, the run
+    /// ended `Done`, `agent_run` emitted a terminal proposal and completed the
+    /// job — and the renderer's save row (which keys on the confirm having been
+    /// resolved) showed the proposal as saved over an unchanged document, with
+    /// nothing on the wire able to tell the two apart.
+    ///
+    /// The fix invents no wire field: the error propagates as `Err`, exactly as
+    /// a failed provider turn already does, into `agent_run`'s existing
+    /// `Err(e) => job_fail(…)` arm. The renderer reads that channel today.
+    ///
+    /// Deliberately NOT extended to the other non-acting branches: Deny, a
+    /// timeout, and a rejected EDIT are all states the model can honestly
+    /// narrate and the user already knows about (they answered, or declined to)
+    /// — `write_declined_by_user_is_not_executed_and_run_continues` and its
+    /// siblings pin that those still continue.
+    ///
+    /// Mutation-checked, executed: folding the failure back into a
+    /// `WriteResolution::Body` makes the run finish `Done` and fails the first
+    /// two assertions here.
+    #[tokio::test]
+    async fn an_approved_write_that_fails_ends_the_run_instead_of_reporting_success() {
+        let mut env = FakeEnv::new(vec![write_call("writer"), final_turn("all saved!")]);
+        env.write_fails_with = Some("database is locked".to_string());
+        let gate = Arc::new(AgentGate::default());
+        spawn_resolver(gate.clone(), "job-1", "1-0-writer", Decision::Approve);
+
+        let outcome = run_gated(
+            &env,
+            &gate,
+            CONFIRM_TIMEOUT,
+            "job-1",
+            &CancellationToken::new(),
+        )
+        .await;
+
+        let err = outcome.expect_err("a failed approved write must not resolve as a finished run");
+        assert!(
+            err.to_string().contains("database is locked"),
+            "the store's reason must reach `agent_run`'s job_fail: {err}"
+        );
+        // The attempt DID happen — this is a failure, not a refusal to try.
+        assert_eq!(env.writes.lock().len(), 1);
+        // The user was asked exactly once, and no terminal narration followed.
+        assert_eq!(
+            env.steps
+                .lock()
+                .iter()
+                .filter(|s| s.kind == AgentStepKind::ConfirmRequest)
+                .count(),
+            1
+        );
     }
 
     /// A Write past the run's tool-call ceiling is refused WITHOUT suspending:
