@@ -2201,6 +2201,10 @@
           "saveCoverLetter": {
             "summary": "Save this cover letter to your saved documents?",
             "contentLabel": "Cover letter text"
+          },
+          "saveResume": {
+            "summary": "Save this résumé to this application's documents?",
+            "contentLabel": "Résumé text"
           }
         }
       }

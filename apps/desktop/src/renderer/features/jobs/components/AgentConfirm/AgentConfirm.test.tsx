@@ -211,6 +211,92 @@ describe('AgentConfirm — save_cover_letter (known tool)', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// `save_resume` — the improve-resume flow's ONLY write (Phase 7).
+//
+// Before it was a known tool it fell through to the read-only JSON branch:
+// approve/deny worked, editing did not, and the one document that flow produces
+// could only be taken or left. Drop the registry entry and every test here fails.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AgentConfirm — save_resume (known tool)', () => {
+  const SAVE_RESUME: AgentConfirmPayload = {
+    callId: '6-0-save_resume',
+    tool: 'save_resume',
+    args: { resumeText: 'Summary\nBuilt the deployment pipeline.' },
+  };
+
+  it('renders the résumé summary and its text read-only by default — not raw JSON', () => {
+    render(<AgentConfirm jobId="job-1" confirm={SAVE_RESUME} onResolved={() => {}} />);
+
+    expect(screen.getByText('jobs.prep.confirm.tools.saveResume.summary')).toBeInTheDocument();
+    const el = screen.getByLabelText('jobs.prep.confirm.tools.saveResume.contentLabel');
+    const textarea = el as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Summary\nBuilt the deployment pipeline.');
+    expect(textarea).toHaveAttribute('readonly');
+    // The generic fallback is what this replaces — it must be gone.
+    expect(screen.queryByLabelText('jobs.prep.confirm.rawArgsLabel')).not.toBeInTheDocument();
+  });
+
+  it('Edit → change → Approve sends approveEdited carrying only resumeText', async () => {
+    const onResolved = vi.fn();
+    render(<AgentConfirm jobId="job-1" confirm={SAVE_RESUME} onResolved={onResolved} />);
+
+    fireEvent.click(screen.getByText('jobs.prep.confirm.edit'));
+    const el = screen.getByLabelText('jobs.prep.confirm.tools.saveResume.contentLabel');
+    const textarea = el as HTMLTextAreaElement;
+    expect(textarea).not.toHaveAttribute('readonly');
+    expect(document.activeElement).toBe(textarea);
+    fireEvent.change(textarea, { target: { value: 'Summary\nOwned the deployment pipeline.' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.approveEdited'));
+    });
+
+    // Content only: the shell re-validates against the tool's schema and
+    // refuses any undeclared key (including routing ones), so the edit must
+    // carry the one content property and nothing else.
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      callId: '6-0-save_resume',
+      decision: 'approveEdited',
+      editedArgs: { resumeText: 'Summary\nOwned the deployment pipeline.' },
+    });
+    expect(onResolved).toHaveBeenCalledWith('APPROVE');
+  });
+
+  it('Revert restores the résumé the agent proposed', () => {
+    render(<AgentConfirm jobId="job-1" confirm={SAVE_RESUME} onResolved={() => {}} />);
+
+    fireEvent.click(screen.getByText('jobs.prep.confirm.edit'));
+    const el = screen.getByLabelText('jobs.prep.confirm.tools.saveResume.contentLabel');
+    const textarea = el as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '' } });
+    fireEvent.click(screen.getByText('jobs.prep.confirm.revert'));
+
+    expect(textarea.value).toBe('Summary\nBuilt the deployment pipeline.');
+  });
+
+  // A known tool whose args did NOT carry its content must not offer an empty
+  // editable field: approving that would replace the user's document with
+  // nothing. Read-only JSON is the honest fallback, exactly as for an unknown tool.
+  it('falls back to read-only JSON when the args carry no resumeText', () => {
+    render(
+      <AgentConfirm
+        jobId="job-1"
+        confirm={{ callId: '6-0-save_resume', tool: 'save_resume', args: { resume: 'wrong key' } }}
+        onResolved={() => {}}
+      />
+    );
+
+    expect(
+      screen.queryByLabelText('jobs.prep.confirm.tools.saveResume.contentLabel')
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('jobs.prep.confirm.rawArgsLabel')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.confirm.edit')).not.toBeInTheDocument();
+  });
+});
+
 describe('AgentConfirm — unrecognized tool (generic fallback)', () => {
   const UNKNOWN: AgentConfirmPayload = {
     callId: '5-unknown_tool',

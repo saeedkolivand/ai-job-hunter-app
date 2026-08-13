@@ -2205,6 +2205,10 @@
           "saveCoverLetter": {
             "summary": "Dieses Anschreiben in deinen gespeicherten Dokumenten speichern?",
             "contentLabel": "Anschreiben-Text"
+          },
+          "saveResume": {
+            "summary": "Diesen Lebenslauf in den Dokumenten dieser Bewerbung speichern?",
+            "contentLabel": "Lebenslauf-Text"
           }
         }
       }
