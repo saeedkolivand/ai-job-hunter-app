@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   atsModeHintKey,
+  isDecoratedLetterLayout,
   isDesignTier,
   isPhotoTemplate,
   isTwoColumnTemplate,
   LETTER_LAYOUT_IDS,
+  shouldClearAtsMode,
   TEMPLATES,
 } from './templates';
 
@@ -190,5 +192,61 @@ describe('LETTER_LAYOUT_IDS', () => {
       'sidebar',
       'monogram',
     ]);
+  });
+});
+
+describe('isDecoratedLetterLayout', () => {
+  // Mirrors the `ats` gates in the letter .typ files one-for-one. A layout is
+  // "decorated" iff ATS mode visibly changes it — that is the ONLY honest reason
+  // to surface an ATS toggle on a cover-letter surface.
+  it.each(['banded', 'sidebar', 'monogram'] as const)(
+    'is true for %s (its .typ drops a decoration under data.opts.ats)',
+    (id) => {
+      expect(isDecoratedLetterLayout(id)).toBe(true);
+    }
+  );
+
+  it.each(['classic', 'refined', 'navy'] as const)(
+    'is false for %s (no ats gate in its .typ — the toggle would do nothing)',
+    (id) => {
+      expect(isDecoratedLetterLayout(id)).toBe(false);
+    }
+  );
+
+  it('treats an unset layout as classic (the backend default), i.e. not decorated', () => {
+    expect(isDecoratedLetterLayout(undefined)).toBe(false);
+  });
+
+  it('classifies every known layout id — no id falls through to undefined', () => {
+    for (const id of LETTER_LAYOUT_IDS) {
+      expect(typeof isDecoratedLetterLayout(id), id).toBe('boolean');
+    }
+    // Guard against a vacuous pass if the id list is ever emptied.
+    expect(LETTER_LAYOUT_IDS.filter((id) => isDecoratedLetterLayout(id))).toHaveLength(3);
+  });
+});
+
+describe('shouldClearAtsMode', () => {
+  it('clears for an ATS-tier résumé template when no letter is in play', () => {
+    expect(shouldClearAtsMode('classic')).toBe(true);
+    expect(shouldClearAtsMode('swiss-minimal')).toBe(true);
+  });
+
+  it('keeps the flag for a design-tier template (the toggle is still live there)', () => {
+    expect(shouldClearAtsMode('atelier')).toBe(false);
+    expect(shouldClearAtsMode('lebenslauf')).toBe(false);
+  });
+
+  // The exact review case: ATS-tier résumé template + a decorated cover letter.
+  // Clearing here would strand the letter's decoration with no off switch.
+  it('does NOT clear when a decorated cover letter is still reading the flag', () => {
+    expect(shouldClearAtsMode('classic', isDecoratedLetterLayout('monogram'))).toBe(false);
+    expect(shouldClearAtsMode('classic', isDecoratedLetterLayout('sidebar'))).toBe(false);
+    expect(shouldClearAtsMode('classic', isDecoratedLetterLayout('banded'))).toBe(false);
+  });
+
+  it('still clears for an ATS-tier template when the letter layout is undecorated', () => {
+    expect(shouldClearAtsMode('classic', isDecoratedLetterLayout('classic'))).toBe(true);
+    expect(shouldClearAtsMode('classic', isDecoratedLetterLayout('navy'))).toBe(true);
   });
 });

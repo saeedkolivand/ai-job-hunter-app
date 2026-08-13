@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
+import { AtsModeToggle } from '@/components/generation/AtsModeToggle';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { HandEditNudge } from '@/components/generation/HandEditNudge';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
@@ -14,6 +15,7 @@ import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
   type GenerationMeta,
+  isDecoratedLetterLayout,
   type LetterLayoutId,
   MODES,
   type QualityReport,
@@ -49,6 +51,14 @@ interface OutputPanelDoneProps {
   accent?: string;
   /** Per-export cover-letter layout — must match the export so the cover preview is faithful. */
   letterLayoutId?: LetterLayoutId;
+  /**
+   * Flips ATS-safe mode from the cover tab. The layout picker below can put a
+   * DECORATED layout on the letter after generation (rail / monogram tile /
+   * band), and this panel replaces the wizard once the run is done — without
+   * this the only off switch for that decoration would be a regeneration.
+   * Omit to hide the toggle (hosts that don't own an atsMode setter).
+   */
+  onAtsModeChange?: (enabled: boolean) => void;
   /** Export market/locale — drives the cover-letter preview layout (#24). */
   locale?: string;
   onActiveOutChange: (out: 'resume' | 'cover') => void;
@@ -85,6 +95,7 @@ export function OutputPanelDone({
   locale,
   onActiveOutChange,
   onLetterLayoutChange,
+  onAtsModeChange,
   onCopy,
   onExport,
   onOutputChange,
@@ -309,10 +320,21 @@ export function OutputPanelDone({
       )}
 
       {/* Letter-layout picker — cover tab only (the layout only affects the letter;
-          mirrors GenerationOutput's cover-only strip). Threaded to preview + export. */}
+          mirrors GenerationOutput's cover-only strip). Threaded to preview + export.
+          The ATS-safe toggle rides along whenever the picked layout has a
+          decoration to drop, so choosing e.g. Monogram here never leaves its
+          initials tile (which extraction reads as "JS Jane Smith") switch-less. */}
       {activeOut === 'cover' && onLetterLayoutChange && (
-        <div className="shrink-0 border-b border-[var(--border-clear)] px-6 py-2">
+        <div className="shrink-0 space-y-2 border-b border-[var(--border-clear)] px-6 py-2">
           <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+          {onAtsModeChange && isDecoratedLetterLayout(letterLayoutId) && (
+            <AtsModeToggle
+              checked={atsMode}
+              onChange={onAtsModeChange}
+              hintKey="aiGenerate.atsModeHintLetter"
+              className="w-fit"
+            />
+          )}
         </div>
       )}
 

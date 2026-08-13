@@ -69,11 +69,13 @@ export {
 export {
   type AtsModeHintKey,
   atsModeHintKey,
+  isDecoratedLetterLayout,
   isDesignTier,
   isPhotoTemplate,
   isTwoColumnTemplate,
   LETTER_LAYOUT_IDS,
   type LetterLayoutId,
+  shouldClearAtsMode,
   TEMPLATE_IDS,
   type TemplateId,
   TEMPLATES,

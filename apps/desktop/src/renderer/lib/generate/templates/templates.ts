@@ -8,18 +8,13 @@
 // a hand-synced local copy) so a `tsc` failure surfaces the moment either side
 // adds an id the other doesn't know about, instead of silently compiling as a
 // subset.
-import type { TemplateId } from '@ajh/shared';
+// `LetterLayoutId` gets the same treatment for the same reason: it was a
+// hand-synced copy of the shared union, so adding a layout on one side and not
+// the other compiled silently as a subset. Sourced from the contract now, which
+// is the single registration point the picker and the backend both answer to.
+import type { LetterLayoutId, TemplateId } from '@ajh/shared';
 
-export type { TemplateId };
-
-/**
- * Cover-letter **layout** (arrangement only). Mirrors the Rust `LetterLayout`
- * enum (export/types.rs) and the shared contract union
- * (`BaseExportRequest.letterLayoutId`). Layout = composition; the palette + fonts
- * always inherit from the chosen résumé {@link TemplateId}. `classic` is the
- * default — an omitted value renders the pre-layout-picker output.
- */
-export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy' | 'sidebar' | 'monogram';
+export type { LetterLayoutId, TemplateId };
 
 /** Ordered letter-layout ids — the picker's option order + the exhaustiveness pin. */
 export const LETTER_LAYOUT_IDS = [
@@ -493,4 +488,62 @@ export function atsModeHintKey(id: TemplateId): AtsModeHintKey {
  */
 export function isDesignTier(id: TemplateId): boolean {
   return TEMPLATES[id].tier === 'design';
+}
+
+/**
+ * Whether ATS mode visibly changes each letter layout — i.e. whether the layout
+ * carries a decoration the `.typ` drops when `data.opts.ats` is true. Mirrors the
+ * `ats` gates in the letter templates one-for-one:
+ *
+ * - `banded` — the accent band across the top (`letter_banded.typ`).
+ * - `sidebar` — the tinted contact rail in the widened left margin (`letter_sidebar.typ`).
+ * - `monogram` — the initials tile, which extraction reads as two characters of
+ *   noise in front of the candidate's own name ("JS Jane Smith") (`letter_monogram.typ`).
+ * - `classic` / `refined` / `navy` — plain text and rules only; their `.typ`
+ *   files contain no `ats` gate, so the toggle would be a no-op (and a lie) there.
+ *
+ * A `Record<LetterLayoutId, boolean>` rather than an id Set: adding a layout id
+ * fails `tsc` until someone decides whether it degrades, which is the same
+ * discipline `LETTER_LAYOUT_IDS` applies to the picker.
+ */
+const LETTER_LAYOUT_DECORATED = {
+  classic: false,
+  refined: false,
+  banded: true,
+  navy: false,
+  sidebar: true,
+  monogram: true,
+} as const satisfies Record<LetterLayoutId, boolean>;
+
+/**
+ * True when the chosen letter layout has a decoration ATS mode drops, so the
+ * ATS toggle is worth surfacing on a cover-letter surface. `undefined` (the
+ * backend default, `classic`) is not decorated.
+ */
+export function isDecoratedLetterLayout(id: LetterLayoutId | undefined): boolean {
+  return id !== undefined && LETTER_LAYOUT_DECORATED[id];
+}
+
+/**
+ * Whether picking `templateId` should clear a sticky `atsMode`.
+ *
+ * `atsMode` is ONE per-export flag covering every document in the run (each
+ * export request carries a single document, so the résumé and the letter each
+ * receive it on their own request). It is a documented no-op for ATS-tier
+ * résumé templates (`single_column.typ`: "data.opts.ats — ATS flag (no-op for
+ * single column)"), which is why picking one used to clear the flag: nothing
+ * could act on it, so leaving it set was invisible state.
+ *
+ * That stopped being true once the letter renderer started reading the same flag
+ * (`data.opts.ats`): under an ATS-tier résumé template a decorated letter is the
+ * ONLY thing the flag still drives, and clearing it took away the letter's only
+ * off switch. So: clear only when nothing left in the export can degrade.
+ *
+ * @param letterAtsApplies caller's answer to "does this export include a cover
+ * letter whose layout is decorated?" — each surface phrases it differently
+ * (`activeOut === 'cover'`, `target !== 'resume'`, a prop), so it is passed in
+ * rather than derived here. Résumé-only surfaces omit it.
+ */
+export function shouldClearAtsMode(templateId: TemplateId, letterAtsApplies = false): boolean {
+  return !isDesignTier(templateId) && !letterAtsApplies;
 }

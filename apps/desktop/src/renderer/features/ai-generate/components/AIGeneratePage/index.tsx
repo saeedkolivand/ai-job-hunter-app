@@ -25,6 +25,7 @@ import {
   exportPDF,
   exportTXT,
   type GenerationMode,
+  isDecoratedLetterLayout,
   type LetterLayoutId,
   resolveMarket,
   type TemplateId,
@@ -319,6 +320,10 @@ export function AIGeneratePage() {
           onJobAdImport={setJobAdFromImport}
           setTemplateId={setTemplateId}
           setAtsMode={setAtsMode}
+          // Applying a template recommendation must not clear atsMode out from
+          // under a decorated cover letter — that flag is the letter's only way
+          // to drop its rail / tile / band.
+          letterAtsApplies={target !== 'resume' && isDecoratedLetterLayout(letterLayoutId)}
           setLocale={setLocale}
           onUpload={handleUpload}
           onReset={reset}
@@ -391,6 +396,7 @@ export function AIGeneratePage() {
                 locale={locale}
                 onActiveOutChange={setActiveOut}
                 onLetterLayoutChange={setLetterLayoutId}
+                onAtsModeChange={setAtsMode}
                 onCopy={() => void copyOutput()}
                 onExport={doExport}
                 onOutputChange={(value) => {

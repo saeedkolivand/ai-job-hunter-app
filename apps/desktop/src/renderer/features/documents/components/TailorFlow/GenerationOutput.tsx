@@ -1,11 +1,12 @@
 import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, Dropdown, Switch, type TabItem, Tabs } from '@ajh/ui';
+import { Button, Dropdown, type TabItem, Tabs } from '@ajh/ui';
 
 import { AccentPicker } from '@/components/generation/AccentPicker';
+import { AtsModeToggle } from '@/components/generation/AtsModeToggle';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
 import { HandEditNudge } from '@/components/generation/HandEditNudge';
@@ -17,9 +18,11 @@ import {
   atsModeHintKey,
   buildFilename,
   type GenerationMeta,
+  isDecoratedLetterLayout,
   isDesignTier,
   type LetterLayoutId,
   type QualityReport,
+  shouldClearAtsMode,
   TEMPLATE_IDS,
   type TemplateId,
   TEMPLATES,
@@ -109,7 +112,6 @@ export function GenerationOutput({
   // Highlighted format in the export picker. The picker is immediate (a click
   // downloads), so this only tracks the visual selection between opens.
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
-  const atsSwitchId = useId();
 
   // Committed text per doc — what PdfPreview renders. Local edits auto-commit
   // after ~700 ms via useDebouncedCommit; generation/regeneration commits immediately.
@@ -174,15 +176,28 @@ export function GenerationOutput({
   }, [flush]);
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
 
+  // Does the one ATS-safe flag still act on this export's cover letter? True
+  // only for a run that produces a letter whose layout carries a decoration
+  // (band / rail / monogram tile) the renderer drops under `data.opts.ats`.
+  const letterAtsApplies = target !== 'resume' && isDecoratedLetterLayout(letterLayoutId);
+
+  // …and does it act on the document currently on screen? That is what decides
+  // whether the toolbar shows the switch: the résumé tab asks about the template,
+  // the cover tab about the letter layout (the tab itself proves a letter exists).
+  const showAtsToggle =
+    activeOut === 'cover' ? isDecoratedLetterLayout(letterLayoutId) : isDesignTier(templateId);
+
   // Template picker (mirrors GenerateWizard.handleTemplateChange): selecting an
   // ATS-tier template forces ATS off, since ATS-safe mode only applies to
-  // design-tier layouts (two-column OR photo, incl. Lebenslauf). One template id
-  // drives BOTH docs' preview + export.
+  // design-tier layouts (two-column OR photo, incl. Lebenslauf) — unless a
+  // decorated cover letter is still reading the flag, which is the one case
+  // where clearing it would strand the letter's decoration with no off switch.
+  // One template id drives BOTH docs' preview + export.
   const templateOptions = TEMPLATE_IDS.map((id) => ({ value: id, label: TEMPLATES[id].name }));
   const handleTemplateChange = (value: string) => {
     const id = value as TemplateId;
     onTemplateChange(id);
-    if (!isDesignTier(id)) onAtsModeChange(false);
+    if (shouldClearAtsMode(id, letterAtsApplies)) onAtsModeChange(false);
   };
 
   // ARIA tabs contract: each tab owns a stable id and controls a panel id; the
@@ -314,8 +329,9 @@ export function GenerationOutput({
         {/* Filename + LIVE template picker strip (parity with the AI Generate done step).
             The single chosen template/ATS drive BOTH docs' preview + export, so the
             picker is shown on BOTH doc tabs (résumé AND cover) — never on the job-ad
-            tab. The ATS-safe toggle stays résumé-only (ATS single-column linearization
-            is a résumé concept; cover letters aren't two-column). */}
+            tab. The ATS-safe toggle sits beside it on whichever tab the flag can
+            still change: the résumé (linearize / drop the photo) or a cover letter
+            whose layout has a decoration to drop. */}
         {view === 'doc' && (
           <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] px-3 py-1.5 text-[10px] text-foreground/30">
             {meta && (
@@ -338,34 +354,21 @@ export function GenerationOutput({
                   listClassName="max-h-48"
                 />
               </div>
-              {/* ATS-safe toggle — résumé-only + only meaningful for design-tier
-                  templates (two-column OR photo, incl. Lebenslauf; copies
-                  StepTemplate's switch markup; reuses the aiGenerate.atsMode keys). */}
-              {activeOut === 'resume' && isDesignTier(templateId) && (
-                <div
-                  title={t(atsModeHintKey(templateId))}
-                  className={cn(
-                    'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
-                    atsMode
-                      ? 'border-brand/35 bg-brand/8 text-foreground/80'
-                      : 'border-foreground/[0.06] bg-transparent text-foreground/45'
-                  )}
-                >
-                  {/* Real <label htmlFor> so clicking the text toggles the switch
-                      (whole-control click) and supplies its accessible name. */}
-                  <label
-                    htmlFor={atsSwitchId}
-                    className="cursor-pointer select-none text-[10px] font-medium"
-                  >
-                    {t('aiGenerate.atsMode')}
-                  </label>
-                  <Switch
-                    id={atsSwitchId}
-                    size="sm"
-                    checked={atsMode}
-                    onCheckedChange={onAtsModeChange}
-                  />
-                </div>
+              {/* ATS-safe toggle — one flag, shown on whichever tab it can still
+                  act on: the résumé tab for design-tier templates (two-column OR
+                  photo, incl. Lebenslauf), and the cover tab when the letter's
+                  layout carries a decoration ATS mode drops. The hint names the
+                  document, so the same switch reads honestly on both tabs. */}
+              {showAtsToggle && (
+                <AtsModeToggle
+                  checked={atsMode}
+                  onChange={onAtsModeChange}
+                  hintKey={
+                    activeOut === 'cover'
+                      ? 'aiGenerate.atsModeHintLetter'
+                      : atsModeHintKey(templateId)
+                  }
+                />
               )}
             </div>
           </div>
@@ -378,8 +381,8 @@ export function GenerationOutput({
           </div>
         )}
         {/* Letter-layout strip — cover-only (the layout only affects the letter; the
-            résumé is unaffected, so it's the cover-doc counterpart to the résumé-only
-            ATS toggle). Drives the cover preview + export. */}
+            résumé is unaffected). Drives the cover preview + export; picking a
+            decorated layout here is what surfaces the ATS toggle above. */}
         {view === 'doc' && activeOut === 'cover' && (
           <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
             <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />

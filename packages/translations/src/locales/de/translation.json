@@ -1489,6 +1489,7 @@
     "atsModeHintTwoColumn": "Empfohlen für ATS-Bewerbungen — reduziert das Layout auf eine Spalte und entfernt ein etwaiges Foto für maximale Parserkompatibilität",
     "atsModeHintPhoto": "Empfohlen für ATS-Bewerbungen — entfernt das Foto für ein lineares, parserfreundliches Layout",
     "atsModeHintDecorative": "Empfohlen für ATS-Bewerbungen — entfernt dekorative Farbakzente und Abschnittsmarkierungen für ein schlichtes, parserfreundliches Layout",
+    "atsModeHintLetter": "Empfohlen für ATS-Bewerbungen — entfernt die Dekoration des Anschreibens (Seitenspalte, Monogramm-Kachel oder Kopfband), damit Parser Name und Text schlicht einlesen",
     "tier": {
       "atsSafe": "ATS-sicher",
       "design": "Design",
@@ -1529,7 +1530,7 @@
     "letterLayoutRefined": "Reduziert",
     "letterLayoutRefinedDesc": "Minimalistisch — Name und Rolle oben, eine Referenzzeile, luftige Abstände.",
     "letterLayoutBanded": "Akzentband",
-    "letterLayoutBandedDesc": "Ein dezentes Akzentband am oberen Rand der ersten Seite.",
+    "letterLayoutBandedDesc": "Ein dezentes Akzentband am oberen Rand der ersten Seite. Im ATS-sicheren Modus entfällt das Band.",
     "wizard": {
       "steps": {
         "0": "Was erstellen",
@@ -1602,9 +1603,9 @@
     "letterLayoutNavy": "Navy",
     "letterLayoutNavyDesc": "Zentrierter Briefkopf über einer Linie. Passt zu Cologne Navy.",
     "letterLayoutSidebar": "Seitenleiste",
-    "letterLayoutSidebarDesc": "Kontaktdaten in einer getönten Seitenspalte. Passt zu Atelier, Aria, Saffron und Deedy. Im ATS-Modus entfällt die Spalte.",
+    "letterLayoutSidebarDesc": "Kontaktdaten in einer getönten Seitenspalte. Passt zu Atelier, Aria, Saffron und Deedy. Im ATS-sicheren Modus entfällt die Spalte.",
     "letterLayoutMonogram": "Monogramm",
-    "letterLayoutMonogramDesc": "Ihre Initialen in einer Akzentkachel neben dem Namen. Passt zu Awesome, Jake und Throughline. Im ATS-Modus entfällt die Kachel."
+    "letterLayoutMonogramDesc": "Ihre Initialen in einer Akzentkachel neben dem Namen. Passt zu Awesome, Jake und Throughline. Im ATS-sicheren Modus entfällt die Kachel."
   },
   "generationDepth": {
     "label": "Gründlichkeit",

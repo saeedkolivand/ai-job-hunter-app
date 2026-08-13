@@ -43,7 +43,23 @@ export interface BaseExportRequest {
   documentType: 'resume' | 'cover-letter';
   templateId: TemplateId;
   meta?: ExportMeta;
-  /** Linearize two-column layouts for ATS parsers. Only affects two-column template. */
+  /**
+   * ATS-safe rendering for **this** document — one flag, read per request, so a
+   * résumé and a cover letter exported from the same session can carry different
+   * values (each export request holds exactly one document).
+   *
+   * - Résumé: design-tier templates collapse to a single column and drop the
+   *   photo. A documented **no-op** for ATS-tier templates (`single_column.typ`:
+   *   "data.opts.ats — ATS flag (no-op for single column)").
+   * - Cover letter: reaches the letter renderer as `data.opts.ats`; a decorated
+   *   layout drops its decoration — Banded's band, Sidebar's contact rail,
+   *   Monogram's initials tile (whose two characters otherwise land in the text
+   *   layer in front of the candidate's name). `classic` / `refined` / `navy`
+   *   have no decoration to drop, so the flag does nothing for them.
+   *
+   * The renderer surfaces the toggle wherever the flag can still act on the
+   * document on screen (see `shouldClearAtsMode` / `isDecoratedLetterLayout`).
+   */
   atsMode?: boolean;
   /** Target market id (`us`, `de`, …); drives the page size (US → Letter, else A4). */
   locale?: string;

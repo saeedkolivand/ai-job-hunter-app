@@ -7,8 +7,10 @@ import { AccentPicker } from '@/components/generation/AccentPicker';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import {
   atsModeHintKey,
+  isDecoratedLetterLayout,
   isDesignTier,
   type LetterLayoutId,
+  shouldClearAtsMode,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
@@ -55,12 +57,22 @@ export function StepTemplate({
   const showLetterLayout = target !== 'resume';
   const { t } = useTranslation();
 
+  // What the one ATS-safe flag actually drives in THIS run. The résumé half is
+  // the original gate (design-tier layouts linearize / drop the photo); the
+  // letter half is new: a decorated layout drops its rail / tile / band. Either
+  // one is reason enough to show the switch — under an ATS-tier résumé template
+  // the letter is the only thing the flag still affects, and before this the
+  // toggle was unreachable in exactly that case.
+  const resumeAtsApplies = !isCover && isDesignTier(templateId);
+  const letterAtsApplies = showLetterLayout && isDecoratedLetterLayout(letterLayoutId);
+
   const handleTemplateSelect = (id: TemplateId) => {
     onTemplateChange(id);
     // ATS-tier templates have no ATS toggle (they are already parser-safe), so
-    // clear any stale atsMode. Design-tier templates (two-column OR photo, incl.
-    // Lebenslauf) keep the toggle. Cover letters never touch atsMode.
-    if (!isCover && !isDesignTier(id)) {
+    // clear any stale atsMode — UNLESS a decorated cover letter in this run is
+    // still reading the flag, in which case clearing it would silently restore
+    // the letter's decoration with no way back. Cover-only runs never clear.
+    if (!isCover && shouldClearAtsMode(id, letterAtsApplies)) {
       onAtsModeChange(false);
     }
   };
@@ -159,9 +171,11 @@ export function StepTemplate({
         <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
       )}
 
-      {/* ATS safe mode toggle — shown for design-tier résumé templates (two-column
-          OR photo, incl. Lebenslauf); ATS-tier templates are already parser-safe. */}
-      {!isCover && isDesignTier(templateId) && (
+      {/* ATS safe mode toggle — one flag for the whole export. Shown for
+          design-tier résumé templates (two-column OR photo, incl. Lebenslauf)
+          AND for a run whose cover letter uses a decorated layout; each hint
+          line below states which document it changes. */}
+      {(resumeAtsApplies || letterAtsApplies) && (
         <Button
           variant="unstyled"
           type="button"
@@ -184,9 +198,16 @@ export function StepTemplate({
             >
               {t('aiGenerate.atsMode')}
             </div>
-            <div className="text-[10px] text-foreground/35 mt-0.5">
-              {t(atsModeHintKey(templateId))}
-            </div>
+            {resumeAtsApplies && (
+              <div className="text-[10px] text-foreground/35 mt-0.5">
+                {t(atsModeHintKey(templateId))}
+              </div>
+            )}
+            {letterAtsApplies && (
+              <div className="text-[10px] text-foreground/35 mt-0.5">
+                {t('aiGenerate.atsModeHintLetter')}
+              </div>
+            )}
           </div>
           <div
             className={cn(

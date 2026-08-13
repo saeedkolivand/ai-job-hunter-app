@@ -1485,6 +1485,7 @@
     "atsModeHintTwoColumn": "Recommended for ATS submissions — collapses the layout to a single column and removes any photo for maximum parser compatibility",
     "atsModeHintPhoto": "Recommended for ATS submissions — removes the photo for a linear, parser-safe layout",
     "atsModeHintDecorative": "Recommended for ATS submissions — drops the decorative color accents and section markers for a plain, parser-safe layout",
+    "atsModeHintLetter": "Recommended for ATS submissions — drops the cover letter's decoration (side rail, monogram tile or header band) so parsers read your name and text plainly",
     "tier": {
       "atsSafe": "ATS-Safe",
       "design": "Design",
@@ -1525,7 +1526,7 @@
     "letterLayoutRefined": "Refined",
     "letterLayoutRefinedDesc": "Minimalist — name and role up top, a reference line, airy spacing.",
     "letterLayoutBanded": "Banded",
-    "letterLayoutBandedDesc": "A soft accent band across the top of the first page.",
+    "letterLayoutBandedDesc": "A soft accent band across the top of the first page. The band is dropped by ATS-safe mode.",
     "wizard": {
       "steps": {
         "0": "What to create",
@@ -1598,9 +1599,9 @@
     "letterLayoutNavy": "Navy",
     "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy.",
     "letterLayoutSidebar": "Sidebar",
-    "letterLayoutSidebarDesc": "Contact details in a tinted side rail. Pairs with Atelier, Aria, Saffron and Deedy. The rail is dropped in ATS mode.",
+    "letterLayoutSidebarDesc": "Contact details in a tinted side rail. Pairs with Atelier, Aria, Saffron and Deedy. The rail is dropped by ATS-safe mode.",
     "letterLayoutMonogram": "Monogram",
-    "letterLayoutMonogramDesc": "Your initials in an accent tile beside your name. Pairs with Awesome, Jake and Throughline. The tile is dropped in ATS mode."
+    "letterLayoutMonogramDesc": "Your initials in an accent tile beside your name. Pairs with Awesome, Jake and Throughline. The tile is dropped by ATS-safe mode."
   },
   "generationDepth": {
     "label": "Generation depth",

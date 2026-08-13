@@ -162,6 +162,65 @@ describe('OutputPanelDone — letter-layout picker (cover tab only)', () => {
     expect(screen.getByTestId(letterOption('banded'))).toHaveAttribute('aria-checked', 'true');
   });
 
+  // ── ATS toggle beside the picker ────────────────────────────────────────────
+  // This panel REPLACES the wizard once a run is done, so a layout picked here
+  // must be undoable here: the letter renderer reads `atsMode` (`data.opts.ats`)
+  // and a decorated layout has no other off switch on this screen.
+
+  const coverProps = { activeOut: 'cover' as const, resumeOut: '', coverOut: 'Dear Team, ...' };
+
+  it.each(['banded', 'sidebar', 'monogram'] as const)(
+    'shows the ATS toggle on the cover tab for the decorated layout %s',
+    (letterLayoutId) => {
+      renderPanel({ ...coverProps, letterLayoutId, onAtsModeChange: vi.fn() });
+      expect(screen.getByRole('switch')).toBeInTheDocument();
+      expect(screen.getByText('ATS-safe mode')).toBeInTheDocument();
+    }
+  );
+
+  it.each(['classic', 'refined', 'navy'] as const)(
+    'hides the ATS toggle for the undecorated layout %s (it would change nothing)',
+    (letterLayoutId) => {
+      renderPanel({ ...coverProps, letterLayoutId, onAtsModeChange: vi.fn() });
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    }
+  );
+
+  it('hides the ATS toggle on the résumé tab even when the letter is decorated', () => {
+    renderPanel({
+      activeOut: 'resume',
+      coverOut: 'Dear Team, ...',
+      letterLayoutId: 'monogram',
+      onAtsModeChange: vi.fn(),
+    });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('hides the ATS toggle when the host owns no atsMode setter', () => {
+    renderPanel({ ...coverProps, letterLayoutId: 'monogram' });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('flips atsMode on — the off switch for the monogram tile after generation', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({ ...coverProps, letterLayoutId: 'monogram', onAtsModeChange });
+
+    await user.click(screen.getByRole('switch'));
+
+    expect(onAtsModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it('flips atsMode back off and shows the current state via aria-checked', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({ ...coverProps, letterLayoutId: 'monogram', atsMode: true, onAtsModeChange });
+
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    await user.click(screen.getByRole('switch'));
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
   it('a chosen layout reaches PdfPreview with the SAME value as the picker — export reads the same state', () => {
     // Mirrors the primary `target: 'both'` flow: the host re-renders with the
     // session-store value the picker just set, threaded straight to preview

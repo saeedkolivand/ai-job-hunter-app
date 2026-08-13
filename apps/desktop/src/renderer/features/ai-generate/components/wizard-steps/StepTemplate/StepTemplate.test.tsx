@@ -515,4 +515,112 @@ describe('StepTemplate', () => {
     expect(onTemplateChange).toHaveBeenCalledWith('lebenslauf');
     expect(onAtsModeChange).not.toHaveBeenCalled();
   });
+
+  // ── ATS toggle for a DECORATED cover-letter layout ───────────────────────────
+  // The letter renderer reads the same atsMode flag (`data.opts.ats`), so a
+  // decorated layout (band / rail / monogram tile) needs the switch on a surface
+  // that produces a letter — even when the résumé template is ATS-tier and the
+  // résumé itself has nothing to linearize.
+
+  it.each(['banded', 'sidebar', 'monogram'] as const)(
+    'target=cover: shows the ATS toggle for the decorated layout %s under an ATS-tier template',
+    (letterLayoutId) => {
+      renderStep({ templateId: 'classic', target: 'cover', letterLayoutId });
+      expect(screen.getByRole('switch', { name: /aiGenerate\.atsMode/i })).toBeInTheDocument();
+      expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
+    }
+  );
+
+  it.each(['classic', 'refined', 'navy'] as const)(
+    'target=cover: hides the ATS toggle for the undecorated layout %s',
+    (letterLayoutId) => {
+      renderStep({ templateId: 'classic', target: 'cover', letterLayoutId });
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    }
+  );
+
+  it('target=cover: hides the ATS toggle when no layout has been picked yet (unset → classic)', () => {
+    renderStep({ templateId: 'classic', target: 'cover' });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it("target='both' with a decorated letter shows the toggle even for an ATS-tier template", () => {
+    renderStep({ templateId: 'classic', target: 'both', letterLayoutId: 'monogram' });
+    expect(screen.getByRole('switch', { name: /aiGenerate\.atsMode/i })).toBeInTheDocument();
+    // Résumé is ATS-tier → only the letter hint, no résumé hint.
+    expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
+    expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
+  });
+
+  it("target='both' with a design-tier template AND a decorated letter states BOTH effects", () => {
+    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'sidebar' });
+    expect(screen.getByText('aiGenerate.atsModeHintTwoColumn')).toBeInTheDocument();
+    expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
+  });
+
+  it("target='resume' never shows the letter hint, whatever layout is threaded through", () => {
+    // A résumé-only run exports no letter — a letter hint there would be a lie.
+    renderStep({ templateId: 'classic', target: 'resume', letterLayoutId: 'monogram' });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByText('aiGenerate.atsModeHintLetter')).not.toBeInTheDocument();
+  });
+
+  it('the toggle actually flips atsMode on for a decorated letter (the reachable off switch)', async () => {
+    const user = userEvent.setup();
+    renderStep({
+      templateId: 'classic',
+      target: 'cover',
+      letterLayoutId: 'monogram',
+      atsMode: false,
+    });
+    await user.click(screen.getByRole('switch'));
+    expect(onAtsModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it('reflects the current atsMode via aria-checked so the letter state is readable', () => {
+    const { unmount } = renderStep({
+      templateId: 'classic',
+      target: 'cover',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+    });
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    unmount();
+
+    renderStep({
+      templateId: 'classic',
+      target: 'cover',
+      letterLayoutId: 'monogram',
+      atsMode: false,
+    });
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  // ── force-clear must not strand a decorated letter ───────────────────────────
+
+  it('does NOT clear atsMode when an ATS-tier template is picked while a decorated letter is in the run', async () => {
+    const user = userEvent.setup();
+    renderStep({
+      templateId: 'atelier',
+      target: 'both',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+    });
+    const swissButton = screen.getByText('Swiss Minimal').closest('button');
+    if (!swissButton) throw new Error('Swiss Minimal button not found');
+    await user.click(swissButton);
+    expect(onTemplateChange).toHaveBeenCalledWith('swiss-minimal');
+    expect(onAtsModeChange).not.toHaveBeenCalled();
+    // …and the switch survives the template change, still on.
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('still clears atsMode for an ATS-tier template when the letter layout is undecorated', async () => {
+    const user = userEvent.setup();
+    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'navy', atsMode: true });
+    const swissButton = screen.getByText('Swiss Minimal').closest('button');
+    if (!swissButton) throw new Error('Swiss Minimal button not found');
+    await user.click(swissButton);
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
 });
