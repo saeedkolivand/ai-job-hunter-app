@@ -256,43 +256,103 @@ async fn read_tool_runs_then_final_text_returns() {
     assert_eq!(*env.reads.lock(), vec!["reader".to_string()]);
 }
 
+/// A loop that always calls a tool is bounded — and since Phase 7 the ceiling
+/// it hits is the TOOL-CALL one, which is the reason that names the runaway.
+///
+/// This test used to assert `MaxSteps` here, and the change is the point: with
+/// `max_tool_calls` (12) under `max_steps` (14) and one call per turn, the call
+/// ceiling is reached first. Its sibling below pins that `MaxSteps` is still
+/// reachable, so neither reason has quietly become dead.
+///
+/// Mutation-checked, executed: raising `max_tool_calls` above `max_steps` in
+/// the passed budget flips this to `MaxSteps` — which is exactly what the
+/// sibling test asserts on purpose.
 #[tokio::test]
-async fn always_calling_a_tool_terminates_at_max_steps() {
-    // The single scripted turn repeats forever → the step budget must stop it.
+async fn always_calling_a_tool_terminates_at_the_tool_call_ceiling() {
+    // The single scripted turn repeats forever → a budget must stop it.
     let env = FakeEnv::new(vec![read_call("reader")]);
     let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
         .await
         .unwrap();
-    assert_eq!(out.stopped_reason, StoppedReason::MaxSteps);
-    assert_eq!(out.steps, MAX_AGENT_STEPS);
+    assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+    assert_eq!(env.reads.lock().len(), TEST_ENTRY_BUDGET.max_tool_calls);
+    assert!(
+        out.steps < MAX_AGENT_STEPS,
+        "the call ceiling must bind before the step ceiling ({} < {MAX_AGENT_STEPS})",
+        out.steps
+    );
 }
 
-/// CHARACTERIZATION, not an endorsement: `Budget::max_tool_calls` is **not
-/// enforced by this loop** — see its field doc for why closing it needs a
-/// signature change rather than a counter, and what bounds spend meanwhile.
+/// `Budget::max_tool_calls` is ENFORCED (Phase 7) — this is the pin that used
+/// to assert the opposite.
 ///
-/// Pinned because the constant reads like a live ceiling: the run above makes
-/// one tool call per turn and therefore spends `MAX_AGENT_STEPS` (14) calls
-/// against a `max_tool_calls` of 12 without [`StoppedReason::MaxToolCalls`]
-/// ever being produced. When the tool count IS enforced this test must change
-/// — deliberately, so the change is visible rather than silent.
+/// It was a documented ceiling with no producer for [`StoppedReason::MaxToolCalls`]
+/// anywhere in the crate, which the `improve_resume` flow turned from untidy
+/// into unsafe: `run_quality_pipeline` is a 75-minute call, and "spend AT MOST
+/// ONE of them" is prose in a prompt, not a bound. The loop now counts every
+/// executed call — including a refused unknown-tool name, which is why the
+/// second half of this test uses one.
+///
+/// Mutation-checked, executed: deleting the `tool_calls >= budget.max_tool_calls`
+/// arm makes the run spend `MAX_AGENT_STEPS` calls and stop at `MaxSteps`.
 #[tokio::test]
-async fn the_tool_call_ceiling_is_not_enforced_and_this_pins_that() {
+async fn the_tool_call_ceiling_stops_a_runaway_tool_loop() {
     let env = FakeEnv::new(vec![read_call("reader")]);
     let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
         .await
         .unwrap();
     let calls = env.reads.lock().len();
-    assert!(
-        calls > TEST_ENTRY_BUDGET.max_tool_calls,
-        "the loop spent {calls} tool calls against a nominal ceiling of {}",
-        TEST_ENTRY_BUDGET.max_tool_calls
+    assert_eq!(
+        calls, TEST_ENTRY_BUDGET.max_tool_calls,
+        "the loop must stop ON the ceiling, not past it"
     );
-    assert_ne!(
+    assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+
+    // A name the whitelist doesn't carry is refused, not executed — but it is
+    // still a call the model asked for, and a loop that keeps inventing names
+    // is precisely the runaway this ceiling exists for. It must not be free.
+    let env = FakeEnv::new(vec![read_call("nope")]);
+    let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(env.reads.lock().is_empty(), "nothing was executed");
+    assert_eq!(
         out.stopped_reason,
         StoppedReason::MaxToolCalls,
-        "nothing in the crate produces MaxToolCalls today"
+        "refused calls count too, or an unknown-name loop runs to the step ceiling"
     );
+}
+
+/// …and the step ceiling is NOT dead code, which the change above could
+/// otherwise have made it: a budget whose call allowance exceeds its step
+/// allowance still ends at [`StoppedReason::MaxSteps`], as does any run whose
+/// turns stop calling tools.
+///
+/// Asserted because "enforce max_tool_calls" trades one reachable stop for
+/// another if nobody checks — `MaxSteps` had a producer before Phase 7 and must
+/// still have one after.
+#[tokio::test]
+async fn the_step_ceiling_is_still_reachable_when_tool_calls_are_not_the_binding_ceiling() {
+    let env = FakeEnv::new(vec![read_call("reader")]);
+    let gate = AgentGate::default();
+    let budget = Budget {
+        max_tool_calls: TEST_ENTRY_BUDGET.max_steps + 1,
+        ..TEST_ENTRY_BUDGET
+    };
+    let out = run_agent_with_system(
+        &env,
+        &whitelist(),
+        &gate,
+        budget,
+        AGENT_SYSTEM,
+        "job-9",
+        "help".into(),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.stopped_reason, StoppedReason::MaxSteps);
+    assert_eq!(out.steps, MAX_AGENT_STEPS);
 }
 
 /// M-5 fix: the tool-schema payload must count toward [`MAX_AGENT_TOKENS`]

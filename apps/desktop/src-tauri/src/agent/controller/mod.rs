@@ -315,6 +315,10 @@ pub async fn run_agent_with_system(
     let mut messages = vec![ChatMsg::system(system), ChatMsg::user(user)];
     let mut tokens: usize = messages.iter().map(|m| estimate_tokens(&m.content)).sum();
     let mut steps = 0usize;
+    // Tool invocations executed so far this run — the counter behind
+    // `Budget::max_tool_calls`, which was a documented ceiling with no
+    // enforcement anywhere in the crate until Phase 7.
+    let mut tool_calls = 0usize;
     let mut final_text = String::new();
 
     // M-5 fix: the tool-schema payload (name + description + JSON schema for
@@ -437,6 +441,11 @@ pub async fn run_agent_with_system(
 
         let mut combined = String::new();
         for (idx, call) in turn.tool_calls.iter().enumerate() {
+            // Counted before the match, so an unknown-tool refusal costs a call
+            // too: a loop that keeps inventing tool names is exactly the runaway
+            // this ceiling is for, and refusals are not free (each one is a
+            // fenced result the next turn pays for in tokens).
+            tool_calls += 1;
             let body = match tool_kind(tools, &call.name) {
                 Some(ToolKind::Read) => {
                     // Same race as the provider turn above: a text-drafting tool
@@ -518,6 +527,29 @@ pub async fn run_agent_with_system(
                 final_text,
                 steps,
                 stopped_reason: StoppedReason::MaxTokens,
+            });
+        }
+        // The tool-call ceiling, enforced (Phase 7) — see [`Budget::max_tool_calls`]
+        // for what it costs and why it is worth paying.
+        //
+        // It was a documented-but-dead constant, which the second flow turned
+        // into a real hole: `run_quality_pipeline` is a 75-minute call, the
+        // prompt's "spend AT MOST ONE of them" is PROSE the model may ignore or
+        // be talked out of by an injected posting (OWASP LLM01), and nothing
+        // else in the loop counts calls — so a steered improve run could spend
+        // its whole tool allowance on repeats of the most expensive tool the app
+        // has. Checked after the turn's calls have all executed — never
+        // mid-turn, which would leave a turn half-applied with its tool results
+        // already in the transcript. Ordered last of the three ceilings, so a
+        // turn that trips two reports the step/token reason; in practice this
+        // one fires on an EARLIER turn than `max_steps` can, because every
+        // shipped budget keeps `max_tool_calls < max_steps` and a tool-calling
+        // loop spends at least one call per turn.
+        if tool_calls >= budget.max_tool_calls {
+            return Ok(AgentOutcome {
+                final_text,
+                steps,
+                stopped_reason: StoppedReason::MaxToolCalls,
             });
         }
     }
