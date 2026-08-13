@@ -754,6 +754,9 @@ html[data-text-scale='large'] {
    far more contrast than near-black@45% over white). Rather than touch ~360
    sites, lift the faint steps in light only so secondary lands on the macOS
    hierarchy (~#6E6E73) and muted (~#8E8E93) — nothing disappears. */
+[data-color-scheme='light'] .text-foreground\/15 {
+  color: color-mix(in oklab, var(--color-foreground) 41%, transparent);
+}
 [data-color-scheme='light'] .text-foreground\/20 {
   color: color-mix(in oklab, var(--color-foreground) 44%, transparent);
 }
@@ -774,6 +777,36 @@ html[data-text-scale='large'] {
 }
 [data-color-scheme='light'] .text-foreground\/50 {
   color: color-mix(in oklab, var(--color-foreground) 65%, transparent);
+}
+/* /55 is the one step ABOVE this block that still measures under raw (fails
+   ~3.8:1 unmapped — see docs/NEXT_ISSUES.md "the text-foreground/NN opacity
+   ramp"); /60 and up already clear 4.5:1 unmapped (near-black at ≥60% alpha
+   over white), so they are deliberately left unmapped — extending the curve
+   into a range that's already correct would be a no-op tinting shift across
+   hundreds of call sites for zero contrast gain. */
+[data-color-scheme='light'] .text-foreground\/55 {
+  color: color-mix(in oklab, var(--color-foreground) 69%, transparent);
+}
+
+/* border-foreground/NN is the SAME token, same asymmetry, and — unlike
+   text-foreground — had ZERO light-scheme coverage: every one of these steps
+   rendered at its raw (near-invisible, ~1.2–1.7:1) alpha on light. Only the
+   steps actually in use get an entry; /70 already clears 3:1 (and 4.5:1)
+   unmapped, same reasoning as text-foreground/60+ above. */
+[data-color-scheme='light'] .border-foreground\/10 {
+  border-color: color-mix(in oklab, var(--color-foreground) 37%, transparent);
+}
+[data-color-scheme='light'] .border-foreground\/12 {
+  border-color: color-mix(in oklab, var(--color-foreground) 38%, transparent);
+}
+[data-color-scheme='light'] .border-foreground\/15 {
+  border-color: color-mix(in oklab, var(--color-foreground) 41%, transparent);
+}
+[data-color-scheme='light'] .border-foreground\/20 {
+  border-color: color-mix(in oklab, var(--color-foreground) 44%, transparent);
+}
+[data-color-scheme='light'] .border-foreground\/25 {
+  border-color: color-mix(in oklab, var(--color-foreground) 48%, transparent);
 }
 
 /* ── Light-scheme fixups for utilities that hardcode white ───────────────── */
