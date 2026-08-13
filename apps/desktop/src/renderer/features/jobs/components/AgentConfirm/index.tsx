@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { AgentConfirmPayload } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, GlassCard, TextArea } from '@ajh/ui';
+import { Button, cn, GlassCard, TextArea } from '@ajh/ui';
 
 import { useAgentConfirm } from '@/services';
 
@@ -53,12 +53,20 @@ function knownTextOf(known: { contentKey: string } | undefined, args: unknown): 
   return typeof value === 'string' ? value : null;
 }
 
-/** Rebuild `args` with the user's edited text — content only, every other field
- *  passes through untouched (the shell re-validates against the tool's schema
- *  and refuses any undeclared key). */
-function withEditedText(known: { contentKey: string }, args: unknown, text: string): unknown {
-  const base = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
-  return { ...base, [known.contentKey]: text };
+/**
+ * The edited args: the tool's ONE content property, and nothing else.
+ *
+ * Deliberately NOT a spread of the model's original `args`. The shell
+ * re-validates an edit against the tool's schema and refuses any undeclared
+ * key (`validate_edited_args`) — but a refusal there resolves the gate as a
+ * DENY while `agent.confirm` still answers `{ ok: true }`, so this card would
+ * report success and unmount with nothing saved. A model that emitted one stray
+ * key would therefore silently discard the user's edit. Every known tool's
+ * schema is content-only (the job is fixed by the run), so there is nothing
+ * legitimate to pass through.
+ */
+function editedArgsFor(known: { contentKey: string }, text: string): unknown {
+  return { [known.contentKey]: text };
 }
 
 export interface AgentConfirmProps {
@@ -165,7 +173,11 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
       tone="surface"
       role="region"
       aria-labelledby="agent-confirm-heading"
-      className="space-y-3 !p-4 border-l-2 border-[var(--color-brand)]"
+      // Amber, not brand: this card is nested inside a host panel that already
+      // wears the brand left-border, and "the run is blocked on you" has to read
+      // as a different thing from "the run is going". Colour is not the only
+      // signal — the heading says so in words.
+      className="space-y-3 !p-4 border-l-2 border-amber-400 bg-amber-500/[0.04]"
     >
       <h3
         ref={headingRef}
@@ -193,7 +205,11 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
               readOnly={!editing}
               rows={10}
               aria-label={t(known.contentLabelKey)}
-              className={!editing ? 'opacity-70' : undefined}
+              // A full résumé is 150–200 lines: tall enough to edit in, capped
+              // against the viewport (the 900×600 floor) so the card's own
+              // actions stay reachable, and user-resizable from there. `rows`
+              // stays as the no-CSS fallback.
+              className={cn('min-h-[14rem] max-h-[45vh] resize-y', !editing && 'opacity-70')}
             />
           ) : (
             <TextArea
@@ -224,7 +240,7 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
               onClick={() =>
                 void resolve(
                   editing && known ? 'approveEdited' : 'approve',
-                  editing && known ? withEditedText(known, confirm.args, text) : undefined
+                  editing && known ? editedArgsFor(known, text) : undefined
                 )
               }
               className="gap-1.5"

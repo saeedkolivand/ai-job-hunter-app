@@ -2225,7 +2225,7 @@
       "confirm": {
         "heading": "Action needs your approval",
         "announcement": "The agent is waiting for your approval before it continues.",
-        "hint": "Approving performs this action right away. Deny skips it — the agent continues without it.",
+        "hint": "Approving performs this action right away. Deny skips it — the agent continues without it. The request expires about five minutes after the agent asked; after that it counts as denied and the run moves on.",
         "approve": "Approve",
         "approveEdited": "Save changes & approve",
         "approveHint": "Performs the action immediately.",

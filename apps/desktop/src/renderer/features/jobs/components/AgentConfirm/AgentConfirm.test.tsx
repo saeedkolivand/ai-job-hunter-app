@@ -265,6 +265,40 @@ describe('AgentConfirm — save_resume (known tool)', () => {
     expect(onResolved).toHaveBeenCalledWith('APPROVE');
   });
 
+  // The shell re-validates an edit against the tool's schema and refuses any
+  // undeclared key — but that refusal resolves the gate as a DENY while
+  // `agent.confirm` still answers `{ ok: true }`, so the card would report
+  // success and unmount with NOTHING saved. Spread the model's args into the
+  // edit and one stray key silently discards the user's rewrite.
+  it('sends the content property alone, never the model’s other args', async () => {
+    render(
+      <AgentConfirm
+        jobId="job-1"
+        confirm={{
+          callId: '6-0-save_resume',
+          tool: 'save_resume',
+          args: { resumeText: 'Original.', jobId: 'not-yours', note: 'chatter' },
+        }}
+        onResolved={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByText('jobs.prep.confirm.edit'));
+    fireEvent.change(screen.getByLabelText('jobs.prep.confirm.tools.saveResume.contentLabel'), {
+      target: { value: 'Edited.' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.approveEdited'));
+    });
+
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      callId: '6-0-save_resume',
+      decision: 'approveEdited',
+      editedArgs: { resumeText: 'Edited.' },
+    });
+  });
+
   it('Revert restores the résumé the agent proposed', () => {
     render(<AgentConfirm jobId="job-1" confirm={SAVE_RESUME} onResolved={() => {}} />);
 

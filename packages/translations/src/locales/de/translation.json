@@ -2229,7 +2229,7 @@
       "confirm": {
         "heading": "Aktion benötigt deine Zustimmung",
         "announcement": "Der Agent wartet auf deine Zustimmung, bevor er fortfährt.",
-        "hint": "Genehmigen führt diese Aktion sofort aus. Ablehnen überspringt sie — der Agent macht ohne sie weiter.",
+        "hint": "Genehmigen führt diese Aktion sofort aus. Ablehnen überspringt sie — der Agent macht ohne sie weiter. Die Anfrage verfällt etwa fünf Minuten, nachdem der Agent gefragt hat; danach gilt sie als abgelehnt und der Lauf geht weiter.",
         "approve": "Genehmigen",
         "approveEdited": "Änderungen speichern & genehmigen",
         "approveHint": "Führt die Aktion sofort aus.",
