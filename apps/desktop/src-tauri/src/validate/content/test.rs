@@ -2795,7 +2795,7 @@ fn italian_rejected_candidates_never_reach_the_validator() {
     let letter = "Gentile Selezionatore,\n\n\
                   Prima di entrare nel settore tech ho lavorato come allenatore: ho costruito \
                   lo spirito di squadra di ventidue atleti in tre stagioni, e nel tempo libero \
-                  ho scritto la tesi di laurea sull'avanguardia futurista italiana. Oggi \
+                  ho dedicato la tesi di laurea all'avanguardia futurista italiana. Oggi \
                   gestisco il sistema di liquidazione che elabora le transazioni ogni \
                   notte.\n\n\
                   Cordiali saluti,\nMaria Rossi\n";
