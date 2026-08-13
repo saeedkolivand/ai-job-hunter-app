@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { AgentConfirmPayload } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, GlassCard, TextArea } from '@ajh/ui';
+import { Button, cn, GlassCard, TextArea } from '@ajh/ui';
 
 import { useAgentConfirm } from '@/services';
 
@@ -11,33 +11,62 @@ import { useAgentConfirm } from '@/services';
  * Anything else falls back to a generic summary and read-only JSON — the
  * confirm UI stays generic over `{ tool, args }` (new gated Write tools need
  * no renderer change to at least render safely).
+ *
+ * Every gated Write tool in the app carries exactly ONE content property (the
+ * job it belongs to is fixed by the run — see `save_resume_schema`/
+ * `save_cover_letter_schema`), so a tool is described by the NAME of that
+ * property rather than by a bespoke pair of extract/rebuild functions per tool.
+ * `save_resume` is the improve-resume flow's only write, and it is reached from
+ * the prep flow too.
  */
-const KNOWN_TOOL_KEYS: Record<string, { summaryKey: string; contentLabelKey: string }> = {
+const KNOWN_TOOL_KEYS: Record<
+  string,
+  { summaryKey: string; contentLabelKey: string; contentKey: string }
+> = {
   save_cover_letter: {
     summaryKey: 'jobs.prep.confirm.tools.saveCoverLetter.summary',
     contentLabelKey: 'jobs.prep.confirm.tools.saveCoverLetter.contentLabel',
+    contentKey: 'coverLetterText',
+  },
+  save_resume: {
+    summaryKey: 'jobs.prep.confirm.tools.saveResume.summary',
+    contentLabelKey: 'jobs.prep.confirm.tools.saveResume.contentLabel',
+    contentKey: 'resumeText',
   },
 };
 
-/** Extract the editable cover-letter text from `save_cover_letter`'s args, or
- *  `null` when the shape isn't what's expected (falls back to read-only JSON). */
-function coverLetterTextOf(args: unknown): string | null {
-  if (
-    args &&
-    typeof args === 'object' &&
-    'coverLetterText' in args &&
-    typeof args.coverLetterText === 'string'
-  ) {
-    return (args as { coverLetterText: string }).coverLetterText;
-  }
-  return null;
+/**
+ * Extract a known tool's editable text from its args, or `null` when the shape
+ * isn't what's expected — which falls the card back to read-only JSON. That
+ * fallback matters more than it looks: an editable field prefilled with `''`
+ * because the property was missing invites the user to approve an EMPTY
+ * document over the one they have.
+ *
+ * The text arrives already clamped for display by the gate
+ * (`display_cap_for`: 40 000 chars for `save_resume`, 20 000 for the letter) —
+ * to each tool's OWN content cap, so what is shown and edited here is exactly
+ * what the tool would persist. Nothing is re-clamped renderer-side.
+ */
+function knownTextOf(known: { contentKey: string } | undefined, args: unknown): string | null {
+  if (!known || !args || typeof args !== 'object') return null;
+  const value = (args as Record<string, unknown>)[known.contentKey];
+  return typeof value === 'string' ? value : null;
 }
 
-/** Rebuild `args` with the user's edited cover-letter text — content only,
- *  every other field passes through untouched (the shell re-validates). */
-function withEditedCoverLetterText(args: unknown, text: string): unknown {
-  const base = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
-  return { ...base, coverLetterText: text };
+/**
+ * The edited args: the tool's ONE content property, and nothing else.
+ *
+ * Deliberately NOT a spread of the model's original `args`. The shell
+ * re-validates an edit against the tool's schema and refuses any undeclared
+ * key (`validate_edited_args`) — but a refusal there resolves the gate as a
+ * DENY while `agent.confirm` still answers `{ ok: true }`, so this card would
+ * report success and unmount with nothing saved. A model that emitted one stray
+ * key would therefore silently discard the user's edit. Every known tool's
+ * schema is content-only (the job is fixed by the run), so there is nothing
+ * legitimate to pass through.
+ */
+function editedArgsFor(known: { contentKey: string }, text: string): unknown {
+  return { [known.contentKey]: text };
 }
 
 export interface AgentConfirmProps {
@@ -56,8 +85,9 @@ export interface AgentConfirmProps {
  * The Phase-3 human-in-the-loop confirm prompt: renders a pending
  * `confirm_request`'s tool + args as DATA (never markup — `args` is untrusted
  * model output) and lets the user Approve, Deny, or Edit-then-approve the
- * content before it executes. Rendered inline by `PrepApplicationPanel` while
- * a confirm is pending; the run is genuinely blocked until this resolves.
+ * content before it executes. Rendered inline by whichever panel is hosting the
+ * run while a confirm is pending; the run is genuinely blocked until this
+ * resolves.
  */
 export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) {
   const { t } = useTranslation();
@@ -67,22 +97,25 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
   const originalTextRef = useRef('');
 
   const known = KNOWN_TOOL_KEYS[confirm.tool];
+  /** A known tool whose args really carried its content — the only case that
+   *  earns the editable field (see {@link knownTextOf}). */
+  const editable = knownTextOf(known, confirm.args) !== null;
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(coverLetterTextOf(confirm.args) ?? '');
+  const [text, setText] = useState(knownTextOf(known, confirm.args) ?? '');
   const [unavailable, setUnavailable] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // A fresh confirm request (new callId) is a new decision point: reset any
   // stale edit/unavailable/error state from a previous call and move focus here.
   useEffect(() => {
-    const original = coverLetterTextOf(confirm.args) ?? '';
+    const original = knownTextOf(KNOWN_TOOL_KEYS[confirm.tool], confirm.args) ?? '';
     originalTextRef.current = original;
     setEditing(false);
     setText(original);
     setUnavailable(false);
     setErrorMessage(null);
     headingRef.current?.focus();
-  }, [confirm.callId, confirm.args]);
+  }, [confirm.callId, confirm.args, confirm.tool]);
 
   // Edit is a real decision point too — move focus into the now-editable field
   // rather than leaving it on the (now relabeled) Edit-adjacent button.
@@ -140,7 +173,11 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
       tone="surface"
       role="region"
       aria-labelledby="agent-confirm-heading"
-      className="space-y-3 !p-4 border-l-2 border-[var(--color-brand)]"
+      // Amber, not brand: this card is nested inside a host panel that already
+      // wears the brand left-border, and "the run is blocked on you" has to read
+      // as a different thing from "the run is going". Colour is not the only
+      // signal — the heading says so in words.
+      className="space-y-3 !p-4 border-l-2 border-amber-400 bg-amber-500/[0.04]"
     >
       <h3
         ref={headingRef}
@@ -160,7 +197,7 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
         <>
           <p className="text-caption text-foreground/70">{t('jobs.prep.confirm.hint')}</p>
 
-          {known ? (
+          {known && editable ? (
             <TextArea
               ref={textAreaRef}
               value={text}
@@ -168,7 +205,11 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
               readOnly={!editing}
               rows={10}
               aria-label={t(known.contentLabelKey)}
-              className={!editing ? 'opacity-70' : undefined}
+              // A full résumé is 150–200 lines: tall enough to edit in, capped
+              // against the viewport (the 900×600 floor) so the card's own
+              // actions stay reachable, and user-resizable from there. `rows`
+              // stays as the no-CSS fallback.
+              className={cn('min-h-[14rem] max-h-[45vh] resize-y', !editing && 'opacity-70')}
             />
           ) : (
             <TextArea
@@ -198,8 +239,8 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
               title={t('jobs.prep.confirm.approveHint')}
               onClick={() =>
                 void resolve(
-                  editing ? 'approveEdited' : 'approve',
-                  editing ? withEditedCoverLetterText(confirm.args, text) : undefined
+                  editing && known ? 'approveEdited' : 'approve',
+                  editing && known ? editedArgsFor(known, text) : undefined
                 )
               }
               className="gap-1.5"
@@ -215,7 +256,7 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
             >
               {t('jobs.prep.confirm.deny')}
             </Button>
-            {known && !editing && (
+            {editable && !editing && (
               <Button
                 variant="ghost"
                 disabled={busy}
@@ -225,7 +266,7 @@ export function AgentConfirm({ jobId, confirm, onResolved }: AgentConfirmProps) 
                 {t('jobs.prep.confirm.edit')}
               </Button>
             )}
-            {known && editing && (
+            {editable && editing && (
               <Button
                 variant="ghost"
                 disabled={busy}

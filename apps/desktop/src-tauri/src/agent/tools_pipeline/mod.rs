@@ -82,10 +82,16 @@ use super::tools_quality::{
 
 // ── Bounds ─────────────────────────────────────────────────────────────────
 
-/// Slack between [`AGENT_STAGE_DEADLINE`] + one full provider call and the
-/// agent's own per-step wall clock, so the arithmetic below is strictly under
-/// the bound it is derived from rather than exactly equal to it (an equality
-/// is a race between two clocks started at different instants).
+/// Slack between an inner deadline + one full provider call and the agent's own
+/// per-step wall clock, so each relation below is strictly under the bound it
+/// is derived from rather than exactly equal to it (an equality is a race
+/// between two clocks started at different instants).
+///
+/// Used by BOTH stage relations, in opposite directions, which is why it is a
+/// named constant rather than a literal at one site: [`AGENT_STAGE_DEADLINE`]
+/// subtracts it to derive an inner deadline from the prep flow's step clock,
+/// and the `AGENT_IMPROVE` assert adds it to check a step clock covers the
+/// quality run's fixed deadline. Same slack, same reason, one number.
 const AGENT_STAGE_MARGIN_SECS: u64 = 10;
 
 /// The wall clock ONE stage gets when the agent runs it.
@@ -119,6 +125,33 @@ const _: () = assert!(
     AGENT_STAGE_DEADLINE.as_secs() + timeouts::OLLAMA_COMPLETION.as_secs()
         < Budget::AGENT_PREP.step_timeout.as_secs(),
     "a stage the agent runs plus one full provider call must fit inside one agent step"
+);
+
+// The same relation for the OTHER direction of the same race, and the reason
+// `Budget::AGENT_IMPROVE.step_timeout` is 90 minutes: `run_quality_pipeline` is
+// reachable only from the improve flow, and ONE call of it is a whole quality
+// run bounded by [`quality_tool_deadline`] — `run_deadline(RESUME_QUALITY,
+// quality_run_deadline(None))`, i.e. `RESUME_QUALITY.run_timeout` (4 500 s) at
+// the effort-blind bottom tier, which
+// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier` and
+// `the_tool_run_deadline_is_the_commands_own_floor` pin — the second one against
+// the FUNCTION, which is what makes it legitimate for this assert to read the
+// constant instead (a `const` cannot call `quality_tool_deadline`).
+//
+// Unlike `AGENT_STAGE_DEADLINE` above, the deadline is FIXED (it is the same
+// floor the IPC command uses, deliberately) and the step timeout is what has to
+// clear it: `guard_deadline` refuses the NEXT call, so a call admitted one
+// second inside the deadline still runs its own full `OLLAMA_COMPLETION`. A
+// `step_timeout` shrunk under that sum makes the controller's race, not the
+// pipeline's own deadline, the thing that ends the run — at
+// `StoppedReason::Timeout`, mid-tool, with nothing saved — so it fails
+// `cargo build` rather than a test.
+const _: () = assert!(
+    Budget::RESUME_QUALITY.run_timeout.as_secs()
+        + timeouts::OLLAMA_COMPLETION.as_secs()
+        + AGENT_STAGE_MARGIN_SECS
+        < Budget::AGENT_IMPROVE.step_timeout.as_secs(),
+    "one whole quality run plus the last call it may admit must fit inside one improve-flow step"
 );
 
 /// Max entries kept per list in [`compact_job_analysis`]. A posting is free to
@@ -519,6 +552,61 @@ fn analyze_job_handler(
     Box::pin(async move { analyze_job_core(&app, &ctx).await })
 }
 
+/// What resolving a run's posting to its stored generation found.
+///
+/// Three outcomes, not an `Option`, because the two empty cases are different
+/// facts with different remedies and every caller so far has wanted to tell
+/// them apart: a posting with no url can never be linked to a generation at
+/// all, while a posting that simply has not been generated for yet names the
+/// one action that would change that.
+pub(crate) enum GenerationLookup {
+    /// The cached posting carries no url, so nothing in `ai_generations` — an
+    /// aggregate keyed by posting url — can be linked to it.
+    UnlinkedJob,
+    /// The posting has a url, but no generation is stored under it.
+    NotGenerated,
+    /// The stored generation aggregate for this posting. Boxed: the record is
+    /// large and the other two variants are unit, so an unboxed enum would be
+    /// record-sized everywhere it is returned.
+    Found(Box<AiGenerationRecord>),
+}
+
+/// Resolve THIS run's job id to the generation stored for its posting.
+///
+/// The one place the rule lives: posting id → cached posting url (trimmed,
+/// non-empty) → [`AiGenerationStore::find_for_job`], which tries the
+/// normalized url before the raw one. It was written twice — here and in
+/// `commands::agent`'s seed loader — and two copies of a resolution rule is
+/// how the report tool and the flow that acts on it would come to disagree
+/// about WHICH document is under review.
+///
+/// **Synchronous on purpose.** Both callers already own a `spawn_blocking`
+/// closure (the `find_for_job` hit is SQLite), and returning a future here
+/// would either add a second hop or drag each caller's own blocking work onto
+/// the async worker. `job_meta_for` is an in-memory `Mutex<PostingsCache>`
+/// lock, cheap on either pool (see this module's sibling note in
+/// `tools_quality`).
+///
+/// POLICY BELONGS TO THE CALLER. This says what is stored, never whether it is
+/// usable: `get_quality_report` reports on a generation of any size, while the
+/// review flow refuses one it cannot seed whole
+/// (`commands::agent::readable_generation_text`). A length rule pushed down
+/// here would break the report tool for exactly the documents it is most
+/// useful on.
+pub(crate) fn generation_for_job(app: &AppHandle, job_id: &str) -> AppResult<GenerationLookup> {
+    let meta = job_meta_for(app, job_id).ok_or_else(|| job_not_found(job_id))?;
+    let job_url = meta.url.trim().to_string();
+    if job_url.is_empty() {
+        return Ok(GenerationLookup::UnlinkedJob);
+    }
+    Ok(app
+        .try_state::<AiGenerationStore>()
+        .and_then(|store| store.find_for_job(&job_url))
+        .map_or(GenerationLookup::NotGenerated, |record| {
+            GenerationLookup::Found(Box::new(record))
+        }))
+}
+
 fn get_quality_report_handler(
     app: &AppHandle,
     ctx: &ToolContext,
@@ -527,24 +615,21 @@ fn get_quality_report_handler(
     let app = app.clone();
     let ctx = ctx.clone();
     Box::pin(async move {
-        // In-memory cache lock, not SQLite — stays inline, exactly like
-        // `tools_quality`'s handlers (see that module's round-10 perf note).
-        let meta = job_meta_for(&app, &ctx.job_id).ok_or_else(|| job_not_found(&ctx.job_id))?;
-        let job_url = meta.url.trim().to_string();
-        if job_url.is_empty() {
-            // The aggregate is keyed by posting url; a posting the cache has no
-            // url for has no report to find, and saying so beats "no report".
-            return Ok(neutralized_summary(
-                &json!({ "available": false, "reason": "unlinked_job" }),
-            ));
-        }
         spawn_blocking_core(move || {
-            let record = app
-                .try_state::<AiGenerationStore>()
-                .and_then(|store| store.find_for_job(&job_url));
-            Ok(neutralized_summary(&compact_quality_report(
-                record.as_ref(),
-            )))
+            match generation_for_job(&app, &ctx.job_id)? {
+                // The aggregate is keyed by posting url; a posting the cache has
+                // no url for has no report to find, and saying so beats "no
+                // report".
+                GenerationLookup::UnlinkedJob => Ok(neutralized_summary(
+                    &json!({ "available": false, "reason": "unlinked_job" }),
+                )),
+                GenerationLookup::NotGenerated => {
+                    Ok(neutralized_summary(&compact_quality_report(None)))
+                }
+                GenerationLookup::Found(record) => Ok(neutralized_summary(
+                    &compact_quality_report(Some(record.as_ref())),
+                )),
+            }
         })
         .await
     })
@@ -728,17 +813,18 @@ pub(crate) fn get_quality_report_tool() -> AgentTool {
 
 /// The whole quality pipeline, returning the draft + report as DATA.
 ///
-/// **Expensive, and deliberately in NO flow whitelist today.** Fifteen provider
-/// calls against a 75-minute floor cannot fit
-/// [`Budget::AGENT_PREP`]'s 360 s `step_timeout`, which the controller races
-/// every tool call against — a prep run that called this would die at
-/// [`StoppedReason::Timeout`] with its drafts unsaved. Phase 7's
-/// `improve_resume` flow is the intended caller, and its `AgentFlow` carries
-/// its own `Budget`; until that exists the tool lives in
-/// [`super::tools::improve_resume_tools`], which no flow drives yet.
-/// `agent::tools::test`'s
+/// **Expensive, and reachable from exactly ONE flow.** Fifteen provider calls
+/// against a 75-minute floor cannot fit [`Budget::AGENT_PREP`]'s 360 s
+/// `step_timeout`, which the controller races every tool call against — a prep
+/// run that called this would die at [`StoppedReason::Timeout`] with its drafts
+/// unsaved. Its caller is the `improve_resume` flow
+/// ([`crate::agent::flows::FLOWS`]), whose `AgentFlow` carries a `Budget`
+/// (`AGENT_IMPROVE`) with a 90-minute step clock sized on the arithmetic
+/// asserted at the top of this module; the whitelist it reaches through is
+/// [`super::tools::improve_resume_tools`]. `agent::tools::test`'s
 /// `the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`
-/// pins the exclusion off that arithmetic rather than off a name list.
+/// and its `…_is_present_in_the_flow_whose_step_can_cover_it` twin pin both
+/// directions off that arithmetic rather than off a name list.
 pub(crate) fn run_quality_pipeline_tool() -> AgentTool {
     AgentTool {
         name: "run_quality_pipeline",

@@ -34,31 +34,39 @@ pub struct Budget {
     /// request several tool calls, and a loop that keeps calling tools without
     /// converging burns real money per call even while the step count crawls.
     ///
-    /// **NOT ENFORCED ANYWHERE TODAY — the same honest note
-    /// [`Self::step_timeout`] carries, and a bigger gap.**
-    /// [`crate::agent::controller`] counts steps and tokens and stops on both;
-    /// it never counts calls, so [`StoppedReason::MaxToolCalls`] has no
-    /// producer in the crate and this value only feeds the compile-time
-    /// relations below. Verified by grep, not assumed; pinned from the
-    /// behavioural side by
-    /// `agent::controller::test::always_calling_a_tool_terminates_at_max_steps`,
-    /// whose comment names this gap.
+    /// **ENFORCED since Phase 7** by [`crate::agent::controller`], which counts
+    /// every executed call (including a refused unknown-tool name) and ends the
+    /// run at [`StoppedReason::MaxToolCalls`] once the count is spent — the
+    /// variant's first producer in the crate. Pinned by
+    /// `agent::controller::test::the_tool_call_ceiling_stops_a_runaway_tool_loop`.
     ///
-    /// It is left unenforced on purpose rather than closed with a counter,
-    /// because a counter alone would make the WRONG stop the binding one:
-    /// [`Self::AGENT_PREP`] rations 12 calls under 14 steps precisely so a run
-    /// that runs out of calls "still has turns left to write its summary", and
-    /// a hard stop at the 12th call spends none of them — it also makes
-    /// [`StoppedReason::MaxSteps`] unreachable for every flow the relation
-    /// below holds for, trading one dead reason for another. The honest fix is
-    /// to stop OFFERING tools once the count is spent (an empty
+    /// **It was a dead constant for two flows' worth of history, and the second
+    /// flow is what made that a hole.** `run_quality_pipeline` is a 75-minute
+    /// call reachable from `improve_resume`, the prompt's "spend AT MOST ONE of
+    /// them" is prose a prompt-injected posting can argue the model out of
+    /// (OWASP LLM01), and nothing else in the loop counts calls — so the
+    /// reachable spend was the whole allowance times the most expensive tool
+    /// the app has.
+    ///
+    /// **Cost of enforcing it this way, stated rather than discovered.** A hard
+    /// stop spends none of the summary turns the ration reserves
+    /// ([`Self::AGENT_PREP`] rations 12 calls under 14 steps precisely so a run
+    /// that runs out of calls "still has turns left to write its summary"), and
+    /// it makes [`StoppedReason::MaxSteps`] unreachable for a tool-calling run
+    /// under any budget where `max_tool_calls < max_steps` — which is every
+    /// shipped one. MaxSteps still binds a loop that answers without calling
+    /// tools, and
+    /// `the_step_ceiling_is_still_reachable_when_tool_calls_are_not_the_binding_ceiling`
+    /// pins that it is not dead code. The better fix remains to stop OFFERING
+    /// tools once the count is spent (an empty
     /// [`crate::commands::ai_provider::ToolSpec`] list for the remaining
-    /// turns), which the loop cannot do today: the spec list is built once in
-    /// `LiveAgentEnv` and `AgentEnv::turn` takes only messages. That is a
-    /// signature change across the trait and both fakes, i.e. its own round.
+    /// turns), which the loop still cannot do: the spec list is built once in
+    /// `LiveAgentEnv` and `AgentEnv::turn` takes only messages, so it is a
+    /// signature change across the trait and both fakes. A stop that is crude
+    /// beats a ceiling that is fiction.
     ///
-    /// What DOES bound spend meanwhile: `max_steps`, `max_tokens` (which
-    /// counts the whole tool-schema payload every turn), the per-call
+    /// What bounds spend alongside it: `max_steps`, `max_tokens` (which counts
+    /// the whole tool-schema payload every turn), the per-call
     /// [`Self::step_timeout`] race, and
     /// [`crate::limits::Limiter::charge_provider_daily`] on every provider
     /// round-trip a tool makes.
@@ -134,10 +142,11 @@ impl Budget {
     ///
     /// **`max_tool_calls` = 12.** The same arithmetic counted in CALLS rather
     /// than turns: 8 fixed + 1 rationed optional + 1 re-check = 10, plus 2 of
-    /// slack. Deliberately below `max_steps` so a run that spends its calls
-    /// would still have turns left to write a summary — **an intent the loop
-    /// does not implement; read the field doc on
-    /// [`Budget::max_tool_calls`] before relying on this number.**
+    /// slack. Below `max_steps` so the ceiling a runaway tool loop hits is the
+    /// one that NAMES it ([`StoppedReason::MaxToolCalls`]) rather than a generic
+    /// step exhaustion — enforced since Phase 7, and the summary turns the gap
+    /// once reserved are not reachable through it; see the field doc on
+    /// [`Budget::max_tool_calls`] for what that stop does and does not buy.
     ///
     /// **`max_tokens` = 120_000.** The drafted résumé is echoed through the
     /// accumulator TWICE — once as the `draft_resume` tool result, once as the
@@ -178,6 +187,125 @@ impl Budget {
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
         step_timeout: Duration::from_secs(360),
         run_timeout: Duration::from_secs(45 * 60),
+        confirm_timeout: Duration::from_secs(300),
+    };
+
+    /// The "improve this résumé" agentic flow
+    /// ([`crate::agent::flows::IMPROVE_RESUME_SYSTEM`]) — a REVIEW pass over a
+    /// generation that already exists, not a second way to write one.
+    ///
+    /// **`step_timeout` = 90 min, and it is DERIVED, not chosen.** This flow is
+    /// the only home of `run_quality_pipeline`
+    /// ([`crate::agent::tools_pipeline`]), and
+    /// [`crate::agent::controller`] races EVERY tool call against this field:
+    /// one call of that tool is a whole quality run, bounded by
+    /// `tools_pipeline::quality_tool_deadline()` =
+    /// `pipeline::resume::run_deadline(RESUME_QUALITY, timeouts::quality_run_deadline(None))`
+    /// = **4 500 s**, and the pipeline's `guard_deadline` refuses only the NEXT
+    /// call — a call admitted one second inside the deadline still runs its own
+    /// full [`Self::RESUME_QUALITY`]-flow bound (`timeouts::OLLAMA_COMPLETION`,
+    /// 300 s). So the floor is 4 500 + 300 + a 10 s two-clock margin = 4 810 s,
+    /// and 5 400 leaves ~590 s for the non-provider work inside the same call
+    /// (loading the inputs, assembling, compaction, the JSON summary). The
+    /// arithmetic is asserted at COMPILE time next to the constants it reads,
+    /// in `agent::tools_pipeline` — the same place, and the same discipline, as
+    /// `AGENT_STAGE_DEADLINE`'s own relation.
+    ///
+    /// **What the long clock does and does not weaken.** It is ONE clock for
+    /// every turn and every tool call, so the AGENT-side backstop on this flow
+    /// is 90 minutes rather than 6. That matters less than it reads, because
+    /// the backstop is not what bounds an ordinary turn: every provider call
+    /// goes through `commands::ai_provider::retry::send_with_retry_capped`,
+    /// which applies its caller's timeout to the whole retry SEQUENCE, at all
+    /// four adapters (Ollama 300 s; OpenAI/Anthropic/Gemini 120 s). A hung
+    /// endpoint on a normal turn still fails in 2–5 minutes with its own
+    /// specific network error. This clock is the sole bound only for a tool
+    /// that owns an internal deadline instead of a single HTTP call — today
+    /// exactly one, `run_quality_pipeline`, bounded at 4 500 s by
+    /// `quality_tool_deadline`, which is the reason the number is what it is.
+    ///
+    /// **Trigger for revisiting it** (a per-TOOL timeout in the controller,
+    /// which is a controller change, not a budget one): **the first tool that
+    /// has NEITHER its own internal deadline NOR a per-call HTTP bound joining
+    /// a long-clock flow.** Such a tool would be raced only by this 90-minute
+    /// value, and 90 minutes is not a bound on anything that can hang. Until
+    /// then a second timing mechanism would sit above bounds that already fire
+    /// with actionable errors.
+    ///
+    /// **Reachable worst case, honestly.** `max_tool_calls` (8) × a 90-minute
+    /// call is ~12 h if a run somehow spent every call on the pipeline tool —
+    /// that is the ceiling the ENFORCED bounds admit, and `run_timeout` below
+    /// does not cut it down (nothing in the agent loop reads it).
+    ///
+    /// The product is only a bound because the count is checked BEFORE EACH
+    /// CALL, not once per turn: providers may return several tool calls in one
+    /// turn, and each executed call races `step_timeout` on its own, so a
+    /// turn-boundary check would have admitted `max_tool_calls - 1 + K` calls —
+    /// an unbounded tail at 90 minutes apiece (HIGH, Phase-7 delta review; see
+    /// `agent::controller`'s per-call refusal and
+    /// `a_parallel_tool_turn_cannot_spend_past_the_tool_call_ceiling`).
+    ///
+    /// What keeps a real run far under the ceiling: the prompt rations that
+    /// tool to at most one use, its own 4 500 s deadline, the per-provider
+    /// daily ceiling, and the user's Stop.
+    ///
+    /// **`max_steps` = 10.** The prompt's fixed sequence is 7 turns (a plan
+    /// turn, 5 tool turns — `get_quality_report`, `validate_resume`,
+    /// `search_candidate_evidence`, the post-fix `validate_resume` re-check,
+    /// `save_resume` — and a closing summary), plus AT MOST 1 rationed optional
+    /// call (`get_trim_suggestions` or `run_quality_pipeline`): 8 worst case,
+    /// with 2 turns of slack for a model that splits a step or retries a
+    /// declined confirm. Fewer than [`Self::AGENT_PREP`]'s 14 because this flow
+    /// drafts nothing: it reads a document that exists, reasons, and asks once
+    /// to save. The prompt-side half is asserted by
+    /// `agent::flows::tests::improve_resume_sequence_fits_the_step_budget`, the
+    /// budget-side half by the compile-time relations below.
+    ///
+    /// **`max_tool_calls` = 8.** The same arithmetic in CALLS: 5 fixed + 1
+    /// rationed optional = 6, plus 2 of slack, and below `max_steps` for the
+    /// reason `AGENT_PREP` gives. Enforced (Phase 7), and on this flow that is
+    /// load-bearing rather than tidy: it is the only ENFORCED bound on how many
+    /// times a steered run may re-enter the 75-minute pipeline tool.
+    ///
+    /// **`max_tokens` = 80_000.** The résumé under review crosses the
+    /// transcript up to four times: as the fenced generation in the seed
+    /// message, as `validate_resume`'s `draft` twice (the check and the
+    /// post-fix re-check), and as `save_resume`'s args. At
+    /// [`crate::agent::tools::SAVED_RESUME_CAP`] (40k chars ≈ 10k tokens) for
+    /// the save and [`crate::agent::tools::RESUME_CAP`] (8k chars ≈ 2k tokens)
+    /// for each fenced/`draft` copy that is ~16k tokens, plus the compacted
+    /// report/evidence/trim summaries (each bounded by `tools_quality`'s
+    /// `SUMMARY_CAP`), plus `run_quality_pipeline`'s returned draft, plus the
+    /// 6-tool schema payload re-sent every turn. ~50k realistic worst case;
+    /// 80k keeps a large document from truncating the run before the save, at
+    /// two thirds of the prep ceiling because this flow carries no cover
+    /// letter, no company research and no match result.
+    ///
+    /// **`run_timeout` = 120 min — the run this flow PLANS, not a bound anything
+    /// applies.** [`crate::agent::controller`] counts steps, tokens and tool
+    /// calls and races `step_timeout`; it has no whole-run clock, so
+    /// [`StoppedReason::RunTimeout`] has no producer on the agent path and this
+    /// number stops nothing. It describes the intended run — one 90-minute
+    /// pipeline call plus nine ordinary turns at ~2 min ≈ 108 min — while the
+    /// ceiling the enforced bounds actually admit is the ~12 h computed above.
+    /// Both figures are stated because the gap between them is the honest state
+    /// of this flow, and because `run_timeout >= step_timeout` (which the
+    /// consistency test checks) holds either way.
+    ///
+    /// **`max_sections`/`max_repair_attempts`** are inert here for the reason
+    /// [`Self::AGENT_PREP`] states; they carry the app-wide defaults.
+    ///
+    /// **`confirm_timeout`** is the app-wide 300 s: the same wait the prep
+    /// flow's saves get, because it is the same human answering the same
+    /// question about the same kind of document.
+    pub const AGENT_IMPROVE: Self = Self {
+        max_steps: 10,
+        max_tool_calls: 8,
+        max_tokens: 80_000,
+        max_sections: DEFAULT_MAX_SECTIONS,
+        max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
+        step_timeout: Duration::from_secs(90 * 60),
+        run_timeout: Duration::from_secs(120 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
 
@@ -344,17 +472,55 @@ const _: () = assert!(
     Budget::AGENT_PREP.max_steps > PREP_WORST_CASE_TURNS,
     "AGENT_PREP.max_steps must leave slack above the 12-turn prep worst case"
 );
+// STRICTLY above the worst case, not equal to it. Equality was fine while the
+// ceiling was dead; with the count enforced it means the run STOPS the instant
+// the last planned call returns — for the prep flow, the moment `save_resume`
+// comes back, so the user gets `MaxToolCalls` and the pre-save text as the
+// proposal instead of the summary the prompt's last step writes. A ceiling has
+// to leave room for the call it is counting to be USED.
 const _: () = assert!(
-    Budget::AGENT_PREP.max_tool_calls >= PREP_WORST_CASE_TOOL_CALLS,
-    "AGENT_PREP.max_tool_calls must admit the 10-call prep worst case"
+    Budget::AGENT_PREP.max_tool_calls > PREP_WORST_CASE_TOOL_CALLS,
+    "AGENT_PREP.max_tool_calls must leave slack above the 10-call prep worst case"
 );
-// A RELATION between the two ceilings, not a claim about the loop: the summary
-// turns it reserves are only actually reachable once the tool count is enforced
-// by suppressing tools rather than by stopping (see [`Budget::max_tool_calls`]).
-// Kept because the relation is the precondition for that fix, and inverting it
-// would silently rule the fix out.
+// With the count enforced (Phase 7), this relation decides WHICH stop a runaway
+// tool loop gets: keeping `max_tool_calls` below `max_steps` means such a run
+// ends at `MaxToolCalls`, which names the problem, instead of at `MaxSteps`,
+// which does not. It is also still the precondition for the better fix
+// (suppressing tools rather than stopping — see [`Budget::max_tool_calls`]), so
+// inverting it would both blur the diagnosis and rule that fix out. What it no
+// longer buys is the summary turns it once reserved: a hard stop spends none.
 const _: () = assert!(
     Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
+    "a run that exhausts its tool calls must still have turns left to summarize"
+);
+
+/// 5 fixed tool turns (`get_quality_report`, `validate_resume`,
+/// `search_candidate_evidence`, the post-fix `validate_resume` re-check,
+/// `save_resume`) + 1 rationed optional call.
+const IMPROVE_WORST_CASE_TOOL_CALLS: usize = 6;
+/// ...plus a planning turn and a closing-summary turn.
+const IMPROVE_WORST_CASE_TURNS: usize = IMPROVE_WORST_CASE_TOOL_CALLS + 2;
+
+// The same three relations `AGENT_PREP` carries, for the same reasons, on the
+// review flow: a budget shrunk past what its prompt's own sequence needs must
+// fail `cargo build` rather than strand a real run at `StoppedReason::MaxSteps`
+// — here, between the validation spend and the one save the whole flow exists
+// to offer.
+const _: () = assert!(
+    Budget::AGENT_IMPROVE.max_steps > IMPROVE_WORST_CASE_TURNS,
+    "AGENT_IMPROVE.max_steps must leave slack above the 8-turn improve worst case"
+);
+// Strict for the reason its prep sibling above states, and the review flow is
+// where it bites hardest: its last planned call IS `save_resume`, so an
+// exactly-equal ceiling would end the run the moment the save returns — with
+// the PRE-save text as the proposal, on the one flow whose whole purpose is the
+// corrected version. 8 > 6 holds with two calls of slack.
+const _: () = assert!(
+    Budget::AGENT_IMPROVE.max_tool_calls > IMPROVE_WORST_CASE_TOOL_CALLS,
+    "AGENT_IMPROVE.max_tool_calls must leave slack above the 6-call improve worst case"
+);
+const _: () = assert!(
+    Budget::AGENT_IMPROVE.max_tool_calls < Budget::AGENT_IMPROVE.max_steps,
     "a run that exhausts its tool calls must still have turns left to summarize"
 );
 /// The résumé pipeline's fixed non-section stages: plan, header, assemble,

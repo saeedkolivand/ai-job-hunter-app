@@ -197,13 +197,17 @@ describe('PrepApplicationPanel — start gating', () => {
 });
 
 describe('PrepApplicationPanel — starting a run', () => {
-  it('calls agent.run with only resumeId/jobId (routing is backend-resolved) and shows the starting indicator', async () => {
+  it('calls agent.run with the prep flow kind and the two ids (provider routing is backend-resolved) and shows the starting indicator', async () => {
     openModal();
     await clickStart();
 
+    // `kind` is FLOW selection, not provider routing: it names one entry of the
+    // backend's closed registry, whose prompt/tools/budget are constants. This
+    // panel is the prep flow's entry point and must never start another one.
     expect(mockRunMutateAsync).toHaveBeenCalledWith({
       resumeId: 'resume-1',
       jobId: 'posting-1',
+      kind: 'prep_application',
     });
     expect(screen.getByText('jobs.prep.starting')).toBeInTheDocument();
   });
