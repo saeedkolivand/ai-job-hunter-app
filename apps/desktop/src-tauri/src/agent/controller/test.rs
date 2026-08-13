@@ -4,13 +4,12 @@ use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::VecDeque;
 
-// The loop's shipped ceilings, read from the ONE place they are declared
-// (`BUDGET` = `Budget::AGENT_PREP`) rather than re-typed here, so these tests
-// assert against whatever is actually configured.
-const MAX_AGENT_STEPS: usize = BUDGET.max_steps;
-const MAX_AGENT_TOKENS: usize = BUDGET.max_tokens;
-const AGENT_STEP_TIMEOUT: Duration = BUDGET.step_timeout;
-const CONFIRM_TIMEOUT: Duration = BUDGET.confirm_timeout;
+// The ceilings `run_agent` runs to, read from the ONE place they are declared
+// (`TEST_ENTRY_BUDGET` = `Budget::AGENT_PREP`) rather than re-typed here, so
+// these tests assert against a budget the app actually ships.
+const MAX_AGENT_STEPS: usize = TEST_ENTRY_BUDGET.max_steps;
+const MAX_AGENT_TOKENS: usize = TEST_ENTRY_BUDGET.max_tokens;
+const AGENT_STEP_TIMEOUT: Duration = TEST_ENTRY_BUDGET.step_timeout;
 
 /// A scripted fake: pops a canned [`AgentTurn`] per `turn()` (repeating the last
 /// one forever), records executed read tools + narrated steps + the exact
@@ -134,6 +133,23 @@ fn never(
     Box::pin(async { Ok(Value::Null) })
 }
 
+/// A whitelist of Read tools with the given names, for the tests that need MORE
+/// distinct tools than the fixed [`whitelist`] carries (a parallel turn asking
+/// for four at once). Registered, so a refusal in those tests is the ceiling's
+/// doing and not an unknown-tool error wearing the same shape.
+fn read_whitelist(names: &[&'static str]) -> Vec<AgentTool> {
+    names
+        .iter()
+        .map(|name| AgentTool {
+            name,
+            description: "r".into(),
+            schema: json!({}),
+            kind: ToolKind::Read,
+            handler: never,
+        })
+        .collect()
+}
+
 fn whitelist() -> Vec<AgentTool> {
     vec![
         AgentTool {
@@ -193,7 +209,7 @@ async fn run_agent_with_system_stamps_the_given_job_id_on_every_step() {
         &env,
         &whitelist(),
         &gate,
-        CONFIRM_TIMEOUT,
+        TEST_ENTRY_BUDGET,
         AGENT_SYSTEM,
         "job-42",
         "help".into(),
@@ -204,6 +220,45 @@ async fn run_agent_with_system_stamps_the_given_job_id_on_every_step() {
     let steps = env.steps.lock();
     assert!(!steps.is_empty());
     assert!(steps.iter().all(|s| s.job_id == "job-42"));
+}
+
+/// The loop enforces the budget it is HANDED, not a module constant.
+///
+/// This is the whole point of Phase 7's controller change: two flows ship two
+/// budgets (`AGENT_PREP`'s 14 steps / 6-minute step clock and `AGENT_IMPROVE`'s
+/// 10 steps / 90-minute one), and a loop that read a constant would run the
+/// review flow's whitelist against the prep flow's ceilings — silently, since
+/// both are plausible numbers. A caller-supplied `max_steps` of 2 must stop the
+/// run at 2.
+///
+/// Mutation-checked, executed: restoring `steps >= TEST_ENTRY_BUDGET.max_steps`
+/// in the loop makes this run to 14 steps and fails.
+#[tokio::test]
+async fn the_loop_stops_at_the_budget_it_was_given_not_a_shipped_constant() {
+    let env = FakeEnv::new(vec![read_call("reader")]);
+    let gate = AgentGate::default();
+    let budget = Budget {
+        max_steps: 2,
+        ..TEST_ENTRY_BUDGET
+    };
+    let out = run_agent_with_system(
+        &env,
+        &whitelist(),
+        &gate,
+        budget,
+        AGENT_SYSTEM,
+        "job-7",
+        "help".into(),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.stopped_reason, StoppedReason::MaxSteps);
+    assert_eq!(out.steps, 2);
+    assert!(
+        out.steps < MAX_AGENT_STEPS,
+        "the given budget must bind before the shipped one ({MAX_AGENT_STEPS})"
+    );
 }
 
 #[tokio::test]
@@ -218,43 +273,207 @@ async fn read_tool_runs_then_final_text_returns() {
     assert_eq!(*env.reads.lock(), vec!["reader".to_string()]);
 }
 
+/// The timeout message is read by a person deciding whether something is
+/// broken, so it states the bound in units they can size at a glance and does
+/// not name a culprit it cannot know (LOW, Phase-7 review: the same message is
+/// stamped when a TOOL overran the clock, and the review flow's clock is 5400
+/// seconds — which nobody reads as "an hour and a half").
+#[test]
+fn the_step_timeout_message_reads_in_human_units_and_blames_nothing_it_cannot_know() {
+    let short = step_timeout_message(TEST_ENTRY_BUDGET.step_timeout);
+    assert!(
+        short.contains("360s"),
+        "a small bound stays in seconds: {short}"
+    );
+
+    let long = step_timeout_message(Budget::AGENT_IMPROVE.step_timeout);
+    assert!(
+        long.contains("1h 30m"),
+        "a 90-minute bound reads as time: {long}"
+    );
+    assert!(
+        !long.contains("5400"),
+        "…and never as a raw second count: {long}"
+    );
+
+    for message in [&short, &long] {
+        assert!(
+            !message.contains("The AI provider did not respond"),
+            "a tool that overran the clock is not the provider failing to respond: {message}"
+        );
+        // It must still point somewhere actionable.
+        assert!(message.contains("Settings → AI"));
+    }
+}
+
+/// The unit boundary itself, both sides — a formatter nobody tests is a
+/// formatter that prints `0h 90m` the first time a budget moves.
+#[test]
+fn humanized_duration_switches_units_at_the_documented_boundary() {
+    for (secs, expected) in [
+        (1, "1s"),
+        (SECONDS_READABLE_UPTO, "600s"),
+        (SECONDS_READABLE_UPTO + 1, "10 minutes"),
+        (45 * 60, "45 minutes"),
+        (60 * 60, "1h"),
+        (90 * 60, "1h 30m"),
+        (125 * 60, "2h 5m"),
+    ] {
+        assert_eq!(humanized_duration(Duration::from_secs(secs)), expected);
+    }
+}
+
+/// A loop that always calls a tool is bounded — and since Phase 7 the ceiling
+/// it hits is the TOOL-CALL one, which is the reason that names the runaway.
+///
+/// This test used to assert `MaxSteps` here, and the change is the point: with
+/// `max_tool_calls` (12) under `max_steps` (14) and one call per turn, the call
+/// ceiling is reached first. Its sibling below pins that `MaxSteps` is still
+/// reachable, so neither reason has quietly become dead.
+///
+/// Mutation-checked, executed: raising `max_tool_calls` above `max_steps` in
+/// the passed budget flips this to `MaxSteps` — which is exactly what the
+/// sibling test asserts on purpose.
 #[tokio::test]
-async fn always_calling_a_tool_terminates_at_max_steps() {
-    // The single scripted turn repeats forever → the step budget must stop it.
+async fn always_calling_a_tool_terminates_at_the_tool_call_ceiling() {
+    // The single scripted turn repeats forever → a budget must stop it.
     let env = FakeEnv::new(vec![read_call("reader")]);
     let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
         .await
         .unwrap();
-    assert_eq!(out.stopped_reason, StoppedReason::MaxSteps);
-    assert_eq!(out.steps, MAX_AGENT_STEPS);
+    assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+    assert_eq!(env.reads.lock().len(), TEST_ENTRY_BUDGET.max_tool_calls);
+    assert!(
+        out.steps < MAX_AGENT_STEPS,
+        "the call ceiling must bind before the step ceiling ({} < {MAX_AGENT_STEPS})",
+        out.steps
+    );
 }
 
-/// CHARACTERIZATION, not an endorsement: `Budget::max_tool_calls` is **not
-/// enforced by this loop** — see its field doc for why closing it needs a
-/// signature change rather than a counter, and what bounds spend meanwhile.
+/// `Budget::max_tool_calls` is ENFORCED (Phase 7) — this is the pin that used
+/// to assert the opposite.
 ///
-/// Pinned because the constant reads like a live ceiling: the run above makes
-/// one tool call per turn and therefore spends `MAX_AGENT_STEPS` (14) calls
-/// against a `max_tool_calls` of 12 without [`StoppedReason::MaxToolCalls`]
-/// ever being produced. When the tool count IS enforced this test must change
-/// — deliberately, so the change is visible rather than silent.
+/// It was a documented ceiling with no producer for [`StoppedReason::MaxToolCalls`]
+/// anywhere in the crate, which the `improve_resume` flow turned from untidy
+/// into unsafe: `run_quality_pipeline` is a 75-minute call, and "spend AT MOST
+/// ONE of them" is prose in a prompt, not a bound. The loop now counts every
+/// executed call — including a refused unknown-tool name, which is why the
+/// second half of this test uses one.
+///
+/// Mutation-checked, executed: deleting the `tool_calls >= budget.max_tool_calls`
+/// arm makes the run spend `MAX_AGENT_STEPS` calls and stop at `MaxSteps`.
 #[tokio::test]
-async fn the_tool_call_ceiling_is_not_enforced_and_this_pins_that() {
+async fn the_tool_call_ceiling_stops_a_runaway_tool_loop() {
     let env = FakeEnv::new(vec![read_call("reader")]);
     let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
         .await
         .unwrap();
     let calls = env.reads.lock().len();
-    assert!(
-        calls > BUDGET.max_tool_calls,
-        "the loop spent {calls} tool calls against a nominal ceiling of {}",
-        BUDGET.max_tool_calls
+    assert_eq!(
+        calls, TEST_ENTRY_BUDGET.max_tool_calls,
+        "the loop must stop ON the ceiling, not past it"
     );
-    assert_ne!(
+    assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+
+    // A name the whitelist doesn't carry is refused, not executed — but it is
+    // still a call the model asked for, and a loop that keeps inventing names
+    // is precisely the runaway this ceiling exists for. It must not be free.
+    let env = FakeEnv::new(vec![read_call("nope")]);
+    let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(env.reads.lock().is_empty(), "nothing was executed");
+    assert_eq!(
         out.stopped_reason,
         StoppedReason::MaxToolCalls,
-        "nothing in the crate produces MaxToolCalls today"
+        "refused calls count too, or an unknown-name loop runs to the step ceiling"
     );
+}
+
+/// HIGH (Phase-7 delta review): the ceiling is enforced PER CALL, so a turn
+/// that asks for several tools at once cannot spend past it.
+///
+/// Providers return `tool_calls[]`, plural — nothing in the app sets
+/// `parallel_tool_calls: false`, every adapter maps the whole array, and
+/// `agent::gate` already drives a 2-call turn. With the check only at the turn
+/// boundary, a K-call final turn executed `max_tool_calls - 1 + K` calls, and
+/// because each executed call races `step_timeout` INDIVIDUALLY, K calls of the
+/// review flow's 90-minute pipeline tool cost K × 90 minutes — the bound
+/// `max_tool_calls × step_timeout` is only true if the count is checked before
+/// each call.
+///
+/// The turn stays whole: the refused calls still get a fenced `error:` result
+/// (see `TOOL_BUDGET_EXHAUSTED`), so nothing vanishes from the transcript. That
+/// body is not observable from this fake — the run returns `MaxToolCalls` at the
+/// end of the same turn, so no later `turn()` is handed the transcript carrying
+/// it — which is why this asserts the executed NAMES instead: the ones past the
+/// ceiling never reached the env at all.
+///
+/// Mutation-checked, executed: moving the check back out of the per-call loop
+/// runs "d" too (4 executed against a ceiling of 3).
+#[tokio::test]
+async fn a_parallel_tool_turn_cannot_spend_past_the_tool_call_ceiling() {
+    let env = FakeEnv::new(vec![multi_read_call(&["a", "b", "c", "d"])]);
+    let gate = AgentGate::default();
+    let budget = Budget {
+        max_tool_calls: 3,
+        ..TEST_ENTRY_BUDGET
+    };
+    let out = run_agent_with_system(
+        &env,
+        &read_whitelist(&["a", "b", "c", "d"]),
+        &gate,
+        budget,
+        AGENT_SYSTEM,
+        "job-9",
+        "help".into(),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        *env.reads.lock(),
+        vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        "the fourth call of the turn must be refused, not executed"
+    );
+    assert_eq!(out.stopped_reason, StoppedReason::MaxToolCalls);
+    assert_eq!(
+        out.steps, 1,
+        "one turn was enough to spend the whole budget"
+    );
+}
+
+/// …and the step ceiling is NOT dead code, which the change above could
+/// otherwise have made it: a budget whose call allowance exceeds its step
+/// allowance still ends at [`StoppedReason::MaxSteps`], as does any run whose
+/// turns stop calling tools.
+///
+/// Asserted because "enforce max_tool_calls" trades one reachable stop for
+/// another if nobody checks — `MaxSteps` had a producer before Phase 7 and must
+/// still have one after.
+#[tokio::test]
+async fn the_step_ceiling_is_still_reachable_when_tool_calls_are_not_the_binding_ceiling() {
+    let env = FakeEnv::new(vec![read_call("reader")]);
+    let gate = AgentGate::default();
+    let budget = Budget {
+        max_tool_calls: TEST_ENTRY_BUDGET.max_steps + 1,
+        ..TEST_ENTRY_BUDGET
+    };
+    let out = run_agent_with_system(
+        &env,
+        &whitelist(),
+        &gate,
+        budget,
+        AGENT_SYSTEM,
+        "job-9",
+        "help".into(),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.stopped_reason, StoppedReason::MaxSteps);
+    assert_eq!(out.steps, MAX_AGENT_STEPS);
 }
 
 /// M-5 fix: the tool-schema payload must count toward [`MAX_AGENT_TOKENS`]
@@ -408,7 +627,7 @@ async fn provider_turn_exceeding_the_step_timeout_stops_the_loop() {
     assert_eq!(out.stopped_reason, StoppedReason::Timeout);
     assert_eq!(out.steps, 0, "the hung turn never actually resolved");
     assert!(
-        out.final_text.contains("did not respond"),
+        out.final_text.contains("did not finish within"),
         "the timeout must leave a clear final message, got: {:?}",
         out.final_text
     );

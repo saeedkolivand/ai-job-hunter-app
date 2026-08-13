@@ -100,9 +100,43 @@ pub fn to_specs(tools: &[AgentTool]) -> Vec<ToolSpec> {
 /// budget of a tool's own provider call. `pub(crate)` — `commands::agent::agent_run`
 /// reuses these exact caps (and [`fenced`]) when seeding the transcript, so the
 /// bound and the fence format are declared in exactly ONE place.
-pub(crate) const RESUME_CAP: usize = 8_000;
+///
+/// **`RESUME_CAP` is GENERATED, not a literal here.** The renderer needs the
+/// same number — it is the threshold the `improve_resume` entry point is
+/// disabled on, because a generation this fence would cut is refused at run
+/// start rather than truncated — and it had been hand-copied there as a second
+/// `8_000`. It now comes from `packages/shared/src/agent-caps.ts` through
+/// `pnpm gen:ipc`, so the renderer imports the constant and `gen:ipc:check`
+/// gates the Rust copy. `JOB_CAP` stays a local literal: nothing outside this
+/// crate reads it, and generating a number with one consumer is ceremony.
+pub(crate) const RESUME_CAP: usize = crate::ipc_contracts::agent_caps::AGENT_RESUME_TEXT_CAP;
 pub(crate) const JOB_CAP: usize = 8_000;
 const BRIEF_CAP: usize = 2_000;
+
+/// Cap on a REQUEST-SUPPLIED identifier echoed back into an error or failure
+/// message — a `resumeId`/`jobId`/flow `kind` that was already rejected.
+///
+/// The same 64 [`crate::agent::controller`] clamps a model-chosen tool name to,
+/// and for the same reason: every real value is a short id or registry token,
+/// so the only ones that reach a formatter oversized are hostile. Rejected ids
+/// land in strings that get stored on a job, logged, fenced into a transcript,
+/// and rendered, and none of those layers bounds them.
+pub(crate) const ECHO_CAP: usize = 64;
+
+/// Clamp a request-supplied identifier for an error message ([`ECHO_CAP`]),
+/// char-boundary safe.
+///
+/// **One owner for the rule, two very different consumers.**
+/// `commands::agent::agent_run` uses it for the three wire fields it echoes
+/// (`kind`, `resumeId`, `jobId`); `super::tools_quality`'s `resume_not_found` /
+/// `job_not_found` use it for the trusted-context ids they name — and those
+/// two reach the SAME user-visible place, because the review flow's generation
+/// lookup surfaces that error verbatim as the run's failure message. Clamping
+/// at one of the two and not the other would have left the identical hole one
+/// call away.
+pub(crate) fn clamped_echo(value: &str) -> String {
+    value.chars().take(ECHO_CAP).collect()
+}
 
 /// Compile the fence-tag detection pattern for one tag. `\s*` is bounded to
 /// whitespace only with no adjacent unbounded quantifier chained to itself,
@@ -798,15 +832,155 @@ fn save_resume_handler(
             crate::commands::match_resume::job_meta_for(&app, &ctx.job_id).ok_or_else(|| {
                 AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
             })?;
-        let req = serde_json::from_value(json!({
-            "resumeText": resume_text,
-            "companyName": meta.company,
-            "jobTitle": meta.title,
-            "jobUrl": meta.url,
-            "board": meta.board,
-        }))?;
-        Ok(crate::commands::ai_generations::ai_generations_save(app, req).await)
+        // The merge rule: this save REPLACES `resume_text`, so it carries a
+        // fresh report over the text it is about to persist — never the stored
+        // one, which describes the document this save is replacing. See
+        // `report::for_saved_resume`.
+        let inputs = saved_resume_inputs(&app, &ctx).await?;
+        let quality_report = crate::commands::resume_pipeline::report::for_saved_resume(
+            &resume_text,
+            &inputs.source_resume,
+            &inputs.job_ad,
+            inputs.top_requirements,
+            &inputs.target_language,
+        )
+        .await?;
+        let req =
+            serde_json::from_value(save_resume_request(&resume_text, &meta, &quality_report)?)?;
+        let saved = saved_or_error(
+            crate::commands::ai_generations::ai_generations_save(app.clone(), req).await,
+        )?;
+        // …and the row-side half of the same rule — ONLY once the write landed.
+        crate::commands::resume_pipeline::sync_saved_resume_status(
+            &app,
+            &meta.url,
+            &quality_report,
+            &resume_text,
+            &inputs.cover_letter_text,
+        );
+        Ok(saved)
     })
+}
+
+/// Turn `ai_generations_save`'s Value-encoded outcome into a `Result`.
+///
+/// **That command reports failure IN BAND** — `{"error": "…"}` instead of
+/// `{"id": …, "success": true}`, because it is a `#[tauri::command]` returning
+/// `Value` for a renderer that checks the key. A tool handler that ignores the
+/// distinction (CodeRabbit, PR #986) told the model the résumé was saved when
+/// the write had failed, and then synced a run's review status to describe text
+/// that was never persisted — a verdict about a document that does not exist.
+///
+/// **Fail CLOSED on any unrecognized shape**, not just on the `error` key. The
+/// two directions are not symmetric: a failed save reported as success is
+/// silent data loss the user is told went fine, while a successful save
+/// reported as failed costs a retry into a merge that lands on the same
+/// aggregate row. If this command ever grows a third shape, the retry is the
+/// side to be wrong on.
+fn saved_or_error(saved: Value) -> AppResult<Value> {
+    if saved.get("success").and_then(Value::as_bool) == Some(true) {
+        return Ok(saved);
+    }
+    let detail = saved
+        .get("error")
+        .and_then(Value::as_str)
+        .map(clamped_echo)
+        .unwrap_or_else(|| "the store returned no result".to_string());
+    Err(AppError::Storage(format!(
+        "the résumé could not be saved: {detail}"
+    )))
+}
+
+/// The grounding a gated résumé save needs to validate the text it persists.
+struct SavedResumeInputs {
+    /// The candidate's own résumé — what every Critical is measured against.
+    source_resume: String,
+    job_ad: String,
+    top_requirements: Vec<String>,
+    target_language: String,
+    /// Only for the run-status recompute (the letter's own findings still count
+    /// toward whether the RUN needs review); this save never rewrites it.
+    cover_letter_text: String,
+}
+
+/// Gather that grounding, preferring the stored aggregate's own fields.
+///
+/// The record is the right source for `job_ad`/`top_requirements`/
+/// `target_language` for the same reason `regenerate_section` reads them off
+/// its record: those are what the document was written against, so a report
+/// computed from anything else would measure it against a different brief. The
+/// postings cache is the fallback for a first save, and an absent field is
+/// empty rather than invented — the validator's checks degrade individually
+/// (no job ad = no alignment findings), which is the honest failure.
+async fn saved_resume_inputs(app: &AppHandle, ctx: &ToolContext) -> AppResult<SavedResumeInputs> {
+    let job_ad = crate::commands::match_resume::job_text_for(app, &ctx.job_id).unwrap_or_default();
+    let app_task = app.clone();
+    let ctx = ctx.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_resume = app_task
+            .state::<crate::documents::DocumentStore>()
+            .get(&ctx.resume_id)
+            .map(|doc| doc.text)
+            .ok_or_else(|| {
+                AppError::Validation(format!(
+                    "resume not found: {}",
+                    clamped_echo(&ctx.resume_id)
+                ))
+            })?;
+        let existing = match super::tools_pipeline::generation_for_job(&app_task, &ctx.job_id)? {
+            super::tools_pipeline::GenerationLookup::Found(record) => Some(record),
+            _ => None,
+        };
+        Ok(SavedResumeInputs {
+            source_resume,
+            job_ad: existing
+                .as_ref()
+                .map(|r| r.job_ad.clone())
+                .filter(|ad| !ad.trim().is_empty())
+                .unwrap_or(job_ad),
+            top_requirements: existing
+                .as_ref()
+                .map(|r| r.top_requirements.clone())
+                .unwrap_or_default(),
+            target_language: existing
+                .as_ref()
+                .map(|r| r.target_language.clone())
+                .unwrap_or_default(),
+            cover_letter_text: existing.map(|r| r.cover_letter_text).unwrap_or_default(),
+        })
+    })
+    .await
+    .map_err(|e| AppError::Storage(format!("save grounding lookup failed: {e}")))?
+}
+
+/// Build the `ai_generations.save` request for a gated résumé save — and
+/// REFUSE to build one that carries no report.
+///
+/// The refusal is the point. "A save that writes `resume_text` carries a fresh
+/// `quality_report`" was a rule stated in three doc comments and enforced by
+/// none of them: the request is a `json!` literal, and omitting one key left
+/// the previous document's verdict attached to the new text with nothing —
+/// no type, no test, no store guard — objecting. Routing every gated save
+/// through a constructor that cannot produce the broken shape makes the rule
+/// mechanical, so the next caller inherits it instead of re-reading the doc.
+fn save_resume_request(
+    resume_text: &str,
+    meta: &crate::commands::match_resume::JobPostingMeta,
+    quality_report: &str,
+) -> AppResult<Value> {
+    if quality_report.trim().is_empty() {
+        return Err(AppError::Validation(
+            "a save that replaces the résumé must carry a fresh quality report".to_string(),
+        ));
+    }
+    Ok(json!({
+        "resumeText": resume_text,
+        "companyName": meta.company,
+        "jobTitle": meta.title,
+        "jobUrl": meta.url,
+        "board": meta.board,
+        "qualityReport": quality_report,
+    }))
 }
 
 /// Char cap on the saved tailored résumé. A full résumé (several roles, each with
@@ -963,25 +1137,23 @@ fn save_resume_tool() -> AgentTool {
 /// against its quality report and the candidate's evidence, then propose
 /// targeted fixes through the gated save.
 ///
-/// **No flow drives this yet, and that is the point of it existing now.** The
-/// flow registry (`AgentFlow { kind, system, tools, budget }`) is Phase 7 work;
-/// what Phase 3 owes it is a HOME for `run_quality_pipeline`, because the tool
-/// must not go into [`prep_application_tools`]:
+/// **This is `run_quality_pipeline`'s only home**, and the reason it has one:
 /// [`crate::agent::controller`] races every tool call against the flow's
 /// `step_timeout`, `Budget::AGENT_PREP`'s is 360 s, and one quality run's own
 /// floor (`Budget::RESUME_QUALITY.run_timeout`) is 75 minutes — a prep run that
 /// called it would end at `StoppedReason::Timeout` after the drafting spend and
-/// before the saves. Pinned by
-/// `test::the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`,
-/// which derives the exclusion from those two constants rather than from a
-/// name list.
+/// before the saves. The improve flow's own `Budget::AGENT_IMPROVE.step_timeout`
+/// is 90 minutes precisely so it can. Both directions are pinned off those
+/// constants rather than off a name list, by
+/// `test::the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`
+/// and `test::the_quality_pipeline_tool_is_present_in_the_flow_whose_step_can_cover_it`.
 ///
-/// **Phase 7's obligations, written down here so they are not rediscovered:**
-/// this flow's `Budget.step_timeout` must clear a full quality run, and its
-/// system prompt must NAME every tool below — the drift guard for the prep
-/// flow (`agent::flows::tests::prep_application_system_names_exactly_the_registered_prep_tools`)
-/// exists because a registered-but-unnamed tool is paid for on every turn in
-/// schema tokens and never called.
+/// The flow that drives it is `crate::agent::flows::IMPROVE_RESUME_KIND` —
+/// prompt, whitelist and budget registered as one value in
+/// [`crate::agent::flows::FLOWS`], where
+/// `every_registered_flow_prompt_names_exactly_its_own_whitelist` keeps this
+/// list and that prompt naming the same six tools (a registered-but-unnamed
+/// tool is paid for on every turn in schema tokens and never called).
 ///
 /// Contents are the plan's own list: the three résumé-quality reads that
 /// operate on an existing document, the persisted report, the pipeline, and

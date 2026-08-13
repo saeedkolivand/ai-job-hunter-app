@@ -4,7 +4,7 @@ import type { AgentStepEvent } from '@ajh/shared';
 
 import { isBusy, isError, transition } from '@/lib/machine';
 
-import { agentRunMachine, stepToEvent } from './agent-run.machine';
+import { agentRunMachine, type AgentRunState, stepToEvent } from './agent-run.machine';
 
 const turn = (tools: string[], text = ''): AgentStepEvent => ({
   jobId: 'job-1',
@@ -106,6 +106,93 @@ describe('agentRunMachine', () => {
 
   it('maps a confirm_request step to CONFIRM_REQUEST', () => {
     expect(stepToEvent(confirmRequest())).toBe('CONFIRM_REQUEST');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The `improve_resume` flow (Phase 7).
+//
+// Its tools are a different vocabulary from prep's, so a prep-keyed mapping
+// answers `null` for every one of them and the machine sits in `planning` for a
+// whole review run. Each test below fails against that mapping.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('stepToEvent — the improve_resume flow', () => {
+  it('maps every review tool to the reviewing state', () => {
+    for (const tool of [
+      'get_quality_report',
+      'validate_resume',
+      'search_candidate_evidence',
+      'get_trim_suggestions',
+      'run_quality_pipeline',
+    ]) {
+      expect(stepToEvent(turn([tool]), 'improve_resume')).toBe('REVIEW');
+      expect(transition(agentRunMachine, 'planning', 'REVIEW')).toBe('reviewing');
+    }
+    expect(isBusy(agentRunMachine, 'reviewing')).toBe(true);
+  });
+
+  // `validate_resume` is called twice in one run (the post-fix re-check). A map
+  // that transitioned only on first sight would mis-sequence the second one.
+  it('is idempotent on the tool that legitimately appears twice', () => {
+    const event = stepToEvent(turn(['validate_resume']), 'improve_resume');
+    expect(event).toBe('REVIEW');
+    const first = transition(agentRunMachine, 'planning', 'REVIEW');
+    expect(first).toBe('reviewing');
+    expect(transition(agentRunMachine, first, 'REVIEW')).toBe('reviewing');
+  });
+
+  // Flow-awareness, not a shared name list: prep's tools cannot move a review
+  // run (and vice versa). Collapse the two maps into one and this fails.
+  it('ignores tools the flow does not own, in both directions', () => {
+    expect(stepToEvent(turn(['research_company']), 'improve_resume')).toBeNull();
+    expect(stepToEvent(turn(['draft_resume']), 'improve_resume')).toBeNull();
+    expect(stepToEvent(turn(['get_quality_report']), 'prep_application')).toBeNull();
+    expect(stepToEvent(turn(['run_quality_pipeline']), 'prep_application')).toBeNull();
+  });
+
+  it('defaults to the prep flow when no kind is given, like the wire does', () => {
+    expect(stepToEvent(turn(['research_company']))).toBe('RESEARCH');
+    expect(stepToEvent(turn(['get_quality_report']))).toBeNull();
+  });
+
+  // The gated write is a step KIND, so it needs no per-flow tool entry — which
+  // is what lets one confirm branch serve `save_cover_letter` and `save_resume`.
+  it('suspends on the save_resume confirm request without a tool mapping', () => {
+    const step: AgentStepEvent = {
+      jobId: 'job-1',
+      step: 6,
+      text: '',
+      tools: ['save_resume'],
+      denied: [],
+      kind: 'confirm_request',
+      confirm: { callId: '6-0-save_resume', tool: 'save_resume', args: { resumeText: 'CV' } },
+    };
+    expect(stepToEvent(step, 'improve_resume')).toBe('CONFIRM_REQUEST');
+    // As a plain turn it is NOT a review step — the suspend is the signal.
+    expect(stepToEvent(turn(['save_resume']), 'improve_resume')).toBeNull();
+  });
+
+  it('runs the whole review lifecycle: report → check → suspend → summary → done', () => {
+    /** Feed one review turn through the real mapping, never a hand-picked event. */
+    const drive = (state: AgentRunState, tools: string[]): AgentRunState => {
+      const event = stepToEvent(turn(tools), 'improve_resume');
+      if (!event) throw new Error(`the improve flow does not recognize ${tools.join()}`);
+      return transition(agentRunMachine, state, event);
+    };
+    let s = transition(agentRunMachine, 'idle', 'START');
+    expect(s).toBe('planning');
+    s = drive(s, ['get_quality_report']);
+    s = drive(s, ['validate_resume']);
+    s = drive(s, ['search_candidate_evidence']);
+    s = drive(s, ['validate_resume']);
+    expect(s).toBe('reviewing');
+    s = transition(agentRunMachine, s, 'CONFIRM_REQUEST');
+    expect(s).toBe('confirming');
+    s = transition(agentRunMachine, s, 'APPROVE');
+    s = transition(agentRunMachine, s, 'PROPOSE');
+    s = transition(agentRunMachine, s, 'COMPLETE');
+    expect(s).toBe('done');
   });
 });
 

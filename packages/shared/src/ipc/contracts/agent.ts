@@ -1,11 +1,24 @@
 import type { AgentConfirmRequest, AgentRunRequest } from '../../schemas/index.js';
 
 /**
- * The "prep this application" agentic flow. `run` starts the background loop and
- * returns its job id immediately; progress streams as `agent:step` events
- * (subscribe via `onStep`) and the run finishes as a `jobs:event`. When the agent
- * wants to perform a write it SUSPENDS and emits a `confirm_request` step — the
- * renderer resolves it with `confirm` (approve / edit-then-approve / deny).
+ * The agentic flows. `run` starts the background loop and returns its job id
+ * immediately; progress streams as `agent:step` events (subscribe via `onStep`)
+ * and the run finishes as a `jobs:event`. When the agent wants to perform a write
+ * it SUSPENDS and emits a `confirm_request` step — the renderer resolves it with
+ * `confirm` (approve / edit-then-approve / deny).
+ *
+ * `AgentRunRequest.kind` picks WHICH flow runs (`AGENT_FLOW_KINDS`, defaulting to
+ * `prep_application`): prepare a whole application, or review the résumé already
+ * generated for the job and offer targeted fixes. The flow's prompt, tool
+ * whitelist and spend budget are backend constants — the request selects one of
+ * two fixed shapes, it does not describe one.
+ *
+ * The two flows differ in what a run emits, which matters to anything mapping
+ * steps to UI state: the prep flow's tool names are the research/drafting set and
+ * it can suspend on `save_cover_letter` AND `save_resume`; the improve flow's are
+ * `get_quality_report`, `validate_resume`, `search_candidate_evidence`,
+ * optionally `get_trim_suggestions` or `run_quality_pipeline`, and it suspends
+ * only on `save_resume`.
  */
 export interface AgentContract {
   run(req: AgentRunRequest): Promise<{ jobId: string }>;

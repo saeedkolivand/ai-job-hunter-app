@@ -2268,7 +2268,57 @@
       "report": {
         "source": "Erzeugt aus deinem gespeicherten Lebenslauf „{{name}}“.",
         "removeHint": "„Entfernen“ hält hier dein Urteil fest; die Zeile selbst löschst du im Lebenslauf-Editor der Bewerbung.",
-        "olderRun": "Das ist nicht der neueste Lauf zu dieser Stelle. Alle Läufe einer Stelle teilen sich einen gespeicherten Lebenslauf, deshalb lässt sich hier nichts ändern."
+        "olderRun": "Das ist nicht der neueste Lauf zu dieser Stelle. Alle Läufe einer Stelle teilen sich einen gespeicherten Lebenslauf, deshalb lässt sich hier nichts ändern.",
+        "reviewInFlight": "Eine Prüfung dieses Lebenslaufs läuft und wird gleich ihre eigene korrigierte Fassung anbieten, die das ganze Dokument ersetzt — „Beheben“ und „Entfernen“ pausieren deshalb bis zum Ende der Prüfung."
+      },
+      "improve": {
+        "trigger": "Diesen Lebenslauf verbessern",
+        "triggerHint": "Der Agent prüft den erzeugten Lebenslauf noch einmal gegen den Bericht und deinen gespeicherten Lebenslauf und schlägt dir gezielte Korrekturen zur Freigabe vor.",
+        "tooLong": "Dieser erzeugte Lebenslauf ist länger, als die Prüfung lesen kann ({{max}} Zeichen) — eine gekürzte Kopie zu prüfen würde den Rest verwerfen. Kürze ihn im Lebenslauf-Editor der Bewerbung und verbessere ihn dann.",
+        "tooLongHint": "Zu lang für die Prüfung — sie liest höchstens {{max}} Zeichen.",
+        "pendingBadge": "Diese Prüfung wartet auf deine Zustimmung. Sie verfällt etwa fünf Minuten, nachdem der Agent gefragt hat.",
+        "pendingBadgeShort": "Zustimmung nötig",
+        "heading": "Lebenslauf wird verbessert",
+        "hint": "Der Agent prüft den erzeugten Lebenslauf erneut und schlägt Korrekturen vor. Gespeichert wird erst, wenn du zustimmst.",
+        "starting": "Prüfung wird gestartet — der erste Schritt kann auf einem lokalen Modell eine Minute dauern.",
+        "liveRegionLabel": "Fortschritt der Lebenslauf-Prüfung",
+        "confirmAnnouncement": "Der Agent wartet auf deine Zustimmung, bevor er den korrigierten Lebenslauf speichert.",
+        "optionalNote": "Zwei Schritte sind optional — Kürzen oder eine vollständige Neuschrift — und erscheinen nur, wenn die Prüfung einen davon nutzt.",
+        "summaryTitle": "Was die Prüfung ergeben hat",
+        "doneHint": "Die Prüfung ist abgeschlossen. Was du freigegeben hast, wurde als Lebenslauf dieser Bewerbung gespeichert.",
+        "stoppedHint": "{{reason}} — die Prüfungen danach liefen also nie; das ist kein Urteil über den Lebenslauf. Gespeichert wurde nichts, außer du hattest bereits zugestimmt; starte die Prüfung erneut, um den Rest laufen zu lassen.",
+        "cancelledHint": "Gestoppt. Es wurde nichts gespeichert, außer du hattest bereits zugestimmt.",
+        "failedTitle": "Die Prüfung ist fehlgeschlagen",
+        "failedFallback": "Sie wurde ohne Angabe eines Grundes beendet. Es wurde nichts gespeichert — du kannst sie erneut starten.",
+        "stop": "Prüfung stoppen",
+        "stopHint": "Fordert einen Abbruch an — der Lauf kann noch einen Moment weiterlaufen.",
+        "stopping": "Wird gestoppt…",
+        "dismiss": "Ausblenden",
+        "busyLock": "Eine Prüfung dieses Lebenslaufs läuft. Ihn neu zu erzeugen und ihn aus dem Bericht heraus zu bearbeiten pausiert bis zum Ende der Prüfung — sie bietet gleich ihre eigene Fassung dieses Dokuments an.",
+        "state": {
+          "running": "Läuft",
+          "waiting": "Wartet auf dich",
+          "done": "Abgeschlossen",
+          "cancelled": "Gestoppt",
+          "stopped": "Gestoppt",
+          "failed": "Fehlgeschlagen"
+        },
+        "status": {
+          "pending": "Ausstehend",
+          "active": "In Bearbeitung",
+          "done": "Fertig",
+          "interrupted": "Unterbrochen",
+          "skipped": "Nicht erreicht"
+        },
+        "steps": {
+          "report": "Letzte Qualitätsprüfung wird gelesen",
+          "check": "Erzeugter Lebenslauf wird geprüft",
+          "trim": "Kürzbare Stichpunkte werden bewertet",
+          "rewrite": "Neuschrift aus deinem gespeicherten Lebenslauf — ein vollständiger Qualitätslauf, bis zu etwa 90 Minuten",
+          "evidence": "Aussagen werden mit deinem Lebenslauf abgeglichen",
+          "save": "Korrigierter Lebenslauf wird vorgeschlagen",
+          "summary": "Änderungen werden zusammengefasst"
+        }
       }
     },
     "prep": {
@@ -2321,7 +2371,7 @@
       "confirm": {
         "heading": "Aktion benötigt deine Zustimmung",
         "announcement": "Der Agent wartet auf deine Zustimmung, bevor er fortfährt.",
-        "hint": "Genehmigen führt diese Aktion sofort aus. Ablehnen überspringt sie — der Agent macht ohne sie weiter.",
+        "hint": "Genehmigen führt diese Aktion sofort aus. Ablehnen überspringt sie — der Agent macht ohne sie weiter. Die Anfrage verfällt etwa fünf Minuten, nachdem der Agent gefragt hat; danach gilt sie als abgelehnt und der Lauf geht weiter.",
         "approve": "Genehmigen",
         "approveEdited": "Änderungen speichern & genehmigen",
         "approveHint": "Führt die Aktion sofort aus.",
@@ -2338,6 +2388,10 @@
           "saveCoverLetter": {
             "summary": "Dieses Anschreiben in deinen gespeicherten Dokumenten speichern?",
             "contentLabel": "Anschreiben-Text"
+          },
+          "saveResume": {
+            "summary": "Diesen Lebenslauf in den Dokumenten dieser Bewerbung speichern?",
+            "contentLabel": "Lebenslauf-Text"
           }
         }
       }

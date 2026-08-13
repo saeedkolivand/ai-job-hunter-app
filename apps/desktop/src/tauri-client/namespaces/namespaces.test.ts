@@ -71,7 +71,9 @@ describe('tauri-client namespaces', () => {
     boards.connect({ boardId: 'indeed' });
     expect(invoke).toHaveBeenCalledWith('boards_login_with_browser', { boardId: 'indeed' });
 
-    const agentReq = { resumeId: 'res-1', jobId: 'job-1' };
+    // `kind` selects the FLOW (`AGENT_FLOW_KINDS`) and is part of the request
+    // shape, so the client passes it through unchanged like every other field.
+    const agentReq = { resumeId: 'res-1', jobId: 'job-1', kind: 'improve_resume' } as const;
     agent.run(agentReq);
     expect(invoke).toHaveBeenCalledWith('agent_run', { req: agentReq });
 

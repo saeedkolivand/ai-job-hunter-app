@@ -78,7 +78,8 @@ use crate::validate::content::{
 use crate::validate::Severity;
 
 use super::tools::{
-    neutralize_transcript_boundaries, AgentTool, ToolContext, ToolKind, JOB_CAP, RESUME_CAP,
+    clamped_echo, neutralize_transcript_boundaries, AgentTool, ToolContext, ToolKind, JOB_CAP,
+    RESUME_CAP,
 };
 
 // ── Shared caps ────────────────────────────────────────────────────────────
@@ -754,14 +755,23 @@ where
 /// out so [`validate_resume_core`]/[`search_candidate_evidence_core`]/
 /// [`get_trim_suggestions_core`] can construct and test it without an
 /// `AppHandle`.
+///
+/// **The id is CLAMPED into the message** ([`clamped_echo`]). "Trusted" here
+/// means trusted-as-ROUTING (it comes from `ToolContext`, never from tool
+/// args) — it does NOT mean bounded: `ToolContext::resume_id` is the request's
+/// own `resumeId`, an unvalidated wire string, and this message is fenced into
+/// the model's transcript AND surfaced verbatim as a run's failure message by
+/// `commands::agent`'s generation lookup. Same rule, same cap, one owner as
+/// `agent_run`'s own echoes.
 pub(super) fn resume_not_found(resume_id: &str) -> AppError {
-    AppError::Validation(format!("resume not found: {resume_id}"))
+    AppError::Validation(format!("resume not found: {}", clamped_echo(resume_id)))
 }
 
 /// The trusted "job not found" error, mirroring [`resume_not_found`] for the
-/// run's `ToolContext::job_id` against the live postings cache.
+/// run's `ToolContext::job_id` against the live postings cache — clamped for
+/// the reason that one states.
 pub(super) fn job_not_found(job_id: &str) -> AppError {
-    AppError::Validation(format!("job not found in cache: {job_id}"))
+    AppError::Validation(format!("job not found in cache: {}", clamped_echo(job_id)))
 }
 
 /// Core, `AppHandle`-free logic for `validate_resume`: the not-found paths

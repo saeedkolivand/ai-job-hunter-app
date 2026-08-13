@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AGENT_FLOW_KINDS,
   AgentConfirmRequestSchema,
   AgentRunRequestSchema,
   AiGenerateRequestSchema,
@@ -43,18 +44,39 @@ describe('AgentRunRequestSchema', () => {
     }
   });
 
-  // Security lock (task #25): routing is backend-owned. Even if a compromised
-  // renderer sends provider/model/baseUrl, the schema strips them so nothing can
-  // point a credentialed agent request at an attacker endpoint — the wire contract
-  // simply has no field to carry them.
-  it('strips renderer-supplied routing fields (provider/model/baseUrl are no longer wire inputs)', () => {
+  // A request that names no flow runs the prep flow — the same default the
+  // generated Rust struct applies, so an older renderer keeps the behaviour it
+  // always had instead of failing validation.
+  it('defaults kind to the prep flow', () => {
+    expect(AgentRunRequestSchema.parse(valid).kind).toBe('prep_application');
+  });
+
+  it('accepts every registered flow kind and nothing else', () => {
+    for (const kind of AGENT_FLOW_KINDS) {
+      expect(AgentRunRequestSchema.parse({ ...valid, kind }).kind).toBe(kind);
+    }
+    // The vocabulary is CLOSED: an unregistered kind is rejected here and, if it
+    // ever got past this, again by the Rust flow registry (which fails the run
+    // rather than falling back to the default flow).
+    expect(() => AgentRunRequestSchema.parse({ ...valid, kind: 'exfiltrate' })).toThrow();
+    expect(() => AgentRunRequestSchema.parse({ ...valid, kind: '' })).toThrow();
+  });
+
+  // Security lock (task #25), rewritten for Phase 7 rather than weakened: PROVIDER
+  // routing is backend-owned, so provider/model/baseUrl are stripped and nothing
+  // can point a credentialed agent request at an attacker endpoint. `kind` is
+  // routing too — it selects which flow runs — but it is a closed menu of two
+  // backend-declared flows whose prompt, tools and budget are compile-time
+  // constants, not an endpoint, a model, or a ceiling.
+  it('strips renderer-supplied provider routing while keeping the flow selector', () => {
     const parsed = AgentRunRequestSchema.parse({
       ...valid,
+      kind: 'improve_resume',
       provider: 'openai-compatible',
       model: 'evil',
       baseUrl: 'http://attacker.example',
     });
-    expect(parsed).toEqual(valid);
+    expect(parsed).toEqual({ ...valid, kind: 'improve_resume' });
   });
 });
 

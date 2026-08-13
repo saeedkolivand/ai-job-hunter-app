@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import type { AgentConfirmRequest, AgentRunRequest, AgentStepEvent } from '@ajh/shared';
@@ -43,10 +43,21 @@ export const useAgentConfirm = () => {
  */
 export const useAgentStepEvents = (onStep?: (event: AgentStepEvent) => void) => {
   const api = useAppClient();
+  // Keep the latest handler in a ref so the listener subscribes ONCE — the same
+  // shape `useJobEvents` already uses, and for the same reason. `onStep` in the
+  // dependency array re-runs this effect whenever the caller's callback changes
+  // identity, which for every real caller happens exactly when its run id
+  // arrives (it is a `useCallback` keyed on that id). Tauri's `listen` attaches
+  // ASYNCHRONOUSLY, so unsubscribe-then-resubscribe leaves a window with no
+  // native listener attached — right at the moment the run starts emitting. A
+  // `confirm_request` lost in that window leaves a SUSPENDED run rendered as a
+  // running one until the 300 s gate timeout denies it.
+  const handlerRef = useRef(onStep);
+  handlerRef.current = onStep;
   useEffect(() => {
     const off = api.agent.onStep((event: unknown) => {
-      onStep?.(event as AgentStepEvent);
+      handlerRef.current?.(event as AgentStepEvent);
     });
     return () => off?.();
-  }, [api, onStep]);
+  }, [api]);
 };

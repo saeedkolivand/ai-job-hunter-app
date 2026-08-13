@@ -123,6 +123,7 @@ fn an_unknown_wire_string_is_rejected() {
 fn every_shipped_budget_is_internally_consistent() {
     for (label, b) in [
         ("AGENT_PREP", Budget::AGENT_PREP),
+        ("AGENT_IMPROVE", Budget::AGENT_IMPROVE),
         ("RESUME_QUALITY", Budget::RESUME_QUALITY),
     ] {
         assert!(b.max_steps > 0, "{label}: a run must get at least one step");
@@ -162,6 +163,31 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
     assert_eq!(Budget::AGENT_PREP.run_timeout, Duration::from_secs(45 * 60));
     assert_eq!(
         Budget::AGENT_PREP.confirm_timeout,
+        Duration::from_secs(300),
+        "a shrunken confirm_timeout silently auto-denies confirmations"
+    );
+
+    // 90 min, and DERIVED rather than chosen: the improve flow is the only home
+    // of `run_quality_pipeline`, and the controller races EVERY tool call
+    // against this field, so it must clear one whole quality run (4 500 s) plus
+    // the one `OLLAMA_COMPLETION` call that may still be admitted just inside
+    // that deadline, plus a margin. Shrinking it back to the prep flow's 360 s
+    // would make the tool unrunnable and kill the run at
+    // `StoppedReason::Timeout` instead; the sharp form of this relation is a
+    // `const _: () = assert!(…)` in `agent::tools_pipeline`, and the
+    // whitelist-side half is `agent::tools::test`'s
+    // `the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`.
+    assert_eq!(
+        Budget::AGENT_IMPROVE.step_timeout,
+        Duration::from_secs(90 * 60),
+        "AGENT_IMPROVE.step_timeout must still cover one whole quality run"
+    );
+    assert_eq!(
+        Budget::AGENT_IMPROVE.run_timeout,
+        Duration::from_secs(120 * 60)
+    );
+    assert_eq!(
+        Budget::AGENT_IMPROVE.confirm_timeout,
         Duration::from_secs(300),
         "a shrunken confirm_timeout silently auto-denies confirmations"
     );
