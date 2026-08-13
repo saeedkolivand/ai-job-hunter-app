@@ -123,6 +123,48 @@ fn the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it() 
     );
 }
 
+/// The POSITIVE half of the same derivation, and the reason Phase 7 gave the
+/// improve flow its own budget: the tool is reachable from exactly the flow
+/// whose per-step wall clock CAN cover one quality run.
+///
+/// Both directions again, because either one alone is satisfiable by the wrong
+/// change. A presence-only assertion passes while `AGENT_IMPROVE.step_timeout`
+/// is 360 s — a whitelist that offers the model a tool every call of which ends
+/// the run at `StoppedReason::Timeout` — and an arithmetic-only assertion
+/// passes on a whitelist that dropped the tool entirely, which would leave
+/// `run_quality_pipeline` registered in no flow at all (the state Phase 7 was
+/// meant to end).
+///
+/// The sharper form of the arithmetic — the deadline PLUS the last provider
+/// call it may admit — is a compile-time assert in `agent::tools_pipeline`;
+/// this is the coarse relation stated against the same two constants the prep
+/// half above reads, so the two halves are read as one rule.
+///
+/// Mutation-checked, both executed: dropping
+/// `tools_pipeline::run_quality_pipeline_tool()` from `improve_resume_tools`
+/// fails the second assertion (`run_quality_pipeline must be reachable from the
+/// one flow…`), and setting `AGENT_IMPROVE.step_timeout` to `AGENT_PREP`'s
+/// 360 s fails the first (the `cargo check` assert in `tools_pipeline` fires on
+/// the same mutation, before this test can run — which is the point).
+#[test]
+fn the_quality_pipeline_tool_is_present_in_the_flow_whose_step_can_cover_it() {
+    use crate::pipeline::budget::Budget;
+
+    assert!(
+        Budget::AGENT_IMPROVE.step_timeout > Budget::RESUME_QUALITY.run_timeout,
+        "one improve-flow step ({:?}) must cover one whole quality run ({:?}) — the controller \
+         races every tool call against it",
+        Budget::AGENT_IMPROVE.step_timeout,
+        Budget::RESUME_QUALITY.run_timeout,
+    );
+    assert!(
+        improve_resume_tools()
+            .iter()
+            .any(|t| t.name == "run_quality_pipeline"),
+        "run_quality_pipeline must be reachable from the one flow that can afford it"
+    );
+}
+
 /// The Phase-7 `improve_resume` whitelist: the plan's own list, exactly, and
 /// ONE gated Write. It is the only home `run_quality_pipeline` has, so a change
 /// here is a change to what that tool is reachable from.

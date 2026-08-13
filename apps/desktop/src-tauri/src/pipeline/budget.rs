@@ -181,6 +181,94 @@ impl Budget {
         confirm_timeout: Duration::from_secs(300),
     };
 
+    /// The "improve this résumé" agentic flow
+    /// ([`crate::agent::flows::IMPROVE_RESUME_SYSTEM`]) — a REVIEW pass over a
+    /// generation that already exists, not a second way to write one.
+    ///
+    /// **`step_timeout` = 90 min, and it is DERIVED, not chosen.** This flow is
+    /// the only home of `run_quality_pipeline`
+    /// ([`crate::agent::tools_pipeline`]), and
+    /// [`crate::agent::controller`] races EVERY tool call against this field:
+    /// one call of that tool is a whole quality run, bounded by
+    /// `tools_pipeline::quality_tool_deadline()` =
+    /// `pipeline::resume::run_deadline(RESUME_QUALITY, timeouts::quality_run_deadline(None))`
+    /// = **4 500 s**, and the pipeline's `guard_deadline` refuses only the NEXT
+    /// call — a call admitted one second inside the deadline still runs its own
+    /// full [`Self::RESUME_QUALITY`]-flow bound (`timeouts::OLLAMA_COMPLETION`,
+    /// 300 s). So the floor is 4 500 + 300 + a 10 s two-clock margin = 4 810 s,
+    /// and 5 400 leaves ~590 s for the non-provider work inside the same call
+    /// (loading the inputs, assembling, compaction, the JSON summary). The
+    /// arithmetic is asserted at COMPILE time next to the constants it reads,
+    /// in `agent::tools_pipeline` — the same place, and the same discipline, as
+    /// `AGENT_STAGE_DEADLINE`'s own relation.
+    ///
+    /// **Cost of that number, stated rather than left to be discovered:** the
+    /// step timeout is ONE clock for every turn and every tool call, so a hung
+    /// provider on an ordinary turn of THIS flow is now caught after 90 minutes
+    /// instead of 6. That is the price of admitting a 75-minute tool into an
+    /// agent loop that has a single per-step race; the flow's other bounds
+    /// (`max_steps`, `max_tokens`, the user's own Stop, and each provider
+    /// call's own HTTP timeout, which still fires first in the common case) are
+    /// unchanged. A per-TOOL timeout is the real fix and is a controller
+    /// change, not a budget one.
+    ///
+    /// **`max_steps` = 10.** The prompt's fixed sequence is 7 turns (a plan
+    /// turn, 5 tool turns — `get_quality_report`, `validate_resume`,
+    /// `search_candidate_evidence`, the post-fix `validate_resume` re-check,
+    /// `save_resume` — and a closing summary), plus AT MOST 1 rationed optional
+    /// call (`get_trim_suggestions` or `run_quality_pipeline`): 8 worst case,
+    /// with 2 turns of slack for a model that splits a step or retries a
+    /// declined confirm. Fewer than [`Self::AGENT_PREP`]'s 14 because this flow
+    /// drafts nothing: it reads a document that exists, reasons, and asks once
+    /// to save. The prompt-side half is asserted by
+    /// `agent::flows::tests::improve_resume_sequence_fits_the_step_budget`, the
+    /// budget-side half by the compile-time relations below.
+    ///
+    /// **`max_tool_calls` = 8.** The same arithmetic in CALLS: 5 fixed + 1
+    /// rationed optional = 6, plus 2 of slack, and below `max_steps` for the
+    /// reason `AGENT_PREP` gives. **Read [`Self::max_tool_calls`] before
+    /// relying on it — nothing enforces it in this flow either.**
+    ///
+    /// **`max_tokens` = 80_000.** The résumé under review crosses the
+    /// transcript up to four times: as the fenced generation in the seed
+    /// message, as `validate_resume`'s `draft` twice (the check and the
+    /// post-fix re-check), and as `save_resume`'s args. At
+    /// [`crate::agent::tools::SAVED_RESUME_CAP`] (40k chars ≈ 10k tokens) for
+    /// the save and [`crate::agent::tools::RESUME_CAP`] (8k chars ≈ 2k tokens)
+    /// for each fenced/`draft` copy that is ~16k tokens, plus the compacted
+    /// report/evidence/trim summaries (each bounded by `tools_quality`'s
+    /// `SUMMARY_CAP`), plus `run_quality_pipeline`'s returned draft, plus the
+    /// 6-tool schema payload re-sent every turn. ~50k realistic worst case;
+    /// 80k keeps a large document from truncating the run before the save, at
+    /// two thirds of the prep ceiling because this flow carries no cover
+    /// letter, no company research and no match result.
+    ///
+    /// **`run_timeout` = 120 min**, and — like every agent budget's — it is NOT
+    /// enforced by [`crate::agent::controller`], which counts steps and tokens
+    /// and races `step_timeout` but has no whole-run clock
+    /// ([`StoppedReason::RunTimeout`] has no producer there). Documented
+    /// ceiling: one 90-minute pipeline call plus nine ordinary turns at ~2
+    /// min/turn ≈ 108 min, so 120 is the honest bound for the run this flow
+    /// plans, and it satisfies the `run_timeout >= step_timeout` invariant the
+    /// consistency test checks.
+    ///
+    /// **`max_sections`/`max_repair_attempts`** are inert here for the reason
+    /// [`Self::AGENT_PREP`] states; they carry the app-wide defaults.
+    ///
+    /// **`confirm_timeout`** is the app-wide 300 s: the same wait the prep
+    /// flow's saves get, because it is the same human answering the same
+    /// question about the same kind of document.
+    pub const AGENT_IMPROVE: Self = Self {
+        max_steps: 10,
+        max_tool_calls: 8,
+        max_tokens: 80_000,
+        max_sections: DEFAULT_MAX_SECTIONS,
+        max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
+        step_timeout: Duration::from_secs(90 * 60),
+        run_timeout: Duration::from_secs(120 * 60),
+        confirm_timeout: Duration::from_secs(300),
+    };
+
     /// The section-wise résumé generation + validation pipeline.
     ///
     /// **`max_steps` = 20.** A section-wise run is one step per section plus the
@@ -355,6 +443,31 @@ const _: () = assert!(
 // would silently rule the fix out.
 const _: () = assert!(
     Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
+    "a run that exhausts its tool calls must still have turns left to summarize"
+);
+
+/// 5 fixed tool turns (`get_quality_report`, `validate_resume`,
+/// `search_candidate_evidence`, the post-fix `validate_resume` re-check,
+/// `save_resume`) + 1 rationed optional call.
+const IMPROVE_WORST_CASE_TOOL_CALLS: usize = 6;
+/// ...plus a planning turn and a closing-summary turn.
+const IMPROVE_WORST_CASE_TURNS: usize = IMPROVE_WORST_CASE_TOOL_CALLS + 2;
+
+// The same three relations `AGENT_PREP` carries, for the same reasons, on the
+// review flow: a budget shrunk past what its prompt's own sequence needs must
+// fail `cargo build` rather than strand a real run at `StoppedReason::MaxSteps`
+// — here, between the validation spend and the one save the whole flow exists
+// to offer.
+const _: () = assert!(
+    Budget::AGENT_IMPROVE.max_steps > IMPROVE_WORST_CASE_TURNS,
+    "AGENT_IMPROVE.max_steps must leave slack above the 8-turn improve worst case"
+);
+const _: () = assert!(
+    Budget::AGENT_IMPROVE.max_tool_calls >= IMPROVE_WORST_CASE_TOOL_CALLS,
+    "AGENT_IMPROVE.max_tool_calls must admit the 6-call improve worst case"
+);
+const _: () = assert!(
+    Budget::AGENT_IMPROVE.max_tool_calls < Budget::AGENT_IMPROVE.max_steps,
     "a run that exhausts its tool calls must still have turns left to summarize"
 );
 /// The résumé pipeline's fixed non-section stages: plan, header, assemble,

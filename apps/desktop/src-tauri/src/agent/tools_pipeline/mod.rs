@@ -121,6 +121,33 @@ const _: () = assert!(
     "a stage the agent runs plus one full provider call must fit inside one agent step"
 );
 
+// The same relation for the OTHER direction of the same race, and the reason
+// `Budget::AGENT_IMPROVE.step_timeout` is 90 minutes: `run_quality_pipeline` is
+// reachable only from the improve flow, and ONE call of it is a whole quality
+// run bounded by [`quality_tool_deadline`] — `run_deadline(RESUME_QUALITY,
+// quality_run_deadline(None))`, i.e. `RESUME_QUALITY.run_timeout` (4 500 s) at
+// the effort-blind bottom tier, which
+// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier` and
+// `the_tool_run_deadline_is_the_commands_own_floor` pin — the second one against
+// the FUNCTION, which is what makes it legitimate for this assert to read the
+// constant instead (a `const` cannot call `quality_tool_deadline`).
+//
+// Unlike `AGENT_STAGE_DEADLINE` above, the deadline is FIXED (it is the same
+// floor the IPC command uses, deliberately) and the step timeout is what has to
+// clear it: `guard_deadline` refuses the NEXT call, so a call admitted one
+// second inside the deadline still runs its own full `OLLAMA_COMPLETION`. A
+// `step_timeout` shrunk under that sum makes the controller's race, not the
+// pipeline's own deadline, the thing that ends the run — at
+// `StoppedReason::Timeout`, mid-tool, with nothing saved — so it fails
+// `cargo build` rather than a test.
+const _: () = assert!(
+    Budget::RESUME_QUALITY.run_timeout.as_secs()
+        + timeouts::OLLAMA_COMPLETION.as_secs()
+        + AGENT_STAGE_MARGIN_SECS
+        < Budget::AGENT_IMPROVE.step_timeout.as_secs(),
+    "one whole quality run plus the last call it may admit must fit inside one improve-flow step"
+);
+
 /// Max entries kept per list in [`compact_job_analysis`]. A posting is free to
 /// state forty "must haves"; the model reading this summary needs the top of
 /// each list, not all of it, and the drops are counted in `truncated`.

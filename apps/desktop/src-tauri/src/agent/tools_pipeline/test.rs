@@ -115,6 +115,30 @@ fn the_tool_run_deadline_is_the_commands_own_floor() {
     );
 }
 
+/// The flow that can actually CALL this tool must survive it: the controller
+/// races every tool call against `Budget::step_timeout`, so one whole quality
+/// run plus the one `OLLAMA_COMPLETION` call `guard_deadline` may still admit
+/// just inside the deadline has to fit inside one improve-flow step.
+///
+/// **The GUARD is the `const _: () = assert!` in `super`** (same reason the
+/// stage-deadline test above states): shrinking `AGENT_IMPROVE.step_timeout`
+/// fails `cargo check`, not this test. What this adds is the half a `const`
+/// cannot check — `quality_tool_deadline()` is a FUNCTION (it takes a `max`
+/// against an effort-scaled value), so the constant the assert reads is only a
+/// faithful stand-in while the two agree, and here they are compared directly.
+#[test]
+fn one_whole_quality_run_fits_inside_one_improve_flow_step() {
+    assert!(
+        quality_tool_deadline() + timeouts::OLLAMA_COMPLETION < Budget::AGENT_IMPROVE.step_timeout,
+        "quality_tool_deadline ({:?}) + OLLAMA_COMPLETION ({:?}) must stay under \
+         AGENT_IMPROVE.step_timeout ({:?}) — otherwise the controller's race, not the \
+         pipeline's own deadline, ends the run at StoppedReason::Timeout with nothing saved",
+        quality_tool_deadline(),
+        timeouts::OLLAMA_COMPLETION,
+        Budget::AGENT_IMPROVE.step_timeout,
+    );
+}
+
 // ── compact_job_analysis ──────────────────────────────────────────────────
 
 fn analysis_with(items: usize) -> JobAnalysis {
