@@ -45,6 +45,10 @@
 #let date-pos      = if "date_position"    in data.opts { data.opts.date_position    } else { "below-header" }
 #let subj-used     = if "subject_line_used"  in data.opts { data.opts.subject_line_used  } else { false }
 #let subj-label    = if "subject_line_label" in data.opts { data.opts.subject_line_label } else { "" }
+// ATS mode drops the decorative band — the same rule the résumé side applies to
+// `theme::has_header_band` templates ("both renderers drop it in ATS mode").
+// Nothing else about the arrangement changes; the band carries no words.
+#let ats   = if "ats" in data.opts { data.opts.ats } else { false }
 
 // ── Band geometry ─────────────────────────────────────────────────────────────
 // Full-bleed angled band: level along the top edge, sloping down to the left.
@@ -67,7 +71,7 @@
   height: pg-h,
   margin: (left: 25.4mm, right: 25.4mm, top: 22mm, bottom: 25.4mm),
   background: context {
-    if counter(page).get().first() == 1 {
+    if not ats and counter(page).get().first() == 1 {
       place(top + left,
         polygon(
           fill: c-band,

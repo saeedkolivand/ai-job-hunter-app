@@ -121,6 +121,8 @@ fn no_cover_letter_font_size_exceeds_sane_ceiling() {
             LetterLayout::Refined,
             LetterLayout::Banded,
             LetterLayout::Navy,
+            LetterLayout::Sidebar,
+            LetterLayout::Monogram,
         ] {
             let request = ExportRequest {
                 text: REFINED_US_TEXT.to_string(),
@@ -478,31 +480,156 @@ fn cover_letter_docx_banded_adds_right_aligned_contact_and_footer_border() {
 
 #[test]
 fn cover_letter_docx_layouts_produce_distinct_bytes() {
-    let classic =
-        generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Classic)).expect("classic");
-    let refined =
-        generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Refined)).expect("refined");
-    let banded =
-        generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Banded)).expect("banded");
-    let navy = generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Navy)).expect("navy");
+    // Pairwise over the WHOLE roster. Hand-written pairs are how a new layout
+    // ends up silently rendering as another one: `generate_cover_letter_docx_
+    // layout` branched on a single `is_refined` boolean, so Navy inherited
+    // Banded's shaded header band and rule footer — the same export produced a
+    // Navy PDF and a Banded DOCX. Navy vs Banded remains the load-bearing pair
+    // and now cannot be dropped by accident.
+    let rendered: Vec<(LetterLayout, Vec<u8>)> = [
+        LetterLayout::Classic,
+        LetterLayout::Refined,
+        LetterLayout::Banded,
+        LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ]
+    .into_iter()
+    .map(|layout| {
+        let bytes = generate_docx(&letter_request(REFINED_US_TEXT, layout))
+            .unwrap_or_else(|e| panic!("{layout:?} docx: {e}"));
+        assert!(!bytes.is_empty(), "{layout:?} produced empty DOCX bytes");
+        (layout, bytes)
+    })
+    .collect();
 
-    assert!(!classic.is_empty() && !refined.is_empty() && !banded.is_empty() && !navy.is_empty());
-    assert_ne!(
-        classic, refined,
-        "Classic and Refined DOCX bytes must differ"
+    for (i, (a_id, a)) in rendered.iter().enumerate() {
+        for (b_id, b) in rendered.iter().skip(i + 1) {
+            assert_ne!(a, b, "{a_id:?} and {b_id:?} DOCX bytes must differ");
+        }
+    }
+}
+
+/// Sidebar's DOCX approximates the tinted rail as paragraph shading behind the
+/// name (there is no margin-anchored frame in DOCX, and a text box or a
+/// two-column table would be exactly the multi-column trap the export avoids)
+/// and keeps the contact at the LEFT margin, because the rail stacks it under
+/// the name rather than pulling it to the right edge.
+///
+/// The contact alignment is the assertion that matters: it was a function of
+/// "centred or right" before this layout existed, so a Sidebar that forgot to
+/// state its own alignment would silently right-align — the same
+/// inherit-by-omission defect that took four review rounds on Navy.
+#[test]
+fn sidebar_docx_shades_the_name_and_left_aligns_the_contact() {
+    let xml = document_xml(
+        &generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Sidebar)).expect("sidebar"),
     );
-    assert_ne!(classic, banded, "Classic and Banded DOCX bytes must differ");
-    assert_ne!(refined, banded, "Refined and Banded DOCX bytes must differ");
-    // Navy vs Banded is the load-bearing pair: `generate_cover_letter_docx_layout`
-    // branched on a single `is_refined` boolean, so Navy silently inherited
-    // Banded's shaded header band and rule footer — a letter that rendered as
-    // Navy in PDF and as Banded in DOCX from the same export.
-    assert_ne!(
-        navy, banded,
-        "Navy must not render as Banded in DOCX — it has no header band"
+    // Classic's accent #222222 lightened 85 % toward white → #DEDEDE, the same
+    // `band_tint_hex` Banded uses, so PDF and DOCX show one tint.
+    assert!(
+        xml.contains("w:shd") && xml.contains(r#"w:fill="DEDEDE""#),
+        "Sidebar must approximate the rail with the lightened-accent shading: {xml}"
     );
-    assert_ne!(navy, refined, "Navy and Refined DOCX bytes must differ");
-    assert_ne!(navy, classic, "Navy and Classic DOCX bytes must differ");
+    assert!(
+        xml.contains(r#"w:jc w:val="left""#),
+        "Sidebar must LEFT-align the contact line — the rail stacks it under the name: {xml}"
+    );
+    assert!(
+        !xml.contains(r#"w:jc w:val="right""#),
+        "Sidebar must not inherit Refined/Banded's right-aligned contact: {xml}"
+    );
+    assert!(
+        xml.contains("Jane Smith"),
+        "Sidebar must keep the name as written (no uppercasing): {xml}"
+    );
+}
+
+/// Monogram's DOCX device is a shaded RUN at the head of the name paragraph,
+/// carrying the SAME initials the `.typ` gets from `LetterHead.initials` — both
+/// call `monogram_initials`, so the two formats cannot disagree about what the
+/// device says, and both extract "JS Jane Smith" rather than putting the
+/// initials on a line of their own.
+#[test]
+fn monogram_docx_prefixes_the_name_with_the_shaded_initials() {
+    let xml = document_xml(
+        &generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Monogram)).expect("monogram"),
+    );
+    assert!(
+        xml.contains("JS  "),
+        "Monogram must emit the initials run before the name: {xml}"
+    );
+    assert!(
+        xml.contains("w:shd") && xml.contains(r#"w:fill="DEDEDE""#),
+        "the Monogram initials run must carry the accent-tint shading: {xml}"
+    );
+    // Run shading, not paragraph shading: the initials sit BESIDE the name in
+    // the `.typ`, so they must share its paragraph.
+    let name_para = xml
+        .split("<w:p>")
+        .find(|p| p.contains("Jane Smith"))
+        .expect("a paragraph containing the name");
+    assert!(
+        name_para.contains("JS  "),
+        "the initials must live in the NAME paragraph, not one of their own: {name_para}"
+    );
+    assert!(
+        xml.contains(r#"w:jc w:val="left""#),
+        "Monogram must left-align the contact line under the lockup: {xml}"
+    );
+}
+
+/// ATS mode drops the decorative tint in DOCX exactly as it does in the PDF.
+/// Without this the two formats disagree: the user turns the toggle on, the PDF
+/// loses its band and the Word file keeps it.
+#[test]
+fn ats_mode_drops_every_letter_docx_tint() {
+    for layout in [
+        LetterLayout::Banded,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ] {
+        let design = document_xml(
+            &generate_docx(&letter_request(REFINED_US_TEXT, layout)).expect("design docx"),
+        );
+        let mut ats_request = letter_request(REFINED_US_TEXT, layout);
+        ats_request.ats_mode = true;
+        let ats = document_xml(&generate_docx(&ats_request).expect("ats docx"));
+
+        assert!(
+            design.contains(r#"w:fill="DEDEDE""#),
+            "precondition: {layout:?} is expected to carry the accent tint in design mode"
+        );
+        assert!(
+            !ats.contains(r#"w:fill="DEDEDE""#),
+            "{layout:?} must drop its accent tint under ATS mode: {ats}"
+        );
+        // Degradation loses decoration, not words.
+        for needle in ["Jane Smith", "Dear Hiring Manager", "distributed systems"] {
+            assert!(
+                ats.contains(needle),
+                "ATS-mode {layout:?} DOCX dropped {needle:?}: {ats}"
+            );
+        }
+    }
+}
+
+/// The Monogram device is TEXT, so ATS mode must remove the initials
+/// themselves — not merely their shading.
+#[test]
+fn ats_mode_drops_the_monogram_initials_from_docx() {
+    let mut request = letter_request(REFINED_US_TEXT, LetterLayout::Monogram);
+    request.ats_mode = true;
+    let ats = document_xml(&generate_docx(&request).expect("ats monogram docx"));
+    assert!(
+        !ats.contains("JS  "),
+        "ATS-mode Monogram must not emit the initials run — they extract as noise \
+         before the name: {ats}"
+    );
+    assert!(
+        ats.contains("Jane Smith"),
+        "ATS-mode Monogram must still render the name: {ats}"
+    );
 }
 
 /// Navy's DOCX must match Navy's PDF, not Banded's.
@@ -627,6 +754,8 @@ fn letterhead_less_letter_keeps_its_salutation_and_body() {
         LetterLayout::Refined,
         LetterLayout::Banded,
         LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
     ] {
         let request = ExportRequest {
             text: "Dear Hiring Manager,\n\nI am writing to apply for the role.\n\nSincerely,\nJane Smith".to_string(),
@@ -672,6 +801,8 @@ fn letterhead_less_letter_with_subject_line_keeps_subject_and_body() {
         LetterLayout::Refined,
         LetterLayout::Banded,
         LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
     ] {
         let request = ExportRequest {
             text: "Betreff: Bewerbung als Software Engineer\n\nSehr geehrte Frau Dr. Weber,\n\nmit großem Interesse habe ich Ihre Stellenausschreibung gelesen und bewerbe mich hiermit.\n\nMit freundlichen Grüßen,\nMax Müller".to_string(),

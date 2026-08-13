@@ -140,6 +140,24 @@ pub enum LetterLayout {
     /// ruled header. Shared like every layout — it inherits whichever template's
     /// palette is active. Source: `letter_navy.typ`.
     Navy,
+    /// Tinted full-height contact rail in a widened left margin, carrying the
+    /// name / role / contact block; the correspondence body runs beside it.
+    /// Styled to pair with the sidebar résumé families (Atelier, Aria, Saffron,
+    /// Deedy) but, like every layout, offered to all of them.
+    ///
+    /// The rail is **decorative**: under `ats_mode` it disappears and the
+    /// letterhead stacks above the body in one plain column. Source:
+    /// `letter_sidebar.typ`.
+    Sidebar,
+    /// Accent initials device (a filled square carrying up to two letters)
+    /// beside a name / role / contact lockup, over a full-width rule, body
+    /// below. Styled to pair with the bold-header résumé families (Awesome,
+    /// Jake, Throughline).
+    ///
+    /// The device is **decorative** — its initials duplicate the name that
+    /// follows — so under `ats_mode` it is dropped and only the lockup remains.
+    /// Source: `letter_monogram.typ`.
+    Monogram,
 }
 
 impl<'de> serde::Deserialize<'de> for LetterLayout {
@@ -150,6 +168,8 @@ impl<'de> serde::Deserialize<'de> for LetterLayout {
             "refined" => LetterLayout::Refined,
             "banded" => LetterLayout::Banded,
             "navy" => LetterLayout::Navy,
+            "sidebar" => LetterLayout::Sidebar,
+            "monogram" => LetterLayout::Monogram,
             // Any unknown / removed id falls back to Classic so a stale frontend
             // never breaks cover-letter export.
             _ => {
@@ -382,7 +402,7 @@ mod tests {
         }
     }
 
-    /// All three letter layouts round-trip through kebab-case serde.
+    /// Every letter layout round-trips through kebab-case serde.
     #[test]
     fn letter_layout_round_trips() {
         let cases = [
@@ -390,6 +410,8 @@ mod tests {
             (LetterLayout::Refined, "\"refined\""),
             (LetterLayout::Banded, "\"banded\""),
             (LetterLayout::Navy, "\"navy\""),
+            (LetterLayout::Sidebar, "\"sidebar\""),
+            (LetterLayout::Monogram, "\"monogram\""),
         ];
         for (layout, expected_json) in cases {
             let serialized = serde_json::to_string(&layout).expect("serialize");

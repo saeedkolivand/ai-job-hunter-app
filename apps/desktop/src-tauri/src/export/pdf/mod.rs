@@ -193,6 +193,12 @@ pub fn generate_pdf(request: &ExportRequest) -> AppResult<Vec<u8>> {
                 market,
                 &lang,
                 request.letter_layout,
+                // ATS mode reaches the letter the same way it reaches the
+                // résumé: layouts drop their decorative elements (Sidebar's
+                // rail, Monogram's device, Banded's band) and keep the words.
+                // Before this, `ats_mode` was read for résumés only and a
+                // cover letter silently ignored the toggle.
+                request.ats_mode,
             )
             .map_err(|e| AppError::Parse(format!("Failed to generate cover letter PDF: {e}")))
         }
@@ -257,6 +263,9 @@ pub fn generate_preview_svg(request: &ExportRequest) -> AppResult<Vec<String>> {
                 market,
                 &lang,
                 request.letter_layout,
+                // Same ATS flag as the export path — the live preview must show
+                // the degraded layout, not a rail the exported PDF won't have.
+                request.ats_mode,
             )
             .map_err(|e| AppError::Parse(format!("Failed to render cover letter preview: {e}")))
         }

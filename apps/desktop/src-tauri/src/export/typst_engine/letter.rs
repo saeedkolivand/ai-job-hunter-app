@@ -91,6 +91,16 @@ pub(super) struct LetterOpts {
     pub recipient_position: String,
     pub subject_line_used: bool,
     pub subject_line_label: String,
+    /// ATS mode — the request's `ats_mode`, threaded through so a layout can
+    /// drop its **decorative, non-semantic** elements (Sidebar's tinted rail,
+    /// Monogram's initials device, Banded's accent band) while keeping every
+    /// word of the letter.
+    ///
+    /// This is the letter-side counterpart of the résumé's `RenderOpts.ats` and
+    /// `theme::has_header_band`: "both renderers drop it in ATS mode". Layouts
+    /// gate on THIS, never on the layout id — the id picks the arrangement, the
+    /// opts decide which parts of it are legal for this export.
+    pub ats: bool,
 }
 
 /// Letterhead block: candidate name + tokenised contact runs.
@@ -99,6 +109,10 @@ pub(super) struct LetterHead {
     pub name: String,
     /// Rich-text runs for the contact line (links first-class).
     pub contact: Vec<LetterRun>,
+    /// Up to two uppercase initials derived from [`Self::name`] — see
+    /// [`monogram_initials`]. Part of the shared model (any layout may use it);
+    /// only `letter_monogram.typ` renders it today, and only outside ATS mode.
+    pub initials: String,
 }
 
 /// Styling pulled from the chosen resume [`Template`] so the letter visually
@@ -209,6 +223,44 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
     }
 }
 
+/// Up to **two** uppercase initials for a letterhead monogram device: the first
+/// letter of the first name-bearing token and the first letter of the last one.
+///
+/// Derived in Rust rather than in Typst because the edge cases are all string
+/// handling that a `.typ` cannot be tested on: a mononym ("Prince" → `P`), a
+/// multi-part surname ("Jane van der Berg" → `JB`, first + LAST, not the first
+/// two), tokens that carry no letter at all ("Jane (she/her) Smith" — the
+/// parenthetical contributes nothing), and non-ASCII capitals ("Àlvaro
+/// Èsposito" → `ÀÈ`, which must survive PDF extraction like every other
+/// accented capital in this engine).
+///
+/// Never longer than two characters, so the device is a fixed-size square no
+/// matter how long the name is — a third initial would overflow it. Returns an
+/// empty string for a nameless letterhead; the template skips the device then.
+pub(crate) fn monogram_initials(name: &str) -> String {
+    // A token contributes only if it contains a letter or digit somewhere; the
+    // initial is that token's FIRST alphanumeric char, so "(she/her)" is skipped
+    // entirely while "O'Brien" still yields `O`.
+    let mut initials = name
+        .split_whitespace()
+        .filter_map(|tok| tok.chars().find(|c| c.is_alphanumeric()));
+
+    let Some(first) = initials.next() else {
+        return String::new();
+    };
+    // `to_uppercase` can expand (ß → SS); take one char so the device stays
+    // exactly one glyph per initial.
+    let up = |c: char| c.to_uppercase().next().unwrap_or(c);
+
+    // `next_back`, not `last`: the iterator is double-ended, and `first` has
+    // already been consumed, so this is the last REMAINING token — a mononym
+    // therefore yields `None` here rather than re-finding its own initial.
+    match initials.next_back() {
+        Some(last) => [up(first), up(last)].iter().collect(),
+        None => up(first).to_string(),
+    }
+}
+
 /// Parse a finished cover-letter text into a structured [`LetterModel`].
 ///
 /// Parsing rules:
@@ -221,6 +273,10 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
 /// - Post-signoff: first non-blank non-name line is signature_title.
 ///
 /// Gracefully handles all-missing parts — body may be empty but never panics.
+///
+/// `ats` is the request's ATS mode. It is a required parameter rather than a
+/// default so a new caller has to state it: an ATS toggle that silently fails to
+/// reach the renderer looks identical to one that works.
 pub(super) fn parse_cover_letter(
     text: &str,
     contact: Option<&ContactProfile>,
@@ -228,6 +284,7 @@ pub(super) fn parse_cover_letter(
     market: &str,
     lang: &str,
     style: LetterStyle,
+    ats: bool,
 ) -> LetterModel {
     let conv = conventions(market);
 
@@ -243,6 +300,7 @@ pub(super) fn parse_cover_letter(
         recipient_position: conv.recipient_position.clone(),
         subject_line_used: conv.subject_line.used,
         subject_line_label: conv.subject_line.label.clone(),
+        ats,
     };
 
     // ── Letterhead ────────────────────────────────────────────────────────────
@@ -295,6 +353,7 @@ pub(super) fn parse_cover_letter(
     };
 
     let letterhead = LetterHead {
+        initials: monogram_initials(&name_text),
         name: name_text.clone(),
         contact: contact_runs,
     };
@@ -629,7 +688,15 @@ Max Müller
         // arm then ate the BODY's blank lines and the whole letter collapsed into
         // a single run-on paragraph.
         let letter = "Dear Hiring Manager,\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n\nSincerely,\n\nJane Smith\n";
-        let model = parse_cover_letter(letter, None, Some("Jane Smith"), "us", "en", dummy_style());
+        let model = parse_cover_letter(
+            letter,
+            None,
+            Some("Jane Smith"),
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
 
         assert_eq!(
             model.body.len(),
@@ -645,7 +712,15 @@ Max Müller
         // Two leading pre-body lines instead of three — still not enough to burn
         // the skip budget before the body starts.
         let letter = "12 March 2025\n\nDear Hiring Manager,\n\nFirst paragraph.\n\nSecond paragraph.\n\nSincerely,\n\nJane Smith\n";
-        let model = parse_cover_letter(letter, None, Some("Jane Smith"), "us", "en", dummy_style());
+        let model = parse_cover_letter(
+            letter,
+            None,
+            Some("Jane Smith"),
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
 
         assert_eq!(model.body.len(), 2, "got {:?}", model.body);
     }
@@ -659,6 +734,7 @@ Max Müller
             "us",
             "en",
             dummy_style(),
+            false,
         );
 
         assert_eq!(model.letterhead.name, "Jane Smith");
@@ -721,6 +797,7 @@ Max Müller
             "de",
             "de",
             dummy_style(),
+            false,
         );
 
         assert_eq!(model.letterhead.name, "Max Müller");
@@ -761,18 +838,18 @@ Max Müller
 
     #[test]
     fn de_market_uses_a4_us_market_uses_letter() {
-        let m_de = parse_cover_letter("x", None, None, "de", "de", dummy_style());
+        let m_de = parse_cover_letter("x", None, None, "de", "de", dummy_style(), false);
         assert_eq!(m_de.opts.page_width_mm, A4_W);
         assert_eq!(m_de.opts.page_height_mm, A4_H);
 
-        let m_us = parse_cover_letter("x", None, None, "us", "en", dummy_style());
+        let m_us = parse_cover_letter("x", None, None, "us", "en", dummy_style(), false);
         assert_eq!(m_us.opts.page_width_mm, LETTER_W);
         assert_eq!(m_us.opts.page_height_mm, LETTER_H);
     }
 
     #[test]
     fn de_market_opts_carry_subject_label_and_date_position() {
-        let m = parse_cover_letter("x", None, None, "de", "de", dummy_style());
+        let m = parse_cover_letter("x", None, None, "de", "de", dummy_style(), false);
         assert!(m.opts.subject_line_used);
         assert_eq!(m.opts.subject_line_label, "Betreff");
         assert_eq!(m.opts.date_position, "top-right");
@@ -796,7 +873,15 @@ I **significantly** improved our pipeline. Results were **outstanding**.
 Sincerely,
 Alice
 ";
-        let model = parse_cover_letter(letter, None, Some("Alice"), "us", "en", dummy_style());
+        let model = parse_cover_letter(
+            letter,
+            None,
+            Some("Alice"),
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
         assert!(!model.body.is_empty(), "body must not be empty");
         // At least one run in the body should be bold
         let has_bold = model.body.iter().any(|para| para.iter().any(|r| r.bold));
@@ -825,7 +910,7 @@ Alice
     #[test]
     fn unknown_market_falls_back_gracefully() {
         // Should not panic; intl baseline applies
-        let model = parse_cover_letter("x", None, None, "zz", "en", dummy_style());
+        let model = parse_cover_letter("x", None, None, "zz", "en", dummy_style(), false);
         assert_eq!(model.opts.page_width_mm, A4_W); // intl uses A4
     }
 
@@ -862,6 +947,7 @@ Saeed Kolivand
             "us",
             "en",
             dummy_style(),
+            false,
         );
 
         assert_eq!(
@@ -908,6 +994,7 @@ Saeed Kolivand
                 "us",
                 "en",
                 dummy_style(),
+                false,
             );
 
             assert!(
@@ -947,6 +1034,7 @@ Saeed Kolivand
             "us",
             "en",
             dummy_style(),
+            false,
         );
 
         assert_eq!(model.letterhead.name, "Saeed Kolivand");
@@ -964,6 +1052,7 @@ Saeed Kolivand
             "us",
             "en",
             dummy_style(),
+            false,
         );
 
         assert_eq!(model.letterhead.name, "SAEED KOLIVAND");
@@ -985,9 +1074,100 @@ Saeed Kolivand
             "us",
             "en",
             dummy_style(),
+            false,
         );
 
         assert_eq!(model.letterhead.name, "SAEED KOLIVAND");
         assert_eq!(model.signature_name, "SAEED KOLIVAND");
+    }
+
+    // ── monogram_initials ─────────────────────────────────────────────────────
+    //
+    // Pure string logic behind `letter_monogram.typ`'s device (and its DOCX
+    // shaded-run approximation, which calls the SAME function). Every case here
+    // is one a `.typ` could not be tested on.
+
+    #[test]
+    fn monogram_initials_takes_the_first_and_last_name_tokens() {
+        assert_eq!(monogram_initials("Jane Smith"), "JS");
+        // First + LAST, not the first two — a `.take(2)` implementation returns
+        // "JV" here, which is the wrong monogram for a multi-part surname.
+        assert_eq!(monogram_initials("Jane van der Berg"), "JB");
+        assert_eq!(monogram_initials("Mary Jane Watson Parker"), "MP");
+    }
+
+    #[test]
+    fn monogram_initials_uppercases_and_survives_non_ascii_capitals() {
+        assert_eq!(monogram_initials("àlvaro èsposito"), "ÀÈ");
+        assert_eq!(monogram_initials("Àlvaro Èsposito"), "ÀÈ");
+        // `char::to_uppercase` expands ß to "SS"; only the first char is taken so
+        // the fixed-size device still holds exactly two glyphs.
+        assert_eq!(monogram_initials("ßiggi ßmith").chars().count(), 2);
+    }
+
+    #[test]
+    fn monogram_initials_handles_mononyms_and_letterless_tokens() {
+        assert_eq!(monogram_initials("Prince"), "P");
+        // A parenthetical pronoun block carries no leading alphanumeric, so it
+        // must not become the second initial ("J(" would be nonsense).
+        assert_eq!(monogram_initials("Jane (she/her) Smith"), "JS");
+        assert_eq!(monogram_initials("Jane (she/her)"), "JS");
+        assert_eq!(monogram_initials("O'Brien"), "O");
+    }
+
+    /// A letterhead-less letter parses to an empty name; the device must then
+    /// render nothing rather than an empty tinted square.
+    #[test]
+    fn monogram_initials_is_empty_for_a_nameless_letterhead() {
+        assert_eq!(monogram_initials(""), "");
+        assert_eq!(monogram_initials("   \t "), "");
+        assert_eq!(monogram_initials("--- ***"), "");
+    }
+
+    /// Never more than two glyphs, whatever the name — the `.typ` device is a
+    /// fixed-size square and a third initial would overflow it.
+    #[test]
+    fn monogram_initials_never_exceeds_two_characters() {
+        for name in [
+            "A B C D E F",
+            "Jane Smith",
+            "Prince",
+            "Maria del Carmen Fernández de la Vega",
+            "",
+        ] {
+            assert!(
+                monogram_initials(name).chars().count() <= 2,
+                "{name:?} produced more than two initials"
+            );
+        }
+    }
+
+    /// The parser must publish the initials on the letterhead — the `.typ` reads
+    /// `data.letterhead.initials`, so a model that omits them silently renders an
+    /// empty device.
+    #[test]
+    fn parsed_letterhead_carries_the_monogram_initials() {
+        let model = parse_cover_letter(
+            EN_LETTER,
+            None,
+            Some("Jane Smith"),
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
+        assert_eq!(model.letterhead.initials, "JS");
+    }
+
+    /// `ats` reaches `data.opts` verbatim — the whole ATS degradation story for
+    /// every layout hangs off this one field being threaded, and an ATS toggle
+    /// that silently fails to reach the renderer looks exactly like one that
+    /// works.
+    #[test]
+    fn ats_flag_reaches_letter_opts() {
+        let on = parse_cover_letter("x", None, None, "us", "en", dummy_style(), true);
+        let off = parse_cover_letter("x", None, None, "us", "en", dummy_style(), false);
+        assert!(on.opts.ats, "ats=true must reach data.opts.ats");
+        assert!(!off.opts.ats, "ats=false must reach data.opts.ats");
     }
 }
