@@ -971,6 +971,7 @@
           "stagesHeading": "In this app",
           "stagesBody": "Models per step are the setting this app owns. Anything you accept here is saved as a normal override you can undo in Settings.",
           "stagesNothing": "Nothing to change here: every reading step is either already pinned, or there is no measurably smaller model installed to move it to.",
+          "stagesDeclined": "Suggestion dismissed. It is still available on the AI settings card, under per-stage models.",
           "appHeading": "Already handled per request",
           "appBody": "The app sends the context window (num_ctx) you configured with every staged request, and keeps the model loaded between steps (keep_alive) so it is not re-read from disk each time. Nothing to do here.",
           "serverHeading": "On your Ollama server — run these yourself",

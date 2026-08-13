@@ -79,6 +79,7 @@ const KEYS = [
   'settings.ai.advisor.recommend.stagesHeading',
   'settings.ai.advisor.recommend.stagesBody',
   'settings.ai.advisor.recommend.stagesNothing',
+  'settings.ai.advisor.recommend.stagesDeclined',
   'settings.ai.advisor.recommend.appHeading',
   'settings.ai.advisor.recommend.appBody',
   'settings.ai.advisor.recommend.serverHeading',

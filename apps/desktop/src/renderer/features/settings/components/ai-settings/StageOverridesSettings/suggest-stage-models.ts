@@ -70,6 +70,15 @@ export interface StageSuggestion {
  * billions. Returns `null` for anything unrecognised — the whole point is that
  * an unparsed size disqualifies a model instead of defaulting it.
  */
+/**
+ * Identity of the installed SET, for a host that remembers a declined
+ * suggestion. Order-independent, so re-listing the same models is the same set
+ * — but a new model on disk is new information and re-arms the offer.
+ */
+export function installedSetKey(models: string[]): string {
+  return [...models].sort().join('|');
+}
+
 export function parseParameterSizeB(size: string | undefined): number | null {
   if (!size) return null;
   const match = /^\s*([\d.]+)\s*([BbMmKk])\s*$/.exec(size);

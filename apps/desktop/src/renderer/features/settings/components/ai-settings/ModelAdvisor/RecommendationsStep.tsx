@@ -1,4 +1,5 @@
 import { Terminal } from 'lucide-react';
+import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 
@@ -23,6 +24,8 @@ const SERVER_ADVICE = ['OLLAMA_FLASH_ATTENTION=1', 'OLLAMA_KV_CACHE_TYPE=q8_0'] 
  */
 export function RecommendationsStep({ ctx }: AdvisorStepProps) {
   const { t } = useTranslation();
+  /** Applied or declined — either way the offer is spent for this visit. */
+  const [declined, setDeclined] = useState(false);
 
   // Same pure predicate the banner uses, on the same inputs — so the section
   // header and its body can never disagree about whether advice exists.
@@ -41,18 +44,35 @@ export function RecommendationsStep({ ctx }: AdvisorStepProps) {
         <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
           {t('settings.ai.advisor.recommend.stagesHeading')}
         </h3>
-        {hasSuggestion ? (
+        {hasSuggestion && !declined ? (
           <StageSuggestionBanner
             activeProvider={ctx.activeProvider}
             activeModel={ctx.activeModel}
             installedModels={ctx.installedModels}
             overrides={ctx.overrides}
+            // Both paths unmount the button that was just pressed. Inside a
+            // focus-trapped dialog that is worse than untidy: focus lands on
+            // <body>, and the trap's keydown listener is bound to the panel, so
+            // the next Tab goes to the page BEHIND the overlay.
+            onApplied={() => {
+              setDeclined(true);
+              ctx.focusPrimaryAction?.();
+            }}
+            onDismiss={() => {
+              setDeclined(true);
+              ctx.focusPrimaryAction?.();
+            }}
           />
         ) : (
           // An empty section reads as "the advisor has nothing to say and won't
-          // admit it" — say the actual finding instead.
+          // admit it" — say the actual finding instead. Declining counts: the
+          // banner unmounts, and this section must not go blank with it.
           <p className="text-xs leading-relaxed text-foreground/60">
-            {t('settings.ai.advisor.recommend.stagesNothing')}
+            {t(
+              declined
+                ? 'settings.ai.advisor.recommend.stagesDeclined'
+                : 'settings.ai.advisor.recommend.stagesNothing'
+            )}
           </p>
         )}
         <p className="text-xs leading-relaxed text-foreground/50">

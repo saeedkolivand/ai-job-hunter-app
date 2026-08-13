@@ -971,6 +971,7 @@
           "stagesHeading": "In dieser App",
           "stagesBody": "Modelle pro Schritt sind die Einstellung, die diese App verwaltet. Was Sie hier übernehmen, wird als normale Übersteuerung gespeichert und lässt sich in den Einstellungen zurücknehmen.",
           "stagesNothing": "Hier gibt es nichts zu ändern: Jeder auswertende Schritt ist entweder bereits festgelegt, oder es ist kein messbar kleineres Modell installiert.",
+          "stagesDeclined": "Vorschlag ausgeblendet. Er steht weiterhin auf der KI-Einstellungskarte unter „Modelle pro Schritt“ zur Verfügung.",
           "appHeading": "Pro Anfrage bereits erledigt",
           "appBody": "Die App sendet das eingestellte Kontextfenster (num_ctx) bei jeder Anfrage eines mehrstufigen Durchlaufs mit und hält das Modell zwischen den Schritten geladen (keep_alive). Hier ist nichts zu tun.",
           "serverHeading": "Auf Ihrem Ollama-Server — selbst ausführen",

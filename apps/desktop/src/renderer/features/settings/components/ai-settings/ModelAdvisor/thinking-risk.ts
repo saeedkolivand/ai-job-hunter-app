@@ -58,7 +58,8 @@ export type ThinkingRiskLevel =
 export interface ThinkingRisk {
   model: string;
   level: ThinkingRiskLevel;
-  /** Present only for `measured-heavy` — thinking ÷ output tokens. */
+  /** thinking ÷ output tokens, for either MEASURED level. Absent when the
+   *  provider reported thinking against zero output, where no ratio exists. */
   ratio?: number;
   /** Sample size behind `ratio`. */
   calls?: number;
@@ -68,6 +69,11 @@ export interface ThinkingRisk {
 
 export interface ThinkingRiskInput {
   model: string;
+  /** The provider this model will actually run on, when known. Model ids are
+   *  not globally unique — `gpt-oss:20b` on Ollama and the same name behind an
+   *  OpenAI-compatible endpoint are different rows — so a measurement is only
+   *  this model's when the provider matches too. */
+  provider?: string;
   /** The provider's configured reasoning effort, when it has one. */
   effort?: string;
   /** `spendSummary().thinkingByModel` — empty for a local-only user. */
@@ -75,9 +81,11 @@ export interface ThinkingRiskInput {
 }
 
 export function assessThinkingRisk(input: ThinkingRiskInput): ThinkingRisk {
-  const { model, effort, measured = [] } = input;
+  const { model, provider, effort, measured = [] } = input;
 
-  const row = measured.find((m) => m.model === model);
+  const row = measured.find(
+    (m) => m.model === model && (provider === undefined || m.provider === provider)
+  );
   if (row && row.calls >= MEASURED_MIN_CALLS) {
     if (row.outputTokens > 0) {
       const ratio = row.thinkingTokens / row.outputTokens;

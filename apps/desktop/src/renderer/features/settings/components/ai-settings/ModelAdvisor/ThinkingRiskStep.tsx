@@ -28,13 +28,14 @@ const LEVEL_CLASS: Record<ThinkingRiskLevel, string> = {
 export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
   const { t } = useTranslation();
 
-  const models = [
-    ...new Set(
-      [ctx.activeModel, ...Object.values(ctx.overrides).map((o) => o.model)].filter(
-        (m): m is string => Boolean(m)
-      )
-    ),
-  ];
+  // Each model with the provider it will actually run on — a measurement only
+  // belongs to this row when both match.
+  const seen = new Map<string, string | undefined>();
+  if (ctx.activeModel) seen.set(ctx.activeModel, ctx.activeProvider);
+  for (const override of Object.values(ctx.overrides)) {
+    if (override.model) seen.set(override.model, override.provider);
+  }
+  const models = [...seen.entries()];
 
   // Nothing selected anywhere (no active model, no overrides) — say that,
   // rather than showing intro prose above an empty list.
@@ -55,9 +56,10 @@ export function ThinkingRiskStep({ ctx }: AdvisorStepProps) {
       </p>
 
       <ul className="space-y-2">
-        {models.map((model) => {
+        {models.map(([model, provider]) => {
           const risk = assessThinkingRisk({
             model,
+            provider,
             effort: ctx.effort,
             measured: ctx.thinkingByModel,
           });

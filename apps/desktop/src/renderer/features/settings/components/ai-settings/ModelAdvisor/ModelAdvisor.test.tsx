@@ -40,8 +40,15 @@ const setStageOverrideAsync = vi.fn().mockResolvedValue({});
 vi.mock('@/services', () => ({
   useModelInspections: () => ({
     byModel: {
-      // A 4k-window model: below the documented input floor.
-      'llama3.2:1b': { contextLength: 4096, parameterSize: '1.2B', quantization: 'Q4_K_M' },
+      // A 4k-window model: below the documented input floor. Its measured size
+      // also makes it a legitimate suggestion against the 32.8B active model.
+      'llama3.2:1b': {
+        contextLength: 4096,
+        parameterSize: '1.2B',
+        quantization: 'Q4_K_M',
+        family: 'llama',
+      },
+      'qwen3:32b': { contextLength: 40_960, parameterSize: '32.8B', family: 'qwen3' },
       // Reported nothing — must read as NOT MEASURED, not as small.
       'mystery:latest': null,
     },
@@ -203,6 +210,56 @@ describe('ModelAdvisor — step 3, recommendations', () => {
     expect(screen.getByText('settings.ai.advisor.recommend.serverDisclaimer')).toBeVisible();
     // Advice only: reaching this step must not have written an override.
     expect(setStageOverrideAsync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The advisor renders the settings card's suggestion banner. Both of its
+ * buttons unmount themselves, and this one lives inside a focus-trapped dialog:
+ * dropping focus on <body> lets the very next Tab reach the page behind the
+ * overlay, because the trap's keydown listener is bound to the panel.
+ */
+describe('ModelAdvisor — step 3, the suggestion inside the dialog', () => {
+  const withSuggestion = {
+    ...props,
+    activeModel: 'qwen3:32b',
+    installedModels: ['qwen3:32b', 'llama3.2:1b'],
+  };
+
+  it('keeps focus inside the dialog after the suggestion is declined', async () => {
+    const user = userEvent.setup();
+    render(<ModelAdvisor {...withSuggestion} />);
+    await next(user, 2);
+
+    await user.click(screen.getByText('settings.ai.stages.suggest.dismiss'));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(screen.getByText('settings.ai.advisor.next'));
+  });
+
+  it('replaces the declined offer with an explanation, not with nothing', async () => {
+    const user = userEvent.setup();
+    render(<ModelAdvisor {...withSuggestion} />);
+    await next(user, 2);
+
+    await user.click(screen.getByText('settings.ai.stages.suggest.dismiss'));
+
+    // The section used to go blank: dismissal lived inside the banner, so the
+    // parent's "is there a suggestion" check still said yes and rendered
+    // neither the offer nor its fallback.
+    expect(screen.getByText('settings.ai.advisor.recommend.stagesDeclined')).toBeVisible();
+    expect(screen.queryByText('settings.ai.stages.suggest.apply')).toBeNull();
+  });
+
+  it('keeps focus inside the dialog after the suggestion is accepted', async () => {
+    const user = userEvent.setup();
+    render(<ModelAdvisor {...withSuggestion} />);
+    await next(user, 2);
+
+    await user.click(screen.getByText('settings.ai.stages.suggest.apply'));
+
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
   });
 });
 

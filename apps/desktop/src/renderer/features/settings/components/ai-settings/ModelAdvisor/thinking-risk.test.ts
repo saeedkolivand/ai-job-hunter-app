@@ -105,4 +105,27 @@ describe('assessThinkingRisk — absence of data', () => {
 
     expect(risk.level).toBe('unmeasured');
   });
+
+  it('does not borrow the same NAME’s measurement from another provider', () => {
+    // The same model id can sit behind two providers; only one of them was
+    // measured, and a local run of it is still unmeasured.
+    const risk = assessThinkingRisk({
+      model: 'gpt-oss:20b',
+      provider: 'ollama',
+      measured: [measuredRow({ provider: 'openai-compatible', model: 'gpt-oss:20b' })],
+      effort: 'low',
+    });
+
+    expect(risk.level).toBe('reasoning-heavy');
+  });
+
+  it('uses the measurement when the provider matches', () => {
+    const risk = assessThinkingRisk({
+      model: 'gpt-oss:20b',
+      provider: 'openai-compatible',
+      measured: [measuredRow({ provider: 'openai-compatible', model: 'gpt-oss:20b' })],
+    });
+
+    expect(risk.level).toBe('measured-heavy');
+  });
 });

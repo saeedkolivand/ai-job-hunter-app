@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, ModalShell, StepDots } from '@ajh/ui';
@@ -44,6 +44,9 @@ export function ModelAdvisor({
   const [stepIndex, setStepIndex] = useState(0);
   const titleId = useId();
   const stepTitleId = useId();
+  /** The footer's primary control — a step that unmounts its own button hands
+   *  focus here, which is inside the trap and always mounted. */
+  const primaryActionRef = useRef<HTMLButtonElement | null>(null);
 
   const inspections = useModelInspections(open ? installedModels : []);
   const { data: overrides = {} } = useStageOverrides();
@@ -63,6 +66,7 @@ export function ModelAdvisor({
     overrides,
     effort: activeProvider ? zustand?.providers?.[activeProvider]?.effort : undefined,
     thinkingByModel: spend?.thinkingByModel ?? [],
+    focusPrimaryAction: () => primaryActionRef.current?.focus(),
   };
 
   const isLast = stepIndex === ADVISOR_STEPS.length - 1;
@@ -117,7 +121,11 @@ export function ModelAdvisor({
             >
               {t('settings.ai.advisor.back')}
             </Button>
-            <Button variant="glass" onClick={() => (isLast ? close() : setStepIndex((i) => i + 1))}>
+            <Button
+              ref={primaryActionRef}
+              variant="glass"
+              onClick={() => (isLast ? close() : setStepIndex((i) => i + 1))}
+            >
               {isLast ? t('settings.ai.advisor.done') : t('settings.ai.advisor.next')}
             </Button>
           </div>

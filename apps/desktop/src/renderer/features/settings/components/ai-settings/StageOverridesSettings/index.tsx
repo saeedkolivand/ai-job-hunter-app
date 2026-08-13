@@ -14,6 +14,7 @@ import { ModelAdvisor } from '../ModelAdvisor';
 import { resolveActiveProblem, resolveStageRouting, type StageRouting } from './stage-routing';
 import { StageOverrideEditor } from './StageOverrideEditor';
 import { StageSuggestionBanner } from './StageSuggestionBanner';
+import { installedSetKey } from './suggest-stage-models';
 
 interface Props {
   /** Active provider/model — what an un-overridden stage runs on. */
@@ -51,6 +52,7 @@ export function StageOverridesSettings({
   const clearStageOverride = useClearStageOverride();
   const [editing, setEditing] = useState<PipelineStage | null>(null);
   const [advisorOpen, setAdvisorOpen] = useState(false);
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   // Per-row "Change" buttons, so focus can come back to the control that opened
   // the editor once it unmounts (WCAG 2.4.3 — otherwise focus drops to <body>).
   const changeButtons = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -65,8 +67,13 @@ export function StageOverridesSettings({
     isConfigured,
   });
 
+  const installedModels = ollamaModels.map((m) => m.name);
+
   /** The advisor only has local-model answers to give. */
   const advisorApplies = activeProvider === 'ollama' || ollamaModels.length > 0;
+
+  /** A declined suggestion stays declined for the same installed set. */
+  const suggestionDismissed = dismissedFor === installedSetKey(installedModels);
 
   /** After the suggestion is accepted its button disappears with it, so send
    *  focus to the first stage it pinned. */
@@ -113,18 +120,23 @@ export function StageOverridesSettings({
           onClose={() => setAdvisorOpen(false)}
           activeProvider={activeProvider}
           activeModel={activeModel}
-          installedModels={ollamaModels.map((m) => m.name)}
+          installedModels={installedModels}
         />
       )}
 
-      {/* Suggestion only — accepting it is a click, never a silent switch. */}
-      <StageSuggestionBanner
-        activeProvider={activeProvider}
-        activeModel={activeModel}
-        installedModels={ollamaModels.map((m) => m.name)}
-        overrides={overrides}
-        onApplied={focusFirstAppliedRow}
-      />
+      {/* Suggestion only — accepting it is a click, never a silent switch.
+          Dismissal is THIS card's state: the banner unmounts when declined, so
+          it cannot hold the memory of having been declined. */}
+      {!suggestionDismissed && (
+        <StageSuggestionBanner
+          activeProvider={activeProvider}
+          activeModel={activeModel}
+          installedModels={installedModels}
+          overrides={overrides}
+          onApplied={focusFirstAppliedRow}
+          onDismiss={() => setDismissedFor(installedSetKey(installedModels))}
+        />
+      )}
 
       {/* ONE line for the active provider, not the same sentence on every row:
           the fix is a single action, and "put this stage back on the default"

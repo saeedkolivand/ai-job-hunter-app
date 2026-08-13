@@ -1,5 +1,4 @@
 import { Sparkles } from 'lucide-react';
-import { useState } from 'react';
 
 import type { AiStageOverride, PipelineStage } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -17,6 +16,14 @@ interface Props {
   /** Called with the stages that were pinned, so the host can take focus off
    *  the button that is about to unmount with this banner. */
   onApplied?: (stages: PipelineStage[]) => void;
+  /**
+   * Decline handler. The "Not now" button exists ONLY when this is provided —
+   * dismissal is the host's state, never this component's: a host that decides
+   * what to render in the banner's place (the advisor's "nothing to change"
+   * line) cannot see state hidden in here, and used to render neither the offer
+   * nor its fallback.
+   */
+  onDismiss?: () => void;
 }
 
 /**
@@ -28,10 +35,6 @@ interface Props {
  * Sizes come from `/api/show` (the same query the advisor uses, so it is one
  * cached fetch, not two) rather than from the model name — a name-parsed size
  * once made this recommend a 70B model as the smaller option.
- *
- * "Not now" dismisses it for the session-and-installed-set: re-offering the
- * same advice on every visit is nagging, but a NEW model on disk is new
- * information and re-arms it.
  */
 export function StageSuggestionBanner({
   activeProvider,
@@ -39,12 +42,15 @@ export function StageSuggestionBanner({
   installedModels,
   overrides,
   onApplied,
+  onDismiss,
 }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
   const setStageOverride = useSetStageOverride();
-  const inspections = useModelInspections(installedModels);
-  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+  // Gated: a cloud user can never receive a suggestion, so probing every
+  // installed model's `/api/show` for one is pure cost.
+  const canSuggest = activeProvider === 'ollama' && Boolean(activeModel);
+  const inspections = useModelInspections(canSuggest ? installedModels : []);
 
   const suggestion = suggestExtractionModel({
     activeProvider,
@@ -54,9 +60,7 @@ export function StageSuggestionBanner({
     overrides,
   });
 
-  // Keyed on the installed set: installing something new re-arms the offer.
-  const installedKey = [...installedModels].sort().join('|');
-  if (!suggestion || dismissedFor === installedKey) return null;
+  if (!suggestion) return null;
 
   const stageNames = suggestion.stages
     .map((stage) => t(`settings.ai.stages.names.${stage}`))
@@ -124,9 +128,11 @@ export function StageSuggestionBanner({
           >
             {t('settings.ai.stages.suggest.apply')}
           </Button>
-          <Button variant="ghost" onClick={() => setDismissedFor(installedKey)}>
-            {t('settings.ai.stages.suggest.dismiss')}
-          </Button>
+          {onDismiss && (
+            <Button variant="ghost" onClick={onDismiss}>
+              {t('settings.ai.stages.suggest.dismiss')}
+            </Button>
+          )}
         </div>
       </div>
     </div>

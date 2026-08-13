@@ -24,6 +24,15 @@ export interface AdvisorContext {
   effort?: string;
   /** `spendSummary().thinkingByModel` — EMPTY for a local-only user. */
   thinkingByModel: AiSpendModelThinking[];
+  /**
+   * Move focus to the wizard's primary footer control.
+   *
+   * A step that unmounts the control the user just pressed has to hand focus to
+   * something that still exists AND is inside the focus trap — `<body>` is
+   * neither, and the trap's keydown listener lives on the panel, so a
+   * body-focused Tab walks straight out to the page behind the overlay.
+   */
+  focusPrimaryAction?: () => void;
 }
 
 export interface AdvisorStepProps {

@@ -41,10 +41,15 @@ const inspectionState: { byModel: Record<string, unknown>; isPending: boolean } 
   },
   isPending: false,
 };
+/** Records what the banner asked to be probed — the cost it imposes. */
+const inspectedWith = vi.fn();
 
 vi.mock('@/services', () => ({
   useSetStageOverride: () => ({ mutateAsync: setStageOverrideAsync, isPending: false }),
-  useModelInspections: () => inspectionState,
+  useModelInspections: (models: string[]) => {
+    inspectedWith(models);
+    return inspectionState;
+  },
 }));
 
 import { StageSuggestionBanner } from './StageSuggestionBanner';
@@ -129,14 +134,32 @@ describe('StageSuggestionBanner', () => {
     setStageOverrideAsync.mockResolvedValue({});
   });
 
-  it('can be declined, and stays declined for the same installed set', async () => {
+  it('offers a decline only when the host owns the dismissal', async () => {
     const user = userEvent.setup();
-    render(<StageSuggestionBanner {...props} />);
+    const onDismiss = vi.fn();
+    const { rerender } = render(<StageSuggestionBanner {...props} onDismiss={onDismiss} />);
 
     await user.click(screen.getByText('settings.ai.stages.suggest.dismiss'));
-
-    expect(screen.queryByText('settings.ai.stages.suggest.apply')).toBeNull();
+    expect(onDismiss).toHaveBeenCalled();
     expect(setStageOverrideAsync).not.toHaveBeenCalled();
+
+    // Without a handler there is no decline button at all — dismissal state the
+    // host cannot see is state that desynchronises what it renders instead.
+    rerender(<StageSuggestionBanner {...props} />);
+    expect(screen.queryByText('settings.ai.stages.suggest.dismiss')).toBeNull();
+  });
+
+  it('probes no models for a provider that can never get a suggestion', () => {
+    render(<StageSuggestionBanner {...props} activeProvider="openai" activeModel="gpt-5.1" />);
+
+    // One `/api/show` per installed model, for an answer that is always null.
+    expect(inspectedWith).toHaveBeenLastCalledWith([]);
+  });
+
+  it('probes the installed models when a suggestion is possible', () => {
+    render(<StageSuggestionBanner {...props} />);
+
+    expect(inspectedWith).toHaveBeenLastCalledWith(['qwen3:32b', 'llama3.2:1b']);
   });
 
   it('renders nothing when no measured size makes a smaller model provable', () => {
