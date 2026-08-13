@@ -212,7 +212,7 @@ nodes that the home-view scan actually measured, swapping them to the existing
 (`/55` and `/60` no longer belong on this list — both are now centrally remapped in
 `packages/ui/src/css/utilities.css`, pinned by `light-scheme-contrast.test.ts`.
 Residual ordering wrinkles from that remap: raw `/65` (11 call sites) and raw `/70`
-(143 call sites — the most-used step in the ramp) both render *less* opaque than the
+(143 call sites — the most-used step in the ramp) both render _less_ opaque than the
 newly-mapped `/60` at 72%. Both still clear AA on their own, so this is cosmetic
 token-ordering, not an accessibility failure — fold them into this sweep when it runs.)
 
