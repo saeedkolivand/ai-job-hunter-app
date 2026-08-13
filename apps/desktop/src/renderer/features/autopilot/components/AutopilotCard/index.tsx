@@ -25,6 +25,7 @@ import {
   Button,
   cn,
   ConfirmModal,
+  Dropdown,
   GlassCard,
   HoverPopover,
   Tag,
@@ -35,6 +36,7 @@ import {
 import { AgencyChip } from '@/components/job/AgencyChip';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
+import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
 import { MatchBand, matchBandDescriptionKey, scoreTier } from '@/lib/match-band';
 import { timeAgo } from '@/lib/time';
@@ -166,6 +168,42 @@ const BADGE_HINT_KEY = {
   needsConfig: 'autopilot.badge.needsConfigHint',
 } as const;
 
+/** A card's found-jobs sort choice — `'relevance'` is the stored rank order. */
+export type FoundJobsSortBy = 'relevance' | 'newest' | 'oldest';
+
+/**
+ * View-side date sort for a card's found jobs. NEVER mutates `jobs` — the
+ * persisted `Autopilot.foundJobs` order feeds AI-note recipient selection on
+ * the backend (ADR-020), so this always sorts a fresh copy and returns it.
+ * Exported so the mutation invariant + banding are directly unit-testable
+ * without going through the component memo.
+ *
+ * Mirrors JobsPage's postedAt sort (JobsPage/index.tsx:288-300): a dated band
+ * (sorted by `postedAt`) leads, an undated band trails instead of
+ * interleaving, and a `url` tiebreak keeps equal-timestamp (or all-undated)
+ * rows in a stable order across renders. Found jobs carry no `id` — `url` is
+ * already the row's own render key (line ~630) and is unique per posting.
+ * Deliberately NO `foundAt` (capture-time) fallback for undated rows — see
+ * JobsPage:278-284: a just-scraped stale posting would otherwise jump above a
+ * genuinely-recent one.
+ */
+export function sortFoundJobsByDate(
+  jobs: AutopilotFoundJob[],
+  sortBy: Exclude<FoundJobsSortBy, 'relevance'>
+): AutopilotFoundJob[] {
+  const byUrl = (x: AutopilotFoundJob, y: AutopilotFoundJob) =>
+    x.url < y.url ? -1 : x.url > y.url ? 1 : 0;
+  return [...jobs].sort((a, b) => {
+    if (typeof a.postedAt !== 'number' || typeof b.postedAt !== 'number') {
+      if (typeof a.postedAt === 'number') return -1; // a dated, b undated
+      if (typeof b.postedAt === 'number') return 1; // b dated, a undated
+      return byUrl(a, b); // both undated
+    }
+    const cmp = sortBy === 'oldest' ? a.postedAt - b.postedAt : b.postedAt - a.postedAt;
+    return cmp || byUrl(a, b);
+  });
+}
+
 export function AutopilotCard({
   autopilot: ap,
   runState,
@@ -182,10 +220,17 @@ export function AutopilotCard({
   const paused = ap.status === 'paused';
   const running = runState === 'scraping' || runState === 'ranking';
   const { t, i18n } = useTranslation();
+  const formatRelativeTime = useFormatRelativeTime(t);
   const openExternal = useOpenExternal();
   const persistJob = usePersistJob();
   const split = useMarkNotDuplicate();
   const notify = useNotification();
+  // View-side sort choice for THIS card's found-jobs list — local, per-card
+  // state (owner correction: two expanded autopilots must be sortable
+  // independently), not a session-store field. Resets on unmount, which is
+  // acceptable — it's a display preference, not data. `'relevance'` (default)
+  // is the STORED rank order, unchanged from today until the user opts in.
+  const [sortBy, setSortBy] = useState<FoundJobsSortBy>('relevance');
   const [showFound, setShowFound] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -194,10 +239,10 @@ export function AutopilotCard({
   // member. Non-canonical members (clusterCanonical === false) collapse into it;
   // unclustered/legacy rows always show. Every "Found · N" count below reads off
   // this list, so the counts track visible clusters, not raw postings.
-  const foundJobs = useMemo(
-    () => (ap.foundJobs ?? []).filter((j) => j.clusterCanonical !== false),
-    [ap.foundJobs]
-  );
+  const foundJobs = useMemo(() => {
+    const canonical = (ap.foundJobs ?? []).filter((j) => j.clusterCanonical !== false);
+    return sortBy === 'relevance' ? canonical : sortFoundJobsByDate(canonical, sortBy);
+  }, [ap.foundJobs, sortBy]);
   // Does this list hold BOTH scales at once? After a semantic re-rank it can:
   // the re-ranked head carries the combined "Match %", the tail keyword
   // coverage, and the backend sorts them as two separate blocks — so a 58 can
@@ -611,16 +656,32 @@ export function AutopilotCard({
                 <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
                   {t('autopilot.foundJobs')} · {foundJobs.length}
                 </span>
-                <Button
-                  variant="unstyled"
-                  type="button"
-                  onClick={() => setShowFound(false)}
-                  aria-label={t('autopilot.collapse')}
-                  title={t('autopilot.collapse')}
-                  className="rounded p-1 text-foreground/30 transition-colors hover:text-foreground/70"
-                >
-                  <ChevronUp size={14} />
-                </Button>
+                {/* Per-card view-side sort (local state — see `sortBy` above):
+                    each card sorts its own found-jobs list independently. */}
+                <div className="flex items-center gap-1">
+                  <Dropdown
+                    options={[
+                      { value: 'relevance', label: t('autopilot.sortRelevance') },
+                      { value: 'newest', label: t('jobs.sortNewest') },
+                      { value: 'oldest', label: t('jobs.sortOldest') },
+                    ]}
+                    value={sortBy}
+                    onChange={(value) => setSortBy(value as FoundJobsSortBy)}
+                    size="sm"
+                    placeholder={t('jobs.sort')}
+                    aria-label={t('jobs.sort')}
+                  />
+                  <Button
+                    variant="unstyled"
+                    type="button"
+                    onClick={() => setShowFound(false)}
+                    aria-label={t('autopilot.collapse')}
+                    title={t('autopilot.collapse')}
+                    className="rounded p-1 text-foreground/30 transition-colors hover:text-foreground/70"
+                  >
+                    <ChevronUp size={14} />
+                  </Button>
+                </div>
               </div>
               <div
                 ref={listContainerRef}
@@ -670,6 +731,19 @@ export function AutopilotCard({
                               className={STATUS_TAG}
                               interactive={false}
                             />
+                            {/* Board coverage is uneven — several boards ship no publish
+                                date — so absence renders nothing rather than "NaN ago".
+                                Same helper + namespace the Jobs page uses for postedAt
+                                (PostingListItem/index.tsx:121-122); the title carries the
+                                absolute timestamp, mirroring ApplicationRow:231. */}
+                            {job.postedAt && (
+                              <span
+                                className="shrink-0 text-[10px] text-foreground/40"
+                                title={new Date(job.postedAt).toLocaleString()}
+                              >
+                                · {formatRelativeTime(job.postedAt)}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
                             <span className="truncate">{job.company}</span>
