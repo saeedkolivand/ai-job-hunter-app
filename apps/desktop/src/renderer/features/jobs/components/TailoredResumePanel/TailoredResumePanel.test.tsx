@@ -966,8 +966,9 @@ describe('TailoredResumePanel — a generation too long to review', () => {
 
   // `aria-disabled`, not `disabled`: a natively disabled button leaves the tab
   // order (so its `aria-describedby` is never announced) and this repo's Button
-  // kills pointer events on it (so `title` never fires). The explanation has to
-  // be reachable, and the click has to be a no-op.
+  // kills pointer events on it (so a `title` on a NATIVELY disabled control
+  // never fires). `aria-disabled` keeps both, which is the point — and is why
+  // the tooltip below has to match the state rather than describe the action.
   it('keeps the action focusable, explains itself, and refuses the click', async () => {
     finishedWithDocument(TOO_LONG);
     await openPanel();
@@ -983,6 +984,20 @@ describe('TailoredResumePanel — a generation too long to review', () => {
 
     if (button) await userEvent.click(button);
     expect(bus.agentRun).not.toHaveBeenCalled();
+  });
+
+  // With `aria-disabled` the tooltip DOES fire, so a generic "what this does"
+  // hint on a button that will refuse the click is actively misleading.
+  it('points its tooltip at the refusal, not at what the action would have done', async () => {
+    finishedWithDocument(TOO_LONG);
+    await openPanel();
+    expect(improveButton()).toHaveAttribute('title', expect.stringMatching(/too long to review/i));
+  });
+
+  it('goes back to describing the action once the résumé fits', async () => {
+    finishedWithDocument();
+    await openPanel();
+    expect(improveButton()).toHaveAttribute('title', expect.stringMatching(/re-check/i));
   });
 
   it('formats the cap for the locale rather than printing a bare number', async () => {
@@ -1006,6 +1021,86 @@ describe('TailoredResumePanel — a generation too long to review', () => {
     await openPanel();
     expect(improveButton()).toBeEnabled();
     expect(screen.queryByText(/longer than the review can read/i)).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A live review holds the document.
+//
+// It captured the text at run start and is about to offer a corrected version
+// through `save_resume`, which replaces the aggregate WHOLESALE. A Fix or a
+// Resolve landing in between is admitted by the limiter (the suspended run
+// holds one of two slots) and then silently overwritten on approve, with no
+// undo — so the report's writes are withheld for the duration, and say why.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailoredResumePanel — the report during a live review', () => {
+  const withClaims = () =>
+    detail({
+      status: 'needsReview',
+      report: {
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 1,
+        resume: {
+          sourceTextHash: 1,
+          report: {
+            ok: false,
+            issues: [
+              {
+                code: 'ats.long_bullet',
+                severity: 'warning',
+                section: 'summary',
+                message: 'This bullet is 340 characters.',
+                evidence: 'Built the deployment pipeline.',
+              },
+            ],
+            metrics: METRICS,
+          },
+          fabrications: [
+            { issueKey: 'factual.unsourced_metric#0', code: 'f', evidence: 'Built the' },
+          ],
+        },
+      },
+    });
+
+  async function openReportDuringReview({ review }: { review: boolean }) {
+    bus.session = makeSession({ state: 'needsReview', runId: 'run-1', detail: withClaims() });
+    bus.runs = [summary({ runId: 'run-1', status: 'needsReview' })];
+    await openPanel();
+    if (review) {
+      await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+    }
+    await userEvent.click(screen.getByRole('button', { name: /open integrity report/i }));
+  }
+
+  // The positive control: these actions exist when no review is running.
+  it('offers Fix and Remove when nothing else holds the document', async () => {
+    await openReportDuringReview({ review: false });
+    expect(screen.getByRole('button', { name: /^remove$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /fix this section/i }).length).toBeGreaterThan(0);
+  });
+
+  it('withholds both while a review is in flight, and says why', async () => {
+    await openReportDuringReview({ review: true });
+    expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /fix this section/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/review of this résumé is running/i)).toBeInTheDocument();
+    // …and not the older-run reason, which is a different fact.
+    expect(screen.queryByText(/not the newest run for this posting/i)).not.toBeInTheDocument();
+  });
+
+  // Reading is not the hazard — only writing is.
+  it('still opens the report itself', async () => {
+    await openReportDuringReview({ review: true });
+    expect(screen.getByText('Section verdicts')).toBeInTheDocument();
+  });
+
+  it('explains the pause in the footer too, where Run again is dead', async () => {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+    expect(screen.getByText(/editing it from the report, are paused/i)).toBeInTheDocument();
   });
 });
 

@@ -45,6 +45,10 @@ const KEYS: string[] = [
   `${IMPROVE}.stopHint`,
   `${IMPROVE}.stopping`,
   `${IMPROVE}.dismiss`,
+  `${IMPROVE}.busyLock`,
+  // Not under `improve.*`, but only reachable because of it: the report's
+  // read-only reason while a review holds the document.
+  'jobs.tailored.report.reviewInFlight',
   ...(['running', 'waiting', 'done', 'cancelled', 'stopped', 'failed'] as const).map(
     (state) => `${IMPROVE}.state.${state}`
   ),

@@ -2135,7 +2135,8 @@
       "report": {
         "source": "Erzeugt aus deinem gespeicherten Lebenslauf „{{name}}“.",
         "removeHint": "„Entfernen“ hält hier dein Urteil fest; die Zeile selbst löschst du im Lebenslauf-Editor der Bewerbung.",
-        "olderRun": "Das ist nicht der neueste Lauf zu dieser Stelle. Alle Läufe einer Stelle teilen sich einen gespeicherten Lebenslauf, deshalb lässt sich hier nichts ändern."
+        "olderRun": "Das ist nicht der neueste Lauf zu dieser Stelle. Alle Läufe einer Stelle teilen sich einen gespeicherten Lebenslauf, deshalb lässt sich hier nichts ändern.",
+        "reviewInFlight": "Eine Prüfung dieses Lebenslaufs läuft und wird gleich ihre eigene korrigierte Fassung anbieten, die das ganze Dokument ersetzt — „Beheben“ und „Entfernen“ pausieren deshalb bis zum Ende der Prüfung."
       },
       "improve": {
         "trigger": "Diesen Lebenslauf verbessern",
@@ -2158,6 +2159,7 @@
         "stopHint": "Fordert einen Abbruch an — der Lauf kann noch einen Moment weiterlaufen.",
         "stopping": "Wird gestoppt…",
         "dismiss": "Ausblenden",
+        "busyLock": "Eine Prüfung dieses Lebenslaufs läuft. Ihn neu zu erzeugen und ihn aus dem Bericht heraus zu bearbeiten pausiert bis zum Ende der Prüfung — sie bietet gleich ihre eigene Fassung dieses Dokuments an.",
         "state": {
           "running": "Läuft",
           "waiting": "Wartet auf dich",

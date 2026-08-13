@@ -2131,7 +2131,8 @@
       "report": {
         "source": "Generated from your saved résumé “{{name}}”.",
         "removeHint": "Remove records your verdict here; the line itself is edited out in the application's résumé editor.",
-        "olderRun": "This is not the newest run for this posting. Every run of a posting shares one saved résumé, so nothing here can be changed."
+        "olderRun": "This is not the newest run for this posting. Every run of a posting shares one saved résumé, so nothing here can be changed.",
+        "reviewInFlight": "A review of this résumé is running and is about to offer its own corrected version, which replaces the whole document — so Fix and Remove are paused until it finishes."
       },
       "improve": {
         "trigger": "Improve this résumé",
@@ -2154,6 +2155,7 @@
         "stopHint": "Requests cancellation — the run may take a moment to stop.",
         "stopping": "Stopping…",
         "dismiss": "Dismiss",
+        "busyLock": "A review of this résumé is running. Generating it again, and editing it from the report, are paused until the review finishes — it is about to offer its own version of this document.",
         "state": {
           "running": "Running",
           "waiting": "Waiting for you",

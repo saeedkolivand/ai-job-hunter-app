@@ -209,25 +209,6 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     setReportOpen(true);
   };
 
-  const note = [
-    !otherRunId && resume
-      ? t('jobs.tailored.report.source', {
-          name: resume.name || t('jobs.tailored.unnamedResume'),
-        })
-      : null,
-    writable ? t('jobs.tailored.report.removeHint') : t('jobs.tailored.report.olderRun'),
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  // Only a trail this surface actually FETCHED is handed over — an absent entry
-  // makes the list render its "live progress only" note instead of an empty
-  // ladder that would read as "this run had no stages".
-  const eventsByRun = useMemo<Record<string, PipelineRunEvent[] | undefined>>(
-    () => (expandedRunId && expandedRun.data ? { [expandedRunId]: expandedRun.data.events } : {}),
-    [expandedRunId, expandedRun.data]
-  );
-
   /**
    * The agentic review of the document this pane just produced — a second flow
    * behind the same `agent.run` command, started from here because this is the
@@ -243,6 +224,41 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     jobId: posting.id,
     fallbackError: t('jobs.tailored.improve.failedTitle'),
   });
+
+  /**
+   * The report's own writes are withheld while a review is running, for a
+   * different reason than the older-run rule — and the note has to say WHICH,
+   * so it is the first branch: a live review already holds the document. It
+   * captured the text at run start and is about to offer a corrected version
+   * through `save_resume`, which replaces the aggregate wholesale; a Fix or a
+   * Resolve landing in between is admitted by the limiter (the suspended run
+   * holds one of two slots) and then silently overwritten on approve, with no
+   * undo. Reading the report during a review stays available — only the writes
+   * are the hazard.
+   */
+  const reportWritable = writable && !improve.busy;
+  const note = [
+    !otherRunId && resume
+      ? t('jobs.tailored.report.source', {
+          name: resume.name || t('jobs.tailored.unnamedResume'),
+        })
+      : null,
+    improve.busy
+      ? t('jobs.tailored.report.reviewInFlight')
+      : writable
+        ? t('jobs.tailored.report.removeHint')
+        : t('jobs.tailored.report.olderRun'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  // Only a trail this surface actually FETCHED is handed over — an absent entry
+  // makes the list render its "live progress only" note instead of an empty
+  // ladder that would read as "this run had no stages".
+  const eventsByRun = useMemo<Record<string, PipelineRunEvent[] | undefined>>(
+    () => (expandedRunId && expandedRun.data ? { [expandedRunId]: expandedRun.data.events } : {}),
+    [expandedRunId, expandedRun.data]
+  );
 
   /**
    * Count CODE POINTS, matching the Rust clamp (`chars().take(RESUME_CAP)`);
@@ -350,11 +366,16 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                 and this repo's Button kills pointer events on it (so `title`
                 never fires either). Same guard as the reference below. */}
             {canImprove && tooLongToReview && (
-              <p
-                id={improveGateId}
-                className="mb-2 text-[11px] leading-relaxed text-amber-400"
-              >
+              <p id={improveGateId} className="mb-2 text-[11px] leading-relaxed text-amber-400">
                 {t('jobs.tailored.improve.tooLong', { max: reviewCapLabel })}
+              </p>
+            )}
+            {/* Why Run again is dead and why the report has no Fix/Resolve
+                right now. Visible adjacent copy, because a natively disabled
+                Button in this repo can explain itself no other way. */}
+            {improve.busy && (
+              <p className="mb-2 text-[11px] leading-relaxed text-foreground/60">
+                {t('jobs.tailored.improve.busyLock')}
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
@@ -417,7 +438,17 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                         if (tooLongToReview) return;
                         void improve.start();
                       }}
-                      title={t('jobs.tailored.improve.triggerHint')}
+                      // `aria-disabled` keeps pointer events, so unlike a
+                      // natively disabled control this tooltip DOES fire — and
+                      // a generic "what this does" hint on a button that will
+                      // refuse the click is worse than none. Supplementary
+                      // only: the footer note above is the primary explanation
+                      // (a title is unreachable by keyboard and touch).
+                      title={
+                        tooLongToReview
+                          ? t('jobs.tailored.improve.tooLongHint', { max: reviewCapLabel })
+                          : t('jobs.tailored.improve.triggerHint')
+                      }
                       className={cn(
                         '@sm:w-auto @sm:flex-1 w-full justify-center gap-1.5 text-brand-soft',
                         tooLongToReview && 'cursor-not-allowed opacity-45'
@@ -656,7 +687,7 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
           // stays `needsReview` — headline and review row cannot disagree —
           // until the user edits the line out where the document lives (the
           // saved application, per the `savesTo` hint).
-          ...(writable && shownRunId
+          ...(reportWritable && shownRunId
             ? {
                 onFixSection: (sectionKey: PipelineSectionKey, noteText: string) =>
                   regenerate.mutate({
