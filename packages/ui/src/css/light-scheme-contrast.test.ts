@@ -300,6 +300,30 @@ describe('utilities.css — text/border-foreground opacity remaps (contrast)', (
     }
   );
 
+  it.each(BORDER_STEPS)('border-foreground/%i clears 3:1 once boosted to its remapped alpha', (nn) => {
+    // Mirrors the text-foreground/55↔/60 pair: border only needs the 3:1
+    // floor, not text's 4.5:1, but a prior version of this block reused the
+    // TEXT taper's percentages verbatim — which cleared 4.5:1 for text at
+    // higher NN, but left four of these five border steps still short of the
+    // much lower 3:1 floor. Each step must clear it on its own.
+    const boosted = remappedAlphaPct(`border-foreground\\/${nn}`);
+    expect(boosted).not.toBeNull();
+    expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('preserves ordering across border-foreground/10..25: each step maps to strictly MORE alpha than the last', () => {
+    // Regression guard for the same defect class as the text /55↔/60 pair:
+    // raising the low steps to clear 3:1 must not collapse or invert the
+    // scale relative to each other (or to /25, which had to move too — its
+    // prior 48% was no longer the ceiling of this range once /10-/20 needed
+    // raising past it).
+    const boosted = BORDER_STEPS.map((nn) => remappedAlphaPct(`border-foreground\\/${nn}`));
+    for (const v of boosted) expect(v).not.toBeNull();
+    for (let i = 1; i < boosted.length; i++) {
+      expect(boosted[i] as number).toBeGreaterThan(boosted[i - 1] as number);
+    }
+  });
+
   it('border-foreground/70 is left unmapped because it already clears 3:1 raw', () => {
     expect(lightRules('border-foreground\\/70')).toHaveLength(0);
     expect(contrastAtAlpha(70)).toBeGreaterThanOrEqual(3);
