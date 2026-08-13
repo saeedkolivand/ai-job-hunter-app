@@ -81,6 +81,11 @@ pub const MAX_STAGE_OVERRIDES: usize = PIPELINE_STAGES.len() - PIPELINE_STAGES_F
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StageOverride {
+    /// Defaulted so a row that OMITS it still parses: an empty provider then
+    /// fails `validate_stage_override` and the row is dropped by the machinery
+    /// built for that, instead of failing the whole restore section at parse
+    /// time. See `lenient_context_window` for the same argument.
+    #[serde(default)]
     pub provider: String,
     /// Empty ONLY for a CLI agent, which runs on its own configured default —
     /// the same rule `Completer::resolve_parts` applies to the active config.
@@ -90,7 +95,15 @@ pub struct StageOverride {
     // provider's own stored row, at resolve time.
     /// `options.num_ctx` for THIS stage's calls, when the user set one. Absent
     /// means the provider's own default — never a guessed size.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ///
+    /// Read leniently: an out-of-range or unrepresentable number costs this
+    /// row its window, not its existence — see
+    /// [`lenient_context_window`](super::lenient_context_window).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "super::lenient_context_window"
+    )]
     pub context_window: Option<u32>,
 }
 
