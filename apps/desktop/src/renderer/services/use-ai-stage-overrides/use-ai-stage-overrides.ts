@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import type { PipelineStage } from '@ajh/shared';
+
 import { useAppClient } from '@/providers/AppClientProvider';
 
 import { keys, QUERY_TIMES } from '../query-client';
@@ -34,7 +36,7 @@ export const useSetStageOverride = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (req: {
-      stage: string;
+      stage: PipelineStage;
       provider: string;
       model?: string;
       contextWindow?: number;
@@ -53,7 +55,7 @@ export const useClearStageOverride = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (stage: string) => {
+    mutationFn: async (stage: PipelineStage) => {
       const result = await api.ai.clearStageOverride({ stage });
       if ('error' in result) throw new Error(result.error as string);
       return result;
