@@ -1348,7 +1348,7 @@ describe('no-ai-slop catalog — prompt-guidance tier (instructed, never validat
       'results-driven',
       'meticulous',
       'detail-oriented',
-      "it is worth noting",
+      'it is worth noting',
       "in today's world",
     ]) {
       expect(AI_TELL_LEXICAL_WORDS_IT).not.toContain(english);
