@@ -1,10 +1,10 @@
 import { FileText, Loader2, ShieldCheck, Sparkles, Square, X } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { detectLanguage, type PipelineSectionKey } from '@ajh/shared';
 import type { PipelineRunEvent } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
-import { Button, ModalShell, Skeleton, StepDots, Tag } from '@ajh/ui';
+import { Button, cn, ModalShell, Skeleton, StepDots, Tag } from '@ajh/ui';
 
 import { DepthSelector, useSmallModelWarning } from '@/components/generation/DepthSelector';
 import { PipelineRunsList } from '@/components/generation/PipelineRunsList';
@@ -72,7 +72,7 @@ const GENERATION_REVIEW_CAP = 8_000;
  *   headline and never the completed copy.
  */
 export function TailoredResumePanel({ posting }: { posting: Posting }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   // `null` = "follow the Settings default", the same convention both wizards
   // use — a default changed in Settings still reaches an untouched panel.
@@ -251,19 +251,36 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
    */
   const reviewLength = useMemo(() => [...documentText].length, [documentText]);
   const tooLongToReview = reviewLength > GENERATION_REVIEW_CAP;
+  /** Locale-formatted for the copy that quotes it — "8,000" / "8.000", never a
+   *  bare machine number in a sentence. */
+  const reviewCapLabel = useMemo(
+    () => new Intl.NumberFormat(i18n.language).format(GENERATION_REVIEW_CAP),
+    [i18n.language]
+  );
   /**
-   * "Improve this résumé" is offered only where it can honestly run: on a
-   * TERMINAL run of the posting's NEWEST document (the same one-document rule
-   * `writable` encodes — every run of a posting merges into one saved résumé,
-   * and this flow's save merges into that same one), when a generation exists
-   * for it at all (`documentText` IS `find_for_job`'s record, which is exactly
-   * what the run resolves server-side — no generation means the run would fail
-   * with "generate one first"), and when there is a résumé + provider to run
-   * with. The jobless surfaces that also show a quality report
-   * (`TailorFlow`/`ai-generate`) get no entry: `agent.run` needs a real posting
-   * id and they have none.
+   * "Improve this résumé" is offered only where it can honestly run: on a run
+   * that actually PRODUCED a document (`done`/`needsReview` — a failed or
+   * stopped run's leftovers are not a résumé to review), of the posting's
+   * NEWEST one (the same one-document rule `writable` encodes — every run of a
+   * posting merges into one saved résumé, and this flow's save merges into that
+   * same one), when a generation exists for it at all (`documentText` IS
+   * `find_for_job`'s record, which is exactly what the run resolves
+   * server-side — no generation means the run would fail with "generate one
+   * first"), and when there is a résumé + provider to run with. The jobless
+   * surfaces that also show a quality report (`TailorFlow`/`ai-generate`) get
+   * no entry: `agent.run` needs a real posting id and they have none.
    */
-  const canImprove = terminal && !!shownDetail && !!documentText && writable && canRunStaged;
+  const canImprove =
+    terminal &&
+    (session.state === 'done' || session.state === 'needsReview') &&
+    !!shownDetail &&
+    !!documentText &&
+    writable &&
+    canRunStaged;
+
+  /** Where focus goes when the review card removes itself (see the card's
+   *  `onDismissed`): the control that started it, which is still on screen. */
+  const improveTriggerRef = useRef<HTMLButtonElement>(null);
 
   const titleId = 'tailored-resume-modal-title';
   const gateNoteId = 'tailored-resume-gate';
@@ -282,6 +299,16 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
         className="shrink-0 gap-1.5 text-brand-soft"
       >
         <ShieldCheck size={13} /> {t('jobs.tailored.trigger')}
+        {/* A suspended review is invisible once this modal is closed, and the
+            request expires in about five minutes — so the closed state has to
+            carry the fact that one is waiting. Colour is not the only signal:
+            the text is read out, and the button's own hint repeats it. */}
+        {improve.pendingConfirm && (
+          <span className="ml-0.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300">
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            <span className="sr-only">{t('jobs.tailored.improve.pendingBadge')}</span>
+          </span>
+        )}
       </Button>
 
       <ModalShell
@@ -315,66 +342,93 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
           </div>
         }
         footer={
-          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-soft)] px-5 py-3">
-            {busy ? (
-              <Button
-                variant="glass"
-                onClick={stop}
-                disabled={stopRequested}
-                title={t('jobs.tailored.cancelHint')}
-                className="w-full justify-center gap-1.5 text-foreground/60"
+          <div className="border-t border-[var(--border-soft)] px-5 py-3">
+            {/* In the FOOTER, next to the control it explains. Below the
+                scrollable body it was off-viewport from its own button, and the
+                button could not speak for itself: a `disabled` control drops out
+                of the tab order (so its `aria-describedby` is never announced)
+                and this repo's Button kills pointer events on it (so `title`
+                never fires either). Same guard as the reference below. */}
+            {canImprove && tooLongToReview && (
+              <p
+                id={improveGateId}
+                className="mb-2 text-[11px] leading-relaxed text-amber-400"
               >
-                <Square size={11} />{' '}
-                {stopRequested ? t('jobs.tailored.cancelling') : t('jobs.tailored.cancel')}
-              </Button>
-            ) : (
-              <>
+                {t('jobs.tailored.improve.tooLong', { max: reviewCapLabel })}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {busy ? (
                 <Button
-                  variant={terminal && shownDetail ? 'glass' : 'primary'}
-                  disabled={gated || session.starting}
-                  loading={session.starting}
-                  onClick={handleStart}
-                  // Same render guard as the note it points at — an
-                  // `aria-describedby` to DOM that isn't there is a broken
-                  // reference, not a hint.
-                  {...(gated ? { 'aria-describedby': gateNoteId } : {})}
-                  className="@sm:w-auto @sm:flex-1 w-full justify-center gap-1.5"
+                  variant="glass"
+                  onClick={stop}
+                  disabled={stopRequested}
+                  title={t('jobs.tailored.cancelHint')}
+                  className="w-full justify-center gap-1.5 text-foreground/60"
                 >
-                  <ShieldCheck size={12} />{' '}
-                  {terminal ? t('jobs.tailored.runAgain') : t('jobs.tailored.start')}
+                  <Square size={11} />{' '}
+                  {stopRequested ? t('jobs.tailored.cancelling') : t('jobs.tailored.cancel')}
                 </Button>
-                {terminal && shownDetail && (
+              ) : (
+                <>
                   <Button
-                    variant="primary"
-                    onClick={() => setReportOpen(true)}
+                    variant={terminal && shownDetail ? 'glass' : 'primary'}
+                    // Locked while a review is in flight: that review is about
+                    // to offer the CURRENT document back through its gated save,
+                    // so a generation started underneath it would be silently
+                    // overwritten by the older, reviewed text on approve.
+                    disabled={gated || session.starting || improve.busy}
+                    loading={session.starting}
+                    onClick={handleStart}
+                    // Same render guard as the note it points at — an
+                    // `aria-describedby` to DOM that isn't there is a broken
+                    // reference, not a hint.
+                    {...(gated ? { 'aria-describedby': gateNoteId } : {})}
                     className="@sm:w-auto @sm:flex-1 w-full justify-center gap-1.5"
                   >
-                    <FileText size={12} /> {t('jobs.tailored.openReport')}
+                    <ShieldCheck size={12} />{' '}
+                    {terminal ? t('jobs.tailored.runAgain') : t('jobs.tailored.start')}
                   </Button>
-                )}
-                {canImprove && (
-                  <Button
-                    variant="glass"
-                    // A run already in flight has its own Stop, in the card
-                    // below — this must not start a second one.
-                    disabled={tooLongToReview || improve.busy}
-                    onClick={() => void improve.start()}
-                    title={
-                      tooLongToReview
-                        ? t('jobs.tailored.improve.tooLongHint', { max: GENERATION_REVIEW_CAP })
-                        : t('jobs.tailored.improve.triggerHint')
-                    }
-                    // Same render guard as the note it points at — an
-                    // aria-describedby to DOM that isn't there is a broken
-                    // reference, not a hint.
-                    {...(tooLongToReview ? { 'aria-describedby': improveGateId } : {})}
-                    className="@sm:w-auto @sm:flex-1 w-full justify-center gap-1.5 text-brand-soft"
-                  >
-                    <Sparkles size={12} aria-hidden="true" /> {t('jobs.tailored.improve.trigger')}
-                  </Button>
-                )}
-              </>
-            )}
+                  {terminal && shownDetail && (
+                    <Button
+                      variant="primary"
+                      onClick={() => setReportOpen(true)}
+                      className="@sm:w-auto @sm:flex-1 w-full justify-center gap-1.5"
+                    >
+                      <FileText size={12} /> {t('jobs.tailored.openReport')}
+                    </Button>
+                  )}
+                  {canImprove && (
+                    <Button
+                      ref={improveTriggerRef}
+                      variant="glass"
+                      // `aria-disabled`, not `disabled`, for the too-long
+                      // refusal: a natively disabled button leaves the tab
+                      // order, so the note it points at is never announced —
+                      // the explanation would exist only for a sighted mouse
+                      // user. The click is guarded instead. A review already in
+                      // flight IS a native disable: its cause is on screen (the
+                      // card below, with its own Stop).
+                      disabled={improve.busy}
+                      {...(tooLongToReview
+                        ? { 'aria-disabled': true, 'aria-describedby': improveGateId }
+                        : {})}
+                      onClick={() => {
+                        if (tooLongToReview) return;
+                        void improve.start();
+                      }}
+                      title={t('jobs.tailored.improve.triggerHint')}
+                      className={cn(
+                        '@sm:w-auto @sm:flex-1 w-full justify-center gap-1.5 text-brand-soft',
+                        tooLongToReview && 'cursor-not-allowed opacity-45'
+                      )}
+                    >
+                      <Sparkles size={12} aria-hidden="true" /> {t('jobs.tailored.improve.trigger')}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         }
       >
@@ -382,7 +436,12 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
           {/* First in the body so the review's suspended confirm — the one thing
               that blocks the run — is visible without scrolling past the
               pipeline's own controls. */}
-          {improve.active && <ImproveResumeRun session={improve} />}
+          {improve.active && (
+            <ImproveResumeRun
+              session={improve}
+              onDismissed={() => improveTriggerRef.current?.focus()}
+            />
+          )}
 
           {/* Shown while no run is in flight — including AFTER a terminal one, so
               "run again" can be run at a different depth without reopening. */}
@@ -558,19 +617,6 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                   <p className="mt-1 text-[10px] leading-relaxed text-foreground/35">
                     {t('jobs.tailored.savesTo')}
                   </p>
-                  {/* Why "Improve this résumé" is offered but disabled. Same
-                      guard as the button's `aria-describedby`, and it names the
-                      two ways out — one of which ("run the generation again")
-                      is the enabled button right next to it. */}
-                  {canImprove && tooLongToReview && (
-                    <p
-                      id={improveGateId}
-                      role="status"
-                      className="mt-1 text-[10px] leading-relaxed text-amber-400"
-                    >
-                      {t('jobs.tailored.improve.tooLong', { max: GENERATION_REVIEW_CAP })}
-                    </p>
-                  )}
                 </div>
               )}
             </div>

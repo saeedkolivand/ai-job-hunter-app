@@ -57,6 +57,9 @@ interface TestBus {
   agentRun: ReturnType<typeof vi.fn>;
   cancelJob: ReturnType<typeof vi.fn>;
   agentConfirm: ReturnType<typeof vi.fn>;
+  /** What the session asked React Query to refetch — the proof that an approved
+   *  review reaches this panel instead of leaving it on the pre-save document. */
+  invalidate: ReturnType<typeof vi.fn>;
   /** The live `agent:step` / `jobs:event` subscribers, so a test can drive a
    *  run the way the backend does. */
   onStep?: (event: AgentStepEvent) => void;
@@ -80,7 +83,21 @@ const bus = vi.hoisted((): TestBus => ({
   agentRun: vi.fn(),
   cancelJob: vi.fn(),
   agentConfirm: vi.fn(),
+  invalidate: vi.fn(),
 }));
+
+// Mocked rather than wrapped in a real provider: `no-restricted-imports` bans
+// importing `QueryClient`/`QueryClientProvider` inside `features/**` (the Ports
+// & Adapters boundary), and the assertion here is about WHICH keys the session
+// invalidates, which the stub reports exactly.
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  // Everything else stays real (`@/services/query-client` builds a `QueryClient`
+  // at import time); only the hook the session uses is swapped. Typed off
+  // `unknown` rather than the module's own types — even a type-only import of
+  // those names trips the same boundary rule.
+  const actual = (await importOriginal());
+  return { ...actual, useQueryClient: () => ({ invalidateQueries: bus.invalidate }) };
+});
 
 vi.mock('@/hooks/use-resume-pipeline-session', () => ({
   useResumePipelineSession: () => bus.session,
@@ -209,8 +226,15 @@ async function openPanel() {
   await userEvent.click(screen.getByRole('button', { name: /tailored résumé/i }));
 }
 
+/** The query keys an invalidation was asked for, in call order. */
+const invalidatedKeys = () =>
+  bus.invalidate.mock.calls.map((call) =>
+    JSON.stringify((call[0] as { queryKey: unknown }).queryKey)
+  );
+
 beforeEach(() => {
   vi.clearAllMocks();
+  bus.invalidate = vi.fn();
   bus.session = makeSession();
   bus.depth = 'quality';
   bus.resume = { id: 'doc-1', name: 'ada-lovelace.pdf' };
@@ -780,6 +804,63 @@ describe('TailoredResumePanel — the improve entry', () => {
     expect(improveButton()).toBeNull();
   });
 
+  // A failed or stopped pipeline run leaves whatever it had written behind.
+  // That is not a document a review can improve, and offering it invites a
+  // paid run over a fragment.
+  it.each(['error', 'cancelled'] as const)(
+    'withholds it on a %s run, whatever it left behind',
+    async (state) => {
+      bus.session = makeSession({ state, runId: 'run-1', detail: detail() });
+      bus.runs = [summary({ runId: 'run-1' })];
+      await openPanel();
+      expect(improveButton()).toBeNull();
+    }
+  );
+
+  // needsReview IS a document — the open claims are exactly what a review helps
+  // with, so this is the case the entry exists for.
+  it('offers it on a needsReview run, which is a document with open claims', async () => {
+    bus.session = makeSession({ state: 'needsReview', runId: 'run-1', detail: detail() });
+    bus.runs = [summary({ runId: 'run-1' })];
+    await openPanel();
+    expect(improveButton()).toBeEnabled();
+  });
+
+  // The review is about to offer the CURRENT document back through its gated
+  // save; a generation started underneath it would be overwritten by the older
+  // reviewed text on approve.
+  it('locks the pipeline’s own Run again while a review is in flight', async () => {
+    finishedWithDocument();
+    await openPanel();
+    expect(screen.getByRole('button', { name: /run again/i })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+    expect(screen.getByRole('button', { name: /run again/i })).toBeDisabled();
+  });
+
+  // A suspended confirm is invisible once the modal is closed, and it expires
+  // in about five minutes — the closed state has to carry that.
+  it('marks the closed panel when a review is waiting on the user', async () => {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+    await act(async () => {
+      bus.onStep?.({
+        jobId: 'agent-job-1',
+        step: 6,
+        text: '',
+        tools: [],
+        denied: [],
+        kind: 'confirm_request',
+        confirm: { callId: '6-0-save_resume', tool: 'save_resume', args: { resumeText: 'Fixed.' } },
+      });
+    });
+
+    const trigger = screen.getByRole('button', { name: /tailored résumé/i });
+    expect(trigger).toHaveTextContent(/waiting for your approval/i);
+    expect(trigger).toHaveTextContent(/five minutes/i);
+  });
+
   it('withholds it without a provider to run it with', async () => {
     finishedWithDocument();
     bus.config = { provider: '', model: '' };
@@ -795,6 +876,85 @@ describe('TailoredResumePanel — the improve entry', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// An approved save must reach the panel.
+//
+// The gated save writes the `ai_generations` aggregate — the SAME record this
+// panel's run detail reads its résumé text and report from. Nothing invalidates
+// it on its own: the run query has no interval once terminal, and the client's
+// refetch-on-focus/-reconnect are off. Without these, the card says "saved"
+// beside the pre-save text, in one viewport, forever.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailoredResumePanel — after an approved review', () => {
+  /** Start a run and suspend it on the gated save. */
+  async function suspendOnSave() {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+    await act(async () => {
+      bus.onStep?.({
+        jobId: 'agent-job-1',
+        step: 6,
+        text: '',
+        tools: [],
+        denied: [],
+        kind: 'confirm_request',
+        confirm: { callId: '6-0-save_resume', tool: 'save_resume', args: { resumeText: 'Fixed.' } },
+      });
+    });
+  }
+
+  it('refetches the saved document and the run detail when the user approves', async () => {
+    await suspendOnSave();
+    bus.invalidate.mockClear();
+
+    await act(async () => {
+      await userEvent.click(screen.getByRole('button', { name: /^approve$/i }));
+    });
+
+    expect(invalidatedKeys()).toEqual(
+      expect.arrayContaining([JSON.stringify(['pipeline']), JSON.stringify(['aiGenerations'])])
+    );
+  });
+
+  // The write executes AFTER `agent.confirm` returns, so the refetch fired on
+  // approve can race it — the next step is proof the tool finished.
+  it('refetches again on the next step, after the write has actually landed', async () => {
+    await suspendOnSave();
+    await act(async () => {
+      await userEvent.click(screen.getByRole('button', { name: /^approve$/i }));
+    });
+    bus.invalidate.mockClear();
+
+    await act(async () => {
+      bus.onStep?.({
+        jobId: 'agent-job-1',
+        step: 7,
+        text: 'Saved.',
+        tools: [],
+        denied: [],
+        kind: 'proposal',
+      });
+    });
+
+    expect(invalidatedKeys()).toEqual(
+      expect.arrayContaining([JSON.stringify(['pipeline']), JSON.stringify(['aiGenerations'])])
+    );
+  });
+
+  it('refetches nothing when the user denies — a denial changed nothing', async () => {
+    await suspendOnSave();
+    bus.invalidate.mockClear();
+
+    await act(async () => {
+      await userEvent.click(screen.getByRole('button', { name: /^deny$/i }));
+    });
+
+    expect(invalidatedKeys()).toEqual([]);
+  });
+});
+
 describe('TailoredResumePanel — a generation too long to review', () => {
   // The seed fences the generation at 8 000 characters. Reviewing a truncated
   // copy and then offering it back through `save_resume` (cap 40 000) would
@@ -802,23 +962,41 @@ describe('TailoredResumePanel — a generation too long to review', () => {
   // and this surface refuses the CLICK, with the reason said out loud.
   const TOO_LONG = 'x'.repeat(8_001);
 
-  it('disables the action, says why, and points the description at that note', async () => {
+  // `aria-disabled`, not `disabled`: a natively disabled button leaves the tab
+  // order (so its `aria-describedby` is never announced) and this repo's Button
+  // kills pointer events on it (so `title` never fires). The explanation has to
+  // be reachable, and the click has to be a no-op.
+  it('keeps the action focusable, explains itself, and refuses the click', async () => {
     finishedWithDocument(TOO_LONG);
     await openPanel();
 
     const button = improveButton();
-    expect(button).toBeDisabled();
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
     const note = screen.getByText(/longer than the review can read/i);
-    expect(note).toHaveTextContent('8000');
     expect(button).toHaveAttribute('aria-describedby', note.id);
-    // A dead disabled button with no reason is the failure this prevents.
+    // Reachable by keyboard, which is what makes the description announceable.
+    button?.focus();
+    expect(document.activeElement).toBe(button);
+
+    if (button) await userEvent.click(button);
     expect(bus.agentRun).not.toHaveBeenCalled();
   });
 
-  it('offers the way out next to the refusal: the generation can be run again', async () => {
+  it('formats the cap for the locale rather than printing a bare number', async () => {
     finishedWithDocument(TOO_LONG);
     await openPanel();
-    expect(screen.getByRole('button', { name: /run again/i })).toBeEnabled();
+    expect(screen.getByText(/8,000 characters/)).toBeInTheDocument();
+  });
+
+  // The note sits in the FOOTER, with the button — below the scrollable body it
+  // was off-viewport from the control it explains.
+  it('puts the reason in the footer, next to the action it refuses', async () => {
+    finishedWithDocument(TOO_LONG);
+    await openPanel();
+    const note = screen.getByText(/longer than the review can read/i);
+    const button = improveButton();
+    expect(note.parentElement?.contains(button ?? null)).toBe(true);
   });
 
   it('still runs at exactly the cap — the refusal is "longer than", not "as long as"', async () => {
