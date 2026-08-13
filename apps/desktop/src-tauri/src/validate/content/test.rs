@@ -2719,20 +2719,26 @@ const IT_SOURCE_STUB: &str = "Maria Rossi\nSviluppatrice\nmaria@example.com\n";
 /// one letter — the same "one fixture, every entry" discipline
 /// `no_ai_slop_checked_tier_fires_on_a_slop_letter` uses for English, so an
 /// entry that silently stopped matching cannot hide behind "some AI tell
-/// fired".
+/// fired". `spirito di squadra` and `all'avanguardia` are deliberately ABSENT
+/// (see `AI_TELL_LEXICAL_WORDS_IT`'s "Rejected" doc): both were demoted to
+/// prompt-only after review, and their negative control lives in
+/// [`italian_rejected_candidates_never_reach_the_validator`] below.
 #[test]
 fn italian_ai_tells_fire_on_a_slop_letter() {
     let letter = "Egregio selezionatore,\n\n\
                   Nel panorama odierno, in un mondo sempre più digitale, la vostra azienda \
-                  opera all'avanguardia con un ventaglio di soluzioni cloud. Ho uno spirito \
-                  di squadra genuino e sono orientato ai risultati; la mia collega è invece \
-                  orientata ai risultati in modo analogo. Sono una persona meticolosa e ho \
-                  lavorato con un team meticoloso su ogni rilascio. Porto con me una \
-                  comprovata esperienza nel settore dei pagamenti. Al fine di completare il \
+                  offre un ventaglio di soluzioni cloud. Sono orientato ai risultati; la mia \
+                  collega è invece orientata ai risultati in modo analogo. Sono una persona \
+                  meticolosa e ho lavorato con un team meticoloso su ogni rilascio. Porto con \
+                  me una comprovata esperienza nel settore dei pagamenti, e ho eccellenti \
+                  capacità comunicative con i team distribuiti. Al fine di completare il \
                   progetto in tempo, e in considerazione del fatto che le scadenze erano \
                   strette, ho riorganizzato il team. Al momento attuale la piattaforma serve \
-                  molti clienti. È importante sottolineare che il sistema non si è mai \
-                  fermato, e vale la pena notare che ho scritto ogni riga del backend.\n\n\
+                  molti clienti. Studi dimostrano che i team affiatati consegnano prima, e gli \
+                  esperti concordano su questo punto. Come è noto a tutti, la qualità del \
+                  codice conta più della velocità. È importante sottolineare che il sistema \
+                  non si è mai fermato, e vale la pena notare che ho scritto ogni riga del \
+                  backend.\n\n\
                   Cordiali saluti,\nMaria Rossi\n";
     let report = validate_content(&ContentInput {
         generated: letter,
@@ -2747,17 +2753,19 @@ fn italian_ai_tells_fire_on_a_slop_letter() {
         .filter_map(|i| i.evidence.as_deref())
         .collect();
     for entry in [
-        "all'avanguardia",
         "un ventaglio di",
-        "spirito di squadra",
         "orientato ai risultati",
         "orientata ai risultati",
         "meticoloso",
         "meticolosa",
         "comprovata esperienza",
+        "eccellenti capacità comunicative",
         "al fine di",
         "in considerazione del fatto che",
         "al momento attuale",
+        "studi dimostrano",
+        "gli esperti concordano",
+        "come è noto a tutti",
         "nel panorama odierno",
         "in un mondo sempre più",
         "è importante sottolineare",
@@ -2774,21 +2782,52 @@ fn italian_ai_tells_fire_on_a_slop_letter() {
     );
 }
 
-/// The mutation that matters for Italian specifically: elision
-/// (`all'avanguardia`, `all'annuncio`) puts an apostrophe INSIDE a checked
-/// phrase in ordinary, unremarkable Italian, unlike English where it only
-/// shows up in a handful of contractions. A model writes the typographic
-/// apostrophe (U+2019) about as often as the ASCII one; without
-/// `fold_apostrophes` on both `ai_tell_issues` and `template_opener_issues`,
-/// the typographic spelling of EITHER phrase below goes silently unmatched —
-/// which is exactly what this test would catch if the fold were removed.
+/// The negative control for the two demotions
+/// (`AI_TELL_LEXICAL_WORDS_IT`'s "Rejected" doc): a letter that uses BOTH
+/// phrases in exactly the truthful, domain-legitimate context that motivated
+/// demoting them must stay silent — the same trust bar
+/// `no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator` holds
+/// English to. `spirito di squadra` sits in OBJECT position as a genuine
+/// coaching achievement (rule 2); `all'avanguardia` names the real Italian
+/// Futurist art movement (rule 4).
 #[test]
-fn italian_ai_tells_and_openers_fire_with_either_apostrophe() {
+fn italian_rejected_candidates_never_reach_the_validator() {
+    let letter = "Gentile Selezionatore,\n\n\
+                  Prima di entrare nel settore tech ho lavorato come allenatore: ho costruito \
+                  lo spirito di squadra di ventidue atleti in tre stagioni, e nel tempo libero \
+                  ho scritto la tesi di laurea sull'avanguardia futurista italiana. Oggi \
+                  gestisco il sistema di liquidazione che elabora le transazioni ogni \
+                  notte.\n\n\
+                  Cordiali saluti,\nMaria Rossi\n";
+    let report = validate_content(&ContentInput {
+        generated: letter,
+        source_resume: IT_SOURCE_STUB,
+        job_ad: "",
+        top_requirements: &[],
+        target_language: "it",
+        doc_kind: DocKind::CoverLetter,
+    });
+    silent(&report, VOICE_AI_TELL_LEXICAL);
+}
+
+/// The Italian elision mutation: `in riferimento all'annuncio` puts an
+/// apostrophe INSIDE a checked opener in ordinary, unremarkable Italian,
+/// unlike English where it only shows up in a handful of contractions. A
+/// model writes the typographic apostrophe (U+2019) about as often as the
+/// ASCII one; without `fold_apostrophes` on `template_opener_issues`, the
+/// typographic spelling goes silently unmatched — which is exactly what this
+/// test would catch if the fold were removed.
+///
+/// `ai_tell_issues` shares the SAME `fold_apostrophes` function (see
+/// `AI_TELL_PROSE_WORDS_IT`'s doc for why a second, lexical-tier Italian
+/// elision fixture was not added here too): its fold is already proven by
+/// `contraction_ai_tells_fire_with_either_apostrophe`'s EN contraction twins.
+#[test]
+fn italian_template_opener_fires_with_either_apostrophe() {
     let typographic = "Gentile Selezionatore,\n\n\
-                       In riferimento all\u{2019}annuncio per la posizione, la vostra azienda \
-                       opera all\u{2019}avanguardia nel settore dei pagamenti digitali. Ho \
-                       sviluppato il sistema di liquidazione che elabora le transazioni ogni \
-                       notte.\n\n\
+                       In riferimento all\u{2019}annuncio per la posizione, ho sviluppato il \
+                       sistema di liquidazione che elabora le transazioni ogni notte per una \
+                       piattaforma di pagamenti.\n\n\
                        Cordiali saluti,\nMaria Rossi\n";
     for (shape, letter) in [
         ("typographic U+2019", typographic.to_string()),
@@ -2808,14 +2847,6 @@ fn italian_ai_tells_and_openers_fire_with_either_apostrophe() {
             "{VOICE_TEMPLATE_OPENER} must report the opener on the {shape} spelling; the \
              report carried {:?}",
             codes(&report)
-        );
-        let lexical_evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
-            .iter()
-            .filter_map(|i| i.evidence.as_deref())
-            .collect();
-        assert!(
-            lexical_evidence.contains(&"all'avanguardia"),
-            "\"all'avanguardia\" must fire on the {shape} spelling; got {lexical_evidence:?}"
         );
     }
 }
@@ -2854,8 +2885,8 @@ fn italian_lexical_tier_applies_to_resume_bullets_prose_tier_does_not() {
     let source = "ESPERIENZA\n\nIngegnere Piattaforma | Acme Pagamenti | 2021 - Presente\n\
                   - Gestisco il sistema di liquidazione\n";
     let generated = "ESPERIENZA\n\nIngegnere Piattaforma | Acme Pagamenti | 2021 - Presente\n\
-                     - Un sistema di pagamenti all'avanguardia che elabora ogni notte le \
-                     transazioni, nel panorama odierno sempre più critico per il settore\n";
+                     - Un ventaglio di competenze in pagamenti digitali che copre ogni notte \
+                     le transazioni, nel panorama odierno sempre più critico per il settore\n";
     let report = validate_content(&ContentInput {
         generated,
         source_resume: source,
@@ -2869,7 +2900,7 @@ fn italian_lexical_tier_applies_to_resume_bullets_prose_tier_does_not() {
         .filter_map(|i| i.evidence.as_deref())
         .collect();
     assert!(
-        evidence.contains(&"all'avanguardia"),
+        evidence.contains(&"un ventaglio di"),
         "the lexical-tier entry must fire on a résumé bullet; got {evidence:?}"
     );
     assert!(

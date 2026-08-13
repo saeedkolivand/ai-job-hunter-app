@@ -137,14 +137,16 @@ const AI_TELL_LEXICAL_DE: &[&str] = &[
 ];
 
 const AI_TELL_LEXICAL_IT: &[&str] = &[
-    "all'avanguardia",
     "un ventaglio di",
-    "spirito di squadra",
     "orientato ai risultati",
     "orientata ai risultati",
     "meticoloso",
     "meticolosa",
     "comprovata esperienza",
+    "eccellenti capacità comunicative",
+    "studi dimostrano",
+    "gli esperti concordano",
+    "come è noto a tutti",
     "al fine di",
     "in considerazione del fatto che",
     "al momento attuale",
