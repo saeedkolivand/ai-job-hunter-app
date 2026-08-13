@@ -1034,6 +1034,7 @@ fn found_job_full(url: &str, title: &str, company: &str, found_at: u64) -> Found
         score_provisional: false,
         score_source: crate::autopilot::ScoreSource::Keyword,
         found_at,
+        posted_at: None,
         is_new: false,
         applied: false,
         trust: None,
@@ -1501,6 +1502,46 @@ fn found_job_with_board_round_trips() {
 }
 
 #[test]
+fn legacy_found_job_without_posted_at_deserializes_to_none() {
+    // Old persisted FoundJob records pre-date the `postedAt` field. The
+    // `#[serde(default)]` must let them load with `posted_at: None` rather than
+    // failing, and re-serialize without emitting a `postedAt` key at all
+    // (`skip_serializing_if`) — a legacy record must load AND save unchanged.
+    let json = r#"{
+        "title": "Engineer",
+        "company": "Acme",
+        "url": "https://a.com/1",
+        "foundAt": 100
+    }"#;
+    let job: FoundJob = serde_json::from_str(json).expect("legacy FoundJob must deserialize");
+    assert_eq!(job.posted_at, None, "absent postedAt must default to None");
+
+    let round_tripped = serde_json::to_string(&job).unwrap();
+    assert!(
+        !round_tripped.contains("postedAt"),
+        "a legacy record with no posted_at must not grow a postedAt key on save; got {round_tripped}"
+    );
+    let restored: FoundJob =
+        serde_json::from_str(&round_tripped).expect("re-serialized legacy record must load");
+    assert_eq!(restored.posted_at, None);
+}
+
+#[test]
+fn found_job_with_posted_at_round_trips() {
+    // A FoundJob carrying the posting's publish date serializes the camelCase
+    // key as epoch millis and round-trips.
+    let mut job = found_job("https://a.com/1", 100);
+    job.posted_at = Some(1_700_000_000_000);
+    let json = serde_json::to_string(&job).unwrap();
+    assert!(
+        json.contains("\"postedAt\":1700000000000"),
+        "postedAt must serialize as a camelCase epoch-ms number; got {json}"
+    );
+    let restored: FoundJob = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.posted_at, Some(1_700_000_000_000));
+}
+
+#[test]
 fn merge_preserves_and_refreshes_board_across_resurface() {
     // An existing row persisted before `board` existed (None) must pick up the
     // board when the same URL re-surfaces, and a never-seen URL keeps its board.
@@ -1558,6 +1599,37 @@ fn merge_preserves_and_refreshes_trust_across_resurface() {
         a2.trust,
         Some(fresh_trust),
         "appended new row keeps its trust (via ..inc spread)"
+    );
+}
+
+#[test]
+fn merge_preserves_and_refreshes_posted_at_across_resurface() {
+    // Same legacy-migration case as the board/trust tests above: an existing
+    // row persisted before `posted_at` existed (None) — or scraped from a
+    // board that didn't expose a publish date on an earlier run — must pick up
+    // the incoming date when the same URL re-surfaces, and a never-seen URL
+    // keeps its own date.
+    let mut existing = found_job("https://a.com/1", 100);
+    existing.posted_at = None; // legacy/dateless row
+
+    let mut resurfaced = found_job("https://a.com/1", 999);
+    resurfaced.posted_at = Some(1_700_000_000_000);
+    let mut fresh = found_job("https://a.com/2", 200);
+    fresh.posted_at = Some(1_650_000_000_000);
+
+    let merged = merge_found_jobs(&[existing], vec![resurfaced, fresh]);
+
+    let a1 = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(
+        a1.posted_at,
+        Some(1_700_000_000_000),
+        "re-surfaced existing row backfills the incoming posted_at"
+    );
+    let a2 = merged.iter().find(|j| j.url == "https://a.com/2").unwrap();
+    assert_eq!(
+        a2.posted_at,
+        Some(1_650_000_000_000),
+        "appended new row keeps its posted_at (via ..inc spread)"
     );
 }
 

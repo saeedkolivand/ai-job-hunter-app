@@ -757,6 +757,10 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         // including for a job whose re-rank later degrades.
         score_source: ScoreSource::Keyword,
         found_at,
+        // The posting's own publish date, copied straight from the source —
+        // aggregator providers (Adzuna, JSearch, Jooble, Apify LinkedIn) parse
+        // this from upstream; boards with no publish-date field leave it `None`.
+        posted_at: p.posted_at,
         // Set by the dedup merge in `record_run`; `applied` is derived on read.
         is_new: false,
         applied: false,
