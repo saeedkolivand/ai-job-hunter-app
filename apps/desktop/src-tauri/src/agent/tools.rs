@@ -104,6 +104,31 @@ pub(crate) const RESUME_CAP: usize = 8_000;
 pub(crate) const JOB_CAP: usize = 8_000;
 const BRIEF_CAP: usize = 2_000;
 
+/// Cap on a REQUEST-SUPPLIED identifier echoed back into an error or failure
+/// message — a `resumeId`/`jobId`/flow `kind` that was already rejected.
+///
+/// The same 64 [`crate::agent::controller`] clamps a model-chosen tool name to,
+/// and for the same reason: every real value is a short id or registry token,
+/// so the only ones that reach a formatter oversized are hostile. Rejected ids
+/// land in strings that get stored on a job, logged, fenced into a transcript,
+/// and rendered, and none of those layers bounds them.
+pub(crate) const ECHO_CAP: usize = 64;
+
+/// Clamp a request-supplied identifier for an error message ([`ECHO_CAP`]),
+/// char-boundary safe.
+///
+/// **One owner for the rule, two very different consumers.**
+/// `commands::agent::agent_run` uses it for the three wire fields it echoes
+/// (`kind`, `resumeId`, `jobId`); `super::tools_quality`'s `resume_not_found` /
+/// `job_not_found` use it for the trusted-context ids they name — and those
+/// two reach the SAME user-visible place, because the review flow's generation
+/// lookup surfaces that error verbatim as the run's failure message. Clamping
+/// at one of the two and not the other would have left the identical hole one
+/// call away.
+pub(crate) fn clamped_echo(value: &str) -> String {
+    value.chars().take(ECHO_CAP).collect()
+}
+
 /// Compile the fence-tag detection pattern for one tag. `\s*` is bounded to
 /// whitespace only with no adjacent unbounded quantifier chained to itself,
 /// so this stays linear (no ReDoS).

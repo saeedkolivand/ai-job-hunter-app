@@ -32,7 +32,7 @@ use tokio_util::sync::CancellationToken;
 use crate::agent::controller::{run_agent_live, AgentStep, AgentStepKind, StoppedReason};
 use crate::agent::flows;
 use crate::agent::gate::{AgentGate, Decision};
-use crate::agent::tools::{fenced, ToolContext, JOB_CAP, RESUME_CAP};
+use crate::agent::tools::{clamped_echo, fenced, ToolContext, JOB_CAP, RESUME_CAP};
 use crate::agent::tools_pipeline::{generation_for_job, GenerationLookup};
 use crate::commands::ai_provider::ModelCapabilities;
 use crate::db::new_job_id;
@@ -375,28 +375,6 @@ fn build_improve_user_message(
     )
 }
 
-/// Longest a REQUEST-SUPPLIED value may be when this command echoes it back in
-/// a failure message. The same 64 the controller clamps a model-chosen tool
-/// name to (`agent::controller`'s `TOOL_NAME_CAP`) and for the same reason:
-/// every real value is a short id or registry token, so the only values that
-/// reach the formatter oversized are the rejected ones.
-const WIRE_ECHO_CAP: usize = 64;
-
-/// Clamp a request-supplied value for a failure message.
-///
-/// **All three of this command's echoed wire fields go through it** — `kind`,
-/// `resumeId`, `jobId` — because they share one threat model: each is an
-/// unvalidated `String` on the DTO (the closed vocabulary and the id lookups
-/// are enforced downstream, not by serde), each is interpolated ONLY on the
-/// path where it was already rejected, and each lands in a job-failure message
-/// that is stored, logged, and rendered. Clamping one and not the others just
-/// moves the hole (LOW, Phase-7 delta review).
-///
-/// Chars, not bytes, so a multi-byte value is cut on a character boundary.
-fn clamped_echo(value: &str) -> String {
-    value.chars().take(WIRE_ECHO_CAP).collect()
-}
-
 /// The seed-side policy for the document the review flow reviews: what the
 /// flow will accept as the generation under review, given the text that is
 /// actually stored.
@@ -493,6 +471,9 @@ fn require_tool_capable(caps: ModelCapabilities, model: &str, flow_kind: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The cap is read only by the echo test below — the command body needs the
+    // helper, not the number.
+    use crate::agent::tools::ECHO_CAP;
     use crate::commands::ai_provider::TokenParam;
 
     /// The seed message carries both ids (so the model can pass them to the tools)
@@ -765,13 +746,18 @@ mod tests {
     /// stored, logged, and rendered — so clamping one and not the others just
     /// moved the hole. Chars, not bytes, so a multi-byte value is cut on a
     /// character boundary.
+    ///
+    /// The rule itself lives in `agent::tools` (`clamped_echo`/[`ECHO_CAP`]),
+    /// shared with the tool-side `resume_not_found`/`job_not_found` that echo
+    /// the same ids into the same failure messages; this pins the behaviour
+    /// this command depends on.
     #[test]
     fn every_echoed_wire_value_is_clamped() {
         let flood = "k".repeat(100_000);
-        assert_eq!(clamped_echo(&flood).chars().count(), WIRE_ECHO_CAP);
+        assert_eq!(clamped_echo(&flood).chars().count(), ECHO_CAP);
 
-        let multibyte = "é".repeat(WIRE_ECHO_CAP + 10);
-        assert_eq!(clamped_echo(&multibyte).chars().count(), WIRE_ECHO_CAP);
+        let multibyte = "é".repeat(ECHO_CAP + 10);
+        assert_eq!(clamped_echo(&multibyte).chars().count(), ECHO_CAP);
 
         // A real (if unregistered) value passes through whole — the messages
         // have to stay useful for the ordinary typo/missing-row case.

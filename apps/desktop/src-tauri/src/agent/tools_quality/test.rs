@@ -1,4 +1,5 @@
 use super::*;
+use crate::agent::tools::ECHO_CAP;
 use crate::documents::evidence::EvidenceRole;
 use crate::validate::content::{ContentMetrics, FACTUAL_UNSOURCED_METRIC};
 
@@ -1503,6 +1504,46 @@ fn compact_trim_suggestions_truncated_accounts_for_both_the_limit_cap_and_the_sh
 // "core" function taking `Option<&str>`/`Option<&JobPostingMeta>` in place of
 // a live `DocumentStore`/postings-cache lookup, so every branch is directly
 // exercisable here with no AppHandle mock (this crate has none).
+
+/// Both not-found constructors CLAMP the id they name (Phase-7 delta review).
+///
+/// "Trusted" on these ids means trusted-as-ROUTING — they come from
+/// `ToolContext`, never from tool args — not bounded: `ToolContext` is built
+/// from the request's own `resumeId`/`jobId`, which are unvalidated wire
+/// strings. The message reaches two places that both matter and neither of
+/// which bounds it: the model's transcript (as a fenced tool result) and, for
+/// the review flow, the USER — `commands::agent`'s generation lookup calls
+/// `job_not_found` through the shared `generation_for_job`, and surfaces the
+/// error verbatim as the run's failure message via `fail_run`. That consumer is
+/// why this is pinned here rather than left to the command's own echo test.
+///
+/// Mutation-checked, executed: dropping `clamped_echo` from either constructor
+/// fails this (100 000 chars survive into the message).
+#[test]
+fn the_not_found_errors_clamp_the_id_they_name() {
+    let flood = "z".repeat(100_000);
+    for message in [
+        resume_not_found(&flood).to_string(),
+        job_not_found(&flood).to_string(),
+    ] {
+        assert!(
+            message.chars().count() < 200,
+            "an unbounded id reached a stored/logged/fenced message: {} chars",
+            message.chars().count()
+        );
+        assert!(message.contains(&"z".repeat(ECHO_CAP)));
+        assert!(!message.contains(&"z".repeat(ECHO_CAP + 1)));
+    }
+
+    // An ordinary id still reads whole — a clamp that mangled real ids would
+    // make every genuine not-found harder to diagnose.
+    assert!(resume_not_found("rid-1")
+        .to_string()
+        .contains("resume not found: rid-1"));
+    assert!(job_not_found("jid-1")
+        .to_string()
+        .contains("job not found in cache: jid-1"));
+}
 
 #[test]
 fn validate_resume_core_reports_resume_not_found() {
