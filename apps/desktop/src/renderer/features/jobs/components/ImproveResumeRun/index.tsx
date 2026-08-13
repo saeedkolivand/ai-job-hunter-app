@@ -415,8 +415,16 @@ export function ImproveResumeRun({ session, onDismissed }: ImproveResumeRunProps
           <p className="text-[11px] font-medium text-red-400">
             {t('jobs.tailored.improve.failedTitle')}
           </p>
+          {/* Verbatim, and ENGLISH even for a German user: the run-start
+              refusals ("no posting URL", "no generated résumé yet", "longer
+              than the review flow can read") arrive as free-form strings on
+              `job.failed` with no code to key a translation off. Matching them
+              by substring would be a guess that breaks the next time the Rust
+              copy is reworded — which happened twice while this shipped. The
+              real fix is a typed error code on the wire; until then the message
+              is shown rather than swallowed, under a localized heading. */}
           {session.error && (
-            <p className="mt-1 text-[10px] leading-relaxed text-foreground/60">{session.error}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/60">{session.error}</p>
           )}
         </div>
       )}
