@@ -16,7 +16,11 @@ import type { LetterLayoutId, TemplateId } from '@ajh/shared';
 
 export type { LetterLayoutId, TemplateId };
 
-/** Ordered letter-layout ids — the picker's option order + the exhaustiveness pin. */
+/**
+ * Ordered letter-layout ids — the picker's option order. `satisfies` checks
+ * membership only; completeness is enforced by `LETTER_LAYOUT_DECORATED`
+ * (`Record<LetterLayoutId, boolean>`) and the picker's registration test.
+ */
 export const LETTER_LAYOUT_IDS = [
   'classic',
   'refined',

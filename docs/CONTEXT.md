@@ -263,7 +263,7 @@ brand color
 The arrangement/composition of a cover letter — `classic` / `refined` / `banded` / `navy` / `sidebar` / `monogram` —
 independent of the résumé template. The palette and fonts always **inherit** from the
 selected résumé template (via `style_from_template`); market conventions (date position,
-subject line, recipient block) own the semantics. A layout owns arrangement only. Decorative elements (rail in Sidebar, initials device in Monogram) drop under ATS mode while core semantics remain.
+subject line, recipient block) own the semantics. A layout owns arrangement only. Decorative elements (band in Banded, rail in Sidebar, initials device in Monogram) drop under ATS mode while core semantics remain.
 _Avoid_: letter template, letter style (LetterStyle is the inherited-palette carrier in
 code, not the arrangement)
 
