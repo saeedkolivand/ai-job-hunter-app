@@ -735,8 +735,12 @@ export function AutopilotCard({
                                 date — so absence renders nothing rather than "NaN ago".
                                 Same helper + namespace the Jobs page uses for postedAt
                                 (PostingListItem/index.tsx:121-122); the title carries the
-                                absolute timestamp, mirroring ApplicationRow:231. */}
-                            {job.postedAt && (
+                                absolute timestamp, mirroring ApplicationRow:231.
+                                `typeof === 'number'`, not `job.postedAt &&` — the classic
+                                0-&&-JSX footgun (a stray "0" text node) AND the one presence
+                                contract shared with `sortFoundJobsByDate`'s dated/undated
+                                banding below (which already treats 0 as dated). */}
+                            {typeof job.postedAt === 'number' && (
                               <span
                                 className="shrink-0 text-[10px] text-foreground/40"
                                 title={new Date(job.postedAt).toLocaleString()}

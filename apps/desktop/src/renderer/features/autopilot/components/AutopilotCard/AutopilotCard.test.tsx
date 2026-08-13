@@ -1278,6 +1278,46 @@ describe('AutopilotCard — postedAt date chip', () => {
 
     expect(screen.queryByText(/jobs\.time/)).not.toBeInTheDocument();
   });
+
+  // Regression (CodeRabbit round 1): `job.postedAt && (...)` is the classic
+  // 0-&&-JSX footgun — a `postedAt: 0` (epoch) job would render a bare stray
+  // "0" text node instead of the chip, AND it disagreed with
+  // `sortFoundJobsByDate`, which already treats 0 as dated via
+  // `typeof === 'number'`. One presence contract now covers both the render
+  // guard and the sort banding.
+  it('treats postedAt: 0 as dated — chip renders (no stray "0" text), and the row sorts in the dated band', async () => {
+    const user = userEvent.setup();
+    const epochJob = { ...makeJob('https://example.com/job/epoch'), postedAt: 0 };
+    const undatedJob = makeJob('https://example.com/job/no-date');
+    renderCard(makeAutopilot([undatedJob, epochJob]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await user.click(header);
+
+    // Display half of the contract: the JSX branch renders (a real titled
+    // <span>), not the OLD `job.postedAt && (...)` guard's failure mode —
+    // `0 && (<span>…</span>)` short-circuits to the bare number `0`, which
+    // React renders as a stray "0" text node instead of the chip. The
+    // relative-time TEXT itself is a separate, pre-existing concern
+    // (`useFormatRelativeTime`'s own `if (!timestamp)` falsy-check also
+    // treats 0 as absent — out of scope here; `title` is computed straight
+    // from `job.postedAt`, not through that hook, so it's still a precise
+    // signal that this is the real chip, not the footgun's stray digit).
+    const epochRow = document.querySelector('[data-job-url="https://example.com/job/epoch"]');
+    const chip = epochRow?.querySelector('span[title]');
+    expect(chip).not.toBeNull();
+    expect(chip).toHaveAttribute('title', new Date(0).toLocaleString());
+    // The footgun's tell: no bare "0" text node anywhere in the row.
+    expect(within(epochRow as HTMLElement).queryByText('0', { exact: true })).not.toBeInTheDocument();
+
+    // Sort half of the contract: the epoch job must band as DATED (ahead of
+    // the undated one), not fall through to the undated/trailing band.
+    await user.click(screen.getByRole('button', { name: 'jobs.sortNewest' }));
+    const order = Array.from(document.querySelectorAll('[data-job-url]')).map((el) =>
+      el.getAttribute('data-job-url')
+    );
+    expect(order).toEqual(['https://example.com/job/epoch', 'https://example.com/job/no-date']);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1318,6 +1358,15 @@ describe('sortFoundJobsByDate', () => {
     const input = [undated('u1'), dated('d1', 1000), undated('u2'), dated('d2', 2000)];
     const result = sortFoundJobsByDate(input, 'oldest');
     expect(result.map((j) => j.url)).toEqual(['d1', 'd2', 'u1', 'u2']);
+  });
+
+  // Pinpoint case for the CodeRabbit round-1 finding: `postedAt: 0` (epoch)
+  // must band as DATED, matching the render guard's `typeof === 'number'`
+  // contract — a falsy-0 check anywhere in this pipeline would sink it into
+  // the undated/trailing band instead.
+  it('treats postedAt: 0 as dated, not undated (shares the render guard\'s typeof contract)', () => {
+    const input = [undated('u1'), dated('epoch', 0)];
+    expect(sortFoundJobsByDate(input, 'newest').map((j) => j.url)).toEqual(['epoch', 'u1']);
   });
 
   it('orders the dated band newest-first for sortBy="newest"', () => {
