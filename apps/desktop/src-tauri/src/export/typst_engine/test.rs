@@ -595,6 +595,38 @@ fn glyph_positions(svg: &str) -> Vec<(f64, f64, String)> {
     out
 }
 
+/// Width, in points, of the topmost baseline among the glyphs left of `max_x`
+/// — first glyph origin to last glyph origin.
+///
+/// Reads the RENDERED TYPE SIZE, which glyph positions alone cannot: typst-svg
+/// gives every glyph an explicit `x` advance, so the same string set in the same
+/// font scales this figure linearly with its point size. Comparing the same
+/// string in two renders therefore yields their size ratio directly, with no
+/// hardcoded point values and no dependency on which glyphs typst-svg chose to
+/// group.
+///
+/// `max_x` selects a column: pass the body's left edge to measure the sidebar
+/// rail, or `f64::INFINITY` for the whole page.
+fn top_line_extent(glyphs: &[(f64, f64, String)], max_x: f64) -> f64 {
+    let zone: Vec<&(f64, f64, String)> = glyphs.iter().filter(|(x, _, _)| *x < max_x).collect();
+    if zone.is_empty() {
+        return 0.0;
+    }
+    let top = zone
+        .iter()
+        .map(|(_, y, _)| *y)
+        .fold(f64::INFINITY, f64::min);
+    // 0.5pt tolerance: one baseline, not "roughly the top of the page".
+    let xs: Vec<f64> = zone
+        .iter()
+        .filter(|(_, y, _)| (*y - top).abs() < 0.5)
+        .map(|(x, _, _)| *x)
+        .collect();
+    let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    hi - lo
+}
+
 /// Bottom edge (page y, in points) of the first FULL-WIDTH rectangle painted in
 /// `fill` — for a header-band template that is the band itself, drawn first as
 /// the page background. Narrow accent shapes (section-marker bars) share the
@@ -3588,6 +3620,11 @@ fn sidebar_letterhead_is_measurably_inside_the_rail() {
     const MM: f64 = 72.0 / 25.4;
     let rail_pad = 7.0 * MM;
     let rail_text_right = (7.0 + 38.0) * MM;
+    // Outer edge of the tinted panel. Used to bound the "rail zone" when
+    // measuring type size: the body column's own left edge is NOT safe for
+    // that, because a body glyph lands a float-hair below 62mm and would be
+    // read as the rail's topmost line, collapsing the measurement to zero.
+    let rail_right = 52.0 * MM;
     let body_left = 62.0 * MM;
     let ats_margin = 25.4 * MM;
 
@@ -3597,27 +3634,40 @@ fn sidebar_letterhead_is_measurably_inside_the_rail() {
     // rail into the gutter and the body column before shrink-to-fit existed.
     // "Alex Li" and "Jane Smith" stay in so the fitter cannot pass by simply
     // shrinking everything.
-    let cases: &[(TemplateId, &str, &str)] = &[
-        (TemplateId::SwissMinimal, "Jane Smith", "jane@example.com"),
-        (TemplateId::Aria, "Alex Li", "alex@example.com"),
+    // `fits_at_base` marks the rows short enough that the fitter must be a
+    // NO-OP: they are the half that makes this test discriminating. Without
+    // them, forcing `fit-size` to always return its 6pt floor passes the whole
+    // matrix — every assertion here is a glyph POSITION, and shrinking
+    // everything only ever produces less overflow, never more.
+    let cases: &[(TemplateId, &str, &str, bool)] = &[
+        (
+            TemplateId::SwissMinimal,
+            "Jane Smith",
+            "jane@example.com",
+            true,
+        ),
+        (TemplateId::Aria, "Alex Li", "alex@example.com", true),
         (
             TemplateId::Aria,
             "Àlvaro Papadopoulos",
             "alvaro.papadopoulos@example.com",
+            false,
         ),
         (
             TemplateId::Cadence,
             "Wojciech Wojciechowski",
             "w.wojciechowski@example.com",
+            false,
         ),
         (
             TemplateId::Deedy,
             "Anne Vandenberghe",
             "anne.vandenberghe@example.co.uk",
+            false,
         ),
     ];
 
-    for (template_id, name, email) in cases {
+    for (template_id, name, email, fits_at_base) in cases {
         let t = Template::get(*template_id);
         let profile = crate::contact_profile::ContactProfile {
             full_name: Some((*name).to_string()),
@@ -3684,6 +3734,36 @@ fn sidebar_letterhead_is_measurably_inside_the_rail() {
             ats_leftmost >= ats_margin - 1.5,
             "{template_id:?}/{name}: ATS-mode Sidebar put a glyph at {ats_leftmost:.1}pt,              left of the {ats_margin:.1}pt margin — the rail placement is still active"
         );
+
+        // The discriminating half. A name that already fits must render at the
+        // rail's BASE size, so the fitter has to leave it alone.
+        //
+        // Expressed as a ratio against the same name in ATS mode — which always
+        // renders at the template's full `name_pt` — so it calibrates itself
+        // per template instead of hardcoding point sizes. The rail's base is
+        // `name_pt - 4pt`, so the two extents must stand in exactly that ratio.
+        // A fitter stuck at its 6pt floor collapses the ratio (6/20 = 0.30
+        // against an expected 0.80) and this goes red, while every
+        // position-only assertion above still passes it: shrinking everything
+        // only ever produces LESS overflow, never more.
+        if *fits_at_base {
+            let base_ratio = (t.name_pt as f64 - 4.0) / t.name_pt as f64;
+            let design_extent = top_line_extent(&design, rail_right);
+            let ats_extent = top_line_extent(&ats, f64::INFINITY);
+            assert!(
+                design_extent > 1.0 && ats_extent > 1.0,
+                "{template_id:?}/{name}: measured a degenerate name line \
+                 (design={design_extent:.1}pt, ats={ats_extent:.1}pt)"
+            );
+            let actual = design_extent / ats_extent;
+            assert!(
+                (actual - base_ratio).abs() < 0.04,
+                "{template_id:?}/{name}: the rail name renders at {actual:.3}x the ATS-mode \
+                 name, expected {base_ratio:.3}x (= (name_pt - 4)/name_pt). A name this short \
+                 already fits the 38 mm rail, so shrink-to-fit must be a NO-OP for it — this \
+                 ratio is what separates 'fits what needs it' from 'shrinks everything'."
+            );
+        }
     }
 }
 
