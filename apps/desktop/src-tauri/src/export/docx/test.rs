@@ -626,6 +626,52 @@ fn ats_mode_drops_every_letter_docx_tint() {
     }
 }
 
+/// The DE market caption, in DOCX, for every caption-bearing layout.
+///
+/// Every other `letter_request` in this file uses `locale: None`, which resolves
+/// to the label-less `intl` market — so nothing here had ever exercised a market
+/// that HAS a subject label, and the DOCX suppression rule
+/// (`strip_market_label` + `has_own_label`) was running untested. That gap is
+/// what let the PDF side ship the duplicate: with no DE coverage on either side,
+/// the two formats could disagree silently.
+///
+/// Asserts the label renders exactly ONCE — the caption is emitted uppercased
+/// and the body keeps the market's own casing, so a duplicate shows up as two
+/// case-insensitive matches.
+#[test]
+fn cover_letter_docx_renders_the_de_market_label_exactly_once() {
+    for layout in [
+        LetterLayout::Refined,
+        LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ] {
+        let mut request = letter_request(REFINED_DE_TEXT, layout);
+        request.locale = Some("de".to_string());
+        let xml = document_xml(&generate_docx(&request).expect("de docx"));
+
+        // Text nodes only — attribute values never carry the label.
+        let body: String = xml.to_lowercase();
+        let count = body.matches("betreff").count();
+        assert_eq!(
+            count, 1,
+            "{layout:?}: the DE label must appear exactly once in the DOCX, found {count} \
+             — the caption is duplicating the label data.subject already carries: {xml}"
+        );
+        assert!(
+            xml.contains("Bewerbung als Software Engineer"),
+            "{layout:?}: the DE subject body went missing: {xml}"
+        );
+        // Same isolating check as the PDF side: the colon only survives on an
+        // unstripped body, so this pins WHICH of the two occurrences was kept.
+        assert!(
+            !body.contains("betreff: bewerbung"),
+            "{layout:?}: the label was left on the subject body instead of being stripped \
+             into the caption: {xml}"
+        );
+    }
+}
+
 /// A letter whose first line is a DATE has no letterhead name, and the device
 /// must not invent one from it.
 ///

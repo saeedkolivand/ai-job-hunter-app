@@ -3585,9 +3585,33 @@ fn banded_band_drops_under_ats_mode() {
 fn new_letter_layouts_gate_the_subject_line_on_market_opts_not_layout() {
     for layout in [LetterLayout::Sidebar, LetterLayout::Monogram] {
         let de = letter_lower(layout, LETTER_FIXTURE_DE, "de", false);
+        // EXACTLY once, not merely present. `contains` is satisfied by one label
+        // and by two, and two is what these layouts shipped: `parse_cover_letter`
+        // publishes `data.subject` verbatim ("Betreff: Bewerbung …") and the
+        // caption printed the label again on top of it, so a DE letter read
+        // "BETREFF / Betreff: Bewerbung …". The four shipped layouts strip the
+        // label first; these two did not, and a presence-only assertion could
+        // not tell the difference.
+        let betreff_count = de.matches("betreff").count();
+        assert_eq!(
+            betreff_count, 1,
+            "{layout:?}: the DE market label must render exactly once, found \
+             {betreff_count} — the caption is duplicating the label already carried \
+             by data.subject:\n{de}"
+        );
+        // …and it must be the CAPTION that survives, not the raw prefix. The
+        // count alone cannot tell those apart: stripping the label without a
+        // caption, and a caption without stripping, both yield exactly one.
+        // The colon is the tell — it only exists in the unstripped body.
         assert!(
-            de.contains("betreff"),
-            "{layout:?}: DE DIN Betreff subject missing (data.opts.subject_line_used):\n{de}"
+            !de.contains("betreff: bewerbung"),
+            "{layout:?}: the label was left on the subject body — `data.subject` must be \
+             stripped before rendering, the way letter_refined/letter_navy and the DOCX \
+             `strip_market_label` all do it:\n{de}"
+        );
+        assert!(
+            de.contains("bewerbung als software engineer"),
+            "{layout:?}: the DE subject body went missing:\n{de}"
         );
         assert!(
             de.contains("sehr geehr") && de.contains("freundlichen"),
