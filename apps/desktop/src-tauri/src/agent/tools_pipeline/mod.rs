@@ -755,17 +755,18 @@ pub(crate) fn get_quality_report_tool() -> AgentTool {
 
 /// The whole quality pipeline, returning the draft + report as DATA.
 ///
-/// **Expensive, and deliberately in NO flow whitelist today.** Fifteen provider
-/// calls against a 75-minute floor cannot fit
-/// [`Budget::AGENT_PREP`]'s 360 s `step_timeout`, which the controller races
-/// every tool call against — a prep run that called this would die at
-/// [`StoppedReason::Timeout`] with its drafts unsaved. Phase 7's
-/// `improve_resume` flow is the intended caller, and its `AgentFlow` carries
-/// its own `Budget`; until that exists the tool lives in
-/// [`super::tools::improve_resume_tools`], which no flow drives yet.
-/// `agent::tools::test`'s
+/// **Expensive, and reachable from exactly ONE flow.** Fifteen provider calls
+/// against a 75-minute floor cannot fit [`Budget::AGENT_PREP`]'s 360 s
+/// `step_timeout`, which the controller races every tool call against — a prep
+/// run that called this would die at [`StoppedReason::Timeout`] with its drafts
+/// unsaved. Its caller is the `improve_resume` flow
+/// ([`crate::agent::flows::FLOWS`]), whose `AgentFlow` carries a `Budget`
+/// (`AGENT_IMPROVE`) with a 90-minute step clock sized on the arithmetic
+/// asserted at the top of this module; the whitelist it reaches through is
+/// [`super::tools::improve_resume_tools`]. `agent::tools::test`'s
 /// `the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`
-/// pins the exclusion off that arithmetic rather than off a name list.
+/// and its `…_is_present_in_the_flow_whose_step_can_cover_it` twin pin both
+/// directions off that arithmetic rather than off a name list.
 pub(crate) fn run_quality_pipeline_tool() -> AgentTool {
     AgentTool {
         name: "run_quality_pipeline",

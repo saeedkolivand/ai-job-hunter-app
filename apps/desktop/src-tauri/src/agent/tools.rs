@@ -963,25 +963,23 @@ fn save_resume_tool() -> AgentTool {
 /// against its quality report and the candidate's evidence, then propose
 /// targeted fixes through the gated save.
 ///
-/// **No flow drives this yet, and that is the point of it existing now.** The
-/// flow registry (`AgentFlow { kind, system, tools, budget }`) is Phase 7 work;
-/// what Phase 3 owes it is a HOME for `run_quality_pipeline`, because the tool
-/// must not go into [`prep_application_tools`]:
+/// **This is `run_quality_pipeline`'s only home**, and the reason it has one:
 /// [`crate::agent::controller`] races every tool call against the flow's
 /// `step_timeout`, `Budget::AGENT_PREP`'s is 360 s, and one quality run's own
 /// floor (`Budget::RESUME_QUALITY.run_timeout`) is 75 minutes — a prep run that
 /// called it would end at `StoppedReason::Timeout` after the drafting spend and
-/// before the saves. Pinned by
-/// `test::the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`,
-/// which derives the exclusion from those two constants rather than from a
-/// name list.
+/// before the saves. The improve flow's own `Budget::AGENT_IMPROVE.step_timeout`
+/// is 90 minutes precisely so it can. Both directions are pinned off those
+/// constants rather than off a name list, by
+/// `test::the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`
+/// and `test::the_quality_pipeline_tool_is_present_in_the_flow_whose_step_can_cover_it`.
 ///
-/// **Phase 7's obligations, written down here so they are not rediscovered:**
-/// this flow's `Budget.step_timeout` must clear a full quality run, and its
-/// system prompt must NAME every tool below — the drift guard for the prep
-/// flow (`agent::flows::tests::prep_application_system_names_exactly_the_registered_prep_tools`)
-/// exists because a registered-but-unnamed tool is paid for on every turn in
-/// schema tokens and never called.
+/// The flow that drives it is `crate::agent::flows::IMPROVE_RESUME_KIND` —
+/// prompt, whitelist and budget registered as one value in
+/// [`crate::agent::flows::FLOWS`], where
+/// `every_registered_flow_prompt_names_exactly_its_own_whitelist` keeps this
+/// list and that prompt naming the same six tools (a registered-but-unnamed
+/// tool is paid for on every turn in schema tokens and never called).
 ///
 /// Contents are the plan's own list: the three résumé-quality reads that
 /// operate on an existing document, the persisted report, the pipeline, and
