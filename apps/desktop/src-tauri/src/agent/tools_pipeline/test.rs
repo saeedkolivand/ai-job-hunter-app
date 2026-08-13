@@ -103,6 +103,42 @@ fn one_agent_run_stage_plus_a_re_ask_fits_inside_one_agent_step() {
     );
 }
 
+/// The stage-deadline relation, asserted over the REGISTRY rather than over the
+/// one budget it happens to be derived from.
+///
+/// `AGENT_STAGE_DEADLINE` is computed off `AGENT_PREP.step_timeout`, and the
+/// compile-time assert in `super` checks it against that same constant — which
+/// is exactly right today and silently insufficient tomorrow: the bound belongs
+/// to whatever flow can CALL `analyze_job`, and any flow may register it.
+/// A flow with a shorter step clock that carried `analyze_job` would have its
+/// runs ended at `StoppedReason::Timeout` by a re-ask the stage deadline
+/// deliberately sized to fit, and nothing in the build would say so.
+///
+/// The mirror of `agent::tools::test`'s `run_quality_pipeline` pair, and like it
+/// derived from constants rather than a name list. Today no flow trips it (the
+/// prep flow is the only `analyze_job` holder and owns the deadline's own
+/// budget); it is written for flow #3.
+#[test]
+fn every_flow_that_can_call_analyze_job_can_afford_a_stage_plus_a_re_ask() {
+    for flow in crate::agent::flows::FLOWS {
+        if !(flow.tools)().iter().any(|t| t.name == "analyze_job") {
+            continue;
+        }
+        assert!(
+            flow.budget.step_timeout
+                >= AGENT_STAGE_DEADLINE
+                    + timeouts::OLLAMA_COMPLETION
+                    + Duration::from_secs(AGENT_STAGE_MARGIN_SECS),
+            "flow '{}' registers analyze_job but its step_timeout ({:?}) cannot cover one stage \
+             ({AGENT_STAGE_DEADLINE:?}) plus the re-ask that stage may pay for ({:?}) plus the \
+             margin — its runs would die at StoppedReason::Timeout mid-tool",
+            flow.kind,
+            flow.budget.step_timeout,
+            timeouts::OLLAMA_COMPLETION,
+        );
+    }
+}
+
 /// The tool-driven quality run gets the SAME deadline the IPC command's floor
 /// gives it — an agent-started run must not be killed by a bound the identical
 /// run started from the UI would never hit.

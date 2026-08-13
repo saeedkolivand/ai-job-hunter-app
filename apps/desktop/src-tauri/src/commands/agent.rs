@@ -200,7 +200,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         // wrong document with no way for anything downstream to notice. Loaded
         // only for the flows that say they need one, so the prep flow pays for
         // no store read.
-        let user = if flow.reviews_an_existing_generation() {
+        let user = if flow.seeds_generation {
             let generated = match generated_resume_for(&app_task, &req.job_id).await {
                 Ok(text) => text,
                 Err(e) => {

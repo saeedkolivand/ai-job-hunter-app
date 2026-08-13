@@ -197,22 +197,21 @@ pub struct AgentFlow {
     pub tools: fn() -> Vec<AgentTool>,
     /// Every ceiling the run is held to, including the confirm wait.
     pub budget: Budget,
-}
-
-impl AgentFlow {
     /// Whether this flow REVIEWS a résumé the app already generated (rather
-    /// than drafting a new one), and therefore needs that generation's text in
-    /// its seed message.
+    /// than drafting a new one), and therefore needs that generation's text
+    /// fenced into its seed message (`commands::agent`).
     ///
-    /// A property of the flow, declared next to the flow it describes, so
-    /// `commands::agent` can stay flow-agnostic instead of matching on `kind`
-    /// at the call site — and so the answer is in the same file as the prompt
+    /// **A FIELD, not a `self.kind == …` method** (Phase-7 review): a method
+    /// only relocates the match, and the answer stops being derivable from the
+    /// kind the moment a third flow reviews something too. As a field, every
+    /// future `FLOWS` entry has to answer the question at compile time — which
+    /// is the whole point of a registry — and the answer sits beside the prompt
     /// that depends on it (`IMPROVE_RESUME_SYSTEM` tells the model the
     /// generation is "fenced in the message below"; this is what puts it
-    /// there).
-    pub fn reviews_an_existing_generation(&self) -> bool {
-        self.kind == IMPROVE_RESUME_KIND
-    }
+    /// there). Getting it wrong is not cosmetic: `false` on a reviewing flow
+    /// strands the model with no document, `true` on a drafting one makes every
+    /// run pay for a store read and fail when nothing has been generated yet.
+    pub seeds_generation: bool,
 }
 
 /// Every shipped flow, keyed by its wire `kind`.
@@ -227,12 +226,14 @@ pub const FLOWS: &[AgentFlow] = &[
         system: PREP_APPLICATION_SYSTEM,
         tools: prep_application_tools,
         budget: Budget::AGENT_PREP,
+        seeds_generation: false,
     },
     AgentFlow {
         kind: IMPROVE_RESUME_KIND,
         system: IMPROVE_RESUME_SYSTEM,
         tools: improve_resume_tools,
         budget: Budget::AGENT_IMPROVE,
+        seeds_generation: true,
     },
 ];
 
@@ -519,7 +520,7 @@ mod tests {
     fn only_the_improve_flow_reviews_an_existing_generation() {
         let reviewers: Vec<&str> = FLOWS
             .iter()
-            .filter(|f| f.reviews_an_existing_generation())
+            .filter(|f| f.seeds_generation)
             .map(|f| f.kind)
             .collect();
         assert_eq!(reviewers, vec![IMPROVE_RESUME_KIND]);
