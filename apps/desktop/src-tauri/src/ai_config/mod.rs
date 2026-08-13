@@ -674,15 +674,20 @@ impl AiConfigStore {
 
 // ── Context window ────────────────────────────────────────────────────────────
 
-/// Narrowest context window a stored setting may name. Below this a run has no
-/// room for the prompt at all (`prompts::ARTIFACT_CAP` alone is 16 000 chars).
-/// Mirrors `LocalModelLimitsSchema` in the renderer's preferences schema — the
-/// SAME bounds the Settings slider already enforces, re-checked here because
-/// this value now arrives from IPC and from restored backups too.
-pub const MIN_CONTEXT_WINDOW: u32 = 512;
-
-/// Widest context window a stored setting may name.
-pub const MAX_CONTEXT_WINDOW: u32 = 131_072;
+/// The bounds a stored context window must fall in, re-exported from the
+/// GENERATED contract so there is one definition for the validator, the wire
+/// schema and every slider that offers the value.
+///
+/// They used to be literals here, mirroring the renderer's preferences schema
+/// by hand — which meant three copies of one rule (this pair, the stage-override
+/// editor, the local-model panel) and nothing failing if they drifted. Now
+/// packages/shared/src/ai-context-window.ts owns them and `pnpm gen:ipc` writes
+/// this side, so `gen:ipc:check` fails CI instead.
+///
+/// Below the minimum a run has no room for the prompt at all
+/// (`prompts::ARTIFACT_CAP` alone is 16 000 chars); above the maximum the
+/// request is an out-of-memory kill rather than a size.
+pub use crate::ipc_contracts::context_window::{MAX_CONTEXT_WINDOW, MIN_CONTEXT_WINDOW};
 
 /// A stored context window, or a hard error naming the bound it broke.
 ///
