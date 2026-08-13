@@ -195,6 +195,24 @@
   }
 }
 
+// Strip a leading "<label>[:]" prefix from the subject.
+//
+// `data.subject` is published VERBATIM by `parse_cover_letter`, label and all,
+// so a DE subject arrives as "Betreff: Bewerbung …". Rendering the caption on
+// top of that printed the label twice — "BETREFF" over "Betreff: Bewerbung …".
+// Same rule as letter_refined.typ / letter_navy.typ, and the same rule the DOCX
+// renderer applies in `strip_market_label`; the three have to agree or one
+// export contradicts the other. Labels are ASCII, so slicing by byte length
+// removes exactly the prefix.
+#let strip-subject-label(s, label) = {
+  let t = s.trim()
+  if label != "" and lower(t).starts-with(lower(label)) {
+    let rest = t.slice(label.len()).trim()
+    if rest.starts-with(":") { rest = rest.slice(1).trim() }
+    rest
+  } else { t }
+}
+
 // ── Shrink-to-fit ─────────────────────────────────────────────────────────────
 //
 // The rail is a FIXED 38mm column and `place` neither reflows nor clips, so
@@ -346,13 +364,24 @@
 
 // ── Subject line (honours the market's subject_line_used) ─────────────────────
 
+// `subj-used` stays: whether a subject renders AT ALL is the market's call
+// (US omits it), and that gating is separate from the duplicate-label fix
+// below, which is about how it renders once the market has asked for one.
 #if subj-used and "subject" in data and data.subject != none {
+  let subj-body = strip-subject-label(data.subject, subj-label)
+  let subj-body-lower = lower(subj-body.trim())
+  // Defensive second check: the label is normally gone by now, but a subject
+  // may carry its own marker the market label does not match — a literal "Re:".
+  let has-own-label = (
+    (subj-label != "" and subj-body-lower.starts-with(lower(subj-label)))
+      or subj-body-lower.starts-with("re:")
+  )
   block(above: 8pt, below: 8pt, {
-    if subj-label != "" {
+    if subj-label != "" and not has-own-label {
       text(size: body-pt - 1.5pt, weight: "bold", fill: c-accent, tracking: 0.1em, smallcaps(subj-label))
       linebreak()
     }
-    text(weight: "bold", fill: c-body, data.subject)
+    text(weight: "bold", fill: c-body, subj-body)
   })
 }
 
