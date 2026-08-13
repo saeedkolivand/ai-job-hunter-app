@@ -267,7 +267,7 @@ fn monogram_initials(name: &str) -> String {
     let mut initials = name
         .split_whitespace()
         .filter(|tok| is_name_token(tok))
-        // Guaranteed `Some` — `is_name_token` required a leading alphanumeric.
+        // Guaranteed `Some` — `is_name_token` required a leading letter.
         .filter_map(|tok| tok.chars().next());
 
     let Some(first) = initials.next() else {
