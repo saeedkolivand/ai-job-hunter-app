@@ -93,6 +93,36 @@
 #let margin-y    = 25.4mm
 #let margin-r    = 22mm
 
+// The usable text column inside the rail. Named because both the layout and the
+// shrink-to-fit below have to agree on it exactly.
+#let rail-text-w = rail-w - 2 * rail-pad   // 38mm
+
+// Shrink-to-fit targets 97% of the column, not 100%. A standalone `measure()`
+// under-reports the advance the same token gets once it is laid out in a
+// paragraph — different shaping context, and the trailing tracking is not
+// counted the same way. Measured at ~1.8% on the worst case in the test matrix
+// (Cadence + "Wojciechowski"), which fitted by measurement and still put its
+// last glyph 1.8pt past the column. 3% covers that with room; the geometry test
+// is what holds it honest if the gap ever widens.
+#let fit-limit = rail-text-w * 0.97
+
+// Absolute floor, NOT a fraction of the base size, and ONE value for both the
+// name and the contact.
+//
+// A proportional floor ("never below 60% of base") reads as the safer choice
+// and is the opposite: a template with a 24pt name floors at 14.4pt while
+// "Wojciechowski" needs 13.3pt to fit 38mm, so the clamp re-created the
+// overflow it was meant to bound — on exactly the templates whose large names
+// make overflow likely. It also made the floor depend on which template was
+// picked rather than on the paper.
+//
+// 6pt, measured not guessed: the widest case in the test matrix (a 31-character
+// e-mail in a 38mm rail) fits between 6pt and 7pt, and a 7pt floor put it back
+// in the gutter. Shrinking is the right trade here rather than breaking the
+// token: an e-mail broken with a zero-width space would read correctly on paper
+// and extract corrupted, which is the soft-hyphen defect again.
+#let fit-floor = 6pt
+
 // Left margin: wide enough for the rail plus its gutter in design mode, the
 // ordinary symmetric margin under ATS mode.
 #let margin-l = if ats { 25.4mm } else { rail-w + rail-gutter }
@@ -165,10 +195,77 @@
   }
 }
 
-// The letterhead itself — identical content in both modes, only the type size
+// ── Shrink-to-fit ─────────────────────────────────────────────────────────────
+//
+// The rail is a FIXED 38mm column and `place` neither reflows nor clips, so
+// anything too wide simply runs out of the rail, across the 10mm gutter and into
+// the body column — measured at up to 44pt past the block for a long surname.
+// Wrapping does not save it: text only breaks at spaces, and the overflow is
+// always a single unbreakable TOKEN — "Papadopoulos", or a 27-character e-mail
+// address. (`hyphenate: false`, which this layout needs for ATS extraction,
+// removes the one other break opportunity.)
+//
+// So measure the widest token at the intended size and scale the size down by
+// the ratio it overflows by. Glyph width is very nearly proportional to font
+// size, so that solve lands within a fraction of a point; the loop then walks
+// off the residue from tracking and hinting, which are not proportional. Floored
+// so a pathological input degrades to small-but-legible instead of vanishing.
+//
+// Applies to the RAIL ONLY. Under ATS mode the letterhead is in the full-width
+// single column, where ordinary wrapping works, so it renders at its base sizes
+// and this never runs.
+
+#let fit-size(tokens, style-fn, limit, base, floor) = {
+  let widest(size) = {
+    let w = 0pt
+    for tok in tokens {
+      let m = measure(style-fn(size, tok)).width
+      if m > w { w = m }
+    }
+    w
+  }
+  let natural = widest(base)
+  if natural <= limit or natural == 0pt {
+    base
+  } else {
+    let size = calc.max(floor, base * (limit / natural))
+    while size > floor and widest(size) > limit {
+      size = size - 0.25pt
+    }
+    calc.max(size, floor)
+  }
+}
+
+// Whitespace-separated tokens of a string, empties dropped.
+#let tokens-of(s) = s.split(regex("\\s+")).filter(t => t != "")
+
+// Plain text of the contact runs, for measurement only (the rendered version
+// keeps its links and per-run styling via `render-runs`).
+#let contact-tokens = if "contact" in data.letterhead {
+  tokens-of(data.letterhead.contact.map(r => r.text).join(""))
+} else { () }
+
+#let title-tokens = if "signature_title" in data and data.signature_title != none {
+  tokens-of(data.signature_title)
+} else { () }
+
+#let name-styler = (sz, s) => text(
+  size: sz,
+  weight: "bold",
+  font: (font-name, "Carlito", "Inter"),
+  tracking: 0.04em,
+  s,
+)
+#let meta-styler = (sz, s) => text(size: sz, font: (font-body, "Carlito", "Inter"), s)
+
+// The letterhead itself — identical content in both modes, only the type sizes
 // and the container change. Ragged-right: a 38 mm rail cannot justify without
 // opening rivers, and the ATS stack reads better ragged too.
-#let letterhead(name-size) = [
+//
+// `meta-size` covers the role line AND the contact line: they share the rail's
+// width, so a long e-mail has to shrink the pair, not just itself, or the two
+// lines end up at visibly different sizes.
+#let letterhead(name-size, meta-size) = [
   #set par(justify: false, leading: lead)
   #text(
     size: name-size,
@@ -183,11 +280,11 @@
   )
 
   #if "signature_title" in data and data.signature_title != none {
-    block(above: 6pt, text(size: body-pt - 0.5pt, fill: c-date, data.signature_title))
+    block(above: 6pt, text(size: meta-size + 0.5pt, fill: c-date, data.signature_title))
   }
 
   #if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-    block(above: 9pt, text(size: body-pt - 1pt, fill: c-body, render-runs(data.letterhead.contact)))
+    block(above: 9pt, text(size: meta-size, fill: c-body, render-runs(data.letterhead.contact)))
   }
 ]
 
@@ -196,17 +293,40 @@
 #if ats {
   // Plain stacked letterhead in the single column, then a hairline to separate
   // it from the correspondence — a rule carries no text, so it costs an ATS
-  // parser nothing.
-  block(below: 10pt, letterhead(name-pt))
+  // parser nothing. Full width, so no fitting: ordinary wrapping works here.
+  block(below: 10pt, letterhead(name-pt, body-pt - 1pt))
   block(below: 14pt, line(length: 100%, stroke: 0.6pt + c-rule))
 } else {
   // Into the rail: back out of the left margin by (rail-w + rail-gutter) and in
   // again by rail-pad. Arithmetic on the constants above — no measurement, so
   // the position is identical on every render.
+  //
+  // `context` is what lets `fit-size` call `measure`; it wraps only the rail
+  // content, so nothing else in the document is deferred.
   place(
     top + left,
     dx: -(rail-w + rail-gutter - rail-pad),
-    block(width: rail-w - 2 * rail-pad, letterhead(name-pt - 4pt)),
+    block(width: rail-text-w, context {
+      let base-name = name-pt - 4pt
+      let base-meta = body-pt - 1pt
+      let fitted-name = fit-size(
+        tokens-of(data.letterhead.name),
+        name-styler,
+        fit-limit,
+        base-name,
+        fit-floor,
+      )
+      // Role and contact share one size — measured together against the same
+      // 38mm so the two lines cannot end up visibly mismatched.
+      let fitted-meta = fit-size(
+        title-tokens + contact-tokens,
+        meta-styler,
+        fit-limit,
+        base-meta,
+        fit-floor,
+      )
+      letterhead(fitted-name, fitted-meta)
+    }),
   )
 }
 

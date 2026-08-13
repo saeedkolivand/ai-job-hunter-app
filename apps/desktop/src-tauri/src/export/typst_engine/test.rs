@@ -3587,69 +3587,104 @@ fn new_letter_layouts_gate_the_subject_line_on_market_opts_not_layout() {
 fn sidebar_letterhead_is_measurably_inside_the_rail() {
     const MM: f64 = 72.0 / 25.4;
     let rail_pad = 7.0 * MM;
-    let rail_w = 52.0 * MM;
+    let rail_text_right = (7.0 + 38.0) * MM;
     let body_left = 62.0 * MM;
     let ats_margin = 25.4 * MM;
 
-    let t = Template::get(TemplateId::SwissMinimal);
-    let page = |ats: bool| {
-        render_letter_svg_pages(
-            LETTER_FIXTURE_US,
-            &t,
-            None,
-            Some("Jane Smith"),
-            LetterRender {
-                market: "us",
-                lang: "en",
-                layout: LetterLayout::Sidebar,
-                ats,
-            },
-        )
-        .expect("sidebar SVG render")[0]
-            .clone()
-    };
+    // A matrix, because the single "Jane Smith" case fitted the 38 mm block by
+    // luck. Every row below is a real name/e-mail length against a template
+    // whose `name_pt` is large enough to matter; the long ones overflowed the
+    // rail into the gutter and the body column before shrink-to-fit existed.
+    // "Alex Li" and "Jane Smith" stay in so the fitter cannot pass by simply
+    // shrinking everything.
+    let cases: &[(TemplateId, &str, &str)] = &[
+        (TemplateId::SwissMinimal, "Jane Smith", "jane@example.com"),
+        (TemplateId::Aria, "Alex Li", "alex@example.com"),
+        (
+            TemplateId::Aria,
+            "Àlvaro Papadopoulos",
+            "alvaro.papadopoulos@example.com",
+        ),
+        (
+            TemplateId::Cadence,
+            "Wojciech Wojciechowski",
+            "w.wojciechowski@example.com",
+        ),
+        (
+            TemplateId::Deedy,
+            "Anne Vandenberghe",
+            "anne.vandenberghe@example.co.uk",
+        ),
+    ];
 
-    let design = glyph_positions(&page(false));
-    assert!(!design.is_empty(), "design-mode page 1 rendered no glyphs");
+    for (template_id, name, email) in cases {
+        let t = Template::get(*template_id);
+        let profile = crate::contact_profile::ContactProfile {
+            full_name: Some((*name).to_string()),
+            email: Some((*email).to_string()),
+            ..Default::default()
+        };
+        let page = |ats: bool| {
+            render_letter_svg_pages(
+                LETTER_FIXTURE_US,
+                &t,
+                Some(&profile),
+                Some(*name),
+                LetterRender {
+                    market: "us",
+                    lang: "en",
+                    layout: LetterLayout::Sidebar,
+                    ats,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{template_id:?}/{name}: sidebar SVG render: {e}"))[0]
+                .clone()
+        };
 
-    let leftmost = design
-        .iter()
-        .map(|(x, _, _)| *x)
-        .fold(f64::INFINITY, f64::min);
-    assert!(
-        (leftmost - rail_pad).abs() < 1.5,
-        "the rail text must start exactly at the 7 mm rail padding ({rail_pad:.1}pt); \
-         leftmost glyph is at {leftmost:.1}pt — the `place` dx arithmetic is off"
-    );
+        let design = glyph_positions(&page(false));
+        assert!(
+            !design.is_empty(),
+            "{template_id:?}/{name}: design-mode page 1 rendered no glyphs"
+        );
 
-    // Nothing may land in the 10 mm gutter between the rail and the body: a glyph
-    // there means the letterhead overflowed its 38 mm block into the body column.
-    let in_gutter: Vec<f64> = design
-        .iter()
-        .map(|(x, _, _)| *x)
-        .filter(|x| *x > rail_w && *x < body_left - 0.5)
-        .collect();
-    assert!(
-        in_gutter.is_empty(),
-        "glyphs at {in_gutter:?} sit in the rail/body gutter ({rail_w:.1}pt–{body_left:.1}pt) — \
-         the letterhead is spilling out of the rail"
-    );
+        let leftmost = design
+            .iter()
+            .map(|(x, _, _)| *x)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            (leftmost - rail_pad).abs() < 1.5,
+            "{template_id:?}/{name}: the rail text must start exactly at the 7 mm rail              padding ({rail_pad:.1}pt); leftmost glyph is at {leftmost:.1}pt — the `place`              dx arithmetic is off"
+        );
 
-    // And the body really did move right to make room for the rail.
-    assert!(
-        design.iter().any(|(x, _, _)| *x >= body_left - 0.5),
-        "no glyph reaches the body column at {body_left:.1}pt — the widened left \
-         margin is not being applied"
-    );
+        // NOTHING may start between the end of the rail's 38 mm text block and
+        // the body column. That span is the rail's right padding plus the 10 mm
+        // gutter — it is where an unbreakable token too wide for the block ends
+        // up, and it is the only visible symptom, since `place` neither wraps
+        // nor clips.
+        let overflow: Vec<f64> = design
+            .iter()
+            .map(|(x, _, _)| *x)
+            .filter(|x| *x > rail_text_right + 0.5 && *x < body_left - 0.5)
+            .collect();
+        assert!(
+            overflow.is_empty(),
+            "{template_id:?}/{name}: glyphs at {overflow:?} sit past the rail text block              ({rail_text_right:.1}pt) and before the body column ({body_left:.1}pt) — the              letterhead is spilling out of the rail and across the gutter"
+        );
 
-    // ATS mode: symmetric margins, so nothing may sit left of 25.4 mm.
-    let ats = glyph_positions(&page(true));
-    let ats_leftmost = ats.iter().map(|(x, _, _)| *x).fold(f64::INFINITY, f64::min);
-    assert!(
-        ats_leftmost >= ats_margin - 1.5,
-        "ATS-mode Sidebar put a glyph at {ats_leftmost:.1}pt, left of the {ats_margin:.1}pt \
-         margin — the rail placement is still active"
-    );
+        assert!(
+            design.iter().any(|(x, _, _)| *x >= body_left - 0.5),
+            "{template_id:?}/{name}: no glyph reaches the body column at {body_left:.1}pt —              the widened left margin is not being applied"
+        );
+
+        // ATS mode is the full-width single column: no rail, so no fitting, and
+        // nothing may sit left of the ordinary margin.
+        let ats = glyph_positions(&page(true));
+        let ats_leftmost = ats.iter().map(|(x, _, _)| *x).fold(f64::INFINITY, f64::min);
+        assert!(
+            ats_leftmost >= ats_margin - 1.5,
+            "{template_id:?}/{name}: ATS-mode Sidebar put a glyph at {ats_leftmost:.1}pt,              left of the {ats_margin:.1}pt margin — the rail placement is still active"
+        );
+    }
 }
 
 /// (S7) Sidebar's contact line contains real `link()`s, and in design mode the
