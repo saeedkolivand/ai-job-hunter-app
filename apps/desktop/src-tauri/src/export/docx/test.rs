@@ -996,3 +996,67 @@ fn letterhead_less_letter_with_date_opening_suppresses_the_name_not_the_date() {
         );
     }
 }
+
+/// HIGH regression (caught in review of the commit above): `profile_contact_md`
+/// emission was nested INSIDE the name-validity branch, so a nameless
+/// (date- or salutation-opening) letter with a REAL `ContactProfile` attached
+/// lost the user's contact info from the DOCX entirely — not just the
+/// fabricated name. That is strictly WORSE than the pre-guard behaviour on
+/// the PII-survives-export axis: before, a garbage name at least kept the
+/// contact line alive alongside it. Contact must render independent of
+/// whether the name does — it comes from a separately-attached profile, not
+/// from parsing the line — exactly like the PDF parser's `contact_md`, which
+/// is built unconditionally before any line is classified. Covers both
+/// opening kinds (date AND salutation), across all six layouts.
+#[test]
+fn contact_profile_survives_even_when_the_letterhead_name_is_suppressed() {
+    let profile = crate::contact_profile::ContactProfile {
+        email: Some("jane@example.com".to_string()),
+        ..Default::default()
+    };
+    let max_size = |xml: &str| all_font_sizes(xml).into_iter().max().unwrap_or(0);
+
+    for (label, text) in [
+        (
+            "date-opening",
+            "12 March 2025\n\nDear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n",
+        ),
+        (
+            "salutation-opening",
+            "Dear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n",
+        ),
+    ] {
+        for layout in [
+            LetterLayout::Classic,
+            LetterLayout::Refined,
+            LetterLayout::Banded,
+            LetterLayout::Navy,
+            LetterLayout::Sidebar,
+            LetterLayout::Monogram,
+        ] {
+            let mut request = letter_request(text, layout);
+            request.contact = Some(profile.clone());
+            let xml = document_xml(&generate_docx(&request).expect("docx"));
+
+            assert!(
+                xml.contains("jane@example.com"),
+                "{label}/{layout:?}: the attached ContactProfile's contact line must survive \
+                 even though there is no valid letterhead name: {xml}"
+            );
+
+            // "the fake name is NOT [present]": no name-sized run at all —
+            // reusing the real-name baseline from the sibling test above.
+            let with_real_name = document_xml(
+                &generate_docx(&letter_request(REFINED_US_TEXT, layout)).expect("docx"),
+            );
+            assert!(
+                max_size(&xml) < max_size(&with_real_name),
+                "{label}/{layout:?}: no name-sized header run should exist when the letterhead \
+                 name is suppressed, even with a contact profile attached \
+                 (this render's max size {}, real-name max size {})",
+                max_size(&xml),
+                max_size(&with_real_name)
+            );
+        }
+    }
+}

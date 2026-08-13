@@ -83,6 +83,13 @@ fn generate_cover_letter_docx_classic(
     let lines: Vec<&str> = text.lines().collect();
     let mut header_done = false;
     let mut in_body = false;
+    // Tracks "have we processed the first non-blank line yet" — NOT the same
+    // as `docx.document.children.is_empty()`, which the header block used to
+    // rely on. That check silently broke once contact could be emitted
+    // without a name: a contact-only header still adds a paragraph, so the
+    // "first line" gate would have gone false starting on line 2 for the
+    // WRONG reason.
+    let mut header_line_seen = false;
 
     for raw_line in &lines {
         let trimmed = raw_line.trim();
@@ -100,32 +107,26 @@ fn generate_cover_letter_docx_classic(
         let is_signoff = crate::locale::letter::is_signoff(&clean);
         let is_subject_line = crate::locale::letter::is_subject_line(&clean);
 
-        // First line is name — but ONLY a real letterhead name, not a letter that
-        // opens straight at the salutation, sign-off, or subject/reference line
-        // (e.g. German "Betreff: …"). Without this guard a letterhead-less
-        // letter's "Dear …"/"Betreff: …" was consumed as the name (replaced with
-        // the candidate name), the salutation/subject arm never ran, `in_body`
-        // was never set, and the whole body rendered in the muted addressee style.
-        if !header_done
-            && docx.document.children.is_empty()
-            && !is_salutation
-            && !is_signoff
-            && !is_subject_line
-        {
+        let is_first_line = !header_line_seen;
+        header_line_seen = true;
+
+        // First line is name — but ONLY a real letterhead name, not a letter
+        // that opens straight at the salutation, sign-off, or subject/
+        // reference line (e.g. German "Betreff: …"), and not a date either
+        // ("12 March 2025", the fourth opening kind) — shared with the PDF
+        // parser's identical guard via `is_letterhead_name` (see its doc
+        // comment) so the two formats can never disagree about which
+        // openings are not names.
+        if is_first_line && !header_done {
+            let is_header_name_line = !is_salutation && !is_signoff && !is_subject_line;
             let name_text = meta
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
                 .unwrap_or(&clean);
+            let renders_name =
+                is_header_name_line && crate::export::typst_engine::is_letterhead_name(name_text);
 
-            // A fourth opening the three checks above don't catch: a date
-            // ("12 March 2025") with no candidate name supplied. Shared with
-            // the PDF parser's identical guard via `is_letterhead_name` — see
-            // its doc comment — so the two formats can never disagree about
-            // which openings are not names. When it fails, DON'T consume this
-            // line as a header at all: fall through un-continued so the block
-            // below (contact/address) or a later iteration (salutation/
-            // subject/body) classifies it normally instead.
-            if crate::export::typst_engine::is_letterhead_name(name_text) {
+            if renders_name {
                 docx = docx.add_paragraph(
                     Paragraph::new()
                         .add_run(
@@ -138,18 +139,34 @@ fn generate_cover_letter_docx_classic(
                         )
                         .line_spacing(LineSpacing::new().after(60)),
                 );
-                // Emit the profile-derived contact line right after the name,
-                // in place of the scraped contact lines. `render_contact_line`
-                // runs `split_urls`, so `[LinkedIn](url)` markdown and bare
-                // emails become real hyperlinks.
-                if let Some(md) = &profile_contact_md {
-                    docx = docx.add_paragraph(
-                        super::docx_renderer::render_contact_line(md, template, &colors)
-                            .line_spacing(LineSpacing::new().after(40)),
-                    );
-                }
+            }
+
+            // Contact renders INDEPENDENT of whether the name did — it comes
+            // from a separately-attached `ContactProfile`, not from parsing
+            // this line, exactly like the PDF parser's `contact_md` (built
+            // unconditionally, before any line is classified). Nesting this
+            // inside the name branch was a regression a review round caught:
+            // a nameless, date/salutation-opening letter with a real profile
+            // attached lost the user's contact info entirely, not just the
+            // fabricated name — strictly worse than the pre-guard behaviour,
+            // where a garbage name at least kept the contact line alive.
+            // `render_contact_line` runs `split_urls`, so `[LinkedIn](url)`
+            // markdown and bare emails become real hyperlinks.
+            if let Some(md) = &profile_contact_md {
+                docx = docx.add_paragraph(
+                    super::docx_renderer::render_contact_line(md, template, &colors)
+                        .line_spacing(LineSpacing::new().after(40)),
+                );
+            }
+
+            if renders_name {
                 continue;
             }
+            // else: this line (a date, the salutation itself, a subject
+            // line, or any other non-name opening) was NOT consumed as a
+            // header — fall through so the block below (contact/address) or
+            // a later branch (salutation/subject/body) classifies it
+            // normally.
         }
 
         // Contact/address lines
@@ -529,6 +546,13 @@ fn generate_cover_letter_docx_layout(
     let lines: Vec<&str> = text.lines().collect();
     let mut header_done = false;
     let mut in_body = false;
+    // Tracks "have we processed the first non-blank line yet" — NOT the same
+    // as `docx.document.children.is_empty()`, which the header block used to
+    // rely on. That check silently broke once contact could be emitted
+    // without a name: a contact-only header still adds a paragraph, so the
+    // "first line" gate would have gone false starting on line 2 for the
+    // WRONG reason.
+    let mut header_line_seen = false;
 
     for raw_line in &lines {
         let trimmed = raw_line.trim();
@@ -542,32 +566,26 @@ fn generate_cover_letter_docx_layout(
         let is_signoff = crate::locale::letter::is_signoff(&clean);
         let is_subject_line = crate::locale::letter::is_subject_line(&clean);
 
-        // First line is name — but ONLY a real letterhead name, not a letter that
-        // opens straight at the salutation, sign-off, or subject/reference line
-        // (e.g. German "Betreff: …"). Without this guard a letterhead-less
-        // letter's "Dear …"/"Betreff: …" was consumed as the name (replaced with
-        // the candidate name), the salutation/subject arm never ran, `in_body`
-        // was never set, and the whole body rendered in the muted addressee style.
-        if !header_done
-            && docx.document.children.is_empty()
-            && !is_salutation
-            && !is_signoff
-            && !is_subject_line
-        {
+        let is_first_line = !header_line_seen;
+        header_line_seen = true;
+
+        // First line is name — but ONLY a real letterhead name, not a letter
+        // that opens straight at the salutation, sign-off, or subject/
+        // reference line (e.g. German "Betreff: …"), and not a date either
+        // ("12 March 2025", the fourth opening kind) — shared with the PDF
+        // parser's identical guard via `is_letterhead_name` (see its doc
+        // comment) so the two formats can never disagree about which
+        // openings are not names.
+        if is_first_line && !header_done {
+            let is_header_name_line = !is_salutation && !is_signoff && !is_subject_line;
             let name_text = meta
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
                 .unwrap_or(&clean);
+            let renders_name =
+                is_header_name_line && crate::export::typst_engine::is_letterhead_name(name_text);
 
-            // A fourth opening the three checks above don't catch: a date
-            // ("12 March 2025") with no candidate name supplied. Shared with
-            // the PDF parser's identical guard via `is_letterhead_name` — see
-            // its doc comment — so the two formats can never disagree about
-            // which openings are not names. When it fails, DON'T consume this
-            // line as a header at all: fall through un-continued so the block
-            // below (contact/address) or a later iteration (salutation/
-            // subject/body) classifies it normally instead.
-            if crate::export::typst_engine::is_letterhead_name(name_text) {
+            if renders_name {
                 // Banded: uppercase name — the same small-caps→uppercase
                 // precedent `render_section_header` uses for the résumé DOCX
                 // path.
@@ -683,24 +701,43 @@ fn generate_cover_letter_docx_layout(
                         docx = docx.add_paragraph(title_para);
                     }
                 }
+            }
 
-                if let Some(md) = &profile_contact_md {
-                    let mut contact_para =
-                        super::docx_renderer::render_contact_line(md, template, &colors)
-                            .align(sty.contact_align)
-                            .line_spacing(LineSpacing::new().after(sty.contact_space_after));
-                    if sty.header_rule {
-                        // Full-width rule under the header — see approximation
-                        // note. For Navy this is the letterhead rule, which is
-                        // why it sits here (after name + title + contact)
-                        // rather than on the name.
-                        contact_para.property =
-                            contact_para.property.set_borders(bottom_rule(&rule_hex, 6));
-                    }
-                    docx = docx.add_paragraph(contact_para);
+            // Contact renders INDEPENDENT of whether the name did — it comes
+            // from a separately-attached `ContactProfile`, not from parsing
+            // this line, exactly like the PDF parser's `contact_md` (built
+            // unconditionally, before any line is classified). Nesting this
+            // inside the name branch was a regression a review round caught:
+            // a nameless, date/salutation-opening letter with a real profile
+            // attached lost the user's contact info entirely, not just the
+            // fabricated name — strictly worse than the pre-guard behaviour,
+            // where a garbage name at least kept the contact line alive.
+            if let Some(md) = &profile_contact_md {
+                let mut contact_para =
+                    super::docx_renderer::render_contact_line(md, template, &colors)
+                        .align(sty.contact_align)
+                        .line_spacing(LineSpacing::new().after(sty.contact_space_after));
+                if sty.header_rule {
+                    // Full-width rule under the header — see approximation
+                    // note. For Navy this is the letterhead rule, which is
+                    // why it sits here (after name + title + contact)
+                    // rather than on the name — and still runs when there is
+                    // no name, closing off a contact-only header the same
+                    // way.
+                    contact_para.property =
+                        contact_para.property.set_borders(bottom_rule(&rule_hex, 6));
                 }
+                docx = docx.add_paragraph(contact_para);
+            }
+
+            if renders_name {
                 continue;
             }
+            // else: this line (a date, the salutation itself, a subject
+            // line, or any other non-name opening) was NOT consumed as a
+            // header — fall through so the block below (contact/address) or
+            // a later branch (salutation/subject/body) classifies it
+            // normally.
         }
 
         // Contact/address lines (only reached when no ContactProfile was
