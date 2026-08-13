@@ -795,9 +795,13 @@ pub trait AiProvider: Send + Sync {
     /// Whether this provider's MODEL performs the search itself, so
     /// [`Self::research`] is a single native call.
     ///
-    /// The routing question, asked once in `Completer::research*`. False means
-    /// the search-then-synthesize path runs instead, which is what lets a
-    /// provider with no search of its own use a configured backend.
+    /// The routing question, asked once per research call — inside
+    /// `search::CompanySearchRoute::resolve` for company briefs (via
+    /// `Completer::resolve_search_route`), and inline in
+    /// `Completer::research_salary`/`research_answer` for the other two
+    /// facets. False means the search-then-synthesize path runs instead,
+    /// which is what lets a provider with no search of its own use a
+    /// configured backend.
     ///
     /// Defaults to the advertised capability. The Ollama family overrides it to
     /// `false`: it advertises search for the FAMILY, but the model does not
@@ -825,10 +829,10 @@ pub trait AiProvider: Send + Sync {
     /// model-side web search.
     ///
     /// Only reached when [`Self::has_native_search`] is true —
-    /// `Completer::research` routes everything else through
-    /// [`search::searched_research`]. Implement this ONLY if the model searches
-    /// for itself; a provider that needs an explicit search backend implements
-    /// [`Self::native_searcher`] instead and leaves this alone.
+    /// `search::CompanySearchRoute::resolve` routes everything else through
+    /// [`search::fetch_company_brief`]. Implement this ONLY if the model
+    /// searches for itself; a provider that needs an explicit search backend
+    /// implements [`Self::native_searcher`] instead and leaves this alone.
     ///
     /// Returns `""` (never an error) when the search finds nothing, so
     /// generation always proceeds. The brief is untrusted reference context —

@@ -13,12 +13,13 @@ use crate::pipeline::Completer;
 const CACHE_NS: &str = "company_brief";
 const TTL_SECS: i64 = 7 * 24 * 3600;
 
-/// Company-research enricher: resolve company → cache check → the **active
-/// provider's own** web search + brief synthesis (via [`Completer::research`]) →
-/// cache store. Degrades gracefully — any missing key / unsupported provider /
-/// failure / timeout / "no information" result yields an empty brief, never an
-/// error, so generation still proceeds. The brief is reused by cover letters
-/// **and** application answers.
+/// Company-research enricher: resolve company → resolve search ROUTE once →
+/// cache check → the **active provider's own** web search + brief synthesis
+/// (via [`Completer::research_via`]) → cache store. Degrades gracefully —
+/// any missing key / unsupported provider / failure / timeout / "no
+/// information" result yields an empty brief, never an error, so generation
+/// still proceeds. The brief is reused by cover letters **and** application
+/// answers.
 pub struct CompanyResearch;
 
 impl CompanyResearch {
@@ -63,9 +64,17 @@ impl CompanyResearch {
         // (including why `role` is deliberately NOT a term). Without
         // provider + model, a user who switched models kept getting the OLD
         // model's cached brief for the full 7-day TTL.
+        //
+        // The route is resolved HERE, exactly once, and reused below by
+        // `research_via` — never re-resolved (PR #989 CodeRabbit MAJOR: the
+        // old shape resolved the backend a SECOND time inside the fetch,
+        // after this cache check's `.await`ed timeout; if credentials
+        // changed in that window — an Exa key added/removed mid-flight —
+        // the key could name a backend that did NOT produce the brief it
+        // gets stored under). See `CompanySearchRoute`'s doc comment.
         let identity = StageIdentity::of(completer);
-        let backend = completer.search_backend();
-        let key = cache_key(identity, backend, &company);
+        let route = completer.resolve_search_route();
+        let key = cache_key(identity, route.backend(), &company);
 
         // Fast path: cached brief younger than the TTL.
         if let Some(cache) = app.try_state::<KvCache>() {
@@ -85,22 +94,27 @@ impl CompanyResearch {
 
         // Provider-native research, bounded so generation never stalls. Any
         // failure / timeout / unconfigured provider yields an empty brief.
-        let brief = match tokio::time::timeout(deadline, completer.research(&company, &role)).await
-        {
-            Ok(Ok(b)) => b,
-            Ok(Err(e)) => {
-                tracing::warn!("research: provider research failed for {company}: {e}");
-                String::new()
-            }
-            Err(_) => {
-                tracing::warn!(
-                    company = %company,
-                    deadline_secs = deadline.as_secs(),
-                    "research: timed out"
-                );
-                String::new()
-            }
-        };
+        // `route` (resolved above, before the cache check) is MOVED in here —
+        // the only way to get a brief is along the exact route the key above
+        // was named from; there is no second resolution to diverge from it.
+        let brief =
+            match tokio::time::timeout(deadline, completer.research_via(route, &company, &role))
+                .await
+            {
+                Ok(Ok(b)) => b,
+                Ok(Err(e)) => {
+                    tracing::warn!("research: provider research failed for {company}: {e}");
+                    String::new()
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        company = %company,
+                        deadline_secs = deadline.as_secs(),
+                        "research: timed out"
+                    );
+                    String::new()
+                }
+            };
 
         // Drop unhelpful "no information" / too-short responses so they neither
         // pollute the cover letter nor get cached (a bad miss must not stick for
@@ -158,15 +172,19 @@ const FIELD_SEPARATOR: char = '\u{1f}';
 /// cross-reference on [`StageIdentity`] itself), plus the two terms that
 /// identity type doesn't carry but this call DOES depend on:
 ///
-/// * `backend` ([`SearchBackend`]) — the retrieval half of the brief.
-///   `searcher_for` picks Native vs. Exa from CREDENTIAL PRESENCE at call
-///   time, not from `(provider, model)`: the same provider and model can
-///   still retrieve from a different backend (an Exa key added or removed)
-///   and must not share a cache row.
+/// * `backend` ([`SearchBackend`]) — the retrieval half of the brief. The
+///   backend that answers a research pass is resolved from CREDENTIAL
+///   PRESENCE, not from `(provider, model)` alone: the same provider and
+///   model can retrieve from a different backend (an Exa key added or
+///   removed) and must not share a cache row. Callers MUST pass
+///   `route.backend()` from the SAME `CompanySearchRoute` the fetch itself
+///   consumes (see its doc comment on `commands::ai_provider::search`) —
+///   resolving separately for the key and for the fetch is the bug PR #989
+///   fixed.
 /// * `company` — the research subject.
 ///
 /// `identity.context_window` is folded in even though
-/// [`Completer::research`] never reads it (search + synthesize doesn't touch
+/// [`Completer::research_via`] never reads it (search + synthesize doesn't touch
 /// `num_ctx`) — reusing the WHOLE identity keeps this key from silently
 /// drifting the day a new `StageIdentity` field starts mattering here too,
 /// at the cost of a harmless extra miss on a window-only change (ADR-017's
@@ -213,11 +231,14 @@ fn is_no_info(brief: &str) -> bool {
 
 // This suite guards the `cache_key` builder and the `KvCache` storage layer
 // it writes through — NOT the `enrich_with` wiring that calls
-// `StageIdentity::of(completer)` / `completer.search_backend()`. This crate
-// has no `tauri::test` mock-app harness (see `SalaryResearch::enrich`'s doc
-// comment for the same limitation), so that wiring is unverified at the unit
-// level here; it is exercised in practice by manual/integration testing of
-// `ai_research_company`. An honest gap, not a fix skipped.
+// `StageIdentity::of(completer)` / `completer.resolve_search_route()` /
+// `completer.research_via(route, ..)`. This crate has no `tauri::test`
+// mock-app harness (see `SalaryResearch::enrich`'s doc comment for the same
+// limitation), so that wiring — including the "route is resolved exactly
+// once and reused" invariant PR #989 fixed — is unverified END TO END at the
+// unit level here; `commands::ai_provider::search::test`'s
+// `resolve_via_backend` tests cover the pure half of that fix (the
+// tag-to-searcher pairing) instead. An honest gap, not a fix skipped.
 #[cfg(test)]
 mod tests {
     use tempfile::TempDir;
