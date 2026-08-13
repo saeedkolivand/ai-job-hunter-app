@@ -71,6 +71,15 @@ const proposal = (text = 'Fixed two unsourced metrics.'): AgentStepEvent => ({
   kind: 'proposal',
 });
 
+/**
+ * Visible copy only. The sr-only live region deliberately repeats status labels
+ * (it announces the outcome), so a bare `getByText` matches twice — asserting
+ * against the announcer instead of the badge would pass on a card that renders
+ * no badge at all.
+ */
+const visible = (text: string | RegExp) =>
+  screen.getAllByText(text).filter((el) => !el.closest('[aria-live]'));
+
 const stop = vi.fn();
 const dismiss = vi.fn();
 const resolveConfirm = vi.fn();
@@ -160,7 +169,7 @@ describe('ImproveResumeRun — the checklist', () => {
     // announces the status change), which is not a second visible row.
     const rows = screen.getByRole('group', { name: /résumé review progress/i });
     expect(
-      within(rows).getByText(/Rewriting from your saved résumé — this can take a while/)
+      within(rows).getByText(/Rewriting from your saved résumé — a full quality pass/)
     ).toBeInTheDocument();
   });
 
@@ -252,9 +261,34 @@ describe('ImproveResumeRun — every state has an action', () => {
       />
     );
 
-    expect(screen.getByText('Stopped at its tool-call limit')).toBeInTheDocument();
+    // The badge is a neutral LABEL; the reason is a sentence, at a readable size.
+    const rows = screen.getByRole('group', { name: /résumé review progress/i });
     expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+    expect(screen.getByText(/Stopped at its tool-call limit, so the checks after/)).toBeInTheDocument();
     expect(screen.queryByText(/The review is finished/)).not.toBeInTheDocument();
+
+    // …and the checks it never reached say so. "Pending" on a run that has
+    // ENDED claims work that is still coming.
+    expect(within(rows).getAllByText('Not reached').length).toBeGreaterThan(0);
+    expect(within(rows).queryByText('Pending')).not.toBeInTheDocument();
+  });
+
+  // The other half of the same rule: a step that WAS in flight when the ceiling
+  // hit is interrupted, not done.
+  it('marks the step that was running when the ceiling hit as interrupted', () => {
+    render(
+      <ImproveResumeRun
+        session={session({
+          state: 'done',
+          busy: false,
+          stoppedReason: 'max_steps',
+          steps: [turn(['get_quality_report']), turn(['validate_resume'])],
+        })}
+      />
+    );
+    const rows = screen.getByRole('group', { name: /résumé review progress/i });
+    expect(within(rows).getByText('Interrupted')).toBeInTheDocument();
+    expect(within(rows).getByText('Done')).toBeInTheDocument();
   });
 
   // The positive control for the test above — without it, "no Completed" would
@@ -270,8 +304,9 @@ describe('ImproveResumeRun — every state has an action', () => {
         })}
       />
     );
-    expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(visible('Completed')).toHaveLength(1);
     expect(screen.getByText(/The review is finished/)).toBeInTheDocument();
+    expect(screen.queryByText(/so the checks after that point never ran/)).not.toBeInTheDocument();
   });
 
   // A reason this build does not know must not be laundered into "Completed".
@@ -281,8 +316,44 @@ describe('ImproveResumeRun — every state has an action', () => {
         session={session({ state: 'done', busy: false, stoppedReason: 'some_new_variant' })}
       />
     );
-    expect(screen.getByText('Stopped')).toBeInTheDocument();
+    expect(visible('Stopped')).toHaveLength(1);
     expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+  });
+
+  // Both self-removing controls: focus left on a removed node falls to <body>,
+  // behind the modal portal, where the trap cannot recover it.
+  it('parks focus on the card before Stop removes the button that was clicked', async () => {
+    render(<ImproveResumeRun session={session()} />);
+    const stopButton = screen.getByRole('button', { name: /stop review/i });
+    stopButton.focus();
+    await userEvent.click(stopButton);
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { name: 'Improving this résumé' })
+    );
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('hands focus back to the host when Dismiss unmounts the card', async () => {
+    const onDismissed = vi.fn();
+    render(<ImproveResumeRun session={session({ state: 'done', busy: false })} onDismissed={onDismissed} />);
+    await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    // The card cannot park focus on itself — it is going away.
+    expect(onDismissed).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces the outcome, not just the last step', () => {
+    const { rerender } = render(<ImproveResumeRun session={session()} />);
+    rerender(
+      <ImproveResumeRun
+        session={session({ state: 'done', busy: false, stoppedReason: 'max_tool_calls' })}
+      />
+    );
+    const live = document.querySelector('[aria-live="polite"]');
+    expect(live).toHaveTextContent('Stopped at its tool-call limit');
   });
 
   it('surfaces a failure as an alert with the backend’s own message', () => {
@@ -354,6 +425,20 @@ describe('buildImproveRows', () => {
   it('matches the gated save on the confirm request, whose tools[] is empty', () => {
     const rows = buildImproveRows([saveConfirm()], { busy: true, interrupted: false });
     expect(rows.find((r) => r.key === 'save')?.status).toBe('active');
+  });
+
+  it('calls an unmatched row skipped once the run is over, pending while it runs', () => {
+    const live = buildImproveRows([turn(['get_quality_report'])], {
+      busy: true,
+      interrupted: false,
+    });
+    expect(live.find((r) => r.key === 'save')?.status).toBe('pending');
+
+    const over = buildImproveRows([turn(['get_quality_report'])], {
+      busy: false,
+      interrupted: true,
+    });
+    expect(over.find((r) => r.key === 'save')?.status).toBe('skipped');
   });
 
   it('never calls the latest step of a finished run "in progress"', () => {

@@ -2136,15 +2136,18 @@
       "improve": {
         "trigger": "Improve this résumé",
         "triggerHint": "Have the agent re-check this generated résumé against the report and your saved résumé, then propose targeted fixes for your approval.",
-        "tooLong": "This generated résumé is longer than the review can read ({{max}} characters), and reviewing a truncated copy would drop the rest of it. Run the generation again, or trim the résumé in this application, then improve it.",
+        "tooLong": "This generated résumé is longer than the review can read ({{max}} characters), and reviewing a truncated copy would drop the rest of it. Shorten it in the application's résumé editor, then improve it.",
         "tooLongHint": "Too long to review — the flow reads at most {{max}} characters.",
+        "pendingBadge": "This review is waiting for your approval. It expires about five minutes after the agent asked.",
         "heading": "Improving this résumé",
         "hint": "The agent re-checks the generated résumé and proposes fixes. Nothing is saved until you approve it.",
-        "starting": "Starting the review…",
+        "starting": "Starting the review — the first step can take a minute on a local model.",
         "liveRegionLabel": "Résumé review progress",
         "confirmAnnouncement": "The agent is waiting for your approval before it saves the corrected résumé.",
+        "optionalNote": "Two steps are optional — trimming, or a full rewrite — and appear only if the review takes one.",
         "summaryTitle": "What the review found",
         "doneHint": "The review is finished. Anything you approved was saved as this application's résumé.",
+        "stoppedHint": "{{reason}}, so the checks after that point never ran — this is not a verdict on the résumé. Nothing was saved unless you already approved it; start the review again to run the rest.",
         "cancelledHint": "Stopped. Nothing was saved unless you had already approved it.",
         "failedTitle": "The review failed",
         "stop": "Stop review",
@@ -2156,19 +2159,21 @@
           "waiting": "Waiting for you",
           "done": "Completed",
           "cancelled": "Stopped",
+          "stopped": "Stopped",
           "failed": "Failed"
         },
         "status": {
           "pending": "Pending",
           "active": "In progress",
           "done": "Done",
-          "interrupted": "Interrupted"
+          "interrupted": "Interrupted",
+          "skipped": "Not reached"
         },
         "steps": {
           "report": "Reading the last quality check",
           "check": "Checking the generated résumé",
           "trim": "Ranking bullets to cut",
-          "rewrite": "Rewriting from your saved résumé — this can take a while",
+          "rewrite": "Rewriting from your saved résumé — a full quality pass, up to about an hour",
           "evidence": "Confirming claims against your saved résumé",
           "save": "Proposing the corrected résumé",
           "summary": "Summarising what changed"

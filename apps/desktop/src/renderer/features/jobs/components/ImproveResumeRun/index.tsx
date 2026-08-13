@@ -1,4 +1,12 @@
-import { CheckCircle2, Circle, CircleMinus, Loader2, Sparkles, Square } from 'lucide-react';
+import {
+  CheckCircle2,
+  Circle,
+  CircleDashed,
+  CircleMinus,
+  Loader2,
+  Sparkles,
+  Square,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AgentStepEvent } from '@ajh/shared';
@@ -12,7 +20,7 @@ import { stoppedSuffix } from '@/lib/stopped-reason';
 export type ImproveRowKey =
   'report' | 'check' | 'trim' | 'rewrite' | 'evidence' | 'save' | 'summary';
 
-export type ImproveRowStatus = 'pending' | 'active' | 'done' | 'interrupted';
+export type ImproveRowStatus = 'pending' | 'active' | 'done' | 'interrupted' | 'skipped';
 
 interface ImproveRowSpec {
   key: ImproveRowKey;
@@ -64,9 +72,15 @@ export interface ImproveRow {
  * Rows for the run so far: every mandatory step plus the optional ones the run
  * actually took.
  *
- * A row is `active` only while it is the LATEST step of a live run; once the
- * run stops or fails, the step that was in flight is `interrupted` (it never
- * finished) rather than `done` — a distinction `done` runs never make.
+ * Three statuses depend on the run being OVER, not on it having failed:
+ *
+ * - `active` only while the row is the LATEST step of a live run;
+ * - `interrupted` for that same latest step once the run ended early (stopped,
+ *   failed, or "completed" at a ceiling) — it was in flight and never finished;
+ * - `skipped` for anything still unmatched once the run is over. "Pending" on a
+ *   run that has ended claims work that is still coming; a review stopped at
+ *   its tool-call limit never reaches its last steps, and the user has to be
+ *   able to see which checks did not run before trusting the résumé.
  */
 export function buildImproveRows(
   steps: AgentStepEvent[],
@@ -89,7 +103,9 @@ export function buildImproveRows(
       key: spec.key,
       match,
       status: !match
-        ? 'pending'
+        ? busy
+          ? 'pending'
+          : 'skipped'
         : isLatest && busy
           ? 'active'
           : isLatest && interrupted
@@ -113,6 +129,13 @@ function headlineState(
 
 export interface ImproveResumeRunProps {
   session: AgentRunSession;
+  /**
+   * Called after `dismiss`, once this card is about to unmount — the host parks
+   * focus on a node it owns (its own trigger). Without it focus falls to
+   * `<body>`, behind the modal's portal, where the focus trap cannot recover
+   * it: the next Tab starts from the top of the document.
+   */
+  onDismissed?: () => void;
 }
 
 /**
@@ -128,10 +151,11 @@ export interface ImproveResumeRunProps {
  * token), and `AgentConfirm` mounted above the log so the suspended decision is
  * the first thing visible.
  */
-export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
+export function ImproveResumeRun({ session, onDismissed }: ImproveResumeRunProps) {
   const { t } = useTranslation();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const prevStatusRef = useRef<Partial<Record<ImproveRowKey, ImproveRowStatus>>>({});
+  const announcedTerminalRef = useRef<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
 
   // This card mounts exactly when the user starts a run — send focus to it, or
@@ -140,9 +164,27 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
     headingRef.current?.focus();
   }, []);
 
+  const state = headlineState(session);
+  /**
+   * A run that "completed" at a ceiling did not finish. `job.completed` fires
+   * for `MaxSteps`/`MaxTokens`/`MaxToolCalls`/`Truncated` too, so an unfinished
+   * run must not wear the finished badge, its rows must not claim the checks it
+   * never reached, and the reason has to be said in a sentence rather than
+   * crammed into a 9px badge. An unmapped variant lands on the neutral
+   * "Stopped" copy, never on "Completed". The reason vocabulary is the
+   * pipeline's, through the shared enum map — the Rust enum is shared, so the
+   * mapping is.
+   */
+  const earlyStop = (() => {
+    if (state !== 'done') return null;
+    const suffix = stoppedSuffix(session.stoppedReason);
+    return suffix && suffix !== 'done' ? suffix : null;
+  })();
+
   const rows = buildImproveRows(session.steps, {
     busy: session.busy,
-    interrupted: session.interrupted,
+    // A ceiling stop is an interruption even though the job "completed".
+    interrupted: session.interrupted || !!earlyStop,
   });
 
   // One utterance per status CHANGE (not per streamed character): the narration
@@ -165,21 +207,22 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
     if (session.pendingConfirm) setAnnouncement(t('jobs.tailored.improve.confirmAnnouncement'));
   }, [session.pendingConfirm, t]);
 
-  const state = headlineState(session);
-  /**
-   * A run that "completed" at a ceiling did not finish. `job.completed` fires
-   * for `MaxSteps`/`MaxTokens`/`MaxToolCalls`/`Truncated` too, so the headline
-   * reports the REASON (and drops the success green) whenever the run recorded
-   * one other than `done` — an unmapped variant lands on the neutral "Stopped"
-   * label rather than on "Completed". Copy is the pipeline's own stopped
-   * vocabulary, which this panel already speaks; the map is shared because the
-   * Rust enum is.
-   */
-  const earlyStop = (() => {
-    if (state !== 'done') return null;
-    const suffix = stoppedSuffix(session.stoppedReason);
-    return suffix && suffix !== 'done' ? suffix : null;
-  })();
+  // …and so is the outcome. Without this the run just stops narrating: a screen
+  // reader hears the last step's status and never learns the run ended, or how.
+  // Guarded by the announced state so a re-render cannot repeat it.
+  useEffect(() => {
+    if (session.busy) {
+      announcedTerminalRef.current = null;
+      return;
+    }
+    const outcome = earlyStop ? `stopped:${earlyStop}` : state;
+    if (announcedTerminalRef.current === outcome) return;
+    announcedTerminalRef.current = outcome;
+    setAnnouncement(
+      earlyStop ? t(`pipeline.stopped.${earlyStop}`) : t(`jobs.tailored.improve.state.${state}`)
+    );
+  }, [session.busy, state, earlyStop, t]);
+
   const proposal = session.steps.find((s) => s.kind === 'proposal');
   const starting = session.busy && session.steps.length === 0;
 
@@ -200,6 +243,9 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
         >
           {t('jobs.tailored.improve.heading')}
         </h3>
+        {/* A badge is a LABEL, not a sentence: the specific reason lives in the
+            paragraph below, where it can be read at a normal size and does not
+            force the header to wrap or truncate. */}
         <Tag
           color={
             earlyStop
@@ -208,21 +254,27 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
                 ? 'success'
                 : state === 'failed'
                   ? 'error'
-                  : state === 'running' || state === 'waiting'
-                    ? 'processing'
-                    : 'default'
+                  : state === 'waiting'
+                    ? 'warning' // blocked on the user reads differently from running
+                    : state === 'running'
+                      ? 'processing'
+                      : 'default'
           }
           className="ml-auto text-[9px]"
         >
           {earlyStop
-            ? t(`pipeline.stopped.${earlyStop}`)
+            ? t('jobs.tailored.improve.state.stopped')
             : t(`jobs.tailored.improve.state.${state}`)}
         </Tag>
       </div>
 
-      <p className="text-[10px] leading-relaxed text-foreground/45">
-        {t('jobs.tailored.improve.hint')}
-      </p>
+      {/* Present tense — only true while the run is going. */}
+      {session.busy && (
+        <div className="space-y-1 text-[11px] leading-relaxed text-foreground/60">
+          <p>{t('jobs.tailored.improve.hint')}</p>
+          <p>{t('jobs.tailored.improve.optionalNote')}</p>
+        </div>
+      )}
 
       {/* Visually-hidden milestone announcer — see the effects above. */}
       <span role="status" aria-live="polite" className="sr-only">
@@ -255,7 +307,9 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
         </div>
       )}
 
-      {rows.length > 0 && (
+      {/* Not while starting: five Pending rows under a "starting" spinner say
+          the same nothing twice. */}
+      {!starting && rows.length > 0 && (
         <div
           role="group"
           aria-label={t('jobs.tailored.improve.liveRegionLabel')}
@@ -282,14 +336,17 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
                   />
                 )}
                 {status === 'interrupted' && (
-                  <CircleMinus
+                  <CircleMinus size={13} className="shrink-0 text-amber-400" aria-hidden="true" />
+                )}
+                {status === 'skipped' && (
+                  <CircleDashed
                     size={13}
-                    className="shrink-0 text-amber-400/80"
+                    className="shrink-0 text-foreground/40"
                     aria-hidden="true"
                   />
                 )}
                 {status === 'pending' && (
-                  <Circle size={13} className="shrink-0 text-foreground/25" aria-hidden="true" />
+                  <Circle size={13} className="shrink-0 text-foreground/40" aria-hidden="true" />
                 )}
                 <span className="text-[11px] font-medium text-foreground/80">
                   {t(`jobs.tailored.improve.steps.${key}`)}
@@ -304,7 +361,7 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
                           ? 'warning'
                           : 'default'
                   }
-                  className="ml-auto text-[9px]"
+                  className="ml-auto shrink-0 text-[9px]"
                 >
                   {t(`jobs.tailored.improve.status.${status}`)}
                 </Tag>
@@ -332,11 +389,18 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
         </div>
       )}
 
-      {/* "The review is finished" is only true of a run that reached its end —
-          a ceiling-stopped one is described by its tag instead. */}
+      {/* "The review is finished" is only true of a run that reached its end. */}
       {session.state === 'done' && !earlyStop && (
-        <p className="text-[10px] leading-relaxed text-foreground/45">
+        <p className="text-[11px] leading-relaxed text-foreground/60">
           {t('jobs.tailored.improve.doneHint')}
+        </p>
+      )}
+
+      {/* The ceiling stop's own paragraph: the specific reason, then what it
+          means for the résumé — a run with unrun checks is not a verdict. */}
+      {earlyStop && (
+        <p className="text-[11px] leading-relaxed text-foreground/60">
+          {t('jobs.tailored.improve.stoppedHint', { reason: t(`pipeline.stopped.${earlyStop}`) })}
         </p>
       )}
 
@@ -361,7 +425,15 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
         {session.busy && session.runJobId && (
           <Button
             variant="glass"
-            onClick={session.stop}
+            // Both actions remove the control that was just clicked (Stop
+            // disables itself, Dismiss unmounts the whole card), and focus left
+            // on a removed node falls to `<body>` BEHIND the modal portal,
+            // where the trap cannot recover it. Park it first — the same move
+            // the confirm resolution already makes.
+            onClick={() => {
+              headingRef.current?.focus();
+              session.stop();
+            }}
             disabled={session.stopRequested}
             title={t('jobs.tailored.improve.stopHint')}
             className="gap-1.5 text-foreground/60"
@@ -373,7 +445,16 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
           </Button>
         )}
         {!session.busy && (
-          <Button variant="ghost" onClick={session.dismiss} className="gap-1.5">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              // This card is about to unmount, so the target has to be a node
+              // the HOST owns (see `onDismissed`).
+              session.dismiss();
+              onDismissed?.();
+            }}
+            className="gap-1.5"
+          >
             {t('jobs.tailored.improve.dismiss')}
           </Button>
         )}
