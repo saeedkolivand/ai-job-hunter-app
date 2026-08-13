@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { EVENT_CHANNELS } from '@ajh/shared';
+import { type AiConfigSnapshot, EVENT_CHANNELS } from '@ajh/shared';
 import type { AiGenerateRequest, EmbedRequest } from '@ajh/shared/schemas';
 import type { AiStreamChunk } from '@ajh/shared/types';
 
@@ -28,18 +28,12 @@ export const ai = {
     baseUrl?: string | null;
     contextWindow?: number | null;
   }) => invoke('ai_set_provider_settings', { req }),
-  seedActiveConfig: ({
-    config,
-  }: {
-    config: {
-      activeProvider?: string;
-      providers: Record<string, { model?: string; baseUrl?: string; contextWindow?: number }>;
-      stageOverrides?: Record<
-        string,
-        { provider: string; model: string; baseUrl?: string; contextWindow?: number }
-      >;
-    };
-  }) => invoke('ai_seed_active_config', { config }),
+  // Typed from the shared contract rather than re-declared: the local copy
+  // still carried a `baseUrl` on each stage override after the field was made
+  // deliberately unrepresentable (the endpoint belongs to the PROVIDER), so it
+  // advertised a field the backend would ignore.
+  seedActiveConfig: ({ config }: { config: AiConfigSnapshot }) =>
+    invoke('ai_seed_active_config', { config }),
   // Per-stage model overrides. An absent key means "the active provider" —
   // never write one back just to mirror the default.
   stageOverrides: () => invoke('ai_stage_overrides'),
