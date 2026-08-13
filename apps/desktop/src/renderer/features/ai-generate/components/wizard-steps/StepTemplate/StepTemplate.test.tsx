@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
-import { TEMPLATES } from '@/lib/generate';
+import { type LetterLayoutId, TEMPLATES } from '@/lib/generate';
 
 import { StepTemplate } from './index';
 
@@ -132,7 +133,7 @@ describe('StepTemplate', () => {
         onAtsModeChange={onAtsModeChange}
       />
     );
-    expect(screen.getByRole('switch', { name: /aiGenerate\.atsMode/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
   });
 
   it('does not show the ATS toggle for single-column templates', () => {
@@ -227,7 +228,7 @@ describe('StepTemplate', () => {
         // target omitted → defaults to 'resume'
       />
     );
-    expect(screen.getByRole('switch', { name: /aiGenerate\.atsMode/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
   });
 
   // ── thumbnail source tests ──────────────────────────────────────────────────
@@ -445,7 +446,7 @@ describe('StepTemplate', () => {
     'shows the ATS toggle for the design-tier template %s',
     (id) => {
       renderStep({ templateId: id });
-      expect(screen.getByRole('switch', { name: /aiGenerate\.atsMode/i })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
     }
   );
 
@@ -526,7 +527,7 @@ describe('StepTemplate', () => {
     'target=cover: shows the ATS toggle for the decorated layout %s under an ATS-tier template',
     (letterLayoutId) => {
       renderStep({ templateId: 'classic', target: 'cover', letterLayoutId });
-      expect(screen.getByRole('switch', { name: /aiGenerate\.atsMode/i })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
       expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
     }
   );
@@ -546,7 +547,7 @@ describe('StepTemplate', () => {
 
   it("target='both' with a decorated letter shows the toggle even for an ATS-tier template", () => {
     renderStep({ templateId: 'classic', target: 'both', letterLayoutId: 'monogram' });
-    expect(screen.getByRole('switch', { name: /aiGenerate\.atsMode/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
     // Résumé is ATS-tier → only the letter hint, no résumé hint.
     expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
     expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
@@ -622,5 +623,134 @@ describe('StepTemplate', () => {
     if (!swissButton) throw new Error('Swiss Minimal button not found');
     await user.click(swissButton);
     expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  // ── the switch's a11y contract + layout anchoring ────────────────────────────
+
+  it('names the switch with the label ALONE — the hints are descriptions, not part of the name', () => {
+    // With both hint lines up, a name built from the button's text content would
+    // read "ATS-safe mode <résumé hint> <letter hint> <both-docs note>". Assert the
+    // EXACT name so that concatenation is a failure, not a passing substring.
+    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'monogram' });
+    const atsSwitch = screen.getByRole('switch');
+    expect(atsSwitch).toHaveAccessibleName('aiGenerate.atsMode');
+
+    // …and every hint line it points at is really in the document, under the
+    // same render guard (no dangling aria-describedby ids).
+    const described = atsSwitch.getAttribute('aria-describedby')?.split(' ') ?? [];
+    expect(described).toHaveLength(3);
+    for (const id of described) expect(document.getElementById(id)).not.toBeNull();
+    expect(atsSwitch).toHaveAccessibleDescription(
+      /aiGenerate\.atsModeHintTwoColumn.*aiGenerate\.atsModeHintLetter.*aiGenerate\.atsModeHintBothDocs/s
+    );
+  });
+
+  it('points aria-describedby at exactly the hint lines that render (résumé only)', () => {
+    renderStep({ templateId: 'atelier', target: 'resume' });
+    const described = screen.getByRole('switch').getAttribute('aria-describedby')?.split(' ') ?? [];
+    expect(described).toHaveLength(1);
+    expect(document.getElementById(described[0] as string)?.textContent).toBe(
+      'aiGenerate.atsModeHintTwoColumn'
+    );
+  });
+
+  it('says ONE switch drives both documents only when it actually drives both', () => {
+    const { unmount } = renderStep({
+      templateId: 'atelier',
+      target: 'both',
+      letterLayoutId: 'monogram',
+    });
+    expect(screen.getByText('aiGenerate.atsModeHintBothDocs')).toBeInTheDocument();
+    unmount();
+
+    // Résumé is ATS-tier → the switch drives the letter only; the note would lie.
+    renderStep({ templateId: 'classic', target: 'both', letterLayoutId: 'monogram' });
+    expect(screen.queryByText('aiGenerate.atsModeHintBothDocs')).not.toBeInTheDocument();
+  });
+
+  it('anchors the switch track to the label line (items-start, not items-center)', () => {
+    // jsdom zeroes rects, so the class IS the assertion: with two free-wrapping
+    // hint lines the row grows to ~80–90px and `items-center` drops the 16px
+    // track that far below the label it belongs to.
+    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'monogram' });
+    const atsSwitch = screen.getByRole('switch');
+    expect(atsSwitch.className).toContain('items-start');
+    expect(atsSwitch.className).not.toContain('items-center');
+  });
+
+  // ── layout change releases the shared flag (round-trip) ──────────────────────
+
+  it('clears atsMode when the letter drops to an undecorated layout and nothing else reads it', async () => {
+    const user = userEvent.setup();
+    renderStep({
+      templateId: 'classic', // ATS-tier → the flag is a no-op for the résumé
+      target: 'both',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+      onLetterLayoutChange: vi.fn(),
+    });
+    await user.click(screen.getByTestId(letterOption('classic')));
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  it('KEEPS atsMode on the same change when a design-tier résumé template still reads it', async () => {
+    const user = userEvent.setup();
+    renderStep({
+      templateId: 'atelier', // design-tier → the résumé genuinely uses the flag
+      target: 'both',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+      onLetterLayoutChange: vi.fn(),
+    });
+    await user.click(screen.getByTestId(letterOption('classic')));
+    expect(onAtsModeChange).not.toHaveBeenCalled();
+  });
+
+  // The full round-trip against real host state — the bug was that step 3 came
+  // back ON, so a freshly-picked Monogram exported with no monogram.
+  function StatefulStep({ templateId }: { templateId: 'classic' | 'atelier' }) {
+    const [atsMode, setAtsMode] = useState(false);
+    const [letterLayoutId, setLetterLayoutId] = useState<LetterLayoutId | undefined>(undefined);
+    return (
+      <StepTemplate
+        templateId={templateId}
+        atsMode={atsMode}
+        onTemplateChange={vi.fn()}
+        onAtsModeChange={setAtsMode}
+        target="both"
+        letterLayoutId={letterLayoutId}
+        onLetterLayoutChange={setLetterLayoutId}
+      />
+    );
+  }
+
+  it('monogram → ATS on → classic → monogram: the toggle comes back OFF', async () => {
+    const user = userEvent.setup();
+    render(<StatefulStep templateId="classic" />);
+
+    await user.click(screen.getByTestId(letterOption('monogram')));
+    await user.click(screen.getByRole('switch'));
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(screen.getByTestId(letterOption('classic')));
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId(letterOption('monogram')));
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('same round-trip under a design-tier template KEEPS the flag on (the résumé owns it)', async () => {
+    const user = userEvent.setup();
+    render(<StatefulStep templateId="atelier" />);
+
+    await user.click(screen.getByTestId(letterOption('monogram')));
+    await user.click(screen.getByRole('switch'));
+
+    await user.click(screen.getByTestId(letterOption('classic')));
+    // The switch stays — the résumé still linearizes under it — and stays ON.
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(screen.getByTestId(letterOption('monogram')));
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   });
 });

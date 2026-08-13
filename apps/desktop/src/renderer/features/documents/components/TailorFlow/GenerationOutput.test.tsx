@@ -685,6 +685,32 @@ describe('GenerationOutput', () => {
       expect(onAtsModeChange).not.toHaveBeenCalled();
     });
 
+    // A silent DOM insertion otherwise: picking Monogram makes the switch appear
+    // with nothing announced. The region must be mounted BEFORE the change (a
+    // live region cannot announce its own first render), which is what the
+    // "empty while hidden" half of this pair pins.
+    it('announces the toggle becoming available, via an always-mounted live region', () => {
+      const { rerender } = render(
+        <GenerationOutput
+          {...makeProps({ target: 'both', activeOut: 'cover', templateId: 'classic' })}
+        />
+      );
+      const region = screen.getByRole('status');
+      expect(region).toHaveTextContent('');
+
+      rerender(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic',
+            letterLayoutId: 'monogram',
+          })}
+        />
+      );
+      expect(screen.getByRole('status')).toHaveTextContent('aiGenerate.atsToggleAvailable');
+    });
+
     it('still clears atsMode on an ATS-tier pick when the letter layout is undecorated', async () => {
       const user = userEvent.setup();
       const onAtsModeChange = vi.fn();
@@ -802,6 +828,66 @@ describe('GenerationOutput', () => {
       );
       await user.click(screen.getByTestId(letterOption('refined')));
       expect(onLetterLayoutChange).toHaveBeenCalledWith('refined');
+    });
+
+    // Symmetry with the template picker: dropping to an undecorated layout has
+    // to RELEASE the shared atsMode, or the next decorated layout returns
+    // silently pre-ATS'd and the user exports a monogram-less Monogram letter.
+    it('releases atsMode when the new layout is undecorated and nothing else reads it', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic', // ATS-tier → no-op for the résumé
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('classic')));
+      expect(onAtsModeChange).toHaveBeenCalledWith(false);
+    });
+
+    it('keeps atsMode on the same change while a design-tier template reads it', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'atelier', // design-tier → the résumé genuinely uses it
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('classic')));
+      expect(onAtsModeChange).not.toHaveBeenCalled();
+    });
+
+    it('does not release atsMode when swapping between two DECORATED layouts', async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'both',
+            activeOut: 'cover',
+            templateId: 'classic',
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('sidebar')));
+      expect(onAtsModeChange).not.toHaveBeenCalled();
     });
   });
 

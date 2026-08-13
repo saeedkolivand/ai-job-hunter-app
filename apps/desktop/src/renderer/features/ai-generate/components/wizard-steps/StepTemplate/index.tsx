@@ -1,4 +1,5 @@
 import { Check, FileText } from 'lucide-react';
+import { useId } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Image } from '@ajh/ui';
@@ -65,6 +66,26 @@ export function StepTemplate({
   // toggle was unreachable in exactly that case.
   const resumeAtsApplies = !isCover && isDesignTier(templateId);
   const letterAtsApplies = showLetterLayout && isDecoratedLetterLayout(letterLayoutId);
+  // One switch driving two documents is only honest if the user is told so —
+  // shown solely in the ambiguous case, where both hint lines are up.
+  const atsDrivesBothDocs = resumeAtsApplies && letterAtsApplies;
+
+  // The hints are `aria-describedby` (never part of the accessible NAME, which
+  // is the aria-label below) — mirrors the @ajh/ui Switch primitive, whose
+  // description is exposed once via describedby rather than concatenated into
+  // the name. Each id is emitted under the SAME guard as the line it points at.
+  const hintBaseId = useId();
+  const resumeHintId = `${hintBaseId}-resume`;
+  const letterHintId = `${hintBaseId}-letter`;
+  const bothHintId = `${hintBaseId}-both`;
+  const atsDescribedBy =
+    [
+      resumeAtsApplies ? resumeHintId : null,
+      letterAtsApplies ? letterHintId : null,
+      atsDrivesBothDocs ? bothHintId : null,
+    ]
+      .filter((id): id is string => id !== null)
+      .join(' ') || undefined;
 
   const handleTemplateSelect = (id: TemplateId) => {
     onTemplateChange(id);
@@ -73,6 +94,19 @@ export function StepTemplate({
     // still reading the flag, in which case clearing it would silently restore
     // the letter's decoration with no way back. Cover-only runs never clear.
     if (!isCover && shouldClearAtsMode(id, letterAtsApplies)) {
+      onAtsModeChange(false);
+    }
+  };
+
+  const handleLetterLayoutSelect = (id: LetterLayoutId) => {
+    onLetterLayoutChange?.(id);
+    // The mirror image of handleTemplateSelect, and the reason it exists: the
+    // flag is SHARED, so leaving it set after the letter stops reading it means
+    // the next decorated layout comes back silently pre-ATS'd — the user picks
+    // Monogram and exports a letter with no monogram. Same two-input guard,
+    // with the NEW layout's decoratedness: clear only when nothing is left to
+    // read the flag (a design-tier résumé template still legitimately does).
+    if (shouldClearAtsMode(templateId, isDecoratedLetterLayout(id))) {
       onAtsModeChange(false);
     }
   };
@@ -168,7 +202,7 @@ export function StepTemplate({
           letter ('cover' or 'both'; palette/fonts still inherit the résumé
           template), threaded to the cover preview + export. */}
       {showLetterLayout && onLetterLayoutChange && (
-        <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+        <LetterLayoutPicker value={letterLayoutId} onChange={handleLetterLayoutSelect} />
       )}
 
       {/* ATS safe mode toggle — one flag for the whole export. Shown for
@@ -181,9 +215,15 @@ export function StepTemplate({
           type="button"
           role="switch"
           aria-checked={atsMode}
+          // Name = the label alone; the hint lines are descriptions (see above).
+          aria-label={t('aiGenerate.atsMode')}
+          aria-describedby={atsDescribedBy}
           onClick={() => onAtsModeChange(!atsMode)}
           className={cn(
-            'w-full flex items-center justify-between rounded-xl border px-3 py-2.5 transition-all text-left',
+            // items-START, not center: with two (German, free-wrapping) hint
+            // lines the row grows to ~80–90px and a centred track floats far
+            // below the label it belongs to. The track stays on the label's line.
+            'w-full flex items-start justify-between rounded-xl border px-3 py-2.5 transition-all text-left',
             atsMode
               ? 'border-brand/35 bg-brand/8'
               : 'border-[var(--border-clear)] bg-card hover:bg-muted'
@@ -199,13 +239,18 @@ export function StepTemplate({
               {t('aiGenerate.atsMode')}
             </div>
             {resumeAtsApplies && (
-              <div className="text-[10px] text-foreground/35 mt-0.5">
+              <div id={resumeHintId} className="text-[10px] text-foreground/35 mt-0.5">
                 {t(atsModeHintKey(templateId))}
               </div>
             )}
             {letterAtsApplies && (
-              <div className="text-[10px] text-foreground/35 mt-0.5">
+              <div id={letterHintId} className="text-[10px] text-foreground/35 mt-0.5">
                 {t('aiGenerate.atsModeHintLetter')}
+              </div>
+            )}
+            {atsDrivesBothDocs && (
+              <div id={bothHintId} className="text-[10px] text-foreground/45 mt-1">
+                {t('aiGenerate.atsModeHintBothDocs')}
               </div>
             )}
           </div>

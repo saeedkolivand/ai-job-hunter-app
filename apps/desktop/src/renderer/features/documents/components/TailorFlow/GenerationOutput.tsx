@@ -200,6 +200,15 @@ export function GenerationOutput({
     if (shouldClearAtsMode(id, letterAtsApplies)) onAtsModeChange(false);
   };
 
+  // Same guard, other input: switching AWAY from a decorated layout has to
+  // release the shared flag too, or the next decorated layout comes back
+  // silently pre-ATS'd (user picks Monogram, exports a letter with no monogram).
+  // Still keeps the flag when a design-tier résumé template is reading it.
+  const handleLetterLayoutChange = (id: LetterLayoutId) => {
+    onLetterLayoutChange(id);
+    if (shouldClearAtsMode(templateId, isDecoratedLetterLayout(id))) onAtsModeChange(false);
+  };
+
   // ARIA tabs contract: each tab owns a stable id and controls a panel id; the
   // single content region below is the active tab's panel (doc tabs share one
   // region, the Job-ad tab swaps in its own). Derive the active pair so the
@@ -370,6 +379,14 @@ export function GenerationOutput({
                   }
                 />
               )}
+              {/* The toggle APPEARS when a decorated layout (or a design-tier
+                  template) is picked — a silent DOM insertion otherwise. This
+                  region is always mounted (a live region only announces content
+                  added AFTER it exists) and `sr-only` is out of flow, so the
+                  toolbar's gap is unchanged. Pattern: SectionTimeline's announcer. */}
+              <span role="status" aria-live="polite" className="sr-only">
+                {showAtsToggle ? t('aiGenerate.atsToggleAvailable') : ''}
+              </span>
             </div>
           </div>
         )}
@@ -385,7 +402,7 @@ export function GenerationOutput({
             decorated layout here is what surfaces the ATS toggle above. */}
         {view === 'doc' && activeOut === 'cover' && (
           <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
-            <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+            <LetterLayoutPicker value={letterLayoutId} onChange={handleLetterLayoutChange} />
           </div>
         )}
         {/* Document region — grows to fill the scrollport, but never shrinks below

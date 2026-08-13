@@ -20,6 +20,7 @@ import {
   MODES,
   type QualityReport,
   resolveMarket,
+  shouldClearAtsMode,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
@@ -212,6 +213,22 @@ export function OutputPanelDone({
     if (activeOut === 'cover' && !coverOut && resumeOut) onActiveOutChange('resume');
   }, [activeOut, resumeOut, coverOut, onActiveOutChange]);
 
+  // The cover tab's ATS switch, or null when it would be pointless: the host
+  // owns no atsMode setter, or the picked layout has no decoration to drop.
+  // Holding the CALLBACK (not a boolean) keeps the render site type-narrowed.
+  const atsToggleChange =
+    onAtsModeChange && isDecoratedLetterLayout(letterLayoutId) ? onAtsModeChange : null;
+
+  // Switching AWAY from a decorated layout releases the shared flag, so the next
+  // decorated layout does not come back silently pre-ATS'd — unless a design-tier
+  // résumé template is still reading it (`shouldClearAtsMode`'s second input).
+  const handleLetterLayoutChange = (id: LetterLayoutId) => {
+    onLetterLayoutChange?.(id);
+    if (onAtsModeChange && shouldClearAtsMode(templateId, isDecoratedLetterLayout(id))) {
+      onAtsModeChange(false);
+    }
+  };
+
   const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;
   // Committed text for the active doc — what PdfPreview actually renders.
   const committed = activeOut === 'resume' ? committedResume : committedCover;
@@ -326,15 +343,21 @@ export function OutputPanelDone({
           initials tile (which extraction reads as "JS Jane Smith") switch-less. */}
       {activeOut === 'cover' && onLetterLayoutChange && (
         <div className="shrink-0 space-y-2 border-b border-[var(--border-clear)] px-6 py-2">
-          <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
-          {onAtsModeChange && isDecoratedLetterLayout(letterLayoutId) && (
+          <LetterLayoutPicker value={letterLayoutId} onChange={handleLetterLayoutChange} />
+          {atsToggleChange && (
             <AtsModeToggle
               checked={atsMode}
-              onChange={onAtsModeChange}
+              onChange={atsToggleChange}
               hintKey="aiGenerate.atsModeHintLetter"
               className="w-fit"
             />
           )}
+          {/* Announce the toggle's ARRIVAL — picking Monogram inserts it with no
+              other signal. Always mounted (a live region cannot announce its own
+              first render) and `sr-only`, so it costs no height. */}
+          <span role="status" aria-live="polite" className="sr-only">
+            {atsToggleChange ? t('aiGenerate.atsToggleAvailable') : ''}
+          </span>
         </div>
       )}
 
