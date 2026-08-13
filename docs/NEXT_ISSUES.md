@@ -91,11 +91,16 @@ adds more than a line or two fails `cargo test --test architecture`, so do the s
 first: extract a cohesive block verbatim into a sibling file under the same module and
 re-export the public names — never trim the feature to fit the counter.
 
-## 10. Design-system primitives — light-scheme contrast sweep
+## 10. [PARTIAL] Design-system primitives — light-scheme contrast sweep
 
-Run the contrast audit over `@ajh/ui` primitives in the light color scheme, not just dark.
-Related concrete instance: the company-avatar tint needs a `bg-brand/15`-class bump to
-clear AA on light backgrounds.
+**Incremental fix (PR #984, 2026-08-13):** Extended the light-scheme opacity remap to cover
+`text-foreground/15` + `/55` (text) and `border-foreground/10`, `/12`, `/15`, `/20`, `/25`
+(borders). The remap now covers all escaped values below the raw-alpha AA compliance threshold.
+Components using these classes automatically inherit the improved contrast on light backgrounds.
+
+The full sweep remains open: run the contrast audit over ALL remaining `@ajh/ui` primitives in
+the light scheme (not just text/border-foreground). Related concrete instance: the company-avatar
+tint still needs a `bg-brand/15`-class bump to clear AA on light backgrounds.
 
 ## 11. ModalShell focus-return hardening
 
@@ -193,6 +198,19 @@ search path sets one. The Apify opt-in toggle in Settings still reads as simply 
 user who enabled and paid for it has no way to learn their scheduled runs never use it.
 Surface it where the toggle lives (and/or in the autopilot run step log). See
 `docs/knowledge/scraping-domain.md` § Aggregator page loop & spend budget.
+
+## 23. [FOLLOW-UP] DOCX line-scanner conflates date with contact profile
+
+Pre-existing, narrow, deferred: the DOCX export's header line-scanner (in `parse_cover_letter`
+/ `parse_resume`, looking for date patterns and contact fields) conflates a date-shaped first
+line with contact profile when a `ContactProfile` is attached. The date is dropped while the
+same PDF render captures it independently. Affects cover letters where the first line is a
+date — rare but possible on custom letterhead or after manual edits. Root cause: the scanner
+checks for "date-like" text before guarding for "this is actually the contact block", and
+overrides the parsed contact once. PDF text-layer extracts the date correctly; DOCX loses it.
+Fixing requires auditing each field independently when adding a guard across formats (see
+lessons log / ADR-0021 for the related header-ownership decision). No user-facing defect has
+been filed; treat as a refinement candidate alongside the existing PDF/DOCX parity audits.
 
 ---
 
