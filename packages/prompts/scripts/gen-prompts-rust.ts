@@ -30,11 +30,14 @@ import { FACTUAL_GROUNDING_RULES } from '../src/generate/emphasis/emphasis.js';
 import {
   AI_TELL_LEXICAL_WORDS_DE,
   AI_TELL_LEXICAL_WORDS_EN,
+  AI_TELL_LEXICAL_WORDS_IT,
   AI_TELL_PROSE_WORDS_DE,
   AI_TELL_PROSE_WORDS_EN,
+  AI_TELL_PROSE_WORDS_IT,
   HUMANIZE_LEXICAL,
   TEMPLATE_OPENERS_DE,
   TEMPLATE_OPENERS_EN,
+  TEMPLATE_OPENERS_IT,
 } from '../src/generate/natural-voice/natural-voice.js';
 import { ATS_PRECEDENCE } from '../src/generate/resume/resume.js';
 import { RESUME_CONVENTION_LOCALES, resumeConventions } from '../src/locale/index.js';
@@ -97,9 +100,9 @@ export function rustArray(name: string, entries: readonly string[]): string {
 
 /**
  * `pub fn <name>(lang: &str) -> &'static [&'static str]` dispatching to the
- * curated `"en"`/`"de"` lists. Every OTHER language returns an EMPTY slice,
- * never the English list — `natural-voice.ts` sends an uncurated language a
- * generic, wordless directive (no word list at all; see its
+ * curated `"en"`/`"de"`/`"it"` lists. Every OTHER language returns an EMPTY
+ * slice, never the English list — `natural-voice.ts` sends an uncurated
+ * language a generic, wordless directive (no word list at all; see its
  * `genericAntiAiTellLexical`/`genericAntiAiTellProse`), so falling back to
  * the English words here would flag a language the prompt never told to
  * avoid them (MEDIUM fix, PR #963 round 5).
@@ -108,13 +111,15 @@ export function rustLookupFn(
   fnName: string,
   doc: string,
   enConst: string,
-  deConst: string
+  deConst: string,
+  itConst: string
 ): string {
   return `${doc}
 pub fn ${fnName}(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => ${deConst},
         "en" => ${enConst},
+        "it" => ${itConst},
         // Every other language gets the prompt's generic, wordless directive
         // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
         // no curated list to check it against.
@@ -130,7 +135,8 @@ function generate(): string {
       '/// Word/phrase bans safe inside a résumé bullet — the lexical tier of\n' +
         '/// `antiAiTellLexical()`. No prose-flow rules here.',
       'AI_TELL_LEXICAL_EN',
-      'AI_TELL_LEXICAL_DE'
+      'AI_TELL_LEXICAL_DE',
+      'AI_TELL_LEXICAL_IT'
     ),
     rustLookupFn(
       'ai_tell_prose',
@@ -145,21 +151,26 @@ function generate(): string {
         "/// permits. They stay prompt-only — see `AI_TELL_PROSE_WORDS_EN`'s doc in\n" +
         '/// natural-voice.ts.',
       'AI_TELL_PROSE_EN',
-      'AI_TELL_PROSE_DE'
+      'AI_TELL_PROSE_DE',
+      'AI_TELL_PROSE_IT'
     ),
     rustLookupFn(
       'template_openers',
       '/// Stock cover-letter openers — the phrases a letter that could have been\n' +
         '/// addressed to anyone starts with.',
       'TEMPLATE_OPENERS_EN',
-      'TEMPLATE_OPENERS_DE'
+      'TEMPLATE_OPENERS_DE',
+      'TEMPLATE_OPENERS_IT'
     ),
     rustArray('AI_TELL_LEXICAL_EN', AI_TELL_LEXICAL_WORDS_EN),
     rustArray('AI_TELL_LEXICAL_DE', AI_TELL_LEXICAL_WORDS_DE),
+    rustArray('AI_TELL_LEXICAL_IT', AI_TELL_LEXICAL_WORDS_IT),
     rustArray('AI_TELL_PROSE_EN', AI_TELL_PROSE_WORDS_EN),
     rustArray('AI_TELL_PROSE_DE', AI_TELL_PROSE_WORDS_DE),
+    rustArray('AI_TELL_PROSE_IT', AI_TELL_PROSE_WORDS_IT),
     rustArray('TEMPLATE_OPENERS_EN', TEMPLATE_OPENERS_EN),
     rustArray('TEMPLATE_OPENERS_DE', TEMPLATE_OPENERS_DE),
+    rustArray('TEMPLATE_OPENERS_IT', TEMPLATE_OPENERS_IT),
   ].join('\n\n');
 
   return [
@@ -173,7 +184,7 @@ function generate(): string {
     '//! validator checks exactly what the prompt asked for. Run `pnpm gen:prompts`',
     '//! to regenerate after editing those arrays.',
     '//!',
-    '//! `lang` is an ISO-639-1 code. `"en"`/`"de"` return their curated lists;',
+    '//! `lang` is an ISO-639-1 code. `"en"`/`"de"`/`"it"` return their curated lists;',
     '//! every OTHER language returns an EMPTY slice, never the English list —',
     '//! `natural-voice.ts` sends an uncurated language a generic, wordless',
     '//! directive instead (see its `genericAntiAiTellLexical`/',

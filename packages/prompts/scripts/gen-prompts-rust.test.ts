@@ -79,18 +79,20 @@ describe('rustLookupFn', () => {
    * to the EN const for every uncurated language (`_ => enConst`), so the
    * validator flagged English AI-tell words in, say, a French letter — but
    * `natural-voice.ts` sends French a generic, wordless directive with no
-   * word list at all. Every non-`en`/`de` language must dispatch to an
+   * word list at all. Every non-`en`/`de`/`it` language must dispatch to an
    * EMPTY slice instead, matching the prompt's own behavior.
    */
-  it('dispatches "de"/"en" to their curated consts and every other language to an empty slice, never the English fallback', () => {
+  it('dispatches "de"/"en"/"it" to their curated consts and every other language to an empty slice, never the English fallback', () => {
     const out = rustLookupFn(
       'ai_tell_lexical',
       '/// doc',
       'AI_TELL_LEXICAL_EN',
-      'AI_TELL_LEXICAL_DE'
+      'AI_TELL_LEXICAL_DE',
+      'AI_TELL_LEXICAL_IT'
     );
     expect(out).toContain('"de" => AI_TELL_LEXICAL_DE,');
     expect(out).toContain('"en" => AI_TELL_LEXICAL_EN,');
+    expect(out).toContain('"it" => AI_TELL_LEXICAL_IT,');
     expect(out).toContain('_ => &[],');
     expect(out).not.toMatch(/_\s*=>\s*AI_TELL_LEXICAL_EN/);
   });

@@ -92,6 +92,15 @@ pub struct StageCacheKey {
 /// A type rather than three loose arguments so "the key binds what the call
 /// sends" stays one thing to keep true: a new routed value that changes the
 /// answer means a new field here, and every key derivation picks it up.
+///
+/// Also reused (not re-derived) by `cover_letter::research::cache_key` for
+/// the `company_brief` cache — a second place a `Completer` becomes cache-key
+/// terms would be exactly the drift this type exists to prevent. That reuse
+/// folds `context_window` into a key whose call never reads it (search +
+/// synthesize doesn't touch `num_ctx`); harmless — an extra miss on a
+/// window-only change, never a wrong answer — and it means a future field
+/// added here propagates to that key too instead of needing an update
+/// someone can forget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StageIdentity<'a> {
     pub provider: &'a str,

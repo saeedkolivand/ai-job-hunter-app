@@ -179,6 +179,20 @@ pub struct FoundJob {
     #[serde(default)]
     pub score_source: ScoreSource,
     pub found_at: u64,
+    /// The posting's publish-or-last-updated date (epoch ms), as reported by
+    /// the board, copied from `JobPosting.posted_at` at find-time — distinct
+    /// from [`Self::found_at`] (when WE scraped it). Most sources report a
+    /// genuine creation/publish date (Adzuna, JSearch, the Apify LinkedIn
+    /// actor, Arbeitnow, Ashby, Breezy, Jobicy, Lever, GermanTechJobs,
+    /// BerlinStartupJobs, WeWorkRemotely, RemoteOK, Remotive, the HN "Who's
+    /// Hiring" feed); a few (Jooble, Comeet, the Bundesagentur für Arbeit)
+    /// only expose an "updated"/"current" timestamp upstream, so this can
+    /// read as more recent than the posting's true original publish date for
+    /// those. A board with no date field at all leaves it `None`.
+    /// `#[serde(default)]` so a record written before this field existed
+    /// loads as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub posted_at: Option<i64>,
     /// First surfaced in the most recent run (set by the dedup merge in
     /// [`AutopilotStore::record_run`]). Drives the "New" badge.
     #[serde(default)]
@@ -973,11 +987,16 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
     // 1) Collapse duplicates WITHIN the incoming batch by canonical key. First
     //    occurrence keeps its position; a later duplicate carrying a longer
     //    description upgrades that one field (richer text for the tailor flow).
-    //    (The engine's dedup_cross_source runs upstream and — like this pass —
-    //    keeps the incumbent's identity and only upgrades description/extra
-    //    field-by-field, never a whole-posting replace; cross-source dupes are
-    //    already collapsed before they reach here, so this pass only ever sees
-    //    same-source within-batch repeats.)
+    //    (The engine's `dedup_cross_source` runs upstream over the FULL
+    //    multi-board batch, keyed on the exact same `canonical_job_key` that
+    //    `build_found_job` copies verbatim into `merge_key` (url/title/company
+    //    are never mutated in between) — so via the one production caller
+    //    (`commands::autopilot::autopilot_run`) this `Some(kept)` branch is
+    //    never actually hit: every duplicate, same-source or cross-source, was
+    //    already collapsed — including its `posted_at`, via the same
+    //    fill-without-clobbering pattern this file uses — before `incoming` was
+    //    built. This pass is `merge_found_jobs`'s own defensive contract for a
+    //    caller that hands it pre-existing duplicates directly, e.g. a test.)
     let mut order: Vec<String> = Vec::new();
     let mut by_key: HashMap<String, FoundJob> = HashMap::new();
     for job in incoming {
@@ -1024,6 +1043,13 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                 }
                 if inc.description.is_some() {
                     row.description = inc.description.clone();
+                }
+                // Same fill-without-clobbering pattern as `board`/`description`: an
+                // existing row persisted before `posted_at` existed (`None`), or
+                // whose board didn't expose a publish date on an earlier run, picks
+                // it up when the same job re-surfaces with one known.
+                if inc.posted_at.is_some() {
+                    row.posted_at = inc.posted_at;
                 }
                 if inc.score.is_some() {
                     // Paired fields — `score_provisional` and `score_source`

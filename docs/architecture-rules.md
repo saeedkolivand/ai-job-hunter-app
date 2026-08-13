@@ -24,7 +24,7 @@ L1  Domain             scraping, extraction, export, documents, jobs, postings, 
                        conversations, credentials, job_preferences, contact_profile, ai_generations,
                        spend, applications, referrals, profile_import, model, layout, measure,
                        validate,
-                       locale, theme
+                       locale, theme, ai_provider
 L0  Shared infra       error, observability, performance, db, data_store, net, platform, browser, limits, vector
 ```
 
@@ -168,7 +168,11 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
 ## Roadmap (deferred, not in this change)
 
 1. **Relocate `ai_provider`** from `commands/` to a top-level L1/L0 module → deletes the
-   shell↔domain cycle and clears most of R7's allowlist.
+   shell↔domain cycle and clears most of R7's allowlist. **Seeded**: `src/ai_provider/`
+   (L1) now exists and holds `SearchBackend`, the first pure value type moved out of
+   `commands::ai_provider::search` (which re-exports it); the routing/credential logic
+   (`resolve`, `embed_text`, `search_backend_for`, …) is still under `commands/`, pending
+   the rest of this item.
 2. **Inject an emitter port** so L1/L2 stream progress without `AppHandle` → clears R2's
    allowlist.
 3. **Group the rendering cluster** under a `render/` parent (or document the cohesion as

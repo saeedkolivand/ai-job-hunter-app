@@ -14,6 +14,9 @@
 
 use serde::Serialize;
 
+use super::letterhead::{
+    is_letterhead_name, letterhead_initials, looks_like_date, resolve_letterhead_candidate,
+};
 use crate::contact_profile::ContactProfile;
 use crate::locale::letter::conventions;
 use crate::model::rich::{tokenize_rich, TextRun};
@@ -110,8 +113,9 @@ pub(super) struct LetterHead {
     /// Rich-text runs for the contact line (links first-class).
     pub contact: Vec<LetterRun>,
     /// Up to two uppercase initials derived from [`Self::name`] — see
-    /// [`monogram_initials`]. Part of the shared model (any layout may use it);
-    /// only `letter_monogram.typ` renders it today, and only outside ATS mode.
+    /// `letterhead::monogram_initials`. Part of the shared model (any layout
+    /// may use it); only `letter_monogram.typ` renders it today, and only
+    /// outside ATS mode.
     pub initials: String,
 }
 
@@ -158,29 +162,6 @@ pub(super) fn page_dims(market: &str) -> (f32, f32) {
     }
 }
 
-/// Lazy date-pattern regex — matches month names or 4-digit years.
-fn looks_like_date(s: &str) -> bool {
-    // Matches lines that contain digits and common date separators, e.g.:
-    //   "June 2, 2025" / "2. Juni 2025" / "02/06/2025" / "2025-06-02"
-    //   "2 juin 2025" / "le 2 juin 2025"
-    let t = s.trim();
-    if t.is_empty() {
-        return false;
-    }
-    let has_digit = t.chars().any(|c| c.is_ascii_digit());
-    if !has_digit {
-        return false;
-    }
-    // Must contain a year-like 4-digit run or a separator ( / . - space)
-    // alongside a digit to distinguish from plain phone numbers or IDs.
-    let has_year = t.split_whitespace().any(|w| {
-        let digits: String = w.chars().filter(|c| c.is_ascii_digit()).collect();
-        digits.len() == 4
-    });
-    let has_sep = t.contains('/') || t.contains('.') || t.contains('-');
-    has_year || (has_digit && has_sep)
-}
-
 /// Heuristic: is this line a contact line that should be skipped in the body
 /// (email address, phone number, URL, or pipe-separated items)?
 fn looks_like_contact_line(s: &str) -> bool {
@@ -221,101 +202,6 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
         }
         _ => name,
     }
-}
-
-/// Up to **two** uppercase initials for a letterhead monogram device: the
-/// initial of the first NAME token and the initial of the last one.
-///
-/// Derived in Rust rather than in Typst because every interesting case is string
-/// handling a `.typ` cannot be tested on: a mononym ("Prince" → `P`), a
-/// multi-part surname ("Jane van der Berg" → `JB`, first + LAST, not the first
-/// two), and non-ASCII capitals ("Àlvaro Èsposito" → `ÀÈ`, which must survive
-/// PDF extraction like every other accented capital in this engine).
-///
-/// Two kinds of token are **not** names and are dropped:
-///
-/// 1. Anything that does not START with a LETTER — a pronoun parenthetical,
-///    "—", a stray bullet, or a number. The first version searched each token
-///    for its first alphanumeric *anywhere*, so "(they/them)" contributed a
-///    `T`; "Jane Smith (they/them)" came out `JT`. Alphanumeric was still too
-///    loose: an initial is never a digit, so "12 March 2025" offered `12`
-///    as a monogram. Letters only.
-/// 2. A token that abbreviates a WORD — two or more letters before its period
-///    ("Dr.", "Prof.", "Dipl.-Ing.", "Ph.D."). Those are titles and
-///    qualifications; "Dr. Jane Smith" is `JS`, and the German
-///    "Dipl.-Ing. Max Müller" is `MM`, not `DM`. A SINGLE-letter initial keeps
-///    its period and still counts, so "J. Smith" is `JS` rather than `S`.
-///
-/// Never longer than two characters, so the device is a fixed-size square no
-/// matter how long the name is — a third initial would overflow it. Returns an
-/// empty string for a nameless letterhead; the template skips the device then.
-fn monogram_initials(name: &str) -> String {
-    /// Is this token a person's name, as opposed to punctuation, a number or a
-    /// title?
-    fn is_name_token(tok: &str) -> bool {
-        if !tok.starts_with(char::is_alphabetic) {
-            return false;
-        }
-        // Letters before the first period: 1 is an initial ("J."), 2+ is a
-        // word abbreviation ("Dr.", "Dipl.-Ing."). No period at all → a name.
-        match tok.split_once('.') {
-            Some((head, _)) => head.chars().count() < 2,
-            None => true,
-        }
-    }
-
-    let mut initials = name
-        .split_whitespace()
-        .filter(|tok| is_name_token(tok))
-        // Guaranteed `Some` — `is_name_token` required a leading letter.
-        .filter_map(|tok| tok.chars().next());
-
-    let Some(first) = initials.next() else {
-        return String::new();
-    };
-    // `to_uppercase` can expand (ß → SS); take one char so the device stays
-    // exactly one glyph per initial.
-    let up = |c: char| c.to_uppercase().next().unwrap_or(c);
-
-    // `next_back`, not `last`: the iterator is double-ended, and `first` has
-    // already been consumed, so this is the last REMAINING token — a mononym
-    // therefore yields `None` here rather than re-finding its own initial.
-    match initials.next_back() {
-        Some(last) => [up(first), up(last)].iter().collect(),
-        None => up(first).to_string(),
-    }
-}
-
-/// Initials for the letterhead device, or empty when the "name" is not a name.
-///
-/// The letterhead name falls back to the first non-blank LINE of the letter when
-/// no candidate name is supplied — and three renderer call sites pass an empty
-/// `candidate_name`, so that fallback is reachable in production. On a
-/// letterhead-less letter the first line is the salutation, which made the
-/// device read `DM`, from "Dear Hiring Manager,".
-///
-/// A DATE is the fourth opening this has to refuse, and the one both formats
-/// missed: a letter whose first line is "12 March 2025" put `12` in the device.
-/// The DOCX line filter excluded salutation/sign-off/subject and nothing else,
-/// so it had the identical hole.
-///
-/// **Both renderers call THIS function** — the DOCX path used to call
-/// [`monogram_initials`] directly, which is how the two drifted in the first
-/// place. One guard, one place; a fifth opening kind gets added once.
-///
-/// Scoped to the DEVICE deliberately: what `letterhead.name` itself should show
-/// for a letterhead-less letter is a separate, pre-existing question, and
-/// widening this would change all six layouts' output.
-pub(crate) fn letterhead_initials(name_text: &str) -> String {
-    use crate::locale::letter::{is_salutation, is_signoff, is_subject_line};
-    if is_salutation(name_text)
-        || is_signoff(name_text)
-        || is_subject_line(name_text)
-        || looks_like_date(name_text)
-    {
-        return String::new();
-    }
-    monogram_initials(name_text)
 }
 
 /// Parse a finished cover-letter text into a structured [`LetterModel`].
@@ -367,20 +253,45 @@ pub(super) fn parse_cover_letter(
     // B.2: an ALL-CAPS stored name adopts the contact profile's mixed-case
     // casing (when it matches case-insensitively) so the letterhead + signature
     // don't render shouted; no-op with no profile or a different-name profile.
+    //
+    // `resolve_letterhead_candidate` is the shared "prefer meta_name unless
+    // blank" decision — both DOCX line-scanners make the identical call, so
+    // an empty-string `Some("")` `meta_name` (the shape three renderer call
+    // sites actually send) degrades to the first-line fallback the same way
+    // in every format.
     let name_text: String = prefer_profile_casing(
-        meta_name
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| {
-                raw_lines
-                    .iter()
-                    .map(|l| l.trim())
-                    .find(|l| !l.is_empty())
-                    .unwrap_or("")
-                    .to_string()
-            }),
+        resolve_letterhead_candidate(meta_name, || {
+            raw_lines
+                .iter()
+                .map(|l| l.trim())
+                .find(|l| !l.is_empty())
+                .unwrap_or("")
+        })
+        .to_string(),
         contact,
     );
+
+    // Suppress the letterhead NAME entirely when it fails the same is-a-name
+    // test the monogram device uses. With no `meta_name` supplied, `name_text`
+    // above just fell back to the letter's first non-blank line, and that line
+    // can be a date ("12 March 2025") or a salutation ("Dear Hiring Manager,")
+    // rather than a name — every `.typ` layout reads `data.letterhead.name`
+    // (and `signature_name`, which is the same value) verbatim, so an
+    // unguarded fallback rendered the wrong text as the person's name in all
+    // six layouts, not just Monogram's already-guarded device.
+    //
+    // This also fixes a second-order bug the fabricated name caused: the
+    // header-dedupe skip below (`clean == name_lower`) matched this exact
+    // line and ate it as a duplicate header echo, silently dropping the
+    // date/salutation from the rest of the parse. An empty `name_text` no
+    // longer matches anything there, so the line falls through to the
+    // ordinary date/salutation/subject/recipient classification instead —
+    // the letter has no letterhead name, but the body still carries the line.
+    let name_text = if is_letterhead_name(&name_text) {
+        name_text
+    } else {
+        String::new()
+    };
 
     // Contact line: use named profile fields (shared with the resume header);
     // fall back to scraping the letter text only when no profile is supplied.
@@ -955,16 +866,6 @@ Alice
     }
 
     #[test]
-    fn looks_like_date_recognises_common_formats() {
-        assert!(looks_like_date("June 2, 2025"));
-        assert!(looks_like_date("2. Juni 2025"));
-        assert!(looks_like_date("02/06/2025"));
-        assert!(looks_like_date("2025-06-02"));
-        assert!(!looks_like_date("Dear Hiring Manager,"));
-        assert!(!looks_like_date("Acme Corp"));
-    }
-
-    #[test]
     fn unknown_market_falls_back_gracefully() {
         // Should not panic; intl baseline applies
         let model = parse_cover_letter("x", None, None, "zz", "en", dummy_style(), false);
@@ -1136,204 +1037,6 @@ Saeed Kolivand
 
         assert_eq!(model.letterhead.name, "SAEED KOLIVAND");
         assert_eq!(model.signature_name, "SAEED KOLIVAND");
-    }
-
-    // ── monogram_initials ─────────────────────────────────────────────────────
-    //
-    // Pure string logic behind `letter_monogram.typ`'s device (and its DOCX
-    // shaded-run approximation, which calls the SAME function). Every case here
-    // is one a `.typ` could not be tested on.
-
-    #[test]
-    fn monogram_initials_takes_the_first_and_last_name_tokens() {
-        assert_eq!(monogram_initials("Jane Smith"), "JS");
-        // First + LAST, not the first two — a `.take(2)` implementation returns
-        // "JV" here, which is the wrong monogram for a multi-part surname.
-        assert_eq!(monogram_initials("Jane van der Berg"), "JB");
-        assert_eq!(monogram_initials("Mary Jane Watson Parker"), "MP");
-    }
-
-    #[test]
-    fn monogram_initials_uppercases_and_survives_non_ascii_capitals() {
-        assert_eq!(monogram_initials("àlvaro èsposito"), "ÀÈ");
-        assert_eq!(monogram_initials("Àlvaro Èsposito"), "ÀÈ");
-        // `char::to_uppercase` expands ß to "SS"; only the first char is taken so
-        // the fixed-size device still holds exactly two glyphs.
-        assert_eq!(monogram_initials("ßiggi ßmith").chars().count(), 2);
-    }
-
-    #[test]
-    fn monogram_initials_handles_mononyms_and_letterless_tokens() {
-        assert_eq!(monogram_initials("Prince"), "P");
-        assert_eq!(monogram_initials("O'Brien"), "O");
-    }
-
-    /// A pronoun parenthetical is not a name token.
-    ///
-    /// The fixture is `(they/them)`, NOT `(she/her)`: with "she" the expected
-    /// `JS` is also what the BROKEN implementation produces, because its `S`
-    /// comes from "she" — the test passed against the defect. `they` makes the
-    /// two outcomes distinguishable, `JS` (correct) vs `JT` (searched the token
-    /// for its first alphanumeric instead of requiring a leading one).
-    #[test]
-    fn monogram_initials_drops_pronoun_parentheticals() {
-        assert_eq!(monogram_initials("Jane Smith (they/them)"), "JS");
-        assert_eq!(monogram_initials("Jane (they/them) Smith"), "JS");
-        assert_eq!(monogram_initials("Jane (they/them)"), "J");
-        // Trailing em-dash / bullet decoration must not become an initial either.
-        assert_eq!(monogram_initials("Jane Smith —"), "JS");
-    }
-
-    /// Titles and qualifications are not names. A monogram for "Dr. Jane Smith"
-    /// is JS; DS is the doctorate's initial standing in for the given name.
-    #[test]
-    fn monogram_initials_drops_titles_and_qualifications() {
-        assert_eq!(monogram_initials("Dr. Jane Smith"), "JS");
-        assert_eq!(monogram_initials("Prof. Dr. Jane Smith"), "JS");
-        // The German honorific the critic named — "DM" was the defect.
-        assert_eq!(monogram_initials("Dipl.-Ing. Max Müller"), "MM");
-        assert_eq!(monogram_initials("Jane Smith Ph.D."), "JS");
-    }
-
-    /// …but a SINGLE-letter initial is part of the name and keeps counting: the
-    /// title rule keys on "two or more letters before the period", so "J." is
-    /// not swept up with "Dr.". Dropping it would make "J. Smith" render "S".
-    #[test]
-    fn monogram_initials_keeps_single_letter_initials() {
-        assert_eq!(monogram_initials("J. Smith"), "JS");
-        assert_eq!(monogram_initials("Jane M. Smith"), "JS");
-    }
-
-    /// A letterhead-less letter parses to an empty name; the device must then
-    /// render nothing rather than an empty tinted square.
-    #[test]
-    fn monogram_initials_is_empty_for_a_nameless_letterhead() {
-        assert_eq!(monogram_initials(""), "");
-        assert_eq!(monogram_initials("   \t "), "");
-        assert_eq!(monogram_initials("--- ***"), "");
-    }
-
-    /// Never more than two glyphs, whatever the name — the `.typ` device is a
-    /// fixed-size square and a third initial would overflow it.
-    #[test]
-    fn monogram_initials_never_exceeds_two_characters() {
-        for name in [
-            "A B C D E F",
-            "Jane Smith",
-            "Prince",
-            "Maria del Carmen Fernández de la Vega",
-            "",
-        ] {
-            assert!(
-                monogram_initials(name).chars().count() <= 2,
-                "{name:?} produced more than two initials"
-            );
-        }
-    }
-
-    /// The parser must publish the initials on the letterhead — the `.typ` reads
-    /// `data.letterhead.initials`, so a model that omits them silently renders an
-    /// empty device.
-    #[test]
-    fn parsed_letterhead_carries_the_monogram_initials() {
-        let model = parse_cover_letter(
-            EN_LETTER,
-            None,
-            Some("Jane Smith"),
-            "us",
-            "en",
-            dummy_style(),
-            false,
-        );
-        assert_eq!(model.letterhead.initials, "JS");
-    }
-
-    /// A letterhead-less letter with no candidate name falls back to the first
-    /// LINE, which is the salutation — so the device read "DM", from "Dear
-    /// Hiring Manager,". Three renderer call sites pass an empty
-    /// `candidate_name`, so this is reachable, not theoretical.
-    ///
-    /// `meta_name: Some("")` rather than `None` on purpose: that is the shape
-    /// the renderer actually sends, and `parse_cover_letter` filters it to the
-    /// same fallback.
-    #[test]
-    fn no_device_initials_when_the_name_falls_back_to_a_salutation() {
-        let letterhead_less =
-            "Dear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
-        for meta in [None, Some("")] {
-            let model = parse_cover_letter(
-                letterhead_less,
-                None,
-                meta,
-                "us",
-                "en",
-                dummy_style(),
-                false,
-            );
-            assert_eq!(
-                model.letterhead.initials, "",
-                "meta_name={meta:?}: the monogram device must be empty when the name is really \
-                 the salutation — it rendered \"DM\" from \"Dear Hiring Manager,\""
-            );
-        }
-    }
-
-    /// A DATE opening is the fourth kind, and the one BOTH formats missed: the
-    /// DOCX line filter excluded salutation/sign-off/subject and nothing else,
-    /// so a letter starting "12 March 2025" put `12` in the device.
-    #[test]
-    fn no_device_initials_when_the_letter_opens_with_a_date() {
-        for opening in ["12 March 2025", "2. Juni 2025", "02/06/2025", "2025-06-02"] {
-            for meta in [None, Some("")] {
-                let model = parse_cover_letter(
-                    &format!("{opening}\n\nDear Hiring Manager,\n\nBody.\n\nSincerely,\n"),
-                    None,
-                    meta,
-                    "us",
-                    "en",
-                    dummy_style(),
-                    false,
-                );
-                assert_eq!(
-                    model.letterhead.initials, "",
-                    "{opening:?} (meta={meta:?}) is a date, not a name — the device must be empty"
-                );
-            }
-        }
-    }
-
-    /// Belt to the date guard's braces: a digit can never BE an initial, so even
-    /// a numeric opening the date heuristic does not recognise cannot produce
-    /// one. `is_name_token` requires a leading LETTER, not merely alphanumeric.
-    #[test]
-    fn monogram_initials_ignores_numeric_tokens() {
-        assert_eq!(monogram_initials("12 March 2025"), "M");
-        assert_eq!(monogram_initials("2025"), "");
-        assert_eq!(monogram_initials("42 Jane Smith 99"), "JS");
-    }
-
-    /// Same guard for the other two opening kinds the DOCX renderer already
-    /// refuses to treat as a name.
-    #[test]
-    fn no_device_initials_for_a_signoff_or_subject_opening() {
-        for opening in [
-            "Mit freundlichen Grüßen,",
-            "Betreff: Bewerbung als Entwickler",
-        ] {
-            let model = parse_cover_letter(
-                &format!("{opening}\n\nBody text here.\n"),
-                None,
-                None,
-                "de",
-                "de",
-                dummy_style(),
-                false,
-            );
-            assert_eq!(
-                model.letterhead.initials, "",
-                "{opening:?} is not a name; the device must stay empty"
-            );
-        }
     }
 
     /// `ats` reaches `data.opts` verbatim — the whole ATS degradation story for

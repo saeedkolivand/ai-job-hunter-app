@@ -118,6 +118,7 @@ fn found(score: Option<f64>) -> FoundJob {
         score_provisional: false,
         score_source: ScoreSource::Keyword,
         found_at: 0,
+        posted_at: None,
         is_new: false,
         applied: false,
         trust: None,
@@ -294,6 +295,26 @@ fn build_found_job_flags_aggregator_snippet_scores_as_provisional() {
         !job.score_provisional,
         "an unscored job is never provisional"
     );
+}
+
+// ── posted_at projection ────────────────────────────────────────────────
+
+#[test]
+fn build_found_job_copies_posted_at_from_the_posting() {
+    // Every aggregator provider (Adzuna, JSearch, Jooble, Apify LinkedIn)
+    // parses the posting's own publish date into `JobPosting.posted_at`
+    // (epoch ms) — `build_found_job` must carry it straight through.
+    let mut dated = posting("Rust Engineer", None);
+    dated.posted_at = Some(1_700_000_000_000);
+    let job = build_found_job(&dated, "", 0);
+    assert_eq!(job.posted_at, Some(1_700_000_000_000));
+
+    // Several full-text boards don't expose a publish date and leave the
+    // posting's `posted_at` at `None` — that must flow through as `None` too,
+    // not a silently-invented default.
+    let dateless = posting("Rust Engineer", None);
+    let job = build_found_job(&dateless, "", 0);
+    assert_eq!(job.posted_at, None);
 }
 
 // ── Phase 2: semantic re-rank (ADR-020 addendum) ──────────────────────────
