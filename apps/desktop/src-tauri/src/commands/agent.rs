@@ -51,13 +51,15 @@ async fn fail_run(app: &AppHandle, cancels: &CancelRegistry, job_id: &str, msg: 
     cancels.unregister(job_id).await;
 }
 
-/// Prepare one job application via the agentic loop. Returns `{ jobId }`
-/// immediately; the run streams `agent:step` events and finishes the job async.
+/// Start ONE agentic run over a job + résumé — which one is `req.kind`
+/// ([`flows::flow_for`]). Returns `{ jobId }` immediately; the run streams
+/// `agent:step` events and finishes the job async.
 ///
 /// Modeled on [`crate::commands::ai::ai_generate`]: acquire the anti-abuse limiter,
-/// register the cancel token, then spawn the loop. EVERY fail-able step —
-/// `Completer::from_active` (backend-owned provider resolution + validation), the
-/// tool-capability check, and loading the résumé + cached job posting — now runs
+/// register the cancel token, then spawn the loop. EVERY fail-able step — the flow
+/// lookup, `Completer::from_active` (backend-owned provider resolution +
+/// validation), the tool-capability check, and loading the résumé + cached job
+/// posting (+ the generation under review, for a flow that reviews one) — runs
 /// INSIDE the spawned task, alongside the loop itself, so no terminal `jobs:event`
 /// can ever fire before this function returns `{ jobId }`. That return is the renderer's ONLY source of the job id; it
 /// starts filtering `jobs:event`/`agent:step` by that id only afterwards, so a
