@@ -286,6 +286,37 @@ fn monogram_initials(name: &str) -> String {
     }
 }
 
+/// Is `s` plausibly a person's NAME, as opposed to one of the other things a
+/// "first non-blank line" fallback can pick up by accident: a salutation, a
+/// sign-off, a subject/reference line, or a date opening?
+///
+/// The single shared rule behind two guards that must never drift apart:
+/// - [`letterhead_initials`] — refuses to derive a monogram DEVICE from
+///   something that isn't a name.
+/// - [`parse_cover_letter`] — refuses to publish the NAME TEXT itself
+///   (`data.letterhead.name` / `signature_name`) when it isn't a name. Every
+///   `.typ` layout reads that one field, so guarding it here — not just the
+///   device — is what makes all six layouts degrade the same way.
+///
+/// `export/docx/mod.rs`'s two line-scanners (DOCX has no shared `LetterModel`
+/// to funnel through) call this directly too, so PDF and DOCX can never
+/// disagree about which openings are not names.
+///
+/// A DATE is the opening the earlier salutation/sign-off/subject-only version
+/// of this check missed: a letter whose first line is "12 March 2025" is
+/// none of those three, so it passed as "a name" and produced `12` as a
+/// monogram (and, before the `parse_cover_letter` guard below existed,
+/// rendered "12 March 2025" as the person's name in every layout's header).
+pub(crate) fn is_letterhead_name(s: &str) -> bool {
+    use crate::locale::letter::{is_salutation, is_signoff, is_subject_line};
+    let t = s.trim();
+    !t.is_empty()
+        && !is_salutation(t)
+        && !is_signoff(t)
+        && !is_subject_line(t)
+        && !looks_like_date(t)
+}
+
 /// Initials for the letterhead device, or empty when the "name" is not a name.
 ///
 /// The letterhead name falls back to the first non-blank LINE of the letter when
@@ -294,25 +325,12 @@ fn monogram_initials(name: &str) -> String {
 /// letterhead-less letter the first line is the salutation, which made the
 /// device read `DM`, from "Dear Hiring Manager,".
 ///
-/// A DATE is the fourth opening this has to refuse, and the one both formats
-/// missed: a letter whose first line is "12 March 2025" put `12` in the device.
-/// The DOCX line filter excluded salutation/sign-off/subject and nothing else,
-/// so it had the identical hole.
-///
 /// **Both renderers call THIS function** — the DOCX path used to call
 /// [`monogram_initials`] directly, which is how the two drifted in the first
-/// place. One guard, one place; a fifth opening kind gets added once.
-///
-/// Scoped to the DEVICE deliberately: what `letterhead.name` itself should show
-/// for a letterhead-less letter is a separate, pre-existing question, and
-/// widening this would change all six layouts' output.
+/// place. One guard, one place; a fifth opening kind gets added once, in
+/// [`is_letterhead_name`].
 pub(crate) fn letterhead_initials(name_text: &str) -> String {
-    use crate::locale::letter::{is_salutation, is_signoff, is_subject_line};
-    if is_salutation(name_text)
-        || is_signoff(name_text)
-        || is_subject_line(name_text)
-        || looks_like_date(name_text)
-    {
+    if !is_letterhead_name(name_text) {
         return String::new();
     }
     monogram_initials(name_text)
@@ -381,6 +399,28 @@ pub(super) fn parse_cover_letter(
             }),
         contact,
     );
+
+    // Suppress the letterhead NAME entirely when it fails the same is-a-name
+    // test the monogram device uses. With no `meta_name` supplied, `name_text`
+    // above just fell back to the letter's first non-blank line, and that line
+    // can be a date ("12 March 2025") or a salutation ("Dear Hiring Manager,")
+    // rather than a name — every `.typ` layout reads `data.letterhead.name`
+    // (and `signature_name`, which is the same value) verbatim, so an
+    // unguarded fallback rendered the wrong text as the person's name in all
+    // six layouts, not just Monogram's already-guarded device.
+    //
+    // This also fixes a second-order bug the fabricated name caused: the
+    // header-dedupe skip below (`clean == name_lower`) matched this exact
+    // line and ate it as a duplicate header echo, silently dropping the
+    // date/salutation from the rest of the parse. An empty `name_text` no
+    // longer matches anything there, so the line falls through to the
+    // ordinary date/salutation/subject/recipient classification instead —
+    // the letter has no letterhead name, but the body still carries the line.
+    let name_text = if is_letterhead_name(&name_text) {
+        name_text
+    } else {
+        String::new()
+    };
 
     // Contact line: use named profile fields (shared with the resume header);
     // fall back to scraping the letter text only when no profile is supplied.
@@ -1334,6 +1374,113 @@ Saeed Kolivand
                 "{opening:?} is not a name; the device must stay empty"
             );
         }
+    }
+
+    // ── letterhead NAME suppression (not just the device) ────────────────────
+    //
+    // The device guard above only ever hid the monogram square. `letterhead.name`
+    // itself — and `signature_name`, the identical value used under the
+    // sign-off — was never guarded, so every one of the six `.typ` layouts
+    // rendered "12 March 2025" or "Dear Hiring Manager," as the person's name
+    // whenever no candidate name was supplied.
+
+    /// `is_letterhead_name` — the shared predicate behind both guards.
+    #[test]
+    fn is_letterhead_name_accepts_real_names_and_refuses_non_name_openings() {
+        for real in ["Jane Smith", "Àlvaro Èsposito", "Prince", "J. Smith"] {
+            assert!(is_letterhead_name(real), "{real:?} should read as a name");
+        }
+        for not_a_name in [
+            "",
+            "   ",
+            "Dear Hiring Manager,",
+            "Mit freundlichen Grüßen,",
+            "Betreff: Bewerbung als Entwickler",
+            "12 March 2025",
+            "2. Juni 2025",
+            "02/06/2025",
+            "2025-06-02",
+        ] {
+            assert!(
+                !is_letterhead_name(not_a_name),
+                "{not_a_name:?} must not read as a name"
+            );
+        }
+    }
+
+    /// With no candidate name, a date-opening letter must not fabricate a
+    /// letterhead/signature name from the date — AND the date itself must not
+    /// be lost. Before this guard, `name_text` fell back to "12 March 2025",
+    /// which (a) rendered as the name, and (b) matched the header-dedupe skip
+    /// below verbatim, so the date line was silently swallowed as a duplicate
+    /// header echo and never reached `model.date` at all.
+    #[test]
+    fn letterhead_name_suppressed_for_date_opening_and_date_still_captured() {
+        let letter =
+            "12 March 2025\n\nDear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+        for meta in [None, Some("")] {
+            let model = parse_cover_letter(letter, None, meta, "us", "en", dummy_style(), false);
+
+            assert_eq!(
+                model.letterhead.name, "",
+                "meta={meta:?}: a date opening must not become the letterhead name; got {:?}",
+                model.letterhead.name
+            );
+            assert_eq!(
+                model.signature_name, "",
+                "meta={meta:?}: the signature block must not fabricate a name from the date"
+            );
+            assert_eq!(
+                model.date.as_deref(),
+                Some("12 March 2025"),
+                "meta={meta:?}: the date line must still be captured, not dropped as a header echo"
+            );
+            assert_eq!(
+                model.salutation.as_deref(),
+                Some("Dear Hiring Manager,"),
+                "meta={meta:?}: the salutation must still render normally"
+            );
+        }
+    }
+
+    /// Same suppression for a salutation-opening letterhead-less letter — the
+    /// PDF-side counterpart of the DOCX
+    /// `letterhead_less_letter_keeps_its_salutation_and_body` regression.
+    #[test]
+    fn letterhead_name_suppressed_for_salutation_opening_and_salutation_still_captured() {
+        let letter = "Dear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+        for meta in [None, Some("")] {
+            let model = parse_cover_letter(letter, None, meta, "us", "en", dummy_style(), false);
+
+            assert_eq!(
+                model.letterhead.name, "",
+                "meta={meta:?}: a salutation opening must not become the letterhead name"
+            );
+            assert_eq!(model.signature_name, "");
+            assert_eq!(
+                model.salutation.as_deref(),
+                Some("Dear Hiring Manager,"),
+                "meta={meta:?}: the salutation must still be captured as the salutation"
+            );
+        }
+    }
+
+    /// Guard the guard: a REAL candidate name must still reach the letterhead
+    /// and signature untouched — `is_letterhead_name` must not become
+    /// overzealous and start suppressing legitimate names.
+    #[test]
+    fn a_real_candidate_name_is_never_suppressed() {
+        let model = parse_cover_letter(
+            EN_LETTER,
+            None,
+            Some("Jane Smith"),
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
+        assert_eq!(model.letterhead.name, "Jane Smith");
+        assert_eq!(model.signature_name, "Jane Smith");
     }
 
     /// `ats` reaches `data.opts` verbatim — the whole ATS degradation story for

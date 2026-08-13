@@ -117,28 +117,39 @@ fn generate_cover_letter_docx_classic(
                 .map(|s| s.as_str())
                 .unwrap_or(&clean);
 
-            docx = docx.add_paragraph(
-                Paragraph::new()
-                    .add_run(
-                        Run::new()
-                            .add_text(name_text)
-                            .size(pt_to_half_points(template.name_pt))
-                            .bold()
-                            .color(&colors.name)
-                            .fonts(docx_run_fonts(name_family)),
-                    )
-                    .line_spacing(LineSpacing::new().after(60)),
-            );
-            // Emit the profile-derived contact line right after the name, in place
-            // of the scraped contact lines. `render_contact_line` runs `split_urls`,
-            // so `[LinkedIn](url)` markdown and bare emails become real hyperlinks.
-            if let Some(md) = &profile_contact_md {
+            // A fourth opening the three checks above don't catch: a date
+            // ("12 March 2025") with no candidate name supplied. Shared with
+            // the PDF parser's identical guard via `is_letterhead_name` — see
+            // its doc comment — so the two formats can never disagree about
+            // which openings are not names. When it fails, DON'T consume this
+            // line as a header at all: fall through un-continued so the block
+            // below (contact/address) or a later iteration (salutation/
+            // subject/body) classifies it normally instead.
+            if crate::export::typst_engine::is_letterhead_name(name_text) {
                 docx = docx.add_paragraph(
-                    super::docx_renderer::render_contact_line(md, template, &colors)
-                        .line_spacing(LineSpacing::new().after(40)),
+                    Paragraph::new()
+                        .add_run(
+                            Run::new()
+                                .add_text(name_text)
+                                .size(pt_to_half_points(template.name_pt))
+                                .bold()
+                                .color(&colors.name)
+                                .fonts(docx_run_fonts(name_family)),
+                        )
+                        .line_spacing(LineSpacing::new().after(60)),
                 );
+                // Emit the profile-derived contact line right after the name,
+                // in place of the scraped contact lines. `render_contact_line`
+                // runs `split_urls`, so `[LinkedIn](url)` markdown and bare
+                // emails become real hyperlinks.
+                if let Some(md) = &profile_contact_md {
+                    docx = docx.add_paragraph(
+                        super::docx_renderer::render_contact_line(md, template, &colors)
+                            .line_spacing(LineSpacing::new().after(40)),
+                    );
+                }
+                continue;
             }
-            continue;
         }
 
         // Contact/address lines
@@ -547,137 +558,149 @@ fn generate_cover_letter_docx_layout(
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
                 .unwrap_or(&clean);
-            // Banded: uppercase name — the same small-caps→uppercase precedent
-            // `render_section_header` uses for the résumé DOCX path.
-            let display_name = if !sty.uppercase_name {
-                name_text.to_string()
-            } else {
-                name_text.to_uppercase()
-            };
-            let name_pt = template.name_pt + sty.name_pt_bonus;
 
-            let mut name_para = Paragraph::new();
-            // Monogram device approximation: the initials as a SHADED RUN at
-            // the head of the name paragraph, from the same
-            // `letterhead_initials` the `.typ` reads via
-            // `LetterHead.initials`, so the two formats can never disagree
-            // about what it says — nor about which openings are not names.
-            // The line filter above excludes a salutation, sign-off and
-            // subject, but NOT a date, so a letter opening "12 March 2025"
-            // reached here and put `12` in the device; the shared helper
-            // refuses all four. A run rather than its own paragraph because
-            // `letter_monogram.typ` sets the square BESIDE the name —
-            // extraction must read "JS Jane Smith", not "JS" on a line of
-            // its own.
-            if show_device {
-                let initials = crate::export::typst_engine::letterhead_initials(name_text);
-                if !initials.is_empty() {
-                    // TWO runs. The gap between the device and the name has to
-                    // be OUTSIDE the shading: docx-rs always writes
-                    // `xml:space="preserve"`, so spaces inside the shaded run
-                    // are painted, and the tile visibly ran on past the
-                    // initials — the `.typ` square stops at the glyphs.
-                    name_para = name_para
-                        .add_run(
-                            Run::new()
-                                .add_text(&initials)
-                                .size(pt_to_half_points(name_pt))
-                                .bold()
-                                .color(&accent_hex)
-                                .fonts(docx_run_fonts(name_family))
-                                .shading(
-                                    Shading::new()
-                                        .shd_type(ShdType::Clear)
-                                        .color("auto")
-                                        .fill(&band_hex),
-                                ),
-                        )
-                        .add_run(
-                            Run::new()
-                                .add_text("  ")
-                                .size(pt_to_half_points(name_pt))
-                                .fonts(docx_run_fonts(name_family)),
-                        );
-                }
-            }
-            name_para = name_para
-                .add_run(
-                    Run::new()
-                        .add_text(&display_name)
-                        .size(pt_to_half_points(name_pt))
-                        .bold()
-                        .color(&colors.name)
-                        .fonts(docx_run_fonts(name_family)),
-                )
-                .line_spacing(LineSpacing::new().after(60));
-            if sty.centred_letterhead {
-                // `letter_navy.typ` centres name, title and contact, then rules
-                // UNDER the lot. The rule therefore goes on the contact
-                // paragraph below, not here; drawing it on the name would put a
-                // line between the name and its own contact line.
-                name_para = name_para.align(AlignmentType::Center);
-            }
-            if show_band {
-                // Banded's band / Sidebar's rail approximation — see the
-                // module-level doc comment. Navy and Monogram are deliberately
-                // excluded: neither design has a tinted block behind the name.
-                name_para.property = name_para.property.shading(
-                    Shading::new()
-                        .shd_type(ShdType::Clear)
-                        .color("auto")
-                        .fill(&band_hex),
-                );
-            }
-            docx = docx.add_paragraph(name_para);
+            // A fourth opening the three checks above don't catch: a date
+            // ("12 March 2025") with no candidate name supplied. Shared with
+            // the PDF parser's identical guard via `is_letterhead_name` — see
+            // its doc comment — so the two formats can never disagree about
+            // which openings are not names. When it fails, DON'T consume this
+            // line as a header at all: fall through un-continued so the block
+            // below (contact/address) or a later iteration (salutation/
+            // subject/body) classifies it normally instead.
+            if crate::export::typst_engine::is_letterhead_name(name_text) {
+                // Banded: uppercase name — the same small-caps→uppercase
+                // precedent `render_section_header` uses for the résumé DOCX
+                // path.
+                let display_name = if !sty.uppercase_name {
+                    name_text.to_string()
+                } else {
+                    name_text.to_uppercase()
+                };
+                let name_pt = template.name_pt + sty.name_pt_bonus;
 
-            // Role line right after the name (see approximation note above re:
-            // `meta.job_title` vs the `.typ`'s `signature_title`). Refined and
-            // Navy both render it; Banded does not.
-            if sty.shows_title {
-                if let Some(job_title) = meta.and_then(|m| m.job_title.as_deref()) {
-                    let mut title_run = Run::new()
-                        .add_text(if sty.title_emphasised {
-                            job_title.to_uppercase()
-                        } else {
-                            job_title.to_string()
-                        })
-                        .size(pt_to_half_points(template.body_pt))
-                        .color(if sty.title_emphasised {
-                            &accent_hex
-                        } else {
-                            // Navy's `.typ` puts the role line in the muted date
-                            // colour, not the accent, and does not track it.
-                            &colors.date
-                        })
-                        .fonts(docx_run_fonts(body_family));
-                    if sty.title_emphasised {
-                        title_run = title_run.character_spacing(24);
+                let mut name_para = Paragraph::new();
+                // Monogram device approximation: the initials as a SHADED RUN
+                // at the head of the name paragraph, from the same
+                // `letterhead_initials` the `.typ` reads via
+                // `LetterHead.initials`, so the two formats can never
+                // disagree about what it says. A run rather than its own
+                // paragraph because `letter_monogram.typ` sets the square
+                // BESIDE the name — extraction must read "JS Jane Smith", not
+                // "JS" on a line of its own.
+                if show_device {
+                    let initials = crate::export::typst_engine::letterhead_initials(name_text);
+                    if !initials.is_empty() {
+                        // TWO runs. The gap between the device and the name has
+                        // to be OUTSIDE the shading: docx-rs always writes
+                        // `xml:space="preserve"`, so spaces inside the shaded
+                        // run are painted, and the tile visibly ran on past the
+                        // initials — the `.typ` square stops at the glyphs.
+                        name_para = name_para
+                            .add_run(
+                                Run::new()
+                                    .add_text(&initials)
+                                    .size(pt_to_half_points(name_pt))
+                                    .bold()
+                                    .color(&accent_hex)
+                                    .fonts(docx_run_fonts(name_family))
+                                    .shading(
+                                        Shading::new()
+                                            .shd_type(ShdType::Clear)
+                                            .color("auto")
+                                            .fill(&band_hex),
+                                    ),
+                            )
+                            .add_run(
+                                Run::new()
+                                    .add_text("  ")
+                                    .size(pt_to_half_points(name_pt))
+                                    .fonts(docx_run_fonts(name_family)),
+                            );
                     }
-                    let mut title_para = Paragraph::new()
-                        .add_run(title_run)
-                        .line_spacing(LineSpacing::new().after(40));
-                    if sty.centred_letterhead {
-                        title_para = title_para.align(AlignmentType::Center);
-                    }
-                    docx = docx.add_paragraph(title_para);
                 }
-            }
+                name_para = name_para
+                    .add_run(
+                        Run::new()
+                            .add_text(&display_name)
+                            .size(pt_to_half_points(name_pt))
+                            .bold()
+                            .color(&colors.name)
+                            .fonts(docx_run_fonts(name_family)),
+                    )
+                    .line_spacing(LineSpacing::new().after(60));
+                if sty.centred_letterhead {
+                    // `letter_navy.typ` centres name, title and contact, then
+                    // rules UNDER the lot. The rule therefore goes on the
+                    // contact paragraph below, not here; drawing it on the
+                    // name would put a line between the name and its own
+                    // contact line.
+                    name_para = name_para.align(AlignmentType::Center);
+                }
+                if show_band {
+                    // Banded's band / Sidebar's rail approximation — see the
+                    // module-level doc comment. Navy and Monogram are
+                    // deliberately excluded: neither design has a tinted
+                    // block behind the name.
+                    name_para.property = name_para.property.shading(
+                        Shading::new()
+                            .shd_type(ShdType::Clear)
+                            .color("auto")
+                            .fill(&band_hex),
+                    );
+                }
+                docx = docx.add_paragraph(name_para);
 
-            if let Some(md) = &profile_contact_md {
-                let mut contact_para =
-                    super::docx_renderer::render_contact_line(md, template, &colors)
-                        .align(sty.contact_align)
-                        .line_spacing(LineSpacing::new().after(sty.contact_space_after));
-                if sty.header_rule {
-                    // Full-width rule under the header — see approximation note.
-                    // For Navy this is the letterhead rule, which is why it sits
-                    // here (after name + title + contact) rather than on the name.
-                    contact_para.property =
-                        contact_para.property.set_borders(bottom_rule(&rule_hex, 6));
+                // Role line right after the name (see approximation note above
+                // re: `meta.job_title` vs the `.typ`'s `signature_title`).
+                // Refined and Navy both render it; Banded does not.
+                if sty.shows_title {
+                    if let Some(job_title) = meta.and_then(|m| m.job_title.as_deref()) {
+                        let mut title_run = Run::new()
+                            .add_text(if sty.title_emphasised {
+                                job_title.to_uppercase()
+                            } else {
+                                job_title.to_string()
+                            })
+                            .size(pt_to_half_points(template.body_pt))
+                            .color(if sty.title_emphasised {
+                                &accent_hex
+                            } else {
+                                // Navy's `.typ` puts the role line in the
+                                // muted date colour, not the accent, and does
+                                // not track it.
+                                &colors.date
+                            })
+                            .fonts(docx_run_fonts(body_family));
+                        if sty.title_emphasised {
+                            title_run = title_run.character_spacing(24);
+                        }
+                        let mut title_para = Paragraph::new()
+                            .add_run(title_run)
+                            .line_spacing(LineSpacing::new().after(40));
+                        if sty.centred_letterhead {
+                            title_para = title_para.align(AlignmentType::Center);
+                        }
+                        docx = docx.add_paragraph(title_para);
+                    }
                 }
-                docx = docx.add_paragraph(contact_para);
+
+                if let Some(md) = &profile_contact_md {
+                    let mut contact_para =
+                        super::docx_renderer::render_contact_line(md, template, &colors)
+                            .align(sty.contact_align)
+                            .line_spacing(LineSpacing::new().after(sty.contact_space_after));
+                    if sty.header_rule {
+                        // Full-width rule under the header — see approximation
+                        // note. For Navy this is the letterhead rule, which is
+                        // why it sits here (after name + title + contact)
+                        // rather than on the name.
+                        contact_para.property =
+                            contact_para.property.set_borders(bottom_rule(&rule_hex, 6));
+                    }
+                    docx = docx.add_paragraph(contact_para);
+                }
+                continue;
             }
-            continue;
         }
 
         // Contact/address lines (only reached when no ContactProfile was

@@ -68,6 +68,17 @@
   lang: lang,
 )
 
+// `hyphenate: false` is load-bearing, not a style choice. Typst turns
+// hyphenation on with `justify`, and a hyphenated line break puts a real break
+// in the PDF text layer: "microservices architecture" extracts as
+// "architec­ture", so an ATS tokenising on whitespace loses the keyword
+// entirely.
+//
+// Justify stays ON for every market, German included: letter bodies are a
+// single full-measure column (not the résumé's narrower multi-block layout),
+// so justified rivers are a non-issue at this width — the owner's explicit
+// call, not a deferred TODO.
+#set text(hyphenate: false)
 #set par(leading: lead, spacing: sp-letter-para, justify: true)
 
 // ── Rich-text renderer ────────────────────────────────────────────────────────

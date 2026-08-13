@@ -87,11 +87,11 @@
 // hyphenation on with `justify`, and a hyphenated line break puts a real break
 // in the PDF text layer: "microservices architecture" extracts as
 // "architec­ture", so an ATS tokenising on whitespace loses the keyword
-// entirely. Justification stays (wider word gaps, no split words).
-//
-// The four SHIPPED layouts (letter.typ, letter_refined.typ, letter_banded.typ,
-// letter_navy.typ) all still hyphenate — that is pre-existing and is being
-// swept in its own PR, together with the justify-vs-rivers call for DE.
+// entirely. Justification stays (wider word gaps, no split words) — including
+// for German: letter bodies are one full-measure column, so justified rivers
+// are a non-issue at this width. The other four layouts (letter.typ,
+// letter_refined.typ, letter_banded.typ, letter_navy.typ) carry the identical
+// flag + comment.
 #set text(hyphenate: false)
 #set par(leading: lead, spacing: sp-letter-para, justify: true)
 

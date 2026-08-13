@@ -45,6 +45,11 @@
 // the top of the single column — same words, same order, no tint, no side
 // panel. Gated on `data.opts.ats`, never on the layout id.
 //
+// The rail also collapses to the same plain/symmetric treatment (`show-rail`,
+// below) when the letterhead has no content at all to show — a suppressed
+// name (see `is_letterhead_name`) with no contact and no title. Otherwise the
+// pale panel would paint an empty tinted box with nothing in it.
+//
 // Reading order note: even in design mode the letterhead is emitted FIRST in the
 // content stream (it is placed from the top of the flow, before the date), so
 // text extraction reads letterhead → date → recipient → body → sign-off. The
@@ -82,6 +87,23 @@
 #let subj-used  = if "subject_line_used"  in data.opts { data.opts.subject_line_used  } else { false }
 #let subj-label = if "subject_line_label" in data.opts { data.opts.subject_line_label } else { "" }
 #let ats        = if "ats"                in data.opts { data.opts.ats                } else { false }
+
+// A letterhead can be entirely empty — the parser suppresses `letterhead.name`
+// outright when the fallback "first line of the letter" isn't a name (a date
+// or salutation opening; see `is_letterhead_name` in `typst_engine/letter.rs`).
+// If a letter with no name ALSO has no contact and no title, the rail would
+// otherwise paint a pale panel with nothing in it: an empty tinted box
+// asserting itself for no reason. Same idea as `letter_monogram.typ`'s
+// `show-device` gate (content-based, not just `ats`), applied to the rail as a
+// whole rather than one glyph pair. A real generated letter always has SOME
+// letterhead content (a `ContactProfile` is attached in practice — ADR 0021),
+// so this is a defensive floor, not the common case.
+#let has-letterhead-content = (
+  data.letterhead.name != ""
+    or ("contact" in data.letterhead and data.letterhead.contact.len() > 0)
+    or ("signature_title" in data and data.signature_title != none)
+)
+#let show-rail = not ats and has-letterhead-content
 
 // ── Rail geometry ─────────────────────────────────────────────────────────────
 // Fixed millimetre constants, not measured content: the rail is `place`d, so
@@ -123,19 +145,20 @@
 // and extract corrupted, which is the soft-hyphen defect again.
 #let fit-floor = 6pt
 
-// Left margin: wide enough for the rail plus its gutter in design mode, the
-// ordinary symmetric margin under ATS mode.
-#let margin-l = if ats { 25.4mm } else { rail-w + rail-gutter }
+// Left margin: wide enough for the rail plus its gutter when the rail is
+// actually shown, the ordinary symmetric margin otherwise (ATS mode, or a
+// design-mode letter with no letterhead content to put in it).
+#let margin-l = if show-rail { rail-w + rail-gutter } else { 25.4mm }
 
 // ── Page & typography ─────────────────────────────────────────────────────────
 
 #set page(
   width:  pg-w,
   height: pg-h,
-  margin: (left: margin-l, right: if ats { 25.4mm } else { margin-r }, top: margin-y, bottom: margin-y),
-  background: if ats { none } else {
+  margin: (left: margin-l, right: if show-rail { margin-r } else { 25.4mm }, top: margin-y, bottom: margin-y),
+  background: if show-rail {
     place(top + left, rect(width: rail-w, height: 100%, fill: c-rail, stroke: none))
-  },
+  } else { none },
 )
 
 #set text(
@@ -149,11 +172,11 @@
 // hyphenation on with `justify`, and a hyphenated line break puts a real break
 // in the PDF text layer: "microservices architecture" extracts as
 // "architec­ture", so an ATS tokenising on whitespace loses the keyword
-// entirely. Justification stays (wider word gaps, no split words).
-//
-// The four SHIPPED layouts (letter.typ, letter_refined.typ, letter_banded.typ,
-// letter_navy.typ) all still hyphenate — that is pre-existing and is being
-// swept in its own PR, together with the justify-vs-rivers call for DE.
+// entirely. Justification stays (wider word gaps, no split words) — including
+// for German: letter bodies are one full-measure column, so justified rivers
+// are a non-issue at this width. The other four layouts (letter.typ,
+// letter_refined.typ, letter_banded.typ, letter_navy.typ) carry the identical
+// flag + comment.
 #set text(hyphenate: false)
 #set par(leading: lead, spacing: sp-letter-para, justify: true)
 
@@ -254,8 +277,14 @@
   }
 }
 
-// Whitespace-separated tokens of a string, empties dropped.
-#let tokens-of(s) = s.split(regex("\\s+")).filter(t => t != "")
+// Whitespace-separated tokens of a string, empties dropped. `s` may be `none`:
+// `array.join` returns `none` (not `""`) for an EMPTY array, which
+// `contact-tokens` below hits whenever the letterhead has no contact runs at
+// all (a suppressed-name letterhead — see `is_letterhead_name` — with no
+// attached `ContactProfile` and nothing scraped from the letter text). `none`
+// has no `.split` method, so this used to panic the whole render instead of
+// degrading to an empty rail.
+#let tokens-of(s) = if s == none { () } else { s.split(regex("\\s+")).filter(t => t != "") }
 
 // Plain text of the contact runs, for measurement only (the rendered version
 // keeps its links and per-run styling via `render-runs`).
@@ -308,10 +337,13 @@
 
 // ── Letterhead placement ──────────────────────────────────────────────────────
 
-#if ats {
-  // Plain stacked letterhead in the single column, then a hairline to separate
-  // it from the correspondence — a rule carries no text, so it costs an ATS
-  // parser nothing. Full width, so no fitting: ordinary wrapping works here.
+#if not show-rail {
+  // Plain stacked letterhead in the single column (ATS mode, or design mode
+  // with no letterhead content to put in the rail), then a hairline to
+  // separate it from the correspondence — a rule carries no text, so it costs
+  // an ATS parser nothing. Full width, so no fitting: ordinary wrapping works
+  // here. When the letterhead is genuinely empty this just stacks nothing
+  // above the rule, which is the honest degraded shape.
   block(below: 10pt, letterhead(name-pt, body-pt - 1pt))
   block(below: 14pt, line(length: 100%, stroke: 0.6pt + c-rule))
 } else {

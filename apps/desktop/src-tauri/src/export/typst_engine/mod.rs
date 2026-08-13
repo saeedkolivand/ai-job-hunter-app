@@ -41,6 +41,14 @@ pub use engine::render_pdf_from_source;
 // `monogram_initials` is deliberately NOT exported: DOCX calling it directly
 // is how the date hole survived in one format after being closed in the other.
 pub(crate) use letter::letterhead_initials;
+// The predicate behind `letterhead_initials` above, exported separately so
+// callers that need "is this a name" (not "give me the initials") don't have
+// to check `!letterhead_initials(s).is_empty()` — a mononym's initials are one
+// character, not empty, so that would have been the wrong test. Used by both
+// `parse_cover_letter` (letterhead NAME text) and `export/docx/mod.rs`'s two
+// line-scanners (DOCX has no shared `LetterModel` to funnel through), so every
+// format agrees on which openings are not names.
+pub(crate) use letter::is_letterhead_name;
 pub use photo::resolve_photo;
 pub use render::RenderOpts;
 // Single source of truth for document-accent hex validation, reused by the

@@ -3296,14 +3296,20 @@ fn letter_navy_extracts_accented_latin_content() {
 //       the layout id.
 
 /// Layouts that must never emit a hyphenated line break into the PDF text
-/// layer, i.e. the ones that set `hyphenate: false`.
-///
-/// Deliberately a roster and not "every layout": the four SHIPPED layouts
-/// (Classic, Refined, Banded, Navy) all still hyphenate, which is pre-existing
-/// and is being swept in its own PR. A family-wide assertion would go red on
-/// them today, so this gates on the two layouts this PR owns and grows when the
-/// sweep lands.
-const NO_SOFT_HYPHEN_LAYOUTS: [LetterLayout; 2] = [LetterLayout::Sidebar, LetterLayout::Monogram];
+/// layer, i.e. the ones that set `hyphenate: false`. Now the full six-layout
+/// roster — Classic/Refined/Banded/Navy picked up the flag in the same change
+/// that extended this const (Sidebar and Monogram already had it from Phase
+/// 8). Still an explicit roster rather than "every `LetterLayout`" so a future
+/// layout that forgets the flag is a missing-test gap to notice, not a
+/// silently-passing wildcard.
+const NO_SOFT_HYPHEN_LAYOUTS: [LetterLayout; 6] = [
+    LetterLayout::Classic,
+    LetterLayout::Refined,
+    LetterLayout::Banded,
+    LetterLayout::Navy,
+    LetterLayout::Sidebar,
+    LetterLayout::Monogram,
+];
 
 /// Render + extract + whitespace-normalise + lowercase, the shape every letter
 /// assertion below wants. Panics with the layout name so a failure says which.
@@ -3400,6 +3406,40 @@ fn new_letter_layouts_extract_in_reading_order() {
         assert!(
             lower.contains("123 main street"),
             "{layout:?}: recipient inside address missing:\n{lower}"
+        );
+    }
+}
+
+/// The roster [`NO_SOFT_HYPHEN_LAYOUTS`] just grew from two layouts to the
+/// full six — Classic/Refined/Banded/Navy picked up `#set text(hyphenate:
+/// false)` in the same change (Sidebar/Monogram already had it from Phase 8).
+/// `letter_lower` is the SINGLE choke point that enforces the guard, but every
+/// existing call site only ever passed Sidebar or Monogram — extending the
+/// roster alone would have been a silent no-op for the other four without
+/// this test actually routing them through it.
+///
+/// [`LETTER_FIXTURE_LONG_US`] carries "microservices architecture" — the
+/// exact phrase cited in every layout's `hyphenate: false` comment — inside a
+/// long, narrow-column paragraph, i.e. a fixture that WOULD hyphenate if the
+/// flag were ever dropped. `letter_lower` asserts the U+00AD absence
+/// internally for every layout in the roster; this test's own job is just to
+/// call it for all six and confirm the phrase still extracts as one
+/// unbroken pair of words.
+#[test]
+fn every_letter_layout_stays_hyphen_free_on_a_hyphenation_prone_word() {
+    for layout in [
+        LetterLayout::Classic,
+        LetterLayout::Refined,
+        LetterLayout::Banded,
+        LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ] {
+        let lower = letter_lower(layout, LETTER_FIXTURE_LONG_US, "us", false);
+        assert!(
+            lower.contains("microservices architecture"),
+            "{layout:?}: the hyphenation-prone phrase must still extract as one \
+             unbroken pair of words:\n{lower}"
         );
     }
 }
@@ -3509,6 +3549,126 @@ fn sidebar_rail_drops_under_ats_mode_without_losing_words() {
             "design-mode Sidebar lost {needle:?}"
         );
     }
+}
+
+/// (S3b) Item-2 interaction: when the letterhead is genuinely EMPTY — no
+/// candidate name (the fallback landed on a date, refused by
+/// `is_letterhead_name`), no attached `ContactProfile`, no title — Sidebar's
+/// rail must not paint a pale panel with nothing in it. `show-rail` collapses
+/// to the same plain/symmetric treatment ATS mode uses, even though `ats`
+/// itself is false here. Detected the same way ATS-mode rail-dropping is: a
+/// page-1 fill a named render has that this one must not.
+#[test]
+fn sidebar_rail_collapses_when_the_letterhead_is_empty() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    const NO_HEADER_DATE: &str =
+        "12 March 2025\n\nDear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+    let render = |fixture: &str, meta_name: Option<&str>, ats: bool| {
+        render_letter_svg_pages(
+            fixture,
+            &t,
+            None,
+            meta_name,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Sidebar,
+                ats,
+            },
+        )
+        .expect("sidebar SVG render")
+    };
+
+    // Precondition: a named letter DOES paint the rail tint, in both design
+    // colour sets used below.
+    let named_fills = svg_fill_colors(&render(LETTER_FIXTURE_US, Some("Jane Smith"), false)[0]);
+    let ats_fills = svg_fill_colors(&render(LETTER_FIXTURE_US, Some("Jane Smith"), true)[0]);
+    let rail_tint: Vec<&String> = named_fills.difference(&ats_fills).collect();
+    assert!(
+        !rail_tint.is_empty(),
+        "precondition: a named Sidebar letter must paint a fill the ATS (no-rail) \
+         render lacks; named={named_fills:?} ats={ats_fills:?}"
+    );
+
+    // The letterhead-less render (no candidate name, date-opening, no
+    // ContactProfile) must NOT contain that rail-only fill either, even
+    // though `ats` is false — i.e. it must not have painted an empty box.
+    let empty_header_fills = svg_fill_colors(&render(NO_HEADER_DATE, None, false)[0]);
+    for tint in &rail_tint {
+        assert!(
+            !empty_header_fills.contains(*tint),
+            "a letterhead-less Sidebar page must not paint the rail tint with nothing in it; \
+             found {tint:?} in {empty_header_fills:?}"
+        );
+    }
+
+    // Suppression must lose only the fabricated name, not the words — the
+    // date and salutation must still extract normally.
+    let bytes = render_letter_pdf(
+        NO_HEADER_DATE,
+        &t,
+        None,
+        None,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Sidebar,
+            ats: false,
+        },
+    )
+    .expect("letterhead-less sidebar PDF render");
+    assert!(bytes.starts_with(b"%PDF"));
+    let txt = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("extract text")
+        .to_lowercase();
+    assert!(
+        txt.contains("12") && txt.contains("march") && txt.contains("2025"),
+        "the date must still extract, just not as the letterhead name:\n{txt}"
+    );
+    assert!(
+        txt.contains("dear hiring manager"),
+        "the salutation must still render:\n{txt}"
+    );
+}
+
+/// Item-2 sanity on the CLASSIC (undecorated) layout: a letterhead-less,
+/// date-opening letter with no candidate name still renders a valid PDF and
+/// still carries the date and salutation — `data.letterhead.name` is empty
+/// (proven directly on the model by `letter.rs`'s
+/// `letterhead_name_suppressed_for_date_opening_and_date_still_captured`);
+/// this is the end-to-end confirmation that an empty name doesn't break
+/// the plainest layout either.
+#[test]
+fn classic_letter_pdf_renders_with_a_suppressed_date_opening_name() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    const NO_HEADER_DATE: &str =
+        "12 March 2025\n\nDear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+    let bytes = render_letter_pdf(
+        NO_HEADER_DATE,
+        &t,
+        None,
+        None,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
+    )
+    .expect("letterhead-less classic PDF render");
+    assert!(bytes.starts_with(b"%PDF"));
+
+    let lower = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("extract text")
+        .to_lowercase();
+    assert!(
+        lower.contains("12") && lower.contains("march") && lower.contains("2025"),
+        "the date must still extract:\n{lower}"
+    );
+    assert!(
+        lower.contains("dear hiring manager"),
+        "the salutation must still render:\n{lower}"
+    );
 }
 
 /// (M3) ATS mode drops Monogram's initials device. Unlike a tint, the device is
