@@ -7,6 +7,7 @@ import { Button, GlassCard, StreamingText, Tag } from '@ajh/ui';
 
 import { AgentConfirm } from '@/features/jobs/components/AgentConfirm';
 import type { AgentRunSession } from '@/features/jobs/hooks/useAgentRunSession';
+import { stoppedSuffix } from '@/lib/stopped-reason';
 
 export type ImproveRowKey =
   'report' | 'check' | 'trim' | 'rewrite' | 'evidence' | 'save' | 'summary';
@@ -165,6 +166,20 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
   }, [session.pendingConfirm, t]);
 
   const state = headlineState(session);
+  /**
+   * A run that "completed" at a ceiling did not finish. `job.completed` fires
+   * for `MaxSteps`/`MaxTokens`/`MaxToolCalls`/`Truncated` too, so the headline
+   * reports the REASON (and drops the success green) whenever the run recorded
+   * one other than `done` — an unmapped variant lands on the neutral "Stopped"
+   * label rather than on "Completed". Copy is the pipeline's own stopped
+   * vocabulary, which this panel already speaks; the map is shared because the
+   * Rust enum is.
+   */
+  const earlyStop = (() => {
+    if (state !== 'done') return null;
+    const suffix = stoppedSuffix(session.stoppedReason);
+    return suffix && suffix !== 'done' ? suffix : null;
+  })();
   const proposal = session.steps.find((s) => s.kind === 'proposal');
   const starting = session.busy && session.steps.length === 0;
 
@@ -187,17 +202,21 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
         </h3>
         <Tag
           color={
-            state === 'done'
-              ? 'success'
-              : state === 'failed'
-                ? 'error'
-                : state === 'running' || state === 'waiting'
-                  ? 'processing'
-                  : 'default'
+            earlyStop
+              ? 'warning'
+              : state === 'done'
+                ? 'success'
+                : state === 'failed'
+                  ? 'error'
+                  : state === 'running' || state === 'waiting'
+                    ? 'processing'
+                    : 'default'
           }
           className="ml-auto text-[9px]"
         >
-          {t(`jobs.tailored.improve.state.${state}`)}
+          {earlyStop
+            ? t(`pipeline.stopped.${earlyStop}`)
+            : t(`jobs.tailored.improve.state.${state}`)}
         </Tag>
       </div>
 
@@ -313,7 +332,9 @@ export function ImproveResumeRun({ session }: ImproveResumeRunProps) {
         </div>
       )}
 
-      {session.state === 'done' && (
+      {/* "The review is finished" is only true of a run that reached its end —
+          a ceiling-stopped one is described by its tag instead. */}
+      {session.state === 'done' && !earlyStop && (
         <p className="text-[10px] leading-relaxed text-foreground/45">
           {t('jobs.tailored.improve.doneHint')}
         </p>

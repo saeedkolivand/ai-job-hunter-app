@@ -883,6 +883,24 @@ describe('TailoredResumePanel — an improve run that fails', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/no posting URL/i);
   });
 
+  // `job.completed` carries the run's `stoppedReason`; a ceiling-stopped review
+  // is not a finished one, and the panel must not launder it into success.
+  it('keeps the stopped reason from a completed run', async () => {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+
+    await act(async () => {
+      bus.onJobEvent?.({
+        jobId: 'agent-job-1',
+        type: 'job.completed',
+        data: { finalText: 'done', steps: 8, stoppedReason: 'max_steps' },
+      } as JobEvent);
+    });
+
+    expect(await screen.findByText('Stopped at its step limit')).toBeInTheDocument();
+  });
+
   it('ignores a terminal event belonging to a different run', async () => {
     finishedWithDocument();
     await openPanel();

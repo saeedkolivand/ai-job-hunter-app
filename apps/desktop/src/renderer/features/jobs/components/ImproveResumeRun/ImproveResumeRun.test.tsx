@@ -79,6 +79,7 @@ function session(overrides: Partial<AgentRunSession> = {}): AgentRunSession {
   return {
     state: 'reviewing',
     steps: [],
+    stoppedReason: null,
     pendingConfirm: null,
     runJobId: 'agent-job-1',
     error: null,
@@ -234,6 +235,54 @@ describe('ImproveResumeRun — every state has an action', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  // `job.completed` also fires at the step / token / tool-call ceilings. A card
+  // that reads it as success reports a truncated review as a clean finish —
+  // with a document the user may then approve believing it was fully checked.
+  it('reports a run that stopped at a ceiling as stopped, never as completed', () => {
+    render(
+      <ImproveResumeRun
+        session={session({
+          state: 'done',
+          busy: false,
+          stoppedReason: 'max_tool_calls',
+          steps: [proposal('Ran out of tool calls after the second check.')],
+        })}
+      />
+    );
+
+    expect(screen.getByText('Stopped at its tool-call limit')).toBeInTheDocument();
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+    expect(screen.queryByText(/The review is finished/)).not.toBeInTheDocument();
+  });
+
+  // The positive control for the test above — without it, "no Completed" would
+  // also pass on a card that never says it.
+  it('still reports a clean finish as completed', () => {
+    render(
+      <ImproveResumeRun
+        session={session({
+          state: 'done',
+          busy: false,
+          stoppedReason: 'done',
+          steps: [proposal()],
+        })}
+      />
+    );
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByText(/The review is finished/)).toBeInTheDocument();
+  });
+
+  // A reason this build does not know must not be laundered into "Completed".
+  it('falls back to a neutral stopped label for an unmapped reason', () => {
+    render(
+      <ImproveResumeRun
+        session={session({ state: 'done', busy: false, stoppedReason: 'some_new_variant' })}
+      />
+    );
+    expect(screen.getByText('Stopped')).toBeInTheDocument();
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument();
   });
 
   it('surfaces a failure as an alert with the backend’s own message', () => {

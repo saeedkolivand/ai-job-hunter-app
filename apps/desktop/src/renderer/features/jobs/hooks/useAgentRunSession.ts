@@ -20,9 +20,27 @@ export interface AgentRunSessionOptions {
   fallbackError: string;
 }
 
+/**
+ * The wire `StoppedReason` a COMPLETED run recorded, or `null` when the payload
+ * carried none.
+ *
+ * A completed agent job is not the same as a finished one: the loop also
+ * "completes" at its step / token / tool-call ceiling, so a surface that reads
+ * `job.completed` as success alone reports a truncated run as a clean finish.
+ * Guarded rather than cast — this is an IPC payload, contract-optional.
+ */
+function readStoppedReason(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const reason = (data as { stoppedReason?: unknown }).stoppedReason;
+  return typeof reason === 'string' && reason.trim() ? reason : null;
+}
+
 export interface AgentRunSession {
   state: AgentRunState;
   steps: AgentStepEvent[];
+  /** See {@link readStoppedReason} — `null` until a run completes (and on a run
+   *  that completed without recording one). */
+  stoppedReason: string | null;
   /** The one Write action currently suspended awaiting the user's decision. */
   pendingConfirm: AgentConfirmPayload | null;
   /** The background job id of the run in flight (`null` until `agent.run`'s
@@ -82,6 +100,7 @@ export function useAgentRunSession({
   const [state, send] = useMachine(agentRunMachine, 'idle');
   const [steps, setSteps] = useState<AgentStepEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [stoppedReason, setStoppedReason] = useState<string | null>(null);
   const [stopRequested, setStopRequested] = useState(false);
   const [runJobId, setRunJobId] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<AgentConfirmPayload | null>(null);
@@ -115,6 +134,7 @@ export function useAgentRunSession({
       activeRef.current = false;
       setPendingConfirm(null);
       if (outcome === 'completed') {
+        setStoppedReason(readStoppedReason(data));
         send('COMPLETE');
       } else if (outcome === 'failed') {
         setError(typeof data === 'string' && data.trim() ? data : fallbackError);
@@ -162,6 +182,7 @@ export function useAgentRunSession({
     if (!resumeId || busy || activeRef.current) return;
     setSteps([]);
     setError(null);
+    setStoppedReason(null);
     setStopRequested(false);
     setRunJobId(null);
     setPendingConfirm(null);
@@ -191,6 +212,7 @@ export function useAgentRunSession({
     if (busy || activeRef.current) return;
     setSteps([]);
     setError(null);
+    setStoppedReason(null);
     setRunJobId(null);
     setPendingConfirm(null);
     send('RESET');
@@ -207,6 +229,7 @@ export function useAgentRunSession({
   return {
     state,
     steps,
+    stoppedReason,
     pendingConfirm,
     runJobId,
     error,
