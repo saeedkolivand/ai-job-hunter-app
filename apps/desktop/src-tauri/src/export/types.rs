@@ -116,8 +116,9 @@ impl<'de> serde::Deserialize<'de> for TemplateId {
 /// still own the WHAT/WHERE semantics; where a convention and the layout's
 /// arrangement conflict, the convention wins (e.g. DE DIN date-top-right).
 ///
-/// Serde uses kebab-case (`"classic"` / `"refined"` / `"banded"`). Unknown /
-/// removed ids fall back to `Classic` via the custom `Deserialize` impl below —
+/// Serde uses kebab-case, one id per variant — the list is not repeated here
+/// because it went stale the moment a fourth layout landed. Unknown / removed
+/// ids fall back to `Classic` via the custom `Deserialize` impl below —
 /// mirroring [`TemplateId`] so a stale frontend id degrades gracefully rather
 /// than breaking export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
