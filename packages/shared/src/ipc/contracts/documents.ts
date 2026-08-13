@@ -28,7 +28,7 @@ export type TemplateId =
  * arrangement, so an omitted value renders the pre-layout-picker output. Ignored
  * for résumé exports.
  */
-export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy';
+export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy' | 'sidebar' | 'monogram';
 
 interface ExportMeta {
   candidateName?: string;

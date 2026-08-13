@@ -1600,7 +1600,11 @@
     "genStepCounter": "Schritt {{current}} von {{total}} — {{label}}",
     "loadingModel": "Modell wird in den Arbeitsspeicher geladen…",
     "letterLayoutNavy": "Navy",
-    "letterLayoutNavyDesc": "Zentrierter Briefkopf über einer Linie. Passt zu Cologne Navy."
+    "letterLayoutNavyDesc": "Zentrierter Briefkopf über einer Linie. Passt zu Cologne Navy.",
+    "letterLayoutSidebar": "Seitenleiste",
+    "letterLayoutSidebarDesc": "Kontaktdaten in einer getönten Seitenspalte. Passt zu Atelier, Aria, Saffron und Deedy. Im ATS-Modus entfällt die Spalte.",
+    "letterLayoutMonogram": "Monogramm",
+    "letterLayoutMonogramDesc": "Ihre Initialen in einer Akzentkachel neben dem Namen. Passt zu Awesome, Jake und Throughline. Im ATS-Modus entfällt die Kachel."
   },
   "generationDepth": {
     "label": "Gründlichkeit",

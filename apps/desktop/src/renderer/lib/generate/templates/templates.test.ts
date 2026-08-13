@@ -181,7 +181,14 @@ describe('LETTER_LAYOUT_IDS', () => {
   // Sync guard: MUST equal the Rust `LetterLayout` enum (export/types.rs, kebab-case)
   // and the shared contract union (BaseExportRequest.letterLayoutId). `classic` is
   // first (the default the backend renders for an omitted value).
-  it('is the canonical four-layout id set, classic first', () => {
-    expect([...LETTER_LAYOUT_IDS]).toEqual(['classic', 'refined', 'banded', 'navy']);
+  it('is the canonical layout id set, classic first', () => {
+    expect([...LETTER_LAYOUT_IDS]).toEqual([
+      'classic',
+      'refined',
+      'banded',
+      'navy',
+      'sidebar',
+      'monogram',
+    ]);
   });
 });

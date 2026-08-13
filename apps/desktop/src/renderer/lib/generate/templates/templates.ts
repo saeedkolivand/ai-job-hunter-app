@@ -19,7 +19,7 @@ export type { TemplateId };
  * always inherit from the chosen résumé {@link TemplateId}. `classic` is the
  * default — an omitted value renders the pre-layout-picker output.
  */
-export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy';
+export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy' | 'sidebar' | 'monogram';
 
 /** Ordered letter-layout ids — the picker's option order + the exhaustiveness pin. */
 export const LETTER_LAYOUT_IDS = [
@@ -27,6 +27,8 @@ export const LETTER_LAYOUT_IDS = [
   'refined',
   'banded',
   'navy',
+  'sidebar',
+  'monogram',
 ] as const satisfies readonly LetterLayoutId[];
 
 interface DocTemplate {

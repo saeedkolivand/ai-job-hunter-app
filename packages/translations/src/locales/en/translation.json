@@ -1596,7 +1596,11 @@
     "genStepCounter": "Step {{current}} of {{total}} — {{label}}",
     "loadingModel": "Loading model into memory…",
     "letterLayoutNavy": "Navy",
-    "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy."
+    "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy.",
+    "letterLayoutSidebar": "Sidebar",
+    "letterLayoutSidebarDesc": "Contact details in a tinted side rail. Pairs with Atelier, Aria, Saffron and Deedy. The rail is dropped in ATS mode.",
+    "letterLayoutMonogram": "Monogram",
+    "letterLayoutMonogramDesc": "Your initials in an accent tile beside your name. Pairs with Awesome, Jake and Throughline. The tile is dropped in ATS mode."
   },
   "generationDepth": {
     "label": "Generation depth",
