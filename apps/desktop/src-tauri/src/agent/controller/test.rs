@@ -256,6 +256,56 @@ async fn read_tool_runs_then_final_text_returns() {
     assert_eq!(*env.reads.lock(), vec!["reader".to_string()]);
 }
 
+/// The timeout message is read by a person deciding whether something is
+/// broken, so it states the bound in units they can size at a glance and does
+/// not name a culprit it cannot know (LOW, Phase-7 review: the same message is
+/// stamped when a TOOL overran the clock, and the review flow's clock is 5400
+/// seconds — which nobody reads as "an hour and a half").
+#[test]
+fn the_step_timeout_message_reads_in_human_units_and_blames_nothing_it_cannot_know() {
+    let short = step_timeout_message(TEST_ENTRY_BUDGET.step_timeout);
+    assert!(
+        short.contains("360s"),
+        "a small bound stays in seconds: {short}"
+    );
+
+    let long = step_timeout_message(Budget::AGENT_IMPROVE.step_timeout);
+    assert!(
+        long.contains("1h 30m"),
+        "a 90-minute bound reads as time: {long}"
+    );
+    assert!(
+        !long.contains("5400"),
+        "…and never as a raw second count: {long}"
+    );
+
+    for message in [&short, &long] {
+        assert!(
+            !message.contains("The AI provider did not respond"),
+            "a tool that overran the clock is not the provider failing to respond: {message}"
+        );
+        // It must still point somewhere actionable.
+        assert!(message.contains("Settings → AI"));
+    }
+}
+
+/// The unit boundary itself, both sides — a formatter nobody tests is a
+/// formatter that prints `0h 90m` the first time a budget moves.
+#[test]
+fn humanized_duration_switches_units_at_the_documented_boundary() {
+    for (secs, expected) in [
+        (1, "1s"),
+        (SECONDS_READABLE_UPTO, "600s"),
+        (SECONDS_READABLE_UPTO + 1, "10 minutes"),
+        (45 * 60, "45 minutes"),
+        (60 * 60, "1h"),
+        (90 * 60, "1h 30m"),
+        (125 * 60, "2h 5m"),
+    ] {
+        assert_eq!(humanized_duration(Duration::from_secs(secs)), expected);
+    }
+}
+
 /// A loop that always calls a tool is bounded — and since Phase 7 the ceiling
 /// it hits is the TOOL-CALL one, which is the reason that names the runaway.
 ///
@@ -506,7 +556,7 @@ async fn provider_turn_exceeding_the_step_timeout_stops_the_loop() {
     assert_eq!(out.stopped_reason, StoppedReason::Timeout);
     assert_eq!(out.steps, 0, "the hung turn never actually resolved");
     assert!(
-        out.final_text.contains("did not respond"),
+        out.final_text.contains("did not finish within"),
         "the timeout must leave a clear final message, got: {:?}",
         out.final_text
     );

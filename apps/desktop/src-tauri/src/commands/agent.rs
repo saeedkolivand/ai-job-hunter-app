@@ -122,7 +122,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                 &app_task,
                 &cancels_task,
                 &job_id_task,
-                format!("unknown agent flow: {kind}"),
+                format!("unknown agent flow: {}", clamped_kind_echo(kind)),
             )
             .await;
             return;
@@ -239,8 +239,10 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                 crate::commands::jobs::job_cancel(&app_task, &job_id_task);
             }
             // A hung/misconfigured provider or tool call: the controller's own
-            // step timeout stopped the loop (see
-            // `crate::pipeline::budget::Budget::AGENT_PREP`'s `step_timeout`).
+            // step timeout stopped the loop (the RUNNING FLOW's
+            // `crate::pipeline::budget::Budget` `step_timeout` — 6 minutes for
+            // the prep flow, 90 for the review flow, which is why the message
+            // carries the bound instead of a constant).
             // This is a FAILURE, never a silent success —
             // the renderer must show an error, not a completed proposal built on
             // a run that never actually finished.
@@ -367,6 +369,25 @@ fn build_improve_user_message(
         fenced("candidate_resume", resume, RESUME_CAP),
         fenced("job_posting", job, JOB_CAP)
     )
+}
+
+/// Longest an unrecognized `kind` may be when it is echoed back in a failure
+/// message. The same 64 the controller clamps a model-chosen tool name to
+/// (`agent::controller`'s `TOOL_NAME_CAP`) and for the same reason: every REAL
+/// value is a short registry token, and the rejected ones are the only ones
+/// that reach the formatter.
+const KIND_ECHO_CAP: usize = 64;
+
+/// Clamp a rejected `kind` for the failure message.
+///
+/// The wire field is a bare `String` (the closed vocabulary is enforced by the
+/// renderer's schema and by [`flows::flow_for`], not by the DTO), so a
+/// compromised renderer can send a megabyte of text here and this is the one
+/// place it is interpolated — into a job-failure message that is stored,
+/// logged, and rendered. Chars, not bytes, so a multi-byte value is cut on a
+/// character boundary rather than panicking.
+fn clamped_kind_echo(kind: &str) -> String {
+    kind.chars().take(KIND_ECHO_CAP).collect()
 }
 
 /// The seed-side policy for the document the review flow reviews: what the
@@ -728,6 +749,25 @@ mod tests {
         assert_eq!(accented.len(), RESUME_CAP * 2, "…so bytes would over-count");
         assert!(readable_generation_text(accented).is_ok());
         assert!(readable_generation_text("é".repeat(RESUME_CAP + 1)).is_err());
+    }
+
+    /// A rejected `kind` is echoed back CLAMPED (LOW, both Phase-7 reviewers).
+    /// The DTO field is a bare `String`, so the only bound on what a compromised
+    /// renderer sends is applied here — and this message is stored on the job,
+    /// logged, and rendered. Same 64-char discipline the controller applies to a
+    /// model-chosen tool name, and clamped by CHARS so a multi-byte value cannot
+    /// be cut mid-sequence.
+    #[test]
+    fn a_rejected_flow_kind_is_echoed_back_clamped() {
+        let flood = "k".repeat(100_000);
+        assert_eq!(clamped_kind_echo(&flood).chars().count(), KIND_ECHO_CAP);
+
+        let multibyte = "é".repeat(KIND_ECHO_CAP + 10);
+        assert_eq!(clamped_kind_echo(&multibyte).chars().count(), KIND_ECHO_CAP);
+
+        // A real (if unregistered) token passes through whole — the message has
+        // to stay useful for the ordinary typo case.
+        assert_eq!(clamped_kind_echo("improve_letter"), "improve_letter");
     }
 
     /// An absent or blank generation is its own refusal, with the message that

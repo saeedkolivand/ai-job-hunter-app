@@ -236,12 +236,44 @@ fn tool_result_fence(name: &str, body: &str) -> String {
 /// message must be the one the run was actually raced against, or a review-flow
 /// timeout would tell the user "did not respond within 360s" after waiting 90
 /// minutes.
+///
+/// Two wording fixes that came with the second flow (LOW, Phase-7 review):
+///
+/// * **minutes above [`SECONDS_READABLE_UPTO`]** — this is read by a person
+///   deciding whether something is broken, and "5400s" makes them do arithmetic
+///   to find out they waited an hour and a half;
+/// * **it no longer blames "the AI provider"** — the same message is stamped
+///   when a TOOL overran the clock (a `run_quality_pipeline` call is minutes of
+///   pipeline work, not one provider response), so naming the provider sent the
+///   user to check a model and endpoint that were answering fine.
 fn step_timeout_message(step_timeout: Duration) -> String {
     format!(
-        "The AI provider did not respond within {}s, so the run was stopped instead \
-         of hanging indefinitely. Check the model/endpoint in Settings → AI and try again.",
-        step_timeout.as_secs()
+        "This step did not finish within {}, so the run was stopped instead of hanging \
+         indefinitely. A slow or unreachable model is the usual cause — check the \
+         model/endpoint in Settings → AI — and a very long résumé or job posting can \
+         also push one step past the limit.",
+        humanized_duration(step_timeout)
     )
+}
+
+/// Above this, a bound is spelled in minutes: ten minutes is about where a
+/// seconds figure stops being something a reader can size at a glance.
+const SECONDS_READABLE_UPTO: u64 = 600;
+
+/// A wall-clock bound as the user should read it — `360s`, `90 minutes`,
+/// `1h 30m`. Whole units only; these are round budget constants, not measured
+/// elapsed times, so there is nothing to round off.
+fn humanized_duration(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs <= SECONDS_READABLE_UPTO {
+        return format!("{secs}s");
+    }
+    let minutes = secs / 60;
+    match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} minutes"),
+        (h, 0) => format!("{h}h"),
+        (h, m) => format!("{h}h {m}m"),
+    }
 }
 
 /// The budgeted, cancellable tool-calling loop. Pure control flow over

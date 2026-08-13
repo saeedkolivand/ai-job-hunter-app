@@ -118,10 +118,12 @@ impl AgentGate {
 // ── Suspend-and-execute mechanics for one Write call ─────────────────────────
 
 // How long a suspended Write confirmation may wait for the user before
-// `resolve_write` gives up and treats it as a DENY (never an execute) is
-// `Budget::AGENT_PREP.confirm_timeout` (`crate::pipeline::budget`) — the
-// controller passes it in as `confirm_timeout` rather than this module owning a
-// second number. A generous ceiling (the human is expected to answer in
+// `resolve_write` gives up and treats it as a DENY (never an execute) is the
+// RUNNING FLOW's `budget.confirm_timeout` (`crate::pipeline::budget`, chosen
+// per flow in `crate::agent::flows`) — the controller passes it in rather than
+// this module owning a second number. Every shipped flow currently sets the
+// same 300 s, but that is a fact about the budgets, not an assumption this
+// module may make. A generous ceiling (the human is expected to answer in
 // seconds) but bounded, so a forgotten prompt can never hang the run forever
 // nor hold an `AGENT_RUN_CONCURRENCY_MAX` slot indefinitely.
 
@@ -336,8 +338,9 @@ pub(super) enum WriteResolution {
 
 /// SUSPEND the loop on a `ToolKind::Write` call: emit a `confirm_request` step,
 /// register a [`oneshot`] with the [`AgentGate`], then block on the user's decision
-/// raced against BOTH cancellation and [`crate::pipeline::budget::Budget::AGENT_PREP`]'s
-/// `confirm_timeout`. The gate entry is ALWAYS removed before returning (every branch).
+/// raced against BOTH cancellation and the running flow's own
+/// [`crate::pipeline::budget::Budget`] `confirm_timeout` (passed in by the
+/// controller). The gate entry is ALWAYS removed before returning (every branch).
 ///
 /// SECURITY: the write executes ONLY on `Approve`/`ApproveEdited`; `Deny`, a
 /// timeout, a closed channel, and cancel all default to NOT acting. `ApproveEdited`

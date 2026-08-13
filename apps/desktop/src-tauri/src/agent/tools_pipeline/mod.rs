@@ -82,10 +82,16 @@ use super::tools_quality::{
 
 // ── Bounds ─────────────────────────────────────────────────────────────────
 
-/// Slack between [`AGENT_STAGE_DEADLINE`] + one full provider call and the
-/// agent's own per-step wall clock, so the arithmetic below is strictly under
-/// the bound it is derived from rather than exactly equal to it (an equality
-/// is a race between two clocks started at different instants).
+/// Slack between an inner deadline + one full provider call and the agent's own
+/// per-step wall clock, so each relation below is strictly under the bound it
+/// is derived from rather than exactly equal to it (an equality is a race
+/// between two clocks started at different instants).
+///
+/// Used by BOTH stage relations, in opposite directions, which is why it is a
+/// named constant rather than a literal at one site: [`AGENT_STAGE_DEADLINE`]
+/// subtracts it to derive an inner deadline from the prep flow's step clock,
+/// and the `AGENT_IMPROVE` assert adds it to check a step clock covers the
+/// quality run's fixed deadline. Same slack, same reason, one number.
 const AGENT_STAGE_MARGIN_SECS: u64 = 10;
 
 /// The wall clock ONE stage gets when the agent runs it.
