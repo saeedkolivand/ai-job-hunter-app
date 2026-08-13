@@ -3,16 +3,23 @@ import { useId } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { cn, Switch } from '@ajh/ui';
 
+import type { AtsModeHintKey } from '@/lib/generate';
+
 interface AtsModeToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   /**
    * i18n key for the hint describing what the toggle changes for the document
    * being shown — `atsModeHintKey(templateId)` for a résumé,
-   * `aiGenerate.atsModeHintLetter` for a cover letter. Surfaced as the control's
-   * `title`, so the copy has to name the document it affects.
+   * `aiGenerate.atsModeHintLetter` for a cover letter. The union (not `string`)
+   * so a typo'd key is a `tsc` failure rather than a raw key on screen.
+   *
+   * Reaches the user twice: as the switch's accessible DESCRIPTION (the Switch
+   * primitive's `description`, exposed via aria-describedby — the copy names its
+   * document, which is the whole point on a surface showing two of them) and as
+   * the hover `title` for sighted users.
    */
-  hintKey: string;
+  hintKey: AtsModeHintKey | 'aiGenerate.atsModeHintLetter';
   className?: string;
 }
 
@@ -49,7 +56,17 @@ export function AtsModeToggle({ checked, onChange, hintKey, className }: AtsMode
       <label htmlFor={switchId} className="cursor-pointer select-none text-[10px] font-medium">
         {t('aiGenerate.atsMode')}
       </label>
-      <Switch id={switchId} size="sm" checked={checked} onCheckedChange={onChange} />
+      {/* `description` (not just the wrapper's `title`, which AT never reads off
+          a role-less div): the label alone says "ATS-safe mode" without saying
+          WHICH document it changes — on a two-document surface that is the only
+          part that matters. Visually hidden here; the title covers hover. */}
+      <Switch
+        id={switchId}
+        size="sm"
+        checked={checked}
+        onCheckedChange={onChange}
+        description={t(hintKey)}
+      />
     </div>
   );
 }

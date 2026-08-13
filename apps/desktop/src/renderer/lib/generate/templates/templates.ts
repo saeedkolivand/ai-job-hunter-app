@@ -539,11 +539,26 @@ export function isDecoratedLetterLayout(id: LetterLayoutId | undefined): boolean
  * ONLY thing the flag still drives, and clearing it took away the letter's only
  * off switch. So: clear only when nothing left in the export can degrade.
  *
+ * The decision is "does ANY document in this export still read the flag?", one
+ * reader per parameter — never a per-site pile of booleans.
+ *
  * @param letterAtsApplies caller's answer to "does this export include a cover
  * letter whose layout is decorated?" — each surface phrases it differently
  * (`activeOut === 'cover'`, `target !== 'resume'`, a prop), so it is passed in
  * rather than derived here. Résumé-only surfaces omit it.
+ * @param resumeInRun whether the export includes a résumé at all. `false` in a
+ * cover-ONLY run, where `templateId` still names a template (it supplies the
+ * letter's palette) but no résumé is rendered from it — so a design-tier id must
+ * NOT keep the flag alive. Getting this wrong stranded exactly one case: cover
+ * target + Atelier + Monogram, ATS on, switch to Classic → the flag stuck → the
+ * next Monogram came back silently pre-ATS'd. Defaults to `true`, the
+ * résumé-bearing shape every other caller has.
  */
-export function shouldClearAtsMode(templateId: TemplateId, letterAtsApplies = false): boolean {
-  return !isDesignTier(templateId) && !letterAtsApplies;
+export function shouldClearAtsMode(
+  templateId: TemplateId,
+  letterAtsApplies = false,
+  resumeInRun = true
+): boolean {
+  const resumeReadsFlag = resumeInRun && isDesignTier(templateId);
+  return !resumeReadsFlag && !letterAtsApplies;
 }

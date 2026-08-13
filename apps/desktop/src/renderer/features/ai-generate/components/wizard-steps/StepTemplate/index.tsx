@@ -92,7 +92,9 @@ export function StepTemplate({
     // ATS-tier templates have no ATS toggle (they are already parser-safe), so
     // clear any stale atsMode — UNLESS a decorated cover letter in this run is
     // still reading the flag, in which case clearing it would silently restore
-    // the letter's decoration with no way back. Cover-only runs never clear.
+    // the letter's decoration with no way back. A cover-ONLY run never clears
+    // here: no résumé is rendered from the picked template, so the pick says
+    // nothing about the flag — releasing it there is the layout path's job.
     if (!isCover && shouldClearAtsMode(id, letterAtsApplies)) {
       onAtsModeChange(false);
     }
@@ -105,8 +107,10 @@ export function StepTemplate({
     // the next decorated layout comes back silently pre-ATS'd — the user picks
     // Monogram and exports a letter with no monogram. Same two-input guard,
     // with the NEW layout's decoratedness: clear only when nothing is left to
-    // read the flag (a design-tier résumé template still legitimately does).
-    if (shouldClearAtsMode(templateId, isDecoratedLetterLayout(id))) {
+    // read the flag — a design-tier résumé template still legitimately does,
+    // but ONLY when this run actually renders a résumé (`!isCover`); a
+    // cover-only run has no résumé to keep the flag alive for.
+    if (shouldClearAtsMode(templateId, isDecoratedLetterLayout(id), !isCover)) {
       onAtsModeChange(false);
     }
   };

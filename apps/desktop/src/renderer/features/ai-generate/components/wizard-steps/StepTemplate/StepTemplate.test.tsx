@@ -739,6 +739,42 @@ describe('StepTemplate', () => {
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
   });
 
+  // target='cover': the picked template only supplies the letter's palette — no
+  // résumé is exported from it, so a design-tier id must NOT hold the flag open.
+  // This was the stranded case: Atelier + Monogram + ATS on → Classic → stuck.
+  function StatefulCoverStep() {
+    const [atsMode, setAtsMode] = useState(false);
+    const [letterLayoutId, setLetterLayoutId] = useState<LetterLayoutId | undefined>(undefined);
+    return (
+      <StepTemplate
+        templateId="atelier"
+        atsMode={atsMode}
+        onTemplateChange={vi.fn()}
+        onAtsModeChange={setAtsMode}
+        target="cover"
+        letterLayoutId={letterLayoutId}
+        onLetterLayoutChange={setLetterLayoutId}
+      />
+    );
+  }
+
+  it("target='cover': monogram → ATS on → classic → monogram comes back OFF, design-tier template notwithstanding", async () => {
+    const user = userEvent.setup();
+    render(<StatefulCoverStep />);
+
+    await user.click(screen.getByTestId(letterOption('monogram')));
+    await user.click(screen.getByRole('switch'));
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(screen.getByTestId(letterOption('classic')));
+    // No résumé in this run, so nothing is left to read the flag: the switch is
+    // gone (Atelier is irrelevant here) and the flag went with it.
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId(letterOption('monogram')));
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('same round-trip under a design-tier template KEEPS the flag on (the résumé owns it)', async () => {
     const user = userEvent.setup();
     render(<StatefulStep templateId="atelier" />);

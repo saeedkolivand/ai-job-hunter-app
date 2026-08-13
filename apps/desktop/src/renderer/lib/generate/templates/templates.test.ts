@@ -249,4 +249,22 @@ describe('shouldClearAtsMode', () => {
     expect(shouldClearAtsMode('classic', isDecoratedLetterLayout('classic'))).toBe(true);
     expect(shouldClearAtsMode('classic', isDecoratedLetterLayout('navy'))).toBe(true);
   });
+
+  // A cover-ONLY run still carries a templateId (it supplies the letter's
+  // palette) but renders no résumé from it, so a design-tier id must not keep
+  // the shared flag alive for a document that is not in the export.
+  it('ignores the template tier when no résumé is in the run', () => {
+    expect(shouldClearAtsMode('atelier', false, true)).toBe(false); // résumé reads it
+    expect(shouldClearAtsMode('atelier', false, false)).toBe(true); // nobody does
+  });
+
+  it('still keeps the flag in a cover-only run while the letter is decorated', () => {
+    expect(shouldClearAtsMode('atelier', true, false)).toBe(false);
+    expect(shouldClearAtsMode('classic', true, false)).toBe(false);
+  });
+
+  it('defaults to a résumé-bearing run, so existing two-argument callers are unchanged', () => {
+    expect(shouldClearAtsMode('atelier', false)).toBe(shouldClearAtsMode('atelier', false, true));
+    expect(shouldClearAtsMode('classic', false)).toBe(shouldClearAtsMode('classic', false, true));
+  });
 });

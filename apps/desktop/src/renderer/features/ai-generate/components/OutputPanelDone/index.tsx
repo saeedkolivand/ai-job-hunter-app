@@ -221,12 +221,14 @@ export function OutputPanelDone({
 
   // Switching AWAY from a decorated layout releases the shared flag, so the next
   // decorated layout does not come back silently pre-ATS'd — unless a design-tier
-  // résumé template is still reading it (`shouldClearAtsMode`'s second input).
+  // résumé template is still reading it. `resumeOut` is the résumé-in-run fact
+  // here (a cover-only run never produces one), and without it a cover-only run
+  // under a design-tier template would keep the flag alive for a document that
+  // is not in the export.
   const handleLetterLayoutChange = (id: LetterLayoutId) => {
     onLetterLayoutChange?.(id);
-    if (onAtsModeChange && shouldClearAtsMode(templateId, isDecoratedLetterLayout(id))) {
-      onAtsModeChange(false);
-    }
+    const release = shouldClearAtsMode(templateId, isDecoratedLetterLayout(id), Boolean(resumeOut));
+    if (onAtsModeChange && release) onAtsModeChange(false);
   };
 
   const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;

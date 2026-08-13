@@ -554,8 +554,12 @@ describe('GenerationOutput', () => {
       'sets the toggle hint to the decorative-only copy for %s (not the false photo hint)',
       (id) => {
         render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: id })} />);
-        expect(screen.getByTitle('aiGenerate.atsModeHintDecorative')).toBeInTheDocument();
-        expect(screen.queryByTitle('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
+        // The accessible DESCRIPTION, not the hover title: a `title` on the
+        // role-less wrapper is never read out, so this is what a screen-reader
+        // user actually hears about which document the switch changes.
+        expect(screen.getByRole('switch')).toHaveAccessibleDescription(
+          'aiGenerate.atsModeHintDecorative'
+        );
       }
     );
 
@@ -590,8 +594,9 @@ describe('GenerationOutput', () => {
             })}
           />
         );
-        expect(screen.getByRole('switch')).toBeInTheDocument();
-        expect(screen.getByTitle('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
+        expect(screen.getByRole('switch')).toHaveAccessibleDescription(
+          'aiGenerate.atsModeHintLetter'
+        );
       }
     );
 
@@ -623,8 +628,12 @@ describe('GenerationOutput', () => {
           })}
         />
       );
-      expect(screen.getByTitle('aiGenerate.atsModeHintTwoColumn')).toBeInTheDocument();
-      expect(screen.queryByTitle('aiGenerate.atsModeHintLetter')).not.toBeInTheDocument();
+      expect(screen.getByRole('switch')).toHaveAccessibleDescription(
+        'aiGenerate.atsModeHintTwoColumn'
+      );
+      expect(screen.getByRole('switch')).not.toHaveAccessibleDescription(
+        'aiGenerate.atsModeHintLetter'
+      );
     });
 
     it('flips atsMode from the cover tab — the reachable off switch for a monogram letter', async () => {
@@ -869,6 +878,27 @@ describe('GenerationOutput', () => {
       );
       await user.click(screen.getByTestId(letterOption('classic')));
       expect(onAtsModeChange).not.toHaveBeenCalled();
+    });
+
+    // target='cover': no résumé is exported, so the (design-tier) template must
+    // not hold the shared flag open once the letter stops reading it.
+    it("target='cover': releases atsMode even under a design-tier template", async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'cover',
+            activeOut: 'cover',
+            templateId: 'atelier',
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('classic')));
+      expect(onAtsModeChange).toHaveBeenCalledWith(false);
     });
 
     it('does not release atsMode when swapping between two DECORATED layouts', async () => {

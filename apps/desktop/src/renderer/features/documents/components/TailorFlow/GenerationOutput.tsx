@@ -181,6 +181,11 @@ export function GenerationOutput({
   // (band / rail / monogram tile) the renderer drops under `data.opts.ats`.
   const letterAtsApplies = target !== 'resume' && isDecoratedLetterLayout(letterLayoutId);
 
+  // …and is there a résumé in this export at all? A cover-only run still has a
+  // templateId (it supplies the letter's palette) but renders no résumé from it,
+  // so a design-tier id must not keep the shared flag alive on its behalf.
+  const resumeInRun = target !== 'cover';
+
   // …and does it act on the document currently on screen? That is what decides
   // whether the toolbar shows the switch: the résumé tab asks about the template,
   // the cover tab about the letter layout (the tab itself proves a letter exists).
@@ -197,16 +202,18 @@ export function GenerationOutput({
   const handleTemplateChange = (value: string) => {
     const id = value as TemplateId;
     onTemplateChange(id);
-    if (shouldClearAtsMode(id, letterAtsApplies)) onAtsModeChange(false);
+    if (shouldClearAtsMode(id, letterAtsApplies, resumeInRun)) onAtsModeChange(false);
   };
 
   // Same guard, other input: switching AWAY from a decorated layout has to
   // release the shared flag too, or the next decorated layout comes back
   // silently pre-ATS'd (user picks Monogram, exports a letter with no monogram).
-  // Still keeps the flag when a design-tier résumé template is reading it.
+  // Still keeps the flag when a design-tier résumé template is reading it — and
+  // only when that résumé is actually part of the run.
   const handleLetterLayoutChange = (id: LetterLayoutId) => {
     onLetterLayoutChange(id);
-    if (shouldClearAtsMode(templateId, isDecoratedLetterLayout(id))) onAtsModeChange(false);
+    if (shouldClearAtsMode(templateId, isDecoratedLetterLayout(id), resumeInRun))
+      onAtsModeChange(false);
   };
 
   // ARIA tabs contract: each tab owns a stable id and controls a panel id; the

@@ -178,8 +178,30 @@ describe('OutputPanelDone — letter-layout picker (cover tab only)', () => {
       renderPanel({ ...coverProps, letterLayoutId, onAtsModeChange: vi.fn() });
       expect(screen.getByRole('switch')).toBeInTheDocument();
       expect(screen.getByText('ATS-safe mode')).toBeInTheDocument();
+      // The label alone never says WHICH document — the description does, and
+      // unlike the wrapper's hover `title` it is actually announced.
+      expect(screen.getByRole('switch')).toHaveAccessibleDescription(/^Cover letter: drops the/);
     }
   );
+
+  // Cover-only run (no résumé generated), so `resumeOut` is empty: a design-tier
+  // template must not keep the shared flag alive for a document that does not exist.
+  it('releases atsMode in a cover-only run even under a design-tier template', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    renderPanel({
+      ...coverProps,
+      resumeOut: '',
+      templateId: 'atelier',
+      letterLayoutId: 'monogram',
+      atsMode: true,
+      onAtsModeChange,
+    });
+
+    await user.click(screen.getByTestId(letterOption('classic')));
+
+    expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
 
   it.each(['classic', 'refined', 'navy'] as const)(
     'hides the ATS toggle for the undecorated layout %s (it would change nothing)',
@@ -287,6 +309,9 @@ describe('OutputPanelDone — letter-layout picker (cover tab only)', () => {
     const onAtsModeChange = vi.fn();
     renderPanel({
       ...coverProps,
+      // A 'both' run — there IS a résumé, and Atelier linearizes under the flag,
+      // so the letter dropping its decoration must not switch it off.
+      resumeOut: 'Résumé body',
       templateId: 'atelier',
       letterLayoutId: 'monogram',
       atsMode: true,
