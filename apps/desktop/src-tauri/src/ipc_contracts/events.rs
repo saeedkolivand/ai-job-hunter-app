@@ -26,6 +26,41 @@ pub const EXTENSION_BRIDGE_CHANGED: &str = "extensionBridge:changed";
 /// packages/shared/src/events/pipeline.ts.
 pub const PIPELINE_STAGE_PHASES: &[&str] = &["start", "finish", "error"];
 
+/// Every stage name the staged résumé pipeline can run, in pipeline order —
+/// the order-preserved UNION of `QUALITY_STAGES` and `MAX_STAGES`
+/// (`pipeline/resume/mod.rs`), pinned against both by
+/// `pipeline::resume::test`. Source of truth: `PIPELINE_STAGES` in
+/// packages/shared/src/events/pipeline.ts.
+///
+/// NORMATIVE for `ai_stage_overrides`: a row whose `stage` is not in this
+/// slice must be REJECTED at write time and DROPPED at import time — an
+/// override on a stage that never runs is a setting the user cannot see the
+/// effect of, and a name from a tampered bundle must not become one.
+#[rustfmt::skip]
+pub const PIPELINE_STAGES: &[&str] = &[
+    "analyze_job",
+    "match_evidence",
+    "strategy",
+    "draft",
+    "sections",
+    "assemble",
+    "validate",
+    "repair",
+    "llm_judge",
+];
+
+/// The stages that make NO provider call in any depth that runs them —
+/// pinned against `Pipeline::free_stage_names()` for BOTH depths by
+/// `pipeline::resume::test`. Source of truth: `PIPELINE_STAGES_FREE` in
+/// packages/shared/src/events/pipeline.ts.
+///
+/// NORMATIVE for `ai_stage_overrides`: a row on one of these must be
+/// REJECTED at write time and DROPPED at import time. There is no model to
+/// choose (the stage asks none), so the setting would be inert — and a
+/// malformed row on a stage that never calls a provider must not be able to
+/// fail a whole run at resolve time.
+pub const PIPELINE_STAGES_FREE: &[&str] = &["assemble", "validate"];
+
 /// Longest a `pipeline:stage` event's `sectionKey` may be, in UTF-16 code
 /// units (the unit the TS guard counts). Every LEGAL key is ASCII, so bytes,
 /// chars and UTF-16 units agree for anything that could pass the grammar; a

@@ -362,6 +362,7 @@ async fn embed_adaptive_leaves_partial_usage_in_the_output_param_when_a_later_ch
                     Usage {
                         input_tokens: 100,
                         output_tokens: 0,
+                        thinking_tokens: None,
                     },
                 ))
             } else {
@@ -478,6 +479,7 @@ impl EmbedAttempt for SequencedEmbedAttempt {
             Usage {
                 input_tokens: 10,
                 output_tokens: 0,
+                thinking_tokens: None,
             },
         ))
     }

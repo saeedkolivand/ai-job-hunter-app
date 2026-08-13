@@ -796,6 +796,11 @@ fn parse_anthropic_usage(data: &Value) -> Usage {
             .and_then(|u| u.get("output_tokens"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
+        // Anthropic does NOT report a separate thinking count — extended /
+        // adaptive thinking tokens are billed and counted inside
+        // `output_tokens`. `None` says exactly that; a 0 would claim the model
+        // did no reasoning.
+        thinking_tokens: None,
     }
 }
 

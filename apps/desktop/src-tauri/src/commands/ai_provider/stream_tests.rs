@@ -308,10 +308,12 @@ fn a_later_usage_piece_overwrites_an_earlier_one_at_completion() {
                 "USAGE1" => out.push(StreamPiece::usage(Usage {
                     input_tokens: 10,
                     output_tokens: 1,
+                    thinking_tokens: None,
                 })),
                 "USAGE2" => out.push(StreamPiece::usage(Usage {
                     input_tokens: 10,
                     output_tokens: 99,
+                    thinking_tokens: None,
                 })),
                 "END" => out.push(StreamPiece::done("")),
                 _ => {}
@@ -333,6 +335,7 @@ fn a_later_usage_piece_overwrites_an_earlier_one_at_completion() {
             Usage {
                 input_tokens: 10,
                 output_tokens: 99,
+                thinking_tokens: None,
             },
             // Usage-only pieces carry no visible delta, so the persisted
             // answer is empty here.
@@ -357,6 +360,7 @@ fn cancellation_after_a_usage_piece_still_carries_the_partial_usage() {
             out.push(StreamPiece::usage(Usage {
                 input_tokens: 50,
                 output_tokens: 50,
+                thinking_tokens: None,
             }));
         }
         out
@@ -371,6 +375,7 @@ fn cancellation_after_a_usage_piece_still_carries_the_partial_usage() {
         vec![Act::Cancelled(Usage {
             input_tokens: 50,
             output_tokens: 50,
+            thinking_tokens: None,
         })],
         "cancellation must still carry the REAL usage already seen, never fabricated but never silently dropped either"
     );
@@ -390,6 +395,7 @@ fn transport_error_after_a_usage_piece_still_carries_the_partial_usage() {
             out.push(StreamPiece::usage(Usage {
                 input_tokens: 50,
                 output_tokens: 50,
+                thinking_tokens: None,
             }));
         }
         out
@@ -409,6 +415,7 @@ fn transport_error_after_a_usage_piece_still_carries_the_partial_usage() {
             Usage {
                 input_tokens: 50,
                 output_tokens: 50,
+                thinking_tokens: None,
             }
         )],
         "a transport error must still carry the REAL usage already seen, never fabricated \

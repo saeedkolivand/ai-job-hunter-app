@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786555932798,
+  "lastUpdate": 1786561377674,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6881,6 +6881,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 195875,
             "range": "± 13466",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7cb303671e3033df962f8af4dd9f8f5bcecd7818",
+          "message": "chore(deps): sentry 0.49 with tauri-plugin-sentry 0.6, gated at the wire (#984)\n\n* chore(deps): drop the no-op reqwest rustls-native-certs feature\n\nreqwest 0.13.1 exposed `rustls-native-certs` only as the implicit feature\nof an optional dependency it never references in its own source, so\nenabling it changed nothing: OS trust roots already arrive through\n`rustls-platform-verifier` (pulled by reqwest's `rustls` feature) and\nthrough the system stack behind `native-tls`.\n\nreqwest 0.13.2 removed the optional dependency, which turns the stale\nentry into a hard resolve error. Unblocks any bump that floats reqwest\npast 0.13.1.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore(deps): bump sentry 0.42 -> 0.49 with tauri-plugin-sentry 0.6\n\nThe coordinated bump dependabot could not do. tauri-plugin-sentry 0.6\nbuilds against sentry 0.49, so the plugin-only PR (#972) duplicated\nsentry/sentry-core/sentry-types in the lock; both sides move together\nhere. sentry-rust-minidump follows transitively, 0.13 -> 0.17 (its\nlib.rs is byte-identical between the two, so no supervisor API change).\n\nRe-verified the four traps the Cargo.toml comment block records:\n\n* Single copy — sentry, sentry-core, sentry-types all resolve to exactly\n  one 0.49.1, shared by the app, the plugin, and the minidump crate. The\n  stale reqwest 0.12 lock entry sentry 0.42 dragged along is gone, so\n  reqwest is now single-version too (0.13.4).\n* Transport — `ureq` and `native-tls` still exist as features in 0.49\n  and still select `UreqHttpTransport`; sentry's resolved deps are\n  httpdate, native-tls, sentry-*, ureq, with no reqwest and no tokio.\n  0.49 also adds `logs` + `metrics` to its defaults; both stay off, they\n  are new egress surfaces ADR-0020 never consented to.\n* Capability — `sentry:default` still expands to allow-envelope +\n  allow-breadcrumb in the generated ACL manifest, unchanged from 0.5.\n* Init + consent — init still runs before tauri::Builder and still forks\n  the supervisor from the same call. `ClientOptions` became\n  #[non_exhaustive] in 0.49, so the struct literal moves to the builder;\n  every field keeps its previous value.\n\nNo paired npm package exists: the browser SDK is a js_init_script inside\nthe crate, so there is nothing on the JS side to bump.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore(deps): reconcile the lock after rebasing over the dependabot bumps\n\n* fix(crash-reporting): enforce consent and drop opaque envelopes at the wire\n\nSecurity review found real, new egress in tauri-plugin-sentry 0.6, and a\nclaim of mine that was simply false. `before_send` is not the last hop:\nit has exactly one call site in sentry-core 0.49.1 (client/mod.rs:383,\ninside the capture_event preparation). Anything handed to\n`Client::send_envelope` reaches the transport with no callback between.\n\nThe plugin uses that door. When a renderer envelope fails to parse — it\nroutinely does, because @sentry/vite-plugin's debug-ID injection writes\na `debug_meta` sourcemap image sentry-rust cannot deserialize — 0.6\nrebuilds it via `Envelope::from_bytes_raw` and calls `send_envelope`\n(commands.rs:30-35). Those bytes live in a private `Items::Raw` that\n`to_writer` copies to the socket verbatim, so no redaction of ours can\nreach inside. Plugin 0.5 dropped them; 0.6 ships them.\n\nSo the guarantee moves to the only place that sees every byte. A\n`GuardedTransportFactory` wraps the SDK's own DefaultTransportFactory\n(ureq under our features) and enforces, per envelope:\n\n  * consent, re-read from an atomic mirror of the consent file. This\n    also closes the mid-session opt-out hole: `Hub::current()` is\n    thread-local, so `disable_current` only unbound the calling thread,\n    and the plugin's own Client clone in Tauri state never consults a\n    hub at all.\n  * opaque envelopes dropped, restoring 0.5's semantics. A payload we\n    cannot inspect is one we cannot redact; the privacy guarantee\n    outranks the sourcemap edge case. Counted and logged content-free.\n\nflush/shutdown delegate, so the supervisor's pre-exit flush still works.\n\nAlso here:\n  * `.enable_logs(false)` / `.enable_metrics(false)`. Both default to\n    TRUE in 0.49 (0.42 had them off) and the field is not cfg-gated, so\n    any future crate enabling `sentry/logs` would unify the feature in\n    and open the pipe silently.\n  * deny.toml bans `failspot/enabled` — a fault-injection crate riding\n    in under the crash reporter, inert as locked (its lock entry has no\n    dependencies, so `dep:flagset` is off) and it must stay that way.\n  * Corrected three comments this falsified: lib.rs on renderer events\n    inheriting before_send, the module docs on where redaction is\n    enforced, and `disable_current`'s claim to drop \"every subsequent\n    event\".\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(crash-reporting): stop overclaiming what the options test guards\n\nMutation-checking my own test found one assertion that does not guard\nwhat its doc said it did. Deleting `.send_default_pii(false)` leaves the\ntest green, because `false` is also `ClientOptions::default()` — so that\nline catches a wrong value but not a deleted call, and no test could\ndistinguish the two.\n\nThe other six were each verified by deletion: transport, before_send,\nbefore_breadcrumb, enable_logs, enable_metrics, server_name all turn the\ntest red when their builder call is removed.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs(crash-reporting): scope the cold-path claim and pin the bump checklist\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T20:49:53+02:00",
+          "tree_id": "6eff9b79f84978c088d36a091d0ca860914da573",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7cb303671e3033df962f8af4dd9f8f5bcecd7818"
+        },
+        "date": 1786561376433,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2331223,
+            "range": "± 98705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2735030,
+            "range": "± 40233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 306445,
+            "range": "± 3594",
             "unit": "ns/iter"
           }
         ]

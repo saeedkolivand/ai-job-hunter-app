@@ -933,6 +933,138 @@
       "empty": "No custom agencies yet."
     },
     "ai": {
+      "advisor": {
+        "open": "Model advisor",
+        "title": "Model advisor",
+        "stepCounter": "Step {{current}} of {{total}}",
+        "close": "Close advisor",
+        "back": "Back",
+        "next": "Next",
+        "done": "Done",
+        "models": {
+          "title": "Installed models",
+          "intro": "What Ollama reports for each installed model. Size and context window come from the model file itself, not from a list we maintain.",
+          "window": "{{tokens}} token window",
+          "active": "Active",
+          "notMeasured": "Not measured",
+          "emptyTitle": "No local models found",
+          "emptyDescription": "Ollama reported no installed models. Start Ollama and download a model, then reopen the advisor.",
+          "loading": "Reading model details…",
+          "loaded_one": "1 installed model read.",
+          "loaded_other": "{{count}} installed models read."
+        },
+        "fit": {
+          "title": "Does it fit?",
+          "intro": "The biggest single prompt is the {{stage}} step: up to {{chars}} characters (about {{tokens}} tokens) in the worst case. The window also has to hold the answer.",
+          "usable": "{{usable}} tokens for the prompt, out of a {{window}} window",
+          "unknownHint": "Ollama did not report a context window for this model. That means it was not measured — not that the window is small.",
+          "overflow": "In the worst case these steps would be cut: {{stages}}",
+          "truncationNote": "Anything that does not fit is cut silently — there is no marker, so the model reads the fragment as the whole input.",
+          "emptyTitle": "No local models to measure",
+          "emptyDescription": "This step compares installed Ollama models against the stage budgets. Nothing is installed, so there is nothing to compare.",
+          "verdict": {
+            "fits": "Fits every step",
+            "tight": "Tight",
+            "too-small": "Too small",
+            "unknown": "Not measured"
+          },
+          "loaded_one": "Context fit checked for 1 model.",
+          "loaded_other": "Context fit checked for {{count}} models."
+        },
+        "recommend": {
+          "title": "What to change",
+          "stagesHeading": "In this app",
+          "stagesBody": "Models per step are the setting this app owns. Anything you accept here is saved as a normal override you can undo in Settings.",
+          "stagesNothing": "Nothing to change here: every reading step is either already pinned, or there is no measurably smaller model installed to move it to.",
+          "stagesDeclined": "Suggestion dismissed. It is still available on the AI settings card, under per-stage models.",
+          "appHeading": "Already handled per request",
+          "appBody": "The app sends the context window (num_ctx) you configured with every staged request, and keeps the model loaded between steps (keep_alive) so it is not re-read from disk each time. Nothing to do here.",
+          "serverHeading": "On your Ollama server — run these yourself",
+          "serverBody": "These live in your Ollama service configuration, so the app will not set them. A quantized KV cache roughly halves what a large context window costs in memory, which is often the difference between a model fitting in VRAM and spilling into RAM.",
+          "serverDisclaimer": "Advice only. Set them where you start Ollama, then restart the server. If a model still spills out of VRAM, a smaller context window costs less quality than a model that swaps."
+        },
+        "risk": {
+          "title": "Known-bad combinations",
+          "intro": "Some models spend far more effort thinking than answering. On a long document that turns minutes into tens of minutes, and at high reasoning effort some of them stop finishing at all.",
+          "badCombo": "This model reasons heavily and reasoning effort is set to {{effort}} — the combination that has been observed looping. Lower the reasoning effort, or use a non-reasoning model for the writing steps.",
+          "measured": "Measured {{ratio}}× more thinking than answer over {{calls}} calls, as reported by the provider.",
+          "measuredNoOutput": "Over {{calls}} calls this model produced reasoning tokens and no answer tokens at all.",
+          "measuredLight": "Measured {{ratio}}× thinking to answer over {{calls}} calls — normal for a reasoning model.",
+          "reasoningHeavy": "A reasoning-heavy model. Fine at lower reasoning effort, but expect longer runs than a comparable non-reasoning model.",
+          "unmeasured": "Not measured. Local models never report a separate thinking count, so this is silence — not a clean bill of health.",
+          "emptyTitle": "No model to assess",
+          "emptyDescription": "No active model is selected and no step is pinned to one, so there is no combination to check yet.",
+          "level": {
+            "known-bad-combo": "Known-bad combination",
+            "measured-heavy": "Measured: thinks far more than it answers",
+            "measured-light": "Measured: normal reasoning",
+            "reasoning-heavy": "Reasoning-heavy",
+            "unmeasured": "Not measured"
+          },
+          "coverageNote": "Only OpenAI and Gemini report thinking tokens separately. Anthropic counts them inside its output and Ollama folds them into its own count — so a local model can never appear as measured here."
+        }
+      },
+      "stages": {
+        "title": "Per-stage models",
+        "description": "A thorough run works in stages, and each stage can use a different model — a smaller model is enough for the reading steps, while writing benefits from your best one. A step you leave alone runs on the active model. Fast runs use the active model for everything and ignore this card.",
+        "defaultModel": "Default — {{model}}",
+        "defaultNoModel": "Default — no model selected",
+        "cliDefaultModel": "CLI default",
+        "noModel": "no model",
+        "change": "Change",
+        "changeFor": "Change the model for {{stage}}",
+        "changeClose": "Close",
+        "changeCloseFor": "Close the model settings for {{stage}}",
+        "reset": "Use default",
+        "resetFor": "Use the default model for {{stage}}",
+        "noProvider": "No provider",
+        "warnActiveUnconfigured": "{{provider}} is not set up, so every step still on the default will fail. Set it up in the provider list above.",
+        "warnActiveNoModel": "{{provider}} has no model selected, so every step still on the default will fail. Pick one in the provider list above.",
+        "warnUnconfigured": "{{provider}} is not set up, so this step will fail. Set it up above, or put this step back on the default.",
+        "warnNoModel": "{{provider}} has no model selected, so this step will fail. Pick one above, or put this step back on the default.",
+        "saveFailed": "Couldn't save this step: {{reason}}",
+        "clearFailed": "Couldn't reset this step: {{reason}}",
+        "names": {
+          "analyze_job": "Job analysis",
+          "match_evidence": "Evidence match",
+          "strategy": "Strategy",
+          "draft": "Draft",
+          "sections": "Sections",
+          "repair": "Repair",
+          "llm_judge": "Review"
+        },
+        "descriptions": {
+          "analyze_job": "Reads the posting and extracts what it asks for.",
+          "match_evidence": "Finds what your résumé actually backs up.",
+          "strategy": "Decides how that evidence is presented.",
+          "draft": "Writes the whole résumé in one streamed pass.",
+          "sections": "Writes the résumé one section at a time.",
+          "repair": "Rewrites sections that failed validation.",
+          "llm_judge": "Scores the finished document."
+        },
+        "suggest": {
+          "title": "A smaller model can handle the reading steps",
+          "body": "{{model}} ({{candidateB}}B) is installed and much smaller than {{active}} ({{activeB}}B). The reading steps only pull facts out of the posting and your résumé and answer in JSON, so a smaller model is usually enough — and when one returns malformed JSON the step gets a re-ask before the run degrades to needs-review. Writing keeps using {{active}}.",
+          "appliesTo": "Applies to: {{stages}}",
+          "apply": "Use suggested",
+          "dismiss": "Not now",
+          "applied_one": "1 step now uses {{model}}.",
+          "applied_other": "{{count}} steps now use {{model}}.",
+          "partial": "Saved {{done}} of {{total}} steps, then stopped: {{reason}}"
+        },
+        "editor": {
+          "provider": "Provider",
+          "model": "Model",
+          "modelPlaceholder": "Select a model…",
+          "modelCliDefault": "The CLI's own default",
+          "providerUnconfigured": "{{provider}} is not set up yet — set it up in the provider list above before pinning a step to it.",
+          "setWindow": "Set a context window",
+          "contextWindow": "Context window (tokens)",
+          "windowDefault": "Uses the provider's own default window.",
+          "save": "Save",
+          "cancel": "Cancel"
+        }
+      },
       "localLimits": {
         "title": "Generation limits",
         "analyze": "Analyze model",
@@ -953,7 +1085,8 @@
         "useSuggested": "Use suggested",
         "suggested": "Suggested",
         "mayLagRam": "A large context window may lag on your available RAM",
-        "mayLagVram": "A large context window may lag on your available VRAM"
+        "mayLagVram": "A large context window may lag on your available VRAM",
+        "windowSaveFailed": "Couldn't save the context window: {{reason}}"
       },
       "embeddings": {
         "title": "Embeddings"

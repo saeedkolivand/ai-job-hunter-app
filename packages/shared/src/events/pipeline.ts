@@ -18,6 +18,84 @@ export const PIPELINE_STAGE_PHASES = ['start', 'finish', 'error'] as const;
 export type PipelineStagePhase = (typeof PIPELINE_STAGE_PHASES)[number];
 
 /**
+ * Every stage name the staged résumé pipeline can run, in pipeline order.
+ *
+ * The ORDER-PRESERVED UNION of the two Rust depth lists (`QUALITY_STAGES` and
+ * `MAX_STAGES` in `pipeline/resume/mod.rs`), not a third hand-written list: a
+ * Rust test pins both directions — every depth's stages must appear here, and
+ * every name here must belong to at least one depth — so this cannot drift from
+ * the pipelines it names.
+ *
+ * Emitted into Rust by `pnpm gen:ipc` (`ipc_contracts::events::PIPELINE_STAGES`)
+ * for the same reason {@link PIPELINE_STAGE_PHASES} is: it is a CLOSED
+ * vocabulary that both sides key on. Two consumers today —
+ *
+ * - a `pipeline:stage` event's `stage` field (the renderer's timeline, which
+ *   ignores a name it does not know, so a rename is otherwise silent);
+ * - the per-stage model overrides (`ai_stage_overrides`), whose primary key is
+ *   one of these names — a row for anything else is rejected at write AND at
+ *   import, so a tampered backup cannot introduce a stage that never runs.
+ */
+export const PIPELINE_STAGES = [
+  'analyze_job',
+  'match_evidence',
+  'strategy',
+  'draft',
+  'sections',
+  'assemble',
+  'validate',
+  'repair',
+  'llm_judge',
+] as const;
+
+/** The closed stage vocabulary — see {@link PIPELINE_STAGES}. */
+export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
+/**
+ * The stages that make NO provider call in any depth that runs them: `assemble`
+ * renders already-paid-for sections into the document body, `validate` is a
+ * deterministic comparison against the source résumé.
+ *
+ * Derived from the Rust `Pipeline::free_stage_names()` of BOTH depths and pinned
+ * against them (`pipeline::resume::test`). "In any depth that runs them" is the
+ * careful part: `free_stage_names` is per-depth, and a stage that is free in one
+ * pipeline but pays in another would not belong here.
+ *
+ * NORMATIVE: a model override on one of these is refused at write AND at import.
+ * There is no model to choose — the stage never asks one anything — so the
+ * control would be inert, and (before the refusal existed) a malformed row on a
+ * free stage could still fail a whole run at resolve time. Filter these out of
+ * any per-stage model UI.
+ */
+export const PIPELINE_STAGES_FREE = [
+  'assemble',
+  'validate',
+] as const satisfies readonly PipelineStage[];
+
+/**
+ * A stage that spends a provider call — the overridable subset, as a TYPE.
+ *
+ * Distinct from {@link PipelineStage} so a value that has been through
+ * {@link isPayingPipelineStage} cannot be passed somewhere a free stage would
+ * be wrong: narrowing to the wider type would have let `'assemble'` through the
+ * compiler on a path the runtime check had just excluded.
+ */
+export type PayingPipelineStage = Exclude<PipelineStage, (typeof PIPELINE_STAGES_FREE)[number]>;
+
+/** Whether a stage can actually spend a provider call — the set a per-stage
+ *  model picker should offer. */
+export function isPayingPipelineStage(value: unknown): value is PayingPipelineStage {
+  return isPipelineStage(value) && !(PIPELINE_STAGES_FREE as readonly string[]).includes(value);
+}
+
+/** Runtime guard for {@link PipelineStage} — the checkable form of the closed
+ *  set above, so a renderer that reads a stage name off the wire (or off a
+ *  stored override row) can reject an unknown one instead of rendering it. */
+export function isPipelineStage(value: unknown): value is PipelineStage {
+  return typeof value === 'string' && (PIPELINE_STAGES as readonly string[]).includes(value);
+}
+
+/**
  * Longest a `sectionKey` may be ON THE WIRE, in UTF-16 code units.
  *
  * NORMATIVE for the Phase-3 Rust emitter: it must reject (not truncate) anything

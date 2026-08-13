@@ -933,6 +933,138 @@
       "empty": "Noch keine eigenen Vermittler."
     },
     "ai": {
+      "advisor": {
+        "open": "Modell-Berater",
+        "title": "Modell-Berater",
+        "stepCounter": "Schritt {{current}} von {{total}}",
+        "close": "Berater schließen",
+        "back": "Zurück",
+        "next": "Weiter",
+        "done": "Fertig",
+        "models": {
+          "title": "Installierte Modelle",
+          "intro": "Was Ollama zu jedem installierten Modell meldet. Größe und Kontextfenster stammen aus der Modelldatei selbst, nicht aus einer gepflegten Liste.",
+          "window": "Kontextfenster: {{tokens}} Tokens",
+          "active": "Aktiv",
+          "notMeasured": "Nicht ermittelt",
+          "emptyTitle": "Keine lokalen Modelle gefunden",
+          "emptyDescription": "Ollama meldet keine installierten Modelle. Starten Sie Ollama, laden Sie ein Modell herunter und öffnen Sie den Berater erneut.",
+          "loading": "Modelldetails werden gelesen…",
+          "loaded_one": "1 installiertes Modell gelesen.",
+          "loaded_other": "{{count}} installierte Modelle gelesen."
+        },
+        "fit": {
+          "title": "Passt es?",
+          "intro": "Der größte einzelne Prompt ist der Schritt „{{stage}}“: im schlechtesten Fall bis zu {{chars}} Zeichen (etwa {{tokens}} Tokens). Das Fenster muss zusätzlich die Antwort fassen.",
+          "usable": "{{usable}} Tokens für den Prompt, bei einem Fenster von {{window}}",
+          "unknownHint": "Ollama hat für dieses Modell kein Kontextfenster gemeldet. Das heißt: nicht ermittelt — nicht, dass das Fenster klein wäre.",
+          "overflow": "Im schlechtesten Fall würden diese Schritte abgeschnitten: {{stages}}",
+          "truncationNote": "Was nicht passt, wird stillschweigend abgeschnitten — ohne Markierung. Das Modell hält das Fragment für die vollständige Eingabe.",
+          "emptyTitle": "Keine lokalen Modelle zum Messen",
+          "emptyDescription": "Dieser Schritt vergleicht installierte Ollama-Modelle mit dem Bedarf der Pipeline-Schritte. Es ist nichts installiert, also gibt es nichts zu vergleichen.",
+          "verdict": {
+            "fits": "Passt für jeden Schritt",
+            "tight": "Knapp",
+            "too-small": "Zu klein",
+            "unknown": "Nicht ermittelt"
+          },
+          "loaded_one": "Kontextpassung für 1 Modell geprüft.",
+          "loaded_other": "Kontextpassung für {{count}} Modelle geprüft."
+        },
+        "recommend": {
+          "title": "Was Sie ändern können",
+          "stagesHeading": "In dieser App",
+          "stagesBody": "Modelle pro Schritt sind die Einstellung, die diese App verwaltet. Was Sie hier übernehmen, wird als normale Übersteuerung gespeichert und lässt sich in den Einstellungen zurücknehmen.",
+          "stagesNothing": "Hier gibt es nichts zu ändern: Jeder auswertende Schritt ist entweder bereits festgelegt, oder es ist kein messbar kleineres Modell installiert.",
+          "stagesDeclined": "Vorschlag ausgeblendet. Er steht weiterhin auf der KI-Einstellungskarte unter „Modelle pro Schritt“ zur Verfügung.",
+          "appHeading": "Pro Anfrage bereits erledigt",
+          "appBody": "Die App sendet das eingestellte Kontextfenster (num_ctx) bei jeder Anfrage eines mehrstufigen Durchlaufs mit und hält das Modell zwischen den Schritten geladen (keep_alive). Hier ist nichts zu tun.",
+          "serverHeading": "Auf Ihrem Ollama-Server — selbst ausführen",
+          "serverBody": "Diese Werte gehören zur Konfiguration Ihres Ollama-Dienstes, deshalb setzt die App sie nicht. Ein quantisierter KV-Cache halbiert den Speicherbedarf eines großen Kontextfensters ungefähr — oft der Unterschied zwischen „passt in den VRAM“ und „läuft in den RAM über“.",
+          "serverDisclaimer": "Nur ein Hinweis. Setzen Sie die Werte dort, wo Sie Ollama starten, und starten Sie den Dienst neu. Läuft ein Modell weiterhin aus dem VRAM, kostet ein kleineres Kontextfenster weniger Qualität als ein auslagerndes Modell."
+        },
+        "risk": {
+          "title": "Bekannt problematische Kombinationen",
+          "intro": "Manche Modelle denken deutlich mehr, als sie antworten. Bei einem langen Dokument werden aus Minuten Dutzende Minuten — und bei hohem Denkaufwand kommen einige gar nicht mehr zum Ende.",
+          "badCombo": "Dieses Modell denkt sehr viel und der Denkaufwand steht auf {{effort}} — genau die Kombination, bei der Endlosschleifen beobachtet wurden. Reduzieren Sie den Denkaufwand oder nutzen Sie für die schreibenden Schritte ein Modell ohne Reasoning.",
+          "measured": "Gemessen: {{ratio}}× mehr Denken als Antwort über {{calls}} Aufrufe, laut Angabe des Anbieters.",
+          "measuredNoOutput": "Über {{calls}} Aufrufe hat dieses Modell Denk-Tokens erzeugt und überhaupt keine Antwort-Tokens.",
+          "measuredLight": "Gemessen: {{ratio}}× Denken zu Antwort über {{calls}} Aufrufe — normal für ein Reasoning-Modell.",
+          "reasoningHeavy": "Ein Reasoning-lastiges Modell. Bei geringerem Denkaufwand unproblematisch, aber langsamer als ein vergleichbares Modell ohne Reasoning.",
+          "unmeasured": "Nicht ermittelt. Lokale Modelle melden keine getrennten Denk-Tokens — das ist Schweigen, keine Entwarnung.",
+          "emptyTitle": "Kein Modell zu bewerten",
+          "emptyDescription": "Es ist kein aktives Modell ausgewählt und kein Schritt festgelegt — es gibt also noch keine Kombination zu prüfen.",
+          "level": {
+            "known-bad-combo": "Bekannt problematische Kombination",
+            "measured-heavy": "Gemessen: denkt weit mehr als es antwortet",
+            "measured-light": "Gemessen: normales Reasoning",
+            "reasoning-heavy": "Reasoning-lastig",
+            "unmeasured": "Nicht ermittelt"
+          },
+          "coverageNote": "Nur OpenAI und Gemini melden Denk-Tokens getrennt. Anthropic zählt sie in der Ausgabe mit und Ollama in seiner eigenen Zählung — ein lokales Modell kann hier also nie als gemessen erscheinen."
+        }
+      },
+      "stages": {
+        "title": "Modelle pro Schritt",
+        "description": "Ein gründlicher Durchlauf besteht aus mehreren Schritten, und jeder Schritt kann ein anderes Modell nutzen — für die auswertenden Schritte genügt ein kleineres Modell, das Schreiben profitiert vom besten. Ein Schritt ohne eigene Einstellung läuft auf dem aktiven Modell. Schnelle Durchläufe nutzen überall das aktive Modell und ignorieren diese Karte.",
+        "defaultModel": "Standard — {{model}}",
+        "defaultNoModel": "Standard — kein Modell ausgewählt",
+        "cliDefaultModel": "CLI-Standard",
+        "noModel": "kein Modell",
+        "change": "Ändern",
+        "changeFor": "Modell für {{stage}} ändern",
+        "changeClose": "Schließen",
+        "changeCloseFor": "Modelleinstellungen für {{stage}} schließen",
+        "reset": "Standard verwenden",
+        "resetFor": "Standardmodell für {{stage}} verwenden",
+        "noProvider": "Kein Anbieter",
+        "warnActiveUnconfigured": "{{provider}} ist nicht eingerichtet — jeder Schritt auf dem Standard schlägt fehl. Richten Sie den Anbieter in der Liste oben ein.",
+        "warnActiveNoModel": "Für {{provider}} ist kein Modell ausgewählt — jeder Schritt auf dem Standard schlägt fehl. Wählen Sie oben eines aus.",
+        "warnUnconfigured": "{{provider}} ist nicht eingerichtet — dieser Schritt schlägt fehl. Richten Sie den Anbieter oben ein oder setzen Sie den Schritt auf den Standard zurück.",
+        "warnNoModel": "Für {{provider}} ist kein Modell ausgewählt — dieser Schritt schlägt fehl. Wählen Sie oben eines aus oder setzen Sie den Schritt auf den Standard zurück.",
+        "saveFailed": "Schritt konnte nicht gespeichert werden: {{reason}}",
+        "clearFailed": "Schritt konnte nicht zurückgesetzt werden: {{reason}}",
+        "names": {
+          "analyze_job": "Stellenanalyse",
+          "match_evidence": "Belegabgleich",
+          "strategy": "Strategie",
+          "draft": "Entwurf",
+          "sections": "Abschnitte",
+          "repair": "Korrektur",
+          "llm_judge": "Bewertung"
+        },
+        "descriptions": {
+          "analyze_job": "Liest die Anzeige und erfasst, was gefordert wird.",
+          "match_evidence": "Findet, was Ihr Lebenslauf tatsächlich belegt.",
+          "strategy": "Legt fest, wie diese Belege dargestellt werden.",
+          "draft": "Schreibt den gesamten Lebenslauf in einem Durchgang.",
+          "sections": "Schreibt den Lebenslauf Abschnitt für Abschnitt.",
+          "repair": "Schreibt Abschnitte neu, die die Prüfung nicht bestanden haben.",
+          "llm_judge": "Bewertet das fertige Dokument."
+        },
+        "suggest": {
+          "title": "Ein kleineres Modell genügt für die auswertenden Schritte",
+          "body": "{{model}} ({{candidateB}} Mrd. Parameter) ist installiert und deutlich kleiner als {{active}} ({{activeB}} Mrd.). Die auswertenden Schritte lesen nur die Anzeige und Ihren Lebenslauf und antworten in JSON — dafür genügt ein kleineres Modell meist, und bei fehlerhaftem JSON wird der Schritt einmal erneut angefragt, bevor der Durchlauf auf „Prüfung nötig“ zurückfällt. Geschrieben wird weiterhin mit {{active}}.",
+          "appliesTo": "Gilt für: {{stages}}",
+          "apply": "Vorschlag übernehmen",
+          "dismiss": "Jetzt nicht",
+          "applied_one": "1 Schritt nutzt jetzt {{model}}.",
+          "applied_other": "{{count}} Schritte nutzen jetzt {{model}}.",
+          "partial": "{{done}} von {{total}} Schritten gespeichert, dann abgebrochen: {{reason}}"
+        },
+        "editor": {
+          "provider": "Anbieter",
+          "model": "Modell",
+          "modelPlaceholder": "Modell auswählen…",
+          "modelCliDefault": "Standard der CLI",
+          "providerUnconfigured": "{{provider}} ist noch nicht eingerichtet — richten Sie den Anbieter in der Liste oben ein, bevor Sie einen Schritt darauf festlegen.",
+          "setWindow": "Kontextfenster festlegen",
+          "contextWindow": "Kontextfenster (Tokens)",
+          "windowDefault": "Nutzt das Standard-Kontextfenster des Anbieters.",
+          "save": "Speichern",
+          "cancel": "Abbrechen"
+        }
+      },
       "localLimits": {
         "title": "Generierungslimits",
         "analyze": "Modell analysieren",
@@ -953,7 +1085,8 @@
         "useSuggested": "Vorschlag übernehmen",
         "suggested": "Vorschlag",
         "mayLagRam": "Ein großes Kontextfenster kann bei Ihrem verfügbaren RAM ruckeln",
-        "mayLagVram": "Ein großes Kontextfenster kann bei Ihrem verfügbaren VRAM ruckeln"
+        "mayLagVram": "Ein großes Kontextfenster kann bei Ihrem verfügbaren VRAM ruckeln",
+        "windowSaveFailed": "Kontextfenster konnte nicht gespeichert werden: {{reason}}"
       },
       "embeddings": {
         "title": "Einbettungen"

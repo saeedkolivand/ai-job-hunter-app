@@ -81,7 +81,7 @@ use crate::ipc_contracts::resume_pipeline::{
 };
 use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::cache::KvCache;
-use crate::pipeline::resume::stages::{regenerate_one_section, SectionOutcome};
+use crate::pipeline::resume::stages::{self, regenerate_one_section, section_gen, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
 use crate::pipeline::resume::{QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
@@ -240,6 +240,13 @@ async fn execute(
 
     let clamped = clamp_request(req);
     let completer = Completer::from_active(app)?;
+    // ONE resolution per overridden stage, BEFORE the run starts: an override
+    // edited mid-run must not take effect halfway through the document, and the
+    // stage cache keys are derived from these same completers. Scoped to the
+    // stages THIS depth runs AND CAN PAY FOR — a `draft` override costs nothing
+    // on a max run, which has no draft stage, and a stage that makes no call
+    // has no routing to resolve (see `max::paying_stages`).
+    let stage_completers = Completer::for_stages(app, &max::paying_stages(depth))?;
     let resume = app
         .state::<DocumentStore>()
         .get(&req.resume_id)
@@ -314,7 +321,8 @@ async fn execute(
         cache.as_deref(),
         deadline,
         Arc::clone(&ledger),
-    );
+    )
+    .with_stage_completers(&stage_completers);
     if depth == GenerationDepth::Max {
         // The hook is ALSO the section-wise observer: per-section events and
         // the progressive document stream are emits, so they belong to the one
@@ -930,29 +938,44 @@ pub async fn resume_pipeline_regenerate_section(
         "pipeline:resume",
         format!("op=regenerate_section key={}", key.to_wire()),
     );
-    let completer = Completer::from_active(&app)?;
     let source = source_resume_for(&app, &row, &record);
-    let outcome =
-        match regenerate_max_entry(&store, &row, &record, &completer, &source, key, &req).await {
-            Some(outcome) => outcome?,
-            // Not a max run, not an employment entry, or the run's artifacts are
-            // gone/unparseable — the whole-section rewrite that has always been
-            // here. A degraded click is a worse click; a failed one is a bug.
-            None => {
-                regenerate_one_section(
-                    &completer,
-                    &source,
-                    &record.target_language,
-                    &record.resume_text,
-                    key,
-                    // No validator issues on this path: the user, not a report,
-                    // asked for the change. The note carries the "why", fenced.
-                    &[],
-                    req.note.as_deref(),
-                )
-                .await?
-            }
-        };
+    // Routed through the SAME per-stage path a run takes — and through the
+    // stage whose PROMPT each sub-path actually uses. Each is resolved INSIDE
+    // the branch that uses it, so a click only ever resolves the routing it
+    // actually takes: resolving propagates its error, so an eagerly-resolved
+    // `sections` override would fail a quality-run click over a stage that run
+    // does not even have.
+    //
+    // * the max artifact-rebuild path re-runs `sections`' own generator over
+    //   the run's stored analysis/strategy, so it follows the `sections`
+    //   override — the stage that produced the text being replaced;
+    // * the fallback is a whole-section REWRITE using `repair`'s prompt and
+    //   grounding, and `repair` is the stage that exists at BOTH depths (a
+    //   quality run has no `sections` stage at all), so it follows `repair`.
+    //
+    // Routing both through one override would make the button disagree with
+    // whichever stage the user actually configured.
+    let outcome = match regenerate_max_entry(&app, &store, &row, &record, &source, key, &req).await
+    {
+        Some(outcome) => outcome?,
+        // Not a max run, not an employment entry, or the run's artifacts are
+        // gone/unparseable — the whole-section rewrite that has always been
+        // here. A degraded click is a worse click; a failed one is a bug.
+        None => {
+            regenerate_one_section(
+                &Completer::from_active_for_stage(&app, stages::REPAIR_STAGE)?,
+                &source,
+                &record.target_language,
+                &record.resume_text,
+                key,
+                // No validator issues on this path: the user, not a report,
+                // asked for the change. The note carries the "why", fenced.
+                &[],
+                req.note.as_deref(),
+            )
+            .await?
+        }
+    };
     let spliced = match outcome {
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {
@@ -1042,10 +1065,10 @@ pub async fn resume_pipeline_regenerate_section(
 /// error: a click must not fail because an optimization was unavailable.
 #[allow(clippy::too_many_arguments)]
 async fn regenerate_max_entry(
+    app: &AppHandle,
     store: &PipelineRunStore,
     row: &RunRow,
     record: &AiGenerationRecord,
-    completer: &Completer,
     source: &str,
     key: SectionKey,
     req: &ResumePipelineRegenerateSectionRequest,
@@ -1057,8 +1080,16 @@ async fn regenerate_max_entry(
         return None;
     };
     let artifacts = max::artifacts_for(store, &row.id)?;
+    // Resolved here, past every early return: this is the first point at which
+    // the max path is certain to run, so a `sections` override is only ever
+    // resolved by a click that will actually use its prompt. See the routing
+    // note at the call site.
+    let completer = match Completer::from_active_for_stage(app, section_gen::NAME) {
+        Ok(completer) => completer,
+        Err(e) => return Some(Err(e)),
+    };
     let outcome = max::regenerate_entry(
-        completer,
+        &completer,
         &artifacts,
         source,
         // The aggregate's own copy of the posting, which is often EMPTY on this

@@ -189,13 +189,14 @@ impl<'a> Stage<QualityCtx<'a>> for MatchEvidence {
         // provider call AND the two Rust passes — which is safe precisely
         // because the key chains in the source résumé and the analysis, the
         // only two inputs those passes read.
-        let cached: Option<EvidenceMap> = cache::get(ctx.cache, NAME, &ctx.cache_key);
+        let key = ctx.stage_cache_key(NAME);
+        let cached: Option<EvidenceMap> = cache::get(ctx.cache, NAME, &key);
         let from_cache = cached.is_some();
         let (evidence, dropped) = match cached {
             Some(evidence) => (evidence, 0),
             None => {
                 let raw: EvidenceMap = ctx
-                    .completer
+                    .completer_for(NAME)
                     .complete_json(
                         // The re-ask is a second full provider call; a run
                         // already out of time must not pay for it.
@@ -218,7 +219,7 @@ impl<'a> Stage<QualityCtx<'a>> for MatchEvidence {
 
         let json = serde_json::to_string(&evidence).unwrap_or_default();
         if !from_cache {
-            cache::put(ctx.cache, NAME, &ctx.cache_key, &json);
+            cache::put(ctx.cache, NAME, &key, &json);
         }
         ctx.cache_key.extend(&json);
         ctx.ledger.count_call(from_cache);
