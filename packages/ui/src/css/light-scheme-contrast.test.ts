@@ -178,7 +178,8 @@ describe('utilities.css — light-scheme status text remaps', () => {
  * literal escaped selector over the raw `--color-foreground` token, so a step
  * outside the enumeration below renders at its raw, un-boosted alpha on
  * light — near-invisible for the low steps this file boosts (WCAG ~1.2–1.7:1
- * measured; see `docs/NEXT_ISSUES.md` "the text-foreground/NN opacity ramp").
+ * measured; the wider text-foreground/NN opacity-ramp sweep is a tracked
+ * follow-up).
  *
  * The contrast math is inlined (not imported) so this test independently
  * recomputes the ratio from the LITERAL `color-mix(...) NN%` in the
@@ -258,11 +259,14 @@ describe('utilities.css — text/border-foreground opacity remaps (contrast)', (
     }
   );
 
-  it.each([55, 60] as const)('text-foreground/%i clears 4.5:1 once boosted to its remapped alpha', (nn) => {
-    const boosted = remappedAlphaPct(`text-foreground\\/${nn}`);
-    expect(boosted).not.toBeNull();
-    expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(4.5);
-  });
+  it.each([55, 60] as const)(
+    'text-foreground/%i clears 4.5:1 once boosted to its remapped alpha',
+    (nn) => {
+      const boosted = remappedAlphaPct(`text-foreground\\/${nn}`);
+      expect(boosted).not.toBeNull();
+      expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(4.5);
+    }
+  );
 
   it('preserves ordering at the /55↔/60 seam: /60 must map to MORE alpha than /55, not less', () => {
     // Regression guard for the exact defect this file's own history caught:

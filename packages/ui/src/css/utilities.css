@@ -779,8 +779,8 @@ html[data-text-scale='large'] {
   color: color-mix(in oklab, var(--color-foreground) 65%, transparent);
 }
 /* /55 AND /60 are the two steps ABOVE this block that still measure under raw
-   (fails ~3.8:1 and ~4.45:1 unmapped respectively — NEITHER clears 4.5:1, see
-   docs/NEXT_ISSUES.md "the text-foreground/NN opacity ramp"). /60 must be
+   (fails ~3.8:1 and ~4.45:1 unmapped respectively — NEITHER clears 4.5:1; the
+   wider /30-/45 opacity-ramp sweep is a tracked follow-up). /60 must be
    mapped too, not just /55: mapping /55 alone to a value ABOVE raw-60%
    (needed to actually fix /55) would make /55 render darker than /60's own
    raw 60% — a lower opacity step rendering MORE opaque than a higher one.
