@@ -3,8 +3,22 @@
 // Same data contract as letter.typ / letter_refined.typ / letter_banded.typ —
 // `data.style`, `data.opts`, LetterModel. This layout owns the COMPOSITION only;
 // the palette and fonts inherit from the chosen résumé template (`data.style`),
-// and market conventions still own the WHAT/WHERE semantics (DE DIN
-// date-top-right vs US below-header) — where they conflict, the convention wins.
+// and market conventions own the WHAT/WHERE semantics that this layout can
+// honour — which date position is used (DE DIN top-right vs US below-header)
+// and whether a subject line renders. Where those conflict with the
+// arrangement, the convention wins.
+//
+// LIMITATION — NOT window-envelope compatible. DIN 5008 Form B puts the
+// Anschriftenfeld 20 mm from the left edge; this layout's recipient block starts
+// at 62 mm, behind the rail's own margin, so a DE letter printed for a
+// window envelope will not show the address through the window. This is not a
+// "narrow the rail for DE" fix: a rail that cleared 20 mm would be under 20 mm
+// wide, which cannot hold a contact line at 9.5 pt — DIN compliance and a
+// contact rail want the same strip of paper. Sidebar is therefore a
+// screen/attachment layout; DE users who need the window envelope should pick
+// Classic or Navy, whose recipient blocks sit at the ordinary margin. Recorded
+// here rather than silently implied, because the paragraph above used to read
+// as if every DE convention was honoured.
 //
 // IMPORTANT: a SHARED layout, not "Atelier's letter". Résumé template and letter
 // layout are orthogonal axes here — the user picks a layout independently of the
@@ -101,6 +115,16 @@
   lang: lang,
 )
 
+// `hyphenate: false` is load-bearing, not a style choice. Typst turns
+// hyphenation on with `justify`, and a hyphenated line break puts a real break
+// in the PDF text layer: "microservices architecture" extracts as
+// "architec­ture", so an ATS tokenising on whitespace loses the keyword
+// entirely. Justification stays (wider word gaps, no split words).
+//
+// The four SHIPPED layouts (letter.typ, letter_refined.typ, letter_banded.typ,
+// letter_navy.typ) all still hyphenate — that is pre-existing and is being
+// swept in its own PR, together with the justify-vs-rivers call for DE.
+#set text(hyphenate: false)
 #set par(leading: lead, spacing: sp-letter-para, justify: true)
 
 // ── Rich-text renderer (identical to letter.typ / letter_banded.typ) ──────────

@@ -3231,8 +3231,31 @@ fn letter_navy_extracts_accented_latin_content() {
 //   (c) structural elements gate on `data.opts` (market conventions), never on
 //       the layout id.
 
+/// Layouts that must never emit a hyphenated line break into the PDF text
+/// layer, i.e. the ones that set `hyphenate: false`.
+///
+/// Deliberately a roster and not "every layout": the four SHIPPED layouts
+/// (Classic, Refined, Banded, Navy) all still hyphenate, which is pre-existing
+/// and is being swept in its own PR. A family-wide assertion would go red on
+/// them today, so this gates on the two layouts this PR owns and grows when the
+/// sweep lands.
+const NO_SOFT_HYPHEN_LAYOUTS: [LetterLayout; 2] = [LetterLayout::Sidebar, LetterLayout::Monogram];
+
 /// Render + extract + whitespace-normalise + lowercase, the shape every letter
 /// assertion below wants. Panics with the layout name so a failure says which.
+///
+/// Also the single choke point for the SOFT-HYPHEN guard: every extraction in
+/// this file flows through here, so a layout in [`NO_SOFT_HYPHEN_LAYOUTS`]
+/// cannot regress into hyphenated line breaks via any test, not just a
+/// dedicated one. A U+00AD in the extracted text means the PDF really did break
+/// the word — "microservices architecture" comes out as "architec­ture" and an
+/// ATS tokenising on whitespace loses the keyword.
+///
+/// Only the SOFT hyphen is checked. The critic's correction to my first
+/// measurement: of the three U+00AD-adjacent breaks I counted, only one is a
+/// genuine soft-hyphen break — the others are HARD hyphens ("end-to-end"),
+/// which Typst tags with `/ActualText` and are recoverable by a conforming
+/// extractor. Asserting on the hard ones would be asserting on a non-defect.
 fn letter_lower(layout: LetterLayout, fixture: &str, market: &str, ats: bool) -> String {
     let t = Template::get(TemplateId::SwissMinimal);
     let name = if market == "de" {
@@ -3247,12 +3270,22 @@ fn letter_lower(layout: LetterLayout, fixture: &str, market: &str, ats: bool) ->
         bytes.starts_with(b"%PDF"),
         "{layout:?} (ats={ats}) must start with %PDF"
     );
-    pdf_extract::extract_text_from_mem(&bytes)
+    let txt = pdf_extract::extract_text_from_mem(&bytes)
         .unwrap_or_else(|e| panic!("pdf-extract on {layout:?} (ats={ats}): {e}"))
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .to_lowercase()
+        .to_lowercase();
+
+    if NO_SOFT_HYPHEN_LAYOUTS.contains(&layout) {
+        assert!(
+            !txt.contains('\u{00AD}'),
+            "{layout:?} (ats={ats}) emitted a soft hyphen — a hyphenated line break splits a \
+             word in the PDF text layer, so an ATS tokenising on whitespace loses the keyword. \
+             `hyphenate: false` must stay set on this layout.\n{txt}"
+        );
+    }
+    txt
 }
 
 /// (S1/M1) Both new layouts render a valid US PDF whose text extracts in
@@ -3566,6 +3599,53 @@ fn sidebar_letterhead_is_measurably_inside_the_rail() {
         "ATS-mode Sidebar put a glyph at {ats_leftmost:.1}pt, left of the {ats_margin:.1}pt \
          margin — the rail placement is still active"
     );
+}
+
+/// (S7) Sidebar's contact line contains real `link()`s, and in design mode the
+/// whole letterhead goes through `place()` with a NEGATIVE `dx` into the page
+/// margin. Placed-and-negatively-offset content is the documented
+/// annotation-loss shape (see the two-column header precedent above), and a
+/// dropped `/Annots` entry is invisible to every text assertion — the words
+/// still extract, they just stop being clickable.
+///
+/// Asserted in BOTH modes: design mode is the placed path, ATS mode is the
+/// ordinary in-flow path, and only comparing the two shows that placement is
+/// what would have cost the annotation.
+#[test]
+fn sidebar_contact_links_survive_the_placed_rail() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let profile = crate::contact_profile::ContactProfile {
+        full_name: Some("Jane Smith".to_string()),
+        email: Some("jane@example.com".to_string()),
+        linkedin: Some("https://linkedin.com/in/janesmith".to_string()),
+        ..Default::default()
+    };
+
+    for ats in [false, true] {
+        let bytes = render_letter_pdf(
+            LETTER_FIXTURE_US,
+            &t,
+            Some(&profile),
+            Some("Jane Smith"),
+            "us",
+            "en",
+            LetterLayout::Sidebar,
+            ats,
+        )
+        .unwrap_or_else(|e| panic!("sidebar (ats={ats}) render failed: {e}"));
+
+        let uris = link_uris(&bytes);
+        assert!(
+            uris.iter().any(|u| u.contains("linkedin.com/in/janesmith")),
+            "sidebar (ats={ats}): the LinkedIn link annotation was dropped — in design mode the \
+             letterhead is `place`d into the margin with a negative dx, which is exactly the \
+             shape that loses /Annots. found {uris:?}"
+        );
+        assert!(
+            uris.iter().any(|u| u.contains("jane@example.com")),
+            "sidebar (ats={ats}): the mailto link annotation was dropped; found {uris:?}"
+        );
+    }
 }
 
 /// (S5) Sidebar keeps its wide left margin and rail on EVERY page (a page-1-only

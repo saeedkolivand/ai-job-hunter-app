@@ -83,6 +83,16 @@
   lang: lang,
 )
 
+// `hyphenate: false` is load-bearing, not a style choice. Typst turns
+// hyphenation on with `justify`, and a hyphenated line break puts a real break
+// in the PDF text layer: "microservices architecture" extracts as
+// "architec­ture", so an ATS tokenising on whitespace loses the keyword
+// entirely. Justification stays (wider word gaps, no split words).
+//
+// The four SHIPPED layouts (letter.typ, letter_refined.typ, letter_banded.typ,
+// letter_navy.typ) all still hyphenate — that is pre-existing and is being
+// swept in its own PR, together with the justify-vs-rivers call for DE.
+#set text(hyphenate: false)
 #set par(leading: lead, spacing: sp-letter-para, justify: true)
 
 // ── Rich-text renderer (identical to letter.typ / letter_banded.typ) ──────────
@@ -146,10 +156,13 @@
   }
 ]
 
-// The monogram square. Skipped entirely when there are no initials to show (a
-// letterhead-less letter parses to an empty name), so an empty box never
-// appears next to a nameless lockup.
-#let device = box(
+// The monogram square. A FUNCTION, not a bound value: as a `#let device = box(
+// … data.letterhead.initials …)` the field was read when the binding was
+// evaluated, which is before the `"initials" in data.letterhead` guard below
+// ever runs — so the guard was dead and a model without the key would have
+// failed at the binding instead of degrading. Taking the initials as a
+// parameter means the read only happens on the branch that already checked.
+#let device(initials) = box(
   width: device-size,
   height: device-size,
   fill: c-device,
@@ -162,7 +175,7 @@
       fill: c-accent,
       font: (font-name, "Carlito", "Inter"),
       tracking: 0.02em,
-      data.letterhead.initials,
+      initials,
     ),
   ),
 )
@@ -180,7 +193,7 @@
     columns: (device-size, 1fr),
     column-gutter: device-gap,
     align: horizon,
-    device,
+    device(data.letterhead.initials),
     lockup,
   )
 } else {

@@ -223,27 +223,49 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
     }
 }
 
-/// Up to **two** uppercase initials for a letterhead monogram device: the first
-/// letter of the first name-bearing token and the first letter of the last one.
+/// Up to **two** uppercase initials for a letterhead monogram device: the
+/// initial of the first NAME token and the initial of the last one.
 ///
-/// Derived in Rust rather than in Typst because the edge cases are all string
-/// handling that a `.typ` cannot be tested on: a mononym ("Prince" → `P`), a
+/// Derived in Rust rather than in Typst because every interesting case is string
+/// handling a `.typ` cannot be tested on: a mononym ("Prince" → `P`), a
 /// multi-part surname ("Jane van der Berg" → `JB`, first + LAST, not the first
-/// two), tokens that carry no letter at all ("Jane (she/her) Smith" — the
-/// parenthetical contributes nothing), and non-ASCII capitals ("Àlvaro
-/// Èsposito" → `ÀÈ`, which must survive PDF extraction like every other
-/// accented capital in this engine).
+/// two), and non-ASCII capitals ("Àlvaro Èsposito" → `ÀÈ`, which must survive
+/// PDF extraction like every other accented capital in this engine).
+///
+/// Two kinds of token are **not** names and are dropped:
+///
+/// 1. Anything that does not START with an alphanumeric — a pronoun
+///    parenthetical, "—", a stray bullet. The first version searched each token
+///    for its first alphanumeric *anywhere*, so "(they/them)" contributed a
+///    `T`; "Jane Smith (they/them)" came out `JT`.
+/// 2. A token that abbreviates a WORD — two or more letters before its period
+///    ("Dr.", "Prof.", "Dipl.-Ing.", "Ph.D."). Those are titles and
+///    qualifications; "Dr. Jane Smith" is `JS`, and the German
+///    "Dipl.-Ing. Max Müller" is `MM`, not `DM`. A SINGLE-letter initial keeps
+///    its period and still counts, so "J. Smith" is `JS` rather than `S`.
 ///
 /// Never longer than two characters, so the device is a fixed-size square no
 /// matter how long the name is — a third initial would overflow it. Returns an
 /// empty string for a nameless letterhead; the template skips the device then.
 pub(crate) fn monogram_initials(name: &str) -> String {
-    // A token contributes only if it contains a letter or digit somewhere; the
-    // initial is that token's FIRST alphanumeric char, so "(she/her)" is skipped
-    // entirely while "O'Brien" still yields `O`.
+    /// Is this token a person's name, as opposed to punctuation or a title?
+    fn is_name_token(tok: &str) -> bool {
+        if !tok.starts_with(char::is_alphanumeric) {
+            return false;
+        }
+        // Letters before the first period: 1 is an initial ("J."), 2+ is a
+        // word abbreviation ("Dr.", "Dipl.-Ing."). No period at all → a name.
+        match tok.split_once('.') {
+            Some((head, _)) => head.chars().count() < 2,
+            None => true,
+        }
+    }
+
     let mut initials = name
         .split_whitespace()
-        .filter_map(|tok| tok.chars().find(|c| c.is_alphanumeric()));
+        .filter(|tok| is_name_token(tok))
+        // Guaranteed `Some` — `is_name_token` required a leading alphanumeric.
+        .filter_map(|tok| tok.chars().next());
 
     let Some(first) = initials.next() else {
         return String::new();
@@ -259,6 +281,28 @@ pub(crate) fn monogram_initials(name: &str) -> String {
         Some(last) => [up(first), up(last)].iter().collect(),
         None => up(first).to_string(),
     }
+}
+
+/// Initials for the letterhead device, or empty when the "name" is not a name.
+///
+/// The letterhead name falls back to the first non-blank LINE of the letter when
+/// no candidate name is supplied — and three renderer call sites pass an empty
+/// `candidate_name`, so that fallback is reachable in production. On a
+/// letterhead-less letter the first line is the salutation, which made the
+/// device read `DM`, from "Dear Hiring Manager,".
+///
+/// The DOCX renderer already refused to treat an opening line as the name
+/// (`generate_cover_letter_docx_layout`'s `!is_salutation && !is_signoff &&
+/// !is_subject_line` guard); this is the PDF side of the same guard, so the two
+/// formats agree. Scoped to the DEVICE deliberately: what `letterhead.name`
+/// itself should show for a letterhead-less letter is a separate, pre-existing
+/// question, and widening this would change all six layouts' output.
+fn letterhead_initials(name_text: &str) -> String {
+    use crate::locale::letter::{is_salutation, is_signoff, is_subject_line};
+    if is_salutation(name_text) || is_signoff(name_text) || is_subject_line(name_text) {
+        return String::new();
+    }
+    monogram_initials(name_text)
 }
 
 /// Parse a finished cover-letter text into a structured [`LetterModel`].
@@ -353,7 +397,7 @@ pub(super) fn parse_cover_letter(
     };
 
     let letterhead = LetterHead {
-        initials: monogram_initials(&name_text),
+        initials: letterhead_initials(&name_text),
         name: name_text.clone(),
         contact: contact_runs,
     };
@@ -1108,11 +1152,43 @@ Saeed Kolivand
     #[test]
     fn monogram_initials_handles_mononyms_and_letterless_tokens() {
         assert_eq!(monogram_initials("Prince"), "P");
-        // A parenthetical pronoun block carries no leading alphanumeric, so it
-        // must not become the second initial ("J(" would be nonsense).
-        assert_eq!(monogram_initials("Jane (she/her) Smith"), "JS");
-        assert_eq!(monogram_initials("Jane (she/her)"), "JS");
         assert_eq!(monogram_initials("O'Brien"), "O");
+    }
+
+    /// A pronoun parenthetical is not a name token.
+    ///
+    /// The fixture is `(they/them)`, NOT `(she/her)`: with "she" the expected
+    /// `JS` is also what the BROKEN implementation produces, because its `S`
+    /// comes from "she" — the test passed against the defect. `they` makes the
+    /// two outcomes distinguishable, `JS` (correct) vs `JT` (searched the token
+    /// for its first alphanumeric instead of requiring a leading one).
+    #[test]
+    fn monogram_initials_drops_pronoun_parentheticals() {
+        assert_eq!(monogram_initials("Jane Smith (they/them)"), "JS");
+        assert_eq!(monogram_initials("Jane (they/them) Smith"), "JS");
+        assert_eq!(monogram_initials("Jane (they/them)"), "J");
+        // Trailing em-dash / bullet decoration must not become an initial either.
+        assert_eq!(monogram_initials("Jane Smith —"), "JS");
+    }
+
+    /// Titles and qualifications are not names. A monogram for "Dr. Jane Smith"
+    /// is JS; DS is the doctorate's initial standing in for the given name.
+    #[test]
+    fn monogram_initials_drops_titles_and_qualifications() {
+        assert_eq!(monogram_initials("Dr. Jane Smith"), "JS");
+        assert_eq!(monogram_initials("Prof. Dr. Jane Smith"), "JS");
+        // The German honorific the critic named — "DM" was the defect.
+        assert_eq!(monogram_initials("Dipl.-Ing. Max Müller"), "MM");
+        assert_eq!(monogram_initials("Jane Smith Ph.D."), "JS");
+    }
+
+    /// …but a SINGLE-letter initial is part of the name and keeps counting: the
+    /// title rule keys on "two or more letters before the period", so "J." is
+    /// not swept up with "Dr.". Dropping it would make "J. Smith" render "S".
+    #[test]
+    fn monogram_initials_keeps_single_letter_initials() {
+        assert_eq!(monogram_initials("J. Smith"), "JS");
+        assert_eq!(monogram_initials("Jane M. Smith"), "JS");
     }
 
     /// A letterhead-less letter parses to an empty name; the device must then
@@ -1157,6 +1233,60 @@ Saeed Kolivand
             false,
         );
         assert_eq!(model.letterhead.initials, "JS");
+    }
+
+    /// A letterhead-less letter with no candidate name falls back to the first
+    /// LINE, which is the salutation — so the device read "DM", from "Dear
+    /// Hiring Manager,". Three renderer call sites pass an empty
+    /// `candidate_name`, so this is reachable, not theoretical.
+    ///
+    /// `meta_name: Some("")` rather than `None` on purpose: that is the shape
+    /// the renderer actually sends, and `parse_cover_letter` filters it to the
+    /// same fallback.
+    #[test]
+    fn no_device_initials_when_the_name_falls_back_to_a_salutation() {
+        let letterhead_less =
+            "Dear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+        for meta in [None, Some("")] {
+            let model = parse_cover_letter(
+                letterhead_less,
+                None,
+                meta,
+                "us",
+                "en",
+                dummy_style(),
+                false,
+            );
+            assert_eq!(
+                model.letterhead.initials, "",
+                "meta_name={meta:?}: the monogram device must be empty when the name is really \
+                 the salutation — it rendered \"DM\" from \"Dear Hiring Manager,\""
+            );
+        }
+    }
+
+    /// Same guard for the other two opening kinds the DOCX renderer already
+    /// refuses to treat as a name.
+    #[test]
+    fn no_device_initials_for_a_signoff_or_subject_opening() {
+        for opening in [
+            "Mit freundlichen Grüßen,",
+            "Betreff: Bewerbung als Entwickler",
+        ] {
+            let model = parse_cover_letter(
+                &format!("{opening}\n\nBody text here.\n"),
+                None,
+                None,
+                "de",
+                "de",
+                dummy_style(),
+                false,
+            );
+            assert_eq!(
+                model.letterhead.initials, "",
+                "{opening:?} is not a name; the device must stay empty"
+            );
+        }
     }
 
     /// `ats` reaches `data.opts` verbatim — the whole ATS degradation story for
