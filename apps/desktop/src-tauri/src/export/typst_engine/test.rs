@@ -4,7 +4,7 @@
 //! ResumeWorld hard-wall.
 
 use crate::export::templates::Template;
-use crate::export::types::{LetterLayout, TemplateId};
+use crate::export::types::{LetterLayout, LetterRender, TemplateId};
 use crate::export::typst_engine::{
     render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_from_source,
     render_resume_svg_pages, RenderOpts, TypstTemplate,
@@ -310,9 +310,12 @@ fn render_letter_svg_pages_returns_svg_page() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_svg_pages(us) should succeed");
 
@@ -590,6 +593,38 @@ fn glyph_positions(svg: &str) -> Vec<(f64, f64, String)> {
         false
     });
     out
+}
+
+/// Width, in points, of the topmost baseline among the glyphs left of `max_x`
+/// — first glyph origin to last glyph origin.
+///
+/// Reads the RENDERED TYPE SIZE, which glyph positions alone cannot: typst-svg
+/// gives every glyph an explicit `x` advance, so the same string set in the same
+/// font scales this figure linearly with its point size. Comparing the same
+/// string in two renders therefore yields their size ratio directly, with no
+/// hardcoded point values and no dependency on which glyphs typst-svg chose to
+/// group.
+///
+/// `max_x` selects a column: pass the body's left edge to measure the sidebar
+/// rail, or `f64::INFINITY` for the whole page.
+fn top_line_extent(glyphs: &[(f64, f64, String)], max_x: f64) -> f64 {
+    let zone: Vec<&(f64, f64, String)> = glyphs.iter().filter(|(x, _, _)| *x < max_x).collect();
+    if zone.is_empty() {
+        return 0.0;
+    }
+    let top = zone
+        .iter()
+        .map(|(_, y, _)| *y)
+        .fold(f64::INFINITY, f64::min);
+    // 0.5pt tolerance: one baseline, not "roughly the top of the page".
+    let xs: Vec<f64> = zone
+        .iter()
+        .filter(|(_, y, _)| (*y - top).abs() < 0.5)
+        .map(|(x, _, _)| *x)
+        .collect();
+    let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    hi - lo
 }
 
 /// Bottom edge (page y, in points) of the first FULL-WIDTH rectangle painted in
@@ -2442,9 +2477,12 @@ fn letter_us_renders_valid_pdf_with_expected_content() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(us) should succeed");
 
@@ -2520,9 +2558,12 @@ fn letter_de_renders_valid_pdf_with_subject_line() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(de) should succeed");
 
@@ -2602,9 +2643,12 @@ fn letter_us_and_de_both_start_with_pdf_header() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(us)");
     let de = render_letter_pdf(
@@ -2612,9 +2656,12 @@ fn letter_us_and_de_both_start_with_pdf_header() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(de)");
     assert!(us.starts_with(b"%PDF"), "US letter must start with %PDF");
@@ -2634,9 +2681,12 @@ fn letter_us_write_sample_pdf_for_review() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(us) should succeed for sample PDF");
 
@@ -2668,9 +2718,12 @@ fn letter_de_write_sample_pdf_for_review() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(de) should succeed for sample PDF");
 
@@ -2817,9 +2870,12 @@ fn letter_refined_us_renders_valid_pdf() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Refined,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined US render should succeed");
     assert!(
@@ -2874,9 +2930,12 @@ fn letter_refined_de_honors_din_conventions() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Refined,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined DE render should succeed");
     assert!(
@@ -2932,9 +2991,12 @@ fn letter_refined_extracts_accented_latin_content() {
         &t,
         None,
         Some("Àlvaro Èsposito"),
-        "us",
-        "en",
-        LetterLayout::Refined,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined accented-Latin render should succeed");
     assert!(
@@ -2983,9 +3045,12 @@ fn letter_refined_shows_subject_when_market_omits_it() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Refined,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined US-subject render");
     let refined_txt = pdf_extract::extract_text_from_mem(&refined)
@@ -3001,9 +3066,12 @@ fn letter_refined_shows_subject_when_market_omits_it() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("classic US-subject render");
     let classic_txt = pdf_extract::extract_text_from_mem(&classic)
@@ -3024,9 +3092,12 @@ fn letter_banded_us_renders_valid_pdf() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Banded,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded US render should succeed");
     assert!(bytes.starts_with(b"%PDF"), "banded US must start with %PDF");
@@ -3074,9 +3145,12 @@ fn letter_banded_de_honors_din_subject() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Banded,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded DE render should succeed");
     assert!(bytes.starts_with(b"%PDF"), "banded DE must start with %PDF");
@@ -3116,9 +3190,12 @@ fn letter_banded_extracts_accented_latin_content() {
         &t,
         None,
         Some("Àlvaro Èsposito"),
-        "us",
-        "en",
-        LetterLayout::Banded,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded accented-Latin render should succeed");
     assert!(
@@ -3166,9 +3243,12 @@ fn letter_navy_extracts_accented_latin_content() {
         &t,
         None,
         Some("Àlvaro Èsposito"),
-        "us",
-        "en",
-        LetterLayout::Navy,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Navy,
+            ats: false,
+        },
     )
     .expect("navy accented-Latin render should succeed");
     assert!(
@@ -3207,6 +3287,610 @@ fn letter_navy_extracts_accented_latin_content() {
     );
 }
 
+// ── Phase 8: Sidebar + Monogram layouts ───────────────────────────────────────
+//
+// Both are decorated layouts, so each needs three separate guarantees:
+//   (a) the words still come out, in reading order (the ATS harness);
+//   (b) the decoration is DROPPED under `data.opts.ats` without losing a word;
+//   (c) structural elements gate on `data.opts` (market conventions), never on
+//       the layout id.
+
+/// Layouts that must never emit a hyphenated line break into the PDF text
+/// layer, i.e. the ones that set `hyphenate: false`.
+///
+/// Deliberately a roster and not "every layout": the four SHIPPED layouts
+/// (Classic, Refined, Banded, Navy) all still hyphenate, which is pre-existing
+/// and is being swept in its own PR. A family-wide assertion would go red on
+/// them today, so this gates on the two layouts this PR owns and grows when the
+/// sweep lands.
+const NO_SOFT_HYPHEN_LAYOUTS: [LetterLayout; 2] = [LetterLayout::Sidebar, LetterLayout::Monogram];
+
+/// Render + extract + whitespace-normalise + lowercase, the shape every letter
+/// assertion below wants. Panics with the layout name so a failure says which.
+///
+/// Also the single choke point for the SOFT-HYPHEN guard: every extraction in
+/// this file flows through here, so a layout in [`NO_SOFT_HYPHEN_LAYOUTS`]
+/// cannot regress into hyphenated line breaks via any test, not just a
+/// dedicated one. A U+00AD in the extracted text means the PDF really did break
+/// the word — "microservices architecture" comes out as "architec­ture" and an
+/// ATS tokenising on whitespace loses the keyword.
+///
+/// Only the SOFT hyphen is checked. The critic's correction to my first
+/// measurement: of the three U+00AD-adjacent breaks I counted, only one is a
+/// genuine soft-hyphen break — the others are HARD hyphens ("end-to-end"),
+/// which Typst tags with `/ActualText` and are recoverable by a conforming
+/// extractor. Asserting on the hard ones would be asserting on a non-defect.
+fn letter_lower(layout: LetterLayout, fixture: &str, market: &str, ats: bool) -> String {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let name = if market == "de" {
+        "Max Müller"
+    } else {
+        "Jane Smith"
+    };
+    let lang = if market == "de" { "de" } else { "en" };
+    let bytes = render_letter_pdf(
+        fixture,
+        &t,
+        None,
+        Some(name),
+        LetterRender {
+            market,
+            lang,
+            layout,
+            ats,
+        },
+    )
+    .unwrap_or_else(|e| panic!("{layout:?} (ats={ats}) render failed: {e}"));
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "{layout:?} (ats={ats}) must start with %PDF"
+    );
+    let txt = pdf_extract::extract_text_from_mem(&bytes)
+        .unwrap_or_else(|e| panic!("pdf-extract on {layout:?} (ats={ats}): {e}"))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+
+    if NO_SOFT_HYPHEN_LAYOUTS.contains(&layout) {
+        assert!(
+            !txt.contains('\u{00AD}'),
+            "{layout:?} (ats={ats}) emitted a soft hyphen — a hyphenated line break splits a \
+             word in the PDF text layer, so an ATS tokenising on whitespace loses the keyword. \
+             `hyphenate: false` must stay set on this layout.\n{txt}"
+        );
+    }
+    txt
+}
+
+/// (S1/M1) Both new layouts render a valid US PDF whose text extracts in
+/// letterhead → recipient → salutation → body → sign-off order. Sidebar's rail
+/// is a MARGIN POSITION, not a second column of prose, so it must not scramble
+/// this the way a real two-column letter would.
+#[test]
+fn new_letter_layouts_extract_in_reading_order() {
+    for layout in [LetterLayout::Sidebar, LetterLayout::Monogram] {
+        let lower = letter_lower(layout, LETTER_FIXTURE_US, "us", false);
+
+        for needle in [
+            "jane smith",
+            "dear hiring manager",
+            "distributed systems",
+            "sincerely",
+        ] {
+            assert!(
+                lower.contains(needle),
+                "{layout:?}: {needle:?} missing from the extracted text:\n{lower}"
+            );
+        }
+
+        let pos_head = lower.find("jane smith").expect("letterhead present");
+        let pos_recipient = lower.find("acme corp").expect("recipient present");
+        let pos_sal = lower.find("dear").expect("salutation present");
+        let pos_body = lower.find("distributed").expect("body present");
+        let pos_signoff = lower.find("sincerely").expect("sign-off present");
+        assert!(
+            pos_head < pos_recipient
+                && pos_recipient < pos_sal
+                && pos_sal < pos_body
+                && pos_body < pos_signoff,
+            "{layout:?}: reading order broken — head={pos_head} recipient={pos_recipient} \
+             sal={pos_sal} body={pos_body} signoff={pos_signoff}\n{lower}"
+        );
+        assert!(
+            lower.contains("123 main street"),
+            "{layout:?}: recipient inside address missing:\n{lower}"
+        );
+    }
+}
+
+/// (S2/M2) Accented-Latin round trip — the guard that caught Cologne Navy's
+/// 0.14em tracking, where the name extracted as "À LVA R O È S P O S I T O".
+/// Both new layouts track their name, so both need it.
+#[test]
+fn new_letter_layouts_extract_accented_latin_content() {
+    for layout in [LetterLayout::Sidebar, LetterLayout::Monogram] {
+        let t = Template::get(TemplateId::SwissMinimal);
+        let bytes = render_letter_pdf(
+            LETTER_FIXTURE_IT,
+            &t,
+            None,
+            Some("Àlvaro Èsposito"),
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout,
+                ats: false,
+            },
+        )
+        .unwrap_or_else(|e| panic!("{layout:?} accented-Latin render failed: {e}"));
+        let extracted = pdf_extract::extract_text_from_mem(&bytes)
+            .unwrap_or_else(|e| panic!("pdf-extract on {layout:?} accented-Latin: {e}"));
+        let lower = extracted
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+
+        assert!(
+            lower.contains("àlvaro èsposito"),
+            "{layout:?}: the accented name did not survive extraction as one word pair — \
+             tracking too wide?\n---\n{extracted}"
+        );
+        assert!(
+            signature_block(&lower).contains("àlvaro èsposito"),
+            "{layout:?}: accented name missing from the SIGNATURE (after the sign-off); a \
+             letterhead-only match would hide a dropped signature\n---\n{extracted}"
+        );
+        assert!(
+            lower.contains("così") || lower.contains("però") || lower.contains("città"),
+            "{layout:?}: grave-accented-lowercase body word missing\n---\n{extracted}"
+        );
+
+        let normalized_len = normalize_like_validator(&extracted).len();
+        assert!(
+            normalized_len >= NO_EXTRACTABLE_TEXT_THRESHOLD,
+            "{layout:?} accented-Latin: only {normalized_len} normalized chars extracted — \
+             the real validator's no_extractable_text gate would block this export"
+        );
+    }
+}
+
+/// (S3) ATS mode drops Sidebar's tinted rail. Detected the same way the Banded
+/// band is: a page-1 fill that design mode has and the ATS render does not.
+///
+/// The load-bearing second half is that no WORD is lost — a "degradation" that
+/// silently drops the contact line would pass a fill-only assertion.
+#[test]
+fn sidebar_rail_drops_under_ats_mode_without_losing_words() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let svg = |ats: bool| {
+        render_letter_svg_pages(
+            LETTER_FIXTURE_US,
+            &t,
+            None,
+            Some("Jane Smith"),
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Sidebar,
+                ats,
+            },
+        )
+        .expect("sidebar SVG render")
+    };
+
+    let design_fills = svg_fill_colors(&svg(false)[0]);
+    let ats_fills = svg_fill_colors(&svg(true)[0]);
+    let rail_only: Vec<&String> = design_fills.difference(&ats_fills).collect();
+    assert!(
+        !rail_only.is_empty(),
+        "the Sidebar rail tint must be present in design mode and absent under ATS mode;\n\
+         design={design_fills:?}\nats={ats_fills:?}"
+    );
+
+    // Same words, both modes — the rail is a position and a tint, not content.
+    let design_txt = letter_lower(LetterLayout::Sidebar, LETTER_FIXTURE_US, "us", false);
+    let ats_txt = letter_lower(LetterLayout::Sidebar, LETTER_FIXTURE_US, "us", true);
+    for needle in [
+        "jane smith",
+        "jane@example.com",
+        "acme corp",
+        "dear hiring manager",
+        "distributed systems",
+        "sincerely",
+    ] {
+        assert!(
+            ats_txt.contains(needle),
+            "ATS-mode Sidebar dropped {needle:?} — degradation must lose decoration, not words:\n{ats_txt}"
+        );
+        assert!(
+            design_txt.contains(needle),
+            "design-mode Sidebar lost {needle:?}"
+        );
+    }
+}
+
+/// (M3) ATS mode drops Monogram's initials device. Unlike a tint, the device is
+/// real TEXT: in design mode extraction reads "js jane smith", two characters of
+/// noise ahead of the candidate's actual name, which is exactly what ATS mode
+/// exists to remove.
+#[test]
+fn monogram_device_drops_under_ats_mode_without_losing_words() {
+    let design = letter_lower(LetterLayout::Monogram, LETTER_FIXTURE_US, "us", false);
+    let ats = letter_lower(LetterLayout::Monogram, LETTER_FIXTURE_US, "us", true);
+
+    assert!(
+        design.contains("js jane smith"),
+        "design-mode Monogram must render the initials device immediately before the name:\n{design}"
+    );
+    assert!(
+        !ats.contains("js jane smith"),
+        "ATS-mode Monogram must NOT emit the initials device — they extract as noise before \
+         the name:\n{ats}"
+    );
+    for needle in [
+        "jane smith",
+        "jane@example.com",
+        "dear hiring manager",
+        "distributed systems",
+        "sincerely",
+    ] {
+        assert!(
+            ats.contains(needle),
+            "ATS-mode Monogram dropped {needle:?} — degradation must lose the device, not words:\n{ats}"
+        );
+    }
+}
+
+/// (B4) The same discipline, applied to the layout that predates it: Banded's
+/// accent band is decorative and must go under ATS mode too. Before ATS mode was
+/// threaded into the letter path at all, the toggle silently did nothing to a
+/// cover letter — a band the user had asked to remove was still exported.
+#[test]
+fn banded_band_drops_under_ats_mode() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let svg = |ats: bool| {
+        render_letter_svg_pages(
+            LETTER_FIXTURE_US,
+            &t,
+            None,
+            Some("Jane Smith"),
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Banded,
+                ats,
+            },
+        )
+        .expect("banded SVG render")
+    };
+    let design_fills = svg_fill_colors(&svg(false)[0]);
+    let ats_fills = svg_fill_colors(&svg(true)[0]);
+    assert!(
+        !design_fills
+            .difference(&ats_fills)
+            .collect::<Vec<_>>()
+            .is_empty(),
+        "the Banded band fill must be present in design mode and absent under ATS mode;\n\
+         design={design_fills:?}\nats={ats_fills:?}"
+    );
+}
+
+/// (S4/M4) Structural elements gate on `data.opts`, NEVER on the layout id: the
+/// subject line appears for a DE letter (DIN `Betreff`, `subject_line_used`) and
+/// is absent for a US one whose market convention omits it — identical layout,
+/// opposite outcome, decided entirely by the market.
+#[test]
+fn new_letter_layouts_gate_the_subject_line_on_market_opts_not_layout() {
+    for layout in [LetterLayout::Sidebar, LetterLayout::Monogram] {
+        let de = letter_lower(layout, LETTER_FIXTURE_DE, "de", false);
+        // EXACTLY once, not merely present. `contains` is satisfied by one label
+        // and by two, and two is what these layouts shipped: `parse_cover_letter`
+        // publishes `data.subject` verbatim ("Betreff: Bewerbung …") and the
+        // caption printed the label again on top of it, so a DE letter read
+        // "BETREFF / Betreff: Bewerbung …". The four shipped layouts strip the
+        // label first; these two did not, and a presence-only assertion could
+        // not tell the difference.
+        let betreff_count = de.matches("betreff").count();
+        assert_eq!(
+            betreff_count, 1,
+            "{layout:?}: the DE market label must render exactly once, found \
+             {betreff_count} — the caption is duplicating the label already carried \
+             by data.subject:\n{de}"
+        );
+        // …and it must be the CAPTION that survives, not the raw prefix. The
+        // count alone cannot tell those apart: stripping the label without a
+        // caption, and a caption without stripping, both yield exactly one.
+        // The colon is the tell — it only exists in the unstripped body.
+        assert!(
+            !de.contains("betreff: bewerbung"),
+            "{layout:?}: the label was left on the subject body — `data.subject` must be \
+             stripped before rendering, the way letter_refined/letter_navy and the DOCX \
+             `strip_market_label` all do it:\n{de}"
+        );
+        assert!(
+            de.contains("bewerbung als software engineer"),
+            "{layout:?}: the DE subject body went missing:\n{de}"
+        );
+        assert!(
+            de.contains("sehr geehr") && de.contains("freundlichen"),
+            "{layout:?}: German salutation / sign-off missing:\n{de}"
+        );
+        assert!(
+            de.contains("max") && de.contains("müller"),
+            "{layout:?}: DE signature name missing:\n{de}"
+        );
+
+        let us = letter_lower(layout, LETTER_FIXTURE_US_SUBJECT, "us", false);
+        assert!(
+            !us.contains("px-2291"),
+            "{layout:?}: the subject must NOT render when the market omits it \
+             (subject_line_used=false):\n{us}"
+        );
+    }
+}
+
+/// (S6) The rail placement is `place`d with hand-computed offsets
+/// (`dx: -(rail-w + rail-gutter - rail-pad)`), so it is measured against the
+/// RENDERED page rather than trusted. A sign error or a stale constant would put
+/// the letterhead off the left edge or on top of the body, and every text-only
+/// assertion above would still pass.
+///
+/// Geometry under test (`letter_sidebar.typ`): rail 52 mm wide, text inset
+/// 7 mm, gutter 10 mm, so the body column starts at 62 mm.
+#[test]
+fn sidebar_letterhead_is_measurably_inside_the_rail() {
+    const MM: f64 = 72.0 / 25.4;
+    let rail_pad = 7.0 * MM;
+    let rail_text_right = (7.0 + 38.0) * MM;
+    // Outer edge of the tinted panel. Used to bound the "rail zone" when
+    // measuring type size: the body column's own left edge is NOT safe for
+    // that, because a body glyph lands a float-hair below 62mm and would be
+    // read as the rail's topmost line, collapsing the measurement to zero.
+    let rail_right = 52.0 * MM;
+    let body_left = 62.0 * MM;
+    let ats_margin = 25.4 * MM;
+
+    // A matrix, because the single "Jane Smith" case fitted the 38 mm block by
+    // luck. Every row below is a real name/e-mail length against a template
+    // whose `name_pt` is large enough to matter; the long ones overflowed the
+    // rail into the gutter and the body column before shrink-to-fit existed.
+    // "Alex Li" and "Jane Smith" stay in so the fitter cannot pass by simply
+    // shrinking everything.
+    // `fits_at_base` marks the rows short enough that the fitter must be a
+    // NO-OP: they are the half that makes this test discriminating. Without
+    // them, forcing `fit-size` to always return its 6pt floor passes the whole
+    // matrix — every assertion here is a glyph POSITION, and shrinking
+    // everything only ever produces less overflow, never more.
+    let cases: &[(TemplateId, &str, &str, bool)] = &[
+        (
+            TemplateId::SwissMinimal,
+            "Jane Smith",
+            "jane@example.com",
+            true,
+        ),
+        (TemplateId::Aria, "Alex Li", "alex@example.com", true),
+        (
+            TemplateId::Aria,
+            "Àlvaro Papadopoulos",
+            "alvaro.papadopoulos@example.com",
+            false,
+        ),
+        (
+            TemplateId::Cadence,
+            "Wojciech Wojciechowski",
+            "w.wojciechowski@example.com",
+            false,
+        ),
+        (
+            TemplateId::Deedy,
+            "Anne Vandenberghe",
+            "anne.vandenberghe@example.co.uk",
+            false,
+        ),
+    ];
+
+    for (template_id, name, email, fits_at_base) in cases {
+        let t = Template::get(*template_id);
+        let profile = crate::contact_profile::ContactProfile {
+            full_name: Some((*name).to_string()),
+            email: Some((*email).to_string()),
+            ..Default::default()
+        };
+        let page = |ats: bool| {
+            render_letter_svg_pages(
+                LETTER_FIXTURE_US,
+                &t,
+                Some(&profile),
+                Some(*name),
+                LetterRender {
+                    market: "us",
+                    lang: "en",
+                    layout: LetterLayout::Sidebar,
+                    ats,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{template_id:?}/{name}: sidebar SVG render: {e}"))[0]
+                .clone()
+        };
+
+        let design = glyph_positions(&page(false));
+        assert!(
+            !design.is_empty(),
+            "{template_id:?}/{name}: design-mode page 1 rendered no glyphs"
+        );
+
+        let leftmost = design
+            .iter()
+            .map(|(x, _, _)| *x)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            (leftmost - rail_pad).abs() < 1.5,
+            "{template_id:?}/{name}: the rail text must start exactly at the 7 mm rail              padding ({rail_pad:.1}pt); leftmost glyph is at {leftmost:.1}pt — the `place`              dx arithmetic is off"
+        );
+
+        // NOTHING may start between the end of the rail's 38 mm text block and
+        // the body column. That span is the rail's right padding plus the 10 mm
+        // gutter — it is where an unbreakable token too wide for the block ends
+        // up, and it is the only visible symptom, since `place` neither wraps
+        // nor clips.
+        let overflow: Vec<f64> = design
+            .iter()
+            .map(|(x, _, _)| *x)
+            .filter(|x| *x > rail_text_right + 0.5 && *x < body_left - 0.5)
+            .collect();
+        assert!(
+            overflow.is_empty(),
+            "{template_id:?}/{name}: glyphs at {overflow:?} sit past the rail text block              ({rail_text_right:.1}pt) and before the body column ({body_left:.1}pt) — the              letterhead is spilling out of the rail and across the gutter"
+        );
+
+        assert!(
+            design.iter().any(|(x, _, _)| *x >= body_left - 0.5),
+            "{template_id:?}/{name}: no glyph reaches the body column at {body_left:.1}pt —              the widened left margin is not being applied"
+        );
+
+        // ATS mode is the full-width single column: no rail, so no fitting, and
+        // nothing may sit left of the ordinary margin.
+        let ats = glyph_positions(&page(true));
+        let ats_leftmost = ats.iter().map(|(x, _, _)| *x).fold(f64::INFINITY, f64::min);
+        assert!(
+            ats_leftmost >= ats_margin - 1.5,
+            "{template_id:?}/{name}: ATS-mode Sidebar put a glyph at {ats_leftmost:.1}pt,              left of the {ats_margin:.1}pt margin — the rail placement is still active"
+        );
+
+        // The discriminating half. A name that already fits must render at the
+        // rail's BASE size, so the fitter has to leave it alone.
+        //
+        // Expressed as a ratio against the same name in ATS mode — which always
+        // renders at the template's full `name_pt` — so it calibrates itself
+        // per template instead of hardcoding point sizes. The rail's base is
+        // `name_pt - 4pt`, so the two extents must stand in exactly that ratio.
+        // A fitter stuck at its 6pt floor collapses the ratio (6/20 = 0.30
+        // against an expected 0.80) and this goes red, while every
+        // position-only assertion above still passes it: shrinking everything
+        // only ever produces LESS overflow, never more.
+        if *fits_at_base {
+            let base_ratio = (t.name_pt as f64 - 4.0) / t.name_pt as f64;
+            let design_extent = top_line_extent(&design, rail_right);
+            let ats_extent = top_line_extent(&ats, f64::INFINITY);
+            assert!(
+                design_extent > 1.0 && ats_extent > 1.0,
+                "{template_id:?}/{name}: measured a degenerate name line \
+                 (design={design_extent:.1}pt, ats={ats_extent:.1}pt)"
+            );
+            let actual = design_extent / ats_extent;
+            assert!(
+                (actual - base_ratio).abs() < 0.04,
+                "{template_id:?}/{name}: the rail name renders at {actual:.3}x the ATS-mode \
+                 name, expected {base_ratio:.3}x (= (name_pt - 4)/name_pt). A name this short \
+                 already fits the 38 mm rail, so shrink-to-fit must be a NO-OP for it — this \
+                 ratio is what separates 'fits what needs it' from 'shrinks everything'."
+            );
+        }
+    }
+}
+
+/// (S7) Sidebar's contact line contains real `link()`s, and in design mode the
+/// whole letterhead goes through `place()` with a NEGATIVE `dx` into the page
+/// margin. Placed-and-negatively-offset content is the documented
+/// annotation-loss shape (see the two-column header precedent above), and a
+/// dropped `/Annots` entry is invisible to every text assertion — the words
+/// still extract, they just stop being clickable.
+///
+/// Asserted in BOTH modes: design mode is the placed path, ATS mode is the
+/// ordinary in-flow path, and only comparing the two shows that placement is
+/// what would have cost the annotation.
+#[test]
+fn sidebar_contact_links_survive_the_placed_rail() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let profile = crate::contact_profile::ContactProfile {
+        full_name: Some("Jane Smith".to_string()),
+        email: Some("jane@example.com".to_string()),
+        linkedin: Some("https://linkedin.com/in/janesmith".to_string()),
+        ..Default::default()
+    };
+
+    for ats in [false, true] {
+        let bytes = render_letter_pdf(
+            LETTER_FIXTURE_US,
+            &t,
+            Some(&profile),
+            Some("Jane Smith"),
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Sidebar,
+                ats,
+            },
+        )
+        .unwrap_or_else(|e| panic!("sidebar (ats={ats}) render failed: {e}"));
+
+        let uris = link_uris(&bytes);
+        assert!(
+            uris.iter().any(|u| u.contains("linkedin.com/in/janesmith")),
+            "sidebar (ats={ats}): the LinkedIn link annotation was dropped — in design mode the \
+             letterhead is `place`d into the margin with a negative dx, which is exactly the \
+             shape that loses /Annots. found {uris:?}"
+        );
+        assert!(
+            uris.iter().any(|u| u.contains("jane@example.com")),
+            "sidebar (ats={ats}): the mailto link annotation was dropped; found {uris:?}"
+        );
+    }
+}
+
+/// (S5) Sidebar keeps its wide left margin and rail on EVERY page (a page-1-only
+/// rail would leave page 2 with a 62 mm margin and nothing in it), and the body
+/// still flows onto a second page — `place` must not have swallowed the content.
+#[test]
+fn sidebar_rail_repeats_on_every_page() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let pages = render_letter_svg_pages(
+        LETTER_FIXTURE_LONG_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Sidebar,
+            ats: false,
+        },
+    )
+    .expect("sidebar long-letter SVG render");
+    assert!(
+        pages.len() >= 2,
+        "the long fixture must reflow onto ≥2 pages to exercise the rail; got {}",
+        pages.len()
+    );
+
+    let ats_pages = render_letter_svg_pages(
+        LETTER_FIXTURE_LONG_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Sidebar,
+            ats: true,
+        },
+    )
+    .expect("sidebar long-letter ATS SVG render");
+
+    // Compared against the ATS render's last page rather than against page 1,
+    // so the assertion is "the rail is still here" and not merely "this page has
+    // some fill" — every page has text fills.
+    let design_last = svg_fill_colors(&pages[pages.len() - 1]);
+    let ats_last = svg_fill_colors(&ats_pages[ats_pages.len() - 1]);
+    assert!(
+        design_last.difference(&ats_last).next().is_some(),
+        "the Sidebar rail must be drawn on the LAST page too, not just page 1;\n\
+         design last-page fills={design_last:?}\nats last-page fills={ats_last:?}"
+    );
+}
+
 // (B3) The Banded accent band is drawn on page 1 ONLY. On a multi-page letter,
 // Banded's page-1 SVG carries a filled band colour that (a) the no-band Classic
 // layout lacks on its own page 1, and (b) is absent from Banded's later pages.
@@ -3220,9 +3904,12 @@ fn letter_banded_band_draws_on_page_one_only() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Banded,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded long-letter SVG render");
     let classic = render_letter_svg_pages(
@@ -3230,9 +3917,12 @@ fn letter_banded_band_draws_on_page_one_only() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("classic long-letter SVG render");
 
@@ -3270,15 +3960,28 @@ fn letter_layout_inherits_resume_template_accent() {
     let regent = Template::get(TemplateId::Regent);
     let swiss = Template::get(TemplateId::SwissMinimal);
 
-    for layout in [LetterLayout::Refined, LetterLayout::Banded] {
+    // Every decorated layout, not just the first two: the palette reaches
+    // Sidebar's rail tint and Monogram's device fill through the same
+    // `style_from_template` seam, and a hardcoded colour in either would show up
+    // here as two identical renders.
+    for layout in [
+        LetterLayout::Refined,
+        LetterLayout::Banded,
+        LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ] {
         let a = render_letter_pdf(
             LETTER_FIXTURE_US,
             &regent,
             None,
             Some("Jane Smith"),
-            "us",
-            "en",
-            layout,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout,
+                ats: false,
+            },
         )
         .expect("regent letter render");
         let b = render_letter_pdf(
@@ -3286,9 +3989,12 @@ fn letter_layout_inherits_resume_template_accent() {
             &swiss,
             None,
             Some("Jane Smith"),
-            "us",
-            "en",
-            layout,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout,
+                ats: false,
+            },
         )
         .expect("swiss letter render");
         assert!(
@@ -3299,49 +4005,56 @@ fn letter_layout_inherits_resume_template_accent() {
     }
 }
 
-// (D1) The three layouts dispatch to distinct sources: same data, different
-// bytes. Classic remains a valid PDF (default-path regression).
+// (D1) EVERY layout dispatches to a distinct source: same data, different bytes.
+// Classic remains a valid PDF (default-path regression).
+//
+// Pairwise over the whole roster rather than three hand-written comparisons —
+// the hand-written form is how a new layout ends up silently rendering as
+// another one (the DOCX side shipped exactly that bug: Navy rendered as Banded
+// because a single boolean sent it down Banded's branch).
 #[test]
 fn letter_layouts_dispatch_to_distinct_sources() {
     let t = Template::get(TemplateId::SwissMinimal);
-    let classic = render_letter_pdf(
-        LETTER_FIXTURE_US,
-        &t,
-        None,
-        Some("Jane Smith"),
-        "us",
-        "en",
+    let layouts = [
         LetterLayout::Classic,
-    )
-    .expect("classic render");
-    let refined = render_letter_pdf(
-        LETTER_FIXTURE_US,
-        &t,
-        None,
-        Some("Jane Smith"),
-        "us",
-        "en",
         LetterLayout::Refined,
-    )
-    .expect("refined render");
-    let banded = render_letter_pdf(
-        LETTER_FIXTURE_US,
-        &t,
-        None,
-        Some("Jane Smith"),
-        "us",
-        "en",
         LetterLayout::Banded,
-    )
-    .expect("banded render");
+        LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ];
+    let rendered: Vec<(LetterLayout, Vec<u8>)> = layouts
+        .iter()
+        .map(|&layout| {
+            let bytes = render_letter_pdf(
+                LETTER_FIXTURE_US,
+                &t,
+                None,
+                Some("Jane Smith"),
+                LetterRender {
+                    market: "us",
+                    lang: "en",
+                    layout,
+                    ats: false,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{layout:?} render failed: {e}"));
+            assert!(
+                bytes.starts_with(b"%PDF"),
+                "{layout:?} must produce a valid PDF"
+            );
+            (layout, bytes)
+        })
+        .collect();
 
-    assert!(
-        classic.starts_with(b"%PDF"),
-        "classic must remain a valid PDF"
-    );
-    assert!(classic != refined, "Classic and Refined must differ");
-    assert!(classic != banded, "Classic and Banded must differ");
-    assert!(refined != banded, "Refined and Banded must differ");
+    for (i, (a_id, a)) in rendered.iter().enumerate() {
+        for (b_id, b) in rendered.iter().skip(i + 1) {
+            assert!(
+                a != b,
+                "{a_id:?} and {b_id:?} must produce different output"
+            );
+        }
+    }
 }
 
 // ── Phase 3a: Meridian, Throughline, Quanta — premium single-column ───────────
@@ -4753,9 +5466,12 @@ fn stray_typst_code_guard_letter() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("stray-token guard: letter render failed");
     assert_no_stray_tokens("letter", &bytes);
@@ -5426,7 +6142,7 @@ fn generate_cover_template_previews() {
     use std::path::Path;
     use typst_layout::PagedDocument;
 
-    use super::engine::letter_template_sources;
+    use super::engine::{letter_scale_source, letter_source_for};
     use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
     use super::world::ResumeWorld;
 
@@ -5456,11 +6172,15 @@ fn generate_cover_template_previews() {
         "cover previews must cover every canonical template"
     );
 
-    // Embedded letter Typst sources (scale preamble + all three layout sources),
-    // reused verbatim from production so the preview matches `render_letter_pdf`.
-    // The gallery preview renders the Classic layout; the Refined/Banded sources
-    // are exposed here for future per-layout previews.
-    let (scale_typ, letter_typ, _refined_typ, _banded_typ) = letter_template_sources();
+    // Embedded letter Typst sources, reused verbatim from production so the
+    // preview matches `render_letter_pdf`. The gallery preview renders the
+    // Classic layout — these previews answer "what does a letter styled like
+    // THIS RÉSUMÉ TEMPLATE look like", which is the `style_from_template` axis;
+    // the layout axis is orthogonal and is chosen separately in the picker.
+    // Routed through the production picker (`letter_source_for`) rather than a
+    // fixed tuple, which had gone stale at three layouts.
+    let scale_typ = letter_scale_source();
+    let letter_typ = letter_source_for(LetterLayout::Classic);
 
     let preview_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../src/renderer/features/ai-generate/assets/cover-template-previews");
@@ -5482,6 +6202,8 @@ fn generate_cover_template_previews() {
             "intl",
             "en",
             style,
+            // Design mode: the gallery advertises what the layout looks like.
+            false,
         );
         let data_json = serde_json::to_vec(&model)
             .unwrap_or_else(|e| panic!("cover previews: JSON serialise ({label}) failed: {e}"));

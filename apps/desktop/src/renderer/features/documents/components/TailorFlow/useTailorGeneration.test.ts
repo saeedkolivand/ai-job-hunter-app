@@ -125,7 +125,11 @@ const params = {
 // must render under a QueryClientProvider.
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(QueryClientProvider, { client: new QueryClient() }, children);
-const render = (p = params) => renderHook(() => useTailorGeneration(p), { wrapper });
+// Typed as the hook's own Params (not `typeof params`) so a case can add an
+// optional field the fixture omits — e.g. `letterLayoutId` — without the literal
+// `templateId: 'classic'` in the fixture narrowing the parameter type.
+const render = (p: Parameters<typeof useTailorGeneration>[0] = params) =>
+  renderHook(() => useTailorGeneration(p), { wrapper });
 
 describe('useTailorGeneration', () => {
   // The session lives in the shared store — reset it so tests don't leak state.
@@ -312,6 +316,41 @@ describe('useTailorGeneration', () => {
       expect(result.current.report).toBeNull();
     });
   });
+
+  // Closes the toggle → wire chain: GenerationOutput's cover-tab switch writes
+  // the host's atsMode, and THIS is the step that has to carry it onto the
+  // cover-letter export request (`data.opts.ats` on the Rust side is what drops
+  // Monogram's initials tile). Positional args mirror exportPDF's signature:
+  // (output, name, docType, meta, templateId, atsMode, locale, accent, letterLayoutId).
+  it.each([true, false])(
+    'passes atsMode=%s onto the cover-letter export alongside the letter layout',
+    async (atsMode) => {
+      vi.mocked(exportPDF).mockClear();
+      const coverParams: Parameters<typeof useTailorGeneration>[0] = {
+        ...params,
+        // ATS-tier résumé template: the flag is a no-op for the résumé, so the
+        // letter is the only document it still changes.
+        templateId: 'classic',
+        atsMode,
+        letterLayoutId: 'monogram',
+      };
+      const { result } = render(coverParams);
+
+      await act(async () => {
+        await result.current.generate('my resume', 'both');
+      });
+      act(() => result.current.setActiveOut('cover'));
+
+      await act(async () => {
+        await result.current.exportAs('pdf');
+      });
+
+      const call = vi.mocked(exportPDF).mock.calls.at(-1);
+      expect(call?.[2]).toBe('cover-letter');
+      expect(call?.[5]).toBe(atsMode);
+      expect(call?.[8]).toBe('monogram');
+    }
+  );
 
   it('surfaces a rejected export as a notification instead of an unhandled rejection', async () => {
     vi.mocked(exportPDF).mockRejectedValueOnce(new Error('Export blocked: too many pages.'));

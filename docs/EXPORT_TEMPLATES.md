@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-08-10
+Last updated: 2026-08-13
 
 The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
@@ -254,16 +254,19 @@ signoff / signature). The model is serialised to JSON and injected via the Typst
 virtual `data.json` — no user content is ever concatenated into Typst markup
 (injection-safe).
 
-### Letter layouts (`classic` / `refined` / `banded`)
+### Letter layouts
 
 `LetterLayout` (`export/types.rs`, wire field `letterLayoutId`) selects the letter's
-**arrangement only** — it is orthogonal to the résumé template. Three layouts:
+**arrangement only** — it is orthogonal to the résumé template. Six layouts:
 
-| Layout    | Source               | Arrangement                                                                                                                                                   |
-| --------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `classic` | `letter.typ`         | The original single-letter arrangement. Default — a request omitting the field is byte-identical.                                                             |
-| `refined` | `letter_refined.typ` | Olivia-Wilson minimalist: large sans name + role top-left, right-aligned contact, rule, always-visible job-reference line (from `subject`), spaced signature. |
-| `banded`  | `letter_banded.typ`  | Belinda-Davidson: angled pale accent band across page 1 (decorative, behind text), serif small-caps name, stacked right contact, short rule footer.           |
+| Layout     | Source                | Arrangement                                                                                                                                                                                                                                                                                |
+| ---------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `classic`  | `letter.typ`          | The original single-letter arrangement. Default — a request omitting the field is byte-identical.                                                                                                                                                                                          |
+| `refined`  | `letter_refined.typ`  | Olivia-Wilson minimalist: large sans name + role top-left, right-aligned contact, rule, always-visible job-reference line (from `subject`), spaced signature.                                                                                                                              |
+| `banded`   | `letter_banded.typ`   | Belinda-Davidson: angled pale accent band across page 1 (decorative, behind text), serif small-caps name, stacked right contact, short rule footer.                                                                                                                                        |
+| `navy`     | `letter_navy.typ`     | Centred letterhead (tracked-caps name over contact line) with a navy-weight rule beneath; pairs with the Cologne Navy résumé's centred ruled header.                                                                                                                                       |
+| `sidebar`  | `letter_sidebar.typ`  | Tinted full-height contact rail in a widened left margin, carrying name / role / contact block; body beside it. Styled to pair with sidebar résumés (Atelier, Aria, Saffron, Deedy). **Note**: not window-envelope compatible (DIN 5008 Form B); rail decorative and drops under ATS mode. |
+| `monogram` | `letter_monogram.typ` | Accent initials device beside name / role / contact lockup, full-width rule beneath, body below. Styled to pair with bold-header résumés (Awesome, Jake, Throughline). Device is decorative and drops under ATS mode.                                                                      |
 
 **Inheritance rule.** A layout owns arrangement; the **palette and fonts always
 inherit** from the résumé template (via `LetterStyle`). A layout can never introduce
@@ -276,11 +279,13 @@ in every layout). The governing rule: **letter layouts gate structural elements 
 `data.opts` conventions, never on the layout id** — composition and semantics stay
 separated, so a new layout can't silently diverge a market convention.
 
+**Decorative elements drop under ATS mode** — the rail (Sidebar) and monogram initials (Monogram) are rendering-only and carry no semantic information, so they are omitted when `ats_mode` is true, leaving the core letterhead and body intact.
+
 **DOCX approximates the PDF layouts** (`export/docx/mod.rs`). `Classic` keeps the
 original, unmodified DOCX renderer (byte-identical). `Refined` / `Banded` share a new
 DOCX path that approximates the vector design: **`Banded`'s angled polygon becomes
 flat accent-tinted paragraph shading** on the name, **PDF small-caps become
-uppercase**, and the contact block is right-aligned with a bottom-border footer rule.
+uppercase**, and the contact block is right-aligned with a bottom-border footer rule. `Navy`, `Sidebar`, and `Monogram` follow similar approximation rules per layout.
 
 **Regent small-caps caveat (PDF).** `Regent` and `Saffron` wrap headings in Typst
 `smallcaps(…)`, but the bundled **Source Serif 4 lacks the `smcp` OpenType feature**,

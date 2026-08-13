@@ -54,7 +54,7 @@ render path (see consequence "Accent validation is single-source").
 
 ### (b) Letter layout is orthogonal to the résumé template
 
-Cover-letter design is modeled as `LetterLayout { Classic, Refined, Banded }`
+Cover-letter design is modeled as `LetterLayout { Classic, Refined, Banded, Navy, Sidebar, Monogram }`
 (contract field `letterLayoutId`, graceful-fallback `Deserialize`). A **layout owns
 only arrangement/composition**. The **palette and fonts always inherit** from the
 selected résumé `TemplateId` via `style_from_template` (which produces a
@@ -63,7 +63,9 @@ selected résumé `TemplateId` via `style_from_template` (which produces a
 block) via `LetterMarketConventions`; where a convention and a layout's arrangement
 conflict, the convention wins (e.g. DE DIN date-top-right). The governing rule:
 **new letter layouts gate structural elements on `data.opts` conventions, never on
-the layout id** — composition and semantics stay separated.
+the layout id** — composition and semantics stay separated. Decorative elements
+(e.g. Sidebar's contact rail, Monogram's initials device) are omitted under ATS mode;
+semantic content remains unchanged in all layouts under both modes.
 
 ### (c) Template tier is honest ATS labeling
 

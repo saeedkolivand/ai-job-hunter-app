@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
+import { LETTER_LAYOUT_IDS } from '@/lib/generate';
+
 import { LetterLayoutPicker } from './index';
 
 vi.mock('@ajh/translations', () => ({
@@ -58,5 +60,16 @@ describe('LetterLayoutPicker', () => {
   it('exposes a labeled radiogroup', () => {
     render(<LetterLayoutPicker onChange={vi.fn()} />);
     expect(screen.getByRole('radiogroup', { name: 'aiGenerate.letterLayout' })).toBeInTheDocument();
+  });
+
+  // Registration guard. The picker renders its own `LAYOUTS` array while the
+  // keyboard handler walks `LETTER_LAYOUT_IDS`, so a layout added to the id set
+  // but not to the picker is invisible — and one added in a different position
+  // makes ArrowDown jump to an option that isn't next on screen. Neither shows
+  // up in any other test here.
+  it('renders exactly one option per LETTER_LAYOUT_IDS, in the same order', () => {
+    render(<LetterLayoutPicker onChange={vi.fn()} />);
+    const rendered = screen.getAllByRole('radio').map((el) => el.getAttribute('data-testid'));
+    expect(rendered).toEqual(LETTER_LAYOUT_IDS.map((id) => opt(id)));
   });
 });
