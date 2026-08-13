@@ -19,7 +19,41 @@ import { describe, expect, it } from 'vitest';
 
 import i18n from '@ajh/translations';
 
+import type { ImproveRowKey, ImproveRowStatus } from './index';
+
 const LOCALES = ['en', 'de'] as const;
+
+/**
+ * The runtime-built halves of the lookup (`steps.${key}`, `status.${status}`),
+ * derived from the component's own unions rather than restated: `satisfies`
+ * rejects a member that is not in the union, and the two conditional types
+ * below reject a union member that is missing from the tuple. Adding a row in
+ * `./index` without adding its copy here is then a COMPILE error — not a suite
+ * that still passes while the new key reaches users as a raw string.
+ */
+const STEPS = [
+  'report',
+  'check',
+  'trim',
+  'rewrite',
+  'evidence',
+  'save',
+  'summary',
+] as const satisfies readonly ImproveRowKey[];
+const STATUSES = [
+  'pending',
+  'active',
+  'done',
+  'interrupted',
+  'skipped',
+] as const satisfies readonly ImproveRowStatus[];
+
+// Exhaustiveness, in the other direction: `never` here means a union member has
+// no entry above, and `tsc` fails on the unused-type check below.
+type StepsAreExhaustive = ImproveRowKey extends (typeof STEPS)[number] ? true : never;
+type StatusesAreExhaustive = ImproveRowStatus extends (typeof STATUSES)[number] ? true : never;
+const _exhaustive: [StepsAreExhaustive, StatusesAreExhaustive] = [true, true];
+void _exhaustive;
 
 const IMPROVE = 'jobs.tailored.improve';
 
@@ -41,6 +75,8 @@ const KEYS: string[] = [
   `${IMPROVE}.stoppedHint`,
   `${IMPROVE}.cancelledHint`,
   `${IMPROVE}.failedTitle`,
+  `${IMPROVE}.failedFallback`,
+  `${IMPROVE}.pendingBadgeShort`,
   `${IMPROVE}.stop`,
   `${IMPROVE}.stopHint`,
   `${IMPROVE}.stopping`,
@@ -52,12 +88,8 @@ const KEYS: string[] = [
   ...(['running', 'waiting', 'done', 'cancelled', 'stopped', 'failed'] as const).map(
     (state) => `${IMPROVE}.state.${state}`
   ),
-  ...(['pending', 'active', 'done', 'interrupted', 'skipped'] as const).map(
-    (status) => `${IMPROVE}.status.${status}`
-  ),
-  ...(['report', 'check', 'trim', 'rewrite', 'evidence', 'save', 'summary'] as const).map(
-    (step) => `${IMPROVE}.steps.${step}`
-  ),
+  ...STATUSES.map((status) => `${IMPROVE}.status.${status}`),
+  ...STEPS.map((step) => `${IMPROVE}.steps.${step}`),
   // The confirm gate's résumé editor — without these, `save_resume` falls back
   // to read-only JSON and the flow's only output cannot be edited.
   'jobs.prep.confirm.tools.saveResume.summary',

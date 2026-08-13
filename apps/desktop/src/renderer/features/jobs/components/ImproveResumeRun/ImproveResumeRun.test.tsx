@@ -210,6 +210,26 @@ describe('ImproveResumeRun — the suspended save', () => {
     expect(screen.getByRole('button', { name: /^deny$/i })).toBeInTheDocument();
   });
 
+  // `busy` is TRUE while suspended — the run is blocked on the user, not idle —
+  // so the headline has to prefer the confirming state. Swap those two checks
+  // in `headlineState` and a blocked run reads as a running one, which is the
+  // one thing this card exists to make obvious.
+  it('says it is waiting on the user, not that it is running', () => {
+    const step = saveConfirm();
+    render(
+      <ImproveResumeRun
+        session={session({
+          state: 'confirming',
+          steps: [step],
+          ...(step.confirm ? { pendingConfirm: step.confirm } : {}),
+        })}
+      />
+    );
+
+    expect(visible('Waiting for you')).toHaveLength(1);
+    expect(screen.queryByText('Running')).not.toBeInTheDocument();
+  });
+
   it('announces the suspend once, in the live region', () => {
     const step = saveConfirm();
     render(
