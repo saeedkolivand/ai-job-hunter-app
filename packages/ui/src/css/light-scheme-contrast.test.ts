@@ -171,3 +171,164 @@ describe('utilities.css — light-scheme status text remaps', () => {
     }
   });
 });
+
+/**
+ * Guards the `text-foreground\/NN` and `border-foreground\/NN` opacity-suffix
+ * remaps: Tailwind compiles each opacity step (`/15`, `/55`, …) into its OWN
+ * literal escaped selector over the raw `--color-foreground` token, so a step
+ * outside the enumeration below renders at its raw, un-boosted alpha on
+ * light — near-invisible for the low steps this file boosts (WCAG ~1.2–1.7:1
+ * measured; the wider text-foreground/NN opacity-ramp sweep is a tracked
+ * follow-up).
+ *
+ * The contrast math is inlined (not imported) so this test independently
+ * recomputes the ratio from the LITERAL `color-mix(...) NN%` in the
+ * stylesheet — a red-first pin: dial a percentage back down toward its raw
+ * value and the ratio assertion fails, it does not just start trusting a
+ * stale constant.
+ */
+describe('utilities.css — text/border-foreground opacity remaps (contrast)', () => {
+  // light-scheme --color-foreground is Apple ink, documented in tokens.css as
+  // `#1d1d1f`. WHITE stands in for the card/canvas the text/border sits on.
+  const INK_CHANNEL = 0x1d / 255;
+  const WHITE_CHANNEL = 1;
+
+  function srgbToLinear(c: number): number {
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }
+
+  /** Relative luminance of the grayscale mix of ink and white at `alphaPct`
+   *  (the same math the browser does compositing `color-mix(..., NN%, transparent)`
+   *  — i.e. plain alpha-over-white on the raw sRGB channel, then linearized). */
+  function luminanceAtAlpha(alphaPct: number): number {
+    const a = alphaPct / 100;
+    const channel = a * INK_CHANNEL + (1 - a) * WHITE_CHANNEL;
+    return srgbToLinear(channel);
+  }
+
+  const WHITE_LUMINANCE = 1; // srgbToLinear(1) === 1
+
+  function contrastAtAlpha(alphaPct: number): number {
+    return (WHITE_LUMINANCE + 0.05) / (luminanceAtAlpha(alphaPct) + 0.05);
+  }
+
+  /** The `NN%` color-mix weight for the first light rule matching `cls`, or
+   *  `null` if no rule (or an unrecognized declaration shape) is found. */
+  function remappedAlphaPct(cls: string): number | null {
+    const body = lightRules(cls)[0];
+    const m = body?.match(/var\(--color-foreground\)\s*(\d+(?:\.\d+)?)%/);
+    return m?.[1] ? Number(m[1]) : null;
+  }
+
+  const TEXT_STEPS = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
+  const BORDER_STEPS = [10, 12, 15, 20, 25] as const;
+
+  it.each(TEXT_STEPS)('.text-foreground\\/%i has exactly ONE light rule', (nn) => {
+    expect(lightRules(`text-foreground\\/${nn}`)).toHaveLength(1);
+  });
+
+  it.each(BORDER_STEPS)('.border-foreground\\/%i has exactly ONE light rule', (nn) => {
+    expect(lightRules(`border-foreground\\/${nn}`)).toHaveLength(1);
+  });
+
+  it.each([15, 55, 60] as const)(
+    '.text-foreground\\/%i is boosted strictly above its raw (unmapped) alpha',
+    (nn) => {
+      const boosted = remappedAlphaPct(`text-foreground\\/${nn}`);
+      expect(boosted).not.toBeNull();
+      expect(boosted as number).toBeGreaterThan(nn);
+    }
+  );
+
+  it.each(BORDER_STEPS)(
+    '.border-foreground\\/%i is boosted strictly above its raw (unmapped) alpha',
+    (nn) => {
+      const boosted = remappedAlphaPct(`border-foreground\\/${nn}`);
+      expect(boosted).not.toBeNull();
+      expect(boosted as number).toBeGreaterThan(nn);
+    }
+  );
+
+  it.each([55, 60] as const)(
+    'text-foreground/%i raw (unmapped) alpha fails AA — the defect this remap fixes',
+    (nn) => {
+      // /60's raw contrast (~4.45:1) is JUST as sub-AA as /55's (~3.8:1) —
+      // neither clears 4.5:1 unmapped. A prior version of this comment
+      // claimed /60 "already clears 4.5" raw; it does not.
+      expect(contrastAtAlpha(nn)).toBeLessThan(4.5);
+    }
+  );
+
+  it.each([55, 60] as const)(
+    'text-foreground/%i clears 4.5:1 once boosted to its remapped alpha',
+    (nn) => {
+      const boosted = remappedAlphaPct(`text-foreground\\/${nn}`);
+      expect(boosted).not.toBeNull();
+      expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(4.5);
+    }
+  );
+
+  it('preserves ordering at the /55↔/60 seam: /60 must map to MORE alpha than /55, not less', () => {
+    // Regression guard for the exact defect this file's own history caught:
+    // /55 was boosted (69%) without also boosting /60, so a LOWER opacity
+    // step (55) briefly rendered MORE opaque than a HIGHER one (60, still raw
+    // at 60%) — the ordering a `text-foreground/NN` scale promises callers
+    // inverted at that one seam. Mapping /60 too restores it.
+    const alpha55 = remappedAlphaPct('text-foreground\\/55');
+    const alpha60 = remappedAlphaPct('text-foreground\\/60');
+    expect(alpha55).not.toBeNull();
+    expect(alpha60).not.toBeNull();
+    expect(alpha60 as number).toBeGreaterThan(alpha55 as number);
+  });
+
+  it('text-foreground/65 is left deliberately unmapped — it clears AA on its own raw alpha', () => {
+    // The new boundary (was /60 before this fix folded /60 into the remap
+    // above). /65's raw 65% alpha independently clears 4.5:1, so it needs no
+    // remap of its own — extending the curve further would re-tint hundreds
+    // of call sites for zero contrast gain. (Its raw 65% sits a little below
+    // the now-mapped /60's 72% — a much smaller, purely cosmetic ordering
+    // wrinkle between two already-AA-passing steps, not the "renders
+    // near-invisible" defect this file exists to fix; left as-is.)
+    expect(lightRules('text-foreground\\/65')).toHaveLength(0);
+    expect(contrastAtAlpha(65)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(BORDER_STEPS)(
+    'border-foreground\\/%i raw (unmapped) alpha fails 3:1 — the defect this remap fixes',
+    (nn) => {
+      expect(contrastAtAlpha(nn)).toBeLessThan(3);
+    }
+  );
+
+  it.each(BORDER_STEPS)(
+    'border-foreground/%i clears 3:1 once boosted to its remapped alpha',
+    (nn) => {
+      // Mirrors the text-foreground/55↔/60 pair: border only needs the 3:1
+      // floor, not text's 4.5:1, but a prior version of this block reused the
+      // TEXT taper's percentages verbatim — which cleared 4.5:1 for text at
+      // higher NN, but left four of these five border steps still short of the
+      // much lower 3:1 floor. Each step must clear it on its own.
+      const boosted = remappedAlphaPct(`border-foreground\\/${nn}`);
+      expect(boosted).not.toBeNull();
+      expect(contrastAtAlpha(boosted as number)).toBeGreaterThanOrEqual(3);
+    }
+  );
+
+  it('preserves ordering across border-foreground/10..25: each step maps to strictly MORE alpha than the last', () => {
+    // Regression guard for the same defect class as the text /55↔/60 pair:
+    // raising the low steps to clear 3:1 must not collapse or invert the
+    // scale relative to each other (or to /25, which had to move too — its
+    // prior 48% was no longer the ceiling of this range once /10-/20 needed
+    // raising past it).
+    const boosted = BORDER_STEPS.map((nn) => remappedAlphaPct(`border-foreground\\/${nn}`));
+    for (const v of boosted) expect(v).not.toBeNull();
+    for (let i = 1; i < boosted.length; i++) {
+      expect(boosted[i] as number).toBeGreaterThan(boosted[i - 1] as number);
+    }
+  });
+
+  it('border-foreground/70 is left unmapped because it already clears 3:1 raw', () => {
+    expect(lightRules('border-foreground\\/70')).toHaveLength(0);
+    expect(contrastAtAlpha(70)).toBeGreaterThanOrEqual(3);
+  });
+});

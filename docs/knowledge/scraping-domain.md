@@ -164,7 +164,7 @@ not by `amount` (a sentinel on the scheduled path). Owner: `SearchBudget` in
 the ones carrying a real user-typed spend target. The opt-in toggle still decides whether
 Apify may run at all (`is_configured`); the budget decides whether this search has money to
 spend on it. **There is no UI signal for this** — a user who enabled Apify has no way to see
-that their scheduled runs skip it. Tracked as a follow-up in `docs/NEXT_ISSUES.md`.
+that their scheduled runs skip it. Tracked as a recorded follow-up.
 
 ## Geocoding — offline first (PR #893, 2026-07-27)
 

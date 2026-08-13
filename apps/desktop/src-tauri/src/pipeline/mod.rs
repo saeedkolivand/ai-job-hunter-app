@@ -300,30 +300,37 @@ impl Completer {
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
 
-    /// Company-research brief through the active provider's **own** web search.
-    /// Returns `""` (never an error) when the provider can't search — see
-    /// [`AiProvider::research`](crate::commands::ai_provider::AiProvider::research).
-    pub async fn research(&self, company: &str, role: &str) -> AppResult<String> {
-        // THE routing decision, made in one place for all three research facets.
-        // Providers whose model searches for itself take the native call;
-        // everyone else takes search-then-synthesize, which resolves either the
-        // provider's own searcher or the configured fallback.
-        //
-        // It lives here rather than in each provider because the per-provider
-        // shape already failed once: `OpenAiClient` overrides all three methods
-        // for every id it serves, so an `openai-compatible` gateway returned ""
-        // instead of reaching the fallback — silently, and while the UI reported
-        // that research was available.
-        if self.provider.has_native_search(&self.model) {
-            return self
-                .provider
-                .research(&self.app, &self.model, company, role)
-                .await;
-        }
-        crate::commands::ai_provider::search::searched_research(
+    /// Resolve the search ROUTE for a company-research pass exactly once —
+    /// see `commands::ai_provider::search::CompanySearchRoute` for the full
+    /// reasoning. A caller that needs the backend identity (e.g. for a cache
+    /// key) MUST resolve here and reuse the result via
+    /// [`research_via`](Self::research_via) — never call this a second time
+    /// for the same pass and expect the two resolutions to agree:
+    /// credentials can change between calls (an Exa key added/removed
+    /// mid-flight), which is exactly the bug this two-phase shape closes.
+    pub fn resolve_search_route(&self) -> crate::commands::ai_provider::search::CompanySearchRoute {
+        crate::commands::ai_provider::search::CompanySearchRoute::resolve(
             &self.app,
             self.provider.as_ref(),
             &self.model,
+        )
+    }
+
+    /// Company-research brief along an ALREADY-resolved `route` — see
+    /// [`resolve_search_route`](Self::resolve_search_route). Returns `""`
+    /// (never an error) when the provider can't search — see
+    /// [`AiProvider::research`](crate::commands::ai_provider::AiProvider::research).
+    pub async fn research_via(
+        &self,
+        route: crate::commands::ai_provider::search::CompanySearchRoute,
+        company: &str,
+        role: &str,
+    ) -> AppResult<String> {
+        crate::commands::ai_provider::search::fetch_company_brief(
+            &self.app,
+            self.provider.as_ref(),
+            &self.model,
+            route,
             company,
             role,
         )
@@ -374,7 +381,9 @@ impl Completer {
 
     /// Web-search reference notes for a single application-question answer
     /// through the active provider's **own** web search — the per-question
-    /// sibling of [`research`](Self::research). Returns `""` (never an error)
+    /// sibling of the company-brief research family
+    /// ([`resolve_search_route`](Self::resolve_search_route)/
+    /// [`research_via`](Self::research_via)). Returns `""` (never an error)
     /// when the provider can't search — see
     /// [`AiProvider::research_answer`](crate::commands::ai_provider::AiProvider::research_answer).
     pub async fn research_answer(

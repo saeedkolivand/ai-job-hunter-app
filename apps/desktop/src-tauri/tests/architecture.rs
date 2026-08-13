@@ -85,6 +85,12 @@ const L1: &[&str] = &[
     // split) owns that exception — see its R7_ALLOW entry below — rather than
     // growing an R7_ALLOW on this L1 store.
     "email_watch",
+    // Seed of the roadmap's "relocate ai_provider out of commands/" item: ONE
+    // pure value type (`SearchBackend`) shared by two L2 siblings (`pipeline`,
+    // `cover_letter`), split out here specifically because it has zero Tauri/
+    // credential-reading logic — that stays L3 (`commands::ai_provider`),
+    // which re-exports this type so its existing consumers are unaffected.
+    "ai_provider",
 ];
 const L2: &[&str] = &[
     "pipeline",

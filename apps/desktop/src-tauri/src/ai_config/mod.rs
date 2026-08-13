@@ -11,7 +11,7 @@
 //! `agent_run` path now resolves via `Completer::from_active` for both the agent's
 //! own turns and every tool provider call (`agent::tools::complete_trusted`), and
 //! its `ToolContext` no longer carries provider/model/base_url — closing the last
-//! base_url-exfil path in this class (`docs/NEXT_ISSUES.md`).
+//! base_url-exfil path in this class.
 //!
 //! Shape maps 1:1 to the renderer's old Zustand slice:
 //! `{ activeProvider, providers: { [id]: { model, baseUrl } } }`.

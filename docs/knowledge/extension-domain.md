@@ -54,7 +54,7 @@ Native-messaging registry locations are OS- and sandboxing-aware. See `apps/desk
 
 A new message type or field MUST be added to the TS shared constants (`EXTENSION_MESSAGE_TYPES`) and the Rust `msg` constants in `extension_bridge/msg.rs` in the **same change**. The TS side is the wire spec; Rust must follow. A parity test in `extension_bridge/test.rs` pins every constant to its TS literal, plus a uniqueness test.
 
-The Rust constant table lives in its own `msg.rs` (lifted verbatim out of `mod.rs`), so a lockstep edit lands in the protocol file rather than in the connection module — which sits directly against the R8 hard LOC cap (see the follow-up in `docs/NEXT_ISSUES.md`).
+The Rust constant table lives in its own `msg.rs` (lifted verbatim out of `mod.rs`), so a lockstep edit lands in the protocol file rather than in the connection module — which sits directly against the R8 hard LOC cap (splitting it is a recorded follow-up).
 
 ## Bridge verbs (reserved-verb pattern)
 
@@ -80,7 +80,7 @@ The bridge uses a **reserved-verb pattern**: each verb is defined in shared cons
 
 `token.revoked` is a **live-socket** signal: `regenerate_token` can only tell the browsers that are connected at the moment of rotation. A browser that is closed (or whose service worker is asleep) when the token rotates never receives the frame; on its next launch it reconnects with the dead token, fails the proof, and gets the deliberately silent close — indistinguishable from a crashed app, so it retries. That is the pre-#895 stranding, narrowed to the offline-at-rotation case rather than eliminated.
 
-Closing it fully needs a client-side bounded-retry counter that degrades to a "re-pair?" hint instead of retrying forever. Recorded as a follow-up in `docs/NEXT_ISSUES.md`; not shipped.
+Closing it fully needs a client-side bounded-retry counter that degrades to a "re-pair?" hint instead of retrying forever. A recorded follow-up; not shipped.
 
 ### Store re-release pending
 
