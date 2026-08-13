@@ -2,7 +2,7 @@ use crate::error::{AppError, AppResult};
 
 use super::{
     templates::Template,
-    types::{DocumentType, ExportRequest},
+    types::{DocumentType, ExportRequest, LetterRender},
 };
 
 // Typst engine — used by the live export path for all twelve templates.
@@ -185,20 +185,22 @@ pub fn generate_pdf(request: &ExportRequest) -> AppResult<Vec<u8>> {
                 .and_then(|m| m.candidate_name.as_deref());
             let market = request.locale.as_deref().unwrap_or("intl");
 
+            // ATS mode reaches the letter the same way it reaches the résumé:
+            // layouts drop their decorative elements (Sidebar's rail,
+            // Monogram's device, Banded's band) and keep the words. Before
+            // this, `ats_mode` was read for résumés only and a cover letter
+            // silently ignored the toggle.
             render_letter_pdf(
                 text,
                 &template,
                 request.contact.as_ref(),
                 meta_name,
-                market,
-                &lang,
-                request.letter_layout,
-                // ATS mode reaches the letter the same way it reaches the
-                // résumé: layouts drop their decorative elements (Sidebar's
-                // rail, Monogram's device, Banded's band) and keep the words.
-                // Before this, `ats_mode` was read for résumés only and a
-                // cover letter silently ignored the toggle.
-                request.ats_mode,
+                LetterRender {
+                    market,
+                    lang: &lang,
+                    layout: request.letter_layout,
+                    ats: request.ats_mode,
+                },
             )
             .map_err(|e| AppError::Parse(format!("Failed to generate cover letter PDF: {e}")))
         }
@@ -255,17 +257,19 @@ pub fn generate_preview_svg(request: &ExportRequest) -> AppResult<Vec<String>> {
                 .and_then(|m| m.candidate_name.as_deref());
             let market = request.locale.as_deref().unwrap_or("intl");
 
+            // Same ATS flag as the export path — the live preview must show the
+            // degraded layout, not a rail the exported PDF won't have.
             render_letter_svg_pages(
                 text,
                 &template,
                 request.contact.as_ref(),
                 meta_name,
-                market,
-                &lang,
-                request.letter_layout,
-                // Same ATS flag as the export path — the live preview must show
-                // the degraded layout, not a rail the exported PDF won't have.
-                request.ats_mode,
+                LetterRender {
+                    market,
+                    lang: &lang,
+                    layout: request.letter_layout,
+                    ats: request.ats_mode,
+                },
             )
             .map_err(|e| AppError::Parse(format!("Failed to render cover letter preview: {e}")))
         }

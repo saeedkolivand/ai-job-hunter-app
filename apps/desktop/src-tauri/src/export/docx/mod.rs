@@ -4,7 +4,7 @@ use docx_rs::*;
 use super::{
     parser::strip_md,
     templates::Template,
-    types::{DocumentType, ExportRequest, GenerationMeta, LetterLayout},
+    types::{DocumentType, ExportRequest, GenerationMeta, LetterLayout, LetterRender},
 };
 use crate::locale::LocaleProfile;
 
@@ -26,20 +26,16 @@ fn page_size_dxa() -> (u32, u32) {
 /// calling the original, unmodified renderer (`_classic`) so its output stays
 /// byte-identical to the pre-layout-picker DOCX — the Refined/Banded arm is
 /// entirely new code, never touched by a Classic request.
-#[allow(clippy::too_many_arguments)]
 fn generate_cover_letter_docx(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
     contact: Option<&crate::contact_profile::ContactProfile>,
-    lang: &str,
-    market: &str,
-    layout: LetterLayout,
-    ats: bool,
+    req: LetterRender<'_>,
 ) -> Result<Docx> {
-    match layout {
+    match req.layout {
         LetterLayout::Classic => {
-            generate_cover_letter_docx_classic(text, meta, template, contact, lang)
+            generate_cover_letter_docx_classic(text, meta, template, contact, req.lang)
         }
         // Every non-Classic layout is an arrangement over the same model, and
         // DOCX cannot express any of them literally (no angled polygon, no
@@ -50,9 +46,9 @@ fn generate_cover_letter_docx(
         | LetterLayout::Banded
         | LetterLayout::Navy
         | LetterLayout::Sidebar
-        | LetterLayout::Monogram => generate_cover_letter_docx_layout(
-            text, meta, template, contact, lang, market, layout, ats,
-        ),
+        | LetterLayout::Monogram => {
+            generate_cover_letter_docx_layout(text, meta, template, contact, req)
+        }
     }
 }
 
@@ -461,33 +457,29 @@ impl LetterDocxStyle {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn generate_cover_letter_docx_layout(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
     contact: Option<&crate::contact_profile::ContactProfile>,
-    lang: &str,
-    market: &str,
-    layout: LetterLayout,
-    ats: bool,
+    req: LetterRender<'_>,
 ) -> Result<Docx> {
     debug_assert!(
-        !matches!(layout, LetterLayout::Classic),
+        !matches!(req.layout, LetterLayout::Classic),
         "generate_cover_letter_docx_layout serves every non-Classic layout"
     );
-    let sty = LetterDocxStyle::for_layout(layout);
+    let sty = LetterDocxStyle::for_layout(req.layout);
     // Decorative tints, dropped together with the `.typ` side's under ATS mode.
     // Derived once here rather than `&& !ats` at each call site, so a future
     // decoration cannot be added to only one of them.
-    let show_band = sty.header_band && !ats;
-    let show_device = sty.monogram_device && !ats;
+    let show_band = sty.header_band && !req.ats;
+    let show_device = sty.monogram_device && !req.ats;
 
     let mut docx = Docx::new();
 
     let profile_contact_md: Option<String> = contact
         .filter(|p| !p.is_effectively_empty())
-        .map(|p| p.header_markdown(lang));
+        .map(|p| p.header_markdown(req.lang));
 
     let page_margin = PageMargin::new()
         .top(inch_to_dxa(1.0))
@@ -506,7 +498,7 @@ fn generate_cover_letter_docx_layout(
     // label, so it matches the same market convention `letter_refined.typ`
     // reads from `data.opts.subject_line_label` (DOCX's scanner is otherwise
     // market-agnostic, same as Classic).
-    let subj_label = crate::locale::letter::conventions(market)
+    let subj_label = crate::locale::letter::conventions(req.market)
         .subject_line
         .label
         .clone();
@@ -994,18 +986,21 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
             // `generate_cover_letter_docx_layout`'s doc comment); mirrors the
             // PDF cover-letter path's `market` computation in `pdf/mod.rs`.
             let market = request.locale.as_deref().unwrap_or("intl");
+            let lang = request.target_lang();
+            // `ats` mirrors the PDF cover-letter path: ATS mode drops each
+            // layout's decorative tint in BOTH formats, so a golden-parity
+            // check can't find a band in one and not the other.
             generate_cover_letter_docx(
                 text,
                 request.meta.as_ref(),
                 &single_column(),
                 request.contact.as_ref(),
-                &request.target_lang(),
-                market,
-                request.letter_layout,
-                // Mirrors the PDF cover-letter path: ATS mode drops each
-                // layout's decorative tint in BOTH formats, so a golden-parity
-                // check can't find a band in one and not the other.
-                request.ats_mode,
+                LetterRender {
+                    market,
+                    lang: &lang,
+                    layout: request.letter_layout,
+                    ats: request.ats_mode,
+                },
             )
             .context("Failed to generate cover letter DOCX")?
         }

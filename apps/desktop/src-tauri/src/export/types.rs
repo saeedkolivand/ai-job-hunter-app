@@ -160,6 +160,30 @@ pub enum LetterLayout {
     Monogram,
 }
 
+/// The per-request knobs a cover-letter render needs that are neither the
+/// letter text nor the résumé [`Template`](crate::export::templates::Template).
+///
+/// Named fields rather than four more positional parameters, for a reason that
+/// had already bitten: `market` and `lang` are BOTH `&str`, adjacent, and the
+/// two renderers took them in OPPOSITE orders — `render_letter_pdf(…, market,
+/// lang, …)` against `generate_cover_letter_docx(…, lang, market, …)`. Swapping
+/// them compiles silently and yields a letter with the wrong page size and the
+/// wrong date convention. It also took every cover-letter entry point past
+/// clippy's argument limit, which was being silenced with `#[allow]` in five
+/// places.
+#[derive(Debug, Clone, Copy)]
+pub struct LetterRender<'a> {
+    /// Resolved job-market id (`"us"`, `"de"`, …) — drives date position,
+    /// subject-line convention and page size.
+    pub market: &'a str,
+    /// BCP-47 language tag, for font-stack selection and `#set text(lang:)`.
+    pub lang: &'a str,
+    /// Which arrangement to render.
+    pub layout: LetterLayout,
+    /// ATS mode — layouts drop their decorative, non-semantic elements.
+    pub ats: bool,
+}
+
 impl<'de> serde::Deserialize<'de> for LetterLayout {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;

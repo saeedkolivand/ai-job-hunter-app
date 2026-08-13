@@ -25,7 +25,7 @@ use typst_pdf::{pdf, PdfOptions};
 use crate::contact_profile::ContactProfile;
 use crate::error::{AppError, AppResult};
 use crate::export::templates::Template;
-use crate::export::types::{LetterLayout, TemplateId};
+use crate::export::types::{LetterLayout, LetterRender, TemplateId};
 use crate::model::document::DocumentModel;
 
 use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
@@ -471,20 +471,14 @@ pub fn render_pdf_from_source(source: &str) -> AppResult<Vec<u8>> {
 ///
 /// All `typst`/`typst_pdf` types remain inside this file and `render.rs`/`world.rs`.
 /// No typst types appear in the public signature.
-#[allow(clippy::too_many_arguments)]
 pub fn render_letter_pdf(
     text: &str,
     template: &Template,
     contact: Option<&ContactProfile>,
     meta_name: Option<&str>,
-    market: &str,
-    lang: &str,
-    layout: LetterLayout,
-    ats: bool,
+    req: LetterRender<'_>,
 ) -> AppResult<Vec<u8>> {
-    let world = build_letter_world(
-        text, template, contact, meta_name, market, lang, layout, ats,
-    )?;
+    let world = build_letter_world(text, template, contact, meta_name, req)?;
     compile_and_export(&world)
 }
 
@@ -499,19 +493,17 @@ pub fn render_letter_pdf(
 /// `layout` selects the arrangement source ([`letter_source`]); every layout
 /// consumes the identical `data.json`. `LetterLayout::Classic` reproduces the
 /// pre-layout-picker output byte-for-byte (same preamble + `letter.typ`).
-#[allow(clippy::too_many_arguments)]
 fn build_letter_world(
     text: &str,
     template: &Template,
     contact: Option<&ContactProfile>,
     meta_name: Option<&str>,
-    market: &str,
-    lang: &str,
-    layout: LetterLayout,
-    ats: bool,
+    req: LetterRender<'_>,
 ) -> AppResult<ResumeWorld> {
     let style = letter_style_from_template(template);
-    let model = parse_cover_letter(text, contact, meta_name, market, lang, style, ats);
+    let model = parse_cover_letter(
+        text, contact, meta_name, req.market, req.lang, style, req.ats,
+    );
 
     let data_json = serde_json::to_vec(&model).map_err(|e| {
         AppError::Parse(format!(
@@ -522,7 +514,7 @@ fn build_letter_world(
     // Prepend the document-meta preamble (PDF title + author + language) and the
     // shared spacing scale, then the selected letter layout source.
     let meta = document_meta_preamble("data.letterhead.name", "Cover Letter");
-    let letter_typ = letter_source(layout);
+    let letter_typ = letter_source(req.layout);
     let source = format!(
         "// Auto-generated cover-letter entry — do not edit.\n\
          #let data = json(\"data.json\")\n\
@@ -542,19 +534,13 @@ fn build_letter_world(
 /// least one page; an empty document is an error (guarded in
 /// [`compile_and_svg`]). No `typst` / `typst_svg` types appear in the public
 /// signature.
-#[allow(clippy::too_many_arguments)]
 pub fn render_letter_svg_pages(
     text: &str,
     template: &Template,
     contact: Option<&ContactProfile>,
     meta_name: Option<&str>,
-    market: &str,
-    lang: &str,
-    layout: LetterLayout,
-    ats: bool,
+    req: LetterRender<'_>,
 ) -> AppResult<Vec<String>> {
-    let world = build_letter_world(
-        text, template, contact, meta_name, market, lang, layout, ats,
-    )?;
+    let world = build_letter_world(text, template, contact, meta_name, req)?;
     compile_and_svg(&world)
 }

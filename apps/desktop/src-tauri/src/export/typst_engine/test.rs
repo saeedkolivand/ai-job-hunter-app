@@ -4,7 +4,7 @@
 //! ResumeWorld hard-wall.
 
 use crate::export::templates::Template;
-use crate::export::types::{LetterLayout, TemplateId};
+use crate::export::types::{LetterLayout, LetterRender, TemplateId};
 use crate::export::typst_engine::{
     render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_from_source,
     render_resume_svg_pages, RenderOpts, TypstTemplate,
@@ -310,10 +310,12 @@ fn render_letter_svg_pages_returns_svg_page() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_svg_pages(us) should succeed");
 
@@ -2443,10 +2445,12 @@ fn letter_us_renders_valid_pdf_with_expected_content() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(us) should succeed");
 
@@ -2522,10 +2526,12 @@ fn letter_de_renders_valid_pdf_with_subject_line() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(de) should succeed");
 
@@ -2605,10 +2611,12 @@ fn letter_us_and_de_both_start_with_pdf_header() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(us)");
     let de = render_letter_pdf(
@@ -2616,10 +2624,12 @@ fn letter_us_and_de_both_start_with_pdf_header() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(de)");
     assert!(us.starts_with(b"%PDF"), "US letter must start with %PDF");
@@ -2639,10 +2649,12 @@ fn letter_us_write_sample_pdf_for_review() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(us) should succeed for sample PDF");
 
@@ -2674,10 +2686,12 @@ fn letter_de_write_sample_pdf_for_review() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("render_letter_pdf(de) should succeed for sample PDF");
 
@@ -2824,10 +2838,12 @@ fn letter_refined_us_renders_valid_pdf() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Refined,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined US render should succeed");
     assert!(
@@ -2882,10 +2898,12 @@ fn letter_refined_de_honors_din_conventions() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Refined,
-        false,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined DE render should succeed");
     assert!(
@@ -2941,10 +2959,12 @@ fn letter_refined_extracts_accented_latin_content() {
         &t,
         None,
         Some("Àlvaro Èsposito"),
-        "us",
-        "en",
-        LetterLayout::Refined,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined accented-Latin render should succeed");
     assert!(
@@ -2993,10 +3013,12 @@ fn letter_refined_shows_subject_when_market_omits_it() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Refined,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
     )
     .expect("refined US-subject render");
     let refined_txt = pdf_extract::extract_text_from_mem(&refined)
@@ -3012,10 +3034,12 @@ fn letter_refined_shows_subject_when_market_omits_it() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("classic US-subject render");
     let classic_txt = pdf_extract::extract_text_from_mem(&classic)
@@ -3036,10 +3060,12 @@ fn letter_banded_us_renders_valid_pdf() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Banded,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded US render should succeed");
     assert!(bytes.starts_with(b"%PDF"), "banded US must start with %PDF");
@@ -3087,10 +3113,12 @@ fn letter_banded_de_honors_din_subject() {
         &t,
         None,
         Some("Max Müller"),
-        "de",
-        "de",
-        LetterLayout::Banded,
-        false,
+        LetterRender {
+            market: "de",
+            lang: "de",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded DE render should succeed");
     assert!(bytes.starts_with(b"%PDF"), "banded DE must start with %PDF");
@@ -3130,10 +3158,12 @@ fn letter_banded_extracts_accented_latin_content() {
         &t,
         None,
         Some("Àlvaro Èsposito"),
-        "us",
-        "en",
-        LetterLayout::Banded,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded accented-Latin render should succeed");
     assert!(
@@ -3181,10 +3211,12 @@ fn letter_navy_extracts_accented_latin_content() {
         &t,
         None,
         Some("Àlvaro Èsposito"),
-        "us",
-        "en",
-        LetterLayout::Navy,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Navy,
+            ats: false,
+        },
     )
     .expect("navy accented-Latin render should succeed");
     assert!(
@@ -3264,8 +3296,19 @@ fn letter_lower(layout: LetterLayout, fixture: &str, market: &str, ats: bool) ->
         "Jane Smith"
     };
     let lang = if market == "de" { "de" } else { "en" };
-    let bytes = render_letter_pdf(fixture, &t, None, Some(name), market, lang, layout, ats)
-        .unwrap_or_else(|e| panic!("{layout:?} (ats={ats}) render failed: {e}"));
+    let bytes = render_letter_pdf(
+        fixture,
+        &t,
+        None,
+        Some(name),
+        LetterRender {
+            market,
+            lang,
+            layout,
+            ats,
+        },
+    )
+    .unwrap_or_else(|e| panic!("{layout:?} (ats={ats}) render failed: {e}"));
     assert!(
         bytes.starts_with(b"%PDF"),
         "{layout:?} (ats={ats}) must start with %PDF"
@@ -3341,10 +3384,12 @@ fn new_letter_layouts_extract_accented_latin_content() {
             &t,
             None,
             Some("Àlvaro Èsposito"),
-            "us",
-            "en",
-            layout,
-            false,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout,
+                ats: false,
+            },
         )
         .unwrap_or_else(|e| panic!("{layout:?} accented-Latin render failed: {e}"));
         let extracted = pdf_extract::extract_text_from_mem(&bytes)
@@ -3393,10 +3438,12 @@ fn sidebar_rail_drops_under_ats_mode_without_losing_words() {
             &t,
             None,
             Some("Jane Smith"),
-            "us",
-            "en",
-            LetterLayout::Sidebar,
-            ats,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Sidebar,
+                ats,
+            },
         )
         .expect("sidebar SVG render")
     };
@@ -3477,10 +3524,12 @@ fn banded_band_drops_under_ats_mode() {
             &t,
             None,
             Some("Jane Smith"),
-            "us",
-            "en",
-            LetterLayout::Banded,
-            ats,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Banded,
+                ats,
+            },
         )
         .expect("banded SVG render")
     };
@@ -3549,10 +3598,12 @@ fn sidebar_letterhead_is_measurably_inside_the_rail() {
             &t,
             None,
             Some("Jane Smith"),
-            "us",
-            "en",
-            LetterLayout::Sidebar,
-            ats,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Sidebar,
+                ats,
+            },
         )
         .expect("sidebar SVG render")[0]
             .clone()
@@ -3627,10 +3678,12 @@ fn sidebar_contact_links_survive_the_placed_rail() {
             &t,
             Some(&profile),
             Some("Jane Smith"),
-            "us",
-            "en",
-            LetterLayout::Sidebar,
-            ats,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout: LetterLayout::Sidebar,
+                ats,
+            },
         )
         .unwrap_or_else(|e| panic!("sidebar (ats={ats}) render failed: {e}"));
 
@@ -3659,10 +3712,12 @@ fn sidebar_rail_repeats_on_every_page() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Sidebar,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Sidebar,
+            ats: false,
+        },
     )
     .expect("sidebar long-letter SVG render");
     assert!(
@@ -3676,10 +3731,12 @@ fn sidebar_rail_repeats_on_every_page() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Sidebar,
-        true,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Sidebar,
+            ats: true,
+        },
     )
     .expect("sidebar long-letter ATS SVG render");
 
@@ -3708,10 +3765,12 @@ fn letter_banded_band_draws_on_page_one_only() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Banded,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Banded,
+            ats: false,
+        },
     )
     .expect("banded long-letter SVG render");
     let classic = render_letter_svg_pages(
@@ -3719,10 +3778,12 @@ fn letter_banded_band_draws_on_page_one_only() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("classic long-letter SVG render");
 
@@ -3776,10 +3837,12 @@ fn letter_layout_inherits_resume_template_accent() {
             &regent,
             None,
             Some("Jane Smith"),
-            "us",
-            "en",
-            layout,
-            false,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout,
+                ats: false,
+            },
         )
         .expect("regent letter render");
         let b = render_letter_pdf(
@@ -3787,10 +3850,12 @@ fn letter_layout_inherits_resume_template_accent() {
             &swiss,
             None,
             Some("Jane Smith"),
-            "us",
-            "en",
-            layout,
-            false,
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout,
+                ats: false,
+            },
         )
         .expect("swiss letter render");
         assert!(
@@ -3827,10 +3892,12 @@ fn letter_layouts_dispatch_to_distinct_sources() {
                 &t,
                 None,
                 Some("Jane Smith"),
-                "us",
-                "en",
-                layout,
-                false,
+                LetterRender {
+                    market: "us",
+                    lang: "en",
+                    layout,
+                    ats: false,
+                },
             )
             .unwrap_or_else(|e| panic!("{layout:?} render failed: {e}"));
             assert!(
@@ -5260,10 +5327,12 @@ fn stray_typst_code_guard_letter() {
         &t,
         None,
         Some("Jane Smith"),
-        "us",
-        "en",
-        LetterLayout::Classic,
-        false,
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
     )
     .expect("stray-token guard: letter render failed");
     assert_no_stray_tokens("letter", &bytes);
