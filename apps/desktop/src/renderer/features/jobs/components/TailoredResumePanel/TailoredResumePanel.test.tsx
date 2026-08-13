@@ -137,7 +137,7 @@ vi.mock('@/services', () => ({
   },
 }));
 
-import { TailoredResumePanel } from './index';
+import { canImproveGeneration, TailoredResumePanel } from './index';
 
 const POSTING: Posting = {
   id: 'posting-1',
@@ -737,6 +737,46 @@ function finishedWithDocument(resumeText = 'Summary\nBuilt the deployment pipeli
 
 const improveButton = () => screen.queryByRole('button', { name: /improve this résumé/i });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The eligibility rule, term by term.
+//
+// The component cannot exercise all of it: opening another run's report
+// REPLACES this modal (one dialog at a time), so every state that makes
+// `writable` false also unmounts the footer the button lives in — a "no button"
+// assertion there passes with or without the term. Asserted directly instead.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('canImproveGeneration', () => {
+  const eligible = {
+    terminal: true,
+    runState: 'done',
+    hasDetail: true,
+    hasDocument: true,
+    writable: true,
+    canRunStaged: true,
+  };
+
+  it('allows a finished run of the newest generated résumé', () => {
+    expect(canImproveGeneration(eligible)).toBe(true);
+    expect(canImproveGeneration({ ...eligible, runState: 'needsReview' })).toBe(true);
+  });
+
+  it.each([
+    ['still running', { terminal: false }],
+    ['a failed run', { runState: 'error' }],
+    ['a stopped run', { runState: 'cancelled' }],
+    ['no run record', { hasDetail: false }],
+    ['no generated document', { hasDocument: false }],
+    // The one the component test cannot reach: every run of a posting merges
+    // into ONE saved résumé, so an older run must not offer a review whose save
+    // would land on the newest document.
+    ['an older run than the newest', { writable: false }],
+    ['no résumé or provider', { canRunStaged: false }],
+  ])('refuses %s', (_case, override) => {
+    expect(canImproveGeneration({ ...eligible, ...override })).toBe(false);
+  });
+});
+
 describe('TailoredResumePanel — the improve entry', () => {
   it('offers the action on a finished run of the newest generated résumé', async () => {
     finishedWithDocument();
@@ -859,6 +899,10 @@ describe('TailoredResumePanel — the improve entry', () => {
     });
 
     const trigger = screen.getByRole('button', { name: /tailored résumé/i });
+    // Visible WORDS, not just the amber dot: colour alone fails WCAG 1.4.1 for
+    // a sighted user who is not running a screen reader.
+    expect(within(trigger).getByText('Approval needed')).toBeInTheDocument();
+    // …and the sr-only sentence still carries the expiry.
     expect(trigger).toHaveTextContent(/waiting for your approval/i);
     expect(trigger).toHaveTextContent(/five minutes/i);
   });
@@ -963,6 +1007,8 @@ describe('TailoredResumePanel — a generation too long to review', () => {
   // overwrite the document with its own head, so the backend refuses the run —
   // and this surface refuses the CLICK, with the reason said out loud.
   const TOO_LONG = 'x'.repeat(8_001);
+  /** One code point, two UTF-16 units — the difference the gate turns on. */
+  const ASTRAL = String.fromCodePoint(0x1f600);
 
   // `aria-disabled`, not `disabled`: a natively disabled button leaves the tab
   // order (so its `aria-describedby` is never announced) and this repo's Button
@@ -998,6 +1044,24 @@ describe('TailoredResumePanel — a generation too long to review', () => {
     finishedWithDocument();
     await openPanel();
     expect(improveButton()).toHaveAttribute('title', expect.stringMatching(/re-check/i));
+  });
+
+  // The production check spreads the string specifically to match the Rust
+  // `chars().take(RESUME_CAP)` clamp. Every other fixture here is ASCII, where
+  // `String.length` and the code-point count agree — so a regression to
+  // `.length` would ship green without this pair.
+  it('counts code points, not UTF-16 units: 8 000 astral chars still fit', async () => {
+    // `.length` is 16 000 here; the code-point count is exactly the cap.
+    finishedWithDocument(ASTRAL.repeat(8_000));
+    await openPanel();
+    expect(improveButton()).toBeEnabled();
+    expect(screen.queryByText(/longer than the review can read/i)).not.toBeInTheDocument();
+  });
+
+  it('still refuses one astral character past the cap', async () => {
+    finishedWithDocument(ASTRAL.repeat(8_001));
+    await openPanel();
+    expect(improveButton()).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('formats the cap for the locale rather than printing a bare number', async () => {
@@ -1176,6 +1240,23 @@ describe('TailoredResumePanel — an improve run that fails', () => {
     expect(await screen.findByText('Stopped at its step limit')).toBeInTheDocument();
   });
 
+  // The card renders `failedTitle` as the alert heading and the message under
+  // it; a fallback that reused the heading printed the same sentence twice.
+  it('does not print the alert heading twice when the failure carries no message', async () => {
+    finishedWithDocument();
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+
+    await act(async () => {
+      bus.onJobEvent?.({ jobId: 'agent-job-1', type: 'job.failed', data: '' } as JobEvent);
+    });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/The review failed/);
+    expect(alert).toHaveTextContent(/stopped without saying why/);
+    expect(alert.textContent?.match(/The review failed/g)).toHaveLength(1);
+  });
+
   it('ignores a terminal event belonging to a different run', async () => {
     finishedWithDocument();
     await openPanel();
@@ -1191,6 +1272,52 @@ describe('TailoredResumePanel — an improve run that fails', () => {
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByText(/starting the review/i)).toBeInTheDocument();
+  });
+});
+
+// The record fallback is not a one-shot: `useJobEvents` invalidates `['jobs']`
+// on EVERY job event, and prefix invalidation marks `['jobs', id]` stale, so
+// this query refetches on each transition without a polling timer. What must
+// hold is that a LATER reading still reconciles — the ref latches only once a
+// terminal status has actually been seen.
+describe('TailoredResumePanel — the record fallback keeps checking', () => {
+  it('reconciles on a later reading, not just the first one', async () => {
+    finishedWithDocument();
+    const running: JobRecord = {
+      id: 'agent-job-1',
+      kind: 'ai.generate',
+      status: 'running',
+      progress: 0,
+      payload: {},
+      retries: 0,
+      maxRetries: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    bus.jobRecord = running;
+
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /improve this résumé/i }));
+    // A running record reconciles nothing — the run really is in flight.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // The record turns terminal while the terminal EVENT never arrives (the
+    // case this fallback exists for). Any later reading has to pick it up — in
+    // the app that reading comes from `useJobEvents` invalidating `['jobs']` on
+    // every event; here, from the re-render a further step causes.
+    bus.jobRecord = { ...running, status: 'failed', error: 'the model went away' };
+    await act(async () => {
+      bus.onStep?.({
+        jobId: 'agent-job-1',
+        step: 2,
+        text: 'still narrating',
+        tools: ['validate_resume'],
+        denied: [],
+        kind: 'turn',
+      });
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/the model went away/);
   });
 });
 

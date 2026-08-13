@@ -51,6 +51,56 @@ import { useGenerationDepth } from '@/store/preferences-store';
  */
 const GENERATION_REVIEW_CAP = AGENT_RESUME_TEXT_CAP;
 
+export interface ImproveEligibility {
+  /** The pipeline run being shown has ended (`session.state !== 'idle' && !busy`). */
+  terminal: boolean;
+  /** That run's own outcome — `ResumePipelineSession['state']`. */
+  runState: string;
+  /** A run RECORD is loaded (not just a session that started one). */
+  hasDetail: boolean;
+  /** The record carries résumé text — i.e. a generation exists for this posting. */
+  hasDocument: boolean;
+  /** The shown run is the posting's newest (`writable`, the one-document rule). */
+  writable: boolean;
+  /** A master résumé and a provider are configured. */
+  canRunStaged: boolean;
+}
+
+/**
+ * Whether "Improve this résumé" may be offered — extracted so the rule can be
+ * tested term by term.
+ *
+ * It cannot be exercised through the panel alone: the report REPLACES the modal
+ * (one dialog at a time), so every state that makes `writable` false also
+ * unmounts the footer the button lives in, and a component test asserting "no
+ * button" there passes whether or not the term is present. That is the
+ * guard-shaped-decoration trap — the rule is asserted here instead.
+ */
+export function canImproveGeneration({
+  terminal,
+  runState,
+  hasDetail,
+  hasDocument,
+  writable,
+  canRunStaged,
+}: ImproveEligibility): boolean {
+  return (
+    terminal &&
+    // A run that produced a document. What a failed or stopped one leaves
+    // behind is not a résumé to review.
+    (runState === 'done' || runState === 'needsReview') &&
+    hasDetail &&
+    // `documentText` IS `find_for_job`'s record — exactly what the run resolves
+    // server-side. No generation means the run would fail with "generate one
+    // first".
+    hasDocument &&
+    // Every run of a posting merges into ONE saved résumé, and this flow's save
+    // merges into that same one, so only the newest may be reviewed.
+    writable &&
+    canRunStaged
+  );
+}
+
 /**
  * The staged résumé pipeline's ENTRY POINT — the one surface that can honestly
  * start `resumePipeline.run`.
@@ -226,7 +276,10 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     kind: 'improve_resume',
     resumeId: resume?.id ?? null,
     jobId: posting.id,
-    fallbackError: t('jobs.tailored.improve.failedTitle'),
+    // A BODY sentence: `ImproveResumeRun` renders `failedTitle` as the alert's
+    // heading and this string underneath it, so reusing the heading printed the
+    // same sentence twice whenever the backend failed a run without a message.
+    fallbackError: t('jobs.tailored.improve.failedFallback'),
   });
 
   /**
@@ -277,26 +330,18 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     () => new Intl.NumberFormat(i18n.language).format(GENERATION_REVIEW_CAP),
     [i18n.language]
   );
-  /**
-   * "Improve this résumé" is offered only where it can honestly run: on a run
-   * that actually PRODUCED a document (`done`/`needsReview` — a failed or
-   * stopped run's leftovers are not a résumé to review), of the posting's
-   * NEWEST one (the same one-document rule `writable` encodes — every run of a
-   * posting merges into one saved résumé, and this flow's save merges into that
-   * same one), when a generation exists for it at all (`documentText` IS
-   * `find_for_job`'s record, which is exactly what the run resolves
-   * server-side — no generation means the run would fail with "generate one
-   * first"), and when there is a résumé + provider to run with. The jobless
-   * surfaces that also show a quality report (`TailorFlow`/`ai-generate`) get
-   * no entry: `agent.run` needs a real posting id and they have none.
-   */
-  const canImprove =
-    terminal &&
-    (session.state === 'done' || session.state === 'needsReview') &&
-    !!shownDetail &&
-    !!documentText &&
-    writable &&
-    canRunStaged;
+  /** Each term is documented on {@link canImproveGeneration}. The jobless
+   *  surfaces that also show a quality report (`TailorFlow`/`ai-generate`) get
+   *  no entry at all: `agent.run` needs a real posting id and they have none. */
+  const canImprove = canImproveGeneration({
+    terminal,
+    runState: session.state,
+    hasDetail: !!shownDetail,
+    hasDocument: !!documentText,
+    writable,
+    canRunStaged,
+  });
+
 
   /** Where focus goes when the review card removes itself (see the card's
    *  `onDismissed`): the control that started it, which is still on screen. */
@@ -326,6 +371,11 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
         {improve.pendingConfirm && (
           <span className="ml-0.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300">
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            {/* WORDS, not just the dot: a sighted user who is not running a
+                screen reader would otherwise have colour as the only carrier
+                (WCAG 1.4.1). The short label is what fits the trigger; the
+                sr-only sentence adds the expiry. */}
+            {t('jobs.tailored.improve.pendingBadgeShort')}
             <span className="sr-only">{t('jobs.tailored.improve.pendingBadge')}</span>
           </span>
         )}
