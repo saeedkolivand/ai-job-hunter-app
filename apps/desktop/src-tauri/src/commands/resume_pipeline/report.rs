@@ -21,6 +21,8 @@
 
 use serde_json::{json, Map, Value};
 
+use crate::error::AppResult;
+use crate::pipeline::resume::stages::validate_documents;
 use crate::validate::content::ContentReport;
 use crate::validate::Severity;
 
@@ -201,6 +203,61 @@ pub fn build(
         wrapper.insert("coverLetter".to_string(), slot(report, text));
     }
     serde_json::to_string(&Value::Object(wrapper)).unwrap_or_default()
+}
+
+/// The `pipeline` label on a wrapper written by a gated agent save.
+///
+/// Not the depth of whatever run produced the PREVIOUS document: this wrapper's
+/// report was computed here, by the deterministic validator, over text the
+/// agent proposed and the user approved. Labelling it `"quality"` because the
+/// row used to hold a quality run's report is the same lie the stale report
+/// itself was.
+pub const AGENT_SAVE_PIPELINE: &str = "agent";
+
+/// The wrapper a save that REPLACES `resume_text` must carry.
+///
+/// **The merge rule, applied to the one path that was still ignoring it.** Any
+/// save writing `resume_text` carries a fresh `quality_report`, because
+/// `AiGenerationStore::save_application` merges per top-level key and an
+/// ABSENT report means "keep what is stored" — so a text-only save leaves the
+/// new document sitting under the previous document's verdict, sections,
+/// fabrication list and all. `resume_pipeline_regenerate_section` has always
+/// obeyed this (one transaction, text + report); the agent's gated
+/// `save_resume` did not, and it is the path whose whole purpose is replacing
+/// the document a report describes.
+///
+/// Deterministic and provider-free — [`validate_documents`] is the same
+/// zero-LLM validator the pipeline's own `validate` stage runs, off the async
+/// worker. No cost, no latency worth naming, and (unlike a model) it may
+/// produce Criticals.
+///
+/// **The cover letter is deliberately absent from the result**, not empty: a
+/// wrapper carrying no `coverLetter` key leaves the stored letter slot
+/// untouched through the merge, which is right because this save does not
+/// change the letter. Passing an empty letter here instead would have written
+/// a slot claiming a letter with no findings.
+pub async fn for_saved_resume(
+    resume_text: &str,
+    source_resume: &str,
+    job_ad: &str,
+    top_requirements: Vec<String>,
+    target_language: &str,
+) -> AppResult<String> {
+    let (report, _letter) = validate_documents(
+        resume_text.to_string(),
+        source_resume.to_string(),
+        job_ad.to_string(),
+        top_requirements,
+        target_language.to_string(),
+        String::new(),
+    )
+    .await?;
+    Ok(build(
+        AGENT_SAVE_PIPELINE,
+        crate::db::now_ms(),
+        Some((&report, resume_text)),
+        None,
+    ))
 }
 
 /// Record one Remove/Keep verdict into an already-persisted wrapper.

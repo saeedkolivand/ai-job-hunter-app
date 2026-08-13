@@ -165,6 +165,104 @@ fn the_quality_pipeline_tool_is_present_in_the_flow_whose_step_can_cover_it() {
     );
 }
 
+// ── The gated résumé save carries its own report ──────────────────────────
+
+fn posting_meta() -> crate::commands::match_resume::JobPostingMeta {
+    crate::commands::match_resume::JobPostingMeta {
+        company: "Acme".to_string(),
+        title: "Senior Backend Engineer".to_string(),
+        url: "https://acme.example/jobs/1".to_string(),
+        board: "greenhouse".to_string(),
+        location: "Berlin".to_string(),
+    }
+}
+
+/// CRITICAL/HIGH (Phase-7 ensemble): a save that replaces `resume_text` cannot
+/// be built without a report.
+///
+/// `AiGenerationStore::save_application` merges the report PER TOP-LEVEL KEY
+/// and an absent one means "keep what is stored"
+/// (`merge_quality_report_content_less_save_keeps_existing_report_untouched`
+/// pins that, and it is correct for an answers-only save). The gated
+/// `save_resume` was content-full and report-less, so the new document landed
+/// under the PREVIOUS document's verdict — sections, fabrication list and all —
+/// with no undo and nothing in the confirm dialog saying so.
+///
+/// The rule was stated in three doc comments and enforced by none; it is now
+/// the constructor's precondition, so the next caller inherits it.
+///
+/// Mutation-checked, executed: passing `""` (the shape the handler had before
+/// the fix — no report computed) fails here.
+#[test]
+fn a_save_that_replaces_the_resume_cannot_be_built_without_a_report() {
+    let meta = posting_meta();
+    for missing in ["", "   ", "\n\t "] {
+        let err = save_resume_request("the new résumé", &meta, missing)
+            .expect_err("a reportless résumé save must be refused");
+        assert!(matches!(err, AppError::Validation(_)));
+        assert!(err.to_string().contains("fresh quality report"));
+    }
+
+    let req = save_resume_request("the new résumé", &meta, r#"{"resume":{}}"#)
+        .expect("a save carrying a report is built");
+    assert_eq!(req["resumeText"], "the new résumé");
+    assert_eq!(req["qualityReport"], r#"{"resume":{}}"#);
+    // Identity comes from the trusted posting meta, never from the model.
+    assert_eq!(req["jobUrl"], meta.url);
+    assert_eq!(req["companyName"], meta.company);
+}
+
+/// …and the report it carries describes the text being SAVED, not the one
+/// being replaced.
+///
+/// `sourceTextHash` is the join between a report and a document (the `stale`
+/// flag every reader computes from it), so hashing the saved text is the
+/// machine-checkable form of "this verdict is about this document". The
+/// wrapper deliberately carries NO `coverLetter` key: the merge overlays whole
+/// top-level keys, so omitting it preserves the stored letter's sub-report,
+/// while an empty slot would have claimed a letter with no findings.
+///
+/// Mutation-checked, executed: building the wrapper from the OLD text (the
+/// stale-report shape) flips the two hash assertions.
+#[tokio::test]
+async fn the_saved_resume_report_describes_the_text_being_saved() {
+    use crate::commands::resume_pipeline::report::{hash_text, AGENT_SAVE_PIPELINE};
+
+    let source = "Jane Doe\nSenior Backend Engineer | Acme | 2020 - Present\n- Shipped a payments service.\n";
+    let replaced = "Jane Doe\nSenior Backend Engineer | Acme | 2020 - Present\n- Shipped a payments service handling refunds.\n";
+    let stale = "Jane Doe\nJunior Analyst | Other | 2016 - 2018\n- Wrote reports.\n";
+
+    let wrapper = crate::commands::resume_pipeline::report::for_saved_resume(
+        replaced,
+        source,
+        "We need a backend engineer with payments experience.",
+        vec!["payments".to_string()],
+        "en",
+    )
+    .await
+    .expect("the validator is deterministic and provider-free");
+
+    let value: Value = serde_json::from_str(&wrapper).expect("a wrapper is JSON");
+    assert_eq!(
+        value["resume"]["sourceTextHash"],
+        json!(hash_text(replaced)),
+        "the report must be joined to the document being saved"
+    );
+    assert_ne!(value["resume"]["sourceTextHash"], json!(hash_text(stale)));
+    assert!(
+        value["resume"]["report"].is_object(),
+        "a real validator verdict, not a placeholder"
+    );
+    assert!(
+        value.get("coverLetter").is_none(),
+        "no letter key — the merge must leave the stored letter slot alone"
+    );
+    assert_eq!(
+        value["pipeline"], AGENT_SAVE_PIPELINE,
+        "the label names what produced THIS report, not the run that produced the old document"
+    );
+}
+
 /// The Phase-7 `improve_resume` whitelist: the plan's own list, exactly, and
 /// ONE gated Write. It is the only home `run_quality_pipeline` has, so a change
 /// here is a change to what that tool is reachable from.

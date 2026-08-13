@@ -100,7 +100,16 @@ pub fn to_specs(tools: &[AgentTool]) -> Vec<ToolSpec> {
 /// budget of a tool's own provider call. `pub(crate)` — `commands::agent::agent_run`
 /// reuses these exact caps (and [`fenced`]) when seeding the transcript, so the
 /// bound and the fence format are declared in exactly ONE place.
-pub(crate) const RESUME_CAP: usize = 8_000;
+///
+/// **`RESUME_CAP` is GENERATED, not a literal here.** The renderer needs the
+/// same number — it is the threshold the `improve_resume` entry point is
+/// disabled on, because a generation this fence would cut is refused at run
+/// start rather than truncated — and it had been hand-copied there as a second
+/// `8_000`. It now comes from `packages/shared/src/agent-caps.ts` through
+/// `pnpm gen:ipc`, so the renderer imports the constant and `gen:ipc:check`
+/// gates the Rust copy. `JOB_CAP` stays a local literal: nothing outside this
+/// crate reads it, and generating a number with one consumer is ceremony.
+pub(crate) const RESUME_CAP: usize = crate::ipc_contracts::agent_caps::AGENT_RESUME_TEXT_CAP;
 pub(crate) const JOB_CAP: usize = 8_000;
 const BRIEF_CAP: usize = 2_000;
 
@@ -823,15 +832,124 @@ fn save_resume_handler(
             crate::commands::match_resume::job_meta_for(&app, &ctx.job_id).ok_or_else(|| {
                 AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
             })?;
-        let req = serde_json::from_value(json!({
-            "resumeText": resume_text,
-            "companyName": meta.company,
-            "jobTitle": meta.title,
-            "jobUrl": meta.url,
-            "board": meta.board,
-        }))?;
-        Ok(crate::commands::ai_generations::ai_generations_save(app, req).await)
+        // The merge rule: this save REPLACES `resume_text`, so it carries a
+        // fresh report over the text it is about to persist — never the stored
+        // one, which describes the document this save is replacing. See
+        // `report::for_saved_resume`.
+        let inputs = saved_resume_inputs(&app, &ctx).await?;
+        let quality_report = crate::commands::resume_pipeline::report::for_saved_resume(
+            &resume_text,
+            &inputs.source_resume,
+            &inputs.job_ad,
+            inputs.top_requirements,
+            &inputs.target_language,
+        )
+        .await?;
+        let req =
+            serde_json::from_value(save_resume_request(&resume_text, &meta, &quality_report)?)?;
+        let saved = crate::commands::ai_generations::ai_generations_save(app.clone(), req).await;
+        // …and the row-side half of the same rule, once the write landed.
+        crate::commands::resume_pipeline::sync_saved_resume_status(
+            &app,
+            &meta.url,
+            &quality_report,
+            &resume_text,
+            &inputs.cover_letter_text,
+        );
+        Ok(saved)
     })
+}
+
+/// The grounding a gated résumé save needs to validate the text it persists.
+struct SavedResumeInputs {
+    /// The candidate's own résumé — what every Critical is measured against.
+    source_resume: String,
+    job_ad: String,
+    top_requirements: Vec<String>,
+    target_language: String,
+    /// Only for the run-status recompute (the letter's own findings still count
+    /// toward whether the RUN needs review); this save never rewrites it.
+    cover_letter_text: String,
+}
+
+/// Gather that grounding, preferring the stored aggregate's own fields.
+///
+/// The record is the right source for `job_ad`/`top_requirements`/
+/// `target_language` for the same reason `regenerate_section` reads them off
+/// its record: those are what the document was written against, so a report
+/// computed from anything else would measure it against a different brief. The
+/// postings cache is the fallback for a first save, and an absent field is
+/// empty rather than invented — the validator's checks degrade individually
+/// (no job ad = no alignment findings), which is the honest failure.
+async fn saved_resume_inputs(app: &AppHandle, ctx: &ToolContext) -> AppResult<SavedResumeInputs> {
+    let job_ad = crate::commands::match_resume::job_text_for(app, &ctx.job_id).unwrap_or_default();
+    let app_task = app.clone();
+    let ctx = ctx.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_resume = app_task
+            .state::<crate::documents::DocumentStore>()
+            .get(&ctx.resume_id)
+            .map(|doc| doc.text)
+            .ok_or_else(|| {
+                AppError::Validation(format!(
+                    "resume not found: {}",
+                    clamped_echo(&ctx.resume_id)
+                ))
+            })?;
+        let existing = match super::tools_pipeline::generation_for_job(&app_task, &ctx.job_id)? {
+            super::tools_pipeline::GenerationLookup::Found(record) => Some(record),
+            _ => None,
+        };
+        Ok(SavedResumeInputs {
+            source_resume,
+            job_ad: existing
+                .as_ref()
+                .map(|r| r.job_ad.clone())
+                .filter(|ad| !ad.trim().is_empty())
+                .unwrap_or(job_ad),
+            top_requirements: existing
+                .as_ref()
+                .map(|r| r.top_requirements.clone())
+                .unwrap_or_default(),
+            target_language: existing
+                .as_ref()
+                .map(|r| r.target_language.clone())
+                .unwrap_or_default(),
+            cover_letter_text: existing.map(|r| r.cover_letter_text).unwrap_or_default(),
+        })
+    })
+    .await
+    .map_err(|e| AppError::Storage(format!("save grounding lookup failed: {e}")))?
+}
+
+/// Build the `ai_generations.save` request for a gated résumé save — and
+/// REFUSE to build one that carries no report.
+///
+/// The refusal is the point. "A save that writes `resume_text` carries a fresh
+/// `quality_report`" was a rule stated in three doc comments and enforced by
+/// none of them: the request is a `json!` literal, and omitting one key left
+/// the previous document's verdict attached to the new text with nothing —
+/// no type, no test, no store guard — objecting. Routing every gated save
+/// through a constructor that cannot produce the broken shape makes the rule
+/// mechanical, so the next caller inherits it instead of re-reading the doc.
+fn save_resume_request(
+    resume_text: &str,
+    meta: &crate::commands::match_resume::JobPostingMeta,
+    quality_report: &str,
+) -> AppResult<Value> {
+    if quality_report.trim().is_empty() {
+        return Err(AppError::Validation(
+            "a save that replaces the résumé must carry a fresh quality report".to_string(),
+        ));
+    }
+    Ok(json!({
+        "resumeText": resume_text,
+        "companyName": meta.company,
+        "jobTitle": meta.title,
+        "jobUrl": meta.url,
+        "board": meta.board,
+        "qualityReport": quality_report,
+    }))
 }
 
 /// Char cap on the saved tailored résumé. A full résumé (several roles, each with
