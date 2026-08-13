@@ -19,6 +19,11 @@
 
 mod engine;
 mod letter;
+// Letterhead name-guard family (`is_letterhead_name` / `letterhead_initials` /
+// their private helpers). Split out of `letter.rs` — sibling module, not a
+// public-surface change — to stay under the R8 module-size cap; see its
+// module doc comment.
+mod letterhead;
 mod photo;
 mod render;
 mod world;
@@ -40,7 +45,11 @@ pub use engine::render_pdf_from_source;
 // names at all (salutation / sign-off / subject / date). The unguarded
 // `monogram_initials` is deliberately NOT exported: DOCX calling it directly
 // is how the date hole survived in one format after being closed in the other.
-pub(crate) use letter::letterhead_initials;
+//
+// Lives in the sibling `letterhead` module (split out of `letter.rs` for the
+// R8 module-size cap); the re-export path here is unchanged, so no consumer
+// (`docx::mod`, `letter::parse_cover_letter`) had to change its call site.
+pub(crate) use letterhead::letterhead_initials;
 // The predicate behind `letterhead_initials` above, exported separately so
 // callers that need "is this a name" (not "give me the initials") don't have
 // to check `!letterhead_initials(s).is_empty()` — a mononym's initials are one
@@ -48,7 +57,7 @@ pub(crate) use letter::letterhead_initials;
 // `parse_cover_letter` (letterhead NAME text) and `export/docx/mod.rs`'s two
 // line-scanners (DOCX has no shared `LetterModel` to funnel through), so every
 // format agrees on which openings are not names.
-pub(crate) use letter::is_letterhead_name;
+pub(crate) use letterhead::is_letterhead_name;
 pub use photo::resolve_photo;
 pub use render::RenderOpts;
 // Single source of truth for document-accent hex validation, reused by the
