@@ -57,15 +57,29 @@ export function LocalModelLimits({ selectedModel }: Props) {
   const { resources } = useSystemResources(selectedModel);
   const setLocalModelLimits = usePreferencesStore((s) => s.setLocalModelLimits);
   const { save: saveProviderSettings } = useSaveProviderSettings();
-  /** Last value actually sent, so a release that moved nothing writes nothing. */
-  const committedWindow = useRef<number | undefined>(undefined);
+  /**
+   * Last value actually sent, PER MODEL.
+   *
+   * A single value here was a data bug, not an optimisation: this component is
+   * never remounted when the selected model changes (no `key` at the call
+   * site), so committing 16 384 for model A latched the number globally and the
+   * identical commit for model B was skipped — B's backend row kept its old
+   * window while Settings showed the new one, and every staged run used the
+   * stale value. "Use suggested" made it deterministic, because the suggestion
+   * is hardware-derived and therefore identical across un-inspected models.
+   */
+  const committedWindows = useRef<Record<string, number>>({});
   const limits = usePreferencesStore((s) =>
     selectedModel ? s.aiProviderConfig?.providers?.ollama?.modelLimits?.[selectedModel] : undefined
   );
 
   if (!selectedModel) return null;
 
-  const inspected = inspect.data;
+  // `inspect` is a mutation, so its result survives a model switch. Trust it
+  // only for the model it was actually run against — otherwise the previous
+  // model's trained maximum clamps the slider (and the committed value) for a
+  // model it says nothing about.
+  const inspected = inspect.variables?.model === selectedModel ? inspect.data : undefined;
   const detectedMax = inspected?.contextLength;
   const ctxMax = Math.min(CTX_MAX, detectedMax ?? CTX_MAX);
 
@@ -101,9 +115,11 @@ export function LocalModelLimits({ selectedModel }: Props) {
    * whole commit path exists to remove.
    */
   const commitWindow = (value: number) => {
-    // Key-up and pointer-up both fire on a press that moved nothing.
-    if (value === committedWindow.current) return;
-    committedWindow.current = value;
+    // Key-up and pointer-up both fire on a press that moved nothing — but the
+    // de-duplication is PER MODEL, so the same number for a different model is
+    // still a write.
+    if (value === committedWindows.current[selectedModel]) return;
+    committedWindows.current[selectedModel] = value;
     saveProviderSettings(
       { provider: 'ollama', model: selectedModel, contextWindow: value },
       {
