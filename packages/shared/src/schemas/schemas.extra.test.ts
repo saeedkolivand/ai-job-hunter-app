@@ -122,6 +122,13 @@ describe('ResumePipelineRunSchema', () => {
       ResumePipelineRunSchema.parse({
         resumeText: 'a whole résumé',
         jobAdText: 'a whole job ad',
+        companyName: 'a'.repeat(513),
+      })
+    ).toThrow();
+    expect(() =>
+      ResumePipelineRunSchema.parse({
+        resumeText: 'a whole résumé',
+        jobAdText: 'a whole job ad',
         board: 'a'.repeat(65),
       })
     ).toThrow();
