@@ -1695,6 +1695,25 @@
       "error": "fehlgeschlagen"
     },
     "stageCounter": "Schritt {{current}} von {{total}}",
+    "step": {
+      "title": "Fortschritt",
+      "analyze": {
+        "label": "Analysieren",
+        "description": "Liest die Stellenanzeige und gleicht sie mit deinen Belegen ab."
+      },
+      "generate": {
+        "label": "Erstellen",
+        "description": "Entwirft deinen Lebenslauf – und das Anschreiben, falls gewünscht."
+      },
+      "validate": {
+        "label": "Prüfen",
+        "description": "Prüft das Ergebnis und behebt kritische Punkte automatisch."
+      },
+      "humanize": {
+        "label": "KI-Spuren entfernen",
+        "description": "Schreibt nur die Zeilen um, die wie KI-Text wirken."
+      }
+    },
     "state": {
       "queued": "Wartet auf einen freien Platz…",
       "preparing": "Vorbereitung",
@@ -1913,8 +1932,6 @@
       "fetchingDescription": "Stellenbeschreibung wird abgerufen…",
       "generate": "Generieren",
       "generating": "Generiere…",
-      "generatingHint": "Das kann einen Moment dauern – wir passen an die Stellenanzeige an.",
-      "reasoningHeavyHint": "Dieses Modell wendet weit mehr für internes Nachdenken auf als für das Dokument. Rechne mit mehreren Minuten – es arbeitet, es hängt nicht.",
       "cancel": "Abbrechen",
       "analyzing": "Stellenbeschreibung wird analysiert…",
       "writingResume": "Lebenslauf wird geschrieben…",
@@ -1993,7 +2010,8 @@
         },
         "model": {
           "title": "KI-Modell",
-          "subtitle": "Wähle das Modell und optionale Unternehmensrecherche"
+          "subtitle": "Wähle das Modell und optionale Unternehmensrecherche",
+          "stagedCost": "Jede Anpassung läuft in mehreren Modellaufrufen ab – analysieren, erstellen, prüfen, dann KI-Spuren entfernen – das dauert meist Minuten statt Sekunden. Dafür wird der Lebenslauf geprüft, bevor du ihn siehst."
         },
         "next": "Weiter",
         "back": "Zurück",
