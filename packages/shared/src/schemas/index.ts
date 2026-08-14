@@ -367,40 +367,85 @@ export type GenerationDepth = (typeof GENERATION_DEPTHS)[number];
  * (`Completer::from_active`), and so is the BUDGET: `maxSteps`/`maxTokens`/
  * `runTimeout` are compile-time `Budget::RESUME_QUALITY` constants, never
  * renderer-supplied, because they bound spend on a paid API (see
- * `pipeline::budget`'s module doc and its lock test). The two id fields are
- * resolved SERVER-side — `resumeId` through the `DocumentStore`, `jobId`
- * through the postings cache — so the model never sees a renderer-supplied
- * résumé or posting body.
+ * `pipeline::budget`'s module doc and its lock test).
+ *
+ * **Two ways in, per side, ID WINS.** `resumeId`/`jobId` resolve SERVER-side —
+ * `resumeId` through the `DocumentStore`, `jobId` through the live postings
+ * cache — so the model never sees a renderer-supplied document body on that
+ * path. `resumeText`/`jobAdText` exist for the apply flow's other two entry
+ * points (a pasted job ad, an Autopilot found job), which have no cache id or
+ * stored résumé id to hand over. The Rust `execute` resolution rule: a
+ * nonempty id ALWAYS wins over the matching text field (never a silent
+ * fallback — a missing id is a hard error, not a text retry), and at least one
+ * of each pair is required (`resumeId` or `resumeText`; `jobId` or
+ * `jobAdText`). `jobTitle`/`companyName`/`board` are the posting identity the
+ * cache lookup would otherwise have supplied — read only on the text path.
+ * Every one of these still reaches a prompt ONLY through the existing fenced
+ * paths (ADR-010); this schema does not change that boundary.
  *
  * `effort` is the ordinary cross-provider reasoning-effort token, exactly as
  * `AiGenerateRequest.effort`: it scales sampling AND the run deadline
  * (`qualityRunDeadlineSecs`), bounded by the same ≤3× multiplier table every
  * other deadline uses, and an unrecognized value falls back to 1.0.
  */
-export const ResumePipelineRunSchema = z.object({
-  resumeId: z.string().min(1),
-  jobId: z.string().min(1),
-  /** The posting URL this run belongs to — the run store's retention key and
-   *  the `ai_generations` aggregate key. Empty for an unlinked generation. */
-  jobUrl: z.string().max(2_048).default(''),
-  depth: z.enum(GENERATION_DEPTHS).default('quality'),
-  targetLanguage: z.string().max(32).default('en'),
-  effort: z.string().max(32).optional(),
-  /** The posting's top requirements, as the JD-analysis step extracted them —
-   *  the same list `resume:validateContent` takes. */
-  topRequirements: z.array(z.string().max(300)).max(50).default([]),
-  /** An already-generated cover letter to validate alongside the résumé.
-   *  Empty = no letter in scope (no letter checks run). Legacy/validate-only:
-   *  when {@link includeCoverLetter} is true the `cover_letter` STAGE writes
-   *  its own letter and this text is the fallback for callers that skip it. */
-  coverLetterText: z.string().max(200_000).default(''),
-  /** Whether the run's `cover_letter` stage should generate a letter (one
-   *  extra streamed pass) instead of no-opping. Default false: an existing
-   *  caller that never sets this gets byte-identical behavior — the stage
-   *  finishes instantly at zero cost, exactly as if it did not exist. */
-  includeCoverLetter: z.boolean().default(false),
-});
-export type ResumePipelineRunRequest = z.infer<typeof ResumePipelineRunSchema>;
+export const ResumePipelineRunSchema = z
+  .object({
+    resumeId: z.string().default(''),
+    jobId: z.string().default(''),
+    /** Pasted/found-job résumé text — the id-less path. Ignored (never a
+     *  fallback) when `resumeId` is set. Same cap class as
+     *  `ResumeTrimSuggestionsRequestSchema.resumeText` — the same kind of text. */
+    resumeText: z.string().max(200_000).default(''),
+    /** Pasted/found-job posting text — the id-less path. Ignored (never a
+     *  fallback) when `jobId` is set. Same cap class as `coverLetterText`
+     *  below (both mirror the server's `MAX_JOB_DESCRIPTION_BYTES`). */
+    jobAdText: z.string().max(200_000).default(''),
+    /** Posting identity for the text path only — the cache lookup's `title`. */
+    jobTitle: z.string().max(512).default(''),
+    /** Posting identity for the text path only — the cache lookup's `company`. */
+    companyName: z.string().max(512).default(''),
+    /** Posting identity for the text path only — the cache lookup's `source`
+     *  board. Short slug (`"linkedin"`, `"indeed"`, an aggregator name). */
+    board: z.string().max(64).default(''),
+    /** The posting URL this run belongs to — the run store's retention key and
+     *  the `ai_generations` aggregate key. Empty for an unlinked generation. */
+    jobUrl: z.string().max(2_048).default(''),
+    depth: z.enum(GENERATION_DEPTHS).default('quality'),
+    targetLanguage: z.string().max(32).default('en'),
+    effort: z.string().max(32).optional(),
+    /** The posting's top requirements, as the JD-analysis step extracted them —
+     *  the same list `resume:validateContent` takes. */
+    topRequirements: z.array(z.string().max(300)).max(50).default([]),
+    /** An already-generated cover letter to validate alongside the résumé.
+     *  Empty = no letter in scope (no letter checks run). Legacy/validate-only:
+     *  when {@link includeCoverLetter} is true the `cover_letter` STAGE writes
+     *  its own letter and this text is the fallback for callers that skip it. */
+    coverLetterText: z.string().max(200_000).default(''),
+    /** Whether the run's `cover_letter` stage should generate a letter (one
+     *  extra streamed pass) instead of no-opping. Default false: an existing
+     *  caller that never sets this gets byte-identical behavior — the stage
+     *  finishes instantly at zero cost, exactly as if it did not exist. */
+    includeCoverLetter: z.boolean().default(false),
+  })
+  .refine((data) => data.resumeId.trim() !== '' || data.resumeText.trim() !== '', {
+    message: 'either resumeId or resumeText is required',
+    path: ['resumeId'],
+  })
+  .refine((data) => data.jobId.trim() !== '' || data.jobAdText.trim() !== '', {
+    message: 'either jobId or jobAdText is required',
+    path: ['jobId'],
+  });
+/**
+ * The INPUT shape, not `z.infer`'s output — deliberately. Every field here has
+ * a `.default(...)`, so the OUTPUT type (every other `*Request` type in this
+ * file uses it) makes them all REQUIRED, and an existing caller built before
+ * this PR's five new fields (`TailoredResumePanel`, `useResumePipelineSession`)
+ * would fail to type-check despite the wire being unaffected — nothing on
+ * this transport ever calls `.parse()` (see `ClampedRequest`'s Rust doc:
+ * "Zod does not run on this transport"), so there is no runtime difference to
+ * protect, only a compile-time one to avoid.
+ */
+export type ResumePipelineRunRequest = z.input<typeof ResumePipelineRunSchema>;
 
 /**
  * Request for `resumePipeline.regenerateSection` — re-run ONE section of a
