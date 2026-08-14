@@ -1622,29 +1622,12 @@
       "strategy": "Planning the résumé",
       "draft": "Writing the résumé",
       "cover_letter": "Writing the cover letter",
+      "sections": "Writing the résumé section by section",
+      "assemble": "Putting the sections together",
       "validate": "Checking the result",
       "repair": "Fixing what the check found",
-      "humanize": "Removing AI writing tells"
-    },
-    "section": {
-      "title": "Sections",
-      "summary": "Summary",
-      "skills": "Skills",
-      "experienceEntry": "Experience {{index}}",
-      "announce": "{{section}} — {{state}}",
-      "progress_one": "{{written}} of {{count}} section written so far",
-      "progress_other": "{{written}} of {{count}} sections written so far",
-      "projects": "Projects",
-      "education": "Education",
-      "state": {
-        "queued": "Waiting",
-        "generating": "Writing",
-        "done": "Written",
-        "checking": "Checking",
-        "needsChanges": "Needs changes",
-        "repaired": "Repaired",
-        "clean": "No changes needed"
-      }
+      "humanize": "Removing AI writing tells",
+      "llm_judge": "Reading the finished résumé once more"
     },
     "phase": {
       "start": "started",

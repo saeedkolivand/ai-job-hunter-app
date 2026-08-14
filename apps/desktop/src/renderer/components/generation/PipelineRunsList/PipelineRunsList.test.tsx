@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 
 import type { PipelineRunEvent, PipelineRunSummary } from '@ajh/shared/ipc';
 
-import { PIPELINE_RUN_DEPTHS_HISTORIC, PipelineRunsList } from './PipelineRunsList';
+import { PipelineRunsList } from './PipelineRunsList';
 
 function run(overrides: Partial<PipelineRunSummary> = {}): PipelineRunSummary {
   return {
@@ -124,6 +124,42 @@ describe('PipelineRunsList', () => {
       expect(screen.getByText(/live progress only/i)).toBeInTheDocument();
       expect(onExpand).toHaveBeenCalledWith('run-1');
     });
+
+    // A max-depth run's PERSISTED trail still carries `sections`/`assemble`/
+    // `llm_judge` — the max pipeline that emitted them is gone, but rows it
+    // already wrote are not, and nothing migrates them. `defaultValue` keeps a
+    // missing key from rendering as a dotted string, but a raw stage token
+    // ("sections", "assemble") is still an English wire identifier landing in
+    // front of, e.g., a German user — the exact failure `translates the phase
+    // instead of printing the raw enum name` above guards for `phase`. This is
+    // the same guard for `stage`, and it has to be a RENDER assertion against
+    // persisted events, not a key-existence check: a test that only asserts
+    // `pipeline.stage.sections` exists in the JSON would pass even if this
+    // component stopped reading it. Mutation-tested: deleting any one of the
+    // three restored locale keys reddens the matching row's assertion below.
+    it('renders human labels for the retired max-only stages in a persisted trail', async () => {
+      const maxEvents: PipelineRunEvent[] = [
+        { seq: 0, ts: 1, stage: 'sections', phase: 'start', artifact: {} },
+        { seq: 1, ts: 2, stage: 'sections', phase: 'finish', artifact: {} },
+        { seq: 2, ts: 3, stage: 'assemble', phase: 'finish', artifact: {} },
+        { seq: 3, ts: 4, stage: 'llm_judge', phase: 'finish', artifact: {} },
+      ];
+      render(<PipelineRunsList runs={[run()]} eventsByRun={{ 'run-1': maxEvents }} />);
+      await userEvent.click(screen.getByRole('button', { name: /show stage timeline/i }));
+
+      // Each stage's own <span> holds nothing but its translated label, so a
+      // plain-string query (whole-node match, not a substring) is exact — no
+      // risk of "assemble"'s translation ("Putting the sections together")
+      // colliding with a raw "sections" token check the way a substring/regex
+      // scan over the whole trail's text would.
+      expect(screen.getAllByText('Writing the résumé section by section')).toHaveLength(2);
+      expect(screen.getByText('Putting the sections together')).toBeInTheDocument();
+      expect(screen.getByText('Reading the finished résumé once more')).toBeInTheDocument();
+      // Not the raw wire tokens — the exact regression this guard exists for.
+      expect(screen.queryByText('sections')).not.toBeInTheDocument();
+      expect(screen.queryByText('assemble')).not.toBeInTheDocument();
+      expect(screen.queryByText('llm_judge')).not.toBeInTheDocument();
+    });
   });
 
   it('warns that only the newest run still has its document', () => {
@@ -148,7 +184,6 @@ describe('PipelineRunsList', () => {
         ['max', 'Max'],
       ] as const
     )('renders a human label for a historic "%s" run, not the raw token', (depth, label) => {
-      expect(PIPELINE_RUN_DEPTHS_HISTORIC).toContain(depth);
       render(<PipelineRunsList runs={[run({ depth })]} />);
       expect(screen.getByText(label)).toBeInTheDocument();
       expect(screen.queryByText(`generationDepth.option.${depth}.label`)).not.toBeInTheDocument();

@@ -26,19 +26,6 @@ const STATUS_TONE: Record<PipelineRunStatus, string> = {
   cancelled: 'border-white/10 bg-white/[0.04] text-foreground/55',
 };
 
-/**
- * Every depth a STORED run row can carry, frozen regardless of which ones this
- * build can currently START.
- *
- * PR-4 deleted the depth SELECTORS (`DepthSelector`, the settings/wizard
- * pickers) once the apply flow stopped offering a choice — but users still
- * have run history at all three, and this list is the one surface that still
- * renders it. Deleting the label vocabulary alongside the pickers would make
- * that history unreadable, so it stays pinned here on purpose; see
- * `PipelineRunsList.test.tsx`'s "historic depth" guard.
- */
-export const PIPELINE_RUN_DEPTHS_HISTORIC = ['fast', 'quality', 'max'] as const;
-
 export interface PipelineRunsListProps {
   runs: PipelineRunSummary[];
   /** Open one run's report. Omit to render the list read-only. */
@@ -167,6 +154,15 @@ export function PipelineRunsList({
                   <ol id={timelineId} className="mt-2 space-y-1 border-l border-white/10 pl-3">
                     {events.map((event) => (
                       <li key={event.seq} className="text-[10px] text-foreground/50">
+                        {/* `pipeline.stage.sections`/`.assemble`/`.llm_judge` stay
+                            in both locale files even though no run can emit them
+                            any more (the max pipeline that wrote them is gone) —
+                            the SAME reasoning as the depth vocabulary below:
+                            these ROWS are historic, persisted with no migration
+                            path, and this is the surface that renders their
+                            trail back. `defaultValue` is the fallback for a
+                            genuinely unknown future stage, not a substitute for
+                            keeping vocabulary a persisted row still needs. */}
                         <span className="text-foreground/70">
                           {t(`pipeline.stage.${event.stage}`, { defaultValue: event.stage })}
                         </span>{' '}
