@@ -2022,7 +2022,15 @@
         },
         "results": {
           "regenerate": "Neu generieren",
-          "edit": "Einstellungen bearbeiten"
+          "edit": "Einstellungen bearbeiten",
+          "needsReviewTitle_one": "Nicht fertig — {{count}} Aussage braucht dein Urteil",
+          "needsReviewTitle_other": "Nicht fertig — {{count}} Aussagen brauchen dein Urteil",
+          "needsReviewHint": "Das Dokument existiert, aber die Prüfung konnte diese Zeilen nicht auf deinen Lebenslauf zurückführen. Öffne den Bericht und behalte oder entferne jeden Eintrag.",
+          "cancelledHint": "Was der Lauf bereits geschrieben hatte, wurde gespeichert.",
+          "failedTitle": "Der Lauf ist fehlgeschlagen",
+          "failedHint": "Nichts wird automatisch wiederholt — versuche es gleich noch einmal.",
+          "fixFailed": "Der Abschnitt konnte nicht neu erstellt werden. {{detail}}",
+          "resolveFailed": "Die Entscheidung konnte nicht gespeichert werden. {{detail}}"
         }
       }
     },

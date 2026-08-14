@@ -2018,7 +2018,15 @@
         },
         "results": {
           "regenerate": "Regenerate",
-          "edit": "Edit settings"
+          "edit": "Edit settings",
+          "needsReviewTitle_one": "Not finished — {{count}} claim needs your verdict",
+          "needsReviewTitle_other": "Not finished — {{count}} claims need your verdict",
+          "needsReviewHint": "The document exists, but the checks couldn't trace these lines back to your résumé. Open the report and keep or remove each one.",
+          "cancelledHint": "Whatever the run had already written was saved.",
+          "failedTitle": "The run failed",
+          "failedHint": "Nothing is retried automatically — try again in a moment.",
+          "fixFailed": "Couldn't regenerate that section. {{detail}}",
+          "resolveFailed": "Couldn't record that decision. {{detail}}"
         }
       }
     },
