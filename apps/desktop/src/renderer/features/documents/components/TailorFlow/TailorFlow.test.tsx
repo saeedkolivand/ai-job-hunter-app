@@ -340,8 +340,7 @@ type MockedPersistence = Omit<
   | 'setAtsMode'
   | 'setAccent'
   | 'setLetterLayoutId'
-  | 'setRunId'
-  | 'setRunJobId'
+  | 'setRun'
 > & {
   setWizardStep: Mock;
   setWizardForm: Mock;
@@ -349,8 +348,7 @@ type MockedPersistence = Omit<
   setAtsMode: Mock;
   setAccent: Mock;
   setLetterLayoutId: Mock;
-  setRunId: Mock;
-  setRunJobId: Mock;
+  setRun: Mock;
 };
 
 function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPersistence {
@@ -367,8 +365,7 @@ function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPers
     setAtsMode: vi.fn(),
     setAccent: vi.fn(),
     setLetterLayoutId: vi.fn(),
-    setRunId: vi.fn(),
-    setRunJobId: vi.fn(),
+    setRun: vi.fn(),
     ...overrides,
   };
 }

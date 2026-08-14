@@ -85,8 +85,11 @@ export interface TailorFlowPersistence {
   setAtsMode: (v: boolean) => void;
   setAccent: (v: string | undefined) => void;
   setLetterLayoutId: (v: LetterLayoutId) => void;
-  setRunId: (v: string | null) => void;
-  setRunJobId: (v: string | null) => void;
+  /** Persists (or clears, with `null`) the reconnect target as ONE atomic
+   *  write — a single host-store update instead of two, so a host that
+   *  keys the write on the ids together (see `ApplicationApplySlice.applyRun`)
+   *  never observes a run/job id pair from two different applications. */
+  setRun: (ids: { runId: string; jobId: string } | null) => void;
 }
 
 export interface TailorFlowProps {
@@ -255,10 +258,7 @@ export function TailorFlow({
     latestGeneration: seedGeneration,
     initialRunId: persistence.runId,
     initialJobId: persistence.runJobId,
-    onRunStarted: (ids) => {
-      persistence.setRunId(ids.runId);
-      persistence.setRunJobId(ids.jobId);
-    },
+    onRunStarted: persistence.setRun,
   });
 
   // Lazy, résumé-independent AI summary of the job ad (shared by the wizard's

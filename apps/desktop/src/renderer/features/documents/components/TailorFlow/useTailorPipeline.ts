@@ -109,13 +109,26 @@ export function useTailorPipeline({
 
   const session = useResumePipelineSession(initialRunId, initialJobId);
 
-  // Persist {runId, jobId} the moment either is known — a fresh start AND a
-  // reconnect both land here, so the host's "remember for next time" write is
-  // one call site instead of two.
+  // `onRunStarted` is host-supplied and, on the real DocumentsTab/TailorFlow
+  // wiring, a FRESH arrow every render (and calling it writes a Zustand
+  // slice, which always returns a new object → re-renders the host → a new
+  // arrow again). Reading it from a ref keeps the effect below from ever
+  // listing it as a dependency, so a host re-render alone can't re-fire it —
+  // only an actual new `{runId, jobId}` can. `persistedRunRef` is a second,
+  // independent guard: even if this effect DOES re-run for the same run
+  // (e.g. a remount that re-seeds identical ids), it's a no-op rather than a
+  // redundant host write. Together these close the infinite update loop
+  // (`onRunStarted` → host state → new arrow → effect refires → …).
+  const onRunStartedRef = useRef(onRunStarted);
+  onRunStartedRef.current = onRunStarted;
+  const persistedRunRef = useRef<string | null>(null);
   useEffect(() => {
-    if (session.runId && session.jobId)
-      onRunStarted?.({ runId: session.runId, jobId: session.jobId });
-  }, [session.runId, session.jobId, onRunStarted]);
+    if (!session.runId || !session.jobId) return;
+    const key = `${session.runId}|${session.jobId}`;
+    if (persistedRunRef.current === key) return;
+    persistedRunRef.current = key;
+    onRunStartedRef.current?.({ runId: session.runId, jobId: session.jobId });
+  }, [session.runId, session.jobId]);
 
   // The 4-step checklist position — keeps the LAST known step for a stage
   // name this build doesn't map (see `pipelineStepForStage`), never regresses.

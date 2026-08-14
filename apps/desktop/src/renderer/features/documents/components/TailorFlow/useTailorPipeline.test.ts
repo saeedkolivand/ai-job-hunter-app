@@ -355,6 +355,54 @@ describe('useTailorPipeline — persisted-run notification', () => {
     render({ onRunStarted });
     expect(onRunStarted).not.toHaveBeenCalled();
   });
+
+  // F1 regression: on the real DocumentsTab/TailorFlow wiring, `onRunStarted`
+  // writes a Zustand slice, which ALWAYS returns a new object — re-rendering
+  // the host, which passes a brand-new arrow back in. The prior effect listed
+  // `onRunStarted` as a dependency with no already-persisted guard, so this
+  // reproduced "Maximum update depth exceeded" immediately after a run
+  // started. A test with a stable `vi.fn()` (the two tests above) cannot
+  // catch this — it must pass a FRESH arrow every render, exactly like the
+  // real host does.
+  it('does not loop when onRunStarted is a fresh arrow every render (F1)', () => {
+    const persisted: { runId: string; jobId: string }[] = [];
+    sessionBus.runId = 'run-1';
+    sessionBus.jobId = 'job-1';
+
+    const { rerender } = renderHook(
+      (props: { onRunStarted: (ids: { runId: string; jobId: string }) => void }) =>
+        useTailorPipeline({ ...PARAMS, ...props }),
+      {
+        wrapper,
+        initialProps: { onRunStarted: (ids) => persisted.push(ids) },
+      }
+    );
+
+    // 20 re-renders, each passing a NEW closure — the exact shape that broke
+    // (TailorFlow's inline `onRunStarted: (ids) => { persistence.setRun(...) }`).
+    // If the guard regresses, this either throws React's max-update-depth
+    // error or the callback fires 20 times instead of once.
+    for (let i = 0; i < 20; i++) {
+      rerender({ onRunStarted: (ids) => persisted.push(ids) });
+    }
+
+    expect(persisted).toEqual([{ runId: 'run-1', jobId: 'job-1' }]);
+  });
+
+  it('persists again once a NEW run id replaces the old one (guard is keyed, not one-shot)', () => {
+    const onRunStarted = vi.fn();
+    sessionBus.runId = 'run-1';
+    sessionBus.jobId = 'job-1';
+    const { rerender } = render({ onRunStarted });
+    expect(onRunStarted).toHaveBeenCalledTimes(1);
+
+    sessionBus.runId = 'run-2';
+    sessionBus.jobId = 'job-2';
+    rerender();
+
+    expect(onRunStarted).toHaveBeenCalledTimes(2);
+    expect(onRunStarted).toHaveBeenLastCalledWith({ runId: 'run-2', jobId: 'job-2' });
+  });
 });
 
 describe('useTailorPipeline — cancel', () => {

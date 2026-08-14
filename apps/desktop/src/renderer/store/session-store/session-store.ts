@@ -165,11 +165,19 @@ interface ApplicationApplySlice {
    * The staged pipeline run this application's TailorFlow session started
    * (or reconnected to) — survives navigating away and back (a Documents-tab
    * remount) within the same app session. Handed to `useTailorPipeline` as
-   * `initialRunId`/`initialJobId`; never read anywhere else. Cleared on
-   * switching applications, same as the other one-shot fields above.
+   * `initialRunId`/`initialJobId`; never read anywhere else.
+   *
+   * Self-describing (`forId`) rather than reset-on-switch: the two apply
+   * entry points (`usePostingActions`, `AutopilotPage`) set `applyForId`
+   * atomically, before navigating, with no compensating clear of this field —
+   * and `DocumentsTab` mounts (default tab) in the SAME commit as the
+   * reset effect that would otherwise clear it, so a naive read can observe
+   * the PREVIOUS application's run id on the very first render. Read this
+   * ONLY when `forId === application.id`; a mismatch (any of the above, or
+   * simply a different application) means "no run for this application",
+   * full stop — no ordering to get right.
    */
-  applyRunId: string | null;
-  applyRunJobId: string | null;
+  applyRun: { forId: string; runId: string; jobId: string } | null;
 }
 
 /**
@@ -218,8 +226,7 @@ const APPLICATION_APPLY_DEFAULTS: ApplicationApplySlice = {
   applyForId: null,
   applySeedResume: null,
   applyMatchLevel: null,
-  applyRunId: null,
-  applyRunJobId: null,
+  applyRun: null,
 };
 
 const ANALYZE_DEFAULTS: AnalyzeSlice = {

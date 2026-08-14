@@ -184,8 +184,7 @@ function makePersistence() {
     setAtsMode: vi.fn(),
     setAccent: vi.fn(),
     setLetterLayoutId: vi.fn(),
-    setRunId: vi.fn(),
-    setRunJobId: vi.fn(),
+    setRun: vi.fn(),
   };
 }
 
@@ -258,5 +257,62 @@ describe('TailorFlow — a failed staged-run start surfaces its reason', () => {
 
     expect(await screen.findByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.generationError)).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F1 — mount-level regression through a DocumentsTab-shaped host
+// ─────────────────────────────────────────────────────────────────────────────
+// `TailorFlow.test.tsx` mocks `useTailorPipeline` wholesale and passes a
+// STABLE `vi.fn()` persistence, so it never exercised the real loop: this
+// file's REAL `useTailorPipeline` chain (already used above) is reused here
+// with a host that mirrors the actual production shape — `runId`/`runJobId`
+// in host state, a brand-new `persistence` object literal (and `setRun`
+// arrow) on every render, exactly like `DocumentsTab` + Zustand's
+// always-new-object setter. Before the fix, this threw "Maximum update depth
+// exceeded" the instant a run started.
+
+function DocumentsTabShapedHost() {
+  const [runId, setRunIdState] = React.useState<string | null>(null);
+  const [runJobId, setRunJobIdState] = React.useState<string | null>(null);
+  // A fresh object every render — never memoized, matching DocumentsTab's
+  // inline `const persistence: TailorFlowPersistence = { ... }`.
+  const persistence = {
+    ...makePersistence(),
+    runId,
+    runJobId,
+    setRun: (ids: { runId: string; jobId: string } | null) => {
+      setRunIdState(ids?.runId ?? null);
+      setRunJobIdState(ids?.jobId ?? null);
+    },
+  };
+  return (
+    <TailorFlow
+      job={JOB}
+      resumeText="My resume"
+      board="linkedin"
+      contextId="autopilot:https://acme.com/jobs/1"
+      jobUrl="https://acme.com/jobs/1"
+      persistence={persistence}
+    />
+  );
+}
+
+describe('TailorFlow — F1 mount-level regression (DocumentsTab-shaped host)', () => {
+  it('does not loop / crash when a real run starts under an unstable persistence object', async () => {
+    const user = userEvent.setup();
+    const client = createMockClient({
+      'resumePipeline.run': vi.fn().mockResolvedValue({ runId: 'run-1', jobId: 'job-1' }),
+      'resumePipeline.get': vi.fn().mockResolvedValue(completedDetail()),
+    });
+
+    render(<DocumentsTabShapedHost />, { wrapper: withProviders(client) });
+
+    // Before the fix, React throws "Maximum update depth exceeded" synchronously
+    // inside this flush — the run's persisted ids trigger the host re-render →
+    // fresh persistence/setRun → useTailorPipeline's effect refires → loop.
+    await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
+
+    expect(await screen.findByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
   });
 });
