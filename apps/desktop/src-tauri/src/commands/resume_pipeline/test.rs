@@ -2056,6 +2056,29 @@ fn an_embedded_newline_in_the_posting_title_does_not_split_the_notification_body
     assert_eq!(body.lines().count(), 1, "the body must stay one line");
 }
 
+/// A crafted `<b>`/`<a href>` in the scraped title/company — or PR-3's
+/// text-path `jobTitle`/`companyName` — must not survive as markup: a Linux
+/// notification daemon that advertises libnotify body-markup would render it
+/// as a tag rather than text. Mutation check: drop the `escape_markup` call
+/// from `posting_label` and this fails.
+#[test]
+fn a_crafted_html_tag_in_the_posting_title_is_escaped_not_rendered() {
+    let body = run_notification(
+        super::STATUS_COMPLETED,
+        0,
+        "<b>Staff Engineer</b>",
+        "Acme & Co <script>",
+    )
+    .expect("terminal")
+    .body;
+    assert_eq!(
+        body,
+        "&lt;b&gt;Staff Engineer&lt;/b&gt; · Acme &amp; Co &lt;script&gt;"
+    );
+    assert!(!body.contains('<'));
+    assert!(!body.contains('>'));
+}
+
 /// The number in the notification is the number the review panel will show — one
 /// definition of "undecided", read from the persisted wrapper.
 ///

@@ -66,13 +66,22 @@ const LABEL_CAP: usize = 160;
 /// checked upstream) — to a single space, trimming both ends.
 ///
 /// A bare `\n` would otherwise survive into the OS notification body verbatim
-/// (a one-line label becoming two), and on a Linux desktop whose notification
-/// daemon advertises libnotify body-markup, an embedded `<b>`/`<a href>` reads
-/// as markup rather than text — collapsing whitespace does not full-escape
-/// that, but it is the cheap half of the fix and removes the newline-driven
-/// multi-line case outright.
+/// (a one-line label becoming two). [`escape_markup`] handles the sibling
+/// gap — an embedded `<b>`/`<a href>` reading as markup rather than text on a
+/// Linux desktop whose notification daemon advertises libnotify body-markup.
 fn collapse_whitespace(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Escape the three characters libnotify's optional body-markup capability
+/// treats specially, so a scraped or renderer-supplied `title`/`company`
+/// renders as plain text instead of markup on a notification daemon that
+/// advertises the hint. `&` first, or the entities inserted for `<`/`>` get
+/// double-escaped.
+fn escape_markup(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// `"<title> · <company>"`, degrading to whichever side the cached posting has —
@@ -92,10 +101,12 @@ fn posting_label(title: &str, company: &str) -> String {
         (title, "") => title.to_string(),
         (title, company) => format!("{title} · {company}"),
     };
-    if label.chars().count() <= LABEL_CAP {
-        return label;
-    }
-    label.chars().take(LABEL_CAP - 1).chain(['…']).collect()
+    let label = if label.chars().count() <= LABEL_CAP {
+        label
+    } else {
+        label.chars().take(LABEL_CAP - 1).chain(['…']).collect()
+    };
+    escape_markup(&label)
 }
 
 /// What is left to do on a run that ended in `needsReview`.
