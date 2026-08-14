@@ -958,6 +958,14 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
     let strategy = strategy_user(hostile, &analysis, &EvidenceMap::default());
     assert_eq!(strategy.matches("</candidate_resume>").count(), 1);
     assert_eq!(strategy.matches("</job_analysis>").count(), 1);
+    assert!(
+        strategy.contains("< /job_posting>"),
+        "a forged sibling must be broken"
+    );
+    assert!(
+        !strategy.contains("[tool_result:"),
+        "a forged marker must be broken"
+    );
 
     // …and the same for the draft turn, which composes THREE blocks.
     let draft = draft_user(hostile, hostile, &ResumeStrategy::default());
