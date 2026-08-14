@@ -1097,6 +1097,183 @@ fn oversized_run_request_free_text_is_clamped_server_side() {
     );
 }
 
+/// PR-3: the two id-less text fields, plus the text-path posting identity,
+/// get the SAME clamp treatment as every other free-text field on this
+/// command. Same mutation check as `oversized_run_request_free_text_is_clamped_server_side`
+/// — drop any one clamp and its assertion fails.
+#[test]
+fn oversized_text_path_fields_are_clamped_server_side() {
+    let req: ResumePipelineRunRequest = serde_json::from_value(json!({
+        "resumeText": "r".repeat(1_000_000),
+        "jobAdText": "j".repeat(1_000_000),
+        "jobTitle": "t".repeat(5_000),
+        "companyName": "c".repeat(5_000),
+        "board": "b".repeat(5_000),
+    }))
+    .expect("the hostile shape still deserializes — nothing rejects it on the wire");
+
+    let clamped = super::clamp_request(&req);
+    assert!(clamped.resume_text.len() <= crate::applications::MAX_JOB_DESCRIPTION_BYTES);
+    assert!(clamped.job_ad_text.len() <= crate::applications::MAX_JOB_DESCRIPTION_BYTES);
+    assert!(clamped.job_title.len() <= super::resolve::JOB_IDENTITY_CAP);
+    assert!(clamped.company_name.len() <= super::resolve::JOB_IDENTITY_CAP);
+    assert!(clamped.board.len() <= super::resolve::BOARD_CAP);
+}
+
+// ── ID-WINS resolution (PR-3) ───────────────────────────────────────────────
+
+/// **ID wins, even when the request also carries text** — the core of the
+/// no-silent-fallback rule. Mutation check: swap the `if` to check `resume_text`
+/// first and this fails.
+#[test]
+fn resume_source_prefers_the_id_even_when_text_is_also_present() {
+    assert_eq!(
+        super::resume_source("res-1", "a whole résumé"),
+        Some(super::ResumeSource::Store("res-1"))
+    );
+}
+
+#[test]
+fn resume_source_uses_text_only_when_the_id_is_empty() {
+    assert_eq!(
+        super::resume_source("", "a whole résumé"),
+        Some(super::ResumeSource::Text("a whole résumé"))
+    );
+}
+
+/// Neither an id nor usable text — `execute` turns this into a validation
+/// error rather than starting a run with no résumé at all. Whitespace-only
+/// counts as empty, matching every other trim-then-check field on this
+/// command.
+#[test]
+fn resume_source_is_none_when_both_are_empty_or_whitespace() {
+    assert_eq!(super::resume_source("", ""), None);
+    assert_eq!(super::resume_source("   ", "\n\t"), None);
+}
+
+#[test]
+fn job_source_prefers_the_id_even_when_text_is_also_present() {
+    assert_eq!(
+        super::job_source("job-9", "a whole job ad"),
+        Some(super::JobSource::Cache("job-9"))
+    );
+}
+
+#[test]
+fn job_source_uses_text_only_when_the_id_is_empty() {
+    assert_eq!(
+        super::job_source("", "a whole job ad"),
+        Some(super::JobSource::Text("a whole job ad"))
+    );
+}
+
+#[test]
+fn job_source_is_none_when_both_are_empty_or_whitespace() {
+    assert_eq!(super::job_source("", ""), None);
+    assert_eq!(super::job_source("  ", "\n"), None);
+}
+
+/// The TEXT path's posting identity comes from the REQUEST's own
+/// `jobTitle`/`companyName`/`board`/`jobUrl` fields — there is no cached
+/// posting to read them off of on this path, unlike `job_meta_for`.
+/// `location` has no wire field on this path and is always empty.
+///
+/// Mutation check: swap two field mappings (e.g. `company`/`title`) and this
+/// fails.
+#[test]
+fn job_meta_from_request_reads_the_identity_fields_off_the_clamped_request() {
+    let req: ResumePipelineRunRequest = serde_json::from_value(json!({
+        "resumeText": "a whole résumé",
+        "jobAdText": "a whole job ad",
+        "jobTitle": "Staff Engineer",
+        "companyName": "Acme Corp",
+        "board": "linkedin",
+        "jobUrl": "https://boards.example/jobs/1",
+    }))
+    .expect("deserializes");
+    let clamped = super::clamp_request(&req);
+    let meta = super::job_meta_from_request(&clamped);
+    assert_eq!(meta.title, "Staff Engineer");
+    assert_eq!(meta.company, "Acme Corp");
+    assert_eq!(meta.board, "linkedin");
+    assert_eq!(meta.url, "https://boards.example/jobs/1");
+    assert_eq!(
+        meta.location, "",
+        "the text path has no cached posting to read a location off of"
+    );
+}
+
+/// **The persist fix (plan risk item 5).** The `Cache` path stays empty
+/// (unchanged — `persist_document`'s own doc explains why), and the `Text`
+/// path carries the text this run was actually built from. Mutation check:
+/// return the text on the `Cache` arm too and this fails.
+#[test]
+fn job_ad_for_persist_is_empty_on_the_cache_path_and_carries_the_text_on_the_text_path() {
+    assert_eq!(
+        super::job_ad_for_persist(super::JobSource::Cache("job-9")),
+        ""
+    );
+    assert_eq!(
+        super::job_ad_for_persist(super::JobSource::Text("a whole job ad")),
+        "a whole job ad"
+    );
+}
+
+/// **No silent fallback at the call site.** `execute`'s `ResumeSource::Store`/
+/// `JobSource::Cache` arms must resolve the store/cache and hard-error on a
+/// miss — they must never read `clamped.resume_text`/`clamped.job_ad_text` as
+/// a fallback. Grep-shaped, same reason as
+/// `every_provider_calling_command_admits_before_it_spends`: the branch needs
+/// an `AppHandle` this crate has no harness for.
+///
+/// Mutation check: add a `.or_else(|| Some(clamped.resume_text.clone()))` (or
+/// the job-ad equivalent) inside either arm and this fails.
+#[test]
+fn id_path_never_falls_back_to_request_text() {
+    let source = include_str!("mod.rs");
+
+    let resume_start = source
+        .find("ResumeSource::Store(id) =>")
+        .expect("the résumé id arm exists");
+    let resume_end = resume_start
+        + source[resume_start..]
+            .find("ResumeSource::Text(text) => text.to_string(),")
+            .expect("the résumé text arm exists after it");
+    assert!(
+        !source[resume_start..resume_end].contains("resume_text"),
+        "the résumé id arm must never read the text fallback"
+    );
+
+    let job_start = source
+        .find("JobSource::Cache(id) => {")
+        .expect("the job id arm exists");
+    let job_end = job_start
+        + source[job_start..]
+            .find("JobSource::Text(text) =>")
+            .expect("the job text arm exists after it");
+    assert!(
+        !source[job_start..job_end].contains("job_ad_text"),
+        "the job id arm must never read the text fallback"
+    );
+}
+
+/// **Provenance only on the id path.** `sourceResumeId` must be present on a
+/// `Store` run's metrics and absent on a `Text` run's — see the module's
+/// `source_resume_for` interplay note next to the insert. Grep-shaped for the
+/// same `AppHandle` reason as the test above.
+///
+/// Mutation check: drop the `if let ResumeSource::Store(id) = resume_choice`
+/// guard (always insert) and this fails.
+#[test]
+fn source_resume_id_is_gated_on_the_store_path() {
+    let source = include_str!("mod.rs");
+    assert!(
+        source.contains("if let ResumeSource::Store(id) = resume_choice {")
+            && source.contains(r#"object.insert("sourceResumeId".to_string(), json!(id));"#),
+        "sourceResumeId must be written only inside the ResumeSource::Store guard"
+    );
+}
+
 // ── Run-store round-trip, with the shapes this emitter actually produces ────
 
 /// A whole run through the store, written the way `execute` + `RunHooks` write
