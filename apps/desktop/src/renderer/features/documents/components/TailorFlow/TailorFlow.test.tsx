@@ -23,7 +23,7 @@
  */
 
 import React, { act } from 'react';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, onTestFinished, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -1008,6 +1008,12 @@ describe('TailorFlow — focus follows the stage (M6/N2)', () => {
     const dialogButton = document.createElement('button');
     dialog.appendChild(dialogButton);
     document.body.appendChild(dialog);
+    // CR-8: registered via `onTestFinished`, not a trailing statement — a
+    // failed assertion above would otherwise skip this cleanup and leave a
+    // `[aria-modal="true"]` node in `document.body` for every LATER test in
+    // this file, which could silently suppress the N2 focus guard in a way
+    // that only reproduces depending on run order.
+    onTestFinished(() => dialog.remove());
     dialogButton.focus();
     expect(dialogButton).toHaveFocus();
 
@@ -1015,6 +1021,37 @@ describe('TailorFlow — focus follows the stage (M6/N2)', () => {
     rerender(rerenderFlow());
 
     expect(dialogButton).toHaveFocus();
-    document.body.removeChild(dialog);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. Persistent live-region announcer (CR-7)
+// ─────────────────────────────────────────────────────────────────────────────
+// Several screen readers do not announce content added to the a11y tree in
+// the SAME update that creates the region — a `role="status"` div that only
+// mounts once its condition is already true is unreliable. This region is
+// mounted for TailorFlow's entire lifetime; only its text changes.
+
+describe('TailorFlow — persistent live-region announcer (CR-7)', () => {
+  it('is present on mount, before there is anything to announce', () => {
+    renderFlow({});
+    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toBeInTheDocument();
+  });
+
+  it('announces the cancelled-no-output state', () => {
+    genMock.state = 'cancelled';
+    renderFlow({});
+    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toHaveTextContent(
+      'autopilot.apply.cancelledNoOutput'
+    );
+  });
+
+  it('announces needsReview once the done stage renders with that status', () => {
+    genMock.state = 'needsReview';
+    genMock.hasOutput = true;
+    renderFlow({});
+    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toHaveTextContent(
+      'pipeline.status.needsReview'
+    );
   });
 });

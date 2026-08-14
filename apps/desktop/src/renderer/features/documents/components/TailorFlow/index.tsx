@@ -346,6 +346,34 @@ export function TailorFlow({
   // The target that produced (or is producing) the output. Persisted form value
   // is the source of truth once a run starts; falls back to the live form value.
   const generatedTarget = persistence.wizardForm?.outputType ?? methods.getValues('outputType');
+  const runState = toRunState(gen.state, gen.runs);
+
+  // CR-7: a `role="status"` element that only enters the DOM once its
+  // condition is already true (the cancelled-no-output hint below,
+  // ResultsPanel's needsReview box) is unreliable — several screen readers
+  // only announce a TEXT CHANGE inside an ALREADY-mounted live region, not
+  // content that arrives in the same update as the region itself. This one
+  // region stays mounted for TailorFlow's whole lifetime (every stage
+  // transition); only its text changes. It's additive, not a replacement —
+  // the two visual banners keep their own `role="status"` too, for AT/browser
+  // combinations that DO handle a freshly-mounted status role; this is the
+  // reliable fallback for the ones that don't. Same "announce the
+  // TRANSITION, not the mount" posture as GeneratingPanel's per-step
+  // announcer (H8).
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
+  const announcedKeyRef = useRef<'cancelled' | 'needsReview' | null>(null);
+  useEffect(() => {
+    const key =
+      stage === 'configuring' && !gen.error && gen.state === 'cancelled'
+        ? 'cancelled'
+        : stage === 'done' && runState === 'needsReview'
+          ? 'needsReview'
+          : null;
+    if (announcedKeyRef.current === key) return;
+    announcedKeyRef.current = key;
+    if (key === 'cancelled') setLiveAnnouncement(t('autopilot.apply.cancelledNoOutput'));
+    else if (key === 'needsReview') setLiveAnnouncement(t('pipeline.status.needsReview'));
+  }, [stage, gen.error, gen.state, runState, t]);
 
   // `AnimatePresence mode="wait"` swaps the whole stage subtree on every stage
   // change, which drops focus to `<body>` with nothing to restore it —
@@ -450,7 +478,7 @@ export function TailorFlow({
         exportOpen={gen.exportOpen}
         setExportOpen={gen.setExportOpen}
         onExport={(fmt) => void gen.exportAs(fmt)}
-        runState={toRunState(gen.state, gen.runs)}
+        runState={runState}
         // No live/reconnected session — a cold redisplay from `latestGeneration`,
         // so there is no interactive fix/resolve UI wired for it (see
         // `pipelineReview`'s `runId` gate). Tells the needsReview hint to say
@@ -467,6 +495,18 @@ export function TailorFlow({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* CR-7: persistently-mounted announcer — see the doc comment on
+          `liveAnnouncement` above for why this exists alongside the visual
+          banners' own `role="status"` rather than instead of them. */}
+      <span
+        data-testid={TEST_IDS.documents.liveAnnouncer}
+        role="status"
+        aria-live="polite"
+        className="sr-only"
+      >
+        {liveAnnouncement}
+      </span>
+
       {/* Stage body */}
       <div className="min-h-0 flex-1">
         <AnimatePresence mode="wait">
