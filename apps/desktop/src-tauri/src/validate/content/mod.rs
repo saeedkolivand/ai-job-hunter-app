@@ -113,17 +113,12 @@ pub const VOICE_GENERIC_LETTER: &str = "voice.generic_letter";
 /// code (i18n key + severity) rather than special-cased.
 pub const REPORT_TRUNCATED: &str = "report.truncated";
 
-// The `judge.*` family — the ONLY codes in this table that come from a model
-// rather than from a deterministic check, emitted by the max-depth
-// `pipeline::resume::stages::judge` stage.
-//
-// They are registered here so the vocabulary stays in one place (this module's
-// own rule: "every code lives in CONTENT_ISSUE_CODES"), and every one of them
-// is a Warning — but the judge does NOT read that severity back out of this
-// table. It writes `Severity::Warning` at its construction site, because "a
-// model may never emit a Critical" has to hold even if someone edits a row
-// here. The table entry is what the renderer enumerates for i18n; the
-// construction site is the guarantee.
+// The `judge.*` family — model-emitted advisory opinions, formerly registered
+// for the now-deleted max-depth judge stage. Kept in this table for historical
+// reasons (old reports may reference them) but no longer emitted. Each entry is
+// a Warning by convention — the rule "a model may never emit a Critical" was
+// enforced at the judge's construction site (now gone). The table entry remains
+// so the renderer can i18n historic report keys.
 /// A sentence the reader has to re-read; a bullet saying two things at once.
 pub const JUDGE_CLARITY: &str = "judge.clarity";
 /// A claim that reads as unsupported — vague ownership, no result, a skill

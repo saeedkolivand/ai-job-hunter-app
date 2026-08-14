@@ -1,9 +1,9 @@
-//! Reading the SOURCE résumé — the seeds a max-depth section is generated from.
+//! Reading the SOURCE résumé — extracting seeds for deterministic normalization.
 //!
 //! Everything here is a pure function of the candidate's own document, and
 //! everything it returns is a fact the model is NOT allowed to author: a
 //! project's links, the education lines, which sections the source actually
-//! has. The section generator asks the model how to PRESENT these; it never
+//! has. The strategy stage asks the model how to PRESENT these; it never
 //! asks for them back.
 //!
 //! ## Line fidelity

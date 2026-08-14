@@ -890,12 +890,11 @@ pub trait Stage<C>: Send + Sync {
     ///
     /// **Default `true`, because the safe direction to be wrong in is refusing
     /// to run.** A boundary deadline check exists to stop a run before it pays
-    /// for the next call — not to throw away what it has already paid for, and
-    /// the two are only the same thing while every stage costs money. A
-    /// section-wise run breaks that: `sections` can stop mid-fan-out with
-    /// eleven paid answers in hand, and the stages that turn them into a saved,
-    /// checked document (`assemble` renders, `validate` compares) make no call
-    /// at all. Aborting at THAT boundary discarded the whole run.
+    /// for the next call — not to throw away what it has already paid for.
+    /// `validate` is a free stage (deterministic checks only) but a deadline
+    /// check there might abort a run after its entire prior sequence has paid
+    /// for itself. Aborting at a free-stage boundary conserves the work already
+    /// done.
     ///
     /// Surfaced to the hook through [`StageInfo::costs_a_call`]; the stop
     /// decision itself is
