@@ -5,7 +5,23 @@
 //! `execute`/`persist_document` (in `mod.rs`) and this module's own tests
 //! (`test.rs`, a sibling under `resume_pipeline`) all need them, not because
 //! anything outside `commands::resume_pipeline` does.
+//!
+//! **The branch semantics live HERE, as pure functions over an already-decided
+//! [`ResumeSource`]/[`JobSource`], not inline in `execute`.** A source-text
+//! substring check on `execute`'s body ("the Store arm's text must not
+//! mention `resume_text`") pins a SPELLING — a mutation that reads the same
+//! value through a differently-named local (`let aliased = clamped.resume_text
+//! .clone(); … .unwrap_or(aliased)`) passes it while changing the behavior it
+//! exists to guard. [`resolve_resume`]/[`resolve_job`] close that off
+//! structurally instead of lexically: the `Store`/`Cache` arms receive ONLY an
+//! id and an injected lookup closure, so there is no `resume_text`/
+//! `job_ad_text` value in scope for a mutation to reach for, accidentally or
+//! otherwise. `execute` still owns the actual `DocumentStore`/postings-cache
+//! calls (they need an `AppHandle` this crate has no test harness for) —
+//! these functions take the lookup as a parameter so the DECISION is testable
+//! without one.
 
+use crate::error::{AppError, AppResult};
 use crate::ipc_contracts::resume_pipeline::ResumePipelineRunRequest;
 
 /// The renderer-supplied free text of one run request, CLAMPED server-side.
@@ -22,6 +38,16 @@ pub(crate) struct ClampedRequest {
     pub(crate) target_language: String,
     pub(crate) top_requirements: Vec<String>,
     pub(crate) cover_letter: String,
+    /// `resumeId`, clamped — the only other renderer string on this command,
+    /// besides `jobId`, that used to reach `execute` unbounded. It is echoed
+    /// into a validation error message on a miss (renderer-visible) and into
+    /// the run's `metrics_json` (`sourceResumeId`) on a hit, so an unbounded
+    /// copy would let a hostile direct-IPC caller grow both without limit.
+    pub(crate) resume_id: String,
+    /// `jobId`, clamped — same treatment as `resume_id`, for the same two
+    /// echo points on the job side (`"job not found in cache: {id}"` and the
+    /// retention-key path a `Cache` run takes).
+    pub(crate) job_id: String,
     /// The id-less résumé path (`resumeText`) — read only when
     /// [`resume_source`] resolves to [`ResumeSource::Text`].
     pub(crate) resume_text: String,
@@ -44,11 +70,13 @@ pub(crate) struct ClampedRequest {
 /// aggregate lookup), so an unbounded one writes an unbounded row.
 pub(crate) const JOB_URL_CAP: usize = 2_048;
 
-/// Byte cap on the request's `jobTitle`/`companyName` — mirrors the schema's
-/// `.max(512)`. Only read on the TEXT path ([`JobSource::Text`]): the id path
-/// resolves these from the postings cache server-side and never trusts the
-/// request's own copy, so there is nothing to hoist these from — they are new
-/// fields with no prior command carrying the same shape.
+/// Byte cap on the request's `jobTitle`/`companyName`/`resumeId`/`jobId` —
+/// mirrors the schema's `.max(512)`. The two ids share this cap with the
+/// text-path identity fields rather than getting their own: an id is a
+/// short opaque token in every store that issues one (`uuid`/nanoid-shaped),
+/// so the SAME "short identifier" cap class applies, and a second
+/// differently-named constant for the exact same bound is the kind of
+/// drift `docs/architecture-rules.md` warns this file about elsewhere.
 pub(crate) const JOB_IDENTITY_CAP: usize = 512;
 /// Byte cap on the request's `board` — mirrors the schema's `.max(64)`. Board
 /// identifiers are short slugs (`"linkedin"`, `"indeed"`, an aggregator name),
@@ -73,6 +101,8 @@ pub(crate) fn clamp_request(req: &ResumePipelineRunRequest) -> ClampedRequest {
             .map(|r| clamp_to_bytes(r.clone(), TOP_REQUIREMENT_BYTES_CAP))
             .collect(),
         cover_letter: clamp_to_bytes(req.cover_letter_text.clone(), MAX_JOB_DESCRIPTION_BYTES),
+        resume_id: clamp_to_bytes(req.resume_id.clone(), JOB_IDENTITY_CAP),
+        job_id: clamp_to_bytes(req.job_id.clone(), JOB_IDENTITY_CAP),
         // Same cap class as `resumeText`/`jobText` elsewhere
         // (`ResumeTrimSuggestionsRequestSchema`, `MatchResumeRequest`'s own
         // clamp) and as `cover_letter` above — all three are "a whole
@@ -88,7 +118,8 @@ pub(crate) fn clamp_request(req: &ResumePipelineRunRequest) -> ClampedRequest {
 /// Where one run's résumé text comes from — the pure half of the ID-WINS rule
 /// `execute` applies. Pure and total over the two clamped inputs, so the rule
 /// is a test rather than a claim; the actual `DocumentStore` lookup needs an
-/// `AppHandle` this crate has no harness for, so it stays in `execute`.
+/// `AppHandle` this crate has no harness for, so it stays in `execute`
+/// (behind [`resolve_resume`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResumeSource<'a> {
     /// A nonempty `resumeId` — look this up; a miss is a HARD ERROR, never a
@@ -110,6 +141,47 @@ pub(crate) fn resume_source<'a>(
     (!resume_text.trim().is_empty()).then_some(ResumeSource::Text(resume_text))
 }
 
+/// Char cap on a request-supplied id echoed into a validation-error message
+/// (`"resume not found: …"` / `"job not found in cache: …"`, both renderer-
+/// visible). Mirrors `agent::tools::ECHO_CAP`/`clamped_echo` — same rule, for
+/// the same reason ("every real id is a short token, so an oversized one
+/// reaching a formatter is hostile") — reimplemented locally rather than
+/// imported: `agent::tools` is PR-5's deletion target once its
+/// `fenced`/`JOB_CAP`/`RESUME_CAP` trio moves to a dependency-free
+/// `prompt_fence.rs`, and `clamped_echo`/`ECHO_CAP` are not part of that
+/// move. Depending on `agent::tools` from here would make PR-5 choose
+/// between widening its extraction to carry a fourth item along or breaking
+/// this command — a coupling this one-line reimplementation avoids entirely.
+/// [`JOB_IDENTITY_CAP`] already bounds `resume_id`/`job_id` for STORAGE
+/// (512 bytes); this is the tighter, separate bound for what a caller
+/// actually SEES echoed back.
+const ECHO_CHARS_CAP: usize = 64;
+
+/// Clamp an id for the error message it is about to be formatted into,
+/// char-boundary safe. See [`ECHO_CHARS_CAP`].
+fn echoed(id: &str) -> String {
+    id.chars().take(ECHO_CHARS_CAP).collect()
+}
+
+/// Resolve one run's résumé TEXT from an already-decided [`ResumeSource`] —
+/// the ID-WINS rule's own behavior, not just the source it picked. `lookup`
+/// is the `DocumentStore` read, injected so this is provable without an
+/// `AppHandle`: the `Store` arm has no `resume_text` (or anything else) in
+/// scope to fall back to on a miss, only `id` and `lookup`, so `lookup =
+/// |_| None` against a `Store` choice MUST return `Err` — there is
+/// structurally nothing else it could return, unlike an inline branch beside
+/// a `clamped.resume_text` a future edit could reach for.
+pub(crate) fn resolve_resume(
+    choice: ResumeSource<'_>,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> AppResult<String> {
+    match choice {
+        ResumeSource::Store(id) => lookup(id)
+            .ok_or_else(|| AppError::Validation(format!("resume not found: {}", echoed(id)))),
+        ResumeSource::Text(text) => Ok(text.to_string()),
+    }
+}
+
 /// The job-ad twin of [`ResumeSource`] — same ID-WINS rule, over `jobId`
 /// (the live postings cache) and `jobAdText`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +198,30 @@ pub(crate) fn job_source<'a>(job_id: &'a str, job_ad_text: &'a str) -> Option<Jo
         return Some(JobSource::Cache(job_id));
     }
     (!job_ad_text.trim().is_empty()).then_some(JobSource::Text(job_ad_text))
+}
+
+/// The job-ad twin of [`resolve_resume`] — same structural close: the
+/// `Cache` arm's error path has only `id` and the two injected lookups in
+/// scope, never `job_ad_text`, so a miss can only ever error. `meta_from_request`
+/// is called ONLY on the `Text` arm (it is cheap and pure, but calling it on
+/// the `Cache` arm too would be the exact "did the branch actually pick a
+/// side" bug this split exists to make unreachable).
+pub(crate) fn resolve_job(
+    choice: JobSource<'_>,
+    lookup_text: impl Fn(&str) -> Option<String>,
+    lookup_meta: impl Fn(&str) -> Option<crate::commands::match_resume::JobPostingMeta>,
+    meta_from_request: impl FnOnce() -> crate::commands::match_resume::JobPostingMeta,
+) -> AppResult<(String, crate::commands::match_resume::JobPostingMeta)> {
+    match choice {
+        JobSource::Cache(id) => {
+            let job_ad = lookup_text(id).ok_or_else(|| {
+                AppError::Validation(format!("job not found in cache: {}", echoed(id)))
+            })?;
+            let meta = lookup_meta(id).unwrap_or_default();
+            Ok((job_ad, meta))
+        }
+        JobSource::Text(text) => Ok((text.to_string(), meta_from_request())),
+    }
 }
 
 /// The posting identity `execute` builds on the TEXT path, where there is no
@@ -153,9 +249,109 @@ pub(crate) fn job_meta_from_request(
 /// it persists it — `merge_application`'s `pick` keeps the existing value
 /// when this is empty, so the `Cache` arm's empty string is a no-op on an
 /// existing aggregate, not an overwrite.
+///
+/// **The aggregate's OWN storage key is a separate concern this fn does not
+/// touch, worth being explicit about.** `AiGenerationRecord.job_url` (what
+/// `save_application` upserts BY) is, on the `Cache` path, a url `execute`
+/// resolved SERVER-side from the postings cache; on the `Text` path it is
+/// `job_meta_from_request`'s `meta.url`, which is just `clamped.jobUrl` — the
+/// RENDERER's own claim, unverified against anything. A text-path run whose
+/// `jobUrl` happens to match an existing posting therefore merges onto that
+/// posting's aggregate rather than starting a fresh one. Not a security
+/// boundary (single local user, and `is_persistable` still refuses to
+/// overwrite a real work history with an empty one) — but a real
+/// data-integrity surprise for a caller that sends a `jobUrl` it does not
+/// actually own.
+///
+/// [`unlinked_run_key`] is a DIFFERENT, narrower key for a DIFFERENT table —
+/// the run STORE's own retention partition, never this aggregate — and the
+/// two must not be conflated: `execute` computes `unlinked_run_key` only for
+/// the run row it writes, while this fn (and `meta.url` above) keep governing
+/// the aggregate exactly as they did before PR-3.
 pub(crate) fn job_ad_for_persist(source: JobSource<'_>) -> String {
     match source {
         JobSource::Cache(_) => String::new(),
         JobSource::Text(text) => text.to_string(),
+    }
+}
+
+/// The run's `metrics_json.sourceResumeId` value — `Some` ONLY on the
+/// [`ResumeSource::Store`] path (see `execute`'s doc: an id is content-free
+/// per ADR-027, and it is the only thing `source_resume_for`'s later
+/// provenance fallback can key on). Pure so "a text-path run never carries
+/// an id here" is a test on the decision itself, not a substring match over
+/// `execute`'s source.
+pub(crate) fn source_resume_id_for_metrics<'a>(choice: ResumeSource<'a>) -> Option<&'a str> {
+    match choice {
+        ResumeSource::Store(id) => Some(id),
+        ResumeSource::Text(_) => None,
+    }
+}
+
+/// A stable, non-real "posting url" for an UNLINKED run's **run-row**
+/// `job_url` — never handed to the `ai_generations` aggregate
+/// (`persist_document`'s own `job_ad_for_persist`/`meta.url` plumbing is
+/// untouched by this; the aggregate still gets exactly what it always did,
+/// empty when there is truly no posting url).
+///
+/// **Why this exists.** `PipelineRunStore::prune` partitions retention on
+/// `(job_url, kind)`, and `upsert_run` stores EVERY unlinked run under the
+/// same `job_url = ""` today — harmless while an unlinked run was rare (a
+/// cache entry with no `url` field), but the text path makes it routine (a
+/// pasted job ad, or an Autopilot found job with no capturable link), so
+/// every pasted posting's "resume" runs now pool into ONE shared bucket: a
+/// 4th pasted job's first run evicts an unrelated pasted job's history.
+/// Keying on a hash of the job-ad text scopes retention back to ONE posting
+/// — repeats of the SAME pasted text land in the same bucket (so re-running
+/// it still caps at [`RETENTION_RUNS_PER_JOB`](crate::pipeline::runs::RETENTION_RUNS_PER_JOB)),
+/// while two DIFFERENT pasted postings get two different buckets.
+///
+/// **Why `https://…/.invalid`, not a bare token or a custom scheme.**
+/// `PipelineRunStore::upsert_run` normalizes every `job_url` through
+/// `applications::normalize_job_url` before it is stored — the SAME
+/// chokepoint that neutralizes any non-`http(s)` scheme back to `""`
+/// (`javascript:`, `data:`, a bare opaque id with no scheme at all falls
+/// through as a bare "host" but a colon-bearing token like a hex hash
+/// prefixed by anything scheme-shaped would trip the same guard). An
+/// `http(s)` url is the only shape that survives that seam intact, so this
+/// borrows the IANA-reserved `.invalid` TLD (RFC 2606 — guaranteed never to
+/// resolve to a real host) rather than inventing a URL that could be
+/// mistaken for a live posting if it ever reached a "view original
+/// posting" affordance. It never does today: the renderer queries run
+/// history by the APPLICATION's own `jobUrl` (a real, possibly-empty
+/// value it already holds), never by anything this function returns, and
+/// `runs_for_job("")`/`find_by_job_url("")` both short-circuit before
+/// touching a table — so a caller holding the real empty url can never
+/// accidentally fetch a row keyed by this synthetic one.
+///
+/// Deterministic and non-cryptographic (FNV-1a) on purpose: this is a
+/// storage partition key, not a security boundary — the reserved TLD and
+/// the fact it never reaches a click target are what keep it from being
+/// mistaken for a real link, not the hash algorithm.
+pub(crate) fn unlinked_run_key(job_ad_text: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
+    for byte in job_ad_text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3); // FNV prime
+    }
+    format!("https://unlinked.ajh.invalid/{hash:016x}")
+}
+
+/// `execute`'s `RunRow.job_url` — MAY differ from the aggregate's own
+/// `job_url` (`persist_document`'s; entirely untouched by this fn). `job_url`
+/// (the aggregate's key, computed the same way it always was) wins whenever
+/// it is nonempty — the ordinary, linked case. Only when it is EMPTY AND the
+/// run took the [`JobSource::Text`] path does this substitute
+/// [`unlinked_run_key`] — see that fn's doc for the full "why" (retention
+/// pooling). A `Cache` run whose cached posting itself carried no url (rare,
+/// pre-existing, not part of PR-3's text-path regression) is left at `""`,
+/// unchanged.
+pub(crate) fn run_store_job_url(job_url: &str, choice: JobSource<'_>) -> String {
+    if !job_url.trim().is_empty() {
+        return job_url.to_string();
+    }
+    match choice {
+        JobSource::Text(text) => unlinked_run_key(text),
+        JobSource::Cache(_) => job_url.to_string(),
     }
 }

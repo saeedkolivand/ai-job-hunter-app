@@ -119,7 +119,7 @@ pub(crate) const STATUS_CANCELLED: &str = "cancelled";
 // `persist_document` read exactly as they did inline.
 use self::resolve::{
     clamp_request, job_ad_for_persist, job_meta_from_request, job_source, resume_source,
-    ClampedRequest, JobSource, ResumeSource,
+    ClampedRequest,
 };
 
 /// Start one staged résumé run. Returns `{ runId, jobId }` immediately; stage
@@ -226,41 +226,47 @@ async fn execute(
 
     // ID WINS, no silent fallback: a nonempty `resumeId`/`jobId` is looked up
     // and a miss is a hard error — `resumeText`/`jobAdText` are never
-    // consulted on that path, even when the request carries both. See the
-    // module doc and `resume_source`/`job_source`.
-    let resume_choice = resume_source(&req.resume_id, &clamped.resume_text).ok_or_else(|| {
-        AppError::Validation("either a résumé id or résumé text is required".to_string())
-    })?;
-    let resume_text = match resume_choice {
-        ResumeSource::Store(id) => app
-            .state::<DocumentStore>()
+    // consulted on that path, even when the request carries both. Resolved
+    // from the CLAMPED ids (never `req.resume_id`/`req.job_id` directly):
+    // both reach a renderer-visible error message on a miss and the run's
+    // `metrics_json` on a hit, so an unbounded copy would let a hostile
+    // direct-IPC caller grow either without limit. See the module doc and
+    // `resolve::{resume_source, job_source, resolve_resume, resolve_job}` —
+    // the decision AND its behavior are pure there, provable without an
+    // `AppHandle`; only the actual store/cache reads stay here.
+    let resume_choice =
+        resume_source(&clamped.resume_id, &clamped.resume_text).ok_or_else(|| {
+            AppError::Validation("either a résumé id or résumé text is required".to_string())
+        })?;
+    let resume_text = resolve::resolve_resume(resume_choice, |id| {
+        app.state::<DocumentStore>()
             .get(id)
             .map(|record| record.text)
-            .ok_or_else(|| AppError::Validation(format!("resume not found: {id}")))?,
-        ResumeSource::Text(text) => text.to_string(),
-    };
+    })?;
 
-    let job_choice = job_source(&req.job_id, &clamped.job_ad_text).ok_or_else(|| {
+    let job_choice = job_source(&clamped.job_id, &clamped.job_ad_text).ok_or_else(|| {
         AppError::Validation("either a job id or job ad text is required".to_string())
     })?;
-    let (job_ad, meta) = match job_choice {
-        JobSource::Cache(id) => {
-            let job_ad = crate::commands::match_resume::job_text_for(app, id)
-                .ok_or_else(|| AppError::Validation(format!("job not found in cache: {id}")))?;
-            let meta = crate::commands::match_resume::job_meta_for(app, id).unwrap_or_default();
-            (job_ad, meta)
-        }
-        JobSource::Text(text) => (text.to_string(), job_meta_from_request(&clamped)),
-    };
+    let (job_ad, meta) = resolve::resolve_job(
+        job_choice,
+        |id| crate::commands::match_resume::job_text_for(app, id),
+        |id| crate::commands::match_resume::job_meta_for(app, id),
+        || job_meta_from_request(&clamped),
+    )?;
     // The posting's OWN url wins over the request's: it was resolved
-    // server-side from the cache, and it is the retention + aggregate key.
-    // On the text path `meta.url` IS the request's `jobUrl`
-    // (`job_meta_from_request`), so this still resolves to the same value.
+    // server-side from the cache, and it is the AGGREGATE's key
+    // (`AiGenerationRecord.job_url` — see `resolve::job_ad_for_persist`'s doc
+    // for the trust asymmetry between the two paths). On the text path
+    // `meta.url` IS the request's `jobUrl` (`job_meta_from_request`), so this
+    // still resolves to the same value.
     let job_url = if meta.url.trim().is_empty() {
         clamped.job_url.clone()
     } else {
         meta.url.clone()
     };
+    // The run-STORE's OWN key — see `resolve::run_store_job_url`'s doc for
+    // why an unlinked text-path run does not simply reuse `job_url` here.
+    let run_job_url = resolve::run_store_job_url(&job_url, job_choice);
 
     let span = crate::observability::Span::begin(
         "pipeline:resume",
@@ -278,7 +284,7 @@ async fn execute(
     let started_at = crate::db::now_ms();
     let mut row = RunRow {
         id: run_id.to_string(),
-        job_url: job_url.clone(),
+        job_url: run_job_url,
         kind: RUN_KIND.to_string(),
         depth: depth.as_str().to_string(),
         status: STATUS_RUNNING.to_string(),
@@ -437,7 +443,7 @@ async fn execute(
         // (`source_is_provenanced`, PR-1): a text-path run's later
         // `regenerateSection` re-validates fine but does not re-normalize
         // Projects from an untracked source.
-        if let ResumeSource::Store(id) = resume_choice {
+        if let Some(id) = resolve::source_resume_id_for_metrics(resume_choice) {
             object.insert("sourceResumeId".to_string(), json!(id));
         }
     }
