@@ -143,11 +143,22 @@ export function useResumeInput({ value, onChange, docId, onDocIdChange }: Params
     }
   }, [value, rawDocs, onChange, selectDoc]);
 
-  /** Load a saved resume into the editor (does not change the default) */
+  /** Load a saved resume into the editor (does not change the default). A
+   *  metadata-only/empty document (no `text`) is not selectable — `onChange`
+   *  and `selectDoc` must land TOGETHER or not at all: firing `selectDoc`
+   *  alone would tell the host "the visible text is backed by this doc" while
+   *  the editor still shows whatever was there before, the exact id/text
+   *  drift this file's `docId` seeding was already fixed for twice. The
+   *  backend's list response already carries the full text (the same source
+   *  a `getText(id)` re-fetch would read), so there is nothing to fetch —
+   *  an empty `raw.text` means the document genuinely has none. The saved
+   *  menu is left open (no `setShowSaved`/`setExpanded`) so the user can
+   *  pick a different entry instead of a silent, unexplained no-op. */
   const handleSelectSaved = (doc: DocumentRecord) => {
     const raw = rawDocs.find((d) => d._id === doc.id);
     const text = raw?.text?.trim();
-    if (text) onChange(text);
+    if (!text) return;
+    onChange(text);
     selectDoc(doc.id);
     setShowSaved(false);
     setExpanded(false);

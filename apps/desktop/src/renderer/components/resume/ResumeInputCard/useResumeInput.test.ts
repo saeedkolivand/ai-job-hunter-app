@@ -22,12 +22,38 @@ vi.mock('@ajh/ui', () => ({
   useNotification: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 
+// `doc-1` is deliberately textless — it is also the auto-fill DEFAULT
+// (`isDefault: true`), and several tests below rely on that effect staying
+// inert (they pass `value: ''` to exercise an unrelated path). Giving it
+// real text would auto-select it on every mount with an empty value,
+// corrupting those tests' setup. `doc-with-text`/`doc-empty` (both
+// non-default) carry the CR-1 fixtures instead, with no such side effect.
 const DOCS: DocumentRecord[] = [
   { id: 'doc-1', title: 'Résumé A', isDefault: true } as DocumentRecord,
 ];
 
+/** A doc that actually HAS text — use this wherever a test needs
+ *  `handleSelectSaved` to genuinely succeed (`DOCS[0]`/`doc-1` deliberately
+ *  does not, see above). */
+const DOC_WITH_TEXT = {
+  id: 'doc-with-text',
+  title: 'Résumé B',
+  isDefault: false,
+} as DocumentRecord;
+
+// `doc-empty` is the CR-1 fixture: present in the library (real id/title)
+// but with no stored text — a metadata-only/blank document, which existing
+// bare `{ _id, title, isDefault }` fixtures could never model on their own
+// (their MISSING `text` key happened to mean the same thing, which is why
+// this shape went unexercised).
 vi.mock('@/services', () => ({
-  useDocuments: () => ({ data: [{ _id: 'doc-1', title: 'Résumé A', isDefault: true }] }),
+  useDocuments: () => ({
+    data: [
+      { _id: 'doc-1', title: 'Résumé A', isDefault: true },
+      { _id: 'doc-with-text', title: 'Résumé B', isDefault: false, text: 'Résumé B full text' },
+      { _id: 'doc-empty', title: 'Empty Doc', isDefault: false, text: '' },
+    ],
+  }),
   useProfileImport: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRemoveDocument: () => ({ mutateAsync: vi.fn() }),
   useSetDefaultDocument: () => ({ mutateAsync: vi.fn() }),
@@ -56,10 +82,13 @@ describe('useResumeInput — onDocIdChange', () => {
       { wrapper }
     );
 
-    act(() => result.current.handleSelectSaved(DOCS[0] as DocumentRecord));
+    act(() => result.current.handleSelectSaved(DOC_WITH_TEXT));
 
-    expect(onDocIdChange).toHaveBeenCalledWith('doc-1');
-    expect(result.current.selectedDocId).toBe('doc-1');
+    // The id notification and the text it's supposed to back must land
+    // TOGETHER — see the CR-1 regression below for what happens when they don't.
+    expect(onChange).toHaveBeenCalledWith('Résumé B full text');
+    expect(onDocIdChange).toHaveBeenCalledWith('doc-with-text');
+    expect(result.current.selectedDocId).toBe('doc-with-text');
   });
 
   it('clears a previously selected doc id on a manual text edit', () => {
@@ -70,7 +99,7 @@ describe('useResumeInput — onDocIdChange', () => {
       { wrapper }
     );
 
-    act(() => result.current.handleSelectSaved(DOCS[0] as DocumentRecord));
+    act(() => result.current.handleSelectSaved(DOC_WITH_TEXT));
     onDocIdChange.mockClear();
 
     act(() => result.current.handleTextChange('hand-edited text'));
@@ -100,6 +129,52 @@ describe('useResumeInput — onDocIdChange', () => {
     expect(() =>
       act(() => result.current.handleSelectSaved(DOCS[0] as DocumentRecord))
     ).not.toThrow();
+  });
+});
+
+describe('useResumeInput — handleSelectSaved on a metadata-only/empty doc (CR-1)', () => {
+  // Bug: `selectDoc(doc.id)` fired unconditionally while `onChange` was
+  // gated on `text` — selecting a doc with no stored text left the editor
+  // showing whatever text was already there while `selectedDocId` claimed
+  // it was backed by the empty doc. An id-first pipeline request would then
+  // resolve server-side to the EMPTY stored text, silently discarding
+  // whatever the user was actually looking at.
+  const EMPTY_DOC = { id: 'doc-empty', title: 'Empty Doc', isDefault: false } as DocumentRecord;
+
+  it('does not select (no onChange, no onDocIdChange) when the doc has no text', () => {
+    const onDocIdChange = vi.fn();
+    const onChange = vi.fn();
+    const { result } = renderHook(
+      () => useResumeInput({ value: 'existing text', onChange, onDocIdChange }),
+      { wrapper }
+    );
+
+    act(() => result.current.handleSelectSaved(EMPTY_DOC));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onDocIdChange).not.toHaveBeenCalled();
+    expect(result.current.selectedDocId).toBeNull();
+  });
+
+  it('does not clobber an ALREADY-selected doc id when selecting an empty doc', () => {
+    const onDocIdChange = vi.fn();
+    const onChange = vi.fn();
+    const { result } = renderHook(
+      () => useResumeInput({ value: 'existing text', onChange, onDocIdChange }),
+      { wrapper }
+    );
+
+    act(() => result.current.handleSelectSaved(DOC_WITH_TEXT));
+    onDocIdChange.mockClear();
+    onChange.mockClear();
+
+    act(() => result.current.handleSelectSaved(EMPTY_DOC));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onDocIdChange).not.toHaveBeenCalled();
+    // Still 'doc-with-text' — the failed select of the empty doc must not
+    // silently detach the id from the text that's genuinely still on screen.
+    expect(result.current.selectedDocId).toBe('doc-with-text');
   });
 });
 
@@ -193,8 +268,8 @@ describe('useResumeInput — activeDoc chip-label regression', () => {
       wrapper,
     });
 
-    act(() => result.current.handleSelectSaved(DOCS[0] as DocumentRecord));
-    expect(result.current.activeDoc?.id).toBe('doc-1');
+    act(() => result.current.handleSelectSaved(DOC_WITH_TEXT));
+    expect(result.current.activeDoc?.id).toBe('doc-with-text');
 
     // Any of the 3 unrelated call sites (upload/paste-save/profile-import)
     // clears selectedDocId the same way a hand-edit does — exercised here via
@@ -203,7 +278,8 @@ describe('useResumeInput — activeDoc chip-label regression', () => {
     act(() => result.current.handleTextChange('hand-edited text'));
 
     expect(result.current.selectedDocId).toBeNull();
-    // DOCS[0] is the only (default) saved doc — must NOT be shown as active.
+    // `doc-1` is the DEFAULT saved doc (a different, unselected one) — must
+    // NOT be shown as active just because it happens to be the default.
     expect(result.current.activeDoc).toBeUndefined();
   });
 });
