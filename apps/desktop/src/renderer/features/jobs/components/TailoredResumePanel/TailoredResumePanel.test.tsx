@@ -3,14 +3,11 @@
  *
  * What is pinned here (each one is a behaviour someone could "simplify" away):
  *
- *  - **Fast ROUTES, it does not re-implement.** Start at `fast` calls the pane's
- *    existing tailor handler and never touches `resumePipeline.run`; quality does
- *    the opposite. Break the routing either way and both halves fail.
+ *  - **There is no depth choice — every run is `quality`.** PR-4 dropped the
+ *    picker; the fast one-shot path has its own separate trigger in
+ *    `JobDetailPane`, so this panel never touches it.
  *  - **The run request carries identity + inputs and nothing else.** No provider,
- *    model, base URL or budget field may appear — those are backend-owned — and
- *    `depth` is the SELECTED staged depth (Phase 4: `max` runs too), never a
- *    hardcoded one that would silently run a different pipeline than the one the
- *    control claims.
+ *    model, base URL or budget field may appear — those are backend-owned.
  *  - **Terminal state is the machine's, never the draft's.** A busy session with
  *    a full draft still renders as running with its display-only caption.
  *  - **`needsReview` is not a finish** — it gets its own count-carrying headline
@@ -32,7 +29,6 @@ import type { AgentStepEvent, JobEvent, JobRecord } from '@ajh/shared';
 import type { ContentReportPayload, PipelineRunDetail, PipelineRunSummary } from '@ajh/shared/ipc';
 
 import type { ResumePipelineSession } from '@/hooks/use-resume-pipeline-session';
-import type { GenerationDepth } from '@/lib/generate';
 
 import type { Posting } from '../../types';
 
@@ -45,14 +41,12 @@ interface MutationStub {
 
 interface TestBus {
   session: ResumePipelineSession;
-  depth: GenerationDepth;
   resume: { id: string; name: string } | null;
   config: { provider: string; model: string; effort?: string };
   runs: PipelineRunSummary[];
   details: Record<string, PipelineRunDetail | null>;
   regenerate: MutationStub;
   resolve: MutationStub;
-  handleTailor: ReturnType<typeof vi.fn>;
   // ── the agent run behind "Improve this résumé" ────────────────────────────
   agentRun: ReturnType<typeof vi.fn>;
   cancelJob: ReturnType<typeof vi.fn>;
@@ -72,14 +66,12 @@ const bus = vi.hoisted((): TestBus => ({
   // Replaced in `beforeEach` before anything renders — the mock factory below
   // only closes over `bus`, it never reads it at import time.
   session: null as unknown as ResumePipelineSession,
-  depth: 'quality',
   resume: { id: 'doc-1', name: 'ada-lovelace.pdf' },
   config: { provider: 'openai', model: 'gpt-5', effort: 'high' },
   runs: [],
   details: {},
   regenerate: { mutate: vi.fn(), isPending: false, error: null },
   resolve: { mutate: vi.fn(), isPending: false, error: null },
-  handleTailor: vi.fn(),
   agentRun: vi.fn(),
   cancelJob: vi.fn(),
   agentConfirm: vi.fn(),
@@ -108,12 +100,6 @@ vi.mock('@/hooks/use-resume-pipeline-session', () => ({
 vi.mock('@/hooks/useDefaultResumeId', () => ({
   useDefaultResume: () => bus.resume,
   useDefaultResumeId: () => bus.resume?.id ?? null,
-}));
-
-vi.mock('@/store/preferences-store', () => ({ useGenerationDepth: () => bus.depth }));
-
-vi.mock('@/features/jobs/hooks/usePostingActions', () => ({
-  usePostingActions: () => ({ handleTailor: bus.handleTailor }),
 }));
 
 vi.mock('@/services', () => ({
@@ -170,7 +156,6 @@ function makeSession(overrides: Partial<ResumePipelineSession> = {}): ResumePipe
     runId: null,
     jobId: null,
     stage: null,
-    sectionStates: {},
     draft: '',
     letterDraft: '',
     thinking: '',
@@ -240,7 +225,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   bus.invalidate = vi.fn();
   bus.session = makeSession();
-  bus.depth = 'quality';
   bus.resume = { id: 'doc-1', name: 'ada-lovelace.pdf' };
   bus.config = { provider: 'openai', model: 'gpt-5', effort: 'high' };
   bus.runs = [];
@@ -257,9 +241,8 @@ beforeEach(() => {
 });
 
 describe('TailoredResumePanel — idle', () => {
-  it('offers the depth control and names the résumé it will actually use', async () => {
+  it('names the résumé it will actually use', async () => {
     await openPanel();
-    expect(screen.getByRole('radiogroup', { name: /generation depth/i })).toBeInTheDocument();
     expect(screen.getByText(/ada-lovelace\.pdf/)).toBeInTheDocument();
   });
 
@@ -286,38 +269,16 @@ describe('TailoredResumePanel — idle', () => {
   });
 });
 
-// ── The routing rule ────────────────────────────────────────────────────────
+// ── What Start actually sends ───────────────────────────────────────────────
 //
-// `fast` is the existing single-shot flow and must be ENTERED, not rebuilt:
-// point Start at `session.start` for fast (or at the tailor handler for
-// quality) and one of these two tests fails.
-describe('TailoredResumePanel — depth routing', () => {
-  it('routes fast depth to the existing tailoring flow and starts no pipeline run', async () => {
-    bus.depth = 'fast';
-    await openPanel();
-    expect(screen.getByText(/one-shot tailoring flow/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /^start$/i }));
-    expect(bus.handleTailor).toHaveBeenCalledTimes(1);
-    expect(START).not.toHaveBeenCalled();
-  });
-
-  it('runs the staged pipeline at quality depth and never touches the fast flow', async () => {
+// There is no depth choice any more (PR-4 dropped it) — every Start runs the
+// staged pipeline at a hardcoded `quality` depth. The fast one-shot path has
+// its own separate trigger in `JobDetailPane`, so this panel never touches it.
+describe('TailoredResumePanel — starting a run', () => {
+  it('starts the staged pipeline when Start is clicked', async () => {
     await openPanel();
     await userEvent.click(screen.getByRole('button', { name: /^start$/i }));
     expect(START).toHaveBeenCalledTimes(1);
-    expect(bus.handleTailor).not.toHaveBeenCalled();
-  });
-
-  // Phase 4. Hardcode the request's `depth` back to `'quality'` (what this
-  // surface used to send, because the backend rejected `max`) and this fails:
-  // the control would say Max while a quality run went to the wire.
-  it('sends the depth the user actually picked, so max runs the max pipeline', async () => {
-    bus.depth = 'max';
-    await openPanel();
-    await userEvent.click(screen.getByRole('button', { name: /^start$/i }));
-    expect(START).toHaveBeenCalledTimes(1);
-    expect((START.mock.calls[0]?.[0] as Record<string, unknown>).depth).toBe('max');
-    expect(bus.handleTailor).not.toHaveBeenCalled();
   });
 
   it('sends identity + inputs only — never routing, budget or document text', async () => {
@@ -331,8 +292,7 @@ describe('TailoredResumePanel — depth routing', () => {
       resumeId: 'doc-1',
       jobId: 'posting-1',
       jobUrl: POSTING.url,
-      // The control's value (the bus is at `quality` here) — see the max case
-      // above for the other half of that.
+      // Hardcoded — the only depth this panel ever sends.
       depth: 'quality',
       targetLanguage: 'en',
       topRequirements: [],
@@ -410,39 +370,6 @@ describe('TailoredResumePanel — a live run', () => {
     await userEvent.click(stop);
     expect(CANCEL).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /stopping/i })).toBeDisabled();
-  });
-
-  // ── The max-depth section timeline + progressive assembly ─────────────────
-  it('shows the per-section checklist and the progressively assembled text', async () => {
-    bus.depth = 'max';
-    bus.session = makeSession({
-      ...running(),
-      stage: { stage: 'sections', phase: 'start', index: 3, total: 8, attempt: 1 },
-      sectionStates: { summary: 'done', 'experience:0': 'generating' },
-      // At max depth the same display-only stream carries whole SECTIONS as
-      // `assemble` renders them, rather than draft tokens. The pane needs no
-      // branch for that — which is what this asserts.
-      draft: 'Summary\nBuilt the deployment pipeline.\n\nExperience\nAcme — Senior Engineer',
-      detail: detail({ status: 'running', stoppedReason: null, finishedAt: undefined }),
-    });
-    await openPanel();
-    expect(screen.getByText('Writing the résumé section by section')).toBeInTheDocument();
-    expect(screen.getByText('Step 4 of 8')).toBeInTheDocument();
-    const timeline = screen.getByTestId('section-timeline');
-    expect(within(timeline).getByText('Summary')).toBeInTheDocument();
-    expect(within(timeline).getByText('Experience 1')).toBeInTheDocument();
-    expect(screen.getByText(/Acme — Senior Engineer/)).toBeInTheDocument();
-    // Still display-only: the assembled text is not the finished résumé.
-    expect(screen.getByText(/display only/i)).toBeInTheDocument();
-    expect(screen.queryByText('Finished résumé')).not.toBeInTheDocument();
-  });
-
-  // Quality depth reports no sections at all, so the checklist must not leave
-  // an empty captioned box behind on the surface that hosts it unconditionally.
-  it('shows no checklist for a quality run', async () => {
-    bus.session = running();
-    await openPanel();
-    expect(screen.queryByTestId('section-timeline')).toBeNull();
   });
 });
 

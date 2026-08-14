@@ -73,10 +73,9 @@ export function GeneratingPanel({
     return () => clearInterval(id);
   }, []);
 
-  // One utterance per step TRANSITION (mirrors SectionTimeline's announcer
-  // pattern) — an aria-hidden icon is the only other state cue on each row,
-  // so without this a screen-reader user hears identical rows and no step
-  // change is ever announced.
+  // One utterance per step TRANSITION — an aria-hidden icon is the only other
+  // state cue on each row, so without this a screen-reader user hears
+  // identical rows and no step change is ever announced.
   const previousStepRef = useRef(currentStep);
   const [announcement, setAnnouncement] = useState('');
   useEffect(() => {

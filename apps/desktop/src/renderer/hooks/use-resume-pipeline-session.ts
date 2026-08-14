@@ -7,8 +7,6 @@ import type { ResumePipelineRunRequest } from '@ajh/shared/schemas';
 import { useMachine } from '@/hooks/use-machine';
 import { errorDetail } from '@/lib/error-class';
 import {
-  foldSectionStates,
-  type PipelineSectionStates,
   type PipelineStageProgress,
   resumePipelineMachine,
   type ResumePipelineState,
@@ -34,16 +32,6 @@ export interface ResumePipelineSession {
   /** The umbrella job id: what `cancel` targets and what the draft stream keys on. */
   jobId: string | null;
   stage: PipelineStageProgress | null;
-  /**
-   * Per-section progress for a MAX-depth run, folded from the stage stream.
-   *
-   * Empty at quality depth (no section events exist) and empty for a
-   * RECONNECTED run: `PipelineRunEvent` carries no `sectionKey`, so the
-   * persisted trail cannot say which section each row belonged to and rebuilding
-   * the map from it would mean guessing. A reconnected run shows its stage
-   * counter and, when it finishes, the report's own section verdicts.
-   */
-  sectionStates: PipelineSectionStates;
   /**
    * The draft stage's streamed text, for DISPLAY ONLY. Not the run's result —
    * `detail.resumeText` is, and it can differ by up to two repair rounds.
@@ -113,7 +101,6 @@ export function useResumePipelineSession(
   const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [jobId, setJobId] = useState<string | null>(initialJobId ?? null);
   const [stage, setStage] = useState<PipelineStageProgress | null>(null);
-  const [sectionStates, setSectionStates] = useState<PipelineSectionStates>({});
   const [draft, setDraft] = useState('');
   const [letterDraft, setLetterDraft] = useState('');
   const [thinking, setThinking] = useState('');
@@ -152,11 +139,6 @@ export function useResumePipelineSession(
         ...(event.issueCount != null ? { issueCount: event.issueCount } : {}),
         ...(event.criticalCount != null ? { criticalCount: event.criticalCount } : {}),
       });
-      // Per-section progress rides the SAME events (`sectionKey` + phase), so
-      // it folds here rather than through a second subscription. The fold
-      // returns its input unchanged when nothing moved, so a quality-depth run
-      // — which has no section events at all — never re-renders for this.
-      setSectionStates((current) => foldSectionStates(current, event));
       // The one thing that decides which buffer new deltas land in — flips
       // ONCE, at the letter stage's start, and never back: nothing after it
       // (validate/repair/humanize) streams visibly, so there is nothing left
@@ -289,7 +271,6 @@ export function useResumePipelineSession(
     async (req: ResumePipelineRunRequest) => {
       setError(null);
       setStage(null);
-      setSectionStates({});
       setDraft('');
       setLetterDraft('');
       setThinking('');
@@ -328,7 +309,6 @@ export function useResumePipelineSession(
     setRunId(null);
     setJobId(null);
     setStage(null);
-    setSectionStates({});
     setDraft('');
     setLetterDraft('');
     setThinking('');
@@ -343,7 +323,6 @@ export function useResumePipelineSession(
     runId,
     jobId,
     stage,
-    sectionStates,
     draft,
     letterDraft,
     thinking,

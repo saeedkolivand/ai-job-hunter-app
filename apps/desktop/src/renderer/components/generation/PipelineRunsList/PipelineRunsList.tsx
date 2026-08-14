@@ -26,6 +26,19 @@ const STATUS_TONE: Record<PipelineRunStatus, string> = {
   cancelled: 'border-white/10 bg-white/[0.04] text-foreground/55',
 };
 
+/**
+ * Every depth a STORED run row can carry, frozen regardless of which ones this
+ * build can currently START.
+ *
+ * PR-4 deleted the depth SELECTORS (`DepthSelector`, the settings/wizard
+ * pickers) once the apply flow stopped offering a choice — but users still
+ * have run history at all three, and this list is the one surface that still
+ * renders it. Deleting the label vocabulary alongside the pickers would make
+ * that history unreadable, so it stays pinned here on purpose; see
+ * `PipelineRunsList.test.tsx`'s "historic depth" guard.
+ */
+export const PIPELINE_RUN_DEPTHS_HISTORIC = ['fast', 'quality', 'max'] as const;
+
 export interface PipelineRunsListProps {
   runs: PipelineRunSummary[];
   /** Open one run's report. Omit to render the list read-only. */

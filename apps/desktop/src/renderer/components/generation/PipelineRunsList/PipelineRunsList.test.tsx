@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 
 import type { PipelineRunEvent, PipelineRunSummary } from '@ajh/shared/ipc';
 
-import { PipelineRunsList } from './PipelineRunsList';
+import { PIPELINE_RUN_DEPTHS_HISTORIC, PipelineRunsList } from './PipelineRunsList';
 
 function run(overrides: Partial<PipelineRunSummary> = {}): PipelineRunSummary {
   return {
@@ -129,5 +129,29 @@ describe('PipelineRunsList', () => {
   it('warns that only the newest run still has its document', () => {
     render(<PipelineRunsList runs={[run(), run({ runId: 'run-0', startedAt: 1 })]} />);
     expect(screen.getByText(/only the newest run's document is stored/i)).toBeInTheDocument();
+  });
+
+  // PR-4 deleted the depth SELECTORS once the apply flow stopped offering a
+  // choice, but a user's run history still has rows at all three depths — this
+  // is the one surface left that renders that history, so the label vocabulary
+  // (`generationDepth.option.*.label`) has to survive the cleanup even though
+  // nothing writes those depths anymore. `max` in particular: it is the depth
+  // most likely to look "orphaned" to a future pass, since nothing can select
+  // it and no other test in this repo renders it.
+  describe('historic depth labels', () => {
+    it.each(
+      // en labels, asserted against the real locale JSON — see the other tests
+      // in this file for why a human label (not the raw token) is the bar.
+      [
+        ['fast', 'Fast'],
+        ['quality', 'Quality'],
+        ['max', 'Max'],
+      ] as const
+    )('renders a human label for a historic "%s" run, not the raw token', (depth, label) => {
+      expect(PIPELINE_RUN_DEPTHS_HISTORIC).toContain(depth);
+      render(<PipelineRunsList runs={[run({ depth })]} />);
+      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.queryByText(`generationDepth.option.${depth}.label`)).not.toBeInTheDocument();
+    });
   });
 });
