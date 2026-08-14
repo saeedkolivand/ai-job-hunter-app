@@ -141,4 +141,69 @@ describe('useResumeInput — remount regression (stale doc id after a hand-edit)
     expect(result.current.selectedDocId).toBe('doc-1');
     expect(onDocIdChange).not.toHaveBeenCalled();
   });
+
+  // handleRemove's sibling fix (same root cause as handleTextChange above,
+  // fixed by the SAME `docId` seed) had no dedicated test of its own.
+  it('handleRemove clears the seeded id/text when removing the doc that backs it', () => {
+    const onDocIdChange = vi.fn();
+    const onChange = vi.fn();
+    const { result } = renderHook(
+      () => useResumeInput({ value: 'existing text', onChange, docId: 'doc-1', onDocIdChange }),
+      { wrapper }
+    );
+
+    act(() => result.current.handleRemove(DOCS[0] as DocumentRecord)); // DOCS[0].id === 'doc-1'
+
+    expect(onDocIdChange).toHaveBeenCalledWith(null);
+    expect(onChange).toHaveBeenCalledWith('');
+    expect(result.current.selectedDocId).toBeNull();
+  });
+
+  it('handleRemove leaves the seeded id/text untouched when removing a DIFFERENT doc', () => {
+    const onDocIdChange = vi.fn();
+    const onChange = vi.fn();
+    const { result } = renderHook(
+      () => useResumeInput({ value: 'existing text', onChange, docId: 'doc-1', onDocIdChange }),
+      { wrapper }
+    );
+
+    act(() =>
+      result.current.handleRemove({
+        id: 'doc-OTHER',
+        title: 'Other',
+        isDefault: false,
+      } as DocumentRecord)
+    );
+
+    expect(onDocIdChange).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(result.current.selectedDocId).toBe('doc-1');
+  });
+});
+
+describe('useResumeInput — activeDoc chip-label regression', () => {
+  // Bug: `activeDoc` fell back to the DEFAULT saved doc whenever nothing was
+  // explicitly selected, so the resting chip showed the default résumé's
+  // title even when the on-screen text (a hand-edit/upload/paste/profile
+  // import) had nothing to do with it. `selectedDocId === null` must mean
+  // "no backing doc", never "assume the default".
+  it('does not fall back to the default doc once selectedDocId is null', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() => useResumeInput({ value: 'existing text', onChange }), {
+      wrapper,
+    });
+
+    act(() => result.current.handleSelectSaved(DOCS[0] as DocumentRecord));
+    expect(result.current.activeDoc?.id).toBe('doc-1');
+
+    // Any of the 3 unrelated call sites (upload/paste-save/profile-import)
+    // clears selectedDocId the same way a hand-edit does — exercised here via
+    // the already-covered text-change path, since the defect is in the
+    // shared `activeDoc` derivation, not any one handler.
+    act(() => result.current.handleTextChange('hand-edited text'));
+
+    expect(result.current.selectedDocId).toBeNull();
+    // DOCS[0] is the only (default) saved doc — must NOT be shown as active.
+    expect(result.current.activeDoc).toBeUndefined();
+  });
 });

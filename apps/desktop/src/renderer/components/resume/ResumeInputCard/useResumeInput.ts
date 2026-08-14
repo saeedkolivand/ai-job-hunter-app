@@ -83,10 +83,13 @@ export function useResumeInput({ value, onChange, docId, onDocIdChange }: Params
   const profileImport = useProfileImport();
 
   const hasSaved = docs.length > 0;
-  const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
-  // The doc backing the current editor text, falling back to the default.
-  const triggerDoc = docs.find((d) => d.id === selectedDocId) ?? defaultDoc;
-  const activeDoc = triggerDoc;
+  // The doc EXPLICITLY backing the current text — never falls back to the
+  // default when nothing is selected. `selectedDocId === null` means the
+  // text came from a hand-edit/upload/paste/profile-import, which has
+  // nothing to do with the default saved résumé; the chip must fall through
+  // to the generic "active résumé" label instead of misattributing itself
+  // to a document the visible text doesn't match.
+  const activeDoc = selectedDocId ? docs.find((d) => d.id === selectedDocId) : undefined;
 
   /** `setSelectedDocId` + the optional host notification, kept in lockstep so
    *  a caller of `onDocIdChange` can never observe a stale id. `useCallback`
