@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::error::AppResult;
-use crate::pipeline::resume::projects::{self, ProjectsNormalizeStats};
+use crate::pipeline::resume::projects::{self, ProjectsNormalizeOutcome};
 use crate::pipeline::resume::prompts::{draft_system, draft_user};
 use crate::pipeline::resume::QualityCtx;
 use crate::pipeline::Stage;
@@ -99,20 +99,36 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
 ///
 /// Deterministic, zero-cost: the Projects section is CODE-OWNED at quality
 /// depth too, the same way `assemble::render_project` already owns it at
-/// max — a model-invented project is dropped and a kept one's links/stack
-/// come back from the source verbatim, never re-asked.
+/// max — an entry this pass can confidently match to a seed gets its
+/// links/stack restored verbatim, never re-asked; anything it cannot match
+/// with confidence is left exactly as the model wrote it (see
+/// `projects`' module doc) rather than deleted.
+///
+/// A skipped/no-op pass is still reported (`projectsNormalizeSkipped`) — a
+/// silent "did nothing" is otherwise unobservable on the run's ledger.
 pub(crate) fn apply_projects_normalization(source_resume: &str, text: String) -> (String, Value) {
-    let seeds = projects::seed_projects_for_normalize(source_resume);
-    let (draft, stats) = match projects::normalize_projects_with_stats(&text, &seeds) {
-        Some((normalized, stats)) => (normalized, stats),
-        None => (text, ProjectsNormalizeStats::default()),
-    };
-    let artifact = json!({
+    let (seeds, seed_skip_reason) = projects::seed_projects_for_normalize(source_resume);
+    let (draft, matched, dropped, links_restored, skipped) =
+        match projects::normalize_projects_outcome(&text, &seeds) {
+            ProjectsNormalizeOutcome::Applied(draft, stats) => (
+                draft,
+                stats.matched,
+                stats.dropped,
+                stats.links_restored,
+                None,
+            ),
+            ProjectsNormalizeOutcome::Skipped(reason) => (text, 0, 0, 0, Some(reason)),
+            ProjectsNormalizeOutcome::NoOp => (text, 0, 0, 0, seed_skip_reason),
+        };
+    let mut artifact = json!({
         "chars": draft.chars().count(),
         "lines": draft.lines().count(),
-        "projectsMatched": stats.matched,
-        "projectsDropped": stats.dropped,
-        "linksRestored": stats.links_restored,
+        "projectsMatched": matched,
+        "projectsDropped": dropped,
+        "linksRestored": links_restored,
     });
+    if let Some(reason) = skipped {
+        artifact["projectsNormalizeSkipped"] = json!(reason);
+    }
     (draft, artifact)
 }

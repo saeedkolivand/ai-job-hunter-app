@@ -1312,6 +1312,6 @@ pub(crate) fn normalize_regenerated_projects(
     if key != SectionKey::Projects || !source_is_provenanced {
         return spliced;
     }
-    let project_seeds = projects::seed_projects_for_normalize(source);
+    let (project_seeds, _seed_skip_reason) = projects::seed_projects_for_normalize(source);
     projects::normalize_projects(&spliced, &project_seeds).unwrap_or(spliced)
 }

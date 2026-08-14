@@ -489,8 +489,9 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
         let input = ctx.input;
         let completer = ctx.completer_for(NAME);
         // Computed ONCE per run — every round's normalize call reads the same
-        // seeds, exactly like `Draft::run`'s.
-        let seeds = projects::seed_projects_for_normalize(input.source_resume);
+        // seeds, exactly like `Draft::run`'s. The skip reason is discarded
+        // here: only the draft-stage ledger reports it (rule 5).
+        let (seeds, _seed_skip_reason) = projects::seed_projects_for_normalize(input.source_resume);
 
         let (draft, report, letter, stats) = repair_loop(
             std::mem::take(&mut ctx.draft),

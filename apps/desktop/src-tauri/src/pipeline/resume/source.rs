@@ -232,19 +232,28 @@ pub(crate) fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
     for (index, line) in entry.iter().enumerate() {
         let text = &line.parsed.text;
         let mut spanned: Vec<String> = Vec::new(); // hrefs already captured as a labeled span
+                                                   // Byte ranges of matches actually CONSUMED as a link — the ONLY ones
+                                                   // stripped before the bare-URL pass below. A match the single-URL or
+                                                   // resource guard SKIPPED (a `[1](note)` footnote, a multi-URL
+                                                   // parenthetical) is left in place, or its own bare URL(s) would be
+                                                   // silently deleted along with the bracket text around them instead of
+                                                   // reaching that pass.
+        let mut captured_ranges: Vec<(usize, usize)> = Vec::new();
         for caps in MD_LINK_RE.captures_iter(text) {
+            let whole = caps.get(0).unwrap();
             // The bracketed content is only a LINK when its href is one by
             // the SAME rule `urls_in` grades with — a `[1](note)` footnote or
             // a URL-shaped LABEL paired with an unrelated href is not one, and
-            // matching `.first()` only when there is EXACTLY one match keeps a
-            // multi-URL parenthetical (rare, but not a link either) out too.
+            // matching a SINGLE candidate keeps a multi-URL parenthetical
+            // (rare, but not a link either) out too.
             let candidates = urls_in(&caps[2]);
             let [href] = candidates.as_slice() else {
-                continue;
+                continue; // not a link at all — leave it for the bare pass
             };
             if index == 1 && !names_a_resource(href) {
-                continue;
+                continue; // a stack-line non-resource — leave it too
             }
+            captured_ranges.push((whole.start(), whole.end()));
             spanned.push(canonical_link(href));
             if links
                 .iter()
@@ -258,7 +267,7 @@ pub(crate) fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
             // Wikipedia-shaped URL) truncates this regex's own capture, which
             // would otherwise write an unbalanced, unparseable span into the
             // document. The bare (verified) href is always safe.
-            let span = caps[0].to_string();
+            let span = whole.as_str().to_string();
             let balanced = span.matches('(').count() == span.matches(')').count();
             let round_trips = urls_in(&span) == [href.clone()];
             links.push(if balanced && round_trips {
@@ -267,10 +276,14 @@ pub(crate) fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
                 href.clone()
             });
         }
-        // Bare URLs, over the line with every already-captured span STRIPPED
+        // Bare URLs, over the line with only the CAPTURED spans blanked out
         // — otherwise a URL-shaped LABEL (`[https://other](https://real)`)
-        // gets harvested a second time as if it were its own link.
-        let stripped = MD_LINK_RE.replace_all(text, " ");
+        // gets harvested a second time as if it were its own link, while a
+        // SKIPPED span's own bare URL(s) still reach this pass.
+        let mut stripped = text.clone();
+        for (start, end) in captured_ranges.iter().rev() {
+            stripped.replace_range(*start..*end, " ");
+        }
         for url in urls_in(&stripped) {
             if index == 1 && !names_a_resource(&url) {
                 continue;
