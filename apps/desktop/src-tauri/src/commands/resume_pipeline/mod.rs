@@ -938,7 +938,7 @@ pub async fn resume_pipeline_regenerate_section(
         "pipeline:resume",
         format!("op=regenerate_section key={}", key.to_wire()),
     );
-    let source = source_resume_for(&app, &row, &record);
+    let (source, source_is_provenanced) = source_resume_for(&app, &row, &record);
     // Routed through the SAME per-stage path a run takes — and through the
     // stage whose PROMPT each sub-path actually uses. Each is resolved INSIDE
     // the branch that uses it, so a click only ever resolves the routing it
@@ -997,14 +997,7 @@ pub async fn resume_pipeline_regenerate_section(
         }
     };
 
-    // Deterministic, zero-cost: a regenerate click can rewrite the Projects
-    // section too (the whole-section rewrite fallback above is not scoped to
-    // any one section), so the same code-owned normalization the run itself
-    // applies must run here before the fresh report is computed — otherwise a
-    // click could persist an altered project link the run would never have let
-    // through. A no-op (`None`) for every other section.
-    let project_seeds = crate::pipeline::resume::source::seed_projects(&source);
-    let spliced = projects::normalize_projects(&spliced, &project_seeds).unwrap_or(spliced);
+    let spliced = normalize_regenerated_projects(key, &source, source_is_provenanced, spliced);
 
     // The merge rule again: this save writes `resume_text`, so it carries a
     // FRESH report over the spliced document — never the stale one the panel
@@ -1256,7 +1249,8 @@ pub async fn resume_pipeline_resolve_fabrication(
     Ok(detail(&app, &row))
 }
 
-/// The SOURCE résumé a re-validation must measure against.
+/// The SOURCE résumé a re-validation must measure against, plus whether it is
+/// a REAL provenance hit rather than the fallback.
 ///
 /// A generation record stores the OUTPUT, not the input it was built from, so
 /// the source is looked up through the id the run recorded as provenance (see
@@ -1266,8 +1260,16 @@ pub async fn resume_pipeline_resolve_fabrication(
 /// re-validated report comes back WEAKER than the run's original rather than
 /// wrong. Weaker-and-honest beats a fabricated Critical against a source this
 /// document was never written from.
-fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord) -> String {
-    serde_json::from_str::<Value>(&row.metrics_json)
+///
+/// The `bool` is why this returns a pair rather than the string alone: that
+/// fallback is fine for VALIDATION (grading against your own output finds
+/// nothing, so it degrades safely), but it is not a WRITE authority — seeding
+/// `projects::normalize_projects` from the generated text would "restore"
+/// links out of the document it is about to overwrite, i.e. codify whatever
+/// the last generation happened to say as fact. Callers that write must check
+/// this flag; callers that only validate may ignore it.
+fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord) -> (String, bool) {
+    let hit = serde_json::from_str::<Value>(&row.metrics_json)
         .ok()
         .and_then(|metrics| {
             metrics
@@ -1275,7 +1277,41 @@ fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord)
                 .and_then(Value::as_str)
                 .map(str::to_string)
         })
-        .and_then(|id| app.state::<DocumentStore>().get(&id))
-        .map(|document| document.text)
-        .unwrap_or_else(|| record.resume_text.clone())
+        .and_then(|id| app.state::<DocumentStore>().get(&id));
+    match hit {
+        Some(document) => (document.text, true),
+        None => (record.resume_text.clone(), false),
+    }
+}
+
+/// The pure decision behind `resume_pipeline_regenerate_section`'s Projects
+/// normalization — pulled out of the command so it is unit-testable without
+/// an `AppHandle`/store. Deterministic, zero-cost: a REGENERATE-PROJECTS
+/// click can rewrite the Projects section too (the whole-section rewrite
+/// fallback is a free-text rewrite, not scoped by content), so the same
+/// code-owned normalization the run itself applies must run here before the
+/// fresh report is computed — otherwise a click could persist an altered
+/// project link the run would never have let through.
+///
+/// Scoped to `key == Projects` ONLY: normalizing on every OTHER section's
+/// regenerate would silently revert the user's own manual edits to Projects
+/// every time they regenerate, say, Skills.
+///
+/// Gated on `source_is_provenanced`: [`source_resume_for`] falls back to the
+/// run's own GENERATED text when `sourceResumeId` is missing/deleted, which
+/// is fine for grading (measuring text against itself finds nothing) but not
+/// for WRITING — seeding the normalizer from the document it is about to
+/// overwrite would "restore" whatever the last generation said as if it were
+/// the candidate's own source.
+pub(crate) fn normalize_regenerated_projects(
+    key: SectionKey,
+    source: &str,
+    source_is_provenanced: bool,
+    spliced: String,
+) -> String {
+    if key != SectionKey::Projects || !source_is_provenanced {
+        return spliced;
+    }
+    let project_seeds = projects::seed_projects_for_normalize(source);
+    projects::normalize_projects(&spliced, &project_seeds).unwrap_or(spliced)
 }

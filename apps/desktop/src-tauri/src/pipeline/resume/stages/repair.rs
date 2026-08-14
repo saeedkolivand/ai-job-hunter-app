@@ -43,7 +43,7 @@ use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::StoppedReason;
 use crate::pipeline::resume::prompts::{repair_system, repair_user};
 use crate::pipeline::resume::types::SectionKey;
-use crate::pipeline::resume::{projects, source, QualityCtx, RunDeadline};
+use crate::pipeline::resume::{projects, QualityCtx, RunDeadline};
 use crate::pipeline::{Completer, Stage};
 use crate::validate::content::{
     ContentIssue, ContentReport, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
@@ -490,7 +490,7 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
         let completer = ctx.completer_for(NAME);
         // Computed ONCE per run — every round's normalize call reads the same
         // seeds, exactly like `Draft::run`'s.
-        let seeds = source::seed_projects(input.source_resume);
+        let seeds = projects::seed_projects_for_normalize(input.source_resume);
 
         let (draft, report, letter, stats) = repair_loop(
             std::mem::take(&mut ctx.draft),

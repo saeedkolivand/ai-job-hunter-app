@@ -15,13 +15,13 @@
 //! draft as the final document.
 
 use async_trait::async_trait;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::error::AppResult;
 use crate::pipeline::resume::projects::{self, ProjectsNormalizeStats};
 use crate::pipeline::resume::prompts::{draft_system, draft_user};
-use crate::pipeline::resume::{source, QualityCtx};
+use crate::pipeline::resume::QualityCtx;
 use crate::pipeline::Stage;
 
 pub struct Draft;
@@ -82,29 +82,37 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
         let text = completer.stream_captured(ctx.input.job_id, req).await?;
         ctx.ledger.count_call(false);
 
-        // Deterministic, zero-cost: the Projects section is CODE-OWNED at
-        // quality depth too, the same way `assemble::render_project` already
-        // owns it at max — a model-invented project is dropped and a kept
-        // one's links/stack come back from the source verbatim, never re-asked.
-        let seeds = source::seed_projects(ctx.input.source_resume);
-        let (draft, stats) = match projects::normalize_projects_with_stats(&text, &seeds) {
-            Some((normalized, stats)) => (normalized, stats),
-            None => (text, ProjectsNormalizeStats::default()),
-        };
-
+        let (draft, artifact) = apply_projects_normalization(ctx.input.source_resume, text);
         // Length + projects-normalize counts only — never the draft itself
         // (ADR-027).
-        ctx.ledger.record(
-            "draft",
-            json!({
-                "chars": draft.chars().count(),
-                "lines": draft.lines().count(),
-                "projectsMatched": stats.matched,
-                "projectsDropped": stats.dropped,
-                "linksRestored": stats.links_restored,
-            }),
-        );
+        ctx.ledger.record("draft", artifact);
         ctx.draft = draft;
         Ok(())
     }
+}
+
+/// The DETERMINISTIC half of this stage — normalize the streamed text's
+/// Projects section and build the ledger artifact — pulled out of `run` so it
+/// is testable without a live provider (the model call above it is the only
+/// part that needs one). Mirrors why `repair::repair_loop` is its own
+/// function rather than inlined in `Repair::run`.
+///
+/// Deterministic, zero-cost: the Projects section is CODE-OWNED at quality
+/// depth too, the same way `assemble::render_project` already owns it at
+/// max — a model-invented project is dropped and a kept one's links/stack
+/// come back from the source verbatim, never re-asked.
+pub(crate) fn apply_projects_normalization(source_resume: &str, text: String) -> (String, Value) {
+    let seeds = projects::seed_projects_for_normalize(source_resume);
+    let (draft, stats) = match projects::normalize_projects_with_stats(&text, &seeds) {
+        Some((normalized, stats)) => (normalized, stats),
+        None => (text, ProjectsNormalizeStats::default()),
+    };
+    let artifact = json!({
+        "chars": draft.chars().count(),
+        "lines": draft.lines().count(),
+        "projectsMatched": stats.matched,
+        "projectsDropped": stats.dropped,
+        "linksRestored": stats.links_restored,
+    });
+    (draft, artifact)
 }

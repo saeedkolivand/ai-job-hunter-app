@@ -18,28 +18,88 @@
 use std::collections::BTreeSet;
 
 use crate::documents::evidence::SectionKind;
+use crate::export::parser::parse_resume;
 use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{assemble, source};
-use crate::validate::content::canonical_link;
+use crate::validate::content::{canonical_link, link_href, project_entry_starts};
 
 use super::stages::sections;
 use super::types_max::ProjectOut;
 
-/// The href inside a link entry, unwrapping a markdown span captured verbatim
-/// by [`source::seed_one_project`] (`[label](href)`). A bare URL passes
-/// through unchanged. Every canonical comparison this module and the seeder
-/// make routes through this first, so a labeled and a bare copy of the same
-/// URL are never treated as two different links.
-pub(crate) fn link_href(link: &str) -> &str {
-    let trimmed = link.trim();
-    let Some(rest) = trimmed.strip_prefix('[') else {
-        return trimmed;
+/// Seed [`ProjectOut`]s for normalization, refusing to hand back seeds a
+/// PLAIN-TEXT source produces garbage from.
+///
+/// Every extractor in `extraction::*` (PDF/DOCX/RTF) emits plain prose, no
+/// markdown at all — `source::entries` groups a section's lines by
+/// [`project_entry_starts`] (bold or bullet) OR "first line of the section",
+/// and that second arm exists only so a section with exactly one project
+/// still seeds. On a plain-text section it is the ONLY arm that ever fires,
+/// so the whole section collapses into ONE mega-entry whose "stack" and
+/// "description" are really the next two projects' title lines. Normalizing
+/// over that seed would rewrite a CORRECT draft into that garbage and it
+/// would still validate clean, because the seed IS what the validator grades
+/// against too.
+///
+/// Two independent guards, because a source can fail either one on its own:
+///
+/// * **No genuine entry boundary.** `None` (empty seeds, which
+///   [`normalize_projects`] already reads as a no-op) when NOT ONE line in
+///   the section satisfies [`project_entry_starts`] — the exact precondition
+///   `source::entries`' grouping rule depends on, checked here through the
+///   SAME predicate rather than re-implemented.
+/// * **Cross-contaminated fields**, the shape a still-wrong boundary leaves
+///   behind even with a genuine bold/bullet line present: one seed's stack or
+///   description holding another seed's own name or link. See
+///   [`seeds_are_plausible`].
+pub(crate) fn seed_projects_for_normalize(source_resume: &str) -> Vec<ProjectOut> {
+    let Some(section) = source::section(source_resume, SectionKind::Projects) else {
+        return Vec::new();
     };
-    let Some(split) = rest.find("](") else {
-        return trimmed;
-    };
-    let href = &rest[split + 2..];
-    href.strip_suffix(')').unwrap_or(trimmed)
+    if !section
+        .lines
+        .iter()
+        .any(|line| project_entry_starts(&line.parsed))
+    {
+        return Vec::new(); // no genuine entry boundary — a plain-text section
+    }
+    let seeds: Vec<ProjectOut> = source::entries(&section)
+        .into_iter()
+        .filter_map(|entry| source::seed_one_project(&entry))
+        .collect();
+    if seeds_are_plausible(&seeds) {
+        seeds
+    } else {
+        Vec::new()
+    }
+}
+
+/// Whether `seeds` look like a genuine per-project split rather than one
+/// entry's fields spilling into another's.
+///
+/// Checked pairwise: any OTHER seed's name or href showing up inside a seed's
+/// own stack/description text is cross-contamination — the shape a
+/// still-wrong entry boundary produces even when at least one bold/bullet
+/// line was present. Normalizing over it would WRITE that contamination into
+/// the document as "restored from the source", which is worse than not
+/// normalizing at all. Short names/hrefs (under a few characters) are exempt
+/// from the comparison to avoid a coincidental substring match.
+fn seeds_are_plausible(seeds: &[ProjectOut]) -> bool {
+    seeds.iter().enumerate().all(|(index, seed)| {
+        let haystack = format!("{} {}", seed.stack.join(" "), seed.description).to_lowercase();
+        seeds
+            .iter()
+            .enumerate()
+            .filter(|(other_index, _)| *other_index != index)
+            .all(|(_, other)| {
+                let name = other.name.trim().to_lowercase();
+                let name_leaks = name.chars().count() > 2 && haystack.contains(&name);
+                let link_leaks = other.links.iter().any(|link| {
+                    let href = link_href(link).trim().to_lowercase();
+                    href.chars().count() > 4 && haystack.contains(&href)
+                });
+                !name_leaks && !link_leaks
+            })
+    })
 }
 
 /// Project identity, compared the way `factual::project_entry_name` compares
@@ -122,6 +182,12 @@ pub(crate) fn reseed_projects(
             continue;
         };
         if out.iter().any(|kept| same_project(&kept.name, &seed.name)) {
+            // A SECOND answer for a seed already kept — two draft entries
+            // (or a rename that collided with an existing one) resolving to
+            // the same project. Counted, not silent: an uncounted drop here
+            // is exactly how `matched + dropped` stops summing to the
+            // draft's own entry count.
+            dropped += 1;
             continue;
         }
         // A project whose seed carries no links, no stack and no description is
@@ -167,6 +233,14 @@ pub(crate) fn reseed_projects(
 /// seed's name so the existing name-keyed rebuild does the rest, rather than
 /// teaching `reseed_projects` a second matching rule to keep in sync with this
 /// one.
+///
+/// **Refuses to rename when MORE than one seed shares the link.** Two seeds
+/// legitimately sharing one URL (a monorepo's app and its docs site, say)
+/// makes "which one is this draft entry" a guess, and guessing wrong renames
+/// the draft entry to the WRONG seed's identity — collapsing two projects
+/// into one under `reseed_projects`' own dedup rather than keeping them apart.
+/// An unresolved name still gets its normal chance to fail — dropped as
+/// invented — rather than silently merged.
 fn resolve_seed_names(seeds: &[ProjectOut], drafted: Vec<ProjectOut>) -> Vec<ProjectOut> {
     drafted
         .into_iter()
@@ -177,8 +251,13 @@ fn resolve_seed_names(seeds: &[ProjectOut], drafted: Vec<ProjectOut>) -> Vec<Pro
             {
                 return project; // the name already resolves; nothing to do
             }
-            if let Some(seed) = seeds.iter().find(|seed| shares_a_link(seed, &project)) {
-                project.name = seed.name.clone();
+            let mut sharing = seeds.iter().filter(|seed| shares_a_link(seed, &project));
+            if let Some(seed) = sharing.next() {
+                if sharing.next().is_none() {
+                    project.name = seed.name.clone();
+                }
+                // else: more than one seed shares this link — ambiguous,
+                // refuse to guess which one it is.
             }
             project
         })
@@ -229,9 +308,13 @@ fn build(document: &str, seeds: &[ProjectOut]) -> Option<(String, ProjectsNormal
     if seeds.is_empty() {
         return None;
     }
-    let raw_sections = sections::split(document);
+    // Parsed ONCE — `sections::split_parsed` and `source::section_from_parsed`
+    // both need a `ParsedDocument` over this SAME text, and `parse_resume` is
+    // the expensive half of each.
+    let parsed = parse_resume(document);
+    let raw_sections = sections::split_parsed(document, &parsed);
     let raw_section = sections::find(&raw_sections, SectionKey::Projects)?;
-    let source_section = source::section(document, SectionKind::Projects)?;
+    let source_section = source::section_from_parsed(document, SectionKind::Projects, &parsed)?;
     let drafted: Vec<ProjectOut> = source::entries(&source_section)
         .into_iter()
         .filter_map(|entry| source::seed_one_project(&entry))
@@ -240,17 +323,33 @@ fn build(document: &str, seeds: &[ProjectOut]) -> Option<(String, ProjectsNormal
     let resolved = resolve_seed_names(seeds, drafted);
     let (kept, dropped, links_restored) = reseed_projects(seeds, &resolved);
 
+    // Nothing survived — every draft entry was invented, or the draft's own
+    // Projects section had none to begin with. Splicing a heading-only
+    // section in would be an undo-less, silent blanking of the section; the
+    // honest answer is "nothing to normalize", not "normalize it to empty".
+    // `matched == kept.len()`, so this is the same check as "zero matched
+    // while something WAS dropped" — a total disagreement between the draft
+    // and the seeds is a parse failure to leave invisible, not a rewrite.
+    if kept.is_empty() {
+        return None;
+    }
+
     let heading = raw_section.heading.clone().unwrap_or_default();
     let body = kept
         .iter()
         .map(assemble::render_project)
         .collect::<Vec<String>>()
         .join("\n\n");
-    let replacement = if body.is_empty() {
-        heading
-    } else {
-        format!("{heading}\n\n{body}")
-    };
+    let mut replacement = format!("{heading}\n\n{body}");
+    // The ORIGINAL section's line range (`raw_section.end`) runs up to the
+    // NEXT heading, so it includes the blank line(s) that separated the two
+    // — which this replacement, built fresh, does not carry. Not the LAST
+    // section ⇒ append one back, or the splice would butt the next heading
+    // directly against the last rendered line (mirrors the trailing-blank
+    // convention `stages::sections::entry_range` documents for entries).
+    if raw_section.end < parsed.lines.len() {
+        replacement.push_str("\n\n");
+    }
     let text = sections::splice(document, raw_section, &replacement);
     Some((
         text,
@@ -457,5 +556,237 @@ mod test {
         assert_eq!(stats.matched, 2, "Alpha and Beta are kept");
         assert_eq!(stats.dropped, 1, "Ghost has no seed");
         assert_eq!(stats.links_restored, 1, "only Alpha's link was altered");
+    }
+
+    // ── C2: all-dropped is a no-op, never a heading-only section ────────
+
+    /// Every draft entry is unrelated to the one seed the source has —
+    /// nothing survives `reseed_projects`, and the honest answer is "nothing
+    /// to normalize", not a heading with no body under it.
+    ///
+    /// Mutation check: drop the `kept.is_empty()` guard in `build` and this
+    /// fails — the section gets spliced down to just its heading.
+    #[test]
+    fn all_dropped_is_a_no_op_not_a_heading_only_section() {
+        let seeds = vec![seed(
+            "Ledger CLI",
+            &["https://github.com/janedoe/ledger"],
+            &[],
+            "",
+        )];
+        let draft = "PROJECTS\n\n**Totally Unrelated** · https://example.com/x\n";
+        assert_eq!(normalize_projects(draft, &seeds), None);
+    }
+
+    // ── M1: the blank line to the NEXT section survives ──────────────────
+
+    /// The original section's line range runs up to the next heading, so it
+    /// swallows the blank line separating the two — a replacement built fresh
+    /// must put one back, or the next heading butts directly against the
+    /// last rendered line.
+    ///
+    /// Mutation check: drop the `raw_section.end < parsed.lines.len()` append
+    /// in `build` and this fails (`"ledger.\nEDUCATION"` with no blank line).
+    #[test]
+    fn the_blank_line_before_the_next_section_survives_normalization() {
+        let seeds = vec![seed(
+            "Ledger CLI",
+            &["https://github.com/janedoe/ledger"],
+            &[],
+            "",
+        )];
+        let draft =
+            "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n\nEDUCATION\n\nMSc.\n";
+        let normalized = normalize_projects(draft, &seeds).unwrap();
+        assert!(
+            normalized.contains("ledger\n\nEDUCATION"),
+            "a blank line must separate the normalized section from the next heading: {normalized:?}"
+        );
+        assert!(!normalized.contains("ledger\nEDUCATION"));
+    }
+
+    /// The section IS the last one — appending a trailing blank would add a
+    /// spurious blank line at end of document, so nothing is appended.
+    #[test]
+    fn no_trailing_blank_is_added_when_projects_is_the_last_section() {
+        let seeds = vec![seed(
+            "Ledger CLI",
+            &["https://github.com/janedoe/ledger"],
+            &[],
+            "",
+        )];
+        let draft = "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n";
+        let normalized = normalize_projects(draft, &seeds).unwrap();
+        assert!(!normalized.ends_with("\n\n\n"));
+    }
+
+    // ── M2: dedup is counted, and an ambiguous link-rename is refused ────
+
+    /// Two draft entries that both resolve to the SAME seed: the second is a
+    /// dedup drop, and it must be COUNTED, not silently discarded — an
+    /// uncounted drop is exactly how `matched + dropped` stops summing to the
+    /// draft's own entry count.
+    ///
+    /// Mutation check: drop the `dropped += 1` on the dedup `continue` in
+    /// `reseed_projects` and `stats.dropped` becomes 0.
+    #[test]
+    fn a_dedup_collision_is_counted_as_dropped() {
+        let seeds = vec![seed(
+            "Ledger CLI",
+            &["https://github.com/janedoe/ledger"],
+            &[],
+            "",
+        )];
+        // Two entries answering to the SAME seed name.
+        let draft = "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n\n\
+             **Ledger CLI** · https://github.com/janedoe/ledger\n";
+        let (_, stats) = normalize_projects_with_stats(draft, &seeds).unwrap();
+        assert_eq!(stats.matched, 1, "only the first survives");
+        assert_eq!(stats.dropped, 1, "the second is a counted dedup drop");
+    }
+
+    /// Two SEEDS legitimately share one link (a monorepo's app and its docs
+    /// site). A draft entry renamed away from EITHER seed's name must not
+    /// guess which one it is — an unresolved name still gets its normal
+    /// chance to fail (dropped as invented) rather than being silently
+    /// merged into whichever seed happened to be first.
+    ///
+    /// Mutation check: use `.find` instead of refusing on a second match in
+    /// `resolve_seed_names` and this fails — the renamed entry survives as
+    /// "App" (the first seed) instead of being dropped.
+    #[test]
+    fn resolve_seed_names_refuses_to_rename_when_two_seeds_share_a_link() {
+        let shared = "https://github.com/janedoe/monorepo";
+        let seeds = vec![
+            seed("App", &[shared], &[], ""),
+            seed("Docs", &[shared], &[], ""),
+        ];
+        let draft = "PROJECTS\n\n**Renamed Thing** · https://github.com/janedoe/monorepo\n";
+        let normalized = normalize_projects(draft, &seeds);
+        assert!(
+            normalized.is_none(),
+            "ambiguous rename ⇒ dropped as invented ⇒ nothing kept ⇒ a no-op: {normalized:?}"
+        );
+    }
+
+    // ── L1/L2/L3: markdown link-span extraction (source.rs) ──────────────
+
+    /// A URL containing its own unescaped `)` (a Wikipedia-shaped link)
+    /// truncates the capturing regex's own match — writing that truncated,
+    /// unbalanced span into the document would be malformed markdown. The
+    /// bare (verified-correct) href is always the safe fallback.
+    #[test]
+    fn a_paren_containing_href_falls_back_to_the_bare_form_not_a_malformed_span() {
+        let source = "PROJECTS\n\n**Rust wiki** · \
+            [Rust](https://en.wikipedia.org/wiki/Rust_(programming_language))\n";
+        let seeds = crate::pipeline::resume::source::seed_projects(source);
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(seeds[0].links.len(), 1);
+        let link = &seeds[0].links[0];
+        assert!(
+            !link.starts_with('['),
+            "the round-trip/balance check must fail on a paren-truncated capture and fall \
+             back to the bare href rather than writing the unbalanced markdown span \
+             verbatim: {link:?}"
+        );
+    }
+
+    /// A URL-shaped LABEL paired with a different href
+    /// (`[https://other](https://real)`) must not ALSO get harvested as its
+    /// own bare-URL link — the label text is stripped before the bare-URL
+    /// pass runs.
+    #[test]
+    fn a_url_shaped_label_is_not_double_harvested() {
+        let source =
+            "PROJECTS\n\n**Site** · [https://other.example.com](https://real.example.com/app)\n";
+        let seeds = crate::pipeline::resume::source::seed_projects(source);
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(
+            seeds[0].links.len(),
+            1,
+            "exactly one link, not the label harvested a second time: {:?}",
+            seeds[0].links
+        );
+    }
+
+    /// A scheme-less `www.` href inside a markdown span is still a link by
+    /// `urls_in`'s own rule, so its label must survive too — anchoring the
+    /// capture to `https?://` would silently drop it.
+    #[test]
+    fn a_scheme_less_www_label_survives() {
+        let source = "PROJECTS\n\n**Site** · [Website](www.example.com/app)\n";
+        let seeds = crate::pipeline::resume::source::seed_projects(source);
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(seeds[0].links, vec!["[Website](www.example.com/app)"]);
+    }
+
+    // ── C1: seed_projects_for_normalize ───────────────────────────────────
+
+    /// The precondition gate directly: zero lines in the source's Projects
+    /// section satisfy `project_entry_starts` (no bold, no bullet — the
+    /// shape every `extraction::*` importer emits) ⇒ empty seeds, never the
+    /// collapsed mega-entry `source::seed_projects` alone would produce.
+    #[test]
+    fn seed_projects_for_normalize_refuses_a_plain_text_section() {
+        let plain = "PROJECTS\n\n\
+            Ledger CLI - https://github.com/janedoe/ledger\n\
+            A bookkeeping tool.\n\
+            CrossKit - https://github.com/janedoe/crosskit\n";
+        // The premise: the naive seeder DOES collapse this (proving the gate
+        // is doing real work, not refusing an already-empty result).
+        assert_eq!(
+            source::seed_projects(plain).len(),
+            1,
+            "premise: the ungated seeder collapses this into one mega-entry"
+        );
+        assert!(seed_projects_for_normalize(plain).is_empty());
+    }
+
+    /// The happy path survives the gate: a genuinely bold/bullet-structured
+    /// source seeds normally.
+    #[test]
+    fn seed_projects_for_normalize_keeps_a_well_formed_section() {
+        let well_formed = "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n\n\
+             **CrossKit** · https://github.com/janedoe/crosskit\n";
+        let seeds = seed_projects_for_normalize(well_formed);
+        assert_eq!(seeds.len(), 2);
+    }
+
+    /// The second, independent guard: cross-contaminated fields (one seed's
+    /// description carrying another seed's own name) are refused even though
+    /// a genuine bold entry-start line is present.
+    #[test]
+    fn seeds_are_plausible_catches_cross_contaminated_fields() {
+        let clean = vec![
+            seed(
+                "Ledger CLI",
+                &["https://github.com/janedoe/ledger"],
+                &[],
+                "",
+            ),
+            seed(
+                "CrossKit",
+                &["https://github.com/janedoe/crosskit"],
+                &[],
+                "",
+            ),
+        ];
+        assert!(seeds_are_plausible(&clean));
+
+        let contaminated = vec![
+            seed(
+                "Ledger CLI",
+                &["https://github.com/janedoe/ledger"],
+                &[],
+                "Then there's the CrossKit project, a design system.",
+            ),
+            seed(
+                "CrossKit",
+                &["https://github.com/janedoe/crosskit"],
+                &[],
+                "",
+            ),
+        ];
+        assert!(!seeds_are_plausible(&contaminated));
     }
 }

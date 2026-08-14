@@ -33,6 +33,8 @@ pub use self::validate::{validate_documents, Validate};
 // production caller reaching for one would be doing the grounding a second
 // time, in a second place.
 #[cfg(test)]
+pub(crate) use self::draft::apply_projects_normalization;
+#[cfg(test)]
 pub(crate) use self::evidence::ground;
 #[cfg(test)]
 pub(crate) use self::judge::{issue_from, issues_from, MAX_JUDGE_ITEMS};

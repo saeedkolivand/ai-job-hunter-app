@@ -985,6 +985,76 @@ fn the_draft_prompt_localizes_its_headings() {
     assert!(!german.contains("Work Experience"));
 }
 
+// ── `Draft::run`'s deterministic half — projects normalization + the ledger
+// artifact it builds ─────────────────────────────────────────────────────
+
+const DRAFT_HOOK_SOURCE: &str = "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n";
+
+/// **The draft-stage hook actually normalizes**, restoring an altered link —
+/// proof the wiring (seed → normalize → record) runs end to end, not just
+/// `projects::normalize_projects` in isolation.
+#[test]
+fn apply_projects_normalization_restores_an_altered_link_and_records_counts() {
+    let draft = "PROJECTS\n\n**Ledger CLI** · https://an-altered-fork.example.com/ledger\n";
+    let (text, artifact) =
+        super::stages::apply_projects_normalization(DRAFT_HOOK_SOURCE, draft.to_string());
+    assert!(text.contains("https://github.com/janedoe/ledger"));
+    assert!(!text.contains("an-altered-fork"));
+    assert_eq!(artifact["projectsMatched"], 1);
+    assert_eq!(artifact["projectsDropped"], 0);
+    assert_eq!(artifact["linksRestored"], 1);
+    assert_eq!(artifact["chars"], text.chars().count());
+}
+
+/// **A PLAIN-TEXT source (no bold/bullet Projects entries — the shape every
+/// `extraction::*` PDF/DOCX/RTF importer produces) is a no-op.** Without this
+/// gate, the source's single-line-per-section grouping fallback collapses a
+/// three-project section into one mega-entry whose "stack"/"description" are
+/// really the next two projects' own title lines — and normalizing over that
+/// would rewrite a CORRECT draft into that garbage, validation-clean.
+///
+/// Mutation check: call `source::seed_projects` directly instead of
+/// `projects::seed_projects_for_normalize` in the hook and this fails — the
+/// draft gets rewritten from the collapsed mega-seed instead of left alone.
+#[test]
+fn apply_projects_normalization_is_a_no_op_over_a_plain_text_source() {
+    let plain_source = "PROJECTS\n\n\
+        Ledger CLI - https://github.com/janedoe/ledger\n\
+        A bookkeeping tool.\n\
+        CrossKit - https://github.com/janedoe/crosskit\n\
+        A design system.\n\
+        Dotfiles - https://github.com/janedoe/dotfiles\n";
+    let draft = "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n\n\
+        **CrossKit** · https://github.com/janedoe/crosskit\n\n\
+        **Dotfiles** · https://github.com/janedoe/dotfiles\n";
+    let (text, artifact) =
+        super::stages::apply_projects_normalization(plain_source, draft.to_string());
+    assert_eq!(
+        text, draft,
+        "a plain-text source must never rewrite an already-correct draft"
+    );
+    assert_eq!(artifact["projectsMatched"], 0);
+    assert_eq!(artifact["projectsDropped"], 0);
+    assert_eq!(artifact["linksRestored"], 0);
+}
+
+/// **All-dropped is a no-op, not a heading-only Projects section.** Every
+/// draft entry the model wrote is unrelated to the source's one seed, so
+/// nothing survives `reseed_projects` — and persisting an emptied section
+/// with no undo would be worse than leaving the (wrong, but non-destructive)
+/// draft alone.
+#[test]
+fn apply_projects_normalization_is_a_no_op_when_every_entry_is_invented() {
+    let draft = "PROJECTS\n\n**Some Other Thing** · https://example.com/unrelated\n";
+    let (text, artifact) =
+        super::stages::apply_projects_normalization(DRAFT_HOOK_SOURCE, draft.to_string());
+    assert_eq!(
+        text, draft,
+        "nothing kept must never become a heading-only section"
+    );
+    assert_eq!(artifact["projectsMatched"], 0);
+}
+
 /// The seeded roster reaches the model as DATA, with its identity fields
 /// intact — that is what makes "the roster is fixed" a statement the model can
 /// act on rather than a rule only Rust knows.

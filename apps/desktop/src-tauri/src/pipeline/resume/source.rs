@@ -30,12 +30,12 @@ use regex::Regex;
 
 use crate::documents::evidence::{classify_section, SectionKind};
 use crate::export::parser::parse_resume;
-use crate::export::types::{LineKind, ParsedLine};
+use crate::export::types::{LineKind, ParsedDocument, ParsedLine};
 use crate::validate::content::{
-    canonical_link, names_a_resource, project_entry_starts, urls_in, MAX_PROJECT_DESCRIPTION_LINES,
+    canonical_link, link_href, names_a_resource, project_entry_starts, urls_in,
+    MAX_PROJECT_DESCRIPTION_LINES,
 };
 
-use super::projects::link_href;
 use super::types_max::ProjectOut;
 
 /// One line of the source, as written AND as classified.
@@ -74,8 +74,20 @@ impl SourceSection {
 /// the first too), and picking a different one here would seed from a section
 /// the validator does not grade.
 pub fn section(source: &str, kind: SectionKind) -> Option<SourceSection> {
+    section_from_parsed(source, kind, &parse_resume(source))
+}
+
+/// [`section`] over an ALREADY-parsed document — the same seam
+/// `stages::sections::split_parsed` offers, for a caller that also needs a
+/// [`stages::sections::RawSection`](crate::pipeline::resume::stages::sections::RawSection)
+/// over the SAME text and would otherwise pay for a second `parse_resume`
+/// (`pipeline::resume::projects::build` is exactly that caller).
+pub(crate) fn section_from_parsed(
+    source: &str,
+    kind: SectionKind,
+    parsed: &ParsedDocument,
+) -> Option<SourceSection> {
     let raw: Vec<&str> = source.lines().collect();
-    let parsed = parse_resume(source);
     let mut current: Option<SourceSection> = None;
     for (index, line) in parsed.lines.iter().enumerate() {
         if matches!(line.kind, LineKind::SectionHeader) {
@@ -154,8 +166,15 @@ const PROJECT_SEPARATORS: [char; 3] = ['·', '|', '•'];
 /// already turns exactly this shape into a clickable label, so keeping the
 /// span intact here is what carries a source's "Website"/"Github" labels
 /// through seeding and re-rendering instead of losing them to the bare href.
+///
+/// The href group is deliberately UNRESTRICTED (not anchored to `https?://`):
+/// what makes a captured group an actual link is decided AFTER the match, by
+/// running it back through [`urls_in`] — the same grader-facing extractor,
+/// which also accepts a scheme-less `www.` host and a handful of others (see
+/// `factual::URL_RE`). Anchoring this regex to `https?://` would silently
+/// drop the label off `[Website](www.example.com)`.
 static MD_LINK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\((https?://[^)]+)\)").unwrap());
+    LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").unwrap());
 
 /// Group one section's non-blank lines into entries, using the SHARED
 /// entry-opening rule.
@@ -214,19 +233,45 @@ pub(crate) fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
         let text = &line.parsed.text;
         let mut spanned: Vec<String> = Vec::new(); // hrefs already captured as a labeled span
         for caps in MD_LINK_RE.captures_iter(text) {
-            let href = &caps[2];
+            // The bracketed content is only a LINK when its href is one by
+            // the SAME rule `urls_in` grades with — a `[1](note)` footnote or
+            // a URL-shaped LABEL paired with an unrelated href is not one, and
+            // matching `.first()` only when there is EXACTLY one match keeps a
+            // multi-URL parenthetical (rare, but not a link either) out too.
+            let candidates = urls_in(&caps[2]);
+            let [href] = candidates.as_slice() else {
+                continue;
+            };
             if index == 1 && !names_a_resource(href) {
                 continue;
             }
             spanned.push(canonical_link(href));
-            if !links
+            if links
                 .iter()
                 .any(|kept| canonical_link(link_href(kept)) == canonical_link(href))
             {
-                links.push(caps[0].to_string());
+                continue;
             }
+            // Only WRITE the labeled span when it round-trips: balanced
+            // brackets, and re-extracting it through `urls_in` yields exactly
+            // this href back. An href containing its own unescaped `)` (a
+            // Wikipedia-shaped URL) truncates this regex's own capture, which
+            // would otherwise write an unbalanced, unparseable span into the
+            // document. The bare (verified) href is always safe.
+            let span = caps[0].to_string();
+            let balanced = span.matches('(').count() == span.matches(')').count();
+            let round_trips = urls_in(&span) == [href.clone()];
+            links.push(if balanced && round_trips {
+                span
+            } else {
+                href.clone()
+            });
         }
-        for url in urls_in(text) {
+        // Bare URLs, over the line with every already-captured span STRIPPED
+        // — otherwise a URL-shaped LABEL (`[https://other](https://real)`)
+        // gets harvested a second time as if it were its own link.
+        let stripped = MD_LINK_RE.replace_all(text, " ");
+        for url in urls_in(&stripped) {
             if index == 1 && !names_a_resource(&url) {
                 continue;
             }
