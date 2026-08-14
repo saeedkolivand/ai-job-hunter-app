@@ -60,6 +60,21 @@ const TITLE_CANCELLED: &str = "Résumé run cancelled";
 /// fits with room to spare; a title longer than this is not a title.
 const LABEL_CAP: usize = 160;
 
+/// Collapse any run of whitespace — including an embedded newline/tab/control
+/// whitespace, which `title`/`company` can carry (a scraped posting title, or
+/// PR-3's text-path `jobTitle`/`companyName`, neither of which is line-shape
+/// checked upstream) — to a single space, trimming both ends.
+///
+/// A bare `\n` would otherwise survive into the OS notification body verbatim
+/// (a one-line label becoming two), and on a Linux desktop whose notification
+/// daemon advertises libnotify body-markup, an embedded `<b>`/`<a href>` reads
+/// as markup rather than text — collapsing whitespace does not full-escape
+/// that, but it is the cheap half of the fix and removes the newline-driven
+/// multi-line case outright.
+fn collapse_whitespace(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// `"<title> · <company>"`, degrading to whichever side the cached posting has —
 /// the same body shape the email-watch card and the follow-up reminder use, so
 /// the inbox reads consistently. Local rather than hoisted out of
@@ -69,7 +84,9 @@ const LABEL_CAP: usize = 160;
 /// Clamped to [`LABEL_CAP`] with an ellipsis, char-boundary safe (the store's
 /// own clamp counts characters too, for the same multi-byte reason).
 fn posting_label(title: &str, company: &str) -> String {
-    let label = match (title.trim(), company.trim()) {
+    let title = collapse_whitespace(title);
+    let company = collapse_whitespace(company);
+    let label = match (title.as_str(), company.as_str()) {
         ("", "") => "Untitled posting".to_string(),
         ("", company) => company.to_string(),
         (title, "") => title.to_string(),
