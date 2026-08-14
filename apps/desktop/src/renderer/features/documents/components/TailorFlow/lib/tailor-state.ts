@@ -1,4 +1,4 @@
-import type { TailorTarget } from '../lib/tailor-target';
+import type { TailorTarget } from './tailor-target';
 
 /**
  * The page-local tailoring wizard form. Model is global (selected via the shared
