@@ -174,7 +174,12 @@ describe('ResultsPanel — status banner', () => {
     const status = screen.getByRole('status');
     expect(status).toHaveTextContent('autopilot.apply.wizard.results.needsReviewTitleEmpty');
     expect(status).toHaveTextContent('autopilot.apply.wizard.results.needsReviewHintEmpty');
-    expect(status).not.toHaveTextContent('autopilot.apply.wizard.results.needsReviewHint"');
+    // CR-4: `needsReviewHint` is a text PREFIX of `needsReviewHintEmpty` (which
+    // DOES render above) — a plain substring `not.toHaveTextContent` would
+    // false-negative on that prefix match. The negative lookahead excludes
+    // exactly the `Empty`-suffixed occurrence, asserting the BARE
+    // non-empty-claims hint specifically is absent.
+    expect(status).not.toHaveTextContent(/needsReviewHint(?!Empty)/);
   });
 
   // H5 (cold half): a COLD redisplay has no interactive fix/resolve UI wired

@@ -102,10 +102,16 @@ describe('GeneratingPanel — the 4-step checklist', () => {
     expect(rows[3]).toHaveTextContent('pipeline.step.humanize.description');
   });
 
+  // CR-6: the active row NEVER shows `.description` regardless of
+  // `stageLabel` (see the test above — that's M2, structural), so asserting
+  // its absence here was tautologically true either way and never proved
+  // this behavior. The caption (`{stageLabel} · {elapsedLabel}`) always
+  // includes the elapsed mm:ss — its absence is the real signal that
+  // NOTHING rendered for an empty stageLabel.
   it('omits the caption when no stage label is given yet (active row shows nothing extra)', () => {
     render(<GeneratingPanel {...makeProps({ currentStep: 0, stageLabel: '' })} />);
     const rows = screen.getAllByRole('listitem');
-    expect(rows[0]).not.toHaveTextContent('pipeline.step.analyze.description');
+    expect(rows[0]?.textContent).not.toMatch(/\d:\d{2}/);
   });
 
   // H8: an aria-hidden icon is the only visual state cue — sr-only text must
