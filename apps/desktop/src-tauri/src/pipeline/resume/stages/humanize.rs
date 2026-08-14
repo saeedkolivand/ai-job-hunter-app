@@ -64,7 +64,11 @@ fn is_voice_issue(issue: &ContentIssue) -> bool {
 /// How many `voice.*` findings one report carries — the gate ("is there
 /// anything to do") and the ledger's `voiceBefore`/`voiceAfter`.
 pub(crate) fn voice_count(report: &ContentReport) -> usize {
-    report.issues.iter().filter(|issue| is_voice_issue(issue)).count()
+    report
+        .issues
+        .iter()
+        .filter(|issue| is_voice_issue(issue))
+        .count()
 }
 
 /// Whether `evidence` sits on a line of `document` that also carries a URL —
@@ -229,7 +233,12 @@ where
             }
             let candidate = normalize(&candidate).unwrap_or(candidate);
             let candidate_report = revalidate(candidate.clone()).await?;
-            if humanize_is_worse(&original_report, &original_text, &candidate_report, &candidate) {
+            if humanize_is_worse(
+                &original_report,
+                &original_text,
+                &candidate_report,
+                &candidate,
+            ) {
                 let mut attempt = HumanizeAttempt::kept(original_text, original_report);
                 attempt.called = true;
                 attempt.reverted = true;
@@ -271,7 +280,10 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         let Some(resume_report) = ctx.report.clone() else {
             // validate did not run — nothing to grade against.
-            ctx.ledger.record(NAME, json!({ "resumeFlagged": 0, "letterFlagged": 0, "calls": 0 }));
+            ctx.ledger.record(
+                NAME,
+                json!({ "resumeFlagged": 0, "letterFlagged": 0, "calls": 0 }),
+            );
             return Ok(());
         };
         let resume_flagged = voice_count(&resume_report);
@@ -404,8 +416,8 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
             ctx.letter_report = Some(attempt.report);
         }
 
-        let voice_after =
-            ctx.report.as_ref().map_or(0, voice_count) + ctx.letter_report.as_ref().map_or(0, voice_count);
+        let voice_after = ctx.report.as_ref().map_or(0, voice_count)
+            + ctx.letter_report.as_ref().map_or(0, voice_count);
 
         if timed_out {
             // First-writer-wins: a run already cancelled or already out of

@@ -460,9 +460,9 @@ mod tests {
     fn quality_run_deadline_clears_the_inner_per_call_bounds() {
         const JSON_STAGES: u32 = 3;
         const ROUND_TRIPS_PER_JSON_STAGE: u32 = 2; // the one budgeted re-ask
-        // `humanize` makes at most one flat `complete` call per FLAGGED
-        // document (résumé, letter) — the worst case this deadline has to
-        // cover, exactly like every other term here.
+                                                   // `humanize` makes at most one flat `complete` call per FLAGGED
+                                                   // document (résumé, letter) — the worst case this deadline has to
+                                                   // cover, exactly like every other term here.
         const HUMANIZE_MAX_CALLS: u32 = 2;
         let json_half = OLLAMA_COMPLETION * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE;
         // The repair fan-out and `humanize` are bounded by the SAME flat

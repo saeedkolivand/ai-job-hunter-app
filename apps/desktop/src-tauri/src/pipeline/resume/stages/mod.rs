@@ -43,7 +43,6 @@ pub(crate) use self::evidence::ground;
 #[cfg(test)]
 pub(crate) use self::humanize::{
     humanize_is_worse, humanize_one, is_usable_rewrite, voice_count, voice_findings,
-    HumanizeAttempt,
 };
 #[cfg(test)]
 pub(crate) use self::judge::{issue_from, issues_from, MAX_JUDGE_ITEMS};

@@ -57,11 +57,7 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
                 },
                 AiGenerateRequestMessage {
                     role: "user".to_string(),
-                    content: letter_user(
-                        ctx.input.source_resume,
-                        ctx.input.job_ad,
-                        &ctx.strategy,
-                    ),
+                    content: letter_user(ctx.input.source_resume, ctx.input.job_ad, &ctx.strategy),
                 },
             ],
             locale: ctx.input.target_language.to_string(),

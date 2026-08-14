@@ -388,9 +388,10 @@ async fn execute(
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
-    let needs_review = quality_report.as_deref().is_some_and(|wrapper| {
-        report::still_needs_review(wrapper, &ctx.draft, ctx.letter_text())
-    }) || ctx.critical_count() > 0;
+    let needs_review = quality_report
+        .as_deref()
+        .is_some_and(|wrapper| report::still_needs_review(wrapper, &ctx.draft, ctx.letter_text()))
+        || ctx.critical_count() > 0;
 
     // Status and reason together — see `hooks::terminal_state` for why a
     // cancelled draft used to come out `failed` + `"done"`, and why a run whose
@@ -552,7 +553,9 @@ fn persist_document(
         depth,
         crate::db::now_ms(),
         Some((report, &ctx.draft)),
-        ctx.letter_report.as_ref().map(|letter| (letter, letter_text)),
+        ctx.letter_report
+            .as_ref()
+            .map(|letter| (letter, letter_text)),
     );
     let store = app.try_state::<AiGenerationStore>()?;
     let record = AiGenerationRecord {

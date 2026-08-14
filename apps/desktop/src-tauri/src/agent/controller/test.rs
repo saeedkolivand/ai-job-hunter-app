@@ -226,7 +226,7 @@ async fn run_agent_with_system_stamps_the_given_job_id_on_every_step() {
 ///
 /// This is the whole point of Phase 7's controller change: two flows ship two
 /// budgets (`AGENT_PREP`'s 14 steps / 6-minute step clock and `AGENT_IMPROVE`'s
-/// 10 steps / 90-minute one), and a loop that read a constant would run the
+/// 10 steps / 105-minute one), and a loop that read a constant would run the
 /// review flow's whitelist against the prep flow's ceilings — silently, since
 /// both are plausible numbers. A caller-supplied `max_steps` of 2 must stop the
 /// run at 2.
@@ -276,8 +276,9 @@ async fn read_tool_runs_then_final_text_returns() {
 /// The timeout message is read by a person deciding whether something is
 /// broken, so it states the bound in units they can size at a glance and does
 /// not name a culprit it cannot know (LOW, Phase-7 review: the same message is
-/// stamped when a TOOL overran the clock, and the review flow's clock is 5400
-/// seconds — which nobody reads as "an hour and a half").
+/// stamped when a TOOL overran the clock, and the review flow's clock is 6300
+/// seconds — which nobody reads as "an hour and forty-five minutes" from a raw
+/// number).
 #[test]
 fn the_step_timeout_message_reads_in_human_units_and_blames_nothing_it_cannot_know() {
     let short = step_timeout_message(TEST_ENTRY_BUDGET.step_timeout);
@@ -288,11 +289,11 @@ fn the_step_timeout_message_reads_in_human_units_and_blames_nothing_it_cannot_kn
 
     let long = step_timeout_message(Budget::AGENT_IMPROVE.step_timeout);
     assert!(
-        long.contains("1h 30m"),
-        "a 90-minute bound reads as time: {long}"
+        long.contains("1h 45m"),
+        "a 105-minute bound reads as time: {long}"
     );
     assert!(
-        !long.contains("5400"),
+        !long.contains("6300"),
         "…and never as a raw second count: {long}"
     );
 
@@ -398,7 +399,7 @@ async fn the_tool_call_ceiling_stops_a_runaway_tool_loop() {
 /// `agent::gate` already drives a 2-call turn. With the check only at the turn
 /// boundary, a K-call final turn executed `max_tool_calls - 1 + K` calls, and
 /// because each executed call races `step_timeout` INDIVIDUALLY, K calls of the
-/// review flow's 90-minute pipeline tool cost K × 90 minutes — the bound
+/// review flow's 105-minute pipeline tool cost K × 105 minutes — the bound
 /// `max_tool_calls × step_timeout` is only true if the count is checked before
 /// each call.
 ///

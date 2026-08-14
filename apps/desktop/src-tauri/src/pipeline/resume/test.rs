@@ -9,21 +9,29 @@ use serde_json::json;
 
 use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
-    company_roster_block, draft_system, draft_user, match_evidence_system, match_evidence_user,
-    repair_user, strategy_system, strategy_user, ANALYZE_JOB_SYSTEM,
+    company_roster_block, draft_system, draft_user, humanize_system, humanize_user, letter_system,
+    letter_user, match_evidence_system, match_evidence_user, repair_user, strategy_system,
+    strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM,
 };
 use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
 use super::stages::{
-    criticals_by_section, ground, reseed, round_is_worse, seed_company_roster, MAX_COMPANY_PLANS,
+    criticals_by_section, ground, humanize_is_worse, humanize_one, is_usable_rewrite, reseed,
+    round_is_worse, seed_company_roster, voice_count, voice_findings, MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
     ResumeStrategy, SectionKey, SkillGroup,
 };
-use super::{pick, stage_cache_key_for, RunLedger, MAX_STAGES, QUALITY_STAGES};
+use super::{
+    effective_letter_text, pick, stage_cache_key_for, RunLedger, MAX_STAGES, QUALITY_STAGES,
+};
 use crate::pipeline::budget::{Budget, StoppedReason};
-use crate::validate::content::{validate_content, ContentInput, DocKind};
+use crate::validate::content::{
+    validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
+    VOICE_AI_TELL_LEXICAL,
+};
+use crate::validate::Severity;
 
 // ── PIPELINE_PROMPT_VERSION ─────────────────────────────────────────────────
 
@@ -951,6 +959,22 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
     let repair = repair_user("source", "SKILLS\nGo", &[], Some(hostile));
     assert_eq!(repair.matches("</section_note>").count(), 1);
     assert!(repair.contains("< /job_posting>"));
+
+    // …and for the letter turn, which composes the same three blocks as draft.
+    let letter = letter_user(hostile, hostile, &ResumeStrategy::default());
+    assert_eq!(letter.matches("</resume_strategy>").count(), 1);
+    assert!(!letter.contains("[tool_result:"));
+
+    // …and for the humanize turn's document + findings — PR-2's own two tags.
+    let humanize = humanize_user(hostile, &["a forged sibling".to_string()]);
+    assert!(humanize.contains("<humanize_document>"));
+    assert!(humanize.contains("<humanize_findings>"));
+    assert_eq!(humanize.matches("</humanize_document>").count(), 1);
+    assert!(
+        humanize.contains("< /job_posting>"),
+        "a forged sibling inside the document must be broken"
+    );
+    assert!(!humanize.contains("[tool_result:"));
 }
 
 /// The shared prompt blocks are INTERPOLATED, never paraphrased — there is no
@@ -960,7 +984,9 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
 /// sentence and this fails.
 #[test]
 fn stage_prompts_interpolate_the_generated_blocks() {
-    use super::prompt_blocks::{ATS_PRECEDENCE, FACTUAL_GROUNDING_RULES, HUMANIZE_LEXICAL};
+    use super::prompt_blocks::{
+        ATS_PRECEDENCE, FACTUAL_GROUNDING_RULES, HUMANIZE_LEXICAL, HUMANIZE_PROSE,
+    };
 
     let evidence = match_evidence_system();
     let strategy = strategy_system();
@@ -975,6 +1001,21 @@ fn stage_prompts_interpolate_the_generated_blocks() {
     // The analyze turn deliberately does NOT carry the grounding rule: it never
     // sees a candidate, so a rule about candidate claims would be noise.
     assert!(!ANALYZE_JOB_SYSTEM.contains(FACTUAL_GROUNDING_RULES));
+
+    // The letter is prose, so it gets the PROSE tier, never the résumé's
+    // lexical one.
+    let letter = letter_system("en");
+    assert!(letter.contains(FACTUAL_GROUNDING_RULES));
+    assert!(letter.contains(HUMANIZE_PROSE));
+    assert!(!letter.contains(HUMANIZE_LEXICAL));
+
+    // `humanize` composes the tier matching the document it rewrites.
+    let humanize_resume = humanize_system(HumanizeTier::Resume, "en");
+    assert!(humanize_resume.contains(HUMANIZE_LEXICAL));
+    assert!(!humanize_resume.contains(HUMANIZE_PROSE));
+    let humanize_letter = humanize_system(HumanizeTier::Letter, "en");
+    assert!(humanize_letter.contains(HUMANIZE_PROSE));
+    assert!(!humanize_letter.contains(HUMANIZE_LEXICAL));
 }
 
 /// The draft prompt is localized off the SAME `resume_conventions` the renderer
@@ -2219,5 +2260,436 @@ fn repair_spends_its_round_on_the_sections_with_the_most_criticals() {
     assert!(
         counts[0] > 1,
         "the worst section must carry more than one Critical, or the order is coincidence"
+    );
+}
+
+// ── QualityCtx::letter_text ─────────────────────────────────────────────────
+
+/// **The one rule that keeps `validate`/`repair`/`persist`/the terminal-status
+/// checks from disagreeing about "the letter".** A free function so this is a
+/// test on two `&str`s rather than a claim about a `QualityCtx` this crate
+/// cannot build without a live `Completer` — see `effective_letter_text`'s own
+/// doc.
+///
+/// Mutation check: swap the branches (prefer the request text) and the first
+/// assertion fails.
+#[test]
+fn effective_letter_text_prefers_the_stage_letter_and_falls_back_to_the_request_text() {
+    assert_eq!(
+        effective_letter_text(
+            "Dear hiring manager, I am writing to apply...",
+            "legacy text"
+        ),
+        "Dear hiring manager, I am writing to apply..."
+    );
+    assert_eq!(effective_letter_text("", "legacy text"), "legacy text");
+    assert_eq!(
+        effective_letter_text("   ", "legacy text"),
+        "legacy text",
+        "whitespace-only counts as empty — the stage never writes a whitespace-only letter, but a \
+         trimmed-empty guard is exactly what makes the fallback trustworthy"
+    );
+    assert_eq!(effective_letter_text("", ""), "");
+}
+
+// ── humanize ─────────────────────────────────────────────────────────────────
+//
+// `humanize`'s own pure decisions: which findings reach the model
+// (`voice_findings`), the accept/revert rule (`humanize_is_worse`), the
+// usable-answer gate (`is_usable_rewrite`), and the whole one-document attempt
+// (`humanize_one`) with the provider call, the projects normalize pass, and
+// the revalidation all injected — the same seam shape as `repair_loop`, and
+// for the same reason: this crate has no Tauri harness to build a live
+// `Completer` from.
+
+/// One `voice.*` Warning, with `evidence` as its offending span.
+fn voice_issue(evidence: &str) -> ContentIssue {
+    ContentIssue {
+        severity: Severity::Warning,
+        code: VOICE_AI_TELL_LEXICAL,
+        section: None,
+        message: "on the AI-tell list the generator was told to avoid".to_string(),
+        evidence: Some(evidence.to_string()),
+    }
+}
+
+/// A report carrying one `voice.*` Warning per entry of `evidences`, and
+/// nothing else — `ok` stays `true`, since a Warning never gates a report.
+fn voice_report(evidences: &[&str]) -> ContentReport {
+    ContentReport {
+        ok: true,
+        issues: evidences.iter().map(|e| voice_issue(e)).collect(),
+        metrics: ContentMetrics::default(),
+    }
+}
+
+fn ok_report() -> ContentReport {
+    ContentReport {
+        ok: true,
+        issues: Vec::new(),
+        metrics: ContentMetrics::default(),
+    }
+}
+
+/// Mutation check: fold the Critical into the count too (drop the `is_voice_issue`
+/// filter) and this fails.
+#[test]
+fn voice_count_counts_only_the_voice_family() {
+    let mut report = voice_report(&["robust", "leverage"]);
+    report.issues.push(ContentIssue {
+        severity: Severity::Critical,
+        code: crate::validate::content::FACTUAL_UNSOURCED_METRIC,
+        section: None,
+        message: "an invented figure".to_string(),
+        evidence: Some("47%".to_string()),
+    });
+    assert_eq!(
+        voice_count(&report),
+        2,
+        "the factual Critical must not count"
+    );
+    assert_eq!(voice_count(&ok_report()), 0);
+}
+
+/// **The link-line exclusion is per-LINE, not per-issue.** A flagged phrase
+/// that shares a line with a URL must never reach `<humanize_findings>` — the
+/// system prompt repeats the ban, but a finding that never reaches the model
+/// cannot be touched even by a model that ignores it.
+///
+/// Mutation check: drop the `on_link_line` filter in `voice_findings` and the
+/// second assertion below fails (the link-line finding would survive).
+#[test]
+fn voice_findings_drops_a_flagged_line_that_also_carries_a_url() {
+    let document = "SKILLS\nRobust systems design.\n\nPROJECTS\nLedger CLI — leverage the API at \
+                     https://example.com/ledger\n";
+    let report = voice_report(&["Robust", "leverage"]);
+    let findings = voice_findings(&report, document);
+    assert_eq!(findings.len(), 1, "only the non-link-line finding survives");
+    assert!(findings[0].contains("Robust"));
+    assert!(!findings.iter().any(|f| f.contains("leverage")));
+}
+
+#[test]
+fn voice_findings_is_empty_when_every_flag_sits_on_a_link_line() {
+    let document = "PROJECTS\nLedger CLI — leverage the API at https://example.com/ledger\n";
+    let report = voice_report(&["leverage"]);
+    assert!(voice_findings(&report, document).is_empty());
+}
+
+/// Mutation check: drop the length-ratio floor and a truncated answer that is
+/// merely non-empty passes.
+#[test]
+fn is_usable_rewrite_rejects_empty_and_drastically_truncated_answers() {
+    let original = "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience \
+                     building ledger systems for regulated banks.\n";
+    assert!(!is_usable_rewrite(original, ""));
+    assert!(!is_usable_rewrite(original, "   "));
+    assert!(
+        !is_usable_rewrite(original, "Summary."),
+        "far below half the original length"
+    );
+    assert!(is_usable_rewrite(
+        original,
+        "PROFESSIONAL SUMMARY\nA payments engineer with a decade of experience building ledger \
+         systems for regulated banks.\n"
+    ));
+}
+
+#[test]
+fn is_usable_rewrite_has_nothing_to_compare_against_an_empty_original() {
+    assert!(is_usable_rewrite("", "anything non-empty"));
+    assert!(!is_usable_rewrite("", ""));
+}
+
+/// **`humanize_is_worse` widens `round_is_worse` by one clause**: more
+/// `voice.*` flags than before is worse even with the SAME or FEWER Criticals
+/// — `round_is_worse` alone would call this an improvement, because it never
+/// looks at Warnings at all.
+///
+/// Mutation check: drop the `voice_count` clause and this fails.
+#[test]
+fn humanize_is_worse_reverts_on_more_voice_flags_even_with_no_new_criticals() {
+    let before = voice_report(&["robust"]);
+    let after = voice_report(&["robust", "leverage"]);
+    assert!(
+        !round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "round_is_worse alone cannot see a voice-only regression"
+    );
+    assert!(humanize_is_worse(&before, ANY_TEXT, &after, ANY_TEXT));
+}
+
+#[test]
+fn humanize_is_worse_keeps_a_candidate_with_fewer_or_equal_voice_flags() {
+    let before = voice_report(&["robust", "leverage"]);
+    let fewer = voice_report(&["robust"]);
+    let equal = voice_report(&["leverage"]);
+    assert!(!humanize_is_worse(&before, ANY_TEXT, &fewer, ANY_TEXT));
+    assert!(!humanize_is_worse(&before, ANY_TEXT, &equal, ANY_TEXT));
+}
+
+/// The `round_is_worse` half of the rule still applies unchanged: fewer voice
+/// flags does not excuse a NEW Critical.
+#[test]
+fn humanize_is_worse_still_reverts_on_a_new_critical_even_with_fewer_voice_flags() {
+    let before = voice_report(&["robust", "leverage"]);
+    let mut after = voice_report(&["robust"]);
+    after.issues.push(ContentIssue {
+        severity: Severity::Critical,
+        code: crate::validate::content::FACTUAL_UNSOURCED_METRIC,
+        section: None,
+        message: "an invented figure".to_string(),
+        evidence: Some("47%".to_string()),
+    });
+    after.ok = false;
+    assert!(humanize_is_worse(&before, ANY_TEXT, &after, ANY_TEXT));
+}
+
+/// **Zero findings is a zero-cost no-op** — the gate the stage itself applies
+/// before ever building a system prompt, pinned again here at the seam that
+/// actually enforces it.
+///
+/// Mutation check: drop the `findings.is_empty()` early return and the
+/// `called` flag flips true.
+#[tokio::test]
+async fn humanize_one_is_a_zero_cost_no_op_with_no_findings() {
+    let mut called = false;
+    let attempt = humanize_one(
+        live_deadline(),
+        "ORIGINAL".to_string(),
+        ok_report(),
+        Vec::new(),
+        |_text, _findings| {
+            called = true;
+            async move { Ok("must never run".to_string()) }
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { Ok(ok_report()) },
+    )
+    .await
+    .expect("no revalidate call means no error path either");
+    assert!(!called);
+    assert!(!attempt.called);
+    assert!(!attempt.reverted && !attempt.failed && !attempt.timed_out);
+    assert_eq!(attempt.text, "ORIGINAL");
+}
+
+/// **The run's deadline is checked FIRST, before findings are even looked
+/// at** — the in-stage check `repair.rs`'s own module doc argues for, applied
+/// here because `humanize` is now the LAST stage.
+///
+/// Mutation check: check `findings.is_empty()` before `deadline.passed()` and
+/// this still passes (findings is non-empty here) but the NEXT test — an
+/// expired deadline with findings present — is what actually catches a
+/// reordering; both are asserted for the same reason a single case would not
+/// separate the two gates.
+#[tokio::test]
+async fn humanize_one_skips_gracefully_when_the_deadline_has_already_passed() {
+    let mut called = false;
+    let attempt = humanize_one(
+        expired_deadline(),
+        "ORIGINAL".to_string(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| {
+            called = true;
+            async move { Ok("must never run".to_string()) }
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { Ok(ok_report()) },
+    )
+    .await
+    .expect("no revalidate call means no error path either");
+    assert!(!called, "no provider call once the deadline has passed");
+    assert!(!attempt.called);
+    assert!(attempt.timed_out);
+    assert!(!attempt.reverted && !attempt.failed);
+    assert_eq!(
+        attempt.text, "ORIGINAL",
+        "the original document is kept, not discarded"
+    );
+}
+
+/// **A provider error never fails the run — it keeps the original and marks
+/// `failed`.** Mirrors `repair_loop`'s own per-section error policy.
+#[tokio::test]
+async fn humanize_one_keeps_the_original_and_marks_failed_on_a_provider_error() {
+    let attempt = humanize_one(
+        live_deadline(),
+        "ORIGINAL".to_string(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| async move {
+            Err(crate::error::AppError::Provider(
+                "the provider is unreachable".to_string(),
+            ))
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { panic!("revalidate must never run after a provider error") },
+    )
+    .await
+    .expect("a provider error is caught inside humanize_one, never propagated");
+    assert!(attempt.called, "a call WAS attempted");
+    assert!(attempt.failed);
+    assert!(!attempt.reverted && !attempt.timed_out);
+    assert_eq!(attempt.text, "ORIGINAL");
+}
+
+/// An empty/truncated answer is graded as UNUSABLE before it ever reaches
+/// revalidation — never a "successful" call that happened to fail the
+/// accept/revert comparison.
+#[tokio::test]
+async fn humanize_one_keeps_the_original_when_the_answer_is_unusable() {
+    let original = "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience \
+                     building ledger systems.\n";
+    let attempt = humanize_one(
+        live_deadline(),
+        original.to_string(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| async move { Ok(String::new()) },
+        |_candidate: &str| None,
+        |_candidate| async move { panic!("revalidate must never run over an unusable answer") },
+    )
+    .await
+    .expect("no revalidate call means no error path either");
+    assert!(attempt.called);
+    assert!(
+        !attempt.failed,
+        "the call succeeded — the ANSWER was unusable, not the transport"
+    );
+    assert!(
+        !attempt.reverted,
+        "reverted implies it was graded; this never was"
+    );
+    assert_eq!(attempt.text, original);
+}
+
+/// **Revert on an introduced Critical** — `humanize_is_worse`'s `round_is_worse`
+/// half, exercised end to end through the seam.
+#[tokio::test]
+async fn humanize_one_reverts_when_the_candidate_introduces_a_critical() {
+    let before_report = voice_report(&["robust"]);
+    let attempt =
+        humanize_one(
+            live_deadline(),
+            "ORIGINAL TEXT THAT IS REASONABLY LONG".to_string(),
+            before_report,
+            vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+            |_text, _findings| async move {
+                Ok("REWRITTEN TEXT THAT IS ALSO REASONABLY LONG".to_string())
+            },
+            |_candidate: &str| None,
+            |_candidate| async move {
+                let mut after = criticals(1);
+                after.issues[0].evidence = Some("an invented figure".to_string());
+                Ok(after)
+            },
+        )
+        .await
+        .expect("revalidate succeeds");
+    assert!(attempt.called);
+    assert!(attempt.reverted);
+    assert!(!attempt.failed);
+    assert_eq!(attempt.text, "ORIGINAL TEXT THAT IS REASONABLY LONG");
+}
+
+/// **Revert on MORE voice flags, with zero new Criticals** — the clause
+/// `round_is_worse` alone cannot express.
+#[tokio::test]
+async fn humanize_one_reverts_when_the_candidate_has_more_voice_flags_than_before() {
+    let before_report = voice_report(&["robust"]);
+    let attempt =
+        humanize_one(
+            live_deadline(),
+            "ORIGINAL TEXT THAT IS REASONABLY LONG".to_string(),
+            before_report,
+            vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+            |_text, _findings| async move {
+                Ok("REWRITTEN TEXT THAT IS ALSO REASONABLY LONG".to_string())
+            },
+            |_candidate: &str| None,
+            |_candidate| async move { Ok(voice_report(&["robust", "leverage"])) },
+        )
+        .await
+        .expect("revalidate succeeds");
+    assert!(attempt.reverted);
+    assert_eq!(attempt.text, "ORIGINAL TEXT THAT IS REASONABLY LONG");
+}
+
+/// **Accept a candidate that strictly improves — fewer voice flags, no new
+/// Criticals.** The candidate and its FRESH report both ship.
+#[tokio::test]
+async fn humanize_one_accepts_a_candidate_with_fewer_voice_flags() {
+    let before_report = voice_report(&["robust", "leverage"]);
+    let attempt =
+        humanize_one(
+            live_deadline(),
+            "ORIGINAL TEXT THAT IS REASONABLY LONG".to_string(),
+            before_report,
+            vec![
+                "[voice.ai_tell_lexical] robust".to_string(),
+                "[voice.ai_tell_lexical] leverage".to_string(),
+            ],
+            |_text, _findings| async move {
+                Ok("REWRITTEN TEXT THAT IS ALSO REASONABLY LONG".to_string())
+            },
+            |_candidate: &str| None,
+            |_candidate| async move { Ok(voice_report(&["robust"])) },
+        )
+        .await
+        .expect("revalidate succeeds");
+    assert!(!attempt.reverted);
+    assert_eq!(attempt.text, "REWRITTEN TEXT THAT IS ALSO REASONABLY LONG");
+    assert_eq!(voice_count(&attempt.report), 1);
+}
+
+/// **The normalize pass runs BETWEEN the provider's answer and revalidation,
+/// and its output — not the model's raw text — is what gets graded and kept.**
+/// This is what makes an accepted résumé rewrite link-safe BY CONSTRUCTION: a
+/// project link line the model altered is restored before the document is
+/// ever judged, so the accepted text is byte-identical to the source's link
+/// line rather than merely "not flagged this time".
+///
+/// Mutation check: apply `normalize` AFTER `revalidate` instead of before it,
+/// and the `revalidate` closure's own assertion (it must see the NORMALIZED
+/// text) fails.
+#[tokio::test]
+async fn humanize_one_runs_normalize_before_grading_so_an_accepted_candidate_is_link_safe() {
+    let original = "PROJECTS\nLedger CLI — https://github.com/jane/ledger\n";
+    let tampered = "PROJECTS\nLedger CLI — https://evil.example/ledger\n"; // what the model returned
+    let restored = original.to_string(); // what `normalize` restores it to
+    let normalize_called = std::cell::Cell::new(false);
+    let attempt = humanize_one(
+        live_deadline(),
+        original.to_string(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| {
+            let tampered = tampered.to_string();
+            async move { Ok(tampered) }
+        },
+        |candidate: &str| {
+            normalize_called.set(true);
+            assert_eq!(candidate, tampered, "normalize sees the model's RAW answer");
+            Some(restored.clone())
+        },
+        |candidate| {
+            let restored_check = restored.clone();
+            async move {
+                assert_eq!(
+                    candidate, restored_check,
+                    "revalidate must see the NORMALIZED candidate, never the model's raw answer"
+                );
+                Ok(ok_report())
+            }
+        },
+    )
+    .await
+    .expect("revalidate succeeds");
+    assert!(normalize_called.get());
+    assert!(!attempt.reverted);
+    assert_eq!(
+        attempt.text, original,
+        "the accepted text is byte-identical to the source's own link line"
     );
 }
