@@ -188,7 +188,11 @@ pub(crate) fn identity_line(company: &str, title: &str, dates: &str) -> String {
 }
 
 /// ONE project, at whichever tier of the ladder its SEEDED data supports.
-fn render_project(project: &ProjectOut) -> String {
+///
+/// `pub(crate)`: [`crate::pipeline::resume::projects::normalize_projects`]
+/// renders the quality-depth Projects section through this SAME ladder, so
+/// the two depths' output shape cannot silently diverge.
+pub(crate) fn render_project(project: &ProjectOut) -> String {
     let name = project.name.trim();
     let links = project.links.join(PROJECT_SEPARATOR);
     // Tier 3: no stack and no description. A bullet, so the entry still OPENS

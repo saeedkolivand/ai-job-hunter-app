@@ -916,6 +916,29 @@ pub fn canonical_link(raw: &str) -> String {
     }
 }
 
+/// The href inside a link entry, unwrapping a markdown span (`[label](href)`)
+/// captured verbatim by `pipeline::resume::source::seed_one_project`. A bare
+/// URL passes through unchanged.
+///
+/// Lives beside [`canonical_link`], not in `pipeline::resume`, because BOTH
+/// `pipeline::resume::source` (which captures the span) and
+/// `pipeline::resume::projects` (which compares it) need it, and putting it in
+/// either one would make the other import from it — a module cycle. Every
+/// canonical comparison either module makes routes through this first, so a
+/// labeled and a bare copy of the same URL are never treated as two different
+/// links.
+pub fn link_href(link: &str) -> &str {
+    let trimmed = link.trim();
+    let Some(rest) = trimmed.strip_prefix('[') else {
+        return trimmed;
+    };
+    let Some(split) = rest.find("](") else {
+        return trimmed;
+    };
+    let href = &rest[split + 2..];
+    href.strip_suffix(')').unwrap_or(trimmed)
+}
+
 /// Whether a URL span names a RESOURCE rather than a package registry or a
 /// library that happens to be host-shaped: it carries a scheme, a `www.` host,
 /// or a path.

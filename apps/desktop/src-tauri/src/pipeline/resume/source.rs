@@ -24,11 +24,16 @@
 //! would let a truthful document fail a check because the two halves disagreed
 //! about where an entry starts.
 
+use std::sync::LazyLock;
+
+use regex::Regex;
+
 use crate::documents::evidence::{classify_section, SectionKind};
 use crate::export::parser::parse_resume;
-use crate::export::types::{LineKind, ParsedLine};
+use crate::export::types::{LineKind, ParsedDocument, ParsedLine};
 use crate::validate::content::{
-    canonical_link, names_a_resource, project_entry_starts, urls_in, MAX_PROJECT_DESCRIPTION_LINES,
+    canonical_link, link_href, names_a_resource, project_entry_starts, urls_in,
+    MAX_PROJECT_DESCRIPTION_LINES,
 };
 
 use super::types_max::ProjectOut;
@@ -69,8 +74,20 @@ impl SourceSection {
 /// the first too), and picking a different one here would seed from a section
 /// the validator does not grade.
 pub fn section(source: &str, kind: SectionKind) -> Option<SourceSection> {
+    section_from_parsed(source, kind, &parse_resume(source))
+}
+
+/// [`section`] over an ALREADY-parsed document — the same seam
+/// `stages::sections::split_parsed` offers, for a caller that also needs a
+/// [`stages::sections::RawSection`](crate::pipeline::resume::stages::sections::RawSection)
+/// over the SAME text and would otherwise pay for a second `parse_resume`
+/// (`pipeline::resume::projects::build` is exactly that caller).
+pub(crate) fn section_from_parsed(
+    source: &str,
+    kind: SectionKind,
+    parsed: &ParsedDocument,
+) -> Option<SourceSection> {
     let raw: Vec<&str> = source.lines().collect();
-    let parsed = parse_resume(source);
     let mut current: Option<SourceSection> = None;
     for (index, line) in parsed.lines.iter().enumerate() {
         if matches!(line.kind, LineKind::SectionHeader) {
@@ -127,6 +144,9 @@ pub fn education_lines(source: &str) -> Vec<String> {
 /// `consistency::tier_of` decides the tier: a second line without one is a
 /// description that started early, and reading it as a stack would turn the
 /// candidate's prose into a `·`-separated technology list.
+///
+/// A link written as a markdown span (`[Website](href)`) is kept VERBATIM in
+/// `links` rather than reduced to its bare href — see [`seed_one_project`].
 pub fn seed_projects(source: &str) -> Vec<ProjectOut> {
     let Some(section) = section(source, SectionKind::Projects) else {
         return Vec::new();
@@ -141,9 +161,29 @@ pub fn seed_projects(source: &str) -> Vec<ProjectOut> {
 /// `consistency::tier_of` and `factual::project_entry_name` split on.
 const PROJECT_SEPARATORS: [char; 3] = ['·', '|', '•'];
 
+/// A markdown link span in résumé prose: `[label](href)`. Captured VERBATIM by
+/// [`seed_one_project`] — the export renderer (`model::rich::split_urls`)
+/// already turns exactly this shape into a clickable label, so keeping the
+/// span intact here is what carries a source's "Website"/"Github" labels
+/// through seeding and re-rendering instead of losing them to the bare href.
+///
+/// The href group is deliberately UNRESTRICTED (not anchored to `https?://`):
+/// what makes a captured group an actual link is decided AFTER the match, by
+/// running it back through [`urls_in`] — the same grader-facing extractor,
+/// which also accepts a scheme-less `www.` host and a handful of others (see
+/// `factual::URL_RE`). Anchoring this regex to `https?://` would silently
+/// drop the label off `[Website](www.example.com)`.
+static MD_LINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").unwrap());
+
 /// Group one section's non-blank lines into entries, using the SHARED
 /// entry-opening rule.
-fn entries(section: &SourceSection) -> Vec<Vec<&SourceLine>> {
+///
+/// `pub(crate)`: [`crate::pipeline::resume::projects::normalize_projects`]
+/// groups the DRAFT's own Projects section through this exact function, so
+/// the seeder and the normalizer can never disagree about where an entry
+/// starts.
+pub(crate) fn entries(section: &SourceSection) -> Vec<Vec<&SourceLine>> {
     let mut out: Vec<Vec<&SourceLine>> = Vec::new();
     for line in section
         .lines
@@ -162,7 +202,11 @@ fn entries(section: &SourceSection) -> Vec<Vec<&SourceLine>> {
 /// Seed ONE project from its grouped lines. `None` for an entry with no name —
 /// unnamable is unmatchable (`factual::project_entry_name` says the same), and
 /// an entry with no name cannot be re-rendered as the candidate's own.
-fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
+///
+/// `pub(crate)`: [`crate::pipeline::resume::projects::normalize_projects`]
+/// seeds the DRAFT's own Projects section through this exact function, so the
+/// seeder and the normalizer can never disagree about what counts as a link.
+pub(crate) fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
     let title = entry.first()?;
     let head = title
         .parsed
@@ -176,20 +220,80 @@ fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
         return None;
     }
 
-    // Links: the title line's, plus any a description line carries. The STACK
-    // line is filtered through the shared resource test — a bare `crates.io` on
-    // a technology list is the ecosystem, not a link, and `names_a_resource` is
-    // the same call the link Critical makes about it.
+    // Links: the title line's, plus any a description line carries. A
+    // markdown span (`[Website](href)`) is captured FIRST and kept VERBATIM —
+    // the label is what the export renderer turns into a clickable name — and
+    // every dedup comparison below goes through `link_href` so a labeled and a
+    // bare copy of the same URL are never counted as two links. The STACK
+    // line is filtered through the shared resource test — a bare `crates.io`
+    // on a technology list is the ecosystem, not a link, and
+    // `names_a_resource` is the same call the link Critical makes about it.
     let mut links: Vec<String> = Vec::new();
     for (index, line) in entry.iter().enumerate() {
-        let found = urls_in(&line.parsed.text);
-        for url in found {
+        let text = &line.parsed.text;
+        let mut spanned: Vec<String> = Vec::new(); // hrefs already captured as a labeled span
+                                                   // Byte ranges of matches actually CONSUMED as a link — the ONLY ones
+                                                   // stripped before the bare-URL pass below. A match the single-URL or
+                                                   // resource guard SKIPPED (a `[1](note)` footnote, a multi-URL
+                                                   // parenthetical) is left in place, or its own bare URL(s) would be
+                                                   // silently deleted along with the bracket text around them instead of
+                                                   // reaching that pass.
+        let mut captured_ranges: Vec<(usize, usize)> = Vec::new();
+        for caps in MD_LINK_RE.captures_iter(text) {
+            let whole = caps.get(0).unwrap();
+            // The bracketed content is only a LINK when its href is one by
+            // the SAME rule `urls_in` grades with — a `[1](note)` footnote or
+            // a URL-shaped LABEL paired with an unrelated href is not one, and
+            // matching a SINGLE candidate keeps a multi-URL parenthetical
+            // (rare, but not a link either) out too.
+            let candidates = urls_in(&caps[2]);
+            let [href] = candidates.as_slice() else {
+                continue; // not a link at all — leave it for the bare pass
+            };
+            if index == 1 && !names_a_resource(href) {
+                continue; // a stack-line non-resource — leave it too
+            }
+            captured_ranges.push((whole.start(), whole.end()));
+            spanned.push(canonical_link(href));
+            if links
+                .iter()
+                .any(|kept| canonical_link(link_href(kept)) == canonical_link(href))
+            {
+                continue;
+            }
+            // Only WRITE the labeled span when it round-trips: balanced
+            // brackets, and re-extracting it through `urls_in` yields exactly
+            // this href back. An href containing its own unescaped `)` (a
+            // Wikipedia-shaped URL) truncates this regex's own capture, which
+            // would otherwise write an unbalanced, unparseable span into the
+            // document. The bare (verified) href is always safe.
+            let span = whole.as_str().to_string();
+            let balanced = span.matches('(').count() == span.matches(')').count();
+            let round_trips = urls_in(&span) == [href.clone()];
+            links.push(if balanced && round_trips {
+                span
+            } else {
+                href.clone()
+            });
+        }
+        // Bare URLs, over the line with only the CAPTURED spans blanked out
+        // — otherwise a URL-shaped LABEL (`[https://other](https://real)`)
+        // gets harvested a second time as if it were its own link, while a
+        // SKIPPED span's own bare URL(s) still reach this pass.
+        let mut stripped = text.clone();
+        for (start, end) in captured_ranges.iter().rev() {
+            stripped.replace_range(*start..*end, " ");
+        }
+        for url in urls_in(&stripped) {
             if index == 1 && !names_a_resource(&url) {
                 continue;
             }
+            if spanned.contains(&canonical_link(&url)) {
+                continue; // already captured as part of a labeled span above
+            }
             if !links
                 .iter()
-                .any(|kept| canonical_link(kept) == canonical_link(&url))
+                .any(|kept| canonical_link(link_href(kept)) == canonical_link(&url))
             {
                 links.push(url);
             }

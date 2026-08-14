@@ -83,7 +83,7 @@ use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::resume::stages::{self, regenerate_one_section, section_gen, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
-use crate::pipeline::resume::{QualityCtx, QualityInput, RunDeadline, RunLedger};
+use crate::pipeline::resume::{projects, QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
@@ -938,7 +938,7 @@ pub async fn resume_pipeline_regenerate_section(
         "pipeline:resume",
         format!("op=regenerate_section key={}", key.to_wire()),
     );
-    let source = source_resume_for(&app, &row, &record);
+    let (source, source_is_provenanced) = source_resume_for(&app, &row, &record);
     // Routed through the SAME per-stage path a run takes — and through the
     // stage whose PROMPT each sub-path actually uses. Each is resolved INSIDE
     // the branch that uses it, so a click only ever resolves the routing it
@@ -997,6 +997,9 @@ pub async fn resume_pipeline_regenerate_section(
         }
     };
 
+    let (spliced, projects_normalize_skipped) =
+        normalize_regenerated_projects(key, &source, source_is_provenanced, spliced);
+
     // The merge rule again: this save writes `resume_text`, so it carries a
     // FRESH report over the spliced document — never the stale one the panel
     // was showing.
@@ -1023,11 +1026,17 @@ pub async fn resume_pipeline_regenerate_section(
     // failing second statement) persists a document with the PREVIOUS
     // document's report — the exact state the rule exists to make impossible.
     generations.update_text_and_report(&record.id, spliced, wrapper)?;
+    // Content-free (ADR-027): a code, never the document — the same reason
+    // vocabulary `Draft::run`'s ledger artifact uses, so a declined Projects
+    // normalization on a manual regenerate is as observable as it is on a run.
     span.end_with(
         &format!(
-            "issues={} blocking={}",
+            "issues={} blocking={}{}",
             report.issues.len(),
-            report::has_criticals(&report)
+            report::has_criticals(&report),
+            projects_normalize_skipped
+                .map(|reason| format!(" projectsNormalizeSkipped={reason}"))
+                .unwrap_or_default()
         ),
         true,
     );
@@ -1247,7 +1256,8 @@ pub async fn resume_pipeline_resolve_fabrication(
     Ok(detail(&app, &row))
 }
 
-/// The SOURCE résumé a re-validation must measure against.
+/// The SOURCE résumé a re-validation must measure against, plus whether it is
+/// a REAL provenance hit rather than the fallback.
 ///
 /// A generation record stores the OUTPUT, not the input it was built from, so
 /// the source is looked up through the id the run recorded as provenance (see
@@ -1257,8 +1267,16 @@ pub async fn resume_pipeline_resolve_fabrication(
 /// re-validated report comes back WEAKER than the run's original rather than
 /// wrong. Weaker-and-honest beats a fabricated Critical against a source this
 /// document was never written from.
-fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord) -> String {
-    serde_json::from_str::<Value>(&row.metrics_json)
+///
+/// The `bool` is why this returns a pair rather than the string alone: that
+/// fallback is fine for VALIDATION (grading against your own output finds
+/// nothing, so it degrades safely), but it is not a WRITE authority — seeding
+/// `projects::normalize_projects` from the generated text would "restore"
+/// links out of the document it is about to overwrite, i.e. codify whatever
+/// the last generation happened to say as fact. Callers that write must check
+/// this flag; callers that only validate may ignore it.
+fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord) -> (String, bool) {
+    let hit = serde_json::from_str::<Value>(&row.metrics_json)
         .ok()
         .and_then(|metrics| {
             metrics
@@ -1266,7 +1284,55 @@ fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord)
                 .and_then(Value::as_str)
                 .map(str::to_string)
         })
-        .and_then(|id| app.state::<DocumentStore>().get(&id))
-        .map(|document| document.text)
-        .unwrap_or_else(|| record.resume_text.clone())
+        .and_then(|id| app.state::<DocumentStore>().get(&id));
+    match hit {
+        Some(document) => (document.text, true),
+        None => (record.resume_text.clone(), false),
+    }
+}
+
+/// The pure decision behind `resume_pipeline_regenerate_section`'s Projects
+/// normalization — pulled out of the command so it is unit-testable without
+/// an `AppHandle`/store. Deterministic, zero-cost: a REGENERATE-PROJECTS
+/// click can rewrite the Projects section too (the whole-section rewrite
+/// fallback is a free-text rewrite, not scoped by content), so the same
+/// code-owned normalization the run itself applies must run here before the
+/// fresh report is computed — otherwise a click could persist an altered
+/// project link the run would never have let through.
+///
+/// Scoped to `key == Projects` ONLY: normalizing on every OTHER section's
+/// regenerate would silently revert the user's own manual edits to Projects
+/// every time they regenerate, say, Skills.
+///
+/// Gated on `source_is_provenanced`: [`source_resume_for`] falls back to the
+/// run's own GENERATED text when `sourceResumeId` is missing/deleted, which
+/// is fine for grading (measuring text against itself finds nothing) but not
+/// for WRITING — seeding the normalizer from the document it is about to
+/// overwrite would "restore" whatever the last generation said as if it were
+/// the candidate's own source.
+///
+/// Returns the (possibly normalized) text PLUS a content-free reason
+/// (ADR-027) when normalization declined to run — `key != Projects` reports
+/// none (there was nothing to attempt), but every other decline is
+/// observable, the same way `Draft::run`'s `apply_projects_normalization`
+/// reports one on the run's ledger. The caller folds it into the command's
+/// own `Span`.
+pub(crate) fn normalize_regenerated_projects(
+    key: SectionKey,
+    source: &str,
+    source_is_provenanced: bool,
+    spliced: String,
+) -> (String, Option<&'static str>) {
+    if key != SectionKey::Projects {
+        return (spliced, None);
+    }
+    if !source_is_provenanced {
+        return (spliced, Some("unprovenanced_source"));
+    }
+    let (project_seeds, seed_skip_reason) = projects::seed_projects_for_normalize(source);
+    match projects::normalize_projects_outcome(&spliced, &project_seeds) {
+        projects::ProjectsNormalizeOutcome::Applied(text, _) => (text, None),
+        projects::ProjectsNormalizeOutcome::Skipped(reason) => (spliced, Some(reason)),
+        projects::ProjectsNormalizeOutcome::NoOp => (spliced, seed_skip_reason),
+    }
 }
