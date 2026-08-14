@@ -24,12 +24,24 @@ interface Props {
   onChange: (text: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** See `useResumeInput`'s `docId` — the host's current belief of which
+   *  saved doc backs `value`, re-seeded on every mount. Pair with
+   *  `onDocIdChange` so a hand-edit after this card remounts still clears
+   *  the host's stale id instead of silently keeping it. */
+  docId?: string | null;
   /** See `useResumeInput`'s `onDocIdChange` — omit unless the caller cares
    *  which saved doc (if any) backs the current text. */
   onDocIdChange?: (id: string | null) => void;
 }
 
-export function ResumeInputCard({ value, onChange, disabled, placeholder, onDocIdChange }: Props) {
+export function ResumeInputCard({
+  value,
+  onChange,
+  disabled,
+  placeholder,
+  docId,
+  onDocIdChange,
+}: Props) {
   const { t } = useTranslation();
   const {
     fileRef,
@@ -65,7 +77,7 @@ export function ResumeInputCard({ value, onChange, disabled, placeholder, onDocI
     toggleUrlInput,
     review,
     clearReview,
-  } = useResumeInput({ value, onChange, onDocIdChange });
+  } = useResumeInput({ value, onChange, docId, onDocIdChange });
 
   // Label for the resting chip: the loaded doc's title, else a generic label
   // when the text came from a paste / profile import (no backing doc).

@@ -102,3 +102,43 @@ describe('useResumeInput — onDocIdChange', () => {
     ).not.toThrow();
   });
 });
+
+describe('useResumeInput — remount regression (stale doc id after a hand-edit)', () => {
+  // Repro: TailorWizard renders `{step === 1 && <StepResume />}`, so
+  // ResumeInputCard — and this hook — REMOUNTS on every visit to the resume
+  // step, resetting any component-local state. The surrounding form does
+  // NOT reset, so `docId` here stands in for the host re-seeding this hook
+  // from its own already-selected id (as `StepResume` does via
+  // `getValues('resumeDocId')`) on that fresh mount.
+
+  it('clears a host-seeded doc id (and notifies the host) on a post-remount hand edit', () => {
+    const onDocIdChange = vi.fn();
+    const onChange = vi.fn();
+    const { result } = renderHook(
+      () => useResumeInput({ value: 'existing text', onChange, docId: 'doc-1', onDocIdChange }),
+      { wrapper }
+    );
+
+    // The remount itself must not lose the host's id — this is what makes
+    // the edit below reachable at all.
+    expect(result.current.selectedDocId).toBe('doc-1');
+
+    act(() => result.current.handleTextChange('hand-edited text'));
+
+    expect(onChange).toHaveBeenCalledWith('hand-edited text');
+    expect(onDocIdChange).toHaveBeenCalledWith(null);
+    expect(result.current.selectedDocId).toBeNull();
+  });
+
+  it('happy path: a doc-backed id survives a remount when the text is left unedited', () => {
+    const onDocIdChange = vi.fn();
+    const onChange = vi.fn();
+    const { result } = renderHook(
+      () => useResumeInput({ value: 'existing text', onChange, docId: 'doc-1', onDocIdChange }),
+      { wrapper }
+    );
+
+    expect(result.current.selectedDocId).toBe('doc-1');
+    expect(onDocIdChange).not.toHaveBeenCalled();
+  });
+});

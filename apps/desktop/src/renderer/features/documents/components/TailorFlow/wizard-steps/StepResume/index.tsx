@@ -9,7 +9,7 @@ import type { TailorWizardState } from '../../lib/tailor-state';
 /** Resume input step — the resume text is the only gated field of the wizard. */
 export function StepResume() {
   const { t } = useTranslation();
-  const { control, setValue } = useFormContext<TailorWizardState>();
+  const { control, setValue, getValues } = useFormContext<TailorWizardState>();
 
   return (
     <div className="space-y-4">
@@ -30,6 +30,11 @@ export function StepResume() {
             <ResumeInputCard
               value={field.value}
               onChange={field.onChange}
+              // Re-seeds ResumeInputCard's local selection on every mount —
+              // this step unmounts/remounts as the wizard steps change, and
+              // without this the card would forget the form already has a
+              // `resumeDocId` and fail to clear it on a post-remount edit.
+              docId={getValues('resumeDocId') ?? null}
               // Not a user-visible field (no Controller/gate of its own) —
               // just rides along so a doc-backed, unedited résumé can send
               // `resumeId` on the pipeline run instead of the free text.

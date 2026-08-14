@@ -25,6 +25,18 @@ interface Params {
   value: string;
   onChange: (text: string) => void;
   /**
+   * Host-owned seed for `selectedDocId` — the id the host already believes
+   * backs `value` (e.g. a form's `resumeDocId` field). Only read once, as the
+   * `useState` initializer: this component remounts every time its wizard
+   * step is revisited (`{step === 1 && <StepResume />}`), which resets any
+   * component-local state, while the host's form does NOT reset. Without this
+   * seed, a post-remount hand-edit compares against a local `null` instead of
+   * the host's real id and never fires `onDocIdChange`, so the host keeps
+   * sending a stale doc id for text the user has since edited. Omit it and
+   * this hook behaves exactly as before (starts unselected).
+   */
+  docId?: string | null;
+  /**
    * Surfaces which saved doc backs the current text — `null` when it came
    * from a manual paste/upload/profile-import edit, or once the loaded doc's
    * text has been hand-edited. The one consumer today (the apply flow's
@@ -35,7 +47,7 @@ interface Params {
 }
 
 /** State + behavior for ResumeInputCard: saved docs, upload, paste, profile import. */
-export function useResumeInput({ value, onChange, onDocIdChange }: Params) {
+export function useResumeInput({ value, onChange, docId, onDocIdChange }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
   const api = useAppClient();
@@ -59,7 +71,9 @@ export function useResumeInput({ value, onChange, onDocIdChange }: Params) {
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   // Which saved resume is currently loaded into the editor (null when the text
   // came from an upload, paste, or profile import rather than a saved doc).
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  // Seeded from the host's `docId` so a remount (see the `docId` doc comment
+  // above) doesn't desync this from what the host already believes.
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(docId ?? null);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [profileUrl, setProfileUrl] = useState('');
 
