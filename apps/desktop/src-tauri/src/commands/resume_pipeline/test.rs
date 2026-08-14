@@ -1342,6 +1342,14 @@ fn source_resume_id_for_metrics_is_some_only_on_the_store_path() {
 /// needs an `AppHandle` this crate has no harness for, so "it actually calls
 /// the resolve functions rather than a reintroduced inline branch" is
 /// otherwise provable only by reading the code.
+///
+/// Every check below matches the function name plus its open paren, never
+/// the argument list: pinning the exact local-variable spelling passed at
+/// the call site would be the same lexical-substring anti-pattern this
+/// module's pure functions were split out to AVOID for the decision itself
+/// (see `resolve.rs`'s module doc) — brittle to a harmless rename or a
+/// rustfmt re-wrap of a long call, and no more provable than the name check
+/// alone, since this test already disclaims branch semantics.
 #[test]
 fn execute_routes_resolution_through_the_pure_resolve_functions() {
     let source = include_str!("mod.rs");
@@ -1354,11 +1362,11 @@ fn execute_routes_resolution_through_the_pure_resolve_functions() {
         "execute must resolve the job ad through resolve::resolve_job"
     );
     assert!(
-        source.contains("resolve::source_resume_id_for_metrics(resume_choice)"),
+        source.contains("resolve::source_resume_id_for_metrics("),
         "sourceResumeId must be gated through resolve::source_resume_id_for_metrics"
     );
     assert!(
-        source.contains("resolve::run_store_job_url(&job_url, job_choice)"),
+        source.contains("resolve::run_store_job_url("),
         "the run row's own job_url must route through resolve::run_store_job_url, \
          not reuse the aggregate's job_url directly"
     );
