@@ -18,7 +18,7 @@ use super::stages::verbatim::is_verbatim;
 use super::stages::{
     criticals_by_section, ground, humanize_is_worse, humanize_one, is_usable_rewrite, reseed,
     round_is_worse, seed_company_roster, should_humanize_letter, voice_count, voice_findings,
-    HumanizeTierKind, MAX_COMPANY_PLANS,
+    MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
@@ -2383,21 +2383,17 @@ fn voice_findings_is_empty_when_every_flag_sits_on_a_link_line() {
 fn is_usable_rewrite_rejects_empty_and_drastically_truncated_answers() {
     let original = "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience \
                      building ledger systems for regulated banks.\n";
-    assert!(!is_usable_rewrite(original, "", HumanizeTierKind::Resume));
-    assert!(!is_usable_rewrite(
-        original,
-        "   ",
-        HumanizeTierKind::Resume
-    ));
+    assert!(!is_usable_rewrite(original, "", HumanizeTier::Resume));
+    assert!(!is_usable_rewrite(original, "   ", HumanizeTier::Resume));
     assert!(
-        !is_usable_rewrite(original, "Summary.", HumanizeTierKind::Resume),
+        !is_usable_rewrite(original, "Summary.", HumanizeTier::Resume),
         "far below half the original length"
     );
     assert!(is_usable_rewrite(
         original,
         "PROFESSIONAL SUMMARY\nA payments engineer with a decade of experience building ledger \
          systems for regulated banks.\n",
-        HumanizeTierKind::Resume
+        HumanizeTier::Resume
     ));
 }
 
@@ -2406,9 +2402,9 @@ fn is_usable_rewrite_has_nothing_to_compare_against_an_empty_original() {
     assert!(is_usable_rewrite(
         "",
         "anything non-empty",
-        HumanizeTierKind::Resume
+        HumanizeTier::Resume
     ));
-    assert!(!is_usable_rewrite("", "", HumanizeTierKind::Resume));
+    assert!(!is_usable_rewrite("", "", HumanizeTier::Resume));
 }
 
 /// **The tier split, pinned at one exact ratio.** 60% of the original clears
@@ -2424,11 +2420,11 @@ fn is_usable_rewrite_tier_split_is_pinned_at_sixty_percent() {
     let candidate_60_percent = "B".repeat(60);
 
     assert!(
-        is_usable_rewrite(&original, &candidate_60_percent, HumanizeTierKind::Resume),
+        is_usable_rewrite(&original, &candidate_60_percent, HumanizeTier::Resume),
         "60% clears the résumé's generous 50% floor"
     );
     assert!(
-        !is_usable_rewrite(&original, &candidate_60_percent, HumanizeTierKind::Letter),
+        !is_usable_rewrite(&original, &candidate_60_percent, HumanizeTier::Letter),
         "60% fails the letter's strict 90% floor — its only backstop against content loss"
     );
 }
@@ -2523,7 +2519,7 @@ async fn humanize_one_is_a_zero_cost_no_op_with_no_findings() {
         },
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
-        HumanizeTierKind::Resume,
+        HumanizeTier::Resume,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -2556,7 +2552,7 @@ async fn humanize_one_skips_gracefully_when_the_deadline_has_already_passed() {
         },
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
-        HumanizeTierKind::Resume,
+        HumanizeTier::Resume,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -2586,7 +2582,7 @@ async fn humanize_one_keeps_the_original_and_marks_failed_on_a_provider_error() 
         },
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run after a provider error") },
-        HumanizeTierKind::Resume,
+        HumanizeTier::Resume,
     )
     .await
     .expect("a provider error is caught inside humanize_one, never propagated");
@@ -2611,7 +2607,7 @@ async fn humanize_one_keeps_the_original_when_the_answer_is_unusable() {
         |_text, _findings| async move { Ok(String::new()) },
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run over an unusable answer") },
-        HumanizeTierKind::Resume,
+        HumanizeTier::Resume,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -2650,7 +2646,7 @@ async fn humanize_one_keeps_the_original_letter_when_the_candidate_is_truncated_
         },
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run over an unusable letter") },
-        HumanizeTierKind::Letter,
+        HumanizeTier::Letter,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -2689,7 +2685,7 @@ async fn humanize_one_accepts_a_resume_candidate_truncated_to_sixty_percent_when
         },
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
-        HumanizeTierKind::Resume,
+        HumanizeTier::Resume,
     )
     .await
     .expect("revalidate succeeds");
@@ -2717,7 +2713,7 @@ async fn humanize_one_reverts_when_the_candidate_introduces_a_critical() {
                 after.issues[0].evidence = Some("an invented figure".to_string());
                 Ok(after)
             },
-            HumanizeTierKind::Resume,
+            HumanizeTier::Resume,
         )
         .await
         .expect("revalidate succeeds");
@@ -2743,7 +2739,7 @@ async fn humanize_one_reverts_when_the_candidate_has_more_voice_flags_than_befor
             },
             |_candidate: &str| None,
             |_candidate| async move { Ok(voice_report(&["robust", "leverage"])) },
-            HumanizeTierKind::Resume,
+            HumanizeTier::Resume,
         )
         .await
         .expect("revalidate succeeds");
@@ -2770,7 +2766,7 @@ async fn humanize_one_accepts_a_candidate_with_fewer_voice_flags() {
             },
             |_candidate: &str| None,
             |_candidate| async move { Ok(voice_report(&["robust"])) },
-            HumanizeTierKind::Resume,
+            HumanizeTier::Resume,
         )
         .await
         .expect("revalidate succeeds");
@@ -2819,7 +2815,7 @@ async fn humanize_one_runs_normalize_before_grading_so_an_accepted_candidate_is_
                 Ok(ok_report())
             }
         },
-        HumanizeTierKind::Resume,
+        HumanizeTier::Resume,
     )
     .await
     .expect("revalidate succeeds");
