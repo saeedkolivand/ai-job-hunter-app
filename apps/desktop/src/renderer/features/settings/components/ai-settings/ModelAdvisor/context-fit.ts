@@ -21,7 +21,6 @@ const RESUME = 8_000; // agent/tools.rs RESUME_CAP
 const JOB = 8_000; // agent/tools.rs JOB_CAP
 const NOTE = 500; // prompts.rs NOTE_CAP
 const SECTION = 4_000; // prompts.rs SECTION_CAP
-const DOCUMENT = 12_000; // section_prompts.rs DOCUMENT_CAP — what the judge reads
 
 /**
  * Worst-case prompt INPUT per stage, in characters — the sum of that stage's
@@ -32,10 +31,10 @@ const DOCUMENT = 12_000; // section_prompts.rs DOCUMENT_CAP — what the judge r
  * - `strategy`       candidate_resume + job_analysis + evidence_map
  * - `draft`          candidate_resume + job_posting + resume_strategy (the
  *                    ~32 k figure the Rust doc comment states)
- * - `sections`       source_entry + job_analysis + resume_strategy slice +
- *                    evidence_map + project_seed (projects only) + section_note
  * - `repair`         candidate_resume + resume_section + section_issues + note
- * - `llm_judge`      generated_resume + job_posting + job_analysis
+ *
+ * There used to be two more entries here, `sections` and `llm_judge` — the
+ * `max` generation depth's own stages, removed along with it.
  *
  * Every artifact term is charged at its full cap even though the measured worst
  * cases sit well under it (evidence_map 15 199 chars, strategy 7 553) — this is
@@ -46,12 +45,10 @@ export const STAGE_WORST_CASE_CHARS: Partial<Record<PipelineStage, number>> = {
   match_evidence: RESUME + ARTIFACT,
   strategy: RESUME + ARTIFACT * 2,
   draft: RESUME + JOB + ARTIFACT,
-  sections: SECTION + ARTIFACT * 4 + NOTE,
   repair: RESUME + SECTION + ARTIFACT + NOTE,
-  llm_judge: DOCUMENT + JOB + ARTIFACT,
-  // PARTIAL on purpose: the free stages (`assemble`, `validate`) send no prompt
-  // at all. Keyed by `PipelineStage` all the same, so a stage renamed upstream
-  // is a compile error here rather than a silently dead entry.
+  // PARTIAL on purpose: the free stage (`validate`) sends no prompt at all.
+  // Keyed by `PipelineStage` all the same, so a stage renamed upstream is a
+  // compile error here rather than a silently dead entry.
 };
 
 /**
@@ -115,9 +112,10 @@ export interface ContextFitInput {
 
 /**
  * The stage with the largest worst-case prompt — COMPUTED, because the answer
- * is not the obvious one: `sections` carries four artifacts and is 2.1× the
- * draft turn, so naming `draft` in the copy (as an early version did) was
- * simply false against this module's own table.
+ * is not the obvious one: `strategy` carries two artifact-sized terms
+ * (`candidate_resume` + `job_analysis` + `evidence_map`) and is larger than
+ * `draft`, so naming `draft` in the copy would be false against this module's
+ * own table.
  */
 export function worstCaseStage(): { stage: PipelineStage; chars: number; tokens: number } {
   const [stage, chars] = Object.entries(STAGE_WORST_CASE_CHARS).reduce((a, b) =>

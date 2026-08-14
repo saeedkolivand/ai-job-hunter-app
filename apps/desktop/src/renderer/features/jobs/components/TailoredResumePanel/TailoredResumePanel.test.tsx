@@ -292,8 +292,6 @@ describe('TailoredResumePanel — starting a run', () => {
       resumeId: 'doc-1',
       jobId: 'posting-1',
       jobUrl: POSTING.url,
-      // Hardcoded — the only depth this panel ever sends.
-      depth: 'quality',
       targetLanguage: 'en',
       topRequirements: [],
       coverLetterText: '',

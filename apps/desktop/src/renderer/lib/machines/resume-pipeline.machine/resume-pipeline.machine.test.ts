@@ -9,7 +9,7 @@ import {
   statusToEvent,
 } from './resume-pipeline.machine';
 
-/** The eight quality-depth stages, in the order `quality_pipeline()` runs them. */
+/** The eight stages, in the order `quality_pipeline()` runs them. */
 const STAGES = [
   'analyze_job',
   'match_evidence',
@@ -19,22 +19,6 @@ const STAGES = [
   'validate',
   'repair',
   'humanize',
-] as const;
-
-/**
- * The eight max-depth stages, in `MAX_STAGES` order — `draft` split into
- * `sections` + `assemble`, and the judge LAST, after repair, because it grades
- * the finished document.
- */
-const MAX_STAGES = [
-  'analyze_job',
-  'match_evidence',
-  'strategy',
-  'sections',
-  'assemble',
-  'validate',
-  'repair',
-  'llm_judge',
 ] as const;
 
 describe('resumePipelineMachine', () => {
@@ -67,34 +51,11 @@ describe('resumePipelineMachine', () => {
     expect(state).toBe('humanizing');
   });
 
-  it('maps the three max-only stages, none of them to a terminal state', () => {
-    // Phase 4. `sections` and `assemble` are max depth's split of `draft`, and
-    // the judge — which runs LAST, after repair — is a review pass over the
-    // finished document, so it reads as checking rather than repairing.
-    expect(stageToEvent('sections', 'start')).toBe('DRAFT');
-    expect(stageToEvent('assemble', 'start')).toBe('DRAFT');
-    expect(stageToEvent('llm_judge', 'start')).toBe('VALIDATE');
-  });
-
   it('leaves an unknown stage name where it is instead of guessing', () => {
-    // A stage added to a FUTURE depth this build predates. It must not guess:
-    // the dots still advance off index/total, and the run record still ends it.
+    // A stage this build predates (or one a later build renames a stage to).
+    // It must not guess: the dots still advance off index/total, and the run
+    // record still ends it.
     expect(stageToEvent('a_stage_from_a_later_build', 'start')).toBeNull();
-  });
-
-  it('walks the whole max stage list and lands in `validating`, still busy', () => {
-    let state: ResumePipelineState = transition(resumePipelineMachine, 'idle', 'START');
-    for (const stage of MAX_STAGES) {
-      for (const phase of ['start', 'finish'] as const) {
-        const event = stageToEvent(stage, phase);
-        if (event) state = transition(resumePipelineMachine, state, event);
-      }
-    }
-    // The judge is the last stage, so a max run ends its trail in `validating`
-    // rather than `repairing` — and, exactly like quality, still busy.
-    expect(state).toBe('validating');
-    expect(resumePipelineMachine.busyStates).toContain(state);
-    expect(state).not.toBe('done');
   });
 
   // ── The load-bearing guard ────────────────────────────────────────────────
@@ -105,12 +66,9 @@ describe('resumePipelineMachine', () => {
   // rounds still ahead. If a stage `finish` were terminal here, the panel would
   // show an unvalidated, unrepaired draft as the finished résumé.
   describe('no stage event may end a run', () => {
-    it.each([...new Set([...STAGES, ...MAX_STAGES])])(
-      'a `finish` on stage "%s" produces no machine event',
-      (stage) => {
-        expect(stageToEvent(stage, 'finish')).toBeNull();
-      }
-    );
+    it.each(STAGES)('a `finish` on stage "%s" produces no machine event', (stage) => {
+      expect(stageToEvent(stage, 'finish')).toBeNull();
+    });
 
     it('the LAST stage finishing leaves the machine busy, not done', () => {
       let state: ResumePipelineState = transition(resumePipelineMachine, 'idle', 'START');

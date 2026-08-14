@@ -203,12 +203,6 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     return detected === 'unknown' ? 'en' : detected;
   }, [posting.description]);
 
-  /**
-   * The only depth this panel ever sends. There is no picker any more (PR-4
-   * dropped it) and no `max` to route to either — `quality` is what the fast
-   * one-shot path next to this panel cannot do, which is the entire reason
-   * this panel exists.
-   */
   const handleStart = async () => {
     if (!resume || !providerReady) return;
     setStopRequested(false);
@@ -216,7 +210,6 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
       resumeId: resume.id,
       jobId: posting.id,
       jobUrl: posting.url,
-      depth: 'quality',
       targetLanguage,
       // Budget and routing are backend-owned; the JD analysis is a STAGE of
       // the run, so there are no requirements to hand it and no letter in

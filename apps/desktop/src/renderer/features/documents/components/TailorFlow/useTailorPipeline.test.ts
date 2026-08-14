@@ -23,12 +23,9 @@ const KNOWN_I18N_KEYS = new Set([
     'strategy',
     'draft',
     'cover_letter',
-    'sections',
-    'assemble',
     'validate',
     'repair',
     'humanize',
-    'llm_judge',
   ].map((s) => `pipeline.stage.${s}`),
   ...['queued', 'preparing', 'drafting', 'validating', 'repairing', 'humanizing'].map(
     (s) => `pipeline.state.${s}`
@@ -375,8 +372,8 @@ describe('useTailorPipeline — the 4-step checklist position', () => {
     rerender();
     expect(result.current.currentStep).toBe(2);
 
-    // max-depth-only stage name — this build doesn't map it, so it holds.
-    sessionBus.stage = { stage: 'sections', phase: 'start' };
+    // A stage name this build doesn't map — it holds rather than regressing.
+    sessionBus.stage = { stage: 'a_future_stage', phase: 'start' };
     rerender();
     expect(result.current.currentStep).toBe(2);
   });

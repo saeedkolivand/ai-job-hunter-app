@@ -4,14 +4,12 @@ import type { PipelineRunStatus } from '@ajh/shared/ipc';
 import { createMachine } from '@/lib/machine';
 
 /**
- * Staged résumé-generation (quality AND max depth) run state machine.
+ * Staged résumé-generation run state machine.
  *
- * One `resumePipeline.run` walks the Rust stage list for its depth — eight at
- * quality (`analyze_job`, `match_evidence`, `strategy`, `draft`,
- * `cover_letter`, `validate`, `repair`, `humanize`) and eight at max (`draft`
- * splits into `sections` + `assemble`, no `cover_letter`/`humanize`, and
- * `llm_judge` runs LAST, after `repair`) — and this machine folds either list
- * into the same coarse states:
+ * One `resumePipeline.run` walks the Rust stage list — eight stages
+ * (`analyze_job`, `match_evidence`, `strategy`, `draft`, `cover_letter`,
+ * `validate`, `repair`, `humanize`) — and this machine folds it into coarse
+ * states:
  *
  *   idle → queued → preparing → drafting → validating → repairing → humanizing
  *                                                     ↘ done | needsReview | cancelled | error
@@ -19,29 +17,25 @@ import { createMachine } from '@/lib/machine';
  * The three JSON extraction stages collapse into one `preparing` state because
  * they are indistinguishable to a user (nothing streams, no document exists
  * yet); `index`/`total` off the event carries the real granularity into the
- * progress dots. `stageToEvent` keys on the stage NAME, not on its index,
- * precisely because the two depths run different lists.
+ * progress dots. `stageToEvent` keys on the stage NAME.
+ *
+ * There used to be a second, `max`-depth, stage list here too — `draft` split
+ * into `sections` + `assemble`, no `cover_letter`/`humanize`, and `llm_judge`
+ * ran LAST, after `repair`. It was removed along with the `max` generation
+ * depth; `STAGE_EVENTS` below no longer needs to fold either name.
  *
  * **`cover_letter` folds into `drafting`** (PR-2) — it is a second streamed
  * pass writing a second document, the same "the document is being written"
- * meaning `sections`/`assemble` already share with `draft`. **`humanize` gets
- * its OWN state, `humanizing`** — it is quality depth's own LAST stage, a
- * distinct "removing AI signs" phase the stepper UI (PR-3) shows as its own
- * step, unlike `cover_letter` which has no separate row.
- *
- * **A max run still ends in `validating`, not `repairing` or `humanizing`** —
- * the judge is a review pass over the finished document and reads as checking,
- * max depth has no `humanize` stage at all, and the ordering is the backend's
- * (`MAX_STAGES`), not this machine's opinion. Nothing downstream depends on
- * which busy state the last stage leaves behind: every busy state is equally
- * non-terminal, which is the invariant below.
+ * meaning `draft` already carries. **`humanize` gets its OWN state,
+ * `humanizing`** — it is the pipeline's own LAST stage, a distinct "removing
+ * AI signs" phase the stepper UI (PR-3) shows as its own step, unlike
+ * `cover_letter` which has no separate row.
  *
  * ## The one rule this machine exists to enforce
  *
  * **No stage event is terminal.** {@link stageToEvent} can never return
  * `COMPLETE`/`NEEDS_REVIEW`, and the last stage's `finish` leaves the machine in
- * a BUSY state (`repairing` at quality depth, `validating` at max). Two
- * independent reasons, both load-bearing:
+ * a BUSY state (`humanizing`). Two independent reasons, both load-bearing:
  *
  * 1. The draft stage streams under the run's own umbrella `jobId`, so the shared
  *    stream machinery fires `job_complete` (and resolves `awaitAiStream`) the
@@ -151,42 +145,24 @@ export const RESUME_PIPELINE_BUSY_STATES: readonly ResumePipelineState[] =
  * A name this build doesn't know (a stage added after it shipped) maps to
  * nothing and leaves the machine where it is, which is honest: the progress
  * dots still advance off `index`/`total`.
- *
- * Both depths' lists live in one map because the names are unique across them:
- * quality's `draft` and max's `sections`/`assemble` are three different stages
- * that all mean "the document is being written", and `llm_judge` is max-only.
- * Keying on the name (rather than on a per-depth list) is also what keeps a
- * depth this build cannot enumerate from mapping to the WRONG state — it maps
- * to none.
  */
 const STAGE_EVENTS: Record<string, ResumePipelineEvent> = {
   analyze_job: 'PREPARE',
   match_evidence: 'PREPARE',
   strategy: 'PREPARE',
   draft: 'DRAFT',
-  // PR-2, quality only. A second streamed pass writing a second document —
-  // the same "the document is being written" meaning `draft`/`sections`/
-  // `assemble` already share, so it folds into the SAME drafting-family event
-  // rather than getting its own busy state.
+  // PR-2. A second streamed pass writing a second document — the same "the
+  // document is being written" meaning `draft` already carries, so it folds
+  // into the SAME drafting-family event rather than getting its own busy
+  // state.
   cover_letter: 'DRAFT',
-  // Max depth writes the document in two stages instead of one: `sections`
-  // generates each section on its own and `assemble` renders them into the body
-  // (pure, no provider call). Both are "writing" to a reader — the per-section
-  // timeline is where the finer state lives.
-  sections: 'DRAFT',
-  assemble: 'DRAFT',
   validate: 'VALIDATE',
   repair: 'REPAIR',
-  // PR-2, quality only — the LAST stage, and the only one that gets its own
-  // busy state (`humanizing`) rather than folding into an existing one: it is
-  // a genuinely distinct "removing AI signs" phase, not a variant of writing
-  // or checking.
+  // PR-2 — the LAST stage, and the only one that gets its own busy state
+  // (`humanizing`) rather than folding into an existing one: it is a
+  // genuinely distinct "removing AI signs" phase, not a variant of writing or
+  // checking.
   humanize: 'HUMANIZE',
-  // The judge reads the FINISHED document (it runs after repair, last), so it
-  // is a checking pass, not a repairing one. It cannot fail a run — its stage
-  // records `{skipped}` on any error — so `VALIDATE` never strands a run: the
-  // record's status is still what ends it.
-  llm_judge: 'VALIDATE',
 };
 
 /**

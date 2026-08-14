@@ -31,10 +31,11 @@ describe('worstCaseStage', () => {
   it('is COMPUTED, and it is not the draft stage', () => {
     const worst = worstCaseStage();
 
-    // `sections` carries four artifacts — naming `draft` in the UI copy was
-    // false against this module's own table.
-    expect(worst.stage).toBe('sections');
-    expect(worst.chars).toBe(STAGE_WORST_CASE_CHARS.sections);
+    // `strategy` carries two artifact-sized terms (evidence_map on top of
+    // job_analysis) — naming `draft` in the UI copy would be false against
+    // this module's own table.
+    expect(worst.stage).toBe('strategy');
+    expect(worst.chars).toBe(STAGE_WORST_CASE_CHARS.strategy);
     expect(worst.chars).toBeGreaterThan(STAGE_WORST_CASE_CHARS.draft ?? 0);
     expect(worst.tokens).toBe(estimateTokensFromChars(worst.chars));
   });
@@ -59,11 +60,11 @@ describe('assessModelContextFit', () => {
   });
 
   it('is "tight" and NAMES the stages that would be cut', () => {
-    // 16k window → ~14k usable: holds draft (8k) but not sections (~17k).
-    const fit = assessModelContextFit({ model: 'mid', contextLength: 16_384 });
+    // 12k window → ~10k usable: holds draft (8k) but not strategy (10k).
+    const fit = assessModelContextFit({ model: 'mid', contextLength: 12_000 });
 
     expect(fit.verdict).toBe('tight');
-    expect(fit.overflowStages).toContain('sections');
+    expect(fit.overflowStages).toContain('strategy');
     expect(fit.overflowStages).not.toContain('draft');
   });
 
