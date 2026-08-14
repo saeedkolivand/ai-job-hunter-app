@@ -22,6 +22,7 @@ import {
   type GenerationMeta,
   type LetterLayoutId,
   parseFabrications,
+  parseQualityReport,
   PERSIST_DEBOUNCE_MS,
   type QualityReport,
   type TemplateId,
@@ -152,7 +153,16 @@ export function useTailorPipeline({
     };
   }, []);
 
-  const resumeOut = resumeOverride ?? session.detail?.resumeText ?? '';
+  // `session.detail` is the LIVE run's own document — present once this
+  // session started or reconnected to a run. `latestGeneration` (the job's
+  // aggregate, threaded through from a live query one level up) is what
+  // fills a COLD entry instead: no `runId` was ever persisted for this
+  // session (a fresh app start, or a different surface produced the run),
+  // but the posting already has a saved result. Same fallback shape both
+  // texts already need for the letter (which has no run-detail source at
+  // all) — the résumé just has one more rung.
+  const resumeOut =
+    resumeOverride ?? session.detail?.resumeText ?? latestGeneration?.resumeText ?? '';
   const coverOut = letterOverride ?? latestGeneration?.coverLetterText ?? '';
   const output = activeOut === 'resume' ? resumeOut : coverOut;
   const hasOutput = !!(resumeOut || coverOut);
@@ -161,8 +171,15 @@ export function useTailorPipeline({
   // `PipelineQualityReport`'s doc comment) — every slot the fast path's parser
   // produces is present here too, plus the pipeline-only `fabrications`, which
   // `QualityReportSlot` already documents as opaque additional data. No cast
-  // needed: `PipelineQualityReportSlot` is a strict superset.
-  const report: QualityReport | null = session.detail?.report ?? null;
+  // needed: `PipelineQualityReportSlot` is a strict superset. Cold-entry falls
+  // back to the aggregate's OWN persisted wrapper, parsed the same way the
+  // fast path always has — never both at once, so a live run's own report
+  // can't be shadowed by a stale persisted one.
+  const report: QualityReport | null = session.detail
+    ? session.detail.report
+    : latestGeneration
+      ? parseQualityReport(latestGeneration.qualityReport)
+      : null;
 
   const targetLanguage = useMemo(() => {
     const detected = detectLanguage(jobDesc);
@@ -175,7 +192,7 @@ export function useTailorPipeline({
   // IPC. `candidateName` stays blank — ADR-0021 makes the editor the header's
   // authority at export time, so this only costs the filename's cosmetic
   // fallback ("Candidate-…"), never the document itself.
-  const meta: GenerationMeta | null = session.detail
+  const meta: GenerationMeta | null = hasOutput
     ? {
         candidateName: '',
         jobTitle,

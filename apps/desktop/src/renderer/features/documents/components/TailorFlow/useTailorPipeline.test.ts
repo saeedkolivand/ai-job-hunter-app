@@ -214,6 +214,33 @@ describe('useTailorPipeline — document text sources', () => {
     const { result } = render();
     expect(result.current.hasOutput).toBe(false);
   });
+
+  it('cold entry: falls back to the aggregate résumé text when no live run detail exists', () => {
+    // No session.detail — a fresh session that never started/reconnected a
+    // run, but the posting already has a saved result from elsewhere.
+    const generation = {
+      id: 'gen-1',
+      resumeText: 'RESUME FROM A PAST RUN',
+      coverLetterText: '',
+    } as AiGenerationRecord;
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.resumeOut).toBe('RESUME FROM A PAST RUN');
+    expect(result.current.hasOutput).toBe(true);
+    expect(result.current.meta).not.toBeNull();
+  });
+
+  it('prefers the LIVE run detail over the aggregate once one exists', () => {
+    sessionBus.detail = detail({ resumeText: 'LIVE RESUME' });
+    const generation = {
+      id: 'gen-1',
+      resumeText: 'STALE RESUME',
+      coverLetterText: '',
+    } as AiGenerationRecord;
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.resumeOut).toBe('LIVE RESUME');
+  });
 });
 
 describe('useTailorPipeline — inline edit persistence', () => {
