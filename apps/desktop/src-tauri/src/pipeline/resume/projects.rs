@@ -401,19 +401,22 @@ fn build(document: &str, seeds: &[ProjectOut]) -> ProjectsNormalizeOutcome {
         })
         .collect();
 
-    enum Resolution {
+    enum Resolution<'a> {
         /// No seed resolves (unmatched or ambiguous) — kept as its own raw
         /// text, never deleted.
         Verbatim,
         /// A SECOND entry resolving to a seed already used by an earlier one.
         Dedup,
-        /// Resolves to `seeds[_]`, rebuilt from it.
-        Matched(usize),
+        /// Resolves to `seeds[_]`, rebuilt from it. Carries the ALREADY-PARSED
+        /// draft entry it was resolved from — structurally, not by re-reading
+        /// `entries` at build time — so the second pass below can never reach
+        /// a `None` here; there is nothing to `.expect()` past.
+        Matched(usize, &'a ProjectOut),
     }
 
     // First pass: resolve every entry, tracking which seed indices got used.
     let mut used_indices: Vec<usize> = Vec::new();
-    let mut resolutions: Vec<Resolution> = Vec::with_capacity(entries.len());
+    let mut resolutions: Vec<Resolution<'_>> = Vec::with_capacity(entries.len());
     for (_, project) in &entries {
         let Some(project) = project else {
             resolutions.push(Resolution::Verbatim); // unnamed — cannot be judged
@@ -443,7 +446,7 @@ fn build(document: &str, seeds: &[ProjectOut]) -> ProjectsNormalizeOutcome {
             }
             Some(index) => {
                 used_indices.push(index);
-                resolutions.push(Resolution::Matched(index));
+                resolutions.push(Resolution::Matched(index, project));
             }
             None => resolutions.push(Resolution::Verbatim),
         }
@@ -487,15 +490,13 @@ fn build(document: &str, seeds: &[ProjectOut]) -> ProjectsNormalizeOutcome {
     let mut matched = 0u32;
     let mut dropped = 0u32;
     let mut links_restored = 0u32;
-    for ((raw_text, project), resolution) in entries.iter().zip(resolutions.iter()) {
+    for ((raw_text, _), resolution) in entries.iter().zip(resolutions.iter()) {
         match resolution {
             Resolution::Verbatim => pieces.push(raw_text.clone()),
             Resolution::Dedup => dropped += 1,
-            Resolution::Matched(index) => {
+            Resolution::Matched(index, project) => {
                 let seed = &seeds[*index];
-                let project = project
-                    .as_ref()
-                    .expect("a Matched resolution only follows a parsed project");
+                let project = *project;
                 let described = !seed.description.trim().is_empty();
                 if !described && !project.description.trim().is_empty() {
                     dropped += 1; // an invented blurb for a data-less project

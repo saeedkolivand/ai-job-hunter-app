@@ -997,7 +997,8 @@ pub async fn resume_pipeline_regenerate_section(
         }
     };
 
-    let spliced = normalize_regenerated_projects(key, &source, source_is_provenanced, spliced);
+    let (spliced, projects_normalize_skipped) =
+        normalize_regenerated_projects(key, &source, source_is_provenanced, spliced);
 
     // The merge rule again: this save writes `resume_text`, so it carries a
     // FRESH report over the spliced document — never the stale one the panel
@@ -1025,11 +1026,17 @@ pub async fn resume_pipeline_regenerate_section(
     // failing second statement) persists a document with the PREVIOUS
     // document's report — the exact state the rule exists to make impossible.
     generations.update_text_and_report(&record.id, spliced, wrapper)?;
+    // Content-free (ADR-027): a code, never the document — the same reason
+    // vocabulary `Draft::run`'s ledger artifact uses, so a declined Projects
+    // normalization on a manual regenerate is as observable as it is on a run.
     span.end_with(
         &format!(
-            "issues={} blocking={}",
+            "issues={} blocking={}{}",
             report.issues.len(),
-            report::has_criticals(&report)
+            report::has_criticals(&report),
+            projects_normalize_skipped
+                .map(|reason| format!(" projectsNormalizeSkipped={reason}"))
+                .unwrap_or_default()
         ),
         true,
     );
@@ -1303,15 +1310,29 @@ fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord)
 /// for WRITING — seeding the normalizer from the document it is about to
 /// overwrite would "restore" whatever the last generation said as if it were
 /// the candidate's own source.
+///
+/// Returns the (possibly normalized) text PLUS a content-free reason
+/// (ADR-027) when normalization declined to run — `key != Projects` reports
+/// none (there was nothing to attempt), but every other decline is
+/// observable, the same way `Draft::run`'s `apply_projects_normalization`
+/// reports one on the run's ledger. The caller folds it into the command's
+/// own `Span`.
 pub(crate) fn normalize_regenerated_projects(
     key: SectionKey,
     source: &str,
     source_is_provenanced: bool,
     spliced: String,
-) -> String {
-    if key != SectionKey::Projects || !source_is_provenanced {
-        return spliced;
+) -> (String, Option<&'static str>) {
+    if key != SectionKey::Projects {
+        return (spliced, None);
     }
-    let (project_seeds, _seed_skip_reason) = projects::seed_projects_for_normalize(source);
-    projects::normalize_projects(&spliced, &project_seeds).unwrap_or(spliced)
+    if !source_is_provenanced {
+        return (spliced, Some("unprovenanced_source"));
+    }
+    let (project_seeds, seed_skip_reason) = projects::seed_projects_for_normalize(source);
+    match projects::normalize_projects_outcome(&spliced, &project_seeds) {
+        projects::ProjectsNormalizeOutcome::Applied(text, _) => (text, None),
+        projects::ProjectsNormalizeOutcome::Skipped(reason) => (spliced, Some(reason)),
+        projects::ProjectsNormalizeOutcome::NoOp => (spliced, seed_skip_reason),
+    }
 }
