@@ -1,12 +1,33 @@
 import { RefreshCw, Settings2 } from 'lucide-react';
 
+import type { PipelineRunSummary } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
-import { Button } from '@ajh/ui';
+import { Button, Tag } from '@ajh/ui';
 
-import type { GenerationMeta, LetterLayoutId, QualityReport, TemplateId } from '@/lib/generate';
+import { PipelineRunsList } from '@/components/generation/PipelineRunsList';
+import type { QualityPipelineReview } from '@/components/generation/QualityReportPanel';
+import {
+  type GenerationMeta,
+  type LetterLayoutId,
+  type QualityReport,
+  type TemplateId,
+  unresolvedCount,
+} from '@/lib/generate';
+import { stoppedSuffix } from '@/lib/stopped-reason';
 
 import { GenerationOutput } from './GenerationOutput';
-import type { TailorTarget } from './useTailorGeneration';
+import type { TailorTarget } from './lib/tailor-target';
+
+/** How a TERMINAL staged run ended — the only states this panel ever shows
+ *  (a busy session renders `GeneratingPanel` instead). */
+export type TailorRunState = 'done' | 'needsReview' | 'cancelled' | 'error';
+
+const STATUS_TONE: Record<TailorRunState, 'success' | 'warning' | 'error' | 'default'> = {
+  done: 'success',
+  needsReview: 'warning',
+  cancelled: 'default',
+  error: 'error',
+};
 
 interface Props {
   target: TailorTarget;
@@ -23,7 +44,7 @@ interface Props {
     language: string;
     setLanguage: (v: string) => void;
   };
-  // Output / doc state from useTailorGeneration.
+  // Output / doc state from useTailorPipeline.
   activeOut: 'resume' | 'cover';
   setActiveOut: (o: 'resume' | 'cover') => void;
   // Render-time template/ATS preference (sticky store) — drives the live preview
@@ -42,6 +63,9 @@ interface Props {
   onEdit: (text: string) => void;
   meta: GenerationMeta | null;
   report?: QualityReport | null;
+  /** Section-fix / fabrication-review extras for the ACTIVE document, from
+   *  `useTailorPipeline` — undefined once no run detail exists yet. */
+  pipelineReview?: QualityPipelineReview;
   /** Re-run validation on the active document — clears staleness after an
    *  inline edit. Omitted hides the panel's action. */
   onRecheck?: () => void;
@@ -51,16 +75,25 @@ interface Props {
   exportOpen: boolean;
   setExportOpen: React.Dispatch<React.SetStateAction<boolean>>;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => void;
+  /** How the run this document came from ended — drives the status banner. */
+  runState: TailorRunState;
+  /** A start failure, or the terminal error text for `runState === 'error'`. */
+  error?: string | null;
+  stoppedReason?: string | null;
+  /** This posting's run history (≤3, newest first) — read-only here, since
+   *  this panel's document view always shows the LATEST run's text. */
+  runs?: PipelineRunSummary[];
   // Actions.
   onRegenerate: () => void;
   onEditSettings: () => void;
 }
 
 /**
- * Done stage: the tailored documents (resume/cover/job-ad tabs via
- * {@link GenerationOutput}) and the regenerate / edit-settings
- * footer. The application-questions assistant now lives in a header-triggered
- * modal ({@link ApplicationQuestionsModal}), so it no longer crowds this stack.
+ * Done stage: the staged run's status (prominent for anything other than a
+ * clean finish), the tailored documents (resume/cover/job-ad tabs via
+ * {@link GenerationOutput}, which now also carries the section-fix /
+ * fabrication-review extras), this posting's run history, and the
+ * regenerate / edit-settings footer.
  */
 export function ResultsPanel({
   target,
@@ -84,6 +117,7 @@ export function ResultsPanel({
   onEdit,
   meta,
   report,
+  pipelineReview,
   onRecheck,
   rechecking,
   copied,
@@ -91,13 +125,71 @@ export function ResultsPanel({
   exportOpen,
   setExportOpen,
   onExport,
+  runState,
+  error,
+  stoppedReason,
+  runs = [],
   onRegenerate,
   onEditSettings,
 }: Props) {
   const { t } = useTranslation();
+  const suffix = stoppedSuffix(stoppedReason);
+  const openClaims = pipelineReview ? unresolvedCount(pipelineReview.fabrications, output) : 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Status banner — visible without a click, unlike the quality badge
+          inside GenerationOutput, so needsReview/cancelled/error never hide
+          behind a small chip. Omitted on a clean finish (nothing to say). */}
+      {runState !== 'done' && (
+        <div className="flex shrink-0 flex-col gap-1.5 px-8 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Tag color={STATUS_TONE[runState]} className="text-[9px]">
+              {t(`pipeline.status.${runState === 'error' ? 'failed' : runState}`)}
+            </Tag>
+            {suffix && (
+              <span className="text-[10px] text-foreground/45">
+                {t(`pipeline.stopped.${suffix}`)}
+              </span>
+            )}
+          </div>
+          {runState === 'needsReview' && (
+            <div
+              role="status"
+              className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5"
+            >
+              <p className="text-[11px] font-medium text-amber-400">
+                {t('autopilot.apply.wizard.results.needsReviewTitle', { count: openClaims })}
+              </p>
+              <p className="mt-1 text-[10px] leading-relaxed text-foreground/50">
+                {t('autopilot.apply.wizard.results.needsReviewHint')}
+              </p>
+            </div>
+          )}
+          {runState === 'cancelled' && (
+            <p className="text-[11px] leading-relaxed text-foreground/50">
+              {t('autopilot.apply.wizard.results.cancelledHint')}
+            </p>
+          )}
+          {runState === 'error' && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5"
+            >
+              <p className="text-[11px] font-medium text-red-400">
+                {t('autopilot.apply.wizard.results.failedTitle')}
+              </p>
+              {error && (
+                <p className="mt-1 text-[10px] leading-relaxed text-foreground/60">{error}</p>
+              )}
+              <p className="mt-1 text-[10px] leading-relaxed text-foreground/45">
+                {t('autopilot.apply.wizard.results.failedHint')}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Height-bounded body — NOT a scroll container. GenerationOutput owns its
           own scroll boundary (below its pinned tab/action header), so the header
           stays visible while the document scrolls. Making this scroll again would
@@ -120,6 +212,7 @@ export function ResultsPanel({
           editable
           meta={meta}
           report={report}
+          pipeline={pipelineReview}
           onRecheck={onRecheck}
           rechecking={rechecking}
           copied={copied}
@@ -135,6 +228,12 @@ export function ResultsPanel({
           jobAdSummary={jobAdSummary}
         />
       </div>
+
+      {runs.length > 0 && (
+        <div className="max-h-40 shrink-0 overflow-y-auto border-t border-[var(--border-clear)] px-8 py-3">
+          <PipelineRunsList runs={runs} />
+        </div>
+      )}
 
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border-clear)] px-8 py-4">
         <Button

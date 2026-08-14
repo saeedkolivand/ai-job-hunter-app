@@ -54,6 +54,7 @@ function makeProps(): ComponentProps<typeof ResultsPanel> {
     exportOpen: false,
     setExportOpen: vi.fn(),
     onExport: vi.fn(),
+    runState: 'done',
     onRegenerate: vi.fn(),
     onEditSettings: vi.fn(),
   };
@@ -107,5 +108,58 @@ describe('ResultsPanel layout', () => {
 
     expect(props.onRegenerate).toHaveBeenCalledTimes(1);
     expect(props.onEditSettings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ResultsPanel — status banner', () => {
+  it('shows nothing extra on a clean finish (runState=done)', () => {
+    render(<ResultsPanel {...makeProps()} runState="done" />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the needsReview banner with the unresolved claim count', () => {
+    render(
+      <ResultsPanel
+        {...makeProps()}
+        runState="needsReview"
+        pipelineReview={{
+          documentText: 'Built the pipeline with 250 users impact.',
+          sections: [],
+          fabrications: [
+            { issueKey: 'a#0', code: 'a', evidence: '250 users' },
+            { issueKey: 'a#1', code: 'a', evidence: 'never in the document' },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'autopilot.apply.wizard.results.needsReviewTitle'
+    );
+  });
+
+  it('shows the failed banner with the error detail text', () => {
+    render(<ResultsPanel {...makeProps()} runState="error" error="Model timed out" />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('autopilot.apply.wizard.results.failedTitle');
+    expect(alert).toHaveTextContent('Model timed out');
+  });
+
+  it('shows the cancelled hint without an alert/status role', () => {
+    render(<ResultsPanel {...makeProps()} runState="cancelled" />);
+    expect(screen.getByText('autopilot.apply.wizard.results.cancelledHint')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the stopped-reason suffix when the run carries one', () => {
+    render(<ResultsPanel {...makeProps()} runState="cancelled" stoppedReason="cancelled" />);
+    expect(screen.getByText('pipeline.stopped.cancelled')).toBeInTheDocument();
+  });
+});
+
+describe('ResultsPanel — run history', () => {
+  it('renders nothing extra when there is no run history', () => {
+    render(<ResultsPanel {...makeProps()} runs={[]} />);
+    expect(screen.queryByText('pipeline.runs.title')).not.toBeInTheDocument();
   });
 });
