@@ -112,10 +112,9 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         // one registered value (`crate::agent::flows`). An unregistered kind is
         // a validation failure, never a fallback to the default flow: running
         // "prep this application" for a request that asked for something else
-        // spends a paid run on the wrong work and writes the wrong document
-        // (the same rule `GenerationDepth::from_wire` follows). Inside the
-        // spawn like every other fail-able step, so the terminal `jobs:event`
-        // can never fire before this command returns the job id.
+        // spends a paid run on the wrong work and writes the wrong document.
+        // Inside the spawn like every other fail-able step, so the terminal
+        // `jobs:event` can never fire before this command returns the job id.
         let kind = req.kind.as_str();
         let Some(flow) = flows::flow_for(kind) else {
             fail_run(

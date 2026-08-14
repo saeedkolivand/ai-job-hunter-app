@@ -21,12 +21,10 @@ use super::stages::{
     voice_count, voice_findings, MAX_COMPANY_PLANS,
 };
 use super::types::{
-    CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
-    ResumeStrategy, SectionKey, SkillGroup,
+    CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
+    SectionKey, SkillGroup,
 };
-use super::{
-    effective_letter_text, pick, stage_cache_key_for, RunLedger, MAX_STAGES, QUALITY_STAGES,
-};
+use super::{effective_letter_text, pick, stage_cache_key_for, RunLedger, QUALITY_STAGES};
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
@@ -629,7 +627,7 @@ fn a_section_label_maps_back_through_the_shared_classifier() {
     assert_eq!(sections::key_for_label(Some("Hobbies")), None);
 }
 
-// ── SectionKey / GenerationDepth ────────────────────────────────────────────
+// ── SectionKey ───────────────────────────────────────────────────────────────
 
 /// **`"header"` is rejected**, and so is every other spelling outside the closed
 /// grammar. The contact header is the editor's at export time (ADR-0021), so a
@@ -661,23 +659,6 @@ fn section_key_rejects_header_and_every_non_canonical_spelling() {
     }
 }
 
-/// An unknown depth is a validation error, never a silent fallback to the
-/// cheapest (or most expensive) tier.
-#[test]
-fn generation_depth_parses_only_the_shared_vocabulary() {
-    for (wire, expected) in [
-        ("fast", GenerationDepth::Fast),
-        ("quality", GenerationDepth::Quality),
-        ("max", GenerationDepth::Max),
-    ] {
-        assert_eq!(GenerationDepth::from_wire(wire), Some(expected));
-        assert_eq!(expected.as_str(), wire);
-    }
-    assert_eq!(GenerationDepth::from_wire("Quality"), None);
-    assert_eq!(GenerationDepth::from_wire("deep"), None);
-    assert_eq!(GenerationDepth::from_wire(""), None);
-}
-
 /// The stage vocabulary the renderer's timeline keys on.
 #[test]
 fn quality_stage_names_are_pinned_and_match_the_pipeline() {
@@ -696,31 +677,28 @@ fn quality_stage_names_are_pinned_and_match_the_pipeline() {
     );
 }
 
-/// The generated stage vocabulary and the two depth lists must describe the
-/// SAME set of stages — checked in BOTH directions, because each direction
-/// fails differently.
+/// The generated stage vocabulary and the pipeline's own stage list must
+/// describe the SAME set of stages — checked in BOTH directions, because each
+/// direction fails differently.
 ///
-/// * A depth stage MISSING from `PIPELINE_STAGES` is a stage the user can never
-///   override (and a `pipeline:stage` name the renderer's closed vocabulary
-///   would reject).
-/// * A generated name belonging to NO depth is worse than useless: the Settings
-///   UI would offer an override for a stage that never runs, the write would be
-///   accepted, and nothing would ever apply it — a setting with no effect and no
-///   error.
+/// * A pipeline stage MISSING from `PIPELINE_STAGES` is a stage the user can
+///   never override (and a `pipeline:stage` name the renderer's closed
+///   vocabulary would reject).
+/// * A generated name the pipeline never runs is worse than useless: the
+///   Settings UI would offer an override for a stage that never runs, the
+///   write would be accepted, and nothing would ever apply it — a setting with
+///   no effect and no error.
 ///
-/// Ordering is deliberately NOT asserted between the two sides: `PIPELINE_STAGES`
-/// is a union of two differently-ordered lists, and pinning a union's order
-/// would only pin the literal. Each depth's own order is pinned against the
-/// pipeline that runs (`each_depth_runs_its_own_pinned_stage_list`).
+/// Ordering is deliberately NOT asserted here: it is pinned against the
+/// pipeline that runs by `quality_stage_names_are_pinned_and_match_the_pipeline`.
 ///
-/// Mutation check (executed): renaming `"llm_judge"` to `"judge"` in
-/// `MAX_STAGES` fails the first assertion; adding `"rewrite"` to the TS
-/// `PIPELINE_STAGES` and regenerating fails the second.
+/// Mutation check (executed): adding `"rewrite"` to the TS `PIPELINE_STAGES`
+/// and regenerating fails the second loop.
 #[test]
-fn the_generated_stage_vocabulary_covers_exactly_the_two_depth_lists() {
+fn the_generated_stage_vocabulary_covers_exactly_the_pipeline() {
     use crate::ipc_contracts::events::PIPELINE_STAGES;
 
-    for stage in QUALITY_STAGES.iter().chain(MAX_STAGES) {
+    for stage in QUALITY_STAGES {
         assert!(
             PIPELINE_STAGES.contains(stage),
             "{stage} runs but is missing from the generated PIPELINE_STAGES — \
@@ -729,48 +707,31 @@ fn the_generated_stage_vocabulary_covers_exactly_the_two_depth_lists() {
     }
     for stage in PIPELINE_STAGES {
         assert!(
-            QUALITY_STAGES.contains(stage) || MAX_STAGES.contains(stage),
-            "{stage} is in the generated PIPELINE_STAGES but belongs to no pipeline — \
+            QUALITY_STAGES.contains(stage),
+            "{stage} is in the generated PIPELINE_STAGES but the pipeline never runs it — \
              an override on it would be a setting with no effect",
         );
     }
 }
 
 /// The generated FREE-stage set must be exactly the stages that make no
-/// provider call in every depth that runs them.
+/// provider call.
 ///
-/// Derived here from the pipelines themselves rather than transcribed: a stage
-/// that starts or stops paying fails this instead of silently gaining or losing
-/// an override the user cannot observe. "In every depth that runs it" is the
-/// careful part — `free_stage_names` is per-depth, and a stage free in one
-/// pipeline but paid in another must NOT be in the set.
+/// Derived here from the pipeline itself rather than transcribed: a stage that
+/// starts or stops paying fails this instead of silently gaining or losing an
+/// override the user cannot observe.
 ///
 /// Mutation check (executed): add `"repair"` to the TS `PIPELINE_STAGES_FREE`
-/// and regenerate — the second loop fails; remove `"assemble"` — the first
+/// and regenerate — the second loop fails; remove `"validate"` — the first
 /// loop fails.
 #[test]
 fn the_generated_free_stage_set_is_exactly_the_zero_call_stages() {
     use crate::ipc_contracts::events::PIPELINE_STAGES_FREE;
 
-    let depths = [super::quality_pipeline(), super::max_pipeline()];
-    // A stage is free-everywhere when every pipeline that CONTAINS it lists it
-    // as free.
-    let free_everywhere: Vec<&str> = crate::ipc_contracts::events::PIPELINE_STAGES
-        .iter()
-        .copied()
-        .filter(|stage| {
-            let containing: Vec<_> = depths
-                .iter()
-                .filter(|p| p.stage_names().contains(stage))
-                .collect();
-            !containing.is_empty()
-                && containing
-                    .iter()
-                    .all(|p| p.free_stage_names().contains(stage))
-        })
-        .collect();
+    let pipeline = super::quality_pipeline();
+    let free = pipeline.free_stage_names();
 
-    for stage in &free_everywhere {
+    for stage in &free {
         assert!(
             PIPELINE_STAGES_FREE.contains(stage),
             "{stage} makes no provider call but is not in the generated free set — \
@@ -779,8 +740,8 @@ fn the_generated_free_stage_set_is_exactly_the_zero_call_stages() {
     }
     for stage in PIPELINE_STAGES_FREE {
         assert!(
-            free_everywhere.contains(stage),
-            "{stage} is listed free but pays for a call in at least one depth",
+            free.contains(stage),
+            "{stage} is listed free but the pipeline pays for its call",
         );
     }
     // The set is non-empty and does not swallow the whole pipeline — a mutation
@@ -821,7 +782,7 @@ fn a_stage_uses_its_override_and_every_other_stage_uses_the_default() {
     overrides.insert("strategy".to_string(), "big-model".to_string());
 
     assert_eq!(pick(Some(&overrides), &default, "strategy"), "big-model");
-    for stage in MAX_STAGES.iter().filter(|s| **s != "strategy") {
+    for stage in QUALITY_STAGES.iter().filter(|s| **s != "strategy") {
         assert_eq!(
             pick(Some(&overrides), &default, stage),
             "default-model",
@@ -864,7 +825,7 @@ fn the_stage_cache_key_binding_follows_the_override() {
     let mut overridden = std::collections::HashMap::new();
     overridden.insert("strategy".to_string(), id("ollama", "big-model", None));
 
-    for stage in MAX_STAGES {
+    for stage in QUALITY_STAGES {
         let key_of = |map: &std::collections::HashMap<String, StageIdentity<'static>>| {
             stage_cache_key_for(&base, Some(map), &default, stage, |i| *i).key()
         };
@@ -1114,9 +1075,9 @@ fn apply_projects_normalization_is_a_no_op_over_a_plain_text_source() {
 
 /// **All-dropped is a no-op, not a heading-only Projects section.** Every
 /// draft entry the model wrote is unrelated to the source's one seed, so
-/// nothing survives `reseed_projects` — and persisting an emptied section
-/// with no undo would be worse than leaving the (wrong, but non-destructive)
-/// draft alone.
+/// nothing survives the match — and persisting an emptied section with no
+/// undo would be worse than leaving the (wrong, but non-destructive) draft
+/// alone.
 #[test]
 fn apply_projects_normalization_is_a_no_op_when_every_entry_is_invented() {
     let draft = "PROJECTS\n\n**Some Other Thing** · https://example.com/unrelated\n";

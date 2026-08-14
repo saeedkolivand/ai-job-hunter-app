@@ -313,12 +313,11 @@ impl Budget {
         confirm_timeout: Duration::from_secs(300),
     };
 
-    /// The staged résumé generation + validation pipeline (quality depth).
+    /// The staged résumé generation + validation pipeline.
     ///
-    /// **`max_steps` = 20, and it is UNENFORCED here** — the same caveat
-    /// [`Self::RESUME_MAX`]'s own copy of this field states: `Pipeline::run_hooked`
+    /// **`max_steps` = 20, and it is UNENFORCED here** — `Pipeline::run_hooked`
     /// counts no steps, so `StoppedReason::MaxSteps` has no producer on this
-    /// pipeline. It is a documented ceiling, not a live bound. Quality depth
+    /// pipeline. It is a documented ceiling, not a live bound. The pipeline
     /// runs 8 stages (`analyze_job`, `match_evidence`, `strategy`, `draft`,
     /// `cover_letter`, `validate`, `repair`, `humanize` — see
     /// [`pipeline::resume::QUALITY_STAGES`](crate::pipeline::resume::QUALITY_STAGES)),
@@ -329,23 +328,17 @@ impl Budget {
     /// an agentic loop. Zero is the honest bound, not an oversight: a stage that
     /// starts calling tools should have to justify raising this.
     ///
-    /// **`max_tokens` = 200_000.** Each section re-sends the grounding context
-    /// (the source résumé slice + the job ad): ~4k prompt + ~1k output per
-    /// section × 12 ≈ 60k, and a section that fails validation is re-asked up to
-    /// [`DEFAULT_MAX_REPAIR_ATTEMPTS`] times, so the worst case is roughly 3×
-    /// that ≈ 180k. 200k covers it without licensing an unbounded loop.
-    ///
-    /// *Re-derived for QUALITY depth (Phase 3), which is not section-wise:* 3
-    /// JSON stages (~3k + ~6k + ~5k tokens, each doubled by the one allowed
-    /// re-ask ⇒ ~28k) + the draft (~7.5k) + ≤2 repair rounds × ≤4 sections ×
-    /// ~6k (~37k) + (PR-2) the letter (~7.5k, the same order as the draft) +
-    /// `humanize`'s ≤2 flagged-document rewrites (~6k each ⇒ ~12k) ≈ **92k**.
-    /// The 200k ceiling over-provisions quality depth by ~2.2× and is sized for
-    /// the max-depth fan-out it was written for, so it is left as is — but it
-    /// is NOT the live bound at quality depth: the per-provider daily ceiling
-    /// and the run deadline are, and this figure has no enforcement point in
-    /// the Phase-3 stages ([`StoppedReason::MaxTokens`] stays unreachable
-    /// here).
+    /// **`max_tokens` = 200_000, over-provisioned by design.** The Phase-3
+    /// derivation: 3 JSON stages (~3k + ~6k + ~5k tokens, each doubled by the
+    /// one allowed re-ask ⇒ ~28k) + the draft (~7.5k) + ≤2 repair rounds × ≤4
+    /// sections × ~6k (~37k) + (PR-2) the letter (~7.5k, the same order as the
+    /// draft) + `humanize`'s ≤2 flagged-document rewrites (~6k each ⇒ ~12k) ≈
+    /// **92k**. The 200k ceiling over-provisions this by ~2.2× — a since-removed
+    /// second, section-wise depth was what it was originally sized for, and it
+    /// is left as is rather than tightened for no live effect: it is NOT the
+    /// live bound, the per-provider daily ceiling and the run deadline are, and
+    /// this figure has no enforcement point in the Phase-3 stages
+    /// ([`StoppedReason::MaxTokens`] stays unreachable here).
     ///
     /// **`step_timeout`** matches [`Self::AGENT_PREP`]'s value, but read its
     /// field doc first: it is INERT for this flow — `Pipeline::run_hooked` does
@@ -384,80 +377,6 @@ impl Budget {
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
         step_timeout: Duration::from_secs(360),
         run_timeout: Duration::from_secs(90 * 60),
-        confirm_timeout: Duration::from_secs(300),
-    };
-
-    /// MAX depth: the same pipeline with the whole-body draft replaced by one
-    /// structured call per section.
-    ///
-    /// **`max_steps` = 24, and it is UNENFORCED in this flow.** One step per
-    /// section ([`DEFAULT_MAX_SECTIONS`] = 12) plus the six framing stages
-    /// around the fan-out (analyze, evidence, strategy, assemble, validate,
-    /// repair) is 18; 24 leaves room for the judge and for a stage split. But
-    /// `Pipeline::run_hooked` counts no steps and [`StoppedReason::MaxSteps`] is
-    /// unreachable from here — it is the AGENT loop's stop reason. The number is
-    /// a documented ceiling that the compile-time assertion against
-    /// `pipeline::resume::MAX_STAGES` keeps HONEST (adding a stage without
-    /// raising it fails the build), not a bound anything checks at run time; the
-    /// live bounds are the run deadline, `step_timeout`'s per-call cousins, and
-    /// the per-provider daily ceiling. Said plainly rather than left to be
-    /// inferred, because "a budget field exists" reads as "a budget field is
-    /// enforced".
-    ///
-    /// **`step_timeout` = 360 s, also unenforced as a STAGE bound.** No stage
-    /// here is wrapped in it; what actually bounds a call is
-    /// `timeouts::OLLAMA_COMPLETION`/`COMPLETION` inside the provider layer. Its
-    /// one real use in this flow is the per-entry REGENERATE
-    /// (`commands::resume_pipeline::max::regenerate_entry`), which has no run
-    /// clock to share and takes this as the click's own deadline.
-    ///
-    /// **`max_tool_calls` = 0**, for the reason [`Self::RESUME_QUALITY`] gives:
-    /// this is stages, not an agentic loop.
-    ///
-    /// **`max_tokens` = 200_000.** Unchanged, and this is the flow the figure
-    /// was originally DERIVED for (see `RESUME_QUALITY`'s doc, which notes it
-    /// over-provisions quality depth by ~2.7× because it was sized for the max
-    /// fan-out): ~4k prompt + ~1k output per section × 12 ≈ 60k, tripled for the
-    /// re-ask and repair worst case ≈ 180k. Still unenforced — the live bounds
-    /// are the per-provider daily ceiling and the run deadline.
-    ///
-    /// **`run_timeout` = 125 min.** The effort-blind FLOOR, DERIVED like its
-    /// quality sibling and required to equal `timeouts::max_run_deadline(None)`
-    /// (`max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`).
-    /// Max depth streams nothing, so every call is bounded by the flat
-    /// `OLLAMA_COMPLETION` (300 s): 4 single-call stages (analyze, evidence,
-    /// strategy, judge) + 12 sections + 2 repair rounds × 4 sections = 24 calls
-    /// = 7 200 s, plus one effort-scaled whole-document pass (300 s at the
-    /// bottom tier) = 7 500 s.
-    ///
-    /// The judge was missing from this count while the stage was already in the
-    /// pipeline, which put the fixed term at 6 900 s and made the total exactly
-    /// equal the 24 calls a run plans — a backstop with zero slack, and a pin
-    /// (`max_run_deadline_clears_the_inner_per_call_bounds`) that could not see
-    /// the problem because it transcribed "3 JSON stages" instead of reading
-    /// the pipeline.
-    ///
-    /// **The one re-ask per JSON call is deliberately NOT counted, which is
-    /// where this derivation departs from `RESUME_QUALITY`'s.** Counting it
-    /// doubles the fan-out term to 12 000 s — 3 h 20 m, a "backstop" no user
-    /// would sit through and one that makes [`StoppedReason::RunTimeout`]
-    /// unreachable in practice. A re-ask happens only on a PARSE failure, it is
-    /// refused by the same `guard_deadline` the rest of the run is bounded by,
-    /// and — the part that only max depth can say — a run stopped mid-fan-out
-    /// KEEPS the sections it already assembled, because the deadline is checked
-    /// between section calls and `assemble` renders whatever the fan-out
-    /// produced. Stopping a max run early costs the tail of a document; stopping
-    /// a quality run early costs the whole draft, which is why that one had to
-    /// buy the worst case and this one does not. Cost of the choice, stated: a
-    /// run whose every call takes the full 300 s stops with the sections it has.
-    pub const RESUME_MAX: Self = Self {
-        max_steps: 24,
-        max_tool_calls: 0,
-        max_tokens: 200_000,
-        max_sections: DEFAULT_MAX_SECTIONS,
-        max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
-        step_timeout: Duration::from_secs(360),
-        run_timeout: Duration::from_secs(125 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
 }

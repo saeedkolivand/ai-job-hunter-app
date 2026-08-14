@@ -12,16 +12,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AiStreamChunk, AI_STREAM, PIPELINE_STAGE};
-use crate::ipc_contracts::events::is_pipeline_section_key;
+use crate::events::{emit_event, PIPELINE_STAGE};
 use crate::pipeline::budget::StoppedReason;
-use crate::pipeline::resume::types::SectionKey;
-use crate::pipeline::resume::{RunDeadline, RunLedger, SectionProgress};
+use crate::pipeline::resume::{RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow};
 use crate::pipeline::{StageHooks, StageInfo, StageOutcome};
 
@@ -85,16 +83,11 @@ pub(crate) fn emitted_phases() -> [&'static str; 3] {
 /// **An expired deadline stops the next PAID stage, not the next stage.** The
 /// boundary check exists because a stage boundary is where stopping is free —
 /// nothing is in flight and the next provider call has not been paid for. That
-/// reasoning says nothing about a stage that makes no call, and reading it as
-/// "stop at the next boundary" cost a max run everything it had: `sections`
-/// breaks out of its fan-out on the same clock, returns its finished sections
-/// `Ok`, and the very next boundary (`assemble`, which is pure, followed by
-/// `validate`, which is deterministic) aborted the run — empty draft, no
-/// report, nothing persisted, `status=failed`, up to eleven paid answers
-/// discarded. It also contradicted the reasoning that sized
-/// `Budget::RESUME_MAX`'s deadline at the reachable 7 200 s rather than the
-/// worst case: that a section-wise run KEEPS what it assembled when the clock
-/// stops.
+/// reasoning says nothing about a stage that makes no call (`validate`): a
+/// deadline that expired while `cover_letter` was streaming must not also
+/// refuse the free `validate` right after it — the run already has a real
+/// draft at that point, and refusing `validate` too would abort with no
+/// report over a document `persist_document` could otherwise have saved.
 ///
 /// The reason is still recorded on the free path, so the run reports
 /// `run_timeout` and [`terminal_state`] resolves it to `needsReview`/
@@ -204,43 +197,14 @@ pub(crate) fn terminal_state(
     (status, reason.map(stopped_wire))
 }
 
-/// The key a stage's FULL artifact rides under, inside the counts-only one.
-///
-/// Nested rather than replacing it, so the persisted row keeps the summary the
-/// runs panel reads AND the payload a max-depth regenerate needs — and so a
-/// reader that does not know about the detail sees exactly what it saw before.
+/// The key a stage's full artifact detail USED to ride under, inside the
+/// counts-only one — the max-depth per-entry regenerate's own payload
+/// (`RunLedger::record_detail`), removed along with the `max` generation
+/// depth. No stage writes one any more, but an EXISTING `pipeline_run_events`
+/// row from before this deletion can still carry it, and there is no
+/// migration touching old rows — so [`super::wire_artifact`] keeps stripping
+/// this key defensively before a persisted artifact reaches the renderer.
 pub(crate) const DETAIL_KEY: &str = "full";
-
-/// Fold a stage's full artifact into its counts-only one, for the DB row.
-///
-/// The EVENT payload is built from the counts-only value upstream of this
-/// (`issue_count`/`critical_count`), so the detail never reaches the wire — and
-/// a stage with no detail (every stage at quality depth) produces a row
-/// byte-identical to the one it produced before this existed.
-///
-/// **The detail-less case returns the ARTIFACT, not `None`.** Written the other
-/// way round once (`let detail = detail?;`) it deleted the counts of every stage
-/// that had no detail — which is all six at quality depth and five of eight at
-/// max — so the persisted row became `"{}"` and `issueCount`/`criticalCount`
-/// came out null on every `pipeline:stage` event the app has ever emitted at
-/// these depths. Pinned by
-/// `a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did`.
-pub(crate) fn with_detail(artifact: Option<Value>, detail: Option<Value>) -> Option<Value> {
-    let Some(detail) = detail else {
-        return artifact;
-    };
-    let mut artifact = artifact.unwrap_or_else(|| Value::Object(serde_json::Map::new()));
-    match artifact.as_object_mut() {
-        Some(object) => {
-            object.insert(DETAIL_KEY.to_string(), detail);
-            Some(artifact)
-        }
-        // A non-object artifact has nowhere to nest into. Keeping the counts is
-        // the safer half: the detail is an optimization, the summary is the
-        // trail. Unreachable today — every `record` call passes an object.
-        None => Some(artifact),
-    }
-}
 
 /// One [`StoppedReason`]'s wire token — the `snake_case` serde rename the
 /// renderer's suffix map keys on.
@@ -252,19 +216,6 @@ fn stopped_wire(reason: StoppedReason) -> String {
         // rename. The fallback names the enum's own default rather than
         // inventing a token no consumer knows.
         .unwrap_or_else(|| "done".to_string())
-}
-
-/// Which stage is currently running, as `before()` last saw it.
-///
-/// The section-wise generator reports up to twelve times from INSIDE one stage,
-/// and `SectionProgress` (L2) deliberately knows nothing about stage indices —
-/// so the position a per-section event carries is the one this observer already
-/// tracks. `None` before the first stage.
-#[derive(Debug, Clone, Copy, Default)]
-struct CurrentStage {
-    stage: Option<&'static str>,
-    index: usize,
-    total: usize,
 }
 
 /// Emits, persists, and stops. One instance per run.
@@ -279,9 +230,6 @@ pub struct RunHooks {
     /// `&self` — the trait is deliberately shaped so an observer cannot mutate
     /// the run.
     seq: AtomicU32,
-    /// The stage a per-section event belongs to. Behind a lock for the same
-    /// reason `seq` is atomic: both hook traits take `&self`.
-    current: parking_lot::Mutex<CurrentStage>,
 }
 
 impl RunHooks {
@@ -305,7 +253,6 @@ impl RunHooks {
             deadline,
             ledger,
             seq: AtomicU32::new(0),
-            current: parking_lot::Mutex::new(CurrentStage::default()),
         }
     }
 
@@ -313,60 +260,6 @@ impl RunHooks {
     /// duration without keeping a second `Instant`.
     pub fn elapsed_ms(&self) -> u64 {
         self.deadline.elapsed().as_millis() as u64
-    }
-
-    /// Emit ONE per-SECTION `pipeline:stage` event and append its durable twin.
-    ///
-    /// The stage NAME stays the fan-out's own (`sections`) and the index/total
-    /// stay the STAGE's position in the run: a timeline that re-scaled its
-    /// progress bar to the section count mid-run would jump backwards. What
-    /// makes these events per-section is `sectionKey`, which is also the ONE
-    /// model-derived value on this wire — so it goes through the GENERATED
-    /// [`is_pipeline_section_key`] grammar first, and an unrepresentable key is
-    /// dropped from the payload rather than shipped.
-    fn report_section(&self, key: SectionKey, phase: &'static str, artifact: Value) {
-        let current = *self.current.lock();
-        let Some(stage) = current.stage else {
-            return; // no stage is running: nothing to attribute this to
-        };
-        let wire = key.to_wire();
-        debug_assert!(
-            is_pipeline_section_key(&wire),
-            "SectionKey::to_wire must round-trip through the generated grammar"
-        );
-        if !is_pipeline_section_key(&wire) {
-            // A keyless per-section event is shaped EXACTLY like a per-stage one
-            // — same stage name, same phase — so it would arrive as "the
-            // `sections` stage finished". No consumer is fooled today
-            // (`foldSectionStates` requires a truthy `sectionKey`, and the
-            // machine maps `sections` to a non-terminal busy state whatever the
-            // phase), and the key is unrepresentable only if `to_wire` and the
-            // generated grammar disagree — which a test pins. But
-            // `debug_assert!` is a release no-op, so the release build's answer
-            // to that disagreement would be to ship the ambiguous event. The
-            // durable row still records what happened.
-            self.append(stage, phase, Some(artifact));
-            return;
-        }
-        let section_key = Some(wire);
-        emit_event(
-            &self.app,
-            PIPELINE_STAGE,
-            PipelineStageEvent {
-                run_id: self.run_id.clone(),
-                job_id: self.job_id.clone(),
-                stage: stage.to_string(),
-                phase,
-                index: current.index,
-                total: current.total,
-                attempt: 1,
-                section_key,
-                ms: None,
-                issue_count: None,
-                critical_count: None,
-            },
-        );
-        self.append(stage, phase, Some(artifact));
     }
 
     /// Emit ONE `pipeline:stage` event and append its durable twin.
@@ -408,17 +301,15 @@ impl RunHooks {
                 phase,
                 index: info.index,
                 total: info.total,
-                // Every STAGE runs once, at both depths: the repair loop's
-                // rounds are reported inside the `repair` artifact, and the
-                // section fan-out's per-section events come through
-                // [`Self::report_section`] — which hardcodes `1` as well. No
-                // emitter threads a real attempt number today; the field is in
-                // the payload because the contract is frozen.
+                // Every stage runs once: the repair loop's rounds are reported
+                // inside the `repair` artifact. No emitter threads a real
+                // attempt number today; the field is in the payload because the
+                // contract is frozen.
                 attempt: 1,
-                // A per-STAGE event is never section-scoped — the fan-out's
-                // per-section events are [`Self::report_section`]'s, and that is
-                // where the model-derived key goes through the generated
-                // `is_pipeline_section_key` grammar before reaching the wire.
+                // No stage reports a `sectionKey` on THIS event any more — the
+                // section-wise fan-out that once did was removed with the `max`
+                // generation depth. The field stays on the wire (the contract is
+                // frozen) as an always-absent optional.
                 section_key: None,
                 ms,
                 issue_count,
@@ -449,56 +340,6 @@ impl RunHooks {
     }
 }
 
-/// The section-wise half of the shell: per-section events, and the progressive
-/// document stream.
-///
-/// Implemented HERE rather than anywhere in `pipeline::resume` for the same
-/// reason [`StageHooks`] is: this is the only layer that may hold an
-/// `AppHandle` or name an event channel.
-impl SectionProgress for RunHooks {
-    fn section_started(&self, key: SectionKey, index: usize, total: usize) {
-        self.report_section(
-            key,
-            PHASE_START,
-            json!({ "section": index, "sections": total }),
-        );
-    }
-
-    fn section_finished(&self, key: SectionKey, index: usize, total: usize, produced: bool) {
-        // `produced=false` is a FINISH, not an error: the section was attempted
-        // and the document simply has nothing new for it. An `error` phase
-        // would tell the timeline the run is breaking when it is degrading —
-        // and the run's own failure is reported by the stage, not by a section.
-        self.report_section(
-            key,
-            PHASE_FINISH,
-            json!({ "section": index, "sections": total, "produced": produced }),
-        );
-    }
-
-    fn section_text(&self, text: &str) {
-        // The SAME `ai:stream` channel the quality draft streams on, under the
-        // run's umbrella job id — so the output pane builds progressively with
-        // no second event channel to subscribe to.
-        //
-        // `done: false`, always. The stream is DISPLAY-ONLY at both depths: the
-        // run's completion signal is its terminal `pipeline:stage` event, and a
-        // `done` here would resolve `awaitAiStream` while validate and repair
-        // are still ahead — presenting an unchecked document as the final one.
-        emit_event(
-            &self.app,
-            AI_STREAM,
-            AiStreamChunk {
-                job_id: self.job_id.clone(),
-                delta: text.to_string(),
-                done: false,
-                error: None,
-                thinking: None,
-            },
-        );
-    }
-}
-
 #[async_trait]
 impl StageHooks for RunHooks {
     /// The run's two stop conditions, checked at a STAGE BOUNDARY — the one
@@ -513,13 +354,6 @@ impl StageHooks for RunHooks {
             self.deadline.limit(),
             stage,
         )?;
-        // Recorded BEFORE the stage body runs, because the section-wise
-        // generator reports from inside it.
-        *self.current.lock() = CurrentStage {
-            stage: Some(stage.stage),
-            index: stage.index,
-            total: stage.total,
-        };
         self.report(stage, PHASE_START, None, None);
         Ok(())
     }
@@ -534,10 +368,7 @@ impl StageHooks for RunHooks {
             stage,
             phase,
             Some(outcome.ms),
-            with_detail(
-                self.ledger.artifact(stage.stage),
-                self.ledger.detail(stage.stage),
-            ),
+            self.ledger.artifact(stage.stage),
         );
     }
 }

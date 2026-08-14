@@ -20,11 +20,13 @@ export type PipelineStagePhase = (typeof PIPELINE_STAGE_PHASES)[number];
 /**
  * Every stage name the staged résumé pipeline can run, in pipeline order.
  *
- * The ORDER-PRESERVED UNION of the two Rust depth lists (`QUALITY_STAGES` and
- * `MAX_STAGES` in `pipeline/resume/mod.rs`), not a third hand-written list: a
- * Rust test pins both directions — every depth's stages must appear here, and
- * every name here must belong to at least one depth — so this cannot drift from
- * the pipelines it names.
+ * Pinned against the Rust `QUALITY_STAGES` (`pipeline/resume/mod.rs`) — a Rust
+ * test asserts both directions, every pipeline stage must appear here and
+ * every name here must belong to the pipeline, so this cannot drift from it.
+ *
+ * There used to be a second, `max`-depth, stage list unioned in here too
+ * (`sections`/`assemble`/`llm_judge`); it was removed along with the `max`
+ * generation depth.
  *
  * Emitted into Rust by `pnpm gen:ipc` (`ipc_contracts::events::PIPELINE_STAGES`)
  * for the same reason {@link PIPELINE_STAGE_PHASES} is: it is a CLOSED
@@ -42,26 +44,20 @@ export const PIPELINE_STAGES = [
   'strategy',
   'draft',
   'cover_letter',
-  'sections',
-  'assemble',
   'validate',
   'repair',
   'humanize',
-  'llm_judge',
 ] as const;
 
 /** The closed stage vocabulary — see {@link PIPELINE_STAGES}. */
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 /**
- * The stages that make NO provider call in any depth that runs them: `assemble`
- * renders already-paid-for sections into the document body, `validate` is a
- * deterministic comparison against the source résumé.
+ * The stages that make NO provider call: `validate` is a deterministic
+ * comparison against the source résumé.
  *
- * Derived from the Rust `Pipeline::free_stage_names()` of BOTH depths and pinned
- * against them (`pipeline::resume::test`). "In any depth that runs them" is the
- * careful part: `free_stage_names` is per-depth, and a stage that is free in one
- * pipeline but pays in another would not belong here.
+ * Derived from the Rust `Pipeline::free_stage_names()` and pinned against it
+ * (`pipeline::resume::test`).
  *
  * NORMATIVE: a model override on one of these is refused at write AND at import.
  * There is no model to choose — the stage never asks one anything — so the
@@ -69,10 +65,7 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
  * free stage could still fail a whole run at resolve time. Filter these out of
  * any per-stage model UI.
  */
-export const PIPELINE_STAGES_FREE = [
-  'assemble',
-  'validate',
-] as const satisfies readonly PipelineStage[];
+export const PIPELINE_STAGES_FREE = ['validate'] as const satisfies readonly PipelineStage[];
 
 /**
  * A stage that spends a provider call — the overridable subset, as a TYPE.

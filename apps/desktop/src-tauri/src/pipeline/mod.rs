@@ -933,10 +933,10 @@ impl<C> Pipeline<C> {
 
     /// The stage names, in order.
     ///
-    /// Exists for the depth-vocabulary pins (`QUALITY_STAGES`/`MAX_STAGES`):
-    /// those constants are what the renderer's timeline keys on, and a pin that
-    /// only compares a constant against a literal proves the literal, not the
-    /// pipeline. With this, renaming or reordering a stage fails the pin.
+    /// Exists for the `QUALITY_STAGES` pin: that constant is what the
+    /// renderer's timeline keys on, and a pin that only compares a constant
+    /// against a literal proves the literal, not the pipeline. With this,
+    /// renaming or reordering a stage fails the pin.
     pub fn stage_names(&self) -> Vec<&'static str> {
         self.stages.iter().map(|stage| stage.name()).collect()
     }

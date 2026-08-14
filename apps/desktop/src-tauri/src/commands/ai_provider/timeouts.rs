@@ -17,8 +17,8 @@
 use std::time::Duration;
 
 use crate::ipc_contracts::ai_timeouts::{
-    EFFORT_TIMEOUT_MULTIPLIER, MAX_RUN_FIXED_SECS, MAX_RUN_GENERATION_PASSES,
-    QUALITY_RUN_FIXED_SECS, QUALITY_RUN_GENERATION_PASSES, STREAM_BASELINE_SECS,
+    EFFORT_TIMEOUT_MULTIPLIER, QUALITY_RUN_FIXED_SECS, QUALITY_RUN_GENERATION_PASSES,
+    STREAM_BASELINE_SECS,
 };
 
 // ── Chat generation ─────────────────────────────────────────────────────────────
@@ -214,56 +214,6 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
     let generation =
         STREAM.as_secs_f64() * QUALITY_RUN_GENERATION_PASSES as f64 * effort_multiplier(effort);
     Duration::from_secs_f64(QUALITY_RUN_FIXED_SECS as f64 + generation.round())
-}
-
-/// Deadline for ONE WHOLE max-depth résumé run — the max-depth twin of
-/// [`quality_run_deadline`], and what makes `StoppedReason::RunTimeout`
-/// reachable at this depth.
-///
-/// Same `fixed + baseline × passes × multiplier` shape. Pinned by
-/// `max_run_deadline_clears_the_inner_per_call_bounds` (which recomputes the
-/// fixed half from the fan-out constants themselves), by
-/// `max_run_deadline_pins_the_derived_table`, and by
-/// `max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`.
-///
-/// Both terms come from `packages/shared` through `pnpm gen:ipc`, exactly like
-/// their quality siblings: [`MAX_RUN_FIXED_SECS`] and
-/// [`MAX_RUN_GENERATION_PASSES`].
-///
-/// **They were two hand-typed literals in two files, and the doc on the TS side
-/// claimed they could not drift.** Nothing enforced it: the generator emitted
-/// only the quality pair, and each side's per-tier table pinned its own
-/// literals — so changing one constant left the other's table green and the two
-/// deadlines silently disagreeing, which is the failure the renderer's client
-/// bound exists to prevent (the backend must give up FIRST, because it is the
-/// side that knows WHY).
-///
-/// The fixed term is 24 calls at the flat [`OLLAMA_COMPLETION`] bound: 4
-/// single-call stages (analyze, evidence, strategy, **and the judge**) +
-/// `max_sections` (12) section calls + `max_repair_attempts` (2) ×
-/// `MAX_SECTIONS_PER_ROUND` (4) repair rewrites. Max depth streams nothing, so
-/// unlike [`QUALITY_RUN_FIXED_SECS`] it covers the WHOLE run rather than its
-/// effort-invariant part.
-///
-/// **The judge was missed once, and the arithmetic hid it.** At 23 calls the
-/// fixed term was 6 900 s, and the effort-scaled term (300 s at the bottom
-/// tier) brought `max_run_deadline(None)` to exactly 7 200 s = the 24 calls a
-/// max run really plans — so the "the deadline clears the inner bounds" pin
-/// passed with ZERO slack, on an equality it was never meant to sit on. That
-/// pin now derives its call count from `max_pipeline()` itself, so the next
-/// stage that makes a call fails it instead of silently eating the slack.
-///
-/// **The one allowed re-ask per JSON call is not counted**, which is the one
-/// place this departs from the quality derivation. See
-/// [`Budget::RESUME_MAX`](crate::pipeline::budget::Budget::RESUME_MAX)'s doc
-/// for the argument: a re-ask is a parse-failure path guarded by the same
-/// clock, and a max run stopped mid-fan-out keeps the sections it already
-/// assembled — so buying the worst case here would only make the deadline
-/// unreachable.
-pub fn max_run_deadline(effort: Option<&str>) -> Duration {
-    let generation =
-        STREAM.as_secs_f64() * MAX_RUN_GENERATION_PASSES as f64 * effort_multiplier(effort);
-    Duration::from_secs_f64(MAX_RUN_FIXED_SECS as f64 + generation.round())
 }
 
 // ── Model discovery & health ────────────────────────────────────────────────────
@@ -532,151 +482,5 @@ mod tests {
             quality_run_deadline(Some("ultra-mega-think")),
             quality_run_deadline(None)
         );
-    }
-
-    // ── max_run_deadline ────────────────────────────────────────────────────
-
-    /// The max deadline must clear the calls a max run PLANS to make, computed
-    /// from the PIPELINE and the fan-out constants rather than from the
-    /// deadline's own terms: one call per stage that is neither free nor a
-    /// fan-out, one call per section up to `max_sections`, and the full repair
-    /// fan-out — every one of them bounded by the flat `OLLAMA_COMPLETION`,
-    /// because max depth streams nothing.
-    ///
-    /// **The stage count is READ OFF `max_pipeline()`, not transcribed.** The
-    /// previous `const JSON_STAGES: u32 = 3` could not notice the judge, which
-    /// is a fourth single-call stage — so the pin passed on an exact equality
-    /// (24 planned calls × 300 s = 7 200 s = `max_run_deadline(None)`) with no
-    /// slack at all, and would have kept passing while the deadline was
-    /// genuinely short. `Pipeline::free_stage_names` is what makes "does this
-    /// stage cost a call" machine-readable; the two fan-out names are the only
-    /// stages whose count is not one, and they are named here because their
-    /// ceilings are the budget's, not the pipeline's.
-    ///
-    /// The re-ask is deliberately absent from BOTH sides (see
-    /// `MAX_RUN_FIXED_SECS`), so this is a guard on the planned run, not on its
-    /// pathological worst case.
-    ///
-    /// Mutation checks (applied and reverted): `DEFAULT_MAX_SECTIONS` 12 → 14 ⇒
-    /// every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier fails;
-    /// `MAX_RUN_FIXED_SECS` 7_200 → 6_900 (the pre-judge value) ⇒ every tier
-    /// fails; add a stage that costs a call to `max_pipeline()` ⇒ every tier
-    /// fails.
-    #[test]
-    fn max_run_deadline_clears_the_inner_per_call_bounds() {
-        /// The two stages whose call count is a FAN-OUT rather than one.
-        const FANS_OUT: [&str; 2] = ["sections", "repair"];
-        let budget = crate::pipeline::budget::Budget::RESUME_MAX;
-        let pipeline = crate::pipeline::resume::max_pipeline();
-        let free = pipeline.free_stage_names();
-        let single_call_stages = pipeline
-            .stage_names()
-            .into_iter()
-            .filter(|stage| !free.contains(stage) && !FANS_OUT.contains(stage))
-            .count() as u32;
-        assert!(
-            FANS_OUT
-                .iter()
-                .all(|stage| pipeline.stage_names().contains(stage)),
-            "a fan-out stage was renamed; its ceiling is no longer being counted"
-        );
-        let planned = single_call_stages
-            + budget.max_sections as u32
-            + (budget.max_repair_attempts * crate::pipeline::resume::stages::MAX_SECTIONS_PER_ROUND)
-                as u32;
-        assert_eq!(
-            planned, 24,
-            "4 single-call stages + 12 sections + 2×4 repair rewrites"
-        );
-        let inner = OLLAMA_COMPLETION * planned;
-        for effort in [
-            None,
-            Some("medium"),
-            Some("high"),
-            Some("xhigh"),
-            Some("max"),
-        ] {
-            assert!(
-                max_run_deadline(effort) >= inner,
-                "max_run_deadline({effort:?}) must cover the calls a max run plans"
-            );
-        }
-        // …and with room to spare at the bottom tier, so the pin is not sitting
-        // on an equality the next constant change silently breaks.
-        assert!(
-            max_run_deadline(None) > inner,
-            "the backstop must clear the planned run, not merely equal it"
-        );
-    }
-
-    /// The per-tier table, spelled out — the max-depth twin of
-    /// `quality_run_deadline_pins_the_derived_table`.
-    ///
-    /// These five numbers are what the RENDERER's `maxRunDeadlineSecs` has to
-    /// EXCEED at every tier (`packages/shared/src/ai-timeouts.ts`), or the
-    /// client timeout fires before the backend can say why it stopped. A
-    /// derivation change that moves them must move that constant too, and a
-    /// table nobody wrote down is a table nobody notices moving.
-    #[test]
-    fn max_run_deadline_pins_the_derived_table() {
-        for (effort, secs) in [
-            (None, 7_500u64),
-            (Some("minimal"), 7_500),
-            (Some("low"), 7_500),
-            (Some("medium"), 7_650),
-            (Some("high"), 7_800),
-            (Some("xhigh"), 7_950),
-            (Some("max"), 8_100),
-        ] {
-            assert_eq!(
-                max_run_deadline(effort),
-                Duration::from_secs(secs),
-                "max_run_deadline({effort:?})"
-            );
-        }
-    }
-
-    /// Same rule as the quality pair: the budget constant is the floor the
-    /// effort-blind path falls back to through `resume::run_deadline`'s `max()`,
-    /// so a disagreement means one of the two stops describing what runs.
-    #[test]
-    fn max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier() {
-        assert_eq!(
-            max_run_deadline(None),
-            crate::pipeline::budget::Budget::RESUME_MAX.run_timeout
-        );
-    }
-
-    /// Max depth is strictly more work than quality depth at every tier, so its
-    /// deadline may never be the shorter of the two — the inversion
-    /// `effort_multiplier`'s own doc records for the `max`/`xhigh` tiers, one
-    /// level up.
-    #[test]
-    fn max_run_deadline_is_never_shorter_than_the_quality_one() {
-        for effort in [None, Some("medium"), Some("high"), Some("max")] {
-            assert!(
-                max_run_deadline(effort) >= quality_run_deadline(effort),
-                "max_run_deadline({effort:?}) is shorter than the quality deadline"
-            );
-        }
-    }
-
-    #[test]
-    fn max_run_deadline_is_monotonically_nondecreasing_by_effort_tier() {
-        let mut prev = Duration::from_secs(0);
-        for effort in [
-            None,
-            Some("minimal"),
-            Some("low"),
-            Some("medium"),
-            Some("high"),
-            Some("xhigh"),
-            Some("max"),
-        ] {
-            let d = max_run_deadline(effort);
-            assert!(d >= prev, "max_run_deadline({effort:?}) = {d:?} < {prev:?}");
-            prev = d;
-        }
-        assert!(max_run_deadline(Some("max")) > max_run_deadline(None));
     }
 }

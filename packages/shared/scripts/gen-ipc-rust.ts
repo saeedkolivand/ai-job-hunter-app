@@ -23,8 +23,6 @@ import {
 } from '../src/ai-context-window.js';
 import {
   EFFORT_TIMEOUT_MULTIPLIER,
-  MAX_RUN_FIXED_SECS,
-  MAX_RUN_GENERATION_PASSES,
   QUALITY_RUN_FIXED_SECS,
   QUALITY_RUN_GENERATION_PASSES,
   STREAM_BASELINE_SECS,
@@ -544,8 +542,7 @@ function genEvents(): string {
     phasesDecl,
     '',
     '/// Every stage name the staged résumé pipeline can run, in pipeline order —',
-    '/// the order-preserved UNION of `QUALITY_STAGES` and `MAX_STAGES`',
-    '/// (`pipeline/resume/mod.rs`), pinned against both by',
+    '/// pinned against `QUALITY_STAGES` (`pipeline/resume/mod.rs`) by',
     '/// `pipeline::resume::test`. Source of truth: `PIPELINE_STAGES` in',
     '/// packages/shared/src/events/pipeline.ts.',
     '///',
@@ -555,10 +552,9 @@ function genEvents(): string {
     '/// effect of, and a name from a tampered bundle must not become one.',
     stagesDecl,
     '',
-    '/// The stages that make NO provider call in any depth that runs them —',
-    '/// pinned against `Pipeline::free_stage_names()` for BOTH depths by',
-    '/// `pipeline::resume::test`. Source of truth: `PIPELINE_STAGES_FREE` in',
-    '/// packages/shared/src/events/pipeline.ts.',
+    '/// The stages that make NO provider call — pinned against',
+    '/// `Pipeline::free_stage_names()` by `pipeline::resume::test`. Source of',
+    '/// truth: `PIPELINE_STAGES_FREE` in packages/shared/src/events/pipeline.ts.',
     '///',
     '/// NORMATIVE for `ai_stage_overrides`: a row on one of these must be',
     '/// REJECTED at write time and DROPPED at import time. There is no model to',
@@ -758,26 +754,14 @@ function genStreamTimeouts(): string {
     '/// `QUALITY_RUN_FIXED_SECS` instead.',
     `pub const QUALITY_RUN_GENERATION_PASSES: u64 = ${QUALITY_RUN_GENERATION_PASSES};`,
     '',
-    "/// The EFFORT-INVARIANT half of one MAX-depth run's deadline: every call it",
-    '/// plans to make, once, at the flat `timeouts::OLLAMA_COMPLETION` bound —',
-    '/// four single-call stages (analyze, evidence, strategy, judge), one call',
-    '/// per section up to `Budget::RESUME_MAX.max_sections`, and the full repair',
-    '/// fan-out. Max depth streams nothing, so unlike `QUALITY_RUN_FIXED_SECS`',
-    '/// this covers the WHOLE run. See `maxRunDeadlineSecs` in',
-    '/// packages/shared/src/ai-timeouts.ts for the full derivation.',
-    `pub const MAX_RUN_FIXED_SECS: u64 = ${MAX_RUN_FIXED_SECS};`,
-    '',
-    '/// Effort-SCALED whole-document passes one max run may make: one. The',
-    '/// fan-out writes the document once and streams nothing, but the run',
-    '/// duration still scales with the reasoning budget.',
-    `pub const MAX_RUN_GENERATION_PASSES: u64 = ${MAX_RUN_GENERATION_PASSES};`,
-    '',
   ].join('\n');
 }
 
-/** Generate the `GenerationDepth` vocabulary — same shape as `genDateFilters`/
- *  `genAiIntents`: one hand-typed list (the TS `const`) instead of two, so the
- *  Rust `GenerationDepth::parse` and the wire schema's `z.enum` cannot drift. */
+/** Generate the historic `GenerationDepth` vocabulary — same shape as
+ *  `genDateFilters`/`genAiIntents`: one hand-typed list (the TS `const`)
+ *  instead of two. There is no Rust `GenerationDepth` enum any more (the `max`
+ *  depth's own deletion) and no request field to type against it — this is
+ *  read-side only now, e.g. `agent_save_pipeline`'s own membership check. */
 function genGenerationDepths(): string {
   const decl = constSliceDecl(
     'GENERATION_DEPTHS',
@@ -789,8 +773,9 @@ function genGenerationDepths(): string {
     '// Source of truth: packages/shared/src/schemas/index.ts',
     '#![allow(dead_code)]',
     '',
-    '/// Ascending depth order: `fast` is the untouched single-shot TS path,',
-    '/// `quality` and `max` are the staged Rust pipeline.',
+    '/// Historic `pipeline_runs.depth`/`QualityReport.pipeline` values — `fast`',
+    "/// is the renderer's own deterministic pass; `quality` is the only staged",
+    '/// depth a run may still request; `max` was removed.',
     decl,
     '',
   ].join('\n');
