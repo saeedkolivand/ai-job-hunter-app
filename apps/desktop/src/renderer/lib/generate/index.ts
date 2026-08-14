@@ -91,8 +91,8 @@ export type {
 
 /**
  * Debounce window (ms) for persisting an in-progress inline edit to a saved
- * generation. Shared so the two edit surfaces (GenerationCard, ApplyPage's
- * useTailorGeneration) stay in lockstep.
+ * generation. Shared so the two edit surfaces (GenerationCard, the tailor
+ * flow's useTailorPipeline) stay in lockstep.
  */
 export const PERSIST_DEBOUNCE_MS = 800;
 export type {

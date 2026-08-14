@@ -1925,17 +1925,12 @@
       "infoLabel": "Board-Ergebnisse"
     },
     "apply": {
-      "depthUnavailable": "Die gestuften Verfahren brauchen einen gespeicherten Lebenslauf und eine Anzeige aus deiner Jobliste. Dieser Ablauf arbeitet mit dem Text im Assistenten, deshalb läuft dieser Durchgang schnell — deine Auswahl bleibt gemerkt.",
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
       "jobDescription": "Stellenbeschreibung",
       "fetchingDescription": "Stellenbeschreibung wird abgerufen…",
       "generate": "Generieren",
-      "generating": "Generiere…",
       "cancel": "Abbrechen",
-      "analyzing": "Stellenbeschreibung wird analysiert…",
-      "writingResume": "Lebenslauf wird geschrieben…",
-      "writingCover": "Anschreiben wird geschrieben…",
       "copy": "Kopieren",
       "copied": "Kopiert",
       "selectModel": "Wählen Sie zuerst ein KI-Modell",

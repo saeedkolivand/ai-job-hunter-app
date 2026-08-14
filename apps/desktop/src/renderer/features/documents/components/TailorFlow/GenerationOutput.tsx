@@ -39,7 +39,7 @@ interface Props {
   activeOut: 'resume' | 'cover';
   setActiveOut: (o: 'resume' | 'cover') => void;
   // Render-time template/ATS (sticky store) — drives BOTH the preview here and the
-  // export in useTailorGeneration. The toolbar picker mutates them; no regeneration.
+  // export in useTailorPipeline. The toolbar picker mutates them; no regeneration.
   templateId: TemplateId;
   atsMode: boolean;
   /** Per-export document accent (6-hex); undefined = template palette. */

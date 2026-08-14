@@ -1921,17 +1921,12 @@
       "infoLabel": "Board results"
     },
     "apply": {
-      "depthUnavailable": "The staged depths need a saved résumé and a posting from your job list. This flow tailors the text in the wizard, so this run stays Fast — your choice is remembered.",
       "back": "Back to autopilot",
       "match": "match",
       "jobDescription": "Job description",
       "fetchingDescription": "Fetching job description…",
       "generate": "Generate",
-      "generating": "Generating…",
       "cancel": "Cancel",
-      "analyzing": "Analyzing job description…",
-      "writingResume": "Writing resume…",
-      "writingCover": "Writing cover letter…",
       "copy": "Copy",
       "copied": "Copied",
       "selectModel": "Select an AI model first",
