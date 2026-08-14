@@ -161,17 +161,52 @@ export function useTailorPipeline({
   const [resumeOverride, setResumeOverride] = useState<string | null>(null);
   const [letterOverride, setLetterOverride] = useState<string | null>(null);
 
+  // CR-2: unmount previously CLEARED these timers without flushing — leaving
+  // a tab (or a host remount of `DocumentsTab`) inside the debounce window
+  // silently dropped the hand-edit; `resumeOverride`/`letterOverride` die
+  // with the unmount too, so nothing recovers it. Matches DocumentsTab's own
+  // `flushJd` posture (`ApplicationDetailPage/index.tsx`) exactly: the
+  // pending PAYLOAD lives in a ref (captured at schedule time, not re-read at
+  // flush time), one `flushPersist` function is the sole place a write is
+  // fired — the debounce timeout and the unmount cleanup both just call it —
+  // and a ref indirection keeps the unmount effect's empty deps honest
+  // without a stale closure over `flushPersist`/`mutate`.
   const persistTimers = useRef<{
     resume?: ReturnType<typeof setTimeout>;
     cover?: ReturnType<typeof setTimeout>;
   }>({});
-  useEffect(() => {
-    const timers = persistTimers.current;
-    return () => {
-      if (timers.resume) clearTimeout(timers.resume);
-      if (timers.cover) clearTimeout(timers.cover);
-    };
+  const pendingEdits = useRef<{
+    resume?: { id: string; text: string };
+    cover?: { id: string; text: string };
+  }>({});
+  const mutateAiGenerationRef = useRef(updateAiGeneration.mutate);
+  mutateAiGenerationRef.current = updateAiGeneration.mutate;
+
+  const flushPersist = useCallback((field: 'resume' | 'cover') => {
+    const timer = persistTimers.current[field];
+    if (timer) {
+      clearTimeout(timer);
+      persistTimers.current[field] = undefined;
+    }
+    const pending = pendingEdits.current[field];
+    if (!pending) return;
+    pendingEdits.current[field] = undefined;
+    mutateAiGenerationRef.current(
+      field === 'resume'
+        ? { id: pending.id, resumeText: pending.text }
+        : { id: pending.id, coverLetterText: pending.text }
+    );
   }, []);
+
+  const flushPersistRef = useRef(flushPersist);
+  flushPersistRef.current = flushPersist;
+  useEffect(
+    () => () => {
+      flushPersistRef.current('resume');
+      flushPersistRef.current('cover');
+    },
+    []
+  );
 
   // `session.detail` is the LIVE run's own document — present once this
   // session started or reconnected to a run. `latestGeneration` (the job's
@@ -324,13 +359,12 @@ export function useTailorPipeline({
     const id = latestGeneration?.id;
     if (!id) return;
     const field = activeOut === 'resume' ? 'resume' : 'cover';
+    // Captured NOW, read at flush time (debounce fire OR unmount) instead of
+    // closing over `text`/`id` — mirrors DocumentsTab's `pendingJd` exactly.
+    pendingEdits.current[field] = { id, text };
     const existing = persistTimers.current[field];
     if (existing) clearTimeout(existing);
-    persistTimers.current[field] = setTimeout(() => {
-      updateAiGeneration.mutate(
-        activeOut === 'resume' ? { id, resumeText: text } : { id, coverLetterText: text }
-      );
-    }, PERSIST_DEBOUNCE_MS);
+    persistTimers.current[field] = setTimeout(() => flushPersist(field), PERSIST_DEBOUNCE_MS);
   };
 
   const start = async (values: TailorWizardState) => {

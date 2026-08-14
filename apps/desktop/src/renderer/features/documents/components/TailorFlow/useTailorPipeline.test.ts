@@ -1,5 +1,5 @@
 import { createElement, type ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
@@ -292,6 +292,13 @@ describe('useTailorPipeline — document text sources', () => {
 });
 
 describe('useTailorPipeline — inline edit persistence', () => {
+  // CR-8: teardown belongs in `afterEach`, not the last line of a test body —
+  // a failed assertion above it would skip `vi.useRealTimers()` and leak fake
+  // timers into every later test in the file (an order-dependent green).
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('debounce-persists to the aggregate id once one exists', () => {
     vi.useFakeTimers();
     sessionBus.detail = detail();
@@ -305,7 +312,6 @@ describe('useTailorPipeline — inline edit persistence', () => {
       id: 'gen-1',
       resumeText: 'hand-edited résumé',
     });
-    vi.useRealTimers();
   });
 
   it('never calls updateAiGeneration without an aggregate id (session-only edit)', () => {
@@ -314,7 +320,45 @@ describe('useTailorPipeline — inline edit persistence', () => {
     act(() => result.current.editActiveOutput('edited text'));
     vi.runAllTimers();
     expect(updateAiGenerationMutate).not.toHaveBeenCalled();
-    vi.useRealTimers();
+  });
+
+  // CR-2: unmounting inside the debounce window previously CLEARED the timer
+  // without flushing — the pending write (and the local override that would
+  // have re-surfaced it) both vanished with the component. Silent user data
+  // loss: type a hand-edit, leave the tab (or the host remounts
+  // `DocumentsTab`) before the debounce fires, and the edit never persists.
+  it('flushes a pending edit on unmount instead of dropping it', () => {
+    vi.useFakeTimers();
+    sessionBus.detail = detail();
+    const generation = { id: 'gen-1', coverLetterText: '' } as AiGenerationRecord;
+    const { result, unmount } = render({ latestGeneration: generation });
+
+    act(() => result.current.editActiveOutput('hand-edited résumé'));
+    // Still inside the debounce window — nothing persisted YET, proving the
+    // assertion below is about the unmount flush, not a race with the timer.
+    expect(updateAiGenerationMutate).not.toHaveBeenCalled();
+
+    unmount();
+
+    expect(updateAiGenerationMutate).toHaveBeenCalledWith({
+      id: 'gen-1',
+      resumeText: 'hand-edited résumé',
+    });
+  });
+
+  it('does not double-persist if the debounce timer somehow still fires after the unmount flush', () => {
+    vi.useFakeTimers();
+    sessionBus.detail = detail();
+    const generation = { id: 'gen-1', coverLetterText: '' } as AiGenerationRecord;
+    const { result, unmount } = render({ latestGeneration: generation });
+
+    act(() => result.current.editActiveOutput('hand-edited résumé'));
+    unmount();
+    updateAiGenerationMutate.mockClear();
+
+    vi.runAllTimers();
+
+    expect(updateAiGenerationMutate).not.toHaveBeenCalled();
   });
 });
 
