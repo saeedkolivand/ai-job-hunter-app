@@ -371,8 +371,23 @@ export function TailorFlow({
           : null;
     if (announcedKeyRef.current === key) return;
     announcedKeyRef.current = key;
+    // CR-10: clearing to '' on the null branch (not leaving the previous
+    // text in place) is the whole fix — for BOTH halves CodeRabbit raised.
+    // Stale text: without this, a run that finishes cleanly after an
+    // earlier cancel/needsReview kept exposing that old announcement in
+    // the (still-mounted) region forever. Re-announcing an IDENTICAL
+    // consecutive value: React bails out of a `setState` that's
+    // `Object.is`-equal to the current value, so calling
+    // `setLiveAnnouncement` with the SAME string twice in a row is not a
+    // real DOM text mutation and may not re-announce — but `key` cannot
+    // reach 'cancelled' (or 'needsReview') twice without passing through
+    // `null` in between (starting a new run always moves `stage` off
+    // 'configuring'/'done' first), so this clear always lands between two
+    // occurrences of the same text, making the SECOND one a genuine ''→text
+    // change again. No separate machinery needed for that half.
     if (key === 'cancelled') setLiveAnnouncement(t('autopilot.apply.cancelledNoOutput'));
     else if (key === 'needsReview') setLiveAnnouncement(t('pipeline.status.needsReview'));
+    else setLiveAnnouncement('');
   }, [stage, gen.error, gen.state, runState, t]);
 
   // `AnimatePresence mode="wait"` swaps the whole stage subtree on every stage

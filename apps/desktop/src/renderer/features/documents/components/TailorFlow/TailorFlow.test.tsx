@@ -1054,4 +1054,22 @@ describe('TailorFlow — persistent live-region announcer (CR-7)', () => {
       'pipeline.status.needsReview'
     );
   });
+
+  // CR-10: without clearing the region on the null transition, a run that
+  // finishes cleanly after an earlier cancel kept exposing the stale
+  // "cancelled" text forever (the region is mounted for the whole component
+  // lifetime, so nothing else ever overwrote it).
+  it('clears the live region once the cancelled state ends', () => {
+    genMock.state = 'cancelled';
+    const { rerender } = renderFlow({});
+    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toHaveTextContent(
+      'autopilot.apply.cancelledNoOutput'
+    );
+
+    genMock.state = 'idle';
+    genMock.busy = true;
+    rerender(rerenderFlow());
+
+    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toBeEmptyDOMElement();
+  });
 });
