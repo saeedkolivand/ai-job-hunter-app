@@ -83,7 +83,14 @@ export function GeneratingPanel({
     if (previousStepRef.current === currentStep) return;
     previousStepRef.current = currentStep;
     const key = PIPELINE_STEP_KEYS[currentStep];
-    if (!key) return;
+    if (!key) {
+      // currentStep reached PIPELINE_STEP_KEYS.length — every step just
+      // finished. Previously a silent no-op: a screen-reader user heard
+      // every step START (below) and never heard the run finish — the
+      // owner's "mark it as done" ask, for non-visual users.
+      setAnnouncement(t('pipeline.step.allDone'));
+      return;
+    }
     setAnnouncement(
       t('pipeline.step.announce', {
         step: t(`pipeline.step.${key}.label`),
@@ -162,7 +169,7 @@ export function GeneratingPanel({
 
       <div className="mx-auto mt-5 flex w-full max-w-2xl min-h-0 flex-1 flex-col overflow-y-auto">
         <ThinkingBubble thinking={thinking} done={currentStep >= 2} defaultExpanded={false} />
-        <span className="mb-1 block shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+        <span className="mb-1 block shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/70">
           {t(
             streamingTarget === 'cover'
               ? 'autopilot.apply.target.cover'

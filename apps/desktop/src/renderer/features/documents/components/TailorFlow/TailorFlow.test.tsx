@@ -960,28 +960,61 @@ describe('TailorFlow — cancelled-before-any-output hint (H9)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. Focus moves to the stage body on every stage change (M6)
+// 8. Focus follows the stage — but never STEALS it from mount or a modal (M6/N2)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('TailorFlow — focus follows the stage (M6)', () => {
-  it('focuses the (inert) stage body element when the stage changes', async () => {
-    genMock.busy = true;
+const rerenderFlow = () => (
+  <TailorFlow
+    job={JOB}
+    resumeText="My resume"
+    board="linkedin"
+    contextId="autopilot:https://acme.com/jobs/1"
+    jobUrl="https://acme.com/jobs/1"
+    persistence={makePersistence()}
+  />
+);
+
+describe('TailorFlow — focus follows the stage (M6/N2)', () => {
+  it('does NOT steal focus on mount (only on a subsequent stage CHANGE)', () => {
+    renderFlow({});
+    // Nothing focused this render — the effect's mount guard must no-op.
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard).parentElement).not.toHaveFocus();
+    expect(document.activeElement === document.body).toBe(true);
+  });
+
+  it('focuses the (inert) stage body element on a stage CHANGE after mount', () => {
     const { rerender } = renderFlow({});
-    // Busy → generating stage; its body should already be focused.
+    genMock.busy = true;
+    rerender(rerenderFlow());
     expect(screen.getByTestId(TEST_IDS.documents.generatingPanel).parentElement).toHaveFocus();
 
     genMock.busy = false;
     genMock.hasOutput = true;
-    rerender(
-      <TailorFlow
-        job={JOB}
-        resumeText="My resume"
-        board="linkedin"
-        contextId="autopilot:https://acme.com/jobs/1"
-        jobUrl="https://acme.com/jobs/1"
-        persistence={makePersistence()}
-      />
-    );
+    rerender(rerenderFlow());
     expect(screen.getByTestId(TEST_IDS.documents.resultsPanel).parentElement).toHaveFocus();
+  });
+
+  // N2: Interview-questions/Referral stay open (and enabled) while a run is
+  // busy (ApplicationDetailPage's toolbar) — a stage flip mid-run must not
+  // pull focus out from under an open dialog. `useFocusTrap` only intercepts
+  // Tab, so a stray programmatic `.focus()` landing outside the trap is not
+  // caught by anything else.
+  it('does NOT steal focus from an element inside an open modal (aria-modal) on a stage change', () => {
+    const { rerender } = renderFlow({});
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const dialogButton = document.createElement('button');
+    dialog.appendChild(dialogButton);
+    document.body.appendChild(dialog);
+    dialogButton.focus();
+    expect(dialogButton).toHaveFocus();
+
+    genMock.busy = true;
+    rerender(rerenderFlow());
+
+    expect(dialogButton).toHaveFocus();
+    document.body.removeChild(dialog);
   });
 });

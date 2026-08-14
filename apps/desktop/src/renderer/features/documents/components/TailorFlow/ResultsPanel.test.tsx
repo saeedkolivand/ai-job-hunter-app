@@ -271,4 +271,14 @@ describe('ResultsPanel — "all steps completed" summary (H2)', () => {
       unmount();
     }
   });
+
+  // N3: was text-foreground/45 (4.22:1 dark, below the AA text floor) — the
+  // repo's documented sub-14px floor is /70 (8.04:1 dark / 6.20:1 light).
+  it('renders the summary row at the AA-safe text-foreground/70, not /45', () => {
+    render(<ResultsPanel {...makeProps()} runState="done" stoppedReason={null} />);
+    const row = screen.getByText('pipeline.step.analyze.label').closest('div');
+    expect(row).not.toBeNull();
+    expect(row?.className).toContain('text-foreground/70');
+    expect(row?.className).not.toContain('text-foreground/45');
+  });
 });

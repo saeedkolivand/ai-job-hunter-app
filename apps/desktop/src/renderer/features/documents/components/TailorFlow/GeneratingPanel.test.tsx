@@ -141,6 +141,27 @@ describe('GeneratingPanel — the 4-step checklist', () => {
     expect(status.textContent).toBe(first);
   });
 
+  // Terminal-state announcement: `PIPELINE_STEP_KEYS[currentStep]` is
+  // undefined once currentStep reaches the step count (every step just
+  // finished) — previously a silent no-op, so a screen-reader user heard
+  // every step START and never heard the run finish.
+  it('announces pipeline.step.allDone once currentStep reaches the step count', () => {
+    const { rerender } = render(<GeneratingPanel {...makeProps({ currentStep: 3 })} />);
+    const status = screen.getByRole('status', { hidden: true });
+    expect(status).not.toHaveTextContent('pipeline.step.allDone');
+
+    rerender(<GeneratingPanel {...makeProps({ currentStep: 4 })} />);
+    expect(status).toHaveTextContent('pipeline.step.allDone');
+  });
+
+  it('still applies the one-utterance-per-transition guard at the terminal step', () => {
+    const { rerender } = render(<GeneratingPanel {...makeProps({ currentStep: 4 })} />);
+    const status = screen.getByRole('status', { hidden: true });
+    const first = status.textContent;
+    rerender(<GeneratingPanel {...makeProps({ currentStep: 4, stageLabel: 'irrelevant' })} />);
+    expect(status.textContent).toBe(first);
+  });
+
   // H6/M5: the active row's label AND its stage caption use the bare
   // `text-brand-soft` class (no opacity suffix — an opacity-suffixed variant
   // never gets the light-scheme remap, which is the regression this guards).
@@ -215,6 +236,15 @@ describe('GeneratingPanel — streaming document header (M3)', () => {
     render(<GeneratingPanel {...makeProps({ streamingTarget: 'resume' })} />);
     expect(screen.getByText('autopilot.apply.target.resume')).toBeInTheDocument();
     expect(screen.queryByText('autopilot.apply.target.cover')).not.toBeInTheDocument();
+  });
+
+  // N3: was text-foreground/45 (4.22:1 dark, below the AA text floor) — the
+  // repo's documented sub-14px floor is /70 (8.04:1 dark / 6.20:1 light).
+  it('renders the header at the AA-safe text-foreground/70, not /45', () => {
+    render(<GeneratingPanel {...makeProps({ streamingTarget: 'resume' })} />);
+    const header = screen.getByText('autopilot.apply.target.resume');
+    expect(header.className).toContain('text-foreground/70');
+    expect(header.className).not.toContain('text-foreground/45');
   });
 
   it('labels the pane "cover letter" once the letter starts streaming', () => {

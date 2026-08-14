@@ -352,8 +352,24 @@ export function TailorFlow({
   // keyboard/AT users lose their place after every wizard step, generate, or
   // "Edit settings". Focus the (otherwise inert, tabIndex={-1}) stage body
   // itself on each transition, matching a route/modal-swap pattern.
+  //
+  // Two guards, both load-bearing:
+  // - Skip the FIRST run (mount): the ref below only tracks CHANGES, so a
+  //   fresh page load never steals focus into an unlabeled offscreen div.
+  // - Bail when focus is already inside an open `ModalShell` dialog
+  //   (`[aria-modal="true"]`) — Questions/Interview/Referral stay open
+  //   across a `generating → done` transition (ApplicationDetailPage keeps
+  //   them enabled while busy), and `useFocusTrap` only intercepts Tab, not
+  //   a programmatic `.focus()` landing outside the trap. Pulling focus out
+  //   from under an open dialog would leave Tab walking the background page.
   const stageBodyRef = useRef<HTMLDivElement>(null);
+  const mountedStageRef = useRef<TailorFlowStage | null>(null);
   useEffect(() => {
+    const isFirstRun = mountedStageRef.current === null;
+    mountedStageRef.current = stage;
+    if (isFirstRun) return;
+    const activeEl = stageBodyRef.current?.ownerDocument.activeElement;
+    if (activeEl instanceof Element && activeEl.closest('[aria-modal="true"]')) return;
     stageBodyRef.current?.focus();
   }, [stage]);
 

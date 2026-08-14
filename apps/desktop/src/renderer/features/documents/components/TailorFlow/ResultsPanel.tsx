@@ -25,6 +25,29 @@ const STATUS_TONE: Record<TailorRunState, 'success' | 'warning' | 'error' | 'def
   error: 'error',
 };
 
+/**
+ * `TailorRunState` → the `pipeline.status.*` key that actually exists.
+ *
+ * The two vocabularies are NOT the same: `pipeline.status` is
+ * running/completed/needsReview/failed/cancelled (the Rust `PipelineRunStatus`
+ * wire enum); `TailorRunState` is done/needsReview/cancelled/error (this
+ * panel's own terminal states — 'done' covers cold/never-started too). A
+ * bare template-literal `pipeline.status.${runState}` silently renders the
+ * dotted key itself for 'done' AND 'error' — i18next has no catalog entry
+ * for either. `Record<TailorRunState, …>` makes this exhaustive at compile
+ * time: a new `TailorRunState` member fails to type-check here until mapped.
+ * Runtime-checked against the real locale JSON in ResultsPanel.i18n.test.ts.
+ */
+export const PIPELINE_STATUS_KEY: Record<
+  TailorRunState,
+  'completed' | 'needsReview' | 'failed' | 'cancelled'
+> = {
+  done: 'completed',
+  needsReview: 'needsReview',
+  cancelled: 'cancelled',
+  error: 'failed',
+};
+
 interface Props {
   target: TailorTarget;
   jobDesc: string;
@@ -163,7 +186,7 @@ export function ResultsPanel({
         <div className="flex shrink-0 flex-col gap-1.5 px-8 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <Tag color={STATUS_TONE[runState]} className="text-[9px]">
-              {t(`pipeline.status.${runState === 'error' ? 'failed' : runState}`)}
+              {t(`pipeline.status.${PIPELINE_STATUS_KEY[runState]}`)}
             </Tag>
             {suffix && (
               <span className="text-[10px] text-foreground/45">
@@ -235,7 +258,7 @@ export function ResultsPanel({
           so it can never actually SHOW all four checked; this is the durable
           place a clean finish says so. */}
       {cleanFinish && (
-        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-8 pt-4 text-[10px] text-foreground/45">
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-8 pt-4 text-[10px] text-foreground/70">
           <span className="sr-only">{t('pipeline.step.allDone')}</span>
           {PIPELINE_STEP_KEYS.map((key) => (
             <span key={key} className="flex items-center gap-1">
