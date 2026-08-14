@@ -11,6 +11,7 @@ import {
   JobPreferencesSchema,
   MatchResumeRequestSchema,
   ResumeExtractTextSchema,
+  ResumePipelineRunSchema,
   ScrapeUrlRequestSchema,
 } from './index';
 
@@ -49,6 +50,81 @@ describe('MatchResumeRequestSchema', () => {
   it('requires both ids', () => {
     expect(() => MatchResumeRequestSchema.parse({ resumeId: 'r1', jobId: 'j1' })).not.toThrow();
     expect(() => MatchResumeRequestSchema.parse({ resumeId: '', jobId: 'j1' })).toThrow();
+  });
+});
+
+describe('ResumePipelineRunSchema', () => {
+  it('parses the OLD id-only wire shape unchanged — zero behavior change', () => {
+    const parsed = ResumePipelineRunSchema.parse({ resumeId: 'res-1', jobId: 'job-9' });
+    expect(parsed.resumeId).toBe('res-1');
+    expect(parsed.jobId).toBe('job-9');
+    // The new fields default to the id-only path's no-op values.
+    expect(parsed.resumeText).toBe('');
+    expect(parsed.jobAdText).toBe('');
+    expect(parsed.jobTitle).toBe('');
+    expect(parsed.companyName).toBe('');
+    expect(parsed.board).toBe('');
+  });
+
+  it('accepts the text-only path — a pasted job ad, no ids', () => {
+    expect(() =>
+      ResumePipelineRunSchema.parse({
+        resumeText: 'a whole résumé',
+        jobAdText: 'a whole job ad',
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts a mix — an id for one side, text for the other', () => {
+    expect(() =>
+      ResumePipelineRunSchema.parse({ resumeId: 'res-1', jobAdText: 'a whole job ad' })
+    ).not.toThrow();
+    expect(() =>
+      ResumePipelineRunSchema.parse({ resumeText: 'a whole résumé', jobId: 'job-9' })
+    ).not.toThrow();
+  });
+
+  it('rejects an empty résumé side — neither resumeId nor resumeText', () => {
+    expect(() => ResumePipelineRunSchema.parse({ jobId: 'job-9' })).toThrow();
+    expect(() =>
+      ResumePipelineRunSchema.parse({ resumeId: '', resumeText: '', jobId: 'job-9' })
+    ).toThrow();
+  });
+
+  it('rejects an empty job side — neither jobId nor jobAdText', () => {
+    expect(() => ResumePipelineRunSchema.parse({ resumeId: 'res-1' })).toThrow();
+    expect(() =>
+      ResumePipelineRunSchema.parse({ resumeId: 'res-1', jobId: '', jobAdText: '' })
+    ).toThrow();
+  });
+
+  it('caps the text-path free-text fields', () => {
+    expect(() =>
+      ResumePipelineRunSchema.parse({
+        resumeText: 'a'.repeat(200_001),
+        jobAdText: 'a whole job ad',
+      })
+    ).toThrow();
+    expect(() =>
+      ResumePipelineRunSchema.parse({
+        resumeText: 'a whole résumé',
+        jobAdText: 'a'.repeat(200_001),
+      })
+    ).toThrow();
+    expect(() =>
+      ResumePipelineRunSchema.parse({
+        resumeText: 'a whole résumé',
+        jobAdText: 'a whole job ad',
+        jobTitle: 'a'.repeat(513),
+      })
+    ).toThrow();
+    expect(() =>
+      ResumePipelineRunSchema.parse({
+        resumeText: 'a whole résumé',
+        jobAdText: 'a whole job ad',
+        board: 'a'.repeat(65),
+      })
+    ).toThrow();
   });
 });
 
