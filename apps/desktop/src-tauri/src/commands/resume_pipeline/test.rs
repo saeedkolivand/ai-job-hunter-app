@@ -1069,8 +1069,11 @@ fn oversized_run_request_free_text_is_clamped_server_side() {
 
     let huge = "a".repeat(TARGET_LANGUAGE_CAP - 1) + "\u{1F600}" + &"b".repeat(5_000);
     let req: ResumePipelineRunRequest = serde_json::from_value(json!({
-        "resumeId": "res-1",
-        "jobId": "job-9",
+        // Oversized on purpose (LOW 1): `resumeId`/`jobId` are the two other
+        // renderer strings on this command, echoed into a validation-error
+        // message and into `metrics_json`.
+        "resumeId": "r".repeat(5_000),
+        "jobId": "j".repeat(5_000),
         "jobUrl": format!("https://boards.example/{}", "u".repeat(9_000)),
         "targetLanguage": huge,
         "topRequirements": (0..500).map(|i| format!("{i} {}", "r".repeat(2_000)))
@@ -1095,6 +1098,8 @@ fn oversized_run_request_free_text_is_clamped_server_side() {
         clamped.cover_letter.len() <= crate::applications::MAX_JOB_DESCRIPTION_BYTES,
         "the letter is validated AND stored — an unbounded one reaches both"
     );
+    assert!(clamped.resume_id.len() <= super::resolve::JOB_IDENTITY_CAP);
+    assert!(clamped.job_id.len() <= super::resolve::JOB_IDENTITY_CAP);
 }
 
 /// PR-3: the two id-less text fields, plus the text-path posting identity,
@@ -1129,7 +1134,7 @@ fn oversized_text_path_fields_are_clamped_server_side() {
 fn resume_source_prefers_the_id_even_when_text_is_also_present() {
     assert_eq!(
         super::resume_source("res-1", "a whole résumé"),
-        Some(super::ResumeSource::Store("res-1"))
+        Some(super::resolve::ResumeSource::Store("res-1"))
     );
 }
 
@@ -1137,7 +1142,7 @@ fn resume_source_prefers_the_id_even_when_text_is_also_present() {
 fn resume_source_uses_text_only_when_the_id_is_empty() {
     assert_eq!(
         super::resume_source("", "a whole résumé"),
-        Some(super::ResumeSource::Text("a whole résumé"))
+        Some(super::resolve::ResumeSource::Text("a whole résumé"))
     );
 }
 
@@ -1155,7 +1160,7 @@ fn resume_source_is_none_when_both_are_empty_or_whitespace() {
 fn job_source_prefers_the_id_even_when_text_is_also_present() {
     assert_eq!(
         super::job_source("job-9", "a whole job ad"),
-        Some(super::JobSource::Cache("job-9"))
+        Some(super::resolve::JobSource::Cache("job-9"))
     );
 }
 
@@ -1163,7 +1168,7 @@ fn job_source_prefers_the_id_even_when_text_is_also_present() {
 fn job_source_uses_text_only_when_the_id_is_empty() {
     assert_eq!(
         super::job_source("", "a whole job ad"),
-        Some(super::JobSource::Text("a whole job ad"))
+        Some(super::resolve::JobSource::Text("a whole job ad"))
     );
 }
 
@@ -1210,67 +1215,285 @@ fn job_meta_from_request_reads_the_identity_fields_off_the_clamped_request() {
 #[test]
 fn job_ad_for_persist_is_empty_on_the_cache_path_and_carries_the_text_on_the_text_path() {
     assert_eq!(
-        super::job_ad_for_persist(super::JobSource::Cache("job-9")),
+        super::job_ad_for_persist(super::resolve::JobSource::Cache("job-9")),
         ""
     );
     assert_eq!(
-        super::job_ad_for_persist(super::JobSource::Text("a whole job ad")),
+        super::job_ad_for_persist(super::resolve::JobSource::Text("a whole job ad")),
         "a whole job ad"
     );
 }
 
-/// **No silent fallback at the call site.** `execute`'s `ResumeSource::Store`/
-/// `JobSource::Cache` arms must resolve the store/cache and hard-error on a
-/// miss — they must never read `clamped.resume_text`/`clamped.job_ad_text` as
-/// a fallback. Grep-shaped, same reason as
-/// `every_provider_calling_command_admits_before_it_spends`: the branch needs
-/// an `AppHandle` this crate has no harness for.
-///
-/// Mutation check: add a `.or_else(|| Some(clamped.resume_text.clone()))` (or
-/// the job-ad equivalent) inside either arm and this fails.
+// ── ID-WINS resolution BEHAVIOR (MEDIUM 1 — rust-backend-architect) ────────
+//
+// `resolve_resume`/`resolve_job` close the no-silent-fallback rule
+// STRUCTURALLY: the `Store`/`Cache` arms receive only an id and an injected
+// lookup, never `clamped.resume_text`/`clamped.job_ad_text`, so there is
+// nothing in scope for a mutation to reach for on a miss — unlike the old
+// source-substring test on `execute`'s body, which a differently-named
+// aliased local (`let aliased = clamped.resume_text.clone(); …
+// .unwrap_or(aliased)`) passed while changing the guarded behavior.
+
 #[test]
-fn id_path_never_falls_back_to_request_text() {
-    let source = include_str!("mod.rs");
+fn resolve_resume_returns_the_looked_up_text_on_a_store_hit() {
+    let choice = super::resolve::ResumeSource::Store("res-1");
+    let resolved = super::resolve::resolve_resume(choice, |id| {
+        (id == "res-1").then(|| "RESUME TEXT".to_string())
+    })
+    .expect("a hit resolves");
+    assert_eq!(resolved, "RESUME TEXT");
+}
 
-    let resume_start = source
-        .find("ResumeSource::Store(id) =>")
-        .expect("the résumé id arm exists");
-    let resume_end = resume_start
-        + source[resume_start..]
-            .find("ResumeSource::Text(text) => text.to_string(),")
-            .expect("the résumé text arm exists after it");
-    assert!(
-        !source[resume_start..resume_end].contains("resume_text"),
-        "the résumé id arm must never read the text fallback"
+/// The reviewer's own reproduction: build the choice through `resume_source`
+/// with BOTH an id and text present (so it still picks `Store` — ID WINS),
+/// then resolve it against a lookup that finds nothing. `resolve_resume` has
+/// no path back to the text `resume_source` saw and discarded — only `id`
+/// and `lookup` are in its scope — so this MUST error.
+#[test]
+fn resolve_resume_errors_on_a_store_miss_even_though_the_request_also_carried_text() {
+    let choice = super::resume_source("res-1", "a whole résumé text").expect("an id is present");
+    let err = super::resolve::resolve_resume(choice, |_| None).expect_err(
+        "a Store miss must error, never silently read the text resume_source saw but discarded",
     );
+    assert!(matches!(err, crate::error::AppError::Validation(_)));
+}
 
-    let job_start = source
-        .find("JobSource::Cache(id) => {")
-        .expect("the job id arm exists");
-    let job_end = job_start
-        + source[job_start..]
-            .find("JobSource::Text(text) =>")
-            .expect("the job text arm exists after it");
-    assert!(
-        !source[job_start..job_end].contains("job_ad_text"),
-        "the job id arm must never read the text fallback"
+#[test]
+fn resolve_resume_resolves_the_text_arm_without_ever_calling_lookup() {
+    let choice = super::resolve::ResumeSource::Text("PASTED RESUME");
+    let resolved =
+        super::resolve::resolve_resume(choice, |_| panic!("the Text arm must never call lookup"))
+            .expect("the Text arm always resolves");
+    assert_eq!(resolved, "PASTED RESUME");
+}
+
+#[test]
+fn resolve_job_returns_the_looked_up_ad_and_meta_on_a_cache_hit() {
+    let choice = super::resolve::JobSource::Cache("job-9");
+    let (ad, meta) = super::resolve::resolve_job(
+        choice,
+        |id| (id == "job-9").then(|| "JOB AD TEXT".to_string()),
+        |id| {
+            (id == "job-9").then(|| crate::commands::match_resume::JobPostingMeta {
+                title: "Staff Engineer".to_string(),
+                ..Default::default()
+            })
+        },
+        || panic!("meta_from_request must never run on the Cache arm"),
+    )
+    .expect("a hit resolves");
+    assert_eq!(ad, "JOB AD TEXT");
+    assert_eq!(meta.title, "Staff Engineer");
+}
+
+/// The job-ad twin of `resolve_resume_errors_on_a_store_miss_…`.
+#[test]
+fn resolve_job_errors_on_a_cache_miss_even_though_the_request_also_carried_text() {
+    let choice = super::job_source("job-9", "a whole job ad text").expect("an id is present");
+    let err = super::resolve::resolve_job(
+        choice,
+        |_| None,
+        |_| None,
+        || panic!("meta_from_request must never run on the Cache arm"),
+    )
+    .expect_err(
+        "a Cache miss must error, never silently read the text job_source saw but discarded",
+    );
+    assert!(matches!(err, crate::error::AppError::Validation(_)));
+}
+
+#[test]
+fn resolve_job_resolves_the_text_arm_via_meta_from_request_without_calling_the_cache_lookups() {
+    let choice = super::resolve::JobSource::Text("PASTED JOB AD");
+    let (ad, meta) = super::resolve::resolve_job(
+        choice,
+        |_| panic!("the Text arm must never call lookup_text"),
+        |_| panic!("the Text arm must never call lookup_meta"),
+        || crate::commands::match_resume::JobPostingMeta {
+            title: "Staff Engineer".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("the Text arm always resolves");
+    assert_eq!(ad, "PASTED JOB AD");
+    assert_eq!(meta.title, "Staff Engineer");
+}
+
+/// **Provenance only on the id path** — the behavioral half (was a
+/// source-substring grep test; the DECISION itself is now provable directly).
+///
+/// Mutation check: return `Some(id)` unconditionally and this fails.
+#[test]
+fn source_resume_id_for_metrics_is_some_only_on_the_store_path() {
+    assert_eq!(
+        super::resolve::source_resume_id_for_metrics(super::resolve::ResumeSource::Store("res-1")),
+        Some("res-1")
+    );
+    assert_eq!(
+        super::resolve::source_resume_id_for_metrics(super::resolve::ResumeSource::Text(
+            "some text"
+        )),
+        None
     );
 }
 
-/// **Provenance only on the id path.** `sourceResumeId` must be present on a
-/// `Store` run's metrics and absent on a `Text` run's — see the module's
-/// `source_resume_for` interplay note next to the insert. Grep-shaped for the
-/// same `AppHandle` reason as the test above.
-///
-/// Mutation check: drop the `if let ResumeSource::Store(id) = resume_choice`
-/// guard (always insert) and this fails.
+/// **Call-site wiring, grep-shaped — presence only, never branch semantics**
+/// (the behavior is pinned above, on the pure functions directly). `execute`
+/// needs an `AppHandle` this crate has no harness for, so "it actually calls
+/// the resolve functions rather than a reintroduced inline branch" is
+/// otherwise provable only by reading the code.
 #[test]
-fn source_resume_id_is_gated_on_the_store_path() {
+fn execute_routes_resolution_through_the_pure_resolve_functions() {
     let source = include_str!("mod.rs");
     assert!(
-        source.contains("if let ResumeSource::Store(id) = resume_choice {")
-            && source.contains(r#"object.insert("sourceResumeId".to_string(), json!(id));"#),
-        "sourceResumeId must be written only inside the ResumeSource::Store guard"
+        source.contains("resolve::resolve_resume("),
+        "execute must resolve the résumé through resolve::resolve_resume"
+    );
+    assert!(
+        source.contains("resolve::resolve_job("),
+        "execute must resolve the job ad through resolve::resolve_job"
+    );
+    assert!(
+        source.contains("resolve::source_resume_id_for_metrics(resume_choice)"),
+        "sourceResumeId must be gated through resolve::source_resume_id_for_metrics"
+    );
+    assert!(
+        source.contains("resolve::run_store_job_url(&job_url, job_choice)"),
+        "the run row's own job_url must route through resolve::run_store_job_url, \
+         not reuse the aggregate's job_url directly"
+    );
+}
+
+// ── Unlinked-run retention key (MEDIUM 2 — rust-backend-architect) ─────────
+
+/// Same text → same bucket (so re-running one pasted posting still caps at
+/// `RETENTION_RUNS_PER_JOB`); different text → different bucket.
+#[test]
+fn unlinked_run_key_is_deterministic_and_distinct_per_text() {
+    let a1 = super::resolve::unlinked_run_key("Staff Engineer at Acme — full ad text");
+    let a2 = super::resolve::unlinked_run_key("Staff Engineer at Acme — full ad text");
+    let b = super::resolve::unlinked_run_key("Backend Engineer at Globex — full ad text");
+    assert_eq!(a1, a2, "the same pasted text must land in the same bucket");
+    assert_ne!(a1, b, "different pasted postings must not collide");
+}
+
+/// **Must survive the SAME normalization chokepoint `PipelineRunStore::
+/// upsert_run` applies before storing.** A non-`http(s)` synthetic key would
+/// be neutralized back to `""` there — right back into the shared bucket
+/// this function exists to escape. Also pins the reserved-TLD shape, so it
+/// can never be mistaken for a resolvable posting link.
+#[test]
+fn unlinked_run_key_survives_normalize_job_url_and_is_shaped_as_reserved() {
+    let key = super::resolve::unlinked_run_key("a pasted job ad");
+    assert_eq!(
+        crate::applications::normalize_job_url(&key),
+        key,
+        "the run store normalizes every job_url on write; a non-http(s) key would be wiped to \"\""
+    );
+    assert!(key.starts_with("https://"));
+    assert!(
+        key.contains(".invalid/"),
+        "must be shaped so it can never resolve to a real host"
+    );
+}
+
+/// `run_store_job_url` — the run-STORE's own key: `job_url` wins whenever
+/// nonempty (the ordinary linked case, `Text` or `Cache`); an empty
+/// `job_url` on the `Text` path substitutes `unlinked_run_key`; an empty
+/// `job_url` on the `Cache` path (the cached posting itself had none — rare,
+/// pre-existing) stays empty, unchanged from before PR-3.
+#[test]
+fn run_store_job_url_substitutes_the_synthetic_key_only_when_unlinked_and_text_path() {
+    assert_eq!(
+        super::resolve::run_store_job_url(
+            "https://boards.example/jobs/1",
+            super::resolve::JobSource::Text("a pasted job ad")
+        ),
+        "https://boards.example/jobs/1",
+        "a real job_url always wins, on either path"
+    );
+    let synthetic =
+        super::resolve::run_store_job_url("", super::resolve::JobSource::Text("a pasted job ad"));
+    assert_eq!(
+        synthetic,
+        super::resolve::unlinked_run_key("a pasted job ad"),
+        "an unlinked TEXT-path run must get the synthetic key"
+    );
+    assert_eq!(
+        super::resolve::run_store_job_url("", super::resolve::JobSource::Cache("job-9")),
+        "",
+        "an unlinked CACHE-path run (the cached posting had no url) stays empty, unchanged"
+    );
+}
+
+/// **MEDIUM 2, pinned at the STORE level.** `PipelineRunStore::prune`
+/// partitions retention on `(job_url, kind)`; leaving every unlinked run
+/// under `job_url = ""` would pool every pasted posting's history into one
+/// shared bucket. 3 runs of job A (same pasted text) + 1 of job B (different
+/// text) both survive `prune()` fully intact; a 4th run of A evicts only A's
+/// oldest, never touching B.
+#[test]
+fn unlinked_runs_of_different_postings_do_not_share_a_retention_bucket() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = PipelineRunStore::open(dir.path()).expect("store opens");
+
+    let key_a = super::resolve::unlinked_run_key("Staff Engineer at Acme — full ad text A");
+    let key_b = super::resolve::unlinked_run_key("Backend Engineer at Globex — full ad text B");
+    assert_ne!(key_a, key_b, "distinct pasted postings must not collide");
+
+    let row = |id: &str, job_url: &str, started_at: u64| RunRow {
+        id: id.to_string(),
+        job_url: job_url.to_string(),
+        kind: super::RUN_KIND.to_string(),
+        depth: "quality".to_string(),
+        status: "completed".to_string(),
+        started_at,
+        finished_at: Some(started_at),
+        stopped_reason: None,
+        metrics_json: "{}".to_string(),
+    };
+
+    for (index, started_at) in [1_700_000_000_000u64, 1_700_000_001_000, 1_700_000_002_000]
+        .into_iter()
+        .enumerate()
+    {
+        store
+            .upsert_run(&row(&format!("run-a-{index}"), &key_a, started_at))
+            .expect("A's run persists");
+    }
+    store
+        .upsert_run(&row("run-b-0", &key_b, 1_700_000_000_500))
+        .expect("B's run persists");
+
+    store.prune();
+
+    assert_eq!(
+        store.runs_for_job(&key_a).len(),
+        3,
+        "A's 3 runs must survive intact"
+    );
+    assert_eq!(
+        store.runs_for_job(&key_b).len(),
+        1,
+        "B's 1 run must survive, untouched by A's count"
+    );
+
+    // A 4th run of A evicts only A's oldest — B stays untouched.
+    store
+        .upsert_run(&row("run-a-3", &key_a, 1_700_000_003_000))
+        .expect("A's 4th run persists");
+    store.prune();
+
+    let a_runs = store.runs_for_job(&key_a);
+    assert_eq!(a_runs.len(), 3, "retention caps A at 3");
+    assert!(
+        a_runs.iter().all(|r| r.id != "run-a-0"),
+        "A's oldest run must be the one evicted"
+    );
+    assert_eq!(
+        store.runs_for_job(&key_b).len(),
+        1,
+        "B is untouched by A's eviction"
     );
 }
 
@@ -1808,6 +2031,21 @@ fn a_crafted_posting_title_cannot_displace_the_notification_clause() {
         .expect("terminal")
         .body;
     assert_eq!(ordinary, "Senior Engineer · Acme");
+}
+
+/// **SEC-LOW-2.** An embedded newline (or other whitespace run) in the
+/// scraped title/company — or PR-3's text-path `jobTitle`/`companyName`,
+/// neither line-shape checked upstream — must not survive into a two-line
+/// OS notification body. Mutation check: revert `posting_label` to
+/// `title.trim()`/`company.trim()` (drop `collapse_whitespace`) and this
+/// fails.
+#[test]
+fn an_embedded_newline_in_the_posting_title_does_not_split_the_notification_body() {
+    let body = run_notification(super::STATUS_COMPLETED, 0, "Staff\nEngineer", "Acme\tCorp")
+        .expect("terminal")
+        .body;
+    assert_eq!(body, "Staff Engineer · Acme Corp");
+    assert_eq!(body.lines().count(), 1, "the body must stay one line");
 }
 
 /// The number in the notification is the number the review panel will show — one
