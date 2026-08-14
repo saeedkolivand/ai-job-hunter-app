@@ -61,7 +61,7 @@ const HUMANIZE_MAX_CALLS = 2;
 
 describe('qualityRunDeadlineSecs', () => {
   it('pins the derived per-tier table', () => {
-    // Every value is `QUALITY_RUN_FIXED_SECS + 300 × 1 × multiplier`. Pinned as
+    // Every value is `QUALITY_RUN_FIXED_SECS + 300 × 2 × multiplier`. Pinned as
     // literals (not recomputed from the constants) so a change to either term
     // has to be re-argued against the derivation in the source doc, and so the
     // Rust twin (`timeouts::quality_run_deadline`) has a table to match.

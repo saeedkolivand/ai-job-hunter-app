@@ -43,11 +43,13 @@
 //! per-language prose checks, not the English ones) is the future fix.
 
 use async_trait::async_trait;
-use serde_json::json;
+use serde_json::{json, Value};
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::StoppedReason;
-use crate::pipeline::resume::prompts::{humanize_system, humanize_user, HumanizeTier};
+use crate::pipeline::resume::prompts::{
+    humanize_system, humanize_user, HumanizeTier, HUMANIZE_DOCUMENT_CAP,
+};
 use crate::pipeline::resume::{projects, QualityCtx, RunDeadline};
 use crate::pipeline::Stage;
 use crate::validate::content::{ContentIssue, ContentMetrics, ContentReport};
@@ -111,6 +113,30 @@ pub(crate) fn voice_findings(report: &ContentReport, document: &str) -> Vec<Stri
         })
         .map(issue_line)
         .collect()
+}
+
+/// Whether `document` is too large for `humanize` to safely rewrite as a
+/// WHOLE document — the same cap [`humanize_user`]'s own `fenced()` call
+/// enforces on the way OUT (`HUMANIZE_DOCUMENT_CAP`), checked HERE on the way
+/// IN so a document that fence would silently truncate is never sent at all.
+///
+/// **Why this cannot be left to [`is_usable_rewrite`]'s length floor.**
+/// `fenced()` truncates with NO marker, so a document over the cap does not
+/// error — the model is handed a PREFIX and asked to rewrite "the whole
+/// document", and a faithful rewrite of that prefix is a candidate whose
+/// length, measured against the REAL (untruncated) original, can still clear
+/// the résumé's 50% floor: a 24 000-char résumé truncated to the 12 000-char
+/// cap and rewritten faithfully comes back at ~50% of the original — right at
+/// the boundary, and comfortably over it for anything shorter than double the
+/// cap. Whether that passing candidate actually LOST content depends on what
+/// was in the dropped tail: `humanize_is_worse`'s absence-shaped Criticals
+/// only fire when the lost tail happened to contain a role or a project link,
+/// so a dropped Education/Certifications/Languages section — real content —
+/// sails through both guards clean. A length ratio against a document that
+/// was never fully SEEN cannot be the backstop; refusing to send it at all
+/// is.
+pub(crate) fn exceeds_humanize_cap(document: &str) -> bool {
+    document.chars().count() > HUMANIZE_DOCUMENT_CAP
 }
 
 /// Whether the letter arm may run at all — pulled out as its OWN pure
@@ -235,6 +261,10 @@ pub(crate) struct HumanizeAttempt {
     pub failed: bool,
     /// The run's deadline had already passed; nothing was attempted.
     pub timed_out: bool,
+    /// `original_text` was over [`HUMANIZE_DOCUMENT_CAP`] — see
+    /// [`exceeds_humanize_cap`]. Nothing was sent; a truncated prefix rewrite
+    /// is never an acceptable substitute for the whole document.
+    pub too_large: bool,
 }
 
 impl HumanizeAttempt {
@@ -246,6 +276,7 @@ impl HumanizeAttempt {
             reverted: false,
             failed: false,
             timed_out: false,
+            too_large: false,
         }
     }
 }
@@ -283,6 +314,11 @@ where
     G: FnMut(String) -> GFut,
     GFut: std::future::Future<Output = AppResult<ContentReport>>,
 {
+    if exceeds_humanize_cap(&original_text) {
+        let mut attempt = HumanizeAttempt::kept(original_text, original_report);
+        attempt.too_large = true;
+        return Ok(attempt);
+    }
     if deadline.passed() {
         let mut attempt = HumanizeAttempt::kept(original_text, original_report);
         attempt.timed_out = true;
@@ -306,7 +342,22 @@ where
                 return Ok(attempt);
             }
             let candidate = normalize(&candidate).unwrap_or(candidate);
-            let candidate_report = revalidate(candidate.clone()).await?;
+            // A revalidate failure (a `spawn_blocking` join failure inside
+            // `validate_documents` — the process, not the model) is a FAILED
+            // ATTEMPT, exactly like a `complete()` error above: keep the
+            // original, mark `failed`, never propagate. Before this, the `?`
+            // here was the ONE path through `humanize_one` that could fail
+            // the WHOLE pipeline run over what is, by design, this stage's
+            // own best-effort cleanup pass.
+            let candidate_report = match revalidate(candidate.clone()).await {
+                Ok(report) => report,
+                Err(_) => {
+                    let mut attempt = HumanizeAttempt::kept(original_text, original_report);
+                    attempt.called = true;
+                    attempt.failed = true;
+                    return Ok(attempt);
+                }
+            };
             if humanize_is_worse(
                 &original_report,
                 &original_text,
@@ -325,23 +376,70 @@ where
                     reverted: false,
                     failed: false,
                     timed_out: false,
+                    too_large: false,
                 })
             }
         }
     }
 }
 
-/// The empty-but-valid report a letter revalidate falls back to when
-/// [`validate_documents`] returns `None` for it — unreachable in practice
-/// ([`is_usable_rewrite`] already guarantees the candidate is non-empty before
-/// this runs, and a non-empty `generated` always yields `Some`), kept as a
-/// defensive fallback rather than a panic so a future change to that contract
-/// degrades instead of crashing a run.
+/// The empty-but-valid report used ONLY as the "before" baseline when
+/// `ctx.letter_report` is somehow `None` even though `letter_flagged > 0` —
+/// unreachable in practice (`voice_count`'s own `map_or(0, ..)` is what makes
+/// `letter_flagged` positive, and that requires `Some`), kept as a defensive
+/// fallback rather than a panic so a future change to that invariant degrades
+/// instead of crashing a run.
+///
+/// **Safe as a BASELINE, wrong as an OUTCOME.** A fabricated clean "before"
+/// only makes [`humanize_is_worse`]'s comparison MORE likely to revert (any
+/// real issue in the candidate now reads as newly introduced), which is the
+/// safe direction. Do not reuse this for a revalidate result: a fabricated
+/// clean "after" report is what let an ungraded letter look accepted — see
+/// the revalidate closure below, which fails CLOSED (an `Err`, caught by
+/// `humanize_one`'s revalidate-error path) instead of calling this on `None`.
 fn empty_ok_report() -> ContentReport {
     ContentReport {
         ok: true,
         issues: Vec::new(),
         metrics: ContentMetrics::default(),
+    }
+}
+
+/// The stage's ledger artifact — one shape, shared by all three exits
+/// (`Stage::run`'s two early returns and its normal end), so a future new
+/// field lands in every exit at once instead of being added to the "real"
+/// one and forgotten on the early-return copies. `Default` gives the two
+/// early exits an all-zero/all-false artifact for free.
+#[derive(Debug, Default)]
+struct Artifact {
+    resume_flagged: usize,
+    letter_flagged: usize,
+    calls: u32,
+    reverted: bool,
+    voice_before: usize,
+    voice_after: usize,
+    failed: bool,
+    timed_out: bool,
+    capped: bool,
+    too_large: bool,
+}
+
+impl Artifact {
+    // Counts only (ADR-027) — never the generated text or the finding lines
+    // the model saw.
+    fn into_json(self) -> Value {
+        json!({
+            "resumeFlagged": self.resume_flagged,
+            "letterFlagged": self.letter_flagged,
+            "calls": self.calls,
+            "reverted": self.reverted,
+            "voiceBefore": self.voice_before,
+            "voiceAfter": self.voice_after,
+            "failed": self.failed,
+            "timedOut": self.timed_out,
+            "capped": self.capped,
+            "tooLarge": self.too_large,
+        })
     }
 }
 
@@ -354,20 +452,7 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         let Some(resume_report) = ctx.report.clone() else {
             // validate did not run — nothing to grade against.
-            ctx.ledger.record(
-                NAME,
-                json!({
-                    "resumeFlagged": 0,
-                    "letterFlagged": 0,
-                    "calls": 0,
-                    "reverted": false,
-                    "voiceBefore": 0,
-                    "voiceAfter": 0,
-                    "failed": false,
-                    "timedOut": false,
-                    "capped": false,
-                }),
-            );
+            ctx.ledger.record(NAME, Artifact::default().into_json());
             return Ok(());
         };
         let resume_flagged = voice_count(&resume_report);
@@ -375,20 +460,7 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         let voice_before = resume_flagged + letter_flagged;
 
         if resume_flagged == 0 && letter_flagged == 0 {
-            ctx.ledger.record(
-                NAME,
-                json!({
-                    "resumeFlagged": 0,
-                    "letterFlagged": 0,
-                    "calls": 0,
-                    "reverted": false,
-                    "voiceBefore": 0,
-                    "voiceAfter": 0,
-                    "failed": false,
-                    "timedOut": false,
-                    "capped": false,
-                }),
-            );
+            ctx.ledger.record(NAME, Artifact::default().into_json());
             return Ok(());
         }
 
@@ -403,6 +475,7 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         let mut failed = false;
         let mut timed_out = false;
         let mut capped = false;
+        let mut too_large = false;
 
         // Read out of `ctx` BEFORE building any closure — `input` is `Copy`,
         // `completer` is an owned `&'a Completer`, and this is the letter text
@@ -413,14 +486,16 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         let letter_for_resume_revalidate = ctx.letter_text().to_string();
 
         if resume_flagged > 0 {
-            // The SAME two gates `humanize_one` itself checks first, mirrored
+            // The SAME three gates `humanize_one` itself checks first, mirrored
             // HERE so `charge_daily` — the call that actually spends the
             // user's daily allowance — never fires on a path that was never
-            // going to send anything: an already-expired deadline, or every
-            // flagged line landing on a link line (`voice_findings` filters
-            // them all out). Charging ahead of these two used to burn the
-            // budget for a stage that was about to no-op either way.
-            if ctx.deadline.passed() {
+            // going to send anything: a document over the cap (`fenced()`
+            // would silently truncate it — see `exceeds_humanize_cap`), an
+            // already-expired deadline, or every flagged line landing on a
+            // link line (`voice_findings` filters them all out).
+            if exceeds_humanize_cap(&ctx.draft) {
+                too_large = true;
+            } else if ctx.deadline.passed() {
                 timed_out = true;
             } else {
                 let findings = voice_findings(&resume_report, &ctx.draft);
@@ -474,6 +549,7 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                             failed |= attempt.failed;
                             reverted |= attempt.reverted;
                             timed_out |= attempt.timed_out;
+                            too_large |= attempt.too_large;
                             ctx.draft = attempt.text;
                             ctx.report = Some(attempt.report);
                         }
@@ -490,8 +566,10 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         // every OTHER reader (validate, repair, persist) correctly uses.
         let letter_body = ctx.letter.clone();
         if should_humanize_letter(letter_flagged, &letter_body, input.include_cover_letter) {
-            // Same two gates, same reason, as the résumé arm above.
-            if ctx.deadline.passed() {
+            // Same three gates, same reason, as the résumé arm above.
+            if exceeds_humanize_cap(&letter_body) {
+                too_large = true;
+            } else if ctx.deadline.passed() {
                 timed_out = true;
             } else {
                 // Safe: `letter_flagged > 0` only counts when `ctx.letter_report`
@@ -532,7 +610,24 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                                             candidate,
                                         )
                                         .await?;
-                                        Ok(letter_report.unwrap_or_else(empty_ok_report))
+                                        // FAIL CLOSED: `None` here means a
+                                        // non-empty candidate produced no
+                                        // letter report at all (unreachable
+                                        // today — see `empty_ok_report`'s own
+                                        // doc). An `Err` is caught by
+                                        // `humanize_one`'s revalidate-error
+                                        // path (kept original, `failed`), so
+                                        // a future contract change on that
+                                        // `None` arm REVERTS instead of
+                                        // shipping an ungraded letter under a
+                                        // fabricated clean report.
+                                        letter_report.ok_or_else(|| {
+                                            AppError::Validation(
+                                                "the letter revalidate produced no report for a \
+                                                 non-empty candidate"
+                                                    .to_string(),
+                                            )
+                                        })
                                     }
                                 },
                                 tier,
@@ -542,6 +637,7 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                             failed |= attempt.failed;
                             reverted |= attempt.reverted;
                             timed_out |= attempt.timed_out;
+                            too_large |= attempt.too_large;
                             ctx.letter = attempt.text;
                             ctx.letter_report = Some(attempt.report);
                         }
@@ -563,21 +659,21 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         for _ in 0..calls {
             ctx.ledger.count_call(false);
         }
-        // Counts only (ADR-027) — never the generated text or the finding
-        // lines the model saw.
         ctx.ledger.record(
             NAME,
-            json!({
-                "resumeFlagged": resume_flagged,
-                "letterFlagged": letter_flagged,
-                "calls": calls,
-                "reverted": reverted,
-                "voiceBefore": voice_before,
-                "voiceAfter": voice_after,
-                "failed": failed,
-                "timedOut": timed_out,
-                "capped": capped,
-            }),
+            Artifact {
+                resume_flagged,
+                letter_flagged,
+                calls,
+                reverted,
+                voice_before,
+                voice_after,
+                failed,
+                timed_out,
+                capped,
+                too_large,
+            }
+            .into_json(),
         );
         Ok(())
     }

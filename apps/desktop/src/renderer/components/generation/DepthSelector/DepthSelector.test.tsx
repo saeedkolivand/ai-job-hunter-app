@@ -51,7 +51,7 @@ describe('DepthSelector', () => {
     );
     expect(screen.getByRole('radio', { name: /quality/i })).toHaveAttribute(
       'title',
-      expect.stringContaining('Six stages')
+      expect.stringContaining('Up to eight stages')
     );
     expect(screen.getByRole('radio', { name: /max/i })).toHaveAttribute(
       'title',
@@ -64,7 +64,8 @@ describe('DepthSelector', () => {
     await userEvent.hover(screen.getByRole('button', { name: /what do these depths do/i }));
 
     expect(await screen.findByText(/1 model call/i)).toBeInTheDocument();
-    expect(screen.getByText(/4 model calls plus up to 2 repair rounds/i)).toBeInTheDocument();
+    expect(screen.getByText(/4–5 model calls/i)).toBeInTheDocument();
+    expect(screen.getByText(/up to 2 clean-up passes/i)).toBeInTheDocument();
     expect(screen.getByText(/\+30–90 seconds/i)).toBeInTheDocument();
     expect(screen.getByText(/one per section \(up to 12\)/i)).toBeInTheDocument();
     // The max run's own wall clock, so "how long can this possibly take" has an

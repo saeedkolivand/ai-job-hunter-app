@@ -11,14 +11,14 @@ use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
     company_roster_block, draft_system, draft_user, humanize_system, humanize_user, letter_system,
     letter_user, match_evidence_system, match_evidence_user, repair_user, strategy_system,
-    strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM,
+    strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP,
 };
 use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
 use super::stages::{
-    criticals_by_section, ground, humanize_is_worse, humanize_one, is_usable_rewrite, reseed,
-    round_is_worse, seed_company_roster, should_humanize_letter, voice_count, voice_findings,
-    MAX_COMPANY_PLANS,
+    criticals_by_section, exceeds_humanize_cap, ground, humanize_is_worse, humanize_one,
+    is_usable_rewrite, reseed, round_is_worse, seed_company_roster, should_humanize_letter,
+    voice_count, voice_findings, MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
@@ -976,6 +976,19 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
         "a forged sibling inside the document must be broken"
     );
     assert!(!humanize.contains("[tool_result:"));
+
+    // `<humanize_findings>` is the SECOND untrusted block this turn fences —
+    // a `voice.*` finding's evidence text is copied from the document, so a
+    // hostile document can smuggle the same forged tags into a finding.
+    let humanize_hostile_findings = humanize_user("SKILLS\nGo", &[hostile.to_string()]);
+    assert_eq!(
+        humanize_hostile_findings
+            .matches("</humanize_findings>")
+            .count(),
+        1
+    );
+    assert!(humanize_hostile_findings.contains("< /job_posting>"));
+    assert!(!humanize_hostile_findings.contains("[tool_result:"));
 }
 
 /// The shared prompt blocks are INTERPOLATED, never paraphrased — there is no
@@ -2377,6 +2390,49 @@ fn voice_findings_is_empty_when_every_flag_sits_on_a_link_line() {
     assert!(voice_findings(&report, document).is_empty());
 }
 
+/// **An evidence-less `voice.*` issue is forwarded, not dropped.**
+/// `on_link_line` only fires on `Some(evidence)` — `evidence: None` has no
+/// span to check for a shared link line, and there is no link risk without
+/// one, so `voice_findings` must still surface the finding (via `issue_line`,
+/// which renders it without an "offending text" line when there is no
+/// evidence to quote).
+///
+/// Mutation check: make the evidence filter treat `None` as "on a link line"
+/// (e.g. `unwrap_or(true)` instead of `is_some_and`) and this finding vanishes.
+#[test]
+fn voice_findings_forwards_an_evidence_less_issue_without_an_offending_text_line() {
+    let mut report = voice_report(&["robust"]);
+    report.issues.push(ContentIssue {
+        severity: Severity::Warning,
+        code: VOICE_AI_TELL_LEXICAL,
+        section: None,
+        message: "a document-wide voice concern with no single span".to_string(),
+        evidence: None,
+    });
+    let findings = voice_findings(&report, "SOME DOCUMENT\n");
+    assert_eq!(findings.len(), 2, "both issues must be forwarded");
+    assert!(findings
+        .iter()
+        .any(|f| f.contains("a document-wide voice concern")
+            && !f.to_lowercase().contains("offending text")));
+}
+
+/// **The cap is a strict boundary, exactly at [`HUMANIZE_DOCUMENT_CAP`].**
+/// `fenced()` truncates with no marker at this same cap — see
+/// `exceeds_humanize_cap`'s own doc — so the char AT the cap must still be
+/// safe to send, and one char over must refuse.
+///
+/// Mutation check: flip `>` to `>=` and a document exactly at the cap starts
+/// refusing (safe direction, but wrong) — flip it to a smaller/larger
+/// constant and this drifts from `HUMANIZE_DOCUMENT_CAP`.
+#[test]
+fn exceeds_humanize_cap_is_a_strict_boundary_at_the_document_cap() {
+    let at_cap = "A".repeat(HUMANIZE_DOCUMENT_CAP);
+    let over_cap = "A".repeat(HUMANIZE_DOCUMENT_CAP + 1);
+    assert!(!exceeds_humanize_cap(&at_cap), "exactly at the cap is safe");
+    assert!(exceeds_humanize_cap(&over_cap), "one char over must refuse");
+}
+
 /// Mutation check: drop the length-ratio floor and a truncated answer that is
 /// merely non-empty passes.
 #[test]
@@ -2426,6 +2482,38 @@ fn is_usable_rewrite_tier_split_is_pinned_at_sixty_percent() {
     assert!(
         !is_usable_rewrite(&original, &candidate_60_percent, HumanizeTier::Letter),
         "60% fails the letter's strict 90% floor — its only backstop against content loss"
+    );
+}
+
+/// **Exact boundaries, both tiers.** Pins the floor as INCLUSIVE (`>=`, not
+/// `>`) at the one length where it matters — one character below the ratio
+/// must fail, exactly at it must pass.
+///
+/// Mutation check: flip either tier's `>=` to `>` and the "at the floor"
+/// assertion for that tier fails.
+#[test]
+fn is_usable_rewrite_resume_floor_boundary_is_inclusive_at_exactly_fifty_percent() {
+    let original = "A".repeat(100);
+    assert!(
+        is_usable_rewrite(&original, &"B".repeat(50), HumanizeTier::Resume),
+        "exactly 50% must clear the inclusive floor"
+    );
+    assert!(
+        !is_usable_rewrite(&original, &"B".repeat(49), HumanizeTier::Resume),
+        "one character under 50% must fail"
+    );
+}
+
+#[test]
+fn is_usable_rewrite_letter_floor_boundary_is_inclusive_at_exactly_ninety_percent() {
+    let original = "A".repeat(100);
+    assert!(
+        is_usable_rewrite(&original, &"B".repeat(90), HumanizeTier::Letter),
+        "exactly 90% must clear the inclusive floor"
+    );
+    assert!(
+        !is_usable_rewrite(&original, &"B".repeat(89), HumanizeTier::Letter),
+        "one character under 90% must fail"
     );
 }
 
@@ -2529,9 +2617,49 @@ async fn humanize_one_is_a_zero_cost_no_op_with_no_findings() {
     assert_eq!(attempt.text, "ORIGINAL");
 }
 
-/// **The run's deadline is checked FIRST, before findings are even looked
-/// at** — the in-stage check `repair.rs`'s own module doc argues for, applied
-/// here because `humanize` is now the LAST stage.
+/// **An over-cap document is refused BEFORE the deadline or findings are even
+/// looked at** — `fenced()` would silently truncate it, and a faithful
+/// rewrite of a truncated prefix can still clear the résumé's length floor
+/// (see `exceeds_humanize_cap`'s own doc). Zero calls, the original kept
+/// byte-for-byte, and `too_large` recorded instead of a fabricated success.
+///
+/// Mutation check: drop the `exceeds_humanize_cap` gate from `humanize_one`
+/// and `called` flips true.
+#[tokio::test]
+async fn humanize_one_refuses_a_document_over_the_cap_without_a_single_call() {
+    let mut called = false;
+    let over_cap = "A".repeat(HUMANIZE_DOCUMENT_CAP + 1);
+    let attempt = humanize_one(
+        live_deadline(),
+        over_cap.clone(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| {
+            called = true;
+            async move { Ok("must never run".to_string()) }
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { panic!("revalidate must never run over the cap") },
+        HumanizeTier::Resume,
+    )
+    .await
+    .expect("no revalidate call means no error path either");
+    assert!(
+        !called,
+        "no provider call once the document is over the cap"
+    );
+    assert!(!attempt.called);
+    assert!(attempt.too_large);
+    assert!(!attempt.reverted && !attempt.failed && !attempt.timed_out);
+    assert_eq!(
+        attempt.text, over_cap,
+        "the original document is kept, untruncated"
+    );
+}
+
+/// **The run's deadline is checked right after the size cap, before findings
+/// are even looked at** — the in-stage check `repair.rs`'s own module doc
+/// argues for, applied here because `humanize` is now the LAST stage.
 ///
 /// Mutation check: check `findings.is_empty()` before `deadline.passed()` and
 /// this still passes (findings is non-empty here) but the NEXT test — an
@@ -2590,6 +2718,42 @@ async fn humanize_one_keeps_the_original_and_marks_failed_on_a_provider_error() 
     assert!(attempt.failed);
     assert!(!attempt.reverted && !attempt.timed_out);
     assert_eq!(attempt.text, "ORIGINAL");
+}
+
+/// **A revalidate error never fails the WHOLE RUN — it keeps the original and
+/// marks `failed`**, exactly like a provider error above. Before this fix,
+/// the `?` on `revalidate(...)` was the only path through `humanize_one` that
+/// could propagate a failure out of what is, by design, this stage's own
+/// best-effort cleanup pass (a `spawn_blocking` join failure inside
+/// `validate_documents` is the process, not the model).
+///
+/// Mutation check: restore the `?` on the revalidate call and this test's
+/// `.expect(...)` on the outer `Result` panics instead of asserting.
+#[tokio::test]
+async fn humanize_one_keeps_the_original_and_marks_failed_when_revalidate_errors() {
+    let attempt = humanize_one(
+        live_deadline(),
+        "ORIGINAL".to_string(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| async move { Ok("REWRITTEN".to_string()) },
+        |_candidate: &str| None,
+        |_candidate| async move {
+            Err(crate::error::AppError::Provider(
+                "revalidate could not be joined".to_string(),
+            ))
+        },
+        HumanizeTier::Resume,
+    )
+    .await
+    .expect("a revalidate error is caught inside humanize_one, never propagated");
+    assert!(attempt.called, "a call WAS attempted");
+    assert!(attempt.failed);
+    assert!(!attempt.reverted && !attempt.timed_out);
+    assert_eq!(
+        attempt.text, "ORIGINAL",
+        "the original is kept, not the ungraded candidate"
+    );
 }
 
 /// An empty/truncated answer is graded as UNUSABLE before it ever reaches

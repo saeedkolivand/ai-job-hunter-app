@@ -1621,7 +1621,7 @@
       },
       "quality": {
         "label": "Quality",
-        "tooltip": "Six stages: analyse, match your evidence, plan, draft, check, auto-repair.",
+        "tooltip": "Up to eight stages: analyse, match your evidence, plan, draft, write a cover letter if requested, check, auto-repair, then remove any AI-sounding phrasing.",
         "summary": "Slower and pricier, but grounded in your résumé and checked before you see it."
       },
       "max": {
@@ -1640,8 +1640,8 @@
         "cost": "1 model call. Seconds to a minute."
       },
       "quality": {
-        "what": "Staged: the job ad is analysed, your evidence is matched and quoted verbatim from your résumé, a strategy is built, the résumé is drafted, then checked — and anything critical is regenerated automatically, up to 2 rounds.",
-        "cost": "4 model calls plus up to 2 repair rounds. Roughly +30–90 seconds on a cloud provider; several minutes on a local model, and up to ~10 minutes at high reasoning effort."
+        "what": "Staged: the job ad is analysed, your evidence is matched and quoted verbatim from your résumé, a strategy is built, the résumé — and a cover letter, if you asked for one — is drafted, then checked; anything critical is regenerated automatically (up to 2 rounds), and any AI-sounding phrasing left over is rewritten once.",
+        "cost": "4–5 model calls (5 when a cover letter is included), plus up to 2 repair rounds and up to 2 clean-up passes for AI-sounding phrasing. Roughly +30–90 seconds on a cloud provider; several minutes on a local model, and up to ~10 minutes at high reasoning effort."
       },
       "max": {
         "what": "Section by section: every section is written in its own call from the evidence quoted out of your résumé, then the whole document is assembled, checked and auto-repaired, and finally read once more by the model for clarity, evidence and tailoring. A live checklist shows each section's state while it runs, and the document builds in front of you.",
