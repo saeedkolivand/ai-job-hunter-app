@@ -19,9 +19,9 @@
 //! `llm_judge` review pass. The owner ruled it wasted tokens for no acted-on
 //! value (`max` alone cost 12+ calls a run) and it was removed; every run is
 //! this one pipeline now. [`types_max::ProjectOut`] and
-//! [`assemble::render_project`]/[`assemble::identity_line`] survive — they are
-//! also how the deterministic Projects normalization (`projects.rs`, PR #990)
-//! renders an entry, unrelated to depth.
+//! [`assemble::render_project`] survive — they are also how the
+//! deterministic Projects normalization (`projects.rs`, PR #990) renders an
+//! entry, unrelated to depth.
 //!
 //! ## The rule the stage split exists to enforce
 //!

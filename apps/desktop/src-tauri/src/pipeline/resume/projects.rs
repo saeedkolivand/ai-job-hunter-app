@@ -452,7 +452,7 @@ fn build(document: &str, seeds: &[ProjectOut]) -> ProjectsNormalizeOutcome {
     // — which this replacement, built fresh, does not carry. Not the LAST
     // section ⇒ append one back, or the splice would butt the next heading
     // directly against the last rendered line (mirrors the trailing-blank
-    // convention `stages::sections::entry_range` documents for entries).
+    // convention that separates entries: the blank belongs to neither side).
     if raw_section.end < parsed.lines.len() {
         replacement.push_str("\n\n");
     }

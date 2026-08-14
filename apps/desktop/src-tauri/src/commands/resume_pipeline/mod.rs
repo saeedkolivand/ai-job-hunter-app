@@ -676,19 +676,19 @@ pub(crate) fn save_verdict(source_resume: &str, draft: &str, job_url: &str) -> S
 /// over a real one always does — however the run happened to end.
 ///
 /// Both sides go through the SAME [`sections::find`] seam, so the
-/// undated-entry caveat (`assemble::DATE_COLUMN_GAP`: an entry with no date
-/// column is not a `LineKind::JobEntry`) applies equally to each and cannot
-/// create a false asymmetry.
+/// undated-entry caveat (an entry with no date column is not a
+/// `LineKind::JobEntry`) applies equally to each and cannot create a false
+/// asymmetry.
 pub(crate) fn is_persistable(source_resume: &str, draft: &str) -> bool {
     has_work_history(draft) || !has_work_history(source_resume)
 }
 
 /// Whether `text` has an employment section with anything under it.
 ///
-/// The SECTION with a body, not [`sections::entry_range`]: that one tests for
-/// `LineKind::JobEntry`, which an entry with no date column legitimately fails,
-/// and a résumé whose dates the source never carried is a real document rather
-/// than an empty one.
+/// The SECTION with a body, not a per-entry line range: `LineKind::JobEntry`
+/// legitimately fails for an entry with no date column, and a résumé whose
+/// dates the source never carried is a real document rather than an empty
+/// one.
 fn has_work_history(text: &str) -> bool {
     let split = crate::pipeline::resume::stages::sections::split(text);
     let lines: Vec<&str> = text.lines().collect();
