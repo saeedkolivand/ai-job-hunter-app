@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import type { DocumentRecord } from '@ajh/shared';
@@ -24,10 +24,18 @@ const MAX_BYTES = 25 * 1024 * 1024;
 interface Params {
   value: string;
   onChange: (text: string) => void;
+  /**
+   * Surfaces which saved doc backs the current text — `null` when it came
+   * from a manual paste/upload/profile-import edit, or once the loaded doc's
+   * text has been hand-edited. The one consumer today (the apply flow's
+   * `useTailorPipeline`) uses this to send `resumeId` instead of `resumeText`
+   * on a pipeline run; every other caller omits it.
+   */
+  onDocIdChange?: (id: string | null) => void;
 }
 
 /** State + behavior for ResumeInputCard: saved docs, upload, paste, profile import. */
-export function useResumeInput({ value, onChange }: Params) {
+export function useResumeInput({ value, onChange, onDocIdChange }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
   const api = useAppClient();
@@ -66,6 +74,25 @@ export function useResumeInput({ value, onChange }: Params) {
   const triggerDoc = docs.find((d) => d.id === selectedDocId) ?? defaultDoc;
   const activeDoc = triggerDoc;
 
+  /** `setSelectedDocId` + the optional host notification, kept in lockstep so
+   *  a caller of `onDocIdChange` can never observe a stale id. `useCallback`
+   *  so the auto-fill effect below can list it as a dependency honestly. */
+  const selectDoc = useCallback(
+    (id: string | null) => {
+      setSelectedDocId(id);
+      onDocIdChange?.(id);
+    },
+    [onDocIdChange]
+  );
+
+  /** The paste textarea's onChange — unlike the doc-selection paths above,
+   *  free typing bypasses every other handler here, so THIS is the one place
+   *  that has to clear a stale doc id on a hand-edit. */
+  const handleTextChange = (text: string) => {
+    onChange(text);
+    if (selectedDocId !== null) selectDoc(null);
+  };
+
   // Close saved-menu on outside click
   useEffect(() => {
     if (!showSaved) return;
@@ -95,16 +122,16 @@ export function useResumeInput({ value, onChange }: Params) {
     const text = raw?.text?.trim();
     if (text) {
       onChange(text);
-      setSelectedDocId(raw?._id ?? null);
+      selectDoc(raw?._id ?? null);
     }
-  }, [value, rawDocs, onChange]);
+  }, [value, rawDocs, onChange, selectDoc]);
 
   /** Load a saved resume into the editor (does not change the default) */
   const handleSelectSaved = (doc: DocumentRecord) => {
     const raw = rawDocs.find((d) => d._id === doc.id);
     const text = raw?.text?.trim();
     if (text) onChange(text);
-    setSelectedDocId(doc.id);
+    selectDoc(doc.id);
     setShowSaved(false);
     setExpanded(false);
   };
@@ -119,7 +146,7 @@ export function useResumeInput({ value, onChange }: Params) {
   const handleRemove = (doc: DocumentRecord) => {
     void removeDocument.mutateAsync(doc.id);
     if (doc.id === selectedDocId) {
-      setSelectedDocId(null);
+      selectDoc(null);
       onChange('');
       setExpanded(true);
     }
@@ -154,7 +181,7 @@ export function useResumeInput({ value, onChange }: Params) {
           queryFn: () => api.documents.getText(id),
         });
         onChange(text);
-        setSelectedDocId(id);
+        selectDoc(id);
         setExpanded(false);
       }
     } catch {
@@ -178,7 +205,7 @@ export function useResumeInput({ value, onChange }: Params) {
       });
       const result = await importFile(blob);
       if (result?.id) {
-        setSelectedDocId(result.id);
+        selectDoc(result.id);
         setExpanded(false);
         notify.success({ message: t('resumeInput.savedToLibrary') });
       }
@@ -199,7 +226,7 @@ export function useResumeInput({ value, onChange }: Params) {
         return;
       }
       onChange(result.text);
-      setSelectedDocId(null);
+      selectDoc(null);
       setProfileUrl('');
       setShowUrlInput(false);
       setExpanded(false);
@@ -246,6 +273,7 @@ export function useResumeInput({ value, onChange }: Params) {
     handleFileChange,
     handleSavePaste,
     handleProfileUrlSubmit,
+    handleTextChange,
     toggleUrlInput,
     review,
     clearReview,

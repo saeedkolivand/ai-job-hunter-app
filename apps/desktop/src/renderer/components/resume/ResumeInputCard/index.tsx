@@ -24,9 +24,12 @@ interface Props {
   onChange: (text: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** See `useResumeInput`'s `onDocIdChange` — omit unless the caller cares
+   *  which saved doc (if any) backs the current text. */
+  onDocIdChange?: (id: string | null) => void;
 }
 
-export function ResumeInputCard({ value, onChange, disabled, placeholder }: Props) {
+export function ResumeInputCard({ value, onChange, disabled, placeholder, onDocIdChange }: Props) {
   const { t } = useTranslation();
   const {
     fileRef,
@@ -58,10 +61,11 @@ export function ResumeInputCard({ value, onChange, disabled, placeholder }: Prop
     handleFileChange,
     handleSavePaste,
     handleProfileUrlSubmit,
+    handleTextChange,
     toggleUrlInput,
     review,
     clearReview,
-  } = useResumeInput({ value, onChange });
+  } = useResumeInput({ value, onChange, onDocIdChange });
 
   // Label for the resting chip: the loaded doc's title, else a generic label
   // when the text came from a paste / profile import (no backing doc).
@@ -180,7 +184,7 @@ export function ResumeInputCard({ value, onChange, disabled, placeholder }: Prop
             </span>
             <TextArea
               value={value}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={(e) => handleTextChange(e.target.value)}
               placeholder={placeholder ?? t('resumeInput.placeholder')}
               rows={6}
               className="w-full resize-none bg-transparent text-xs text-foreground/80 placeholder:text-foreground/20"
