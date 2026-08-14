@@ -40,6 +40,7 @@
 
 pub mod assemble;
 pub mod cache;
+pub mod projects;
 pub mod prompt_blocks;
 pub mod prompts;
 pub mod section_prompts;

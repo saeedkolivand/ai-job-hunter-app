@@ -15,10 +15,11 @@
 //! draft as the final document.
 
 use async_trait::async_trait;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::error::AppResult;
+use crate::pipeline::resume::projects::{self, ProjectsNormalizeOutcome};
 use crate::pipeline::resume::prompts::{draft_system, draft_user};
 use crate::pipeline::resume::QualityCtx;
 use crate::pipeline::Stage;
@@ -80,12 +81,54 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
 
         let text = completer.stream_captured(ctx.input.job_id, req).await?;
         ctx.ledger.count_call(false);
-        // Length only — never the draft itself (ADR-027).
-        ctx.ledger.record(
-            "draft",
-            json!({ "chars": text.chars().count(), "lines": text.lines().count() }),
-        );
-        ctx.draft = text;
+
+        let (draft, artifact) = apply_projects_normalization(ctx.input.source_resume, text);
+        // Length + projects-normalize counts only — never the draft itself
+        // (ADR-027).
+        ctx.ledger.record("draft", artifact);
+        ctx.draft = draft;
         Ok(())
     }
+}
+
+/// The DETERMINISTIC half of this stage — normalize the streamed text's
+/// Projects section and build the ledger artifact — pulled out of `run` so it
+/// is testable without a live provider (the model call above it is the only
+/// part that needs one). Mirrors why `repair::repair_loop` is its own
+/// function rather than inlined in `Repair::run`.
+///
+/// Deterministic, zero-cost: the Projects section is CODE-OWNED at quality
+/// depth too, the same way `assemble::render_project` already owns it at
+/// max — an entry this pass can confidently match to a seed gets its
+/// links/stack restored verbatim, never re-asked; anything it cannot match
+/// with confidence is left exactly as the model wrote it (see
+/// `projects`' module doc) rather than deleted.
+///
+/// A skipped/no-op pass is still reported (`projectsNormalizeSkipped`) — a
+/// silent "did nothing" is otherwise unobservable on the run's ledger.
+pub(crate) fn apply_projects_normalization(source_resume: &str, text: String) -> (String, Value) {
+    let (seeds, seed_skip_reason) = projects::seed_projects_for_normalize(source_resume);
+    let (draft, matched, dropped, links_restored, skipped) =
+        match projects::normalize_projects_outcome(&text, &seeds) {
+            ProjectsNormalizeOutcome::Applied(draft, stats) => (
+                draft,
+                stats.matched,
+                stats.dropped,
+                stats.links_restored,
+                None,
+            ),
+            ProjectsNormalizeOutcome::Skipped(reason) => (text, 0, 0, 0, Some(reason)),
+            ProjectsNormalizeOutcome::NoOp => (text, 0, 0, 0, seed_skip_reason),
+        };
+    let mut artifact = json!({
+        "chars": draft.chars().count(),
+        "lines": draft.lines().count(),
+        "projectsMatched": matched,
+        "projectsDropped": dropped,
+        "linksRestored": links_restored,
+    });
+    if let Some(reason) = skipped {
+        artifact["projectsNormalizeSkipped"] = json!(reason);
+    }
+    (draft, artifact)
 }
