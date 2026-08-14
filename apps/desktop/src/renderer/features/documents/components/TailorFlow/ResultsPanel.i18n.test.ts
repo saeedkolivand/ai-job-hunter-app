@@ -4,8 +4,17 @@
  * `pipeline.status.done` rendered the raw dotted key in production, because
  * the mock has no notion of "this key doesn't exist in the real catalog".
  *
- * This file imports the REAL locale JSON directly (not through i18next, not
- * through a mock — `resolveJsonModule` makes this a plain object import).
+ * CR-11: uses the REAL @ajh/translations instance (not a deep import of the
+ * raw locale JSON, not ResultsPanel.test.tsx's identity mock) — same pattern
+ * as this repo's other `*.i18n.test.ts` files (e.g.
+ * LocationFilterNote.i18n.test.ts, AutopilotCard.i18n.test.ts):
+ * `i18n.exists(key, { lng, fallbackLng: false })` + `i18n.getFixedT(lng)`.
+ * `fallbackLng: false` disables @ajh/translations' `fallbackLng: 'en'`
+ * default for this one check, so a key missing in de fails the de case
+ * instead of silently resolving via English — per-locale separation is the
+ * whole point, not just a shared "resolves at all" check. Each case below is
+ * a (locale, key) pair, not just a key, so a de-only gap is reported on its
+ * own case instead of hiding behind a passing en case for the same key.
  *
  * Scope (CR-3 correction of the original claim, which said "every
  * dynamically-constructed key path" but only swept `pipeline.status.*`,
@@ -22,40 +31,26 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import i18n from '@ajh/translations';
+
 import { STOPPED_SUFFIX, UNKNOWN_STOPPED_SUFFIX } from '@/lib/stopped-reason';
 
-import de from '../../../../../../../../packages/translations/src/locales/de/translation.json';
-import en from '../../../../../../../../packages/translations/src/locales/en/translation.json';
 import { PIPELINE_STEP_KEYS } from './lib/pipeline-steps';
 import { PIPELINE_STATUS_KEY } from './ResultsPanel';
 
-type Catalog = Record<string, unknown>;
-
-/** Read a dotted path off a parsed locale object. */
-function at(obj: Catalog, path: string): unknown {
-  return path
-    .split('.')
-    .reduce<unknown>(
-      (node, seg) => (node && typeof node === 'object' ? (node as Catalog)[seg] : undefined),
-      obj
-    );
-}
+const LOCALES = ['en', 'de'] as const;
+type Locale = (typeof LOCALES)[number];
 
 /**
- * CR-5: `toHaveProperty` passes for an empty string — a key that exists but
- * carries no copy would slip through silently (and render as blank chrome,
- * not a loud dotted-key failure). Assert a REAL, non-empty string in BOTH
- * locales, not just presence.
+ * CR-5: an existence check alone passes for a key that resolves to an empty
+ * string — assert real, non-empty copy for the given locale, not just
+ * presence.
  */
-function expectRealCopy(path: string) {
-  for (const [label, catalog] of [
-    ['en', en],
-    ['de', de],
-  ] as const) {
-    const value = at(catalog, path);
-    expect(typeof value, `${label}.${path} should be a string`).toBe('string');
-    expect((value as string).length, `${label}.${path} should not be empty`).toBeGreaterThan(0);
-  }
+function expectRealCopy(lng: Locale, path: string) {
+  expect(i18n.exists(path, { lng, fallbackLng: false }), `${lng}:${path}`).toBe(true);
+  const out = i18n.getFixedT(lng)(path);
+  expect(out, `${lng}:${path}`).not.toBe(path);
+  expect(out.trim().length, `${lng}:${path}`).toBeGreaterThan(0);
 }
 
 describe('ResultsPanel i18n — every reachable key resolves to real content', () => {
@@ -63,51 +58,63 @@ describe('ResultsPanel i18n — every reachable key resolves to real content', (
   // PIPELINE_STATUS_KEY. This is the exact bug: `pipeline.status.done` and
   // `pipeline.status.error` do not exist — the vocabulary is
   // running/completed/needsReview/failed/cancelled.
-  it.each(Object.entries(PIPELINE_STATUS_KEY))(
-    'runState=%s -> pipeline.status.%s',
-    (_runState, statusKey) => {
-      expectRealCopy(`pipeline.status.${statusKey}`);
-    }
+  const statusCases = LOCALES.flatMap((lng) =>
+    Object.entries(PIPELINE_STATUS_KEY).map(
+      ([runState, statusKey]) => [lng, runState, statusKey] as const
+    )
   );
+  it.each(statusCases)('%s runState=%s -> pipeline.status.%s', (lng, _runState, statusKey) => {
+    expectRealCopy(lng, `pipeline.status.${statusKey}`);
+  });
 
   // CR-3: `pipeline.stopped.${suffix}` (ResultsPanel's stopped-reason line) —
   // the reachable set is every `StoppedSuffix` VALUE `stoppedSuffix()` can
   // produce, plus its own unknown-reason fallback. Iterated from the shared
   // helper's own tables, not a hand-copied list, so a variant added there is
   // covered here automatically.
-  it.each([...new Set(Object.values(STOPPED_SUFFIX)), UNKNOWN_STOPPED_SUFFIX])(
-    'pipeline.stopped.%s',
-    (suffix) => {
-      expectRealCopy(`pipeline.stopped.${suffix}`);
-    }
+  const stoppedSuffixes = [...new Set(Object.values(STOPPED_SUFFIX)), UNKNOWN_STOPPED_SUFFIX];
+  const stoppedCases = LOCALES.flatMap((lng) =>
+    stoppedSuffixes.map((suffix) => [lng, suffix] as const)
   );
+  it.each(stoppedCases)('%s pipeline.stopped.%s', (lng, suffix) => {
+    expectRealCopy(lng, `pipeline.stopped.${suffix}`);
+  });
 
   // H8: pipeline.step.state.{done,active,pending} — the per-row sr-only word.
-  it.each(['done', 'active', 'pending'])('pipeline.step.state.%s', (state) => {
-    expectRealCopy(`pipeline.step.state.${state}`);
+  const stepStateCases = LOCALES.flatMap((lng) =>
+    (['done', 'active', 'pending'] as const).map((state) => [lng, state] as const)
+  );
+  it.each(stepStateCases)('%s pipeline.step.state.%s', (lng, state) => {
+    expectRealCopy(lng, `pipeline.step.state.${state}`);
   });
 
   // GeneratingPanel + ResultsPanel's H2 summary both key off PIPELINE_STEP_KEYS.
-  it.each(PIPELINE_STEP_KEYS)('pipeline.step.%s.{label,description}', (key) => {
-    expectRealCopy(`pipeline.step.${key}.label`);
-    expectRealCopy(`pipeline.step.${key}.description`);
+  const stepKeyCases = LOCALES.flatMap((lng) =>
+    PIPELINE_STEP_KEYS.map((key) => [lng, key] as const)
+  );
+  it.each(stepKeyCases)('%s pipeline.step.%s.{label,description}', (lng, key) => {
+    expectRealCopy(lng, `pipeline.step.${key}.label`);
+    expectRealCopy(lng, `pipeline.step.${key}.description`);
   });
 
   // Terminal-state announcer (GeneratingPanel).
-  it('pipeline.step.allDone', () => {
-    expectRealCopy('pipeline.step.allDone');
+  it.each(LOCALES)('%s pipeline.step.allDone', (lng) => {
+    expectRealCopy(lng, 'pipeline.step.allDone');
   });
 
   // M3: streaming-target header — a closed 2-way ternary, not a template
   // literal, but the same "reachable dynamic key" shape.
-  it.each(['resume', 'cover'])('autopilot.apply.target.%s', (target) => {
-    expectRealCopy(`autopilot.apply.target.${target}`);
+  const targetCases = LOCALES.flatMap((lng) =>
+    (['resume', 'cover'] as const).map((target) => [lng, target] as const)
+  );
+  it.each(targetCases)('%s autopilot.apply.target.%s', (lng, target) => {
+    expectRealCopy(lng, `autopilot.apply.target.${target}`);
   });
 
   // CR-3: the literal (non-dynamic) keys this PR added or renamed to
   // ResultsPanel — a typo here between the call site and the catalog is the
   // same class of "renders a dotted key" failure a mocked `t` cannot catch.
-  it.each([
+  const literalKeys = [
     'autopilot.apply.wizard.results.needsReviewTitleEmpty',
     'autopilot.apply.wizard.results.needsReviewHintEmpty',
     'autopilot.apply.wizard.results.needsReviewHintCold',
@@ -115,7 +122,9 @@ describe('ResultsPanel i18n — every reachable key resolves to real content', (
     'autopilot.apply.wizard.results.failedHint',
     'autopilot.apply.wizard.results.cancelledHint',
     'pipeline.runs.title',
-  ])('%s', (path) => {
-    expectRealCopy(path);
+  ] as const;
+  const literalCases = LOCALES.flatMap((lng) => literalKeys.map((path) => [lng, path] as const));
+  it.each(literalCases)('%s resolves %s', (lng, path) => {
+    expectRealCopy(lng, path);
   });
 });
