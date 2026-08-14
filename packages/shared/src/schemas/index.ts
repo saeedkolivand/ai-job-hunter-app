@@ -444,8 +444,25 @@ export const ResumePipelineRunSchema = z
  * this transport ever calls `.parse()` (see `ClampedRequest`'s Rust doc:
  * "Zod does not run on this transport"), so there is no runtime difference to
  * protect, only a compile-time one to avoid.
+ *
+ * A bare `z.input` still leaves BOTH source pairs optional (every field has
+ * a `.default(...)`), so `{}` type-checked even though the `.refine`s above
+ * reject it at parse time and Rust rejects it at runtime
+ * (`resume_source`/`job_source`, `resolve.rs`) — a caller could build a
+ * request nothing downstream would ever accept and the compiler would say
+ * nothing. The two groups are intersected as two SEPARATE two-member unions,
+ * not one `RequireOneOf` helper applied twice to the same base type — nesting
+ * it that way does not enforce both groups independently (the second
+ * application can subsume the first). Each pair still allows BOTH fields set
+ * — id wins at runtime, same as today — only "neither" is excluded.
  */
-export type ResumePipelineRunRequest = z.input<typeof ResumePipelineRunSchema>;
+type ResumePipelineRunRequestBase = Omit<
+  z.input<typeof ResumePipelineRunSchema>,
+  'resumeId' | 'resumeText' | 'jobId' | 'jobAdText'
+>;
+export type ResumePipelineRunRequest = ResumePipelineRunRequestBase &
+  ({ resumeId: string; resumeText?: string } | { resumeId?: string; resumeText: string }) &
+  ({ jobId: string; jobAdText?: string } | { jobId?: string; jobAdText: string });
 
 /**
  * Request for `resumePipeline.regenerateSection` — re-run ONE section of a
