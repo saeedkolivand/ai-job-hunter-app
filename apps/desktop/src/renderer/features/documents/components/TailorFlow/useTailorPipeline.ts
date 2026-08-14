@@ -26,6 +26,7 @@ import {
   PERSIST_DEBOUNCE_MS,
   type QualityReport,
   type TemplateId,
+  unresolvedCount,
 } from '@/lib/generate';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
 import { keys } from '@/services/query-client';
@@ -139,8 +140,14 @@ export function useTailorPipeline({
     setCurrentStep((prev) => pipelineStepForStage(stageName, prev));
   }, [stageName]);
 
+  // A stage name this build doesn't have a `pipeline.stage.*` copy entry for
+  // (added server-side after this renderer shipped) falls back to the
+  // machine's own translated coarse state — never the raw snake_case wire
+  // name, which would leak straight onto the panel.
   const stageLabel = session.stage
-    ? t(`pipeline.stage.${session.stage.stage}`, { defaultValue: session.stage.stage })
+    ? t(`pipeline.stage.${session.stage.stage}`, {
+        defaultValue: t(`pipeline.state.${session.state}`, { defaultValue: '' }),
+      })
     : t(`pipeline.state.${session.state}`, { defaultValue: '' });
 
   // Modal-local, ephemeral UI — fine to reset on remount.
@@ -263,6 +270,24 @@ export function useTailorPipeline({
   const sections = useMemo(() => buildSectionVerdicts(rawSlot?.report, output), [rawSlot, output]);
   const fabrications = useMemo(() => parseFabrications(rawSlot?.fabrications), [rawSlot]);
   const runId = session.detail?.runId;
+
+  // Unresolved fabrication count across BOTH documents — the Rust
+  // `needsReview` verdict (`still_needs_review`) scans resume AND coverLetter,
+  // but `fabrications` above (and the ACTIVE-tab-only `pipelineReview` it
+  // feeds) only ever reflects whichever document is on screen. A run flagged
+  // for review while the user is looking at the OTHER, clean document must
+  // not read as "0 claims" just because this session hasn't switched tabs.
+  const resumeReportSlot = session.detail?.report?.resume;
+  const coverReportSlot = session.detail?.report?.coverLetter;
+  const openClaimsTotal = useMemo(() => {
+    const resumeUnresolved = resumeReportSlot
+      ? unresolvedCount(parseFabrications(resumeReportSlot.fabrications), resumeOut)
+      : 0;
+    const coverUnresolved = coverReportSlot
+      ? unresolvedCount(parseFabrications(coverReportSlot.fabrications), coverOut)
+      : 0;
+    return resumeUnresolved + coverUnresolved;
+  }, [resumeReportSlot, coverReportSlot, resumeOut, coverOut]);
   const pipelineReview: QualityPipelineReview | undefined = runId
     ? {
         documentText: output,
@@ -429,6 +454,7 @@ export function useTailorPipeline({
     meta,
     report,
     pipelineReview,
+    openClaimsTotal,
     recheck,
     rechecking,
     runs,

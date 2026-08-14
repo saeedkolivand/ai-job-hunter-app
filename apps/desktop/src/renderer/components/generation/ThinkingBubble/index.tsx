@@ -8,11 +8,20 @@ import { Button, transition } from '@ajh/ui';
 interface ThinkingBubbleProps {
   thinking: string;
   done?: boolean;
+  /** Initial expand state. Defaults open (the historical behavior, still
+   *  correct for a spacious panel); a caller tight on vertical space (the
+   *  4-step generating panel, ~550px pushed down at the 900x600 floor) opts
+   *  into collapsed-by-default — the user still expands it with one click. */
+  defaultExpanded?: boolean;
 }
 
-export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) {
+export function ThinkingBubble({
+  thinking,
+  done = false,
+  defaultExpanded = true,
+}: ThinkingBubbleProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const scrollRef = useRef<HTMLPreElement>(null);
 
   // Auto-collapse when the model finishes thinking and real output starts
@@ -44,7 +53,7 @@ export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) 
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >
         <Brain size={12} className="shrink-0 text-violet-400/70" />
-        <span className="flex-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400/60">
+        <span className="flex-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
           {done ? t('aiGenerate.reasoningComplete') : t('aiGenerate.thinking')}
         </span>
         {!done && (
@@ -76,7 +85,7 @@ export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) 
           >
             <pre
               ref={scrollRef}
-              className="select-text max-h-40 overflow-y-auto px-3 pb-3 font-mono text-[10px] leading-relaxed text-violet-300/40 whitespace-pre-wrap break-all"
+              className="select-text max-h-40 overflow-y-auto px-3 pb-3 font-mono text-[10px] leading-relaxed text-violet-300/75 whitespace-pre-wrap break-all"
             >
               {thinking}
               {!done && (

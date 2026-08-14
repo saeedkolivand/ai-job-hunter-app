@@ -12,6 +12,13 @@
 export const PIPELINE_STEP_KEYS = ['analyze', 'generate', 'validate', 'humanize'] as const;
 export type PipelineStepKey = (typeof PIPELINE_STEP_KEYS)[number];
 
+// KNOWN GAP, currently unreachable: a MAX-depth run's `sections`/`assemble`/
+// `llm_judge` stages have no entry here (they fall through to "stay where you
+// are" below), and max depth has no `humanize` stage at all — so this 4-step
+// UI would mis-narrate a max run (stuck checklist, a "Remove AI signs" step
+// that never happens). Not reachable today: the wizard's depth picker was
+// removed and every run defaults to quality depth. PR-4 deletes max depth
+// outright, so this is left as a comment rather than a speculative fix.
 const STEP_INDEX: Record<string, number> = {
   analyze_job: 0,
   match_evidence: 0,

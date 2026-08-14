@@ -921,3 +921,67 @@ describe('TailorFlow — height chain', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. Cancelled-with-no-output acknowledgement (H9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailorFlow — cancelled-before-any-output hint (H9)', () => {
+  it('shows an acknowledgement on the configuring stage when cancelled with no output', () => {
+    genMock.state = 'cancelled';
+    genMock.busy = false;
+    genMock.hasOutput = false;
+    renderFlow({});
+    expect(screen.getByTestId(TEST_IDS.documents.generationCancelled)).toHaveTextContent(
+      'autopilot.apply.cancelledNoOutput'
+    );
+  });
+
+  it('does not show it while idle (nothing to acknowledge)', () => {
+    genMock.state = 'idle';
+    renderFlow({});
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCancelled)).not.toBeInTheDocument();
+  });
+
+  it('a start failure (gen.error) takes priority over the cancelled hint', () => {
+    genMock.state = 'cancelled';
+    genMock.error = 'Model timed out';
+    renderFlow({});
+    expect(screen.getByTestId(TEST_IDS.documents.generationError)).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCancelled)).not.toBeInTheDocument();
+  });
+
+  it('does not show once output exists (done stage) even if state is still cancelled', () => {
+    genMock.state = 'cancelled';
+    genMock.hasOutput = true;
+    renderFlow({});
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCancelled)).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. Focus moves to the stage body on every stage change (M6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailorFlow — focus follows the stage (M6)', () => {
+  it('focuses the (inert) stage body element when the stage changes', async () => {
+    genMock.busy = true;
+    const { rerender } = renderFlow({});
+    // Busy → generating stage; its body should already be focused.
+    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel).parentElement).toHaveFocus();
+
+    genMock.busy = false;
+    genMock.hasOutput = true;
+    rerender(
+      <TailorFlow
+        job={JOB}
+        resumeText="My resume"
+        board="linkedin"
+        contextId="autopilot:https://acme.com/jobs/1"
+        jobUrl="https://acme.com/jobs/1"
+        persistence={makePersistence()}
+      />
+    );
+    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel).parentElement).toHaveFocus();
+  });
+});

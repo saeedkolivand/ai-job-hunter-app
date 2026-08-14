@@ -267,23 +267,36 @@ describe('TailorFlow — a failed staged-run start surfaces its reason', () => {
 // STABLE `vi.fn()` persistence, so it never exercised the real loop: this
 // file's REAL `useTailorPipeline` chain (already used above) is reused here
 // with a host that mirrors the actual production shape — `runId`/`runJobId`
-// in host state, a brand-new `persistence` object literal (and `setRun`
-// arrow) on every render, exactly like `DocumentsTab` + Zustand's
-// always-new-object setter. Before the fix, this threw "Maximum update depth
-// exceeded" the instant a run started.
+// in a single OBJECT slice, always replaced with a fresh `{...prev, ...patch}`
+// spread (mirrors Zustand's `setApplicationApply` exactly — a plain primitive
+// `useState` would let React bail out on an equal value, silently masking the
+// defect a real store's always-new-object setter never would), and a
+// brand-new `persistence` object literal (and `setRun` arrow) on every
+// render, exactly like `DocumentsTab`.
+//
+// Disproven by mutation-testing this file against the reverted (buggy)
+// source: it does NOT reproduce "Maximum update depth exceeded" in this
+// jsdom/RTL environment — the effect-driven render→setState cycle the bug
+// describes doesn't hit React's nested-update-limit within one `act()`
+// flush here, unlike a real browser tab. The call-count assertion below
+// DOES catch the regression (verified red against the reverted source): the
+// buggy effect calls `setRun` repeatedly (4 times observed here — bounded
+// in THIS test only because a mock AppClient settles quickly; production's
+// unbounded churn is what the bug report's repro actually crashed on) for
+// the SAME run instead of once. The hook-level test in
+// `useTailorPipeline.test.ts` remains the primary, crash-shaped guard.
 
-function DocumentsTabShapedHost() {
-  const [runId, setRunIdState] = React.useState<string | null>(null);
-  const [runJobId, setRunJobIdState] = React.useState<string | null>(null);
+function DocumentsTabShapedHost({ onSetRun }: { onSetRun: (ids: unknown) => void }) {
+  const [applyRun, setApplyRun] = React.useState<{ runId: string; jobId: string } | null>(null);
   // A fresh object every render — never memoized, matching DocumentsTab's
   // inline `const persistence: TailorFlowPersistence = { ... }`.
   const persistence = {
     ...makePersistence(),
-    runId,
-    runJobId,
+    runId: applyRun?.runId ?? null,
+    runJobId: applyRun?.jobId ?? null,
     setRun: (ids: { runId: string; jobId: string } | null) => {
-      setRunIdState(ids?.runId ?? null);
-      setRunJobIdState(ids?.jobId ?? null);
+      onSetRun(ids);
+      setApplyRun((prev) => (ids ? { ...prev, ...ids } : null));
     },
   };
   return (
@@ -299,20 +312,20 @@ function DocumentsTabShapedHost() {
 }
 
 describe('TailorFlow — F1 mount-level regression (DocumentsTab-shaped host)', () => {
-  it('does not loop / crash when a real run starts under an unstable persistence object', async () => {
+  it('calls setRun exactly once for one run, and does not crash, under an unstable persistence object', async () => {
     const user = userEvent.setup();
+    const onSetRun = vi.fn();
     const client = createMockClient({
       'resumePipeline.run': vi.fn().mockResolvedValue({ runId: 'run-1', jobId: 'job-1' }),
       'resumePipeline.get': vi.fn().mockResolvedValue(completedDetail()),
     });
 
-    render(<DocumentsTabShapedHost />, { wrapper: withProviders(client) });
+    render(<DocumentsTabShapedHost onSetRun={onSetRun} />, { wrapper: withProviders(client) });
 
-    // Before the fix, React throws "Maximum update depth exceeded" synchronously
-    // inside this flush — the run's persisted ids trigger the host re-render →
-    // fresh persistence/setRun → useTailorPipeline's effect refires → loop.
     await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
 
     expect(await screen.findByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
+    expect(onSetRun).toHaveBeenCalledTimes(1);
+    expect(onSetRun).toHaveBeenCalledWith({ runId: 'run-1', jobId: 'job-1' });
   });
 });

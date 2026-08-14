@@ -1,4 +1,5 @@
 import { Check, Loader2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Skeleton } from '@ajh/ui';
@@ -16,23 +17,80 @@ interface Props {
   stageLabel: string;
   thinking: string;
   output: string;
+  /** Which document `output` is currently streaming — only `draft`/`cover_letter`
+   *  emit deltas (see `use-resume-pipeline-session`'s module doc), so this never
+   *  changes after the letter's first token lands. Labels the streaming pane so
+   *  a résumé→letter swap mid-run doesn't read as the SAME document continuing. */
+  streamingTarget: 'resume' | 'cover';
   onCancel: () => void;
+}
+
+/** mm:ss since `since` (epoch ms). Plain text, so it keeps ticking under
+ *  `prefers-reduced-motion` — nothing here is a CSS animation. */
+function elapsedLabel(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 /**
  * Streaming stage: a 4-row step checklist (Analyze → Generate → Validate →
- * Remove AI signs), each row showing a one-line description and a
- * done-checkmark once passed; the active row gets a subtle spinner and the
- * pipeline's own finer stage name as a caption. Below it, the model's
- * reasoning bubble and the streaming document text — same as before. Cancel
- * aborts the in-flight run.
+ * Remove AI signs), each row showing a done-checkmark once passed; the active
+ * row gets a subtle spinner, the pipeline's own finer stage name, and an
+ * elapsed-time caption (validate/humanize emit no stream deltas, so without a
+ * moving number the panel reads as stalled for its longest steps). Below it,
+ * the model's reasoning bubble (collapsed by default — this panel is tight on
+ * vertical space) and the streaming document text, labelled with which
+ * document is currently being written. Cancel aborts the in-flight run.
  *
  * Modeled on `TailorWizard`'s own numbered-circle → checkmark step header
  * (`TailorWizard.tsx`), so the apply flow reads as one continuous wizard
- * rather than two different step-indicator styles back to back.
+ * rather than two different step-indicator styles back to back — the active
+ * row's label uses the same `text-brand-soft` affordance.
  */
-export function GeneratingPanel({ currentStep, stageLabel, thinking, output, onCancel }: Props) {
+export function GeneratingPanel({
+  currentStep,
+  stageLabel,
+  thinking,
+  output,
+  streamingTarget,
+  onCancel,
+}: Props) {
   const { t } = useTranslation();
+
+  // Elapsed time on the ACTIVE step, reset every time the step changes.
+  const stepStartRef = useRef(Date.now());
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => {
+    stepStartRef.current = Date.now();
+    setElapsedSec(0);
+  }, [currentStep]);
+  useEffect(() => {
+    const id = setInterval(
+      () => setElapsedSec(Math.floor((Date.now() - stepStartRef.current) / 1000)),
+      1000
+    );
+    return () => clearInterval(id);
+  }, []);
+
+  // One utterance per step TRANSITION (mirrors SectionTimeline's announcer
+  // pattern) — an aria-hidden icon is the only other state cue on each row,
+  // so without this a screen-reader user hears identical rows and no step
+  // change is ever announced.
+  const previousStepRef = useRef(currentStep);
+  const [announcement, setAnnouncement] = useState('');
+  useEffect(() => {
+    if (previousStepRef.current === currentStep) return;
+    previousStepRef.current = currentStep;
+    const key = PIPELINE_STEP_KEYS[currentStep];
+    if (!key) return;
+    setAnnouncement(
+      t('pipeline.step.announce', {
+        step: t(`pipeline.step.${key}.label`),
+        state: t('pipeline.step.state.active'),
+      })
+    );
+  }, [currentStep, t]);
 
   return (
     <div className="flex h-full min-h-0 flex-col px-8 py-6">
@@ -43,6 +101,9 @@ export function GeneratingPanel({ currentStep, stageLabel, thinking, output, onC
         {PIPELINE_STEP_KEYS.map((key, i) => {
           const done = i < currentStep;
           const active = i === currentStep;
+          const stateWord = t(
+            `pipeline.step.state.${done ? 'done' : active ? 'active' : 'pending'}`
+          );
           return (
             <li
               key={key}
@@ -54,7 +115,7 @@ export function GeneratingPanel({ currentStep, stageLabel, thinking, output, onC
             >
               <span
                 aria-hidden="true"
-                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-current text-[9px] text-foreground/40"
+                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-current text-[9px] text-foreground/70"
               >
                 {done ? (
                   <Check size={10} className="text-emerald-400" />
@@ -68,21 +129,23 @@ export function GeneratingPanel({ currentStep, stageLabel, thinking, output, onC
                 <span
                   className={cn(
                     'block text-[11px] font-medium',
-                    active
-                      ? 'text-foreground/90'
-                      : done
-                        ? 'text-foreground/50'
-                        : 'text-foreground/35'
+                    active ? 'text-brand-soft' : done ? 'text-foreground/50' : 'text-foreground/55'
                   )}
                 >
                   {t(`pipeline.step.${key}.label`)}
+                  {/* Screen readers hear identical rows otherwise — the icon
+                      above is aria-hidden and is the only other state cue. */}
+                  <span className="sr-only"> — {stateWord}</span>
                 </span>
-                <span className="mt-0.5 block text-[10px] text-foreground/40">
-                  {t(`pipeline.step.${key}.description`)}
-                </span>
-                {active && stageLabel && (
-                  <span className="mt-0.5 block text-[9px] uppercase tracking-[0.14em] text-brand-soft/70">
-                    {stageLabel}
+                {active ? (
+                  stageLabel && (
+                    <span className="mt-0.5 block text-[10px] text-brand-soft">
+                      {stageLabel} · {elapsedLabel(elapsedSec)}
+                    </span>
+                  )
+                ) : (
+                  <span className="mt-0.5 block text-[10px] text-foreground/70">
+                    {t(`pipeline.step.${key}.description`)}
                   </span>
                 )}
               </span>
@@ -91,8 +154,21 @@ export function GeneratingPanel({ currentStep, stageLabel, thinking, output, onC
         })}
       </ul>
 
+      {/* One utterance per step transition; the rows themselves are not a
+          live region, so nothing is re-read when a later step activates. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </span>
+
       <div className="mx-auto mt-5 flex w-full max-w-2xl min-h-0 flex-1 flex-col overflow-y-auto">
-        <ThinkingBubble thinking={thinking} done={false} />
+        <ThinkingBubble thinking={thinking} done={currentStep >= 2} defaultExpanded={false} />
+        <span className="mb-1 block shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+          {t(
+            streamingTarget === 'cover'
+              ? 'autopilot.apply.target.cover'
+              : 'autopilot.apply.target.resume'
+          )}
+        </span>
         {output ? (
           <div className="select-text flex-1 whitespace-pre-wrap rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
             {output}
@@ -112,7 +188,7 @@ export function GeneratingPanel({ currentStep, stageLabel, thinking, output, onC
         <Button
           variant="glass"
           onClick={onCancel}
-          className="border-red-400/20 text-red-300/80 hover:text-red-200"
+          className="border-red-400/20 text-red-300 hover:text-red-200"
         >
           {t('autopilot.apply.cancel')}
         </Button>

@@ -10,7 +10,38 @@ import type * as GenerateModule from '@/lib/generate';
 
 import { useTailorPipeline } from './useTailorPipeline';
 
-vi.mock('@ajh/translations', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+// Echoes the key verbatim, EXCEPT: a key outside these two small "known"
+// sets (mirroring the real `pipeline.stage.*`/`pipeline.state.*` catalog)
+// falls back to `defaultValue` when the caller passes one — the real
+// i18next missing-key contract, which `stageLabel`'s two call sites are the
+// only ones in this hook to rely on. Every other `t(...)` call (no
+// `defaultValue`, or a key that IS "known") is unaffected.
+const KNOWN_I18N_KEYS = new Set([
+  ...[
+    'analyze_job',
+    'match_evidence',
+    'strategy',
+    'draft',
+    'cover_letter',
+    'sections',
+    'assemble',
+    'validate',
+    'repair',
+    'humanize',
+    'llm_judge',
+  ].map((s) => `pipeline.stage.${s}`),
+  ...['queued', 'preparing', 'drafting', 'validating', 'repairing', 'humanizing'].map(
+    (s) => `pipeline.state.${s}`
+  ),
+]);
+vi.mock('@ajh/translations', () => ({
+  useTranslation: () => ({
+    t: (k: string, opts?: Record<string, unknown>) => {
+      if (KNOWN_I18N_KEYS.has(k)) return k;
+      return opts && 'defaultValue' in opts ? (opts.defaultValue as string) : k;
+    },
+  }),
+}));
 
 const mockNotify = { error: vi.fn() };
 vi.mock('@ajh/ui', () => ({ useNotification: () => mockNotify }));
@@ -410,5 +441,79 @@ describe('useTailorPipeline — cancel', () => {
     const { result } = render();
     result.current.cancel();
     expect(sessionBus.cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useTailorPipeline — openClaimsTotal counts BOTH slots (H5)', () => {
+  const minimalReport = {
+    ok: true,
+    issues: [],
+    metrics: {
+      keywordCoverage: null,
+      topRequirementHits: null,
+      duplicateRatio: 0,
+      rolesSource: 0,
+      rolesOutput: 0,
+    },
+  };
+
+  it('sums unresolved fabrications from resume AND coverLetter, not just the active tab', () => {
+    sessionBus.detail = detail({
+      resumeText: 'Résumé text mentions FOO-EVIDENCE right here.',
+      report: {
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 0,
+        resume: {
+          report: minimalReport,
+          sourceTextHash: 0,
+          fabrications: [{ issueKey: 'a#0', code: 'a', evidence: 'FOO-EVIDENCE' }],
+        },
+        coverLetter: {
+          report: minimalReport,
+          sourceTextHash: 0,
+          fabrications: [{ issueKey: 'b#0', code: 'b', evidence: 'BAR-EVIDENCE' }],
+        },
+      },
+    });
+    const generation = {
+      id: 'gen-1',
+      coverLetterText: 'Cover letter mentions BAR-EVIDENCE right here.',
+    } as AiGenerationRecord;
+
+    const { result } = render({ latestGeneration: generation });
+
+    // `activeOut` defaults to 'resume' — the OLD, buggy single-slot count
+    // would report 1 here (only the resume's own fabrication).
+    expect(result.current.activeOut).toBe('resume');
+    expect(result.current.openClaimsTotal).toBe(2);
+  });
+
+  it('is 0 when neither slot has an unresolved fabrication', () => {
+    sessionBus.detail = detail({
+      resumeText: 'Clean résumé text.',
+      report: {
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 0,
+        resume: { report: minimalReport, sourceTextHash: 0 },
+      },
+    });
+    const { result } = render();
+    expect(result.current.openClaimsTotal).toBe(0);
+  });
+});
+
+describe('useTailorPipeline — stageLabel fallback (L: no raw snake_case leak)', () => {
+  it('falls back to the translated coarse state for a stage name this build does not have copy for', () => {
+    sessionBus.state = 'drafting';
+    sessionBus.stage = {
+      stage: 'a_future_stage_this_build_predates',
+      phase: 'start',
+    };
+    const { result } = render();
+    // Never the raw wire name — falls back to pipeline.state.drafting's translation.
+    expect(result.current.stageLabel).not.toBe('a_future_stage_this_build_predates');
+    expect(result.current.stageLabel).toBe('pipeline.state.drafting');
   });
 });

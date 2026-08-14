@@ -4,6 +4,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { AiGenerationRecord, AutopilotFoundJob } from '@ajh/shared';
+import type { PipelineRunSummary } from '@ajh/shared/ipc';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { ErrorState, transition } from '@ajh/ui';
@@ -38,12 +39,26 @@ const SHORT_DESC_FLOOR = 800;
 
 type TailorFlowStage = 'configuring' | 'generating' | 'done';
 
-/** A terminal `ResumePipelineState` → the results panel's status banner. Any
- *  non-terminal/idle state (including a cold-entry redisplay of a PAST run,
- *  which never ran in this session) reads as a clean `'done'` — there is
- *  nothing more to say about it here. */
-function toRunState(state: string): TailorRunState {
+/**
+ * A terminal `ResumePipelineState` → the results panel's status banner.
+ *
+ * A COLD entry (a past run redisplayed from `latestGeneration`, never
+ * started/reconnected in THIS session) leaves the machine at `idle` — its
+ * own state has no opinion, but this posting's run list (`runs`, already
+ * fetched) does: `runs[0]` is that same latest run's real, persisted status.
+ * Falling back to a blind `'done'` there rendered a needsReview or failed
+ * run as a clean success. Any OTHER non-terminal state (queued/drafting/…)
+ * still reads as `'done'` — those only happen with a live session, which
+ * `GeneratingPanel` owns instead.
+ */
+function toRunState(state: string, runs: PipelineRunSummary[]): TailorRunState {
   if (state === 'needsReview' || state === 'cancelled' || state === 'error') return state;
+  if (state === 'idle') {
+    const coldStatus = runs[0]?.status;
+    if (coldStatus === 'needsReview') return 'needsReview';
+    if (coldStatus === 'cancelled') return 'cancelled';
+    if (coldStatus === 'failed') return 'error';
+  }
   return 'done';
 }
 
@@ -332,6 +347,16 @@ export function TailorFlow({
   // is the source of truth once a run starts; falls back to the live form value.
   const generatedTarget = persistence.wizardForm?.outputType ?? methods.getValues('outputType');
 
+  // `AnimatePresence mode="wait"` swaps the whole stage subtree on every stage
+  // change, which drops focus to `<body>` with nothing to restore it —
+  // keyboard/AT users lose their place after every wizard step, generate, or
+  // "Edit settings". Focus the (otherwise inert, tabIndex={-1}) stage body
+  // itself on each transition, matching a route/modal-swap pattern.
+  const stageBodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    stageBodyRef.current?.focus();
+  }, [stage]);
+
   // Surface the imperative controller to the host (header triggers + derived stage).
   const questionsCount = questions.selected.size;
   const interviewQuestionsCount = interview.questions.length;
@@ -373,6 +398,7 @@ export function TailorFlow({
         // streams past it (validate/repair/humanize make no visible calls),
         // so this is the right live text for every later step too.
         output={gen.letterDraft || gen.draft}
+        streamingTarget={gen.letterDraft ? 'cover' : 'resume'}
         onCancel={gen.cancel}
       />
     ),
@@ -400,6 +426,7 @@ export function TailorFlow({
         meta={gen.meta}
         report={gen.report}
         pipelineReview={gen.pipelineReview}
+        openClaims={gen.openClaimsTotal}
         onRecheck={gen.recheck}
         rechecking={gen.rechecking}
         copied={gen.copied}
@@ -407,7 +434,12 @@ export function TailorFlow({
         exportOpen={gen.exportOpen}
         setExportOpen={gen.setExportOpen}
         onExport={(fmt) => void gen.exportAs(fmt)}
-        runState={toRunState(gen.state)}
+        runState={toRunState(gen.state, gen.runs)}
+        // No live/reconnected session — a cold redisplay from `latestGeneration`,
+        // so there is no interactive fix/resolve UI wired for it (see
+        // `pipelineReview`'s `runId` gate). Tells the needsReview hint to say
+        // so honestly instead of pointing at controls that don't exist here.
+        cold={gen.state === 'idle'}
         error={gen.error}
         stoppedReason={gen.stoppedReason}
         runs={gen.runs}
@@ -424,11 +456,13 @@ export function TailorFlow({
         <AnimatePresence mode="wait">
           <motion.div
             key={stage}
+            ref={stageBodyRef}
+            tabIndex={-1}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={transition.fast}
-            className="h-full"
+            className="h-full outline-none"
           >
             {stageRegistry[stage]()}
           </motion.div>
@@ -445,6 +479,22 @@ export function TailorFlow({
             description={gen.error}
             className="rounded-xl border border-red-400/20 bg-red-400/5 py-6"
           />
+        </div>
+      )}
+
+      {/* Cancelling BEFORE any text streamed leaves no output, so the stage
+          derivation above falls back to the wizard with nothing else to say
+          it happened — `session.cancel()` sets no `error`, and the banner
+          above is gated on one. A one-line acknowledgement instead of dead
+          silence; stays until the next `start()` moves `gen.state` off
+          `cancelled`. */}
+      {stage === 'configuring' && !gen.error && gen.state === 'cancelled' && (
+        <div
+          data-testid={TEST_IDS.documents.generationCancelled}
+          role="status"
+          className="mx-8 mb-4 shrink-0 rounded-lg border border-[var(--border-clear)] bg-foreground/[0.02] px-4 py-3 text-[11px] text-foreground/60"
+        >
+          {t('autopilot.apply.cancelledNoOutput')}
         </div>
       )}
 

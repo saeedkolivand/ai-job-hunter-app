@@ -1697,6 +1697,12 @@
     "stageCounter": "Schritt {{current}} von {{total}}",
     "step": {
       "title": "Fortschritt",
+      "announce": "{{step}} — {{state}}",
+      "state": {
+        "done": "Fertig",
+        "active": "Läuft",
+        "pending": "Noch nicht gestartet"
+      },
       "analyze": {
         "label": "Analysieren",
         "description": "Liest die Stellenanzeige und gleicht sie mit deinen Belegen ab."
@@ -1707,12 +1713,13 @@
       },
       "validate": {
         "label": "Prüfen",
-        "description": "Prüft das Ergebnis und behebt kritische Punkte automatisch."
+        "description": "Prüft jede Aussage gegen deinen Lebenslauf und behebt, was möglich ist."
       },
       "humanize": {
         "label": "KI-Spuren entfernen",
         "description": "Schreibt nur die Zeilen um, die wie KI-Text wirken."
-      }
+      },
+      "allDone": "Alle Schritte abgeschlossen"
     },
     "state": {
       "queued": "Wartet auf einen freien Platz…",
@@ -1984,6 +1991,7 @@
       "tryAgain": "Erneut versuchen",
       "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",
       "hintNoDescription": "Keine Stellenbeschreibung zum Anpassen vorhanden",
+      "cancelledNoOutput": "Generierung abgebrochen — es wurde noch nichts geschrieben.",
       "wizard": {
         "steps": {
           "jobAd": "Stellenanzeige",
@@ -2021,6 +2029,9 @@
           "needsReviewTitle_one": "Nicht fertig — {{count}} Aussage braucht dein Urteil",
           "needsReviewTitle_other": "Nicht fertig — {{count}} Aussagen brauchen dein Urteil",
           "needsReviewHint": "Das Dokument existiert, aber die Prüfung konnte diese Zeilen nicht auf deinen Lebenslauf zurückführen. Öffne den Bericht und behalte oder entferne jeden Eintrag.",
+          "needsReviewHintCold": "Dieser Lauf muss erneut geöffnet werden, bevor diese Aussagen geprüft und entschieden werden können.",
+          "needsReviewTitleEmpty": "Nicht fertig — eine der Prüfungen hat etwas markiert, das du dir ansehen solltest",
+          "needsReviewHintEmpty": "Details siehe Qualitäts-Badge über dem Dokument.",
           "cancelledHint": "Was der Lauf bereits geschrieben hatte, wurde gespeichert.",
           "failedTitle": "Der Lauf ist fehlgeschlagen",
           "failedHint": "Nichts wird automatisch wiederholt — versuche es gleich noch einmal.",
