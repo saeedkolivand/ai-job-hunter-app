@@ -1,6 +1,4 @@
-import type { GenerationDepth } from '@/lib/generate';
-
-import type { TailorTarget } from '../useTailorGeneration';
+import type { TailorTarget } from './tailor-target';
 
 /**
  * The page-local tailoring wizard form. Model is global (selected via the shared
@@ -10,13 +8,8 @@ export interface TailorWizardState {
   resume: string;
   outputType: TailorTarget; // 'resume' | 'cover' | 'both'
   researchCompany: boolean;
-  /**
-   * Per-run generation-depth OVERRIDE. `undefined` means "follow the Settings
-   * default": the form deliberately does not snapshot the default, so a
-   * default changed in Settings still applies to a form the user never
-   * touched, while an explicit pick survives.
-   */
-  depth?: GenerationDepth;
+  /** Which saved résumé backs `resume`, unedited — see `tailor-schema`'s doc. */
+  resumeDocId?: string;
 }
 
 /**

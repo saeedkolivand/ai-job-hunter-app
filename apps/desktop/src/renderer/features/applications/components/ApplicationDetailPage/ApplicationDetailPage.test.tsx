@@ -76,6 +76,7 @@ const mockSessionState: {
     applyTemplateId: TemplateId;
     applyAtsMode: boolean;
     applyForId: string | null;
+    applyRun: { forId: string; runId: string; jobId: string } | null;
   };
   setApplicationApply: typeof mockSetApplicationApply;
   // Only `lastAppliedId` is read by the component (the resetScroll gate); kept
@@ -88,6 +89,7 @@ const mockSessionState: {
     applyTemplateId: 'classic',
     applyAtsMode: false,
     applyForId: null,
+    applyRun: null,
   },
   setApplicationApply: mockSetApplicationApply,
   autopilot: { lastAppliedId: null },
@@ -112,17 +114,27 @@ let capturedOnJobDescChange: ((text: string) => void) | undefined = undefined;
 
 vi.mock('@/features/documents/components/TailorFlow', () => ({
   // Surface the injected seedGeneration id so we can assert DocumentsTab wires the
-  // latest matching record (cold-entry hydration source).
+  // latest matching record (cold-entry hydration source). Also surface
+  // `persistence.runId`/`runJobId` (F2 regression) — the self-describing-read
+  // gate DocumentsTab applies to `applicationApply.applyRun` before ever
+  // handing a reconnect target to TailorFlow.
   TailorFlow: ({
     seedGeneration,
     onJobDescChange,
+    persistence,
   }: {
     seedGeneration?: { id: string };
     onJobDescChange?: (text: string) => void;
+    persistence?: { runId: string | null; runJobId: string | null };
   }) => {
     capturedOnJobDescChange = onJobDescChange;
     return (
-      <div data-testid={TEST_IDS.documents.tailorFlow} data-seedgenid={seedGeneration?.id ?? ''} />
+      <div
+        data-testid={TEST_IDS.documents.tailorFlow}
+        data-seedgenid={seedGeneration?.id ?? ''}
+        data-runid={persistence?.runId ?? ''}
+        data-runjobid={persistence?.runJobId ?? ''}
+      />
     );
   },
 }));
@@ -406,6 +418,80 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F2 regression — a stale `applyRun` from another application must never
+// reach TailorFlow as a reconnect target (cross-application run leak).
+//
+// Both apply entry points (`usePostingActions.handleTailor`,
+// `AutopilotPage.handleApply`) set `applyForId` to the NEW application's id
+// BEFORE navigating, with no compensating clear of the reconnect target — so
+// the reset effect's `applyForId !== application.id` guard can already be
+// FALSE by the time this application's DocumentsTab first renders (and even
+// where it isn't, this tab is the wizard's DEFAULT tab, so it mounts in the
+// SAME commit as the reset effect that would otherwise clear it — a classic
+// `useState` lazy-initializer race). Exercised here directly at the render
+// level: `applicationApply.applyRun.forId` disagreeing with the CURRENT
+// application id, regardless of how that came to be, must read as "no run".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ApplicationDetailPage — F2: applyRun is read only for the CURRENT application', () => {
+  afterEach(() => {
+    mockSessionState.applicationApply = {
+      ...mockSessionState.applicationApply,
+      applyRun: null,
+    };
+  });
+
+  it('does NOT hand another application’s run id to TailorFlow (A→B leak)', () => {
+    mockTab = 'documents';
+    // Simulates the exact hazard: `applyForId` already matches THIS
+    // application (set atomically by an apply entry point, or simply because
+    // the reset effect already ran) while `applyRun` still points at a
+    // DIFFERENT application's run — the shape a naive `applyRunId` field
+    // could leak, and the self-describing `forId` gate must reject.
+    mockSessionState.applicationApply = {
+      ...mockSessionState.applicationApply,
+      applyForId: 'app-1',
+      applyRun: { forId: 'app-OTHER', runId: 'run-OTHER', jobId: 'job-OTHER' },
+    };
+    const app = makeApp({ id: 'app-1' });
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    render(<ApplicationDetailPage />);
+
+    const flow = screen.getByTestId(TEST_IDS.documents.tailorFlow);
+    expect(flow).toHaveAttribute('data-runid', '');
+    expect(flow).toHaveAttribute('data-runjobid', '');
+  });
+
+  it('DOES hand this application’s own run id to TailorFlow (happy path)', () => {
+    mockTab = 'documents';
+    mockSessionState.applicationApply = {
+      ...mockSessionState.applicationApply,
+      applyForId: 'app-1',
+      applyRun: { forId: 'app-1', runId: 'run-1', jobId: 'job-1' },
+    };
+    const app = makeApp({ id: 'app-1' });
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    render(<ApplicationDetailPage />);
+
+    const flow = screen.getByTestId(TEST_IDS.documents.tailorFlow);
+    expect(flow).toHaveAttribute('data-runid', 'run-1');
+    expect(flow).toHaveAttribute('data-runjobid', 'job-1');
+  });
+});
+
 describe('ApplicationDetailPage — save-on-blur (Overview tab)', () => {
   function renderLoadedApp(app: Application) {
     mockTab = 'overview';
@@ -639,6 +725,7 @@ describe('ApplicationDetailPage — wizard reset on mount', () => {
       applyWizardForm: null,
       applySeedResume: null,
       applyMatchLevel: null,
+      applyRun: null,
     });
   });
 

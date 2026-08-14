@@ -12,7 +12,10 @@ import { type ExportFormat, ExportPicker } from '@/components/generation/ExportP
 import { HandEditNudge } from '@/components/generation/HandEditNudge';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
-import { QualityBadge } from '@/components/generation/QualityReportPanel';
+import {
+  QualityBadge,
+  type QualityPipelineReview,
+} from '@/components/generation/QualityReportPanel';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   atsModeHintKey,
@@ -29,14 +32,14 @@ import {
 } from '@/lib/generate';
 
 import { JobAdView } from './JobAdView';
-import type { TailorTarget } from './useTailorGeneration';
+import type { TailorTarget } from './lib/tailor-target';
 
 interface Props {
   target: TailorTarget;
   activeOut: 'resume' | 'cover';
   setActiveOut: (o: 'resume' | 'cover') => void;
   // Render-time template/ATS (sticky store) — drives BOTH the preview here and the
-  // export in useTailorGeneration. The toolbar picker mutates them; no regeneration.
+  // export in useTailorPipeline. The toolbar picker mutates them; no regeneration.
   templateId: TemplateId;
   atsMode: boolean;
   /** Per-export document accent (6-hex); undefined = template palette. */
@@ -52,6 +55,12 @@ interface Props {
   editable: boolean;
   meta: GenerationMeta | null;
   report?: QualityReport | null;
+  /**
+   * Staged-run extras for the ACTIVE document's badge/panel (section Fix,
+   * per-bullet fabrication review) — see `QualityPipelineReview`. Absent for
+   * a fast-path report; the badge then renders exactly as it always did.
+   */
+  pipeline?: QualityPipelineReview;
   /** Re-run validation on the active document — this is the only surface with
    *  inline editing, so it is also the only one that can go stale mid-session. */
   onRecheck?: () => void;
@@ -93,6 +102,7 @@ export function GenerationOutput({
   editable,
   meta,
   report,
+  pipeline,
   onRecheck,
   rechecking,
   copied,
@@ -278,6 +288,7 @@ export function GenerationOutput({
               report={report}
               docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
               currentText={output}
+              pipeline={pipeline}
               onRecheck={onRecheck}
               rechecking={rechecking}
               // The editor's own change handler, so a "Remove" from the review

@@ -7,8 +7,20 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct ResumePipelineRunRequest {
+    #[serde(default = "default_resume_pipeline_run_request_resume_id")]
     pub resume_id: String,
+    #[serde(default = "default_resume_pipeline_run_request_job_id")]
     pub job_id: String,
+    #[serde(default = "default_resume_pipeline_run_request_resume_text")]
+    pub resume_text: String,
+    #[serde(default = "default_resume_pipeline_run_request_job_ad_text")]
+    pub job_ad_text: String,
+    #[serde(default = "default_resume_pipeline_run_request_job_title")]
+    pub job_title: String,
+    #[serde(default = "default_resume_pipeline_run_request_company_name")]
+    pub company_name: String,
+    #[serde(default = "default_resume_pipeline_run_request_board")]
+    pub board: String,
     #[serde(default = "default_resume_pipeline_run_request_job_url")]
     pub job_url: String,
     #[serde(default = "default_resume_pipeline_run_request_depth")]
@@ -42,6 +54,34 @@ pub struct ResumePipelineResolveFabricationRequest {
     pub run_id: String,
     pub issue_key: String,
     pub decision: String,
+}
+
+fn default_resume_pipeline_run_request_resume_id() -> String {
+    "".to_string()
+}
+
+fn default_resume_pipeline_run_request_job_id() -> String {
+    "".to_string()
+}
+
+fn default_resume_pipeline_run_request_resume_text() -> String {
+    "".to_string()
+}
+
+fn default_resume_pipeline_run_request_job_ad_text() -> String {
+    "".to_string()
+}
+
+fn default_resume_pipeline_run_request_job_title() -> String {
+    "".to_string()
+}
+
+fn default_resume_pipeline_run_request_company_name() -> String {
+    "".to_string()
+}
+
+fn default_resume_pipeline_run_request_board() -> String {
+    "".to_string()
 }
 
 fn default_resume_pipeline_run_request_job_url() -> String {
