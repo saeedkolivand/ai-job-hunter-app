@@ -12,16 +12,18 @@ pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
 
 /// The EFFORT-INVARIANT half of one quality-depth run's deadline: every call
 /// whose per-call bound is FLAT — the three JSON stages (each allowed one
-/// re-ask) plus the repair fan-out (`max_repair_attempts` rounds ×
-/// `MAX_SECTIONS_PER_ROUND` sections), all bounded by
-/// `timeouts::OLLAMA_COMPLETION`. See `qualityRunDeadlineSecs` in
-/// packages/shared/src/ai-timeouts.ts for the full derivation.
-pub const QUALITY_RUN_FIXED_SECS: u64 = 4200;
+/// re-ask), the repair fan-out (`max_repair_attempts` rounds ×
+/// `MAX_SECTIONS_PER_ROUND` sections), and `humanize`'s up to 2
+/// flagged-document calls, all bounded by `timeouts::OLLAMA_COMPLETION`.
+/// See `qualityRunDeadlineSecs` in packages/shared/src/ai-timeouts.ts for
+/// the full derivation.
+pub const QUALITY_RUN_FIXED_SECS: u64 = 4800;
 
-/// Effort-SCALED whole-document passes one quality run may make: the draft,
-/// the run's only streamed call. The repair rounds are flat-bounded and live
-/// in `QUALITY_RUN_FIXED_SECS` instead.
-pub const QUALITY_RUN_GENERATION_PASSES: u64 = 1;
+/// Effort-SCALED whole-document passes one quality run may make: two — the
+/// draft, and the cover letter when `includeCoverLetter` is set. The repair
+/// rounds and `humanize` are flat-bounded and live in
+/// `QUALITY_RUN_FIXED_SECS` instead.
+pub const QUALITY_RUN_GENERATION_PASSES: u64 = 2;
 
 /// The EFFORT-INVARIANT half of one MAX-depth run's deadline: every call it
 /// plans to make, once, at the flat `timeouts::OLLAMA_COMPLETION` bound —

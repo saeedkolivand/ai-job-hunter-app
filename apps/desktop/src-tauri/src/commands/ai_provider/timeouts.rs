@@ -178,15 +178,17 @@ pub fn research_deadline(effort: Option<&str>) -> Duration {
 /// `StoppedReason::RunTimeout` reachable.
 ///
 /// **Not `baseline × multiplier`, unlike [`stream_deadline`] and
-/// [`research_deadline`].** All but ONE of a run's calls do not scale with
-/// reasoning effort: the three JSON stages and every repair-round section
-/// rewrite go through `complete_with_usage`, whose bounds ([`COMPLETION`] /
-/// [`OLLAMA_COMPLETION`]) are flat constants. So the formula is
-/// `fixed + baseline × passes × multiplier`, where the fixed term is
-/// 3 stages × 2 round-trips (`complete_json` allows exactly one re-ask) +
-/// `max_repair_attempts` (2) rounds × `MAX_SECTIONS_PER_ROUND` (4) sections,
-/// i.e. 14 calls × [`OLLAMA_COMPLETION`] = 4200 s, and the scaling term is the
-/// draft — the run's only streamed call.
+/// [`research_deadline`].** All but TWO of a run's calls do not scale with
+/// reasoning effort: the three JSON stages, every repair-round section
+/// rewrite, and `humanize`'s per-document rewrite go through
+/// `complete_with_usage`, whose bounds ([`COMPLETION`] / [`OLLAMA_COMPLETION`])
+/// are flat constants. So the formula is `fixed + baseline × passes ×
+/// multiplier`, where the fixed term is 3 stages × 2 round-trips
+/// (`complete_json` allows exactly one re-ask) + `max_repair_attempts` (2)
+/// rounds × `MAX_SECTIONS_PER_ROUND` (4) sections + `humanize`'s ≤2
+/// flagged-document rewrites, i.e. 16 calls × [`OLLAMA_COMPLETION`] = 4800 s,
+/// and the scaling term is TWO streamed calls — the résumé draft and the
+/// cover letter (`cover_letter` stage, PR-2).
 ///
 /// Both terms come from `packages/shared/src/ai-timeouts.ts` through
 /// `pnpm gen:ipc`; the resulting per-tier table is pinned on BOTH sides
@@ -412,13 +414,13 @@ mod tests {
     #[test]
     fn quality_run_deadline_pins_the_derived_table() {
         for (effort, secs) in [
-            (None, 4_500),
-            (Some("minimal"), 4_500),
-            (Some("low"), 4_500),
-            (Some("medium"), 4_650),
-            (Some("high"), 4_800),
-            (Some("xhigh"), 4_950),
-            (Some("max"), 5_100),
+            (None, 5_400),
+            (Some("minimal"), 5_400),
+            (Some("low"), 5_400),
+            (Some("medium"), 5_700),
+            (Some("high"), 6_000),
+            (Some("xhigh"), 6_300),
+            (Some("max"), 6_600),
         ] {
             assert_eq!(
                 quality_run_deadline(effort),
@@ -451,18 +453,25 @@ mod tests {
     ///
     /// Mutation checks (applied and reverted): `QUALITY_RUN_FIXED_SECS` back to
     /// 1_800 ⇒ every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier
-    /// fails; `DEFAULT_MAX_REPAIR_ATTEMPTS` 2 → 3 ⇒ every tier fails.
+    /// fails; `DEFAULT_MAX_REPAIR_ATTEMPTS` 2 → 3 ⇒ every tier fails;
+    /// `QUALITY_RUN_GENERATION_PASSES` 2 → 1 ⇒ every tier fails (only the draft
+    /// would be covered, not the letter).
     #[test]
     fn quality_run_deadline_clears_the_inner_per_call_bounds() {
         const JSON_STAGES: u32 = 3;
         const ROUND_TRIPS_PER_JSON_STAGE: u32 = 2; // the one budgeted re-ask
+                                                   // `humanize` makes at most one flat `complete` call per FLAGGED
+                                                   // document (résumé, letter) — the worst case this deadline has to
+                                                   // cover, exactly like every other term here.
+        const HUMANIZE_MAX_CALLS: u32 = 2;
         let json_half = OLLAMA_COMPLETION * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE;
-        // The repair fan-out is bounded by the SAME flat per-call constant —
-        // `regenerate_one_section` goes through `Completer::complete`, never a
-        // stream — so it belongs to the effort-invariant half.
+        // The repair fan-out and `humanize` are bounded by the SAME flat
+        // per-call constant — both go through `Completer::complete`, never a
+        // stream — so they belong to the effort-invariant half.
         let repair_half = OLLAMA_COMPLETION
             * crate::pipeline::budget::Budget::RESUME_QUALITY.max_repair_attempts as u32
             * crate::pipeline::resume::stages::MAX_SECTIONS_PER_ROUND as u32;
+        let humanize_half = OLLAMA_COMPLETION * HUMANIZE_MAX_CALLS;
         for effort in [
             None,
             Some("medium"),
@@ -470,10 +479,13 @@ mod tests {
             Some("xhigh"),
             Some("max"),
         ] {
-            // The draft is the only streamed call the run makes.
-            let generation = stream_deadline(effort);
+            // The draft and the cover letter are the only streamed calls the
+            // run makes — see `QUALITY_RUN_GENERATION_PASSES`.
+            let generation = stream_deadline(effort)
+                * crate::ipc_contracts::ai_timeouts::QUALITY_RUN_GENERATION_PASSES as u32;
             assert!(
-                quality_run_deadline(effort) >= json_half + repair_half + generation,
+                quality_run_deadline(effort)
+                    >= json_half + repair_half + humanize_half + generation,
                 "quality_run_deadline({effort:?}) must cover the calls it wraps"
             );
         }

@@ -390,8 +390,15 @@ export const ResumePipelineRunSchema = z.object({
    *  the same list `resume:validateContent` takes. */
   topRequirements: z.array(z.string().max(300)).max(50).default([]),
   /** An already-generated cover letter to validate alongside the résumé.
-   *  Empty = no letter in scope (no letter checks run). */
+   *  Empty = no letter in scope (no letter checks run). Legacy/validate-only:
+   *  when {@link includeCoverLetter} is true the `cover_letter` STAGE writes
+   *  its own letter and this text is the fallback for callers that skip it. */
   coverLetterText: z.string().max(200_000).default(''),
+  /** Whether the run's `cover_letter` stage should generate a letter (one
+   *  extra streamed pass) instead of no-opping. Default false: an existing
+   *  caller that never sets this gets byte-identical behavior — the stage
+   *  finishes instantly at zero cost, exactly as if it did not exist. */
+  includeCoverLetter: z.boolean().default(false),
 });
 export type ResumePipelineRunRequest = z.infer<typeof ResumePipelineRunSchema>;
 

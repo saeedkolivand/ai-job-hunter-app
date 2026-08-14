@@ -7,8 +7,10 @@
 //! without any stage knowing either exists.
 
 mod analyze;
+mod cover_letter;
 mod draft;
 mod evidence;
+mod humanize;
 mod judge;
 mod repair;
 pub mod section_gen;
@@ -18,8 +20,10 @@ mod validate;
 pub mod verbatim;
 
 pub use self::analyze::AnalyzeJob;
+pub use self::cover_letter::CoverLetter;
 pub use self::draft::Draft;
 pub use self::evidence::MatchEvidence;
+pub use self::humanize::Humanize;
 pub use self::judge::Judge;
 pub use self::repair::NAME as REPAIR_STAGE;
 pub use self::repair::{regenerate_one_section, Repair, SectionOutcome, MAX_SECTIONS_PER_ROUND};
@@ -36,6 +40,11 @@ pub use self::validate::{validate_documents, Validate};
 pub(crate) use self::draft::apply_projects_normalization;
 #[cfg(test)]
 pub(crate) use self::evidence::ground;
+#[cfg(test)]
+pub(crate) use self::humanize::{
+    exceeds_humanize_cap, humanize_is_worse, humanize_one, is_usable_rewrite,
+    should_humanize_letter, voice_count, voice_findings,
+};
 #[cfg(test)]
 pub(crate) use self::judge::{issue_from, issues_from, MAX_JUDGE_ITEMS};
 #[cfg(test)]

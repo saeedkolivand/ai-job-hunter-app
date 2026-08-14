@@ -68,6 +68,11 @@ fn run_request_carries_only_identity_no_budget_and_no_routing() {
     // Defaults, not renderer-chosen escalations.
     assert_eq!(req.depth, "quality");
     assert_eq!(req.target_language, "en");
+    // PR-2: an existing caller that omits `includeCoverLetter` (every caller
+    // this build ships) gets the no-op default — the `cover_letter` stage
+    // finishes instantly at zero cost, byte-identical to a build that never
+    // had the stage at all.
+    assert!(!req.include_cover_letter);
 
     // Re-serializing must not resurrect any of them: the round-trip is exactly
     // the field set the backend owns.
@@ -801,7 +806,7 @@ fn the_run_kind_and_the_budget_floor_are_pinned() {
     assert_eq!(super::RUN_KIND, "resume");
     assert_eq!(
         Budget::RESUME_QUALITY.run_timeout,
-        Duration::from_secs(75 * 60)
+        Duration::from_secs(90 * 60)
     );
 }
 
@@ -1701,7 +1706,9 @@ fn paying_stages_never_includes_a_stage_that_makes_no_ai_call() {
                 "match_evidence",
                 "strategy",
                 "draft",
+                "cover_letter",
                 "repair",
+                "humanize",
             ][..],
         ),
         (

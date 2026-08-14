@@ -1031,8 +1031,10 @@
           "match_evidence": "Belegabgleich",
           "strategy": "Strategie",
           "draft": "Entwurf",
+          "cover_letter": "Anschreiben",
           "sections": "Abschnitte",
           "repair": "Korrektur",
+          "humanize": "KI-Spuren entfernen",
           "llm_judge": "Bewertung"
         },
         "descriptions": {
@@ -1040,8 +1042,10 @@
           "match_evidence": "Findet, was Ihr Lebenslauf tatsächlich belegt.",
           "strategy": "Legt fest, wie diese Belege dargestellt werden.",
           "draft": "Schreibt den gesamten Lebenslauf in einem Durchgang.",
+          "cover_letter": "Schreibt das Anschreiben, sofern eines angefordert wurde.",
           "sections": "Schreibt den Lebenslauf Abschnitt für Abschnitt.",
           "repair": "Schreibt Abschnitte neu, die die Prüfung nicht bestanden haben.",
+          "humanize": "Schreibt Zeilen um, die eine automatische Prüfung als KI-klingend markiert hat.",
           "llm_judge": "Bewertet das fertige Dokument."
         },
         "suggest": {
@@ -1621,7 +1625,7 @@
       },
       "quality": {
         "label": "Gründlich",
-        "tooltip": "Sechs Schritte: analysieren, Belege zuordnen, planen, schreiben, prüfen, automatisch nachbessern.",
+        "tooltip": "Bis zu acht Schritte: analysieren, Belege zuordnen, planen, schreiben, bei Bedarf ein Anschreiben verfassen, prüfen, automatisch nachbessern, abschließend KI-typische Formulierungen entfernen.",
         "summary": "Langsamer und teurer, dafür an deinem Lebenslauf belegt und vorab geprüft."
       },
       "max": {
@@ -1640,8 +1644,8 @@
         "cost": "1 Modellaufruf. Sekunden bis eine Minute."
       },
       "quality": {
-        "what": "In Schritten: die Anzeige wird analysiert, deine Belege werden wörtlich aus dem Lebenslauf zugeordnet, eine Strategie entsteht, der Lebenslauf wird geschrieben und anschließend geprüft — kritische Funde werden automatisch neu geschrieben, bis zu 2 Runden.",
-        "cost": "4 Modellaufrufe plus bis zu 2 Nachbesserungsrunden. In der Cloud rund +30–90 Sekunden; lokal mehrere Minuten, bei hohem Reasoning-Aufwand bis zu ca. 10 Minuten."
+        "what": "In Schritten: die Anzeige wird analysiert, deine Belege werden wörtlich aus dem Lebenslauf zugeordnet, eine Strategie entsteht, der Lebenslauf — und, falls gewünscht, ein Anschreiben — wird geschrieben und anschließend geprüft; kritische Funde werden automatisch neu geschrieben (bis zu 2 Runden), verbliebene KI-typische Formulierungen werden einmal überarbeitet.",
+        "cost": "4–5 Modellaufrufe (5 mit Anschreiben), plus bis zu 2 Nachbesserungsrunden und bis zu 2 Durchgänge zum Entfernen KI-typischer Formulierungen. In der Cloud rund +30–90 Sekunden; lokal mehrere Minuten, bei hohem Reasoning-Aufwand bis zu ca. 10 Minuten."
       },
       "max": {
         "what": "Abschnitt für Abschnitt: jeder Abschnitt wird in einem eigenen Aufruf aus den wörtlich aus deinem Lebenslauf zitierten Belegen geschrieben, danach wird das Dokument zusammengesetzt, geprüft und automatisch nachgebessert und zum Schluss vom Modell noch einmal auf Klarheit, Belege und Passung gelesen. Eine Live-Checkliste zeigt den Stand jedes Abschnitts, und das Dokument entsteht vor deinen Augen.",
@@ -1657,10 +1661,12 @@
       "match_evidence": "Belege werden zugeordnet",
       "strategy": "Lebenslauf wird geplant",
       "draft": "Lebenslauf wird geschrieben",
+      "cover_letter": "Anschreiben wird geschrieben",
       "sections": "Lebenslauf wird Abschnitt für Abschnitt geschrieben",
       "assemble": "Abschnitte werden zusammengesetzt",
       "validate": "Ergebnis wird geprüft",
       "repair": "Gefundene Probleme werden behoben",
+      "humanize": "KI-Spuren werden entfernt",
       "llm_judge": "Fertiger Lebenslauf wird noch einmal gelesen"
     },
     "section": {
@@ -1694,7 +1700,8 @@
       "preparing": "Vorbereitung",
       "drafting": "Wird geschrieben",
       "validating": "Wird geprüft",
-      "repairing": "Wird nachgebessert"
+      "repairing": "Wird nachgebessert",
+      "humanizing": "KI-Spuren werden entfernt"
     },
     "status": {
       "running": "Läuft",
