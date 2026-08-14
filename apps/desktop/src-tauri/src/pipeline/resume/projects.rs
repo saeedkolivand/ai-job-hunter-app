@@ -684,6 +684,19 @@ mod test {
         assert!(normalized.contains("A double-entry bookkeeping tool for small businesses."));
         assert_eq!(stats.matched, 2);
         assert_eq!(stats.links_restored, 1, "only CrossKit's link was altered");
+        // `render_project`'s separator glyph (`assemble::PROJECT_SEPARATOR`)
+        // has no other pin now that the old `max_test.rs` is gone — the whole
+        // suite passes even if this character changes underneath it. Pinned
+        // here on both a name-to-link join (CrossKit, tier 3, bullet form)
+        // and a multi-item stack join (Ledger CLI's `Rust`/`SQLite`).
+        assert!(
+            normalized.contains("• CrossKit · https://github.com/janedoe/crosskit"),
+            "the project separator glyph is pinned: {normalized}"
+        );
+        assert!(
+            normalized.contains("Rust · SQLite"),
+            "the stack-join separator glyph is pinned: {normalized}"
+        );
     }
 
     // ── C2 / all-verbatim: never a heading-only section ─────────────────
