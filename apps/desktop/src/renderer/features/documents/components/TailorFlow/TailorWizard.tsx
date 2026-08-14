@@ -41,9 +41,6 @@ interface Props {
   // Global AI availability.
   canUse: boolean;
   reason?: string;
-  /** Why quality depth can't run from this flow yet — forwarded to the depth
-   *  picker on the model step so the limitation is stated, not silent. */
-  depthUnavailableReason?: string;
   // Submit the wizard → start generation.
   onGenerate: (values: TailorWizardState) => void;
 }
@@ -67,7 +64,6 @@ export function TailorWizard({
   jobAdSummary,
   canUse,
   reason,
-  depthUnavailableReason,
   onGenerate,
 }: Props) {
   const { t } = useTranslation();
@@ -144,13 +140,7 @@ export function TailorWizard({
               )}
               {step === 1 && <StepResume />}
               {step === 2 && <StepOutput />}
-              {step === 3 && (
-                <StepModel
-                  canUse={canUse}
-                  reason={reason}
-                  depthUnavailableReason={depthUnavailableReason}
-                />
-              )}
+              {step === 3 && <StepModel canUse={canUse} reason={reason} />}
             </motion.div>
           </AnimatePresence>
         </FormProvider>

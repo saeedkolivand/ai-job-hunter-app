@@ -117,6 +117,11 @@ export const TEST_IDS = {
     resultsPanel: 'results-panel',
     /** Inline banner surfacing a failed generation's reason on the wizard. */
     generationError: 'generation-error',
+    /** Inline banner acknowledging a cancel that produced no output. */
+    generationCancelled: 'generation-cancelled',
+    /** The persistently-mounted sr-only live region (CR-7) — distinct from
+     *  the visual banners' own `role="status"`, which also exist. */
+    liveAnnouncer: 'live-announcer',
     questionsModal: 'questions-modal',
     interviewModal: 'interview-modal',
     referralModal: 'referral-modal',

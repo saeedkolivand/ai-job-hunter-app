@@ -1,30 +1,29 @@
 /**
- * TailorFlow — generation-failure visibility.
+ * TailorFlow — staged-pipeline start-failure visibility.
  *
- * A failed run used to fall back to the wizard SILENTLY: `runTailor` wrote
- * `session.error`, but `TailorFlow` never read it and no toast fired. These
- * tests drive a failure through the REAL `useTailorGeneration` hook + the
- * real `useGenerationStore` (only the AI pipeline functions are stubbed), and
- * assert the rendered DOM — a test that only checked `gen.error` would have
- * passed against the broken code, since the store already set that field.
+ * A failed run used to fall back to the wizard SILENTLY on the fast path;
+ * these tests drive a failure through the REAL `useTailorPipeline` →
+ * `useResumePipelineSession` → service-hook chain against a mock `AppClient`
+ * (only `resumePipeline.run`/`.get` are stubbed) and assert the rendered
+ * DOM — a test that only checked a mocked hook's `error` field would pass
+ * against broken wiring, since a shallow mock already sets that field.
  *
  * Everything NOT under test (heavy result/wizard panels, the sibling
- * assistants, service hooks) is stubbed exactly as in `TailorFlow.test.tsx`.
+ * assistants, service hooks unrelated to the pipeline) is stubbed exactly as
+ * in `TailorFlow.test.tsx`.
  */
 
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
+import type { PipelineRunDetail } from '@ajh/shared/ipc';
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 
-import { generateResume } from '@/lib/generate';
-import { useGenerationStore } from '@/store/generation-store';
-import { makeQueryClient } from '@/test-support';
+import { createMockClient, withProviders } from '@/test-support';
 
 // ── i18n — identity translator so the raw keys are assertable ────────────────
 
@@ -65,7 +64,7 @@ vi.mock('motion/react', () => ({
   },
 }));
 
-// ── ModelSelector + service hooks — static, no IPC ────────────────────────────
+// ── ModelSelector + service hooks — static, no IPC for these ─────────────────
 
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'test-model',
@@ -76,37 +75,6 @@ vi.mock('@/services', () => ({
   useResolveJobUrl: () => ({ data: undefined, isLoading: false }),
   useExtractText: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useActiveModelCapabilities: () => ({ data: { supportsWebSearch: false }, isSuccess: true }),
-}));
-
-// ── AppClient — only `aiGenerations.save` is exercised on a clean run ────────
-
-const save = vi.fn().mockResolvedValue({ id: 'gen-1', success: true });
-vi.mock('@/providers/AppClientProvider', () => ({
-  useAppClient: () => ({ aiGenerations: { save } }),
-}));
-
-// ── The AI pipeline — the only seam driving success vs. failure ──────────────
-
-vi.mock('@/lib/generate', () => ({
-  extractMetadata: vi.fn().mockResolvedValue({
-    candidateName: '',
-    jobTitle: '',
-    companyName: '',
-    resumeLanguage: 'en',
-    jobAdLanguage: 'en',
-    mismatch: false,
-    targetLanguage: 'en',
-    topRequirements: [],
-  }),
-  generateResume: vi.fn().mockResolvedValue('RESUME TEXT'),
-  generateCoverLetter: vi.fn().mockResolvedValue({ text: 'COVER', companyBrief: '' }),
-  buildFilename: vi.fn(),
-  exportDOCX: vi.fn(),
-  exportPDF: vi.fn(),
-  exportTXT: vi.fn(),
-  computeQualityReport: vi.fn().mockResolvedValue(null),
-  serializeQualityReport: vi.fn(),
-  parseQualityReport: vi.fn().mockReturnValue(null),
 }));
 
 // ── Sibling assistants — irrelevant to this failure path ─────────────────────
@@ -208,45 +176,59 @@ function makePersistence() {
     wizardForm: null,
     templateId: 'classic' as const,
     atsMode: false,
+    runId: null,
+    runJobId: null,
     setWizardStep: vi.fn(),
     setWizardForm: vi.fn(),
     setTemplateId: vi.fn(),
     setAtsMode: vi.fn(),
     setAccent: vi.fn(),
     setLetterLayoutId: vi.fn(),
+    setRun: vi.fn(),
   };
 }
 
-function renderFlow() {
-  const client = makeQueryClient();
+function completedDetail(overrides: Partial<PipelineRunDetail> = {}): PipelineRunDetail {
+  return {
+    runId: 'run-1',
+    jobUrl: JOB.url,
+    kind: 'resume',
+    depth: 'quality',
+    status: 'completed',
+    startedAt: 1,
+    metrics: {},
+    events: [],
+    report: null,
+    resumeText: 'RESUME TEXT',
+    ...overrides,
+  };
+}
+
+function renderFlow(overrides: Record<string, (...args: never[]) => unknown> = {}) {
+  const client = createMockClient(overrides);
   return render(
-    <QueryClientProvider client={client}>
-      <TailorFlow
-        job={JOB}
-        resumeText="My resume"
-        board="linkedin"
-        contextId="autopilot:https://acme.com/jobs/1"
-        jobUrl="https://acme.com/jobs/1"
-        persistence={makePersistence()}
-      />
-    </QueryClientProvider>
+    <TailorFlow
+      job={JOB}
+      resumeText="My resume"
+      board="linkedin"
+      contextId="autopilot:https://acme.com/jobs/1"
+      jobUrl="https://acme.com/jobs/1"
+      persistence={makePersistence()}
+    />,
+    { wrapper: withProviders(client) }
   );
 }
 
 beforeEach(() => {
-  // The generation session lives in a module-level store — reset between tests.
-  useGenerationStore.setState({ sessions: {} });
-  save.mockClear();
   mockNotify.error.mockClear();
-  vi.mocked(generateResume).mockClear();
-  vi.mocked(generateResume).mockResolvedValue('RESUME TEXT');
 });
 
-describe('TailorFlow — a failed generation surfaces its reason', () => {
+describe('TailorFlow — a failed staged-run start surfaces its reason', () => {
   it('renders the failure message on the wizard and fires a toast', async () => {
-    vi.mocked(generateResume).mockRejectedValueOnce(new Error('Model timed out'));
     const user = userEvent.setup();
-    renderFlow();
+    renderFlow({
+      'resumePipeline.run': vi.fn().mockRejectedValueOnce(new Error('Model timed out')),
+    });
 
     await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
 
@@ -255,19 +237,95 @@ describe('TailorFlow — a failed generation surfaces its reason', () => {
     expect(mockNotify.error).toHaveBeenCalledWith({ message: 'autopilot.apply.failed' });
   });
 
-  it('clears a stale error once a subsequent run succeeds', async () => {
-    vi.mocked(generateResume).mockRejectedValueOnce(new Error('boom'));
+  it('clears a stale error once a subsequent run completes', async () => {
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ runId: 'run-1', jobId: 'job-1' });
     const user = userEvent.setup();
-    renderFlow();
+    renderFlow({
+      'resumePipeline.run': run,
+      'resumePipeline.get': vi.fn().mockResolvedValue(completedDetail()),
+    });
 
     await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
     expect(await screen.findByTestId(TEST_IDS.documents.generationError)).toBeInTheDocument();
 
-    // The next attempt succeeds (base mock resolves) — the stale failure must
-    // not sit on screen over the fresh, in-flight/successful run.
+    // The next attempt succeeds and the run completes immediately — the stale
+    // failure must not sit on screen over the fresh, successful run.
     await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
 
     expect(await screen.findByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.generationError)).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F1 — mount-level regression through a DocumentsTab-shaped host
+// ─────────────────────────────────────────────────────────────────────────────
+// `TailorFlow.test.tsx` mocks `useTailorPipeline` wholesale and passes a
+// STABLE `vi.fn()` persistence, so it never exercised the real loop: this
+// file's REAL `useTailorPipeline` chain (already used above) is reused here
+// with a host that mirrors the actual production shape — `runId`/`runJobId`
+// in a single OBJECT slice, always replaced with a fresh `{...prev, ...patch}`
+// spread (mirrors Zustand's `setApplicationApply` exactly — a plain primitive
+// `useState` would let React bail out on an equal value, silently masking the
+// defect a real store's always-new-object setter never would), and a
+// brand-new `persistence` object literal (and `setRun` arrow) on every
+// render, exactly like `DocumentsTab`.
+//
+// Disproven by mutation-testing this file against the reverted (buggy)
+// source: it does NOT reproduce "Maximum update depth exceeded" in this
+// jsdom/RTL environment — the effect-driven render→setState cycle the bug
+// describes doesn't hit React's nested-update-limit within one `act()`
+// flush here, unlike a real browser tab. The call-count assertion below
+// DOES catch the regression (verified red against the reverted source): the
+// buggy effect calls `setRun` repeatedly (4 times observed here — bounded
+// in THIS test only because a mock AppClient settles quickly; production's
+// unbounded churn is what the bug report's repro actually crashed on) for
+// the SAME run instead of once. The hook-level test in
+// `useTailorPipeline.test.ts` remains the primary, crash-shaped guard.
+
+function DocumentsTabShapedHost({ onSetRun }: { onSetRun: (ids: unknown) => void }) {
+  const [applyRun, setApplyRun] = React.useState<{ runId: string; jobId: string } | null>(null);
+  // A fresh object every render — never memoized, matching DocumentsTab's
+  // inline `const persistence: TailorFlowPersistence = { ... }`.
+  const persistence = {
+    ...makePersistence(),
+    runId: applyRun?.runId ?? null,
+    runJobId: applyRun?.jobId ?? null,
+    setRun: (ids: { runId: string; jobId: string } | null) => {
+      onSetRun(ids);
+      setApplyRun((prev) => (ids ? { ...prev, ...ids } : null));
+    },
+  };
+  return (
+    <TailorFlow
+      job={JOB}
+      resumeText="My resume"
+      board="linkedin"
+      contextId="autopilot:https://acme.com/jobs/1"
+      jobUrl="https://acme.com/jobs/1"
+      persistence={persistence}
+    />
+  );
+}
+
+describe('TailorFlow — F1 mount-level regression (DocumentsTab-shaped host)', () => {
+  it('calls setRun exactly once for one run, and does not crash, under an unstable persistence object', async () => {
+    const user = userEvent.setup();
+    const onSetRun = vi.fn();
+    const client = createMockClient({
+      'resumePipeline.run': vi.fn().mockResolvedValue({ runId: 'run-1', jobId: 'job-1' }),
+      'resumePipeline.get': vi.fn().mockResolvedValue(completedDetail()),
+    });
+
+    render(<DocumentsTabShapedHost onSetRun={onSetRun} />, { wrapper: withProviders(client) });
+
+    await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
+
+    expect(await screen.findByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
+    expect(onSetRun).toHaveBeenCalledTimes(1);
+    expect(onSetRun).toHaveBeenCalledWith({ runId: 'run-1', jobId: 'job-1' });
   });
 });

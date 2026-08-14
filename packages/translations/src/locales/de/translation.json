@@ -1695,6 +1695,32 @@
       "error": "fehlgeschlagen"
     },
     "stageCounter": "Schritt {{current}} von {{total}}",
+    "step": {
+      "title": "Fortschritt",
+      "announce": "{{step}} — {{state}}",
+      "state": {
+        "done": "Fertig",
+        "active": "Läuft",
+        "pending": "Noch nicht gestartet"
+      },
+      "analyze": {
+        "label": "Analysieren",
+        "description": "Liest die Stellenanzeige und gleicht sie mit deinen Belegen ab."
+      },
+      "generate": {
+        "label": "Erstellen",
+        "description": "Entwirft deinen Lebenslauf – und das Anschreiben, falls gewünscht."
+      },
+      "validate": {
+        "label": "Prüfen",
+        "description": "Prüft jede Aussage gegen deinen Lebenslauf und behebt, was möglich ist."
+      },
+      "humanize": {
+        "label": "KI-Spuren entfernen",
+        "description": "Schreibt nur die Zeilen um, die wie KI-Text wirken."
+      },
+      "allDone": "Alle Schritte abgeschlossen"
+    },
     "state": {
       "queued": "Wartet auf einen freien Platz…",
       "preparing": "Vorbereitung",
@@ -1906,19 +1932,12 @@
       "infoLabel": "Board-Ergebnisse"
     },
     "apply": {
-      "depthUnavailable": "Die gestuften Verfahren brauchen einen gespeicherten Lebenslauf und eine Anzeige aus deiner Jobliste. Dieser Ablauf arbeitet mit dem Text im Assistenten, deshalb läuft dieser Durchgang schnell — deine Auswahl bleibt gemerkt.",
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
       "jobDescription": "Stellenbeschreibung",
       "fetchingDescription": "Stellenbeschreibung wird abgerufen…",
       "generate": "Generieren",
-      "generating": "Generiere…",
-      "generatingHint": "Das kann einen Moment dauern – wir passen an die Stellenanzeige an.",
-      "reasoningHeavyHint": "Dieses Modell wendet weit mehr für internes Nachdenken auf als für das Dokument. Rechne mit mehreren Minuten – es arbeitet, es hängt nicht.",
       "cancel": "Abbrechen",
-      "analyzing": "Stellenbeschreibung wird analysiert…",
-      "writingResume": "Lebenslauf wird geschrieben…",
-      "writingCover": "Anschreiben wird geschrieben…",
       "copy": "Kopieren",
       "copied": "Kopiert",
       "selectModel": "Wählen Sie zuerst ein KI-Modell",
@@ -1972,6 +1991,7 @@
       "tryAgain": "Erneut versuchen",
       "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",
       "hintNoDescription": "Keine Stellenbeschreibung zum Anpassen vorhanden",
+      "cancelledNoOutput": "Generierung abgebrochen — es wurde noch nichts geschrieben.",
       "wizard": {
         "steps": {
           "jobAd": "Stellenanzeige",
@@ -1993,7 +2013,8 @@
         },
         "model": {
           "title": "KI-Modell",
-          "subtitle": "Wähle das Modell und optionale Unternehmensrecherche"
+          "subtitle": "Wähle das Modell und optionale Unternehmensrecherche",
+          "stagedCost": "Jede Anpassung läuft in mehreren Modellaufrufen ab – analysieren, erstellen, prüfen, dann KI-Spuren entfernen – das dauert meist Minuten statt Sekunden. Dafür wird der Lebenslauf geprüft, bevor du ihn siehst."
         },
         "next": "Weiter",
         "back": "Zurück",
@@ -2004,7 +2025,18 @@
         },
         "results": {
           "regenerate": "Neu generieren",
-          "edit": "Einstellungen bearbeiten"
+          "edit": "Einstellungen bearbeiten",
+          "needsReviewTitle_one": "Nicht fertig — {{count}} Aussage braucht dein Urteil",
+          "needsReviewTitle_other": "Nicht fertig — {{count}} Aussagen brauchen dein Urteil",
+          "needsReviewHint": "Das Dokument existiert, aber die Prüfung konnte diese Zeilen nicht auf deinen Lebenslauf zurückführen. Öffne den Bericht und behalte oder entferne jeden Eintrag.",
+          "needsReviewHintCold": "Dieser Lauf muss erneut geöffnet werden, bevor diese Aussagen geprüft und entschieden werden können.",
+          "needsReviewTitleEmpty": "Nicht fertig — eine der Prüfungen hat etwas markiert, das du dir ansehen solltest",
+          "needsReviewHintEmpty": "Details siehe Qualitäts-Badge über dem Dokument.",
+          "cancelledHint": "Was der Lauf bereits geschrieben hatte, wurde gespeichert.",
+          "failedTitle": "Der Lauf ist fehlgeschlagen",
+          "failedHint": "Nichts wird automatisch wiederholt — versuche es gleich noch einmal.",
+          "fixFailed": "Der Abschnitt konnte nicht neu erstellt werden. {{detail}}",
+          "resolveFailed": "Die Entscheidung konnte nicht gespeichert werden. {{detail}}"
         }
       }
     },

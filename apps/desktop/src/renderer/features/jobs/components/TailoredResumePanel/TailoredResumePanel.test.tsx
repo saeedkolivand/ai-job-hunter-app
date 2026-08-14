@@ -172,6 +172,8 @@ function makeSession(overrides: Partial<ResumePipelineSession> = {}): ResumePipe
     stage: null,
     sectionStates: {},
     draft: '',
+    letterDraft: '',
+    thinking: '',
     detail: null,
     error: null,
     starting: false,

@@ -950,6 +950,23 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
         "a forged marker must be broken"
     );
 
+    // …and for the strategy turn, which shares the same two untrusted blocks
+    // (`candidate_resume`, `job_analysis`) with the match-evidence turn above,
+    // through the SAME `fenced`/`fenced_artifact` primitive
+    // (`prompts.rs::strategy_user`) — the one résumé-consuming stage prompt
+    // this sweep had missed.
+    let strategy = strategy_user(hostile, &analysis, &EvidenceMap::default());
+    assert_eq!(strategy.matches("</candidate_resume>").count(), 1);
+    assert_eq!(strategy.matches("</job_analysis>").count(), 1);
+    assert!(
+        strategy.contains("< /job_posting>"),
+        "a forged sibling must be broken"
+    );
+    assert!(
+        !strategy.contains("[tool_result:"),
+        "a forged marker must be broken"
+    );
+
     // …and the same for the draft turn, which composes THREE blocks.
     let draft = draft_user(hostile, hostile, &ResumeStrategy::default());
     assert_eq!(draft.matches("</resume_strategy>").count(), 1);

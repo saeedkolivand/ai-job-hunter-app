@@ -60,6 +60,30 @@ const TITLE_CANCELLED: &str = "Résumé run cancelled";
 /// fits with room to spare; a title longer than this is not a title.
 const LABEL_CAP: usize = 160;
 
+/// Collapse any run of whitespace — including an embedded newline/tab/control
+/// whitespace, which `title`/`company` can carry (a scraped posting title, or
+/// PR-3's text-path `jobTitle`/`companyName`, neither of which is line-shape
+/// checked upstream) — to a single space, trimming both ends.
+///
+/// A bare `\n` would otherwise survive into the OS notification body verbatim
+/// (a one-line label becoming two). [`escape_markup`] handles the sibling
+/// gap — an embedded `<b>`/`<a href>` reading as markup rather than text on a
+/// Linux desktop whose notification daemon advertises libnotify body-markup.
+fn collapse_whitespace(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Escape the three characters libnotify's optional body-markup capability
+/// treats specially, so a scraped or renderer-supplied `title`/`company`
+/// renders as plain text instead of markup on a notification daemon that
+/// advertises the hint. `&` first, or the entities inserted for `<`/`>` get
+/// double-escaped.
+fn escape_markup(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 /// `"<title> · <company>"`, degrading to whichever side the cached posting has —
 /// the same body shape the email-watch card and the follow-up reminder use, so
 /// the inbox reads consistently. Local rather than hoisted out of
@@ -69,16 +93,20 @@ const LABEL_CAP: usize = 160;
 /// Clamped to [`LABEL_CAP`] with an ellipsis, char-boundary safe (the store's
 /// own clamp counts characters too, for the same multi-byte reason).
 fn posting_label(title: &str, company: &str) -> String {
-    let label = match (title.trim(), company.trim()) {
+    let title = collapse_whitespace(title);
+    let company = collapse_whitespace(company);
+    let label = match (title.as_str(), company.as_str()) {
         ("", "") => "Untitled posting".to_string(),
         ("", company) => company.to_string(),
         (title, "") => title.to_string(),
         (title, company) => format!("{title} · {company}"),
     };
-    if label.chars().count() <= LABEL_CAP {
-        return label;
-    }
-    label.chars().take(LABEL_CAP - 1).chain(['…']).collect()
+    let label = if label.chars().count() <= LABEL_CAP {
+        label
+    } else {
+        label.chars().take(LABEL_CAP - 1).chain(['…']).collect()
+    };
+    escape_markup(&label)
 }
 
 /// What is left to do on a run that ended in `needsReview`.

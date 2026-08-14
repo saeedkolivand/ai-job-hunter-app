@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import type { DocumentRecord } from '@ajh/shared';
@@ -24,10 +24,30 @@ const MAX_BYTES = 25 * 1024 * 1024;
 interface Params {
   value: string;
   onChange: (text: string) => void;
+  /**
+   * Host-owned seed for `selectedDocId` — the id the host already believes
+   * backs `value` (e.g. a form's `resumeDocId` field). Only read once, as the
+   * `useState` initializer: this component remounts every time its wizard
+   * step is revisited (`{step === 1 && <StepResume />}`), which resets any
+   * component-local state, while the host's form does NOT reset. Without this
+   * seed, a post-remount hand-edit compares against a local `null` instead of
+   * the host's real id and never fires `onDocIdChange`, so the host keeps
+   * sending a stale doc id for text the user has since edited. Omit it and
+   * this hook behaves exactly as before (starts unselected).
+   */
+  docId?: string | null;
+  /**
+   * Surfaces which saved doc backs the current text — `null` when it came
+   * from a manual paste/upload/profile-import edit, or once the loaded doc's
+   * text has been hand-edited. The one consumer today (the apply flow's
+   * `useTailorPipeline`) uses this to send `resumeId` instead of `resumeText`
+   * on a pipeline run; every other caller omits it.
+   */
+  onDocIdChange?: (id: string | null) => void;
 }
 
 /** State + behavior for ResumeInputCard: saved docs, upload, paste, profile import. */
-export function useResumeInput({ value, onChange }: Params) {
+export function useResumeInput({ value, onChange, docId, onDocIdChange }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
   const api = useAppClient();
@@ -51,7 +71,9 @@ export function useResumeInput({ value, onChange }: Params) {
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   // Which saved resume is currently loaded into the editor (null when the text
   // came from an upload, paste, or profile import rather than a saved doc).
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  // Seeded from the host's `docId` so a remount (see the `docId` doc comment
+  // above) doesn't desync this from what the host already believes.
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(docId ?? null);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [profileUrl, setProfileUrl] = useState('');
 
@@ -61,10 +83,32 @@ export function useResumeInput({ value, onChange }: Params) {
   const profileImport = useProfileImport();
 
   const hasSaved = docs.length > 0;
-  const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
-  // The doc backing the current editor text, falling back to the default.
-  const triggerDoc = docs.find((d) => d.id === selectedDocId) ?? defaultDoc;
-  const activeDoc = triggerDoc;
+  // The doc EXPLICITLY backing the current text — never falls back to the
+  // default when nothing is selected. `selectedDocId === null` means the
+  // text came from a hand-edit/upload/paste/profile-import, which has
+  // nothing to do with the default saved résumé; the chip must fall through
+  // to the generic "active résumé" label instead of misattributing itself
+  // to a document the visible text doesn't match.
+  const activeDoc = selectedDocId ? docs.find((d) => d.id === selectedDocId) : undefined;
+
+  /** `setSelectedDocId` + the optional host notification, kept in lockstep so
+   *  a caller of `onDocIdChange` can never observe a stale id. `useCallback`
+   *  so the auto-fill effect below can list it as a dependency honestly. */
+  const selectDoc = useCallback(
+    (id: string | null) => {
+      setSelectedDocId(id);
+      onDocIdChange?.(id);
+    },
+    [onDocIdChange]
+  );
+
+  /** The paste textarea's onChange — unlike the doc-selection paths above,
+   *  free typing bypasses every other handler here, so THIS is the one place
+   *  that has to clear a stale doc id on a hand-edit. */
+  const handleTextChange = (text: string) => {
+    onChange(text);
+    if (selectedDocId !== null) selectDoc(null);
+  };
 
   // Close saved-menu on outside click
   useEffect(() => {
@@ -95,16 +139,27 @@ export function useResumeInput({ value, onChange }: Params) {
     const text = raw?.text?.trim();
     if (text) {
       onChange(text);
-      setSelectedDocId(raw?._id ?? null);
+      selectDoc(raw?._id ?? null);
     }
-  }, [value, rawDocs, onChange]);
+  }, [value, rawDocs, onChange, selectDoc]);
 
-  /** Load a saved resume into the editor (does not change the default) */
+  /** Load a saved resume into the editor (does not change the default). A
+   *  metadata-only/empty document (no `text`) is not selectable — `onChange`
+   *  and `selectDoc` must land TOGETHER or not at all: firing `selectDoc`
+   *  alone would tell the host "the visible text is backed by this doc" while
+   *  the editor still shows whatever was there before, the exact id/text
+   *  drift this file's `docId` seeding was already fixed for twice. The
+   *  backend's list response already carries the full text (the same source
+   *  a `getText(id)` re-fetch would read), so there is nothing to fetch —
+   *  an empty `raw.text` means the document genuinely has none. The saved
+   *  menu is left open (no `setShowSaved`/`setExpanded`) so the user can
+   *  pick a different entry instead of a silent, unexplained no-op. */
   const handleSelectSaved = (doc: DocumentRecord) => {
     const raw = rawDocs.find((d) => d._id === doc.id);
     const text = raw?.text?.trim();
-    if (text) onChange(text);
-    setSelectedDocId(doc.id);
+    if (!text) return;
+    onChange(text);
+    selectDoc(doc.id);
     setShowSaved(false);
     setExpanded(false);
   };
@@ -119,7 +174,7 @@ export function useResumeInput({ value, onChange }: Params) {
   const handleRemove = (doc: DocumentRecord) => {
     void removeDocument.mutateAsync(doc.id);
     if (doc.id === selectedDocId) {
-      setSelectedDocId(null);
+      selectDoc(null);
       onChange('');
       setExpanded(true);
     }
@@ -154,7 +209,7 @@ export function useResumeInput({ value, onChange }: Params) {
           queryFn: () => api.documents.getText(id),
         });
         onChange(text);
-        setSelectedDocId(id);
+        selectDoc(id);
         setExpanded(false);
       }
     } catch {
@@ -178,7 +233,7 @@ export function useResumeInput({ value, onChange }: Params) {
       });
       const result = await importFile(blob);
       if (result?.id) {
-        setSelectedDocId(result.id);
+        selectDoc(result.id);
         setExpanded(false);
         notify.success({ message: t('resumeInput.savedToLibrary') });
       }
@@ -199,7 +254,7 @@ export function useResumeInput({ value, onChange }: Params) {
         return;
       }
       onChange(result.text);
-      setSelectedDocId(null);
+      selectDoc(null);
       setProfileUrl('');
       setShowUrlInput(false);
       setExpanded(false);
@@ -246,6 +301,7 @@ export function useResumeInput({ value, onChange }: Params) {
     handleFileChange,
     handleSavePaste,
     handleProfileUrlSubmit,
+    handleTextChange,
     toggleUrlInput,
     review,
     clearReview,
