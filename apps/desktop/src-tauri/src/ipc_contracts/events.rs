@@ -42,10 +42,12 @@ pub const PIPELINE_STAGES: &[&str] = &[
     "match_evidence",
     "strategy",
     "draft",
+    "cover_letter",
     "sections",
     "assemble",
     "validate",
     "repair",
+    "humanize",
     "llm_judge",
 ];
 

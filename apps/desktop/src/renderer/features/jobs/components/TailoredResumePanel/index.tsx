@@ -239,6 +239,9 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
         // scope.
         topRequirements: [],
         coverLetterText: '',
+        // This panel is being replaced by TailorFlow's staged run (PR-3); it
+        // never asks the pipeline to generate a letter itself.
+        includeCoverLetter: false,
         ...(effort ? { effort } : {}),
       });
     },

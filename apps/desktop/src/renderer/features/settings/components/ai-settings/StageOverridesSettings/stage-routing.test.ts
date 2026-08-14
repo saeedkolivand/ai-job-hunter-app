@@ -30,8 +30,10 @@ describe('OVERRIDABLE_PIPELINE_STAGES', () => {
       'match_evidence',
       'strategy',
       'draft',
+      'cover_letter',
       'sections',
       'repair',
+      'humanize',
       'llm_judge',
     ]);
   });

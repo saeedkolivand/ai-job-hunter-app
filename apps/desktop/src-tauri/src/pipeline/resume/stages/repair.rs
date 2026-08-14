@@ -77,7 +77,12 @@ pub const MAX_SECTIONS_PER_ROUND: usize = 4;
 /// offending span. Content-bearing by necessity — this goes to the MODEL, not
 /// to a log — and it rides inside `<section_issues>`, fenced like everything
 /// else in the user turn.
-fn issue_line(issue: &ContentIssue) -> String {
+///
+/// `pub(super)` (rather than private) so `humanize.rs` — the SIBLING stage
+/// with the same "render one issue for the model" need — reuses this exact
+/// format for its own `<humanize_findings>` block instead of a second,
+/// driftable copy.
+pub(super) fn issue_line(issue: &ContentIssue) -> String {
     match &issue.evidence {
         Some(evidence) => format!(
             "[{}] {} — offending text: {evidence}",
@@ -492,6 +497,11 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
         // seeds, exactly like `Draft::run`'s. The skip reason is discarded
         // here: only the draft-stage ledger reports it (rule 5).
         let (seeds, _seed_skip_reason) = projects::seed_projects_for_normalize(input.source_resume);
+        // The `cover_letter` stage's own letter when it produced one, falling
+        // back to the renderer-supplied validate-only text — see
+        // `QualityCtx::letter_text`. Read BEFORE the closures below so neither
+        // one borrows `ctx`, for the exact reason its own comment states.
+        let letter_text = ctx.letter_text().to_string();
 
         let (draft, report, letter, stats) = repair_loop(
             std::mem::take(&mut ctx.draft),
@@ -519,7 +529,7 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
                     input.job_ad.to_string(),
                     input.top_requirements.to_vec(),
                     input.target_language.to_string(),
-                    input.cover_letter.to_string(),
+                    letter_text.clone(),
                 )
             },
         )

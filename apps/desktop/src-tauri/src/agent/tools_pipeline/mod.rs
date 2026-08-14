@@ -40,10 +40,12 @@
 //!   re-ask, i.e. two `OLLAMA_COMPLETION`-bounded calls, which does NOT fit —
 //!   so it runs under [`AGENT_STAGE_DEADLINE`], derived so the re-ask is
 //!   refused rather than overrunning.
-//! * `run_quality_pipeline` is FIFTEEN provider calls with a 75-minute floor
-//!   ([`Budget::RESUME_QUALITY`]`.run_timeout`). No shrinking makes that fit a
-//!   360 s step; the tool is therefore registered but kept OUT of the prep
-//!   whitelist — see [`super::tools::improve_resume_tools`].
+//! * `run_quality_pipeline` is up to EIGHTEEN provider calls (15 pre-PR-2, plus
+//!   PR-2's `cover_letter` stream and `humanize`'s ≤2 rewrites — this tool
+//!   always sends `includeCoverLetter: false`, so in practice it is at most
+//!   SEVENTEEN) with a 90-minute floor ([`Budget::RESUME_QUALITY`]`.run_timeout`).
+//!   No shrinking makes that fit a 360 s step; the tool is therefore registered
+//!   but kept OUT of the prep whitelist — see [`super::tools::improve_resume_tools`].
 
 use std::future::Future;
 use std::pin::Pin;
@@ -128,11 +130,12 @@ const _: () = assert!(
 );
 
 // The same relation for the OTHER direction of the same race, and the reason
-// `Budget::AGENT_IMPROVE.step_timeout` is 90 minutes: `run_quality_pipeline` is
+// `Budget::AGENT_IMPROVE.step_timeout` is 105 minutes: `run_quality_pipeline` is
 // reachable only from the improve flow, and ONE call of it is a whole quality
 // run bounded by [`quality_tool_deadline`] — `run_deadline(RESUME_QUALITY,
-// quality_run_deadline(None))`, i.e. `RESUME_QUALITY.run_timeout` (4 500 s) at
-// the effort-blind bottom tier, which
+// quality_run_deadline(None))`, i.e. `RESUME_QUALITY.run_timeout` (5 400 s,
+// raised by PR-2's `cover_letter` + `humanize` stages) at the effort-blind
+// bottom tier, which
 // `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier` and
 // `the_tool_run_deadline_is_the_commands_own_floor` pin — the second one against
 // the FUNCTION, which is what makes it legitimate for this assert to read the
@@ -520,6 +523,9 @@ async fn analyze_job_core(app: &AppHandle, ctx: &ToolContext) -> AppResult<Value
             target_language: detect_locale_tag(&inputs.job_ad),
             top_requirements: &[],
             cover_letter: "",
+            // This call runs `analyze_job` alone (see the doc above) — no
+            // `cover_letter` stage reaches this context at all.
+            include_cover_letter: false,
             // The agent loop has no per-request reasoning effort of its own,
             // so this runs on the unscaled baseline — same choice
             // `research_company_handler` makes.
@@ -642,6 +648,12 @@ fn get_quality_report_handler(
 /// bound the identical run started from the UI would never hit — the deadline
 /// exists to catch a run that never converges, not to make the agent's copy of
 /// it cheaper.
+///
+/// **Unaffected by this tool's `includeCoverLetter: false`.** The deadline is
+/// sized against the run's WORST case (see `ai-timeouts.ts`'s
+/// `QUALITY_RUN_GENERATION_PASSES`/`QUALITY_RUN_FIXED_SECS`), not against what
+/// this particular call will spend, so a run that skips the letter still gets
+/// the same floor a run that generates one would.
 fn quality_tool_deadline() -> Duration {
     run_deadline(Budget::RESUME_QUALITY, timeouts::quality_run_deadline(None))
 }
@@ -706,14 +718,14 @@ async fn run_quality_pipeline_core(app: &AppHandle, ctx: &ToolContext) -> AppRes
     // A tool-side provider call spends money too — the same coarse daily
     // backstop `tools::complete_trusted` charges before its own call. The three
     // JSON stages charge again inside `complete_json`; over-charging a coarse
-    // ceiling is the safe direction, and the alternative (a run of fifteen
-    // calls admitted by nothing) is not.
+    // ceiling is the safe direction, and the alternative (a run of up to
+    // seventeen calls admitted by nothing) is not.
     //
     // The `agent_run` limiter bucket is deliberately NOT re-acquired: the
     // enclosing `agent_run` command already holds one of its two slots for the
     // whole run, so taking a second from inside would let ONE user action
     // occupy the entire bucket, and `acquire_queued` could park this call
-    // behind another 75-minute run while still holding that slot.
+    // behind another 90-minute run while still holding that slot.
     app.state::<Arc<Limiter>>()
         .inner()
         .charge_provider_daily(completer.provider_id().as_str(), PROVIDER_DAILY_MAX)?;
@@ -733,6 +745,10 @@ async fn run_quality_pipeline_core(app: &AppHandle, ctx: &ToolContext) -> AppRes
             target_language: detect_locale_tag(&inputs.job_ad),
             top_requirements: &[],
             cover_letter: "",
+            // This tool has no way to ask for a letter — the whitelist offers
+            // no argument, and generating an unrequested one would silently
+            // widen what "Read-only, no writes" call already costs.
+            include_cover_letter: false,
             effort: None,
             job_id: &stream_job,
         },
@@ -813,14 +829,16 @@ pub(crate) fn get_quality_report_tool() -> AgentTool {
 
 /// The whole quality pipeline, returning the draft + report as DATA.
 ///
-/// **Expensive, and reachable from exactly ONE flow.** Fifteen provider calls
-/// against a 75-minute floor cannot fit [`Budget::AGENT_PREP`]'s 360 s
-/// `step_timeout`, which the controller races every tool call against — a prep
-/// run that called this would die at [`StoppedReason::Timeout`] with its drafts
-/// unsaved. Its caller is the `improve_resume` flow
-/// ([`crate::agent::flows::FLOWS`]), whose `AgentFlow` carries a `Budget`
-/// (`AGENT_IMPROVE`) with a 90-minute step clock sized on the arithmetic
-/// asserted at the top of this module; the whitelist it reaches through is
+/// **Expensive, and reachable from exactly ONE flow.** Up to seventeen provider
+/// calls (this tool always sends `includeCoverLetter: false`, so the letter's
+/// stream never runs) against a 90-minute floor cannot fit
+/// [`Budget::AGENT_PREP`]'s 360 s `step_timeout`, which the controller races
+/// every tool call against — a prep run that called this would die at
+/// [`StoppedReason::Timeout`] with its drafts unsaved. Its caller is the
+/// `improve_resume` flow ([`crate::agent::flows::FLOWS`]), whose `AgentFlow`
+/// carries a `Budget` (`AGENT_IMPROVE`) with a 105-minute step clock sized on
+/// the arithmetic asserted at the top of this module; the whitelist it reaches
+/// through is
 /// [`super::tools::improve_resume_tools`]. `agent::tools::test`'s
 /// `the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`
 /// and its `…_is_present_in_the_flow_whose_step_can_cover_it` twin pin both

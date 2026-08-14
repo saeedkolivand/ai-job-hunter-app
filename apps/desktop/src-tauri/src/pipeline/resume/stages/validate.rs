@@ -102,7 +102,10 @@ impl<'a> Stage<QualityCtx<'a>> for Validate {
             ctx.input.job_ad.to_string(),
             ctx.input.top_requirements.to_vec(),
             ctx.input.target_language.to_string(),
-            ctx.input.cover_letter.to_string(),
+            // The `cover_letter` stage's own letter when it produced one,
+            // falling back to the renderer-supplied validate-only text — see
+            // `QualityCtx::letter_text`.
+            ctx.letter_text().to_string(),
         )
         .await?;
 

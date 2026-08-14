@@ -10,10 +10,12 @@
 //! | `match_evidence` | 1 call  | same | [`EvidenceMap`] — what the RÉSUMÉ backs |
 //! | `strategy`       | 1 call  | same | [`ResumeStrategy`] — how to present it  |
 //! | `draft`          | 1 call  | –    | the résumé body, streamed for display   |
+//! | `cover_letter`   | 0 or 1  | –    | the letter body, streamed — 0 unless `includeCoverLetter` |
 //! | `sections`       | –       | ≤12  | one typed answer per section            |
 //! | `assemble`       | –       | 0    | those sections as the same body         |
 //! | `validate`       | 0       | 0    | the deterministic [`ContentReport`]     |
 //! | `repair`         | ≤2×N    | same | section-scoped corrections, re-checked  |
+//! | `humanize`       | ≤2      | –    | `voice.*`-flagged lines rewritten, re-checked |
 //!
 //! The three shared stages are the SAME values with the SAME cache keys at both
 //! depths, so a max run of a posting a quality run already analyzed pays for
@@ -93,6 +95,20 @@ pub(crate) fn pick<'m, T>(
     per_stage.and_then(|map| map.get(stage)).unwrap_or(default)
 }
 
+/// The letter text a downstream stage reads: `stage_letter` (the `cover_letter`
+/// stage's own output) when it produced one, else `request_letter` (the
+/// renderer-supplied, validate-only legacy text). A free function, not just a
+/// `QualityCtx` method, so the decision is a test on two `&str`s rather than a
+/// claim about a type this crate cannot construct in a test — see
+/// [`QualityCtx::letter_text`], the only production caller.
+pub(crate) fn effective_letter_text<'a>(stage_letter: &'a str, request_letter: &'a str) -> &'a str {
+    if stage_letter.trim().is_empty() {
+        request_letter
+    } else {
+        stage_letter
+    }
+}
+
 /// The BINDING: pick the routing for `stage`, then derive that stage's cache
 /// key from the routing that was picked.
 ///
@@ -131,12 +147,20 @@ pub struct QualityInput<'a> {
     pub target_language: &'a str,
     pub top_requirements: &'a [String],
     /// An already-generated cover letter to validate alongside the résumé;
-    /// empty when no letter is in scope.
+    /// empty when no letter is in scope. Legacy/validate-only: the `cover_letter`
+    /// stage's OWN output (`QualityCtx::letter`) takes precedence over this once
+    /// it has one — see [`QualityCtx::letter_text`].
     pub cover_letter: &'a str,
+    /// Whether the `cover_letter` stage should generate a letter. `false` is a
+    /// complete no-op (the stage finishes instantly, zero cost) — the default
+    /// for every caller that predates it, so this field is the ONLY thing that
+    /// changes behavior.
+    pub include_cover_letter: bool,
     /// The cross-provider reasoning-effort token, threaded to the draft's
     /// stream request and to the run deadline.
     pub effort: Option<&'a str>,
-    /// The run's umbrella job id — the draft stage streams under it.
+    /// The run's umbrella job id — the draft and cover_letter stages stream
+    /// under it.
     pub job_id: &'a str,
 }
 
@@ -342,9 +366,14 @@ pub struct QualityCtx<'a> {
     pub evidence: EvidenceMap,
     pub strategy: ResumeStrategy,
     /// The résumé body. Written by `draft` (quality) or `assemble` (max),
-    /// spliced by `repair`.
+    /// spliced by `repair`, corrected by `humanize`.
     pub draft: String,
     pub report: Option<ContentReport>,
+    /// The letter `cover_letter` generated. Empty when
+    /// [`QualityInput::include_cover_letter`] is false (the stage no-ops) or
+    /// the depth has no `cover_letter` stage (max). Never read directly by a
+    /// downstream stage — see [`Self::letter_text`].
+    pub letter: String,
     /// The letter's own report — present only when a letter was in scope.
     pub letter_report: Option<ContentReport>,
 }
@@ -383,6 +412,7 @@ impl<'a> QualityCtx<'a> {
             strategy: ResumeStrategy::default(),
             draft: String::new(),
             report: None,
+            letter: String::new(),
             letter_report: None,
         }
     }
@@ -450,6 +480,28 @@ impl<'a> QualityCtx<'a> {
         move || guard_deadline(&ledger, deadline)
     }
 
+    /// The letter text every downstream reader (validate, repair, persist, the
+    /// report) must use: the `cover_letter` stage's OWN output when it produced
+    /// one, falling back to [`QualityInput::cover_letter`] — the
+    /// renderer-supplied, validate-only legacy text — otherwise.
+    ///
+    /// **The one rule that keeps two callers from disagreeing about "the
+    /// letter".** Before the `cover_letter` stage existed, every reader took
+    /// `ctx.input.cover_letter` directly; a run that generates its own letter
+    /// must not leave any of them still reading the (now stale, usually empty)
+    /// request text instead. Preferring [`Self::letter`] when it is non-empty
+    /// and falling back otherwise is exactly what preserves the PRE-PR-2
+    /// behavior for a run where the stage skipped (`include_cover_letter:
+    /// false`, or max depth, which has no `cover_letter` stage at all).
+    ///
+    /// Delegates to [`effective_letter_text`], a free function for the same
+    /// reason [`pick`] is one: a `QualityCtx` needs a live `Completer` to
+    /// construct (which needs an `AppHandle`, which this crate's tests cannot
+    /// build), while the DECISION here needs only two `&str`s.
+    pub fn letter_text(&self) -> &str {
+        effective_letter_text(&self.letter, self.input.cover_letter)
+    }
+
     /// How many Criticals the current report carries. `0` when nothing has been
     /// validated yet — callers must not read that as "clean" without also
     /// checking that a report exists.
@@ -475,8 +527,10 @@ pub fn quality_pipeline<'a>() -> Pipeline<QualityCtx<'a>> {
         .add(stages::MatchEvidence)
         .add(stages::Strategy)
         .add(stages::Draft)
+        .add(stages::CoverLetter)
         .add(stages::Validate)
         .add(stages::Repair)
+        .add(stages::Humanize)
 }
 
 /// The stage names, in pipeline order — the vocabulary a `pipeline:stage`
@@ -487,8 +541,10 @@ pub const QUALITY_STAGES: &[&str] = &[
     "match_evidence",
     "strategy",
     "draft",
+    "cover_letter",
     "validate",
     "repair",
+    "humanize",
 ];
 
 /// The MAX-depth stage list, in order.

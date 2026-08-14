@@ -194,26 +194,30 @@ impl Budget {
     /// ([`crate::agent::flows::IMPROVE_RESUME_SYSTEM`]) — a REVIEW pass over a
     /// generation that already exists, not a second way to write one.
     ///
-    /// **`step_timeout` = 90 min, and it is DERIVED, not chosen.** This flow is
+    /// **`step_timeout` = 105 min, and it is DERIVED, not chosen.** This flow is
     /// the only home of `run_quality_pipeline`
     /// ([`crate::agent::tools_pipeline`]), and
     /// [`crate::agent::controller`] races EVERY tool call against this field:
     /// one call of that tool is a whole quality run, bounded by
     /// `tools_pipeline::quality_tool_deadline()` =
     /// `pipeline::resume::run_deadline(RESUME_QUALITY, timeouts::quality_run_deadline(None))`
-    /// = **4 500 s**, and the pipeline's `guard_deadline` refuses only the NEXT
-    /// call — a call admitted one second inside the deadline still runs its own
-    /// full [`Self::RESUME_QUALITY`]-flow bound (`timeouts::OLLAMA_COMPLETION`,
-    /// 300 s). So the floor is 4 500 + 300 + a 10 s two-clock margin = 4 810 s,
-    /// and 5 400 leaves ~590 s for the non-provider work inside the same call
-    /// (loading the inputs, assembling, compaction, the JSON summary). The
-    /// arithmetic is asserted at COMPILE time next to the constants it reads,
-    /// in `agent::tools_pipeline` — the same place, and the same discipline, as
-    /// `AGENT_STAGE_DEADLINE`'s own relation.
+    /// = **5 400 s** (PR-2 raised this floor from 4 500 s — see
+    /// [`Self::RESUME_QUALITY::run_timeout`](Self::RESUME_QUALITY)'s own doc for
+    /// why: the `cover_letter` stage adds a second streamed pass and `humanize`
+    /// adds a flat allowance), and the pipeline's `guard_deadline` refuses only
+    /// the NEXT call — a call admitted one second inside the deadline still runs
+    /// its own full [`Self::RESUME_QUALITY`]-flow bound
+    /// (`timeouts::OLLAMA_COMPLETION`, 300 s). So the floor is
+    /// 5 400 + 300 + a 10 s two-clock margin = 5 710 s, and 6 300 leaves the
+    /// SAME ~590 s of headroom the pre-PR-2 arithmetic had for the non-provider
+    /// work inside the same call (loading the inputs, assembling, compaction,
+    /// the JSON summary). The arithmetic is asserted at COMPILE time next to the
+    /// constants it reads, in `agent::tools_pipeline` — the same place, and the
+    /// same discipline, as `AGENT_STAGE_DEADLINE`'s own relation.
     ///
     /// **What the long clock does and does not weaken.** It is ONE clock for
     /// every turn and every tool call, so the AGENT-side backstop on this flow
-    /// is 90 minutes rather than 6. That matters less than it reads, because
+    /// is 105 minutes rather than 6. That matters less than it reads, because
     /// the backstop is not what bounds an ordinary turn: every provider call
     /// goes through `commands::ai_provider::retry::send_with_retry_capped`,
     /// which applies its caller's timeout to the whole retry SEQUENCE, at all
@@ -221,19 +225,19 @@ impl Budget {
     /// endpoint on a normal turn still fails in 2–5 minutes with its own
     /// specific network error. This clock is the sole bound only for a tool
     /// that owns an internal deadline instead of a single HTTP call — today
-    /// exactly one, `run_quality_pipeline`, bounded at 4 500 s by
+    /// exactly one, `run_quality_pipeline`, bounded at 5 400 s by
     /// `quality_tool_deadline`, which is the reason the number is what it is.
     ///
     /// **Trigger for revisiting it** (a per-TOOL timeout in the controller,
     /// which is a controller change, not a budget one): **the first tool that
     /// has NEITHER its own internal deadline NOR a per-call HTTP bound joining
-    /// a long-clock flow.** Such a tool would be raced only by this 90-minute
-    /// value, and 90 minutes is not a bound on anything that can hang. Until
+    /// a long-clock flow.** Such a tool would be raced only by this 105-minute
+    /// value, and 105 minutes is not a bound on anything that can hang. Until
     /// then a second timing mechanism would sit above bounds that already fire
     /// with actionable errors.
     ///
-    /// **Reachable worst case, honestly.** `max_tool_calls` (8) × a 90-minute
-    /// call is ~12 h if a run somehow spent every call on the pipeline tool —
+    /// **Reachable worst case, honestly.** `max_tool_calls` (8) × a 105-minute
+    /// call is ~14 h if a run somehow spent every call on the pipeline tool —
     /// that is the ceiling the ENFORCED bounds admit, and `run_timeout` below
     /// does not cut it down (nothing in the agent loop reads it).
     ///
@@ -241,12 +245,12 @@ impl Budget {
     /// CALL, not once per turn: providers may return several tool calls in one
     /// turn, and each executed call races `step_timeout` on its own, so a
     /// turn-boundary check would have admitted `max_tool_calls - 1 + K` calls —
-    /// an unbounded tail at 90 minutes apiece (HIGH, Phase-7 delta review; see
+    /// an unbounded tail at 105 minutes apiece (HIGH, Phase-7 delta review; see
     /// `agent::controller`'s per-call refusal and
     /// `a_parallel_tool_turn_cannot_spend_past_the_tool_call_ceiling`).
     ///
     /// What keeps a real run far under the ceiling: the prompt rations that
-    /// tool to at most one use, its own 4 500 s deadline, the per-provider
+    /// tool to at most one use, its own 5 400 s deadline, the per-provider
     /// daily ceiling, and the user's Stop.
     ///
     /// **`max_steps` = 10.** The prompt's fixed sequence is 7 turns (a plan
@@ -265,7 +269,7 @@ impl Budget {
     /// rationed optional = 6, plus 2 of slack, and below `max_steps` for the
     /// reason `AGENT_PREP` gives. Enforced (Phase 7), and on this flow that is
     /// load-bearing rather than tidy: it is the only ENFORCED bound on how many
-    /// times a steered run may re-enter the 75-minute pipeline tool.
+    /// times a steered run may re-enter the 90-minute pipeline tool.
     ///
     /// **`max_tokens` = 80_000.** The résumé under review crosses the
     /// transcript up to four times: as the fenced generation in the seed
@@ -281,13 +285,13 @@ impl Budget {
     /// two thirds of the prep ceiling because this flow carries no cover
     /// letter, no company research and no match result.
     ///
-    /// **`run_timeout` = 120 min — the run this flow PLANS, not a bound anything
+    /// **`run_timeout` = 135 min — the run this flow PLANS, not a bound anything
     /// applies.** [`crate::agent::controller`] counts steps, tokens and tool
     /// calls and races `step_timeout`; it has no whole-run clock, so
     /// [`StoppedReason::RunTimeout`] has no producer on the agent path and this
-    /// number stops nothing. It describes the intended run — one 90-minute
-    /// pipeline call plus nine ordinary turns at ~2 min ≈ 108 min — while the
-    /// ceiling the enforced bounds actually admit is the ~12 h computed above.
+    /// number stops nothing. It describes the intended run — one 105-minute
+    /// pipeline call plus nine ordinary turns at ~2 min ≈ 123 min — while the
+    /// ceiling the enforced bounds actually admit is the ~14 h computed above.
     /// Both figures are stated because the gap between them is the honest state
     /// of this flow, and because `run_timeout >= step_timeout` (which the
     /// consistency test checks) holds either way.
@@ -304,16 +308,22 @@ impl Budget {
         max_tokens: 80_000,
         max_sections: DEFAULT_MAX_SECTIONS,
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
-        step_timeout: Duration::from_secs(90 * 60),
-        run_timeout: Duration::from_secs(120 * 60),
+        step_timeout: Duration::from_secs(105 * 60),
+        run_timeout: Duration::from_secs(135 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
 
-    /// The section-wise résumé generation + validation pipeline.
+    /// The staged résumé generation + validation pipeline (quality depth).
     ///
-    /// **`max_steps` = 20.** A section-wise run is one step per section plus the
-    /// fixed framing stages (plan, header, assemble, validate); at
-    /// [`DEFAULT_MAX_SECTIONS`] sections that is 12 + 4 = 16, with slack.
+    /// **`max_steps` = 20, and it is UNENFORCED here** — the same caveat
+    /// [`Self::RESUME_MAX`]'s own copy of this field states: `Pipeline::run_hooked`
+    /// counts no steps, so `StoppedReason::MaxSteps` has no producer on this
+    /// pipeline. It is a documented ceiling, not a live bound. Quality depth
+    /// runs 8 stages (`analyze_job`, `match_evidence`, `strategy`, `draft`,
+    /// `cover_letter`, `validate`, `repair`, `humanize` — see
+    /// [`pipeline::resume::QUALITY_STAGES`](crate::pipeline::resume::QUALITY_STAGES)),
+    /// comfortably under 20 with room for a future addition; the live per-run
+    /// ceiling is [`Self::run_timeout`] plus the per-provider daily spend cap.
     ///
     /// **`max_tool_calls` = 0.** The pipeline calls no tools — it is stages, not
     /// an agentic loop. Zero is the honest bound, not an oversight: a stage that
@@ -328,32 +338,35 @@ impl Budget {
     /// *Re-derived for QUALITY depth (Phase 3), which is not section-wise:* 3
     /// JSON stages (~3k + ~6k + ~5k tokens, each doubled by the one allowed
     /// re-ask ⇒ ~28k) + the draft (~7.5k) + ≤2 repair rounds × ≤4 sections ×
-    /// ~6k (~37k) ≈ **73k**. The 200k ceiling over-provisions quality depth by
-    /// ~2.7× and is sized for the max-depth fan-out it was written for, so it
-    /// is left as is — but it is NOT the live bound at quality depth: the
-    /// per-provider daily ceiling and the run deadline are, and this figure has
-    /// no enforcement point in the Phase-3 stages
-    /// ([`StoppedReason::MaxTokens`] stays unreachable here).
+    /// ~6k (~37k) + (PR-2) the letter (~7.5k, the same order as the draft) +
+    /// `humanize`'s ≤2 flagged-document rewrites (~6k each ⇒ ~12k) ≈ **92k**.
+    /// The 200k ceiling over-provisions quality depth by ~2.2× and is sized for
+    /// the max-depth fan-out it was written for, so it is left as is — but it
+    /// is NOT the live bound at quality depth: the per-provider daily ceiling
+    /// and the run deadline are, and this figure has no enforcement point in
+    /// the Phase-3 stages ([`StoppedReason::MaxTokens`] stays unreachable
+    /// here).
     ///
     /// **`step_timeout`** matches [`Self::AGENT_PREP`]'s value, but read its
     /// field doc first: it is INERT for this flow — `Pipeline::run_hooked` does
     /// not enforce it.
     ///
-    /// **`run_timeout` = 75 min**, raised from an unvalidated 30 (via a wrong
-    /// 45) and now DERIVED from the fan-out that actually runs: it is the
-    /// effort-blind FLOOR that must agree with
+    /// **`run_timeout` = 90 min**, raised from an unvalidated 30 (via a wrong
+    /// 45, then 75) and now DERIVED from the fan-out that actually runs: it is
+    /// the effort-blind FLOOR that must agree with
     /// `timeouts::quality_run_deadline(None)`, which is
-    /// `fixed + baseline × passes × 1.0` = 4200 s + 300 s = 4500 s. The fixed
+    /// `fixed + baseline × passes × 1.0` = 4800 s + 600 s = 5400 s. The fixed
     /// term is every call whose per-call bound is FLAT — 3 JSON stages × 2
-    /// round-trips (1800 s) plus the repair fan-out, `max_repair_attempts` (2)
-    /// rounds × `MAX_SECTIONS_PER_ROUND` (4) sections (2400 s), all at the
-    /// 300 s `OLLAMA_COMPLETION` bound — and the scaled term is the draft, the
-    /// run's only streamed call. The 45-minute version counted the repair half
-    /// as ONE effort-scaled draft-equivalent per round (600 s instead of
-    /// 2400 s), so the advertised deadline was ~1800 s short of the calls it
-    /// wraps while the renderer's own client timeout would have fired first —
-    /// inverting the invariant that the backend gives up first because it is
-    /// the side that knows WHY. Pinned by
+    /// round-trips (1800 s), the repair fan-out (`max_repair_attempts` (2)
+    /// rounds × `MAX_SECTIONS_PER_ROUND` (4) sections, 2400 s), and `humanize`'s
+    /// worst case (≤2 flagged documents, 600 s), all at the 300 s
+    /// `OLLAMA_COMPLETION` bound — and the scaled term is TWO streamed calls,
+    /// the draft and the cover letter (`cover_letter` stage, PR-2). The
+    /// 75-minute version counted only ONE streamed pass and no `humanize` term,
+    /// so raising either without raising this floor reopens the inversion the
+    /// 45-minute bug already taught: the renderer's own client timeout firing
+    /// before the backend's, instead of after it — the backend must give up
+    /// first because it is the side that knows WHY. Pinned by
     /// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`
     /// and by `quality_run_deadline_clears_the_inner_per_call_bounds`, which
     /// computes those inner bounds from the fan-out constants themselves; the
@@ -370,7 +383,7 @@ impl Budget {
         max_sections: DEFAULT_MAX_SECTIONS,
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
         step_timeout: Duration::from_secs(360),
-        run_timeout: Duration::from_secs(75 * 60),
+        run_timeout: Duration::from_secs(90 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
 
