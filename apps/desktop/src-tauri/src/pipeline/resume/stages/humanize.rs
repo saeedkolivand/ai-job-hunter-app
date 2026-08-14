@@ -119,12 +119,60 @@ pub enum HumanizeTierKind {
     Letter,
 }
 
+/// Whether the letter arm may run at all — pulled out as its OWN pure
+/// predicate, not inlined into an `if`, because this is the gate HIGH-1 exists
+/// for: the letter arm must be structurally unadoptable whenever this run
+/// never asked for a letter, independent of which text `letter_body` happens
+/// to hold.
+///
+/// **Two conditions, both load-bearing, neither one alone is enough:**
+///
+/// * `include_cover_letter` — the run REQUESTED a letter. Without this alone,
+///   a validate-only caller that hands `coverLetterText` in for checking (the
+///   legacy path `QualityInput::cover_letter` still serves) would have its
+///   text silently REWRITTEN by a stage it never asked to run, and — because
+///   `persist_document` writes `cover_letter_text: ctx.letter.clone()` — the
+///   humanized rewrite would then overwrite the posting's stored letter with
+///   a document this run never generated.
+/// * `!letter_body.trim().is_empty()` — there is something to rewrite.
+///   `letter_body` MUST be `ctx.letter` (the `cover_letter` stage's own
+///   output), never `ctx.letter_text()`'s fallback: reading the field
+///   directly is what makes "no request, no rewrite" true by CONSTRUCTION —
+///   `ctx.letter` is empty whenever `cover_letter` skipped, so a caller could
+///   drop the `include_cover_letter` check entirely and this would still
+///   refuse. Keeping both is defense in depth, not redundancy: the field-read
+///   protects against a future change to the flag check, and the flag check
+///   protects against a future change to what populates `ctx.letter`.
+///
+/// `letter_flagged` is checked by the caller before this — a letter with
+/// nothing flagged has nothing to humanize regardless of the other two.
+pub(crate) fn should_humanize_letter(
+    letter_flagged: usize,
+    letter_body: &str,
+    include_cover_letter: bool,
+) -> bool {
+    letter_flagged > 0 && !letter_body.trim().is_empty() && include_cover_letter
+}
+
 /// Whether a rewritten document is usable AT ALL — before it is ever graded.
 ///
 /// Two things have to hold: non-empty (trimmed), and not drastically shorter
-/// than the original. The length floor is tier-dependent:
-/// - Resume tier: 50% (generous, accounts for trimmed wordy flagged bullets)
-/// - Letter tier: 90% (strict, requires near-complete preservation)
+/// than the original. The length floor is tier-dependent, and the asymmetry is
+/// deliberate, not a stricter-is-safer default:
+///
+/// - **Resume tier: 50%**, generous — a rewrite that trims a wordy flagged
+///   bullet is still legitimate, and `humanize_is_worse` has a REAL backstop
+///   against content loss regardless: `round_is_worse`'s absence-shaped
+///   Criticals (`factual.dropped_role`, `factual.altered_project_link`'s
+///   absence arm) catch a rewrite that silently drops a role or a project
+///   link, so the length floor only has to catch outright truncation.
+/// - **Letter tier: 90%**, strict — a letter has NO absence-shaped validator.
+///   Nothing in `validate::content::letter` names a paragraph, a company
+///   detail, or a claim the letter USED TO make and no longer does; the
+///   voice/factual checks it does run are span-shaped, not presence-shaped.
+///   This length floor is therefore the letter's ONLY backstop against
+///   content loss — a candidate that quietly drops a paragraph would
+///   otherwise sail through revalidation clean.
 ///
 /// What it catches is the shape `repair`'s own `sections::is_usable_replacement`
 /// exists for: a truncated or refused answer that would otherwise be spliced in
@@ -423,8 +471,12 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
             }
         }
 
-        let letter_text = ctx.letter_text().to_string();
-        if letter_flagged > 0 && !letter_text.trim().is_empty() && input.include_cover_letter {
+        // `ctx.letter` DIRECTLY — never `ctx.letter_text()`'s fallback. See
+        // `should_humanize_letter`'s own doc for why the field-read has to be
+        // this, not the "whichever letter is in scope" convenience accessor
+        // every OTHER reader (validate, repair, persist) correctly uses.
+        let letter_body = ctx.letter.clone();
+        if should_humanize_letter(letter_flagged, &letter_body, input.include_cover_letter) {
             // Charge BEFORE entering humanize_one, so a cap refusal doesn't
             // count as a call or failure.
             match completer.charge_daily() {
@@ -436,11 +488,11 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                     // Safe: `letter_flagged > 0` only counts when `ctx.letter_report`
                     // is `Some` (see its own `voice_count` above).
                     let letter_report = ctx.letter_report.clone().unwrap_or_else(empty_ok_report);
-                    let findings = voice_findings(&letter_report, &letter_text);
+                    let findings = voice_findings(&letter_report, &letter_body);
                     let draft_for_revalidate = ctx.draft.clone();
                     let attempt = humanize_one(
                         ctx.deadline,
-                        letter_text,
+                        letter_body,
                         letter_report,
                         findings,
                         |text, findings| async move {
@@ -522,7 +574,7 @@ mod tests {
     fn is_usable_rewrite_resume_tier_uses_50_percent_floor() {
         let original = "This is a substantial piece of text with multiple sentences.";
         let candidate_50_percent = "This is a substantial piece of"; // exactly 50%
-        let candidate_49_percent = "This is a substantial piec";      // < 50%
+        let candidate_49_percent = "This is a substantial piec"; // < 50%
 
         assert!(
             is_usable_rewrite(original, candidate_50_percent, HumanizeTierKind::Resume),
@@ -536,9 +588,11 @@ mod tests {
 
     #[test]
     fn is_usable_rewrite_letter_tier_uses_90_percent_floor() {
-        let original = "This is a comprehensive cover letter with multiple paragraphs and complete thoughts.";
+        let original =
+            "This is a comprehensive cover letter with multiple paragraphs and complete thoughts.";
         // 90% of 82 chars is ~73.8, so 74 chars should pass, 72 should fail
-        let candidate_90_percent = "This is a comprehensive cover letter with multiple paragraphs and complete thoug"; // ~78 chars, > 90%
+        let candidate_90_percent =
+            "This is a comprehensive cover letter with multiple paragraphs and complete thoug"; // ~78 chars, > 90%
         let candidate_60_percent = "This is a comprehensive cover letter with multiple"; // ~48 chars, < 90%
 
         assert!(

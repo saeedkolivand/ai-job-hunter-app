@@ -41,7 +41,10 @@ pub(crate) use self::draft::apply_projects_normalization;
 #[cfg(test)]
 pub(crate) use self::evidence::ground;
 #[cfg(test)]
-pub(crate) use self::humanize::{HumanizeTierKind, humanize_is_worse, humanize_one, is_usable_rewrite, voice_count, voice_findings};
+pub(crate) use self::humanize::{
+    humanize_is_worse, humanize_one, is_usable_rewrite, should_humanize_letter, voice_count,
+    voice_findings, HumanizeTierKind,
+};
 #[cfg(test)]
 pub(crate) use self::judge::{issue_from, issues_from, MAX_JUDGE_ITEMS};
 #[cfg(test)]

@@ -17,7 +17,8 @@ use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
 use super::stages::{
     criticals_by_section, ground, humanize_is_worse, humanize_one, is_usable_rewrite, reseed,
-    round_is_worse, seed_company_roster, voice_count, voice_findings, MAX_COMPANY_PLANS,
+    round_is_worse, seed_company_roster, should_humanize_letter, voice_count, voice_findings,
+    HumanizeTierKind, MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
@@ -2382,23 +2383,81 @@ fn voice_findings_is_empty_when_every_flag_sits_on_a_link_line() {
 fn is_usable_rewrite_rejects_empty_and_drastically_truncated_answers() {
     let original = "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience \
                      building ledger systems for regulated banks.\n";
-    assert!(!is_usable_rewrite(original, ""));
-    assert!(!is_usable_rewrite(original, "   "));
+    assert!(!is_usable_rewrite(original, "", HumanizeTierKind::Resume));
+    assert!(!is_usable_rewrite(
+        original,
+        "   ",
+        HumanizeTierKind::Resume
+    ));
     assert!(
-        !is_usable_rewrite(original, "Summary."),
+        !is_usable_rewrite(original, "Summary.", HumanizeTierKind::Resume),
         "far below half the original length"
     );
     assert!(is_usable_rewrite(
         original,
         "PROFESSIONAL SUMMARY\nA payments engineer with a decade of experience building ledger \
-         systems for regulated banks.\n"
+         systems for regulated banks.\n",
+        HumanizeTierKind::Resume
     ));
 }
 
 #[test]
 fn is_usable_rewrite_has_nothing_to_compare_against_an_empty_original() {
-    assert!(is_usable_rewrite("", "anything non-empty"));
-    assert!(!is_usable_rewrite("", ""));
+    assert!(is_usable_rewrite(
+        "",
+        "anything non-empty",
+        HumanizeTierKind::Resume
+    ));
+    assert!(!is_usable_rewrite("", "", HumanizeTierKind::Resume));
+}
+
+/// **The tier split, pinned at one exact ratio.** 60% of the original clears
+/// the résumé's 50% floor and fails the letter's 90% one — the same candidate
+/// length is usable for one tier and unusable for the other, which is the
+/// whole point of tiering `is_usable_rewrite` rather than sharing one floor.
+///
+/// Mutation check: swap the two tier arms in `is_usable_rewrite` and both
+/// assertions flip.
+#[test]
+fn is_usable_rewrite_tier_split_is_pinned_at_sixty_percent() {
+    let original = "A".repeat(100);
+    let candidate_60_percent = "B".repeat(60);
+
+    assert!(
+        is_usable_rewrite(&original, &candidate_60_percent, HumanizeTierKind::Resume),
+        "60% clears the résumé's generous 50% floor"
+    );
+    assert!(
+        !is_usable_rewrite(&original, &candidate_60_percent, HumanizeTierKind::Letter),
+        "60% fails the letter's strict 90% floor — its only backstop against content loss"
+    );
+}
+
+/// **HIGH-1 regression — the letter arm's gate.** `should_humanize_letter`
+/// must refuse whenever a run never asked for a letter, and it must do so
+/// even if `letter_body` (which production always feeds `ctx.letter`, never
+/// `ctx.letter_text()`'s legacy fallback) happens to be non-empty: the flag
+/// and the field-read are two INDEPENDENT guards, and this pins that neither
+/// one alone is trusted to carry the rule.
+///
+/// Mutation check: drop the `include_cover_letter` clause from
+/// `should_humanize_letter` and the second assertion (a non-empty body with
+/// the flag OFF) flips true.
+#[test]
+fn should_humanize_letter_refuses_whenever_the_run_never_requested_a_letter() {
+    // The real-world shape: `includeCoverLetter: false` means `ctx.letter` is
+    // ALWAYS empty (`cover_letter` no-ops), so both conditions fail together.
+    assert!(!should_humanize_letter(2, "", false));
+    // Defense in depth: even a non-empty body cannot make this run without the
+    // flag — the case HIGH-1 exists to close (a legacy validate-only
+    // `coverLetterText` must never be silently rewritten and persisted).
+    assert!(!should_humanize_letter(2, "a stray letter body", false));
+    // Nothing flagged is a no-op regardless of the flag.
+    assert!(!should_humanize_letter(0, "a generated letter", true));
+    // Requested, but the stage produced nothing (yet) to rewrite.
+    assert!(!should_humanize_letter(2, "", true));
+    // The one case that actually runs: requested, flagged, and non-empty.
+    assert!(should_humanize_letter(2, "a generated letter", true));
 }
 
 /// **`humanize_is_worse` widens `round_is_worse` by one clause**: more
@@ -2464,6 +2523,7 @@ async fn humanize_one_is_a_zero_cost_no_op_with_no_findings() {
         },
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
+        HumanizeTierKind::Resume,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -2496,6 +2556,7 @@ async fn humanize_one_skips_gracefully_when_the_deadline_has_already_passed() {
         },
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
+        HumanizeTierKind::Resume,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -2525,6 +2586,7 @@ async fn humanize_one_keeps_the_original_and_marks_failed_on_a_provider_error() 
         },
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run after a provider error") },
+        HumanizeTierKind::Resume,
     )
     .await
     .expect("a provider error is caught inside humanize_one, never propagated");
@@ -2549,6 +2611,7 @@ async fn humanize_one_keeps_the_original_when_the_answer_is_unusable() {
         |_text, _findings| async move { Ok(String::new()) },
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run over an unusable answer") },
+        HumanizeTierKind::Resume,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -2562,6 +2625,76 @@ async fn humanize_one_keeps_the_original_when_the_answer_is_unusable() {
         "reverted implies it was graded; this never was"
     );
     assert_eq!(attempt.text, original);
+}
+
+/// **HIGH-2 regression, letter half — end to end through the seam, not just
+/// the pure predicate.** A letter candidate truncated to ~60% of the original
+/// is unusable at the letter's strict 90% floor: the answer is kept as
+/// unusable, exactly like `humanize_one_keeps_the_original_when_the_answer_is_unusable`
+/// above, and — critically — `revalidate` never runs over it (a 40%-shorter
+/// letter has no absence-shaped Critical to catch that loss; the floor IS the
+/// backstop, so this must never reach the point where a validator could wave
+/// it through).
+#[tokio::test]
+async fn humanize_one_keeps_the_original_letter_when_the_candidate_is_truncated_to_sixty_percent() {
+    let original = "A".repeat(100);
+    let candidate_60_percent = "B".repeat(60);
+    let attempt = humanize_one(
+        live_deadline(),
+        original.clone(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| {
+            let candidate = candidate_60_percent.clone();
+            async move { Ok(candidate) }
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { panic!("revalidate must never run over an unusable letter") },
+        HumanizeTierKind::Letter,
+    )
+    .await
+    .expect("no revalidate call means no error path either");
+    assert!(attempt.called);
+    assert!(
+        !attempt.failed,
+        "the call succeeded — the ANSWER was unusable"
+    );
+    assert!(
+        !attempt.reverted,
+        "reverted implies it was graded; this never was"
+    );
+    assert_eq!(attempt.text, original);
+}
+
+/// **HIGH-2 regression, résumé half — the SAME 60% candidate the letter test
+/// above rejects is accepted here**, because the résumé tier's 50% floor is
+/// generous and its real backstop against content loss is
+/// `humanize_is_worse`'s absence-shaped Criticals, not the length check. A
+/// clean revalidate (no new Criticals, no more voice flags) is enough to ship
+/// it — this is what pins the two tiers as genuinely different floors rather
+/// than one shared constant that happens to read differently.
+#[tokio::test]
+async fn humanize_one_accepts_a_resume_candidate_truncated_to_sixty_percent_when_validators_are_clean(
+) {
+    let original = "A".repeat(100);
+    let candidate_60_percent = "B".repeat(60);
+    let attempt = humanize_one(
+        live_deadline(),
+        original,
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| {
+            let candidate = candidate_60_percent.clone();
+            async move { Ok(candidate) }
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { Ok(ok_report()) },
+        HumanizeTierKind::Resume,
+    )
+    .await
+    .expect("revalidate succeeds");
+    assert!(!attempt.reverted);
+    assert_eq!(attempt.text, "B".repeat(60));
 }
 
 /// **Revert on an introduced Critical** — `humanize_is_worse`'s `round_is_worse`
@@ -2584,6 +2717,7 @@ async fn humanize_one_reverts_when_the_candidate_introduces_a_critical() {
                 after.issues[0].evidence = Some("an invented figure".to_string());
                 Ok(after)
             },
+            HumanizeTierKind::Resume,
         )
         .await
         .expect("revalidate succeeds");
@@ -2609,6 +2743,7 @@ async fn humanize_one_reverts_when_the_candidate_has_more_voice_flags_than_befor
             },
             |_candidate: &str| None,
             |_candidate| async move { Ok(voice_report(&["robust", "leverage"])) },
+            HumanizeTierKind::Resume,
         )
         .await
         .expect("revalidate succeeds");
@@ -2635,6 +2770,7 @@ async fn humanize_one_accepts_a_candidate_with_fewer_voice_flags() {
             },
             |_candidate: &str| None,
             |_candidate| async move { Ok(voice_report(&["robust"])) },
+            HumanizeTierKind::Resume,
         )
         .await
         .expect("revalidate succeeds");
@@ -2683,6 +2819,7 @@ async fn humanize_one_runs_normalize_before_grading_so_an_accepted_candidate_is_
                 Ok(ok_report())
             }
         },
+        HumanizeTierKind::Resume,
     )
     .await
     .expect("revalidate succeeds");
