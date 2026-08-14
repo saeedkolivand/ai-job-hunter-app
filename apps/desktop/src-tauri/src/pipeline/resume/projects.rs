@@ -51,8 +51,8 @@ use super::types_max::ProjectOut;
 /// still seeds. On a plain-text section it is the only arm that fires, so a
 /// multi-project section collapses into fewer, garbled entries.
 ///
-/// Two independent, WHOLE-BAIL guards (a partial filter would still leave the
-/// rest of a mis-grouped section to normalize from):
+/// Three independent, WHOLE-BAIL guards (a partial filter would still leave
+/// the rest of a mis-grouped section to normalize from):
 ///
 /// * **An empty seed.** A seed with no link, no stack AND no description
 ///   cannot come from a locked-signature entry — every accepted tier carries
@@ -63,11 +63,27 @@ use super::types_max::ProjectOut;
 ///   usually corrupts its neighbors too (a title's stack/description
 ///   mis-attributed to the next project), which is why this bails the WHOLE
 ///   list rather than filtering the one empty seed out.
+/// * **A link inside a description or stack field.** The locked signature
+///   puts links ONLY on the title line, and [`source::seed_one_project`]
+///   already strips a stack line's own URLs out before it ever reaches
+///   `stack` (`names_a_resource` there). So a URL surviving in a seed's
+///   `description`/`stack` cannot be a legitimate part of either field — it
+///   means this entry's boundary swallowed a FOLLOWING project's title line
+///   (a plain-text, multi-project source collapsing into one mega-entry:
+///   `Ledger CLI\n<url>\nBeta Sync · <url>\nGo · gRPC` seeds ONE entry named
+///   "Ledger CLI" whose merged description carries Beta Sync's own link). A
+///   single collapsed mega-entry has no SIBLING to compare against, so
+///   [`seeds_are_plausible`] cannot catch this on its own — this guard is
+///   independent of seed count. A legitimate description that happens to
+///   CITE a URL in prose ("see my write-up at <url>") merely disables
+///   normalization for that run (fails safe); the draft is left untouched
+///   and validators still grade it.
 /// * **Cross-contaminated fields** — see [`seeds_are_plausible`].
 ///
 /// A source whose Projects section actually follows the locked signature
 /// (title/stack/description, or a compact `Name · link · link` line — links
-/// make a seed non-empty either way) passes both bails untouched.
+/// make a seed non-empty either way, and a stack/description line never
+/// legitimately carries a URL) passes all three bails untouched.
 pub(crate) fn seed_projects_for_normalize(
     source_resume: &str,
 ) -> (Vec<ProjectOut>, Option<&'static str>) {
@@ -86,6 +102,12 @@ pub(crate) fn seed_projects_for_normalize(
         seed.links.is_empty() && seed.stack.is_empty() && seed.description.trim().is_empty()
     }) {
         return (Vec::new(), Some("empty_seed"));
+    }
+    if seeds.iter().any(|seed| {
+        !urls_in(&seed.description).is_empty()
+            || seed.stack.iter().any(|item| !urls_in(item).is_empty())
+    }) {
+        return (Vec::new(), Some("link_in_description"));
     }
     if !seeds_are_plausible(&seeds) {
         return (Vec::new(), Some("implausible_seeds"));
@@ -984,6 +1006,66 @@ mod test {
             "an unattached-but-present seed link must disable the whole pass: {outcome:?}"
         );
         assert_eq!(normalize_projects(draft, &seeds), None);
+    }
+
+    // ── the mega-seed guard: a link surviving in description/stack ──────
+
+    /// **The residual mega-seed shape.** A 2-project plain-text source with
+    /// no bold/bullet anywhere collapses into ONE seed (no sibling to
+    /// compare against, so `seeds_are_plausible` is vacuous; the seed has a
+    /// name, a link AND a description, so the empty-seed bail does not fire
+    /// either) — but that single seed's swallowed SECOND title line
+    /// ("Beta Sync · <url>") leaks its own URL into the merged
+    /// `description`. A URL can never legitimately live in `description` or
+    /// `stack` (the locked signature puts links on the title line only, and
+    /// `seed_one_project` already strips a stack line's own URLs before they
+    /// ever reach `stack`), so its presence there is unambiguous evidence the
+    /// entry boundary swallowed a following project.
+    #[test]
+    fn a_link_surviving_in_the_description_disables_normalization() {
+        let source = "PROJECTS\n\n\
+            Ledger CLI\n\
+            https://github.com/janedoe/ledger\n\
+            Beta Sync · https://github.com/janedoe/beta\n\
+            Go · gRPC\n";
+        let (seeds, reason) = seed_projects_for_normalize(source);
+        assert!(seeds.is_empty(), "must disable normalization: {seeds:?}");
+        assert_eq!(reason, Some("link_in_description"));
+
+        // End to end: a correct one-project draft is left byte-for-byte
+        // untouched — no writing beta's URL onto the Ledger CLI entry.
+        let draft = "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n";
+        assert_eq!(normalize_projects(draft, &seeds), None);
+    }
+
+    /// **The negative case.** A single, honestly-formatted project (link ON
+    /// the title line — the locked signature — so it never leaks into the
+    /// description) still normalizes fully: the `link_in_description` guard
+    /// must not disable the feature for the ordinary, correct shape.
+    #[test]
+    fn an_honest_single_project_source_still_normalizes() {
+        let source = "PROJECTS\n\n\
+            Ledger CLI · https://github.com/janedoe/ledger\n\
+            A bookkeeping tool for freelancers.\n";
+        let (seeds, reason) = seed_projects_for_normalize(source);
+        assert_eq!(
+            reason, None,
+            "an honest source must not be disabled: {seeds:?}"
+        );
+        assert!(!seeds.is_empty());
+
+        let draft = "PROJECTS\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n\
+            A bookkeeping tool for freelancers.\n";
+        let outcome = normalize_projects_outcome(draft, &seeds);
+        match outcome {
+            ProjectsNormalizeOutcome::Applied(_, stats) => {
+                assert_eq!(
+                    stats.matched, 1,
+                    "the feature still fires on an honest source"
+                );
+            }
+            other => panic!("expected the feature to fire: {other:?}"),
+        }
     }
 
     // ── N1: seeds_are_plausible ignores a truthful cross-reference ──────
