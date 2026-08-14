@@ -41,10 +41,12 @@ export const PIPELINE_STAGES = [
   'match_evidence',
   'strategy',
   'draft',
+  'cover_letter',
   'sections',
   'assemble',
   'validate',
   'repair',
+  'humanize',
   'llm_judge',
 ] as const;
 

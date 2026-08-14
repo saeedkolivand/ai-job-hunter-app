@@ -16,12 +16,12 @@ pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
 /// `MAX_SECTIONS_PER_ROUND` sections), all bounded by
 /// `timeouts::OLLAMA_COMPLETION`. See `qualityRunDeadlineSecs` in
 /// packages/shared/src/ai-timeouts.ts for the full derivation.
-pub const QUALITY_RUN_FIXED_SECS: u64 = 4200;
+pub const QUALITY_RUN_FIXED_SECS: u64 = 4800;
 
 /// Effort-SCALED whole-document passes one quality run may make: the draft,
 /// the run's only streamed call. The repair rounds are flat-bounded and live
 /// in `QUALITY_RUN_FIXED_SECS` instead.
-pub const QUALITY_RUN_GENERATION_PASSES: u64 = 1;
+pub const QUALITY_RUN_GENERATION_PASSES: u64 = 2;
 
 /// The EFFORT-INVARIANT half of one MAX-depth run's deadline: every call it
 /// plans to make, once, at the flat `timeouts::OLLAMA_COMPLETION` bound —

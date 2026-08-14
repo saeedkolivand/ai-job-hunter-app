@@ -167,11 +167,12 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
         "a shrunken confirm_timeout silently auto-denies confirmations"
     );
 
-    // 90 min, and DERIVED rather than chosen: the improve flow is the only home
-    // of `run_quality_pipeline`, and the controller races EVERY tool call
-    // against this field, so it must clear one whole quality run (4 500 s) plus
-    // the one `OLLAMA_COMPLETION` call that may still be admitted just inside
-    // that deadline, plus a margin. Shrinking it back to the prep flow's 360 s
+    // 105 min, and DERIVED rather than chosen: the improve flow is the only
+    // home of `run_quality_pipeline`, and the controller races EVERY tool call
+    // against this field, so it must clear one whole quality run (5 400 s,
+    // raised by PR-2's `cover_letter` + `humanize` stages) plus the one
+    // `OLLAMA_COMPLETION` call that may still be admitted just inside that
+    // deadline, plus a margin. Shrinking it back to the prep flow's 360 s
     // would make the tool unrunnable and kill the run at
     // `StoppedReason::Timeout` instead; the sharp form of this relation is a
     // `const _: () = assert!(…)` in `agent::tools_pipeline`, and the
@@ -179,12 +180,12 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
     // `the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`.
     assert_eq!(
         Budget::AGENT_IMPROVE.step_timeout,
-        Duration::from_secs(90 * 60),
+        Duration::from_secs(105 * 60),
         "AGENT_IMPROVE.step_timeout must still cover one whole quality run"
     );
     assert_eq!(
         Budget::AGENT_IMPROVE.run_timeout,
-        Duration::from_secs(120 * 60)
+        Duration::from_secs(135 * 60)
     );
     assert_eq!(
         Budget::AGENT_IMPROVE.confirm_timeout,
@@ -197,19 +198,22 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
         Duration::from_secs(360),
         "RESUME_QUALITY.step_timeout deliberately matches AGENT_PREP's backstop"
     );
-    // 75 min, and DERIVED rather than chosen: it is the effort-blind floor that
-    // must equal `timeouts::quality_run_deadline(None)` — 4200 s of FLAT
-    // per-call bounds (3 JSON stages × 2 round-trips, PLUS `max_repair_attempts`
-    // × `MAX_SECTIONS_PER_ROUND` section rewrites, all at `OLLAMA_COMPLETION`)
-    // + 300 s for the one streamed draft. The 45-minute version counted the
-    // repair fan-out as one effort-scaled draft-equivalent per round, i.e. 600 s
-    // instead of 2400 s, so the deadline sat ~1800 s below the calls it wraps.
-    // See the budget's own doc and
+    // 90 min, and DERIVED rather than chosen: it is the effort-blind floor that
+    // must equal `timeouts::quality_run_deadline(None)` — 4800 s of FLAT
+    // per-call bounds (3 JSON stages × 2 round-trips, `max_repair_attempts` ×
+    // `MAX_SECTIONS_PER_ROUND` section rewrites, PLUS PR-2's `humanize`
+    // allowance for ≤2 flagged documents, all at `OLLAMA_COMPLETION`) + 600 s
+    // for the two streamed passes (draft + PR-2's `cover_letter`). The
+    // 45-minute version counted the repair fan-out as one effort-scaled
+    // draft-equivalent per round, i.e. 600 s instead of 2400 s, so the deadline
+    // sat ~1800 s below the calls it wraps; the 75-minute version that fixed
+    // that never accounted for a second streamed pass or `humanize`. See the
+    // budget's own doc and
     // `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`,
     // which is the guard that keeps the two from drifting apart again.
     assert_eq!(
         Budget::RESUME_QUALITY.run_timeout,
-        Duration::from_secs(75 * 60)
+        Duration::from_secs(90 * 60)
     );
     assert_eq!(
         Budget::RESUME_QUALITY.confirm_timeout,
