@@ -345,6 +345,10 @@ function ApplicationDetailLoaded({
         // Drop any autopilot one-shot seed/badge left over from another application.
         applySeedResume: null,
         applyMatchLevel: null,
+        // …and any staged-run reconnect target — a different application's
+        // run id must never be replayed against this one.
+        applyRunId: null,
+        applyRunJobId: null,
       });
     }
   }, [application.id, applicationApply.applyForId, setApplicationApply]);
@@ -1117,12 +1121,16 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     atsMode: applicationApply.applyAtsMode,
     accent: applicationApply.applyAccent,
     letterLayoutId: applicationApply.applyLetterLayoutId,
+    runId: applicationApply.applyRunId,
+    runJobId: applicationApply.applyRunJobId,
     setWizardStep: (v) => setApplicationApply({ applyWizardStep: v }),
     setWizardForm: (v) => setApplicationApply({ applyWizardForm: v }),
     setTemplateId: (v) => setApplicationApply({ applyTemplateId: v }),
     setAtsMode: (v) => setApplicationApply({ applyAtsMode: v }),
     setAccent: (v) => setApplicationApply({ applyAccent: v }),
     setLetterLayoutId: (v) => setApplicationApply({ applyLetterLayoutId: v }),
+    setRunId: (v) => setApplicationApply({ applyRunId: v }),
+    setRunJobId: (v) => setApplicationApply({ applyRunJobId: v }),
   };
 
   return (

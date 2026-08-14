@@ -10,8 +10,8 @@
  *      open the respective modals.
  *
  * Strategy:
- *  - `useTailorGeneration` and `useApplicationAnswers` are mocked so stage
- *    transitions are fully controlled without any IPC / generation-store.
+ *  - `useTailorPipeline` and `useApplicationAnswers` are mocked so stage
+ *    transitions are fully controlled without any IPC / React Query.
  *  - Service hooks (`useExtractText`, `useResolveJobUrl`, `useSelectedModel`,
  *    `useCanUseAI`) are mocked so no QueryClient / AppClient provider is needed.
  *  - Heavy child panels (TailorWizard, GeneratingPanel, ResultsPanel,
@@ -90,33 +90,43 @@ vi.mock('@/services', () => ({
   }),
 }));
 
-// ── useTailorGeneration — controlled mock ─────────────────────────────────────
+// ── useTailorPipeline — controlled mock ───────────────────────────────────────
 
 const genMock = {
-  generating: false,
-  phase: 'idle' as const,
-  phaseLabel: '',
+  state: 'idle' as string,
+  busy: false,
+  starting: false,
+  currentStep: 0,
+  stageLabel: '',
   thinking: '',
+  draft: '',
+  letterDraft: '',
   resumeOut: '' as string,
   coverOut: '' as string,
   activeOut: 'resume' as const,
   setActiveOut: vi.fn(),
   output: '' as string,
-  error: null,
+  hasOutput: false,
+  error: null as string | null,
+  stoppedReason: undefined as string | null | undefined,
   copied: false,
   exportOpen: false,
   setExportOpen: vi.fn(),
-  generate: vi.fn().mockResolvedValue(undefined),
-  abort: vi.fn(),
+  start: vi.fn().mockResolvedValue(null),
+  cancel: vi.fn(),
   copy: vi.fn(),
   exportAs: vi.fn(),
   editActiveOutput: vi.fn(),
-  hydrate: vi.fn(),
   meta: null,
+  report: null,
+  pipelineReview: undefined,
+  recheck: undefined,
+  rechecking: false,
+  runs: [],
 };
 
-vi.mock('@/features/documents/components/TailorFlow/useTailorGeneration', () => ({
-  useTailorGeneration: () => genMock,
+vi.mock('@/features/documents/components/TailorFlow/useTailorPipeline', () => ({
+  useTailorPipeline: () => genMock,
 }));
 
 // ── useApplicationAnswers — controlled mock ───────────────────────────────────
@@ -307,16 +317,9 @@ vi.mock('./ReferralModal', () => ({
 
 // ── Import component after all mocks ─────────────────────────────────────────
 
-import type { AiGenerationRecord, AutopilotFoundJob } from '@ajh/shared';
+import type { AutopilotFoundJob } from '@ajh/shared';
 
-import type { LetterLayoutId, TemplateId } from '@/lib/generate';
-
-import {
-  TailorFlow,
-  type TailorFlowController,
-  type TailorFlowPersistence,
-  type TailorWizardState,
-} from './index';
+import { TailorFlow, type TailorFlowController, type TailorFlowPersistence } from './index';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -329,28 +332,6 @@ const JOB: AutopilotFoundJob = {
   foundAt: Date.now(),
 };
 
-const SAVED_GENERATION: AiGenerationRecord = {
-  id: 'rec-1',
-  createdAt: Date.now(),
-  candidateName: 'Ada Lovelace',
-  jobTitle: 'Senior Engineer',
-  companyName: 'Acme',
-  resumeLanguage: 'en',
-  jobAdLanguage: 'en',
-  targetLanguage: 'en',
-  mismatch: false,
-  topRequirements: ['rust'],
-  mode: 'ats',
-  resumeText: 'SAVED RESUME',
-  coverLetterText: 'SAVED COVER',
-  jobAd: 'Build great things.',
-  jobUrl: 'https://acme.com/jobs/1',
-  board: 'linkedin',
-  applicationAnswers: [],
-  companyBrief: '',
-  interviewQuestions: [],
-};
-
 type MockedPersistence = Omit<
   TailorFlowPersistence,
   | 'setWizardStep'
@@ -359,13 +340,17 @@ type MockedPersistence = Omit<
   | 'setAtsMode'
   | 'setAccent'
   | 'setLetterLayoutId'
+  | 'setRunId'
+  | 'setRunJobId'
 > & {
-  setWizardStep: Mock<(v: number) => void>;
-  setWizardForm: Mock<(v: TailorWizardState) => void>;
-  setTemplateId: Mock<(v: TemplateId) => void>;
-  setAtsMode: Mock<(v: boolean) => void>;
-  setAccent: Mock<(v: string | undefined) => void>;
-  setLetterLayoutId: Mock<(v: LetterLayoutId) => void>;
+  setWizardStep: Mock;
+  setWizardForm: Mock;
+  setTemplateId: Mock;
+  setAtsMode: Mock;
+  setAccent: Mock;
+  setLetterLayoutId: Mock;
+  setRunId: Mock;
+  setRunJobId: Mock;
 };
 
 function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPersistence {
@@ -374,12 +359,16 @@ function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPers
     wizardForm: null,
     templateId: 'classic',
     atsMode: false,
-    setWizardStep: vi.fn<(v: number) => void>(),
-    setWizardForm: vi.fn<(v: TailorWizardState) => void>(),
-    setTemplateId: vi.fn<(v: TemplateId) => void>(),
-    setAtsMode: vi.fn<(v: boolean) => void>(),
-    setAccent: vi.fn<(v: string | undefined) => void>(),
-    setLetterLayoutId: vi.fn<(v: LetterLayoutId) => void>(),
+    runId: null,
+    runJobId: null,
+    setWizardStep: vi.fn(),
+    setWizardForm: vi.fn(),
+    setTemplateId: vi.fn(),
+    setAtsMode: vi.fn(),
+    setAccent: vi.fn(),
+    setLetterLayoutId: vi.fn(),
+    setRunId: vi.fn(),
+    setRunJobId: vi.fn(),
     ...overrides,
   };
 }
@@ -387,7 +376,6 @@ function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPers
 function renderFlow(opts: {
   persistence?: TailorFlowPersistence;
   onController?: (c: TailorFlowController) => void;
-  seedGeneration?: AiGenerationRecord;
   job?: AutopilotFoundJob;
   onJobDescChange?: (text: string) => void;
 }) {
@@ -400,7 +388,6 @@ function renderFlow(opts: {
       board="linkedin"
       contextId="autopilot:https://acme.com/jobs/1"
       jobUrl="https://acme.com/jobs/1"
-      seedGeneration={opts.seedGeneration}
       persistence={persistence}
       onController={opts.onController}
       onJobDescChange={opts.onJobDescChange}
@@ -411,13 +398,15 @@ function renderFlow(opts: {
 // ── Reset between tests ───────────────────────────────────────────────────────
 
 beforeEach(() => {
-  genMock.generating = false;
+  genMock.state = 'idle';
+  genMock.busy = false;
+  genMock.hasOutput = false;
   genMock.resumeOut = '';
   genMock.coverOut = '';
   genMock.output = '';
-  genMock.generate.mockClear();
-  genMock.abort.mockClear();
-  genMock.hydrate.mockClear();
+  genMock.error = null;
+  genMock.start.mockClear();
+  genMock.cancel.mockClear();
   jobAdSummaryMock.generate.mockClear();
   jobAdSummaryMock.setLanguage.mockClear();
   answersMock.selected = new Set<string>();
@@ -436,49 +425,39 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TailorFlow — stage derivation', () => {
-  it('renders the wizard (configuring) when not generating and no output', () => {
+  it('renders the wizard (configuring) when not busy and no output', () => {
     renderFlow({});
     expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.generatingPanel)).not.toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
   });
 
-  it('renders the generating panel when generating=true (no output)', () => {
-    genMock.generating = true;
+  it('renders the generating panel when busy=true (no output)', () => {
+    genMock.busy = true;
     renderFlow({});
     expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.tailorWizard)).not.toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
   });
 
-  it('renders the results panel when resumeOut is set and not generating', () => {
-    genMock.resumeOut = 'Generated resume text';
-    genMock.output = 'Generated resume text';
+  it('renders the results panel when hasOutput is true and not busy', () => {
+    genMock.hasOutput = true;
     renderFlow({});
     expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.tailorWizard)).not.toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.generatingPanel)).not.toBeInTheDocument();
   });
 
-  it('renders the results panel when only coverOut is set', () => {
-    genMock.coverOut = 'Generated cover letter';
-    genMock.output = 'Generated cover letter';
-    renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
-  });
-
-  it('generating=true WINS over existing output (generating stage takes priority)', () => {
-    genMock.generating = true;
-    genMock.resumeOut = 'Previous output';
-    genMock.output = 'Previous output';
+  it('busy=true WINS over existing output (generating stage takes priority)', () => {
+    genMock.busy = true;
+    genMock.hasOutput = true;
     renderFlow({});
     expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
   });
 
   it('clicking "edit-settings" from done stage reverts to the wizard (forceConfiguring)', async () => {
-    genMock.resumeOut = 'Generated resume';
-    genMock.output = 'Generated resume';
+    genMock.hasOutput = true;
     const user = userEvent.setup();
     renderFlow({});
 
@@ -492,8 +471,8 @@ describe('TailorFlow — stage derivation', () => {
     expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
 
-    // Output is preserved under forceConfiguring — gen mock still has output.
-    expect(genMock.resumeOut).toBe('Generated resume');
+    // Output is preserved under forceConfiguring — the mock's own hasOutput stays.
+    expect(genMock.hasOutput).toBe(true);
   });
 });
 
@@ -538,8 +517,8 @@ describe('TailorFlow — persistence injection', () => {
     expect(persistence.setWizardStep).toHaveBeenCalledWith(1);
   });
 
-  it('calls persistence.setWizardForm when the user clicks generate', async () => {
-    // startGeneration calls persistForm() before launching gen.generate.
+  it('calls persistence.setWizardForm and gen.start when the user clicks generate', async () => {
+    // startGeneration calls persistForm() before launching gen.start.
     // The "generate" button in the TailorWizard stub calls onGenerate({ ... }).
     const user = userEvent.setup();
     const persistence = makePersistence();
@@ -551,16 +530,15 @@ describe('TailorFlow — persistence injection', () => {
     expect(persistence.setWizardForm).toHaveBeenCalledTimes(1);
     // setWizardStep is NOT called by startGeneration (only by handleStep).
     expect(persistence.setWizardStep).not.toHaveBeenCalled();
-    // gen.generate is invoked.
-    expect(genMock.generate).toHaveBeenCalledTimes(1);
+    // gen.start is invoked.
+    expect(genMock.start).toHaveBeenCalledTimes(1);
   });
 
   it('reads templateId and atsMode from persistence and passes them to ResultsPanel when done', () => {
     // GAP 2 FIX: drive the "done" stage so ResultsPanel renders, then assert the
     // persistence values were forwarded as props (rendered as data-* attributes by
     // the stub). This proves TailorFlow reads them from persistence, not constants.
-    genMock.resumeOut = 'Generated text';
-    genMock.output = 'Generated text';
+    genMock.hasOutput = true;
     const persistence = makePersistence({ templateId: 'classic', atsMode: true });
     renderFlow({ persistence });
 
@@ -573,8 +551,7 @@ describe('TailorFlow — persistence injection', () => {
     // GAP 2 FIX: ResultsPanel stub exposes a "change-template" button that calls
     // onTemplateChange('classic'). Assert persistence.setTemplateId is called.
     const user = userEvent.setup();
-    genMock.resumeOut = 'Generated text';
-    genMock.output = 'Generated text';
+    genMock.hasOutput = true;
     const persistence = makePersistence({ templateId: 'swiss-minimal' });
     renderFlow({ persistence });
 
@@ -588,8 +565,7 @@ describe('TailorFlow — persistence injection', () => {
     // GAP 2 FIX: ResultsPanel stub exposes a "toggle-ats" button that calls
     // onAtsModeChange(true). Assert persistence.setAtsMode is called.
     const user = userEvent.setup();
-    genMock.resumeOut = 'Generated text';
-    genMock.output = 'Generated text';
+    genMock.hasOutput = true;
     const persistence = makePersistence({ atsMode: false });
     renderFlow({ persistence });
 
@@ -671,7 +647,7 @@ describe('TailorFlow — capability-driven research default', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TailorFlow — controller seam', () => {
-  it('calls onController with stage=configuring when no output and not generating', () => {
+  it('calls onController with stage=configuring when no output and not busy', () => {
     const onController = vi.fn();
     renderFlow({ onController });
 
@@ -682,8 +658,8 @@ describe('TailorFlow — controller seam', () => {
     expect(controller?.stage).toBe('configuring');
   });
 
-  it('calls onController with stage=generating when generating=true', () => {
-    genMock.generating = true;
+  it('calls onController with stage=generating when busy=true', () => {
+    genMock.busy = true;
     const onController = vi.fn();
     renderFlow({ onController });
 
@@ -692,9 +668,8 @@ describe('TailorFlow — controller seam', () => {
     expect(controller?.stage).toBe('generating');
   });
 
-  it('calls onController with stage=done when output exists and not generating', () => {
-    genMock.resumeOut = 'Output';
-    genMock.output = 'Output';
+  it('calls onController with stage=done when output exists and not busy', () => {
+    genMock.hasOutput = true;
     const onController = vi.fn();
     renderFlow({ onController });
 
@@ -812,105 +787,7 @@ describe('TailorFlow — controller seam', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Cold-entry hydration — seedGeneration → gen.hydrate
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('TailorFlow — cold-entry hydration', () => {
-  it('hydrates the session from seedGeneration (mapped text + id + meta)', () => {
-    renderFlow({ seedGeneration: SAVED_GENERATION });
-
-    expect(genMock.hydrate).toHaveBeenCalledTimes(1);
-    expect(genMock.hydrate).toHaveBeenCalledWith({
-      resumeOut: 'SAVED RESUME',
-      coverOut: 'SAVED COVER',
-      savedId: 'rec-1',
-      meta: {
-        candidateName: 'Ada Lovelace',
-        jobTitle: 'Senior Engineer',
-        companyName: 'Acme',
-        resumeLanguage: 'en',
-        jobAdLanguage: 'en',
-        mismatch: false,
-        targetLanguage: 'en',
-        topRequirements: ['rust'],
-      },
-      // seedGeneration carries no `qualityReport` — parses to null (never `'{}'`).
-      report: null,
-    });
-  });
-
-  it('does not hydrate when no seedGeneration is provided', () => {
-    renderFlow({});
-    expect(genMock.hydrate).not.toHaveBeenCalled();
-  });
-
-  it('does not hydrate when the saved record has no résumé or cover text', () => {
-    renderFlow({
-      seedGeneration: { ...SAVED_GENERATION, resumeText: '', coverLetterText: '' },
-    });
-    expect(genMock.hydrate).not.toHaveBeenCalled();
-  });
-
-  it('parses a real seeded qualityReport (slot + its own hash) into hydrate', () => {
-    const slot = {
-      report: {
-        ok: true,
-        issues: [],
-        metrics: {
-          keywordCoverage: 80,
-          topRequirementHits: 1,
-          topRequirementsMeasured: 2,
-          duplicateRatio: 0,
-          rolesSource: 1,
-          rolesOutput: 1,
-        },
-      },
-      sourceTextHash: 12345,
-    };
-    const qualityReport = JSON.stringify({
-      schemaVersion: 2,
-      pipeline: 'fast',
-      generatedAt: 42,
-      resume: slot,
-    });
-    renderFlow({ seedGeneration: { ...SAVED_GENERATION, qualityReport } });
-
-    expect(genMock.hydrate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        report: expect.objectContaining({ generatedAt: 42, resume: slot }),
-      })
-    );
-  });
-
-  // A blob in the pre-slot shape hydrates as "no report" rather than as a
-  // report with no staleness anchor — the state that renders a green badge over
-  // text it never validated.
-  it('drops a v1-shaped seeded qualityReport instead of hydrating an anchorless report', () => {
-    const qualityReport = JSON.stringify({
-      schemaVersion: 1,
-      pipeline: 'fast',
-      generatedAt: 42,
-      resume: {
-        ok: true,
-        issues: [],
-        metrics: {
-          keywordCoverage: 80,
-          topRequirementHits: 1,
-          duplicateRatio: 0,
-          rolesSource: 1,
-          rolesOutput: 1,
-        },
-      },
-      sourceTextHash: { resume: 12345 },
-    });
-    renderFlow({ seedGeneration: { ...SAVED_GENERATION, qualityReport } });
-
-    expect(genMock.hydrate).toHaveBeenCalledWith(expect.objectContaining({ report: null }));
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. prefer-longer / skip-refetch branch (SHORT_DESC_FLOOR = 800)
+// 4. prefer-longer / skip-refetch branch (SHORT_DESC_FLOOR = 800)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // A string of exactly `n` 'x' characters — avoids import of a pad utility.
@@ -966,7 +843,7 @@ describe('TailorFlow — prefer-longer / useResolveJobUrl branch', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. onJobDescChange prop — host persist callback
+// 5. onJobDescChange prop — host persist callback
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TailorFlow — onJobDescChange host callback', () => {
@@ -1009,7 +886,7 @@ describe('TailorFlow — onJobDescChange host callback', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Height chain (load-bearing layout)
+// 6. Height chain (load-bearing layout)
 // ─────────────────────────────────────────────────────────────────────────────
 // GenerationOutput pins its header by being height-bounded, which only works if
 // every ancestor passes a bounded height down. These two links are that chain's
@@ -1021,8 +898,7 @@ describe('TailorFlow — onJobDescChange host callback', () => {
 describe('TailorFlow — height chain', () => {
   it('bounds the stage body and stretches the stage to it, on every stage', () => {
     for (const stage of ['configuring', 'done'] as const) {
-      genMock.resumeOut = stage === 'done' ? 'Generated resume text' : '';
-      genMock.output = genMock.resumeOut;
+      genMock.hasOutput = stage === 'done';
 
       const { unmount } = renderFlow({});
       const testId =

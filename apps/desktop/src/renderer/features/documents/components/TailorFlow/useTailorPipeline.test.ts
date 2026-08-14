@@ -193,6 +193,23 @@ describe('useTailorPipeline — start() builds the id-wins run request', () => {
     });
     expect(sessionBus.start).not.toHaveBeenCalled();
   });
+
+  it('toasts a failed start — the session already set the persistent banner text', async () => {
+    sessionBus.start.mockResolvedValueOnce(null);
+    const { result } = render();
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(mockNotify.error).toHaveBeenCalledWith({ message: 'autopilot.apply.failed' });
+  });
+
+  it('does not toast a successful start', async () => {
+    const { result } = render();
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(mockNotify.error).not.toHaveBeenCalled();
+  });
 });
 
 describe('useTailorPipeline — document text sources', () => {

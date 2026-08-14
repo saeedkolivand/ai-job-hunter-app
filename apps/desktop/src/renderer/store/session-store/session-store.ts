@@ -161,6 +161,15 @@ interface ApplicationApplySlice {
   /** One-shot match-level id (e.g. `strong`) carried from autopilot Apply so the
    *  detail header can show the badge; cleared when switching applications. */
   applyMatchLevel: string | null;
+  /**
+   * The staged pipeline run this application's TailorFlow session started
+   * (or reconnected to) — survives navigating away and back (a Documents-tab
+   * remount) within the same app session. Handed to `useTailorPipeline` as
+   * `initialRunId`/`initialJobId`; never read anywhere else. Cleared on
+   * switching applications, same as the other one-shot fields above.
+   */
+  applyRunId: string | null;
+  applyRunJobId: string | null;
 }
 
 /**
@@ -209,6 +218,8 @@ const APPLICATION_APPLY_DEFAULTS: ApplicationApplySlice = {
   applyForId: null,
   applySeedResume: null,
   applyMatchLevel: null,
+  applyRunId: null,
+  applyRunJobId: null,
 };
 
 const ANALYZE_DEFAULTS: AnalyzeSlice = {

@@ -10,7 +10,7 @@ import { ErrorState, transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
-import { type LetterLayoutId, parseQualityReport, type TemplateId } from '@/lib/generate';
+import type { LetterLayoutId, TemplateId } from '@/lib/generate';
 import { shouldSeedResearchDefault } from '@/lib/research-company-default';
 import { useActiveModelCapabilities, useResolveJobUrl } from '@/services';
 
@@ -20,11 +20,11 @@ import { InterviewQuestionsModal } from './InterviewQuestionsModal';
 import { tailorWizardSchema } from './lib/tailor-schema';
 import { buildTailorDefaults, type TailorWizardState } from './lib/tailor-state';
 import { ReferralModal } from './ReferralModal';
-import { ResultsPanel } from './ResultsPanel';
+import { ResultsPanel, type TailorRunState } from './ResultsPanel';
 import { TailorWizard } from './TailorWizard';
 import { useApplicationAnswers } from './useApplicationAnswers';
 import { useJobAdSummary } from './useJobAdSummary';
-import { useTailorGeneration } from './useTailorGeneration';
+import { useTailorPipeline } from './useTailorPipeline';
 
 export type { TailorWizardState };
 
@@ -37,6 +37,15 @@ export type { TailorWizardState };
 const SHORT_DESC_FLOOR = 800;
 
 type TailorFlowStage = 'configuring' | 'generating' | 'done';
+
+/** A terminal `ResumePipelineState` → the results panel's status banner. Any
+ *  non-terminal/idle state (including a cold-entry redisplay of a PAST run,
+ *  which never ran in this session) reads as a clean `'done'` — there is
+ *  nothing more to say about it here. */
+function toRunState(state: string): TailorRunState {
+  if (state === 'needsReview' || state === 'cancelled' || state === 'error') return state;
+  return 'done';
+}
 
 /**
  * Imperative surface a host can drive: it reads the derived `stage` + the
@@ -66,26 +75,35 @@ export interface TailorFlowPersistence {
   accent?: string;
   /** Per-export cover-letter layout; undefined → the backend renders classic. */
   letterLayoutId?: LetterLayoutId;
+  /** The staged run this session started/reconnected to — reconnect target
+   *  for `useTailorPipeline`, survives navigating away and back. */
+  runId: string | null;
+  runJobId: string | null;
   setWizardStep: (v: number) => void;
   setWizardForm: (v: TailorWizardState) => void;
   setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
   setAccent: (v: string | undefined) => void;
   setLetterLayoutId: (v: LetterLayoutId) => void;
+  setRunId: (v: string | null) => void;
+  setRunJobId: (v: string | null) => void;
 }
 
 export interface TailorFlowProps {
   job: AutopilotFoundJob;
   resumeText?: string;
   board: string;
-  /** Generation-store session key (e.g. `autopilot:<jobUrl>`). */
+  /** Session key for the host's own bookkeeping (e.g. `autopilot:<jobUrl>`) —
+   *  TailorFlow itself no longer keys any session state on it (the staged
+   *  pipeline's own session lives in `persistence.runId`/`runJobId`), but
+   *  callers still pass it for logging/future use. */
   contextId: string;
   /** Saved onto the AiGeneration record. */
   jobUrl: string;
   /**
-   * Latest persisted generation for this job, if any. When the live generation
-   * session is empty (e.g. a cold app start), the flow seeds itself from this
-   * record so it opens on the results (`done`) stage instead of the wizard.
+   * Latest persisted generation for this job, if any — supplies the letter
+   * text (and, on a cold entry with no reconnected run, the résumé text and
+   * quality report too; see `useTailorPipeline`).
    */
   seedGeneration?: AiGenerationRecord;
   persistence: TailorFlowPersistence;
@@ -106,20 +124,21 @@ export interface TailorFlowProps {
 
 /**
  * The extracted BODY of the tailoring flow — a derived stage machine
- * (configuring → generating → done) rendering the RHF wizard, the streaming
- * panel, or the results panel, plus the Questions + Referral modals. The host
- * owns the slim header and the persistence slice; TailorFlow surfaces a
- * controller so the header can drive its modals and read the derived stage.
+ * (configuring → generating → done) rendering the RHF wizard, the staged
+ * quality pipeline's 4-step checklist, or the results panel, plus the
+ * Questions + Referral modals. The host owns the slim header and the
+ * persistence slice; TailorFlow surfaces a controller so the header can drive
+ * its modals and read the derived stage.
  *
- * Output persistence lives in the generation store (keyed by `contextId`), so
- * the stage is derived, never stored; the wizard form + step are persisted via
- * the injected `persistence` slice so configuring survives a remount.
+ * Output lives in the staged run record + the job's aggregate document (see
+ * `useTailorPipeline`), so the stage is derived, never stored here; the
+ * wizard form + step + run-reconnect ids are persisted via the injected
+ * `persistence` slice so configuring (and an in-flight run) survive a remount.
  */
 export function TailorFlow({
   job,
   resumeText,
   board,
-  contextId,
   jobUrl,
   seedGeneration,
   persistence,
@@ -135,7 +154,7 @@ export function TailorFlow({
   const step = persistence.wizardStep;
   const setStep = persistence.setWizardStep;
   // Sticky render-time template/ATS preference (single source of truth shared by
-  // the preview and the export — see useTailorGeneration). Render-time only.
+  // the preview and the export — see useTailorPipeline). Render-time only.
   const setTemplateId = persistence.setTemplateId;
   const setAtsMode = persistence.setAtsMode;
   const setAccent = persistence.setAccent;
@@ -162,7 +181,9 @@ export function TailorFlow({
     mode: 'onChange',
   });
 
-  // The research toggle is an RHF field; the hook needs its live value.
+  // The research toggle is an RHF field; the questions/interview assistants
+  // below need its live value (the staged run itself takes no such field —
+  // see the shared schema's doc comment on `ResumePipelineRunRequest`).
   const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
 
   // Keep the "search company" default in sync with the active model's capability:
@@ -215,23 +236,29 @@ export function TailorFlow({
   // with a snippet present it renders immediately and upgrades silently on fetch.
   const fetchingDesc = !initialDesc && resolved.isLoading;
 
-  const gen = useTailorGeneration({
-    contextId,
+  const gen = useTailorPipeline({
     jobDesc,
     // The résumé the wizard tailors FROM — the quality panel's "Re-check" needs
-    // it as validation context (RHF owns the live value; `generate` passes its
+    // it as validation context (RHF owns the live value; `start` passes its
     // own validated copy per run).
     sourceResume: methods.getValues('resume'),
-    model,
+    jobUrl,
+    jobTitle: job.title,
+    companyName: job.company,
+    board,
     canUse,
     hasDesc,
-    jobUrl,
-    board,
-    researchCompany,
     templateId: persistence.templateId,
     atsMode: persistence.atsMode,
     accent: persistence.accent,
     letterLayoutId: persistence.letterLayoutId,
+    latestGeneration: seedGeneration,
+    initialRunId: persistence.runId,
+    initialJobId: persistence.runJobId,
+    onRunStarted: (ids) => {
+      persistence.setRunId(ids.runId);
+      persistence.setRunJobId(ids.jobId);
+    },
   });
 
   // Lazy, résumé-independent AI summary of the job ad (shared by the wizard's
@@ -245,34 +272,6 @@ export function TailorFlow({
     applicationId,
     initialSummary,
   });
-
-  // Cold-entry hydration: when a prior generation is persisted for this job and
-  // the live session is empty, seed it so the flow opens on the results panel
-  // (`done`) instead of the wizard. The store guards re-entry (no-op once a
-  // session has output / a savedId / is generating), so this never clobbers
-  // in-progress work; `gen.hydrate` is stable so the effect fires once per record.
-  const hydrateSession = gen.hydrate;
-  useEffect(() => {
-    if (!seedGeneration) return;
-    const { resumeText: savedResume, coverLetterText } = seedGeneration;
-    if (!savedResume && !coverLetterText) return;
-    hydrateSession({
-      resumeOut: savedResume,
-      coverOut: coverLetterText,
-      savedId: seedGeneration.id,
-      meta: {
-        candidateName: seedGeneration.candidateName,
-        jobTitle: seedGeneration.jobTitle,
-        companyName: seedGeneration.companyName,
-        resumeLanguage: seedGeneration.resumeLanguage,
-        jobAdLanguage: seedGeneration.jobAdLanguage,
-        mismatch: seedGeneration.mismatch,
-        targetLanguage: seedGeneration.targetLanguage,
-        topRequirements: seedGeneration.topRequirements,
-      },
-      report: parseQualityReport(seedGeneration.qualityReport),
-    });
-  }, [seedGeneration, hydrateSession]);
 
   // Lifted out of ResultsPanel so the modal can fully unmount on close without
   // losing the user's picks/answers (the hook holds non-rehydrated local state)
@@ -318,15 +317,14 @@ export function TailorFlow({
   const startGeneration = (values: TailorWizardState) => {
     persistForm(values);
     setForceConfiguring(false);
-    void gen.generate(values.resume, values.outputType);
+    void gen.start(values);
   };
 
   // Stage derivation: in-flight FIRST, then output, else the wizard. "Edit
   // settings" overrides to configuring while leaving the existing output intact.
-  const hasOutput = !!(gen.resumeOut || gen.coverOut);
-  const stage: TailorFlowStage = gen.generating
+  const stage: TailorFlowStage = gen.busy
     ? 'generating'
-    : hasOutput && !forceConfiguring
+    : gen.hasOutput && !forceConfiguring
       ? 'done'
       : 'configuring';
 
@@ -361,25 +359,21 @@ export function TailorFlow({
         jobUrl={job.url}
         canUse={canUse}
         reason={reason}
-        // `resumePipeline.run` resolves BOTH inputs server-side — a
-        // `DocumentStore` résumé id and a postings-cache job id. This flow
-        // tailors the free text in the wizard (which may have been pasted or
-        // hand-edited) against an `AutopilotFoundJob` that carries no posting
-        // id, so neither is available here. The picker still records the
-        // preference; it says out loud that THIS run stays Fast.
-        depthUnavailableReason={t('autopilot.apply.depthUnavailable')}
         onGenerate={startGeneration}
         jobAdSummary={jobAdSummary}
       />
     ),
     generating: () => (
       <GeneratingPanel
-        target={generatedTarget}
-        phase={gen.phase}
-        phaseLabel={gen.phaseLabel}
+        currentStep={gen.currentStep}
+        stageLabel={gen.stageLabel}
         thinking={gen.thinking}
-        output={gen.output}
-        onCancel={() => gen.abort()}
+        // Whichever document is currently streaming: the letter stage's own
+        // buffer once it has content, the résumé's before/otherwise. Nothing
+        // streams past it (validate/repair/humanize make no visible calls),
+        // so this is the right live text for every later step too.
+        output={gen.letterDraft || gen.draft}
+        onCancel={gen.cancel}
       />
     ),
     done: () => (
@@ -405,6 +399,7 @@ export function TailorFlow({
         onEdit={gen.editActiveOutput}
         meta={gen.meta}
         report={gen.report}
+        pipelineReview={gen.pipelineReview}
         onRecheck={gen.recheck}
         rechecking={gen.rechecking}
         copied={gen.copied}
@@ -412,6 +407,10 @@ export function TailorFlow({
         exportOpen={gen.exportOpen}
         setExportOpen={gen.setExportOpen}
         onExport={(fmt) => void gen.exportAs(fmt)}
+        runState={toRunState(gen.state)}
+        error={gen.error}
+        stoppedReason={gen.stoppedReason}
+        runs={gen.runs}
         onRegenerate={() => startGeneration(methods.getValues())}
         onEditSettings={() => setForceConfiguring(true)}
       />
@@ -436,8 +435,10 @@ export function TailorFlow({
         </AnimatePresence>
       </div>
 
-      {/* A failed run falls back to the wizard above — surface WHY, not silence. */}
-      {gen.error && (
+      {/* A start failure falls back to the wizard above — surface WHY, not
+          silence. A terminal needsReview/cancelled/error is NOT shown here —
+          ResultsPanel's own status banner (`stage === 'done'`) owns that. */}
+      {stage === 'configuring' && gen.error && (
         <div data-testid={TEST_IDS.documents.generationError} className="mx-8 mb-4 shrink-0">
           <ErrorState
             title={t('autopilot.apply.error')}

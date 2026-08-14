@@ -295,13 +295,13 @@ export function useTailorPipeline({
     }, PERSIST_DEBOUNCE_MS);
   };
 
-  const start = (values: TailorWizardState) => {
-    if (!canUse || !hasDesc) return Promise.resolve(null);
+  const start = async (values: TailorWizardState) => {
+    if (!canUse || !hasDesc) return null;
     setResumeOverride(null);
     setLetterOverride(null);
     setCurrentStep(0);
     const resumeId = values.resumeDocId ?? '';
-    return session.start({
+    const runId = await session.start({
       resumeId,
       resumeText: resumeId ? '' : values.resume,
       jobId: '',
@@ -315,6 +315,12 @@ export function useTailorPipeline({
       coverLetterText: '',
       includeCoverLetter: values.outputType !== 'resume',
     });
+    // `session.start` already logged the cause and set `error`/`state` — this
+    // is the one thing it can't do itself: a transient, dismissable toast.
+    // The persistent banner (rendered off the same `error`) is the durable
+    // half of that pair.
+    if (!runId) notify.error({ message: t('autopilot.apply.failed') });
+    return runId;
   };
 
   const cancel = () => session.cancel();

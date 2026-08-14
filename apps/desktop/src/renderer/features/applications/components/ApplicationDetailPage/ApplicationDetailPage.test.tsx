@@ -639,6 +639,8 @@ describe('ApplicationDetailPage — wizard reset on mount', () => {
       applyWizardForm: null,
       applySeedResume: null,
       applyMatchLevel: null,
+      applyRunId: null,
+      applyRunJobId: null,
     });
   });
 
