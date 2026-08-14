@@ -679,8 +679,10 @@ fn quality_stage_names_are_pinned_and_match_the_pipeline() {
             "match_evidence",
             "strategy",
             "draft",
+            "cover_letter",
             "validate",
-            "repair"
+            "repair",
+            "humanize"
         ]
     );
 }

@@ -120,6 +120,10 @@ struct ClampedRequest {
     cover_letter: String,
 }
 
+// `include_cover_letter` is a plain `bool` — no free text to clamp, so it rides
+// straight from `req` into `QualityInput` at the call site rather than through
+// `ClampedRequest`, which exists only for fields that need one.
+
 /// Byte cap on the request's `jobUrl` — mirrors the schema's `.max(2_048)`.
 /// This value is a STORAGE key (the run row's retention partition and the
 /// aggregate lookup), so an unbounded one writes an unbounded row.
@@ -314,6 +318,7 @@ async fn execute(
             target_language: &clamped.target_language,
             top_requirements: &clamped.top_requirements,
             cover_letter: &clamped.cover_letter,
+            include_cover_letter: req.include_cover_letter,
             effort: req.effort.as_deref(),
             job_id,
         },
@@ -384,7 +389,7 @@ async fn execute(
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
     let needs_review = quality_report.as_deref().is_some_and(|wrapper| {
-        report::still_needs_review(wrapper, &ctx.draft, &clamped.cover_letter)
+        report::still_needs_review(wrapper, &ctx.draft, ctx.letter_text())
     }) || ctx.critical_count() > 0;
 
     // Status and reason together — see `hooks::terminal_state` for why a
@@ -443,7 +448,7 @@ async fn execute(
         app,
         status,
         quality_report.as_deref().map_or(0, |wrapper| {
-            report::unresolved_count(wrapper, &ctx.draft, &clamped.cover_letter)
+            report::unresolved_count(wrapper, &ctx.draft, ctx.letter_text())
         }),
         &meta,
     );
@@ -540,13 +545,14 @@ fn persist_document(
     if save_verdict(ctx.input.source_resume, &ctx.draft, job_url) != SaveVerdict::Save {
         return None;
     }
+    // The `cover_letter` stage's own letter when it produced one, falling back
+    // to the renderer-supplied validate-only text — see `QualityCtx::letter_text`.
+    let letter_text = ctx.letter_text();
     let wrapper = report::build(
         depth,
         crate::db::now_ms(),
         Some((report, &ctx.draft)),
-        ctx.letter_report
-            .as_ref()
-            .map(|letter| (letter, clamped.cover_letter.as_str())),
+        ctx.letter_report.as_ref().map(|letter| (letter, letter_text)),
     );
     let store = app.try_state::<AiGenerationStore>()?;
     let record = AiGenerationRecord {
@@ -555,6 +561,13 @@ fn persist_document(
         target_language: clamped.target_language.clone(),
         top_requirements: clamped.top_requirements.clone(),
         resume_text: ctx.draft.clone(),
+        // ONLY the stage-generated letter, never the fallback: `save_application`'s
+        // merge-upsert treats an empty `cover_letter_text` as "keep the
+        // existing value" (`ai_generations::pick`), so writing the legacy
+        // validate-only request text here would overwrite whatever letter the
+        // posting's aggregate already had with a document this run never
+        // generated.
+        cover_letter_text: ctx.letter.clone(),
         job_ad: String::new(),
         job_url: job_url.to_string(),
         board: meta.board.clone(),

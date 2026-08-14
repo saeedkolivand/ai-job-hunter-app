@@ -523,6 +523,9 @@ async fn analyze_job_core(app: &AppHandle, ctx: &ToolContext) -> AppResult<Value
             target_language: detect_locale_tag(&inputs.job_ad),
             top_requirements: &[],
             cover_letter: "",
+            // This call runs `analyze_job` alone (see the doc above) — no
+            // `cover_letter` stage reaches this context at all.
+            include_cover_letter: false,
             // The agent loop has no per-request reasoning effort of its own,
             // so this runs on the unscaled baseline — same choice
             // `research_company_handler` makes.
@@ -742,6 +745,10 @@ async fn run_quality_pipeline_core(app: &AppHandle, ctx: &ToolContext) -> AppRes
             target_language: detect_locale_tag(&inputs.job_ad),
             top_requirements: &[],
             cover_letter: "",
+            // This tool has no way to ask for a letter — the whitelist offers
+            // no argument, and generating an unrequested one would silently
+            // widen what "Read-only, no writes" call already costs.
+            include_cover_letter: false,
             effort: None,
             job_id: &stream_job,
         },
