@@ -11,14 +11,16 @@ import {
   statusToEvent,
 } from './resume-pipeline.machine';
 
-/** The six quality-depth stages, in the order `quality_pipeline()` runs them. */
+/** The eight quality-depth stages, in the order `quality_pipeline()` runs them. */
 const STAGES = [
   'analyze_job',
   'match_evidence',
   'strategy',
   'draft',
+  'cover_letter',
   'validate',
   'repair',
+  'humanize',
 ] as const;
 
 /**
@@ -47,7 +49,16 @@ describe('resumePipelineMachine', () => {
     expect(stageToEvent('repair', 'start')).toBe('REPAIR');
   });
 
-  it('walks idle → preparing → drafting → validating → repairing on stage starts', () => {
+  // PR-2. `cover_letter` folds into the SAME drafting-family event `draft`
+  // already produces — a second document being streamed, not a new phase.
+  // `humanize` gets its own event/state: it is quality depth's genuinely
+  // distinct LAST phase.
+  it('folds cover_letter into DRAFT and gives humanize its own HUMANIZE event', () => {
+    expect(stageToEvent('cover_letter', 'start')).toBe('DRAFT');
+    expect(stageToEvent('humanize', 'start')).toBe('HUMANIZE');
+  });
+
+  it('walks idle → preparing → drafting → validating → repairing → humanizing on stage starts', () => {
     let state: ResumePipelineState = 'idle';
     state = transition(resumePipelineMachine, state, 'START');
     expect(state).toBe('queued');
@@ -55,7 +66,7 @@ describe('resumePipelineMachine', () => {
       const event = stageToEvent(stage, 'start');
       if (event) state = transition(resumePipelineMachine, state, event);
     }
-    expect(state).toBe('repairing');
+    expect(state).toBe('humanizing');
   });
 
   it('maps the three max-only stages, none of them to a terminal state', () => {
@@ -111,7 +122,7 @@ describe('resumePipelineMachine', () => {
           if (event) state = transition(resumePipelineMachine, state, event);
         }
       }
-      expect(state).toBe('repairing');
+      expect(state).toBe('humanizing');
       expect(resumePipelineMachine.busyStates).toContain(state);
       expect(state).not.toBe('done');
       expect(state).not.toBe('needsReview');

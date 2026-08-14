@@ -1031,8 +1031,10 @@
           "match_evidence": "Evidence match",
           "strategy": "Strategy",
           "draft": "Draft",
+          "cover_letter": "Cover letter",
           "sections": "Sections",
           "repair": "Repair",
+          "humanize": "Remove AI signs",
           "llm_judge": "Review"
         },
         "descriptions": {
@@ -1040,8 +1042,10 @@
           "match_evidence": "Finds what your résumé actually backs up.",
           "strategy": "Decides how that evidence is presented.",
           "draft": "Writes the whole résumé in one streamed pass.",
+          "cover_letter": "Writes the cover letter, when one is requested.",
           "sections": "Writes the résumé one section at a time.",
           "repair": "Rewrites sections that failed validation.",
+          "humanize": "Rewrites lines an automated check flagged as sounding AI-written.",
           "llm_judge": "Scores the finished document."
         },
         "suggest": {
@@ -1653,10 +1657,12 @@
       "match_evidence": "Matching your evidence",
       "strategy": "Planning the résumé",
       "draft": "Writing the résumé",
+      "cover_letter": "Writing the cover letter",
       "sections": "Writing the résumé section by section",
       "assemble": "Putting the sections together",
       "validate": "Checking the result",
       "repair": "Fixing what the check found",
+      "humanize": "Removing AI writing tells",
       "llm_judge": "Reading the finished résumé once more"
     },
     "section": {
@@ -1690,7 +1696,8 @@
       "preparing": "Preparing",
       "drafting": "Writing",
       "validating": "Checking",
-      "repairing": "Repairing"
+      "repairing": "Repairing",
+      "humanizing": "Removing AI signs"
     },
     "status": {
       "running": "Running",

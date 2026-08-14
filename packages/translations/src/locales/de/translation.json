@@ -1031,8 +1031,10 @@
           "match_evidence": "Belegabgleich",
           "strategy": "Strategie",
           "draft": "Entwurf",
+          "cover_letter": "Anschreiben",
           "sections": "Abschnitte",
           "repair": "Korrektur",
+          "humanize": "KI-Spuren entfernen",
           "llm_judge": "Bewertung"
         },
         "descriptions": {
@@ -1040,8 +1042,10 @@
           "match_evidence": "Findet, was Ihr Lebenslauf tatsächlich belegt.",
           "strategy": "Legt fest, wie diese Belege dargestellt werden.",
           "draft": "Schreibt den gesamten Lebenslauf in einem Durchgang.",
+          "cover_letter": "Schreibt das Anschreiben, sofern eines angefordert wurde.",
           "sections": "Schreibt den Lebenslauf Abschnitt für Abschnitt.",
           "repair": "Schreibt Abschnitte neu, die die Prüfung nicht bestanden haben.",
+          "humanize": "Schreibt Zeilen um, die eine automatische Prüfung als KI-klingend markiert hat.",
           "llm_judge": "Bewertet das fertige Dokument."
         },
         "suggest": {
@@ -1657,10 +1661,12 @@
       "match_evidence": "Belege werden zugeordnet",
       "strategy": "Lebenslauf wird geplant",
       "draft": "Lebenslauf wird geschrieben",
+      "cover_letter": "Anschreiben wird geschrieben",
       "sections": "Lebenslauf wird Abschnitt für Abschnitt geschrieben",
       "assemble": "Abschnitte werden zusammengesetzt",
       "validate": "Ergebnis wird geprüft",
       "repair": "Gefundene Probleme werden behoben",
+      "humanize": "KI-Spuren werden entfernt",
       "llm_judge": "Fertiger Lebenslauf wird noch einmal gelesen"
     },
     "section": {
@@ -1694,7 +1700,8 @@
       "preparing": "Vorbereitung",
       "drafting": "Wird geschrieben",
       "validating": "Wird geprüft",
-      "repairing": "Wird nachgebessert"
+      "repairing": "Wird nachgebessert",
+      "humanizing": "KI-Spuren werden entfernt"
     },
     "status": {
       "running": "Läuft",

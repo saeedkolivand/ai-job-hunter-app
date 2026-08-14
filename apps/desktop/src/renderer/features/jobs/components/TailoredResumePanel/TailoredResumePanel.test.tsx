@@ -335,6 +335,7 @@ describe('TailoredResumePanel — depth routing', () => {
       targetLanguage: 'en',
       topRequirements: [],
       coverLetterText: '',
+      includeCoverLetter: false,
       effort: 'high',
     });
     for (const forbidden of [
