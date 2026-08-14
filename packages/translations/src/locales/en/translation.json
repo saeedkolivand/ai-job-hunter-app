@@ -1333,7 +1333,6 @@
     "subtitle": "Upload your resume and target job ad to generate tailored, ATS-optimized documents.",
     "thinking": "Thinking…",
     "reasoningComplete": "Reasoning complete",
-    "depthUnavailable": "The staged depths need a saved résumé and a job from your job list. This page generates from pasted text, so it always runs Fast here — your choice is remembered for the surfaces that can use it.",
     "research": {
       "label": "Research the company",
       "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
