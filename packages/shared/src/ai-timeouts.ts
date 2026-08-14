@@ -64,18 +64,21 @@ function effortMultiplier(effort?: string): number {
  * | -------------------------- | --------------- | -------------------- | ------ |
  * | 3 JSON stages, ≤1 re-ask   | 3 × 2 = 6       | `OLLAMA_COMPLETION`  | 1800 s |
  * | repair, ≤2 rounds × ≤4 sec | 2 × 4 = 8       | `OLLAMA_COMPLETION`  | 2400 s |
- * | **fixed total**            |                 |                      | 4200 s |
+ * | humanize, ≤2 documents     | 2               | `OLLAMA_COMPLETION`  |  600 s |
+ * | **fixed total**            |                 |                      | 4800 s |
  *
  * `analyze_job`/`match_evidence`/`strategy` each run through
  * `Completer::complete_json`, which is allowed exactly ONE re-ask. The repair
  * stage regenerates up to `repair::MAX_SECTIONS_PER_ROUND` (4) sections per
  * round for up to `Budget::max_repair_attempts` (2) rounds, each through
- * `Completer::complete`. **Every one of those 14 round-trips is bounded by the
- * longest per-call HTTP timeout this app ships — `timeouts::OLLAMA_COMPLETION`,
- * 300 s** (the local daemon's non-streaming bound), and NONE of them scales
- * with reasoning effort: `complete_with_usage`'s timeouts (`COMPLETION` /
- * `OLLAMA_COMPLETION`) are flat constants. Only the STREAM deadline is
- * effort-scaled, and the draft is the run's only streamed call.
+ * `Completer::complete`. The `humanize` stage makes at most one `complete` call
+ * PER FLAGGED DOCUMENT (résumé + letter), so at most 2. **Every one of those 16
+ * round-trips is bounded by the longest per-call HTTP timeout this app ships —
+ * `timeouts::OLLAMA_COMPLETION`, 300 s** (the local daemon's non-streaming
+ * bound), and NONE of them scales with reasoning effort: `complete_with_usage`'s
+ * timeouts (`COMPLETION` / `OLLAMA_COMPLETION`) are flat constants. Only the
+ * STREAM deadline is effort-scaled, and `draft`/`cover_letter` are the run's
+ * only streamed calls (see {@link QUALITY_RUN_GENERATION_PASSES}).
  *
  * **"300 s per call" is a statement about the RETRY LOOP, not just the
  * `.timeout()`.** `commands::ai_provider::retry::send_with_retry` re-sends a
@@ -99,22 +102,35 @@ function effortMultiplier(effort?: string): number {
  * boundary and repair is the LAST stage, nothing else bounded it either. Both
  * halves were fixed together: the repair loop now checks the deadline between
  * rounds AND between per-section calls, and this term covers the fan-out.
+ *
+ * **PR-2 addition: `humanize`.** It runs LAST and makes at most one
+ * `Completer::complete` call per FLAGGED document (résumé, letter), so ≤2 more
+ * flat `OLLAMA_COMPLETION`-bounded calls — 600 s, taking the fixed term from
+ * 4 200 s to 4 800 s. Zero flagged documents costs nothing (the deterministic
+ * `voice.*` scan that gates it is not a provider call), so this is the WORST
+ * case, exactly like every other term above.
  */
-export const QUALITY_RUN_FIXED_SECS = 4_200;
+export const QUALITY_RUN_FIXED_SECS = 4_800;
 
 /**
  * How many EFFORT-SCALED (streamed) whole-document passes one quality-depth run
- * may make: exactly one — the draft.
+ * may make: two — the résumé draft, and the cover letter when
+ * `includeCoverLetter` is set.
  *
- * It is the run's only `chat_stream` call, and therefore the only call bounded
- * by {@link STREAM_BASELINE_SECS} × the effort multiplier (`stream_deadline`).
- * The repair rounds are NOT here: they go through `Completer::complete`, whose
- * bound is flat, so they belong to {@link QUALITY_RUN_FIXED_SECS} — counting
- * them here would scale 8 calls that do not scale, wildly over-provisioning the
- * top tier for the same reason `baseline × multiplier` under-provisions the
- * bottom one.
+ * Both are the run's only `chat_stream` calls, and therefore the only calls
+ * bounded by {@link STREAM_BASELINE_SECS} × the effort multiplier
+ * (`stream_deadline`). The repair rounds and `humanize` are NOT here: they go
+ * through `Completer::complete`, whose bound is flat, so they belong to
+ * {@link QUALITY_RUN_FIXED_SECS} — counting them here would scale calls that do
+ * not scale, wildly over-provisioning the top tier for the same reason
+ * `baseline × multiplier` under-provisions the bottom one.
+ *
+ * **Charged for every run, whether or not a letter is requested** — the SAME
+ * choice {@link QUALITY_RUN_FIXED_SECS} already makes for `humanize`'s worst
+ * case: the deadline is a backstop sized against what a run COULD spend, not
+ * against what THIS run will.
  */
-export const QUALITY_RUN_GENERATION_PASSES = 1;
+export const QUALITY_RUN_GENERATION_PASSES = 2;
 
 /**
  * Deadline (seconds) for ONE WHOLE quality-depth résumé pipeline run — the
@@ -123,13 +139,13 @@ export const QUALITY_RUN_GENERATION_PASSES = 1;
  * `fixed + baseline × passes × multiplier(effort)`, i.e. the sum of the inner
  * per-call bounds the run can legitimately consume at that effort:
  *
- * | effort           | m   | flat calls | the draft | deadline        |
- * | ---------------- | --- | ---------- | --------- | --------------- |
- * | none/minimal/low | 1.0 | 4200 s     | 300 s     | 4500 s (75 min) |
- * | medium           | 1.5 | 4200 s     | 450 s     | 4650 s (77 min) |
- * | high             | 2.0 | 4200 s     | 600 s     | 4800 s (80 min) |
- * | xhigh            | 2.5 | 4200 s     | 750 s     | 4950 s (82 min) |
- * | max              | 3.0 | 4200 s     | 900 s     | 5100 s (85 min) |
+ * | effort           | m   | flat calls | 2 generation passes | deadline         |
+ * | ---------------- | --- | ---------- | -------------------- | ---------------- |
+ * | none/minimal/low | 1.0 | 4800 s     | 600 s                | 5400 s (90 min)  |
+ * | medium           | 1.5 | 4800 s     | 900 s                | 5700 s (95 min)  |
+ * | high             | 2.0 | 4800 s     | 1200 s                | 6000 s (100 min) |
+ * | xhigh            | 2.5 | 4800 s     | 1500 s                | 6300 s (105 min) |
+ * | max              | 3.0 | 4800 s     | 1800 s                | 6600 s (110 min) |
  *
  * Deliberately NOT `baseline × multiplier`: all but one of the run's calls do
  * not scale with effort at all (see {@link QUALITY_RUN_FIXED_SECS}), so a

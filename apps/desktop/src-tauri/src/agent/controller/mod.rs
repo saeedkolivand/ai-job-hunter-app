@@ -35,8 +35,8 @@ use super::tools::{neutralize_transcript_boundaries, to_specs, AgentTool, ToolCo
 /// second flow ([`crate::agent::flows::FLOWS`]) they differ per flow, and a
 /// controller that reads one flow's budget while running another's whitelist
 /// is exactly the mismatch `AgentFlow` exists to make unrepresentable — the
-/// review flow's 90-minute step clock would have been unreachable, and its one
-/// affordable-only-there tool would have ended every run at
+/// review flow's 105-minute step clock would have been unreachable, and its
+/// one affordable-only-there tool would have ended every run at
 /// [`StoppedReason::Timeout`].
 ///
 /// This constant survives for the pure [`run_agent`] entry point alone, which
@@ -274,10 +274,10 @@ fn step_timeout_message(step_timeout: Duration) -> String {
 const SECONDS_READABLE_UPTO: u64 = 600;
 
 /// A wall-clock bound as the user should read it — `360s`, `45 minutes`,
-/// `1h 30m` (the review flow's 90-minute clock crosses the hour, so it reads as
-/// the last of those, not the middle one). Whole units only; these are round
-/// budget constants, not measured elapsed times, so there is nothing to round
-/// off.
+/// `1h 45m` (the review flow's 105-minute clock crosses the hour, so it reads
+/// as the last of those, not the middle one). Whole units only; these are
+/// round budget constants, not measured elapsed times, so there is nothing to
+/// round off.
 fn humanized_duration(d: Duration) -> String {
     let secs = d.as_secs();
     if secs <= SECONDS_READABLE_UPTO {
@@ -497,9 +497,9 @@ pub async fn run_agent_with_system(
             // `agent::gate`'s `double_write_call` already drives a 2-call turn).
             // A boundary-only check therefore admits `max_tool_calls - 1 + K`
             // calls for a K-call final turn, and since each executed call races
-            // `step_timeout` INDIVIDUALLY, K calls of a 90-minute tool cost
-            // K × 90 minutes. The whole point of the ceiling is that the product
-            // `max_tool_calls × step_timeout` is the bound.
+            // `step_timeout` INDIVIDUALLY, K calls of a 105-minute tool cost
+            // K × 105 minutes. The whole point of the ceiling is that the
+            // product `max_tool_calls × step_timeout` is the bound.
             //
             // Once it is spent the remaining calls of the turn are REFUSED, not
             // executed. The run ends at `MaxToolCalls` below either way, so

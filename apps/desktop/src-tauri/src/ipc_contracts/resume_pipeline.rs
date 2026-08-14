@@ -21,6 +21,8 @@ pub struct ResumePipelineRunRequest {
     pub top_requirements: Vec<String>,
     #[serde(default = "default_resume_pipeline_run_request_cover_letter_text")]
     pub cover_letter_text: String,
+    #[serde(default = "default_resume_pipeline_run_request_include_cover_letter")]
+    pub include_cover_letter: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -60,4 +62,8 @@ fn default_resume_pipeline_run_request_top_requirements() -> Vec<String> {
 
 fn default_resume_pipeline_run_request_cover_letter_text() -> String {
     "".to_string()
+}
+
+fn default_resume_pipeline_run_request_include_cover_letter() -> bool {
+    false
 }

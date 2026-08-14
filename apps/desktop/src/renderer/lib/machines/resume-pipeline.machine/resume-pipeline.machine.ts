@@ -6,14 +6,15 @@ import { createMachine } from '@/lib/machine';
 /**
  * Staged résumé-generation (quality AND max depth) run state machine.
  *
- * One `resumePipeline.run` walks the Rust stage list for its depth — six at
- * quality (`analyze_job`, `match_evidence`, `strategy`, `draft`, `validate`,
- * `repair`) and eight at max (`draft` splits into `sections` + `assemble`, and
+ * One `resumePipeline.run` walks the Rust stage list for its depth — eight at
+ * quality (`analyze_job`, `match_evidence`, `strategy`, `draft`,
+ * `cover_letter`, `validate`, `repair`, `humanize`) and eight at max (`draft`
+ * splits into `sections` + `assemble`, no `cover_letter`/`humanize`, and
  * `llm_judge` runs LAST, after `repair`) — and this machine folds either list
  * into the same coarse states:
  *
- *   idle → queued → preparing → drafting → validating → repairing
- *                                        ↘ done | needsReview | cancelled | error
+ *   idle → queued → preparing → drafting → validating → repairing → humanizing
+ *                                                     ↘ done | needsReview | cancelled | error
  *
  * The three JSON extraction stages collapse into one `preparing` state because
  * they are indistinguishable to a user (nothing streams, no document exists
@@ -22,11 +23,19 @@ import { createMachine } from '@/lib/machine';
  * `PipelineSectionState`). `stageToEvent` keys on the stage NAME, not on its
  * index, precisely because the two depths run different lists.
  *
- * **A max run therefore ends in `validating`, not `repairing`** — the judge is
- * a review pass over the finished document and reads as checking, and the
- * ordering is the backend's (`MAX_STAGES`), not this machine's opinion. Nothing
- * downstream depends on which busy state the last stage leaves behind: every
- * busy state is equally non-terminal, which is the invariant below.
+ * **`cover_letter` folds into `drafting`** (PR-2) — it is a second streamed
+ * pass writing a second document, the same "the document is being written"
+ * meaning `sections`/`assemble` already share with `draft`. **`humanize` gets
+ * its OWN state, `humanizing`** — it is quality depth's own LAST stage, a
+ * distinct "removing AI signs" phase the stepper UI (PR-3) shows as its own
+ * step, unlike `cover_letter` which has no separate row.
+ *
+ * **A max run still ends in `validating`, not `repairing` or `humanizing`** —
+ * the judge is a review pass over the finished document and reads as checking,
+ * max depth has no `humanize` stage at all, and the ordering is the backend's
+ * (`MAX_STAGES`), not this machine's opinion. Nothing downstream depends on
+ * which busy state the last stage leaves behind: every busy state is equally
+ * non-terminal, which is the invariant below.
  *
  * ## The one rule this machine exists to enforce
  *
@@ -180,6 +189,7 @@ export type ResumePipelineState =
   | 'drafting'
   | 'validating'
   | 'repairing'
+  | 'humanizing'
   | 'done'
   | 'needsReview'
   | 'cancelled'
@@ -192,6 +202,7 @@ export type ResumePipelineEvent =
   | 'DRAFT'
   | 'VALIDATE'
   | 'REPAIR'
+  | 'HUMANIZE'
   | 'COMPLETE'
   | 'NEEDS_REVIEW'
   | 'CANCEL'
@@ -211,6 +222,7 @@ const BUSY_TRANSITIONS = {
   DRAFT: 'drafting',
   VALIDATE: 'validating',
   REPAIR: 'repairing',
+  HUMANIZE: 'humanizing',
   COMPLETE: 'done',
   NEEDS_REVIEW: 'needsReview',
   CANCEL: 'cancelled',
@@ -228,6 +240,7 @@ export const resumePipelineMachine = createMachine<ResumePipelineState, ResumePi
     drafting: { ...BUSY_TRANSITIONS },
     validating: { ...BUSY_TRANSITIONS },
     repairing: { ...BUSY_TRANSITIONS },
+    humanizing: { ...BUSY_TRANSITIONS },
     done: { ...TERMINAL_TRANSITIONS },
     // A run may leave `needsReview` for `done` once the user resolves the last
     // flagged bullet — the write commands return a fresh `PipelineRunDetail`
@@ -236,7 +249,7 @@ export const resumePipelineMachine = createMachine<ResumePipelineState, ResumePi
     cancelled: { ...TERMINAL_TRANSITIONS },
     error: { ...TERMINAL_TRANSITIONS },
   },
-  busyStates: ['queued', 'preparing', 'drafting', 'validating', 'repairing'],
+  busyStates: ['queued', 'preparing', 'drafting', 'validating', 'repairing', 'humanizing'],
   errorStates: ['error'],
 });
 
@@ -262,6 +275,11 @@ const STAGE_EVENTS: Record<string, ResumePipelineEvent> = {
   match_evidence: 'PREPARE',
   strategy: 'PREPARE',
   draft: 'DRAFT',
+  // PR-2, quality only. A second streamed pass writing a second document —
+  // the same "the document is being written" meaning `draft`/`sections`/
+  // `assemble` already share, so it folds into the SAME drafting-family event
+  // rather than getting its own busy state.
+  cover_letter: 'DRAFT',
   // Max depth writes the document in two stages instead of one: `sections`
   // generates each section on its own and `assemble` renders them into the body
   // (pure, no provider call). Both are "writing" to a reader — the per-section
@@ -270,6 +288,11 @@ const STAGE_EVENTS: Record<string, ResumePipelineEvent> = {
   assemble: 'DRAFT',
   validate: 'VALIDATE',
   repair: 'REPAIR',
+  // PR-2, quality only — the LAST stage, and the only one that gets its own
+  // busy state (`humanizing`) rather than folding into an existing one: it is
+  // a genuinely distinct "removing AI signs" phase, not a variant of writing
+  // or checking.
+  humanize: 'HUMANIZE',
   // The judge reads the FINISHED document (it runs after repair, last), so it
   // is a checking pass, not a repairing one. It cannot fail a run — its stage
   // records `{skipped}` on any error — so `VALIDATE` never strands a run: the

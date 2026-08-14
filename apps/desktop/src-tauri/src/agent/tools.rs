@@ -266,6 +266,14 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         "source_entry",
         "project_seed",
         "generated_resume",
+        // PR-2's `humanize` stage (`pipeline::resume::prompts::humanize_user`):
+        // the WHOLE document being rewritten and the flagged-line findings
+        // list, composed into one turn exactly like the tags above it. A
+        // forged `<humanize_findings>` riding inside the document (or vice
+        // versa) would let untrusted résumé/letter text pose as the run's own
+        // instruction about what to rewrite.
+        "humanize_document",
+        "humanize_findings",
     ]
     .into_iter()
     .map(|tag| (tag, compile_fence_tag_pattern(tag)))

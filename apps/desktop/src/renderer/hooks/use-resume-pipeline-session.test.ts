@@ -97,7 +97,16 @@ function detail(status: PipelineRunDetail['status']): PipelineRunDetail {
 }
 
 /** Start a run and drive the stage stream through the whole pipeline. */
-const STAGES = ['analyze_job', 'match_evidence', 'strategy', 'draft', 'validate', 'repair'];
+const STAGES = [
+  'analyze_job',
+  'match_evidence',
+  'strategy',
+  'draft',
+  'cover_letter',
+  'validate',
+  'repair',
+  'humanize',
+];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -122,6 +131,7 @@ describe('useResumePipelineSession', () => {
         targetLanguage: 'en',
         topRequirements: [],
         coverLetterText: '',
+        includeCoverLetter: false,
       });
     });
     expect(result.current.runId).toBe(RUN_ID);
@@ -202,6 +212,7 @@ describe('useResumePipelineSession', () => {
           targetLanguage: 'en',
           topRequirements: [],
           coverLetterText: '',
+          includeCoverLetter: false,
         });
       });
       expect(result.current.sectionStates).toEqual({});
@@ -442,6 +453,7 @@ describe('useResumePipelineSession', () => {
         targetLanguage: 'en',
         topRequirements: [],
         coverLetterText: '',
+        includeCoverLetter: false,
       });
     });
     expect(result.current.state).toBe('error');

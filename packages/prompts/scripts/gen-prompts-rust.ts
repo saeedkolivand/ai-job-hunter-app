@@ -34,7 +34,10 @@ import {
   AI_TELL_PROSE_WORDS_DE,
   AI_TELL_PROSE_WORDS_EN,
   AI_TELL_PROSE_WORDS_IT,
+  antiAiTellLexical,
+  antiAiTellProse,
   HUMANIZE_LEXICAL,
+  HUMANIZE_PROSE,
   TEMPLATE_OPENERS_DE,
   TEMPLATE_OPENERS_EN,
   TEMPLATE_OPENERS_IT,
@@ -316,6 +319,34 @@ function generateBlocks(): string {
         '/// tier stays ATS-safe (no contractions, no fragments).',
       'HUMANIZE_LEXICAL',
       HUMANIZE_LEXICAL
+    ),
+    rustStrConst(
+      '/// The lexical-tier anti-AI-tell BAN LIST (English, full depth) — word/phrase\n' +
+        '/// bans safe inside a résumé bullet. `draft`/`repair` compose only\n' +
+        "/// `HUMANIZE_LEXICAL` (the positive block); the `humanize` stage's résumé\n" +
+        '/// tier composes this PLUS `HUMANIZE_LEXICAL`, mirroring\n' +
+        "/// `packages/prompts/src/generate/rewrite/rewrite.ts`'s `buildDocVoice`,\n" +
+        "/// which is the app's existing single-span rewrite prompt for the same two\n" +
+        '/// tiers. English only, like every other block on this page: Rust prompts\n' +
+        '/// steer the OUTPUT language via `system_language`; the RULE text itself\n' +
+        '/// stays English, the same choice `HUMANIZE_LEXICAL` already made.',
+      'ANTI_AI_TELL_LEXICAL',
+      antiAiTellLexical('en')
+    ),
+    rustStrConst(
+      '/// The prose-tier anti-AI-tell ruleset (English, full depth): the lexical\n' +
+        '/// bans plus prose-flow rules (em dash, rhythm, rule-of-three, template\n' +
+        '/// openers). Composed with `HUMANIZE_PROSE` for the letter/prose voice —\n' +
+        "/// the `cover_letter` stage and `humanize`'s letter tier.",
+      'ANTI_AI_TELL_PROSE',
+      antiAiTellProse('en')
+    ),
+    rustStrConst(
+      '/// The POSITIVE prose-tier voice block — cadence, concreteness, controlled\n' +
+        '/// imperfection — composed ALONGSIDE `ANTI_AI_TELL_PROSE`, never instead of\n' +
+        '/// it. Prose tier (letters, not résumé bullets).',
+      'HUMANIZE_PROSE',
+      HUMANIZE_PROSE
     ),
     rustResumeConventions(),
   ].join('\n\n');
