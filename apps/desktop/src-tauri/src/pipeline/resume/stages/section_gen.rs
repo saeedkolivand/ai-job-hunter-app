@@ -46,6 +46,7 @@ use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::StoppedReason;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::resume::cache::StageCacheKey;
+use crate::pipeline::resume::projects::reseed_projects;
 use crate::pipeline::resume::prompt_blocks::resume_conventions;
 use crate::pipeline::resume::section_prompts::{section_system, section_user};
 use crate::pipeline::resume::types::{
@@ -53,8 +54,8 @@ use crate::pipeline::resume::types::{
     SectionKey, SkillGroup,
 };
 use crate::pipeline::resume::types_max::{
-    example_for, schema_for, EducationOut, ExperienceOut, ProjectOut, ProjectsOut, SectionBody,
-    SectionResult, SectionSeed, SectionSlot, SkillsOut, SummaryOut,
+    example_for, schema_for, EducationOut, ExperienceOut, ProjectsOut, SectionBody, SectionResult,
+    SectionSeed, SectionSlot, SkillsOut, SummaryOut,
 };
 use crate::pipeline::resume::{
     assemble, cache, guard_deadline, source, QualityCtx, RunDeadline, RunLedger, SectionProgress,
@@ -408,7 +409,7 @@ pub fn merge(
             )
         }
         (SectionSeed::Projects(seeds), SectionAnswer::Projects(out)) => {
-            let (projects, dropped) = reseed_projects(seeds, &out.projects);
+            let (projects, dropped, _links_restored) = reseed_projects(seeds, &out.projects);
             (SectionBody::Projects(projects), out.used_evidence, dropped)
         }
         (SectionSeed::Education(lines), SectionAnswer::Education(out)) => {
@@ -447,85 +448,6 @@ fn empty_body(seed: &SectionSeed) -> SectionBody {
     }
 }
 
-/// Re-seed every project's identity from the SOURCE and keep only the
-/// description the model was allowed to write.
-///
-/// Two rules, both mechanical:
-///
-/// * `name`, `links` and `stack` come back from the seed unconditionally — the
-///   model's copies are discarded even when they match, so a "helpfully"
-///   corrected host cannot survive;
-/// * a description is kept ONLY for a project whose SOURCE description was
-///   non-empty. A project the résumé says nothing about renders as its compact
-///   link line, which is the third tier of the owner's degradation ladder;
-///   inventing a blurb for it is the failure the ladder exists to prevent.
-///
-/// Order follows the MODEL's answer (that is the tailoring decision it is
-/// allowed to make) and a project it dropped stays dropped — trimming is a
-/// normal editorial cut, and `factual.altered_project_link` deliberately does
-/// not fire on one.
-fn reseed_projects(seeds: &[ProjectOut], answered: &[ProjectOut]) -> (Vec<ProjectOut>, u32) {
-    let mut out: Vec<ProjectOut> = Vec::new();
-    let mut dropped = 0u32;
-    for project in answered {
-        let Some(seed) = seeds
-            .iter()
-            .find(|seed| same_project(&seed.name, &project.name))
-        else {
-            // A project the source does not have. Not renderable and not
-            // repairable: there is no seed to take its links from.
-            dropped += 1;
-            continue;
-        };
-        if out.iter().any(|kept| same_project(&kept.name, &seed.name)) {
-            continue;
-        }
-        // A project whose seed carries no links, no stack and no description is
-        // below the ladder's bottom rung, not on it: `render_project` emits a
-        // bare `• {name}`, `parse_resume` strips the marker, and
-        // `consistency::tier_of` then rejects the one-line entry — the document
-        // flags ITSELF with `consistency.project_structure`. Verified against
-        // the real validator, which warns for `• Alpha` and does not for
-        // `• Alpha · https://…`. Dropping it is the same call `reseed_projects`
-        // already makes about content the source cannot back.
-        if seed.links.is_empty() && seed.stack.is_empty() && seed.description.trim().is_empty() {
-            dropped += 1;
-            continue;
-        }
-        let described = !seed.description.trim().is_empty();
-        if !described && !project.description.trim().is_empty() {
-            dropped += 1; // an invented blurb for a data-less project
-        }
-        out.push(ProjectOut {
-            name: seed.name.clone(),
-            links: seed.links.clone(),
-            stack: seed.stack.clone(),
-            description: if described {
-                one_line(&project.description)
-            } else {
-                String::new()
-            },
-        });
-    }
-    (out, dropped)
-}
-
-/// Project identity, compared the way `factual::project_entry_name` compares
-/// it: lowercase alphanumeric words. Two graders disagreeing about whether two
-/// entries are the same project is how a link Critical fires on a truthful
-/// document.
-fn same_project(left: &str, right: &str) -> bool {
-    fn key(name: &str) -> String {
-        name.split(|c: char| !c.is_alphanumeric())
-            .filter(|token| !token.is_empty())
-            .map(str::to_lowercase)
-            .collect::<Vec<String>>()
-            .join(" ")
-    }
-    let left = key(left);
-    !left.is_empty() && left == key(right)
-}
-
 /// Keep only the answers that are a character-for-character copy of a seeded
 /// source line, and render the SEEDED line rather than the model's copy.
 ///
@@ -560,13 +482,6 @@ fn strip_heading(text: &str, heading: &str) -> String {
         lines.next();
     }
     lines.collect::<Vec<&str>>().join("\n").trim().to_string()
-}
-
-/// One paragraph: every internal newline becomes a space, so a description
-/// cannot silently add lines to a project entry and push it out of the
-/// structure check's accepted shapes.
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<&str>>().join(" ")
 }
 
 fn strip_marker(bullet: &str) -> String {

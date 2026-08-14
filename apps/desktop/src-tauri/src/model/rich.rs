@@ -369,6 +369,38 @@ mod tests {
         );
     }
 
+    /// The exact shape `pipeline::resume::assemble::render_project` emits for
+    /// a project title line — a bold name followed by two labeled project
+    /// links, `·`-separated. Both labels ("Website"/"Github") must render as
+    /// the CLICKABLE TEXT, not the raw URL — this is what carries a source
+    /// résumé's own link labels through to the PDF/DOCX export rather than
+    /// falling back to the bare href.
+    #[test]
+    fn tokenize_renders_project_link_labels_as_the_hyperlink_text() {
+        let rt = tokenize_rich(
+            "**Ledger CLI** · [Website](https://ledger.example.dev) · \
+             [Github](https://github.com/janedoe/ledger)",
+        );
+        assert_eq!(
+            shape(&rt),
+            vec![
+                ("Ledger CLI".to_string(), true, None),
+                (" · ".to_string(), false, None),
+                (
+                    "Website".to_string(),
+                    false,
+                    Some("https://ledger.example.dev".to_string())
+                ),
+                (" · ".to_string(), false, None),
+                (
+                    "Github".to_string(),
+                    false,
+                    Some("https://github.com/janedoe/ledger".to_string())
+                ),
+            ]
+        );
+    }
+
     #[test]
     fn tokenize_parses_bold_inside_a_link_label() {
         let rt = tokenize_rich("[**Site**](https://janedoe.dev)");
