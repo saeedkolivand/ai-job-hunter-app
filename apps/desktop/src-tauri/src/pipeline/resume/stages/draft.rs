@@ -19,8 +19,9 @@ use serde_json::json;
 
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::error::AppResult;
+use crate::pipeline::resume::projects::{self, ProjectsNormalizeStats};
 use crate::pipeline::resume::prompts::{draft_system, draft_user};
-use crate::pipeline::resume::QualityCtx;
+use crate::pipeline::resume::{source, QualityCtx};
 use crate::pipeline::Stage;
 
 pub struct Draft;
@@ -80,12 +81,30 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
 
         let text = completer.stream_captured(ctx.input.job_id, req).await?;
         ctx.ledger.count_call(false);
-        // Length only — never the draft itself (ADR-027).
+
+        // Deterministic, zero-cost: the Projects section is CODE-OWNED at
+        // quality depth too, the same way `assemble::render_project` already
+        // owns it at max — a model-invented project is dropped and a kept
+        // one's links/stack come back from the source verbatim, never re-asked.
+        let seeds = source::seed_projects(ctx.input.source_resume);
+        let (draft, stats) = match projects::normalize_projects_with_stats(&text, &seeds) {
+            Some((normalized, stats)) => (normalized, stats),
+            None => (text, ProjectsNormalizeStats::default()),
+        };
+
+        // Length + projects-normalize counts only — never the draft itself
+        // (ADR-027).
         ctx.ledger.record(
             "draft",
-            json!({ "chars": text.chars().count(), "lines": text.lines().count() }),
+            json!({
+                "chars": draft.chars().count(),
+                "lines": draft.lines().count(),
+                "projectsMatched": stats.matched,
+                "projectsDropped": stats.dropped,
+                "linksRestored": stats.links_restored,
+            }),
         );
-        ctx.draft = text;
+        ctx.draft = draft;
         Ok(())
     }
 }

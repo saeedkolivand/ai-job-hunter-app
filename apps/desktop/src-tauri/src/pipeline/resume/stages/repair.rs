@@ -43,7 +43,7 @@ use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::StoppedReason;
 use crate::pipeline::resume::prompts::{repair_system, repair_user};
 use crate::pipeline::resume::types::SectionKey;
-use crate::pipeline::resume::{QualityCtx, RunDeadline};
+use crate::pipeline::resume::{projects, source, QualityCtx, RunDeadline};
 use crate::pipeline::{Completer, Stage};
 use crate::validate::content::{
     ContentIssue, ContentReport, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
@@ -344,19 +344,29 @@ pub(crate) struct RepairStats {
 ///
 /// Only a `revalidate` failure is an `Err` — that is a `spawn_blocking` join
 /// failure, i.e. the process, not the model.
+///
+/// `normalize` runs on the round's candidate AFTER the section splices and
+/// BEFORE `revalidate` — the deterministic projects-normalization pass
+/// (`pipeline::resume::projects::normalize_projects`) so the document the
+/// validator grades is the one that is actually kept, and a repair round
+/// "fixing" an unrelated Critical cannot leave a project link altered behind
+/// it. `None` means no change, exactly like `normalize_projects`'s own
+/// contract.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn repair_loop<F, Fut, G, GFut>(
+pub(crate) async fn repair_loop<F, Fut, N, G, GFut>(
     mut draft: String,
     mut report: ContentReport,
     mut letter: Option<ContentReport>,
     max_rounds: u32,
     deadline: RunDeadline,
     mut regenerate: F,
+    normalize: N,
     mut revalidate: G,
 ) -> AppResult<(String, ContentReport, Option<ContentReport>, RepairStats)>
 where
     F: FnMut(SectionKey, String, Vec<String>) -> Fut,
     Fut: Future<Output = AppResult<SectionOutcome>>,
+    N: Fn(&str) -> Option<String>,
     G: FnMut(String) -> GFut,
     GFut: Future<Output = AppResult<(ContentReport, Option<ContentReport>)>>,
 {
@@ -420,6 +430,13 @@ where
             break;
         }
 
+        // Deterministic and zero-cost: re-render the Projects section from the
+        // source-seeded truth BEFORE the candidate is graded, so the report
+        // `revalidate` returns describes the document that is actually kept.
+        if let Some(normalized) = normalize(&candidate) {
+            candidate = normalized;
+        }
+
         let (candidate_report, candidate_letter) = revalidate(candidate.clone()).await?;
         let (_, after) = counts(&candidate_report);
 
@@ -471,6 +488,9 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
         // each other: `QualityInput` is `Copy` and `completer` is a shared ref.
         let input = ctx.input;
         let completer = ctx.completer_for(NAME);
+        // Computed ONCE per run — every round's normalize call reads the same
+        // seeds, exactly like `Draft::run`'s.
+        let seeds = source::seed_projects(input.source_resume);
 
         let (draft, report, letter, stats) = repair_loop(
             std::mem::take(&mut ctx.draft),
@@ -490,6 +510,7 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
                 )
                 .await
             },
+            |candidate: &str| projects::normalize_projects(candidate, &seeds),
             |candidate| {
                 validate_documents(
                     candidate,

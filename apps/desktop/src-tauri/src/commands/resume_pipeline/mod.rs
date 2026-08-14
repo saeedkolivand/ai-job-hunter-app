@@ -83,7 +83,7 @@ use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::resume::stages::{self, regenerate_one_section, section_gen, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
-use crate::pipeline::resume::{QualityCtx, QualityInput, RunDeadline, RunLedger};
+use crate::pipeline::resume::{projects, QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
@@ -996,6 +996,15 @@ pub async fn resume_pipeline_regenerate_section(
             )));
         }
     };
+
+    // Deterministic, zero-cost: a regenerate click can rewrite the Projects
+    // section too (the whole-section rewrite fallback above is not scoped to
+    // any one section), so the same code-owned normalization the run itself
+    // applies must run here before the fresh report is computed — otherwise a
+    // click could persist an altered project link the run would never have let
+    // through. A no-op (`None`) for every other section.
+    let project_seeds = crate::pipeline::resume::source::seed_projects(&source);
+    let spliced = projects::normalize_projects(&spliced, &project_seeds).unwrap_or(spliced);
 
     // The merge rule again: this save writes `resume_text`, so it carries a
     // FRESH report over the spliced document — never the stale one the panel

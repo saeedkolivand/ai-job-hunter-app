@@ -2141,6 +2141,7 @@ async fn a_faithful_repair_round_keeps_every_seeded_identity_line() {
             let spliced = sections::splice(&document, section, &faithful);
             async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
         },
+        |_: &str| None,
         max_revalidate,
     )
     .await
@@ -2212,6 +2213,7 @@ async fn a_repair_round_that_loses_a_seeded_identity_line_is_reverted() {
             let spliced = sections::splice(&document, section, &lossy);
             async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
         },
+        |_: &str| None,
         max_revalidate,
     )
     .await
@@ -2287,6 +2289,7 @@ async fn a_repair_round_that_loses_a_source_project_link_is_reverted() {
             let spliced = sections::splice(&document, section, lossy);
             async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
         },
+        |_: &str| None,
         max_revalidate,
     )
     .await

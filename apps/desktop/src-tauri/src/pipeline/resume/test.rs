@@ -1681,6 +1681,7 @@ async fn the_repair_loop_splices_revalidates_and_stops_when_clean() {
             let spliced = sections::splice(&document, section, REPAIR_FIXED_SUMMARY);
             async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
         },
+        |_: &str| None,
         repair_revalidate,
     )
     .await
@@ -1735,6 +1736,7 @@ async fn the_repair_loop_reverts_a_round_that_adds_criticals() {
             let spliced = sections::splice(&document, section, worse);
             async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
         },
+        |_: &str| None,
         repair_revalidate,
     )
     .await
@@ -1835,6 +1837,7 @@ async fn the_repair_loop_stops_at_the_run_deadline_without_paying_for_a_call() {
             calls += 1;
             async move { Ok(super::stages::SectionOutcome::Replaced(String::new())) }
         },
+        |_: &str| None,
         repair_revalidate,
     )
     .await
@@ -1909,6 +1912,7 @@ async fn the_repair_loop_stops_between_section_calls_not_only_between_rounds() {
                 Ok(super::stages::SectionOutcome::Replaced(spliced))
             }
         },
+        |_: &str| None,
         |candidate| {
             let candidate = candidate.clone();
             async move {
@@ -1963,6 +1967,7 @@ async fn the_repair_loop_survives_a_section_error_and_stops_on_the_daily_cap() {
                 "the model fell over".to_string(),
             ))
         },
+        |_: &str| None,
         repair_revalidate,
     )
     .await
@@ -1985,6 +1990,7 @@ async fn the_repair_loop_survives_a_section_error_and_stops_on_the_daily_cap() {
                 "daily provider ceiling reached".to_string(),
             ))
         },
+        |_: &str| None,
         repair_revalidate,
     )
     .await
@@ -2016,6 +2022,7 @@ async fn a_missing_section_is_not_counted_as_a_provider_call() {
         2,
         live_deadline(),
         |_key, _document, _issues| async move { Ok(super::stages::SectionOutcome::Missing) },
+        |_: &str| None,
         repair_revalidate,
     )
     .await
@@ -2032,6 +2039,71 @@ async fn a_missing_section_is_not_counted_as_a_provider_call() {
         "the round happened; it just achieved nothing"
     );
     assert_eq!(document, REPAIR_DRAFT);
+}
+
+/// **`normalize` runs on the round's candidate AFTER the section splices and
+/// BEFORE `revalidate`.** A closure that visibly mutates the candidate
+/// (uppercases it) must be exactly what `revalidate` receives — proving the
+/// seam fires, and fires in the right order, independent of
+/// `projects::normalize_projects`'s own logic (which has its own tests).
+///
+/// `revalidate` is a stub here (not the real validator) on purpose: this test
+/// is about ORDERING, not about what an uppercased résumé validates as.
+///
+/// Mutation check: apply `normalize` to `draft` instead of `candidate` (i.e.
+/// before the section-splice loop runs) — `calls[0]` would then be the
+/// UN-spliced, uppercased original draft and would not contain the spliced-in
+/// fixed summary, failing the second assertion.
+#[tokio::test]
+async fn the_repair_loop_applies_normalize_after_splicing_and_before_revalidate() {
+    use std::sync::{Arc, Mutex};
+
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_for_revalidate = Arc::clone(&seen);
+
+    let (_document, _report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        1, // one round is enough to observe the ordering
+        live_deadline(),
+        |key, document, _issues| {
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the summary exists");
+            let spliced = sections::splice(&document, section, REPAIR_FIXED_SUMMARY);
+            async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
+        },
+        |candidate: &str| Some(candidate.to_uppercase()),
+        move |candidate: String| {
+            seen_for_revalidate.lock().unwrap().push(candidate);
+            async move {
+                Ok((
+                    crate::validate::content::ContentReport {
+                        ok: true,
+                        issues: Vec::new(),
+                        metrics: crate::validate::content::ContentMetrics::default(),
+                    },
+                    None,
+                ))
+            }
+        },
+    )
+    .await
+    .expect("re-validation ran");
+
+    assert_eq!(stats.rounds, 1);
+    let calls = seen.lock().unwrap();
+    assert_eq!(calls.len(), 1, "one revalidation call");
+    assert_eq!(
+        calls[0],
+        calls[0].to_uppercase(),
+        "revalidate must see the candidate AFTER normalize ran"
+    );
+    assert!(
+        calls[0].contains("BUILT THE LEDGER SERVICE"),
+        "…and after the splice too — normalize runs on the SPLICED candidate: {}",
+        calls[0]
+    );
 }
 
 /// **A round spends its budget on the WORST sections, not the alphabetically
