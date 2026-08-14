@@ -1691,6 +1691,32 @@
       "error": "failed"
     },
     "stageCounter": "Step {{current}} of {{total}}",
+    "step": {
+      "title": "Progress",
+      "announce": "{{step}} — {{state}}",
+      "state": {
+        "done": "Done",
+        "active": "In progress",
+        "pending": "Not started yet"
+      },
+      "analyze": {
+        "label": "Analyze",
+        "description": "Reads the job ad and matches it against your evidence."
+      },
+      "generate": {
+        "label": "Generate",
+        "description": "Drafts your résumé — and the cover letter, if you asked for one."
+      },
+      "validate": {
+        "label": "Validate",
+        "description": "Checks every claim against your résumé and fixes what it can."
+      },
+      "humanize": {
+        "label": "Remove AI signs",
+        "description": "Rewrites only the lines that read as AI-written."
+      },
+      "allDone": "All steps completed"
+    },
     "state": {
       "queued": "Waiting for a free slot…",
       "preparing": "Preparing",
@@ -1902,19 +1928,12 @@
       "infoLabel": "Board results"
     },
     "apply": {
-      "depthUnavailable": "The staged depths need a saved résumé and a posting from your job list. This flow tailors the text in the wizard, so this run stays Fast — your choice is remembered.",
       "back": "Back to autopilot",
       "match": "match",
       "jobDescription": "Job description",
       "fetchingDescription": "Fetching job description…",
       "generate": "Generate",
-      "generating": "Generating…",
-      "generatingHint": "This can take a moment — tailoring against the job posting.",
-      "reasoningHeavyHint": "This model is spending far more on internal reasoning than on the document. Expect several minutes — it is working, not stuck.",
       "cancel": "Cancel",
-      "analyzing": "Analyzing job description…",
-      "writingResume": "Writing resume…",
-      "writingCover": "Writing cover letter…",
       "copy": "Copy",
       "copied": "Copied",
       "selectModel": "Select an AI model first",
@@ -1968,6 +1987,7 @@
       "tryAgain": "Try again",
       "hintNoResume": "Add your resume to generate",
       "hintNoDescription": "No job description to tailor against",
+      "cancelledNoOutput": "Generation was cancelled — nothing was written yet.",
       "wizard": {
         "steps": {
           "jobAd": "Job ad",
@@ -1989,7 +2009,8 @@
         },
         "model": {
           "title": "AI model",
-          "subtitle": "Pick the model and optional company research"
+          "subtitle": "Pick the model and optional company research",
+          "stagedCost": "Every tailor runs several model calls in stages — analyze, generate, validate, then remove AI signs — so it typically takes minutes, not seconds. The trade: a résumé that's checked before you ever see it."
         },
         "next": "Next",
         "back": "Back",
@@ -2000,7 +2021,18 @@
         },
         "results": {
           "regenerate": "Regenerate",
-          "edit": "Edit settings"
+          "edit": "Edit settings",
+          "needsReviewTitle_one": "Not finished — {{count}} claim needs your verdict",
+          "needsReviewTitle_other": "Not finished — {{count}} claims need your verdict",
+          "needsReviewHint": "The document exists, but the checks couldn't trace these lines back to your résumé. Open the report and keep or remove each one.",
+          "needsReviewHintCold": "This run needs to be reopened before these claims can be reviewed and resolved.",
+          "needsReviewTitleEmpty": "Not finished — one of the checks flagged something to look at",
+          "needsReviewHintEmpty": "See the quality badge above the document for details.",
+          "cancelledHint": "Whatever the run had already written was saved.",
+          "failedTitle": "The run failed",
+          "failedHint": "Nothing is retried automatically — try again in a moment.",
+          "fixFailed": "Couldn't regenerate that section. {{detail}}",
+          "resolveFailed": "Couldn't record that decision. {{detail}}"
         }
       }
     },

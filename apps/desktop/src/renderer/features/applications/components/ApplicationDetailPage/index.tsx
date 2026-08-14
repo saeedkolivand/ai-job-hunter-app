@@ -345,6 +345,12 @@ function ApplicationDetailLoaded({
         // Drop any autopilot one-shot seed/badge left over from another application.
         applySeedResume: null,
         applyMatchLevel: null,
+        // …and any staged-run reconnect target. Not load-bearing for
+        // correctness (DocumentsTab reads `applyRun` gated on `forId`, so a
+        // stale entry left here is simply ignored by ANY other application)
+        // — this just keeps the store from accumulating one abandoned run
+        // per application switch.
+        applyRun: null,
       });
     }
   }, [application.id, applicationApply.applyForId, setApplicationApply]);
@@ -1110,6 +1116,14 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     salaryCurrency: application.salaryCurrency,
   };
 
+  // Self-describing read: only trust `applyRun` when it was written FOR this
+  // application. Evaluated at render time (not in an effect), so it's correct
+  // on the very first render even when this tab mounts (default tab) before
+  // the parent's applyForId-reset effect has had a chance to run — see
+  // `ApplicationApplySlice.applyRun`'s doc comment for the full hazard.
+  const applyRun =
+    applicationApply.applyRun?.forId === application.id ? applicationApply.applyRun : null;
+
   const persistence: TailorFlowPersistence = {
     wizardStep: applicationApply.applyWizardStep,
     wizardForm: applicationApply.applyWizardForm,
@@ -1117,12 +1131,18 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     atsMode: applicationApply.applyAtsMode,
     accent: applicationApply.applyAccent,
     letterLayoutId: applicationApply.applyLetterLayoutId,
+    runId: applyRun?.runId ?? null,
+    runJobId: applyRun?.jobId ?? null,
     setWizardStep: (v) => setApplicationApply({ applyWizardStep: v }),
     setWizardForm: (v) => setApplicationApply({ applyWizardForm: v }),
     setTemplateId: (v) => setApplicationApply({ applyTemplateId: v }),
     setAtsMode: (v) => setApplicationApply({ applyAtsMode: v }),
     setAccent: (v) => setApplicationApply({ applyAccent: v }),
     setLetterLayoutId: (v) => setApplicationApply({ applyLetterLayoutId: v }),
+    setRun: (ids) =>
+      setApplicationApply({
+        applyRun: ids ? { forId: application.id, runId: ids.runId, jobId: ids.jobId } : null,
+      }),
   };
 
   return (

@@ -4,8 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type * as DepthSelectorModule from '@/components/generation/DepthSelector';
-
 import { buildTailorDefaults, type TailorWizardState } from '../../lib/tailor-state';
 import { StepModel } from './index';
 
@@ -16,14 +14,6 @@ vi.mock('@ajh/translations', () => ({
 // The global model picker is out of scope here — stub it to a stable marker.
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector" />,
-}));
-
-// The depth picker's "is the active model small AND local" probe reaches for
-// the app client — stub the probe, keep the real picker rendered so its RHF
-// wiring below is exercised for real.
-vi.mock('@/components/generation/DepthSelector', async (importOriginal) => ({
-  ...(await importOriginal<typeof DepthSelectorModule>()),
-  useSmallModelWarning: () => false,
 }));
 
 // Controllable Ollama-key predicate — the seam under test.
@@ -74,24 +64,11 @@ describe('StepModel — Ollama research-key hint', () => {
   });
 });
 
-describe('StepModel — generation depth', () => {
-  it('shows the depth picker seeded from the Settings default', () => {
+describe('StepModel — staged-run cost line', () => {
+  it('shows the honest cost copy instead of a depth picker', () => {
     mockNeedsResearchKey = false;
     renderStep(true);
-    // Three depths, and the form's own value starts UNSET so the Settings
-    // default (`fast`) is what is checked.
-    expect(screen.getAllByRole('radio')).toHaveLength(3);
-    expect(
-      screen.getByRole('radio', { name: /generationDepth.option.fast.label/ })
-    ).toHaveAttribute('aria-checked', 'true');
-  });
-
-  it('writes a per-run override into the wizard form', async () => {
-    mockNeedsResearchKey = false;
-    const user = userEvent.setup();
-    renderStep(true);
-    const quality = screen.getByRole('radio', { name: /generationDepth.option.quality.label/ });
-    await user.click(quality);
-    expect(quality).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('autopilot.apply.wizard.model.stagedCost')).toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
   });
 });

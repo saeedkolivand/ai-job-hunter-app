@@ -4,7 +4,7 @@ import { useTranslation } from '@ajh/translations';
 import { SegmentedControl } from '@ajh/ui';
 
 import type { TailorWizardState } from '../../lib/tailor-state';
-import type { TailorTarget } from '../../useTailorGeneration';
+import type { TailorTarget } from '../../lib/tailor-target';
 
 /** Output-type step — resume, cover letter, or both. Bounded control, no gate. */
 export function StepOutput() {

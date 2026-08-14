@@ -51,8 +51,27 @@ export interface ResumePipelineSession {
    * At MAX depth the same channel carries the progressive assembly: each
    * finished section's text is appended as its stage produces it, so this builds
    * up section by section instead of token by token. Display-only either way.
+   *
+   * **Stops growing once the `cover_letter` stage starts** — see
+   * {@link ResumePipelineSession.letterDraft}.
    */
   draft: string;
+  /**
+   * The `cover_letter` stage's streamed text, for DISPLAY ONLY — the same
+   * `ai:stream` channel as {@link ResumePipelineSession.draft} carries BOTH
+   * documents in sequence (draft, then the letter), so this hook splits the
+   * one stream at the `cover_letter` stage's `start` event rather than mashing
+   * the letter's tokens onto the end of the résumé buffer. Empty for a run
+   * that never includes a letter (`cover_letter` still runs but writes
+   * nothing) and for a reconnected run (the stream is not replayed).
+   */
+  letterDraft: string;
+  /**
+   * Reasoning/thinking tokens from EITHER streamed stage, for DISPLAY ONLY —
+   * not split by document (a reasoning bubble reads fine as one continuous
+   * transcript; only the finished text needs to land in the right pane).
+   */
+  thinking: string;
   /** The run record: the authority on status, report, metrics and document. */
   detail: PipelineRunDetail | null;
   /** A start failure, or the stopped reason of a run that ended badly. */
@@ -96,7 +115,13 @@ export function useResumePipelineSession(
   const [stage, setStage] = useState<PipelineStageProgress | null>(null);
   const [sectionStates, setSectionStates] = useState<PipelineSectionStates>({});
   const [draft, setDraft] = useState('');
+  const [letterDraft, setLetterDraft] = useState('');
+  const [thinking, setThinking] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Flips once, at the `cover_letter` stage's `start` event — see
+  // `ResumePipelineSession.letterDraft`. A ref because it must be readable
+  // from `appendDraft` without re-subscribing the stream on every stage event.
+  const writingLetterRef = useRef(false);
 
   const startRun = useStartResumePipelineRun();
   const cancelJob = useCancelJob();
@@ -132,6 +157,13 @@ export function useResumePipelineSession(
       // returns its input unchanged when nothing moved, so a quality-depth run
       // — which has no section events at all — never re-renders for this.
       setSectionStates((current) => foldSectionStates(current, event));
+      // The one thing that decides which buffer new deltas land in — flips
+      // ONCE, at the letter stage's start, and never back: nothing after it
+      // (validate/repair/humanize) streams visibly, so there is nothing left
+      // to misroute once it is set.
+      if (event.stage === 'cover_letter' && event.phase === 'start') {
+        writingLetterRef.current = true;
+      }
       const next = stageToEvent(event.stage, event.phase);
       if (next) send(next);
     },
@@ -139,8 +171,12 @@ export function useResumePipelineSession(
   );
   usePipelineStageEvents(handleStage);
 
-  const appendDraft = useCallback((delta: string) => setDraft((prev) => prev + delta), []);
-  usePipelineDraftStream(jobId, appendDraft);
+  const appendDraft = useCallback((delta: string) => {
+    if (writingLetterRef.current) setLetterDraft((prev) => prev + delta);
+    else setDraft((prev) => prev + delta);
+  }, []);
+  const appendThinking = useCallback((delta: string) => setThinking((prev) => prev + delta), []);
+  usePipelineDraftStream(jobId, appendDraft, appendThinking);
 
   /**
    * The failures the run RECORD can never report, and the one job event that can.
@@ -255,6 +291,9 @@ export function useResumePipelineSession(
       setStage(null);
       setSectionStates({});
       setDraft('');
+      setLetterDraft('');
+      setThinking('');
+      writingLetterRef.current = false;
       replayed.current = null;
       send('START');
       try {
@@ -291,6 +330,9 @@ export function useResumePipelineSession(
     setStage(null);
     setSectionStates({});
     setDraft('');
+    setLetterDraft('');
+    setThinking('');
+    writingLetterRef.current = false;
     setError(null);
     replayed.current = null;
   }, [send]);
@@ -303,6 +345,8 @@ export function useResumePipelineSession(
     stage,
     sectionStates,
     draft,
+    letterDraft,
+    thinking,
     detail,
     error,
     starting: startRun.isPending,

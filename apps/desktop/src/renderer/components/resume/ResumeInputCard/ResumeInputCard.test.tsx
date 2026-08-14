@@ -66,6 +66,7 @@ interface StubHook {
   handleFileChange: ReturnType<typeof vi.fn>;
   handleSavePaste: ReturnType<typeof vi.fn>;
   handleProfileUrlSubmit: ReturnType<typeof vi.fn>;
+  handleTextChange: ReturnType<typeof vi.fn>;
   toggleUrlInput: ReturnType<typeof vi.fn>;
   clearReview: ReturnType<typeof vi.fn>;
 }
@@ -100,6 +101,7 @@ const baseHook: StubHook = {
   handleFileChange: vi.fn(),
   handleSavePaste: vi.fn(),
   handleProfileUrlSubmit: vi.fn(),
+  handleTextChange: vi.fn(),
   toggleUrlInput: vi.fn(),
   clearReview: vi.fn(),
 };

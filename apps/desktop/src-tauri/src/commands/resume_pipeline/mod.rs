@@ -10,9 +10,17 @@
 //!   wire schema has no `maxSteps`/`maxTokens`/`runTimeout` field to bind, so a
 //!   compromised renderer has no unbounded-spend knob (pinned by
 //!   `run_request_carries_only_identity_no_budget`).
-//! * **The inputs** — the résumé text comes from the `DocumentStore` by id and
-//!   the posting text from the postings cache by id, so a prompt is never built
-//!   from renderer-supplied document bodies.
+//! * **The inputs, two ways in per side, ID WINS.** The résumé and the posting
+//!   each resolve from EITHER a server-side lookup (`DocumentStore` by
+//!   `resumeId`, the live postings cache by `jobId`) OR renderer-supplied text
+//!   (`resumeText`/`jobAdText`) — added so a pasted job ad or an Autopilot
+//!   found job, neither of which has a cache id or a stored résumé id, can
+//!   still start a staged run. [`resume_source`]/[`job_source`] are the pure
+//!   decision: a nonempty id ALWAYS wins over its matching text field (a run
+//!   that sends both never silently prefers the text), and a miss on the id
+//!   path is a hard error — it never falls back to the text field. Renderer
+//!   text still reaches a prompt ONLY through the existing `fenced(...)` paths
+//!   (ADR-010); this does not add a second way in for untrusted text.
 //!
 //! ## Where a run's pieces live
 //!
@@ -58,6 +66,7 @@ pub mod hooks;
 pub mod max;
 pub mod notify;
 pub mod report;
+mod resolve;
 
 #[cfg(test)]
 mod max_test;
@@ -104,51 +113,14 @@ pub(crate) const STATUS_NEEDS_REVIEW: &str = "needsReview";
 pub(crate) const STATUS_FAILED: &str = "failed";
 pub(crate) const STATUS_CANCELLED: &str = "cancelled";
 
-/// The renderer-supplied free text of one run request, CLAMPED server-side.
-///
-/// The wire schema's `.max(…)` caps are Zod, and Zod does not run on this
-/// transport (`tauri-client` calls `invoke` directly, no parse on the way out),
-/// so serde accepts whatever a direct IPC caller sends. Every other command
-/// that takes this same text mirrors its caps in Rust —
-/// `commands::resume::resume_validate_content` is where these constants live,
-/// and they are HOISTED from there rather than re-declared, because two copies
-/// of "50 requirements, 300 bytes each" is exactly how one of them drifts.
-struct ClampedRequest {
-    job_url: String,
-    target_language: String,
-    top_requirements: Vec<String>,
-    cover_letter: String,
-}
-
-// `include_cover_letter` is a plain `bool` — no free text to clamp, so it rides
-// straight from `req` into `QualityInput` at the call site rather than through
-// `ClampedRequest`, which exists only for fields that need one.
-
-/// Byte cap on the request's `jobUrl` — mirrors the schema's `.max(2_048)`.
-/// This value is a STORAGE key (the run row's retention partition and the
-/// aggregate lookup), so an unbounded one writes an unbounded row.
-const JOB_URL_CAP: usize = 2_048;
-
-/// Clamp every renderer-supplied free-text field of a run request. Pure, so the
-/// caps are a test rather than a claim.
-fn clamp_request(req: &ResumePipelineRunRequest) -> ClampedRequest {
-    use crate::applications::{clamp_to_bytes, MAX_JOB_DESCRIPTION_BYTES};
-    use crate::commands::resume::{
-        TARGET_LANGUAGE_CAP, TOP_REQUIREMENTS_CAP, TOP_REQUIREMENT_BYTES_CAP,
-    };
-
-    ClampedRequest {
-        job_url: clamp_to_bytes(req.job_url.clone(), JOB_URL_CAP),
-        target_language: clamp_to_bytes(req.target_language.clone(), TARGET_LANGUAGE_CAP),
-        top_requirements: req
-            .top_requirements
-            .iter()
-            .take(TOP_REQUIREMENTS_CAP)
-            .map(|r| clamp_to_bytes(r.clone(), TOP_REQUIREMENT_BYTES_CAP))
-            .collect(),
-        cover_letter: clamp_to_bytes(req.cover_letter_text.clone(), MAX_JOB_DESCRIPTION_BYTES),
-    }
-}
+// The clamp + the ID-WINS résumé/job-ad resolution decision live in
+// `resolve` — split out to stay under R8's per-module LOC cap
+// (`docs/architecture-rules.md`). Re-imported below so `execute`/
+// `persist_document` read exactly as they did inline.
+use self::resolve::{
+    clamp_request, job_ad_for_persist, job_meta_from_request, job_source, resume_source,
+    ClampedRequest,
+};
 
 /// Start one staged résumé run. Returns `{ runId, jobId }` immediately; stage
 /// progress streams as `pipeline:stage` and the draft's deltas as `ai:stream`
@@ -251,20 +223,50 @@ async fn execute(
     // on a max run, which has no draft stage, and a stage that makes no call
     // has no routing to resolve (see `max::paying_stages`).
     let stage_completers = Completer::for_stages(app, &max::paying_stages(depth))?;
-    let resume = app
-        .state::<DocumentStore>()
-        .get(&req.resume_id)
-        .ok_or_else(|| AppError::Validation(format!("resume not found: {}", req.resume_id)))?;
-    let job_ad = crate::commands::match_resume::job_text_for(app, &req.job_id)
-        .ok_or_else(|| AppError::Validation(format!("job not found in cache: {}", req.job_id)))?;
-    let meta = crate::commands::match_resume::job_meta_for(app, &req.job_id).unwrap_or_default();
+
+    // ID WINS, no silent fallback: a nonempty `resumeId`/`jobId` is looked up
+    // and a miss is a hard error — `resumeText`/`jobAdText` are never
+    // consulted on that path, even when the request carries both. Resolved
+    // from the CLAMPED ids (never `req.resume_id`/`req.job_id` directly):
+    // both reach a renderer-visible error message on a miss and the run's
+    // `metrics_json` on a hit, so an unbounded copy would let a hostile
+    // direct-IPC caller grow either without limit. See the module doc and
+    // `resolve::{resume_source, job_source, resolve_resume, resolve_job}` —
+    // the decision AND its behavior are pure there, provable without an
+    // `AppHandle`; only the actual store/cache reads stay here.
+    let resume_choice =
+        resume_source(&clamped.resume_id, &clamped.resume_text).ok_or_else(|| {
+            AppError::Validation("either a résumé id or résumé text is required".to_string())
+        })?;
+    let resume_text = resolve::resolve_resume(resume_choice, |id| {
+        app.state::<DocumentStore>()
+            .get(id)
+            .map(|record| record.text)
+    })?;
+
+    let job_choice = job_source(&clamped.job_id, &clamped.job_ad_text).ok_or_else(|| {
+        AppError::Validation("either a job id or job ad text is required".to_string())
+    })?;
+    let (job_ad, meta) = resolve::resolve_job(
+        job_choice,
+        |id| crate::commands::match_resume::job_text_for(app, id),
+        |id| crate::commands::match_resume::job_meta_for(app, id),
+        || job_meta_from_request(&clamped),
+    )?;
     // The posting's OWN url wins over the request's: it was resolved
-    // server-side from the cache, and it is the retention + aggregate key.
+    // server-side from the cache, and it is the AGGREGATE's key
+    // (`AiGenerationRecord.job_url` — see `resolve::job_ad_for_persist`'s doc
+    // for the trust asymmetry between the two paths). On the text path
+    // `meta.url` IS the request's `jobUrl` (`job_meta_from_request`), so this
+    // still resolves to the same value.
     let job_url = if meta.url.trim().is_empty() {
         clamped.job_url.clone()
     } else {
         meta.url.clone()
     };
+    // The run-STORE's OWN key — see `resolve::run_store_job_url`'s doc for
+    // why an unlinked text-path run does not simply reuse `job_url` here.
+    let run_job_url = resolve::run_store_job_url(&job_url, job_choice);
 
     let span = crate::observability::Span::begin(
         "pipeline:resume",
@@ -282,7 +284,7 @@ async fn execute(
     let started_at = crate::db::now_ms();
     let mut row = RunRow {
         id: run_id.to_string(),
-        job_url: job_url.clone(),
+        job_url: run_job_url,
         kind: RUN_KIND.to_string(),
         depth: depth.as_str().to_string(),
         status: STATUS_RUNNING.to_string(),
@@ -313,7 +315,7 @@ async fn execute(
     let cache = app.try_state::<KvCache>();
     let mut ctx = QualityCtx::new(
         QualityInput {
-            source_resume: &resume.text,
+            source_resume: &resume_text,
             job_ad: &job_ad,
             target_language: &clamped.target_language,
             top_requirements: &clamped.top_requirements,
@@ -376,7 +378,15 @@ async fn execute(
     // stopped at the repair stage still wrote a real document, and discarding
     // it because the report is not clean is the opposite of what the terminal
     // review is for.
-    let quality_report = persist_document(app, &job_url, &meta, &clamped, &ctx, depth.as_str());
+    let quality_report = persist_document(
+        app,
+        &job_url,
+        &meta,
+        &clamped,
+        &job_ad_for_persist(job_choice),
+        &ctx,
+        depth.as_str(),
+    );
     // A REFUSED save is not a successful run. `is_persistable` rejects a
     // document that lost the source's whole work history, and `terminal_state`
     // would otherwise read `outcome == Ok` and report `completed` — a run the
@@ -421,7 +431,21 @@ async fn execute(
         // a re-validation is only meaningful against the SOURCE résumé; the
         // aggregate stores the output, not the input. An id is content-free
         // (ADR-027), which is why this column can carry it at all.
-        object.insert("sourceResumeId".to_string(), json!(req.resume_id));
+        //
+        // ONLY on the `Store` path: `resumeText` never lived in the
+        // `DocumentStore`, so there is no id to carry, and writing an EMPTY
+        // one would be indistinguishable from a real (if deleted) id to
+        // `source_resume_for`'s `sourceResumeId` read. Leaving the key out
+        // entirely reads back as `None`, which sends `source_resume_for` down
+        // its documented weaker fallback (measure against the run's own
+        // output) — and that fallback is exactly why
+        // `normalize_regenerated_projects` refuses to write from it
+        // (`source_is_provenanced`, PR-1): a text-path run's later
+        // `regenerateSection` re-validates fine but does not re-normalize
+        // Projects from an untracked source.
+        if let Some(id) = resolve::source_resume_id_for_metrics(resume_choice) {
+            object.insert("sourceResumeId".to_string(), json!(id));
+        }
     }
     row.metrics_json = metrics.to_string();
     store.upsert_run(&row)?;
@@ -534,11 +558,18 @@ async fn execute(
 ///   panel cannot describe and the user cannot undo. Nothing is saved, and the
 ///   previous document survives. Source-RELATIVE on purpose: a candidate whose
 ///   own résumé has no employment section is a real input, not a failure.
+///
+/// `job_ad_for_persist` is [`job_ad_for_persist`]'s output: empty on the
+/// `Cache` path (unchanged — see that fn's doc for why), the request's own
+/// job-ad text on the `Text` path. `merge_application`'s `pick` keeps the
+/// existing aggregate value whenever the incoming one is empty, so the
+/// `Cache` path's empty string never erases a `job_ad` an earlier save wrote.
 fn persist_document(
     app: &AppHandle,
     job_url: &str,
     meta: &crate::commands::match_resume::JobPostingMeta,
     clamped: &ClampedRequest,
+    job_ad_for_persist: &str,
     ctx: &QualityCtx<'_>,
     depth: &str,
 ) -> Option<String> {
@@ -571,7 +602,7 @@ fn persist_document(
         // posting's aggregate already had with a document this run never
         // generated.
         cover_letter_text: ctx.letter.clone(),
-        job_ad: String::new(),
+        job_ad: job_ad_for_persist.to_string(),
         job_url: job_url.to_string(),
         board: meta.board.clone(),
         company_name: meta.company.clone(),
