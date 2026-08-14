@@ -34,6 +34,13 @@
 //! [`projects::normalize_projects`] before it is graded — the SAME
 //! deterministic, zero-cost pass `draft`/`repair` already run — so a rewrite
 //! cannot silently alter a project link even if it tried to.
+//!
+//! ## Language residual
+//!
+//! A humanize rewrite in the target language (e.g., DE) using an English-lexicon
+//! rule dictionary (antiAiTellProse) can seed English vocabulary into non-English
+//! prose undetected by the per-language lexicon checks. Locale dispatch (using the
+//! per-language prose checks, not the English ones) is the future fix.
 
 use async_trait::async_trait;
 use serde_json::json;
@@ -106,17 +113,24 @@ pub(crate) fn voice_findings(report: &ContentReport, document: &str) -> Vec<Stri
         .collect()
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum HumanizeTierKind {
+    Resume,
+    Letter,
+}
+
 /// Whether a rewritten document is usable AT ALL — before it is ever graded.
 ///
 /// Two things have to hold: non-empty (trimmed), and not drastically shorter
-/// than the original. The length floor is deliberately generous (half the
-/// original) — this stage does not know how much text the flagged lines were,
-/// so a tight floor would reject a legitimate rewrite that also trimmed a
-/// wordy flagged bullet. What it catches is the shape `repair`'s own
-/// `sections::is_usable_replacement` exists for: a truncated or refused answer
-/// that would otherwise be spliced in as if it were the whole document,
-/// silently deleting everything past whatever the model actually returned.
-pub(crate) fn is_usable_rewrite(original: &str, candidate: &str) -> bool {
+/// than the original. The length floor is tier-dependent:
+/// - Resume tier: 50% (generous, accounts for trimmed wordy flagged bullets)
+/// - Letter tier: 90% (strict, requires near-complete preservation)
+///
+/// What it catches is the shape `repair`'s own `sections::is_usable_replacement`
+/// exists for: a truncated or refused answer that would otherwise be spliced in
+/// as if it were the whole document, silently deleting everything past whatever
+/// the model actually returned.
+pub(crate) fn is_usable_rewrite(original: &str, candidate: &str, tier: HumanizeTierKind) -> bool {
     let candidate = candidate.trim();
     if candidate.is_empty() {
         return false;
@@ -125,7 +139,17 @@ pub(crate) fn is_usable_rewrite(original: &str, candidate: &str) -> bool {
     if original_len == 0 {
         return true; // nothing to compare a ratio against
     }
-    candidate.chars().count() * 2 >= original_len
+    let candidate_len = candidate.chars().count();
+    match tier {
+        HumanizeTierKind::Resume => {
+            // Resume: keep if at least 50% of original length
+            candidate_len * 2 >= original_len
+        }
+        HumanizeTierKind::Letter => {
+            // Letter: keep if at least 90% of original length (strict)
+            candidate_len * 10 >= original_len * 9
+        }
+    }
 }
 
 /// Whether a humanize candidate must be discarded — [`super::repair::round_is_worse`]'s
@@ -162,6 +186,9 @@ pub(crate) struct HumanizeAttempt {
     pub failed: bool,
     /// The run's deadline had already passed; nothing was attempted.
     pub timed_out: bool,
+    /// The run hit a spend cap (Limiter refused the call) — distinct from
+    /// a provider failure or a timeout.
+    pub capped: bool,
 }
 
 impl HumanizeAttempt {
@@ -173,6 +200,7 @@ impl HumanizeAttempt {
             reverted: false,
             failed: false,
             timed_out: false,
+            capped: false,
         }
     }
 }
@@ -201,6 +229,7 @@ pub(crate) async fn humanize_one<F, Fut, N, G, GFut>(
     mut complete: F,
     normalize: N,
     mut revalidate: G,
+    tier: HumanizeTierKind,
 ) -> AppResult<HumanizeAttempt>
 where
     F: FnMut(String, Vec<String>) -> Fut,
@@ -226,7 +255,7 @@ where
             Ok(attempt)
         }
         Ok(candidate) => {
-            if !is_usable_rewrite(&original_text, &candidate) {
+            if !is_usable_rewrite(&original_text, &candidate, tier) {
                 let mut attempt = HumanizeAttempt::kept(original_text, original_report);
                 attempt.called = true;
                 return Ok(attempt);
@@ -251,6 +280,7 @@ where
                     reverted: false,
                     failed: false,
                     timed_out: false,
+                    capped: false,
                 })
             }
         }
@@ -282,7 +312,17 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
             // validate did not run — nothing to grade against.
             ctx.ledger.record(
                 NAME,
-                json!({ "resumeFlagged": 0, "letterFlagged": 0, "calls": 0 }),
+                json!({
+                    "resumeFlagged": 0,
+                    "letterFlagged": 0,
+                    "calls": 0,
+                    "reverted": false,
+                    "voiceBefore": 0,
+                    "voiceAfter": 0,
+                    "failed": false,
+                    "timedOut": false,
+                    "capped": false,
+                }),
             );
             return Ok(());
         };
@@ -300,6 +340,9 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                     "reverted": false,
                     "voiceBefore": 0,
                     "voiceAfter": 0,
+                    "failed": false,
+                    "timedOut": false,
+                    "capped": false,
                 }),
             );
             return Ok(());
@@ -315,6 +358,7 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         let mut reverted = false;
         let mut failed = false;
         let mut timed_out = false;
+        let mut capped = false;
 
         // Read out of `ctx` BEFORE building any closure — `input` is `Copy`,
         // `completer` is an owned `&'a Completer`, and this is the letter text
@@ -325,95 +369,118 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         let letter_for_resume_revalidate = ctx.letter_text().to_string();
 
         if resume_flagged > 0 {
-            let findings = voice_findings(&resume_report, &ctx.draft);
-            let attempt = humanize_one(
-                ctx.deadline,
-                ctx.draft.clone(),
-                resume_report,
-                findings,
-                |text, findings| async move {
-                    completer.charge_daily()?;
-                    completer
-                        .complete(
-                            &humanize_system(HumanizeTier::Resume, input.target_language),
-                            &humanize_user(&text, &findings),
-                            None,
-                        )
-                        .await
-                },
-                |candidate: &str| projects::normalize_projects(candidate, &seeds),
-                |candidate| {
-                    let letter = letter_for_resume_revalidate.clone();
-                    async move {
-                        let (report, _letter_report) = validate_documents(
-                            candidate,
-                            input.source_resume.to_string(),
-                            input.job_ad.to_string(),
-                            input.top_requirements.to_vec(),
-                            input.target_language.to_string(),
-                            letter,
-                        )
-                        .await?;
-                        Ok(report)
-                    }
-                },
-            )
-            .await?;
-            calls += u32::from(attempt.called);
-            failed |= attempt.failed;
-            reverted |= attempt.reverted;
-            timed_out |= attempt.timed_out;
-            ctx.draft = attempt.text;
-            ctx.report = Some(attempt.report);
+            // Charge BEFORE entering humanize_one, so a cap refusal doesn't
+            // count as a call or failure.
+            match completer.charge_daily() {
+                Err(_) => {
+                    // Limiter refused — don't attempt the rewrite, just record
+                    // the cap without charging count_call.
+                    capped = true;
+                }
+                Ok(()) => {
+                    let findings = voice_findings(&resume_report, &ctx.draft);
+                    let attempt = humanize_one(
+                        ctx.deadline,
+                        ctx.draft.clone(),
+                        resume_report,
+                        findings,
+                        |text, findings| async move {
+                            completer
+                                .complete(
+                                    &humanize_system(HumanizeTier::Resume, input.target_language),
+                                    &humanize_user(&text, &findings),
+                                    None,
+                                )
+                                .await
+                        },
+                        |candidate: &str| projects::normalize_projects(candidate, &seeds),
+                        |candidate| {
+                            let letter = letter_for_resume_revalidate.clone();
+                            async move {
+                                let (report, _letter_report) = validate_documents(
+                                    candidate,
+                                    input.source_resume.to_string(),
+                                    input.job_ad.to_string(),
+                                    input.top_requirements.to_vec(),
+                                    input.target_language.to_string(),
+                                    letter,
+                                )
+                                .await?;
+                                Ok(report)
+                            }
+                        },
+                        HumanizeTierKind::Resume,
+                    )
+                    .await?;
+                    calls += u32::from(attempt.called);
+                    failed |= attempt.failed;
+                    reverted |= attempt.reverted;
+                    timed_out |= attempt.timed_out;
+                    capped |= attempt.capped;
+                    ctx.draft = attempt.text;
+                    ctx.report = Some(attempt.report);
+                }
+            }
         }
 
         let letter_text = ctx.letter_text().to_string();
-        if letter_flagged > 0 && !letter_text.trim().is_empty() {
-            // Safe: `letter_flagged > 0` only counts when `ctx.letter_report`
-            // is `Some` (see its own `voice_count` above).
-            let letter_report = ctx.letter_report.clone().unwrap_or_else(empty_ok_report);
-            let findings = voice_findings(&letter_report, &letter_text);
-            let draft_for_revalidate = ctx.draft.clone();
-            let attempt = humanize_one(
-                ctx.deadline,
-                letter_text,
-                letter_report,
-                findings,
-                |text, findings| async move {
-                    completer.charge_daily()?;
-                    completer
-                        .complete(
-                            &humanize_system(HumanizeTier::Letter, input.target_language),
-                            &humanize_user(&text, &findings),
-                            None,
-                        )
-                        .await
-                },
-                // A letter has no Projects section to re-render.
-                |_candidate: &str| None,
-                |candidate| {
-                    let draft = draft_for_revalidate.clone();
-                    async move {
-                        let (_resume_report, letter_report) = validate_documents(
-                            draft,
-                            input.source_resume.to_string(),
-                            input.job_ad.to_string(),
-                            input.top_requirements.to_vec(),
-                            input.target_language.to_string(),
-                            candidate,
-                        )
-                        .await?;
-                        Ok(letter_report.unwrap_or_else(empty_ok_report))
-                    }
-                },
-            )
-            .await?;
-            calls += u32::from(attempt.called);
-            failed |= attempt.failed;
-            reverted |= attempt.reverted;
-            timed_out |= attempt.timed_out;
-            ctx.letter = attempt.text;
-            ctx.letter_report = Some(attempt.report);
+        if letter_flagged > 0 && !letter_text.trim().is_empty() && input.include_cover_letter {
+            // Charge BEFORE entering humanize_one, so a cap refusal doesn't
+            // count as a call or failure.
+            match completer.charge_daily() {
+                Err(_) => {
+                    // Limiter refused — don't attempt the rewrite.
+                    capped = true;
+                }
+                Ok(()) => {
+                    // Safe: `letter_flagged > 0` only counts when `ctx.letter_report`
+                    // is `Some` (see its own `voice_count` above).
+                    let letter_report = ctx.letter_report.clone().unwrap_or_else(empty_ok_report);
+                    let findings = voice_findings(&letter_report, &letter_text);
+                    let draft_for_revalidate = ctx.draft.clone();
+                    let attempt = humanize_one(
+                        ctx.deadline,
+                        letter_text,
+                        letter_report,
+                        findings,
+                        |text, findings| async move {
+                            completer
+                                .complete(
+                                    &humanize_system(HumanizeTier::Letter, input.target_language),
+                                    &humanize_user(&text, &findings),
+                                    None,
+                                )
+                                .await
+                        },
+                        // A letter has no Projects section to re-render.
+                        |_candidate: &str| None,
+                        |candidate| {
+                            let draft = draft_for_revalidate.clone();
+                            async move {
+                                let (_resume_report, letter_report) = validate_documents(
+                                    draft,
+                                    input.source_resume.to_string(),
+                                    input.job_ad.to_string(),
+                                    input.top_requirements.to_vec(),
+                                    input.target_language.to_string(),
+                                    candidate,
+                                )
+                                .await?;
+                                Ok(letter_report.unwrap_or_else(empty_ok_report))
+                            }
+                        },
+                        HumanizeTierKind::Letter,
+                    )
+                    .await?;
+                    calls += u32::from(attempt.called);
+                    failed |= attempt.failed;
+                    reverted |= attempt.reverted;
+                    timed_out |= attempt.timed_out;
+                    capped |= attempt.capped;
+                    ctx.letter = attempt.text;
+                    ctx.letter_report = Some(attempt.report);
+                }
+            }
         }
 
         let voice_after = ctx.report.as_ref().map_or(0, voice_count)
@@ -440,8 +507,64 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                 "voiceAfter": voice_after,
                 "failed": failed,
                 "timedOut": timed_out,
+                "capped": capped,
             }),
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_usable_rewrite_resume_tier_uses_50_percent_floor() {
+        let original = "This is a substantial piece of text with multiple sentences.";
+        let candidate_50_percent = "This is a substantial piece of"; // exactly 50%
+        let candidate_49_percent = "This is a substantial piec";      // < 50%
+
+        assert!(
+            is_usable_rewrite(original, candidate_50_percent, HumanizeTierKind::Resume),
+            "Resume tier should accept exactly 50% of original"
+        );
+        assert!(
+            !is_usable_rewrite(original, candidate_49_percent, HumanizeTierKind::Resume),
+            "Resume tier should reject less than 50% of original"
+        );
+    }
+
+    #[test]
+    fn is_usable_rewrite_letter_tier_uses_90_percent_floor() {
+        let original = "This is a comprehensive cover letter with multiple paragraphs and complete thoughts.";
+        // 90% of 82 chars is ~73.8, so 74 chars should pass, 72 should fail
+        let candidate_90_percent = "This is a comprehensive cover letter with multiple paragraphs and complete thoug"; // ~78 chars, > 90%
+        let candidate_60_percent = "This is a comprehensive cover letter with multiple"; // ~48 chars, < 90%
+
+        assert!(
+            is_usable_rewrite(original, candidate_90_percent, HumanizeTierKind::Letter),
+            "Letter tier should accept 90%+ of original"
+        );
+        assert!(
+            !is_usable_rewrite(original, candidate_60_percent, HumanizeTierKind::Letter),
+            "Letter tier should reject 60% (below 90% threshold)"
+        );
+    }
+
+    #[test]
+    fn humanize_attempt_default_values() {
+        let text = "test".to_string();
+        let report = ContentReport {
+            ok: true,
+            issues: Vec::new(),
+            metrics: ContentMetrics::default(),
+        };
+        let attempt = HumanizeAttempt::kept(text, report);
+
+        assert!(!attempt.called, "kept() should have called=false");
+        assert!(!attempt.reverted, "kept() should have reverted=false");
+        assert!(!attempt.failed, "kept() should have failed=false");
+        assert!(!attempt.timed_out, "kept() should have timed_out=false");
+        assert!(!attempt.capped, "kept() should have capped=false");
     }
 }
