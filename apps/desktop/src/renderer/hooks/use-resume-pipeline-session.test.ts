@@ -21,6 +21,7 @@ const refreshRunsMock = vi.hoisted(() => vi.fn());
 const bus = vi.hoisted(() => ({
   stage: null as ((e: PipelineStageEvent) => void) | null,
   delta: null as ((d: string) => void) | null,
+  thinking: null as ((d: string) => void) | null,
   job: null as ((e: JobEvent) => void) | null,
   detail: null as PipelineRunDetail | null,
   live: false,
@@ -36,8 +37,13 @@ vi.mock('@/services/use-resume-pipeline', () => ({
   usePipelineStageEvents: (handler?: (e: PipelineStageEvent) => void) => {
     bus.stage = handler ?? null;
   },
-  usePipelineDraftStream: (_jobId: string | null, handler?: (d: string) => void) => {
-    bus.delta = handler ?? null;
+  usePipelineDraftStream: (
+    _jobId: string | null,
+    onDelta?: (d: string) => void,
+    onThinking?: (d: string) => void
+  ) => {
+    bus.delta = onDelta ?? null;
+    bus.thinking = onThinking ?? null;
   },
   useRefreshRunsForJobOnTerminal: refreshRunsMock,
 }));
@@ -112,6 +118,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   bus.stage = null;
   bus.delta = null;
+  bus.thinking = null;
   bus.job = null;
   bus.detail = null;
   bus.live = false;
@@ -237,6 +244,76 @@ describe('useResumePipelineSession', () => {
       bus.delta?.('Lovelace');
     });
     expect(result.current.draft).toBe('Ada Lovelace');
+  });
+
+  it('appends reasoning chunks to `thinking`, separate from the document text', () => {
+    const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+    act(() => {
+      bus.thinking?.('considering the ');
+      bus.thinking?.('evidence');
+      bus.delta?.('Ada');
+    });
+    expect(result.current.thinking).toBe('considering the evidence');
+    expect(result.current.draft).toBe('Ada');
+  });
+
+  // The trap `usePipelineDraftStream`'s doc comment calls out: both the draft
+  // AND the cover_letter stage stream through the SAME `ai:stream` jobId, so
+  // without a split every letter token would land on the end of the résumé
+  // buffer.
+  describe('the letter stream split', () => {
+    it('routes deltas before cover_letter starts to `draft`', () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => {
+        bus.stage?.(stage('draft', 'start', 3));
+        bus.delta?.('resume text');
+      });
+      expect(result.current.draft).toBe('resume text');
+      expect(result.current.letterDraft).toBe('');
+    });
+
+    it('routes deltas from the cover_letter stage start onward to `letterDraft`, leaving `draft` frozen', () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => {
+        bus.stage?.(stage('draft', 'start', 3));
+        bus.delta?.('resume text');
+        bus.stage?.(stage('draft', 'finish', 3));
+        bus.stage?.(stage('cover_letter', 'start', 4));
+        bus.delta?.('Dear hiring team,');
+      });
+      expect(result.current.draft).toBe('resume text');
+      expect(result.current.letterDraft).toBe('Dear hiring team,');
+    });
+
+    it('resets both buffers and the split flag on a new run', async () => {
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => {
+        bus.stage?.(stage('cover_letter', 'start', 4));
+        bus.delta?.('old letter');
+      });
+      expect(result.current.letterDraft).toBe('old letter');
+
+      await act(async () => {
+        await result.current.start({
+          resumeId: 'doc-1',
+          jobId: 'posting-1',
+          jobUrl: '',
+          depth: 'quality',
+          targetLanguage: 'en',
+          topRequirements: [],
+          coverLetterText: '',
+          includeCoverLetter: true,
+        });
+      });
+      expect(result.current.letterDraft).toBe('');
+      expect(result.current.draft).toBe('');
+
+      // The split flag reset too — a fresh delta with no stage event yet
+      // goes back to the résumé buffer, not the previous run's letter one.
+      act(() => bus.delta?.('new resume text'));
+      expect(result.current.draft).toBe('new resume text');
+      expect(result.current.letterDraft).toBe('');
+    });
   });
 
   // ── The trap this hook exists to avoid ────────────────────────────────────

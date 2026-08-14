@@ -214,21 +214,25 @@ export const usePipelineStageEvents = (onStage?: (event: PipelineStageEvent) => 
  * rounds are still ahead. Here there is no promise to resolve, so there is
  * nothing for a caller to mistake for completion — only text to render.
  *
- * `onDelta` is called with each answer chunk; reasoning/thinking frames and
- * frames belonging to other jobs are dropped.
+ * `onDelta` is called with each answer chunk; frames belonging to other jobs
+ * are dropped either way. `onThinking`, when supplied, receives the
+ * reasoning/thinking chunks `onDelta` drops — omit it and this hook's
+ * behaviour is unchanged (thinking frames are simply discarded, as before).
  */
 export const usePipelineDraftStream = (
   jobId: string | null | undefined,
-  onDelta?: (delta: string) => void
+  onDelta?: (delta: string) => void,
+  onThinking?: (delta: string) => void
 ) => {
   const api = useAppClient();
   useEffect(() => {
-    if (!jobId || !onDelta) return;
+    if (!jobId || (!onDelta && !onThinking)) return;
     const off = api.ai.onStream((raw: unknown) => {
       const chunk = raw as AiStreamChunk;
-      if (chunk.jobId !== jobId || chunk.thinking || !chunk.delta) return;
-      onDelta(chunk.delta);
+      if (chunk.jobId !== jobId || !chunk.delta) return;
+      if (chunk.thinking) onThinking?.(chunk.delta);
+      else onDelta?.(chunk.delta);
     });
     return () => off?.();
-  }, [api, jobId, onDelta]);
+  }, [api, jobId, onDelta, onThinking]);
 };
