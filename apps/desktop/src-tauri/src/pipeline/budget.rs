@@ -6,8 +6,8 @@
 //! only budgeted, cancellable, multi-step run in the app: the résumé pipeline
 //! is one too, and a second copy of "how many steps / how many tokens / how
 //! long per step" is exactly the drift this codebase keeps re-discovering.
-//! [`Budget::AGENT_PREP`]/[`Budget::AGENT_IMPROVE`], the two agent-flow
-//! budgets, were deleted alongside the agent module (PR-5 step 2) —
+//! `Budget::AGENT_PREP`/`Budget::AGENT_IMPROVE`, the two agent-flow budgets,
+//! were deleted alongside the agent module (PR-5 step 2) —
 //! [`Budget::RESUME_QUALITY`] is the sole shipped budget now.
 //!
 //! **Budgets are NEVER renderer-supplied.** They are compile-time constants

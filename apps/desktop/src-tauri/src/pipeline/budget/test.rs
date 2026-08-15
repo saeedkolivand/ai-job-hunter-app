@@ -106,25 +106,36 @@ fn an_unknown_wire_string_is_rejected() {
 
 // ── Budget internal consistency ──────────────────────────────────────────────
 
-/// Sanity for the budget we ship: no zero ceiling that would stop a run before
-/// its first step, and no timeout ordering that makes a field unreachable.
+/// Every budget this crate ships. `RESUME_QUALITY` is the only one today, but
+/// `budget.rs:43-45` already anticipates a future tool-calling flow's own
+/// budget — a test that read `Budget::RESUME_QUALITY` directly would keep
+/// passing, unchanged, the day a second constant lands, silently covering
+/// nothing new. Add a budget here and every loop below covers it by
+/// construction, the same table-driven shape [`WIRE`] already uses for
+/// `StoppedReason` above.
+const SHIPPED_BUDGETS: &[Budget] = &[Budget::RESUME_QUALITY];
+
+/// Sanity for every budget we ship: no zero ceiling that would stop a run
+/// before its first step, and no timeout ordering that makes a field
+/// unreachable.
 #[test]
 fn every_shipped_budget_is_internally_consistent() {
-    let b = Budget::RESUME_QUALITY;
-    assert!(b.max_steps > 0, "a run must get at least one step");
-    assert!(b.max_tokens > 0, "max_tokens must be positive");
-    assert!(
-        b.max_sections > 0,
-        "a document must get at least one section"
-    );
-    assert!(
-        !b.step_timeout.is_zero() && !b.run_timeout.is_zero(),
-        "a zero timeout expires before the first await"
-    );
-    assert!(
-        b.run_timeout >= b.step_timeout,
-        "run_timeout below step_timeout makes step_timeout unreachable"
-    );
+    for b in SHIPPED_BUDGETS {
+        assert!(b.max_steps > 0, "a run must get at least one step");
+        assert!(b.max_tokens > 0, "max_tokens must be positive");
+        assert!(
+            b.max_sections > 0,
+            "a document must get at least one section"
+        );
+        assert!(
+            !b.step_timeout.is_zero() && !b.run_timeout.is_zero(),
+            "a zero timeout expires before the first await"
+        );
+        assert!(
+            b.run_timeout >= b.step_timeout,
+            "run_timeout below step_timeout makes step_timeout unreachable"
+        );
+    }
 }
 
 /// Literal pins for every `Duration` field of the shipped budget.
