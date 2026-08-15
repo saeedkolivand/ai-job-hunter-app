@@ -409,6 +409,18 @@ describe('useTailorPipeline — runStartedAt (backend-anchored elapsed timer)', 
     const second = render({ initialRunId: 'run-1', initialJobId: 'job-1' });
     expect(second.result.current.runStartedAt).toBe(12_345);
   });
+
+  // Defensive: not reachable with today's `now_ms()`-populated
+  // `pipeline_runs.started_at` column, but `?? null` alone only guards
+  // null/undefined — a `0` (or negative) value would otherwise become the
+  // anchor and render an absurd/negative "N total" caption. `null` here is
+  // what lets `GeneratingPanel`'s own `runStartedAt ?? mountFallback` recover
+  // instead.
+  it('falls back to null (not 0) for a non-positive startedAt', () => {
+    sessionBus.detail = detail({ status: 'running', startedAt: 0 });
+    const { result } = render();
+    expect(result.current.runStartedAt).toBeNull();
+  });
 });
 
 describe('useTailorPipeline — the section-fix / fabrication-review bundle', () => {

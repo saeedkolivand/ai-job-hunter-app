@@ -266,6 +266,19 @@ describe('GeneratingPanel — elapsed-time caption (H3)', () => {
     });
     expect(screen.getByText(/0:02/)).toBeInTheDocument();
   });
+
+  // Defensive (not reachable with today's `now_ms()`-populated column, but a
+  // clock-skewed host still passes `useTailorPipeline`'s own `> 0` guard):
+  // `runStartedAt` ahead of THIS client's clock must never render a negative
+  // "N total" caption. Mutation check: drop the `Math.max(0, …)` clamp and
+  // this reads a negative minute/second pair instead of 0:00.
+  it('clamps the elapsed caption at 0:00 when runStartedAt is ahead of this client (clock skew)', () => {
+    const runStartedAt = Date.now() + 5_000;
+    render(
+      <GeneratingPanel {...makeProps({ currentStep: 0, stageLabel: 'Reading', runStartedAt })} />
+    );
+    expect(screen.getByText(/0:00/)).toBeInTheDocument();
+  });
 });
 
 describe('GeneratingPanel — ThinkingBubble wiring (H1/M4)', () => {

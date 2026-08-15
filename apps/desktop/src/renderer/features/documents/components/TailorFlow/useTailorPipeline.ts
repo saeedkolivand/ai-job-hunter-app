@@ -466,8 +466,14 @@ export function useTailorPipeline({
     // The run's own backend-recorded start time (`pipeline_runs.started_at`),
     // for `GeneratingPanel`'s elapsed caption — anchoring on this instead of
     // the panel's own mount time is what survives a navigate-away-and-back
-    // (see that prop's doc comment for why a remount needs it).
-    runStartedAt: session.detail?.startedAt ?? null,
+    // (see that prop's doc comment for why a remount needs it). `> 0`, not a
+    // bare presence check: a `0`/negative epoch ms is never a real timestamp
+    // (defensive — today's `now_ms()`-populated column never produces one),
+    // and falling through to `null` here is what lets `GeneratingPanel`'s own
+    // `runStartedAt ?? mountFallback` recover instead of anchoring the
+    // caption on the Unix epoch and counting up from ~1970.
+    runStartedAt:
+      session.detail?.startedAt && session.detail.startedAt > 0 ? session.detail.startedAt : null,
     thinking: session.thinking,
     // The résumé pane's live stream — the letter's own (`session.letterDraft`)
     // is display-only in the same sense, exposed separately so a cover-only

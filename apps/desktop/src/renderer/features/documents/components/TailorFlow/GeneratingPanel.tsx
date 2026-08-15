@@ -81,7 +81,11 @@ export function GeneratingPanel({
   const anchor = runStartedAt ?? mountFallback;
   const [elapsedSec, setElapsedSec] = useState(0);
   useEffect(() => {
-    const tick = () => setElapsedSec(Math.floor((Date.now() - anchor) / 1000));
+    // Clamped at 0: `anchor` is a backend timestamp, so a clock-skewed host
+    // can put it slightly ahead of this client's `Date.now()` even though
+    // it passed the `> 0` guard on the way in — without the clamp that reads
+    // as a negative "N total" caption instead of just starting at 0:00.
+    const tick = () => setElapsedSec(Math.max(0, Math.floor((Date.now() - anchor) / 1000)));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
