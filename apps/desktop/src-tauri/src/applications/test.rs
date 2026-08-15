@@ -60,6 +60,20 @@ fn gen_application_id(gen_conn: &Connection, gen_id: &str) -> Option<String> {
         .unwrap()
 }
 
+/// Whether the one-shot legacy-backfill marker is set in `applications.db`
+/// at `dir` — direct SQL against the on-disk file, since `legacy_backfill_
+/// done` is private to `applications::migrations`, a sibling module of
+/// `applications::test`, and so is not reachable from here.
+fn legacy_backfill_marker_set(dir: &std::path::Path) -> bool {
+    let conn = Connection::open(dir.join("applications.db")).unwrap();
+    conn.query_row(
+        "SELECT 1 FROM backfill_state WHERE name = 'legacy_generations_backfill'",
+        [],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
 /// Return the number of rows in `ai_generations` matching an `application_id`.
 fn gen_count_for_app(gen_conn: &Connection, application_id: &str) -> i64 {
     gen_conn
@@ -1996,6 +2010,65 @@ fn a_legacy_backfilled_application_stays_deleted_across_a_second_reboot() {
         None,
         "must stay unlinked, not get a freshly re-created Application"
     );
+}
+
+/// **FIX-2 mutation guard: a transient read failure must NOT read as "not
+/// done".** Before FIX-2, `legacy_backfill_done` swallowed EVERY
+/// `query_row` error into `false` — indistinguishable from the genuine "no
+/// row yet" case — so a glitch reading `backfill_state` re-ran the whole
+/// one-shot scan. Manually dropping `backfill_state` AFTER its own migration
+/// already ran (`run_migrations`'s versioned skip — own doc — never
+/// recreates an already-applied migration's table) forces
+/// `legacy_backfill_done`'s `query_row` into a genuine SQL error
+/// (`no such table`) rather than `QueryReturnedNoRows`.
+///
+/// Mutation check: revert `legacy_backfill_done` to `-> bool` / `.is_ok()`
+/// (swallowing the "no such table" error into `false`) and
+/// `rebooted.list().len()` becomes 1 (the swallow reads as "not done", so
+/// the scan runs and backfills the legacy row) instead of 0 — applied and
+/// reverted.
+#[test]
+fn a_transient_marker_read_failure_does_not_re_run_the_scan() {
+    let dir = TempDir::new().unwrap();
+
+    // Boot 1: creates `applications.db` (and `backfill_state`, via
+    // migration) with nothing yet to find.
+    {
+        let store = ApplicationStore::open(dir.path()).unwrap();
+        assert_eq!(store.list().len(), 0, "precondition: nothing to find yet");
+        assert!(
+            legacy_backfill_marker_set(dir.path()),
+            "precondition: boot 1 sets the marker (nothing to find, ever)"
+        );
+    }
+
+    // Break `legacy_backfill_done`'s read: drop the table its own migration
+    // already created and versioned past.
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute_batch("DROP TABLE backfill_state;").unwrap();
+    }
+
+    // A legacy row boot 1 never saw (it didn't exist yet).
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    insert_gen_with_app_id(
+        &gen_conn,
+        "gen-glitch",
+        "https://acme.com/jobs/glitch",
+        None,
+    );
+
+    // Boot 2: `legacy_backfill_done` now hits a genuine SQL error reading the
+    // (missing) marker table. `open()` still swallows the resulting backfill
+    // error non-fatally at its own call site (own doc), but the scan itself
+    // must never have run.
+    let rebooted = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        rebooted.list().len(),
+        0,
+        "a genuine read error must abort before the scan runs, not be read as \"not done\""
+    );
+    assert_eq!(gen_application_id(&gen_conn, "gen-glitch"), None);
 }
 
 // ── R1 — ApplicationStore::import rollback regression guard ──────────────────

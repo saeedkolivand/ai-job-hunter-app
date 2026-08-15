@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use crate::ai_generations::ApplicationAnswer;
 use crate::db::{now_ms, ts_from_db, ts_to_db, Migration};
@@ -263,7 +263,7 @@ impl ApplicationStore {
     /// after every row above has been processed — so a run that errors out
     /// partway is retried on the next boot instead of silently marked done.
     pub(super) fn backfill_from_generations(&self, data_dir: &Path) -> AppResult<()> {
-        if self.legacy_backfill_done() {
+        if self.legacy_backfill_done()? {
             return Ok(()); // ran once already — see doc above, never re-scan
         }
         let gen_path = data_dir.join("ai_generations.db");
@@ -359,14 +359,22 @@ impl ApplicationStore {
     }
 
     /// Whether the one-shot marker [`LEGACY_BACKFILL_MARKER`] is set.
-    fn legacy_backfill_done(&self) -> bool {
+    /// `.optional()` so only `QueryReturnedNoRows` reads as "not done yet" —
+    /// any OTHER error (e.g. a transient SQLite failure) propagates through
+    /// `?` instead of being swallowed into a false `false`, which would make
+    /// [`Self::backfill_from_generations`] re-run the one-shot scan on a
+    /// glitch and recreate a deliberately-deleted `Application` — the exact
+    /// bug the marker exists to prevent, reachable through a different door.
+    fn legacy_backfill_done(&self) -> AppResult<bool> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT 1 FROM backfill_state WHERE name = ?1",
-            params![LEGACY_BACKFILL_MARKER],
-            |_| Ok(()),
-        )
-        .is_ok()
+        Ok(conn
+            .query_row(
+                "SELECT 1 FROM backfill_state WHERE name = ?1",
+                params![LEGACY_BACKFILL_MARKER],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
     }
 
     /// Set it. `INSERT OR REPLACE` so a caller never special-cases "already set".
