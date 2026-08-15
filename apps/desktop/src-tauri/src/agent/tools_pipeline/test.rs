@@ -944,7 +944,7 @@ fn a_neutralized_pipeline_payload_survives_a_second_pass_byte_identical() {
     let once = neutralized_summary(&compact_job_analysis(&analysis));
     let body = once.get("result").and_then(Value::as_str).expect("a body");
     assert_eq!(
-        crate::agent::tools::neutralize_transcript_boundaries(body),
+        crate::prompt_fence::neutralize_transcript_boundaries(body),
         body,
         "the fenced body must be a fixed point of the neutralization"
     );

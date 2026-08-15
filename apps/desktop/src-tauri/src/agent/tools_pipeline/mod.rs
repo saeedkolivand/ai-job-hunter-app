@@ -75,12 +75,13 @@ use crate::pipeline::resume::{
 use crate::pipeline::{Completer, Stage, StageHooks, StageInfo, StageOutcome};
 use crate::validate::content::ContentReport;
 
-use super::tools::{AgentTool, ToolContext, ToolKind, RESUME_CAP};
+use super::tools::{AgentTool, ToolContext, ToolKind};
 use super::tools_quality::{
     clamp_chars, clamp_evidence, clamped_job_text, clamped_resume_text, job_not_found,
     neutralized_summary, resume_not_found, shrink_to_summary_cap, spawn_blocking_core, MAX_ISSUES,
     MESSAGE_CAP, SECTION_CAP,
 };
+use crate::prompt_fence::RESUME_CAP;
 
 // ── Bounds ─────────────────────────────────────────────────────────────────
 

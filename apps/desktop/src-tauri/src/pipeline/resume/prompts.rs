@@ -22,12 +22,12 @@
 //!   `evidence_map` and `resume_strategy` are model text derived from a scraped
 //!   posting; treating them as trusted just because this app produced the JSON
 //!   would launder an injected instruction through one hop. Their tags are
-//!   registered in `agent::tools::FENCE_TAG_PATTERNS` so a forged sibling
+//!   registered in `crate::prompt_fence::FENCE_TAG_PATTERNS` so a forged sibling
 //!   cannot ride in inside another block either.
 
 use serde::Serialize;
 
-use crate::agent::tools::{fenced, JOB_CAP, RESUME_CAP};
+use crate::prompt_fence::{fenced, JOB_CAP, RESUME_CAP};
 
 use super::prompt_blocks::{
     resume_conventions, ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE, ATS_PRECEDENCE,

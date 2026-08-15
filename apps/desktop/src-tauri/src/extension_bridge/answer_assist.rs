@@ -98,11 +98,11 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use super::msg;
-use crate::agent::tools::{fenced, JOB_CAP, RESUME_CAP};
 use crate::applications::{normalize_job_url, normalize_question, Application, ApplicationStore};
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::pipeline::Completer;
+use crate::prompt_fence::{fenced, JOB_CAP, RESUME_CAP};
 use crate::salary_research::SalaryRange;
 
 /// Fixed sentinel — the SEPARATE ai-assist opt-in is off. Never the

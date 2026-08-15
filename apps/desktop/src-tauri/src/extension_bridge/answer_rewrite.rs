@@ -35,7 +35,7 @@
 //! ## Untrusted-input discipline
 //! `existingAnswer` (the field's current text) and the resolved instruction
 //! are both page/user-derived — fenced with the SAME
-//! `agent::tools::fenced`/`untrusted_note` discipline
+//! `crate::prompt_fence::fenced`/`untrusted_note` discipline
 //! `answer_assist::build_user_message` uses for `<question>`: the model is
 //! told the instruction's CONTENT is the transform to apply, but never to
 //! follow any OTHER instruction embedded in either block (an escape
@@ -43,7 +43,7 @@
 //! past answer) — never logged, never written to any store, held only for
 //! this one request.
 
-use crate::agent::tools::fenced;
+use crate::prompt_fence::fenced;
 
 /// The 5 quick-action rewrite presets — MUST stay in lockstep with the
 /// extension's `ExtensionRewritePreset` union

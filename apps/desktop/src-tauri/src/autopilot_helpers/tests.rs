@@ -483,6 +483,26 @@ fn note_user_msg_caps_oversized_resume_and_job_as_data() {
     assert!(msg.chars().filter(|&c| c == 'z').count() <= RESUME_CAP + JOB_CAP);
 }
 
+/// Every `snake_case` token in a prompt — copy of `agent::flows::tests::
+/// tool_like_tokens` (moved here alongside `AUTOPILOT_NOTE_SYSTEM`, PR-5 step
+/// 1); `agent::flows` keeps its own copy for the two registered flows'
+/// prompts, which this module has no reason to depend on.
+fn tool_like_tokens(prompt: &str) -> std::collections::BTreeSet<String> {
+    prompt
+        .split(|c: char| !(c.is_ascii_lowercase() || c == '_'))
+        .filter(|token| token.contains('_'))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The headless Autopilot note prompt is single-shot and tool-free — it
+/// must never grow a tool instruction (there is no loop, no whitelist and
+/// no confirm gate on a schedule to honor one).
+#[test]
+fn autopilot_note_system_names_no_tools() {
+    assert!(tool_like_tokens(AUTOPILOT_NOTE_SYSTEM).is_empty());
+}
+
 // ── run_notes_loop (HIGH-2: the async loop's guarantees, fake-driven) ──────
 
 /// A scripted [`NoteEnv`] fake: records every `complete()` call, returns a

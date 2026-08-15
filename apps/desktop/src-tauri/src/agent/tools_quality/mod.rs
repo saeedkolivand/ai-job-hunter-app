@@ -23,8 +23,8 @@
 //! [`MAX_ISSUES`]/[`MAX_SKILLS`] COUNT caps) bounds it before it re-enters the
 //! transcript through [`neutralized_summary`], which makes every quoted span
 //! inert as a transcript boundary via the SAME
-//! [`super::tools::neutralize_transcript_boundaries`] pass `agent::tools`'
-//! [`fenced`] runs on untrusted input — so a forged fence tag or
+//! [`crate::prompt_fence::neutralize_transcript_boundaries`] pass
+//! [`crate::prompt_fence::fenced`] runs on untrusted input — so a forged fence tag or
 //! `[tool_result:…]` marker smuggled inside a quoted span can't masquerade as
 //! a `<job_posting>`/`<candidate_resume>` boundary or a second tool verdict.
 //! `lookup_salary` is the one exception: its result carries no free text (see
@@ -45,7 +45,7 @@
 //! LOW fix, PR #963 round 9 — these summaries used to be `<validate_resume_
 //! result>`-style tag-WRAPPED as well ([`fenced`]). That wrap was provably
 //! dead work: those three tags are registered in
-//! `super::tools::FENCE_TAG_PATTERNS`, and
+//! `crate::prompt_fence::FENCE_TAG_PATTERNS`, and
 //! [`crate::agent::controller::tool_result_fence`] runs the same
 //! neutralization over EVERY tool result body on its way into the transcript
 //! — so the wrapper this module added was broken open again one layer up
@@ -54,10 +54,10 @@
 //! neutralization ever did any work, and that is what survives here. The tags
 //! stay registered on purpose: with no legitimate producer left, ANY
 //! occurrence of one is a forgery, and breaking it is now unambiguously
-//! correct (pinned by `agent::tools`'
+//! correct (pinned by `prompt_fence::test`'s
 //! `fenced_neutralizes_a_forged_validate_resume_result_tag_inside_a_job_posting_body`).
 //!
-//! [`fenced`]: super::tools::fenced
+//! [`fenced`]: crate::prompt_fence::fenced
 
 use std::future::Future;
 use std::pin::Pin;
@@ -77,10 +77,8 @@ use crate::validate::content::{
 };
 use crate::validate::Severity;
 
-use super::tools::{
-    clamped_echo, neutralize_transcript_boundaries, AgentTool, ToolContext, ToolKind, JOB_CAP,
-    RESUME_CAP,
-};
+use super::tools::{clamped_echo, AgentTool, ToolContext, ToolKind};
+use crate::prompt_fence::{neutralize_transcript_boundaries, JOB_CAP, RESUME_CAP};
 
 // ── Shared caps ────────────────────────────────────────────────────────────
 
@@ -679,7 +677,7 @@ fn currency_for_location(location: &str) -> Option<&'static str> {
 /// clamped to [`SUMMARY_CAP`] and made inert as a transcript boundary. See
 /// the module SECURITY note: the summary embeds untrusted-résumé/job-derived
 /// text, so it goes through exactly the neutralization
-/// [`super::tools::fenced`] applies to untrusted INPUT — minus the `<tag>`
+/// [`crate::prompt_fence::fenced`] applies to untrusted INPUT — minus the `<tag>`
 /// wrap, which `crate::agent::controller::tool_result_fence` breaks open
 /// again one layer up (round-9 LOW; see the module doc).
 ///

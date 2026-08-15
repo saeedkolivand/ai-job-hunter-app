@@ -38,6 +38,14 @@ const L0: &[&str] = &[
     // (embedding compare) and `scraping::cluster` (cross-board dedup) so the L1
     // cluster module reuses it without an upward import (R7). Depends on nothing.
     "vector",
+    // ADR-010 prompt-injection fencing primitives (`fenced`/`FENCE_TAG_PATTERNS`/
+    // `neutralize_transcript_boundaries`/`JOB_CAP`/`RESUME_CAP`) — PR-5 step 1
+    // relocated them out of the L3 `agent` module (dependency-free string
+    // transforms, no Tauri) so `pipeline`, `commands::ai_provider::structured`,
+    // `extension_bridge`, `autopilot_helpers` and `agent` itself can all reach
+    // them downward. This is what clears the `pipeline -> agent` and
+    // `autopilot_helpers -> agent` R7_ALLOW exceptions below.
+    "prompt_fence",
 ];
 const L1: &[&str] = &[
     "scraping",
@@ -522,16 +530,7 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // W-1: ai_provider lives under commands/ today; consumers reach up until it is
     // relocated to a top-level module. autopilot_scheduler invokes the autopilot command.
     ("pipeline", "commands"),
-    // The résumé pipeline's stage prompts reuse the agent layer's pure
-    // prompt-safety primitives (`fenced`/`RESUME_CAP`/`JOB_CAP`) — read-only
-    // string construction, no controller, no tool. Identical to the
-    // `autopilot_helpers -> agent` edge below and carrying the same TODO(arch):
-    // relocate those primitives out of the L3 `agent` module (an L0/L1
-    // prompt-utils) and BOTH edges clear. Writing a second fence helper instead
-    // is the outcome ADR-010 exists to prevent — one boundary mechanism, and a
-    // second copy is where the neutralization list drifts.
-    ("pipeline", "agent"),
-    // …and the GENERATED cross-language constants: the `pipeline:stage`
+    // …the GENERATED cross-language constants: the `pipeline:stage`
     // sectionKey grammar (`is_pipeline_section_key`), the depth vocabulary, and
     // the run-deadline terms. Pure compile-time `&str`/`usize` literals emitted
     // by `pnpm gen:ipc`, exactly like the `scraping -> ipc_contracts` edge
@@ -556,11 +555,6 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // the L3 `events` helper (crate::events::emit_event + channel consts), the same
     // shell-reach it already has for `commands`. R2 likewise allowlists this file.
     ("autopilot_helpers", "events"),
-    // Headless AI notes (L2) reuse the agent layer's pure prompt-safety primitives
-    // (fenced/JOB_CAP/RESUME_CAP) + the shared AUTOPILOT_NOTE_SYSTEM prompt — read-only
-    // string construction, invokes no controller. TODO(arch): relocate these pure prompt
-    // primitives out of the L3 `agent` module (e.g. an L0/L1 prompt-utils) to clear this edge.
-    ("autopilot_helpers", "agent"),
     // accent_watcher (L0 platform) emits via the L3 events helper; same shell-reach as
     // autopilot_helpers->events. TODO(arch): emitter port.
     ("platform", "events"),
@@ -570,6 +564,12 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // already reach up for). No runtime/layer coupling. TODO(arch): host the
     // cross-language consts in an L0 module so this exception clears.
     ("scraping", "ipc_contracts"),
+    // `prompt_fence::RESUME_CAP` re-exports the GENERATED cross-language cap
+    // (`ipc_contracts::agent_caps::AGENT_RESUME_TEXT_CAP`, source of truth
+    // `packages/shared/src/agent-caps.ts`) so the renderer and this crate read
+    // the same number — identical shape to the `pipeline`/`ai_config`/
+    // `scraping -> ipc_contracts` edges above for the same reason.
+    ("prompt_fence", "ipc_contracts"),
     // Email-watch scheduler (L2, task #23 PR B) invokes
     // `commands::notifications::push_and_notify` to deliver a match — the
     // same upward shell-reach `autopilot_scheduler` has for

@@ -50,6 +50,7 @@ pub mod pipeline;
 pub mod platform;
 pub mod postings;
 pub mod profile_import;
+pub mod prompt_fence;
 pub mod recommend;
 pub mod referrals;
 pub mod reminder_scheduler;

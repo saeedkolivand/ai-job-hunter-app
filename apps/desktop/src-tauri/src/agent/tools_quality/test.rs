@@ -981,7 +981,7 @@ fn the_removed_tag_wrap_could_not_have_survived_the_controllers_neutralization()
     let body = serde_json::to_string(&summary).unwrap();
 
     // BUG reproduction: exactly what `fenced_summary` used to return.
-    let old = crate::agent::tools::fenced("validate_resume_result", &body, SUMMARY_CAP);
+    let old = crate::prompt_fence::fenced("validate_resume_result", &body, SUMMARY_CAP);
     assert!(
         old.starts_with("<validate_resume_result>"),
         "the fixture must be the real pre-fix shape"

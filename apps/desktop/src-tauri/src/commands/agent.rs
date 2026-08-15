@@ -32,7 +32,7 @@ use tokio_util::sync::CancellationToken;
 use crate::agent::controller::{run_agent_live, AgentStep, AgentStepKind, StoppedReason};
 use crate::agent::flows;
 use crate::agent::gate::{AgentGate, Decision};
-use crate::agent::tools::{clamped_echo, fenced, ToolContext, JOB_CAP, RESUME_CAP};
+use crate::agent::tools::{clamped_echo, ToolContext};
 use crate::agent::tools_pipeline::{generation_for_job, GenerationLookup};
 use crate::commands::ai_provider::ModelCapabilities;
 use crate::db::new_job_id;
@@ -42,6 +42,7 @@ use crate::events::{emit_event, AGENT_STEP};
 use crate::ipc_contracts::agent::{AgentConfirmRequest, AgentRunRequest};
 use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::Completer;
+use crate::prompt_fence::{fenced, JOB_CAP, RESUME_CAP};
 
 /// Fail the run: mark the job Failed and release its cancel-token registration.
 /// Shared by every validation step that now runs INSIDE the spawned task (see
@@ -324,7 +325,7 @@ fn map_decision(decision: &str, edited_args: Option<Value>) -> Option<Decision> 
 
 /// Build the untrusted user message seeding the transcript: the résumé + job ids
 /// the agent passes to the tools, plus the fenced résumé and job posting as DATA
-/// (never instructions). Reuses `agent::tools`'s [`fenced`] helper + caps
+/// (never instructions). Reuses `crate::prompt_fence`'s [`fenced`] helper + caps
 /// ([`RESUME_CAP`]/[`JOB_CAP`]) — the SAME bound and fence format the tools use, so
 /// the cap and the tag shape are declared in exactly one place.
 fn build_user_message(resume_id: &str, job_id: &str, resume: &str, job: &str) -> String {

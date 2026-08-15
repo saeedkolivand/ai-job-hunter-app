@@ -25,9 +25,9 @@
 use serde_json::{json, Map, Value};
 use tauri::AppHandle;
 
-use crate::agent::tools::fenced;
 use crate::error::AppResult;
 use crate::pipeline::json::JsonParseError;
+use crate::prompt_fence::fenced;
 
 use super::{
     flatten_messages, resolve_intent, AiGenerateRequest, AiProvider, ChatMsg, Role, Usage,

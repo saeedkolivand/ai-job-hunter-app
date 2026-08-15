@@ -27,7 +27,8 @@ use crate::pipeline::Completer;
 
 use super::flows::AgentFlow;
 use super::gate::{resolve_write, AgentGate, WriteResolution};
-use super::tools::{neutralize_transcript_boundaries, to_specs, AgentTool, ToolContext, ToolKind};
+use super::tools::{to_specs, AgentTool, ToolContext, ToolKind};
+use crate::prompt_fence::neutralize_transcript_boundaries;
 
 /// The budget [`run_agent`] runs to.
 ///
@@ -220,7 +221,7 @@ const TOOL_NAME_CAP: usize = 64;
 /// smuggled through a prompt-injected posting survived verbatim into the
 /// transcript and could pass for a real quality-tool verdict. Name and body
 /// now go through [`neutralize_transcript_boundaries`] — BOTH boundary
-/// syntaxes, defined once in `agent::tools` and shared with [`fenced`], which
+/// syntaxes, defined once in `crate::prompt_fence` and shared with [`fenced`], which
 /// had the symmetric hole on the input side — at the ONE chokepoint every
 /// tool result crosses (per-caller fencing is what left the gap in the first
 /// place).
@@ -234,7 +235,7 @@ const TOOL_NAME_CAP: usize = 64;
 /// `super::tools_quality`'s module doc), and that interior survives this pass
 /// untouched because the neutralization is idempotent.
 ///
-/// [`fenced`]: super::tools::fenced
+/// [`fenced`]: crate::prompt_fence::fenced
 fn tool_result_fence(name: &str, body: &str) -> String {
     let name: String = name.chars().take(TOOL_NAME_CAP).collect();
     let name = neutralize_transcript_boundaries(&name);
