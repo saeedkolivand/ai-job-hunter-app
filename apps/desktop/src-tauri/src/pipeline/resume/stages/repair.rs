@@ -67,7 +67,7 @@ pub const NAME: &str = "repair";
 /// derived from exactly this number (`QUALITY_RUN_FIXED_SECS` counts
 /// `max_repair_attempts × MAX_SECTIONS_PER_ROUND` calls at
 /// `timeouts::OLLAMA_COMPLETION_BASELINE`), which is why
-/// `quality_run_deadline_clears_the_inner_per_call_bounds` reads this constant
+/// `quality_run_deadline_equals_the_inner_per_call_bounds` reads this constant
 /// rather than a literal: raising it without raising the deadline fails that
 /// test. Four is every section a quality-depth draft actually has that can
 /// carry a factual Critical (summary, skills, experience, projects) — a bound,

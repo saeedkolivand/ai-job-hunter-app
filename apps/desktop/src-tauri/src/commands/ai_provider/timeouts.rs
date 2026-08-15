@@ -512,18 +512,59 @@ mod tests {
         }
     }
 
-    /// The outer bound must clear the inner bounds it wraps, at EVERY tier —
-    /// the same rule `research_deadline_exceeds_the_inner_search_bounds_it_wraps`
-    /// states.
+    /// The outer bound must EQUAL the inner bounds it wraps, at EVERY tier —
+    /// deliberately an exact match here, NOT the "clear it with headroom" rule
+    /// `research_deadline_exceeds_the_inner_search_bounds_it_wraps` states,
+    /// because the two deadlines enforce themselves in structurally different
+    /// ways. `research_deadline` wraps a LIVE future in
+    /// `tokio::time::timeout` (`cover_letter::research::mod::enrich_with`), so
+    /// an outer bound that does not clear the inner one really can cancel a
+    /// call mid-flight and race away its own error. [`quality_run_deadline`]
+    /// instead backs `pipeline::resume::RunDeadline`/`guard_deadline`, which is
+    /// only ever POLLED — `deadline.passed()`, checked between calls (stage
+    /// boundaries, a JSON stage's guard before its one re-ask, the repair
+    /// loop's per-section check, `humanize_one`'s per-document check) and
+    /// never raced against an in-flight completion (the backend observes its
+    /// deadline BETWEEN calls, never mid-call, because cancelling one would
+    /// throw away work the run already paid for — see
+    /// `QUALITY_RUN_CLIENT_MARGIN_SECS`'s own doc in
+    /// `packages/shared/src/ai-timeouts.ts`). A call already dispatched always
+    /// finishes or times out on its OWN bound; the run deadline can only
+    /// refuse the NEXT call, so there is no live race for a margin to protect.
+    ///
+    /// **Why exact equality still lets an in-flight call's own timeout win.**
+    /// Before dispatching call *k*, elapsed time is the sum of calls
+    /// `1..k-1`'s ACTUAL durations, each strictly under its own bound (a call
+    /// that hit its own bound already returned — see below), so elapsed is
+    /// always strictly less than the sum of bounds `1..k-1`, which is always
+    /// strictly less than `quality_run_deadline` by at least bound(k) > 0.
+    /// The pre-dispatch check in front of the run's LAST call therefore never
+    /// sees `elapsed >= quality_run_deadline`, headroom or not.
+    ///
+    /// **Why it matters that this is exact rather than generous.** The stages
+    /// whose own timeout is user-facing — `analyze_job`/`match_evidence`/
+    /// `strategy` (their `complete_json`'s `?` propagates) and `draft`/
+    /// `cover_letter` (their streamed call's `?` propagates) — run FIRST and
+    /// together spend at most `json_half + generation`, strictly less than
+    /// this deadline by exactly `QUALITY_RUN_FIXED_SECS`: the share reserved
+    /// for `repair`/`humanize`, which run AFTER and have not spent it yet. So
+    /// none of those five stages' pre-dispatch checks can ever fire early.
+    /// `repair`/`humanize`, which run last, do the opposite by design (see
+    /// their own module docs: "No error here fails the run" / a per-call
+    /// timeout there is a FAILED ATTEMPT) — a hung call is swallowed and
+    /// reverted, never surfaced as a message, so there is no actionable
+    /// per-call error left for the generic `RunTimeout` to steal even in the
+    /// one place this deadline's own margin is genuinely zero.
     ///
     /// The inner bounds are computed from the FAN-OUT CONSTANTS themselves, not
     /// from the deadline's own terms: three JSON stages each allowed one
     /// re-ask (now bounded by [`ollama_completion_deadline`], scaled), plus
     /// `max_repair_attempts × MAX_SECTIONS_PER_ROUND` section rewrites and
     /// `humanize`'s allowance — both still bounded by the FLAT
-    /// `OLLAMA_COMPLETION_BASELINE` — plus the one streamed draft. That is what
-    /// makes this a guard rather than an identity: raising either repair
-    /// constant without raising the deadline fails here.
+    /// `OLLAMA_COMPLETION_BASELINE` — plus the one streamed draft. Two
+    /// INDEPENDENT derivations landing on the same number is what makes this a
+    /// real guard rather than a tautology: raising either repair constant
+    /// without raising the deadline fails here.
     ///
     /// **One scaled call per JSON-stage round-trip, not `MAX_ATTEMPTS` of
     /// them.** That holds only because `retry::send_with_retry` bounds the
@@ -542,7 +583,7 @@ mod tests {
     /// term dropped back to a flat `OLLAMA_COMPLETION_BASELINE` ⇒ every tier
     /// above the bottom fails.
     #[test]
-    fn quality_run_deadline_clears_the_inner_per_call_bounds() {
+    fn quality_run_deadline_equals_the_inner_per_call_bounds() {
         const JSON_STAGES: u32 = 3;
         const ROUND_TRIPS_PER_JSON_STAGE: u32 = 2; // the one budgeted re-ask
                                                    // `humanize` makes at most one flat `complete` call per FLAGGED
@@ -571,10 +612,17 @@ mod tests {
             // run makes — see `QUALITY_RUN_GENERATION_PASSES`.
             let generation = stream_deadline(effort)
                 * crate::ipc_contracts::ai_timeouts::QUALITY_RUN_GENERATION_PASSES as u32;
-            assert!(
-                quality_run_deadline(effort)
-                    >= json_half + repair_half + humanize_half + generation,
-                "quality_run_deadline({effort:?}) must cover the calls it wraps"
+            // `assert_eq!`, not `>=`: the two derivations are provably
+            // identical at every tier (see this test's own doc comment for
+            // why exact equality — no headroom — is what the discrete,
+            // never-mid-call `RunDeadline` check actually needs), so pin the
+            // equality itself rather than a one-sided bound a wider
+            // `quality_run_deadline` could also satisfy without anyone
+            // noticing the two sides had drifted apart.
+            assert_eq!(
+                quality_run_deadline(effort),
+                json_half + repair_half + humanize_half + generation,
+                "quality_run_deadline({effort:?}) must equal the calls it wraps"
             );
         }
     }

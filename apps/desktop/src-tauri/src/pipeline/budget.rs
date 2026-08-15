@@ -149,7 +149,7 @@ impl Budget {
     /// of after it — the backend must give up first because it is the side
     /// that knows WHY. Pinned by
     /// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`
-    /// and by `quality_run_deadline_clears_the_inner_per_call_bounds`, which
+    /// and by `quality_run_deadline_equals_the_inner_per_call_bounds`, which
     /// computes those inner bounds from the fan-out constants themselves; the
     /// effort-scaled deadline above this floor is picked by
     /// `pipeline::resume::run_deadline`.
