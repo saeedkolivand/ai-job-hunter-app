@@ -386,12 +386,18 @@ async fn execute(
     // user is told succeeded, over a document that never changed, with nothing
     // anywhere saying why. Only `Refused` counts: `Nothing` is the unlinked /
     // empty-draft case, which is benign and already reported by its own path.
-    let verdict = save_verdict(
-        ctx.input.source_resume,
-        &ctx.draft,
-        ctx.letter_text(),
-        &job_url,
-    );
+    // Gated on `ctx.letter` — the stage's OWN output, the only letter text
+    // this run can actually persist — never `ctx.letter_text()`'s fallback to
+    // `input.cover_letter` (the user's own pasted reference letter, read when
+    // `include_cover_letter = false`). That fallback is real user text this
+    // run never generates and `persist_document` never stores, so gating on
+    // it made a fence tag INCIDENTAL to a pasted reference letter refuse a
+    // save that had nothing wrong with it — discarding a whole run's résumé
+    // and report over text that was never going to be written anywhere. See
+    // `persist_document`'s identical gate below for the save decision itself;
+    // this one only has to AGREE with it for `refused`/`terminal_state` to be
+    // consistent with what was actually written.
+    let verdict = save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, &job_url);
     let refused = matches!(verdict, SaveVerdict::Refused(_));
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
@@ -611,10 +617,15 @@ fn persist_document(
     depth: &str,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
-    // The `cover_letter` stage's own letter when it produced one, falling back
-    // to the renderer-supplied validate-only text — see `QualityCtx::letter_text`.
+    // The gate gates `ctx.letter` — what `cover_letter_text` below actually
+    // stores — NOT `ctx.letter_text()`'s fallback to the user's own pasted
+    // reference letter (see the identical comment on `execute`'s own
+    // `save_verdict` call, which this one must agree with). `letter_text` is
+    // still what the wrapper below is built over: the report legitimately
+    // describes whichever text `report::build` was given, stage output or
+    // fallback, and that's what `letter_text()` is for.
     let letter_text = ctx.letter_text();
-    if save_verdict(ctx.input.source_resume, &ctx.draft, letter_text, job_url) != SaveVerdict::Save
+    if save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, job_url) != SaveVerdict::Save
     {
         return None;
     }
