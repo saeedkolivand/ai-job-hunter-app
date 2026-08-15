@@ -1,0 +1,25 @@
+# Pins the exact compiler used for local dev, PR CI, and release builds so
+# they can't silently diverge (all three previously resolved whatever
+# "stable" happened to mean on the day — see the pin commit).
+#
+# 1.97.1, not the toolchain already on every dev machine: `dtolnay/rust-
+# toolchain@stable` (what CI ran before this pin) tracks rustup's live
+# "stable" channel, and 1.97.1 is what that resolved to as of the pin —
+# the version CI has actually been validated against. `rustup` fetches it
+# on first use here same as in CI.
+#
+# `dtolnay/rust-toolchain` (used in .github/actions/setup-rust and
+# release.yml) does NOT read this file — its @rev selects the version — so
+# CI is pinned to the SAME version below via that action's SHA. Bump both
+# together.
+#
+# No `components` here: each CI job's `dtolnay/rust-toolchain` step already
+# requests exactly the components it needs (see setup-rust's `components`
+# input); listing them here too would make rustup auto-install rustfmt/
+# clippy/llvm-tools-preview for every job via the toolchain-file override,
+# including ones (e.g. plain `cargo check`) that never asked for them.
+# Locally, rustup's default install profile already includes rustfmt +
+# clippy, so `cargo fmt`/`cargo clippy` still resolve deterministically
+# without listing them here.
+[toolchain]
+channel = "1.97.1"
