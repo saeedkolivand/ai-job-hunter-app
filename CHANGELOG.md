@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.136.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.135.0...v0.136.0) (2026-08-15)
+
+### ✨ Features
+
+* **apply:** the apply flow runs the staged 4-step pipeline on both surfaces ([#992](https://github.com/saeedkolivand/ai-job-hunter-app/issues/992)) ([19a6de3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/19a6de3e90907406b8d6713435d9e30d135a0cb4))
+* delete the agentic surfaces and extract the prompt fencing ([#995](https://github.com/saeedkolivand/ai-job-hunter-app/issues/995)) ([93174a1](https://github.com/saeedkolivand/ai-job-hunter-app/commit/93174a1c5123a37043bebe0e46a2247270eb4fa2))
+* **pipeline:** code-owned projects section at quality depth with link-label fidelity ([#990](https://github.com/saeedkolivand/ai-job-hunter-app/issues/990)) ([9806f69](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9806f691b681b2f2be69a25e5e4a285d6c61f957))
+* **pipeline:** cover letter joins the staged run and a humanize stage removes ai signs ([#991](https://github.com/saeedkolivand/ai-job-hunter-app/issues/991)) ([3f9a1da](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3f9a1daaa35f78b1d6371755e6251c3b6c865556))
+* **pipeline:** delete the max generation depth and the depth concept ([#993](https://github.com/saeedkolivand/ai-job-hunter-app/issues/993)) ([3f5f153](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3f5f153f52bd036d26bf039cb8b963a9dcf4ec9e)), closes [#986](https://github.com/saeedkolivand/ai-job-hunter-app/issues/986) [#992](https://github.com/saeedkolivand/ai-job-hunter-app/issues/992) [#992](https://github.com/saeedkolivand/ai-job-hunter-app/issues/992) [#986](https://github.com/saeedkolivand/ai-job-hunter-app/issues/986) [#991](https://github.com/saeedkolivand/ai-job-hunter-app/issues/991)
+
 ## [0.135.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.3...v0.135.0) (2026-08-13)
 
 ### ✨ Features
