@@ -344,6 +344,21 @@ describe('SEARCH_INDEX — manifest integrity', () => {
     expect(SEARCH_INDEX).toHaveLength(32);
   });
 
+  // A bare count survives the wrong deletion (or a duplicate masking a real
+  // removal), so pin the actual change: the depth-selection entry is gone,
+  // and `ai-stages` no longer advertises the judge/sections keywords that
+  // went with it.
+  it('dropped the deleted generation-depth entry, not a different one', () => {
+    expect(SEARCH_INDEX.find((e) => e.id === 'ai-depth')).toBeUndefined();
+  });
+
+  it('no longer indexes `ai-stages` under the removed judge/sections keywords', () => {
+    const stages = SEARCH_INDEX.find((e) => e.id === 'ai-stages');
+    expect(stages).toBeDefined();
+    expect(stages?.keywords).not.toContain('judge');
+    expect(stages?.keywords).not.toContain('sections');
+  });
+
   it('every SectionId has at least one entry', () => {
     const sectionIds: SectionId[] = [
       'general',
