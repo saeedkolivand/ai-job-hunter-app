@@ -23,6 +23,32 @@ fn insert_gen_with_app_id(
         .unwrap();
 }
 
+/// Same as [`insert_gen_with_app_id`], but with an explicit `created_at` —
+/// for the `APPLICATIONS_FEATURE_EPOCH_MS` vintage-gate tests, which need a
+/// row on a specific side of that boundary rather than the hardcoded legacy
+/// `1000` every other caller of `insert_gen_with_app_id` relies on.
+fn insert_gen_with_app_id_and_created_at(
+    gen_conn: &Connection,
+    id: &str,
+    job_url: &str,
+    application_id: Option<&str>,
+    created_at: i64,
+) {
+    gen_conn
+        .execute(
+            "INSERT INTO ai_generations
+             (id, created_at, company_name, job_url, board, application_id)
+             VALUES (?1, ?2, 'Acme', ?3, 'linkedin', ?4)",
+            rusqlite::params![id, created_at, job_url, application_id],
+        )
+        .unwrap();
+}
+
+/// 2026-07-01T00:00:00Z — safely after
+/// [`super::APPLICATIONS_FEATURE_EPOCH_MS`], an arbitrary fixed value rather
+/// than a wall-clock read so these tests are deterministic.
+const MODERN_CREATED_AT: i64 = 1_782_864_000_000;
+
 /// Return the `application_id` column for a generation row (None when NULL).
 fn gen_application_id(gen_conn: &Connection, gen_id: &str) -> Option<String> {
     gen_conn
@@ -1571,6 +1597,255 @@ fn link_orphaned_generations_never_guesses_a_link_for_an_unmatched_row() {
         None,
         "an unresolvable row must stay NULL rather than being guessed onto an unrelated Application"
     );
+}
+
+/// **Boot-path regression guard.** The three tests above call
+/// `link_orphaned_generations` DIRECTLY — which passed even while `open()`'s
+/// original call order ran `backfill_from_generations` FIRST and left every
+/// resolvable orphan already linked (via `upsert_internal`'s wide merge)
+/// before `link_orphaned_generations` ever ran, making it dead in the real
+/// boot path despite passing in isolation. This drives `ApplicationStore::
+/// open` itself — a REAL reboot on an existing data dir, not a direct call to
+/// either private backfill method — so a regression in `open()`'s own call
+/// ORDER is caught here even if both functions individually still pass their
+/// own tests.
+///
+/// The two paths are distinguishable by more than the row's `application_id`:
+/// `upsert_internal`'s merge (`pick(incoming, existing)`) overwrites the
+/// Application's OTHER fields with whatever the orphaned generation row
+/// carries, while `link_orphaned_generations` only ever writes the
+/// generation's FK column. So `company` is set here to a value the orphan
+/// row's hardcoded `'Acme'` (see `insert_gen_with_app_id`) does NOT carry —
+/// if `open()` ever let the wide backfill resolve this row instead of the
+/// lookup-only pass, `company` would be clobbered back to `'Acme'`.
+///
+/// Mutation check: revert `open()`'s call order (`backfill_from_generations`
+/// before `link_orphaned_generations`) and the `company` assertion fails —
+/// applied and reverted.
+#[test]
+fn open_links_an_orphan_through_the_lookup_only_path_not_the_wide_backfill() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+
+    let raw_url = "https://acme.com/jobs/77";
+    let normalized_url = normalize_job_url(raw_url);
+
+    let app_id = {
+        let store = ApplicationStore::open(dir.path()).unwrap();
+        store
+            .upsert_for_origin(
+                raw_url,
+                "linkedin",
+                &meta("Acme", "Dev"),
+                ApplicationOrigin::Generate,
+                None,
+            )
+            .unwrap()
+        // `store` drops here, releasing the connection before the reboot below.
+    };
+
+    // A later correction — a value the stale orphan row below does NOT carry.
+    {
+        let apps_conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        apps_conn
+            .execute(
+                "UPDATE applications SET company = 'Verified Later Value' WHERE id = ?1",
+                rusqlite::params![app_id],
+            )
+            .unwrap();
+    }
+
+    // The orphan: `insert_gen_with_app_id` hardcodes company_name = 'Acme',
+    // the STALE value from before the correction above.
+    insert_gen_with_app_id(&gen_conn, "gen-orphan-boot", &normalized_url, None);
+
+    // A REAL reboot: `ApplicationStore::open`, not a direct call to either
+    // private backfill method.
+    let store2 = ApplicationStore::open(dir.path()).unwrap();
+
+    assert_eq!(
+        store2.list().len(),
+        1,
+        "the orphan must link to the pre-existing Application, not spawn a duplicate"
+    );
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-orphan-boot"),
+        Some(app_id.clone()),
+        "open() must link the orphan to the SAME pre-existing Application"
+    );
+    let app = store2.get(&app_id).unwrap();
+    assert_eq!(
+        app.company, "Verified Later Value",
+        "open() must resolve this row through the lookup-only path — a boot that let \
+         the wide backfill's merge reach it first would clobber this field with the \
+         orphan's stale 'Acme'"
+    );
+}
+
+// ── `APPLICATIONS_FEATURE_EPOCH_MS` — the resurrection fix ───────────────────
+//
+// `backfill_from_generations` used to CREATE an Application for any
+// unmatched row, unconditionally, on every boot. Deleting an Application
+// (either arm) does not — cannot — reach into the sibling `ai_generations.db`
+// atomically, so a surviving orphaned row with the deleted posting's
+// `job_url` made the NEXT boot silently re-create it: the user's delete was
+// undone without any signal that it happened. These tests drive the actual
+// user-visible sequence (create → delete → reboot) through `ApplicationStore::
+// open`, not the private backfill methods directly.
+
+/// **`keepDocuments=true`: detach, then delete, then reboot — must not come
+/// back.** Mirrors `commands::applications::applications_delete`'s own two
+/// calls (`AiGenerationStore::detach_application` then `ApplicationStore::
+/// delete`) for that arm.
+///
+/// Mutation check: comment out the `created_at >= APPLICATIONS_FEATURE_EPOCH_MS`
+/// guard in `backfill_from_generations` and the `list().len()` assertion
+/// after reboot fails (1, not 0) — applied and reverted.
+#[test]
+fn a_keep_documents_true_delete_does_not_resurrect_the_application_on_reboot() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    let gen_store =
+        crate::ai_generations::AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let raw_url = "https://acme.com/jobs/resurrect-1";
+    let normalized = normalize_job_url(raw_url);
+
+    // ONE long-lived store instance for the whole create→detach→delete
+    // sequence — exactly production's shape (`applications_delete` runs
+    // against the already-open `tauri::State<ApplicationStore>`, it never
+    // reopens the store mid-delete). A second `ApplicationStore::open` call
+    // BEFORE the delete would itself run a boot-repair pass while the
+    // Application still exists and re-link the just-detached row, masking
+    // the very defect this test exists to catch.
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let app_id = store
+        .upsert_for_origin(
+            raw_url,
+            "linkedin",
+            &meta("Acme", "Dev"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+    // A MODERN generation, linked to the Application about to be deleted —
+    // exactly the shape a real staged-pipeline run produces.
+    insert_gen_with_app_id_and_created_at(
+        &gen_conn,
+        "gen-r1",
+        &normalized,
+        Some(&app_id),
+        MODERN_CREATED_AT,
+    );
+
+    // The `keepDocuments=true` delete sequence.
+    gen_store.detach_application(&app_id).unwrap();
+    store.delete(&app_id, true).unwrap();
+    assert_eq!(
+        store.list().len(),
+        0,
+        "precondition: the Application is gone"
+    );
+    drop(store); // release the connection before the reboot below.
+
+    let rebooted = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        rebooted.list().len(),
+        0,
+        "a deletion the user asked for must survive a restart"
+    );
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-r1"),
+        None,
+        "the detached generation must stay unlinked, not get a freshly created Application"
+    );
+}
+
+/// **`keepDocuments=false`: a row already orphaned BEFORE the delete — the
+/// exact pre-fix state every existing install is in right now — must not
+/// resurrect the Application either.** `remove_for_application` only deletes
+/// rows CURRENTLY linked by id, so a row that was never linked to this
+/// Application (already NULL) survives the delete untouched, sharing its
+/// `job_url` — precisely the shape a reboot must not re-link into existence.
+///
+/// Mutation check: same as above — remove the vintage guard and this reddens.
+#[test]
+fn a_keep_documents_false_delete_does_not_resurrect_from_a_pre_orphaned_row() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    let gen_store =
+        crate::ai_generations::AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let raw_url = "https://acme.com/jobs/resurrect-2";
+    let normalized = normalize_job_url(raw_url);
+    // ONE long-lived store instance, same reasoning as the keepDocuments=true
+    // test above — a second `open` before the delete would itself relink the
+    // pre-orphaned row to the still-alive Application via `link_orphaned_
+    // generations`, masking the defect this test exists to catch.
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let app_id = store
+        .upsert_for_origin(
+            raw_url,
+            "linkedin",
+            &meta("Acme", "Dev"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // Already orphaned BEFORE the delete — never linked to `app_id`.
+    insert_gen_with_app_id_and_created_at(
+        &gen_conn,
+        "gen-r2",
+        &normalized,
+        None,
+        MODERN_CREATED_AT,
+    );
+
+    let deleted = gen_store.remove_for_application(&app_id).unwrap();
+    assert_eq!(
+        deleted, 0,
+        "precondition: the pre-orphaned row was never linked to this id"
+    );
+    store.delete(&app_id, false).unwrap();
+    drop(store); // release the connection before the reboot below.
+
+    let rebooted = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        rebooted.list().len(),
+        0,
+        "must not resurrect the Application from a row that was already orphaned before the delete"
+    );
+    assert_eq!(gen_application_id(&gen_conn, "gen-r2"), None);
+}
+
+/// **Direct proof of the vintage gate itself**, isolated from the delete
+/// sequence above: a MODERN row with no matching Application ANYWHERE (never
+/// had one, or it was deleted) must never get one CREATED by
+/// `backfill_from_generations` — only [`link_orphaned_generations`] may ever
+/// resolve it, and only by linking to one that already exists.
+///
+/// Mutation check: drop the `created_at >= APPLICATIONS_FEATURE_EPOCH_MS`
+/// guard and `list().len()` becomes 1 — applied and reverted.
+#[test]
+fn a_modern_unmatched_orphan_never_gets_an_application_created_by_backfill() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    insert_gen_with_app_id_and_created_at(
+        &gen_conn,
+        "gen-modern-orphan",
+        "https://acme.com/jobs/never-had-one",
+        None,
+        MODERN_CREATED_AT,
+    );
+
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        store.list().len(),
+        0,
+        "a MODERN orphan must never get a freshly created Application"
+    );
+    assert_eq!(gen_application_id(&gen_conn, "gen-modern-orphan"), None);
 }
 
 // ── R1 — ApplicationStore::import rollback regression guard ──────────────────

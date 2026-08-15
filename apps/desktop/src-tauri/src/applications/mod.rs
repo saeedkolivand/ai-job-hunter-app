@@ -302,6 +302,13 @@ pub struct StatusEvent {
     pub note: String,
 }
 
+/// 2026-06-11T00:00:00Z ms: a day before PR #359 (Applications) merged, so
+/// `created_at` earlier is provably LEGACY (create-on-miss is correct); at/
+/// after it, TREATED as modern — misclassifying legacy only strands it from
+/// `find_for_job`, while the reverse RESURRECTS a deletion. Still relinked
+/// later by `link_orphaned_generations`; only CREATING one is refused.
+const APPLICATIONS_FEATURE_EPOCH_MS: u64 = 1_781_136_000_000;
+
 pub struct ApplicationStore {
     conn: Mutex<Connection>,
 }
@@ -317,22 +324,23 @@ impl ApplicationStore {
         let store = Self {
             conn: Mutex::new(conn),
         };
-        // The ai_generations FK column + the backfill touch the SEPARATE
-        // ai_generations.db, so they can't be ordinary applications.db migrations.
-        // Run them here, guarded so a re-run is a no-op.
+        // Both backfills touch the SEPARATE ai_generations.db; guarded so a
+        // re-run is a no-op. ORDER IS LOAD-BEARING: lookup-only `link_
+        // orphaned_generations` (own doc) runs FIRST — reversed, the wide
+        // backfill's unconditional scan resolved every row first, leaving
+        // nothing for the lookup-only pass (proven: stubbed to `Ok(0)`, the
+        // OLD order still merge-linked the orphan). Reordering alone does NOT
+        // stop resurrecting a DELETED Application — `APPLICATIONS_FEATURE_
+        // EPOCH_MS` (own doc) below closes that.
+        if let Err(e) = store.link_orphaned_generations(data_dir) {
+            log::warn!("[applications] orphaned-generation link skipped (non-fatal): {e}");
+        }
+        // Pre-ADR-0001 legacy backfill: no Application ever existed for these.
+        // Scoped to whatever the pass above couldn't resolve, plus its own vintage gate.
         if let Err(e) = store.backfill_from_generations(data_dir) {
             // Non-fatal: a backfill failure must never block app boot. Worst case
             // the table is empty and the user re-derives via the normal flow.
             log::warn!("[applications] backfill skipped (non-fatal): {e}");
-        }
-        // A SECOND, DISJOINT backfill from the same sibling database, for a
-        // later defect: every staged-pipeline `ai_generations` row saved before
-        // `persist_document` started establishing the FK itself (see that
-        // function's own doc) has `application_id` NULL despite an Application
-        // for it already existing — unlike the legacy rows `backfill_from_
-        // generations` handles, where no Application ever existed at all.
-        if let Err(e) = store.link_orphaned_generations(data_dir) {
-            log::warn!("[applications] orphaned-generation link skipped (non-fatal): {e}");
         }
         Ok(store)
     }
@@ -347,10 +355,10 @@ impl ApplicationStore {
     ///
     /// 1. `ALTER TABLE ai_generations ADD COLUMN application_id` (+ index) — guarded
     ///    by [`crate::db::column_exists`] so a re-run is a no-op.
-    /// 2. For each generation, ensure exactly one `Application(status=applied,
-    ///    applied_at=created_at)` keyed by `normalize(job_url)` (empty url → its own
-    ///    uuid so link-less generations each get a distinct Application), link the
-    ///    gen's `application_id`, and seed one status event.
+    /// 2. For each generation OLDER than [`APPLICATIONS_FEATURE_EPOCH_MS`] (own
+    ///    doc; younger left NULL), ensure exactly one `Application(status=
+    ///    applied, applied_at=created_at)` keyed by `normalize(job_url)`,
+    ///    link the gen's `application_id`, and seed one status event.
     ///
     /// Re-running is safe: a gen that already carries a non-empty `application_id`
     /// is skipped, and Applications are looked up by normalized url before insert,
@@ -414,6 +422,9 @@ impl ApplicationStore {
         for g in rows {
             if g.application_id.is_some() {
                 continue; // already linked — idempotent skip
+            }
+            if g.created_at >= APPLICATIONS_FEATURE_EPOCH_MS {
+                continue; // modern + still unmatched — own doc on the constant
             }
             let normalized = normalize_job_url(&g.job_url);
             let meta = ApplicationMeta {
