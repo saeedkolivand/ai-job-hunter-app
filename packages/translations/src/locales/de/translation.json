@@ -1663,7 +1663,8 @@
         "label": "KI-Spuren entfernen",
         "description": "Schreibt nur die Zeilen um, die wie KI-Text wirken."
       },
-      "allDone": "Alle Schritte abgeschlossen"
+      "allDone": "Alle Schritte abgeschlossen",
+      "elapsedTotal": "{{time}} insgesamt"
     },
     "state": {
       "queued": "Wartet auf einen freien Platz…",

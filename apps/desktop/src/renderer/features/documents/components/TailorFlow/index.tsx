@@ -451,6 +451,7 @@ export function TailorFlow({
       <GeneratingPanel
         currentStep={gen.currentStep}
         stageLabel={gen.stageLabel}
+        runStartedAt={gen.runStartedAt}
         thinking={gen.thinking}
         // Whichever document is currently streaming: the letter stage's own
         // buffer once it has content, the résumé's before/otherwise. Nothing
