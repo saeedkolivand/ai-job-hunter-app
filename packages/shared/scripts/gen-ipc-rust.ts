@@ -784,11 +784,11 @@ function genGenerationDepths(): string {
 }
 
 /** Generate the agent-flow `kind` vocabulary — same shape as `genGenerationDepths`
- *  above, and load-bearing for the same reason: the Rust `AgentFlow` registry
- *  (`agent::flows::FLOWS`) is keyed on these tokens, so emitting them lets a Rust
- *  test assert the registry covers exactly the vocabulary the wire schema accepts.
- *  Without it, a kind added to the `z.enum` and to no flow would pass `gen:ipc`
- *  and fail at run time as "unknown agent flow" — a shipped dead option. */
+ *  above. Used to be load-bearing for a Rust-side registry test (the `AgentFlow`
+ *  registry, `agent::flows::FLOWS`, was keyed on these tokens); that registry and
+ *  the whole `agent` module were deleted (PR-5 step 2). Still emitted because the
+ *  renderer (untouched until PR-5 step 3) imports `AGENT_FLOW_KINDS`/
+ *  `AgentRunRequest`/`AgentConfirmRequest` via `@ajh/shared`. */
 function genAgentFlowKinds(): string {
   const decl = constSliceDecl(
     'AGENT_FLOW_KINDS',
@@ -800,10 +800,11 @@ function genAgentFlowKinds(): string {
     '// Source of truth: packages/shared/src/schemas/index.ts',
     '#![allow(dead_code)]',
     '',
-    '/// Every `AgentRunRequest.kind` the wire accepts. The FIRST entry is the',
-    '/// serde default (`prep_application`), and `agent::flows::FLOWS` must carry',
-    '/// exactly one flow per token — pinned by',
-    '/// `agent::flows::tests::the_registry_covers_the_whole_wire_vocabulary`.',
+    '/// Every `AgentRunRequest.kind` the wire accepted. The FIRST entry is the',
+    '/// serde default (`prep_application`). The Rust-side registry this used to',
+    '/// pin (`agent::flows::FLOWS`) was deleted along with the rest of `agent/`',
+    '/// (PR-5 step 2); kept only because the renderer (PR-5 step 3) still',
+    '/// imports it via `@ajh/shared`.',
     decl,
     '',
   ].join('\n');

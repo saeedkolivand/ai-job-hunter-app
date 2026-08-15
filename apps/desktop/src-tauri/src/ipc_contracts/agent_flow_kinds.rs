@@ -2,8 +2,9 @@
 // Source of truth: packages/shared/src/schemas/index.ts
 #![allow(dead_code)]
 
-/// Every `AgentRunRequest.kind` the wire accepts. The FIRST entry is the
-/// serde default (`prep_application`), and `agent::flows::FLOWS` must carry
-/// exactly one flow per token — pinned by
-/// `agent::flows::tests::the_registry_covers_the_whole_wire_vocabulary`.
+/// Every `AgentRunRequest.kind` the wire accepted. The FIRST entry is the
+/// serde default (`prep_application`). The Rust-side registry this used to
+/// pin (`agent::flows::FLOWS`) was deleted along with the rest of `agent/`
+/// (PR-5 step 2); kept only because the renderer (PR-5 step 3) still
+/// imports it via `@ajh/shared`.
 pub const AGENT_FLOW_KINDS: &[&str] = &["prep_application", "improve_resume"];
