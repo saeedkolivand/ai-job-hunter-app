@@ -298,6 +298,7 @@ impl ApplicationStore {
                  FROM ai_generations
                  ORDER BY created_at ASC",
             )?;
+            let mut dropped = 0usize;
             let rows: Vec<GenRow> = stmt
                 .query_map([], |row| {
                     let answers_json: String = row.get(7)?;
@@ -315,9 +316,25 @@ impl ApplicationStore {
                         application_id: app_id.filter(|s| !s.is_empty()),
                     })
                 })?
-                .filter_map(|r| r.ok())
+                .filter_map(|r| match r {
+                    Ok(row) => Some(row),
+                    Err(_) => {
+                        dropped += 1;
+                        None
+                    }
+                })
                 .collect();
             drop(stmt);
+            if dropped > 0 {
+                // Path-free, content-free (ADR-027): a count only, never the
+                // row's id/company/url. These rows are never retried — the
+                // marker this scan feeds into is one-shot — so this is the
+                // only signal their loss is ever diagnosable from.
+                log::warn!(
+                    "[applications] legacy backfill dropped {dropped} generation row(s) \
+                     that failed to parse (not retried)"
+                );
+            }
 
             for g in rows {
                 if g.application_id.is_some() {
