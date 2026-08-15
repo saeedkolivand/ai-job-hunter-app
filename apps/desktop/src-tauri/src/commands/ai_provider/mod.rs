@@ -1318,11 +1318,21 @@ pub fn friendly_api_error(
 /// Distinct from [`friendly_api_error`], which maps a response the server DID
 /// send back.
 ///
-/// `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()` fired (never
-/// a connect/DNS/TLS failure) — the ONLY case that should surface as a
-/// per-call deadline rather than a generic "unreachable". A retry against the
-/// same deadline would time out again, so this is `AppError::Timeout`, not
-/// `Network`.
+/// `is_timeout()` walks `e`'s WHOLE source chain, not just this crate's own
+/// `.timeout()` call: it also matches an inner `hyper::Error::is_timeout()`
+/// and a raw `io::ErrorKind::TimedOut` — so it is reqwest's general "gave up
+/// waiting" signal, not narrowly "the client's own configured deadline
+/// fired". That is still the right classification here: `net::http::shared`
+/// (the sole pooled client every adapter uses) sets no separate
+/// connect/read timeout of its own — see its module doc, "no global
+/// timeout" — so every request's ONLY timing bound is the SAME per-call
+/// `.timeout()` these call sites set, and that bound covers connect through
+/// the last streamed byte. Whichever inner layer is the one that actually
+/// noticed the wait (reqwest's own timer, hyper's, or the OS socket's) is
+/// noticing the SAME deadline elapsing, so `is_timeout() == true` reliably
+/// means this call's own `deadline` is why it stopped waiting, and a retry
+/// against that same deadline would time out again — `AppError::Timeout`,
+/// not `Network`, either way.
 ///
 /// `label` names the provider in the message — a fixed string for a
 /// single-provider adapter (Anthropic/Gemini/Ollama), or `self.id.as_str()`

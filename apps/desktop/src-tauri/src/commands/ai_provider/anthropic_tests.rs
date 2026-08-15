@@ -1389,11 +1389,17 @@ async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_
 //
 // `AppError::Timeout` (see `complete_impl`'s `send_with_retry` failure branch,
 // and its siblings in `openai.rs`/`gemini.rs`/`ollama.rs`) depends on
-// `is_timeout()` meaning exactly "the CLIENT's own `.timeout()` fired", never
-// a connect/DNS/TLS failure — `reqwest::Error` has no public constructor, so
-// this pins the assumption against a REAL error rather than trusting the
-// library's docs. One place for all four adapters: the classification is a
-// `reqwest` fact, not an Anthropic-specific one.
+// `is_timeout()` firing whenever a call gave up waiting on ITS OWN `.timeout()`
+// deadline — which, per reqwest's own source, is checked by walking the whole
+// error chain (its `TimedOut` marker, an inner `hyper::Error::is_timeout()`,
+// or a raw `io::ErrorKind::TimedOut`), not by matching one specific error
+// shape. It must NOT also fire for a connection this process itself refused —
+// that is a different failure (nothing was ever waited on) and would
+// misreport an actively-down host as "try a faster model". `reqwest::Error`
+// has no public constructor, so this pins both halves of that boundary
+// against REAL errors rather than trusting the library's docs. One place for
+// all four adapters: the classification is a `reqwest` fact, not an
+// Anthropic-specific one.
 
 /// A server that accepts the connection immediately (so a CONNECT check would
 /// succeed) but writes NOTHING — not even the status line — until `delay` has
