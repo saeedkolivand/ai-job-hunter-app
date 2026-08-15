@@ -1483,6 +1483,55 @@ fn link_orphaned_generations_links_a_row_whose_application_already_exists() {
     );
 }
 
+/// **Proves `link_orphaned_generations` itself normalizes `job_url` before
+/// looking it up** — every other link test in this file seeds the orphan row
+/// with an already-normalized url (matching what production actually writes),
+/// so none of them can tell the internal `normalize_job_url` call apart from
+/// simply being a no-op on an already-normalized string. This one seeds the
+/// RAW, un-normalized url instead — what a genuinely pre-fix row on disk
+/// would carry — so only the real normalization call can make the lookup hit.
+///
+/// Mutation check: delete the `normalize_job_url(&job_url)` call inside
+/// `link_orphaned_generations` (looking up the raw string directly) and
+/// `linked` becomes `0` — applied and reverted.
+#[test]
+fn link_orphaned_generations_normalizes_a_raw_unnormalized_orphan_url() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+
+    // `utm_source` is dropped and the host is lowercased by normalization —
+    // this raw form is NOT equal to its own normalized form.
+    let raw_url = "https://ACME.com/jobs/42?utm_source=newsletter";
+    assert_ne!(
+        raw_url,
+        normalize_job_url(raw_url),
+        "test precondition: raw_url must actually differ from its normalized form"
+    );
+    let app_id = app_store
+        .upsert_for_origin(
+            raw_url,
+            "linkedin",
+            &meta("Acme", "Dev"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // The orphan row carries the RAW url, unlike every other test in this file.
+    insert_gen_with_app_id(&gen_conn, "gen-orphan-raw", raw_url, None);
+
+    let linked = app_store.link_orphaned_generations(dir.path()).unwrap();
+    assert_eq!(
+        linked, 1,
+        "a raw, un-normalized orphan url must still resolve to its Application"
+    );
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-orphan-raw"),
+        Some(app_id)
+    );
+}
+
 /// **The actual user-visible defect, reproduced end to end and then closed.**
 /// BEFORE the backfill, `remove_for_application` — what `applications_delete`
 /// calls for `keepDocuments=false` — matches nothing for an orphaned row: the
@@ -1846,6 +1895,36 @@ fn a_modern_unmatched_orphan_never_gets_an_application_created_by_backfill() {
         "a MODERN orphan must never get a freshly created Application"
     );
     assert_eq!(gen_application_id(&gen_conn, "gen-modern-orphan"), None);
+}
+
+/// **The epoch boundary is inclusive** — a row created at EXACTLY
+/// `APPLICATIONS_FEATURE_EPOCH_MS` must be treated as modern (`>=`, not
+/// `>`). Every other test in this section seeds [`MODERN_CREATED_AT`], which
+/// sits comfortably after the boundary and so cannot distinguish `>` from
+/// `>=`; this seeds the boundary value itself.
+///
+/// Mutation check: change the guard from `created_at >= APPLICATIONS_FEATURE_
+/// EPOCH_MS` to `created_at > APPLICATIONS_FEATURE_EPOCH_MS` and
+/// `list().len()` becomes 1 — applied and reverted.
+#[test]
+fn a_row_created_exactly_at_the_epoch_boundary_is_treated_as_modern() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    insert_gen_with_app_id_and_created_at(
+        &gen_conn,
+        "gen-boundary",
+        "https://acme.com/jobs/exactly-at-epoch",
+        None,
+        APPLICATIONS_FEATURE_EPOCH_MS as i64,
+    );
+
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        store.list().len(),
+        0,
+        "a row created exactly at the epoch boundary must be treated as modern, not legacy"
+    );
+    assert_eq!(gen_application_id(&gen_conn, "gen-boundary"), None);
 }
 
 /// **The genuinely-pre-epoch resurrection, closed.** The epoch guard above
