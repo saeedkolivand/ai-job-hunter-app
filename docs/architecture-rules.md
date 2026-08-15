@@ -17,7 +17,7 @@ lower layer; a lower layer may never use a higher one). Layer = the first path s
 a module under `src/`.
 
 ```
-L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, agent, crash_reporting
+L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, crash_reporting
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend, salary_research
 L1  Domain             scraping, extraction, export, documents, jobs, postings, dedup,
@@ -44,8 +44,9 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
 - **Documented exception:** `prompt_fence` (ADR-010 injection-fencing primitives —
   `fenced`/`FENCE_TAG_PATTERNS`/`neutralize_transcript_boundaries`/`JOB_CAP`/
   `RESUME_CAP`, relocated out of the L3 `agent` module in PR-5 step 1 so
-  `pipeline`, `agent`, `commands::ai_provider::structured`, and `extension_bridge`
-  can all reach them without an upward import) reads the GENERATED
+  `pipeline`, `commands::ai_provider::structured`, and `extension_bridge`
+  can all reach them without an upward import — `agent` itself was deleted
+  entirely in PR-5 step 2) reads the GENERATED
   `ipc_contracts::agent_caps::AGENT_RESUME_TEXT_CAP` constant — the same
   generated-cross-language-const exception `pipeline`/`ai_config`/`scraping`
   already carry for `ipc_contracts`. See R7's allowlist.
@@ -101,7 +102,7 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
   moved the pure prompt primitives to `prompt_fence` and `AUTOPILOT_NOTE_SYSTEM`
   into `autopilot_helpers` itself.)
 
-### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `agent`, `crash_reporting`)
+### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `crash_reporting`)
 
 - **Allowed deps:** anything below (L0/L1/L2).
 - **Forbidden deps:** none structurally — but L3 must stay **thin**: command handlers
