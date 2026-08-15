@@ -563,12 +563,6 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // already reach up for). No runtime/layer coupling. TODO(arch): host the
     // cross-language consts in an L0 module so this exception clears.
     ("scraping", "ipc_contracts"),
-    // `prompt_fence::RESUME_CAP` re-exports the GENERATED cross-language cap
-    // (`ipc_contracts::agent_caps::AGENT_RESUME_TEXT_CAP`, source of truth
-    // `packages/shared/src/agent-caps.ts`) so the renderer and this crate read
-    // the same number — identical shape to the `pipeline`/`ai_config`/
-    // `scraping -> ipc_contracts` edges above for the same reason.
-    ("prompt_fence", "ipc_contracts"),
     // Email-watch scheduler (L2, task #23 PR B) invokes
     // `commands::notifications::push_and_notify` to deliver a match — the
     // same upward shell-reach `autopilot_scheduler` has for

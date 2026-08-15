@@ -2,14 +2,20 @@
 //! every untrusted blob (a scraped job posting, a candidate's résumé, prior-
 //! stage model output, a bridge question) crosses before it reaches a prompt.
 //!
-//! **Dependency-free by design.** This module has no dependency on `pipeline`
-//! or `commands` — only `std` + `regex` + the generated
-//! [`crate::ipc_contracts::agent_caps`] constant. It used to live inside the
-//! agentic controller's `agent::tools`, but callers outside that module (the
-//! résumé pipeline, the extension bridge, the structured-output re-ask path,
-//! Autopilot's AI notes) depended on it too, so it moved here (PR-5 step 1) to
-//! survive `agent`'s deletion (PR-5 step 2) instead of being deleted along
-//! with it.
+//! **Dependency-free by design.** This module has no dependency on `pipeline`,
+//! `commands`, or any generated contract — only `std` + `regex`. It used to
+//! live inside the agentic controller's `agent::tools`, but callers outside
+//! that module (the résumé pipeline, the extension bridge, the
+//! structured-output re-ask path, Autopilot's AI notes) depended on it too,
+//! so it moved here (PR-5 step 1) to survive `agent`'s deletion (PR-5 step 2)
+//! instead of being deleted along with it. `RESUME_CAP` was itself a
+//! generated re-export of `packages/shared/src/agent-caps.ts` until the
+//! renderer's own consumer of that number (the `improve_resume` entry point)
+//! was deleted (PR-5 step 3) — at that point generating a number with ONE
+//! consumer, this crate, was the exact ceremony [`JOB_CAP`]'s own doc already
+//! argued against, so the generator target was deleted (PR-5 review fixes)
+//! and this became a local literal too, clearing the last reason this
+//! module depended on anything outside itself.
 //!
 //! SECURITY (OWASP LLM01): [`fenced`] wraps one untrusted blob as `<tag>…
 //! </tag>`, truncated to a caller-supplied cap, and neutralizes every KNOWN
@@ -23,15 +29,17 @@
 //! [`FENCE_TAG_PATTERNS`] as load-bearing security, not bookkeeping: a stale
 //! entry costs nothing, a missing one is a prompt-injection hole.
 
-/// Char cap on the résumé text fenced into a prompt.
-///
-/// **GENERATED, not a literal here.** The renderer needs the same number —
-/// it is the threshold a generation this fence would cut is refused at
-/// rather than silently truncated — and it had been hand-copied there as a
-/// second `8_000`. It now comes from `packages/shared/src/agent-caps.ts`
-/// through `pnpm gen:ipc`, so the renderer imports the constant and
-/// `gen:ipc:check` gates this Rust copy.
-pub(crate) const RESUME_CAP: usize = crate::ipc_contracts::agent_caps::AGENT_RESUME_TEXT_CAP;
+/// Char cap on the résumé text fenced into a prompt. A local literal — same
+/// rule [`JOB_CAP`] states below, and now true of this constant too: nothing
+/// outside this crate reads it. It used to be generated from
+/// `packages/shared/src/agent-caps.ts` because the renderer's `improve_resume`
+/// entry point needed the identical number to decide whether a generation was
+/// short enough to review — that entry point (and the whole renderer surface
+/// around it) was deleted in PR-5 step 3, so the generated indirection outlived
+/// its only reason to exist. `8_000` here is byte-for-byte the same value
+/// `AGENT_RESUME_TEXT_CAP` carried; nothing downstream that depends on the
+/// exact number changed.
+pub(crate) const RESUME_CAP: usize = 8_000;
 
 /// Char cap on the job-posting text fenced into a prompt. A local literal —
 /// nothing outside this crate reads it, and generating a number with one
