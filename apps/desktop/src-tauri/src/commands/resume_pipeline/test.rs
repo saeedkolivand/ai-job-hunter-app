@@ -2518,6 +2518,14 @@ fn persist_document_source() -> String {
 /// field from the `AiGenerationRecord` literal (the record falls back to
 /// `..empty_record()`'s `None` again) and the second assertion fails; delete
 /// the `upsert_for_origin(` call and the first does.
+///
+/// **This is a SOURCE pin, not a behavior test** — it cannot tell a real
+/// `upsert_for_origin(` call from one that errors on every invocation, or a
+/// `try_state::<ApplicationStore>()` that returns `None` at runtime; nothing
+/// about that shows up in the source text. See
+/// [`upsert_for_origin_id_on_the_record_is_what_remove_for_application_finds`]
+/// below for the store-level guard that actually drives the chain this test
+/// can only assert the shape of.
 #[test]
 fn persist_document_establishes_the_application_fk_it_used_to_skip() {
     let body = persist_document_source();
@@ -2531,6 +2539,62 @@ fn persist_document_establishes_the_application_fk_it_used_to_skip() {
         "the upserted id must land on the AiGenerationRecord literal — otherwise it \
          is computed and discarded, and the row still persists with \
          application_id: None via ..empty_record()"
+    );
+}
+
+/// **Store-level replacement for the source pin above.** `persist_document`
+/// itself still can't be driven directly — no `tauri::test` mock-app harness
+/// (see `persist_document_source`'s own doc) — so this drives the STORE-LEVEL
+/// chain it composes instead, exactly the way `persist_document` composes it:
+/// `ApplicationStore::upsert_for_origin` returns an id, that id lands on
+/// `AiGenerationRecord.application_id`, `AiGenerationStore::save_application`
+/// persists it, and `remove_for_application` — what
+/// `applications_delete(keepDocuments=false)` calls — actually finds and
+/// deletes the row through it. The source pin above would stay green even if
+/// `upsert_for_origin` errored on every call or `try_state` returned `None`
+/// at runtime; this fails for real if the id it hands to the record is not
+/// the SAME id `remove_for_application` deletes by.
+///
+/// Mutation check: force `application_id: None` on the record below (the
+/// pre-fix `..empty_record()` shape this FK exists to prevent) and `deleted`
+/// reddens from `1` to `0`.
+#[test]
+fn upsert_for_origin_id_on_the_record_is_what_remove_for_application_finds() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let app_store = crate::applications::ApplicationStore::open(dir.path()).unwrap();
+    let gen_store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let job_url = "https://acme.com/jobs/fk-1";
+    let app_id = app_store
+        .upsert_for_origin(
+            job_url,
+            "linkedin",
+            &crate::applications::ApplicationMeta {
+                company: "Acme".into(),
+                title: "Staff Engineer".into(),
+                ..Default::default()
+            },
+            crate::applications::ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // Exactly what `persist_document` builds: the id `upsert_for_origin` just
+    // returned, landing on the record's `application_id` field.
+    let record = AiGenerationRecord {
+        id: "gen-fk-1".into(),
+        job_url: job_url.to_string(),
+        resume_text: "Staff Engineer résumé".into(),
+        application_id: Some(app_id.clone()),
+        ..super::empty_record()
+    };
+    gen_store.save_application(record).unwrap();
+
+    let deleted = gen_store.remove_for_application(&app_id).unwrap();
+    assert_eq!(
+        deleted, 1,
+        "the id persist_document writes onto application_id must be the SAME id \
+         remove_for_application deletes by"
     );
 }
 
