@@ -297,6 +297,36 @@ describe('useResumePipelineSession', () => {
     });
   });
 
+  // ── reset()'s own stale-ref window ──────────────────────────────────────
+  //
+  // Same shape as the `start()` race above (see "arrives after a clean
+  // reconcile read, before the render commits"): `runIdRef`/`jobIdRef`/
+  // `busyRef` are written only in the render body, so `reset()`'s `setState`
+  // calls don't reach them synchronously. The `pipeline:stage` listener is
+  // still mounted on the run that was just reset — nothing unsubscribes it —
+  // so a late event for that run, arriving in the gap before the pending
+  // reset commits, must be dropped by the (fresh) ref guard, not read
+  // against the old run's id.
+  describe('reset()', () => {
+    it('drops a stage event for the just-reset run that arrives before the render commits', async () => {
+      const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      bus.detail = detail('needsReview');
+      rerender();
+      await waitFor(() => expect(result.current.state).toBe('needsReview'));
+
+      act(() => {
+        result.current.reset();
+        // Fires in the SAME synchronous scope as reset() — before this
+        // act() lets the pending RESET/setStage(null) calls commit — which
+        // is exactly the ordering a real listener callback can race into.
+        bus.stage?.(stage('analyze_job', 'start', 0));
+      });
+
+      expect(result.current.state).toBe('idle');
+      expect(result.current.stage).toBeNull();
+    });
+  });
+
   it('cancels through the umbrella job id and waits for the record to confirm', () => {
     const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
     act(() => bus.stage?.(stage('draft', 'start', 3)));
