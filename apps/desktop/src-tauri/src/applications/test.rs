@@ -2126,6 +2126,104 @@ fn relink_after_restore_bypasses_the_already_set_marker() {
     );
 }
 
+/// **FIX-4 mutation guard: the marker is set LAST, not on partial
+/// progress.** `backfill_from_generations`'s own doc promises a run that
+/// errors PARTWAY through is retried on the next boot, not silently marked
+/// done — only the success path was covered before this test. A `BEFORE
+/// UPDATE` trigger poisons the SECOND row's link-back write only, after the
+/// FIRST row's Application already committed on the applications
+/// connection — a genuine partial failure, not a total pre-loop I/O failure
+/// (which wouldn't prove "partway").
+///
+/// `gen-fail` still gets an Application CREATED before its own write fails —
+/// `upsert_internal` (applications.db) runs before the link-back `UPDATE`
+/// (ai_generations.db) inside the loop body, so the poisoned row's failure
+/// lands strictly between the two, not before either.
+///
+/// Mutation check: move `self.mark_legacy_backfill_done()` in
+/// `backfill_from_generations` to run unconditionally (e.g. before the `?`
+/// on `scan_legacy_generations`) and the first `legacy_backfill_marker_set`
+/// assertion (expected `false`) fails — applied and reverted.
+///
+/// (FIX-2's own swallowed-error regression has a dedicated test above,
+/// `a_transient_marker_read_failure_does_not_re_run_the_scan` — this test's
+/// trigger never makes `legacy_backfill_done`'s OWN read fail, only the
+/// later link-back write, so it cannot mutation-test FIX-2 on its own.)
+#[test]
+fn a_run_that_errors_partway_does_not_set_the_marker() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+
+    // Two legacy (pre-epoch) rows, distinct `created_at` so `ORDER BY
+    // created_at ASC` deterministically processes `gen-ok` first.
+    insert_gen_with_app_id_and_created_at(
+        &gen_conn,
+        "gen-ok",
+        "https://acme.com/jobs/partial-ok",
+        None,
+        1_000,
+    );
+    insert_gen_with_app_id_and_created_at(
+        &gen_conn,
+        "gen-fail",
+        "https://acme.com/jobs/partial-fail",
+        None,
+        2_000,
+    );
+
+    // Poison ONLY `gen-fail`'s link-back write.
+    gen_conn
+        .execute_batch(
+            "CREATE TRIGGER trg_poison BEFORE UPDATE OF application_id ON ai_generations
+             WHEN NEW.id = 'gen-fail'
+             BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;",
+        )
+        .unwrap();
+
+    // `open()` swallows the backfill error non-fatally (own doc) and still
+    // returns `Ok` — matches the real boot path exactly.
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    assert!(
+        !legacy_backfill_marker_set(dir.path()),
+        "a run that errored partway through must not set the one-shot marker"
+    );
+    assert_eq!(
+        store.list().len(),
+        2,
+        "both rows reach `upsert_internal` before either write can fail — \
+         gen-fail's Application IS created, only its link-back write fails"
+    );
+    assert!(
+        gen_application_id(&gen_conn, "gen-ok").is_some(),
+        "gen-ok's link-back write completed before gen-fail's poisoned one ran"
+    );
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-fail"),
+        None,
+        "gen-fail's own link-back write is the one that failed"
+    );
+    drop(store); // release the connection before the reboot below.
+
+    // Un-poison, then reboot: the retry must finish the row it never reached.
+    gen_conn.execute_batch("DROP TRIGGER trg_poison;").unwrap();
+    let rebooted = ApplicationStore::open(dir.path()).unwrap();
+    assert!(
+        legacy_backfill_marker_set(dir.path()),
+        "the retry must succeed once every row is processed and set the marker"
+    );
+    assert_eq!(
+        rebooted.list().len(),
+        2,
+        "still 2 — the retry must merge gen-fail into ITS ALREADY-CREATED \
+         Application (job_url lookup in `upsert_internal`), not spawn a \
+         duplicate, while skipping the already-linked gen-ok entirely"
+    );
+    assert!(
+        gen_application_id(&gen_conn, "gen-fail").is_some(),
+        "gen-fail must end up linked once the retry succeeds"
+    );
+}
+
 // ── R1 — ApplicationStore::import rollback regression guard ──────────────────
 //
 // `DataStore::import` for ApplicationStore runs clear+repopulate in ONE
