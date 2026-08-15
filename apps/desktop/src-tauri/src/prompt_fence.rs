@@ -59,6 +59,21 @@ pub(crate) const JOB_CAP: usize = 8_000;
 /// It stays linear: `[^>]*` cannot match `>`, so it has exactly one way to
 /// reach the delimiter and there is no quantifier nested inside another.
 ///
+/// **`((?:\s|/)[^>]*)?` — the SELF-CLOSING form (CodeRabbit round, PR #995).**
+/// The attribute-form fix above still required WHITESPACE right after the tag
+/// name, so a self-closer with no space before the slash — `<job_posting/>` —
+/// fell through both branches (no whitespace for the attribute form, and `/`
+/// isn't `>` for the bare form) and survived byte-identical, carrying whatever
+/// attributes followed the slash too (`<job_posting instruction="…"/>`). The
+/// review's own suggested fix, `(?:\s[^>]*|/)?`, closes the empty-self-closer
+/// case but not `<tag/attr>` (attributes right after the slash, still no
+/// leading whitespace) — that shape needs its own alternation branch, or the
+/// slash has to be admitted as a second character class ALONGSIDE whitespace
+/// at the START of the same unbounded run, which is what landed: the group
+/// now opens on whitespace OR `/`, then reads to the next `>` exactly like the
+/// attribute form always did. Still linear — `(?:\s|/)` matches exactly one
+/// character before `[^>]*` starts, no ambiguity between the two branches.
+///
 /// **The run is deliberately UNBOUNDED and newline-tolerant**, and both halves
 /// of that were argued rather than defaulted:
 ///
@@ -71,7 +86,7 @@ pub(crate) const JOB_CAP: usize = 8_000;
 ///   [`neutralize_one`] no longer does.
 fn compile_fence_tag_pattern(tag: &str) -> regex::Regex {
     let escaped = regex::escape(tag);
-    regex::Regex::new(&format!(r"(?i)<\s*(/?)\s*{escaped}(\s[^>]*)?\s*>"))
+    regex::Regex::new(&format!(r"(?i)<\s*(/?)\s*{escaped}((?:\s|/)[^>]*)?\s*>"))
         .expect("fence-tag pattern is always valid regex")
 }
 
