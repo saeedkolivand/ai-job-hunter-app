@@ -523,26 +523,27 @@ async fn execute(
     );
 
     match outcome {
-        // The pipeline finished, and the document it produced was refused. The
-        // row already says `failed`; the JOB has to agree, and the user needs
-        // the reason — the alternative is a green run over an unchanged
-        // document. `execute`'s caller turns this into `job_fail`. The reason
-        // itself lives on the verdict (see `SaveVerdict::Refused`) so this arm
-        // never re-derives — and risks drifting from — why it refused.
-        Ok(()) if refused => {
-            let SaveVerdict::Refused(reason) = verdict else {
-                unreachable!("`refused` is exactly `matches!(verdict, SaveVerdict::Refused(_))`")
-            };
-            Err(AppError::Message(reason.to_string()).into())
-        }
-        Ok(()) => {
-            crate::commands::jobs::job_complete(
-                app,
-                job_id,
-                json!({ "runId": run_id, "status": status, "text": ctx.draft }),
-            );
-            Ok(())
-        }
+        // The pipeline finished; whether that is a success depends on the SAME
+        // `verdict` `refused` (above) was computed from — matched here
+        // exhaustively, once, rather than re-derived from a bool guard, so a
+        // future `SaveVerdict` variant is a compile error in this match, never
+        // a runtime `unreachable!()` on a spawned run task with no terminal
+        // event to show for it.
+        Ok(()) => match verdict {
+            // The document the pipeline produced was refused. The row already
+            // says `failed`; the JOB has to agree, and the user needs the
+            // reason — the alternative is a green run over an unchanged
+            // document. `execute`'s caller turns this into `job_fail`.
+            SaveVerdict::Refused(reason) => Err(AppError::Message(reason.to_string()).into()),
+            SaveVerdict::Save | SaveVerdict::Nothing => {
+                crate::commands::jobs::job_complete(
+                    app,
+                    job_id,
+                    json!({ "runId": run_id, "status": status, "text": ctx.draft }),
+                );
+                Ok(())
+            }
+        },
         Err(_) if cancelled => {
             crate::commands::jobs::job_cancel(app, job_id);
             Ok(())
