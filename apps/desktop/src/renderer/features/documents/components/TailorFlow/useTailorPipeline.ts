@@ -463,6 +463,11 @@ export function useTailorPipeline({
     starting: session.starting,
     currentStep,
     stageLabel,
+    // The run's own backend-recorded start time (`pipeline_runs.started_at`),
+    // for `GeneratingPanel`'s elapsed caption — anchoring on this instead of
+    // the panel's own mount time is what survives a navigate-away-and-back
+    // (see that prop's doc comment for why a remount needs it).
+    runStartedAt: session.detail?.startedAt ?? null,
     thinking: session.thinking,
     // The résumé pane's live stream — the letter's own (`session.letterDraft`)
     // is display-only in the same sense, exposed separately so a cover-only
