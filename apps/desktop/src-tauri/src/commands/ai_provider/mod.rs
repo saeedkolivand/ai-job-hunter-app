@@ -416,8 +416,10 @@ impl SamplingProfile {
 //
 // SECURITY INVARIANT: only `Role::System` carries trusted, fixed instructions.
 // The user's question and (untrusted) tool results ride in `User`/`Tool` turns and
-// are NEVER merged into the system prompt or a tool description — the controller
-// in `crate::agent` enforces this.
+// must never be merged into the system prompt or a tool description. The
+// agentic controller that enforced this was deleted (PR-5 step 2) along with
+// its only caller of `chat_with_tools`/`ToolSpec` below — this Phase-1
+// tool-calling surface currently has no live caller in the crate.
 
 /// A tool offered to the model: name, a natural-language description, and a
 /// JSON-Schema object describing its arguments. Provider-agnostic; each adapter
@@ -473,10 +475,11 @@ pub enum Role {
 
 impl Role {
     /// Wire role string shared by the OpenAI / Ollama chat shapes. `Tool` results
-    /// fold into a `user` turn (already fenced by the controller) so no adapter
+    /// fold into a `user` turn (already fenced by the caller) so no adapter
     /// needs native tool-call-id linkage in Phase 1. `pub(crate)` (wider than
-    /// this module's descendants) so `agent::controller`'s tests can assert
-    /// wire-alternation against the real mapping instead of a duplicate.
+    /// this module's descendants) — the now-deleted agentic controller's own
+    /// tests used to assert wire-alternation against this mapping instead of a
+    /// duplicate.
     pub(crate) fn wire(self) -> &'static str {
         match self {
             Role::System => "system",

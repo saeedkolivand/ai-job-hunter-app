@@ -5,13 +5,12 @@
 //! [`crate::documents::EmbeddingConfig`] pattern but for chat/generation. This
 //! store is the `base_url` source for EVERY generation path — `ai_generate`,
 //! `generate_pipeline`, research/salary, the extension bridge's
-//! `resolve_answer_assist`, autopilot (task #16), and the `agent_run` ("prep this
-//! application") agent loop + its tools (task #25) — so none of them accept a
-//! renderer-supplied `base_url`; routing comes from *here*, not the request. The
-//! `agent_run` path now resolves via `Completer::from_active` for both the agent's
-//! own turns and every tool provider call (`agent::tools::complete_trusted`), and
-//! its `ToolContext` no longer carries provider/model/base_url — closing the last
-//! base_url-exfil path in this class.
+//! `resolve_answer_assist`, and autopilot (task #16) — so none of them accept a
+//! renderer-supplied `base_url`; routing comes from *here*, not the request.
+//! (The now-deleted `agent_run` ("prep this application") agent loop + its
+//! tools used to resolve via `Completer::from_active` here too, task #25,
+//! closing the base_url-exfil path for the whole tool-calling surface — moot
+//! now that surface is gone, PR-5 step 2.)
 //!
 //! Shape maps 1:1 to the renderer's old Zustand slice:
 //! `{ activeProvider, providers: { [id]: { model, baseUrl } } }`.

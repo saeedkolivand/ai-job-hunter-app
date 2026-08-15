@@ -38,6 +38,14 @@ const L0: &[&str] = &[
     // (embedding compare) and `scraping::cluster` (cross-board dedup) so the L1
     // cluster module reuses it without an upward import (R7). Depends on nothing.
     "vector",
+    // ADR-010 prompt-injection fencing primitives (`fenced`/`FENCE_TAG_PATTERNS`/
+    // `neutralize_transcript_boundaries`/`JOB_CAP`/`RESUME_CAP`) — PR-5 step 1
+    // relocated them out of the L3 `agent` module (dependency-free string
+    // transforms, no Tauri) so `pipeline`, `commands::ai_provider::structured`,
+    // `extension_bridge`, `autopilot_helpers` and `agent` itself can all reach
+    // them downward. This is what clears the `pipeline -> agent` and
+    // `autopilot_helpers -> agent` R7_ALLOW exceptions below.
+    "prompt_fence",
 ];
 const L1: &[&str] = &[
     "scraping",
@@ -138,12 +146,11 @@ const L3: &[&str] = &[
     // never the reverse. Its consent state is a plain file precisely because no
     // store or WebView exists that early.
     "crash_reporting",
-    // Agentic controller foundation (Phase 1, backend only). Shell-role: its
-    // `LiveAgentEnv` holds an AppHandle, emits `agent:step`, and reaches DOWN into
-    // commands/pipeline/limits to run a budgeted tool-calling loop — never the
-    // reverse. The controller's pure core (`run_agent`) is AppHandle-free. Wired
-    // to a Tauri command in Phase 2 (`agent_run`).
-    "agent",
+    // The agentic controller foundation (Phase 1) that used to live here —
+    // `agent` — was deleted in its entirety (PR-5 step 2): the "prep this
+    // application" flow, the human-in-the-loop confirm gate, and the
+    // tool-calling loop it drove. See `prompt_fence` (L0) for what survived
+    // the deletion.
 ];
 
 fn layer_of(module: &str) -> Option<u8> {
@@ -522,16 +529,7 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // W-1: ai_provider lives under commands/ today; consumers reach up until it is
     // relocated to a top-level module. autopilot_scheduler invokes the autopilot command.
     ("pipeline", "commands"),
-    // The résumé pipeline's stage prompts reuse the agent layer's pure
-    // prompt-safety primitives (`fenced`/`RESUME_CAP`/`JOB_CAP`) — read-only
-    // string construction, no controller, no tool. Identical to the
-    // `autopilot_helpers -> agent` edge below and carrying the same TODO(arch):
-    // relocate those primitives out of the L3 `agent` module (an L0/L1
-    // prompt-utils) and BOTH edges clear. Writing a second fence helper instead
-    // is the outcome ADR-010 exists to prevent — one boundary mechanism, and a
-    // second copy is where the neutralization list drifts.
-    ("pipeline", "agent"),
-    // …and the GENERATED cross-language constants: the `pipeline:stage`
+    // …the GENERATED cross-language constants: the `pipeline:stage`
     // sectionKey grammar (`is_pipeline_section_key`), the depth vocabulary, and
     // the run-deadline terms. Pure compile-time `&str`/`usize` literals emitted
     // by `pnpm gen:ipc`, exactly like the `scraping -> ipc_contracts` edge
@@ -556,11 +554,6 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // the L3 `events` helper (crate::events::emit_event + channel consts), the same
     // shell-reach it already has for `commands`. R2 likewise allowlists this file.
     ("autopilot_helpers", "events"),
-    // Headless AI notes (L2) reuse the agent layer's pure prompt-safety primitives
-    // (fenced/JOB_CAP/RESUME_CAP) + the shared AUTOPILOT_NOTE_SYSTEM prompt — read-only
-    // string construction, invokes no controller. TODO(arch): relocate these pure prompt
-    // primitives out of the L3 `agent` module (e.g. an L0/L1 prompt-utils) to clear this edge.
-    ("autopilot_helpers", "agent"),
     // accent_watcher (L0 platform) emits via the L3 events helper; same shell-reach as
     // autopilot_helpers->events. TODO(arch): emitter port.
     ("platform", "events"),

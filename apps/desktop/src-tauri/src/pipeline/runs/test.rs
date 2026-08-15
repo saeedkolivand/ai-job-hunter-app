@@ -47,52 +47,6 @@ fn event(run_id: &str, seq: u32, artifact: &str) -> RunEventRow {
     }
 }
 
-// ── Existence-checked status moves ───────────────────────────────────────────
-
-/// A status move must NOT recreate a row that was deleted in the meantime
-/// (CodeRabbit, PR #986 — the #970 delete-race class).
-///
-/// `upsert_run` is an `INSERT OR REPLACE`, so any read-then-write status sync
-/// undoes a concurrent delete and leaves an orphan run row: no parent, no UI,
-/// and no eviction (retention only prunes the fourth run of a posting that is
-/// still being run, which a deleted one never is). The two halves are asserted
-/// together because the first is what makes the second necessary.
-///
-/// Mutation-checked, executed: pointing `update_status_if_present` at
-/// `upsert_run` recreates the row and fails the third assertion.
-#[test]
-fn a_status_move_never_resurrects_a_deleted_run() {
-    let (_dir, store) = store();
-    let row = run("run-1", "https://example.test/job/1", 1_700_000_000_000);
-    store.upsert_run(&row).unwrap();
-
-    // Present: it moves, and reports that it did.
-    assert!(store
-        .update_status_if_present("run-1", "needsReview")
-        .unwrap());
-    assert_eq!(store.run("run-1").unwrap().status, "needsReview");
-
-    // Deleted underneath us: the move is a no-op, not an insert.
-    assert_eq!(store.delete_for_job("https://example.test/job/1"), 1);
-    assert!(
-        !store
-            .update_status_if_present("run-1", "completed")
-            .unwrap(),
-        "a status move must report that the row was gone"
-    );
-    assert!(
-        store.run("run-1").is_none(),
-        "the deleted row must stay deleted — an INSERT OR REPLACE would have resurrected it"
-    );
-
-    // …and the mechanism it replaces demonstrably would have.
-    store.upsert_run(&row).unwrap();
-    assert!(
-        store.run("run-1").is_some(),
-        "upsert_run inserts a row that does not exist — which is why the status sync cannot use it"
-    );
-}
-
 // ── Round-trip through SQLite ────────────────────────────────────────────────
 
 #[test]

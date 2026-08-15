@@ -13,7 +13,6 @@
  *   - Library/transport can be swapped in one layer
  */
 export * from './query-client';
-export * from './use-agent';
 export * from './use-ai';
 export * from './use-ai-provider';
 export * from './use-ai-stage-overrides';

@@ -1212,10 +1212,6 @@ fn job_meta_from_request_reads_the_identity_fields_off_the_clamped_request() {
     assert_eq!(meta.company, "Acme Corp");
     assert_eq!(meta.board, "linkedin");
     assert_eq!(meta.url, "https://boards.example/jobs/1");
-    assert_eq!(
-        meta.location, "",
-        "the text path has no cached posting to read a location off of"
-    );
 }
 
 /// **The persist fix (plan risk item 5).** The `Cache` path stays empty
@@ -1310,6 +1306,61 @@ fn resolve_job_errors_on_a_cache_miss_even_though_the_request_also_carried_text(
         "a Cache miss must error, never silently read the text job_source saw but discarded",
     );
     assert!(matches!(err, crate::error::AppError::Validation(_)));
+}
+
+/// **The error-echo clamp, guarded.** `resolve::echoed`/`ECHO_CHARS_CAP` bound
+/// a request-supplied id echoed into a validation-error message — at base
+/// the equivalent rule was mutation-checked by `commands/agent.rs`
+/// (`clamped_echo`/`ECHO_CAP`), which PR-5 deletes; nothing here re-proved
+/// the clamp survived, so `echoed`'s body could regress to `id.to_string()`
+/// (no clamp at all) with the whole suite still green — exactly the class of
+/// gap this PR's review kept finding. Impact is bounded even so
+/// (`JOB_IDENTITY_CAP` already caps `resumeId`/`jobId` at 512 bytes before
+/// either ever reaches `echoed`), but a clamp guarded by nothing is a clamp
+/// one refactor away from silently doing nothing.
+///
+/// Mutation-checked, executed: replacing `echoed`'s body with
+/// `id.chars().collect()` (dropping the `.take(...)`) fails the second
+/// assertion here — the oversized id would come back whole.
+#[test]
+fn resolve_resume_error_echoes_an_oversized_id_clamped_to_64_chars() {
+    let huge_id = "x".repeat(100);
+    let choice = super::resolve::ResumeSource::Store(&huge_id);
+    let err =
+        super::resolve::resolve_resume(choice, |_| None).expect_err("a Store miss must error");
+    let message = err.to_string();
+    assert!(
+        message.contains(&"x".repeat(64)),
+        "the first 64 chars of the oversized id must still be echoed; got: {message:?}"
+    );
+    assert!(
+        !message.contains(&"x".repeat(65)),
+        "the id must be clamped to 64 chars, not echoed in full; got: {message:?}"
+    );
+}
+
+/// The job-ad twin of the clamp guard above — same primitive, same call
+/// shape, `resolve_job`'s own `echoed(id)` site.
+#[test]
+fn resolve_job_error_echoes_an_oversized_id_clamped_to_64_chars() {
+    let huge_id = "y".repeat(100);
+    let choice = super::resolve::JobSource::Cache(&huge_id);
+    let err = super::resolve::resolve_job(
+        choice,
+        |_| None,
+        |_| None,
+        || panic!("meta_from_request must never run on the Cache arm"),
+    )
+    .expect_err("a Cache miss must error");
+    let message = err.to_string();
+    assert!(
+        message.contains(&"y".repeat(64)),
+        "the first 64 chars of the oversized id must still be echoed; got: {message:?}"
+    );
+    assert!(
+        !message.contains(&"y".repeat(65)),
+        "the id must be clamped to 64 chars, not echoed in full; got: {message:?}"
+    );
 }
 
 #[test]

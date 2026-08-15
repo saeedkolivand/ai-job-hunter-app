@@ -1204,8 +1204,8 @@ Kubernetes handles rollout. Docker images come from CI. Terraform provisions \
 infrastructure. Terraform manages networking. Ansible configures hosts.";
 
 /// R8 follow-up — both skills lists were sorted ALPHABETICALLY, purely for
-/// determinism. Every consumer truncates (`agent::tools_quality`'s
-/// `.take(MAX_SKILLS)`), so what survived was an alphabetical PREFIX of the gap
+/// determinism. Every consumer truncates (the now-deleted `agent::tools_quality`'s
+/// `.take(MAX_SKILLS)` was one), so what survived was an alphabetical PREFIX of the gap
 /// list: "ansible" kept, "terraform" cut, and `skillsTruncated` reports only a
 /// COUNT, so nothing downstream can see the bias. Relevance-first ordering makes
 /// a truncated list the top-N by construction; alphabetical is the tiebreak, so

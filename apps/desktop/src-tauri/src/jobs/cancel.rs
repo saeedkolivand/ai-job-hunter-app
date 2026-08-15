@@ -1,13 +1,14 @@
 //! Central cancellation-token registry, keyed by job/run id.
 //!
-//! Pays off the `TODO(arch)` that sat in `commands::agent::agent_run`: agent
-//! runs borrowed [`crate::scraping::ScraperEngine`]'s private job-token map
-//! because that is where `jobs_cancel` happened to dispatch. That worked, but it
-//! tied a domain-neutral concern (a user pressed Cancel on job `X`) to the
-//! scraper. The registry is that concern, extracted — the engine now DELEGATES
-//! to it and everyone else (agent runs today, pipeline runs next) registers
-//! against the same shared instance, so one `jobs_cancel` still reaches every
-//! job kind.
+//! Pays off a `TODO(arch)` that used to sit in the now-deleted
+//! `commands::agent::agent_run`: agent runs used to borrow
+//! [`crate::scraping::ScraperEngine`]'s private job-token map because that is
+//! where `jobs_cancel` happened to dispatch. That worked, but it tied a
+//! domain-neutral concern (a user pressed Cancel on job `X`) to the scraper.
+//! The registry is that concern, extracted — the engine now DELEGATES to it
+//! and everyone else (the staged résumé pipeline today, autopilot and
+//! scraping too) registers against the same shared instance, so one
+//! `jobs_cancel` still reaches every job kind.
 //!
 //! **Ownership rule (unchanged, and the reason `cancel` does not remove):**
 //! whoever registers a slot removes it. Cancelling leaves the slot IN PLACE so a
@@ -42,8 +43,9 @@ impl CancelRegistry {
     /// **Why last-writer-wins needs no generation/handle:** ids are MINTED per
     /// run by [`crate::db::new_job_id`] (`job-{uuid-v4}`) and never derived from
     /// anything stable like a job URL — `commands::scrape::scrape_boards`,
-    /// `commands::autopilot::autopilot_run` and `commands::agent::agent_run` are
-    /// the three registering call sites, each minting one id per invocation, and
+    /// `commands::autopilot::autopilot_run` and
+    /// `commands::resume_pipeline::resume_pipeline_run` are the three
+    /// registering call sites, each minting one id per invocation, and
     /// the engine only ever [`Self::get_or_register`]s the id it was passed. So
     /// two LIVE runs cannot share a key, and the "run A's late `unregister`
     /// removes run B's token" interleaving has no way to arise. The one id used

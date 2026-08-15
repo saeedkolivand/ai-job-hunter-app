@@ -369,8 +369,8 @@ pub const MIN_CHARS_FOR_LANGUAGE_CHECK: usize = 120;
 /// keeping the OLD stored report — a fresh report just vanishes with no
 /// error anywhere. Capping the issue list here, at the source, keeps the
 /// serialized report comfortably under that clamp so the truncate-then-fail
-/// path is unreachable. Mirrors `agent::tools_quality::MAX_ISSUES`'s
-/// count-cap discipline, sized higher (200 vs. 20) because this report is
+/// path is unreachable. Mirrors the same count-cap discipline the now-deleted
+/// `agent::tools_quality::MAX_ISSUES` used, sized higher (200 vs. 20) because this report is
 /// the FULL quality-report panel's data, not a token-budgeted tool summary.
 pub const MAX_CONTENT_ISSUES: usize = 200;
 

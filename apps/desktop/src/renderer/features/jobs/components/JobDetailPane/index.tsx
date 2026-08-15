@@ -33,9 +33,7 @@ import {
 import { AgencyChip } from '@/components/job/AgencyChip';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { hostOf } from '@/components/job/host-of';
-import { PrepApplicationPanel } from '@/features/jobs/components/PrepApplicationPanel';
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
-import { TailoredResumePanel } from '@/features/jobs/components/TailoredResumePanel';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
@@ -297,9 +295,7 @@ function DetailContent({
             </div>
           </div>
 
-          {/* RIGHT: action cluster — Save/View, Tailor (one-shot), Tailored
-              résumé (depth-aware; `fast` routes back into the same Tailor
-              handler), Prep, ActionMenu.
+          {/* RIGHT: action cluster — Save/View, Tailor, ActionMenu.
               `shrink-0` used to pin this at max-content, so `flex-wrap` never
               fired and the trailing actions were clipped by the pane's
               overflow-hidden on a narrow window. `min-w-0` lets it shrink below
@@ -326,8 +322,6 @@ function DetailContent({
             >
               <Wand2 size={11} /> {t('jobs.tailor')}
             </Button>
-            <TailoredResumePanel posting={posting} />
-            <PrepApplicationPanel posting={posting} />
             <ActionMenu
               label={t('jobs.actions')}
               items={[

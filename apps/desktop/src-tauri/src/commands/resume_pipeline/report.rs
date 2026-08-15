@@ -21,8 +21,6 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::error::AppResult;
-use crate::pipeline::resume::stages::validate_documents;
 use crate::validate::content::ContentReport;
 use crate::validate::Severity;
 
@@ -203,82 +201,6 @@ pub fn build(
         wrapper.insert("coverLetter".to_string(), slot(report, text));
     }
     serde_json::to_string(&Value::Object(wrapper)).unwrap_or_default()
-}
-
-/// The `pipeline` label on a wrapper written by a gated agent save.
-///
-/// **A member of the shared depth vocabulary, not a new word.** This started as
-/// a literal `"agent"`, which was wrong in a way only the round trip shows
-/// (CodeRabbit, PR #986): the field's type IS `GenerationDepth` on the renderer
-/// side, and its parser maps anything outside `GENERATION_DEPTHS` to `'fast'`
-/// and then re-serializes it — so an agent-written label survived exactly until
-/// the next "Re-check", which silently PERSISTED the relabel. Inventing a value
-/// for a closed shared vocabulary is the same drift class this branch spent
-/// `AGENT_FLOW_KINDS` and `AGENT_RESUME_TEXT_CAP` closing.
-///
-/// Widening the vocabulary instead was the other option and is worse:
-/// `GENERATION_DEPTHS` (`fast`/`quality`/`max`) is what types every
-/// `pipeline`/`depth` value the renderer round-trips, historic rows included
-/// — the Rust `GenerationDepth` enum this doc originally cited is gone (the
-/// `max` depth's own deletion), but the shared vocabulary itself has to stay a
-/// closed set, so a hand-picked literal here still cannot invent a member.
-///
-/// `fast` is the honest member: the field distinguishes "the staged pipeline
-/// produced this" from "a deterministic pass produced this", and that is
-/// exactly what this report is — the same `validate_content` the renderer's own
-/// fast pass runs. What must NOT happen is inheriting the previous document's
-/// `"quality"`/`"max"`, which would be the stale-label twin of the stale-report
-/// bug this function exists to fix.
-///
-/// Pinned by `the_saved_resume_label_round_trips_through_the_shared_vocabulary`.
-pub fn agent_save_pipeline() -> &'static str {
-    "fast"
-}
-
-/// The wrapper a save that REPLACES `resume_text` must carry.
-///
-/// **The merge rule, applied to the one path that was still ignoring it.** Any
-/// save writing `resume_text` carries a fresh `quality_report`, because
-/// `AiGenerationStore::save_application` merges per top-level key and an
-/// ABSENT report means "keep what is stored" — so a text-only save leaves the
-/// new document sitting under the previous document's verdict, sections,
-/// fabrication list and all. `resume_pipeline_regenerate_section` has always
-/// obeyed this (one transaction, text + report); the agent's gated
-/// `save_resume` did not, and it is the path whose whole purpose is replacing
-/// the document a report describes.
-///
-/// Deterministic and provider-free — [`validate_documents`] is the same
-/// zero-LLM validator the pipeline's own `validate` stage runs, off the async
-/// worker. No cost, no latency worth naming, and (unlike a model) it may
-/// produce Criticals.
-///
-/// **The cover letter is deliberately absent from the result**, not empty: a
-/// wrapper carrying no `coverLetter` key leaves the stored letter slot
-/// untouched through the merge, which is right because this save does not
-/// change the letter. Passing an empty letter here instead would have written
-/// a slot claiming a letter with no findings.
-pub async fn for_saved_resume(
-    resume_text: &str,
-    source_resume: &str,
-    job_ad: &str,
-    top_requirements: Vec<String>,
-    target_language: &str,
-) -> AppResult<String> {
-    let (report, _letter) = validate_documents(
-        resume_text.to_string(),
-        source_resume.to_string(),
-        job_ad.to_string(),
-        top_requirements,
-        target_language.to_string(),
-        String::new(),
-    )
-    .await?;
-    Ok(build(
-        agent_save_pipeline(),
-        crate::db::now_ms(),
-        Some((&report, resume_text)),
-        None,
-    ))
 }
 
 /// Record one Remove/Keep verdict into an already-persisted wrapper.
