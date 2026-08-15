@@ -303,13 +303,13 @@ pub(super) fn spawn_answer_assist(
     out_tx: UnboundedSender<Message>,
     registry: Arc<AssistStreamRegistry>,
 ) {
-    let Some(gen) = begin_or_reject_duplicate(&registry, &req_id, &out_tx) else {
+    let Some(r#gen) = begin_or_reject_duplicate(&registry, &req_id, &out_tx) else {
         return;
     };
     tokio::spawn(async move {
         let mut sink = ChannelFrameSink(out_tx.clone());
         let reply = super::answer_assist::handle_answer_assist(
-            &app, &req_id, gen, &payload, &registry, &mut sink,
+            &app, &req_id, r#gen, &payload, &registry, &mut sink,
         )
         .await;
         let _ = out_tx.send(Message::text(reply));
@@ -335,8 +335,8 @@ fn begin_or_reject_duplicate(
     req_id: &str,
     out_tx: &UnboundedSender<Message>,
 ) -> Option<u64> {
-    if let Some(gen) = registry.begin(req_id) {
-        return Some(gen);
+    if let Some(r#gen) = registry.begin(req_id) {
+        return Some(r#gen);
     }
     let reply = super::answer_assist::answer_assist_reply(
         req_id,

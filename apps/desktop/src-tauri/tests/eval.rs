@@ -208,7 +208,7 @@ struct Case {
 /// say `tier2` and grade `tier3`, passing every assertion while leaving one
 /// fixture ungraded and another graded twice. One spelling, one fixture.
 macro_rules! case {
-    ($file:literal, $lang:literal, $kind:expr, $label:expr) => {
+    ($file:literal, $lang:literal, $kind:expr_2021, $label:expr_2021) => {
         Case {
             file: $file,
             text: include_str!(concat!("../src/validate/content/fixtures/", $file)),
