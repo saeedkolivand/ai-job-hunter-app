@@ -2495,65 +2495,65 @@ fn persist_document_source() -> String {
     lines[start..=end].join("\n")
 }
 
-/// **FK-orphan regression.** `persist_document` used to build its
-/// `AiGenerationRecord` with `..empty_record()`, whose `application_id` is
-/// `None` — and nothing else in the staged pipeline ever set one.
-/// `ai_generations::merge_application`'s `application_id:
-/// incoming.application_id.or(existing.application_id)` only ever PRESERVES
-/// an id already on the row, it never ESTABLISHES one, so the first
-/// staged-pipeline save for a posting with no prior linked generation
-/// persisted `application_id: NULL` — invisible to every reader that filters
-/// `ai_generations` by `applicationId`. The résumé masked it (it has its own
-/// run-scoped read path, `PipelineRunDetail.resumeText`, joined by run id,
-/// no FK involved); the cover letter has no such channel and was
-/// unreachable for that whole class of application.
+/// **Resurrection regression — the lookup must be READ-ONLY.**
+/// `persist_document` briefly called `ApplicationStore::upsert_for_origin`
+/// to establish the FK (see the no-longer-true history in the old version of
+/// this doc, still visible in git blame): that call CREATES an Application
+/// on a `job_url` miss. A staged run takes minutes; if the user deletes the
+/// Application it was launched from while the run is still working, landing
+/// the run then upserting on that url silently RESURRECTS the delete — no
+/// race required, just the plain sequence run-in-flight → delete → run
+/// lands. This is the identical hazard
+/// `ApplicationStore::link_orphaned_generations` already closed at ITS call
+/// site (own doc); `find_by_job_url` is the same read-only primitive, reused
+/// here rather than re-invented.
 ///
-/// Pins that `persist_document` now ESTABLISHES the FK the same way
-/// `commands::ai_generations::ai_generations_save` always has (the same
-/// idempotent `ApplicationStore::upsert_for_origin` call), and that the
-/// resulting id actually lands on the persisted record rather than being
-/// computed and discarded.
+/// Pins that `persist_document` looks the Application up READ-ONLY
+/// (`find_by_job_url`, never `upsert_for_origin`) and that a FOUND id still
+/// lands on the persisted record — so the fix narrowed create-on-miss, it
+/// did not disable linking altogether.
 ///
-/// Mutation check, both applied and reverted: delete the `application_id,`
-/// field from the `AiGenerationRecord` literal (the record falls back to
-/// `..empty_record()`'s `None` again) and the second assertion fails; delete
-/// the `upsert_for_origin(` call and the first does.
+/// Mutation check, both applied and reverted: change `find_by_job_url(` back
+/// to `upsert_for_origin(` and the second assertion fails; delete the
+/// `application_id,` field from the `AiGenerationRecord` literal (falls back
+/// to `..empty_record()`'s `None`) and the third fails.
 ///
-/// **This is a SOURCE pin, not a behavior test** — it cannot tell a real
-/// `upsert_for_origin(` call from one that errors on every invocation, or a
-/// `try_state::<ApplicationStore>()` that returns `None` at runtime; nothing
-/// about that shows up in the source text. See
-/// [`upsert_for_origin_id_on_the_record_is_what_remove_for_application_finds`]
-/// below for the store-level guard that actually drives the chain this test
-/// can only assert the shape of.
+/// **This is a SOURCE pin, not a behavior test** — see
+/// [`persist_document_lookup_never_resurrects_a_deleted_application`] and
+/// [`persist_document_lookup_links_to_an_existing_application`] below for
+/// the store-level guards that actually drive the chain this test can only
+/// assert the shape of.
 #[test]
-fn persist_document_establishes_the_application_fk_it_used_to_skip() {
+fn persist_document_looks_up_the_application_read_only_never_creates_one() {
     let body = persist_document_source();
     assert!(
-        body.contains("upsert_for_origin("),
-        "persist_document must ESTABLISH the Application FK the same way \
-         ai_generations_save does, not merely carry one forward"
+        body.contains("find_by_job_url("),
+        "persist_document must look the Application up READ-ONLY — the same \
+         primitive link_orphaned_generations uses for the identical hazard"
+    );
+    assert!(
+        !body.contains("upsert_for_origin("),
+        "persist_document must never create-on-miss — that is exactly the \
+         resurrection hazard e695f4cf closed at the sibling call site"
     );
     assert!(
         body.contains("application_id,"),
-        "the upserted id must land on the AiGenerationRecord literal — otherwise it \
-         is computed and discarded, and the row still persists with \
-         application_id: None via ..empty_record()"
+        "a FOUND id must still land on the AiGenerationRecord literal — otherwise \
+         the fix disabled linking entirely instead of narrowing it to read-only"
     );
 }
 
-/// **Store-level replacement for the source pin above.** `persist_document`
-/// itself still can't be driven directly — no `tauri::test` mock-app harness
-/// (see `persist_document_source`'s own doc) — so this drives the STORE-LEVEL
-/// chain it composes instead, exactly the way `persist_document` composes it:
-/// `ApplicationStore::upsert_for_origin` returns an id, that id lands on
+/// **Delete-cascade guard, independent of how the id got there.** Once
+/// `persist_document`'s (now read-only) lookup finds an id and lands it on
 /// `AiGenerationRecord.application_id`, `AiGenerationStore::save_application`
 /// persists it, and `remove_for_application` — what
-/// `applications_delete(keepDocuments=false)` calls — actually finds and
-/// deletes the row through it. The source pin above would stay green even if
-/// `upsert_for_origin` errored on every call or `try_state` returned `None`
-/// at runtime; this fails for real if the id it hands to the record is not
-/// the SAME id `remove_for_application` deletes by.
+/// `applications_delete(keepDocuments=false)` calls — must actually find and
+/// delete the row through it. `upsert_for_origin` here is only this test's
+/// OWN setup (synthesizing an Application the way the ordinary Save/Apply
+/// flow would, before a staged run ever starts) — not a claim about what
+/// `persist_document` itself calls; see
+/// [`persist_document_lookup_links_to_an_existing_application`] below for the
+/// guard on `persist_document`'s actual lookup.
 ///
 /// Mutation check: force `application_id: None` on the record below (the
 /// pre-fix `..empty_record()` shape this FK exists to prevent) and `deleted`
@@ -2579,8 +2579,8 @@ fn upsert_for_origin_id_on_the_record_is_what_remove_for_application_finds() {
         )
         .unwrap();
 
-    // Exactly what `persist_document` builds: the id `upsert_for_origin` just
-    // returned, landing on the record's `application_id` field.
+    // The shape `persist_document` builds once its lookup finds an id: that
+    // id landing on the record's `application_id` field.
     let record = AiGenerationRecord {
         id: "gen-fk-1".into(),
         job_url: job_url.to_string(),
@@ -2595,6 +2595,127 @@ fn upsert_for_origin_id_on_the_record_is_what_remove_for_application_finds() {
         deleted, 1,
         "the id persist_document writes onto application_id must be the SAME id \
          remove_for_application deletes by"
+    );
+}
+
+/// **Store-level no-resurrect guard.** Drives the exact chain
+/// `persist_document`'s lookup now runs (`normalize_job_url` +
+/// `find_by_job_url`) against a REAL `ApplicationStore`, reproducing the
+/// user-visible sequence with **no concurrency involved**: an Application
+/// exists (created the ordinary way — a staged run is always launched FROM
+/// an Application's own page) → the run is in flight for minutes → the user
+/// deletes it → the run lands and the lookup runs. Asserts no Application
+/// was created and the id comes back `None`.
+///
+/// Mutation check: swap this test's own `find_by_job_url` call for
+/// `upsert_for_origin` (the pre-fix shape) and `list()` goes from empty to
+/// `1` — the deleted Application comes back.
+#[test]
+fn persist_document_lookup_never_resurrects_a_deleted_application() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let app_store = crate::applications::ApplicationStore::open(dir.path()).unwrap();
+
+    let job_url = "https://acme.com/jobs/resurrect-1";
+    let app_id = app_store
+        .upsert_for_origin(
+            job_url,
+            "linkedin",
+            &crate::applications::ApplicationMeta {
+                company: "Acme".into(),
+                title: "Staff Engineer".into(),
+                ..Default::default()
+            },
+            crate::applications::ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        app_store.list().len(),
+        1,
+        "the Application the run was launched from exists before the delete"
+    );
+
+    // "the run is in flight, then the user deletes it" — the deletion just
+    // has to happen before the lookup below runs; no race needed to trigger
+    // the hazard.
+    app_store.delete(&app_id, false).unwrap();
+    assert!(
+        app_store.get(&app_id).is_none(),
+        "deletion actually took effect"
+    );
+
+    // Exactly the two lines `persist_document`'s lookup runs.
+    let normalized = crate::applications::normalize_job_url(job_url);
+    let application_id = app_store.find_by_job_url(&normalized).map(|found| found.id);
+
+    assert!(
+        application_id.is_none(),
+        "a deleted Application must not resolve — Some(_) here would mean the \
+         delete got silently resurrected"
+    );
+    assert!(
+        app_store.list().is_empty(),
+        "the lookup itself must never CREATE an Application on a miss"
+    );
+}
+
+/// **Store-level normal-path guard — the fix must not have simply disabled
+/// linking.** Same two-line chain as the guard above, but the Application
+/// still exists when the lookup runs — the common case, since every staged
+/// run is launched FROM an Application's own page. Confirms the id resolves
+/// and actually lands on the persisted generation row, which is the behavior
+/// `28f5833d` existed to add; narrowing create-on-miss must not regress it.
+///
+/// Mutation check: look the wrong url up (`find_by_job_url(job_url)` instead
+/// of the normalized one) and this reddens for any url normalization
+/// changes (e.g. a tracking query param).
+#[test]
+fn persist_document_lookup_links_to_an_existing_application() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let app_store = crate::applications::ApplicationStore::open(dir.path()).unwrap();
+    let gen_store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let job_url = "https://acme.com/jobs/fk-2?utm_source=li";
+    let app_id = app_store
+        .upsert_for_origin(
+            job_url,
+            "linkedin",
+            &crate::applications::ApplicationMeta {
+                company: "Acme".into(),
+                title: "Staff Engineer".into(),
+                ..Default::default()
+            },
+            crate::applications::ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // Exactly the two lines `persist_document`'s lookup runs.
+    let normalized = crate::applications::normalize_job_url(job_url);
+    let application_id = app_store.find_by_job_url(&normalized).map(|found| found.id);
+    assert_eq!(
+        application_id,
+        Some(app_id.clone()),
+        "the Application still exists, so the read-only lookup must still find it \
+         — the resurrection fix narrows create-on-miss, it does not stop finding"
+    );
+
+    let record = AiGenerationRecord {
+        id: "gen-fk-2".into(),
+        job_url: job_url.to_string(),
+        resume_text: "Staff Engineer résumé".into(),
+        application_id,
+        ..super::empty_record()
+    };
+    gen_store.save_application(record).unwrap();
+
+    let saved = gen_store
+        .find_for_job(job_url)
+        .expect("the saved row is findable by job_url");
+    assert_eq!(
+        saved.application_id.as_deref(),
+        Some(app_id.as_str()),
+        "the FK the lookup found must persist onto the row"
     );
 }
 

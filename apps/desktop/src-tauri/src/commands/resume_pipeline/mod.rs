@@ -587,10 +587,18 @@ async fn execute(
 /// `applicationId`. The résumé masked it: it has its own run-scoped read
 /// path (`PipelineRunDetail.resumeText`, joined by run id, no FK involved),
 /// but the cover letter has no such channel and is unreachable for that
-/// whole class of application. `upsert_for_origin` is idempotent on the
-/// normalized `job_url`, so calling it here either finds the Application
-/// the apply flow already created or creates it now — either way this run's
-/// generation ends up linked.
+/// whole class of application.
+///
+/// **Read-only lookup, never create-on-miss** — the same posture as
+/// [`crate::applications::ApplicationStore::link_orphaned_generations`] (own
+/// doc), for the same reason: a staged run is always launched FROM an
+/// existing Application's page, so it's already there by the time this runs.
+/// A run takes minutes; if the user deletes that Application while it's in
+/// flight, an upsert would silently resurrect it the moment the run lands.
+/// A miss here just leaves `application_id: None` — the row stays findable
+/// by `AiGenerationStore::find_for_job` (keyed on `job_url`, not the FK),
+/// only Application-scoped readers miss it, exactly like the error path
+/// below.
 ///
 /// [`ai_generations_save`]: crate::commands::ai_generations::ai_generations_save
 fn persist_document(
@@ -619,35 +627,16 @@ fn persist_document(
             .map(|letter| (letter, letter_text)),
     );
     let store = app.try_state::<AiGenerationStore>()?;
-    // Non-fatal on error, mirroring `ai_generations_save`: the generation
-    // itself is the user-visible action, and an unlinked row is still found
-    // by `AiGenerationStore::find_for_job` (keyed on `job_url`, not the FK) —
-    // only the Application-scoped readers miss it, and a later save retries
-    // the same idempotent upsert.
+    // Read-only lookup, never create-on-miss — see this function's own doc.
+    // A miss (no Application, or the store isn't running) just leaves the FK
+    // unset; the row is still found by `AiGenerationStore::find_for_job`
+    // (keyed on `job_url`, not the FK) — only Application-scoped readers
+    // miss it, and a later save retries the same idempotent lookup.
     let application_id = app
         .try_state::<crate::applications::ApplicationStore>()
         .and_then(|apps| {
-            let app_meta = crate::applications::ApplicationMeta {
-                company: meta.company.clone(),
-                title: meta.title.clone(),
-                ..Default::default()
-            };
-            match apps.upsert_for_origin(
-                job_url,
-                &meta.board,
-                &app_meta,
-                crate::applications::ApplicationOrigin::Generate,
-                None,
-            ) {
-                Ok(id) => Some(id),
-                Err(e) => {
-                    log::warn!(
-                        "[pipeline] could not link the generated résumé to its application \
-                         (non-fatal): {e}"
-                    );
-                    None
-                }
-            }
+            let normalized = crate::applications::normalize_job_url(job_url);
+            apps.find_by_job_url(&normalized).map(|found| found.id)
         });
     let record = AiGenerationRecord {
         id: make_generation_id(),
