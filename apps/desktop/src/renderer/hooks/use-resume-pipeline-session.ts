@@ -13,7 +13,7 @@ import {
   stageToEvent,
   statusToEvent,
 } from '@/lib/machines/resume-pipeline.machine';
-import { useCancelJob, useJobEvents } from '@/services/use-jobs';
+import { fetchJob, useCancelJob, useJobEvents } from '@/services/use-jobs';
 import {
   usePipelineDraftStream,
   usePipelineRun,
@@ -183,6 +183,11 @@ export function useResumePipelineSession(
    * a document the row calls reviewable. A run that already reached a terminal
    * state is left alone, error text included. `job.completed` is never read here
    * for the reason the module doc gives: the draft stream fires it mid-run.
+   *
+   * This live path still misses the EARLIEST instance of the same failure: one
+   * emitted before `start`'s `mutateAsync` resolves, while `jobIdRef` is still
+   * null/stale. `start` reconciles that window itself with one `fetchJob` read
+   * right after the ids land.
    */
   const jobIdRef = useRef(jobId);
   jobIdRef.current = jobId;
@@ -281,6 +286,25 @@ export function useResumePipelineSession(
         const started = await startRun.mutateAsync(req);
         setRunId(started.runId);
         setJobId(started.jobId);
+        // The umbrella job can already be `failed` by the time this promise
+        // resolves: `resume_pipeline_run` spawns its task and returns the ids
+        // immediately, so an admission/validation failure inside that task
+        // (a full queue, no configured provider, …) can reach `job_fail`
+        // before this `await` returns — see that command's doc comment.
+        // `handleJobEvent` would drop such an event: `jobIdRef` is still
+        // null/stale until the two lines above run, and no `pipeline_runs`
+        // row was ever written either, so nothing else would ever end this
+        // session. One reconcile read against the (cheap, in-memory)
+        // `JobTracker` closes that window.
+        const job = (await fetchJob(started.jobId)) as { status?: string; error?: string } | null;
+        if (job?.status === 'failed') {
+          console.error('[resumePipeline] the umbrella job had already failed', {
+            jobId: started.jobId,
+          });
+          setError(typeof job.error === 'string' && job.error ? job.error : null);
+          send('ERROR');
+          return null;
+        }
         return started.runId;
       } catch (err) {
         console.error('[resumePipeline] start failed', { error: errorDetail(err) });

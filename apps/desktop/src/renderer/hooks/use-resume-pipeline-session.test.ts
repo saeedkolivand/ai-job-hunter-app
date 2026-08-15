@@ -18,6 +18,7 @@ const startMock = vi.hoisted(() => ({
 }));
 const cancelJobMock = vi.hoisted(() => ({ mutate: vi.fn() }));
 const refreshRunsMock = vi.hoisted(() => vi.fn());
+const fetchJobMock = vi.hoisted(() => vi.fn());
 const bus = vi.hoisted(() => ({
   stage: null as ((e: PipelineStageEvent) => void) | null,
   delta: null as ((d: string) => void) | null,
@@ -53,6 +54,7 @@ vi.mock('@/services/use-jobs', () => ({
   useJobEvents: (handler?: (e: JobEvent) => void) => {
     bus.job = handler ?? null;
   },
+  fetchJob: (...args: unknown[]) => fetchJobMock(...args),
 }));
 
 const RUN_ID = 'run-1';
@@ -104,6 +106,9 @@ beforeEach(() => {
   bus.live = false;
   bus.recordError = null;
   startMock.mutateAsync.mockResolvedValue({ runId: RUN_ID, jobId: JOB_ID });
+  // Default: no umbrella-job failure raced the start — matches every test
+  // that isn't specifically about that race.
+  fetchJobMock.mockResolvedValue(null);
 });
 
 describe('useResumePipelineSession', () => {
@@ -369,6 +374,41 @@ describe('useResumePipelineSession', () => {
       await waitFor(() => expect(result.current.state).toBe('error'));
       expect(result.current.busy).toBe(false);
       expect(result.current.error).toContain('job not found in cache');
+      consoleError.mockRestore();
+    });
+
+    // The earliest instance of the same hole: `job.failed` can fire while
+    // `mutateAsync` is still in flight, before `jobId` state exists at all —
+    // so the live listener above drops it (`jobIdRef.current` is null). Only
+    // `start`'s own `fetchJob` reconcile, run right after the ids land, can
+    // ever notice. This reproduces the ACTUAL ordering (the event fires
+    // inside the mutation, before it resolves) rather than asserting the
+    // eventual state some other way.
+    it('reconciles a job.failed event that raced ahead of start() resolving', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      startMock.mutateAsync.mockImplementationOnce(async () => {
+        bus.job?.(jobFailed(JOB_ID, 'agent_run queue is full'));
+        return { runId: RUN_ID, jobId: JOB_ID };
+      });
+      fetchJobMock.mockResolvedValueOnce({ status: 'failed', error: 'agent_run queue is full' });
+
+      const { result } = renderHook(() => useResumePipelineSession());
+      await act(async () => {
+        await result.current.start({
+          resumeId: 'doc-1',
+          jobId: 'posting-1',
+          jobUrl: '',
+          targetLanguage: 'en',
+          topRequirements: [],
+          coverLetterText: '',
+          includeCoverLetter: false,
+        });
+      });
+
+      expect(fetchJobMock).toHaveBeenCalledWith(JOB_ID);
+      expect(result.current.state).toBe('error');
+      expect(result.current.busy).toBe(false);
+      expect(result.current.error).toContain('agent_run queue is full');
       consoleError.mockRestore();
     });
 
