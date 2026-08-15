@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JobEvent, PipelineStageEvent } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 import type { ResumePipelineRunRequest } from '@ajh/shared/schemas';
+import { useTranslation } from '@ajh/translations';
 
 import { useMachine } from '@/hooks/use-machine';
 import { errorDetail } from '@/lib/error-class';
@@ -71,6 +72,20 @@ export interface ResumePipelineSession {
 }
 
 /**
+ * `job.failed`'s structured payload for a per-call timeout — see
+ * `hooks::timeout_failure_data` on the Rust side, the ONLY producer of this
+ * shape. `unknown`-safe: every OTHER `job.failed` (scrape, ai.generate,
+ * autopilot, …) still sends a plain string, and `handleJobEvent` below must
+ * keep treating those exactly as before.
+ */
+function timeoutFailureDetail(data: unknown): { stage: string; seconds: number } | null {
+  if (typeof data !== 'object' || data === null || (data as { kind?: unknown }).kind !== 'timeout')
+    return null;
+  const { stage, seconds } = data as { stage?: unknown; seconds?: unknown };
+  return typeof stage === 'string' && typeof seconds === 'number' ? { stage, seconds } : null;
+}
+
+/**
  * Session state for one staged ("quality depth") résumé run.
  *
  * Owns four things a panel would otherwise re-derive: the coarse machine state,
@@ -97,6 +112,7 @@ export function useResumePipelineSession(
   // the one mechanism that notices a run which ended at a stage boundary and
   // therefore emitted no terminal event. A run that turns out to be finished
   // leaves `queued` on its first fetched record, which costs one render.
+  const { t } = useTranslation();
   const [state, send] = useMachine(resumePipelineMachine, initialRunId ? 'queued' : 'idle');
   const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [jobId, setJobId] = useState<string | null>(initialJobId ?? null);
@@ -202,10 +218,26 @@ export function useResumePipelineSession(
       if (!jobIdRef.current || event.jobId !== jobIdRef.current) return;
       if (!busyRef.current) return;
       console.error('[resumePipeline] the umbrella job failed', { jobId: event.jobId });
-      setError(typeof event.data === 'string' && event.data ? event.data : null);
+      // A per-call timeout carries structured `{ stage, seconds }` instead of
+      // the plain string every other `job.failed` sends — localize it through
+      // `pipeline.timeout`, mapping the raw stage key through the SAME
+      // `pipeline.stage.*` labels the step tracker already shows (never the
+      // raw snake_case name a user has never seen). Every other failure keeps
+      // reading `event.data` as the plain string it has always been.
+      const timeout = timeoutFailureDetail(event.data);
+      setError(
+        timeout
+          ? t('pipeline.timeout', {
+              stage: t(`pipeline.stage.${timeout.stage}`, { defaultValue: timeout.stage }),
+              seconds: timeout.seconds,
+            })
+          : typeof event.data === 'string' && event.data
+            ? event.data
+            : null
+      );
       send('ERROR');
     },
-    [send]
+    [send, t]
   );
   useJobEvents(handleJobEvent);
 

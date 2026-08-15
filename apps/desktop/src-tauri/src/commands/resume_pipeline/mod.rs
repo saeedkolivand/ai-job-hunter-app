@@ -182,13 +182,20 @@ pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) 
                 guard
             }
             Err(e) => {
-                fail(&app_task, &cancels, &job_id_task, e.to_string()).await;
+                fail(&app_task, &cancels, &job_id_task, e.to_string(), None).await;
                 return;
             }
         };
 
-        if let Err(e) = execute(&app_task, &run_id_task, &job_id_task, &req, &cancel).await {
-            fail(&app_task, &cancels, &job_id_task, e.to_string()).await;
+        if let Err(failure) = execute(&app_task, &run_id_task, &job_id_task, &req, &cancel).await {
+            fail(
+                &app_task,
+                &cancels,
+                &job_id_task,
+                failure.error.to_string(),
+                failure.data,
+            )
+            .await;
             return;
         }
         cancels.unregister(&job_id_task).await;
@@ -197,10 +204,41 @@ pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) 
     json!({ "runId": run_id, "jobId": job_id })
 }
 
+/// The failure [`execute`] hands its caller: a typed message plus OPTIONAL
+/// structured data for `job.failed`'s event payload — for the one case a
+/// caller can say more than the message text alone (currently just the
+/// per-call timeout: WHICH stage, and how long — see
+/// `hooks::timeout_failure_data`). `From<AppError>` covers every ordinary `?`
+/// inside `execute` with `data: None`, so only the arm that actually has more
+/// to say constructs this by hand.
+struct ExecuteFailure {
+    error: AppError,
+    data: Option<Value>,
+}
+
+impl From<AppError> for ExecuteFailure {
+    fn from(error: AppError) -> Self {
+        Self { error, data: None }
+    }
+}
+
 /// Mark the job failed and release its cancel registration — the two calls
-/// every early return owes.
-async fn fail(app: &AppHandle, cancels: &CancelRegistry, job_id: &str, message: String) {
-    crate::commands::jobs::job_fail(app, job_id, message);
+/// every early return owes. `data`, when present, becomes `job.failed`'s
+/// event payload INSTEAD of `message` (see
+/// [`crate::commands::jobs::job_fail_with_data`]) — currently only
+/// [`ExecuteFailure`]'s per-call-timeout arm ever sets one; every other
+/// failure keeps riding as the plain message string it always has.
+async fn fail(
+    app: &AppHandle,
+    cancels: &CancelRegistry,
+    job_id: &str,
+    message: String,
+    data: Option<Value>,
+) {
+    match data {
+        Some(data) => crate::commands::jobs::job_fail_with_data(app, job_id, message, data),
+        None => crate::commands::jobs::job_fail(app, job_id, message),
+    }
     cancels.unregister(job_id).await;
 }
 
@@ -208,14 +246,16 @@ async fn fail(app: &AppHandle, cancels: &CancelRegistry, job_id: &str, message: 
 ///
 /// Split out of the spawn so every failure is ONE `?` and the task body stays
 /// readable — and so the ordering (resolve → record `running` → run → record
-/// terminal) is visible in one place.
+/// terminal) is visible in one place. Returns [`ExecuteFailure`], not a bare
+/// `AppError`, so the ONE arm that has structured `job.failed` data to give
+/// (the per-call timeout) can hand it to the caller alongside the message.
 async fn execute(
     app: &AppHandle,
     run_id: &str,
     job_id: &str,
     req: &ResumePipelineRunRequest,
     cancel: &CancellationToken,
-) -> AppResult<()> {
+) -> Result<(), ExecuteFailure> {
     let clamped = clamp_request(req);
     let completer = Completer::from_active(app)?;
     // ONE resolution per overridden stage, BEFORE the run starts: an override
@@ -493,7 +533,7 @@ async fn execute(
             let SaveVerdict::Refused(reason) = verdict else {
                 unreachable!("`refused` is exactly `matches!(verdict, SaveVerdict::Refused(_))`")
             };
-            Err(AppError::Message(reason.to_string()))
+            Err(AppError::Message(reason.to_string()).into())
         }
         Ok(()) => {
             crate::commands::jobs::job_complete(
@@ -524,10 +564,15 @@ async fn execute(
         // carries a reasonable message (see each provider's `complete_impl`),
         // but `hooks::apply_timeout` recorded exactly which STAGE and how
         // long — strictly more than the provider layer alone can know — so
-        // `job_fail` gets the actionable version instead of the generic one.
+        // `job_fail` gets the actionable version instead of the generic one,
+        // PLUS `timeout_failure_data` for the renderer to localize instead of
+        // splicing the raw stage key into an un-translatable English sentence.
         Err(e) => Err(match ledger.timeout_detail() {
-            Some((stage, ms)) => AppError::Timeout(hooks::timeout_message(stage, ms)),
-            None => e,
+            Some((stage, ms)) => ExecuteFailure {
+                error: AppError::Timeout(hooks::timeout_message(stage, ms)),
+                data: Some(hooks::timeout_failure_data(stage, ms)),
+            },
+            None => e.into(),
         }),
     }
 }

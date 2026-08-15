@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
@@ -145,16 +145,31 @@ pub(crate) fn apply_timeout(ledger: &RunLedger, stage: &StageInfo, outcome: Stag
 /// [`RunLedger::timeout_detail`] names the stage and how long it waited.
 ///
 /// Content-free per ADR-027 — a stage NAME and a duration, never prompt or
-/// document text — and plain, un-localized English: this is what `execute`
-/// hands `job_fail`, which carries it verbatim as `job.failed`'s `data` all
-/// the way to the renderer's existing raw-error display (no i18n key), the
-/// same as every other `job.failed` message this crate has always sent.
+/// document text — but plain, un-localized English, so this is no longer
+/// what reaches the renderer's error banner (see [`timeout_failure_data`]
+/// for that). It still becomes `AppError::Timeout`'s message, which
+/// `execute`'s caller writes onto the job's own tracked `error` field
+/// (`jobs_get`/`jobs_list`, a diagnostics surface with no i18n of its own) —
+/// a readable fallback for that surface, same as every other `job_fail`
+/// message this crate has always sent there.
 pub(crate) fn timeout_message(stage: &str, ms: u64) -> String {
     format!(
         "The \"{stage}\" step didn't get a response within {}s. Try a faster model or a lower \
          effort level.",
         ms / 1000
     )
+}
+
+/// The `job.failed` EVENT payload for a per-call timeout — `{ kind, stage,
+/// seconds }`, structured and machine-stable rather than [`timeout_message`]'s
+/// pre-formatted English sentence, so the renderer can render an actionable,
+/// LOCALIZED banner (`pipeline.timeout`, with `stage` mapped through the same
+/// `pipeline.stage.*` labels the step tracker already shows) instead of
+/// echoing the raw internal stage key. `"kind": "timeout"` is a discriminator
+/// so a consumer never has to guess a bare `{ stage, seconds }` object apart
+/// from some other job's payload shape.
+pub(crate) fn timeout_failure_data(stage: &str, ms: u64) -> Value {
+    json!({ "kind": "timeout", "stage": stage, "seconds": ms / 1000 })
 }
 
 /// The run's TERMINAL STATE — status and stopped reason, derived together.

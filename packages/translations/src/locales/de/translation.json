@@ -1694,6 +1694,7 @@
       "maxRepairs": "Gestoppt — das Budget für Nachbesserungen war aufgebraucht",
       "stopped": "Gestoppt"
     },
+    "timeout": "Der Schritt „{{stage}}“ hat innerhalb von {{seconds}} s keine Antwort erhalten. Versuchen Sie ein schnelleres Modell oder eine niedrigere Aufwandsstufe.",
     "runs": {
       "title": "Gestufte Läufe für diese Stelle",
       "empty": "Für diese Anzeige gibt es noch keine gestuften Läufe.",

@@ -511,6 +511,45 @@ describe('useResumePipelineSession', () => {
       consoleError.mockRestore();
     });
 
+    // A per-call timeout carries `{ kind: 'timeout', stage, seconds }` instead
+    // of a plain string (see `hooks::timeout_failure_data` on the Rust side) —
+    // the ONE `job.failed` shape this hook renders through `pipeline.timeout`
+    // rather than a raw string, so the banner names a step the user recognizes
+    // ("Matching your evidence") instead of the internal wire key
+    // ("match_evidence") a German (or any) user has never seen.
+    //
+    // Mutation check: read `event.data` as a plain string unconditionally
+    // (the pre-fix shape) and this fails — the raw key shows up verbatim.
+    it('localizes a per-call timeout instead of splicing the raw stage key into prose', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() =>
+        bus.job?.(jobFailed(JOB_ID, { kind: 'timeout', stage: 'match_evidence', seconds: 302 }))
+      );
+
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.error).toContain('Matching your evidence');
+      expect(result.current.error).toContain('302');
+      expect(result.current.error).not.toContain('match_evidence');
+      consoleError.mockRestore();
+    });
+
+    // A stage this build has no `pipeline.stage.*` copy for (added server-side
+    // after this renderer shipped) must still say SOMETHING rather than an
+    // empty label — the same `defaultValue` fallback `useTailorPipeline`'s
+    // `stageLabel` already relies on.
+    it('falls back to the raw stage key when no pipeline.stage label exists for it', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() =>
+        bus.job?.(jobFailed(JOB_ID, { kind: 'timeout', stage: 'a_future_stage', seconds: 12 }))
+      );
+
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.error).toContain('a_future_stage');
+      consoleError.mockRestore();
+    });
+
     // A run that already reached a terminal state is left alone — error text
     // included. The backend reports a deadline-stopped-but-saved run as complete
     // on the JOB while the row says `needsReview`, so letting a late job event

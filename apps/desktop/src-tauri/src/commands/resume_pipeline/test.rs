@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::hooks::{apply_stop, apply_timeout, timeout_message};
+use super::hooks::{apply_stop, apply_timeout, timeout_failure_data, timeout_message};
 use super::max;
 use super::notify::run_notification;
 use super::report;
@@ -846,6 +846,48 @@ fn timeout_message_names_the_stage_and_rounds_the_duration_to_seconds() {
         timeout_message("strategy", 300_021),
         "The \"strategy\" step didn't get a response within 300s. Try a faster model or a \
          lower effort level."
+    );
+}
+
+/// **`job.failed`'s STRUCTURED payload for the same failure** — what the
+/// renderer actually renders through `pipeline.timeout` now, instead of
+/// [`timeout_message`]'s English sentence (that string still lands on the
+/// job's own tracked `error`, never on `job.failed`'s event `data` — see
+/// `fail`'s doc comment). `"kind": "timeout"` is a discriminator so a
+/// consumer never has to guess a bare `{ stage, seconds }` shape apart from
+/// some other job's payload.
+///
+/// Mutation check: drop the `ms / 1000` rounding (emit raw milliseconds
+/// instead) and the `seconds` assertion below fails.
+#[test]
+fn timeout_failure_data_carries_the_stage_and_the_rounded_duration() {
+    assert_eq!(
+        timeout_failure_data("strategy", 300_021),
+        serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 300 })
+    );
+}
+
+/// **Wiring pin: `execute`'s per-call-timeout arm actually attaches
+/// [`timeout_failure_data`] to what it hands its caller.** `execute` needs an
+/// `AppHandle` this crate has no harness for (same limitation
+/// `persist_document_source` documents), so this is presence-only — the pure
+/// computation itself is pinned directly by the test above, and the
+/// renderer's consumption of the identical `{ kind, stage, seconds }` shape
+/// is pinned by `use-resume-pipeline-session.test.ts`'s "localizes a per-call
+/// timeout instead of splicing the raw stage key into prose". This is the one
+/// link connecting the two ends that only a source read can confirm without
+/// a live run.
+///
+/// Mutation check: change the timeout arm's `data` field back to `None` (the
+/// pre-fix shape) and this fails.
+#[test]
+fn executes_timeout_arm_attaches_the_structured_failure_data() {
+    let source = include_str!("mod.rs");
+    assert!(
+        source.contains("data: Some(hooks::timeout_failure_data(stage, ms))"),
+        "execute's per-call-timeout arm must attach timeout_failure_data to the \
+         ExecuteFailure it returns — otherwise job.failed's event carries no \
+         structured payload and the renderer's timeout banner never renders"
     );
 }
 

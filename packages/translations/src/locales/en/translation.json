@@ -1690,6 +1690,7 @@
       "maxRepairs": "Stopped — the repair budget ran out",
       "stopped": "Stopped"
     },
+    "timeout": "The \"{{stage}}\" step didn't get a response within {{seconds}}s. Try a faster model or a lower effort level.",
     "runs": {
       "title": "Staged runs for this job",
       "empty": "No staged runs yet for this posting.",
