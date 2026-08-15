@@ -339,15 +339,23 @@ impl ApplicationStore {
         // Reordering alone does NOT stop resurrecting a deleted Application —
         // only `backfill_from_generations` running exactly once (own doc)
         // closes that.
+        // `{}`/`e.code()`, never `{e}` — a `rusqlite::Error::InvalidPath` embeds
+        // the offending path in its `Display`, which `AppError::from` preserves,
+        // so interpolating `e` directly here would leak an absolute path into
+        // the log (repo path-privacy rule). `.code()` is a fixed, path-free
+        // category string, exactly what it exists for (own doc on `AppError::code`).
         if let Err(e) = store.link_orphaned_generations(data_dir) {
-            log::warn!("[applications] orphaned-generation link skipped (non-fatal): {e}");
+            log::warn!(
+                "[applications] orphaned-generation link skipped (non-fatal): {}",
+                e.code()
+            );
         }
         // Pre-ADR-0001 legacy backfill: no Application ever existed for these.
         // No-ops immediately once its one-shot marker is set (own doc).
         if let Err(e) = store.backfill_from_generations(data_dir) {
             // Non-fatal: a backfill failure must never block app boot. Worst case
             // the table is empty and the user re-derives via the normal flow.
-            log::warn!("[applications] backfill skipped (non-fatal): {e}");
+            log::warn!("[applications] backfill skipped (non-fatal): {}", e.code());
         }
         Ok(store)
     }
