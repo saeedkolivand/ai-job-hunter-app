@@ -784,13 +784,15 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
     // cannot say so — see [`has_curated_function_words`].
     let curated = has_curated_function_words(vocab.lang);
     // Ordered by how often the POSTING states the term, alphabetically within a
-    // tie. Both lists are truncated by their consumers
-    // (the now-deleted `agent::tools_quality::compact_evidence_set` took the
-    // first N and reported only a dropped COUNT), so a purely alphabetical order silently
-    // handed a prompt the alphabetical PREFIX of the gap list — "ansible" kept,
+    // tie. Both lists are sized for a future truncating consumer — none reads
+    // them today (`pipeline::resume::stages::strategy` calls `extract_evidence`
+    // for `.roles` only); the now-deleted `agent::tools_quality::
+    // compact_evidence_set` took the first N and reported only a dropped COUNT,
+    // and is why a purely alphabetical order would silently hand a truncating
+    // consumer the alphabetical PREFIX of the gap list — "ansible" kept,
     // "terraform" cut, and nothing downstream able to tell. Relevance-first
-    // makes a truncated list the top-N by construction, and the consumer needs
-    // no change.
+    // makes a truncated list the top-N by construction, so a future truncating
+    // consumer needs no change.
     //
     // Determinism is unchanged, which is what the alphabetical sort was for:
     // the tiebreak is a total order, because [`display_forms`] maps each stem to
