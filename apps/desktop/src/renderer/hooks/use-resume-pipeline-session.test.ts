@@ -84,6 +84,10 @@ function detail(status: PipelineRunDetail['status']): PipelineRunDetail {
   };
 }
 
+function jobFailed(jobId: string, data?: unknown): JobEvent {
+  return { type: 'job.failed', jobId, ...(data !== undefined ? { data } : {}), ts: 1 };
+}
+
 /** Start a run and drive the stage stream through the whole pipeline. */
 const STAGES = [
   'analyze_job',
@@ -297,6 +301,50 @@ describe('useResumePipelineSession', () => {
     });
   });
 
+  // ── reset()'s own stale-ref window ──────────────────────────────────────
+  //
+  // Same shape as the `start()` race above (see "arrives after a clean
+  // reconcile read, before the render commits"): the `pipeline:stage` and
+  // `job.failed` listeners are still mounted on the run/job that was just
+  // reset — nothing unsubscribes them — so a late event can fire in the gap
+  // before `reset()`'s `setState` calls commit. `reset()` closes that gap by
+  // assigning `runIdRef`/`jobIdRef`/`busyRef` SYNCHRONOUSLY, inside the same
+  // call, instead of leaving them to the next render body — a late event
+  // arriving in that gap must be dropped by the (fresh) ref guard, not read
+  // against the old run/job's id.
+  describe('reset()', () => {
+    it('drops a stage AND a job.failed event for the just-reset run/job that arrive before the render commits', async () => {
+      const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      bus.detail = detail('needsReview');
+      rerender();
+      await waitFor(() => expect(result.current.state).toBe('needsReview'));
+
+      // A missing registration must fail loudly here, not be silently
+      // skipped by an optional call below — that silence is exactly what
+      // would let this test pass green without ever exercising the guard
+      // it exists to catch.
+      if (!bus.stage) throw new Error('pipeline:stage listener was not registered');
+      if (!bus.job) throw new Error('job event listener was not registered');
+      const stageListener = bus.stage;
+      const jobListener = bus.job;
+
+      act(() => {
+        result.current.reset();
+        // Both fire in the SAME synchronous scope as reset() — before this
+        // act() lets the pending RESET/setState calls commit — exactly the
+        // ordering a real listener callback can race into. Together they
+        // exercise all three refs reset() writes synchronously: runIdRef
+        // (the stage event) and jobIdRef + busyRef (the job.failed event).
+        stageListener(stage('analyze_job', 'start', 0));
+        jobListener(jobFailed(JOB_ID, 'late failure for the just-reset run'));
+      });
+
+      expect(result.current.state).toBe('idle');
+      expect(result.current.stage).toBeNull();
+      expect(result.current.error).toBeNull();
+    });
+  });
+
   it('cancels through the umbrella job id and waits for the record to confirm', () => {
     const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
     act(() => bus.stage?.(stage('draft', 'start', 3)));
@@ -359,13 +407,6 @@ describe('useResumePipelineSession', () => {
   // `upsert_run` leaves the same hole from the other end: a row stuck at
   // `running`. Drop the `job.failed` consumer and the session spins either way.
   describe('a run that failed without a terminal record', () => {
-    const jobFailed = (jobId: string, data?: unknown): JobEvent => ({
-      type: 'job.failed',
-      jobId,
-      ...(data !== undefined ? { data } : {}),
-      ts: 1,
-    });
-
     it('ends the session on the umbrella job failure when no record exists', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));

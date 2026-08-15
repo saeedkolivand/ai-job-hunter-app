@@ -143,18 +143,16 @@ pub(crate) fn resume_source<'a>(
 
 /// Char cap on a request-supplied id echoed into a validation-error message
 /// (`"resume not found: …"` / `"job not found in cache: …"`, both renderer-
-/// visible). Mirrors `agent::tools::ECHO_CAP`/`clamped_echo` — same rule, for
-/// the same reason ("every real id is a short token, so an oversized one
-/// reaching a formatter is hostile") — reimplemented locally rather than
-/// imported: `agent::tools` is PR-5's deletion target once its
-/// `fenced`/`JOB_CAP`/`RESUME_CAP` trio moves to a dependency-free
-/// `prompt_fence.rs`, and `clamped_echo`/`ECHO_CAP` are not part of that
-/// move. Depending on `agent::tools` from here would make PR-5 choose
-/// between widening its extraction to carry a fourth item along or breaking
-/// this command — a coupling this one-line reimplementation avoids entirely.
-/// [`JOB_IDENTITY_CAP`] already bounds `resume_id`/`job_id` for STORAGE
-/// (512 bytes); this is the tighter, separate bound for what a caller
-/// actually SEES echoed back.
+/// visible). The same rule, for the same reason ("every real id is a short
+/// token, so an oversized one reaching a formatter is hostile"), the
+/// now-deleted `agent::tools::ECHO_CAP`/`clamped_echo` used to enforce —
+/// reimplemented locally rather than imported from `crate::prompt_fence`
+/// (PR-5 step 1's extraction target): `ECHO_CAP`/`clamped_echo` were never
+/// part of that move (verified: no surviving caller outside the deleted
+/// `agent` module ever needed them), so this one-line reimplementation is the
+/// permanent shape, not a stopgap. [`JOB_IDENTITY_CAP`] already bounds
+/// `resume_id`/`job_id` for STORAGE (512 bytes); this is the tighter,
+/// separate bound for what a caller actually SEES echoed back.
 const ECHO_CHARS_CAP: usize = 64;
 
 /// Clamp an id for the error message it is about to be formatted into,
@@ -226,9 +224,7 @@ pub(crate) fn resolve_job(
 
 /// The posting identity `execute` builds on the TEXT path, where there is no
 /// cached posting for `job_meta_for` to read. Pure so the field mapping is a
-/// test rather than a claim — `location` has no wire field (the cache's own
-/// `job_meta_for` populates it from the posting, which the text path has no
-/// equivalent of) and is always empty here.
+/// test rather than a claim.
 pub(crate) fn job_meta_from_request(
     clamped: &ClampedRequest,
 ) -> crate::commands::match_resume::JobPostingMeta {
@@ -237,7 +233,6 @@ pub(crate) fn job_meta_from_request(
         title: clamped.job_title.clone(),
         url: clamped.job_url.clone(),
         board: clamped.board.clone(),
-        location: String::new(),
     }
 }
 

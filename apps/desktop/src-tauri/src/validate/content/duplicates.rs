@@ -27,9 +27,9 @@ pub const MIN_TOKENS_FOR_DUPLICATE: usize = 4;
 /// "generated" document with thousands of bullet-shaped lines) held a tokio
 /// worker for seconds on every save. A real résumé/letter never has anywhere
 /// near this many bullets; the cap only ever bites on already-broken input.
-/// Mirrors the count-cap discipline `agent::tools_quality`'s `MAX_ISSUES`/
-/// `MAX_SKILLS` use for the same "untrusted size, bound before doing the
-/// expensive thing" reason.
+/// Mirrors the count-cap discipline the now-deleted `agent::tools_quality`'s
+/// `MAX_ISSUES`/`MAX_SKILLS` used for the same "untrusted size, bound before
+/// doing the expensive thing" reason.
 pub const MAX_DUP_BULLETS: usize = 400;
 
 /// Returns the duplicate issues and the `duplicateRatio` metric — the share of

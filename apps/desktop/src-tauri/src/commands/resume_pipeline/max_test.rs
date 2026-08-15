@@ -41,7 +41,9 @@ fn paying_stages_matches_the_pipelines_own_paid_stages() {
 /// The ceiling is picked from the backend-owned constant, never renderer
 /// input — and it agrees with the pipeline's own free/paid split.
 ///
-/// Mutation check: return `Budget::AGENT_PREP` from `budget()` and this fails.
+/// Mutation check: return anything other than `Budget::RESUME_QUALITY` from
+/// `budget()` and this fails (it was `Budget::AGENT_PREP` before that
+/// agent-flow budget was deleted, PR-5 step 2).
 #[test]
 fn the_run_uses_the_backend_owned_quality_budget() {
     assert_eq!(budget(), Budget::RESUME_QUALITY);

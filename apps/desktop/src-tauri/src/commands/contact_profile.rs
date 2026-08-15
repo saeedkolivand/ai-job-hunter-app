@@ -11,9 +11,9 @@ use crate::error::{AppError, AppResult};
 // `AppHandle` — so the degrade path (unmanaged store, the `try_state ==
 // None` branch `panic = "abort"` made non-optional) is testable at all. This
 // crate has no `tauri::test` mock-app harness (established precedent —
-// `agent::controller`, `extension_bridge::assist_registry`,
-// `commands::ai_provider::openai`, `salary_research` all document the same
-// gap and use the same shape of split); building a REAL `ContactProfileStore`
+// `extension_bridge::assist_registry`, `commands::ai_provider::openai`,
+// `salary_research` all document the same gap and use the same shape of
+// split); building a REAL `ContactProfileStore`
 // via `tempfile::TempDir` + `ContactProfileStore::open` and calling the
 // `_inner` fn directly with `Some(&store)` / `None` exercises both branches
 // of the actual production logic without one.

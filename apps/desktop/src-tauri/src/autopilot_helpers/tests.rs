@@ -483,12 +483,32 @@ fn note_user_msg_caps_oversized_resume_and_job_as_data() {
     assert!(msg.chars().filter(|&c| c == 'z').count() <= RESUME_CAP + JOB_CAP);
 }
 
+/// Every `snake_case` token in a prompt — copy of the (now fully deleted,
+/// PR-5 step 2) `agent::flows::tests::tool_like_tokens` helper, moved here
+/// alongside `AUTOPILOT_NOTE_SYSTEM` (PR-5 step 1).
+fn tool_like_tokens(prompt: &str) -> std::collections::BTreeSet<String> {
+    prompt
+        .split(|c: char| !(c.is_ascii_lowercase() || c == '_'))
+        .filter(|token| token.contains('_'))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The headless Autopilot note prompt is single-shot and tool-free — it
+/// must never grow a tool instruction (there is no loop, no whitelist and
+/// no confirm gate on a schedule to honor one).
+#[test]
+fn autopilot_note_system_names_no_tools() {
+    assert!(tool_like_tokens(AUTOPILOT_NOTE_SYSTEM).is_empty());
+}
+
 // ── run_notes_loop (HIGH-2: the async loop's guarantees, fake-driven) ──────
 
 /// A scripted [`NoteEnv`] fake: records every `complete()` call, returns a
 /// canned response (or errors), and can fail `charge_daily` from a chosen call
-/// onward. Mirrors `agent::controller::tests::FakeEnv` — no `AppHandle` or live
-/// provider, which is the whole point of the seam.
+/// onward. Mirrored the now-deleted `agent::controller::tests::FakeEnv`'s
+/// shape — no `AppHandle` or live provider, which is the whole point of the
+/// seam.
 struct FakeNoteEnv {
     calls: Mutex<usize>,
     response: AppResult<String>,
@@ -691,8 +711,9 @@ async fn daily_ceiling_error_stops_the_loop_early() {
 /// HIGH-1: cancellation must interrupt an IN-FLIGHT completion, not just fire
 /// between iterations. `complete()` here never resolves on its own — the only
 /// way `run_notes_loop` can return is via the `tokio::select!` race against
-/// `cancel.cancelled()`. Deterministic under the current-thread test runtime,
-/// mirroring `agent::controller::tests::cancellation_during_an_inflight_turn_stops_immediately`.
+/// `cancel.cancelled()`. Deterministic under the current-thread test runtime;
+/// mirrored the shape of the now-deleted
+/// `agent::controller::tests::cancellation_during_an_inflight_turn_stops_immediately`.
 #[tokio::test]
 async fn cancellation_during_an_inflight_call_stops_immediately() {
     struct HangingNoteEnv;

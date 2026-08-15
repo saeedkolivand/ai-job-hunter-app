@@ -2,13 +2,12 @@
  * Rust `StoppedReason` (`pipeline::budget`, `#[serde(rename_all = "snake_case")]`)
  * → the i18n key SUFFIX a surface appends to its own namespace.
  *
- * One map, two consumers: the agent run's `jobs.prep.stopped.*` labels and the
- * staged pipeline's `pipeline.stopped.*` labels. The enum is shared, so the
- * mapping is too — a variant added to `pipeline::budget` needs ONE entry here,
- * not one per surface, and a surface that forgets it lands on
+ * One map for every `pipeline.stopped.*`-style label. The enum is shared, so
+ * the mapping is too — a variant added to `pipeline::budget` needs ONE entry
+ * here, not one per surface, and a surface that forgets it lands on
  * {@link UNKNOWN_STOPPED_SUFFIX} rather than on a wrong-but-plausible label.
  *
- * `timeout` is deliberately absent: `commands::agent` turns it into a job
+ * `timeout` is deliberately absent: the staged pipeline turns it into a job
  * FAILURE, so it surfaces as an error state and never reaches a stopped tag.
  */
 export type StoppedSuffix =

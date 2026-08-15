@@ -702,11 +702,10 @@ pub(crate) struct JobPostingMeta {
     pub title: String,
     pub url: String,
     pub board: String,
-    pub location: String,
 }
 
-/// `pub(crate)` so the agent's `save_cover_letter` Write tool resolves the same
-/// posting identity the rest of the app uses, instead of re-deriving it.
+/// `pub(crate)` so `commands::resume_pipeline` resolves the same posting
+/// identity the rest of the app uses, instead of re-deriving it.
 pub(crate) fn job_meta_for(app: &AppHandle, job_id: &str) -> Option<JobPostingMeta> {
     let cache = app.state::<Mutex<PostingsCache>>();
     let guard = cache.lock();
@@ -727,7 +726,6 @@ pub(crate) fn job_meta_for(app: &AppHandle, job_id: &str) -> Option<JobPostingMe
         url: field("url"),
         // `JobPosting` serializes the originating board under `source`.
         board: field("source"),
-        location: field("location"),
     })
 }
 

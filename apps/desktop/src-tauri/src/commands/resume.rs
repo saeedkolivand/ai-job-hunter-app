@@ -68,25 +68,26 @@ pub(crate) const TARGET_LANGUAGE_CAP: usize = 32;
 /// → `crate::async_runtime::spawn(...)` (Tokio's WORKER pool, `tauri-2.11.5/
 /// src/ipc/mod.rs`), moving the sync body off the main thread without making
 /// it an actual `async fn`. That got the scan off the UI thread — but left it
-/// parked inline on a tokio worker, one of THREE different placements the
+/// parked inline on a tokio worker, one of several different placements the
 /// identical `validate_content` scan had grown across this codebase: the
-/// `agent::tools_quality` handlers already ran it through
+/// now-deleted `agent::tools_quality` handlers already ran it through
 /// `tauri::async_runtime::spawn_blocking` (round 10's own perf note there),
 /// while `resume_trim_suggestions` (`commands/match_resume.rs`) runs its own
-/// CPU-bound scan inline in a plain `async fn` body. One scan, three answers.
+/// CPU-bound scan inline in a plain `async fn` body. One scan, several answers.
 ///
 /// Round 11: this fn is now genuinely `async` (the `(async)` attribute comes
 /// off — a plain `#[tauri::command]` on an `async fn` already gets Tauri's
 /// `body_async` dispatch, no attribute needed), and its body wraps the scan in
 /// `tauri::async_runtime::spawn_blocking`, with the SAME `JoinError` →
-/// `AppError` mapping `agent::tools_quality::spawn_blocking_core` uses. This
+/// `AppError` mapping `pipeline::resume::stages::validate` uses. This
 /// body is regex/token scans over up to 3×200 KB plus capped-`O(n²)`
 /// duplicate-bullet detection (`validate::content::duplicates::MAX_DUP_BULLETS`)
 /// — real CPU work on every Re-check/save — so the `(async)` attribute got it
 /// off the UI thread, and `spawn_blocking` now gets it off the async workers
-/// too: one consistent answer. `resume_trim_suggestions` remains the one
-/// outlier (frozen this PR — `commands/match_resume.rs` is owned elsewhere; a
-/// follow-up chip already tracks it).
+/// too — matching the placement `pipeline::resume::stages::validate` also
+/// uses. `resume_trim_suggestions` remains the one outlier (frozen this PR —
+/// `commands/match_resume.rs` is owned elsewhere; a follow-up chip already
+/// tracks it).
 #[tauri::command]
 pub async fn resume_validate_content(
     req: ResumeValidateContentRequest,
@@ -119,7 +120,7 @@ pub async fn resume_validate_content(
     // `validate_content` owns its own `Span` (codes/counts only, ADR-027) — no
     // command-level span duplicating it on top. Off the async worker pool
     // too (see the doc comment's round-11 note) — same placement +
-    // `JoinError` mapping `agent::tools_quality::spawn_blocking_core` uses.
+    // `JoinError` mapping `pipeline::resume::stages::validate` uses.
     tauri::async_runtime::spawn_blocking(move || {
         validate_content(&ContentInput {
             generated: &generated,

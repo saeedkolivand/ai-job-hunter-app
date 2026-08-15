@@ -361,6 +361,16 @@ export function useResumePipelineSession(
     writingLetterRef.current = false;
     setError(null);
     replayed.current = null;
+    // Same reasoning as `start` (see the `jobIdRef` doc comment above): these
+    // three are written only in the render body, so a `pipeline:stage`/
+    // `job.failed` listener still mounted on the OLD run/job can fire in the
+    // gap before this function's `setState` calls actually commit — reading
+    // the stale ids/busy flag and misattributing the event to whatever
+    // session starts next. Assign them synchronously, right here, instead of
+    // leaving them to the next render.
+    runIdRef.current = null;
+    jobIdRef.current = null;
+    busyRef.current = false;
   }, [send]);
 
   return {
