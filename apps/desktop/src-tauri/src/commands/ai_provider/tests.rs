@@ -190,6 +190,80 @@ async fn bounded_maps_an_expired_deadline_to_a_named_network_error() {
     );
 }
 
+// ── map_completion_transport_error (is_timeout() → Timeout/Network) ────────
+//
+// The load-bearing classification the timeout-diagnostics chain this batch
+// exists for depends on: is_timeout() → AppError::Timeout →
+// StoppedReason::Timeout → the banner telling the user a stage timed out and
+// to try a faster model. If this helper silently reclassified a real timeout
+// to Network, that whole chain reverts to the original bug (a spinner with no
+// explanation) — and a mutation test against a prior, pre-extraction version
+// of this helper (forced to always return Network) found NOTHING red
+// anywhere in the workspace, which is exactly the gap this test closes.
+//
+// `reqwest::Error` has no public constructor (see `anthropic_tests.rs`'s
+// `reqwest_is_timeout_fires_for_the_clients_own_deadline_and_never_for_a_connect_failure`,
+// which pins the underlying `is_timeout()` assumption this helper relies on
+// but never drives the classification itself), so both branches below are
+// built from REAL local connections rather than a mock: a socket that
+// accepts but never writes back is a genuine client-side timeout; a loopback
+// port nothing is bound to refuses the connection immediately and is a
+// genuine non-timeout transport error.
+#[tokio::test]
+async fn map_completion_transport_error_classifies_a_real_timeout_and_a_real_connect_failure() {
+    // A REAL timeout: the server accepts the connection but writes nothing
+    // back before the client's own short deadline elapses.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        if let Ok((socket, _)) = listener.accept().await {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            drop(socket);
+        }
+    });
+    let timed_out = crate::net::http::shared()
+        .get(format!("http://{addr}"))
+        .timeout(std::time::Duration::from_millis(50))
+        .send()
+        .await
+        .expect_err("a 50ms deadline against a silent server must fail");
+    assert!(timed_out.is_timeout(), "precondition: {timed_out}");
+
+    match map_completion_transport_error(
+        timed_out,
+        "Anthropic",
+        std::time::Duration::from_secs(120),
+    ) {
+        AppError::Timeout(msg) => {
+            assert!(msg.contains("Anthropic"), "must name the provider: {msg}");
+            assert!(msg.contains("120"), "must carry the deadline: {msg}");
+        }
+        other => panic!("a real is_timeout() error must map to AppError::Timeout, got {other:?}"),
+    }
+
+    // A REAL non-timeout transport failure: a loopback port nothing is bound
+    // to refuses the connection immediately (no firewall/DNS involved).
+    let refused_addr = {
+        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        probe.local_addr().unwrap()
+        // `probe` drops here — the port is released with nothing bound to it.
+    };
+    let refused = crate::net::http::shared()
+        .get(format!("http://{refused_addr}"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect_err("a closed loopback port must refuse the connection");
+    assert!(!refused.is_timeout(), "precondition: {refused}");
+
+    let mapped =
+        map_completion_transport_error(refused, "Anthropic", std::time::Duration::from_secs(120));
+    assert!(
+        matches!(mapped, AppError::Network(_)),
+        "a non-timeout transport error must map to AppError::Network, got {mapped:?}"
+    );
+}
+
 #[test]
 fn cosine_identical_vectors_is_one() {
     let a = vec![1.0, 2.0, 3.0];
