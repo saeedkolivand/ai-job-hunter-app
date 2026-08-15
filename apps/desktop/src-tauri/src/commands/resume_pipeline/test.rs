@@ -2306,3 +2306,110 @@ fn normalize_regenerated_projects_reports_the_seed_skip_reason() {
     );
     assert_eq!(reason, Some("link_in_description"));
 }
+
+// ── persist_document: the Application FK + the two-document shape ─────────
+
+/// The verbatim source of `persist_document`'s body — from its own `fn` line
+/// through its own top-level closing brace (column 0, so no NESTED `}`
+/// inside the function body can end the scan early; same "opener at a
+/// strictly smaller indent" assumption
+/// `commands::autopilot::tests::every_record_mutation_goes_through_mutate_record`
+/// already documents for this exact idiom). Shared by the two regression
+/// tests below so the extraction logic is not duplicated, and `include_str!`
+/// makes rustc track the file, so this can never silently read a stale copy.
+///
+/// **Why a source pin at all.** `persist_document` takes a live `&AppHandle`
+/// and this crate has no `tauri::test` mock-app harness (see the doc on
+/// `every_record_mutation_goes_through_mutate_record` for the same
+/// limitation) — driving it for real is not available. A source pin is the
+/// cheapest HONEST guard: it fails the instant the exact line it names is
+/// edited away, which is what a mutation check below actually exercises.
+fn persist_document_source() -> String {
+    const SRC: &str = include_str!("mod.rs");
+    let lines: Vec<&str> = SRC.lines().collect();
+    let start = lines
+        .iter()
+        .position(|l| l.trim_start() == "fn persist_document(")
+        .expect("persist_document must still exist under this exact signature line");
+    let end = start
+        + lines[start..]
+            .iter()
+            .position(|l| *l == "}")
+            .expect("persist_document's own top-level closing brace (column 0)");
+    lines[start..=end].join("\n")
+}
+
+/// **FK-orphan regression.** `persist_document` used to build its
+/// `AiGenerationRecord` with `..empty_record()`, whose `application_id` is
+/// `None` — and nothing else in the staged pipeline ever set one.
+/// `ai_generations::merge_application`'s `application_id:
+/// incoming.application_id.or(existing.application_id)` only ever PRESERVES
+/// an id already on the row, it never ESTABLISHES one, so the first
+/// staged-pipeline save for a posting with no prior linked generation
+/// persisted `application_id: NULL` — invisible to every reader that filters
+/// `ai_generations` by `applicationId`. The résumé masked it (it has its own
+/// run-scoped read path, `PipelineRunDetail.resumeText`, joined by run id,
+/// no FK involved); the cover letter has no such channel and was
+/// unreachable for that whole class of application.
+///
+/// Pins that `persist_document` now ESTABLISHES the FK the same way
+/// `commands::ai_generations::ai_generations_save` always has (the same
+/// idempotent `ApplicationStore::upsert_for_origin` call), and that the
+/// resulting id actually lands on the persisted record rather than being
+/// computed and discarded.
+///
+/// Mutation check, both applied and reverted: delete the `application_id,`
+/// field from the `AiGenerationRecord` literal (the record falls back to
+/// `..empty_record()`'s `None` again) and the second assertion fails; delete
+/// the `upsert_for_origin(` call and the first does.
+#[test]
+fn persist_document_establishes_the_application_fk_it_used_to_skip() {
+    let body = persist_document_source();
+    assert!(
+        body.contains("upsert_for_origin("),
+        "persist_document must ESTABLISH the Application FK the same way \
+         ai_generations_save does, not merely carry one forward"
+    );
+    assert!(
+        body.contains("application_id,"),
+        "the upserted id must land on the AiGenerationRecord literal — otherwise it \
+         is computed and discarded, and the row still persists with \
+         application_id: None via ..empty_record()"
+    );
+}
+
+/// **A completed run exposes two DISTINCT documents — pinned by SOURCE
+/// against the exact two lines that build them, not by feeding two
+/// already-distinct literals through the store and asserting they differ.**
+/// A store-round-trip test shaped that way could never fail for what it
+/// claims: it would never call `persist_document` at all, so a regression
+/// INSIDE it — `cover_letter_text: ctx.draft.clone()`, say — would sail
+/// through clean, both fields still non-empty, which is exactly the "both
+/// non-empty" shape that let both the fence-tag leak (BUG-A) and this FK
+/// orphaning (this bug) ship undetected. (`ai_generations`'s own store-level
+/// merge tests already cover the downstream round trip thoroughly; what was
+/// never pinned is the two lines in `persist_document` that decide which
+/// `QualityCtx` field feeds which DB column.)
+///
+/// Pins that `resume_text` and `cover_letter_text` are built from two
+/// DIFFERENT `QualityCtx` fields — `ctx.draft` ("the résumé body") and
+/// `ctx.letter` ("the letter `cover_letter` generated"), per that struct's
+/// own field docs — never the same field read twice.
+///
+/// Mutation check, both applied and reverted: change `cover_letter_text:
+/// ctx.letter.clone()` to `cover_letter_text: ctx.draft.clone()` in
+/// `persist_document` and the second assertion fails.
+#[test]
+fn persist_document_builds_the_two_documents_from_different_ctx_fields() {
+    let body = persist_document_source();
+    assert!(
+        body.contains("resume_text: ctx.draft.clone(),"),
+        "the résumé slot must come from ctx.draft — QualityCtx's own \"the résumé \
+         body\" field"
+    );
+    assert!(
+        body.contains("cover_letter_text: ctx.letter.clone(),"),
+        "the letter slot must come from ctx.letter, NEVER ctx.draft — QualityCtx's \
+         own \"the letter `cover_letter` generated\" field"
+    );
+}

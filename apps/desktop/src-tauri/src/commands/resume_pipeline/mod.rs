@@ -558,6 +558,25 @@ async fn execute(
 /// job-ad text on the `Text` path. `merge_application`'s `pick` keeps the
 /// existing aggregate value whenever the incoming one is empty, so the
 /// `Cache` path's empty string never erases a `job_ad` an earlier save wrote.
+///
+/// **Establishes the Application FK, the same way [`ai_generations_save`]
+/// does — this writer used to skip that step entirely.** ADR 0001 demoted
+/// the generation to a child Document of an Application, but
+/// `ai_generations::merge_application`'s `application_id:
+/// incoming.application_id.or(existing.application_id)` only ever PRESERVES
+/// an id that already arrived on the row; nothing in this pipeline ever
+/// SET one, so the first staged-pipeline save for a posting with no prior
+/// linked generation persisted with `application_id` permanently `NULL` —
+/// invisible to every reader that joins/filters `ai_generations` by
+/// `applicationId`. The résumé masked it: it has its own run-scoped read
+/// path (`PipelineRunDetail.resumeText`, joined by run id, no FK involved),
+/// but the cover letter has no such channel and is unreachable for that
+/// whole class of application. `upsert_for_origin` is idempotent on the
+/// normalized `job_url`, so calling it here either finds the Application
+/// the apply flow already created or creates it now — either way this run's
+/// generation ends up linked.
+///
+/// [`ai_generations_save`]: crate::commands::ai_generations::ai_generations_save
 fn persist_document(
     app: &AppHandle,
     job_url: &str,
@@ -583,6 +602,36 @@ fn persist_document(
             .map(|letter| (letter, letter_text)),
     );
     let store = app.try_state::<AiGenerationStore>()?;
+    // Non-fatal on error, mirroring `ai_generations_save`: the generation
+    // itself is the user-visible action, and an unlinked row is still found
+    // by `AiGenerationStore::find_for_job` (keyed on `job_url`, not the FK) —
+    // only the Application-scoped readers miss it, and a later save retries
+    // the same idempotent upsert.
+    let application_id = app
+        .try_state::<crate::applications::ApplicationStore>()
+        .and_then(|apps| {
+            let app_meta = crate::applications::ApplicationMeta {
+                company: meta.company.clone(),
+                title: meta.title.clone(),
+                ..Default::default()
+            };
+            match apps.upsert_for_origin(
+                job_url,
+                &meta.board,
+                &app_meta,
+                crate::applications::ApplicationOrigin::Generate,
+                None,
+            ) {
+                Ok(id) => Some(id),
+                Err(e) => {
+                    log::warn!(
+                        "[pipeline] could not link the generated résumé to its application \
+                         (non-fatal): {e}"
+                    );
+                    None
+                }
+            }
+        });
     let record = AiGenerationRecord {
         id: make_generation_id(),
         created_at: crate::db::now_ms(),
@@ -602,6 +651,7 @@ fn persist_document(
         company_name: meta.company.clone(),
         job_title: meta.title.clone(),
         quality_report: wrapper.clone(),
+        application_id,
         ..empty_record()
     };
     match store.save_application(record) {
