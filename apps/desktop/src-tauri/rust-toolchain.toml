@@ -1,0 +1,15 @@
+# Pins the exact compiler + components used for local dev, PR CI, and release
+# builds so they can't silently diverge (all three previously resolved
+# whatever "stable" happened to mean on the day — see the pin commit).
+#
+# `dtolnay/rust-toolchain` (used in .github/actions/setup-rust and
+# release.yml) does NOT read this file — its @rev selects the version — so
+# CI is pinned to the SAME version below via that action's SHA. Bump both
+# together.
+#
+# `channel` is the currently-installed toolchain frozen in place, not an
+# upgrade; `rust-version` in Cargo.toml documents the real MSRV floor derived
+# from the dependency graph (currently lower — see that field's comment).
+[toolchain]
+channel = "1.96.1"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
