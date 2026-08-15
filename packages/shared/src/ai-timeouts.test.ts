@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EFFORT_TIMEOUT_MULTIPLIER,
+  ollamaCompletionDeadlineSecs,
   QUALITY_RUN_CLIENT_MARGIN_SECS,
   QUALITY_RUN_FIXED_SECS,
   QUALITY_RUN_GENERATION_PASSES,
+  QUALITY_RUN_JSON_STAGE_CALLS,
   qualityRunClientTimeoutMs,
   qualityRunDeadlineSecs,
   STREAM_BASELINE_SECS,
@@ -34,14 +36,18 @@ const TIERS = [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as
  * live guard against them drifting is the RUST twin
  * (`timeouts::quality_run_deadline_clears_the_inner_per_call_bounds`), which
  * reads `Budget::max_repair_attempts` / `MAX_SECTIONS_PER_ROUND` /
- * `OLLAMA_COMPLETION` from the source. This side pins the same arithmetic so a
- * TS-only edit to the deadline formula cannot pass alone.
+ * `OLLAMA_COMPLETION_BASELINE` from the source. This side pins the same
+ * arithmetic so a TS-only edit to the deadline formula cannot pass alone.
  */
 /**
- * `timeouts::OLLAMA_COMPLETION` — the longest per-call non-streaming bound, and
- * the bound on a whole `send_with_retry` SEQUENCE, not on one attempt (the retry
- * loop applies the caller's timeout and gives a retry only the remainder). Were
- * that budget removed, the real per-call figure would be `MAX_ATTEMPTS × 300`.
+ * `timeouts::OLLAMA_COMPLETION_BASELINE` (this file's
+ * `OLLAMA_COMPLETION_BASELINE_SECS`) — the BASELINE per-call non-streaming
+ * bound, and the bound on a whole `send_with_retry` SEQUENCE, not on one
+ * attempt (the retry loop applies the caller's timeout and gives a retry only
+ * the remainder). Were that budget removed, the real per-call figure would be
+ * `MAX_ATTEMPTS × 300`. A JSON stage's actual bound is this scaled by effort
+ * (`ollamaCompletionDeadlineSecs`, tested separately below); the repair
+ * fan-out and `humanize` stay at exactly this baseline, always.
  */
 const OLLAMA_COMPLETION_SECS = 300;
 /** `analyze_job`, `match_evidence`, `strategy`. */
@@ -57,17 +63,24 @@ const HUMANIZE_MAX_CALLS = 2;
 
 describe('qualityRunDeadlineSecs', () => {
   it('pins the derived per-tier table', () => {
-    // Every value is `QUALITY_RUN_FIXED_SECS + 300 × 2 × multiplier`. Pinned as
+    // Every value is `QUALITY_RUN_FIXED_SECS + QUALITY_RUN_JSON_STAGE_CALLS ×
+    // ollamaCompletionDeadlineSecs(effort) + 300 × 2 × multiplier`. Pinned as
     // literals (not recomputed from the constants) so a change to either term
     // has to be re-argued against the derivation in the source doc, and so the
     // Rust twin (`timeouts::quality_run_deadline`) has a table to match.
+    //
+    // The bottom tier (5_400 s) is UNCHANGED from before the JSON-stage term
+    // started scaling — `multiplier` is 1.0 there regardless of which term it
+    // applies to. Every tier above it moved: this is the incident fix, not a
+    // cosmetic rename — a run at `medium` effort now gets 6_600 s instead of
+    // 5_700 s, because its JSON stages legitimately may take longer too.
     expect(qualityRunDeadlineSecs(undefined)).toBe(5_400);
     expect(qualityRunDeadlineSecs('minimal')).toBe(5_400);
     expect(qualityRunDeadlineSecs('low')).toBe(5_400);
-    expect(qualityRunDeadlineSecs('medium')).toBe(5_700);
-    expect(qualityRunDeadlineSecs('high')).toBe(6_000);
-    expect(qualityRunDeadlineSecs('xhigh')).toBe(6_300);
-    expect(qualityRunDeadlineSecs('max')).toBe(6_600);
+    expect(qualityRunDeadlineSecs('medium')).toBe(6_600);
+    expect(qualityRunDeadlineSecs('high')).toBe(7_800);
+    expect(qualityRunDeadlineSecs('xhigh')).toBe(9_000);
+    expect(qualityRunDeadlineSecs('max')).toBe(10_200);
   });
 
   it('clears the inner per-call bounds it wraps at every tier', () => {
@@ -75,36 +88,57 @@ describe('qualityRunDeadlineSecs', () => {
     // sum of the deadlines the run's own calls are allowed to consume, or it
     // becomes the binding constraint and the actionable per-call error never
     // fires. Mutation checks (both applied, both caught): set
-    // QUALITY_RUN_FIXED_SECS back to 1_800 (the pre-fix value that ignored the
-    // repair fan-out) and every tier fails; set QUALITY_RUN_GENERATION_PASSES
-    // to 0 and every tier fails.
+    // QUALITY_RUN_FIXED_SECS back to 4_800 (the pre-fix value that folded the
+    // JSON stages into the flat term) and every tier above the bottom fails;
+    // set QUALITY_RUN_GENERATION_PASSES to 0 and every tier fails.
     const flatCalls =
-      OLLAMA_COMPLETION_SECS * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE +
       OLLAMA_COMPLETION_SECS * REPAIR_ROUNDS * REPAIR_SECTIONS_PER_ROUND +
       OLLAMA_COMPLETION_SECS * HUMANIZE_MAX_CALLS;
     for (const effort of TIERS) {
       const multiplier = (effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1;
+      // The JSON stages now scale exactly like the draft/letter do.
+      const jsonStageCalls =
+        OLLAMA_COMPLETION_SECS * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE * multiplier;
       // The draft and the letter are the run's only streamed (effort-scaled)
       // calls — see QUALITY_RUN_GENERATION_PASSES.
       const innerBounds =
-        flatCalls + STREAM_BASELINE_SECS * QUALITY_RUN_GENERATION_PASSES * multiplier;
+        flatCalls +
+        jsonStageCalls +
+        STREAM_BASELINE_SECS * QUALITY_RUN_GENERATION_PASSES * multiplier;
       expect(qualityRunDeadlineSecs(effort)).toBeGreaterThanOrEqual(innerBounds);
     }
   });
 
   it('accounts for the repair fan-out and the humanize allowance in a term that does not scale with effort', () => {
     // The second half of the AH2 fix, pinned separately from the sum above:
-    // the 8 repair calls plus humanize's ≤2 are bounded by a FLAT constant, so
-    // they must sit in `QUALITY_RUN_FIXED_SECS`. Mutation check: move them back
-    // into the scaled term and the fixed-term assertion fails — while the sum
-    // above still passes at the bottom tier, which is exactly why this needs
-    // its own guard.
+    // the 8 repair calls plus humanize's ≤2 are bounded by a FLAT constant
+    // (`Completer::complete` has no effort to scale by), so they must sit in
+    // `QUALITY_RUN_FIXED_SECS` — the three JSON stages must NOT, any more:
+    // they moved to the scaled `QUALITY_RUN_JSON_STAGE_CALLS` term instead.
+    // Mutation check: fold them back into this term and the assertion below
+    // still passes (it is `>=`, not `===`) but
+    // `pins the derived per-tier table` above fails at every tier above the
+    // bottom — exactly why that test exists alongside this one.
     expect(QUALITY_RUN_FIXED_SECS).toBeGreaterThanOrEqual(
-      OLLAMA_COMPLETION_SECS * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE +
-        OLLAMA_COMPLETION_SECS * REPAIR_ROUNDS * REPAIR_SECTIONS_PER_ROUND +
+      OLLAMA_COMPLETION_SECS * REPAIR_ROUNDS * REPAIR_SECTIONS_PER_ROUND +
         OLLAMA_COMPLETION_SECS * HUMANIZE_MAX_CALLS
     );
+    expect(QUALITY_RUN_JSON_STAGE_CALLS).toBe(JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE);
     expect(QUALITY_RUN_GENERATION_PASSES).toBe(2);
+  });
+
+  it('ollamaCompletionDeadlineSecs scales exactly like the stream deadline', () => {
+    // Both baselines are 300 s and share the one multiplier table — a run's
+    // effort setting is meant to raise every one of its calls the same way,
+    // streamed or not. Mutation check: give either its own multiplier table
+    // and this fails.
+    for (const effort of TIERS) {
+      expect(ollamaCompletionDeadlineSecs(effort)).toBe(
+        Math.round(
+          STREAM_BASELINE_SECS * ((effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1)
+        )
+      );
+    }
   });
 
   it('is monotonically nondecreasing across the ascending tier order', () => {
@@ -149,7 +183,8 @@ describe('qualityRunClientTimeoutMs', () => {
     // 4.0 without raising the margin ⇒ fails.
     const topMultiplier = Math.max(...Object.values(EFFORT_TIMEOUT_MULTIPLIER));
     const longestInFlightCall = Math.max(
-      OLLAMA_COMPLETION_SECS, // any flat call: a JSON stage, a repair splice
+      OLLAMA_COMPLETION_SECS, // a repair splice / humanize rewrite — always flat
+      OLLAMA_COMPLETION_SECS * topMultiplier, // a JSON stage at the top tier
       STREAM_BASELINE_SECS * topMultiplier // the draft at the top tier
     );
     expect(QUALITY_RUN_CLIENT_MARGIN_SECS).toBeGreaterThan(longestInFlightCall);

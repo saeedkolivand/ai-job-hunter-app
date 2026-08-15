@@ -443,7 +443,7 @@ impl AiProvider for OllamaClient {
 
         let resp = match super::retry::send_with_retry(
             || crate::net::http::shared().post(&endpoint).json(&body),
-            timeouts::OLLAMA_COMPLETION,
+            timeouts::OLLAMA_COMPLETION_BASELINE,
         )
         .await
         {
@@ -1203,11 +1203,18 @@ async fn complete_impl(
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
 
+    // Scaled by the SAME effort that governs `chat_stream`'s deadline — see
+    // `timeouts::ollama_completion_deadline`'s doc for why this is the only
+    // one of the three non-structured completion callers below (`complete`/
+    // `complete_with_usage`, which set `structured: None`) that can actually
+    // raise it above the baseline: those two have no `AiGenerateRequest` to
+    // read an effort off, so they fall back to the same flat bound as before.
+    let deadline = timeouts::ollama_completion_deadline(structured.as_ref().and_then(|s| s.effort));
     let body = build_complete_body(model, system, user, temperature, structured);
 
     let resp = match super::retry::send_with_retry(
         || crate::net::http::shared().post(&endpoint).json(&body),
-        timeouts::OLLAMA_COMPLETION,
+        deadline,
     )
     .await
     {
@@ -1222,7 +1229,7 @@ async fn complete_impl(
             return Err(if e.is_timeout() {
                 AppError::Timeout(format!(
                     "Ollama: no response within {}s",
-                    timeouts::OLLAMA_COMPLETION.as_secs()
+                    deadline.as_secs()
                 ))
             } else {
                 AppError::Network(format!("Ollama unreachable: {e}"))

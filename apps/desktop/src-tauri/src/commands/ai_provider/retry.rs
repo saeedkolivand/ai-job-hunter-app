@@ -17,7 +17,7 @@
 //! retry sequence by it** — the caller passes the operation's timeout instead of
 //! setting `.timeout()` on the builder itself. Retries are free wall-clock
 //! otherwise: each attempt would rebuild its own full `.timeout()`, so an
-//! operation documented as "bounded by `OLLAMA_COMPLETION` (300 s)" really cost
+//! operation documented as "bounded by `OLLAMA_COMPLETION_BASELINE` (300 s)" really cost
 //! up to `MAX_ATTEMPTS × 300 s` + backoff, and every outer deadline derived from
 //! those per-call bounds (`timeouts::quality_run_deadline`, the renderer's own
 //! client timeouts) was short by that factor. The streaming path had this budget
@@ -44,7 +44,7 @@ use reqwest::{RequestBuilder, Response, StatusCode};
 /// whole sequence by the operation's own timeout (see the module doc), so
 /// raising this changes how many PROMPT rejections are retried inside that one
 /// bound, never how long the operation can take. That is what lets
-/// `timeouts::quality_run_deadline` count one `OLLAMA_COMPLETION` per call
+/// `timeouts::quality_run_deadline` count one call's own deadline per call
 /// rather than three.
 pub const MAX_ATTEMPTS: u32 = 3;
 /// Base delay for the exponential schedule (attempt 1 → BASE, attempt 2 → 2·BASE…).
@@ -144,7 +144,8 @@ fn parse_retry_after(resp: &Response) -> Option<u64> {
 /// outcome (response or transport error). Never retries beyond [`MAX_ATTEMPTS`].
 ///
 /// **`timeout` is the operation's own per-request bound (`timeouts::COMPLETION`,
-/// `timeouts::OLLAMA_COMPLETION`, `timeouts::EMBED`, …) and the caller must not
+/// `timeouts::ollama_completion_deadline(effort)`, `timeouts::EMBED`, …) and
+/// the caller must not
 /// set one on the builder** — this function applies it, and it bounds the WHOLE
 /// sequence rather than each attempt (see [`send_with_retry_capped`]). One
 /// argument rather than a builder `.timeout()` plus a budget parameter, because
@@ -387,7 +388,7 @@ mod retry_loop_tests {
 
     /// **The one-shot path's total budget** — the bound every derived deadline
     /// (`timeouts::quality_run_deadline`, the renderer's client timeouts) counts
-    /// on when it counts ONE `OLLAMA_COMPLETION` per flat provider call.
+    /// on when it counts ONE per-call deadline per provider call.
     ///
     /// Without it each attempt rebuilt its own full `.timeout()`, so a call
     /// documented as 300 s-bounded really cost up to `MAX_ATTEMPTS × 300 s` plus

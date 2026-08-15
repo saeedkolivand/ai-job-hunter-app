@@ -540,7 +540,7 @@ pub fn run_timeout_error(limit: Duration) -> AppError {
 /// multi-call shape is a JSON stage: [`Completer::complete_json`] is allowed one
 /// re-ask, which is a second full provider call decided on inside the stage, so
 /// a run whose deadline expired during the first call would pay for a second
-/// (up to `OLLAMA_COMPLETION`) that nothing would look at.
+/// (up to `timeouts::ollama_completion_deadline`) that nothing would look at.
 ///
 /// **Hard error rather than the repair loop's "stop and keep".** A JSON stage
 /// has no partial result to keep: the first response failed to parse, so there

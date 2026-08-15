@@ -659,7 +659,7 @@ fn active_cfg(
 fn the_request_builder_forwards_the_configured_context_window() {
     use crate::pipeline::text_request;
 
-    let req = text_request("m", "sys", "usr", Some(0.4), Some(256), Some(8_192));
+    let req = text_request("m", "sys", "usr", Some(0.4), Some(256), Some(8_192), None);
     assert_eq!(req.context_window, Some(8_192));
     assert_eq!(req.max_tokens, Some(256));
     assert_eq!(req.temperature, Some(0.4));
@@ -671,7 +671,32 @@ fn the_request_builder_forwards_the_configured_context_window() {
     // Unconfigured stays unconfigured — the provider's own default, never a
     // number this layer made up.
     assert_eq!(
-        text_request("m", "s", "u", None, None, None).context_window,
+        text_request("m", "s", "u", None, None, None, None).context_window,
+        None
+    );
+}
+
+/// The SAME fix, for `effort`: `structured_call` used to hard-code
+/// `effort: None`, so a JSON stage's per-call HTTP deadline
+/// (`ollama_completion_deadline`) could never scale even when the run's
+/// STREAMED calls already did. `text_request` is the one place both build
+/// their request, so this is the missing link, not the adapter — same shape
+/// as the context-window fix above.
+///
+/// Mutation check: change `effort` back to a hard-coded `None` in
+/// `text_request` and the first assertion fails.
+#[test]
+fn the_request_builder_forwards_the_run_effort() {
+    use crate::pipeline::text_request;
+
+    let req = text_request("m", "sys", "usr", None, None, None, Some("high"));
+    assert_eq!(req.effort.as_deref(), Some("high"));
+
+    // A caller with nothing to scale by (the agentic tool loop / extension
+    // bridge, via `stream_complete`) still gets the provider's own default,
+    // never an invented tier.
+    assert_eq!(
+        text_request("m", "s", "u", None, None, None, None).effort,
         None
     );
 }

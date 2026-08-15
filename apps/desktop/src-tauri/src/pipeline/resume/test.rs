@@ -1865,8 +1865,8 @@ async fn the_repair_loop_reverts_a_round_that_adds_criticals() {
 /// **The repair loop is not the only stage that calls a provider twice.**
 ///
 /// `Completer::complete_json` is allowed exactly one re-ask, and it decides on
-/// that second call by itself — between two `OLLAMA_COMPLETION`-bounded round
-/// trips, with no stage boundary in between. `analyze_job`, `match_evidence` and
+/// that second call by itself — between two `ollama_completion_deadline`-bounded
+/// round trips, with no stage boundary in between. `analyze_job`, `match_evidence` and
 /// `strategy` each go through it, so before this guard a run whose deadline
 /// expired during the first call paid for a second one nothing would look at
 /// (three stages × 300 s of it, worst case) and only THEN hit the boundary check.
@@ -1922,8 +1922,9 @@ async fn a_json_stage_does_not_pay_for_a_re_ask_after_the_deadline() {
 
 /// **The deadline is enforced INSIDE the loop.** `StageHooks::before` cannot
 /// reach here: `repair` is the last stage, so there is no boundary after it,
-/// and one round can spend four provider calls at up to `OLLAMA_COMPLETION`
-/// each. A run past its deadline makes NO call and stops with `RunTimeout`,
+/// and one round can spend four provider calls at up to
+/// `OLLAMA_COMPLETION_BASELINE` each. A run past its deadline makes NO call
+/// and stops with `RunTimeout`,
 /// keeping whatever it already had.
 ///
 /// Mutation check: delete the `deadline.passed()` check at the top of the loop
@@ -1959,7 +1960,7 @@ async fn the_repair_loop_stops_at_the_run_deadline_without_paying_for_a_call() {
 
 /// **The deadline is checked between the round's own CALLS, not only between
 /// rounds.** One round can spend `MAX_SECTIONS_PER_ROUND` (4) calls at up to
-/// `OLLAMA_COMPLETION` (300 s) each: a round-granular check lets a run overrun
+/// `OLLAMA_COMPLETION_BASELINE` (300 s) each: a round-granular check lets a run overrun
 /// its deadline by ~20 minutes, which is most of the gap the whole AH2 finding
 /// is about.
 ///

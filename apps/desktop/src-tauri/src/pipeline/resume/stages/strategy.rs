@@ -240,6 +240,7 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                         &user,
                         ResumeStrategy::EXAMPLE,
                         Some(&ResumeStrategy::schema()),
+                        ctx.input.effort,
                     )
                     .await?
             }
