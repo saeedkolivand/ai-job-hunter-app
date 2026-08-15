@@ -307,6 +307,13 @@ pub struct StatusEvent {
 /// after it, TREATED as modern — misclassifying legacy only strands it from
 /// `find_for_job`, while the reverse RESURRECTS a deletion. Still relinked
 /// later by `link_orphaned_generations`; only CREATING one is refused.
+///
+/// **Second line of defence, not the fix**: a genuinely pre-epoch row stays
+/// pre-epoch forever, so this alone cannot stop create → delete → FK detaches
+/// to NULL → still pre-epoch and unlinked → recreated. `migrations.rs`'s
+/// one-shot backfill marker is what closes that; this just keeps a
+/// never-backfilled legacy row from misclassifying as modern before the
+/// marker exists.
 const APPLICATIONS_FEATURE_EPOCH_MS: u64 = 1_781_136_000_000;
 
 pub struct ApplicationStore {
@@ -314,8 +321,9 @@ pub struct ApplicationStore {
 }
 
 impl ApplicationStore {
-    /// Open `applications.db`, run migrations, then run the one-time backfill from
-    /// the sibling `ai_generations.db` (idempotent — safe on every boot).
+    /// Open `applications.db`, run migrations, then run the lookup-only orphan
+    /// link (every boot) and the one-time legacy backfill from the sibling
+    /// `ai_generations.db` (own doc on [`Self::backfill_from_generations`]).
     pub fn open(data_dir: &Path) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("applications.db");
@@ -324,19 +332,18 @@ impl ApplicationStore {
         let store = Self {
             conn: Mutex::new(conn),
         };
-        // Both backfills touch the SEPARATE ai_generations.db; guarded so a
-        // re-run is a no-op. ORDER IS LOAD-BEARING: lookup-only `link_
-        // orphaned_generations` (own doc) runs FIRST — reversed, the wide
-        // backfill's unconditional scan resolved every row first, leaving
-        // nothing for the lookup-only pass (proven: stubbed to `Ok(0)`, the
-        // OLD order still merge-linked the orphan). Reordering alone does NOT
-        // stop resurrecting a DELETED Application — `APPLICATIONS_FEATURE_
-        // EPOCH_MS` (own doc) below closes that.
+        // Both touch the SEPARATE ai_generations.db. ORDER IS LOAD-BEARING:
+        // lookup-only `link_orphaned_generations` (own doc, safe every boot)
+        // runs FIRST — reversed, the wide backfill's unconditional scan
+        // resolves every row first, leaving nothing for the lookup-only pass.
+        // Reordering alone does NOT stop resurrecting a deleted Application —
+        // only `backfill_from_generations` running exactly once (own doc)
+        // closes that.
         if let Err(e) = store.link_orphaned_generations(data_dir) {
             log::warn!("[applications] orphaned-generation link skipped (non-fatal): {e}");
         }
         // Pre-ADR-0001 legacy backfill: no Application ever existed for these.
-        // Scoped to whatever the pass above couldn't resolve, plus its own vintage gate.
+        // No-ops immediately once its one-shot marker is set (own doc).
         if let Err(e) = store.backfill_from_generations(data_dir) {
             // Non-fatal: a backfill failure must never block app boot. Worst case
             // the table is empty and the user re-derives via the normal flow.
@@ -349,111 +356,6 @@ impl ApplicationStore {
         let conn = self.conn.lock();
         conn.execute("DELETE FROM applications", []).ok();
         conn.execute("DELETE FROM status_events", []).ok();
-    }
-
-    /// Forward-safe, idempotent backfill from the pre-split `ai_generations.db`:
-    ///
-    /// 1. `ALTER TABLE ai_generations ADD COLUMN application_id` (+ index) — guarded
-    ///    by [`crate::db::column_exists`] so a re-run is a no-op.
-    /// 2. For each generation OLDER than [`APPLICATIONS_FEATURE_EPOCH_MS`] (own
-    ///    doc; younger left NULL), ensure exactly one `Application(status=
-    ///    applied, applied_at=created_at)` keyed by `normalize(job_url)`,
-    ///    link the gen's `application_id`, and seed one status event.
-    ///
-    /// Re-running is safe: a gen that already carries a non-empty `application_id`
-    /// is skipped, and Applications are looked up by normalized url before insert,
-    /// so no duplicates accrue.
-    fn backfill_from_generations(&self, data_dir: &Path) -> AppResult<()> {
-        let gen_path = data_dir.join("ai_generations.db");
-        if !gen_path.exists() {
-            return Ok(()); // fresh install — nothing to migrate
-        }
-        let gen_conn = crate::db::open(&gen_path)?;
-
-        // Step 1: add the FK column + index if absent (idempotent guard).
-        if !crate::db::column_exists(&gen_conn, "ai_generations", "application_id") {
-            gen_conn.execute_batch(
-                "ALTER TABLE ai_generations ADD COLUMN application_id TEXT;
-                 CREATE INDEX IF NOT EXISTS idx_ai_generations_application_id
-                     ON ai_generations(application_id);",
-            )?;
-        }
-
-        struct GenRow {
-            id: String,
-            created_at: u64,
-            candidate: String,
-            title: String,
-            company: String,
-            job_url: String,
-            board: String,
-            answers: Vec<ApplicationAnswer>,
-            brief: String,
-            application_id: Option<String>,
-        }
-
-        let mut stmt = gen_conn.prepare(
-            "SELECT id, created_at, candidate_name, job_title, company_name,
-                    job_url, board, application_answers, company_brief, application_id
-             FROM ai_generations
-             ORDER BY created_at ASC",
-        )?;
-        let rows: Vec<GenRow> = stmt
-            .query_map([], |row| {
-                let answers_json: String = row.get(7)?;
-                let app_id: Option<String> = row.get(9).unwrap_or(None);
-                Ok(GenRow {
-                    id: row.get(0)?,
-                    created_at: ts_from_db(row.get::<_, i64>(1)?),
-                    candidate: row.get(2)?,
-                    title: row.get(3)?,
-                    company: row.get(4)?,
-                    job_url: row.get(5)?,
-                    board: row.get(6)?,
-                    answers: serde_json::from_str(&answers_json).unwrap_or_default(),
-                    brief: row.get(8)?,
-                    application_id: app_id.filter(|s| !s.is_empty()),
-                })
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
-        drop(stmt);
-
-        for g in rows {
-            if g.application_id.is_some() {
-                continue; // already linked — idempotent skip
-            }
-            if g.created_at >= APPLICATIONS_FEATURE_EPOCH_MS {
-                continue; // modern + still unmatched — own doc on the constant
-            }
-            let normalized = normalize_job_url(&g.job_url);
-            let meta = ApplicationMeta {
-                company: g.company,
-                title: g.title,
-                candidate: g.candidate,
-                brief: g.brief,
-                job_description: String::new(), // ponytail: legacy generations carry no JD column
-                answers: g.answers,
-                job_summary: String::new(),
-                salary_min: None,
-                salary_max: None,
-                salary_currency: None,
-            };
-            // Empty url → a fresh per-gen Application (no shared key to merge on);
-            // non-empty url → merge into that url's Application if one exists.
-            let app_id = self.upsert_internal(
-                &normalized,
-                &g.board,
-                &meta,
-                &meta.job_description,
-                Some(g.created_at),
-            )?;
-            gen_conn.execute(
-                "UPDATE ai_generations SET application_id = ?2 WHERE id = ?1",
-                params![g.id, app_id],
-            )?;
-        }
-        Ok(())
     }
 
     /// Forward-safe, idempotent, **lookup-only** backfill: link every orphaned

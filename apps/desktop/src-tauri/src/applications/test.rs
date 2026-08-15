@@ -1848,6 +1848,77 @@ fn a_modern_unmatched_orphan_never_gets_an_application_created_by_backfill() {
     assert_eq!(gen_application_id(&gen_conn, "gen-modern-orphan"), None);
 }
 
+/// **The genuinely-pre-epoch resurrection, closed.** The epoch guard above
+/// only protects a MODERN row; a row that predates `APPLICATIONS_FEATURE_
+/// EPOCH_MS` stays pre-epoch forever, so it alone cannot stop this sequence:
+/// backfill creates an Application from a legacy row → the user deletes it
+/// (which detaches the generation's FK back to `NULL`, same as the
+/// `keepDocuments=true` command path) → the row is STILL pre-epoch and STILL
+/// unlinked, so an unguarded backfill would recreate the very Application the
+/// user just deleted on the next boot. `LEGACY_BACKFILL_MARKER` is what
+/// actually closes this: the FIRST boot's backfill sets it, so the SECOND
+/// boot's `backfill_from_generations` short-circuits before it ever looks at
+/// `ai_generations.db` again.
+///
+/// Mutation check: make `legacy_backfill_done` always return `false` (i.e.
+/// restore the old unconditional re-scan) and `rebooted.list().len()`
+/// becomes 1 — applied and reverted.
+#[test]
+fn a_legacy_backfilled_application_stays_deleted_across_a_second_reboot() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+
+    let raw_url = "https://acme.com/jobs/legacy-resurrect";
+    let normalized = normalize_job_url(raw_url);
+    // `insert_gen_with_app_id` hardcodes `created_at = 1000` — provably before
+    // `APPLICATIONS_FEATURE_EPOCH_MS`, i.e. a genuinely legacy row.
+    insert_gen_with_app_id(&gen_conn, "gen-legacy-resurrect", &normalized, None);
+
+    // Boot 1: the legacy row has no Application anywhere, so
+    // `backfill_from_generations` creates one and links it.
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let apps = store.list();
+    assert_eq!(apps.len(), 1, "precondition: the legacy row was backfilled");
+    let app_id = apps[0].id.clone();
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-legacy-resurrect"),
+        Some(app_id.clone()),
+        "precondition: the backfill linked the generation to the new Application"
+    );
+
+    // The user deletes it — same two calls `applications_delete` makes for
+    // `keepDocuments=true`: detach the FK, then remove the Application row.
+    let gen_store =
+        crate::ai_generations::AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    gen_store.detach_application(&app_id).unwrap();
+    store.delete(&app_id, true).unwrap();
+    assert_eq!(
+        store.list().len(),
+        0,
+        "precondition: the Application is gone"
+    );
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-legacy-resurrect"),
+        None,
+        "precondition: the delete detached the generation's FK back to NULL"
+    );
+    drop(store); // release the connection before the reboot below.
+
+    // Boot 2: the row is STILL pre-epoch and STILL unlinked — exactly the
+    // shape an unguarded backfill would recreate an Application from.
+    let rebooted = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        rebooted.list().len(),
+        0,
+        "the user's delete must survive a second reboot, not just the first"
+    );
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-legacy-resurrect"),
+        None,
+        "must stay unlinked, not get a freshly re-created Application"
+    );
+}
+
 // ── R1 — ApplicationStore::import rollback regression guard ──────────────────
 //
 // `DataStore::import` for ApplicationStore runs clear+repopulate in ONE
