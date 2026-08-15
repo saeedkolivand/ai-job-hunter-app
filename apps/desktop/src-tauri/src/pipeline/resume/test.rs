@@ -5,7 +5,11 @@
 //! change that makes it fail, and each was applied and reverted rather than
 //! assumed. A test that passes with its feature deleted is not a guard.
 
+use std::cell::Cell;
+
 use serde_json::json;
+use serde_json::Value;
+use tempfile::TempDir;
 
 use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
@@ -25,7 +29,9 @@ use super::types::{
     SectionKey, SkillGroup,
 };
 use super::{effective_letter_text, pick, stage_cache_key_for, RunLedger, QUALITY_STAGES};
+use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::{Budget, StoppedReason};
+use crate::pipeline::cache::KvCache;
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
     VOICE_AI_TELL_LEXICAL,
@@ -199,6 +205,176 @@ fn cache_key_field_boundaries_are_unambiguous() {
     assert_ne!(
         StageCacheKey::new(id("ab", "c", None), "s").key(),
         StageCacheKey::new(id("a", "bc", None), "s").key()
+    );
+}
+
+// ── End to end: a retry after a mid-run failure does not re-spend what already
+//    succeeded ──────────────────────────────────────────────────────────────
+//
+// The incident this proves the fix for: `analyze_job` (3 min) and
+// `match_evidence` (2 min) succeeded, `strategy` then timed out, and the run
+// failed. A retry with UNCHANGED inputs must not re-charge the two stages
+// that already answered — `StageCacheKey` + `KvCache::get`/`set` is the
+// mechanism (`cache::get`/`cache::put` below are the same two functions
+// `analyze.rs`/`evidence.rs`/`strategy.rs` call). Key derivation is pinned in
+// isolation above (`cache_key_discipline_misses_on_version_provider_model_and_window`,
+// `effort_is_part_of_the_cache_key`, …) and the KvCache read/write path is
+// pinned in `pipeline::cache::test` — NEITHER on its own proves a retry
+// actually skips a provider call; this is the one place that does, against a
+// REAL on-disk cache, so a future change to key derivation, the ledger, or
+// stage ordering that quietly breaks the reuse shows up as an assertion
+// failure here instead of staying an "emergent property" nothing guards.
+//
+// Runs the real `StageCacheKey`/`cache::get`/`cache::put` through a FAKE
+// provider (a call counter) rather than the real stage structs: this crate
+// has no Tauri test harness, and every real `Completer` call needs an
+// `AppHandle` (keychain lookup, event emission) this crate cannot construct
+// in a test. `cached_stage_call` below copies the cache-then-call-else-and-
+// extend SEQUENCE verbatim from each real stage's `run()` — see
+// analyze.rs/evidence.rs/strategy.rs — so a drift between it and them could
+// only ever make this test prove MORE reuse than a real run gets, never less;
+// it cannot hide the failure mode it exists to catch (a retry that re-spends).
+
+/// One stage's real sequence: look up the cache under `stage`'s own key: on a
+/// hit, use the cached value and DO NOT touch `calls`; on a miss, call
+/// `answer` (counted), then write it back. Either way, fold the resolved
+/// value into the ROLLING `cache_key` so the next stage's key depends on it —
+/// exactly `analyze.rs`'s `ctx.cache_key.extend(&json)`.
+fn cached_stage_call(
+    cache: &KvCache,
+    stage: &'static str,
+    cache_key: &mut StageCacheKey,
+    calls: &Cell<u32>,
+    answer: impl FnOnce() -> AppResult<Value>,
+) -> AppResult<()> {
+    let key = cache_key.clone();
+    let cached: Option<Value> = super::cache::get(Some(cache), stage, &key);
+    let from_cache = cached.is_some();
+    let value = match cached {
+        Some(v) => v,
+        None => {
+            calls.set(calls.get() + 1);
+            answer()?
+        }
+    };
+    let json = serde_json::to_string(&value).unwrap_or_default();
+    if !from_cache {
+        super::cache::put(Some(cache), stage, &key, &json);
+    }
+    cache_key.extend(&json);
+    Ok(())
+}
+
+/// Mutation checks (both applied and reverted): comment out the
+/// `super::cache::put` call inside `cached_stage_call` (or make
+/// `super::cache::get` always return `None`) and the retry section's first
+/// two assertions fail — the calls come back. Drop `effort` back out of
+/// `StageIdentity`/`StageCacheKey` (reverting the previous commit) and the
+/// LAST section's assertion fails instead: a different-effort request would
+/// silently reuse a same-effort answer, which is exactly the staleness bug
+/// that fix closed — this is where a wrong key shows up as REAL re-spending,
+/// not just a mismatched hash in a unit test.
+#[test]
+fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_succeeded() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache = KvCache::open(dir.path()).expect("open cache");
+
+    let analyze_calls = Cell::new(0u32);
+    let evidence_calls = Cell::new(0u32);
+    let strategy_calls = Cell::new(0u32);
+
+    // The run's own inputs — identical between the failed attempt and the
+    // retry, exactly what "click regenerate with nothing edited" reproduces
+    // (`ResultsPanel`'s `onRegenerate` re-sends the current form values).
+    let seed = "the candidate's résumé\u{1f}the job ad\u{1f}en";
+    let baseline = id_with_effort("ollama", "qwen3-vl-32k:latest", Some("baseline"));
+
+    // ── First attempt: analyze_job and match_evidence succeed, strategy times out ──
+    let mut key = StageCacheKey::new(baseline, seed);
+    cached_stage_call(&cache, "analyze_job", &mut key, &analyze_calls, || {
+        Ok(json!({ "mustHave": ["Rust"], "niceToHave": [], "redFlags": [] }))
+    })
+    .expect("analyze_job answers on the first attempt");
+    cached_stage_call(&cache, "match_evidence", &mut key, &evidence_calls, || {
+        Ok(json!({ "items": [] }))
+    })
+    .expect("match_evidence answers on the first attempt");
+    let first_attempt = cached_stage_call(&cache, "strategy", &mut key, &strategy_calls, || {
+        Err(AppError::Timeout("no response within 300s".to_string()))
+    });
+
+    assert!(
+        first_attempt.is_err(),
+        "the premise: strategy fails on the first attempt"
+    );
+    assert_eq!(analyze_calls.get(), 1);
+    assert_eq!(evidence_calls.get(), 1);
+    assert_eq!(
+        strategy_calls.get(),
+        1,
+        "strategy WAS attempted (that's what timed out) — it just never got to cache an answer"
+    );
+
+    // ── Retry: SAME inputs (a fresh rolling key, same seed/identity — a new
+    //    run), strategy now succeeds ────────────────────────────────────────
+    let mut retry_key = StageCacheKey::new(baseline, seed);
+    cached_stage_call(
+        &cache,
+        "analyze_job",
+        &mut retry_key,
+        &analyze_calls,
+        || panic!("must not re-ask analyze_job — it already answered"),
+    )
+    .expect("analyze_job reuses its cached answer");
+    cached_stage_call(
+        &cache,
+        "match_evidence",
+        &mut retry_key,
+        &evidence_calls,
+        || panic!("must not re-ask match_evidence — it already answered"),
+    )
+    .expect("match_evidence reuses its cached answer");
+    cached_stage_call(&cache, "strategy", &mut retry_key, &strategy_calls, || {
+        Ok(json!({ "companies": [] }))
+    })
+    .expect("strategy gets a real second chance");
+
+    assert_eq!(
+        analyze_calls.get(),
+        1,
+        "a retry with unchanged inputs must not re-spend a stage that already succeeded"
+    );
+    assert_eq!(
+        evidence_calls.get(),
+        1,
+        "a retry with unchanged inputs must not re-spend a stage that already succeeded"
+    );
+    assert_eq!(
+        strategy_calls.get(),
+        2,
+        "strategy has no cached answer from the failed attempt, so it must run for real again \
+         (1 failed attempt + 1 real retry — never served from a cache the failure never wrote)"
+    );
+
+    // ── A third attempt at a DIFFERENT effort must NOT reuse the baseline
+    //    answer — this is where dropping `effort` from the key would show up
+    //    as a real, silent re-spend of the wrong answer rather than a hash
+    //    mismatch in a unit test. ─────────────────────────────────────────
+    let higher_effort = id_with_effort("ollama", "qwen3-vl-32k:latest", Some("high"));
+    let mut different_effort_key = StageCacheKey::new(higher_effort, seed);
+    cached_stage_call(
+        &cache,
+        "analyze_job",
+        &mut different_effort_key,
+        &analyze_calls,
+        || Ok(json!({ "mustHave": ["Rust"], "niceToHave": [], "redFlags": [] })),
+    )
+    .expect("analyze_job answers again at the different effort");
+
+    assert_eq!(
+        analyze_calls.get(),
+        2,
+        "a different effort must miss the cache, never silently reuse the baseline answer"
     );
 }
 
