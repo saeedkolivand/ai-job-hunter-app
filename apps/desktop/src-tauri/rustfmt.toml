@@ -1,4 +1,17 @@
 # Canonical formatting for the Rust core. Stable-rustfmt only (no nightly-gated
 # options) so `cargo fmt` works on the same stable toolchain CI uses, and
 # `cargo fmt --all -- --check` is a meaningful gate (docs/architecture-rules.md R9).
-edition = "2021"
+edition = "2024"
+# `cargo fmt` passes the crate's Cargo.toml edition to rustfmt, which
+# overrides this file's own `edition` key for style purposes. `style_edition`
+# is a separate, stable key that pins the *formatting* rules independently of
+# the *language* edition above, so the edition 2024 bump doesn't also
+# reformat every file in the crate (import sort order, `assert!` wrapping,
+# etc.) as an unrelated side effect.
+#
+# This pin is DEBT, not a permanent choice: unpinning it (dropping this key, or
+# setting it to "2024") reformats ~200 files / 374 hunks in one go. Do that as a
+# standalone `style: adopt the 2024 style edition` commit with nothing else in
+# it, so the reformat is a scheduled chore and never noise a real change can
+# hide inside.
+style_edition = "2021"

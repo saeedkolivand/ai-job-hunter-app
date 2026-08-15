@@ -368,7 +368,7 @@ impl<'a> QualityCtx<'a> {
     /// [`Completer::complete_json`](crate::pipeline::Completer::complete_json) —
     /// see [`guard_deadline`]. Owned (an `Arc` clone plus a `Copy` clock), so it
     /// does not borrow the context across the call it guards.
-    pub fn deadline_guard(&self) -> impl Fn() -> AppResult<()> + 'static {
+    pub fn deadline_guard(&self) -> impl Fn() -> AppResult<()> + 'static + use<> {
         let ledger = Arc::clone(&self.ledger);
         let deadline = self.deadline;
         move || guard_deadline(&ledger, deadline)

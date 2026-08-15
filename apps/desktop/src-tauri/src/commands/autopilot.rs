@@ -912,7 +912,7 @@ fn cluster_aware_retain(
     // with the retained rows), so this set must not borrow from it.
     let passing: HashSet<String> = rep_by_cluster
         .iter()
-        .filter(|(_, &idx)| passes_min_score(&found_jobs[idx], threshold))
+        .filter(|&(_, &idx)| passes_min_score(&found_jobs[idx], threshold))
         .map(|(&cid, _)| cid.to_string())
         .collect();
 

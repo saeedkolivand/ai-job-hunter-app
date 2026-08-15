@@ -128,7 +128,7 @@ impl StreamEntry {
     /// This entry's generation, regardless of which variant it currently is
     /// — used by [`AssistStreamRegistry::unregister_gen`]'s match-the-caller
     /// check.
-    fn gen(&self) -> u64 {
+    fn r#gen(&self) -> u64 {
         match self {
             StreamEntry::Pending(g)
             | StreamEntry::Running(g, _)
@@ -191,12 +191,12 @@ impl AssistStreamRegistry {
         if guard.entries.contains_key(req_id) {
             return None;
         }
-        let gen = guard.next_gen;
+        let r#gen = guard.next_gen;
         guard.next_gen += 1;
         guard
             .entries
-            .insert(req_id.to_string(), StreamEntry::Pending(gen));
-        Some(gen)
+            .insert(req_id.to_string(), StreamEntry::Pending(r#gen));
+        Some(r#gen)
     }
 
     /// Register an in-flight stream's `reqId -> jobId`, UNLESS `req_id` was
@@ -220,17 +220,17 @@ impl AssistStreamRegistry {
             guard.entries.remove(req_id);
             return false;
         }
-        let gen = match guard.entries.get(req_id) {
-            Some(StreamEntry::Pending(gen)) => *gen,
+        let r#gen = match guard.entries.get(req_id) {
+            Some(StreamEntry::Pending(r#gen)) => *r#gen,
             _ => {
-                let gen = guard.next_gen;
+                let r#gen = guard.next_gen;
                 guard.next_gen += 1;
-                gen
+                r#gen
             }
         };
         guard.entries.insert(
             req_id.to_string(),
-            StreamEntry::Running(gen, job_id.to_string()),
+            StreamEntry::Running(r#gen, job_id.to_string()),
         );
         true
     }
@@ -245,9 +245,13 @@ impl AssistStreamRegistry {
     /// `CancelledEarly` → later consumed by `register`), or a LATER `begin`
     /// for the same reused `req_id` minted a strictly higher generation — in
     /// either case this call must never remove what it doesn't own.
-    pub(super) fn unregister_gen(&self, req_id: &str, gen: u64) {
+    pub(super) fn unregister_gen(&self, req_id: &str, r#gen: u64) {
         let mut guard = self.0.lock();
-        if guard.entries.get(req_id).is_some_and(|e| e.gen() == gen) {
+        if guard
+            .entries
+            .get(req_id)
+            .is_some_and(|e| e.r#gen() == r#gen)
+        {
             guard.entries.remove(req_id);
         }
     }
@@ -321,11 +325,11 @@ impl AssistStreamRegistry {
                     Some(StreamEntry::Running(_, job_id)) => Some(job_id),
                     _ => None,
                 },
-                Some(StreamEntry::Pending(gen)) => {
-                    let gen = *gen;
+                Some(StreamEntry::Pending(r#gen)) => {
+                    let r#gen = *r#gen;
                     guard
                         .entries
-                        .insert(req_id.to_string(), StreamEntry::CancelledEarly(gen));
+                        .insert(req_id.to_string(), StreamEntry::CancelledEarly(r#gen));
                     None
                 }
                 _ => None,
@@ -363,10 +367,10 @@ impl AssistStreamRegistry {
                 // for that `req_id` finds nothing, returns `true`, and starts
                 // a full billable generation for a request the user already
                 // cancelled.
-                StreamEntry::Pending(gen) | StreamEntry::CancelledEarly(gen) => {
+                StreamEntry::Pending(r#gen) | StreamEntry::CancelledEarly(r#gen) => {
                     guard
                         .entries
-                        .insert(req_id, StreamEntry::CancelledEarly(gen));
+                        .insert(req_id, StreamEntry::CancelledEarly(r#gen));
                 }
             }
         }
@@ -413,9 +417,9 @@ mod tests {
     #[test]
     fn unregister_gen_then_register_again_reflects_the_new_mapping() {
         let r = AssistStreamRegistry::default();
-        let gen = r.begin("req-1").expect("a fresh reqId");
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
         assert!(r.register("req-1", "job-1"));
-        r.unregister_gen("req-1", gen);
+        r.unregister_gen("req-1", r#gen);
         assert!(r.register("req-1", "job-2"));
         assert_eq!(r.take("req-1"), Some("job-2".to_string()));
     }
@@ -700,10 +704,10 @@ mod tests {
         // actually remove it — this is the "one owner cleans up its own
         // request" path every non-race request takes.
         let r = AssistStreamRegistry::default();
-        let gen = r.begin("req-1").expect("a fresh reqId");
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
         assert!(r.register("req-1", "job-1"));
 
-        r.unregister_gen("req-1", gen);
+        r.unregister_gen("req-1", r#gen);
 
         assert!(
             !r.contains("req-1"),
