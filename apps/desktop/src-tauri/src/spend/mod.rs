@@ -15,8 +15,11 @@
 //! - `pipeline::Completer::complete` — every non-streaming completion
 //!   (autopilot notes, the résumé/cover pipeline's research-brief synthesis).
 //! - `pipeline::Completer::chat_with_tools` — every agent tool-calling turn
-//!   (`agent_run`'s "Prep this application" loop; one run fans out into
-//!   several turns, so this is plausibly the biggest paid-token consumer).
+//!   (the "Prep this application" loop's `agent_run` command; one run fanned
+//!   out into several turns, plausibly the biggest paid-token consumer while
+//!   it shipped). `agent_run` was deleted in PR-5 along with the rest of the
+//!   agent module, so this chokepoint currently has no live caller — flagged
+//!   for the AI-provider owner as a separate cleanup, not touched by PR-5.
 //! - `commands::ai_provider::embed_text` — every embedding call (`ai_embed`,
 //!   match-score resolution, `ai_reembed_all`'s batch re-index).
 //!

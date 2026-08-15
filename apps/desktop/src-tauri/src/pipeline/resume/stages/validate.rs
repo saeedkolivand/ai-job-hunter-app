@@ -23,8 +23,9 @@ pub struct Validate;
 /// cover letter.
 ///
 /// Off the async workers via `spawn_blocking`, the same placement
-/// `commands::resume::resume_validate_content` and `agent::tools_quality` use:
-/// this is regex/token scanning over up to three 200 KB documents plus capped
+/// `commands::resume::resume_validate_content` uses (the now-deleted
+/// `agent::tools_quality` handlers did too): this is regex/token scanning
+/// over up to three 200 KB documents plus capped
 /// `O(n²)` duplicate detection, and a staged run does it up to three times
 /// (once, then once per repair round). One scan, one answer about where it
 /// runs.

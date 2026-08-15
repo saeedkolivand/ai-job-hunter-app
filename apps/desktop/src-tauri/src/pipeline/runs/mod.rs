@@ -493,32 +493,6 @@ impl PipelineRunStore {
         Ok(())
     }
 
-    /// Move ONE existing run row's status — and do nothing at all if the row
-    /// is gone. Returns whether it moved.
-    ///
-    /// The existence-checked counterpart to [`upsert_run`](Self::upsert_run),
-    /// which is an `INSERT OR REPLACE` and therefore RESURRECTS a row that was
-    /// deleted between a caller's read and its write (CodeRabbit, PR #986; the
-    /// #970 delete-race class). A generation delete, an application delete, or
-    /// a factory reset on another thread inside that window would otherwise be
-    /// undone by a status sync, leaving an orphan run row with no parent, no
-    /// UI, and no eviction path — retention only ever prunes the fourth run of
-    /// a posting that is still being run, which a deleted one never is.
-    ///
-    /// `UPDATE … WHERE id = ?` is the whole mechanism: SQLite reports zero rows
-    /// changed when the row is absent, so the check and the write are one
-    /// statement and there is no window between them to lose.
-    pub fn update_status_if_present(&self, id: &str, status: &str) -> AppResult<bool> {
-        let conn = self.conn.lock();
-        let changed = conn
-            .execute(
-                "UPDATE pipeline_runs SET status = ?2 WHERE id = ?1",
-                params![id, status],
-            )
-            .map_err(|e| AppError::Storage(e.to_string()))?;
-        Ok(changed > 0)
-    }
-
     /// Append one stage event. `artifact_json` is clamped HERE — at the single
     /// write site — so no caller can bypass the cap by forgetting to.
     pub fn append_event(&self, event: &RunEventRow) -> AppResult<()> {

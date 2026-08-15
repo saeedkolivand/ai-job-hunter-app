@@ -299,59 +299,6 @@ export const ResumeValidateContentSchema = z.object({
 export type ResumeValidateContentRequest = z.infer<typeof ResumeValidateContentSchema>;
 
 /**
- * Which agentic flow one `agent.run` request starts. The vocabulary is closed and
- * shared: the Rust `AgentFlow` registry (`agent::flows::FLOWS`) is keyed on these
- * exact tokens through `pnpm gen:ipc`, and a kind that resolves to no flow is a
- * validation error rather than a silent fallback to the default — running the
- * wrong flow spends a paid run on work nobody asked for and writes the wrong
- * document.
- *
- * - `prep_application` — prepare one application end to end (research, match,
- *   draft the letter + résumé, offer both saves). The DEFAULT.
- * - `improve_resume` — review a résumé this app already generated against its
- *   quality report and the candidate's evidence, and offer targeted fixes.
- */
-export const AGENT_FLOW_KINDS = ['prep_application', 'improve_resume'] as const;
-export type AgentFlowKind = (typeof AGENT_FLOW_KINDS)[number];
-
-/**
- * Request for an agentic run (`agent.run`). Carries ONLY the résumé + job identity
- * plus WHICH flow to run: routing (provider/model/baseUrl) is BACKEND-OWNED — the
- * agent loop and every tool provider call resolve the active provider from the
- * persisted store (`Completer::from_active`), never from the renderer, so a
- * compromised renderer can no longer point a credentialed request at an attacker
- * endpoint (task #25 — closes the last base_url-exfil path task #16 sealed).
- *
- * `kind` selects a FLOW, not a provider: it picks one entry of a closed,
- * backend-owned registry whose prompt, tool whitelist and spend budget are all
- * compile-time constants. It cannot widen what a run may reach or spend — only
- * which of the two fixed shapes it takes — and it defaults to the prep flow, so
- * an older renderer that omits it keeps the behaviour it always had.
- */
-export const AgentRunRequestSchema = z.object({
-  resumeId: z.string().min(1),
-  jobId: z.string().min(1),
-  kind: z.enum(AGENT_FLOW_KINDS).default('prep_application'),
-});
-
-/**
- * Request for `agent.confirm` — the human-in-the-loop decision on ONE suspended
- * Write action of a running agent. `jobId` + `callId` identify the pending call
- * (echoed from the `confirm_request` step). `decision` is the user's verdict;
- * `editedArgs` carries the (content-only) edited arguments and is required by, and
- * only meaningful for, `approveEdited`. The Rust controller re-validates
- * `editedArgs` against the tool schema and rejects any routing/egress field — the
- * trusted provider/model/base_url/job identity always come from the run's context,
- * never from here.
- */
-export const AgentConfirmRequestSchema = z.object({
-  jobId: z.string().min(1),
-  callId: z.string().min(1),
-  decision: z.enum(['approve', 'approveEdited', 'deny']),
-  editedArgs: z.unknown().optional(),
-});
-
-/**
  * The historic vocabulary of `pipeline_runs.depth`/`QualityReport.pipeline`
  * values — `fast` (the renderer's own deterministic pass), `quality` (the
  * staged Rust pipeline — the fixed value every new run persists), and `max`
@@ -884,5 +831,3 @@ export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
 export type ResumeTrimSuggestionsRequest = z.infer<typeof ResumeTrimSuggestionsRequestSchema>;
-export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
-export type AgentConfirmRequest = z.infer<typeof AgentConfirmRequestSchema>;

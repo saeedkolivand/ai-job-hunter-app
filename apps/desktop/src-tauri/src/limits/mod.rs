@@ -71,14 +71,20 @@ pub const SCRAPE_RATE_MAX: usize = 30;
 /// `scrape_board` / `scrape_url`: at most this many in-flight at once.
 pub const SCRAPE_CONCURRENCY_MAX: usize = 2;
 
-/// `agent_run` (the Phase-2 agentic loop command): at most this many starts per
-/// [`RATE_WINDOW`]. One run fans out into several provider requests (each turn is
-/// separately charged against the per-provider daily ceiling), so admit fewer
-/// runs than a single-shot `ai_generate`.
+/// `resume_pipeline_run` (`commands::resume_pipeline`, the staged résumé
+/// pipeline): at most this many starts per [`RATE_WINDOW`]. One run fans out
+/// into several provider requests across its stages (each separately charged
+/// against the per-provider daily ceiling), so admit fewer runs than a
+/// single-shot `ai_generate`.
+///
+/// Named for the Phase-2 agentic loop command these buckets originally
+/// admitted; that command (`agent_run`) was deleted in PR-5 — the staged
+/// résumé pipeline is the sole caller of this bucket now, and inherited the
+/// same ceiling rather than getting a fresh (unreviewed) one of its own.
 pub const AGENT_RUN_RATE_MAX: usize = 10;
-/// `agent_run`: at most this many in-flight at once.
+/// `resume_pipeline_run`: at most this many in-flight at once.
 pub const AGENT_RUN_CONCURRENCY_MAX: usize = 2;
-/// `agent_run`: at most this many callers PARKED waiting for a slot.
+/// `resume_pipeline_run`: at most this many callers PARKED waiting for a slot.
 ///
 /// Smaller than [`AI_GENERATE_QUEUE_MAX`] on purpose. Both buckets serve
 /// deliberate human actions, so both PARK rather than reject (a user working

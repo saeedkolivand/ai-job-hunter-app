@@ -964,9 +964,10 @@ impl ScraperEngine {
     /// The owners that remove their own slot are unchanged:
     /// `commands::scrape::scrape_boards` (early cancelled return and after the
     /// engine call), `commands::autopilot::autopilot_run` (scrape-Err,
-    /// cancelled, and success paths), and `commands::agent::agent_run` (every
-    /// validation failure via `fail_run`, plus the spawned loop's own exit) —
-    /// while an engine-minted slot is removed by the `we_minted` branch.
+    /// cancelled, and success paths), and
+    /// `commands::resume_pipeline::resume_pipeline_run` (every validation
+    /// failure, plus the spawned task's own exit) — while an engine-minted
+    /// slot is removed by the `we_minted` branch.
     pub async fn cancel(&self, job_id: &str) {
         self.jobs.cancel(job_id).await;
     }

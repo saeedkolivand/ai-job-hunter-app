@@ -25,9 +25,9 @@
 use serde_json::{json, Map, Value};
 use tauri::AppHandle;
 
-use crate::agent::tools::fenced;
 use crate::error::AppResult;
 use crate::pipeline::json::JsonParseError;
+use crate::prompt_fence::fenced;
 
 use super::{
     flatten_messages, resolve_intent, AiGenerateRequest, AiProvider, ChatMsg, Role, Usage,
@@ -142,12 +142,15 @@ impl JsonParseError {
     /// every fence tag and `[tool_result` marker inside it, including a forged
     /// copy of this block's own closing tag.
     ///
-    /// It lives in this module rather than next to the error type because
-    /// [`fenced`] is an L3 primitive (`agent::tools`) and `pipeline::json` is
-    /// L2 — architecture rule R7 forbids that import. TODO(arch): move the
-    /// pure prompt-safety primitives out of `agent` (the same relocation the
-    /// `autopilot_helpers -> agent` allowlist entry already asks for) and this
-    /// can become an ordinary method on the type.
+    /// It lives in this module rather than next to the error type for
+    /// historical reasons: [`fenced`] used to be an L3 primitive (`agent::tools`)
+    /// and `pipeline::json` is L1/L2, so architecture rule R7 forbade that
+    /// import. [`fenced`] has since relocated to the dependency-free L0
+    /// [`crate::prompt_fence`] (PR-5 step 1) and `agent` itself is gone
+    /// (PR-5 step 2), so the R7 blocker is clear — this could become an
+    /// ordinary method on [`JsonParseError`] importing `prompt_fence`
+    /// directly. Left as-is for now (a separate move, not bundled into the
+    /// agent deletion).
     pub fn reask_detail(&self) -> String {
         match self.detail() {
             "" => String::new(),

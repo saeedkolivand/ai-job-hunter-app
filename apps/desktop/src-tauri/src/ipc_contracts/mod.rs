@@ -4,9 +4,6 @@
 //! `packages/shared/src/schemas`. Do not edit them by hand — change the schema
 //! and regenerate. CI runs `pnpm gen:ipc --check` to catch drift.
 
-pub mod agent;
-pub mod agent_caps;
-pub mod agent_flow_kinds;
 pub mod ai;
 pub mod ai_intents;
 pub mod ai_timeouts;
