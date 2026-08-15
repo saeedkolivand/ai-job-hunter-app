@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EFFORT_TIMEOUT_MULTIPLIER,
+  OLLAMA_COMPLETION_BASELINE_SECS,
   ollamaCompletionDeadlineSecs,
   QUALITY_RUN_CLIENT_MARGIN_SECS,
   QUALITY_RUN_FIXED_SECS,
@@ -127,15 +128,19 @@ describe('qualityRunDeadlineSecs', () => {
     expect(QUALITY_RUN_GENERATION_PASSES).toBe(2);
   });
 
-  it('ollamaCompletionDeadlineSecs scales exactly like the stream deadline', () => {
-    // Both baselines are 300 s and share the one multiplier table — a run's
-    // effort setting is meant to raise every one of its calls the same way,
-    // streamed or not. Mutation check: give either its own multiplier table
-    // and this fails.
+  it('scales OLLAMA_COMPLETION_BASELINE_SECS by the shared multiplier table', () => {
+    // Asserted against OLLAMA_COMPLETION_BASELINE_SECS, NOT STREAM_BASELINE_SECS
+    // — the two are documented as separate constants free to drift
+    // independently (they only share a value today because they happen to
+    // start equal). Comparing against STREAM_BASELINE_SECS would go red the
+    // moment either baseline changed on its own, blaming the multiplier table
+    // for a baseline edit it had nothing to do with. Mutation check: give
+    // either baseline its own multiplier table and this fails.
     for (const effort of TIERS) {
       expect(ollamaCompletionDeadlineSecs(effort)).toBe(
         Math.round(
-          STREAM_BASELINE_SECS * ((effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1)
+          OLLAMA_COMPLETION_BASELINE_SECS *
+            ((effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1)
         )
       );
     }

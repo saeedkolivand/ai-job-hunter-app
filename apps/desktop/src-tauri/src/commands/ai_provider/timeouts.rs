@@ -386,12 +386,20 @@ mod tests {
         );
     }
 
-    /// Scales EXACTLY like `stream_deadline` — same baseline value, same
-    /// multiplier table — because a run's effort setting is meant to raise
-    /// every one of ITS calls the same way, streamed or not. Mutation check:
-    /// give either function its own multiplier table and this fails.
+    /// Scales `OLLAMA_COMPLETION_BASELINE` — NOT [`STREAM`] — by the shared
+    /// multiplier table. Asserted against `OLLAMA_COMPLETION_BASELINE`, never
+    /// [`stream_deadline`]/[`STREAM`] directly: the two baselines are
+    /// documented as separate constants free to drift independently (they
+    /// only share a value today because they happen to start equal).
+    /// Comparing directly against `stream_deadline` would go red the moment
+    /// either baseline changed on its own, blaming the multiplier table for a
+    /// baseline edit it had nothing to do with. The multiplier lookup is
+    /// reproduced inline (not via [`effort_multiplier`]) so this stays a
+    /// check on the shared table, not a tautology against the function under
+    /// test. Mutation check: give either baseline its own multiplier table
+    /// and this fails.
     #[test]
-    fn ollama_completion_deadline_matches_stream_deadline_at_every_tier() {
+    fn ollama_completion_deadline_scales_its_own_baseline_by_the_shared_multiplier_table() {
         for effort in [
             None,
             Some("minimal"),
@@ -401,10 +409,17 @@ mod tests {
             Some("xhigh"),
             Some("max"),
         ] {
+            let multiplier = match effort {
+                Some(e) => EFFORT_TIMEOUT_MULTIPLIER
+                    .iter()
+                    .find(|(tier, _)| *tier == e)
+                    .map_or(1.0, |(_, mult)| *mult),
+                None => 1.0,
+            };
             assert_eq!(
                 ollama_completion_deadline(effort),
-                stream_deadline(effort),
-                "ollama_completion_deadline({effort:?}) must track stream_deadline's own scaling"
+                Duration::from_secs_f64(OLLAMA_COMPLETION_BASELINE.as_secs_f64() * multiplier),
+                "ollama_completion_deadline({effort:?}) must scale OLLAMA_COMPLETION_BASELINE by the shared multiplier table"
             );
         }
     }
