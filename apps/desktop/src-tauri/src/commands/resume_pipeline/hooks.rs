@@ -122,6 +122,41 @@ pub(crate) fn apply_stop(
     Ok(())
 }
 
+/// The run's TIMEOUT decision — split out of [`StageHooks::after`] for the
+/// same reason [`apply_stop`] is split out of `before`: provable without an
+/// `AppHandle`.
+///
+/// A per-call HTTP deadline expiring INSIDE a stage's own body (as opposed to
+/// the stage BOUNDARY [`apply_stop`] guards, which never lets the stage run
+/// at all) reaches here as [`StageOutcome::timed_out`] — set by
+/// `Pipeline::run_hooked` from the stage's own `AppError::Timeout`. The
+/// pipeline's OTHER in-loop deadline checks (`repair`/`humanize`, racing the
+/// WHOLE-run deadline) already record their own [`StoppedReason::RunTimeout`]
+/// and return `Ok`, so `timed_out` is never true for those — first-writer-wins
+/// on [`RunLedger::stop`] would leave this a no-op even if it somehow were.
+pub(crate) fn apply_timeout(ledger: &RunLedger, stage: &StageInfo, outcome: StageOutcome) {
+    if outcome.timed_out {
+        ledger.stop(StoppedReason::Timeout);
+        ledger.note_timeout(stage.stage, outcome.ms);
+    }
+}
+
+/// The actionable text a per-call deadline failure ends up as, once
+/// [`RunLedger::timeout_detail`] names the stage and how long it waited.
+///
+/// Content-free per ADR-027 — a stage NAME and a duration, never prompt or
+/// document text — and plain, un-localized English: this is what `execute`
+/// hands `job_fail`, which carries it verbatim as `job.failed`'s `data` all
+/// the way to the renderer's existing raw-error display (no i18n key), the
+/// same as every other `job.failed` message this crate has always sent.
+pub(crate) fn timeout_message(stage: &str, ms: u64) -> String {
+    format!(
+        "The \"{stage}\" step didn't get a response within {}s. Try a faster model or a lower \
+         effort level.",
+        ms / 1000
+    )
+}
+
 /// The run's TERMINAL STATE — status and stopped reason, derived together.
 ///
 /// Together, because deriving them separately is what let a cancelled run
@@ -359,6 +394,7 @@ impl StageHooks for RunHooks {
     }
 
     async fn after(&self, stage: &StageInfo, outcome: StageOutcome) {
+        apply_timeout(&self.ledger, stage, outcome);
         let phase = if outcome.ok {
             PHASE_FINISH
         } else {

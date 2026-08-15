@@ -34,6 +34,14 @@ pub enum AppError {
     /// rolls over or an in-flight call finishes. See [`crate::limits`].
     #[error("{0}")]
     RateLimited(String),
+    /// A per-call HTTP deadline expired (`reqwest`'s own `.timeout()` firing,
+    /// distinct from a connect/DNS/TLS failure — see `reqwest::Error::is_timeout`).
+    /// Not retriable in the automatic sense: the same call against the same
+    /// deadline will time out again, so the fix is a faster model or a lower
+    /// effort level, not a retry. Maps to [`crate::pipeline::budget::StoppedReason::Timeout`]
+    /// for the staged pipeline (`commands::resume_pipeline::hooks::apply_timeout`).
+    #[error("{0}")]
+    Timeout(String),
     /// The operation was cancelled (user abort, shutdown).
     /// The operation was cancelled (user abort, shutdown). Reserved for the
     /// cancellation paths that currently surface bespoke messages.
@@ -65,6 +73,7 @@ impl AppError {
             AppError::Parse(_) => "PARSE",
             AppError::Validation(_) => "VALIDATION",
             AppError::RateLimited(_) => "RATE_LIMITED",
+            AppError::Timeout(_) => "TIMEOUT",
             AppError::Cancelled => "CANCELLED",
             AppError::Message(_) => "ERROR",
         }

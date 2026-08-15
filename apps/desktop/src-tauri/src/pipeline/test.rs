@@ -294,6 +294,76 @@ fn run_hooked_tells_the_hook_which_stages_cost_a_provider_call() {
     );
 }
 
+// ── StageOutcome::timed_out ──────────────────────────────────────────────────
+
+struct TimeoutStep;
+#[async_trait]
+impl Stage<Ctx> for TimeoutStep {
+    fn name(&self) -> &'static str {
+        "timeout_step"
+    }
+    async fn run(&self, ctx: &mut Ctx) -> AppResult<()> {
+        ctx.log.push("timeout_step");
+        Err(AppError::Timeout("no response within 300s".to_string()))
+    }
+}
+
+/// Captures `(stage name, StageOutcome::timed_out)` per `after` call — the one
+/// field `Recorder` (above) doesn't expose, since it predates
+/// `AppError::Timeout`.
+#[derive(Default)]
+struct TimeoutRecorder {
+    seen: Mutex<Vec<(String, bool)>>,
+}
+#[async_trait]
+impl StageHooks for TimeoutRecorder {
+    async fn before(&self, _stage: &StageInfo) -> AppResult<()> {
+        Ok(())
+    }
+    async fn after(&self, stage: &StageInfo, outcome: StageOutcome) {
+        self.seen
+            .lock()
+            .push((stage.stage.to_string(), outcome.timed_out));
+    }
+}
+
+/// `run_hooked` is the ONLY place `StageOutcome::timed_out` is computed — from
+/// the stage's raw `AppResult`, which a `StageHooks::after` implementor never
+/// sees directly. This is the seam `commands::resume_pipeline::hooks::apply_timeout`
+/// (and, downstream, `StoppedReason::Timeout`) is built on.
+///
+/// Mutation check: hard-code `timed_out: false` in `run_hooked` and the first
+/// assertion fails; compute it from `!outcome.ok` instead of matching
+/// `AppError::Timeout` specifically and the second assertion (a non-timeout
+/// failure) fails.
+#[test]
+fn run_hooked_flags_a_timeout_error_and_only_a_timeout_error() {
+    tauri::async_runtime::block_on(async {
+        let mut ctx = Ctx { log: Vec::new() };
+        let hooks = TimeoutRecorder::default();
+        let _ = Pipeline::new("t")
+            .add(TimeoutStep)
+            .run_hooked(&mut ctx, &hooks)
+            .await;
+        assert_eq!(
+            hooks.seen.lock().clone(),
+            vec![("timeout_step".to_string(), true)]
+        );
+
+        let mut ctx = Ctx { log: Vec::new() };
+        let hooks = TimeoutRecorder::default();
+        let _ = Pipeline::new("t")
+            .add(Boom)
+            .run_hooked(&mut ctx, &hooks)
+            .await;
+        assert_eq!(
+            hooks.seen.lock().clone(),
+            vec![("boom".to_string(), false)],
+            "a non-timeout failure must not be flagged as one"
+        );
+    });
+}
+
 // ── Completer::complete_json (via its AppHandle-free core) ───────────────────────
 
 #[derive(Debug, serde::Deserialize, PartialEq)]
@@ -589,7 +659,7 @@ fn active_cfg(
 fn the_request_builder_forwards_the_configured_context_window() {
     use crate::pipeline::text_request;
 
-    let req = text_request("m", "sys", "usr", Some(0.4), Some(256), Some(8_192));
+    let req = text_request("m", "sys", "usr", Some(0.4), Some(256), Some(8_192), None);
     assert_eq!(req.context_window, Some(8_192));
     assert_eq!(req.max_tokens, Some(256));
     assert_eq!(req.temperature, Some(0.4));
@@ -601,7 +671,32 @@ fn the_request_builder_forwards_the_configured_context_window() {
     // Unconfigured stays unconfigured — the provider's own default, never a
     // number this layer made up.
     assert_eq!(
-        text_request("m", "s", "u", None, None, None).context_window,
+        text_request("m", "s", "u", None, None, None, None).context_window,
+        None
+    );
+}
+
+/// The SAME fix, for `effort`: `structured_call` used to hard-code
+/// `effort: None`, so a JSON stage's per-call HTTP deadline
+/// (`ollama_completion_deadline`) could never scale even when the run's
+/// STREAMED calls already did. `text_request` is the one place both build
+/// their request, so this is the missing link, not the adapter — same shape
+/// as the context-window fix above.
+///
+/// Mutation check: change `effort` back to a hard-coded `None` in
+/// `text_request` and the first assertion fails.
+#[test]
+fn the_request_builder_forwards_the_run_effort() {
+    use crate::pipeline::text_request;
+
+    let req = text_request("m", "sys", "usr", None, None, None, Some("high"));
+    assert_eq!(req.effort.as_deref(), Some("high"));
+
+    // A caller with nothing to scale by (the agentic tool loop / extension
+    // bridge, via `stream_complete`) still gets the provider's own default,
+    // never an invented tier.
+    assert_eq!(
+        text_request("m", "s", "u", None, None, None, None).effort,
         None
     );
 }

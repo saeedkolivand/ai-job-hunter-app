@@ -1385,6 +1385,91 @@ async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_
     assert!(matches!(err, AppError::Network(_)));
 }
 
+// ── `reqwest::Error::is_timeout` — the assumption every `complete_impl` now relies on ──
+//
+// `AppError::Timeout` (see `complete_impl`'s `send_with_retry` failure branch,
+// and its siblings in `openai.rs`/`gemini.rs`/`ollama.rs`) depends on
+// `is_timeout()` meaning exactly "the CLIENT's own `.timeout()` fired", never
+// a connect/DNS/TLS failure — `reqwest::Error` has no public constructor, so
+// this pins the assumption against a REAL error rather than trusting the
+// library's docs. One place for all four adapters: the classification is a
+// `reqwest` fact, not an Anthropic-specific one.
+
+/// A server that accepts the connection immediately (so a CONNECT check would
+/// succeed) but writes NOTHING — not even the status line — until `delay` has
+/// passed. This is `.send()`'s own timeout, not `slow_body_server`'s
+/// already-resolved-headers case above: it is what a backend that computes
+/// its whole answer before responding at all (Ollama's non-streaming
+/// `/api/chat`, generating for minutes with nothing on the wire until it is
+/// done) actually looks like on the socket.
+async fn wholly_slow_server(delay: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut buf = [0u8; 4096];
+        loop {
+            match socket.read(&mut buf).await {
+                Ok(0) | Err(_) => return,
+                Ok(n) if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") => break,
+                Ok(_) => continue,
+            }
+        }
+        tokio::time::sleep(delay).await;
+        let body = "{}";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = socket.write_all(response.as_bytes()).await;
+        let _ = socket.flush().await;
+    });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn reqwest_is_timeout_fires_for_the_clients_own_deadline_and_never_for_a_connect_failure() {
+    let base = wholly_slow_server(Duration::from_millis(200)).await;
+    let timed_out = crate::net::http::shared()
+        .get(&base)
+        .timeout(Duration::from_millis(50))
+        .send()
+        .await
+        .expect_err("a 50ms deadline against a 200ms-silent server must fail");
+    assert!(timed_out.is_timeout(), "{timed_out}");
+
+    // A REFUSED connection is a DIFFERENT `reqwest::Error` shape —
+    // `is_timeout()` must not also fire for it, or every actively-refused
+    // provider host would misreport as "try a faster model". A well-known
+    // port like 1 is NOT a reliable negative case (some environments
+    // firewall/blackhole it instead of sending RST, which is
+    // indistinguishable from a timeout — correctly so, since that IS what a
+    // client-side deadline is for). A loopback port this process just bound
+    // and then dropped is: the kernel's own TCP stack refuses it immediately,
+    // no firewall or DNS involved, hermetic and portable across OSes.
+    let refused_addr = {
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        probe.local_addr().unwrap()
+        // `probe` drops here — the port is released with nothing bound to it.
+    };
+    let url = reqwest::Url::parse(&format!("http://{refused_addr}/v1/messages")).unwrap();
+    // Generous on purpose: a loopback refusal is normally sub-millisecond, but
+    // a sandboxed/virtualized network stack can add real latency before the
+    // RST arrives (observed: ~2s in one such environment) — this only needs
+    // to clear that, not race it. A GENUINE timeout would still fail this
+    // assertion at any bound, since `is_timeout()` is asserted false, not the
+    // wall-clock.
+    let refused = crate::net::http::shared()
+        .get(url)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .expect_err("a closed loopback port must refuse the connection");
+    assert!(!refused.is_timeout(), "{refused}");
+}
+
 // ── Structured-output model gate ──────────────────────────────────────────────
 
 #[test]

@@ -17,9 +17,9 @@
 //!
 //! ## The key
 //!
-//! `sha256(version ∥ provider ∥ model ∥ context_window ∥ chain)`, where `chain`
-//! is a rolling hash of every artifact upstream of this stage. Each term closes
-//! a way the same nominal input can mean something different:
+//! `sha256(version ∥ provider ∥ model ∥ context_window ∥ effort ∥ chain)`, where
+//! `chain` is a rolling hash of every artifact upstream of this stage. Each
+//! term closes a way the same nominal input can mean something different:
 //!
 //! * [`PIPELINE_PROMPT_VERSION`] — the prompts themselves are an input. Editing
 //!   a stage body without bumping it would serve answers to the OLD question.
@@ -30,16 +30,26 @@
 //!   questions with two different answers. It reaches the request only because
 //!   the staged pipeline now sends it; the key had to move with it, or a run
 //!   that raised the window is served the answer the truncated one gave.
+//! * effort — on a thinking-capable Ollama model, `complete_structured` sends
+//!   it as the request's own `think` field (`ollama::think_level`), which
+//!   changes the model's actual reasoning depth and therefore its answer, not
+//!   just how long the caller waits for one. It did NOT used to reach the
+//!   provider at all (`pipeline::text_request` hard-coded it to `None` for
+//!   every non-streaming call), which is why it was correctly absent from this
+//!   key before; once the per-call deadline started scaling by it
+//!   (`ollama_completion_deadline`), effort started reaching the provider too,
+//!   and omitting it here would have let a "high"-effort answer be served back
+//!   to a "low"-effort request for the same résumé/posting/model.
 //! * the chained artifact hashes — `strategy` reads the analysis AND the
 //!   evidence, so a changed analysis has to miss the strategy cache too. A key
 //!   built only from the stage's own literal inputs would serve a strategy
 //!   planned against an analysis nobody produced.
 //!
 //! **The rule for adding a term:** anything that reaches the provider and can
-//! change the answer belongs here. `temperature` and `effort` deliberately do
-//! NOT, because the cached stages never send them — `pipeline::text_request`
-//! hard-codes both to `None`, and the structured path resolves its temperature
-//! inside the adapter from provider + model, which are already terms.
+//! change the answer belongs here. `temperature` still does NOT, because the
+//! structured path resolves it inside the adapter from provider + model, which
+//! are already terms — it is never taken from the caller's effort/temperature
+//! choice the way `think` now is.
 
 use crate::documents::sha256_hex;
 use crate::pipeline::cache::KvCache;
@@ -82,6 +92,9 @@ pub struct StageCacheKey {
     provider: String,
     model: String,
     context_window: Option<u32>,
+    /// Normalized: `""` for `None`, the raw token otherwise — same "positional,
+    /// never omitted" discipline as `context_window` (see [`Self::key`]).
+    effort: String,
     chain: String,
 }
 
@@ -106,16 +119,25 @@ pub struct StageIdentity<'a> {
     pub provider: &'a str,
     pub model: &'a str,
     pub context_window: Option<u32>,
+    /// The RAW reasoning-effort token a stage's provider call actually sends —
+    /// not a `Completer` field (unlike the three above): a completer is
+    /// resolved once for the whole run, but effort is per-call, so this is
+    /// supplied by the caller of [`Self::of`] rather than read off the
+    /// completer. `None` for a call site with no effort concept
+    /// (`cover_letter::research`'s reuse of this type).
+    pub effort: Option<&'a str>,
 }
 
 impl<'a> StageIdentity<'a> {
-    /// The identity a resolved completer carries — the ONE place a `Completer`
+    /// The identity a resolved completer carries, PLUS the effort the caller
+    /// is about to send it — the ONE place a `Completer` (and a call's effort)
     /// becomes cache-key terms.
-    pub fn of(completer: &'a Completer) -> Self {
+    pub fn of(completer: &'a Completer, effort: Option<&'a str>) -> Self {
         Self {
             provider: completer.provider_id().as_str(),
             model: completer.model(),
             context_window: completer.context_window(),
+            effort,
         }
     }
 }
@@ -134,6 +156,7 @@ impl StageCacheKey {
             provider: identity.provider.to_string(),
             model: identity.model.to_string(),
             context_window: identity.context_window,
+            effort: identity.effort.unwrap_or_default().to_string(),
             chain: sha256_hex(seed),
         }
     }
@@ -157,6 +180,7 @@ impl StageCacheKey {
             provider: identity.provider.to_string(),
             model: identity.model.to_string(),
             context_window: identity.context_window,
+            effort: identity.effort.unwrap_or_default().to_string(),
             chain: self.chain.clone(),
         }
     }
@@ -168,15 +192,16 @@ impl StageCacheKey {
     /// with a `None` one. Adding the term changed the pre-hash shape, which
     /// invalidates every entry written before it — a one-time miss on a 7-day
     /// TTL, and the safe direction: a changed key can only cost a call, never
-    /// serve a wrong answer.
+    /// serve a wrong answer. `effort` follows the exact same discipline (see
+    /// the module doc for why it is a term at all).
     pub fn key(&self) -> String {
         let window = self
             .context_window
             .map(|c| c.to_string())
             .unwrap_or_default();
         let pre_hash = format!(
-            "v{PIPELINE_PROMPT_VERSION}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{window}{FIELD_SEPARATOR}{}",
-            self.provider, self.model, self.chain
+            "v{PIPELINE_PROMPT_VERSION}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{window}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{}",
+            self.provider, self.model, self.effort, self.chain
         );
         sha256_hex(&pre_hash)
     }

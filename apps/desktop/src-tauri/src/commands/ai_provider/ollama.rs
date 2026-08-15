@@ -443,7 +443,7 @@ impl AiProvider for OllamaClient {
 
         let resp = match super::retry::send_with_retry(
             || crate::net::http::shared().post(&endpoint).json(&body),
-            timeouts::OLLAMA_COMPLETION,
+            timeouts::OLLAMA_COMPLETION_BASELINE,
         )
         .await
         {
@@ -1203,18 +1203,37 @@ async fn complete_impl(
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
 
+    // Scaled by the SAME effort that governs `chat_stream`'s deadline — see
+    // `timeouts::ollama_completion_deadline`'s doc for why this is the only
+    // one of the three non-structured completion callers below (`complete`/
+    // `complete_with_usage`, which set `structured: None`) that can actually
+    // raise it above the baseline: those two have no `AiGenerateRequest` to
+    // read an effort off, so they fall back to the same flat bound as before.
+    let deadline = timeouts::ollama_completion_deadline(structured.as_ref().and_then(|s| s.effort));
     let body = build_complete_body(model, system, user, temperature, structured);
 
     let resp = match super::retry::send_with_retry(
         || crate::net::http::shared().post(&endpoint).json(&body),
-        timeouts::OLLAMA_COMPLETION,
+        deadline,
     )
     .await
     {
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            return Err(AppError::Network(format!("Ollama unreachable: {e}")));
+            // `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()`
+            // fired (never a connect/DNS/TLS failure) — the ONLY case that
+            // should surface as a per-call deadline rather than a generic
+            // "unreachable". A retry against the same deadline would time out
+            // again, so this is `AppError::Timeout`, not `Network`.
+            return Err(if e.is_timeout() {
+                AppError::Timeout(format!(
+                    "Ollama: no response within {}s",
+                    deadline.as_secs()
+                ))
+            } else {
+                AppError::Network(format!("Ollama unreachable: {e}"))
+            });
         }
     };
     let status = resp.status();

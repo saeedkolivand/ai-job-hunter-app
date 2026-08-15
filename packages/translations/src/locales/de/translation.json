@@ -1688,6 +1688,7 @@
       "cancelled": "Abgebrochen",
       "truncated": "Gestoppt — die Antwort wurde abgeschnitten",
       "budgeted": "Gestoppt — das Tageslimit des Anbieters ist erreicht",
+      "timeout": "Gestoppt — ein Schritt hat nicht rechtzeitig geantwortet. Versuchen Sie ein schnelleres Modell oder eine niedrigere Aufwandsstufe.",
       "runTimeout": "Gestoppt — die Zeit für den Lauf war um",
       "maxToolCalls": "Beim Limit für Werkzeugaufrufe gestoppt",
       "maxRepairs": "Gestoppt — das Budget für Nachbesserungen war aufgebraucht",

@@ -839,7 +839,19 @@ impl AnthropicClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(AppError::Network(format!("Anthropic unreachable: {e}")));
+                // `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()`
+                // fired (never a connect/DNS/TLS failure) — the ONLY case that
+                // should surface as a per-call deadline rather than a generic
+                // "unreachable". A retry against the same deadline would time
+                // out again, so this is `AppError::Timeout`, not `Network`.
+                return Err(if e.is_timeout() {
+                    AppError::Timeout(format!(
+                        "Anthropic: no response within {}s",
+                        timeouts::COMPLETION.as_secs()
+                    ))
+                } else {
+                    AppError::Network(format!("Anthropic unreachable: {e}"))
+                });
             }
         };
         let status = resp.status();

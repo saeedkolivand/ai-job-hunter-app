@@ -28,7 +28,8 @@
 //! 6. **The run deadline is checked HERE**, between rounds and between
 //!    per-section calls. `StageHooks::before` cannot bound this stage: it is
 //!    the last one, so there is no later boundary, and it is the only stage
-//!    that fans out (≤2 × 4 provider calls at up to `OLLAMA_COMPLETION` each).
+//!    that fans out (≤2 × 4 provider calls at up to `OLLAMA_COMPLETION_BASELINE`
+//!    each — `Completer::complete` carries no effort to scale that by).
 //!
 //! Never cached: a repair reads a validator verdict, and a cached correction to
 //! a document that no longer exists is the worst possible hit.
@@ -65,7 +66,7 @@ pub const NAME: &str = "repair";
 /// The round's cost is one provider call per section, and the run deadline is
 /// derived from exactly this number (`QUALITY_RUN_FIXED_SECS` counts
 /// `max_repair_attempts × MAX_SECTIONS_PER_ROUND` calls at
-/// `timeouts::OLLAMA_COMPLETION`), which is why
+/// `timeouts::OLLAMA_COMPLETION_BASELINE`), which is why
 /// `quality_run_deadline_clears_the_inner_per_call_bounds` reads this constant
 /// rather than a literal: raising it without raising the deadline fails that
 /// test. Four is every section a quality-depth draft actually has that can
@@ -391,8 +392,8 @@ where
         let mut changed = false;
         for (wire_key, issues) in grouped.iter().take(MAX_SECTIONS_PER_ROUND) {
             // Between calls, not just between rounds: four calls at up to
-            // `OLLAMA_COMPLETION` each is 20 minutes a round-granular check
-            // would not interrupt.
+            // `OLLAMA_COMPLETION_BASELINE` each is 20 minutes a round-granular
+            // check would not interrupt.
             if deadline.passed() {
                 stats.timed_out = true;
                 break;

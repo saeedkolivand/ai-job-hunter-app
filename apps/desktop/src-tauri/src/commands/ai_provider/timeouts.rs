@@ -17,8 +17,8 @@
 use std::time::Duration;
 
 use crate::ipc_contracts::ai_timeouts::{
-    EFFORT_TIMEOUT_MULTIPLIER, QUALITY_RUN_FIXED_SECS, QUALITY_RUN_GENERATION_PASSES,
-    STREAM_BASELINE_SECS,
+    EFFORT_TIMEOUT_MULTIPLIER, OLLAMA_COMPLETION_BASELINE_SECS, QUALITY_RUN_FIXED_SECS,
+    QUALITY_RUN_GENERATION_PASSES, QUALITY_RUN_JSON_STAGE_CALLS, STREAM_BASELINE_SECS,
 };
 
 // ── Chat generation ─────────────────────────────────────────────────────────────
@@ -111,17 +111,47 @@ pub fn stream_deadline(effort: Option<&str>) -> Duration {
 /// cloud provider (OpenAI / Anthropic / Gemini).
 pub const COMPLETION: Duration = Duration::from_secs(120);
 
-/// Non-streaming **local** Ollama completion (`complete`): the local daemon can
-/// be far slower than a cloud API on first token, so it gets the longer
-/// stream-class budget rather than the cloud [`COMPLETION`] bound.
+/// Non-streaming **local** Ollama completion (`complete`/`complete_structured`):
+/// the local daemon can be far slower than a cloud API on first token, so it
+/// gets the longer stream-class BASELINE rather than the cloud [`COMPLETION`]
+/// bound. This is the baseline only — every call site that HAS an effort to
+/// scale by uses [`ollama_completion_deadline`], never this constant directly;
+/// see that function's doc for which call sites don't (yet) have one.
 ///
-/// Like [`COMPLETION`], this is handed to
+/// The value itself is generated from `packages/shared/src/ai-timeouts.ts`
+/// (`OLLAMA_COMPLETION_BASELINE_SECS`), the same way [`STREAM`] is — a
+/// SEPARATE generated constant from `STREAM_BASELINE_SECS`, not a reused one,
+/// even though the two currently share a value: they bound different
+/// operations, so they can drift independently later.
+///
+/// Like [`COMPLETION`], every value derived from this is handed to
 /// [`retry::send_with_retry`](super::retry::send_with_retry) rather than set on
 /// the request builder, so it bounds the whole retry SEQUENCE and not one
 /// attempt. Every outer deadline derived from these constants —
 /// [`quality_run_deadline`] above all — counts one of them per provider call and
 /// is wrong by `retry::MAX_ATTEMPTS` if that ever stops being true.
-pub const OLLAMA_COMPLETION: Duration = Duration::from_secs(300);
+pub const OLLAMA_COMPLETION_BASELINE: Duration =
+    Duration::from_secs(OLLAMA_COMPLETION_BASELINE_SECS);
+
+/// The actual per-request deadline for a non-streaming local-Ollama
+/// `/api/chat` call: [`OLLAMA_COMPLETION_BASELINE`] scaled by
+/// [`effort_multiplier`] — exactly how [`stream_deadline`] scales [`STREAM`].
+///
+/// **Not every non-streaming call site has an `effort` to pass here.**
+/// `analyze_job`/`match_evidence`/`strategy` go through
+/// `Completer::complete_json` → `complete_structured`, which carries the
+/// run's `AiGenerateRequest.effort` — those three now scale, closing the gap
+/// this function exists to fix (a per-call deadline that no effort setting
+/// could raise, even though the exact same run's STREAMED calls already
+/// scaled). The `repair`/`humanize` stages and `chat_with_tools` go through
+/// `Completer::complete`/`complete_with_usage`, which take no
+/// `AiGenerateRequest` and so have no effort to read — those call sites pass
+/// `None` here (unchanged baseline behavior) rather than gaining a new
+/// parameter that would ripple into every other caller of `Completer::complete`
+/// (autopilot notes, interview questions, the cover-letter fast path, …).
+pub fn ollama_completion_deadline(effort: Option<&str>) -> Duration {
+    Duration::from_secs_f64(OLLAMA_COMPLETION_BASELINE.as_secs_f64() * effort_multiplier(effort))
+}
 
 // ── Embeddings ──────────────────────────────────────────────────────────────────
 
@@ -177,43 +207,55 @@ pub fn research_deadline(effort: Option<&str>) -> Duration {
 /// Deadline for ONE WHOLE quality-depth résumé pipeline run — what makes
 /// `StoppedReason::RunTimeout` reachable.
 ///
-/// **Not `baseline × multiplier`, unlike [`stream_deadline`] and
-/// [`research_deadline`].** All but TWO of a run's calls do not scale with
-/// reasoning effort: the three JSON stages, every repair-round section
-/// rewrite, and `humanize`'s per-document rewrite go through
-/// `complete_with_usage`, whose bounds ([`COMPLETION`] / [`OLLAMA_COMPLETION`])
-/// are flat constants. So the formula is `fixed + baseline × passes ×
-/// multiplier`, where the fixed term is 3 stages × 2 round-trips
-/// (`complete_json` allows exactly one re-ask) + `max_repair_attempts` (2)
-/// rounds × `MAX_SECTIONS_PER_ROUND` (4) sections + `humanize`'s ≤2
-/// flagged-document rewrites, i.e. 16 calls × [`OLLAMA_COMPLETION`] = 4800 s,
-/// and the scaling term is TWO streamed calls — the résumé draft and the
-/// cover letter (`cover_letter` stage, PR-2).
+/// **Not a single `baseline × multiplier`, unlike [`stream_deadline`] and
+/// [`research_deadline`].** Only the repair fan-out and `humanize`'s per-
+/// document rewrite stay FLAT — they go through `complete_with_usage`, which
+/// carries no `AiGenerateRequest` and so no `effort` to scale by (see
+/// [`ollama_completion_deadline`]'s doc). The formula is `flat + jsonStages ×
+/// ollama_completion_deadline(effort) + baseline × passes × multiplier`:
 ///
-/// Both terms come from `packages/shared/src/ai-timeouts.ts` through
+/// * **flat** ([`QUALITY_RUN_FIXED_SECS`]) — `max_repair_attempts` (2) rounds
+///   × `MAX_SECTIONS_PER_ROUND` (4) sections + `humanize`'s ≤2 flagged-document
+///   rewrites, i.e. 10 calls × [`OLLAMA_COMPLETION_BASELINE`] = 3000 s, always
+///   (no effort to raise it).
+/// * **jsonStages** ([`QUALITY_RUN_JSON_STAGE_CALLS`], 6) — 3 stages × 2
+///   round-trips (`complete_json` allows exactly one re-ask), each now scaled
+///   by [`ollama_completion_deadline`] — the fix this function exists to
+///   carry: these three stages run FIRST, on the same model as everything
+///   else, and used to be flat-bounded even though the STREAMED calls right
+///   after them already scaled.
+/// * **the scaling term** — TWO streamed calls, the résumé draft and the
+///   cover letter (`cover_letter` stage, PR-2).
+///
+/// All three terms come from `packages/shared/src/ai-timeouts.ts` through
 /// `pnpm gen:ipc`; the resulting per-tier table is pinned on BOTH sides
 /// (`quality_run_deadline_pins_the_derived_table` here,
 /// `qualityRunDeadlineSecs > pins the derived per-tier table` there), which is
 /// what keeps the shared arithmetic from drifting even though each side spells
 /// it out.
 ///
-/// **Counting ONE [`OLLAMA_COMPLETION`] per call is a claim about
-/// [`retry`](super::retry), not just about `.timeout()`.** A transient failure is
-/// re-sent up to `retry::MAX_ATTEMPTS` times, so the retry loop bounds the whole
-/// sequence by the caller's timeout — it applies that timeout itself and gives a
-/// retry only the remainder. Before it did, one "300 s" call could cost 3 × 300 s
-/// plus backoff and this deadline was short by that factor;
-/// `retry::a_one_shot_call_stops_once_its_own_timeout_is_spent` is the guard that
-/// keeps this arithmetic true.
+/// **Counting ONE [`OLLAMA_COMPLETION_BASELINE`]-scaled call per call is a
+/// claim about [`retry`](super::retry), not just about `.timeout()`.** A
+/// transient failure is re-sent up to `retry::MAX_ATTEMPTS` times, so the retry
+/// loop bounds the whole sequence by the caller's timeout — it applies that
+/// timeout itself and gives a retry only the remainder. Before it did, one
+/// call could cost `MAX_ATTEMPTS ×` its own bound plus backoff and this
+/// deadline was short by that factor;
+/// `retry::a_one_shot_call_stops_once_its_own_timeout_is_spent` is the guard
+/// that keeps this arithmetic true.
 ///
-/// This is a BACKSTOP, not a target: [`stream_deadline`]/[`OLLAMA_COMPLETION`]
-/// catch a single hung call, and `Budget::step_timeout` catches a hung stage.
-/// This one catches the run that answers every step just slowly enough never to
-/// trip either.
+/// This is a BACKSTOP, not a target: [`stream_deadline`]/
+/// [`ollama_completion_deadline`] catch a single hung call, and
+/// `Budget::step_timeout` catches a hung stage. This one catches the run that
+/// answers every step just slowly enough never to trip either.
 pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
+    let json_stages =
+        QUALITY_RUN_JSON_STAGE_CALLS as f64 * ollama_completion_deadline(effort).as_secs_f64();
     let generation =
         STREAM.as_secs_f64() * QUALITY_RUN_GENERATION_PASSES as f64 * effort_multiplier(effort);
-    Duration::from_secs_f64(QUALITY_RUN_FIXED_SECS as f64 + generation.round())
+    Duration::from_secs_f64(
+        QUALITY_RUN_FIXED_SECS as f64 + json_stages.round() + generation.round(),
+    )
 }
 
 // ── Model discovery & health ────────────────────────────────────────────────────
@@ -300,6 +342,81 @@ mod tests {
         assert_eq!(stream_deadline(Some("ultra-mega-think")), STREAM);
     }
 
+    // ── ollama_completion_deadline ──────────────────────────────────────────
+    //
+    // Same contract as `stream_deadline` — this is the fix for the incident
+    // where a per-call non-streaming deadline stayed flat regardless of
+    // effort, so a local model at a HIGHER effort got no more time on
+    // `analyze_job`/`match_evidence`/`strategy` than the baseline did.
+
+    #[test]
+    fn ollama_completion_deadline_matches_the_baseline_for_no_or_low_effort() {
+        assert_eq!(ollama_completion_deadline(None), OLLAMA_COMPLETION_BASELINE);
+        assert_eq!(
+            ollama_completion_deadline(Some("")),
+            OLLAMA_COMPLETION_BASELINE
+        );
+        assert_eq!(
+            ollama_completion_deadline(Some("minimal")),
+            OLLAMA_COMPLETION_BASELINE
+        );
+        assert_eq!(
+            ollama_completion_deadline(Some("low")),
+            OLLAMA_COMPLETION_BASELINE
+        );
+    }
+
+    #[test]
+    fn ollama_completion_deadline_scales_up_for_higher_effort() {
+        assert_eq!(
+            ollama_completion_deadline(Some("medium")),
+            Duration::from_secs(450)
+        );
+        assert_eq!(
+            ollama_completion_deadline(Some("high")),
+            Duration::from_secs(600)
+        );
+        assert_eq!(
+            ollama_completion_deadline(Some("xhigh")),
+            Duration::from_secs(750)
+        );
+        assert_eq!(
+            ollama_completion_deadline(Some("max")),
+            Duration::from_secs(900)
+        );
+    }
+
+    /// Scales EXACTLY like `stream_deadline` — same baseline value, same
+    /// multiplier table — because a run's effort setting is meant to raise
+    /// every one of ITS calls the same way, streamed or not. Mutation check:
+    /// give either function its own multiplier table and this fails.
+    #[test]
+    fn ollama_completion_deadline_matches_stream_deadline_at_every_tier() {
+        for effort in [
+            None,
+            Some("minimal"),
+            Some("low"),
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+        ] {
+            assert_eq!(
+                ollama_completion_deadline(effort),
+                stream_deadline(effort),
+                "ollama_completion_deadline({effort:?}) must track stream_deadline's own scaling"
+            );
+        }
+    }
+
+    #[test]
+    fn ollama_completion_deadline_falls_back_to_baseline_for_an_unrecognized_effort_string() {
+        assert_eq!(
+            ollama_completion_deadline(Some("ultra-mega-think")),
+            OLLAMA_COMPLETION_BASELINE
+        );
+    }
+
     // ── research_deadline ───────────────────────────────────────────────────
     //
     // Same contract as `stream_deadline`, and for the same reason: the thing it
@@ -367,10 +484,10 @@ mod tests {
             (None, 5_400),
             (Some("minimal"), 5_400),
             (Some("low"), 5_400),
-            (Some("medium"), 5_700),
-            (Some("high"), 6_000),
-            (Some("xhigh"), 6_300),
-            (Some("max"), 6_600),
+            (Some("medium"), 6_600),
+            (Some("high"), 7_800),
+            (Some("xhigh"), 9_000),
+            (Some("max"), 10_200),
         ] {
             assert_eq!(
                 quality_run_deadline(effort),
@@ -386,26 +503,29 @@ mod tests {
     ///
     /// The inner bounds are computed from the FAN-OUT CONSTANTS themselves, not
     /// from the deadline's own terms: three JSON stages each allowed one
-    /// re-ask, plus `max_repair_attempts × MAX_SECTIONS_PER_ROUND` section
-    /// rewrites — all of them `Completer::complete*` calls bounded by the flat
-    /// `OLLAMA_COMPLETION` — plus the one streamed draft. That is what makes
-    /// this a guard rather than an identity: raising either repair constant
-    /// without raising the deadline fails here.
+    /// re-ask (now bounded by [`ollama_completion_deadline`], scaled), plus
+    /// `max_repair_attempts × MAX_SECTIONS_PER_ROUND` section rewrites and
+    /// `humanize`'s allowance — both still bounded by the FLAT
+    /// `OLLAMA_COMPLETION_BASELINE` — plus the one streamed draft. That is what
+    /// makes this a guard rather than an identity: raising either repair
+    /// constant without raising the deadline fails here.
     ///
-    /// **One `OLLAMA_COMPLETION` per call, not `MAX_ATTEMPTS` of them.** That
-    /// holds only because `retry::send_with_retry` bounds the whole retry
-    /// sequence by the caller's timeout; the guard for THAT half lives next to
-    /// it (`a_one_shot_call_stops_once_its_own_timeout_is_spent`), because it is
-    /// a property of the loop's wall clock, not of this arithmetic. Multiplying
-    /// the term by `MAX_ATTEMPTS` here instead would pin a dependency the code
-    /// no longer has — an identity of exactly the kind this test was rebuilt to
-    /// stop being.
+    /// **One scaled call per JSON-stage round-trip, not `MAX_ATTEMPTS` of
+    /// them.** That holds only because `retry::send_with_retry` bounds the
+    /// whole retry sequence by the caller's timeout; the guard for THAT half
+    /// lives next to it (`a_one_shot_call_stops_once_its_own_timeout_is_spent`),
+    /// because it is a property of the loop's wall clock, not of this
+    /// arithmetic. Multiplying the term by `MAX_ATTEMPTS` here instead would
+    /// pin a dependency the code no longer has — an identity of exactly the
+    /// kind this test was rebuilt to stop being.
     ///
     /// Mutation checks (applied and reverted): `QUALITY_RUN_FIXED_SECS` back to
     /// 1_800 ⇒ every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier
     /// fails; `DEFAULT_MAX_REPAIR_ATTEMPTS` 2 → 3 ⇒ every tier fails;
     /// `QUALITY_RUN_GENERATION_PASSES` 2 → 1 ⇒ every tier fails (only the draft
-    /// would be covered, not the letter).
+    /// would be covered, not the letter); `quality_run_deadline`'s `json_stages`
+    /// term dropped back to a flat `OLLAMA_COMPLETION_BASELINE` ⇒ every tier
+    /// above the bottom fails.
     #[test]
     fn quality_run_deadline_clears_the_inner_per_call_bounds() {
         const JSON_STAGES: u32 = 3;
@@ -414,14 +534,14 @@ mod tests {
                                                    // document (résumé, letter) — the worst case this deadline has to
                                                    // cover, exactly like every other term here.
         const HUMANIZE_MAX_CALLS: u32 = 2;
-        let json_half = OLLAMA_COMPLETION * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE;
         // The repair fan-out and `humanize` are bounded by the SAME flat
         // per-call constant — both go through `Completer::complete`, never a
-        // stream — so they belong to the effort-invariant half.
-        let repair_half = OLLAMA_COMPLETION
+        // stream, and neither has an `effort` to scale by — so they stay
+        // effort-invariant.
+        let repair_half = OLLAMA_COMPLETION_BASELINE
             * crate::pipeline::budget::Budget::RESUME_QUALITY.max_repair_attempts as u32
             * crate::pipeline::resume::stages::MAX_SECTIONS_PER_ROUND as u32;
-        let humanize_half = OLLAMA_COMPLETION * HUMANIZE_MAX_CALLS;
+        let humanize_half = OLLAMA_COMPLETION_BASELINE * HUMANIZE_MAX_CALLS;
         for effort in [
             None,
             Some("medium"),
@@ -429,6 +549,9 @@ mod tests {
             Some("xhigh"),
             Some("max"),
         ] {
+            // The JSON stages now scale exactly like the streamed calls do.
+            let json_half =
+                ollama_completion_deadline(effort) * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE;
             // The draft and the cover letter are the only streamed calls the
             // run makes — see `QUALITY_RUN_GENERATION_PASSES`.
             let generation = stream_deadline(effort)
