@@ -209,6 +209,38 @@ async fn bounded_maps_an_expired_deadline_to_a_named_network_error() {
 // accepts but never writes back is a genuine client-side timeout; a loopback
 // port nothing is bound to refuses the connection immediately and is a
 // genuine non-timeout transport error.
+//
+// `refused_connection_error` (below) binds an ephemeral loopback port, drops
+// it to free it, then immediately connects to the same port and expects a
+// refusal — but this file and `anthropic_tests.rs` both run that exact
+// pattern in the SAME test binary, in parallel by default, so a sibling test
+// can reclaim the just-freed port before this one reconnects. A bounded
+// retry (fresh port each attempt) rather than a single `expect_err` keeps
+// that flake from being misread as a `map_completion_transport_error`
+// regression instead of a shared, unrelated test seam.
+async fn refused_connection_error() -> reqwest::Error {
+    for _ in 0..5 {
+        let refused_addr = {
+            let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            probe.local_addr().unwrap()
+            // `probe` drops here — the port is released with nothing bound to it.
+        };
+        match crate::net::http::shared()
+            .get(format!("http://{refused_addr}"))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Err(e) => return e,
+            // Another test's listener claimed the freed port in the gap
+            // between drop and connect — retry with a fresh one rather than
+            // let an accidental success pass (or panic for the wrong reason).
+            Ok(_) => continue,
+        }
+    }
+    panic!("could not observe a refused loopback connection after 5 attempts");
+}
+
 #[tokio::test]
 async fn map_completion_transport_error_classifies_a_real_timeout_and_a_real_connect_failure() {
     // A REAL timeout: the server accepts the connection but writes nothing
@@ -243,17 +275,7 @@ async fn map_completion_transport_error_classifies_a_real_timeout_and_a_real_con
 
     // A REAL non-timeout transport failure: a loopback port nothing is bound
     // to refuses the connection immediately (no firewall/DNS involved).
-    let refused_addr = {
-        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        probe.local_addr().unwrap()
-        // `probe` drops here — the port is released with nothing bound to it.
-    };
-    let refused = crate::net::http::shared()
-        .get(format!("http://{refused_addr}"))
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await
-        .expect_err("a closed loopback port must refuse the connection");
+    let refused = refused_connection_error().await;
     assert!(!refused.is_timeout(), "precondition: {refused}");
 
     let mapped =

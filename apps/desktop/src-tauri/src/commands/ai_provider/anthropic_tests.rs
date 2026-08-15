@@ -1455,25 +1455,44 @@ async fn reqwest_is_timeout_fires_for_the_clients_own_deadline_and_never_for_a_c
     // client-side deadline is for). A loopback port this process just bound
     // and then dropped is: the kernel's own TCP stack refuses it immediately,
     // no firewall or DNS involved, hermetic and portable across OSes.
-    let refused_addr = {
-        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        probe.local_addr().unwrap()
-        // `probe` drops here — the port is released with nothing bound to it.
-    };
-    let url = reqwest::Url::parse(&format!("http://{refused_addr}/v1/messages")).unwrap();
-    // Generous on purpose: a loopback refusal is normally sub-millisecond, but
-    // a sandboxed/virtualized network stack can add real latency before the
-    // RST arrives (observed: ~2s in one such environment) — this only needs
-    // to clear that, not race it. A GENUINE timeout would still fail this
-    // assertion at any bound, since `is_timeout()` is asserted false, not the
-    // wall-clock.
-    let refused = crate::net::http::shared()
-        .get(url)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await
-        .expect_err("a closed loopback port must refuse the connection");
+    let refused = refused_connection_error().await;
     assert!(!refused.is_timeout(), "{refused}");
+}
+
+/// Bind an ephemeral loopback port, free it, then connect to the same port
+/// and return the resulting refusal — bounded-retried against a fresh port
+/// each time, because `tests.rs`'s `refused_connection_error` runs the exact
+/// same pattern in the SAME test binary (both compile into one crate target,
+/// tests run in parallel by default), so a sibling test can reclaim the
+/// just-freed port before this one reconnects. Generous on the per-attempt
+/// timeout on purpose: a loopback refusal is normally sub-millisecond, but a
+/// sandboxed/virtualized network stack can add real latency before the RST
+/// arrives (observed: ~2s in one such environment) — this only needs to
+/// clear that, not race it. A GENUINE timeout would still fail the caller's
+/// `is_timeout()` assertion regardless of this bound, since that assertion
+/// checks the classification, not the wall-clock.
+async fn refused_connection_error() -> reqwest::Error {
+    for _ in 0..5 {
+        let refused_addr = {
+            let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            probe.local_addr().unwrap()
+            // `probe` drops here — the port is released with nothing bound to it.
+        };
+        let url = reqwest::Url::parse(&format!("http://{refused_addr}/v1/messages")).unwrap();
+        match crate::net::http::shared()
+            .get(url)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Err(e) => return e,
+            // Another test's listener claimed the freed port in the gap
+            // between drop and connect — retry with a fresh one rather than
+            // let an accidental success pass (or panic for the wrong reason).
+            Ok(_) => continue,
+        }
+    }
+    panic!("could not observe a refused loopback connection after 5 attempts");
 }
 
 // ── Structured-output model gate ──────────────────────────────────────────────
