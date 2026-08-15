@@ -1392,6 +1392,187 @@ fn delete_keep_documents_true_detaches_child_generations_but_keeps_rows() {
     );
 }
 
+// ── `link_orphaned_generations` — the FK backfill for existing installs ──────
+//
+// The FK fix (`commands::resume_pipeline::mod::persist_document`) stops NEW
+// rows being orphaned; it does nothing for rows the staged pipeline already
+// wrote before that fix shipped. Those rows are the user-visible defect:
+// `applications_delete(keepDocuments=false)` calls `remove_for_application`,
+// which matches by `application_id` — an orphaned row is invisible to it, so
+// the user asks the app to delete their documents and the documents stay.
+//
+// Each test below proves something `link_orphaned_generations` returning
+// `Ok(_)` alone cannot: the exact COUNT it claims to have linked, and — for
+// the delete case — the actual downstream behaviour the user experiences,
+// not just the FK column's value.
+
+/// **The happy path, and the one the whole backfill exists for**: an orphaned
+/// row whose Application already exists (created independently, by the apply
+/// flow, before the run that orphaned this row) gets linked, keyed by
+/// NORMALIZED `job_url` — the same key every live save merges on. Asserts the
+/// returned COUNT, not just that the call succeeded: a migration that runs
+/// clean while linking nothing is the worst outcome named in this backfill's
+/// own doc, and a bare `Ok(())`/`is_ok()` check cannot tell the two apart.
+///
+/// Mutation check: make `link_orphaned_generations` an immediate `Ok(0)` (the
+/// no-op it must never regress to) and both assertions fail — applied and
+/// reverted.
+#[test]
+fn link_orphaned_generations_links_a_row_whose_application_already_exists() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+
+    // The Application: created by the apply flow, exactly like production —
+    // `upsert_for_origin` normalizes the raw url internally.
+    let raw_url = "https://acme.com/jobs/42?utm_source=newsletter";
+    let app_id = app_store
+        .upsert_for_origin(
+            raw_url,
+            "linkedin",
+            &meta("Acme", "Dev"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // The orphan: a staged-pipeline row saved BEFORE `persist_document`
+    // established the FK. `save_application` always normalizes `job_url`
+    // before writing it, so a REAL orphaned row carries the NORMALIZED form —
+    // this seeds the same one, not the raw string, to match production.
+    let normalized_url = normalize_job_url(raw_url);
+    insert_gen_with_app_id(&gen_conn, "gen-orphan", &normalized_url, None);
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-orphan"),
+        None,
+        "precondition: the row is orphaned"
+    );
+
+    let linked = app_store.link_orphaned_generations(dir.path()).unwrap();
+    assert_eq!(linked, 1, "exactly the one orphan must be linked");
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-orphan"),
+        Some(app_id),
+        "the row must now reference the Application that already existed for its posting"
+    );
+}
+
+/// **The actual user-visible defect, reproduced end to end and then closed.**
+/// BEFORE the backfill, `remove_for_application` — what `applications_delete`
+/// calls for `keepDocuments=false` — matches nothing for an orphaned row: the
+/// user asks the app to delete their documents and the documents stay. AFTER
+/// the backfill, the SAME delete call actually removes it. Proves the
+/// downstream BEHAVIOUR, not merely the `application_id` column's value.
+///
+/// This cannot pass against a no-op migration: `deleted_before` is asserted
+/// `0` (reproducing the defect) and `deleted_after` is asserted `1` — a
+/// backfill that linked nothing would leave `deleted_after` at `0` too, and
+/// the test would fail on that assertion, not merely on an unchecked seed.
+///
+/// Mutation check: make `link_orphaned_generations` an immediate `Ok(0)` and
+/// the `deleted_after`/`total_after` assertions fail — applied and reverted.
+#[test]
+fn a_backfilled_row_is_then_actually_removed_by_delete_keep_documents_false() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+    let gen_store =
+        crate::ai_generations::AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let url = normalize_job_url("https://acme.com/jobs/43");
+    let app_id = app_store
+        .upsert_for_origin(
+            &url,
+            "linkedin",
+            &meta("Acme", "Dev"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+    insert_gen_with_app_id(&gen_conn, "gen-orphan-2", &url, None);
+
+    // THE defect, reproduced: `applications_delete`'s own `remove_for_application`
+    // call matches nothing for an orphaned row, and the row survives untouched.
+    let deleted_before = gen_store.remove_for_application(&app_id).unwrap();
+    assert_eq!(
+        deleted_before, 0,
+        "reproduces the defect: an orphaned row is invisible to remove_for_application"
+    );
+    let survives: i64 = gen_conn
+        .query_row(
+            "SELECT COUNT(*) FROM ai_generations WHERE id = 'gen-orphan-2'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        survives, 1,
+        "the user asked to delete this document and it is still here — the defect"
+    );
+
+    // The fix: back-link it.
+    let linked = app_store.link_orphaned_generations(dir.path()).unwrap();
+    assert_eq!(linked, 1);
+
+    // The SAME delete call, now reaching it.
+    let deleted_after = gen_store.remove_for_application(&app_id).unwrap();
+    assert_eq!(
+        deleted_after, 1,
+        "the backfilled row must now be deleted along with its application"
+    );
+    let total_after: i64 = gen_conn
+        .query_row(
+            "SELECT COUNT(*) FROM ai_generations WHERE id = 'gen-orphan-2'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        total_after, 0,
+        "the user's delete must actually remove the document now"
+    );
+}
+
+/// **Never guess.** A row whose posting has no resolvable Application — the
+/// user deleted it, or the row was never linked to begin with — must stay
+/// NULL. A DIFFERENT, unrelated Application exists in the same store so this
+/// cannot pass merely because the `applications` table happened to be empty;
+/// a wrong link here would put someone's résumé under an unrelated
+/// Application and delete it along with THAT one.
+///
+/// Mutation check: have `link_orphaned_generations` fall back to the first
+/// Application it finds instead of `find_by_job_url`'s exact match, and the
+/// final assertion fails — applied and reverted.
+#[test]
+fn link_orphaned_generations_never_guesses_a_link_for_an_unmatched_row() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+
+    // A real Application exists in the store — for a DIFFERENT posting.
+    app_store
+        .upsert_for_origin(
+            "https://other.com/jobs/1",
+            "linkedin",
+            &meta("Other Co", "Role"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // No Application anywhere matches this posting.
+    let url = normalize_job_url("https://nomatch.example.com/jobs/999");
+    insert_gen_with_app_id(&gen_conn, "gen-unmatched", &url, None);
+
+    let linked = app_store.link_orphaned_generations(dir.path()).unwrap();
+    assert_eq!(linked, 0, "nothing resolvable was linked");
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-unmatched"),
+        None,
+        "an unresolvable row must stay NULL rather than being guessed onto an unrelated Application"
+    );
+}
+
 // ── R1 — ApplicationStore::import rollback regression guard ──────────────────
 //
 // `DataStore::import` for ApplicationStore runs clear+repopulate in ONE

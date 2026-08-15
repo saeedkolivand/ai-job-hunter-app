@@ -610,6 +610,28 @@ fn a_truncated_section_is_rejected_rather_than_spliced() {
     ));
 }
 
+/// **BUG-A's shape gap, `repair`'s own copy.** The repair prompt wraps the
+/// section it hands the model as `<resume_section>…</resume_section>` and
+/// asks for "the replacement section" back — a model that echoes the wrapper
+/// instead of just the content would splice the literal tag into the
+/// document, and a heading/body-line count alone would not catch it (the
+/// wrapper only adds a line). Checked for EVERY registered tag, driven from
+/// `prompt_fence::known_fence_tags()` rather than one hardcoded name.
+///
+/// Mutation check: drop the `contains_fence_tag` gate from
+/// `is_usable_replacement` and every assertion below flips true — verified,
+/// then reverted.
+#[test]
+fn is_usable_replacement_rejects_a_replacement_wrapped_in_any_registered_fence_tag() {
+    for tag in crate::prompt_fence::known_fence_tags() {
+        let wrapped = format!("<{tag}>\nSKILLS\nGo, Rust, Kubernetes\n</{tag}>");
+        assert!(
+            !sections::is_usable_replacement(&wrapped),
+            "a replacement wrapped in <{tag}> must be rejected, not spliced"
+        );
+    }
+}
+
 /// A validator's section LABEL maps back through the same classifier the split
 /// used, so a German heading finds its section. Mutation check: compare the
 /// label to the English section names as strings and the German case fails.
@@ -2495,6 +2517,33 @@ fn is_usable_rewrite_letter_floor_boundary_is_inclusive_at_exactly_ninety_percen
     );
 }
 
+/// **BUG-A regression — the humanize fence-tag leak.** A real run exported a
+/// résumé with `<humanize_document>` as the candidate's name and
+/// `</humanize_document>` as its last line: the model echoed the fence wrapper
+/// `humanize_user` sent it in, and the length floor alone let it through (a
+/// wrapper only ADDS length). Every candidate wrapped in ANY registered fence
+/// tag — not just the one that bit us — must now be rejected, driven off
+/// `prompt_fence::known_fence_tags()` rather than a single hardcoded name so a
+/// future tag added to the registry is covered here for free.
+///
+/// Mutation check: drop the `contains_fence_tag` gate from `is_usable_rewrite`
+/// and every assertion below flips true — verified, then reverted.
+#[test]
+fn is_usable_rewrite_rejects_a_candidate_wrapped_in_any_registered_fence_tag() {
+    let original = "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience \
+                     building ledger systems for regulated banks.\n";
+    for tag in crate::prompt_fence::known_fence_tags() {
+        let wrapped = format!(
+            "<{tag}>\nPROFESSIONAL SUMMARY\nA payments engineer with a decade of experience \
+             building ledger systems for regulated banks.\n</{tag}>"
+        );
+        assert!(
+            !is_usable_rewrite(original, &wrapped, HumanizeTier::Resume),
+            "a candidate wrapped in <{tag}> must be rejected, not accepted as content-clean"
+        );
+    }
+}
+
 /// **HIGH-1 regression — the letter arm's gate.** `should_humanize_letter`
 /// must refuse whenever a run never asked for a letter, and it must do so
 /// even if `letter_body` (which production always feeds `ctx.letter`, never
@@ -2761,6 +2810,43 @@ async fn humanize_one_keeps_the_original_when_the_answer_is_unusable() {
     assert!(
         !attempt.reverted,
         "reverted implies it was graded; this never was"
+    );
+    assert_eq!(attempt.text, original);
+}
+
+/// **BUG-A regression, end to end through the seam.** A candidate that echoes
+/// the SAME `<humanize_document>` tag the real incident leaked is treated
+/// exactly like a truncated/empty answer: discarded before revalidation ever
+/// runs (the `panic!` below would fire if it did), `called` recorded honestly,
+/// `reverted` false because nothing was graded — the shape gate rejected it
+/// first — and the original text kept byte-for-byte.
+#[tokio::test]
+async fn humanize_one_keeps_the_original_when_the_answer_echoes_its_own_fence_tag() {
+    let original =
+        "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience building \
+         ledger systems.\n";
+    let attempt = humanize_one(
+        live_deadline(),
+        original.to_string(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| async move {
+            Ok(
+                "<humanize_document>\nPROFESSIONAL SUMMARY\nA payments engineer with a decade \
+                of experience building ledger systems.\n</humanize_document>"
+                    .to_string(),
+            )
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { panic!("revalidate must never run over a shape-broken answer") },
+        HumanizeTier::Resume,
+    )
+    .await
+    .expect("no revalidate call means no error path either");
+    assert!(attempt.called);
+    assert!(
+        !attempt.reverted,
+        "reverted implies it was graded; the shape gate rejected it first"
     );
     assert_eq!(attempt.text, original);
 }
