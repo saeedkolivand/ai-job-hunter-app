@@ -354,8 +354,8 @@ export const AgentConfirmRequestSchema = z.object({
 /**
  * The historic vocabulary of `pipeline_runs.depth`/`QualityReport.pipeline`
  * values — `fast` (the renderer's own deterministic pass), `quality` (the
- * staged Rust pipeline, the only one a run may still request), and `max` (a
- * second staged depth removed for wasting tokens on no acted-on value).
+ * staged Rust pipeline — the fixed value every new run persists), and `max`
+ * (a second staged depth removed for wasting tokens on no acted-on value).
  *
  * **A closed vocabulary for READING, not for a request field.** `resumePipeline
  * .run`'s wire request has no `depth` field any more — the pipeline it runs is
