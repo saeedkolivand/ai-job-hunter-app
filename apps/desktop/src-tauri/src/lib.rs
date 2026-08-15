@@ -9,6 +9,14 @@
 // Async-safety: never hold a lock guard across an `.await` (the app uses
 // `parking_lot::Mutex` inside async command handlers). See docs/architecture-rules.md R14.
 #![deny(clippy::await_holding_lock)]
+// Edition 2024 legalizes let-chains (`if let X && let Y { .. }`), which makes
+// this lint newly fire at ~96 pre-existing nested `if`/`if let` sites across
+// every domain in the crate — none of them wrong, all of them now
+// "collapsible" only because the target syntax became legal. Nothing here is
+// a defect: this is a style modernization, deliberately deferred rather than
+// bundled into the edition bump (a 96-site multi-domain refactor is not a
+// mechanical flag flip). Remove this once that cleanup lands.
+#![allow(clippy::collapsible_if)]
 
 pub mod ai_config;
 pub mod ai_generations;

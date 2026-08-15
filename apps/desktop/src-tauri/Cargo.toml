@@ -1,7 +1,7 @@
 [package]
 name = "ajh-tauri"
 version = "0.135.0"
-edition = "2021"
+edition = "2024"
 # Real floor derived from `cargo metadata`'s per-package `rust_version` fields
 # (highest wins): sysinfo 0.39.6 → 1.95, the next-highest is serial_test 4.0.1 →
 # 1.93.1. Lower than the pinned toolchain (see rust-toolchain.toml) — that pin
