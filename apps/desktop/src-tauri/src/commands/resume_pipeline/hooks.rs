@@ -141,6 +141,20 @@ pub(crate) fn apply_timeout(ledger: &RunLedger, stage: &StageInfo, outcome: Stag
     }
 }
 
+/// Round a millisecond duration UP to whole seconds, floored at 1 — shared by
+/// [`timeout_message`] and [`timeout_failure_data`] so the English sentence
+/// and the structured event payload always report the same number.
+///
+/// Ceiling, not truncation: `ms / 1000` rounds DOWN, so any sub-second
+/// timeout (a real, reachable value once effort scales the per-call deadline
+/// down far enough) rendered "within 0s" and shipped `seconds: 0` to the
+/// renderer's banner — a duration nobody waited, describing a failure that
+/// took some non-zero time. `.max(1)` is the floor for the same reason: a
+/// timeout that took any time at all is never "0 seconds".
+fn round_up_seconds(ms: u64) -> u64 {
+    ms.div_ceil(1000).max(1)
+}
+
 /// The actionable text a per-call deadline failure ends up as, once
 /// [`RunLedger::timeout_detail`] names the stage and how long it waited.
 ///
@@ -156,7 +170,7 @@ pub(crate) fn timeout_message(stage: &str, ms: u64) -> String {
     format!(
         "The \"{stage}\" step didn't get a response within {}s. Try a faster model or a lower \
          effort level.",
-        ms / 1000
+        round_up_seconds(ms)
     )
 }
 
@@ -169,7 +183,7 @@ pub(crate) fn timeout_message(stage: &str, ms: u64) -> String {
 /// so a consumer never has to guess a bare `{ stage, seconds }` object apart
 /// from some other job's payload shape.
 pub(crate) fn timeout_failure_data(stage: &str, ms: u64) -> Value {
-    json!({ "kind": "timeout", "stage": stage, "seconds": ms / 1000 })
+    json!({ "kind": "timeout", "stage": stage, "seconds": round_up_seconds(ms) })
 }
 
 /// The run's TERMINAL STATE — status and stopped reason, derived together.

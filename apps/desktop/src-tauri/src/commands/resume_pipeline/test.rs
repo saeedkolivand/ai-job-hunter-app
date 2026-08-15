@@ -840,12 +840,40 @@ fn apply_timeout_stops_the_run_only_when_the_outcome_says_so() {
 /// The actionable text `execute` hands `job_fail` once `apply_timeout` has
 /// named the stage and the duration — content-free per ADR-027 (a stage name
 /// and a rounded duration, never prompt or document text).
+///
+/// Rounds UP (301s, not 300, for 300_021ms): a `/ 1000` truncation would
+/// silently drop the trailing 21ms, and for a genuinely sub-second timeout
+/// that same truncation floors all the way to "0s" (see
+/// [`a_sub_second_timeout_never_renders_as_0s`]).
 #[test]
 fn timeout_message_names_the_stage_and_rounds_the_duration_to_seconds() {
     assert_eq!(
         timeout_message("strategy", 300_021),
-        "The \"strategy\" step didn't get a response within 300s. Try a faster model or a \
+        "The \"strategy\" step didn't get a response within 301s. Try a faster model or a \
          lower effort level."
+    );
+}
+
+/// **Mutation-testing hook for the fix itself**: a sub-second timeout must
+/// never render as "0s" or ship `seconds: 0` — the exact defect a `/ 1000`
+/// truncation produced. Neither of the two pinned tests above alone could
+/// catch a regression back to truncation because 300_021ms rounds to a
+/// non-zero value either way; this drives a value where truncation and
+/// ceiling diverge to zero vs one.
+///
+/// Mutation check: swap `round_up_seconds`'s `div_ceil(1000).max(1)` back to
+/// plain `/ 1000` and both assertions below fail (`0s`/`0`, not `1s`/`1`) —
+/// applied and reverted.
+#[test]
+fn a_sub_second_timeout_never_renders_as_0s() {
+    assert!(
+        timeout_message("strategy", 250).contains("within 1s"),
+        "{}",
+        timeout_message("strategy", 250)
+    );
+    assert_eq!(
+        timeout_failure_data("strategy", 250),
+        serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 1 })
     );
 }
 
@@ -857,13 +885,13 @@ fn timeout_message_names_the_stage_and_rounds_the_duration_to_seconds() {
 /// consumer never has to guess a bare `{ stage, seconds }` shape apart from
 /// some other job's payload.
 ///
-/// Mutation check: drop the `ms / 1000` rounding (emit raw milliseconds
-/// instead) and the `seconds` assertion below fails.
+/// Mutation check: drop the rounding (emit raw milliseconds instead) and the
+/// `seconds` assertion below fails.
 #[test]
 fn timeout_failure_data_carries_the_stage_and_the_rounded_duration() {
     assert_eq!(
         timeout_failure_data("strategy", 300_021),
-        serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 300 })
+        serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 301 })
     );
 }
 
