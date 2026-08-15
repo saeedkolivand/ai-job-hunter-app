@@ -1008,7 +1008,7 @@
       },
       "stages": {
         "title": "Per-stage models",
-        "description": "A thorough run works in stages, and each stage can use a different model — a smaller model is enough for the reading steps, while writing benefits from your best one. A step you leave alone runs on the active model. Fast runs use the active model for everything and ignore this card.",
+        "description": "Tailoring a résumé for a job works in stages, and each stage can use a different model — a smaller model is enough for the reading steps, while writing benefits from your best one. A step you leave alone runs on the active model. Generating without a job posting is a single pass and uses the active model throughout.",
         "defaultModel": "Default — {{model}}",
         "defaultNoModel": "Default — no model selected",
         "cliDefaultModel": "CLI default",

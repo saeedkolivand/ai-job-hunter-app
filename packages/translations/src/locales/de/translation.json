@@ -1008,7 +1008,7 @@
       },
       "stages": {
         "title": "Modelle pro Schritt",
-        "description": "Ein gründlicher Durchlauf besteht aus mehreren Schritten, und jeder Schritt kann ein anderes Modell nutzen — für die auswertenden Schritte genügt ein kleineres Modell, das Schreiben profitiert vom besten. Ein Schritt ohne eigene Einstellung läuft auf dem aktiven Modell. Schnelle Durchläufe nutzen überall das aktive Modell und ignorieren diese Karte.",
+        "description": "Das Zuschneiden eines Lebenslaufs auf eine Stelle besteht aus mehreren Schritten, und jeder Schritt kann ein anderes Modell nutzen — für die auswertenden Schritte genügt ein kleineres Modell, das Schreiben profitiert vom besten. Ein Schritt ohne eigene Einstellung läuft auf dem aktiven Modell. Ohne Stellenanzeige entsteht der Text in einem einzigen Durchlauf mit dem aktiven Modell.",
         "defaultModel": "Standard — {{model}}",
         "defaultNoModel": "Standard — kein Modell ausgewählt",
         "cliDefaultModel": "CLI-Standard",
