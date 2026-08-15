@@ -187,7 +187,10 @@ export function useResumePipelineSession(
    * This live path still misses the EARLIEST instance of the same failure: one
    * emitted before `start`'s `mutateAsync` resolves, while `jobIdRef` is still
    * null/stale. `start` reconciles that window itself with one `fetchJob` read
-   * right after the ids land.
+   * right after the ids land — and assigns `jobIdRef`/`runIdRef` synchronously
+   * at that same point, rather than leaving them to the next render commit,
+   * so a `job.failed` (or `pipeline:stage`) delivered between the reconcile
+   * read and that commit is not read against a stale ref either.
    */
   const jobIdRef = useRef(jobId);
   jobIdRef.current = jobId;
@@ -282,20 +285,39 @@ export function useResumePipelineSession(
       writingLetterRef.current = false;
       replayed.current = null;
       send('START');
+      // `jobIdRef`/`runIdRef`/`busyRef` are all written in the render body
+      // (see below), so the `setState` calls in this function only reach
+      // them once React actually re-renders — which is NOT guaranteed to
+      // happen before this async function's next `await` resumes. A promise
+      // that resolves entirely through the microtask queue (every mocked
+      // service call in this hook's tests; a real `invoke` can too, once its
+      // one native round trip is done) never yields the macrotask turn
+      // React's scheduler needs, so `start` can run start-to-finish without
+      // a single commit landing in between. Any live listener reading one of
+      // these refs in that window — `job.failed`/`pipeline:stage` via
+      // `jobIdRef`/`runIdRef`, `job.failed`'s busy gate via `busyRef` — sees
+      // it null/stale/false and drops the event, even after this function's
+      // OWN reconcile read already came back clean. `busy` is knowable
+      // synchronously right here: `START` always lands on a busy state (see
+      // `resumePipelineMachine`), so there is nothing to compute.
+      busyRef.current = true;
       try {
         const started = await startRun.mutateAsync(req);
         setRunId(started.runId);
         setJobId(started.jobId);
-        // The umbrella job can already be `failed` by the time this promise
-        // resolves: `resume_pipeline_run` spawns its task and returns the ids
-        // immediately, so an admission/validation failure inside that task
-        // (a full queue, no configured provider, …) can reach `job_fail`
-        // before this `await` returns — see that command's doc comment.
-        // `handleJobEvent` would drop such an event: `jobIdRef` is still
-        // null/stale until the two lines above run, and no `pipeline_runs`
-        // row was ever written either, so nothing else would ever end this
-        // session. One reconcile read against the (cheap, in-memory)
-        // `JobTracker` closes that window.
+        // Same reasoning as above, for the ids: assign both refs here,
+        // synchronously, the instant they are known, rather than leaving
+        // them to the next render commit.
+        jobIdRef.current = started.jobId;
+        runIdRef.current = started.runId;
+        // The umbrella job can also already be `failed` by the time this
+        // promise resolves: `resume_pipeline_run` spawns its task and returns
+        // the ids immediately, so an admission/validation failure inside that
+        // task (a full queue, no configured provider, …) can reach `job_fail`
+        // before this `await` returns — see that command's doc comment. And
+        // no `pipeline_runs` row was ever written for that failure either, so
+        // nothing else would ever end this session. One reconcile read
+        // against the (cheap, in-memory) `JobTracker` closes that window too.
         const job = (await fetchJob(started.jobId)) as { status?: string; error?: string } | null;
         if (job?.status === 'failed') {
           console.error('[resumePipeline] the umbrella job had already failed', {

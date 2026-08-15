@@ -412,6 +412,42 @@ describe('useResumePipelineSession', () => {
       consoleError.mockRestore();
     });
 
+    // A DIFFERENT ordering than the test above, and the residual window
+    // CodeRabbit found in that fix: the reconcile read comes back CLEAN, and
+    // only THEN does `job.failed` arrive. `jobIdRef`/`runIdRef` are written
+    // in the render body, so they only pick up the new ids once React
+    // actually re-renders — which a `setState` call does not do
+    // synchronously. Firing the event in the same `act()` scope right after
+    // `start()` resolves, before that scope gets to flush the pending
+    // render, reproduces exactly the gap: without `start()` also assigning
+    // both refs synchronously, this event would still see them null/stale
+    // and be dropped, even though `start()` itself already found nothing
+    // wrong.
+    it('reconciles a job.failed event that arrives after a clean reconcile read, before the render commits', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      fetchJobMock.mockResolvedValueOnce({ status: 'queued' });
+
+      const { result } = renderHook(() => useResumePipelineSession());
+      await act(async () => {
+        await result.current.start({
+          resumeId: 'doc-1',
+          jobId: 'posting-1',
+          jobUrl: '',
+          targetLanguage: 'en',
+          topRequirements: [],
+          coverLetterText: '',
+          includeCoverLetter: false,
+        });
+        bus.job?.(jobFailed(JOB_ID, 'writing the run row failed'));
+      });
+
+      expect(fetchJobMock).toHaveBeenCalledWith(JOB_ID);
+      expect(result.current.state).toBe('error');
+      expect(result.current.busy).toBe(false);
+      expect(result.current.error).toContain('writing the run row failed');
+      consoleError.mockRestore();
+    });
+
     it('ignores a failure belonging to another job', () => {
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
       act(() => bus.job?.(jobFailed('someone-elses-job', 'boom')));
