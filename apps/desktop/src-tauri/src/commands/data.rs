@@ -281,6 +281,36 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<ApplicationStore>() {
         import_into("applications", s.inner());
+        // Restore-specific link pass (own doc on `ApplicationStore::
+        // relink_legacy_generations_after_restore`): a bundle that replaced
+        // `aiGenerations` but carries NO `"applications"` section is
+        // verifiably a pre-`ApplicationStore`-era backup, so its orphaned
+        // legacy rows can never be a deliberately-detached row (that
+        // capability didn't exist yet when it was exported) — safe to
+        // re-link/re-create outside the one-shot boot marker, which would
+        // otherwise leave them stranded forever (the marker was set long
+        // before this import ever ran). A bundle that DOES carry
+        // `"applications"` is a modern full backup: its `aiGenerations` rows
+        // already restore self-consistent `application_id` links via the two
+        // imports above, and it CAN legitimately carry a deliberately
+        // detached row — re-scanning that would resurrect it, so this must
+        // NOT run for that shape.
+        if stores.get("aiGenerations").is_some() && stores.get("applications").is_none() {
+            match app.path().app_data_dir() {
+                Ok(data_dir) => {
+                    if let Err(e) = s.inner().relink_legacy_generations_after_restore(&data_dir)
+                    {
+                        log::warn!(
+                            "[applications] restore relink skipped (non-fatal): {}",
+                            e.code()
+                        );
+                    }
+                }
+                Err(_) => log::warn!(
+                    "[applications] restore relink skipped (non-fatal): could not resolve app data dir"
+                ),
+            }
+        }
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
         import_into("jobPreferences", s.inner());

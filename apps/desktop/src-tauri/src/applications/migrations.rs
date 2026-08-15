@@ -262,10 +262,55 @@ impl ApplicationStore {
     /// no I/O against `ai_generations.db` at all once set) and set LAST, only
     /// after every row above has been processed — so a run that errors out
     /// partway is retried on the next boot instead of silently marked done.
+    /// (`legacy_backfill_done`'s own `?` is part of that: a transient read
+    /// failure must re-run the scan, not be treated as "not done yet".)
     pub(super) fn backfill_from_generations(&self, data_dir: &Path) -> AppResult<()> {
         if self.legacy_backfill_done()? {
             return Ok(()); // ran once already — see doc above, never re-scan
         }
+        self.scan_legacy_generations(data_dir)?;
+        self.mark_legacy_backfill_done()
+    }
+
+    /// **Restore-specific**, called ONLY from `commands::data::data_import`,
+    /// right after it replaces `ai_generations.db` from a bundle whose
+    /// `stores` object has NO `"applications"` key — i.e. verifiably a
+    /// pre-`ApplicationStore`-era backup. That absence is what makes this
+    /// safe to run outside the one-shot marker: `AiGenerationStore::
+    /// detach_application` (the source of the "deliberately unlinked" rows
+    /// this whole marker exists to protect, own doc above) could not
+    /// possibly have run against any row in a bundle from before
+    /// `ApplicationStore` existed, so nothing in it can be a
+    /// deliberately-detached row masquerading as a never-processed legacy
+    /// one — every unlinked pre-epoch row genuinely has never been scanned.
+    ///
+    /// Without this, a legacy bundle imported after the marker is already
+    /// set (the common case — the marker is set on the very first boot,
+    /// long before any later restore) leaves its generations permanently
+    /// orphaned: [`Self::backfill_from_generations`] no-ops forever once the
+    /// marker is set, and this bundle shape never even reaches the store
+    /// through the normal boot path.
+    ///
+    /// Deliberately does NOT touch [`LEGACY_BACKFILL_MARKER`] — that marker
+    /// gates the recurring BOOT-time scan, not this one-off, structurally
+    /// scoped restore pass.
+    ///
+    /// **Never call this for a bundle that DOES carry an `"applications"`
+    /// section** — a modern full backup already restores self-consistent
+    /// `application_id` links via `ApplicationStore::import`/
+    /// `AiGenerationStore::import` running on the SAME snapshot, and it CAN
+    /// legitimately contain a deliberately-detached row (a real user
+    /// `keepDocuments=true` delete before the backup was taken) — re-scanning
+    /// that would resurrect it, the exact bug the marker exists to prevent.
+    pub fn relink_legacy_generations_after_restore(&self, data_dir: &Path) -> AppResult<()> {
+        self.scan_legacy_generations(data_dir)
+    }
+
+    /// Core one-shot scan body shared by [`Self::backfill_from_generations`]
+    /// (marker-gated, every boot) and [`Self::relink_legacy_generations_after_restore`]
+    /// (marker-bypassing, restore-only — own doc there for why that is safe).
+    /// Never touches the marker itself.
+    fn scan_legacy_generations(&self, data_dir: &Path) -> AppResult<()> {
         let gen_path = data_dir.join("ai_generations.db");
         if gen_path.exists() {
             let gen_conn = crate::db::open(&gen_path)?;
@@ -370,9 +415,9 @@ impl ApplicationStore {
                     params![g.id, app_id],
                 )?;
             }
-        } // else: fresh install — still marked done below (nothing to find, ever).
+        } // else: nothing to scan — the caller decides what "done" means here.
 
-        self.mark_legacy_backfill_done()
+        Ok(())
     }
 
     /// Whether the one-shot marker [`LEGACY_BACKFILL_MARKER`] is set.

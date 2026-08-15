@@ -2071,6 +2071,61 @@ fn a_transient_marker_read_failure_does_not_re_run_the_scan() {
     assert_eq!(gen_application_id(&gen_conn, "gen-glitch"), None);
 }
 
+/// **FIX-1 mutation guard.** `relink_legacy_generations_after_restore` must
+/// bypass `LEGACY_BACKFILL_MARKER` entirely — that is the whole point of it
+/// existing as a SEPARATE method from `backfill_from_generations`. Drives the
+/// exact sequence `data_import` produces: `ApplicationStore::open` runs once
+/// on an empty data dir (no `ai_generations.db` yet, so the ordinary backfill
+/// finds nothing and sets the marker immediately — the common case), THEN a
+/// legacy row lands in `ai_generations.db` out of band, exactly as
+/// `AiGenerationStore::import` replacing the table would produce for a
+/// pre-`ApplicationStore`-era bundle. A second `ApplicationStore::open` alone
+/// could never link it (the marker is already set); only the restore-specific
+/// call can.
+///
+/// Mutation check: change `relink_legacy_generations_after_restore` to call
+/// `self.backfill_from_generations` instead of `self.scan_legacy_generations`
+/// (i.e. reintroduce the marker gate) and `list().len()` after the call stays
+/// 0 — applied and reverted.
+#[test]
+fn relink_after_restore_bypasses_the_already_set_marker() {
+    let dir = TempDir::new().unwrap();
+
+    // Boot on an empty data dir: nothing to find, so the ordinary backfill
+    // sets the marker immediately (own doc on `backfill_from_generations`).
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(store.list().len(), 0, "precondition: nothing to find yet");
+    assert!(
+        legacy_backfill_marker_set(dir.path()),
+        "precondition: the marker is set by the first boot, before the row below ever exists"
+    );
+
+    // A legacy row lands afterward — the shape a bundle-replace import
+    // produces, out of band from any `ApplicationStore::open` call.
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+    insert_gen_with_app_id(
+        &gen_conn,
+        "gen-restored",
+        "https://acme.com/jobs/restored",
+        None,
+    );
+
+    store
+        .relink_legacy_generations_after_restore(dir.path())
+        .unwrap();
+
+    assert_eq!(
+        store.list().len(),
+        1,
+        "the restore-specific pass must create the Application the boot-time \
+         marker now permanently blocks"
+    );
+    assert!(
+        gen_application_id(&gen_conn, "gen-restored").is_some(),
+        "the restored generation must end up linked"
+    );
+}
+
 // ── R1 — ApplicationStore::import rollback regression guard ──────────────────
 //
 // `DataStore::import` for ApplicationStore runs clear+repopulate in ONE
