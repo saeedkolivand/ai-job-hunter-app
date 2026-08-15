@@ -328,7 +328,7 @@ impl<'a> QualityCtx<'a> {
             "{}\u{1f}{}\u{1f}{}",
             input.source_resume, input.job_ad, input.target_language
         );
-        let cache_key = StageCacheKey::new(StageIdentity::of(completer), &seed);
+        let cache_key = StageCacheKey::new(StageIdentity::of(completer, input.effort), &seed);
         Self {
             input,
             default_completer: completer,
@@ -378,12 +378,13 @@ impl<'a> QualityCtx<'a> {
     /// be served back to a run using the default model (and vice versa), which
     /// is the one failure a cache key exists to prevent.
     pub fn stage_cache_key(&self, stage: &str) -> StageCacheKey {
+        let effort = self.input.effort;
         stage_cache_key_for(
             &self.cache_key,
             self.stage_completers,
             self.default_completer,
             stage,
-            StageIdentity::of,
+            move |completer| StageIdentity::of(completer, effort),
         )
     }
 

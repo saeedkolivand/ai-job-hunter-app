@@ -58,6 +58,21 @@ fn id<'a>(provider: &'a str, model: &'a str, context_window: Option<u32>) -> Sta
         provider,
         model,
         context_window,
+        effort: None,
+    }
+}
+
+/// [`id`] plus an explicit effort — for the one test that needs to vary it.
+fn id_with_effort<'a>(
+    provider: &'a str,
+    model: &'a str,
+    effort: Option<&'a str>,
+) -> StageIdentity<'a> {
+    StageIdentity {
+        provider,
+        model,
+        context_window: None,
+        effort,
     }
 }
 
@@ -121,6 +136,43 @@ fn the_context_window_is_part_of_the_cache_key() {
     assert_ne!(
         unset.rebound(id("ollama", "m", Some(4_096))).key(),
         unset.rebound(id("ollama", "m", None)).key()
+    );
+}
+
+/// **Effort is an OUTPUT-AFFECTING input too, on a thinking-capable model.**
+/// `complete_structured` sends it as the request's own `think` field
+/// (`ollama::think_level`), which changes the model's actual reasoning depth —
+/// not just how long the caller waits. Before the per-call deadline started
+/// scaling by effort, `pipeline::text_request` hard-coded it to `None` for
+/// every non-streaming call, so it genuinely never varied and omitting it from
+/// the key was correct; once it started reaching the provider, an omitted term
+/// here would let a "high"-effort answer be served back to a "low"-effort
+/// request for the identical résumé/posting/model.
+///
+/// Mutation check (executed): remove `effort` from `key`'s pre-hash (or drop it
+/// from `rebound`/`new`) and the first two assertions fail.
+#[test]
+fn effort_is_part_of_the_cache_key() {
+    let none = StageCacheKey::new(id_with_effort("ollama", "m", None), "seed");
+    let low = StageCacheKey::new(id_with_effort("ollama", "m", Some("low")), "seed");
+    let high = StageCacheKey::new(id_with_effort("ollama", "m", Some("high")), "seed");
+
+    assert_ne!(
+        none.key(),
+        low.key(),
+        "an unset effort must not collide with a set one"
+    );
+    assert_ne!(low.key(), high.key(), "a different effort must miss");
+    assert_eq!(
+        low.key(),
+        StageCacheKey::new(id_with_effort("ollama", "m", Some("low")), "seed").key()
+    );
+    // …and effort travels through `rebound` too, the path an overridden stage
+    // takes.
+    assert_ne!(
+        none.rebound(id_with_effort("ollama", "m", Some("high")))
+            .key(),
+        none.rebound(id_with_effort("ollama", "m", None)).key()
     );
 }
 
