@@ -14,11 +14,12 @@ use super::stream::{stream_response, StreamPiece};
 use super::structured;
 use super::timeouts;
 use super::{
-    bounded, friendly_api_error, model_entry, pagination_step, resolve_intent, single_shot_turn,
-    split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities,
-    PaginationStep, ProviderId, RequestTrace, Role, SamplingProfile, StopReason, TokenParam,
-    ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY,
-    PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    bounded, friendly_api_error, map_completion_transport_error, model_entry, pagination_step,
+    resolve_intent, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
+    ChatMsg, Intent, ModelCapabilities, PaginationStep, ProviderId, RequestTrace, Role,
+    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
+    PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE,
+    PROSE_TOP_P,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
@@ -582,19 +583,11 @@ impl GeminiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                // `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()`
-                // fired (never a connect/DNS/TLS failure) — the ONLY case that
-                // should surface as a per-call deadline rather than a generic
-                // "unreachable". A retry against the same deadline would time
-                // out again, so this is `AppError::Timeout`, not `Network`.
-                return Err(if e.is_timeout() {
-                    AppError::Timeout(format!(
-                        "Gemini: no response within {}s",
-                        timeouts::COMPLETION.as_secs()
-                    ))
-                } else {
-                    AppError::Network(format!("Gemini unreachable: {e}"))
-                });
+                return Err(map_completion_transport_error(
+                    e,
+                    "Gemini",
+                    timeouts::COMPLETION,
+                ));
             }
         };
         let status = resp.status();

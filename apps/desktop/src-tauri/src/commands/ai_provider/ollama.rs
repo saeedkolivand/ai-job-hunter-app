@@ -18,10 +18,11 @@ use super::stream::{stream_response, StreamPiece};
 use super::structured;
 use super::timeouts;
 use super::{
-    model_entry, parse_rfc3339_millis, resolve_intent, single_shot_turn, AgentTurn,
-    AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace,
-    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
-    PROSE_GROUNDED_TEMPERATURE, PROSE_REPEAT_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    map_completion_transport_error, model_entry, parse_rfc3339_millis, resolve_intent,
+    single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities,
+    ProviderId, RequestTrace, SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    DETERMINISTIC_TEMPERATURE, PROSE_GROUNDED_TEMPERATURE, PROSE_REPEAT_PENALTY, PROSE_TEMPERATURE,
+    PROSE_TOP_P,
 };
 
 const EMBED_MODEL: &str = "nomic-embed-text";
@@ -1221,19 +1222,7 @@ async fn complete_impl(
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            // `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()`
-            // fired (never a connect/DNS/TLS failure) — the ONLY case that
-            // should surface as a per-call deadline rather than a generic
-            // "unreachable". A retry against the same deadline would time out
-            // again, so this is `AppError::Timeout`, not `Network`.
-            return Err(if e.is_timeout() {
-                AppError::Timeout(format!(
-                    "Ollama: no response within {}s",
-                    deadline.as_secs()
-                ))
-            } else {
-                AppError::Network(format!("Ollama unreachable: {e}"))
-            });
+            return Err(map_completion_transport_error(e, "Ollama", deadline));
         }
     };
     let status = resp.status();

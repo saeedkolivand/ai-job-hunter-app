@@ -1313,6 +1313,39 @@ pub fn friendly_api_error(
     }
 }
 
+/// Map a *transport* failure (the `send()` that raced a completion HTTP call
+/// never got a response at all) to `AppError::Timeout` or `AppError::Network`.
+/// Distinct from [`friendly_api_error`], which maps a response the server DID
+/// send back.
+///
+/// `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()` fired (never
+/// a connect/DNS/TLS failure) — the ONLY case that should surface as a
+/// per-call deadline rather than a generic "unreachable". A retry against the
+/// same deadline would time out again, so this is `AppError::Timeout`, not
+/// `Network`.
+///
+/// `label` names the provider in the message — a fixed string for a
+/// single-provider adapter (Anthropic/Gemini/Ollama), or `self.id.as_str()`
+/// for [`crate::commands::ai_provider::openai::OpenAiClient`], which serves
+/// several [`ProviderId`]s from one client. `deadline` is the per-call bound
+/// that just expired — not read off a shared table here because it varies by
+/// call (Ollama's non-streaming completion scales it by the request's
+/// reasoning effort; see `timeouts::ollama_completion_deadline`).
+pub fn map_completion_transport_error(
+    e: reqwest::Error,
+    label: &str,
+    deadline: std::time::Duration,
+) -> AppError {
+    if e.is_timeout() {
+        AppError::Timeout(format!(
+            "{label}: no response within {}s",
+            deadline.as_secs()
+        ))
+    } else {
+        AppError::Network(format!("{label} unreachable: {e}"))
+    }
+}
+
 /// Redact a generation-failure message before it reaches the renderer.
 ///
 /// This is the choke point every generation-failure path funnels through

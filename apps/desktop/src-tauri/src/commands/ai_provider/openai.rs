@@ -16,11 +16,11 @@ use super::stream::{stream_response, StreamPiece};
 use super::structured;
 use super::timeouts;
 use super::{
-    friendly_api_error, model_entry, resolve_intent, single_shot_turn, AgentTurn,
-    AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace,
-    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
-    PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE,
-    PROSE_TOP_P,
+    friendly_api_error, map_completion_transport_error, model_entry, resolve_intent,
+    single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities,
+    ProviderId, RequestTrace, SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE,
+    PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -650,24 +650,16 @@ impl OpenAiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                // `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()`
-                // fired (never a connect/DNS/TLS failure) — the ONLY case that
-                // should surface as a per-call deadline rather than a generic
-                // "unreachable". A retry against the same deadline would time
-                // out again, so this is `AppError::Timeout`, not `Network`.
-                return Err(if e.is_timeout() {
-                    AppError::Timeout(format!(
-                        "{}: no response within {}s",
-                        self.id.as_str(),
-                        timeouts::COMPLETION.as_secs()
-                    ))
-                } else {
-                    AppError::Network(format!(
-                        "{} unreachable: {}",
-                        self.id.as_str(),
-                        scrub_url_secret(e)
-                    ))
-                });
+                // Scrub BEFORE mapping: some OpenAI-compatible gateways put the
+                // API key in the base URL's own query string, and
+                // `reqwest::Error`'s `Display` embeds the request URL verbatim
+                // (see `scrub_url_secret`'s own doc) — the timeout branch never
+                // reads `e`'s `Display`, so scrubbing unconditionally is safe.
+                return Err(map_completion_transport_error(
+                    scrub_url_secret(e),
+                    self.id.as_str(),
+                    timeouts::COMPLETION,
+                ));
             }
         };
         let status = resp.status();
