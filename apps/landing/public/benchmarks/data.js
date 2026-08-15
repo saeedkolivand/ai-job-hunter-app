@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786774696826,
+  "lastUpdate": 1786789611171,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7259,6 +7259,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 302903,
             "range": "± 7467",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "950b08829629d4d3388863952fbbd5086e4b22b1",
+          "message": "build: pin the rust toolchain across local, ci, and release (#994)\n\n* build: pin rust toolchain to 1.96.1 across local, ci, and release\n\nLocal dev, PR CI, and release builds each resolved whatever \"stable\" meant\non the day, so they could silently disagree (a bare cargo fmt --all mass-\nreformatted files that pass cargo fmt --check under the pinned rustfmt).\n\nAdd apps/desktop/src-tauri/rust-toolchain.toml pinning channel 1.96.1 (the\nalready-installed toolchain, frozen in place — not an upgrade) plus the\nrustfmt/clippy/llvm-tools-preview components every gate needs. Add\nrust-version = \"1.95\" to Cargo.toml, the real MSRV floor re-derived from\n`cargo metadata`'s per-package rust_version fields (sysinfo 0.39.6 is the\nhighest at 1.95; serial_test 4.0.1 is next at 1.93.1).\n\ndtolnay/rust-toolchain doesn't read toolchain files -- its @rev IS the\nversion selector -- so .github/actions/setup-rust (consumed by ci-pipeline,\nquality, and security workflows) and release.yml's inline setup step both\nmove from the @stable branch to the repo's own \"1.96.1\" branch SHA.\n\nVerified locally: rustup auto-installs and activates 1.96.1 with the pinned\ncomponents via the toolchain-file override, and cargo fmt --check/test/\nclippy and pnpm typecheck all pass under it -- no reformat commit needed.\n\n* fix: correct the rust pin to 1.97.1 and drop unused components\n\nTwo review findings on the toolchain pin (9d72b134):\n\n1. It was a silent CI downgrade, not a freeze. dtolnay/rust-toolchain@stable\n   tracks rustup's live \"stable\" channel at whatever version is current when\n   the job runs -- it does not hardcode a version on the @stable branch. As\n   of this pin that resolves to 1.97.1 (released 2026-07-16), not the 1.96.1\n   this machine happened to have installed already. Re-verified both\n   directly: rust-lang/rust's release list has no stable release after\n   1.97.1, and dtolnay/rust-toolchain's own \"1.97.1\" branch hardcodes\n   `toolchain: 1.97.1`. Pin to 1.97.1 -- the version CI has actually been\n   validated against -- and fix rust-toolchain.toml's comment, which\n   described only the dev-machine situation.\n\n2. The toml's `components` list made rustup auto-install rustfmt/clippy/\n   llvm-tools-preview for every CI job via the toolchain-file override, even\n   jobs that request none of them (the plain `cargo check` jobs). Drop\n   `components` from the file; each job's own dtolnay/rust-toolchain step\n   already declares what it needs. Verified locally that rustfmt/clippy\n   still resolve without it -- rustup's default install profile includes\n   both already; only llvm-tools-preview (CI-only, for cargo-llvm-cov) is\n   not part of that default and stays job-scoped in CI.\n\nrust-version in Cargo.toml is unaffected (unchanged Cargo.lock, --locked\neverywhere) -- confirmed by an identical cargo test --workspace result\n(4175 passed) under 1.97.1.\n\nRe-ran the full gate: cargo fmt --check / test --workspace --locked /\nclippy -D warnings / pnpm typecheck / pnpm gen:workflows:check all green\nunder the corrected pin; rustup show resolves to 1.97.1 via the toolchain\nfile.",
+          "timestamp": "2026-08-15T12:02:18+02:00",
+          "tree_id": "1c87684cfdab4b2d297ebc02cef8169cdf6d2b6e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/950b08829629d4d3388863952fbbd5086e4b22b1"
+        },
+        "date": 1786789610325,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2166433,
+            "range": "± 49658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2544884,
+            "range": "± 20416",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 296975,
+            "range": "± 4122",
             "unit": "ns/iter"
           }
         ]
