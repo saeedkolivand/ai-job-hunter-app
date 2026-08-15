@@ -99,8 +99,8 @@ describe('StageOverridesSettings — a stage with no override', () => {
       screen.queryByText(`settings.ai.stages.names.${stage}`)
     );
     expect(rendered).toEqual([...OVERRIDABLE_PIPELINE_STAGES]);
-    // `assemble`/`validate` make no provider call and are refused server-side,
-    // so the vocabulary rendered is the overridable one, not PIPELINE_STAGES.
+    // `validate` makes no provider call and is refused server-side, so the
+    // vocabulary rendered is the overridable one, not PIPELINE_STAGES.
     expect(screen.getAllByText(/^settings\.ai\.stages\.names\./)).toHaveLength(
       OVERRIDABLE_PIPELINE_STAGES.length
     );
@@ -160,19 +160,19 @@ describe('StageOverridesSettings — an overridden stage', () => {
 
 describe('StageOverridesSettings — an override the backend will refuse', () => {
   it('warns on the row when the override’s provider is not configured', () => {
-    overridesState.data = { llm_judge: { provider: 'anthropic', model: 'claude-sonnet-4-6' } };
+    overridesState.data = { humanize: { provider: 'anthropic', model: 'claude-sonnet-4-6' } };
     render(<StageOverridesSettings {...baseProps} isConfigured={(p) => p === 'ollama'} />);
 
     expect(
-      rowFor('llm_judge').getByText(/settings\.ai\.stages\.warnUnconfigured Anthropic/)
+      rowFor('humanize').getByText(/settings\.ai\.stages\.warnUnconfigured Anthropic/)
     ).toBeVisible();
   });
 
   it('warns on the row when the override names a model-less provider', () => {
-    overridesState.data = { llm_judge: { provider: 'openai', model: '' } };
+    overridesState.data = { humanize: { provider: 'openai', model: '' } };
     render(<StageOverridesSettings {...baseProps} />);
 
-    expect(rowFor('llm_judge').getByText(/settings\.ai\.stages\.warnNoModel OpenAI/)).toBeVisible();
+    expect(rowFor('humanize').getByText(/settings\.ai\.stages\.warnNoModel OpenAI/)).toBeVisible();
   });
 });
 
@@ -204,7 +204,7 @@ describe('StageOverridesSettings — a broken active provider', () => {
   });
 
   it('still warns per-row for the ONE stage whose own override is broken', () => {
-    overridesState.data = { llm_judge: { provider: 'anthropic', model: 'claude-sonnet-4-6' } };
+    overridesState.data = { humanize: { provider: 'anthropic', model: 'claude-sonnet-4-6' } };
     render(
       <StageOverridesSettings
         {...baseProps}
@@ -216,7 +216,7 @@ describe('StageOverridesSettings — a broken active provider', () => {
 
     expect(screen.getAllByText(/settings\.ai\.stages\.warnActiveNoModel/)).toHaveLength(1);
     expect(
-      rowFor('llm_judge').getByText(/settings\.ai\.stages\.warnUnconfigured Anthropic/)
+      rowFor('humanize').getByText(/settings\.ai\.stages\.warnUnconfigured Anthropic/)
     ).toBeVisible();
   });
 });

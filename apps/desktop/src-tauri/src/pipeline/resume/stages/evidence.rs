@@ -28,7 +28,7 @@ use crate::documents::evidence::contains_word;
 use crate::documents::keywords::{keywords, keywords_normalized, languages_align, make_stemmer};
 use crate::error::AppResult;
 use crate::pipeline::resume::prompts::{match_evidence_system, match_evidence_user};
-use crate::pipeline::resume::types::{EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth};
+use crate::pipeline::resume::types::{EvidenceItem, EvidenceMap, EvidenceStatus};
 use crate::pipeline::resume::{cache, QualityCtx};
 use crate::pipeline::Stage;
 use crate::validate::content::normalize_language;
@@ -238,16 +238,6 @@ impl<'a> Stage<QualityCtx<'a>> for MatchEvidence {
                 "quotesDropped": dropped,
             }),
         );
-        // At MAX depth the whole map is persisted alongside those counts, in
-        // the DB event row only — see `RunLedger::record_detail`. It is what a
-        // "regenerate this role" click hours later grounds its citations in,
-        // and re-deriving it would cost two fresh provider calls per click.
-        if ctx.depth == GenerationDepth::Max {
-            ctx.ledger.record_detail(
-                "match_evidence",
-                serde_json::to_value(&evidence).unwrap_or_default(),
-            );
-        }
         ctx.evidence = evidence;
         Ok(())
     }

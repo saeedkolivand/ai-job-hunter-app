@@ -98,8 +98,8 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
 /// function rather than inlined in `Repair::run`.
 ///
 /// Deterministic, zero-cost: the Projects section is CODE-OWNED at quality
-/// depth too, the same way `assemble::render_project` already owns it at
-/// max — an entry this pass can confidently match to a seed gets its
+/// depth too, the same way `project_render::render_project` already owns it
+/// at max — an entry this pass can confidently match to a seed gets its
 /// links/stack restored verbatim, never re-asked; anything it cannot match
 /// with confidence is left exactly as the model wrote it (see
 /// `projects`' module doc) rather than deleted.

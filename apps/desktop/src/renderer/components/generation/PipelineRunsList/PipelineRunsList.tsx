@@ -154,6 +154,15 @@ export function PipelineRunsList({
                   <ol id={timelineId} className="mt-2 space-y-1 border-l border-white/10 pl-3">
                     {events.map((event) => (
                       <li key={event.seq} className="text-[10px] text-foreground/50">
+                        {/* `pipeline.stage.sections`/`.assemble`/`.llm_judge` stay
+                            in both locale files even though no run can emit them
+                            any more (the max pipeline that wrote them is gone) —
+                            the SAME reasoning as the depth vocabulary below:
+                            these ROWS are historic, persisted with no migration
+                            path, and this is the surface that renders their
+                            trail back. `defaultValue` is the fallback for a
+                            genuinely unknown future stage, not a substitute for
+                            keeping vocabulary a persisted row still needs. */}
                         <span className="text-foreground/70">
                           {t(`pipeline.stage.${event.stage}`, { defaultValue: event.stage })}
                         </span>{' '}

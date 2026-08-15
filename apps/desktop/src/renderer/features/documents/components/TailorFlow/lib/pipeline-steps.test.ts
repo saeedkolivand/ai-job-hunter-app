@@ -17,11 +17,8 @@ describe('pipelineStepForStage', () => {
   });
 
   it('keeps the previous step for a stage name it does not recognise', () => {
-    // max-depth-only stages (never reached by the quality pipeline this
-    // checklist renders) and a hypothetical future stage both fall here.
-    expect(pipelineStepForStage('sections', 1)).toBe(1);
-    expect(pipelineStepForStage('assemble', 2)).toBe(2);
-    expect(pipelineStepForStage('llm_judge', 3)).toBe(3);
+    // A hypothetical future stage falls here rather than regressing the
+    // checklist.
     expect(pipelineStepForStage('some_future_stage', 0)).toBe(0);
   });
 });

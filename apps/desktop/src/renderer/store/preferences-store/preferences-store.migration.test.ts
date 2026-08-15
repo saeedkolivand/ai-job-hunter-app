@@ -83,7 +83,48 @@ describe('preferences-store migrations', () => {
     // asserting only `generationDepth === 'fast'` passes with the step deleted
     // (verified by mutation) and guards nothing.
     expect(state.version).toBe(5);
-    expect(state.generationDepth).toBe('fast');
+    // `generationDepth` is no longer a field of `Preferences` (PR-4 deleted the
+    // depth-selection UI) — the migration step that WRITES it is left alone on
+    // purpose (migration history is append-only, never rewritten), so this key
+    // still lands in the persisted blob for anyone migrating up from v4. Read
+    // back as an untyped, unused extra below — see the orphan-key test.
+    expect((state as unknown as Record<string, unknown>).generationDepth).toBe('fast');
     expect(state.fetchCompanyLogos).toBe(true);
+  });
+
+  // The mirror case: an ALREADY-v5 user (no migration runs at all — the
+  // version marker matches STORE_VERSION) whose persisted blob still carries
+  // `generationDepth` from before the field was removed from `Preferences`.
+  // Zustand's default `persist` merge is a shallow spread of the persisted
+  // JSON onto the initial state, with no schema validation in between — it
+  // does not know or care that `generationDepth` isn't a declared field any
+  // more, so the orphaned key rides along harmlessly instead of throwing.
+  //
+  // Mutation-tested: temporarily giving `persist()` a `merge` that throws on
+  // any persisted key not in `defaultPreferences` makes `hydrate()` reject the
+  // orphaned `generationDepth` key, and this test goes red (`state.language`
+  // never advances past the pre-hydration default) — confirming it actually
+  // exercises the tolerance rather than a no-op. The same mutation also took
+  // out the v3/v4 migration tests above it, for the same underlying reason:
+  // their migrated payloads carry the identical orphaned key downstream.
+  // Reverted after confirming; not shipped.
+  it('tolerates an orphaned generationDepth key on an already-current payload without crashing', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        version: 5,
+        state: { language: 'de', promptQuality: 'full', generationDepth: 'quality' },
+      })
+    );
+
+    const state = await hydrate();
+
+    // Rehydration completed (no throw) and known fields survived the merge.
+    expect(state.language).toBe('de');
+    expect(state.promptQuality).toBe('full');
+    // The orphaned key is present but inert — nothing in the running store
+    // reads it; typed access to `state.generationDepth` is gone along with
+    // the field, which is the whole point of the deletion.
+    expect((state as unknown as Record<string, unknown>).generationDepth).toBe('quality');
   });
 });

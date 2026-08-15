@@ -24,17 +24,3 @@ pub const QUALITY_RUN_FIXED_SECS: u64 = 4800;
 /// rounds and `humanize` are flat-bounded and live in
 /// `QUALITY_RUN_FIXED_SECS` instead.
 pub const QUALITY_RUN_GENERATION_PASSES: u64 = 2;
-
-/// The EFFORT-INVARIANT half of one MAX-depth run's deadline: every call it
-/// plans to make, once, at the flat `timeouts::OLLAMA_COMPLETION` bound —
-/// four single-call stages (analyze, evidence, strategy, judge), one call
-/// per section up to `Budget::RESUME_MAX.max_sections`, and the full repair
-/// fan-out. Max depth streams nothing, so unlike `QUALITY_RUN_FIXED_SECS`
-/// this covers the WHOLE run. See `maxRunDeadlineSecs` in
-/// packages/shared/src/ai-timeouts.ts for the full derivation.
-pub const MAX_RUN_FIXED_SECS: u64 = 7200;
-
-/// Effort-SCALED whole-document passes one max run may make: one. The
-/// fan-out writes the document once and streams nothing, but the run
-/// duration still scales with the reasoning budget.
-pub const MAX_RUN_GENERATION_PASSES: u64 = 1;

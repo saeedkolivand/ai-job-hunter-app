@@ -11,9 +11,7 @@ mod cover_letter;
 mod draft;
 mod evidence;
 mod humanize;
-mod judge;
 mod repair;
-pub mod section_gen;
 pub mod sections;
 mod strategy;
 mod validate;
@@ -24,10 +22,8 @@ pub use self::cover_letter::CoverLetter;
 pub use self::draft::Draft;
 pub use self::evidence::MatchEvidence;
 pub use self::humanize::Humanize;
-pub use self::judge::Judge;
 pub use self::repair::NAME as REPAIR_STAGE;
 pub use self::repair::{regenerate_one_section, Repair, SectionOutcome, MAX_SECTIONS_PER_ROUND};
-pub use self::section_gen::Sections;
 pub use self::strategy::{seed_company_roster, Strategy, MAX_COMPANY_PLANS};
 pub use self::validate::{validate_documents, Validate};
 
@@ -45,8 +41,6 @@ pub(crate) use self::humanize::{
     exceeds_humanize_cap, humanize_is_worse, humanize_one, is_usable_rewrite,
     should_humanize_letter, voice_count, voice_findings,
 };
-#[cfg(test)]
-pub(crate) use self::judge::{issue_from, issues_from, MAX_JUDGE_ITEMS};
 #[cfg(test)]
 pub(crate) use self::repair::{criticals_by_section, repair_loop, round_is_worse};
 #[cfg(test)]

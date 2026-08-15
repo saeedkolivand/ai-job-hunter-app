@@ -63,8 +63,6 @@ vi.mock('@/services', () => ({
   useChangelog: () => ({ data: undefined, isPending: false }),
   // AppearanceCard
   useSystemAccent: () => ({ data: { supported: false } }),
-  // GenerationDepthPreferences → useSmallModelWarning
-  useGenerateConfig: () => ({ provider: 'openai', model: 'gpt-5', isPending: false }),
   // ContactProfileTab / ApplicantDetailsSection
   useContactProfile: () => ({ data: undefined }),
   useSetContactProfile: () => ({ mutate: vi.fn(), isPending: false }),
@@ -139,12 +137,10 @@ vi.mock('@/store/preferences-store', () => ({
       setOutputTone: vi.fn(),
       setPerformanceMode: vi.fn(),
       setCustomPerformance: vi.fn(),
-      setGenerationDepth: vi.fn(),
       setFetchCompanyLogos: vi.fn(),
     }),
   useFetchCompanyLogos: () => false,
   useDebugMode: () => false,
-  useGenerationDepth: () => 'fast',
   useOutputTone: () => 'professional',
   usePerformanceMode: () => 'balanced',
   useResolvedPerformanceProfile: () => ({
@@ -344,8 +340,23 @@ function assertAnchor(container: HTMLElement, anchor: string) {
 // ── manifest integrity ────────────────────────────────────────────────────────
 
 describe('SEARCH_INDEX — manifest integrity', () => {
-  it('has exactly 33 entries', () => {
-    expect(SEARCH_INDEX).toHaveLength(33);
+  it('has exactly 32 entries', () => {
+    expect(SEARCH_INDEX).toHaveLength(32);
+  });
+
+  // A bare count survives the wrong deletion (or a duplicate masking a real
+  // removal), so pin the actual change: the depth-selection entry is gone,
+  // and `ai-stages` no longer advertises the judge/sections keywords that
+  // went with it.
+  it('dropped the deleted generation-depth entry, not a different one', () => {
+    expect(SEARCH_INDEX.find((e) => e.id === 'ai-depth')).toBeUndefined();
+  });
+
+  it('no longer indexes `ai-stages` under the removed judge/sections keywords', () => {
+    const stages = SEARCH_INDEX.find((e) => e.id === 'ai-stages');
+    expect(stages).toBeDefined();
+    expect(stages?.keywords).not.toContain('judge');
+    expect(stages?.keywords).not.toContain('sections');
   });
 
   it('every SectionId has at least one entry', () => {

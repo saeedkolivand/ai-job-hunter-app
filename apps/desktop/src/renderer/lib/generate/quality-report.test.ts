@@ -568,4 +568,17 @@ describe('parse → serialize round-trip of a staged-pipeline wrapper', () => {
     const bogus = JSON.stringify({ ...QUALITY_WRAPPER, pipeline: 'turbo' });
     expect(parseQualityReport(bogus)?.pipeline).toBe('fast');
   });
+
+  it('still reads a historic `max`-depth wrapper as `max`, not as an unrecognised value', () => {
+    // PR-4 removed the `max` generation depth — no run can produce this label
+    // any more — but an EXISTING row saved before the removal still has one,
+    // and there is no migration touching old rows. `max` must stay a member of
+    // the shared depth vocabulary (`GENERATION_DEPTHS`) purely for THIS read
+    // path, or every pre-existing max-depth report silently relabels itself
+    // `fast` on the next open — the exact bug `parsePipeline`'s fallback
+    // exists to avoid for a genuinely unrecognised value, applied wrongly to a
+    // value that is still recognised.
+    const historicMax = JSON.stringify({ ...QUALITY_WRAPPER, pipeline: 'max' });
+    expect(parseQualityReport(historicMax)?.pipeline).toBe('max');
+  });
 });

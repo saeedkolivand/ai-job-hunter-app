@@ -710,13 +710,14 @@ impl PipelineRunStore {
     /// Delete every run of ONE posting, and its events with it. Returns how
     /// many RUNS went.
     ///
-    /// **Deleting a posting has to reach this table.** A max-depth run persists
-    /// its FULL `strategy` (the whole employment history) and its full
-    /// `match_evidence` map (verbatim quotes out of the candidate's résumé) into
-    /// `pipeline_run_events.artifact_json` — that is a deliberate DB decision
-    /// (see `RunLedger::record_detail`: ADR-027 governs the LOG), and it is the
-    /// only copy a per-entry regenerate can read hours later. But nothing else
-    /// ever removes those rows for a posting the user deleted:
+    /// **Deleting a posting has to reach this table.** A max-depth run (the
+    /// `max` generation depth is gone, but an EXISTING run row from before its
+    /// removal can still be sitting here, and there is no migration touching
+    /// old rows) persisted its FULL `strategy` (the whole employment history)
+    /// and its full `match_evidence` map (verbatim quotes out of the
+    /// candidate's résumé) into `pipeline_run_events.artifact_json` — a
+    /// deliberate DB decision at the time (ADR-027 governs only the LOG). But
+    /// nothing else ever removes those rows for a posting the user deleted:
     /// [`prune`](Self::prune) partitions by `(job_url, kind)` and only evicts
     /// the FOURTH run of a posting that is still being run, and
     /// [`clear_all`](Self::clear_all) is the factory reset. So "delete this"
