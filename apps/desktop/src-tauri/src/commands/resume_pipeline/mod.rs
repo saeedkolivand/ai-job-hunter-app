@@ -298,8 +298,9 @@ async fn execute(
 
     let ledger = Arc::new(RunLedger::new());
     // ONE clock for the whole run: the hook checks it at every stage boundary,
-    // and the `repair` stage checks it between its own (it is the last stage,
-    // so there is no boundary after it — see `RunDeadline`).
+    // and `repair` checks it again between its own calls — a single round can
+    // make several section round-trips, and a boundary check alone would not
+    // interrupt one mid-round. See `RunDeadline`.
     let deadline = RunDeadline::starting_now(max::deadline_for(req.effort.as_deref()));
     let hooks = RunHooks::new(
         app.clone(),
