@@ -386,8 +386,13 @@ async fn execute(
     // user is told succeeded, over a document that never changed, with nothing
     // anywhere saying why. Only `Refused` counts: `Nothing` is the unlinked /
     // empty-draft case, which is benign and already reported by its own path.
-    let refused =
-        save_verdict(ctx.input.source_resume, &ctx.draft, &job_url) == SaveVerdict::Refused;
+    let verdict = save_verdict(
+        ctx.input.source_resume,
+        &ctx.draft,
+        ctx.letter_text(),
+        &job_url,
+    );
+    let refused = matches!(verdict, SaveVerdict::Refused(_));
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
@@ -475,12 +480,15 @@ async fn execute(
         // The pipeline finished, and the document it produced was refused. The
         // row already says `failed`; the JOB has to agree, and the user needs
         // the reason — the alternative is a green run over an unchanged
-        // document. `execute`'s caller turns this into `job_fail`.
-        Ok(()) if refused => Err(AppError::Message(
-            "The generated résumé came back without any of your work history, so your saved \
-             document was left unchanged. Try again."
-                .to_string(),
-        )),
+        // document. `execute`'s caller turns this into `job_fail`. The reason
+        // itself lives on the verdict (see `SaveVerdict::Refused`) so this arm
+        // never re-derives — and risks drifting from — why it refused.
+        Ok(()) if refused => {
+            let SaveVerdict::Refused(reason) = verdict else {
+                unreachable!("`refused` is exactly `matches!(verdict, SaveVerdict::Refused(_))`")
+            };
+            Err(AppError::Message(reason.to_string()))
+        }
         Ok(()) => {
             crate::commands::jobs::job_complete(
                 app,
@@ -595,12 +603,13 @@ fn persist_document(
     depth: &str,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
-    if save_verdict(ctx.input.source_resume, &ctx.draft, job_url) != SaveVerdict::Save {
-        return None;
-    }
     // The `cover_letter` stage's own letter when it produced one, falling back
     // to the renderer-supplied validate-only text — see `QualityCtx::letter_text`.
     let letter_text = ctx.letter_text();
+    if save_verdict(ctx.input.source_resume, &ctx.draft, letter_text, job_url) != SaveVerdict::Save
+    {
+        return None;
+    }
     let wrapper = report::build(
         depth,
         crate::db::now_ms(),
@@ -688,21 +697,63 @@ pub(crate) enum SaveVerdict {
     Save,
     /// There was nothing to save, or nowhere to save it.
     Nothing,
-    /// There WAS a document, and [`is_persistable`] rejected it.
-    Refused,
+    /// There WAS a document, and it was rejected — for the user-facing reason
+    /// carried here, surfaced verbatim by `execute` (see
+    /// [`LOST_WORK_HISTORY_MESSAGE`]/[`LEAKED_FENCE_TAG_MESSAGE`]).
+    Refused(&'static str),
 }
 
+/// [`SaveVerdict::Refused`] reason: [`is_persistable`] rejected the draft for
+/// dropping the source's whole work history.
+const LOST_WORK_HISTORY_MESSAGE: &str = "The generated résumé came back without any of your work \
+    history, so your saved document was left unchanged. Try again.";
+
+/// [`SaveVerdict::Refused`] reason: the résumé or letter echoed one of the
+/// internal prompt-fence wrapper tags (`<generated_resume>`,
+/// `<candidate_resume>`, …) instead of real content — see
+/// [`crate::prompt_fence::contains_fence_tag`]. `draft`/`cover_letter` are the
+/// SOLE producers of these documents (unlike `humanize`/`repair`, which can
+/// discard a bad candidate and keep the last-good text they started from), so
+/// `save_verdict` is the last chokepoint that can catch a leak here before it
+/// reaches the saved aggregate and the exported PDF. Refusing to save —
+/// rather than saving with a flagged report — is the deliberate choice: it
+/// costs the run producing nothing this time, but a raw framework artifact
+/// reaching an employer is worse than a document the user has to retry, and
+/// it keeps this gate consistent with [`LOST_WORK_HISTORY_MESSAGE`] above
+/// rather than inventing a second, weaker failure mode for a defect that is
+/// arguably more visible to the reader.
+const LEAKED_FENCE_TAG_MESSAGE: &str = "The generated document came back with an internal \
+    formatting artifact that must never reach your résumé or cover letter, so your saved \
+    document was left unchanged. Try again.";
+
 /// One definition of "will this save", shared by `persist_document` (which
-/// acts on it) and `execute` (which has to report it).
-pub(crate) fn save_verdict(source_resume: &str, draft: &str, job_url: &str) -> SaveVerdict {
+/// acts on it) and `execute` (which has to report it). `letter` is checked
+/// independently of `draft`: `persist_document` writes both documents into
+/// ONE `AiGenerationRecord`, so there is no lower-granularity save to fall
+/// back to — a defect in EITHER document refuses the whole save, the same way
+/// [`is_persistable`] already treats a résumé-only defect as blocking it.
+pub(crate) fn save_verdict(
+    source_resume: &str,
+    draft: &str,
+    letter: &str,
+    job_url: &str,
+) -> SaveVerdict {
     if draft.trim().is_empty() || job_url.trim().is_empty() {
         return SaveVerdict::Nothing;
     }
-    if is_persistable(source_resume, draft) {
-        SaveVerdict::Save
-    } else {
-        SaveVerdict::Refused
+    if !is_persistable(source_resume, draft) {
+        return SaveVerdict::Refused(LOST_WORK_HISTORY_MESSAGE);
     }
+    // `humanize`/`sections` already gate their OWN rewrite candidates against
+    // an echoed fence tag (`is_usable_rewrite`, the splice guard in
+    // `sections.rs`) — but `draft`/`cover_letter` are what FIRST produce this
+    // text, and neither had a shape check of its own before this gate.
+    if crate::prompt_fence::contains_fence_tag(draft)
+        || crate::prompt_fence::contains_fence_tag(letter)
+    {
+        return SaveVerdict::Refused(LEAKED_FENCE_TAG_MESSAGE);
+    }
+    SaveVerdict::Save
 }
 
 /// Whether a run's document may OVERWRITE the posting's saved one.
