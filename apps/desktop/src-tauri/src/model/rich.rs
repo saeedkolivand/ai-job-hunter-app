@@ -369,7 +369,7 @@ mod tests {
         );
     }
 
-    /// The exact shape `pipeline::resume::assemble::render_project` emits for
+    /// The exact shape `pipeline::resume::project_render::render_project` emits for
     /// a project title line — a bold name followed by two labeled project
     /// links, `·`-separated. Both labels ("Website"/"Github") must render as
     /// the CLICKABLE TEXT, not the raw URL — this is what carries a source

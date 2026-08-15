@@ -18,8 +18,8 @@
 //! section instead of the single streamed `draft`, plus a Warning-only
 //! `llm_judge` review pass. The owner ruled it wasted tokens for no acted-on
 //! value (`max` alone cost 12+ calls a run) and it was removed; every run is
-//! this one pipeline now. [`types_max::ProjectOut`] and
-//! [`assemble::render_project`] survive — they are also how the
+//! this one pipeline now. [`project_seed::ProjectOut`] and
+//! [`project_render::render_project`] survive — they are also how the
 //! deterministic Projects normalization (`projects.rs`, PR #990) renders an
 //! entry, unrelated to depth.
 //!
@@ -42,15 +42,15 @@
 //! implementation and therefore every `pipeline:stage` emit. What the stages
 //! need to tell that hook travels through the shared [`RunLedger`].
 
-pub mod assemble;
 pub mod cache;
+pub mod project_render;
+pub mod project_seed;
 pub mod projects;
 pub mod prompt_blocks;
 pub mod prompts;
 pub mod source;
 pub mod stages;
 pub mod types;
-pub mod types_max;
 
 #[cfg(test)]
 mod test;

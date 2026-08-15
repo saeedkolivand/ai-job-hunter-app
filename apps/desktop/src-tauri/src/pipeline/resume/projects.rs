@@ -1,5 +1,5 @@
-//! Making the Projects section CODE-OWNED — `assemble::render_project` is the
-//! same renderer this module's normalizer produces text through.
+//! Making the Projects section CODE-OWNED — `project_render::render_project`
+//! is the same renderer this module's normalizer produces text through.
 //!
 //! The model writes the whole résumé body in one streamed call, projects
 //! included — so a draft can rename a project, drop a link, or invent one the
@@ -35,11 +35,11 @@ use std::collections::BTreeSet;
 use crate::documents::evidence::SectionKind;
 use crate::export::parser::parse_resume;
 use crate::pipeline::resume::types::SectionKey;
-use crate::pipeline::resume::{assemble, source};
+use crate::pipeline::resume::{project_render, source};
 use crate::validate::content::{canonical_link, link_href, urls_in};
 
+use super::project_seed::ProjectOut;
 use super::stages::sections;
-use super::types_max::ProjectOut;
 
 /// Seed [`ProjectOut`]s for normalization, plus WHY the list came back empty
 /// when it did — content-free (ADR-027), for the draft-stage ledger.
@@ -275,8 +275,8 @@ pub(crate) fn normalize_projects_with_stats(
 
 /// Re-render the DRAFT's Projects section from the source-seeded truth,
 /// dropping what the model invented and restoring what it altered — the
-/// quality-depth mirror of what `assemble::render_project` already guarantees
-/// at max. See the module doc for why write authority is narrow.
+/// quality-depth mirror of what `project_render::render_project` already
+/// guarantees at max. See the module doc for why write authority is narrow.
 pub(crate) fn normalize_projects_outcome(
     document: &str,
     seeds: &[ProjectOut],
@@ -429,7 +429,7 @@ fn build(document: &str, seeds: &[ProjectOut]) -> ProjectsNormalizeOutcome {
                         String::new()
                     },
                 };
-                pieces.push(assemble::render_project(&rebuilt));
+                pieces.push(project_render::render_project(&rebuilt));
                 matched += 1;
             }
         }
@@ -684,7 +684,7 @@ mod test {
         assert!(normalized.contains("A double-entry bookkeeping tool for small businesses."));
         assert_eq!(stats.matched, 2);
         assert_eq!(stats.links_restored, 1, "only CrossKit's link was altered");
-        // `render_project`'s separator glyph (`assemble::PROJECT_SEPARATOR`)
+        // `render_project`'s separator glyph (`project_render::PROJECT_SEPARATOR`)
         // has no other pin now that the old `max_test.rs` is gone — the whole
         // suite passes even if this character changes underneath it. Pinned
         // here on both a name-to-link join (CrossKit, tier 3, bullet form)

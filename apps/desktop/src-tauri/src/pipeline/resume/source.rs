@@ -36,7 +36,7 @@ use crate::validate::content::{
     MAX_PROJECT_DESCRIPTION_LINES,
 };
 
-use super::types_max::ProjectOut;
+use super::project_seed::ProjectOut;
 
 /// One line of the source, as written AND as classified.
 #[derive(Debug, Clone)]

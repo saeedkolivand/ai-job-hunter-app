@@ -1,14 +1,8 @@
 //! Rendering primitives shared by the deterministic Projects normalization
 //! (`pipeline::resume::projects`) and the section-splice utilities
 //! (`stages::sections`).
-//!
-//! This module used to render a whole max-depth document from its finished
-//! sections. That machinery was removed with the `max` generation depth;
-//! [`render_project`] survives because it is also how PR #990's
-//! deterministic Projects normalization renders an entry — unrelated to
-//! depth.
 
-use crate::pipeline::resume::types_max::ProjectOut;
+use crate::pipeline::resume::project_seed::ProjectOut;
 
 /// The `·` the locked project signature separates with. A constant because it
 /// is the format, not a preference.
