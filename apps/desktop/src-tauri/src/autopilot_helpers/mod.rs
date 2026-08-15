@@ -370,8 +370,8 @@ pub(crate) fn scrape_diagnostics(summaries: &[BoardScrapeSummary]) -> String {
 /// LLM01). The 2–4-sentence bound is enforced here (the provider layer has no
 /// max-tokens knob) and defended by [`NOTE_CAP`].
 ///
-/// Moved here from `agent::flows` (PR-5 step 1) — this is the only caller, and
-/// `agent` is being deleted.
+/// Moved here from the now-deleted `agent::flows` (PR-5 step 1) — this was
+/// its only caller.
 const AUTOPILOT_NOTE_SYSTEM: &str = "\
 You help a job seeker triage automatically-discovered job postings. You are given \
 the candidate's résumé and ONE job posting, both as DATA. Write a SHORT note of 2 to \
@@ -439,12 +439,12 @@ fn note_user_msg(
     )
 }
 
-/// The notes loop's provider seam — mirrors `agent::controller::AgentEnv`: the ONE
-/// external call (a provider completion + the shared daily-budget charge) sits
-/// behind a trait so the loop's pure control flow (top-N cap / cancellation /
-/// daily-ceiling short-circuit / prior-url skip) is unit-testable with a fake —
-/// this crate has no way to fake a live `Box<dyn AiProvider>`. Prod wiring is
-/// [`LiveNoteEnv`].
+/// The notes loop's provider seam — mirrored the shape of the now-deleted
+/// `agent::controller::AgentEnv`: the ONE external call (a provider completion
+/// + the shared daily-budget charge) sits behind a trait so the loop's pure
+/// control flow (top-N cap / cancellation / daily-ceiling short-circuit /
+/// prior-url skip) is unit-testable with a fake — this crate has no way to
+/// fake a live `Box<dyn AiProvider>`. Prod wiring is [`LiveNoteEnv`].
 #[async_trait]
 trait NoteEnv: Send + Sync {
     /// Run one note completion. Mirrors [`Completer::complete`]'s signature (a
@@ -459,9 +459,9 @@ trait NoteEnv: Send + Sync {
 }
 
 /// Production [`NoteEnv`]: the resolved [`Completer`] + the shared [`Limiter`]. Reads
-/// the provider id straight off `completer.provider_id()` (same pattern as
-/// `agent::tools`'s tool-call charge) so this module never needs to name the
-/// `ProviderId` type itself.
+/// the provider id straight off `completer.provider_id()` (the same pattern
+/// the now-deleted `agent::tools`'s tool-call charge used) so this module
+/// never needs to name the `ProviderId` type itself.
 struct LiveNoteEnv<'a> {
     completer: &'a Completer,
     limiter: Arc<Limiter>,
@@ -483,9 +483,9 @@ impl NoteEnv for LiveNoteEnv<'_> {
 /// The pure(ish) notes loop: for each job whose merge key is genuinely new (∉
 /// `prior_keys`), request one note through `env`, honoring — every iteration — the
 /// top-N call ceiling, the run's cancellation token, and the shared daily-ceiling
-/// charge. Split from [`generate_assistant_notes`] (mirroring
-/// `agent::controller::run_agent`'s split from its `AgentEnv`) so a fake `env`
-/// unit-tests the control flow directly, without a live provider.
+/// charge. Split from [`generate_assistant_notes`] (mirroring the shape of the
+/// now-deleted `agent::controller::run_agent`'s split from its `AgentEnv`) so
+/// a fake `env` unit-tests the control flow directly, without a live provider.
 ///
 /// HIGH-1: cancellation is raced against the in-flight completion itself via
 /// `tokio::select!`, not just checked between iterations — Stop/cancel interrupts a

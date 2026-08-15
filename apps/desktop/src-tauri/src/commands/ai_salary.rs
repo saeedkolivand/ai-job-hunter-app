@@ -8,9 +8,10 @@ use tauri::{AppHandle, Manager};
 
 use super::ai::{admit_research, AdmitOutcome};
 
-/// Why [`ai_lookup_salary_reasoned`] found nothing — L-2: surfaced to
-/// `agent::tools_quality::lookup_salary` as a distinct `reason`; the public
-/// command in `ai.rs` collapses this to `Option` (unchanged IPC contract).
+/// Why [`ai_lookup_salary_reasoned`] found nothing — L-2: surfaced as a
+/// distinct `reason` to callers that want it (the now-deleted
+/// `agent::tools_quality::lookup_salary` was one); the public command in
+/// `ai.rs` collapses this to `Option` (unchanged IPC contract).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SalaryLookupReason {
     /// The transient per-call rate/concurrency cap refused the request —
@@ -30,9 +31,9 @@ pub(crate) enum SalaryLookupReason {
 }
 
 /// [`super::ai::ai_lookup_salary`]'s core, with the failure REASON its bare
-/// `Option` return discards — `pub(crate)` so `agent::tools_quality::
-/// lookup_salary` can surface it (zero business-logic duplication, one core,
-/// 2 callers).
+/// `Option` return discards — `pub(crate)` so a caller that wants the reason
+/// (the now-deleted `agent::tools_quality::lookup_salary` used to) can
+/// surface it (zero business-logic duplication, one core).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn ai_lookup_salary_reasoned(
     app: &AppHandle,

@@ -642,10 +642,11 @@ async fn cancel_leaves_the_slot_in_place_and_is_idempotent() {
 /// The engine's three cancel verbs now DELEGATE to the shared
 /// `jobs::cancel::CancelRegistry`, and `lib.rs` manages the very handle
 /// `cancel_registry()` returns as app state. That sharing is what keeps a
-/// non-scraping run cancellable: `commands::agent::agent_run` registers through
-/// the registry while `jobs_cancel` still dispatches through `engine.cancel`.
-/// If the two ever became separate maps, an agent run's Stop button would
-/// silently do nothing — so pin BOTH directions.
+/// non-scraping run cancellable: `commands::resume_pipeline::resume_pipeline_run`
+/// registers through the registry while `jobs_cancel` still dispatches
+/// through `engine.cancel`. If the two ever became separate maps, a résumé
+/// pipeline run's Stop button would silently do nothing — so pin BOTH
+/// directions.
 #[tokio::test]
 async fn the_engine_and_its_exposed_registry_are_the_same_map() {
     let engine = ScraperEngine::new();

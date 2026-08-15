@@ -11,11 +11,12 @@ use super::{Budget, StoppedReason, DEFAULT_MAX_REPAIR_ATTEMPTS, DEFAULT_MAX_SECT
 // ── Wire compatibility (the relocation must be invisible on the wire) ─────────
 
 /// Every variant's wire string, in the order the enum declares them. The seven
-/// leading entries are the EXACT strings `agent::controller::StoppedReason`
-/// serialized to before this type moved into `pipeline::budget`; the renderer's
-/// `STOPPED_SUFFIX` map (PrepApplicationPanel) keys on them, and an `agent.run`
-/// job result carries one in its `stoppedReason` field. Changing one is a
-/// breaking wire change, not a rename.
+/// leading entries are the EXACT strings the (now-deleted) agentic
+/// controller's own `StoppedReason` serialized to before this type moved into
+/// `pipeline::budget`; the renderer's `STOPPED_SUFFIX` map keys on them, and a
+/// budgeted-run job result — the résumé pipeline's, today — carries one in its
+/// `stoppedReason` field. Changing one is a breaking wire change, not a
+/// rename.
 const WIRE: &[(StoppedReason, &str)] = &[
     (StoppedReason::Done, "done"),
     (StoppedReason::MaxSteps, "max_steps"),
@@ -96,18 +97,6 @@ fn stopped_reason_round_trips_through_json() {
     }
 }
 
-/// The re-export at the OLD path must be the SAME type, not a copy: a second
-/// enum would serialize identically today and drift silently tomorrow.
-#[test]
-fn the_agent_re_export_is_this_exact_type() {
-    let via_old_path: crate::agent::controller::StoppedReason = StoppedReason::MaxSteps;
-    assert_eq!(via_old_path, StoppedReason::MaxSteps);
-    assert_eq!(
-        serde_json::to_value(via_old_path).unwrap(),
-        json!("max_steps")
-    );
-}
-
 /// A reason the shell has never emitted must not deserialize — an unknown value
 /// arriving from a tampered bundle should fail loudly, not map to `Done`.
 #[test]
@@ -117,33 +106,28 @@ fn an_unknown_wire_string_is_rejected() {
 
 // ── Budget internal consistency ──────────────────────────────────────────────
 
-/// Sanity for every budget we ship: no zero ceiling that would stop a run before
+/// Sanity for the budget we ship: no zero ceiling that would stop a run before
 /// its first step, and no timeout ordering that makes a field unreachable.
 #[test]
 fn every_shipped_budget_is_internally_consistent() {
-    for (label, b) in [
-        ("AGENT_PREP", Budget::AGENT_PREP),
-        ("AGENT_IMPROVE", Budget::AGENT_IMPROVE),
-        ("RESUME_QUALITY", Budget::RESUME_QUALITY),
-    ] {
-        assert!(b.max_steps > 0, "{label}: a run must get at least one step");
-        assert!(b.max_tokens > 0, "{label}: max_tokens must be positive");
-        assert!(
-            b.max_sections > 0,
-            "{label}: a document must get at least one section"
-        );
-        assert!(
-            !b.step_timeout.is_zero() && !b.run_timeout.is_zero(),
-            "{label}: a zero timeout expires before the first await"
-        );
-        assert!(
-            b.run_timeout >= b.step_timeout,
-            "{label}: run_timeout below step_timeout makes step_timeout unreachable"
-        );
-    }
+    let b = Budget::RESUME_QUALITY;
+    assert!(b.max_steps > 0, "a run must get at least one step");
+    assert!(b.max_tokens > 0, "max_tokens must be positive");
+    assert!(
+        b.max_sections > 0,
+        "a document must get at least one section"
+    );
+    assert!(
+        !b.step_timeout.is_zero() && !b.run_timeout.is_zero(),
+        "a zero timeout expires before the first await"
+    );
+    assert!(
+        b.run_timeout >= b.step_timeout,
+        "run_timeout below step_timeout makes step_timeout unreachable"
+    );
 }
 
-/// Literal pins for every `Duration` field of both shipped budgets.
+/// Literal pins for every `Duration` field of the shipped budget.
 ///
 /// The consistency test above checks only RELATIONS (non-zero, `run_timeout >=
 /// step_timeout`), and a typo can satisfy every one of them: a
@@ -156,47 +140,10 @@ fn every_shipped_budget_is_internally_consistent() {
 #[test]
 fn every_budget_timeout_is_pinned_to_its_documented_literal() {
     assert_eq!(
-        Budget::AGENT_PREP.step_timeout,
-        Duration::from_secs(360),
-        "AGENT_PREP.step_timeout sits above the 300s OLLAMA_COMPLETION timeout on purpose"
-    );
-    assert_eq!(Budget::AGENT_PREP.run_timeout, Duration::from_secs(45 * 60));
-    assert_eq!(
-        Budget::AGENT_PREP.confirm_timeout,
-        Duration::from_secs(300),
-        "a shrunken confirm_timeout silently auto-denies confirmations"
-    );
-
-    // 105 min, and DERIVED rather than chosen: the improve flow is the only
-    // home of `run_quality_pipeline`, and the controller races EVERY tool call
-    // against this field, so it must clear one whole quality run (5 400 s,
-    // raised by PR-2's `cover_letter` + `humanize` stages) plus the one
-    // `OLLAMA_COMPLETION` call that may still be admitted just inside that
-    // deadline, plus a margin. Shrinking it back to the prep flow's 360 s
-    // would make the tool unrunnable and kill the run at
-    // `StoppedReason::Timeout` instead; the sharp form of this relation is a
-    // `const _: () = assert!(…)` in `agent::tools_pipeline`, and the
-    // whitelist-side half is `agent::tools::test`'s
-    // `the_quality_pipeline_tool_is_absent_from_a_flow_whose_step_cannot_cover_it`.
-    assert_eq!(
-        Budget::AGENT_IMPROVE.step_timeout,
-        Duration::from_secs(105 * 60),
-        "AGENT_IMPROVE.step_timeout must still cover one whole quality run"
-    );
-    assert_eq!(
-        Budget::AGENT_IMPROVE.run_timeout,
-        Duration::from_secs(135 * 60)
-    );
-    assert_eq!(
-        Budget::AGENT_IMPROVE.confirm_timeout,
-        Duration::from_secs(300),
-        "a shrunken confirm_timeout silently auto-denies confirmations"
-    );
-
-    assert_eq!(
         Budget::RESUME_QUALITY.step_timeout,
         Duration::from_secs(360),
-        "RESUME_QUALITY.step_timeout deliberately matches AGENT_PREP's backstop"
+        "RESUME_QUALITY.step_timeout sits above the 300s OLLAMA_COMPLETION timeout on purpose \
+         (INERT for this flow — see the field's own doc)"
     );
     // 90 min, and DERIVED rather than chosen: it is the effort-blind floor that
     // must equal `timeouts::quality_run_deadline(None)` — 4800 s of FLAT
@@ -222,15 +169,14 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
     );
 }
 
-// The budget-arithmetic relations (`max_steps` above the prep worst case,
-// `max_tool_calls` below `max_steps`, `RESUME_QUALITY.max_steps` above the
-// section count) are `const _: () = assert!(…)` items in `budget.rs` itself, NOT
-// tests here: `#[cfg(test)]` code is not compiled by `cargo build --release`, so
-// an assert placed in this file could never have failed a build.
+// The budget-arithmetic relation (`RESUME_QUALITY.max_steps` above the section
+// count) is a `const _: () = assert!(…)` item in `budget.rs` itself, NOT a test
+// here: `#[cfg(test)]` code is not compiled by `cargo build --release`, so an
+// assert placed in this file could never have failed a build.
 
 /// The résumé pipeline runs no tools; zero is the deliberate bound, so a stage
 /// that starts calling tools has to justify raising it rather than inheriting
-/// the agent's allowance.
+/// a nonzero default.
 #[test]
 fn resume_quality_allows_no_tool_calls_and_covers_every_section() {
     assert_eq!(Budget::RESUME_QUALITY.max_tool_calls, 0);
@@ -243,8 +189,8 @@ fn resume_quality_allows_no_tool_calls_and_covers_every_section() {
 
 // ── Security lock: budgets are backend-owned, never renderer-supplied ─────────
 
-/// Same lock shape as `commands::agent`'s routing lock (task #25): the wire
-/// request struct has NO budget field, so a compromised renderer that appends
+/// Same lock shape as the backend-owned provider-routing lock (task #25): the
+/// wire request struct has NO budget field, so a compromised renderer that appends
 /// `maxSteps`/`maxTokens`/`maxToolCalls` cannot widen a paid run's ceiling —
 /// serde drops the unknown keys because there is nowhere to bind them. The
 /// anti-abuse limiter caps how OFTEN a run starts; only this struct's SHAPE caps
@@ -300,12 +246,12 @@ fn the_run_request_carries_no_budget_field() {
 /// mechanism: a caller gets a VALUE, and mutating it cannot affect the constant.
 #[test]
 fn a_budget_copy_cannot_mutate_the_shipped_constant() {
-    let mut local = Budget::AGENT_PREP;
+    let mut local = Budget::RESUME_QUALITY;
     local.max_tokens = usize::MAX;
     assert_eq!(local.max_tokens, usize::MAX, "the copy did change");
     assert_eq!(
-        Budget::AGENT_PREP.max_tokens,
-        120_000,
+        Budget::RESUME_QUALITY.max_tokens,
+        200_000,
         "the shipped constant must be unaffected by a caller's copy"
     );
 }

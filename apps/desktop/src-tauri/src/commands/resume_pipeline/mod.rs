@@ -136,10 +136,11 @@ use self::resolve::{
 /// progress streams as `pipeline:stage` and the draft's deltas as `ai:stream`
 /// under the same `jobId`.
 ///
-/// Every fail-able step runs INSIDE the spawned task, for the reason
-/// `commands::agent::agent_run` documents at length: the returned `jobId` is
-/// the renderer's only handle, so a terminal event emitted before this returns
-/// is silently dropped and the run looks stuck at pending forever.
+/// Every fail-able step runs INSIDE the spawned task, for the same reason the
+/// now-deleted `commands::agent::agent_run` used to document at length: the
+/// returned `jobId` is the renderer's only handle, so a terminal event
+/// emitted before this returns is silently dropped and the run looks stuck at
+/// pending forever.
 #[tauri::command]
 pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) -> Value {
     let job_id = new_job_id();
@@ -148,7 +149,7 @@ pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) 
 
     let cancel = CancellationToken::new();
     let cancels = app.state::<Arc<CancelRegistry>>().inner().clone();
-    // Registered BEFORE the spawn (mirrors `agent_run`/`scrape_boards`) so a
+    // Registered BEFORE the spawn (mirrors `scrape_boards`) so a
     // `jobs_cancel` arriving between this return and the task waking is not a
     // no-op.
     cancels.register(&job_id, cancel.clone()).await;
@@ -1086,63 +1087,6 @@ fn recomputed_status(current: &str, needs_review: bool) -> Option<&'static str> 
         STATUS_COMPLETED
     };
     (matches!(current, STATUS_COMPLETED | STATUS_NEEDS_REVIEW) && current != next).then_some(next)
-}
-
-/// Move the newest run row for `job_url` to the status its FRESH report implies
-/// — the row-side half of "text and report move together".
-///
-/// The panel keys its headline, and whether the review block renders at all, on
-/// this row (see `regenerate_section`'s own call to [`recomputed_status`], which
-/// does these three steps inline because it already holds its row and must
-/// return it). A save that changes the document can introduce a finding on a
-/// row that still says `completed`, or clear the last one on a row that still
-/// says `needsReview`; leaving the row alone shows the previous document's
-/// verdict as this one's.
-///
-/// `runs_for_job` normalizes the key and orders newest-first, so a raw posting
-/// url from the cache resolves the same row the pipeline wrote. A posting with
-/// no run row at all (a fast-path generation, or a résumé the agent saved
-/// first) is a no-op by construction — there is no status to correct.
-///
-/// **Failure is logged, not propagated.** The document is already saved and is
-/// the user-visible outcome; a row that failed to move is a display defect, and
-/// turning it into a tool error would report a successful save as a failure.
-pub(crate) fn sync_saved_resume_status(
-    app: &AppHandle,
-    job_url: &str,
-    wrapper: &str,
-    resume_text: &str,
-    cover_letter_text: &str,
-) {
-    let Some(store) = app.try_state::<PipelineRunStore>() else {
-        return;
-    };
-    let Some(row) = store.runs_for_job(job_url).into_iter().next() else {
-        return;
-    };
-    let needs_review = report::still_needs_review(wrapper, resume_text, cover_letter_text);
-    let Some(next) = recomputed_status(&row.status, needs_review) else {
-        return;
-    };
-    // `update_status_if_present`, NOT `upsert_run` (CodeRabbit, PR #986):
-    // `upsert_run` is an `INSERT OR REPLACE`, so a generation delete,
-    // application delete, or factory reset landing between the read above and
-    // this write would be UNDONE here — recreating an orphan run row the delete
-    // had just removed. A row-scoped `UPDATE` changes zero rows instead.
-    match store.update_status_if_present(&row.id, next) {
-        // The row was deleted while this save was in flight; the delete wins,
-        // and there is nothing left to show a status on.
-        Ok(false) => log::debug!(
-            "[resume_pipeline] sync_saved_resume_status: run row vanished before the status \
-             could move to {next}"
-        ),
-        Ok(true) => {}
-        Err(e) => log::warn!(
-            "[resume_pipeline] sync_saved_resume_status: the résumé was saved but its run row \
-             could not be moved to {next}: {}",
-            e.code()
-        ),
-    }
 }
 
 /// Record the user's Remove/Keep verdict on ONE surviving fabrication finding.

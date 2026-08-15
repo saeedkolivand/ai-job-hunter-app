@@ -785,8 +785,8 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
     let curated = has_curated_function_words(vocab.lang);
     // Ordered by how often the POSTING states the term, alphabetically within a
     // tie. Both lists are truncated by their consumers
-    // (`agent::tools_quality::compact_evidence_set` takes the first N and
-    // reports only a dropped COUNT), so a purely alphabetical order silently
+    // (the now-deleted `agent::tools_quality::compact_evidence_set` took the
+    // first N and reported only a dropped COUNT), so a purely alphabetical order silently
     // handed a prompt the alphabetical PREFIX of the gap list — "ansible" kept,
     // "terraform" cut, and nothing downstream able to tell. Relevance-first
     // makes a truncated list the top-N by construction, and the consumer needs

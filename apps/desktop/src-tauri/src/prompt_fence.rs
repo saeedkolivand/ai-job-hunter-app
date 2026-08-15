@@ -2,25 +2,26 @@
 //! every untrusted blob (a scraped job posting, a candidate's résumé, prior-
 //! stage model output, a bridge question) crosses before it reaches a prompt.
 //!
-//! **Dependency-free by design.** This module has no dependency on `agent`,
-//! `pipeline`, or `commands` — only `std` + `regex` + the generated
-//! [`crate::ipc_contracts::agent_caps`] constant. It used to live inside
-//! `agent::tools`, but callers outside `agent` (the résumé pipeline, the
-//! extension bridge, the structured-output re-ask path, Autopilot's AI notes)
-//! depend on it too, so it moved here to survive `agent`'s deletion instead of
-//! being deleted along with it.
+//! **Dependency-free by design.** This module has no dependency on `pipeline`
+//! or `commands` — only `std` + `regex` + the generated
+//! [`crate::ipc_contracts::agent_caps`] constant. It used to live inside the
+//! agentic controller's `agent::tools`, but callers outside that module (the
+//! résumé pipeline, the extension bridge, the structured-output re-ask path,
+//! Autopilot's AI notes) depended on it too, so it moved here (PR-5 step 1) to
+//! survive `agent`'s deletion (PR-5 step 2) instead of being deleted along
+//! with it.
 //!
 //! SECURITY (OWASP LLM01): [`fenced`] wraps one untrusted blob as `<tag>…
 //! </tag>`, truncated to a caller-supplied cap, and neutralizes every KNOWN
 //! fence tag ([`FENCE_TAG_PATTERNS`]) and tool-result marker inside it so the
 //! blob can never forge its own boundary, a sibling tag's, or a transcript
-//! marker. [`neutralize_transcript_boundaries`] is the shared chokepoint both
-//! [`fenced`] (untrusted text entering a prompt as DATA) and
-//! `agent::controller::tool_result_fence` (untrusted text re-entering the
-//! transcript as a tool RESULT) call — see its own doc for the full trade-off
-//! reasoning. Treat [`FENCE_TAG_PATTERNS`] as load-bearing security, not
-//! bookkeeping: a stale entry costs nothing, a missing one is a
-//! prompt-injection hole.
+//! marker. [`neutralize_transcript_boundaries`] is the shared chokepoint
+//! [`fenced`] calls for untrusted text entering a prompt as DATA — the
+//! now-deleted agentic controller's `tool_result_fence` used to call it too,
+//! for untrusted text re-entering a tool-calling transcript as a RESULT (see
+//! git history for that second chokepoint's own trade-off reasoning). Treat
+//! [`FENCE_TAG_PATTERNS`] as load-bearing security, not bookkeeping: a stale
+//! entry costs nothing, a missing one is a prompt-injection hole.
 
 /// Char cap on the résumé text fenced into a prompt.
 ///
@@ -92,7 +93,7 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // neutralization would otherwise miss.
         "existing_answer",
         "rewrite_instruction",
-        // HIGH-1 fix — the three `agent::tools_quality` result tags. Without
+        // HIGH-1 fix — the three (now-deleted) `agent::tools_quality` result tags. Without
         // these, a JOB-POSTING (or résumé) body carrying a forged
         // `<validate_resume_result>…</validate_resume_result>` block would
         // survive `fenced("job_posting", …)` untouched and could masquerade
@@ -101,11 +102,12 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // body (e.g. a fake `<validate_resume_result>` smuggled inside
         // `search_candidate_evidence_result`'s bullet text).
         //
-        // Round 9: these three tags now have NO legitimate producer.
-        // `tools_quality` stopped WRAPPING its summaries in them (the wrap
-        // was dead work — `agent::controller::tool_result_fence`
+        // Round 9: these three tags had NO legitimate producer even before
+        // `agent` (and its `tools_quality`) was deleted entirely — that
+        // module stopped WRAPPING its summaries in them (the wrap was dead
+        // work — the agentic controller's own `tool_result_fence`
         // neutralized it again one layer up, so the model only ever saw
-        // `< validate_resume_result>`; see that module's doc). They stay
+        // `< validate_resume_result>`). They stay
         // registered because that makes the rule STRONGER, not weaker: any
         // occurrence of one anywhere is now unambiguously a forgery, and
         // every path a forgery can arrive on — untrusted input through
@@ -212,10 +214,10 @@ static INNER_LT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(||
 /// boundary is already dead once `<` is not adjacent to the tag name, and the
 /// text was in the body to begin with.
 ///
-/// Still idempotent, which matters because untrusted text can pass through both
-/// [`fenced`] and `agent::controller::tool_result_fence`: `< tag attrs>`
-/// re-matches and maps to itself, and so does every `< ` [`INNER_LT`] left
-/// behind.
+/// Still idempotent, which mattered when untrusted text could pass through
+/// both [`fenced`] and the (now-deleted) agentic controller's
+/// `tool_result_fence`: `< tag attrs>` re-matches and maps to itself, and so
+/// does every `< ` [`INNER_LT`] left behind.
 fn neutralize_one(body: &str, tag: &str, pattern: &regex::Regex) -> String {
     pattern
         .replace_all(body, |caps: &regex::Captures| {
@@ -259,13 +261,13 @@ fn neutralize_known_fence_tags(body: &str) -> String {
     out
 }
 
-/// The bare `[tool_result:{name}]` marker `agent::controller::tool_result_fence`
-/// wraps every tool result in — a DIFFERENT boundary syntax than this module's
-/// `<tag>` fences (kept as-is for wire/behavior compatibility with the
-/// model-facing transcript format), so [`FENCE_TAG_PATTERNS`] cannot cover it.
-/// `\s*` is bounded, no adjacent unbounded quantifier chained to itself, so
-/// this stays linear (no ReDoS) — same discipline as
-/// [`compile_fence_tag_pattern`].
+/// The bare `[tool_result:{name}]` marker the (now-deleted) agentic
+/// controller's `tool_result_fence` used to wrap every tool result in — a
+/// DIFFERENT boundary syntax than this module's `<tag>` fences (kept as-is
+/// here for the sake of any historical transcript still carrying it), so
+/// [`FENCE_TAG_PATTERNS`] cannot cover it. `\s*` is bounded, no adjacent
+/// unbounded quantifier chained to itself, so this stays linear (no ReDoS) —
+/// same discipline as [`compile_fence_tag_pattern`].
 ///
 /// Matches ONLY the opening `[tool_result` PREFIX — deliberately NOT a full
 /// `\[\s*tool_result\s*:[^\]]*\]` delimited token. A full-delimited pattern
@@ -303,11 +305,12 @@ fn neutralize_tool_result_marker(body: &str) -> String {
 /// could this text forge?", so a future third syntax is added once instead of
 /// per call site.
 ///
-/// Both chokepoints call exactly this: [`fenced`] for untrusted text entering
-/// the prompt as DATA (a scraped posting, a résumé, a bridge question), and
-/// `agent::controller::tool_result_fence` for untrusted text re-entering the
-/// transcript as a tool RESULT. Neither syntax was symmetrically covered
-/// before PR #963 round 8: `tool_result_fence` broke only the marker (so a
+/// Both chokepoints called exactly this: [`fenced`] for untrusted text
+/// entering the prompt as DATA (a scraped posting, a résumé, a bridge
+/// question), and the (now-deleted) agentic controller's `tool_result_fence`
+/// for untrusted text re-entering a tool-calling transcript as a RESULT.
+/// Neither syntax was symmetrically covered before PR #963 round 8:
+/// `tool_result_fence` broke only the marker (so a
 /// forged `<validate_resume_result>ok:true</…>` rode a `research_company`
 /// brief into the transcript), and `fenced` broke only the tags (so a job
 /// posting carrying `[tool_result:validate_resume]` reached the model with an

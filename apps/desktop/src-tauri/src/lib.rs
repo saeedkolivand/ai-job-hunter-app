@@ -10,7 +10,6 @@
 // `parking_lot::Mutex` inside async command handlers). See docs/architecture-rules.md R14.
 #![deny(clippy::await_holding_lock)]
 
-pub mod agent;
 pub mod ai_config;
 pub mod ai_generations;
 pub mod ai_provider;
@@ -770,9 +769,9 @@ pub fn run() {
             // ONE cancel registry for every job kind (`jobs::cancel`). The
             // engine dispatches through it (`ScraperEngine::cancel`, which
             // `jobs_cancel` calls for every job id regardless of kind), and it
-            // is also managed on its own so a non-scraping run — an agent run
-            // today, a pipeline run from Phase 3 — registers its token without
-            // borrowing the scraper. Process-local, holds no user data.
+            // is also managed on its own so a non-scraping run — a pipeline
+            // run — registers its token without borrowing the scraper.
+            // Process-local, holds no user data.
             let scraper_engine = std::sync::Arc::new(ScraperEngine::new());
             app.manage(scraper_engine.cancel_registry());
             app.manage(scraper_engine);
@@ -781,11 +780,6 @@ pub fn run() {
             // `scrape_url`. Process-local; resets on restart. Not in the reset
             // registry — it holds no user data, only transient counters.
             app.manage(std::sync::Arc::new(limits::Limiter::new()));
-            // Agent confirm gate: pending human-in-the-loop Write confirmations,
-            // keyed by (jobId, callId). `agent_run` registers an entry when it
-            // suspends on a Write tool; `agent_confirm` resolves it. Process-local,
-            // holds no user data — not in the reset registry.
-            app.manage(agent::gate::AgentGate::default());
             // Live performance config (balanced default). Updated by system_set_performance_mode.
             crate::performance::set(crate::performance::PerformanceConfig::default());
             app.manage(commands::translation::TranslationCache::new());
@@ -988,9 +982,6 @@ pub fn run() {
             commands::ai::ai_set_stage_override,
             commands::ai::ai_clear_stage_override,
             commands::pipeline::generate_pipeline,
-            // agent ("prep this application" flow + human-in-the-loop confirm gate)
-            commands::agent::agent_run,
-            commands::agent::agent_confirm,
             // resume extraction + content-quality checks
             commands::resume::extract_resume,
             commands::resume::resume_validate_content,

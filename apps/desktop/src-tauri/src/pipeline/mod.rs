@@ -26,7 +26,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_provider::{
     record_usage, resolve, AgentTurn, AiGenerateRequest, AiGenerateRequestMessage, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, ToolSpec, Usage,
+    ChatMsg, ProviderId, ToolSpec, Usage,
 };
 use crate::error::{AppError, AppResult};
 
@@ -422,14 +422,6 @@ impl Completer {
         self.provider.id()
     }
 
-    /// The active model's capability matrix (e.g. `supports_tools`) — used by
-    /// callers that must gate behavior before making a request. The agent
-    /// controller requires native tool-calling; see
-    /// [`crate::commands::agent::agent_run`].
-    pub fn capabilities(&self) -> ModelCapabilities {
-        self.provider.capabilities(&self.model)
-    }
-
     /// Whether company research can actually run right now — a configured search
     /// backend exists, not merely a provider that advertises one. See
     /// `ai_provider::search::research_available`.
@@ -441,10 +433,10 @@ impl Completer {
         )
     }
 
-    /// The resolved active model — so a caller can name it in a capability-gate
-    /// error message after resolving, without re-deriving it from the (no longer
-    /// trusted) request. See [`crate::commands::agent::agent_run`]'s
-    /// tool-capability guard.
+    /// The resolved active model — so a caller can name it in an error message
+    /// after resolving, without re-deriving it from the (no longer trusted)
+    /// request. Used by `pipeline::resume::cache` to key the résumé pipeline's
+    /// cache on the model it ran against.
     pub fn model(&self) -> &str {
         &self.model
     }
@@ -583,9 +575,10 @@ impl Completer {
     /// analogue of [`research`](Self::research). Delegates to
     /// [`AiProvider::chat_with_tools`](crate::commands::ai_provider::AiProvider::chat_with_tools):
     /// providers without native tool support degrade to a single-shot answer.
-    /// Consumed by the agent controller (`crate::agent`) — plausibly the
-    /// biggest paid-token consumer, since one "Prep this application" run fans
-    /// out into several turns. Records the returned [`AgentTurn::usage`]
+    /// Consumed by the (now-deleted) agentic controller — plausibly the
+    /// biggest paid-token consumer while it shipped, since one "Prep this
+    /// application" run fanned out into several turns; currently has no live
+    /// caller in the crate. Records the returned [`AgentTurn::usage`]
     /// (each provider's own turn-parser populates it from the same
     /// response fields `complete`/`chat_stream` already parse) against
     /// today's AI spend before returning, so every turn — not just the final
@@ -681,13 +674,14 @@ impl Completer {
 
     /// Charge ONE provider round-trip against the shared per-provider daily
     /// ceiling — the coarse runaway-cost backstop every other fan-out
-    /// chokepoint charges (`agent::controller`'s `LiveAgentEnv::turn`,
-    /// `agent::tools::complete_trusted`, `commands::pipeline`). Fail-closed: the
-    /// `Err` must abort the caller BEFORE the request is built.
+    /// chokepoint charges (`commands::pipeline`; the now-deleted agentic
+    /// controller's `LiveAgentEnv::turn` and tool-call charge did the same).
+    /// Fail-closed: the `Err` must abort the caller BEFORE the request is
+    /// built.
     ///
-    /// Resolves the managed `Arc<Limiter>` the same way
-    /// `agent::tools::complete_trusted` does; the limiter is managed
-    /// unconditionally in `lib.rs::setup`, before any command can run.
+    /// Resolves the managed `Arc<Limiter>` the same way every other charge
+    /// site does; the limiter is managed unconditionally in `lib.rs::setup`,
+    /// before any command can run.
     ///
     /// `pub(crate)` for [`stream_captured`](Self::stream_captured)'s caller and
     /// for the résumé pipeline's own non-`complete_json` round-trips (the
@@ -821,7 +815,8 @@ pub(crate) fn text_request(
 /// what a test replaces: charging and recording done inside it would be provable
 /// only by reading the code. Here, "N round-trips ⇒ exactly N charges and N
 /// records, the re-ask included" is a unit test with no Tauri harness (the same
-/// seam shape as [`Completer::from_config`] and `agent::controller::run_agent`).
+/// seam shape as [`Completer::from_config`] and the now-deleted agentic
+/// controller's own `run_agent`).
 pub(crate) async fn complete_json_with<T, C, F, Fut, R>(
     mut charge: C,
     mut ask: F,

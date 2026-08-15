@@ -146,12 +146,11 @@ const L3: &[&str] = &[
     // never the reverse. Its consent state is a plain file precisely because no
     // store or WebView exists that early.
     "crash_reporting",
-    // Agentic controller foundation (Phase 1, backend only). Shell-role: its
-    // `LiveAgentEnv` holds an AppHandle, emits `agent:step`, and reaches DOWN into
-    // commands/pipeline/limits to run a budgeted tool-calling loop — never the
-    // reverse. The controller's pure core (`run_agent`) is AppHandle-free. Wired
-    // to a Tauri command in Phase 2 (`agent_run`).
-    "agent",
+    // The agentic controller foundation (Phase 1) that used to live here —
+    // `agent` — was deleted in its entirety (PR-5 step 2): the "prep this
+    // application" flow, the human-in-the-loop confirm gate, and the
+    // tool-calling loop it drove. See `prompt_fence` (L0) for what survived
+    // the deletion.
 ];
 
 fn layer_of(module: &str) -> Option<u8> {

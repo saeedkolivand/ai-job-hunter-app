@@ -344,8 +344,8 @@ fn adding_the_rewrite_tags_does_not_regress_the_original_six_tag_cross_forgery()
 /// `FENCE_TAG_PATTERNS`, this survived `fenced("job_posting", …)`
 /// untouched, because `job_posting`'s own boundary was already safe and
 /// the (then-unregistered) sibling tag was never scrubbed. The prior
-/// regression test in `agent::tools_quality` only checked the REVERSE
-/// direction (a forged `<job_posting>` inside a `validate_resume_result`
+/// regression test in the (now-deleted) `agent::tools_quality` only checked
+/// the REVERSE direction (a forged `<job_posting>` inside a `validate_resume_result`
 /// body), which already passed since `job_posting` was always
 /// registered — this is the direction that was actually broken.
 #[test]
