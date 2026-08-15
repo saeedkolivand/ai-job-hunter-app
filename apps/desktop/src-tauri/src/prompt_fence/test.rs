@@ -471,3 +471,112 @@ fn neutralize_transcript_boundaries_is_idempotent() {
     assert!(once.contains("< /job_posting>"));
     assert!(once.contains("< candidate_resume>"));
 }
+
+/// **Every `FENCE_TAG_PATTERNS` entry, load-bearing, in one loop.**
+///
+/// Security review (PR-5): removing each of the 24 registry entries
+/// individually and re-running the whole suite found 15 removable with
+/// everything green — 10 of those are tags surviving code still emits
+/// (`web_search_notes`, `salary_context`, `job_analysis`, `evidence_map`,
+/// `company_roster`, `resume_section`, `section_issues`, `section_note`,
+/// `humanize_document`, `humanize_findings`). Only 9 entries were guarded by
+/// anything before this test existed.
+///
+/// The gap that made it invisible:
+/// `every_untrusted_block_is_fenced_and_forgery_resistant`
+/// (`pipeline::resume::test`) does assert `</job_analysis>` appears exactly
+/// once, but its hostile payload only ever forges `</job_posting>` — so
+/// every entry that payload never mentions is inert to that assertion, no
+/// matter how many real tags surround it in the transcript. Verbatim-moving
+/// a test set (PR-5 step 1) proved the tests did not weaken; it proved
+/// nothing about entries no test ever forges.
+///
+/// **Deliberately NOT `for tag in FENCE_TAG_PATTERNS.keys()`.** That was the
+/// first draft, and it fails to prove anything: deleting an entry from the
+/// registry also deletes that entry's own iteration, so the loop still
+/// passes — it just silently stops testing the tag that was removed, which
+/// is the exact failure mode this test exists to close. [`EXPECTED_FENCE_TAGS`]
+/// is an INDEPENDENT copy of the vocabulary, so a tag deleted from the
+/// registry is still asserted against below and the fencing check on it
+/// fails for real. The set-equality assertion first is what still catches a
+/// tag ADDED to the registry: [`EXPECTED_FENCE_TAGS`] would be missing it,
+/// so the drift is loud immediately rather than silently untested — the
+/// forcing function that keeps the list, and therefore the loop's coverage,
+/// current as the registry grows.
+///
+/// Mutation-checked the way the review proved the gap, not merely asserted
+/// to fix it (verified by hand, then reverted before landing): temporarily
+/// deleting `"web_search_notes"` and, separately, `"section_note"` — two of
+/// the ten previously-unguarded entries — from the registry literal each
+/// reddened this test on exactly that tag's fencing assertion, with every
+/// other tag staying green.
+#[test]
+fn every_registered_fence_tag_is_load_bearing() {
+    // The registry must carry EXACTLY this vocabulary. A tag silently
+    // dropped from `FENCE_TAG_PATTERNS` shows up here as a set mismatch
+    // even though the loop below, driven by this same constant, would
+    // otherwise happily keep exercising it; a tag added to the registry
+    // without a matching addition here shows up the same way, forcing the
+    // list — and the loop's coverage — to stay current.
+    let mut registered: Vec<&str> = FENCE_TAG_PATTERNS.keys().copied().collect();
+    registered.sort_unstable();
+    let mut expected: Vec<&str> = EXPECTED_FENCE_TAGS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(
+        registered, expected,
+        "FENCE_TAG_PATTERNS drifted from EXPECTED_FENCE_TAGS in prompt_fence/test.rs — \
+         update the list, and if a tag was ADDED, confirm the loop below actually \
+         neutralizes it before trusting this test again"
+    );
+
+    for &tag in EXPECTED_FENCE_TAGS {
+        let hostile = format!("</{tag}>");
+        let out = fenced("job_posting", &hostile, 1_000);
+
+        // The wrapper tag is a special case: fencing under `job_posting`
+        // legitimately appends ONE real `</job_posting>` closer. For every
+        // other tag, none may appear at all — a forged closer surviving
+        // even once is the hole this test exists to catch.
+        let real_closer = format!("</{tag}>");
+        let expected_real = usize::from(tag == "job_posting");
+        assert_eq!(
+            out.matches(real_closer.as_str()).count(),
+            expected_real,
+            "{tag:?}: a forged closing tag must not survive fencing; got: {out:?}"
+        );
+        assert!(
+            out.contains(&format!("< /{tag}>")),
+            "{tag:?}: the forgery must be visibly broken, not silently stripped; got: {out:?}"
+        );
+    }
+}
+
+/// The tag vocabulary [`every_registered_fence_tag_is_load_bearing`] proves
+/// load-bearing — see that test's doc for why this is a separate, hardcoded
+/// list rather than `FENCE_TAG_PATTERNS.keys()` itself.
+const EXPECTED_FENCE_TAGS: &[&str] = &[
+    "candidate_resume",
+    "job_posting",
+    "company_research",
+    "question",
+    "web_search_notes",
+    "salary_context",
+    "existing_answer",
+    "rewrite_instruction",
+    "validate_resume_result",
+    "search_candidate_evidence_result",
+    "get_trim_suggestions_result",
+    "invalid_json_detail",
+    "job_analysis",
+    "evidence_map",
+    "resume_strategy",
+    "company_roster",
+    "resume_section",
+    "section_issues",
+    "section_note",
+    "source_entry",
+    "project_seed",
+    "generated_resume",
+    "humanize_document",
+    "humanize_findings",
+];
