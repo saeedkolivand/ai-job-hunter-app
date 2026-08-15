@@ -8,4 +8,10 @@ edition = "2024"
 # the *language* edition above, so the edition 2024 bump doesn't also
 # reformat every file in the crate (import sort order, `assert!` wrapping,
 # etc.) as an unrelated side effect.
+#
+# This pin is DEBT, not a permanent choice: unpinning it (dropping this key, or
+# setting it to "2024") reformats ~200 files / 374 hunks in one go. Do that as a
+# standalone `style: adopt the 2024 style edition` commit with nothing else in
+# it, so the reformat is a scheduled chore and never noise a real change can
+# hide inside.
 style_edition = "2021"

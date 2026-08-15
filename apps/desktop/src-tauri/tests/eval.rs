@@ -207,6 +207,12 @@ struct Case {
 /// path a second time inside `include_str!` let the two disagree — a row could
 /// say `tier2` and grade `tier3`, passing every assertion while leaving one
 /// fixture ungraded and another graded twice. One spelling, one fixture.
+// `expr_2021` is a mechanical `cargo fix --edition` artifact, not a deliberate
+// pin: edition 2024 widened `expr` to also admit `const { … }` and `_`, and
+// `cargo fix` froze the old matcher everywhere by default. Nothing here needs
+// it — every invocation passes a simple path expression and the macro has one
+// rule, so no follow-set ambiguity exists. Widening back to `expr` is safe if
+// a future row wants `const { … }`.
 macro_rules! case {
     ($file:literal, $lang:literal, $kind:expr_2021, $label:expr_2021) => {
         Case {

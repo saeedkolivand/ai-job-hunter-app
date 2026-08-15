@@ -16,6 +16,15 @@
 // a defect: this is a style modernization, deliberately deferred rather than
 // bundled into the edition bump (a 96-site multi-domain refactor is not a
 // mechanical flag flip). Remove this once that cleanup lands.
+//
+// Two limits worth knowing before you trust or move this:
+// * It is WIDER than its own justification. `collapsible_if` also covers plain
+//   `if a { if b { } }`, which has nothing to do with let-chains — so this
+//   leaves a small genuine lint-coverage hole, not just a let-chain deferral.
+// * It covers THIS crate root only. `main.rs`, `benches/` and `tests/` are
+//   separate crate roots and do not inherit it, so a new nested `if let` there
+//   hard-fails `-D warnings` while identical code under `src/` passes. All 96
+//   current sites are in the lib, so this bites nobody today.
 #![allow(clippy::collapsible_if)]
 
 pub mod ai_config;
