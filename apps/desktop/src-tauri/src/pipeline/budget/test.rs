@@ -188,58 +188,12 @@ fn resume_quality_allows_no_tool_calls_and_covers_every_section() {
 }
 
 // ── Security lock: budgets are backend-owned, never renderer-supplied ─────────
-
-/// Same lock shape as the backend-owned provider-routing lock (task #25): the
-/// wire request struct has NO budget field, so a compromised renderer that appends
-/// `maxSteps`/`maxTokens`/`maxToolCalls` cannot widen a paid run's ceiling —
-/// serde drops the unknown keys because there is nowhere to bind them. The
-/// anti-abuse limiter caps how OFTEN a run starts; only this struct's SHAPE caps
-/// how much one run may spend. The gate is `gen:ipc:check` (Rust↔TS parity) plus
-/// this assertion.
-#[test]
-fn the_run_request_carries_no_budget_field() {
-    let req: crate::ipc_contracts::agent::AgentRunRequest = serde_json::from_value(json!({
-        "resumeId": "res-1",
-        "jobId": "job-9",
-        // A compromised renderer's attempted budget escalation — ignored.
-        "maxSteps": 100_000,
-        "maxToolCalls": 100_000,
-        "maxTokens": 100_000_000,
-        "maxSections": 4_000,
-        "maxRepairAttempts": 999,
-        "stepTimeoutSecs": 86_400,
-        "runTimeoutSecs": 86_400,
-        "budget": { "maxSteps": 100_000 },
-    }))
-    .expect("deserializes from the identity-only wire shape, ignoring budget keys");
-    assert_eq!(req.resume_id, "res-1");
-    assert_eq!(req.job_id, "job-9");
-
-    // Re-serializing the accepted request must not carry any budget key back —
-    // proof the values were dropped, not stashed in a catch-all field.
-    let echoed = serde_json::to_value(&req).unwrap();
-    let keys: Vec<&str> = echoed
-        .as_object()
-        .expect("request serializes to an object")
-        .keys()
-        .map(String::as_str)
-        .collect();
-    for forbidden in [
-        "maxSteps",
-        "maxToolCalls",
-        "maxTokens",
-        "maxSections",
-        "maxRepairAttempts",
-        "stepTimeoutSecs",
-        "runTimeoutSecs",
-        "budget",
-    ] {
-        assert!(
-            !keys.contains(&forbidden),
-            "AgentRunRequest must not carry a renderer-supplied budget key ({forbidden})"
-        );
-    }
-}
+//
+// The wire-shape half of this lock (no `maxSteps`/`maxTokens`/`maxToolCalls`
+// field on the request struct a compromised renderer could escalate through)
+// used to be pinned here against the now-deleted `AgentRunRequest`. The
+// equivalent guard for the one remaining paying flow lives at
+// `commands::resume_pipeline::test::run_request_carries_only_identity_no_budget_and_no_routing`.
 
 /// The budgets themselves are compile-time constants, so there is no setter to
 /// call from a command handler either. `Copy` (not `Clone`-into-a-cell) is the

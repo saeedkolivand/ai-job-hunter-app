@@ -54,12 +54,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
   const scrapeProgressHandlers = new Set<(event: ScrapeProgressEvent) => void>();
 
   const base: AppClient = {
-    agent: {
-      run: async () => ({ jobId: 'mock-agent' }),
-      confirm: async () => ({ ok: true }),
-      onStep: unsub,
-    },
-
     system: {
       health: noop,
       getVersion: noop,

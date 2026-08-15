@@ -33,7 +33,6 @@ describe('EVENT_CHANNELS', () => {
   it('exposes every expected event namespace', () => {
     const namespaces = Object.keys(EVENT_CHANNELS).sort();
     expect(namespaces).toEqual([
-      'agent',
       'ai',
       'applications',
       'autopilot',
@@ -78,7 +77,6 @@ describe('EVENT_CHANNELS', () => {
     // must have a payload entry and vice-versa, so the registry and the typed
     // payload map can never drift.
     const appEventKeys: Array<keyof AppEvents> = [
-      'agent:step',
       'ai:stream',
       'jobs:event',
       'applications:changed',

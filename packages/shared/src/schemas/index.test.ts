@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  AGENT_FLOW_KINDS,
-  AgentConfirmRequestSchema,
-  AgentRunRequestSchema,
   AiGenerateRequestSchema,
   AutopilotCreateSchema,
   BOARD_IDS,
@@ -23,85 +20,6 @@ describe('LocaleSchema', () => {
     expect(() => LocaleSchema.parse('xx')).toThrow();
     expect(() => LocaleSchema.parse('')).toThrow();
     expect(() => LocaleSchema.parse(null)).toThrow();
-  });
-});
-
-describe('AgentRunRequestSchema', () => {
-  const valid = {
-    resumeId: 'res-1',
-    jobId: 'job-1',
-  };
-
-  it('accepts a valid request', () => {
-    expect(() => AgentRunRequestSchema.parse(valid)).not.toThrow();
-  });
-
-  it('requires resumeId and jobId (each non-empty)', () => {
-    for (const key of ['resumeId', 'jobId'] as const) {
-      const { [key]: _omitted, ...without } = valid;
-      expect(() => AgentRunRequestSchema.parse(without)).toThrow();
-      expect(() => AgentRunRequestSchema.parse({ ...valid, [key]: '' })).toThrow();
-    }
-  });
-
-  // A request that names no flow runs the prep flow — the same default the
-  // generated Rust struct applies, so an older renderer keeps the behaviour it
-  // always had instead of failing validation.
-  it('defaults kind to the prep flow', () => {
-    expect(AgentRunRequestSchema.parse(valid).kind).toBe('prep_application');
-  });
-
-  it('accepts every registered flow kind and nothing else', () => {
-    for (const kind of AGENT_FLOW_KINDS) {
-      expect(AgentRunRequestSchema.parse({ ...valid, kind }).kind).toBe(kind);
-    }
-    // The vocabulary is CLOSED: an unregistered kind is rejected here and, if it
-    // ever got past this, again by the Rust flow registry (which fails the run
-    // rather than falling back to the default flow).
-    expect(() => AgentRunRequestSchema.parse({ ...valid, kind: 'exfiltrate' })).toThrow();
-    expect(() => AgentRunRequestSchema.parse({ ...valid, kind: '' })).toThrow();
-  });
-
-  // Security lock (task #25), rewritten for Phase 7 rather than weakened: PROVIDER
-  // routing is backend-owned, so provider/model/baseUrl are stripped and nothing
-  // can point a credentialed agent request at an attacker endpoint. `kind` is
-  // routing too — it selects which flow runs — but it is a closed menu of two
-  // backend-declared flows whose prompt, tools and budget are compile-time
-  // constants, not an endpoint, a model, or a ceiling.
-  it('strips renderer-supplied provider routing while keeping the flow selector', () => {
-    const parsed = AgentRunRequestSchema.parse({
-      ...valid,
-      kind: 'improve_resume',
-      provider: 'openai-compatible',
-      model: 'evil',
-      baseUrl: 'http://attacker.example',
-    });
-    expect(parsed).toEqual({ ...valid, kind: 'improve_resume' });
-  });
-});
-
-describe('AgentConfirmRequestSchema', () => {
-  const valid = { jobId: 'job-1', callId: '3-save_cover_letter', decision: 'approve' as const };
-
-  it('accepts each valid decision, with optional editedArgs', () => {
-    for (const decision of ['approve', 'approveEdited', 'deny'] as const) {
-      expect(() => AgentConfirmRequestSchema.parse({ ...valid, decision })).not.toThrow();
-    }
-    expect(() =>
-      AgentConfirmRequestSchema.parse({
-        ...valid,
-        decision: 'approveEdited',
-        editedArgs: { coverLetterText: 'edited' },
-      })
-    ).not.toThrow();
-  });
-
-  it('requires non-empty jobId + callId and a known decision', () => {
-    expect(() => AgentConfirmRequestSchema.parse({ ...valid, jobId: '' })).toThrow();
-    expect(() => AgentConfirmRequestSchema.parse({ ...valid, callId: '' })).toThrow();
-    expect(() => AgentConfirmRequestSchema.parse({ ...valid, decision: 'nuke' })).toThrow();
-    const { jobId: _j, ...noJob } = valid;
-    expect(() => AgentConfirmRequestSchema.parse(noJob)).toThrow();
   });
 });
 
