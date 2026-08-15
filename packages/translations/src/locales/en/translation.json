@@ -1683,6 +1683,7 @@
       "cancelled": "Cancelled",
       "truncated": "Stopped — the answer was cut off",
       "budgeted": "Stopped — the daily provider limit was reached",
+      "timeout": "Stopped — a step didn't respond in time. Try a faster model or a lower effort level.",
       "runTimeout": "Stopped — the run ran out of time",
       "maxToolCalls": "Stopped at its tool-call limit",
       "maxRepairs": "Stopped — the repair budget ran out",

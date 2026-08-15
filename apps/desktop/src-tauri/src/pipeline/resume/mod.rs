@@ -183,6 +183,12 @@ struct LedgerState {
     cached: u32,
     repair_rounds: u32,
     reverted: bool,
+    /// The stage name + wall-clock ms a [`StoppedReason::Timeout`] fired at —
+    /// content-free per ADR-027 (a code and a duration, never generated text).
+    /// What lets `execute` build an actionable failure message ("the strategy
+    /// step didn't respond within 300s") without threading the stage/duration
+    /// pair through the command by hand.
+    timeout: Option<(&'static str, u64)>,
 }
 
 impl RunLedger {
@@ -225,6 +231,23 @@ impl RunLedger {
 
     pub fn stopped(&self) -> Option<StoppedReason> {
         self.state.lock().stopped
+    }
+
+    /// Record which stage a [`StoppedReason::Timeout`] fired at, and how long
+    /// it had been running. FIRST writer wins, same as [`Self::stop`] — the
+    /// pipeline aborts at the first stage error, so at most one stage can ever
+    /// call this for one run, but the guard keeps the two methods' semantics
+    /// identical rather than assumed.
+    pub fn note_timeout(&self, stage: &'static str, ms: u64) {
+        let mut state = self.state.lock();
+        if state.timeout.is_none() {
+            state.timeout = Some((stage, ms));
+        }
+    }
+
+    /// The stage + duration [`Self::note_timeout`] recorded, if any.
+    pub fn timeout_detail(&self) -> Option<(&'static str, u64)> {
+        self.state.lock().timeout
     }
 
     pub fn note_repair(&self, rounds: u32, reverted: bool) {

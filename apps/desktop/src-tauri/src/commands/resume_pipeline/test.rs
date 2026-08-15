@@ -8,18 +8,19 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::hooks::apply_stop;
+use super::hooks::{apply_stop, apply_timeout, timeout_message};
 use super::max;
 use super::notify::run_notification;
 use super::report;
 use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
+use crate::error::{AppError, AppResult};
 use crate::ipc_contracts::events::PIPELINE_STAGE_PHASES;
 use crate::ipc_contracts::resume_pipeline::ResumePipelineRunRequest;
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{RunLedger, QUALITY_STAGES};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow, RunRow};
-use crate::pipeline::StageInfo;
+use crate::pipeline::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
 };
@@ -796,6 +797,138 @@ fn cancellation_outranks_the_deadline() {
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
 }
 
+/// The THIRD stop seam: a per-call HTTP deadline expiring INSIDE a stage's own
+/// body — as opposed to `apply_stop`'s stage-BOUNDARY checks above, which never
+/// let the stage run at all. `apply_timeout` is `RunHooks::after`'s pure half,
+/// same shape as `apply_stop` is `before`'s.
+///
+/// Mutation check: drop the `if outcome.timed_out` guard in `apply_timeout` and
+/// the second assertion (an ordinary failure) fails; drop `note_timeout` and
+/// the detail assertion does.
+#[test]
+fn apply_timeout_stops_the_run_only_when_the_outcome_says_so() {
+    let ledger = RunLedger::new();
+    apply_timeout(
+        &ledger,
+        &stage_info(true),
+        StageOutcome {
+            ok: false,
+            ms: 300_021,
+            timed_out: true,
+        },
+    );
+    assert_eq!(ledger.stopped(), Some(StoppedReason::Timeout));
+    assert_eq!(ledger.timeout_detail(), Some(("repair", 300_021)));
+
+    let untouched = RunLedger::new();
+    apply_timeout(
+        &untouched,
+        &stage_info(true),
+        StageOutcome {
+            ok: false,
+            ms: 50,
+            timed_out: false,
+        },
+    );
+    assert_eq!(
+        untouched.stopped(),
+        None,
+        "a non-timeout failure must not stop the run through this seam"
+    );
+}
+
+/// The actionable text `execute` hands `job_fail` once `apply_timeout` has
+/// named the stage and the duration — content-free per ADR-027 (a stage name
+/// and a rounded duration, never prompt or document text).
+#[test]
+fn timeout_message_names_the_stage_and_rounds_the_duration_to_seconds() {
+    assert_eq!(
+        timeout_message("strategy", 300_021),
+        "The \"strategy\" step didn't get a response within 300s. Try a faster model or a \
+         lower effort level."
+    );
+}
+
+/// A fake stage standing in for a provider call that hit its per-call
+/// deadline — exactly what each `complete_impl` now returns for a `reqwest`
+/// timeout (see `commands::ai_provider::ollama::complete_impl` and its
+/// siblings).
+struct TimeoutStage;
+struct FakeCtx;
+#[async_trait::async_trait]
+impl Stage<FakeCtx> for TimeoutStage {
+    fn name(&self) -> &'static str {
+        "strategy"
+    }
+    async fn run(&self, _ctx: &mut FakeCtx) -> AppResult<()> {
+        Err(AppError::Timeout("no response within 300s".to_string()))
+    }
+}
+
+/// A minimal `StageHooks` standing in for `RunHooks::after`'s ONE decision this
+/// module owns — `apply_timeout` — without the `AppHandle` `RunHooks` itself
+/// needs (this crate has no Tauri test harness).
+struct TimeoutOnlyHooks<'a>(&'a RunLedger);
+#[async_trait::async_trait]
+impl StageHooks for TimeoutOnlyHooks<'_> {
+    async fn before(&self, _stage: &StageInfo) -> AppResult<()> {
+        Ok(())
+    }
+    async fn after(&self, stage: &StageInfo, outcome: StageOutcome) {
+        apply_timeout(self.0, stage, outcome);
+    }
+}
+
+/// **End to end (within this crate's reach): a per-call deadline failure
+/// really does yield a run row with the Timeout reason, and a message a user
+/// can act on.**
+///
+/// Chains every pure piece `execute` composes at runtime — `Pipeline::run_hooked`
+/// (computes `StageOutcome::timed_out` from the stage's own `AppError`),
+/// `apply_timeout` (records `StoppedReason::Timeout` + which stage/how long),
+/// `terminal_state` (resolves the row to `failed` + `"timeout"`), and
+/// `timeout_message` (the text `job_fail` ends up carrying) — without the
+/// `AppHandle` the full command needs.
+///
+/// Mutation check: any one of those four broken in isolation (see their own
+/// tests) breaks this one too, proving they are wired together and not just
+/// individually correct.
+#[test]
+fn a_per_call_deadline_failure_produces_a_run_row_with_the_timeout_reason() {
+    tauri::async_runtime::block_on(async {
+        let ledger = RunLedger::new();
+        let mut ctx = FakeCtx;
+        let result = Pipeline::new("resume_quality")
+            .add(TimeoutStage)
+            .run_hooked(&mut ctx, &TimeoutOnlyHooks(&ledger))
+            .await;
+        assert!(result.is_err(), "the stage's own error still propagates");
+
+        assert_eq!(ledger.stopped(), Some(StoppedReason::Timeout));
+        let (stage, ms) = ledger
+            .timeout_detail()
+            .expect("the failing stage's name and duration were recorded");
+        assert_eq!(stage, "strategy");
+        // `ms` is `run_hooked`'s OWN wall-clock reading around the (instant,
+        // fake) stage body — the exact-value math is `timeout_message`'s own
+        // test below; this only proves a real duration reached the ledger.
+        let ms = ms.max(1);
+
+        // The RUN ROW: only `RunTimeout` gets the "still usable" leniency (see
+        // `a_timeout_stopped_run_is_always_a_failure_even_when_something_was_persisted`
+        // below), so this is unconditionally a failure.
+        let (status, reason) = super::hooks::terminal_state(&ledger, false, false, false, false);
+        assert_eq!(status, "failed");
+        assert_eq!(reason.as_deref(), Some("timeout"));
+
+        // The RENDERED message: names the stage, gives a next step — never a
+        // raw token or an empty string, which is the bug this fix closes.
+        let message = timeout_message(stage, ms);
+        assert!(message.contains("strategy"), "{message}");
+        assert!(message.contains("Try a faster model"), "{message}");
+    });
+}
+
 /// The budget floor and the run's own kind string — both load-bearing: the
 /// floor is what `run_deadline` falls back to, and `kind` is half the store's
 /// retention partition, so changing either silently re-partitions someone's
@@ -980,6 +1113,29 @@ fn a_deadline_that_still_saved_a_document_is_not_a_failure() {
     assert_eq!(
         super::hooks::terminal_state(&errored, false, false, true, true),
         ("failed", Some("max_repairs".to_string()))
+    );
+}
+
+/// **Only `RunTimeout` gets the "still usable" leniency `terminal_state`
+/// grants above — `Timeout` never does**, even when a document was somehow
+/// persisted. A per-call deadline inside `analyze_job`/`match_evidence`/
+/// `strategy` means that stage's own JSON never parsed — there is no partial
+/// artifact the way a WHOLE-run deadline caught at a later stage boundary
+/// always has a real document from every stage that already finished. Reusing
+/// `timed_out_with_document`'s leniency for `Timeout` would report
+/// `needsReview`/`completed` over a run that produced nothing this specific
+/// document came from.
+///
+/// Mutation check: fold `Timeout` into `timed_out_with_document`'s match and
+/// this fails (status flips to `completed`).
+#[test]
+fn a_timeout_stopped_run_is_always_a_failure_even_when_something_was_persisted() {
+    let ledger = RunLedger::new();
+    ledger.stop(StoppedReason::Timeout);
+    assert_eq!(
+        super::hooks::terminal_state(&ledger, false, false, false, true),
+        ("failed", Some("timeout".to_string())),
+        "persisted=true must not rescue a Timeout the way it rescues a RunTimeout"
     );
 }
 

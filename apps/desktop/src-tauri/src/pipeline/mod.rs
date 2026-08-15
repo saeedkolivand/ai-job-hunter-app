@@ -995,6 +995,13 @@ impl<C> Pipeline<C> {
             let outcome = StageOutcome {
                 ok: result.is_ok(),
                 ms: started.elapsed().as_millis() as u64,
+                // A per-call HTTP deadline expiring INSIDE the stage body —
+                // distinct from the stage-BOUNDARY run deadline `before()`
+                // guards (that one never reaches `stage.run` at all). Computed
+                // here, not by the hook, because only the raw `AppResult` — not
+                // the `ok`/`ms` pair a hook receives — carries which `AppError`
+                // variant fired.
+                timed_out: matches!(&result, Err(AppError::Timeout(_))),
             };
             hooks.after(&info, outcome).await;
             result?;
@@ -1029,6 +1036,14 @@ pub struct StageOutcome {
     pub ok: bool,
     /// Wall-clock duration of the stage body.
     pub ms: u64,
+    /// The stage's own `AppError` was [`crate::error::AppError::Timeout`] — a
+    /// per-call HTTP deadline expiring, never a stage-boundary run-deadline
+    /// stop (which never runs the stage at all) or any other failure kind.
+    /// `false` whenever `ok` is `true`. What lets a [`StageHooks::after`]
+    /// implementor (e.g. the résumé pipeline's `RunHooks`) record
+    /// [`crate::pipeline::budget::StoppedReason::Timeout`] without being
+    /// handed the error itself.
+    pub timed_out: bool,
 }
 
 /// Per-stage lifecycle callbacks for [`Pipeline::run_hooked`].

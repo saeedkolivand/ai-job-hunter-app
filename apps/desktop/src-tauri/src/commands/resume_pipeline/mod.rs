@@ -506,7 +506,15 @@ async fn execute(
             );
             Ok(())
         }
-        Err(e) => Err(e),
+        // A per-call deadline failure: the propagated stage error already
+        // carries a reasonable message (see each provider's `complete_impl`),
+        // but `hooks::apply_timeout` recorded exactly which STAGE and how
+        // long — strictly more than the provider layer alone can know — so
+        // `job_fail` gets the actionable version instead of the generic one.
+        Err(e) => Err(match ledger.timeout_detail() {
+            Some((stage, ms)) => AppError::Timeout(hooks::timeout_message(stage, ms)),
+            None => e,
+        }),
     }
 }
 

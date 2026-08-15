@@ -7,8 +7,15 @@
  * here, not one per surface, and a surface that forgets it lands on
  * {@link UNKNOWN_STOPPED_SUFFIX} rather than on a wrong-but-plausible label.
  *
- * `timeout` is deliberately absent: the staged pipeline turns it into a job
- * FAILURE, so it surfaces as an error state and never reaches a stopped tag.
+ * `timeout` (a per-call HTTP deadline, as opposed to `runTimeout`'s whole-run
+ * one) DOES still map here even though the staged pipeline's `execute` also
+ * turns it into a job FAILURE (`job.failed`, rendered as raw text by the
+ * panel's existing error state) — the two are not mutually exclusive: the RUN
+ * ROW still carries `stoppedReason: "timeout"`, and this run's entry in
+ * `PipelineRunsList`'s history reads it same as any other terminal run. A
+ * missing entry here previously meant a `timeout`-stopped run's history row
+ * showed no label at all, distinct from (but just as silent as) the live
+ * failure banner having nothing to say either.
  */
 export type StoppedSuffix =
   | 'done'
@@ -17,6 +24,7 @@ export type StoppedSuffix =
   | 'cancelled'
   | 'truncated'
   | 'budgeted'
+  | 'timeout'
   | 'runTimeout'
   | 'maxToolCalls'
   | 'maxRepairs';
@@ -28,6 +36,7 @@ export const STOPPED_SUFFIX: Record<string, StoppedSuffix> = {
   cancelled: 'cancelled',
   truncated: 'truncated',
   budgeted: 'budgeted',
+  timeout: 'timeout',
   run_timeout: 'runTimeout',
   max_tool_calls: 'maxToolCalls',
   max_repairs: 'maxRepairs',

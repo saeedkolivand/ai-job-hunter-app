@@ -294,6 +294,76 @@ fn run_hooked_tells_the_hook_which_stages_cost_a_provider_call() {
     );
 }
 
+// ── StageOutcome::timed_out ──────────────────────────────────────────────────
+
+struct TimeoutStep;
+#[async_trait]
+impl Stage<Ctx> for TimeoutStep {
+    fn name(&self) -> &'static str {
+        "timeout_step"
+    }
+    async fn run(&self, ctx: &mut Ctx) -> AppResult<()> {
+        ctx.log.push("timeout_step");
+        Err(AppError::Timeout("no response within 300s".to_string()))
+    }
+}
+
+/// Captures `(stage name, StageOutcome::timed_out)` per `after` call — the one
+/// field `Recorder` (above) doesn't expose, since it predates
+/// `AppError::Timeout`.
+#[derive(Default)]
+struct TimeoutRecorder {
+    seen: Mutex<Vec<(String, bool)>>,
+}
+#[async_trait]
+impl StageHooks for TimeoutRecorder {
+    async fn before(&self, _stage: &StageInfo) -> AppResult<()> {
+        Ok(())
+    }
+    async fn after(&self, stage: &StageInfo, outcome: StageOutcome) {
+        self.seen
+            .lock()
+            .push((stage.stage.to_string(), outcome.timed_out));
+    }
+}
+
+/// `run_hooked` is the ONLY place `StageOutcome::timed_out` is computed — from
+/// the stage's raw `AppResult`, which a `StageHooks::after` implementor never
+/// sees directly. This is the seam `commands::resume_pipeline::hooks::apply_timeout`
+/// (and, downstream, `StoppedReason::Timeout`) is built on.
+///
+/// Mutation check: hard-code `timed_out: false` in `run_hooked` and the first
+/// assertion fails; compute it from `!outcome.ok` instead of matching
+/// `AppError::Timeout` specifically and the second assertion (a non-timeout
+/// failure) fails.
+#[test]
+fn run_hooked_flags_a_timeout_error_and_only_a_timeout_error() {
+    tauri::async_runtime::block_on(async {
+        let mut ctx = Ctx { log: Vec::new() };
+        let hooks = TimeoutRecorder::default();
+        let _ = Pipeline::new("t")
+            .add(TimeoutStep)
+            .run_hooked(&mut ctx, &hooks)
+            .await;
+        assert_eq!(
+            hooks.seen.lock().clone(),
+            vec![("timeout_step".to_string(), true)]
+        );
+
+        let mut ctx = Ctx { log: Vec::new() };
+        let hooks = TimeoutRecorder::default();
+        let _ = Pipeline::new("t")
+            .add(Boom)
+            .run_hooked(&mut ctx, &hooks)
+            .await;
+        assert_eq!(
+            hooks.seen.lock().clone(),
+            vec![("boom".to_string(), false)],
+            "a non-timeout failure must not be flagged as one"
+        );
+    });
+}
+
 // ── Completer::complete_json (via its AppHandle-free core) ───────────────────────
 
 #[derive(Debug, serde::Deserialize, PartialEq)]

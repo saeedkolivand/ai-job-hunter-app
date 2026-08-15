@@ -1214,7 +1214,19 @@ async fn complete_impl(
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            return Err(AppError::Network(format!("Ollama unreachable: {e}")));
+            // `is_timeout()` is `reqwest`'s own signal that ITS `.timeout()`
+            // fired (never a connect/DNS/TLS failure) — the ONLY case that
+            // should surface as a per-call deadline rather than a generic
+            // "unreachable". A retry against the same deadline would time out
+            // again, so this is `AppError::Timeout`, not `Network`.
+            return Err(if e.is_timeout() {
+                AppError::Timeout(format!(
+                    "Ollama: no response within {}s",
+                    timeouts::OLLAMA_COMPLETION.as_secs()
+                ))
+            } else {
+                AppError::Network(format!("Ollama unreachable: {e}"))
+            });
         }
     };
     let status = resp.status();
