@@ -1,6 +1,6 @@
 # Architecture (map + boundaries + feature ownership)
 
-Last updated: 2026-08-07
+Last updated: 2026-08-15
 
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Query graphify (MCP `query_graph`, else `graphify explain "<module>"`) for a scoped view.
 
@@ -31,7 +31,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 - **Resume/export** — `export/` (pdf/, docx/, typst_engine/, model_docx/, templates/, parser/, links/, types.rs), `model/`, `theme/`, `locale/`, `contact_profile/`, `validate/`.
 - **Job match / ATS** — `commands/match_resume.rs`, `cover_letter/`, `commands/ai.rs` (cover-letter generation), `recommend/`, `validate/`.
-- **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board_login/, trust/, rate_limiter/, scrape_url/, types/), `autopilot/` + `autopilot_scheduler`, `email_watch/` + `email_watch_scheduler.rs`, `agent/`, `commands/agent.rs`. _(No auto-apply engine: the app is an apply **assistant** — autopilot finds → ranks → notifies; the user tailors & submits.)_ See ADR-0013 for email-confirmation watching.
+- **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board_login/, trust/, rate_limiter/, scrape_url/, types/), `autopilot/` + `autopilot_scheduler`, `email_watch/` + `email_watch_scheduler.rs`. _(No auto-apply engine: the app is an apply **assistant** — autopilot finds → ranks → notifies; the user tailors & submits.)_ See ADR-0013 for email-confirmation watching.
 - **AI** — `commands/ai_provider/` (ollama, openai, anthropic, gemini, ollama_cloud, cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `ai_config/`, `extraction/`, `recommend/`. See ADR-0012 for backend-owned provider/model/base_url resolution.
 - **Notifications** — `notifications/` (persistent store + action registry), `tray/` (system tray + menu). See `notification-center.md`.
 - **Platform/data** — `platform/` (`config.rs` `data_dir()`), `net/` (`http.rs` `shared()`), `error.rs`, `observability.rs` (`Span`), `db.rs`, `data_store.rs`, `credentials/`, `updater/`, `pipeline/`, `jobs/`, `postings/`, `job_preferences/`, `profile_import/`, `applications/`, `salary_research/`, `referrals/`, `spend/`, `limits/`, `deeplink/`, `events/`, `extension_bridge/`.
@@ -48,7 +48,7 @@ Renderer (`apps/desktop/src/renderer/features/`): 12 features each owning a rout
 | ------------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Resume / export / templates          | `resume-export-expert` (impl `pdf-docx-generator`) | `export/` (incl. `typst_engine/`, `templates/`), `model/`, `theme/`, `locale/`            |
 | ATS scoring / job match              | `job-match-expert`                                 | `commands/match_resume.rs`, `cover_letter/`, `recommend/`, `validate/`                    |
-| Scraping / apply assistant           | `scraping-applier-expert`                          | `scraping/`, `autopilot/`, `agent/`, `email_watch/`                                       |
+| Scraping / apply assistant           | `scraping-applier-expert`                          | `scraping/`, `autopilot/`, `email_watch/`                                                 |
 | AI providers / embeddings / prompts  | `ai-provider-expert`                               | `commands/ai_provider/`, `commands/ai.rs`, `ai_config/`, `documents/`, `packages/prompts` |
 | Rust backend / data / migrations     | `rust-backend-architect`                           | rest of `src-tauri/src/**`, `db.rs`, `*Store`                                             |
 | Security (cross-cutting)             | `tauri-security-reviewer`                          | `capabilities/`, `net/`, `credentials/`, deps, `updater/`, `extension_bridge/`            |
