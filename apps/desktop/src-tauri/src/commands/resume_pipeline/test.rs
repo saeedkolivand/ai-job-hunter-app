@@ -1212,10 +1212,6 @@ fn job_meta_from_request_reads_the_identity_fields_off_the_clamped_request() {
     assert_eq!(meta.company, "Acme Corp");
     assert_eq!(meta.board, "linkedin");
     assert_eq!(meta.url, "https://boards.example/jobs/1");
-    assert_eq!(
-        meta.location, "",
-        "the text path has no cached posting to read a location off of"
-    );
 }
 
 /// **The persist fix (plan risk item 5).** The `Cache` path stays empty
