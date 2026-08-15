@@ -37,13 +37,6 @@ export {
   type StarFeedback,
   synthesizeResume,
 } from './generation';
-export {
-  ALL_GENERATION_DEPTHS,
-  type GenerationDepth,
-  isDepthRunnable,
-  resolveRunnableDepth,
-  RUNNABLE_GENERATION_DEPTHS,
-} from './generation-depth';
 export { buildLinkSuggestions } from './links';
 export {
   OUTPUT_LANGUAGES,

@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import type { PerformanceBackendConfig } from '@ajh/shared';
-import { GENERATION_DEPTHS } from '@ajh/shared/schemas';
 
 // Performance modes. `custom` resolves to the user-edited `customPerformance`
 // profile; the other three resolve to the fixed presets below.
@@ -172,16 +171,6 @@ export const PreferencesSchema = z.object({
 
   // Prompt quality — which prompt variant to send to the AI model
   promptQuality: PromptQualitySchema.default('auto'),
-
-  // How much WORK one résumé generation is allowed to do — the DEFAULT depth;
-  // the generate/tailor surfaces override it per run. Orthogonal to
-  // `promptQuality` (which prompt VARIANT) and `outputTone` (voice): this picks
-  // between today's one-shot path and the staged pipeline.
-  //
-  // Defaults to `fast` deliberately. Quality depth makes four provider calls
-  // plus up to two repair rounds where fast makes one, so flipping the default
-  // would multiply an existing user's spend and latency without them asking.
-  generationDepth: z.enum(GENERATION_DEPTHS).default('fast'),
 
   // Developer / debug
   debugMode: z.boolean().default(false),

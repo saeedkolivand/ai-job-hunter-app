@@ -252,17 +252,12 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         "resume_section",
         "section_issues",
         "section_note",
-        // The MAX-depth section prompts (`pipeline::resume::section_prompts`).
-        // A max run composes up to twelve turns, each carrying the SOURCE
-        // slice a section is grounded in (`source_entry`) beside prior-stage
-        // model output — and the projects turn also carries `project_seed`,
-        // the candidate's own links. A forged `<project_seed>` inside a
-        // scraped posting is the highest-value forgery on this path: project
-        // links are the one field the generator copies through verbatim, so a
-        // planted one would be rendered into the document as the candidate's
-        // own repository. `generated_resume` is the assembled document the
-        // judge reads, which is model output and untrusted exactly like the
-        // three artifacts above it.
+        // Historical max-depth section generation tags (now deleted).
+        // Kept for fence-tag normalization in case historical transcripts
+        // need processing. The three tags were used in max-depth section
+        // turns: `source_entry` (source slice), `project_seed` (seeded links),
+        // `generated_resume` (assembled document). They are still enumerated
+        // here so neutralize_known_fence_tags covers them.
         "source_entry",
         "project_seed",
         "generated_resume",

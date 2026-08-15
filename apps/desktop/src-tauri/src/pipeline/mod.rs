@@ -890,12 +890,13 @@ pub trait Stage<C>: Send + Sync {
     ///
     /// **Default `true`, because the safe direction to be wrong in is refusing
     /// to run.** A boundary deadline check exists to stop a run before it pays
-    /// for the next call — not to throw away what it has already paid for, and
-    /// the two are only the same thing while every stage costs money. A
-    /// section-wise run breaks that: `sections` can stop mid-fan-out with
-    /// eleven paid answers in hand, and the stages that turn them into a saved,
-    /// checked document (`assemble` renders, `validate` compares) make no call
-    /// at all. Aborting at THAT boundary discarded the whole run.
+    /// for the next call — not to throw away what it has already paid for.
+    /// `validate` is a free stage (deterministic checks only): once the
+    /// deadline has passed, its boundary check still lets it run rather than
+    /// aborting, because `validate` is what turns the prior paid stages'
+    /// output into a usable document — refusing to run it would discard that
+    /// work instead of conserving it. Letting a free-stage boundary through is
+    /// what conserves the work already done; aborting there would not.
     ///
     /// Surfaced to the hook through [`StageInfo::costs_a_call`]; the stop
     /// decision itself is
@@ -933,10 +934,10 @@ impl<C> Pipeline<C> {
 
     /// The stage names, in order.
     ///
-    /// Exists for the depth-vocabulary pins (`QUALITY_STAGES`/`MAX_STAGES`):
-    /// those constants are what the renderer's timeline keys on, and a pin that
-    /// only compares a constant against a literal proves the literal, not the
-    /// pipeline. With this, renaming or reordering a stage fails the pin.
+    /// Exists for the `QUALITY_STAGES` pin: that constant is what the
+    /// renderer's timeline keys on, and a pin that only compares a constant
+    /// against a literal proves the literal, not the pipeline. With this,
+    /// renaming or reordering a stage fails the pin.
     pub fn stage_names(&self) -> Vec<&'static str> {
         self.stages.iter().map(|stage| stage.name()).collect()
     }

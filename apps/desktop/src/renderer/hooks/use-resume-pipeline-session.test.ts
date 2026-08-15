@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import type { AiStreamChunk, JobEvent, PipelineSectionKey, PipelineStageEvent } from '@ajh/shared';
+import type { AiStreamChunk, JobEvent, PipelineStageEvent } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 
 import { useResumePipelineSession } from './use-resume-pipeline-session';
@@ -18,6 +18,7 @@ const startMock = vi.hoisted(() => ({
 }));
 const cancelJobMock = vi.hoisted(() => ({ mutate: vi.fn() }));
 const refreshRunsMock = vi.hoisted(() => vi.fn());
+const fetchJobMock = vi.hoisted(() => vi.fn());
 const bus = vi.hoisted(() => ({
   stage: null as ((e: PipelineStageEvent) => void) | null,
   delta: null as ((d: string) => void) | null,
@@ -53,6 +54,7 @@ vi.mock('@/services/use-jobs', () => ({
   useJobEvents: (handler?: (e: JobEvent) => void) => {
     bus.job = handler ?? null;
   },
+  fetchJob: (...args: unknown[]) => fetchJobMock(...args),
 }));
 
 const RUN_ID = 'run-1';
@@ -65,26 +67,6 @@ function stage(
   runId = RUN_ID
 ): PipelineStageEvent {
   return { runId, jobId: JOB_ID, stage: name, phase, index, total: 6, attempt: 1 };
-}
-
-/** One per-section event of the max-depth `sections` stage (index 3 of 8). */
-function section(
-  sectionKey: PipelineSectionKey,
-  phase: PipelineStageEvent['phase'],
-  runId = RUN_ID
-): PipelineStageEvent {
-  return {
-    runId,
-    jobId: JOB_ID,
-    stage: 'sections',
-    phase,
-    // The STAGE's position, not the section's — that is what the Rust emitter
-    // copies in, and reading it as the section's would misdraw the timeline.
-    index: 3,
-    total: 8,
-    attempt: 1,
-    sectionKey,
-  };
 }
 
 function detail(status: PipelineRunDetail['status']): PipelineRunDetail {
@@ -124,6 +106,9 @@ beforeEach(() => {
   bus.live = false;
   bus.recordError = null;
   startMock.mutateAsync.mockResolvedValue({ runId: RUN_ID, jobId: JOB_ID });
+  // Default: no umbrella-job failure raced the start — matches every test
+  // that isn't specifically about that race.
+  fetchJobMock.mockResolvedValue(null);
 });
 
 describe('useResumePipelineSession', () => {
@@ -134,7 +119,6 @@ describe('useResumePipelineSession', () => {
         resumeId: 'doc-1',
         jobId: 'posting-1',
         jobUrl: '',
-        depth: 'quality',
         targetLanguage: 'en',
         topRequirements: [],
         coverLetterText: '',
@@ -159,82 +143,6 @@ describe('useResumePipelineSession', () => {
     expect(result.current.stage).toBeNull();
     // Still the reconnect's starting state — the other run moved nothing here.
     expect(result.current.state).toBe('queued');
-  });
-
-  // ── The max-depth section timeline ────────────────────────────────────────
-  //
-  // Per-section progress rides the SAME `pipeline:stage` channel as the coarse
-  // stage counter — `sectionKey` + phase — so the fold lives next to it here.
-  describe('per-section states at max depth', () => {
-    it('tracks each section through generating → done → checking → clean', () => {
-      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
-      act(() => {
-        bus.stage?.(section('summary', 'start'));
-        bus.stage?.(section('summary', 'finish'));
-        bus.stage?.(section('experience:0', 'start'));
-      });
-      expect(result.current.sectionStates).toEqual({
-        summary: 'done',
-        'experience:0': 'generating',
-      });
-      // The coarse machine is unaffected by the per-section granularity: both
-      // are `sections`, which maps to `drafting`.
-      expect(result.current.state).toBe('drafting');
-
-      act(() => {
-        bus.stage?.(section('experience:0', 'finish'));
-        bus.stage?.(stage('validate', 'start', 5));
-      });
-      expect(result.current.sectionStates).toEqual({
-        summary: 'checking',
-        'experience:0': 'checking',
-      });
-
-      act(() => bus.stage?.({ ...stage('validate', 'finish', 5), issueCount: 0 }));
-      expect(result.current.sectionStates).toEqual({
-        summary: 'clean',
-        'experience:0': 'clean',
-      });
-    });
-
-    // Drop the `event.sectionKey` read from the fold and this fails: the
-    // sections would be indistinguishable and the timeline would show one row.
-    it('keeps a foreign run’s section events out of the map', () => {
-      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
-      act(() => bus.stage?.(section('skills', 'start', 'someone-elses-run')));
-      expect(result.current.sectionStates).toEqual({});
-    });
-
-    it('starts a new run with an empty map instead of the previous run’s', async () => {
-      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
-      act(() => bus.stage?.(section('summary', 'finish')));
-      expect(result.current.sectionStates).toEqual({ summary: 'done' });
-
-      await act(async () => {
-        await result.current.start({
-          resumeId: 'doc-1',
-          jobId: 'posting-1',
-          jobUrl: '',
-          depth: 'max',
-          targetLanguage: 'en',
-          topRequirements: [],
-          coverLetterText: '',
-          includeCoverLetter: false,
-        });
-      });
-      expect(result.current.sectionStates).toEqual({});
-    });
-
-    it('stays empty for a quality run — it has no section events at all', () => {
-      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
-      act(() => {
-        STAGES.forEach((name, index) => {
-          bus.stage?.(stage(name, 'start', index));
-          bus.stage?.(stage(name, 'finish', index));
-        });
-      });
-      expect(result.current.sectionStates).toEqual({});
-    });
   });
 
   it('appends draft deltas for display', () => {
@@ -298,7 +206,6 @@ describe('useResumePipelineSession', () => {
           resumeId: 'doc-1',
           jobId: 'posting-1',
           jobUrl: '',
-          depth: 'quality',
           targetLanguage: 'en',
           topRequirements: [],
           coverLetterText: '',
@@ -470,6 +377,77 @@ describe('useResumePipelineSession', () => {
       consoleError.mockRestore();
     });
 
+    // The earliest instance of the same hole: `job.failed` can fire while
+    // `mutateAsync` is still in flight, before `jobId` state exists at all —
+    // so the live listener above drops it (`jobIdRef.current` is null). Only
+    // `start`'s own `fetchJob` reconcile, run right after the ids land, can
+    // ever notice. This reproduces the ACTUAL ordering (the event fires
+    // inside the mutation, before it resolves) rather than asserting the
+    // eventual state some other way.
+    it('reconciles a job.failed event that raced ahead of start() resolving', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      startMock.mutateAsync.mockImplementationOnce(async () => {
+        bus.job?.(jobFailed(JOB_ID, 'agent_run queue is full'));
+        return { runId: RUN_ID, jobId: JOB_ID };
+      });
+      fetchJobMock.mockResolvedValueOnce({ status: 'failed', error: 'agent_run queue is full' });
+
+      const { result } = renderHook(() => useResumePipelineSession());
+      await act(async () => {
+        await result.current.start({
+          resumeId: 'doc-1',
+          jobId: 'posting-1',
+          jobUrl: '',
+          targetLanguage: 'en',
+          topRequirements: [],
+          coverLetterText: '',
+          includeCoverLetter: false,
+        });
+      });
+
+      expect(fetchJobMock).toHaveBeenCalledWith(JOB_ID);
+      expect(result.current.state).toBe('error');
+      expect(result.current.busy).toBe(false);
+      expect(result.current.error).toContain('agent_run queue is full');
+      consoleError.mockRestore();
+    });
+
+    // A DIFFERENT ordering than the test above, and the residual window
+    // CodeRabbit found in that fix: the reconcile read comes back CLEAN, and
+    // only THEN does `job.failed` arrive. `jobIdRef`/`runIdRef` are written
+    // in the render body, so they only pick up the new ids once React
+    // actually re-renders — which a `setState` call does not do
+    // synchronously. Firing the event in the same `act()` scope right after
+    // `start()` resolves, before that scope gets to flush the pending
+    // render, reproduces exactly the gap: without `start()` also assigning
+    // both refs synchronously, this event would still see them null/stale
+    // and be dropped, even though `start()` itself already found nothing
+    // wrong.
+    it('reconciles a job.failed event that arrives after a clean reconcile read, before the render commits', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      fetchJobMock.mockResolvedValueOnce({ status: 'queued' });
+
+      const { result } = renderHook(() => useResumePipelineSession());
+      await act(async () => {
+        await result.current.start({
+          resumeId: 'doc-1',
+          jobId: 'posting-1',
+          jobUrl: '',
+          targetLanguage: 'en',
+          topRequirements: [],
+          coverLetterText: '',
+          includeCoverLetter: false,
+        });
+        bus.job?.(jobFailed(JOB_ID, 'writing the run row failed'));
+      });
+
+      expect(fetchJobMock).toHaveBeenCalledWith(JOB_ID);
+      expect(result.current.state).toBe('error');
+      expect(result.current.busy).toBe(false);
+      expect(result.current.error).toContain('writing the run row failed');
+      consoleError.mockRestore();
+    });
+
     it('ignores a failure belonging to another job', () => {
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
       act(() => bus.job?.(jobFailed('someone-elses-job', 'boom')));
@@ -526,7 +504,6 @@ describe('useResumePipelineSession', () => {
         resumeId: 'doc-9',
         jobId: 'posting-1',
         jobUrl: '',
-        depth: 'quality',
         targetLanguage: 'en',
         topRequirements: [],
         coverLetterText: '',

@@ -50,9 +50,6 @@ vi.mock('@/features/settings/components/contact/ContactProfileTab', () => ({
 vi.mock('@/features/settings/components/ai-settings/AISettingsTab', () => ({
   AISettingsTab: () => <div data-testid={TEST_IDS.settings.aiTab} />,
 }));
-vi.mock('@/features/settings/components/preferences/GenerationDepthPreferences', () => ({
-  GenerationDepthPreferences: () => <div data-testid="generation-depth-prefs" />,
-}));
 vi.mock('@/features/settings/components/preferences/OutputTonePreferences', () => ({
   OutputTonePreferences: () => <div data-testid={TEST_IDS.settings.tonePrefs} />,
 }));

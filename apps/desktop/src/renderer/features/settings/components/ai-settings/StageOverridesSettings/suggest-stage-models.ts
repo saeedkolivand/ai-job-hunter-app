@@ -19,8 +19,8 @@ import type { AiStageOverride, ModelInspectResult, PipelineStage } from '@ajh/sh
 /**
  * The three stages that only READ (the posting, the résumé) and answer in
  * strict JSON — no prose is written here, so model size buys much less than it
- * does in `draft`/`sections`. Deliberately not derived from the depth lists: it
- * is a claim about what these stages DO, which is why each is named.
+ * does in `draft`. Deliberately not derived from the pipeline's own stage
+ * list: it is a claim about what these stages DO, which is why each is named.
  */
 export const EXTRACTION_STAGES = [
   'analyze_job',

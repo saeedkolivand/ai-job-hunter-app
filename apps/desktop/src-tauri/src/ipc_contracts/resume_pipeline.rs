@@ -23,8 +23,6 @@ pub struct ResumePipelineRunRequest {
     pub board: String,
     #[serde(default = "default_resume_pipeline_run_request_job_url")]
     pub job_url: String,
-    #[serde(default = "default_resume_pipeline_run_request_depth")]
-    pub depth: String,
     #[serde(default = "default_resume_pipeline_run_request_target_language")]
     pub target_language: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,10 +84,6 @@ fn default_resume_pipeline_run_request_board() -> String {
 
 fn default_resume_pipeline_run_request_job_url() -> String {
     "".to_string()
-}
-
-fn default_resume_pipeline_run_request_depth() -> String {
-    "quality".to_string()
 }
 
 fn default_resume_pipeline_run_request_target_language() -> String {

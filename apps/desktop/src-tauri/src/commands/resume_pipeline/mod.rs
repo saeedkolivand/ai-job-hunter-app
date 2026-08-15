@@ -90,9 +90,11 @@ use crate::ipc_contracts::resume_pipeline::{
 };
 use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::cache::KvCache;
-use crate::pipeline::resume::stages::{self, regenerate_one_section, section_gen, SectionOutcome};
-use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
-use crate::pipeline::resume::{projects, QualityCtx, QualityInput, RunDeadline, RunLedger};
+use crate::pipeline::resume::stages::{self, regenerate_one_section, SectionOutcome};
+use crate::pipeline::resume::types::SectionKey;
+use crate::pipeline::resume::{
+    projects, quality_pipeline, QualityCtx, QualityInput, RunDeadline, RunLedger,
+};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
@@ -106,6 +108,14 @@ use self::hooks::RunHooks;
 /// keeps its own. Depth rides in the `depth` column, where it can change
 /// without re-partitioning anyone's history.
 pub const RUN_KIND: &str = "resume";
+
+/// The `pipeline_runs.depth` value every NEW run writes. The column itself
+/// stays (existing rows carry `"fast"`/`"quality"`/`"max"`, and the renderer
+/// still needs the historic vocabulary to render an old run's label) — this
+/// is the one value a run started by this build can produce, now that `fast`
+/// never reached this pipeline and `max` was removed. No migration touches an
+/// existing row.
+const RUN_DEPTH: &str = "quality";
 
 const STATUS_RUNNING: &str = "running";
 pub(crate) const STATUS_COMPLETED: &str = "completed";
@@ -205,24 +215,14 @@ async fn execute(
     req: &ResumePipelineRunRequest,
     cancel: &CancellationToken,
 ) -> AppResult<()> {
-    let depth = GenerationDepth::from_wire(&req.depth)
-        .ok_or_else(|| AppError::Validation(format!("unknown generation depth: {}", req.depth)))?;
-    if !max::is_staged(depth) {
-        return Err(AppError::Validation(format!(
-            "the staged pipeline runs at quality or max depth; {} is not handled here",
-            depth.as_str()
-        )));
-    }
-
     let clamped = clamp_request(req);
     let completer = Completer::from_active(app)?;
     // ONE resolution per overridden stage, BEFORE the run starts: an override
     // edited mid-run must not take effect halfway through the document, and the
     // stage cache keys are derived from these same completers. Scoped to the
-    // stages THIS depth runs AND CAN PAY FOR — a `draft` override costs nothing
-    // on a max run, which has no draft stage, and a stage that makes no call
-    // has no routing to resolve (see `max::paying_stages`).
-    let stage_completers = Completer::for_stages(app, &max::paying_stages(depth))?;
+    // stages the pipeline actually CAN PAY FOR — a stage that makes no call has
+    // no routing to resolve (see `max::paying_stages`).
+    let stage_completers = Completer::for_stages(app, &max::paying_stages())?;
 
     // ID WINS, no silent fallback: a nonempty `resumeId`/`jobId` is looked up
     // and a miss is a hard error — `resumeText`/`jobAdText` are never
@@ -274,8 +274,7 @@ async fn execute(
         // text and this line lands in the diagnostics bundle. Same treatment as
         // the `key=` below, which logs a parsed `SectionKey`.
         format!(
-            "op=run depth={} effort={}",
-            depth.as_str(),
+            "op=run effort={}",
             timeouts::effort_tier(req.effort.as_deref())
         ),
     );
@@ -286,7 +285,7 @@ async fn execute(
         id: run_id.to_string(),
         job_url: run_job_url,
         kind: RUN_KIND.to_string(),
-        depth: depth.as_str().to_string(),
+        depth: RUN_DEPTH.to_string(),
         status: STATUS_RUNNING.to_string(),
         started_at,
         finished_at: None,
@@ -299,10 +298,10 @@ async fn execute(
 
     let ledger = Arc::new(RunLedger::new());
     // ONE clock for the whole run: the hook checks it at every stage boundary,
-    // the `sections` stage checks it between its per-section calls, and the
-    // `repair` stage checks it between its own (it is the last stage, so there
-    // is no boundary after it — see `RunDeadline`).
-    let deadline = RunDeadline::starting_now(max::deadline_for(depth, req.effort.as_deref()));
+    // and `repair` checks it again between its own calls — a single round can
+    // make several section round-trips, and a boundary check alone would not
+    // interrupt one mid-round. See `RunDeadline`.
+    let deadline = RunDeadline::starting_now(max::deadline_for(req.effort.as_deref()));
     let hooks = RunHooks::new(
         app.clone(),
         run_id.to_string(),
@@ -330,15 +329,8 @@ async fn execute(
         Arc::clone(&ledger),
     )
     .with_stage_completers(&stage_completers);
-    if depth == GenerationDepth::Max {
-        // The hook is ALSO the section-wise observer: per-section events and
-        // the progressive document stream are emits, so they belong to the one
-        // layer allowed to emit. `RunHooks` outlives the context, and both
-        // borrows are shared.
-        ctx = ctx.for_max(Some(&hooks));
-    }
 
-    let outcome = max::pipeline_for(depth).run_hooked(&mut ctx, &hooks).await;
+    let outcome = quality_pipeline().run_hooked(&mut ctx, &hooks).await;
 
     // ── THE DELETE WINS ──────────────────────────────────────────────────────
     //
@@ -385,7 +377,7 @@ async fn execute(
         &clamped,
         &job_ad_for_persist(job_choice),
         &ctx,
-        depth.as_str(),
+        RUN_DEPTH,
     );
     // A REFUSED save is not a successful run. `is_persistable` rejects a
     // document that lost the source's whole work history, and `terminal_state`
@@ -485,7 +477,7 @@ async fn execute(
         // document. `execute`'s caller turns this into `job_fail`.
         Ok(()) if refused => Err(AppError::Message(
             "The generated résumé came back without any of your work history, so your saved \
-             document was left unchanged. Try again, or use quality depth."
+             document was left unchanged. Try again."
                 .to_string(),
         )),
         Ok(()) => {
@@ -541,17 +533,18 @@ async fn execute(
 ///
 /// This save is an overwrite: there is one `ai_generations` row per posting and
 /// no versioning, so whatever a run persists REPLACES what the user had. Since
-/// a deadline-stopped fan-out now keeps its sections (`hooks::apply_stop` lets
-/// `assemble` and `validate` run past the clock), that includes PARTIAL
-/// documents — which is deliberate, and worth stating rather than discovering:
+/// a deadline-stopped run keeps whatever it already produced (a `repair` round
+/// that ran out of time mid-fan-out still KEEPS its accumulated corrections and
+/// returns `Ok`, and `hooks::apply_stop` lets the free `validate` boundary run
+/// past a clock that expired during the preceding paid stage), that includes
+/// PARTIAL documents — which is deliberate, and worth stating rather than
+/// discovering:
 ///
-/// * **The kept trade.** A run stopped near the end loses tail sections
-///   (Education before Projects before an employment entry — `plan_sections`
-///   truncates from the tail for exactly this reason). A missing employer is a
-///   visible `factual.dropped_role` Critical, the run lands `needsReview`, and
-///   the user is looking at a document they can see is short. That beats
-///   throwing away eleven paid sections, which is the whole argument that sized
-///   `Budget::RESUME_MAX`'s deadline at the reachable number.
+/// * **The kept trade.** A run stopped near the end still has a real, checked
+///   draft — a missing correction is a visible Critical the report already
+///   describes, the run lands `needsReview`, and the user is looking at a
+///   document they can see is unfinished. That beats discarding everything the
+///   run had already paid for.
 /// * **The refused trade** ([`is_persistable`]). A document that lost ALL of a
 ///   work history the SOURCE has is not a short résumé, it is not a résumé —
 ///   and overwriting a good previous document with it is a loss the review
@@ -673,32 +666,30 @@ pub(crate) fn save_verdict(source_resume: &str, draft: &str, job_url: &str) -> S
 ///   `Budgeted`/`RunTimeout` for a stop it RECOVERED from and then returns
 ///   `Ok(())`. Status `completed`, document unchanged, no explanation anywhere;
 /// * keying on the run's OUTCOME missed the case the gate exists for. The
-///   sections fan-out treats a daily-cap refusal as `StoppedReason::Budgeted`,
-///   breaks, and returns `Ok(())` — and nothing downstream converts that into
-///   an `Err` (`apply_stop` errors only on the clock or a cancel, `assemble`
-///   and `validate` are free, `repair` returns `Ok` on `RateLimited`, the judge
-///   is skippable, and `run_hooked` never consults the ledger). So a max run
-///   that hit the cap right after Summary produced a summary-only document with
-///   `outcome == Ok`, and it overwrote the saved résumé.
+///   removed `max` depth's now-deleted per-section fan-out treated a
+///   daily-cap refusal as `StoppedReason::Budgeted`, broke, and returned
+///   `Ok(())` — and nothing downstream converted that into an `Err`. So a max
+///   run that hit the cap right after Summary produced a summary-only
+///   document with `outcome == Ok`, and it overwrote the saved résumé.
 ///
 /// Comparing the two DOCUMENTS answers both at once and needs no run state:
-/// a source with no work history can never trip it, and a truncated fan-out
+/// a source with no work history can never trip it, and a truncated draft
 /// over a real one always does — however the run happened to end.
 ///
 /// Both sides go through the SAME [`sections::find`] seam, so the
-/// undated-entry caveat (`assemble::DATE_COLUMN_GAP`: an entry with no date
-/// column is not a `LineKind::JobEntry`) applies equally to each and cannot
-/// create a false asymmetry.
+/// undated-entry caveat (an entry with no date column is not a
+/// `LineKind::JobEntry`) applies equally to each and cannot create a false
+/// asymmetry.
 pub(crate) fn is_persistable(source_resume: &str, draft: &str) -> bool {
     has_work_history(draft) || !has_work_history(source_resume)
 }
 
 /// Whether `text` has an employment section with anything under it.
 ///
-/// The SECTION with a body, not [`sections::entry_range`]: that one tests for
-/// `LineKind::JobEntry`, which an entry with no date column legitimately fails,
-/// and a résumé whose dates the source never carried is a real document rather
-/// than an empty one.
+/// The SECTION with a body, not a per-entry line range: `LineKind::JobEntry`
+/// legitimately fails for an entry with no date column, and a résumé whose
+/// dates the source never carried is a real document rather than an empty
+/// one.
 fn has_work_history(text: &str) -> bool {
     let split = crate::pipeline::resume::stages::sections::split(text);
     let lines: Vec<&str> = text.lines().collect();
@@ -804,22 +795,22 @@ fn summary(row: &RunRow) -> Value {
     })
 }
 
-/// ONE persisted stage artifact, as the WIRE carries it: the counts, never the
-/// detail.
+/// ONE persisted stage artifact, as the WIRE carries it: the counts, never a
+/// nested detail.
 ///
-/// The server keeps the full `strategy`/`match_evidence` artifacts a max-depth
-/// per-entry regenerate needs (`RunLedger::record_detail`), and it keeps them
-/// SERVER-SIDE. `record_detail`'s doc says "nowhere else"; without this it was
-/// wrong — the trail is handed to the renderer verbatim, so every `get` of a max
-/// run shipped up to 2 × 16 KiB of employment history and verbatim résumé quotes
-/// over IPC to a reader that has never had a consumer for it (the contract types
-/// `artifact` as `unknown`; the only renderer reference is a `{}` test fixture).
+/// The max-depth per-entry regenerate this once served (`RunLedger::record_detail`)
+/// was removed with the `max` generation depth, so no NEW row ever carries a
+/// nested `hooks::DETAIL_KEY` value — but an EXISTING `pipeline_run_events` row
+/// from before this deletion still can, and there is no migration touching it.
+/// Stripping the key here is what keeps such a row's employment history and
+/// verbatim résumé quotes from reaching the renderer over IPC (the contract
+/// types `artifact` as `unknown`; there has never been a consumer for it).
 ///
 /// **An unparseable artifact becomes a content-free MARKER, not the raw
 /// string.** Returning the raw bytes was the right answer while artifacts were
 /// counts-only — a reader must not see a silent `{}` claiming the stage
 /// reported nothing. But the only artifact large enough for the store's clamp
-/// to truncate is a detail-bearing one, so the raw-string arm WAS the leak,
+/// to truncate was a detail-bearing one, so the raw-string arm WAS the leak,
 /// with the truncation marker on the end. The marker keeps the one thing the
 /// reader needed (this artifact did not survive intact) and carries nothing
 /// else.
@@ -986,43 +977,21 @@ pub async fn resume_pipeline_regenerate_section(
         format!("op=regenerate_section key={}", key.to_wire()),
     );
     let (source, source_is_provenanced) = source_resume_for(&app, &row, &record);
-    // Routed through the SAME per-stage path a run takes — and through the
-    // stage whose PROMPT each sub-path actually uses. Each is resolved INSIDE
-    // the branch that uses it, so a click only ever resolves the routing it
-    // actually takes: resolving propagates its error, so an eagerly-resolved
-    // `sections` override would fail a quality-run click over a stage that run
-    // does not even have.
-    //
-    // * the max artifact-rebuild path re-runs `sections`' own generator over
-    //   the run's stored analysis/strategy, so it follows the `sections`
-    //   override — the stage that produced the text being replaced;
-    // * the fallback is a whole-section REWRITE using `repair`'s prompt and
-    //   grounding, and `repair` is the stage that exists at BOTH depths (a
-    //   quality run has no `sections` stage at all), so it follows `repair`.
-    //
-    // Routing both through one override would make the button disagree with
-    // whichever stage the user actually configured.
-    let outcome = match regenerate_max_entry(&app, &store, &row, &record, &source, key, &req).await
-    {
-        Some(outcome) => outcome?,
-        // Not a max run, not an employment entry, or the run's artifacts are
-        // gone/unparseable — the whole-section rewrite that has always been
-        // here. A degraded click is a worse click; a failed one is a bug.
-        None => {
-            regenerate_one_section(
-                &Completer::from_active_for_stage(&app, stages::REPAIR_STAGE)?,
-                &source,
-                &record.target_language,
-                &record.resume_text,
-                key,
-                // No validator issues on this path: the user, not a report,
-                // asked for the change. The note carries the "why", fenced.
-                &[],
-                req.note.as_deref(),
-            )
-            .await?
-        }
-    };
+    // A whole-section REWRITE using `repair`'s prompt and grounding — the ONLY
+    // path now that the max-depth per-entry artifact rebuild is gone. It
+    // follows `repair`'s own override, the stage whose prompt this uses.
+    let outcome = regenerate_one_section(
+        &Completer::from_active_for_stage(&app, stages::REPAIR_STAGE)?,
+        &source,
+        &record.target_language,
+        &record.resume_text,
+        key,
+        // No validator issues on this path: the user, not a report,
+        // asked for the change. The note carries the "why", fenced.
+        &[],
+        req.note.as_deref(),
+    )
+    .await?;
     let spliced = match outcome {
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {
@@ -1100,77 +1069,6 @@ pub async fn resume_pipeline_regenerate_section(
         return Ok(detail(&app, &row));
     }
     Ok(detail(&app, &row))
-}
-
-/// The MAX-depth per-entry regenerate, when this click qualifies for it.
-///
-/// `None` means "not this path" — and every one of the four reasons is a normal
-/// state, not a failure:
-///
-/// * the run was quality depth (its document was drafted whole, so an entry is
-///   not independently regenerable — that is exactly what `sections::find`'s
-///   Experience-collapse says);
-/// * the key is not an employment entry (every other section IS its own
-///   section, and the whole-section rewrite addresses it correctly);
-/// * the run's persisted artifacts are missing or unparseable — a run older
-///   than the detail, or one whose artifact the store's clamp truncated;
-/// * the document no longer has that entry.
-///
-/// The caller degrades to the whole-section path in all four cases, which is
-/// why this returns `Option<AppResult<_>>` rather than folding the miss into an
-/// error: a click must not fail because an optimization was unavailable.
-#[allow(clippy::too_many_arguments)]
-async fn regenerate_max_entry(
-    app: &AppHandle,
-    store: &PipelineRunStore,
-    row: &RunRow,
-    record: &AiGenerationRecord,
-    source: &str,
-    key: SectionKey,
-    req: &ResumePipelineRegenerateSectionRequest,
-) -> Option<AppResult<SectionOutcome>> {
-    if row.depth != GenerationDepth::Max.as_str() {
-        return None;
-    }
-    let SectionKey::Experience(index) = key else {
-        return None;
-    };
-    let artifacts = max::artifacts_for(store, &row.id)?;
-    // Resolved here, past every early return: this is the first point at which
-    // the max path is certain to run, so a `sections` override is only ever
-    // resolved by a click that will actually use its prompt. See the routing
-    // note at the call site.
-    let completer = match Completer::from_active_for_stage(app, section_gen::NAME) {
-        Ok(completer) => completer,
-        Err(e) => return Some(Err(e)),
-    };
-    let outcome = max::regenerate_entry(
-        &completer,
-        &artifacts,
-        source,
-        // The aggregate's own copy of the posting, which is often EMPTY on this
-        // path: the pipeline's save deliberately writes no `job_ad` (the
-        // postings cache is keyed by the live job id, which a finished run no
-        // longer holds), so this is only populated when a fast-path generation
-        // stored one first. Empty is a degradation, not a failure — the posting
-        // reaches the prompt through the persisted `job_analysis` and
-        // `evidence_map` either way, and the FACTS the entry is rebuilt from
-        // are the source résumé's, which is always present. The one thing it
-        // costs is `extract_evidence`'s keyword scoring, which orders bullets
-        // it does not select.
-        &record.job_ad,
-        &record.target_language,
-        &record.resume_text,
-        index,
-        req.note.as_deref(),
-    )
-    .await;
-    match outcome {
-        // The entry is not in the document (or not in the roster): fall back
-        // rather than telling the user their résumé has no such section.
-        Ok(SectionOutcome::Missing) => None,
-        other => Some(other),
-    }
 }
 
 /// The status a run row should move to after its persisted wrapper changed —

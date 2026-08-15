@@ -352,10 +352,18 @@ export const AgentConfirmRequestSchema = z.object({
 });
 
 /**
- * How much work one résumé generation is allowed to do. `fast` is today's
- * single-shot TS path (byte-identical, untouched); `quality` and `max` are the
- * staged Rust pipeline. Ascending, and the order is load-bearing — the Rust
- * `GenerationDepth::parse` reads this same vocabulary through `pnpm gen:ipc`.
+ * The historic vocabulary of `pipeline_runs.depth`/`QualityReport.pipeline`
+ * values — `fast` (the renderer's own deterministic pass), `quality` (the
+ * staged Rust pipeline — the fixed value every new run persists), and `max`
+ * (a second staged depth removed for wasting tokens on no acted-on value).
+ *
+ * **A closed vocabulary for READING, not for a request field.** `resumePipeline
+ * .run`'s wire request has no `depth` field any more — the pipeline it runs is
+ * fixed — but a run row or a persisted `QualityReport` written before that
+ * change (or by the renderer's own fast pass) still carries one of these three
+ * values, and both `PipelineRunSummary.depth` and `QualityReport.pipeline`
+ * type against this set so a historic value round-trips instead of being
+ * silently relabelled.
  */
 export const GENERATION_DEPTHS = ['fast', 'quality', 'max'] as const;
 export type GenerationDepth = (typeof GENERATION_DEPTHS)[number];
@@ -410,7 +418,6 @@ export const ResumePipelineRunSchema = z
     /** The posting URL this run belongs to — the run store's retention key and
      *  the `ai_generations` aggregate key. Empty for an unlinked generation. */
     jobUrl: z.string().max(2_048).default(''),
-    depth: z.enum(GENERATION_DEPTHS).default('quality'),
     targetLanguage: z.string().max(32).default('en'),
     effort: z.string().max(32).optional(),
     /** The posting's top requirements, as the JD-analysis step extracted them —

@@ -37,8 +37,8 @@ export function ContextFitStep({ ctx }: AdvisorStepProps) {
     );
   }
 
-  // Which stage is the biggest is COMPUTED, not asserted — `sections` carries
-  // four artifacts and beats the draft turn.
+  // Which stage is the biggest is COMPUTED, not asserted — `strategy` carries
+  // two artifact-sized terms and beats the draft turn.
   const worst = worstCaseStage();
 
   return (
