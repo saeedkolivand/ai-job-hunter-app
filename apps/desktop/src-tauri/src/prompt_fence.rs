@@ -396,5 +396,33 @@ pub(crate) fn fenced(tag: &str, body: &str, cap: usize) -> String {
     format!("<{tag}>\n{body}\n</{tag}>")
 }
 
+/// Whether `text` contains ANY registered fence tag ([`FENCE_TAG_PATTERNS`]) as
+/// a literal opening or closing tag — the OUTPUT-side mirror of [`fenced`],
+/// which guards untrusted text going INTO a prompt. This guards GENERATED text
+/// coming out of one: a model told to return "the whole document" that echoes
+/// the very `<tag>…</tag>` wrapper it was handed, rather than only the content
+/// between the tags, produces a document that every CONTENT check (voice,
+/// factual, length) can still pass while its SHAPE is corrupt — a fence tag
+/// literally saved as the document's own text. See
+/// `pipeline::resume::stages::humanize`'s module doc for the incident this
+/// closes. Driven from the SAME registry [`fenced`] neutralizes untrusted
+/// input with, so a caller checking generated output for this defect covers
+/// every tag, present and future, without a second, driftable list.
+pub(crate) fn contains_fence_tag(text: &str) -> bool {
+    FENCE_TAG_PATTERNS
+        .values()
+        .any(|pattern| pattern.is_match(text))
+}
+
+/// Every tag name [`FENCE_TAG_PATTERNS`] knows about — for a caller OUTSIDE
+/// this module (a regression test, a report) that needs the FULL current set
+/// rather than one hardcoded tag name that would silently stop covering the
+/// others the day a new tag is registered. Test-only: no production caller
+/// needs the list itself, only [`contains_fence_tag`]'s yes/no answer.
+#[cfg(test)]
+pub(crate) fn known_fence_tags() -> impl Iterator<Item = &'static str> {
+    FENCE_TAG_PATTERNS.keys().copied()
+}
+
 #[cfg(test)]
 mod test;
