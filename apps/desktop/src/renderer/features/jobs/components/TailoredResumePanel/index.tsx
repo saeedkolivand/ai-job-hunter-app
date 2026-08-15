@@ -1,18 +1,15 @@
 import { FileText, Loader2, ShieldCheck, Sparkles, Square, X } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { AGENT_RESUME_TEXT_CAP, detectLanguage, type PipelineSectionKey } from '@ajh/shared';
 import type { PipelineRunEvent } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, ModalShell, Skeleton, StepDots, Tag } from '@ajh/ui';
 
-import { DepthSelector, useSmallModelWarning } from '@/components/generation/DepthSelector';
 import { PipelineRunsList } from '@/components/generation/PipelineRunsList';
 import { QualityReportPanel } from '@/components/generation/QualityReportPanel';
-import { SectionTimeline } from '@/components/generation/SectionTimeline';
 import { ImproveResumeRun } from '@/features/jobs/components/ImproveResumeRun';
 import { useAgentRunSession } from '@/features/jobs/hooks/useAgentRunSession';
-import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
 import {
   type ResumePipelineSession,
@@ -20,12 +17,7 @@ import {
 } from '@/hooks/use-resume-pipeline-session';
 import { useDefaultResume } from '@/hooks/useDefaultResumeId';
 import { errorDetail } from '@/lib/error-class';
-import {
-  buildSectionVerdicts,
-  type GenerationDepth,
-  parseFabrications,
-  unresolvedCount,
-} from '@/lib/generate';
+import { buildSectionVerdicts, parseFabrications, unresolvedCount } from '@/lib/generate';
 import { stoppedSuffix } from '@/lib/stopped-reason';
 import {
   useGenerateConfig,
@@ -34,7 +26,6 @@ import {
   useRegenerateSection,
   useResolveFabrication,
 } from '@/services';
-import { useGenerationDepth } from '@/store/preferences-store';
 
 /**
  * Longest generated résumé the `improve_resume` flow can review, in CHARACTERS
@@ -112,9 +103,15 @@ export function canImproveGeneration({
  * through the `DocumentStore` and `jobId` through the live postings cache
  * (`match_resume::job_text_for`). Neither generate wizard can supply both — they
  * tailor free text that has no document id against a pasted ad that has no
- * posting id — which is why they show the depth control but keep running the
- * fast path. This pane holds a full {@link Posting} (so `posting.id` really is a
- * cached posting) and the default saved résumé, i.e. both ids legitimately.
+ * posting id — which is why they always run the fast one-shot path instead.
+ * This pane holds a full {@link Posting} (so `posting.id` really is a cached
+ * posting) and the default saved résumé, i.e. both ids legitimately.
+ *
+ * The fast one-shot path has its own trigger next to this one in
+ * `JobDetailPane` (the "Tailor" button); this panel exists for the staged
+ * pipeline and the agentic "Improve this résumé" review that runs against its
+ * output, so it has no depth choice of its own — every run here is a
+ * `quality`-depth staged run.
  *
  * Three traps from the contract are wired here rather than assumed away:
  *
@@ -131,33 +128,22 @@ export function canImproveGeneration({
 export function TailoredResumePanel({ posting }: { posting: Posting }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
-  // `null` = "follow the Settings default", the same convention both wizards
-  // use — a default changed in Settings still reaches an untouched panel.
-  const [depthOverride, setDepthOverride] = useState<GenerationDepth | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   /** A run OTHER than this session's, opened from the history list. */
   const [otherRunId, setOtherRunId] = useState<string | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [stopRequested, setStopRequested] = useState(false);
 
-  const settingsDepth = useGenerationDepth();
-  const depth = depthOverride ?? settingsDepth;
-  const smallModel = useSmallModelWarning();
-
   const resume = useDefaultResume();
   const { provider, model, effort } = useGenerateConfig();
   const providerReady = !!provider && !!model;
-  /** Both staged depths need the same two server-resolved inputs. */
+  /** The staged run needs the same two server-resolved inputs. */
   const canRunStaged = !!resume && providerReady;
 
   const session = useResumePipelineSession();
   const runs = usePipelineRunsForJob(posting.url).data ?? [];
   const regenerate = useRegenerateSection();
   const resolveFabrication = useResolveFabrication();
-  // The FAST depth routes to the flow that already exists — the same handler
-  // the pane's own "Tailor" button uses. Re-implementing a one-shot generation
-  // here would be a second copy of it.
-  const { handleTailor } = usePostingActions(posting);
 
   // The report can be opened for this session's run or for an older one. Both
   // read the same query key, so the session's own record costs no extra fetch.
@@ -217,46 +203,24 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     return detected === 'unknown' ? 'en' : detected;
   }, [posting.description]);
 
-  /**
-   * `fast` cannot reach here — it routes to the one-shot flow in
-   * {@link handleStart} — so the parameter is the two STAGED depths only. Taken
-   * as an argument rather than read off `depth` so the caller's early return is
-   * what proves `fast` was handled, instead of a second check that could drift
-   * from it.
-   */
-  const startStaged = useCallback(
-    async (stagedDepth: Exclude<GenerationDepth, 'fast'>) => {
-      if (!resume || !providerReady) return;
-      setStopRequested(false);
-      await session.start({
-        resumeId: resume.id,
-        jobId: posting.id,
-        jobUrl: posting.url,
-        depth: stagedDepth,
-        targetLanguage,
-        // Budget and routing are backend-owned; the JD analysis is a STAGE of
-        // the run, so there are no requirements to hand it and no letter in
-        // scope.
-        topRequirements: [],
-        coverLetterText: '',
-        // This panel is being replaced by TailorFlow's staged run (PR-3); it
-        // never asks the pipeline to generate a letter itself.
-        includeCoverLetter: false,
-        ...(effort ? { effort } : {}),
-      });
-    },
-    [resume, providerReady, session, posting.id, posting.url, targetLanguage, effort]
-  );
-
-  const handleStart = () => {
-    if (depth === 'fast') {
-      // Not a second one-shot generator: the existing flow, entered the way the
-      // pane's Tailor button enters it (it navigates, so close behind it).
-      setOpen(false);
-      void handleTailor();
-      return;
-    }
-    void startStaged(depth);
+  const handleStart = async () => {
+    if (!resume || !providerReady) return;
+    setStopRequested(false);
+    await session.start({
+      resumeId: resume.id,
+      jobId: posting.id,
+      jobUrl: posting.url,
+      targetLanguage,
+      // Budget and routing are backend-owned; the JD analysis is a STAGE of
+      // the run, so there are no requirements to hand it and no letter in
+      // scope.
+      topRequirements: [],
+      coverLetterText: '',
+      // This panel is being replaced by TailorFlow's staged run (PR-3); it
+      // never asks the pipeline to generate a letter itself.
+      includeCoverLetter: false,
+      ...(effort ? { effort } : {}),
+    });
   };
 
   const stop = () => {
@@ -355,9 +319,9 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
   const titleId = 'tailored-resume-modal-title';
   const gateNoteId = 'tailored-resume-gate';
   const improveGateId = 'tailored-resume-improve-gate';
-  /** A staged depth is selected but cannot run — the note below says which half
-   *  is missing, and Start points at it rather than being silently dead. */
-  const gated = !busy && depth !== 'fast' && !canRunStaged;
+  /** The staged run cannot start — the note below says which half is missing,
+   *  and Start points at it rather than being silently dead. */
+  const gated = !busy && !canRunStaged;
   const showRuns = runs.length > 0;
 
   return (
@@ -459,7 +423,7 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                     // overwritten by the older, reviewed text on approve.
                     disabled={gated || session.starting || improve.busy}
                     loading={session.starting}
-                    onClick={handleStart}
+                    onClick={() => void handleStart()}
                     // Same render guard as the note it points at — an
                     // `aria-describedby` to DOM that isn't there is a broken
                     // reference, not a hint.
@@ -534,28 +498,20 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
           )}
 
           {/* Shown while no run is in flight — including AFTER a terminal one, so
-              "run again" can be run at a different depth without reopening. */}
+              "run again" can be re-run without reopening. */}
           {!busy && (
             <>
-              <DepthSelector value={depth} onChange={setDepthOverride} smallModel={smallModel} />
-
-              {depth === 'fast' ? (
-                <p className="text-[11px] leading-relaxed text-foreground/50">
-                  {t('jobs.tailored.fastRoutes')}
-                </p>
-              ) : (
-                session.state === 'idle' && (
-                  <div className="space-y-1.5 text-[11px] leading-relaxed text-foreground/50">
-                    {resume && (
-                      <p>
-                        {t('jobs.tailored.usesResume', {
-                          name: resume.name || t('jobs.tailored.unnamedResume'),
-                        })}
-                      </p>
-                    )}
-                    <p>{t('jobs.tailored.savesTo')}</p>
-                  </div>
-                )
+              {session.state === 'idle' && (
+                <div className="space-y-1.5 text-[11px] leading-relaxed text-foreground/50">
+                  {resume && (
+                    <p>
+                      {t('jobs.tailored.usesResume', {
+                        name: resume.name || t('jobs.tailored.unnamedResume'),
+                      })}
+                    </p>
+                  )}
+                  <p>{t('jobs.tailored.savesTo')}</p>
+                </div>
               )}
 
               {gated && (
@@ -603,11 +559,6 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                   </p>
                 )}
               </div>
-
-              {/* Max depth only — empty (and self-hiding) at quality depth and
-                  for a reconnected run, so it needs no depth check of its own:
-                  what it renders is what the run actually reported. */}
-              <SectionTimeline states={session.sectionStates} />
 
               <p className="text-[10px] leading-relaxed text-foreground/40">
                 {t('jobs.tailored.draftNote')}

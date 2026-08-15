@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::hooks::{apply_stop, with_detail};
+use super::hooks::apply_stop;
 use super::max;
 use super::notify::run_notification;
 use super::report;
@@ -65,8 +65,7 @@ fn run_request_carries_only_identity_no_budget_and_no_routing() {
     .expect("deserializes from the identity-only wire shape, ignoring the extra keys");
     assert_eq!(req.resume_id, "res-1");
     assert_eq!(req.job_id, "job-9");
-    // Defaults, not renderer-chosen escalations.
-    assert_eq!(req.depth, "quality");
+    // Default, not a renderer-chosen escalation.
     assert_eq!(req.target_language, "en");
     // PR-2: an existing caller that omits `includeCoverLetter` (every caller
     // this build ships) gets the no-op default — the `cover_letter` stage
@@ -801,9 +800,20 @@ fn cancellation_outranks_the_deadline() {
 /// floor is what `run_deadline` falls back to, and `kind` is half the store's
 /// retention partition, so changing either silently re-partitions someone's
 /// history.
+///
+/// **`RUN_DEPTH` is pinned here too.** It is the ONE literal `execute` writes
+/// into every new `RunRow.depth` and hands `persist_document` — there is no
+/// depth CHOICE left to make, so this constant is the whole guard against a
+/// stray edit quietly reviving `"fast"`/`"max"` (or a typo) on every run this
+/// build creates. `RunRow.depth` itself stays a plain `String` column (never a
+/// closed Rust enum) precisely so an existing row recorded at `"fast"`/`"max"`
+/// before this depth's removal still reads back without erroring.
+///
+/// Mutation check (executed): change `RUN_DEPTH` to `"fast"` and this fails.
 #[test]
-fn the_run_kind_and_the_budget_floor_are_pinned() {
+fn the_run_kind_the_budget_floor_and_the_run_depth_are_pinned() {
     assert_eq!(super::RUN_KIND, "resume");
+    assert_eq!(super::RUN_DEPTH, "quality");
     assert_eq!(
         Budget::RESUME_QUALITY.run_timeout,
         Duration::from_secs(90 * 60)
@@ -1517,15 +1527,13 @@ fn unlinked_runs_of_different_postings_do_not_share_a_retention_bucket() {
 /// with nothing but a `warn!` to show for it. It also pins that the emitter's
 /// `kind` is what `listForJob` filters on.
 ///
-/// The artifact goes through `with_detail`, which is what `RunHooks::after`
-/// does — so BOTH halves of that wrapper are pinned here at the row level: a
-/// detail-less stage's counts reach the row (`validate`'s `criticals`), and a
-/// stage that left a detail carries it nested beside them (`strategy`).
+/// The artifact goes straight through `ledger.artifact(stage)`, exactly as
+/// `RunHooks::after` reads it — so a stage's counts reach the row unchanged
+/// (`validate`'s `criticals`).
 ///
 /// Mutation check: emit a phase outside the CHECK's vocabulary and the event
 /// count drops to zero; change `RUN_KIND` on one side only and the filtered
-/// list is empty; make `with_detail` drop the artifact when there is no detail
-/// and the `criticals` assertion fails.
+/// list is empty.
 #[test]
 fn a_run_round_trips_through_the_store_with_real_stage_events() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -1534,7 +1542,6 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
     let ledger = RunLedger::new();
     ledger.record("analyze_job", json!({ "cached": false, "mustHave": 4 }));
     ledger.record("strategy", json!({ "cached": false, "companies": 3 }));
-    ledger.record_detail("strategy", json!({ "perCompany": [{ "company": "Acme" }] }));
     ledger.record("validate", json!({ "issues": 3, "criticals": 1 }));
     ledger.count_call(false);
     ledger.count_call(true);
@@ -1565,11 +1572,9 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
                     ts: 1_700_000_000_000 + u64::from(seq),
                     stage: (*stage).to_string(),
                     phase: phase.to_string(),
-                    // Through `with_detail`, exactly as `RunHooks::after`
-                    // builds it — not `ledger.artifact` directly, which is what
-                    // let the wrapper delete every detail-less stage's counts
-                    // while this end-to-end test still read them.
-                    artifact_json: with_detail(ledger.artifact(stage), ledger.detail(stage))
+                    // Exactly as `RunHooks::after` builds it.
+                    artifact_json: ledger
+                        .artifact(stage)
                         .map(|value| value.to_string())
                         .unwrap_or_else(|| "{}".to_string()),
                 })
@@ -1612,8 +1617,6 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
         serde_json::from_str(&validate.artifact_json).expect("the artifact is JSON");
     assert_eq!(artifact["criticals"], json!(1));
 
-    // The other half of the wrapper: a stage that left a FULL artifact carries
-    // it nested under the counts, not instead of them.
     let strategy = events
         .iter()
         .find(|event| event.stage == "strategy" && event.phase == "finish")
@@ -1621,10 +1624,6 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
     let artifact: serde_json::Value =
         serde_json::from_str(&strategy.artifact_json).expect("the artifact is JSON");
     assert_eq!(artifact["companies"], json!(3));
-    assert_eq!(
-        artifact[super::hooks::DETAIL_KEY]["perCompany"][0]["company"],
-        json!("Acme")
-    );
 
     // `listForJob` filters on this flow's kind; a run of another kind against
     // the same posting must not appear in the résumé runs list.
@@ -2129,54 +2128,36 @@ fn the_review_notification_counts_the_findings_the_panel_lists() {
 /// holds when the row got there another way, e.g. a hand-edited database or a
 /// stage that stopped paying after the row was written.
 ///
-/// Asserted for BOTH depths, because "free" is per-depth: the quality pipeline
-/// and the max pipeline do not run the same stages.
-///
-/// Mutation check (executed): neuter the filter to `|_| true` and both depths
-/// yield their free stages, failing here.
+/// Mutation check (executed): neuter the filter to `|_| true` and both loops
+/// fail here.
 #[test]
 fn paying_stages_never_includes_a_stage_that_makes_no_ai_call() {
     use crate::ipc_contracts::events::PIPELINE_STAGES_FREE;
-    use crate::pipeline::resume::types::GenerationDepth;
 
-    // Pinned as LITERAL lists, in order. Deriving the expectation
+    // Pinned as a LITERAL list, in order. Deriving the expectation
     // (`stage_names()` minus `free_stage_names()`) would restate the
-    // implementation and pass whatever it did; these fail if a paying stage is
+    // implementation and pass whatever it did; this fails if a paying stage is
     // ever silently DROPPED, which is the costly direction — an override the
     // user sets, Settings shows, and nothing ever resolves.
-    for (depth, expected) in [
-        (
-            GenerationDepth::Quality,
-            &[
-                "analyze_job",
-                "match_evidence",
-                "strategy",
-                "draft",
-                "cover_letter",
-                "repair",
-                "humanize",
-            ][..],
-        ),
-        (
-            GenerationDepth::Max,
-            &[
-                "analyze_job",
-                "match_evidence",
-                "strategy",
-                "sections",
-                "repair",
-                "llm_judge",
-            ][..],
-        ),
-    ] {
-        let paying = max::paying_stages(depth);
-        assert_eq!(paying, expected, "{depth:?} lost or gained a paying stage");
-        for free in PIPELINE_STAGES_FREE {
-            assert!(
-                !paying.contains(free),
-                "{depth:?} would resolve routing for the inert stage {free:?}"
-            );
-        }
+    let expected = [
+        "analyze_job",
+        "match_evidence",
+        "strategy",
+        "draft",
+        "cover_letter",
+        "repair",
+        "humanize",
+    ];
+    let paying = max::paying_stages();
+    assert_eq!(
+        paying, expected,
+        "the pipeline lost or gained a paying stage"
+    );
+    for free in PIPELINE_STAGES_FREE {
+        assert!(
+            !paying.contains(free),
+            "would resolve routing for the inert stage {free:?}"
+        );
     }
 }
 

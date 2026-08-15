@@ -217,9 +217,11 @@ pub fn build(
 /// `AGENT_FLOW_KINDS` and `AGENT_RESUME_TEXT_CAP` closing.
 ///
 /// Widening the vocabulary instead was the other option and is worse:
-/// `GENERATION_DEPTHS` is the DEPTH set (`fast`/`quality`/`max`) that also types
-/// `ResumePipelineRunSchema.depth` and `GenerationDepth::from_wire`, so adding
-/// `"agent"` would let a run REQUEST ask for a depth that is not one.
+/// `GENERATION_DEPTHS` (`fast`/`quality`/`max`) is what types every
+/// `pipeline`/`depth` value the renderer round-trips, historic rows included
+/// — the Rust `GenerationDepth` enum this doc originally cited is gone (the
+/// `max` depth's own deletion), but the shared vocabulary itself has to stay a
+/// closed set, so a hand-picked literal here still cannot invent a member.
 ///
 /// `fast` is the honest member: the field distinguishes "the staged pipeline
 /// produced this" from "a deterministic pass produced this", and that is
@@ -230,7 +232,7 @@ pub fn build(
 ///
 /// Pinned by `the_saved_resume_label_round_trips_through_the_shared_vocabulary`.
 pub fn agent_save_pipeline() -> &'static str {
-    crate::pipeline::resume::types::GenerationDepth::Fast.as_str()
+    "fast"
 }
 
 /// The wrapper a save that REPLACES `resume_text` must carry.

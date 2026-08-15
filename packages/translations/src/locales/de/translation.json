@@ -1032,10 +1032,8 @@
           "strategy": "Strategie",
           "draft": "Entwurf",
           "cover_letter": "Anschreiben",
-          "sections": "Abschnitte",
           "repair": "Korrektur",
-          "humanize": "KI-Spuren entfernen",
-          "llm_judge": "Bewertung"
+          "humanize": "KI-Spuren entfernen"
         },
         "descriptions": {
           "analyze_job": "Liest die Anzeige und erfasst, was gefordert wird.",
@@ -1043,10 +1041,8 @@
           "strategy": "Legt fest, wie diese Belege dargestellt werden.",
           "draft": "Schreibt den gesamten Lebenslauf in einem Durchgang.",
           "cover_letter": "Schreibt das Anschreiben, sofern eines angefordert wurde.",
-          "sections": "Schreibt den Lebenslauf Abschnitt für Abschnitt.",
           "repair": "Schreibt Abschnitte neu, die die Prüfung nicht bestanden haben.",
-          "humanize": "Schreibt Zeilen um, die eine automatische Prüfung als KI-klingend markiert hat.",
-          "llm_judge": "Bewertet das fertige Dokument."
+          "humanize": "Schreibt Zeilen um, die eine automatische Prüfung als KI-klingend markiert hat."
         },
         "suggest": {
           "title": "Ein kleineres Modell genügt für die auswertenden Schritte",
@@ -1100,10 +1096,6 @@
       "spend": {
         "title": "KI-Ausgaben"
       }
-    },
-    "generationDepth": {
-      "title": "Gründlichkeit",
-      "description": "Wie viel Arbeit eine Lebenslauf-Erstellung standardmäßig leistet. Jede Erstellungs- und Anpassungsseite zeigt dieselbe Auswahl und kann sie für einen einzelnen Durchgang übersteuern."
     },
     "outputTone": {
       "title": "KI-Ausgabestil",
@@ -1337,7 +1329,6 @@
     "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
     "thinking": "Denkt nach…",
     "reasoningComplete": "Schlussfolgerung abgeschlossen",
-    "depthUnavailable": "Die gestuften Verfahren brauchen einen gespeicherten Lebenslauf und eine Stelle aus deiner Jobliste. Diese Seite arbeitet mit eingefügtem Text und läuft hier deshalb immer schnell — deine Auswahl bleibt für die Oberflächen gemerkt, die sie nutzen können.",
     "research": {
       "label": "Unternehmen recherchieren",
       "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
@@ -1616,44 +1607,17 @@
     "letterLayoutMonogramDesc": "Ihre Initialen in einer Akzentkachel neben dem Namen. Passt zu Awesome, Jake und Throughline. Im ATS-sicheren Modus entfällt die Kachel."
   },
   "generationDepth": {
-    "label": "Gründlichkeit",
     "option": {
       "fast": {
-        "label": "Schnell",
-        "tooltip": "Ein Modellaufruf. Lebenslauf und Stellenanzeige gehen einmal ans Modell.",
-        "summary": "Ein Durchgang, danach die übliche Integritätsprüfung."
+        "label": "Schnell"
       },
       "quality": {
-        "label": "Gründlich",
-        "tooltip": "Bis zu acht Schritte: analysieren, Belege zuordnen, planen, schreiben, bei Bedarf ein Anschreiben verfassen, prüfen, automatisch nachbessern, abschließend KI-typische Formulierungen entfernen.",
-        "summary": "Langsamer und teurer, dafür an deinem Lebenslauf belegt und vorab geprüft."
+        "label": "Gründlich"
       },
       "max": {
-        "label": "Maximal",
-        "tooltip": "Acht Schritte: analysieren, Belege zuordnen, planen, jeden Abschnitt einzeln schreiben, zusammensetzen, prüfen, automatisch nachbessern, abschließend ein KI-Review.",
-        "summary": "Jeder Abschnitt wird einzeln geschrieben — du siehst den Lebenslauf entstehen — danach wird das fertige Dokument als Ganzes geprüft und nachgebessert. Mit Abstand die langsamste Stufe: in der Cloud Minuten, nach etwa zwei Stunden bricht der Lauf selbst ab."
-      },
-      "unavailable": "In dieser Version noch nicht verfügbar."
-    },
-    "info": {
-      "open": "Was bedeuten diese Stufen?",
-      "title": "Gründlichkeit",
-      "notYet": "(noch nicht verfügbar)",
-      "fast": {
-        "what": "Ein Durchgang: Lebenslauf und Stellenanzeige gehen einmal ans Modell, die Antwort ist das Dokument.",
-        "cost": "1 Modellaufruf. Sekunden bis eine Minute."
-      },
-      "quality": {
-        "what": "In Schritten: die Anzeige wird analysiert, deine Belege werden wörtlich aus dem Lebenslauf zugeordnet, eine Strategie entsteht, der Lebenslauf — und, falls gewünscht, ein Anschreiben — wird geschrieben und anschließend geprüft; kritische Funde werden automatisch neu geschrieben (bis zu 2 Runden), verbliebene KI-typische Formulierungen werden einmal überarbeitet.",
-        "cost": "4–5 Modellaufrufe (5 mit Anschreiben), plus bis zu 2 Nachbesserungsrunden und bis zu 2 Durchgänge zum Entfernen KI-typischer Formulierungen. In der Cloud rund +30–90 Sekunden; lokal mehrere Minuten, bei hohem Reasoning-Aufwand bis zu ca. 10 Minuten."
-      },
-      "max": {
-        "what": "Abschnitt für Abschnitt: jeder Abschnitt wird in einem eigenen Aufruf aus den wörtlich aus deinem Lebenslauf zitierten Belegen geschrieben, danach wird das Dokument zusammengesetzt, geprüft und automatisch nachgebessert und zum Schluss vom Modell noch einmal auf Klarheit, Belege und Passung gelesen. Eine Live-Checkliste zeigt den Stand jedes Abschnitts, und das Dokument entsteht vor deinen Augen.",
-        "cost": "3 Planungsaufrufe, dann einer pro Abschnitt (bis zu 12), ein Review-Aufruf und bis zu 2 Nachbesserungsrunden — bei einem typischen Lebenslauf rund 12 Aufrufe. In der Cloud mehrere Minuten, lokal deutlich länger; nach etwa zwei Stunden bricht der Lauf selbst ab."
-      },
-      "report": "Jede Stufe endet mit demselben deterministischen Integritätsbericht — feste Regeln, keine KI-Bewertung. Gründlich und Maximal ergänzen die automatische Nachbesserung und eine Einzelprüfung aller Aussagen, die sich nicht im Lebenslauf belegen ließen; Maximal ergänzt zusätzlich das Review des Modells, dessen Hinweise immer nur Empfehlungen sind und nie blockieren."
-    },
-    "smallModelWarning": "Die gestuften Verfahren verlangen strukturiertes JSON — an drei Stellen und bei Maximal zusätzlich einmal pro Abschnitt —, und kleine lokale Modelle treffen dieses Format oft nicht. Der Lauf fragt einmal nach, läuft dann zu Ende und markiert, was er nicht prüfen konnte: es funktioniert, aber es bleibt mehr zu sichten."
+        "label": "Maximal"
+      }
+    }
   },
   "pipeline": {
     "stage": {
@@ -1668,26 +1632,6 @@
       "repair": "Gefundene Probleme werden behoben",
       "humanize": "KI-Spuren werden entfernt",
       "llm_judge": "Fertiger Lebenslauf wird noch einmal gelesen"
-    },
-    "section": {
-      "title": "Abschnitte",
-      "summary": "Kurzprofil",
-      "skills": "Kenntnisse",
-      "experienceEntry": "Berufserfahrung {{index}}",
-      "announce": "{{section}} — {{state}}",
-      "progress_one": "{{written}} von {{count}} Abschnitt geschrieben",
-      "progress_other": "{{written}} von {{count}} Abschnitten geschrieben",
-      "projects": "Projekte",
-      "education": "Ausbildung",
-      "state": {
-        "queued": "Wartet",
-        "generating": "Wird geschrieben",
-        "done": "Geschrieben",
-        "checking": "Wird geprüft",
-        "needsChanges": "Änderungen nötig",
-        "repaired": "Nachgebessert",
-        "clean": "Keine Änderungen nötig"
-      }
     },
     "phase": {
       "start": "gestartet",
@@ -2282,14 +2226,13 @@
     "saveError": "Speichern in der Verfolgung fehlgeschlagen. Bitte erneut versuchen.",
     "tailored": {
       "trigger": "Angepasster Lebenslauf (gestuft)",
-      "triggerHint": "Wähle, wie viel Arbeit die Generierung leistet. Die gestuften Verfahren analysieren die Anzeige, belegen Aussagen aus deinem gespeicherten Lebenslauf, schreiben, prüfen und bessern automatisch nach — Maximal schreibt jeden Abschnitt einzeln und ergänzt ein Review.",
+      "triggerHint": "Führt das gestufte Verfahren aus: analysiert die Anzeige, belegt Aussagen aus deinem gespeicherten Lebenslauf, schreibt, prüft und bessert automatisch nach. Hier kannst du den fertigen Lebenslauf auch von der KI prüfen lassen.",
       "modalTitle": "Angepasster Lebenslauf",
       "close": "Schließen",
-      "fastRoutes": "„Schnell“ öffnet den bekannten Ein-Schritt-Ablauf — „Starten“ führt dorthin, statt hier etwas auszuführen.",
       "usesResume": "Nutzt deinen gespeicherten Standard-Lebenslauf „{{name}}“. Einen anderen Standard wählst du unter Dokumente.",
       "unnamedResume": "deinen gespeicherten Standard-Lebenslauf",
       "savesTo": "Der fertige Lebenslauf wird bei der Bewerbung zu dieser Stelle gespeichert — dort kannst du ihn bearbeiten und exportieren.",
-      "needsResume": "Speichere zuerst einen Lebenslauf — die gestuften Verfahren lesen ihn aus deinen Dokumenten, nicht von diesem Bildschirm.",
+      "needsResume": "Speichere zuerst einen Lebenslauf — das gestufte Verfahren liest ihn aus deinen Dokumenten, nicht von diesem Bildschirm.",
       "needsProvider": "Wähle einen KI-Anbieter in Einstellungen → KI.",
       "start": "Starten",
       "runAgain": "Erneut ausführen",

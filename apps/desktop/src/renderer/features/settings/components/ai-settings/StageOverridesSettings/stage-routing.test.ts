@@ -19,8 +19,7 @@ const allConfigured = () => true;
 describe('OVERRIDABLE_PIPELINE_STAGES', () => {
   it('is the generated vocabulary minus the stages that make no provider call', () => {
     expect(OVERRIDABLE_PIPELINE_STAGES).toEqual(PIPELINE_STAGES.filter(isPayingPipelineStage));
-    // The two the backend refuses an override for.
-    expect(OVERRIDABLE_PIPELINE_STAGES).not.toContain('assemble');
+    // The one the backend refuses an override for.
     expect(OVERRIDABLE_PIPELINE_STAGES).not.toContain('validate');
   });
 
@@ -31,10 +30,8 @@ describe('OVERRIDABLE_PIPELINE_STAGES', () => {
       'strategy',
       'draft',
       'cover_letter',
-      'sections',
       'repair',
       'humanize',
-      'llm_judge',
     ]);
   });
 
@@ -73,10 +70,10 @@ describe('resolveStageRouting', () => {
 
   it('flags an override pointing at an UNCONFIGURED provider', () => {
     const [row] = resolveStageRouting({
-      overrides: { llm_judge: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
+      overrides: { humanize: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
       active: { provider: 'ollama', model: 'qwen3:8b' },
       isConfigured: (p) => p === 'ollama',
-      stages: ['llm_judge'],
+      stages: ['humanize'],
     });
 
     // The backend refuses the run rather than falling back, so this has to be

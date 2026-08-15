@@ -2,6 +2,9 @@
 // Source of truth: packages/shared/src/schemas/index.ts
 #![allow(dead_code)]
 
-/// Ascending depth order: `fast` is the untouched single-shot TS path,
-/// `quality` and `max` are the staged Rust pipeline.
+/// Historic `pipeline_runs.depth`/`QualityReport.pipeline` values — closed
+/// for READING, not for a request field. The wire request carries no
+/// `depth` field; every new run persists the fixed value `quality`. `fast`
+/// (the renderer's own deterministic pass) and `max` (a removed staged
+/// depth) remain in this constant only so a historic row still round-trips.
 pub const GENERATION_DEPTHS: &[&str] = &["fast", "quality", "max"];

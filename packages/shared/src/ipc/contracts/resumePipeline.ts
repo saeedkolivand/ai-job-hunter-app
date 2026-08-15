@@ -8,7 +8,7 @@ import type {
 import type { ContentReportPayload } from './resume.js';
 
 /**
- * The staged résumé pipeline — the `quality` and `max` depths.
+ * The staged résumé pipeline — one fixed stage sequence; there is no depth choice.
  *
  * `run` starts the background run and returns its ids immediately; stage
  * progress streams as `pipeline:stage` events (subscribe via {@link
@@ -21,12 +21,11 @@ import type { ContentReportPayload } from './resume.js';
  *    `completed`/`needsReview`/`failed`/`cancelled` is the fact everything else
  *    describes. Poll or re-`get` on a stage event; do not derive the outcome.
  * 2. **The umbrella job's `job.failed` covers the runs that never get a row.**
- *    A rejected depth, a résumé or posting that cannot be resolved, no
- *    configured provider, or a refused admission all fail BEFORE the run row is
- *    inserted — `get(runId)` then returns `null` forever, and the failure
- *    reaches the renderer only as the `jobs:event` failure for `jobId`. A
- *    surface that consumes stage events alone shows such a run as still
- *    starting.
+ *    A résumé or posting that cannot be resolved, no configured provider, or a
+ *    refused admission all fail BEFORE the run row is inserted — `get(runId)`
+ *    then returns `null` forever, and the failure reaches the renderer only as
+ *    the `jobs:event` failure for `jobId`. A surface that consumes stage
+ *    events alone shows such a run as still starting.
  *
  * **Stage events are progress, not completion.** There is no guaranteed final
  * `finish`/`error` event: the cancel + deadline check runs in the stage hook's

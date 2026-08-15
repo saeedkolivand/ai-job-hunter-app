@@ -326,33 +326,3 @@ impl SectionKey {
         }
     }
 }
-
-/// How much work one generation is allowed to do. Parsed from the wire token
-/// against the GENERATED [`crate::ipc_contracts::generation_depths`]
-/// vocabulary, so an unknown depth is a validation error rather than a silent
-/// fallback to the cheapest (or most expensive) tier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GenerationDepth {
-    Fast,
-    Quality,
-    Max,
-}
-
-impl GenerationDepth {
-    pub fn from_wire(value: &str) -> Option<Self> {
-        match value {
-            "fast" => Some(Self::Fast),
-            "quality" => Some(Self::Quality),
-            "max" => Some(Self::Max),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Fast => "fast",
-            Self::Quality => "quality",
-            Self::Max => "max",
-        }
-    }
-}

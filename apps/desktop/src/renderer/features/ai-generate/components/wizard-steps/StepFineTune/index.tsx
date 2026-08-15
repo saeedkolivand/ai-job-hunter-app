@@ -3,24 +3,17 @@ import { AlertTriangle, Check, Gauge, type LucideIcon, SlidersHorizontal, Zap } 
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown } from '@ajh/ui';
 
-import { DepthSelector, useSmallModelWarning } from '@/components/generation/DepthSelector';
 import { useNeedsResearchKey } from '@/hooks/use-needs-research-key';
 import {
   EMPHASIS_OPTIONS,
   type EmphasisId,
-  type GenerationDepth,
   type GenerationMode,
   LETTER_MARKET_IDS,
   letterConventions,
   MODES,
 } from '@/lib/generate';
 import type { PromptQuality } from '@/store/preferences-schema';
-import {
-  useGenerationDepth,
-  usePreferencesStore,
-  usePromptQuality,
-} from '@/store/preferences-store';
-import { useSessionStore } from '@/store/session-store';
+import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
 interface StepFineTuneProps {
   mode: GenerationMode;
@@ -78,15 +71,6 @@ export function StepFineTune({
     onEmphasisChange(emphasis.includes(id) ? emphasis.filter((e) => e !== id) : [...emphasis, id]);
   const promptQuality = usePromptQuality();
   const setPromptQuality = usePreferencesStore((s) => s.setPromptQuality);
-
-  // Depth: the Settings default, overridable for THIS session only. The session
-  // value stays `undefined` until the user touches the control, so a default
-  // changed in Settings still reaches an untouched session.
-  const defaultDepth = useGenerationDepth();
-  const sessionDepth = useSessionStore((s) => s.aiGenerate.depth);
-  const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
-  const depth: GenerationDepth = sessionDepth ?? defaultDepth;
-  const smallModel = useSmallModelWarning();
 
   const showOllamaResearchHint = useNeedsResearchKey();
 
@@ -173,15 +157,6 @@ export function StepFineTune({
           })}
         </div>
       </div>
-
-      {/* Generation depth — how much WORK the run does (orthogonal to the
-          prompt-variant control below and to the tone control above). */}
-      <DepthSelector
-        value={depth}
-        onChange={(next) => setAIGenerate({ depth: next })}
-        smallModel={smallModel}
-        unavailableReason={t('aiGenerate.depthUnavailable')}
-      />
 
       {/* Prompt quality */}
       <div>

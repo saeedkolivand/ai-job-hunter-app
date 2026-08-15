@@ -401,7 +401,7 @@ export function GenerationOutput({
                   template) is picked — a silent DOM insertion otherwise. This
                   region is always mounted (a live region only announces content
                   added AFTER it exists) and `sr-only` is out of flow, so the
-                  toolbar's gap is unchanged. Pattern: SectionTimeline's announcer. */}
+                  toolbar's gap is unchanged. */}
               <span role="status" aria-live="polite" className="sr-only">
                 {showAtsToggle ? t('aiGenerate.atsToggleAvailable') : ''}
               </span>

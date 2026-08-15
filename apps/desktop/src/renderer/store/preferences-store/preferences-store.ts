@@ -1,9 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { GenerationDepth } from '@ajh/shared/schemas';
-
-import { resolveRunnableDepth } from '@/lib/generate/generation-depth';
 import { clearOnboardingMirror, markOnboardingComplete } from '@/lib/onboarding-mirror';
 
 import {
@@ -83,7 +80,6 @@ const defaultPreferences: Preferences = {
   outputTone: 'professional',
   performanceMode: 'balanced',
   promptQuality: 'auto',
-  generationDepth: 'fast',
   debugMode: false,
   semanticScoring: false,
   autoIndexOnUpload: false,
@@ -119,8 +115,6 @@ interface PreferencesActions {
    */
   setCustomPerformance: (profile: PerformanceProfile) => void;
   setPromptQuality: (promptQuality: PromptQuality) => void;
-  /** Default generation depth (fast / quality / max) — overridable per run. */
-  setGenerationDepth: (generationDepth: GenerationDepth) => void;
   setDebugMode: (enabled: boolean) => void;
   setSemanticScoring: (enabled: boolean) => void;
   setAutoIndexOnUpload: (enabled: boolean) => void;
@@ -238,13 +232,6 @@ export const usePreferencesStore = create<PreferencesStore>()(
         set((state) => ({
           ...state,
           promptQuality,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setGenerationDepth: (generationDepth: GenerationDepth) =>
-        set((state) => ({
-          ...state,
-          generationDepth,
           lastUpdated: new Date().toISOString(),
         })),
 
@@ -373,19 +360,6 @@ export const useResolvedPerformanceProfile = (): PerformanceProfile =>
     })
   );
 export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');
-
-/**
- * The user's DEFAULT generation depth, coerced to a depth this build can
- * actually RUN.
- *
- * Two distinct holes, one guard: a persisted state written before this field
- * existed (an upgraded install must not start spending four provider calls per
- * generation), and a stored value naming a tier this build cannot run — `max`
- * from a hand-edited store or a downgrade. Both land on `fast`;
- * `resolveRunnableDepth` is the single place that decision is made.
- */
-export const useGenerationDepth = () =>
-  usePreferencesStore((state) => resolveRunnableDepth(state.generationDepth));
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);
 export const useSemanticScoring = () =>
   usePreferencesStore((state) => state.semanticScoring ?? false);

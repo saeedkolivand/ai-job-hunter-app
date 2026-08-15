@@ -7,15 +7,13 @@ import type { ResumePipelineRunRequest } from '@ajh/shared/schemas';
 import { useMachine } from '@/hooks/use-machine';
 import { errorDetail } from '@/lib/error-class';
 import {
-  foldSectionStates,
-  type PipelineSectionStates,
   type PipelineStageProgress,
   resumePipelineMachine,
   type ResumePipelineState,
   stageToEvent,
   statusToEvent,
 } from '@/lib/machines/resume-pipeline.machine';
-import { useCancelJob, useJobEvents } from '@/services/use-jobs';
+import { fetchJob, useCancelJob, useJobEvents } from '@/services/use-jobs';
 import {
   usePipelineDraftStream,
   usePipelineRun,
@@ -34,16 +32,6 @@ export interface ResumePipelineSession {
   /** The umbrella job id: what `cancel` targets and what the draft stream keys on. */
   jobId: string | null;
   stage: PipelineStageProgress | null;
-  /**
-   * Per-section progress for a MAX-depth run, folded from the stage stream.
-   *
-   * Empty at quality depth (no section events exist) and empty for a
-   * RECONNECTED run: `PipelineRunEvent` carries no `sectionKey`, so the
-   * persisted trail cannot say which section each row belonged to and rebuilding
-   * the map from it would mean guessing. A reconnected run shows its stage
-   * counter and, when it finishes, the report's own section verdicts.
-   */
-  sectionStates: PipelineSectionStates;
   /**
    * The draft stage's streamed text, for DISPLAY ONLY. Not the run's result —
    * `detail.resumeText` is, and it can differ by up to two repair rounds.
@@ -113,7 +101,6 @@ export function useResumePipelineSession(
   const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [jobId, setJobId] = useState<string | null>(initialJobId ?? null);
   const [stage, setStage] = useState<PipelineStageProgress | null>(null);
-  const [sectionStates, setSectionStates] = useState<PipelineSectionStates>({});
   const [draft, setDraft] = useState('');
   const [letterDraft, setLetterDraft] = useState('');
   const [thinking, setThinking] = useState('');
@@ -152,11 +139,6 @@ export function useResumePipelineSession(
         ...(event.issueCount != null ? { issueCount: event.issueCount } : {}),
         ...(event.criticalCount != null ? { criticalCount: event.criticalCount } : {}),
       });
-      // Per-section progress rides the SAME events (`sectionKey` + phase), so
-      // it folds here rather than through a second subscription. The fold
-      // returns its input unchanged when nothing moved, so a quality-depth run
-      // — which has no section events at all — never re-renders for this.
-      setSectionStates((current) => foldSectionStates(current, event));
       // The one thing that decides which buffer new deltas land in — flips
       // ONCE, at the letter stage's start, and never back: nothing after it
       // (validate/repair/humanize) streams visibly, so there is nothing left
@@ -201,6 +183,14 @@ export function useResumePipelineSession(
    * a document the row calls reviewable. A run that already reached a terminal
    * state is left alone, error text included. `job.completed` is never read here
    * for the reason the module doc gives: the draft stream fires it mid-run.
+   *
+   * This live path still misses the EARLIEST instance of the same failure: one
+   * emitted before `start`'s `mutateAsync` resolves, while `jobIdRef` is still
+   * null/stale. `start` reconciles that window itself with one `fetchJob` read
+   * right after the ids land — and assigns `jobIdRef`/`runIdRef` synchronously
+   * at that same point, rather than leaving them to the next render commit,
+   * so a `job.failed` (or `pipeline:stage`) delivered between the reconcile
+   * read and that commit is not read against a stale ref either.
    */
   const jobIdRef = useRef(jobId);
   jobIdRef.current = jobId;
@@ -289,17 +279,54 @@ export function useResumePipelineSession(
     async (req: ResumePipelineRunRequest) => {
       setError(null);
       setStage(null);
-      setSectionStates({});
       setDraft('');
       setLetterDraft('');
       setThinking('');
       writingLetterRef.current = false;
       replayed.current = null;
       send('START');
+      // `jobIdRef`/`runIdRef`/`busyRef` are all written in the render body
+      // (see below), so the `setState` calls in this function only reach
+      // them once React actually re-renders — which is NOT guaranteed to
+      // happen before this async function's next `await` resumes. A promise
+      // that resolves entirely through the microtask queue (every mocked
+      // service call in this hook's tests; a real `invoke` can too, once its
+      // one native round trip is done) never yields the macrotask turn
+      // React's scheduler needs, so `start` can run start-to-finish without
+      // a single commit landing in between. Any live listener reading one of
+      // these refs in that window — `job.failed`/`pipeline:stage` via
+      // `jobIdRef`/`runIdRef`, `job.failed`'s busy gate via `busyRef` — sees
+      // it null/stale/false and drops the event, even after this function's
+      // OWN reconcile read already came back clean. `busy` is knowable
+      // synchronously right here: `START` always lands on a busy state (see
+      // `resumePipelineMachine`), so there is nothing to compute.
+      busyRef.current = true;
       try {
         const started = await startRun.mutateAsync(req);
         setRunId(started.runId);
         setJobId(started.jobId);
+        // Same reasoning as above, for the ids: assign both refs here,
+        // synchronously, the instant they are known, rather than leaving
+        // them to the next render commit.
+        jobIdRef.current = started.jobId;
+        runIdRef.current = started.runId;
+        // The umbrella job can also already be `failed` by the time this
+        // promise resolves: `resume_pipeline_run` spawns its task and returns
+        // the ids immediately, so an admission/validation failure inside that
+        // task (a full queue, no configured provider, …) can reach `job_fail`
+        // before this `await` returns — see that command's doc comment. And
+        // no `pipeline_runs` row was ever written for that failure either, so
+        // nothing else would ever end this session. One reconcile read
+        // against the (cheap, in-memory) `JobTracker` closes that window too.
+        const job = (await fetchJob(started.jobId)) as { status?: string; error?: string } | null;
+        if (job?.status === 'failed') {
+          console.error('[resumePipeline] the umbrella job had already failed', {
+            jobId: started.jobId,
+          });
+          setError(typeof job.error === 'string' && job.error ? job.error : null);
+          send('ERROR');
+          return null;
+        }
         return started.runId;
       } catch (err) {
         console.error('[resumePipeline] start failed', { error: errorDetail(err) });
@@ -328,7 +355,6 @@ export function useResumePipelineSession(
     setRunId(null);
     setJobId(null);
     setStage(null);
-    setSectionStates({});
     setDraft('');
     setLetterDraft('');
     setThinking('');
@@ -343,7 +369,6 @@ export function useResumePipelineSession(
     runId,
     jobId,
     stage,
-    sectionStates,
     draft,
     letterDraft,
     thinking,

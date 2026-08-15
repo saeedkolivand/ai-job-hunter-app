@@ -242,8 +242,7 @@ pub const FLOWS: &[AgentFlow] = &[
 /// `None` is a VALIDATION ERROR at the caller, never a fallback to the default
 /// flow: silently running "prep this application" for a request that asked for
 /// something else would spend a paid run on the wrong work and write the wrong
-/// document. Same rule, and the same reason, as
-/// `pipeline::resume::types::GenerationDepth::from_wire`.
+/// document.
 pub fn flow_for(kind: &str) -> Option<&'static AgentFlow> {
     FLOWS.iter().find(|flow| flow.kind == kind)
 }

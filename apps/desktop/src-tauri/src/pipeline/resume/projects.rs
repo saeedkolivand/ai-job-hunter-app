@@ -1,15 +1,15 @@
-//! Making the Projects section CODE-OWNED at quality depth, the way
-//! `assemble::render_project` already makes it at max.
+//! Making the Projects section CODE-OWNED — `project_render::render_project`
+//! is the same renderer this module's normalizer produces text through.
 //!
-//! At quality depth the model writes the whole résumé body in one streamed
-//! call, projects included — so a draft can rename a project, drop a link, or
-//! invent one the source never had, and nothing catches it until the
-//! deterministic validator flags it as a Critical several stages later. This
-//! module re-renders the DRAFT's own Projects section from the same
-//! source-seeded [`ProjectOut`]s the max-depth generator uses, using the same
-//! parser the seeder does ([`source::section`]/[`source::entries`]/
-//! [`source::seed_one_project`]) so this module and the grader it feeds can
-//! never disagree about where an entry starts or what counts as a link.
+//! The model writes the whole résumé body in one streamed call, projects
+//! included — so a draft can rename a project, drop a link, or invent one the
+//! source never had, and nothing catches it until the deterministic validator
+//! flags it as a Critical several stages later. This module re-renders the
+//! DRAFT's own Projects section from the same source-seeded [`ProjectOut`]s,
+//! using the same parser the seeder does ([`source::section`]/
+//! [`source::entries`]/[`source::seed_one_project`]) so this module and the
+//! grader it feeds can never disagree about where an entry starts or what
+//! counts as a link.
 //!
 //! ## Write authority is narrow, on purpose
 //!
@@ -35,11 +35,11 @@ use std::collections::BTreeSet;
 use crate::documents::evidence::SectionKind;
 use crate::export::parser::parse_resume;
 use crate::pipeline::resume::types::SectionKey;
-use crate::pipeline::resume::{assemble, source};
+use crate::pipeline::resume::{project_render, source};
 use crate::validate::content::{canonical_link, link_href, urls_in};
 
+use super::project_seed::ProjectOut;
 use super::stages::sections;
-use super::types_max::ProjectOut;
 
 /// Seed [`ProjectOut`]s for normalization, plus WHY the list came back empty
 /// when it did — content-free (ADR-027), for the draft-stage ledger.
@@ -57,9 +57,9 @@ use super::types_max::ProjectOut;
 /// * **An empty seed.** A seed with no link, no stack AND no description
 ///   cannot come from a locked-signature entry — every accepted tier carries
 ///   at least a link (`render_project`'s own bottom rung refuses to emit a
-///   bare name; see [`reseed_projects`]'s doc). It is always the symptom of a
-///   mis-grouped fragment: a title swallowed by the previous bullet, an
-///   achievement bullet counted as its own "entry". The SAME mis-grouping
+///   bare name). It is always the symptom of a mis-grouped fragment: a title
+///   swallowed by the previous bullet, an achievement bullet counted as its
+///   own "entry". The SAME mis-grouping
 ///   usually corrupts its neighbors too (a title's stack/description
 ///   mis-attributed to the next project), which is why this bails the WHOLE
 ///   list rather than filtering the one empty seed out.
@@ -154,9 +154,6 @@ fn seeds_are_plausible(seeds: &[ProjectOut]) -> bool {
 /// it: lowercase alphanumeric words. Two graders disagreeing about whether two
 /// entries are the same project is how a link Critical fires on a truthful
 /// document.
-///
-/// Lifted out of `stages::section_gen` (which re-imports it) so the max-depth
-/// rebuild and this module's normalizer share exactly one identity rule.
 pub(crate) fn same_project(left: &str, right: &str) -> bool {
     fn key(name: &str) -> String {
         name.split(|c: char| !c.is_alphanumeric())
@@ -186,88 +183,6 @@ fn link_sets_differ(answered: &[String], seed: &[String]) -> bool {
         links.iter().map(|l| canonical_link(link_href(l))).collect()
     };
     key(answered) != key(seed)
-}
-
-/// Re-seed every project's identity from the SOURCE and keep only the
-/// description the model was allowed to write. **Max-depth only** — see
-/// [`build`] for the normalizer's own (verbatim-preserving) matching pass.
-///
-/// Two rules, both mechanical:
-///
-/// * `name`, `links` and `stack` come back from the seed unconditionally — the
-///   model's copies are discarded even when they match, so a "helpfully"
-///   corrected host cannot survive;
-/// * a description is kept ONLY for a project whose SOURCE description was
-///   non-empty. A project the résumé says nothing about renders as its compact
-///   link line, which is the third tier of the owner's degradation ladder;
-///   inventing a blurb for it is the failure the ladder exists to prevent.
-///
-/// Order follows the MODEL's answer (that is the tailoring decision it is
-/// allowed to make) and a project it dropped stays dropped — trimming is a
-/// normal editorial cut, and `factual.altered_project_link` deliberately does
-/// not fire on one.
-///
-/// Used by `stages::section_gen::merge` (which re-imports this), which
-/// generates a WHOLE section from a JSON answer rather than splicing draft
-/// text — there is no "original text" to fall back to there, so an
-/// unmatched answer is dropped rather than kept verbatim. The THIRD return
-/// value (`linksRestored`) is additive and max's caller ignores it: **output
-/// is unchanged there; only this dropped-metric now also counts a dedup
-/// collision it silently missed before.**
-pub(crate) fn reseed_projects(
-    seeds: &[ProjectOut],
-    answered: &[ProjectOut],
-) -> (Vec<ProjectOut>, u32, u32) {
-    let mut out: Vec<ProjectOut> = Vec::new();
-    let mut dropped = 0u32;
-    let mut links_restored = 0u32;
-    for project in answered {
-        let Some(seed) = seeds
-            .iter()
-            .find(|seed| same_project(&seed.name, &project.name))
-        else {
-            // A project the source does not have. Not renderable and not
-            // repairable: there is no seed to take its links from.
-            dropped += 1;
-            continue;
-        };
-        if out.iter().any(|kept| same_project(&kept.name, &seed.name)) {
-            // A SECOND answer for a seed already kept. Counted, not silent:
-            // an uncounted drop here is exactly how `matched + dropped` stops
-            // summing to the answer's own entry count.
-            dropped += 1;
-            continue;
-        }
-        // A project whose seed carries no links, no stack and no description is
-        // below the ladder's bottom rung, not on it: `render_project` emits a
-        // bare `• {name}`, `parse_resume` strips the marker, and
-        // `consistency::tier_of` then rejects the one-line entry — the document
-        // flags ITSELF with `consistency.project_structure`. Dropping it is the
-        // same call this function already makes about content the source
-        // cannot back.
-        if seed.links.is_empty() && seed.stack.is_empty() && seed.description.trim().is_empty() {
-            dropped += 1;
-            continue;
-        }
-        let described = !seed.description.trim().is_empty();
-        if !described && !project.description.trim().is_empty() {
-            dropped += 1; // an invented blurb for a data-less project
-        }
-        if link_sets_differ(&project.links, &seed.links) {
-            links_restored += 1;
-        }
-        out.push(ProjectOut {
-            name: seed.name.clone(),
-            links: seed.links.clone(),
-            stack: seed.stack.clone(),
-            description: if described {
-                one_line(&project.description)
-            } else {
-                String::new()
-            },
-        });
-    }
-    (out, dropped, links_restored)
 }
 
 /// Whether `seed` and `project` name the same resource by URL, comparing
@@ -360,8 +275,8 @@ pub(crate) fn normalize_projects_with_stats(
 
 /// Re-render the DRAFT's Projects section from the source-seeded truth,
 /// dropping what the model invented and restoring what it altered — the
-/// quality-depth mirror of what `assemble::render_project` already guarantees
-/// at max. See the module doc for why write authority is narrow.
+/// quality-depth mirror of what `project_render::render_project` already
+/// guarantees at max. See the module doc for why write authority is narrow.
 pub(crate) fn normalize_projects_outcome(
     document: &str,
     seeds: &[ProjectOut],
@@ -514,7 +429,7 @@ fn build(document: &str, seeds: &[ProjectOut]) -> ProjectsNormalizeOutcome {
                         String::new()
                     },
                 };
-                pieces.push(assemble::render_project(&rebuilt));
+                pieces.push(project_render::render_project(&rebuilt));
                 matched += 1;
             }
         }
@@ -537,7 +452,7 @@ fn build(document: &str, seeds: &[ProjectOut]) -> ProjectsNormalizeOutcome {
     // — which this replacement, built fresh, does not carry. Not the LAST
     // section ⇒ append one back, or the splice would butt the next heading
     // directly against the last rendered line (mirrors the trailing-blank
-    // convention `stages::sections::entry_range` documents for entries).
+    // convention that separates entries: the blank belongs to neither side).
     if raw_section.end < parsed.lines.len() {
         replacement.push_str("\n\n");
     }
@@ -769,6 +684,19 @@ mod test {
         assert!(normalized.contains("A double-entry bookkeeping tool for small businesses."));
         assert_eq!(stats.matched, 2);
         assert_eq!(stats.links_restored, 1, "only CrossKit's link was altered");
+        // `render_project`'s separator glyph (`project_render::PROJECT_SEPARATOR`)
+        // has no other pin now that the old `max_test.rs` is gone — the whole
+        // suite passes even if this character changes underneath it. Pinned
+        // here on both a name-to-link join (CrossKit, tier 3, bullet form)
+        // and a multi-item stack join (Ledger CLI's `Rust`/`SQLite`).
+        assert!(
+            normalized.contains("• CrossKit · https://github.com/janedoe/crosskit"),
+            "the project separator glyph is pinned: {normalized}"
+        );
+        assert!(
+            normalized.contains("Rust · SQLite"),
+            "the stack-join separator glyph is pinned: {normalized}"
+        );
     }
 
     // ── C2 / all-verbatim: never a heading-only section ─────────────────

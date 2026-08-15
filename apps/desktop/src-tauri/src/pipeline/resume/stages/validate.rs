@@ -2,8 +2,7 @@
 //!
 //! Every Critical in this pipeline comes from here, and everything here is a
 //! deterministic comparison against the SOURCE résumé. That is the mechanical
-//! form of the core rule: **a model may never emit a Critical.** An LLM judge
-//! exists at max depth and is Warning-only.
+//! form of the core rule: **a model may never emit a Critical.**
 //!
 //! Never cached, and not because it would be hard: a validator verdict is the
 //! thing the user is asked to trust, and a stale one reports a document that no

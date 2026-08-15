@@ -73,10 +73,6 @@ pub(super) const ARTIFACT_CAP: usize = 16_000;
 /// Char cap on the free-text steer a user may attach to a section regenerate.
 /// Mirrors the wire schema's `.max(500)`; serde enforces nothing, so the prompt
 /// builder caps its own copy.
-///
-/// `pub(super)` for `section_prompts`, which fences the same field for the same
-/// command — it had a second `= 500` of its own, and two literals both claiming
-/// to mirror one schema are two literals that can drift apart.
 pub(super) const NOTE_CAP: usize = 500;
 
 /// Char cap on ONE section's current text on the repair path.
@@ -398,13 +394,11 @@ pub fn letter_user(resume: &str, job_ad: &str, strategy: &ResumeStrategy) -> Str
 // ── humanize ─────────────────────────────────────────────────────────────────
 
 /// Char cap on the WHOLE document `humanize` rewrites — the résumé draft or the
-/// letter, never a single section. Same figure and the same rationale as
-/// `section_prompts::DOCUMENT_CAP` (the max-depth judge's own whole-document
-/// fence): generously above a two-page résumé (~6 000 chars) so a real
-/// document is never cut. Sized independently rather than reused from there,
-/// because [`fenced`] truncates with NO marker — a truncated INPUT here would
-/// mean the model returns a truncated "full document", which is exactly the
-/// content loss the deterministic revert guard exists to catch, not license.
+/// letter, never a single section. Generously above a two-page résumé (~6 000 chars)
+/// so a real document is never cut. Sized conservatively because [`fenced`]
+/// truncates with NO marker — a truncated INPUT here would mean the model
+/// returns a truncated "full document", which is exactly the content loss the
+/// deterministic revert guard exists to catch, not license.
 pub(super) const HUMANIZE_DOCUMENT_CAP: usize = 12_000;
 
 /// Which voice tier `humanize` composes for the document it is rewriting.
