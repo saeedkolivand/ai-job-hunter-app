@@ -1,6 +1,6 @@
 [package]
 name = "ajh-tauri"
-version = "0.135.0"
+version = "0.136.0"
 edition = "2021"
 # Real floor derived from `cargo metadata`'s per-package `rust_version` fields
 # (highest wins): sysinfo 0.39.6 → 1.95, the next-highest is serial_test 4.0.1 →
