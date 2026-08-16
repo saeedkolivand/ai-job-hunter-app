@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
@@ -120,6 +120,70 @@ pub(crate) fn apply_stop(
         }
     }
     Ok(())
+}
+
+/// The run's TIMEOUT decision — split out of [`StageHooks::after`] for the
+/// same reason [`apply_stop`] is split out of `before`: provable without an
+/// `AppHandle`.
+///
+/// A per-call HTTP deadline expiring INSIDE a stage's own body (as opposed to
+/// the stage BOUNDARY [`apply_stop`] guards, which never lets the stage run
+/// at all) reaches here as [`StageOutcome::timed_out`] — set by
+/// `Pipeline::run_hooked` from the stage's own `AppError::Timeout`. The
+/// pipeline's OTHER in-loop deadline checks (`repair`/`humanize`, racing the
+/// WHOLE-run deadline) already record their own [`StoppedReason::RunTimeout`]
+/// and return `Ok`, so `timed_out` is never true for those — first-writer-wins
+/// on [`RunLedger::stop`] would leave this a no-op even if it somehow were.
+pub(crate) fn apply_timeout(ledger: &RunLedger, stage: &StageInfo, outcome: StageOutcome) {
+    if outcome.timed_out {
+        ledger.stop(StoppedReason::Timeout);
+        ledger.note_timeout(stage.stage, outcome.ms);
+    }
+}
+
+/// Round a millisecond duration UP to whole seconds, floored at 1 — shared by
+/// [`timeout_message`] and [`timeout_failure_data`] so the English sentence
+/// and the structured event payload always report the same number.
+///
+/// Ceiling, not truncation: `ms / 1000` rounds DOWN, so any sub-second
+/// timeout (a real, reachable value once effort scales the per-call deadline
+/// down far enough) rendered "within 0s" and shipped `seconds: 0` to the
+/// renderer's banner — a duration nobody waited, describing a failure that
+/// took some non-zero time. `.max(1)` is the floor for the same reason: a
+/// timeout that took any time at all is never "0 seconds".
+fn round_up_seconds(ms: u64) -> u64 {
+    ms.div_ceil(1000).max(1)
+}
+
+/// The actionable text a per-call deadline failure ends up as, once
+/// [`RunLedger::timeout_detail`] names the stage and how long it waited.
+///
+/// Content-free per ADR-027 — a stage NAME and a duration, never prompt or
+/// document text — but plain, un-localized English, so this is no longer
+/// what reaches the renderer's error banner (see [`timeout_failure_data`]
+/// for that). It still becomes `AppError::Timeout`'s message, which
+/// `execute`'s caller writes onto the job's own tracked `error` field
+/// (`jobs_get`/`jobs_list`, a diagnostics surface with no i18n of its own) —
+/// a readable fallback for that surface, same as every other `job_fail`
+/// message this crate has always sent there.
+pub(crate) fn timeout_message(stage: &str, ms: u64) -> String {
+    format!(
+        "The \"{stage}\" step didn't get a response within {}s. Try a faster model or a lower \
+         effort level.",
+        round_up_seconds(ms)
+    )
+}
+
+/// The `job.failed` EVENT payload for a per-call timeout — `{ kind, stage,
+/// seconds }`, structured and machine-stable rather than [`timeout_message`]'s
+/// pre-formatted English sentence, so the renderer can render an actionable,
+/// LOCALIZED banner (`pipeline.timeout`, with `stage` mapped through the same
+/// `pipeline.stage.*` labels the step tracker already shows) instead of
+/// echoing the raw internal stage key. `"kind": "timeout"` is a discriminator
+/// so a consumer never has to guess a bare `{ stage, seconds }` object apart
+/// from some other job's payload shape.
+pub(crate) fn timeout_failure_data(stage: &str, ms: u64) -> Value {
+    json!({ "kind": "timeout", "stage": stage, "seconds": round_up_seconds(ms) })
 }
 
 /// The run's TERMINAL STATE — status and stopped reason, derived together.
@@ -359,6 +423,7 @@ impl StageHooks for RunHooks {
     }
 
     async fn after(&self, stage: &StageInfo, outcome: StageOutcome) {
+        apply_timeout(&self.ledger, stage, outcome);
         let phase = if outcome.ok {
             PHASE_FINISH
         } else {

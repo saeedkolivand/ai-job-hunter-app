@@ -1008,7 +1008,7 @@
       },
       "stages": {
         "title": "Modelle pro Schritt",
-        "description": "Ein gründlicher Durchlauf besteht aus mehreren Schritten, und jeder Schritt kann ein anderes Modell nutzen — für die auswertenden Schritte genügt ein kleineres Modell, das Schreiben profitiert vom besten. Ein Schritt ohne eigene Einstellung läuft auf dem aktiven Modell. Schnelle Durchläufe nutzen überall das aktive Modell und ignorieren diese Karte.",
+        "description": "Das Zuschneiden eines Lebenslaufs auf eine Stelle besteht aus mehreren Schritten, und jeder Schritt kann ein anderes Modell nutzen — für die auswertenden Schritte genügt ein kleineres Modell, das Schreiben profitiert vom besten. Ein Schritt ohne eigene Einstellung läuft auf dem aktiven Modell. Ohne Stellenanzeige entsteht der Text in einem einzigen Durchlauf mit dem aktiven Modell.",
         "defaultModel": "Standard — {{model}}",
         "defaultNoModel": "Standard — kein Modell ausgewählt",
         "cliDefaultModel": "CLI-Standard",
@@ -1663,7 +1663,8 @@
         "label": "KI-Spuren entfernen",
         "description": "Schreibt nur die Zeilen um, die wie KI-Text wirken."
       },
-      "allDone": "Alle Schritte abgeschlossen"
+      "allDone": "Alle Schritte abgeschlossen",
+      "elapsedTotal": "{{time}} insgesamt"
     },
     "state": {
       "queued": "Wartet auf einen freien Platz…",
@@ -1687,11 +1688,13 @@
       "cancelled": "Abgebrochen",
       "truncated": "Gestoppt — die Antwort wurde abgeschnitten",
       "budgeted": "Gestoppt — das Tageslimit des Anbieters ist erreicht",
+      "timeout": "Gestoppt — ein Schritt hat nicht rechtzeitig geantwortet. Versuchen Sie ein schnelleres Modell oder eine niedrigere Aufwandsstufe.",
       "runTimeout": "Gestoppt — die Zeit für den Lauf war um",
       "maxToolCalls": "Beim Limit für Werkzeugaufrufe gestoppt",
       "maxRepairs": "Gestoppt — das Budget für Nachbesserungen war aufgebraucht",
       "stopped": "Gestoppt"
     },
+    "timeout": "Der Schritt „{{stage}}“ hat innerhalb von {{seconds}} s keine Antwort erhalten. Versuchen Sie ein schnelleres Modell oder eine niedrigere Aufwandsstufe.",
     "runs": {
       "title": "Gestufte Läufe für diese Stelle",
       "empty": "Für diese Anzeige gibt es noch keine gestuften Läufe.",

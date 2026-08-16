@@ -205,6 +205,7 @@ impl<'a> Stage<QualityCtx<'a>> for MatchEvidence {
                         &match_evidence_user(ctx.input.source_resume, &ctx.analysis),
                         EvidenceMap::EXAMPLE,
                         Some(&EvidenceMap::schema()),
+                        ctx.input.effort,
                     )
                     .await?;
                 ground(

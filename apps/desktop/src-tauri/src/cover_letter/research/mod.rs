@@ -72,7 +72,9 @@ impl CompanyResearch {
         // changed in that window — an Exa key added/removed mid-flight —
         // the key could name a backend that did NOT produce the brief it
         // gets stored under). See `CompanySearchRoute`'s doc comment.
-        let identity = StageIdentity::of(completer);
+        // No effort concept on this path (search + synthesis, never a `think`
+        // request) — `None` here is a real absence, not an omission.
+        let identity = StageIdentity::of(completer, None);
         let route = completer.resolve_search_route();
         let key = cache_key(identity, route.backend(), &company);
 
@@ -253,6 +255,7 @@ mod tests {
             provider,
             model,
             context_window: None,
+            effort: None,
         }
     }
 

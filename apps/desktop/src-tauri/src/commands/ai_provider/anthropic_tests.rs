@@ -1385,6 +1385,116 @@ async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_
     assert!(matches!(err, AppError::Network(_)));
 }
 
+// ── `reqwest::Error::is_timeout` — the assumption every `complete_impl` now relies on ──
+//
+// `AppError::Timeout` (see `complete_impl`'s `send_with_retry` failure branch,
+// and its siblings in `openai.rs`/`gemini.rs`/`ollama.rs`) depends on
+// `is_timeout()` firing whenever a call gave up waiting on ITS OWN `.timeout()`
+// deadline — which, per reqwest's own source, is checked by walking the whole
+// error chain (its `TimedOut` marker, an inner `hyper::Error::is_timeout()`,
+// or a raw `io::ErrorKind::TimedOut`), not by matching one specific error
+// shape. It must NOT also fire for a connection this process itself refused —
+// that is a different failure (nothing was ever waited on) and would
+// misreport an actively-down host as "try a faster model". `reqwest::Error`
+// has no public constructor, so this pins both halves of that boundary
+// against REAL errors rather than trusting the library's docs. One place for
+// all four adapters: the classification is a `reqwest` fact, not an
+// Anthropic-specific one.
+
+/// A server that accepts the connection immediately (so a CONNECT check would
+/// succeed) but writes NOTHING — not even the status line — until `delay` has
+/// passed. This is `.send()`'s own timeout, not `slow_body_server`'s
+/// already-resolved-headers case above: it is what a backend that computes
+/// its whole answer before responding at all (Ollama's non-streaming
+/// `/api/chat`, generating for minutes with nothing on the wire until it is
+/// done) actually looks like on the socket.
+async fn wholly_slow_server(delay: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut buf = [0u8; 4096];
+        loop {
+            match socket.read(&mut buf).await {
+                Ok(0) | Err(_) => return,
+                Ok(n) if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") => break,
+                Ok(_) => continue,
+            }
+        }
+        tokio::time::sleep(delay).await;
+        let body = "{}";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = socket.write_all(response.as_bytes()).await;
+        let _ = socket.flush().await;
+    });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn reqwest_is_timeout_fires_for_the_clients_own_deadline_and_never_for_a_connect_failure() {
+    let base = wholly_slow_server(Duration::from_millis(200)).await;
+    let timed_out = crate::net::http::shared()
+        .get(&base)
+        .timeout(Duration::from_millis(50))
+        .send()
+        .await
+        .expect_err("a 50ms deadline against a 200ms-silent server must fail");
+    assert!(timed_out.is_timeout(), "{timed_out}");
+
+    // A REFUSED connection is a DIFFERENT `reqwest::Error` shape —
+    // `is_timeout()` must not also fire for it, or every actively-refused
+    // provider host would misreport as "try a faster model". A well-known
+    // port like 1 is NOT a reliable negative case (some environments
+    // firewall/blackhole it instead of sending RST, which is
+    // indistinguishable from a timeout — correctly so, since that IS what a
+    // client-side deadline is for). A loopback port this process just bound
+    // and then dropped is: the kernel's own TCP stack refuses it immediately,
+    // no firewall or DNS involved, hermetic and portable across OSes.
+    let refused = refused_connection_error().await;
+    assert!(!refused.is_timeout(), "{refused}");
+}
+
+/// Bind an ephemeral loopback port, free it, then connect to the same port
+/// and return the resulting refusal — bounded-retried against a fresh port
+/// each time, because `tests.rs`'s `refused_connection_error` runs the exact
+/// same pattern in the SAME test binary (both compile into one crate target,
+/// tests run in parallel by default), so a sibling test can reclaim the
+/// just-freed port before this one reconnects. Generous on the per-attempt
+/// timeout on purpose: a loopback refusal is normally sub-millisecond, but a
+/// sandboxed/virtualized network stack can add real latency before the RST
+/// arrives (observed: ~2s in one such environment) — this only needs to
+/// clear that, not race it. A GENUINE timeout would still fail the caller's
+/// `is_timeout()` assertion regardless of this bound, since that assertion
+/// checks the classification, not the wall-clock.
+async fn refused_connection_error() -> reqwest::Error {
+    for _ in 0..5 {
+        let refused_addr = {
+            let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            probe.local_addr().unwrap()
+            // `probe` drops here — the port is released with nothing bound to it.
+        };
+        let url = reqwest::Url::parse(&format!("http://{refused_addr}/v1/messages")).unwrap();
+        match crate::net::http::shared()
+            .get(url)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Err(e) => return e,
+            // Another test's listener claimed the freed port in the gap
+            // between drop and connect — retry with a fresh one rather than
+            // let an accidental success pass (or panic for the wrong reason).
+            Ok(_) => continue,
+        }
+    }
+    panic!("could not observe a refused loopback connection after 5 attempts");
+}
+
 // ── Structured-output model gate ──────────────────────────────────────────────
 
 #[test]

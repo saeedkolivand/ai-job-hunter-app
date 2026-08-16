@@ -101,6 +101,23 @@ pub fn job_fail(app: &AppHandle, id: &str, error: String) {
     emit_job_event(app, "job.failed", id, Some(Value::String(error)));
 }
 
+/// Like [`job_fail`], for a caller that can say more than the message text.
+///
+/// `message` still becomes the job's own tracked `error` (the
+/// `jobs_get`/`jobs_list` surface, a `String` field with no i18n of its own —
+/// see [`crate::commands::resume_pipeline::hooks::timeout_message`] for why
+/// that stays plain English). `data` rides as `job.failed`'s event payload
+/// INSTEAD of `message`, so a consumer that knows the shape (currently only
+/// the staged pipeline's per-call timeout,
+/// [`crate::commands::resume_pipeline::hooks::timeout_failure_data`]) can
+/// render something better than the raw string — a localized message built
+/// from structured fields, rather than an internal stage key spliced into
+/// English prose.
+pub fn job_fail_with_data(app: &AppHandle, id: &str, message: String, data: Value) {
+    app.state::<Mutex<JobTracker>>().lock().fail(id, message);
+    emit_job_event(app, "job.failed", id, Some(data));
+}
+
 /// Mark a job cancelled and emit `job.cancelled`.
 pub fn job_cancel(app: &AppHandle, id: &str) {
     app.state::<Mutex<JobTracker>>().lock().cancel(id);

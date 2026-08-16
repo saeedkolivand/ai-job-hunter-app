@@ -169,12 +169,25 @@ pub fn splice(text: &str, section: &RawSection, replacement: &str) -> String {
 ///
 /// A TRUNCATED section is a FAILED attempt, not a smaller section: splicing one
 /// in deletes the rest of the original and the document silently loses content.
-/// Two things have to hold — the replacement must open with a heading line, and
-/// it must carry at least one line of body under it. (An over-eager model that
-/// answers with the whole résumé is caught by the splice being section-scoped:
-/// the extra sections land inside this section's range and the validator sees
-/// the duplicate.)
+/// Three things have to hold — free of any registered fence tag, the
+/// replacement must open with a heading line, and it must carry at least one
+/// line of body under it. (An over-eager model that answers with the whole
+/// résumé is caught by the splice being section-scoped: the extra sections
+/// land inside this section's range and the validator sees the duplicate.)
+///
+/// **The fence-tag check is the same shape gate `humanize`'s
+/// `is_usable_rewrite` added** (see that module's doc for the incident): the
+/// repair prompt wraps the section it hands the model as `<resume_section>…
+/// </resume_section>` and asks for "the replacement section" back — a model
+/// that echoes the wrapper instead of just the content would splice
+/// `<resume_section>` literally into the document, and a heading/body count
+/// alone would not catch it (the wrapper adds a line, it doesn't remove one).
+/// Checked against the FULL `crate::prompt_fence` registry, not just this one
+/// tag, for the same reason.
 pub fn is_usable_replacement(replacement: &str) -> bool {
+    if crate::prompt_fence::contains_fence_tag(replacement) {
+        return false;
+    }
     let mut lines = replacement.lines().map(str::trim).filter(|l| !l.is_empty());
     let Some(first) = lines.next() else {
         return false;

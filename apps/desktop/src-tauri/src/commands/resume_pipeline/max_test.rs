@@ -212,29 +212,108 @@ fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
     const URL: &str = "https://boards.example/jobs/1";
 
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, URL),
+        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, "", URL),
         SaveVerdict::Save
     );
-    assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, URL),
-        SaveVerdict::Refused,
+    assert!(
+        matches!(
+            super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL),
+            SaveVerdict::Refused(_)
+        ),
         "a document that lost the source's work history is REFUSED, not skipped"
     );
 
     // Benign non-saves stay benign: an unlinked run is session-only by design,
     // and an empty draft is a run that already failed on its own terms.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, ""),
+        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", ""),
         SaveVerdict::Nothing
     );
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "   ", URL),
+        super::save_verdict(SOURCE_WITH_WORK, "   ", "", URL),
         SaveVerdict::Nothing
     );
     // …and a source with no work history of its own is never refused.
     assert_eq!(
-        super::save_verdict(NO_WORK, NO_WORK, URL),
+        super::save_verdict(NO_WORK, NO_WORK, "", URL),
         SaveVerdict::Save
+    );
+}
+
+/// **A leaked prompt-fence tag refuses the save too — from EITHER document.**
+///
+/// `draft` and `cover_letter` are the sole producers of these documents (no
+/// upstream stage to fall back to the way `humanize`/`repair` can), so an
+/// echoed `<generated_resume>`/`<candidate_resume>` wrapper from either one
+/// must be caught here or it reaches the saved aggregate and the exported PDF
+/// unfiltered — the defect `humanize.rs`/`sections.rs`'s own
+/// `contains_fence_tag` gates never covered because neither stage sits
+/// downstream of `draft`/`cover_letter`.
+///
+/// Mutation check: check only `draft` (never `letter`) and the letter-only
+/// case stops refusing; drop the `contains_fence_tag` calls entirely and
+/// every case here stops refusing while
+/// `a_refused_save_is_distinguishable_from_having_nothing_to_save` above
+/// still passes (proving THAT test alone cannot catch this regression).
+#[test]
+fn a_leaked_fence_tag_in_either_document_refuses_the_save() {
+    use super::SaveVerdict;
+
+    const SOURCE: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                          - Owned the settlement service\n";
+    const CLEAN_DRAFT: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                               - Owned the settlement service\n";
+    const URL: &str = "https://boards.example/jobs/1";
+    // A real leak looks like the WHOLE document swallowed inside the wrapper
+    // the pipeline uses to fence untrusted input — see `prompt_fence.rs` — so
+    // the work history is still there, tags aside; this isolates the
+    // assertion to the fence-tag check rather than tripping the (separate,
+    // already-covered) work-history one.
+    const LEAKED_DRAFT: &str = "<generated_resume>\nWork Experience\n\n\
+                                Staff Engineer, Acme  2021 - Present\n\
+                                - Owned the settlement service\n</generated_resume>";
+    const LEAKED_LETTER: &str = "<candidate_resume>\nDear hiring team,\n</candidate_resume>";
+
+    // A clean draft + no letter still saves.
+    assert_eq!(
+        super::save_verdict(SOURCE, CLEAN_DRAFT, "", URL),
+        SaveVerdict::Save
+    );
+
+    // The draft itself leaked.
+    assert!(matches!(
+        super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL),
+        SaveVerdict::Refused(_)
+    ));
+
+    // The draft is clean but the LETTER leaked — must still refuse; this is
+    // exactly the gap a draft-only check would miss.
+    assert!(matches!(
+        super::save_verdict(SOURCE, CLEAN_DRAFT, LEAKED_LETTER, URL),
+        SaveVerdict::Refused(_)
+    ));
+
+    // The refusal must be ACTIONABLE, not a bare tag — and distinguishable
+    // from the work-history refusal so the two defects don't share a
+    // (potentially misleading) message.
+    let SaveVerdict::Refused(reason) = super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL) else {
+        panic!("expected Refused");
+    };
+    assert!(
+        !reason.is_empty(),
+        "the user must get an actionable message, not a silent empty result"
+    );
+    let SaveVerdict::Refused(work_history_reason) = super::save_verdict(
+        SOURCE,
+        "Professional Summary\n\nA payments engineer.\n",
+        "",
+        URL,
+    ) else {
+        panic!("expected Refused");
+    };
+    assert_ne!(
+        reason, work_history_reason,
+        "a leaked fence tag and a lost work history are different defects"
     );
 }
 
