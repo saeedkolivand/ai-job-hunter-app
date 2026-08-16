@@ -1093,8 +1093,15 @@ Saeed Kolivand
         };
         let letter = "Dear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
         for meta in [None, Some("")] {
-            let model =
-                parse_cover_letter(letter, Some(&profile), meta, "us", "en", dummy_style(), false);
+            let model = parse_cover_letter(
+                letter,
+                Some(&profile),
+                meta,
+                "us",
+                "en",
+                dummy_style(),
+                false,
+            );
             assert_eq!(
                 model.letterhead.name, "Jane Smith",
                 "meta={meta:?}: the contact profile's name must win over the \

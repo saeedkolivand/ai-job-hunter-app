@@ -1204,7 +1204,14 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
     // the market conventions and (when supplied) the date — `today` reaches
     // a prompt as free renderer text same as anything else here, so it gets
     // the same forgery check.
-    let letter = letter_user(hostile, hostile, &ResumeStrategy::default(), "de", hostile, hostile);
+    let letter = letter_user(
+        hostile,
+        hostile,
+        &ResumeStrategy::default(),
+        "de",
+        hostile,
+        hostile,
+    );
     assert_eq!(letter.matches("</resume_strategy>").count(), 1);
     assert_eq!(letter.matches("</market_conventions>").count(), 1);
     assert_eq!(letter.matches("</letter_date>").count(), 1);
@@ -1380,14 +1387,27 @@ fn letter_user_fences_a_non_empty_company_brief_and_omits_a_blank_one() {
     assert!(with_brief.contains("Acme builds payment infrastructure."));
     assert!(with_brief.contains("</company_research>"));
 
-    let blank_brief =
-        letter_user("resume", "job ad", &ResumeStrategy::default(), "intl", "", "   ");
+    let blank_brief = letter_user(
+        "resume",
+        "job ad",
+        &ResumeStrategy::default(),
+        "intl",
+        "",
+        "   ",
+    );
     assert!(!blank_brief.contains("<company_research>"));
 
     // The unset-flag path (empty string, same as every caller before this
     // feature existed) is BYTE-IDENTICAL to a caller that never knew about
     // `company_brief` at all.
-    let unset = letter_user("resume", "job ad", &ResumeStrategy::default(), "intl", "", "");
+    let unset = letter_user(
+        "resume",
+        "job ad",
+        &ResumeStrategy::default(),
+        "intl",
+        "",
+        "",
+    );
     assert_eq!(unset, blank_brief);
 }
 
@@ -1413,10 +1433,7 @@ fn research_company_brief_has_no_fallible_operator_that_could_fail_the_run() {
         .find("async fn research_company_brief")
         .expect("research_company_brief must exist");
     let body = &source[start..];
-    let end = body
-        .find("\n}\n")
-        .map(|i| i + 3)
-        .unwrap_or(body.len());
+    let end = body.find("\n}\n").map(|i| i + 3).unwrap_or(body.len());
     let body = &body[..end];
 
     assert!(
@@ -3080,7 +3097,12 @@ fn humanize_is_worse_reverts_on_a_coverage_drop_even_with_nothing_else_worse() {
     // alone — `round_is_worse`/`voice_count` still decide, and both are clean
     // here.
     let uncomparable = ok_report();
-    assert!(!humanize_is_worse(&before, ANY_TEXT, &uncomparable, ANY_TEXT));
+    assert!(!humanize_is_worse(
+        &before,
+        ANY_TEXT,
+        &uncomparable,
+        ANY_TEXT
+    ));
 }
 
 /// **Zero findings is a zero-cost no-op** — the gate the stage itself applies

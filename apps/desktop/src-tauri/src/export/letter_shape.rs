@@ -113,7 +113,8 @@ mod tests {
         );
         assert!(out.contains(body));
         assert!(
-            out.trim_end().ends_with("Mit freundlichen Grüßen\nMax Müller"),
+            out.trim_end()
+                .ends_with("Mit freundlichen Grüßen\nMax Müller"),
             "got: {out:?}"
         );
     }
@@ -162,12 +163,18 @@ mod tests {
         let has_salutation_only = "Dear Hiring Manager,\n\nBody text here.";
         let out = complete_letter_text(has_salutation_only, "us", "Jane Smith");
         assert_eq!(out.matches("Dear Hiring Manager,").count(), 1);
-        assert!(out.trim_end().ends_with("Sincerely,\nJane Smith"), "got: {out:?}");
+        assert!(
+            out.trim_end().ends_with("Sincerely,\nJane Smith"),
+            "got: {out:?}"
+        );
 
         let has_signoff_only = "Body text here.\n\nSincerely,\nJane Smith";
         let out2 = complete_letter_text(has_signoff_only, "us", "Jane Smith");
         assert_eq!(out2.matches("Sincerely,").count(), 1);
-        assert!(out2.starts_with("Dear Hiring Manager,\n\n"), "got: {out2:?}");
+        assert!(
+            out2.starts_with("Dear Hiring Manager,\n\n"),
+            "got: {out2:?}"
+        );
     }
 
     // ── salutation-placement regression: `14bd60c3` taught `letter_system` to

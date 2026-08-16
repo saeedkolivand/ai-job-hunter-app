@@ -141,10 +141,17 @@ const RESOLVED_REQUIREMENT_BYTES_CAP: usize = 300;
 /// `ai_generations::merge_application`'s pick-non-empty merge then silently
 /// froze — a stale or even a different posting's requirements kept showing
 /// as this one's keyword chips.
-pub(crate) fn resolved_top_requirements(analysis: &JobAnalysis, fallback: &[String]) -> Vec<String> {
+pub(crate) fn resolved_top_requirements(
+    analysis: &JobAnalysis,
+    fallback: &[String],
+) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for requirement in analysis.must_have.iter().chain(analysis.nice_to_have.iter()) {
+    for requirement in analysis
+        .must_have
+        .iter()
+        .chain(analysis.nice_to_have.iter())
+    {
         let clamped = crate::applications::clamp_to_bytes(
             requirement.trim().to_string(),
             RESOLVED_REQUIREMENT_BYTES_CAP,

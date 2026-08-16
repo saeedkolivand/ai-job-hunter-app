@@ -1244,12 +1244,14 @@ fn body_only_letter_gets_completed_furniture_in_docx_document_xml() {
         // into one run-on paragraph — the DOCX shape of the same bug the PDF
         // tests guard ("plain text, no bold, no paragraph spacing").
         let paras = docx_paragraphs(&xml);
-        let idx1 = paras.iter().position(|p| p.contains(needle1)).unwrap_or_else(|| {
-            panic!("{market}: no <w:p> paragraph contains {needle1:?}: {xml}")
-        });
-        let idx2 = paras.iter().position(|p| p.contains(needle2)).unwrap_or_else(|| {
-            panic!("{market}: no <w:p> paragraph contains {needle2:?}: {xml}")
-        });
+        let idx1 = paras
+            .iter()
+            .position(|p| p.contains(needle1))
+            .unwrap_or_else(|| panic!("{market}: no <w:p> paragraph contains {needle1:?}: {xml}"));
+        let idx2 = paras
+            .iter()
+            .position(|p| p.contains(needle2))
+            .unwrap_or_else(|| panic!("{market}: no <w:p> paragraph contains {needle2:?}: {xml}"));
         assert_ne!(
             idx1, idx2,
             "{market}: body paragraphs containing {needle1:?} and {needle2:?} must render as \

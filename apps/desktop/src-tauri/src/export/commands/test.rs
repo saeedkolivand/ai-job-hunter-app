@@ -275,7 +275,9 @@ fn test_generate_filename() {
 /// `Some` and never reached this fallback rung at all.
 #[test]
 fn generate_filename_falls_back_to_contact_profile_when_meta_name_is_blank() {
-    use super::super::types::{DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId};
+    use super::super::types::{
+        DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
+    };
     use crate::contact_profile::ContactProfile;
 
     let request = ExportRequest {

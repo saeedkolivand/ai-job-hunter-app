@@ -297,7 +297,10 @@ pub(crate) fn humanize_is_worse(
 /// see [`crate::validate::content::ContentMetrics::keyword_coverage`]) never
 /// rejects: there is nothing to compare.
 fn coverage_dropped(before: &ContentReport, after: &ContentReport) -> bool {
-    match (before.metrics.keyword_coverage, after.metrics.keyword_coverage) {
+    match (
+        before.metrics.keyword_coverage,
+        after.metrics.keyword_coverage,
+    ) {
         (Some(before), Some(after)) => {
             before - after >= crate::validate::content::MIN_COVERAGE_DROP_POINTS
         }
