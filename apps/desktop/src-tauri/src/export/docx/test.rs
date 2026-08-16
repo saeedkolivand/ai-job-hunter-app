@@ -1257,5 +1257,23 @@ fn body_only_letter_gets_completed_furniture_in_docx_document_xml() {
             "{market}: body paragraphs containing {needle1:?} and {needle2:?} must render as \
              separate <w:p> elements, not merged into one: {xml}"
         );
+
+        // `needle2` is the `**bold**` keyword in the fixture — actually assert
+        // the markdown becomes a real bold RUN, not just separate paragraphs.
+        // Literal `**` must never leak into the rendered XML text...
+        assert!(
+            !xml.contains("**"),
+            "{market}: literal ** markdown leaked into word/document.xml — \
+             parse_inline_md must have consumed it: {xml}"
+        );
+        // ...and the paragraph carrying the bold keyword must contain a real
+        // `<w:b />` run property (see `create_runs` in `docx_renderer.rs`),
+        // the same proxy `navy_docx_...` above uses for bold-run assertions.
+        assert!(
+            paras[idx2].contains("<w:b />"),
+            "{market}: paragraph containing {needle2:?} must carry a bold run \
+             (<w:b />): {}",
+            paras[idx2]
+        );
     }
 }

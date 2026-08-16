@@ -211,12 +211,12 @@ pub async fn ai_inspect_model(model: String) -> Value {
 }
 
 /// The outcome of [`admit_research`]: guard+completer, or WHY refused — L-2:
-/// `ai_salary::ai_lookup_salary_reasoned` surfaces the reason to the model;
-/// every other caller still just degrades to its own empty value on any
-/// non-`Admitted`. `pub(super)`: `commands::ai_salary` (split out purely for
-/// R8) reuses it — zero business-logic duplication. `#[allow]`: a
-/// short-lived, immediately-destructured value, never a loop/collection —
-/// boxing `Completer` would only add indirection.
+/// `ai_salary::ai_lookup_salary_reasoned`, the sole caller, surfaces the
+/// reason to the model rather than collapsing every refusal to one empty
+/// value. `pub(super)`: `commands::ai_salary` (split out purely for R8)
+/// reuses it — zero business-logic duplication. `#[allow]`: a short-lived,
+/// immediately-destructured value, never a loop/collection — boxing
+/// `Completer` would only add indirection.
 #[allow(clippy::large_enum_variant)]
 pub(super) enum AdmitOutcome {
     Admitted(crate::limits::ConcurrencyGuard, crate::pipeline::Completer),
@@ -237,17 +237,21 @@ pub(super) enum AdmitOutcome {
 /// provider, then charge the per-provider daily ceiling — in that order, so a
 /// rejected call costs no budget.
 ///
-/// Extracted because `ai_research_company`, `ai_lookup_salary` and
-/// `ai_research_answer` each open with the identical ~30-line preamble and each
-/// degrades to its OWN "nothing found" value rather than an error. The guard
+/// Extracted for [`ai_salary::ai_lookup_salary_reasoned`](super::ai_salary),
+/// which — unlike `ai_research_company` below — has no cache check ahead of
+/// its own real provider call, so charging the daily ceiling eagerly at
+/// admission is correct for it (no cache hit could ever be mischarged).
+/// `ai_research_company` deliberately does NOT call this function: it shares
+/// [`crate::cover_letter::research::CompanyResearch::enrich_with`] with the
+/// résumé pipeline's cover-letter research stage, and that shared enricher
+/// checks its own cache before ever charging the daily ceiling — so it admits
+/// through [`crate::pipeline::Completer::admit_research`] instead (rate +
+/// concurrency only), the same bucket, so a cache hit there never touches
+/// today's budget. `ai_research_answer` also does not call this function (it
+/// hand-rolls its own rate/concurrency admission with no daily charge at
+/// all — a pre-existing, separate shape this fix does not touch). The guard
 /// rides in the returned tuple so the caller holds the slot for the real work.
 /// `who` only labels the debug log.
-///
-/// `pub(super)`, so a caller below `commands` (the résumé pipeline's opt-in
-/// `cover_letter` research) cannot reach this exact function — it admits
-/// against the SAME bucket via [`crate::pipeline::Completer::admit_research`]
-/// instead, which shares [`crate::limits::AI_RESEARCH_BUCKET`] and its
-/// constants with this one rather than re-declaring them.
 pub(super) fn admit_research(app: &AppHandle, who: &str) -> AdmitOutcome {
     let limiter = app
         .state::<std::sync::Arc<crate::limits::Limiter>>()
@@ -335,9 +339,25 @@ pub async fn ai_research_company(
 ) -> Value {
     use crate::cover_letter::research::CompanyResearch;
 
-    let (_guard, completer) = match admit_research(&app, "research_company") {
-        AdmitOutcome::Admitted(g, c) => (g, c),
-        _ => return json!({ "company": "", "brief": "" }),
+    // Deliberately NOT the `admit_research`/`AdmitOutcome` free function below
+    // (which also eagerly charges the daily ceiling — still correct for
+    // `ai_lookup_salary`/`ai_research_answer`, which have no cache check of
+    // their own ahead of the real call). This command shares
+    // `CompanyResearch::enrich_with` with the résumé pipeline's cover-letter
+    // research stage, and `enrich_with` checks its cache BEFORE charging the
+    // daily budget — so this admits through the SAME `Completer::admit_research`
+    // (rate/concurrency only) the pipeline stage uses, rather than a second,
+    // eagerly-charging implementation that would have burned a day's
+    // allowance on every cache hit.
+    let completer = match crate::pipeline::Completer::from_active(&app) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("research_company: provider resolution failed: {e}");
+            return json!({ "company": "", "brief": "" });
+        }
+    };
+    let Some(_guard) = completer.admit_research("research_company") else {
+        return json!({ "company": "", "brief": "" });
     };
 
     // Prefer the accurate AI-extracted company name from the generation flow; the

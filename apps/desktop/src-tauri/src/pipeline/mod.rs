@@ -693,12 +693,16 @@ impl Completer {
     /// site does; the limiter is managed unconditionally in `lib.rs::setup`,
     /// before any command can run.
     ///
-    /// `pub(crate)` for [`stream_captured`](Self::stream_captured)'s caller and
+    /// `pub(crate)` for [`stream_captured`](Self::stream_captured)'s caller,
     /// for the résumé pipeline's own non-`complete_json` round-trips (the
     /// repair loop's section rewrites go through [`complete`](Self::complete),
     /// which records spend but does not charge): every provider call a
     /// multi-stage run makes has to hit this ceiling, or the run is the one
-    /// fan-out shape that escapes the day's cap.
+    /// fan-out shape that escapes the day's cap. Also called by
+    /// [`crate::cover_letter::research::CompanyResearch::enrich_with`], but
+    /// ONLY after its own cache check has already come back empty — see that
+    /// call site's comment for why the charge moved there instead of into
+    /// [`Self::admit_research`].
     ///
     /// **Per-stage models spread the charge across buckets.** The ceiling is
     /// PER PROVIDER, and each call charges the provider THIS completer
@@ -721,25 +725,31 @@ impl Completer {
     }
 
     /// Admit one billable, provider-web-search company-research call against
-    /// the SAME shared [`crate::limits::AI_RESEARCH_BUCKET`] (rate +
-    /// concurrency cap, then this completer's own resolved provider's daily
-    /// ceiling) that `commands::ai::admit_research` gates
-    /// `ai_research_company`/`ai_lookup_salary`/`ai_research_answer` behind.
+    /// the shared [`crate::limits::AI_RESEARCH_BUCKET`] rate + concurrency
+    /// cap — the SAME bucket `commands::ai::admit_research` gates
+    /// `ai_lookup_salary`/`ai_research_answer` behind, and (as of the
+    /// cache-hit-charges-the-daily-budget fix) the one `ai_research_company`
+    /// admits into too, via this exact method — the two callers that share
+    /// [`crate::cover_letter::research::CompanyResearch::enrich_with`] now
+    /// also share ONE admission implementation instead of two that could
+    /// silently drift.
     ///
-    /// The résumé pipeline's opt-in `cover_letter` research is the reason
-    /// this exists on `Completer` rather than being called directly: it is a
-    /// layer below `commands` and cannot reach that `pub(super)` function, and
-    /// duplicating its rate-limit/daily-charge sequence with a second literal
-    /// `"ai_research"` string would risk exactly the drift a shared bucket
-    /// exists to prevent — a typo'd second bucket is an unbounded spend path.
-    /// Both callers resolve the SAME managed `Arc<Limiter>` and reference the
-    /// SAME `crate::limits` constants, so this is one bucket at runtime
-    /// regardless of which of the two admits into it.
+    /// Deliberately charges **no daily budget** here — only the rate +
+    /// concurrency slot, which exists to bound a stampede of *concurrent*
+    /// requests regardless of whether any of them turns out to need a real
+    /// provider call. The per-provider daily ceiling
+    /// ([`Self::charge_daily`]) is charged by `enrich_with` itself, ONLY
+    /// once it has already checked its cache and confirmed a real provider
+    /// request is about to fire — a cache hit, or a request with no
+    /// resolvable company name, must never spend a day's allowance. Charging
+    /// eagerly here (the pre-fix shape) burned the daily ceiling on every
+    /// cache hit, silently shrinking the effective allowance to whatever
+    /// fraction of calls actually missed the cache.
     ///
-    /// Returns `None` on ANY refusal (rate-limited, concurrency cap, or daily
-    /// budget exhausted) — the résumé pipeline has no renderer-facing
-    /// distinction to make between them the way `commands::ai::AdmitOutcome`
-    /// does for its callers: a refusal always means "skip the research,"
+    /// Returns `None` on rate-limit/concurrency refusal — the résumé
+    /// pipeline (and `ai_research_company`) have no renderer-facing
+    /// distinction to make there the way `commands::ai::AdmitOutcome` does
+    /// for `ai_lookup_salary`: a refusal always means "skip the research,"
     /// never a failed run. `who` only labels the debug log.
     pub(crate) fn admit_research(&self, who: &str) -> Option<crate::limits::ConcurrencyGuard> {
         let limiter = self
@@ -747,25 +757,17 @@ impl Completer {
             .state::<std::sync::Arc<crate::limits::Limiter>>()
             .inner()
             .clone();
-        let guard = match limiter.acquire(
+        match limiter.acquire(
             crate::limits::AI_RESEARCH_BUCKET,
             crate::limits::AI_RESEARCH_RATE_MAX,
             crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
         ) {
-            Ok(g) => g,
+            Ok(g) => Some(g),
             Err(e) => {
                 tracing::debug!("{who}: research rate limited: {e}");
-                return None;
+                None
             }
-        };
-        if let Err(e) = limiter.charge_provider_daily(
-            self.provider.id().as_str(),
-            crate::limits::PROVIDER_DAILY_MAX,
-        ) {
-            tracing::debug!("{who}: research daily budget exceeded: {e}");
-            return None;
         }
-        Some(guard)
     }
 
     /// Record ONE completed round-trip's REAL reported usage against today's

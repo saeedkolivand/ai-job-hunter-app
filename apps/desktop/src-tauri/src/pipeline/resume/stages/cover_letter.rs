@@ -125,15 +125,24 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
 
 /// Research the run's company for the letter's "why this company" paragraph —
 /// opt-in ([`crate::pipeline::resume::QualityInput::research_company`]), and
-/// non-fatal BY CONSTRUCTION: there is no `?` anywhere in this function, so an
-/// admission refusal, a search failure, a timeout, or an unresolved company
-/// name all fall through to `""` — exactly how
+/// non-fatal BY CONSTRUCTION: the `-> String` return type below makes it a
+/// COMPILE ERROR for this function's body to contain a `?` on any
+/// `Result`/`Option` sub-expression (`String` implements neither
+/// `FromResidual<Result<Infallible, _>>` nor `FromResidual<Option<Infallible>>`),
+/// so an admission refusal, a search failure, a timeout, or an unresolved
+/// company name can only ever fall through to `""` — exactly how
 /// `commands::ai::ai_research_company` degrades to `{"brief": ""}` rather than
 /// a command error. Admits against the SAME shared `"ai_research"` bucket that
 /// command goes through (see [`Completer::admit_research`]'s doc): this is a
 /// SECOND billable, no-other-ceiling provider web search per run, and a run
 /// whose toggle is on must not open a path around that ceiling.
-async fn research_company_brief(completer: &Completer, ctx: &QualityCtx<'_>) -> String {
+///
+/// `pub(crate)`, not private: `pipeline::resume::test` pins this exact
+/// signature at compile time (`research_company_brief_returns_a_plain_string`)
+/// instead of scraping this file's source text for a `?` — see that test's
+/// doc for why the scrape it replaced was a weaker guarantee than the type
+/// system already gives us for free.
+pub(crate) async fn research_company_brief(completer: &Completer, ctx: &QualityCtx<'_>) -> String {
     let Some(_guard) = completer.admit_research(NAME) else {
         return String::new();
     };

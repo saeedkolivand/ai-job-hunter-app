@@ -373,6 +373,45 @@ fn validate_and_normalize_completes_a_body_only_cover_letter() {
     );
 }
 
+/// `meta.candidate_name: Some("")` must fall through to the attached
+/// `ContactProfile`'s name for the LETTER sign-off too, not just the
+/// filename — both call sites route through the same `resolve_candidate_name`
+/// helper, so this pins that they stay in lockstep.
+#[test]
+fn validate_and_normalize_signs_off_with_contact_profile_when_meta_name_is_blank() {
+    use super::super::types::GenerationMeta;
+    use crate::contact_profile::ContactProfile;
+
+    let mut request = ExportRequest {
+        text: "I am writing to express my interest in this role.".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::Classic,
+        meta: Some(GenerationMeta {
+            candidate_name: Some(String::new()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: Some("us".to_string()),
+        contact: Some(ContactProfile {
+            full_name: Some("Jane Smith".to_string()),
+            ..Default::default()
+        }),
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+
+    validate_and_normalize(&mut request).expect("validate_and_normalize should succeed");
+
+    assert!(
+        request.text.trim_end().ends_with("Sincerely,\nJane Smith"),
+        "must sign off with the contact profile's name, not blank: {:?}",
+        request.text
+    );
+}
+
 /// The gate is `document_type == CoverLetter` — a résumé request must never
 /// run the letter-completion pass.
 #[test]

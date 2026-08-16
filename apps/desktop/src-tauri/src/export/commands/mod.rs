@@ -14,6 +14,33 @@ use crate::validate::{validate_and_fix, ExportReport, Severity};
 /// MIME type for every page string returned by the SVG live-preview path.
 const SVG_MIME: &str = "image/svg+xml";
 
+/// Resolve the candidate's name from an [`ExportRequest`], one rung at a time:
+/// `meta.candidate_name` (trimmed, non-blank) first, then `contact.full_name`
+/// (trimmed, non-blank), else `None`. Both rungs are filtered non-blank because
+/// `meta.candidate_name: Some("")` is a shape callers actually send (TailorFlow),
+/// and without the filter it would win as an empty string — an `Option::Some("")`,
+/// not `None` — and never fall through to the profile rung below.
+///
+/// Shared by [`validate_and_normalize`] (which signs off the completed letter
+/// text) and [`generate_filename`] (which names the downloaded file) so the two
+/// never drift on which rung wins.
+fn resolve_candidate_name(request: &ExportRequest) -> Option<&str> {
+    request
+        .meta
+        .as_ref()
+        .and_then(|m| m.candidate_name.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            request
+                .contact
+                .as_ref()
+                .and_then(|c| c.full_name.as_deref())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })
+}
+
 /// Reject empty input and run the same text-normalization passes every export
 /// path uses (Unicode normalize → strip stray Markdown → dash typography), so
 /// unsupported glyphs never appear as replacement boxes and no `*` / backtick or
@@ -58,21 +85,7 @@ fn validate_and_normalize(request: &mut ExportRequest) -> AppResult<()> {
     // marker line.
     if request.document_type == DocumentType::CoverLetter {
         let market = request.locale.as_deref().unwrap_or("intl");
-        let name = request
-            .meta
-            .as_ref()
-            .and_then(|m| m.candidate_name.as_deref())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                request
-                    .contact
-                    .as_ref()
-                    .and_then(|c| c.full_name.as_deref())
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-            })
-            .unwrap_or("");
+        let name = resolve_candidate_name(request).unwrap_or("");
         request.text = complete_letter_text(&request.text, market, name);
     }
 
@@ -307,26 +320,10 @@ pub async fn documents_export_and_save(
 /// Generate filename from metadata
 fn generate_filename(request: &ExportRequest, extension: &str) -> String {
     // Meta name first (fallback only — never overrides text-derived content
-    // elsewhere), then the contact profile's name, then "Candidate". Both
-    // rungs are filtered non-blank: `meta.candidate_name: Some("")` is the
-    // shape TailorFlow actually sends, and without the filter it would win as
-    // an empty string (an `Option::Some("")`, not `None`) and never reach the
-    // profile rung below — the exact way this stayed "Candidate-…" even when
-    // a contact profile was attached.
-    let name = request
-        .meta
-        .as_ref()
-        .and_then(|m| m.candidate_name.as_deref())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            request
-                .contact
-                .as_ref()
-                .and_then(|c| c.full_name.as_deref())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        })
+    // elsewhere), then the contact profile's name, then "Candidate" — the same
+    // chain `validate_and_normalize` uses to sign off the letter text, via
+    // `resolve_candidate_name` so the two never drift.
+    let name = resolve_candidate_name(request)
         .map(sanitize_filename)
         .unwrap_or_else(|| "Candidate".to_string());
 

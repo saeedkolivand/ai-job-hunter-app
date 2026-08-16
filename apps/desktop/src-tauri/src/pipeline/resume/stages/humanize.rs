@@ -283,8 +283,10 @@ pub(crate) fn humanize_is_worse(
         || coverage_dropped(before, after)
 }
 
-/// Whether `after`'s keyword coverage fell more than
-/// [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`] below `before`'s —
+/// Whether `after`'s keyword coverage fell by
+/// [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`] points or more below
+/// `before`'s (the threshold itself counts as a drop, not just anything past
+/// it) —
 /// the SAME points-of-drop threshold `alignment.low_coverage` already reports
 /// at, reused rather than a second invented number. Neither of
 /// [`humanize_is_worse`]'s other two checks looks at keyword coverage at

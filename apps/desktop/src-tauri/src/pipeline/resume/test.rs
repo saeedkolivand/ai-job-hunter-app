@@ -21,8 +21,8 @@ use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
 use super::stages::{
     criticals_by_section, exceeds_humanize_cap, ground, humanize_is_worse, humanize_one,
-    is_usable_rewrite, reseed, round_is_worse, seed_company_roster, should_humanize_letter,
-    voice_count, voice_findings, MAX_COMPANY_PLANS,
+    is_usable_rewrite, research_company_brief, reseed, round_is_worse, seed_company_roster,
+    should_humanize_letter, voice_count, voice_findings, MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
@@ -1438,42 +1438,60 @@ fn letter_user_fences_a_non_empty_company_brief_and_omits_a_blank_one() {
 
 /// The `cover_letter` stage's opt-in research must be structurally non-fatal
 /// — an admission refusal, a search failure, or a timeout must degrade to
-/// `""`, never propagate as a run-ending `AppError`. `research_company_brief`
-/// needs a live `Completer` (`AppHandle`) this crate has no harness for, so —
-/// same shape as `letter_system_gates_the_company_research_instruction_on_has_brief`'s
-/// sibling source-lock tests elsewhere in this crate — this is the source-level
-/// proof: the helper's own signature returns a plain `String`, never
-/// `AppResult<String>`, and its body contains no `?` that could bubble a
-/// research failure into the stage's `run()`.
+/// `""`, never propagate as a run-ending `AppError`.
 ///
-/// Mutation check: change `research_company_brief`'s return type to
-/// `AppResult<String>` and propagate the research error with `?` — this test
-/// fails immediately (no `?` may appear in the function body), and the
-/// broken behavior it would let through (a failed run on a mere research
-/// hiccup) is exactly what requirement #4 forbids.
+/// This used to be a source-text scrape (find `research_company_brief`'s
+/// body via `body.find("\n}\n")`, then check it contains no `?`). Three real
+/// flaws in that shape: the brace search finds the FIRST column-0 `}\n`, so
+/// the slice can overrun into a nested item; a `?` inside a comment/string/
+/// URL trips the "no `?`" check even though it changes nothing about control
+/// flow; and it is blind to `.unwrap()`/`.expect()`/a bare `return
+/// Err(...)`, none of which contain a `?` at all.
+///
+/// The replacement below makes the SIGNATURE the guarantee instead, for the
+/// one thing a signature actually can prove:
+/// [`research_company_brief_returns_a_plain_string`] is a compile-time-only
+/// check (never executed — see its own doc) that fails to COMPILE, not just
+/// fails a test, the moment `research_company_brief`'s return type stops
+/// being a plain `String`. Since `String` implements neither
+/// `FromResidual<Result<Infallible, _>>` nor `FromResidual<Option<Infallible>>`,
+/// that return type makes it a compile error for the function's body to
+/// contain a `?` on ANY `Result`/`Option` sub-expression — a stronger
+/// guarantee than the old scrape could ever give, and one that needs no
+/// runtime harness (this crate has no `tauri::test` mock-`AppHandle`, the
+/// same constraint `research_answer_tests` documents).
+///
+/// What the signature does NOT prove — a `.unwrap()`/`.expect()`/panic (the
+/// type system has nothing to say about those) or that the function actually
+/// ADMITS before it spends — stays a plain, narrow runtime check just below,
+/// honestly scoped to what it can see.
+#[allow(dead_code)]
+fn research_company_brief_returns_a_plain_string<'a>(
+    completer: &'a crate::pipeline::Completer,
+    ctx: &'a super::QualityCtx<'a>,
+) -> impl std::future::Future<Output = String> + 'a {
+    research_company_brief(completer, ctx)
+}
+
+/// The one guarantee the type system above cannot give: that
+/// `research_company_brief` actually ADMITS against the shared rate/
+/// daily-budget bucket BEFORE it spends — the cost-control half of the same
+/// non-fatality contract. A narrow whole-file substring check, not a
+/// brace-bounded slice: `research_company_brief` is the last item in
+/// `cover_letter.rs`, so nothing after the match position could produce a
+/// false pass.
+///
+/// Mutation check: delete the `let Some(_guard) = completer.admit_research(NAME)
+/// else { ... };` line from `research_company_brief` — this test fails
+/// immediately.
 #[test]
-fn research_company_brief_has_no_fallible_operator_that_could_fail_the_run() {
+fn research_company_brief_admits_before_it_researches() {
     let source = include_str!("stages/cover_letter.rs");
     let start = source
-        .find("async fn research_company_brief")
+        .find("pub(crate) async fn research_company_brief")
         .expect("research_company_brief must exist");
-    let body = &source[start..];
-    let end = body.find("\n}\n").map(|i| i + 3).unwrap_or(body.len());
-    let body = &body[..end];
-
     assert!(
-        body.contains("-> String"),
-        "research_company_brief must return a plain String, never a Result: {body}"
-    );
-    assert!(
-        !body.contains('?'),
-        "research_company_brief must contain no `?` — a research failure must never \
-         propagate as a run-ending error: {body}"
-    );
-    // It must still actually ADMIT before it spends — the cost-control half
-    // of the same guarantee.
-    assert!(
-        body.contains(".admit_research("),
+        source[start..].contains(".admit_research("),
         "research_company_brief must admit against the shared bucket before researching"
     );
 }
@@ -3117,6 +3135,19 @@ fn humanize_is_worse_reverts_on_a_coverage_drop_even_with_nothing_else_worse() {
     // A drop under the threshold is not worth reverting over.
     let small_drop = with_coverage(77.0);
     assert!(!humanize_is_worse(&before, ANY_TEXT, &small_drop, ANY_TEXT));
+
+    // Exactly `MIN_COVERAGE_DROP_POINTS` (5.0) — `coverage_dropped` compares
+    // with `>=`, so the threshold itself counts as a drop, not just anything
+    // past it. This is the boundary CodeRabbit flagged: the doc comment used
+    // to say "fell more than" the threshold, which would have kept this exact
+    // case, not reverted it.
+    let exactly_at_threshold = with_coverage(75.0);
+    assert!(humanize_is_worse(
+        &before,
+        ANY_TEXT,
+        &exactly_at_threshold,
+        ANY_TEXT
+    ));
 
     // An uncomparable posting (`None` coverage) never rejects on coverage
     // alone — `round_is_worse`/`voice_count` still decide, and both are clean

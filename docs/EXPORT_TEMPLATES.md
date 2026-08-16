@@ -272,7 +272,11 @@ conventions). No salutation, no sign-off, no signature block.
     "Dear Hiring Manager," (US) or "Sehr geehrte Damen und Herren," (DE).
   - **Sign-off** (at document end) — resolved from market conventions, e.g. "Sincerely," or
     "Mit freundlichen Grüßen".
-  - **Signature name** (after sign-off) — from the `ContactProfile.name` field, trimmed.
+  - **Signature name** (after sign-off) — resolved by `resolve_candidate_name`
+    (`export/commands/mod.rs`): `meta.candidate_name` (trimmed, non-blank) first, falling
+    through to `contact.full_name` (trimmed, non-blank), else blank. `generate_filename`
+    routes through the same helper so the letter sign-off and the downloaded filename can
+    never disagree on whose name wins.
 
 **Why this matters:** The prompt says the app will add these parts; if the generation stage
 ever emits a full letter (salutation + body + sign-off), the parser stops classifying the

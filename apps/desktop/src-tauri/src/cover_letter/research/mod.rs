@@ -99,6 +99,21 @@ impl CompanyResearch {
             }
         }
 
+        // Charge the per-provider DAILY ceiling only NOW — right before the
+        // real provider call, after the cache check above has already come
+        // back empty. `Completer::admit_research` (both this crate's and
+        // the résumé pipeline's callers admit through it) only acquires the
+        // rate/concurrency slot; charging the daily budget any earlier —
+        // the pre-fix shape — burned a day's allowance on every cache hit,
+        // since a hit never reaches this line at all.
+        if let Err(e) = completer.charge_daily() {
+            tracing::debug!("research: daily budget exceeded for {company}: {e}");
+            return EnrichmentResult {
+                key: company,
+                content: String::new(),
+            };
+        }
+
         // Provider-native research, bounded so generation never stalls. Any
         // failure / timeout / unconfigured provider yields an empty brief.
         // `route` (resolved above, before the cache check) is MOVED in here —
@@ -376,5 +391,33 @@ mod tests {
             gig-economy apps. Recently raised funding to expand into Europe, which \
             is relevant for a backend engineer joining the payments team.";
         assert!(!is_no_info(brief));
+    }
+
+    /// The daily-budget-on-cache-hit fix: `enrich_with` must check its cache
+    /// and return on a hit BEFORE it ever reaches `completer.charge_daily()`.
+    /// Same source-position technique `pipeline::resume::test`'s sibling
+    /// `research_company_brief_has_no_fallible_operator_...` test uses for
+    /// this crate's other AppHandle-requiring, harness-less research code —
+    /// an honest structural guard, not a substitute for an integration test
+    /// this crate has no `tauri::test` harness to write.
+    #[test]
+    fn enrich_with_checks_the_cache_before_charging_the_daily_budget() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn enrich_with")
+            .expect("enrich_with must exist");
+        let body = &source[start..];
+        let cache_check_pos = body
+            .find("cache.get(CACHE_NS")
+            .expect("enrich_with must check its cache");
+        let charge_pos = body
+            .find("completer.charge_daily()")
+            .expect("enrich_with must charge the daily ceiling before a real provider call");
+        assert!(
+            cache_check_pos < charge_pos,
+            "enrich_with must check its cache BEFORE charging the daily budget — a cache \
+             hit must never spend a day's provider allowance: cache check at byte \
+             {cache_check_pos}, daily charge at byte {charge_pos}"
+        );
     }
 }
