@@ -142,7 +142,7 @@
   }
 
   #if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-    block(above: 5pt,
+    block(above: sp-name-below,
       text(size: body-pt - 0.5pt, fill: c-body, render-runs(data.letterhead.contact)),
     )
   }
@@ -215,17 +215,19 @@
   }
 }
 
-// ── Sign-off + signature ──────────────────────────────────────────────────────
-
-#if "signoff" in data and data.signoff != none {
-  block(above: 22pt, below: 4pt, text(fill: c-body, data.signoff))
-}
-
-#v(30pt)
-
-#text(
-  weight: "bold",
-  fill: c-name,
-  font: (font-name, "Carlito", "Inter"),
-  data.letterhead.name,
-)
+// ── Sign-off + signature ────────────────────────────────────────────────────
+// Grouped as one non-breakable unit — see `sp-signature-lead`/
+// `sp-signature-gap` in _scale.typ: a page break must never land between the
+// sign-off and the name it belongs to.
+#block(breakable: false, above: sp-signature-lead, {
+  if "signoff" in data and data.signoff != none {
+    text(fill: c-body, data.signoff)
+    v(sp-signature-gap)
+  }
+  text(
+    weight: "bold",
+    fill: c-name,
+    font: (font-name, "Carlito", "Inter"),
+    data.letterhead.name,
+  )
+})

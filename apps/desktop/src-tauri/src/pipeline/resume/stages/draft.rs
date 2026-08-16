@@ -57,7 +57,7 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
             messages: vec![
                 AiGenerateRequestMessage {
                     role: "system".to_string(),
-                    content: draft_system(ctx.input.target_language),
+                    content: draft_system(ctx.input.target_language, ctx.input.market),
                 },
                 AiGenerateRequestMessage {
                     role: "user".to_string(),
