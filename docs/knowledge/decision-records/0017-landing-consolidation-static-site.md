@@ -68,9 +68,9 @@ unchanged; no cross-reference to film concepts remains.
 
 ## References
 
-- Supersedes: `docs/adr/0016-terminal-velocity-scroll-film-landing.md` (the film; fully
+- Supersedes: `docs/knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md` (the film; fully
   retired).
-- Supersedes-parts-of: `docs/adr/0014-landing-gl-takeover.md` (the Experience gate and
+- Supersedes-parts-of: `docs/knowledge/decision-records/0014-landing-gl-takeover.md` (the Experience gate and
   Semantic layer machinery that constrained the film are retired; ADR-0014 itself is a period
   document for the 2026-07-18 ideation that birthed 0015/0016).
 - Deployed: `apps/landing/` directory; publish via `.github/workflows/pages.yml`.

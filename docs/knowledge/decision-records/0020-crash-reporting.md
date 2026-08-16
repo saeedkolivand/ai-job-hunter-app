@@ -8,7 +8,7 @@ status: accepted
 
 Until now the app was blind in production. A panic hook appends to `crashes.log`
 (`apps/desktop/src-tauri/src/lib.rs`) and a redacted diagnostics zip
-([ADR 0027](../knowledge/decision-records/adr-027-diagnostics-bundle-privacy-boundary.md))
+([ADR 0027](../../knowledge/decision-records/adr-027-diagnostics-bundle-privacy-boundary.md))
 lets a user export it — but both require the user to notice a failure, find the
 export, and attach it to a GitHub issue by hand. Nobody reports a crash they did
 not see. The renderer was worse: React errors caught by a boundary never reached
@@ -97,7 +97,7 @@ read the mission-control PAT from `localStorage`.
   failed. "Not configured" must also stay distinguishable from "configured
   wrong", so absent secrets skip while a real failure is surfaced.
   The exact ordering and failure plumbing live in
-  [`.github/workflows/release.yml`](../../.github/workflows/release.yml), which
+  [`.github/workflows/release.yml`](../../../.github/workflows/release.yml), which
   is authoritative — do not restate them here.
 - The release profile keeps symbols (`debug = "line-tables-only"`,
   `split-debuginfo = "packed"`, `strip = "debuginfo"`) and CI uploads the

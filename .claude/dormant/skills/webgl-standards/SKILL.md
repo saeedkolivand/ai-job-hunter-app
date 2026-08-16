@@ -13,9 +13,9 @@ description: DORMANT (ADR-0017, 2026-07-20) - the TERMINAL VELOCITY scroll-film 
 
 The single source both GL authors (`webgl-author`, `shader-engineer`) and their critics
 (`webgl-reviewer`, `gate-auditor`, `webgl-perf-profiler`) read before touching `apps/landing`.
-Experience contract + rationale: `docs/adr/0016-terminal-velocity-scroll-film-landing.md` (the
+Experience contract + rationale: `docs/knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md` (the
 source of truth). Still-binding structural machinery (Next 16 static export, Semantic layer,
-Experience gate, `landing/` passthrough, staged flip): `docs/adr/0014-landing-gl-takeover.md`.
+Experience gate, `landing/` passthrough, staged flip): `docs/knowledge/decision-records/0014-landing-gl-takeover.md`.
 **The ADR holds the decisions; this skill holds the tunable numbers and their current starting
 values.** Every constant below marked _tunable_ may move within its ADR envelope during M1..M6.
 

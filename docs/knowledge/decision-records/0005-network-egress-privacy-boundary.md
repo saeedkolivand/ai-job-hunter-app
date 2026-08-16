@@ -14,7 +14,7 @@ Investigating each call showed none of them exfiltrate the data the guarantee is
 
 The local-first privacy boundary is defined in terms of **storage and telemetry**, not total network silence. The guarantee is:
 
-> Your résumés, generations, applications, tracked job data, and credentials live in a local database on your device — there is no app-operated backend collecting them and no behavioural analytics. Data leaves the device only for services you configure or invoke (enumerated below) — notably the AI provider, which receives the résumé and job text you ask it to generate from — plus crash reports when the app fails, which carry the error and environment but never your documents or job data.
+> Your résumés, generations, applications, tracked job data, and credentials live in a local database on your device — there is no app-operated backend collecting them and no behavioural analytics. Data leaves the device only for services you configure or invoke (enumerated below) — notably the AI provider, which receives the résumé and job text you ask it to generate from — plus two classes of automatic app-initiated egress (updater version checks and crash reports when the app fails), which send only metadata and error information, never your documents or job data.
 
 Network egress is **permitted** and enumerated by class, each with a gating rule:
 
@@ -43,7 +43,7 @@ No runtime behavior changes: every current call already complies. The fix is to 
 
 ## Consequences
 
-- **README.md and SECURITY.md must be rewritten** to state the personal-data guarantee and enumerate the seven egress classes. (Tracked as a develop/modify item, not yet applied.)
+- **README.md and SECURITY.md must be rewritten** to state the personal-data guarantee and enumerate the eight egress classes. (Tracked as a develop/modify item, not yet applied.)
 - **A new egress endpoint now has a written test to pass:** does it send personal data (prohibited) or a public identifier/typed query (opt-in, default OFF, CSP-scoped)? This is the reference for future review.
 - **The opt-in enrichment pattern (Clearbit) is now the sanctioned template** for feature-driven egress: default OFF, minimal CSP, public identifier only.
 - **No behavior changes ship from this ADR.** If a future decision adds a hard offline mode, it supersedes option 2 here.

@@ -64,7 +64,7 @@ All media is same-origin (`apps/landing/public/world/`). The scrub-engine inject
 - **Regeneration**: Requires the local ComfyUI pipeline (documented in scroll-world session skill files). The scripts are preserved and method is clear; the committed encodes are final.
 - **Type safety**: Vendored `scrub-engine.js` is a `.js` file (not `.ts`); the engine's config type is documented in JSDoc comments at the top of the file. Consumers (e.g., `world-config.ts`) must import the engine and infer types from usage — the engine itself is not strict-typed.
 - **Mobile exclusion optional**: A page can use the engine with `clip` + `connectors` only (no mobile variants); it still works on phones (just heavier). `clipMobile` + `connectorsMobile` are opt-in optimizations.
-- **Edit safety**: When editing the `scrub-engine.js` file, **use Bash heredoc (`cat >> file <<'EOF'`)** or direct file operations (not the Edit tool). The Edit tool's post-processing rewrites the file wholesale, which strips the vendored-integrity guarantee. Commit the file with `git diff` to verify byte-for-byte fidelity against the source before pushing.
+- **Edit safety**: `scrub-engine.js` is vendored, so it must stay byte-for-byte faithful to its source. Append with a redirect or `tee` rather than an editor that may re-indent or normalise whitespace, and read back `git diff` before pushing to confirm only the intended bytes changed.
 
 ## Addendum: engine deviation log
 
@@ -76,7 +76,7 @@ All media is same-origin (`apps/landing/public/world/`). The scrub-engine inject
 export { mountScrollWorld };
 ```
 
-Turbopack statically analyzes this file as ESM and doesn't see the conditional CJS tail above it, so without a real `export` the dev import resolves to no exports and `/world` 500s. A real export just makes this an ES module too (`typeof module` stays safely undefined); the CJS/global lines still run unchanged — **the file remains portable**.
+Turbopack statically analyzes this file as ESM and doesn't see the conditional CJS tail above it, so without a real `export` the dev import resolves to no exports and `/world` 500s. A real export makes this an ES module (`typeof module` stays safely undefined); the CJS/global lines still run unchanged. **The file is now ESM-only for the app's use case** (Turbopack/Next.js); classic `<script>` and CommonJS loading of this specific file are no longer supported, though the portable vanilla-JS engine design remains sound for other projects that don't use ESM.
 
 ### D2 — device classification: coarse **and** phone-sized, frozen at mount
 

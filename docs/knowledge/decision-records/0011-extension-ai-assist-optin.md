@@ -29,7 +29,7 @@ Ship `answer.assist` with a **separate, independent opt-in gate**, default OFF, 
 
 - The `autofill_enabled` toggle in Settings remains (gate for `profile.get`, `answers.save`, `answers.suggest`).
 - The new AI-assist toggle is adjacent, gated by `BridgeState::ai_assist_enabled()` (queried via `extension_bridge_ai_assist_enabled` IPC command), with a clear cost/budget notice (e.g. "Requires AI provider credits — only charged when you request an AI-drafted answer").
-- A user can have `autofill_enabled=true` and AI-assist `disabled=false` to get free suggestions without paying for AI drafting.
+- A user can have `autofill_enabled=true` and AI-assist `enabled=false` to get free suggestions without paying for AI drafting.
 - The toggle is reset-to-OFF on factory reset (user data wipe), same as autofill.
 
 **Snapshot invariant:**
@@ -63,7 +63,8 @@ Ship `answer.assist` with a **separate, independent opt-in gate**, default OFF, 
 
 ## References
 
-- Toggle + snapshot: `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (`BridgeState::ai_assist_enabled()`, `BridgeState::ai_assist_snapshot()`, `BridgeState::set_ai_assist()`, `AiAssistConfig`, `AI_ASSIST_OPTIN_FILE`).
+- Toggle: `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (`BridgeState::ai_assist_enabled()`, `BridgeState::set_ai_assist()`).
+- Historical snapshot symbols (superseded by ADR-0012): `BridgeState::ai_assist_snapshot()`, `AiAssistConfig`, `AI_ASSIST_OPTIN_FILE` — these are no longer active; live provider resolution uses `AiConfigStore` instead.
 - IPC commands: `apps/desktop/src-tauri/src/commands/extension_bridge.rs` (`extension_bridge_ai_assist_enabled`, `extension_bridge_set_ai_assist_enabled`).
 - Renderer UI: `apps/desktop/src/renderer/features/settings/components/accounts/ExtensionBridgeSection` (Settings toggle).
 - Desktop gate + billing check: `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs` (`handle_answer_assist`, `resolve_answer_assist`, `charge_compose_budget`).

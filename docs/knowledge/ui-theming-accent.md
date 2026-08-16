@@ -38,4 +38,4 @@ Status (success/warning/error/info) and semantic action buttons (run/edit/delete
 
 ## Decision record
 
-See `docs/adr/0004-single-source-user-customizable-accent-color.md` for context, alternatives rejected, and consequences (macOS fixed palette, Linux unsupported, per-scheme lightness recalc, etc.).
+See `docs/knowledge/decision-records/0004-single-source-user-customizable-accent-color.md` for context, alternatives rejected, and consequences (macOS fixed palette, Linux unsupported, per-scheme lightness recalc, etc.).

@@ -48,7 +48,7 @@ GeoNames data is licensed **CC BY 4.0**
 **mandatory** in anything we ship, not optional. It lives in:
 
 - the app itself — Settings → About (`settings.about.dataAttribution`, en + de);
-- `docs/adr/0005-network-egress-privacy-boundary.md` (egress class 5);
+- `docs/knowledge/decision-records/0005-network-egress-privacy-boundary.md` (egress class 5);
 - this file.
 
 The online fallback (Photon, <https://photon.komoot.io>) serves OpenStreetMap

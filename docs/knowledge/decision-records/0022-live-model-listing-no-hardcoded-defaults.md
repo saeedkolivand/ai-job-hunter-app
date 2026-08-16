@@ -133,14 +133,14 @@ The initial plan was three: (1) expose errors from `list_models`, (2) remove cur
 
 ## Follow-Up Regression Fixed in #937
 
-#936 added a keyless carve-out for `openai-compatible` (LM Studio and vLLM users can list models without storing a key). But it only checked `if provider == 'openai-compatible'`, not whether the provider was actually configured. For unconfigured users:
+PR #936 added a keyless carve-out for `openai-compatible` (LM Studio and vLLM users can list models without storing a key). But it only checked `if provider == 'openai-compatible'`, not whether the provider was actually configured. For unconfigured users:
 
 - `baseUrlFor('openai-compatible')` returns `undefined`
 - The backend falls back to `https://api.openai.com/v1` with no auth header
 - `ModelSelector` mounts on six surfaces
 - Every user (including fully local, offline Ollama users who never touched openai-compatible) made unauthenticated requests to `api.openai.com` on every relevant page load — breaking the local-first promise
 
-#937 fixed it by requiring `openai-compatible` to be configured (either a stored base URL or a stored key) before it can fetch. The same guard now applies uniformly across all surfaces (`isProviderConfigured` predicate rather than per-site special cases).
+PR #937 fixed it by requiring `openai-compatible` to be configured (either a stored base URL or a stored key) before it can fetch. The same guard now applies uniformly across all surfaces (`isProviderConfigured` predicate rather than per-site special cases).
 
 ## Important Notes
 

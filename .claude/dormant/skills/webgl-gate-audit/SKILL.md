@@ -12,7 +12,7 @@ no-GL fallback rendering, and canvas absence are DOM facts, not pixels, and REQU
 (accessibility snapshot / `eval` querying the DOM / DevTools Elements panel), not screenshots -
 see Copy parity and Reduced-motion + no-GL fallback render below. Contract + numbers live in
 `.claude/dormant/skills/webgl-standards/SKILL.md`; experience decisions in
-`docs/adr/0016-terminal-velocity-scroll-film-landing.md`.
+`docs/knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md`.
 
 ## Driving the page
 

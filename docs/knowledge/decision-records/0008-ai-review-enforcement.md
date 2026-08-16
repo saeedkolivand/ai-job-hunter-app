@@ -3,7 +3,7 @@ status: accepted
 amended: 2026-08-11
 ---
 
-# Mandatory AI review enforcement via deterministic schema-1 verdicts across three active surfaces (Stop gate, /review, CI) — and historical pre-push lane
+# Mandatory AI review enforcement via deterministic schema-1 verdicts across three active AI surfaces (pre-commit Stop gate, pre-PR agents/CodeRabbit, CI), plus retained deterministic pre-push gates
 
 > **Status update (2026-08-11):** The pre-push LLM review lane (`scripts/pre-push-review.mjs`) was removed per owner decision. The deterministic pre-push lanes (fmt/clippy/tests/deny/drift) remain. AI review now happens exclusively via the pre-PR internal agent chain + CodeRabbit + CI (`🤖 AI Review OK` required check). Sections describing the pre-push gate below are **historical reference only**; the active review surfaces are: Stop gate (deterministic), pre-PR agents/CodeRabbit (advisory), CI gate (required).
 
