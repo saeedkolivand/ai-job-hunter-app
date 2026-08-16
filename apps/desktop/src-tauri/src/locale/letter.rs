@@ -215,6 +215,51 @@ pub fn is_subject_line(line: &str) -> bool {
     })
 }
 
+/// Literal template-placeholder tokens across the markets this app supports
+/// (en + de at minimum) — lower-cased for comparison against a
+/// trailing-punctuation-trimmed line.
+const PLACEHOLDER_TOKENS: &[&str] = &[
+    "ihr name",
+    "ihr vollständiger name",
+    "your name",
+    "your full name",
+    "name",
+    "ihre position",
+    "your title",
+    "your position",
+    "[name]",
+    "vorname nachname",
+    "first last",
+];
+
+/// True when `line` is an unfilled template-placeholder slot rather than real
+/// content — either whole-line bracket/slot syntax (`[...]`, `<...>`,
+/// `{...}`, `{{...}}`) or one of [`PLACEHOLDER_TOKENS`] (case-insensitive,
+/// trailing-punctuation tolerant, mirroring the candidate-name comparison
+/// style used around the cover-letter parser's signature-title detection).
+///
+/// A model trained on résumé/letter templates can reproduce an unfilled slot
+/// verbatim (e.g. German "Ihr Name") even though the prompt tells it not to —
+/// see ADR-034 Consequence #2. This is the shared predicate both the letter
+/// parser (`export/typst_engine/letter.rs`, so the placeholder is never
+/// promoted to `signature_title`) and content validation
+/// (`validate/content/letter.rs`, `letter.template_placeholder`) use, so the
+/// pattern list exists in exactly one place.
+pub fn is_template_placeholder(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let slot_wrapped = (trimmed.starts_with('[') && trimmed.ends_with(']'))
+        || (trimmed.starts_with('<') && trimmed.ends_with('>'))
+        || (trimmed.starts_with('{') && trimmed.ends_with('}'));
+    if slot_wrapped {
+        return true;
+    }
+    let normalized = trimmed.trim_end_matches([',', '.']).trim().to_lowercase();
+    PLACEHOLDER_TOKENS.contains(&normalized.as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +321,26 @@ mod tests {
             "Reference architecture I designed at Acme"
         ));
         assert!(!is_subject_line("Dear Hiring Manager,"));
+    }
+
+    #[test]
+    fn detects_template_placeholder_lines() {
+        // Literal tokens, case-insensitive, trailing-punctuation tolerant.
+        assert!(is_template_placeholder("Ihr Name"));
+        assert!(is_template_placeholder("ihr name,"));
+        assert!(is_template_placeholder("Your Name"));
+        assert!(is_template_placeholder("Your Full Name."));
+        assert!(is_template_placeholder("First Last"));
+        // Whole-line bracket/slot syntax.
+        assert!(is_template_placeholder("[Your Title]"));
+        assert!(is_template_placeholder("<Name>"));
+        assert!(is_template_placeholder("{{Name}}"));
+        // Real content must never match.
+        assert!(!is_template_placeholder("Senior Software Engineer"));
+        assert!(!is_template_placeholder("Saeed Kolivand"));
+        assert!(!is_template_placeholder(""));
+        assert!(!is_template_placeholder(
+            "I led the migration of our payments service."
+        ));
     }
 }

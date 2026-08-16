@@ -1799,6 +1799,9 @@
       "content": {
         "language_mismatch": "This text doesn't match the target language."
       },
+      "letter": {
+        "template_placeholder": "This looks like an unfilled template placeholder, not real content — replace it before sending this letter."
+      },
       "alignment": {
         "low_coverage": "This document covers little of the job ad's vocabulary — consider weaving in more of it.",
         "missing_top_requirement": "A top requirement from the job ad isn't evidenced here."

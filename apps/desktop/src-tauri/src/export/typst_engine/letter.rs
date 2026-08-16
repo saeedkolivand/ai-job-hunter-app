@@ -213,7 +213,9 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
 ///   (`looks_like_date`), or recipient.
 /// - Body paragraphs are parsed as rich-text runs via `tokenize_rich` so
 ///   **bold** phrases survive.
-/// - Post-signoff: first non-blank non-name line is signature_title.
+/// - Post-signoff: first non-blank non-name, non-placeholder line is
+///   signature_title (an unfilled template slot like "Ihr Name" is dropped,
+///   never promoted — see [`crate::locale::letter::is_template_placeholder`]).
 ///
 /// Gracefully handles all-missing parts — body may be empty but never panics.
 ///
@@ -464,7 +466,16 @@ pub(super) fn parse_cover_letter(
             // header-echo skip above: a name ending in "." never matched.
             let is_candidate_name =
                 clean.trim().trim_end_matches([',', '.']).to_lowercase() == name_lower;
-            if signature_title.is_none() && !clean.is_empty() && !is_candidate_name {
+            // An unfilled template placeholder ("Ihr Name" / "Your Name" /
+            // "[Your Title]") is not a real title — the model can reproduce a
+            // template's slot verbatim even though the prompt tells it not
+            // to. Never promote it. See ADR-034 Consequence #2.
+            let is_placeholder = crate::locale::letter::is_template_placeholder(&clean);
+            if signature_title.is_none()
+                && !clean.is_empty()
+                && !is_candidate_name
+                && !is_placeholder
+            {
                 signature_title = Some(clean.to_string());
             }
             continue;
@@ -944,6 +955,77 @@ Saeed Kolivand
             "trailing sign-off name (title-case) must not be promoted to signature_title; \
              got {:?}",
             model.signature_title
+        );
+    }
+
+    /// Live-defect regression, generalised across the placeholder shapes the
+    /// task describes rather than one instance: a letter-template
+    /// placeholder left in the signature block must never be promoted to
+    /// `signature_title`. The German case is the ACTUAL observed export
+    /// tail ("Ihr Name" after "Mit freundlichen Grüßen"); the other two rows
+    /// cover the English literal form and bracketed slot syntax. See
+    /// ADR-034 Consequence #2.
+    #[test]
+    fn template_placeholder_not_promoted_to_signature_title() {
+        for (signoff, placeholder) in [
+            ("Mit freundlichen Grüßen", "Ihr Name"),
+            ("Sincerely,", "Your Name"),
+            ("Sincerely,", "[Your Title]"),
+        ] {
+            let letter = format!(
+                "Saeed Kolivand\nsaeed@example.com\n\nDear Hiring Manager,\n\nI am writing to \
+                 apply for this role.\n\n{signoff}\n\nSaeed Kolivand\n{placeholder}\n"
+            );
+            let model = parse_cover_letter(
+                &letter,
+                None,
+                Some("Saeed Kolivand"),
+                "us",
+                "en",
+                dummy_style(),
+                false,
+            );
+            assert_eq!(model.signature_name, "Saeed Kolivand");
+            assert!(
+                model.signature_title.is_none(),
+                "placeholder {placeholder:?} after {signoff:?} must not be promoted to \
+                 signature_title; got {:?}",
+                model.signature_title
+            );
+        }
+    }
+
+    /// Negative: a genuine job title must still be promoted — the placeholder
+    /// guard must not over-match and swallow a real signature title.
+    #[test]
+    fn real_job_title_still_promoted_to_signature_title() {
+        let letter = "\
+Saeed Kolivand
+saeed@example.com
+
+Dear Hiring Manager,
+
+I am writing to apply for this role.
+
+Sincerely,
+
+Saeed Kolivand
+Senior Software Engineer
+";
+        let model = parse_cover_letter(
+            letter,
+            None,
+            Some("Saeed Kolivand"),
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
+
+        assert_eq!(
+            model.signature_title.as_deref(),
+            Some("Senior Software Engineer"),
+            "a real job title must still be promoted to signature_title"
         );
     }
 
