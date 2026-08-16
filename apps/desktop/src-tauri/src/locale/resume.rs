@@ -49,7 +49,15 @@ const DE_ORDER: &[SectionId] = &[
 /// follow the listed ones — see `model::transform::reorder_sections`.
 pub fn section_order_for(market: &str) -> &'static [SectionId] {
     match market.trim().to_lowercase().as_str() {
-        "de" => DE_ORDER,
+        // Two market-id namespaces reach this function and they disagree:
+        // `locale::letter::conventions` and the generation pipeline key on
+        // "de", while `LocaleProfile` collapses DE/AT/CH into the single id
+        // "dach" — which `recommend::pick_locale` returns and the AI-Generate
+        // résumé export path forwards verbatim. Accept BOTH, using the same
+        // alias set `LocaleProfile::get` already uses, so a German user cannot
+        // silently receive the default order depending on which surface set
+        // the market.
+        "de" | "at" | "ch" | "dach" => DE_ORDER,
         _ => DEFAULT_ORDER,
     }
 }
@@ -93,6 +101,21 @@ mod tests {
             position(order, &SectionId::Certifications) < position(order, &SectionId::Skills),
             "the German Lebenslauf runs skills late, after certifications"
         );
+    }
+
+    /// Regression: `LocaleProfile` collapses DE/AT/CH into the id "dach", and
+    /// `recommend::pick_locale` returns that value, which the AI-Generate
+    /// résumé export path forwards to `linearize` verbatim. Matching only the
+    /// literal "de" silently gave those users the default (US) order.
+    #[test]
+    fn german_market_aliases_all_resolve_to_the_de_order() {
+        for market in ["de", "at", "ch", "dach", "DACH", "  dach  "] {
+            assert_eq!(
+                section_order_for(market),
+                DE_ORDER,
+                "market {market:?} must resolve to the Lebenslauf order"
+            );
+        }
     }
 
     #[test]

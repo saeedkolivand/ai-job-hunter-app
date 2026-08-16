@@ -466,11 +466,12 @@ pub(super) fn parse_cover_letter(
             // header-echo skip above: a name ending in "." never matched.
             let is_candidate_name =
                 clean.trim().trim_end_matches([',', '.']).to_lowercase() == name_lower;
-            // An unfilled template placeholder ("Ihr Name" / "Your Name" /
-            // "[Your Title]") is not a real title — the model can reproduce a
-            // template's slot verbatim even though the prompt tells it not
-            // to. Never promote it. See ADR-034 Consequence #2.
-            let is_placeholder = crate::locale::letter::is_template_placeholder(&clean);
+            // An unfilled template slot ("Ihr Name", "[Job Title]") is not a
+            // real title — never promote it (ADR-034 Consequence #2). Test the
+            // RAW line too: `clean` has been through `strip_md_links`, which
+            // unwraps any whole `[...]` span, so the bracket branch alone dies.
+            let is_placeholder = crate::locale::letter::is_template_placeholder(trimmed)
+                || crate::locale::letter::is_template_placeholder(&clean);
             if signature_title.is_none()
                 && !clean.is_empty()
                 && !is_candidate_name
@@ -971,6 +972,8 @@ Saeed Kolivand
             ("Mit freundlichen Grüßen", "Ihr Name"),
             ("Sincerely,", "Your Name"),
             ("Sincerely,", "[Your Title]"),
+            ("Sincerely,", "[Job Title]"),
+            ("Sincerely,", "[Position]"),
         ] {
             let letter = format!(
                 "Saeed Kolivand\nsaeed@example.com\n\nDear Hiring Manager,\n\nI am writing to \
