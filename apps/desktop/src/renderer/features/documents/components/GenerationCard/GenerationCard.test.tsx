@@ -340,6 +340,47 @@ describe('GenerationCard — debounced persist', () => {
   });
 });
 
+// ── Cover-letter export locale (fix/letter-export-contract) ──────────────────
+//
+// GenerationCard used to pass `locale: undefined` to the cover-letter export.
+// The backend resolves a missing locale to "intl" and its `complete_letter_text`
+// synthesizes an English salutation/sign-off onto a body-only letter — so a
+// German generation re-exported here silently got English furniture. This
+// guards the fix: the resolved market must reach the mocked export call, not
+// just "was called".
+
+describe('GenerationCard — cover-letter export locale', () => {
+  beforeEach(() => {
+    vi.mocked(exportPDF).mockClear();
+    vi.mocked(exportPDF).mockResolvedValue(undefined);
+  });
+
+  /** Export lives in the 3-dots overflow menu → the composed ExportPicker's
+   *  own action buttons (default format is pdf). */
+  function openExportModal() {
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'resumes.generated.export' }));
+  }
+
+  it('resolves a German generation to the German market, not undefined', async () => {
+    render(<GenerationCard gen={{ ...GEN, targetLanguage: 'de' }} />);
+    openExportModal();
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
+
+    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(exportPDF).mock.calls[0]?.[6]).toBe('de');
+  });
+
+  it('leaves the résumé export locale unset (unchanged behavior)', async () => {
+    render(<GenerationCard gen={{ ...GEN, targetLanguage: 'de' }} />);
+    openExportModal();
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
+
+    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(exportPDF).mock.calls[0]?.[6]).toBeUndefined();
+  });
+});
+
 // ── Export failure surfaces a toast (was a silent unhandled rejection) ────────
 
 describe('GenerationCard — export failure', () => {
