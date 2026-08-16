@@ -38,6 +38,13 @@ pub enum TrustFlag {
     InvalidUrl,
     SuspiciousDomain,
     CompanyDomainMismatch,
+    /// The "company" field itself is implausible as an employer name — CTA/UI
+    /// debris (`"Apply now"`), a job board's own brand standing in for the
+    /// employer, separator/markup debris, a placeholder, or an unreasonable
+    /// shape. See [`is_implausible_company`]. Additive variant — see that
+    /// function's doc comment for why appending it here is safe for every
+    /// `TrustAssessment`/`FoundJob` record already on disk.
+    ImplausibleCompany,
 }
 
 /// URL-shortener domains — they obscure the real destination, a classic
@@ -126,15 +133,185 @@ pub fn assess_trust(url: &str, company: &str) -> TrustAssessment {
         score -= 25;
     }
 
-    if !company.trim().is_empty()
-        && !matches_domain_list(&host, ATS_ALLOWLIST)
-        && !company_matches_host(company, &host)
-    {
-        flags.push(TrustFlag::CompanyDomainMismatch);
-        score -= 15;
+    if !company.trim().is_empty() {
+        if is_implausible_company(company) {
+            // Same root cause `company_matches_host` would also fail on below
+            // (garbage text rarely matches any host), so this branch takes
+            // priority over `CompanyDomainMismatch` rather than stacking both
+            // flags for one underlying problem.
+            flags.push(TrustFlag::ImplausibleCompany);
+            score -= 20;
+        } else if !matches_domain_list(&host, ATS_ALLOWLIST)
+            && !company_matches_host(company, &host)
+        {
+            flags.push(TrustFlag::CompanyDomainMismatch);
+            score -= 15;
+        }
     }
 
     finish(score, flags)
+}
+
+/// Job-board brands that occasionally leak into the "company" field when a
+/// scraper's selector lands on the hosting board's own chrome instead of the
+/// employer (a nav link, a "Powered by" footer). Judges the COMPANY STRING
+/// itself — distinct from [`ATS_ALLOWLIST`]/[`SUSPICIOUS_DOMAINS`] above,
+/// which judge the apply URL's host. Matched WHOLE-WORD (see
+/// [`is_implausible_company`]) rather than by substring: a substring check
+/// would false-positive real employers like "Boxing Studio" (contains
+/// "xing") or "Monster Energy" (contains "monster") — the latter is a real,
+/// if unlikely, trade this list accepts explicitly, since on a scraped job
+/// board "Monster" alone is overwhelmingly the board itself.
+const JOB_BOARD_NAMES: &[&str] = &[
+    "linkedin",
+    "indeed",
+    "glassdoor",
+    "xing",
+    "stepstone",
+    "monster",
+    "ziprecruiter",
+];
+
+/// Call-to-action / UI copy a broken selector sometimes captures instead of
+/// an employer name — checked as a case-insensitive substring, since the
+/// whole "company" value is usually nothing BUT this text (`"Apply now"`) or
+/// this text concatenated with board chrome (`"Apply now | LinkedIn"`, the
+/// literal PR #960 report). None of these phrases plausibly appears as a
+/// substring inside a real employer's name.
+const CTA_PHRASES: &[&str] = &[
+    "apply now",
+    "view job",
+    "see more",
+    "easy apply",
+    "apply on ",
+];
+
+/// Literal placeholders/nulls a form default or a scraper's own fallback
+/// sometimes writes rather than leaving the field empty. Compared against
+/// the fully-trimmed, lower-cased value, never as a substring.
+const PLACEHOLDER_NAMES: &[&str] = &["n/a", "none", "unknown", "company", "unternehmen"];
+
+/// Longest legitimate employer name observed in the wild is ~48 chars
+/// ("CHECK24 Vergleichsportal für Versicherungen GmbH" — see the identical
+/// note on `sanitizeCompanyName`, this predicate's TS twin for AI-extracted
+/// metadata, `packages/prompts/src/generate/metadata/metadata.ts`). 80 gives
+/// a long-form legal name (umlauts, multiple suffixes) real headroom without
+/// accepting an obvious sentence or paragraph a broken selector scraped —
+/// the character/punctuation/board-name checks below carry most of the
+/// classification weight, this bound only catches the extreme tail.
+const MAX_COMPANY_CHARS: usize = 80;
+
+/// True when `s` contains an HTML character entity (`&amp;`, `&#39;`, …): an
+/// `&` followed, within a short run of non-whitespace characters, by a `;`.
+/// Deliberately narrower than "contains `&`" — a real name may contain a bare
+/// ampersand (`"Johnson & Johnson"`, `"AT&T"`), and neither has a `;`
+/// anywhere near it, so both survive this check untouched.
+fn has_html_entity(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if c != '&' {
+            continue;
+        }
+        let mut j = i + 1;
+        let mut scanned = 0;
+        while j < chars.len() && scanned < 10 {
+            let next = chars[j];
+            if next == ';' {
+                return true;
+            }
+            if next.is_whitespace() || next == '&' {
+                break;
+            }
+            j += 1;
+            scanned += 1;
+        }
+    }
+    false
+}
+
+/// Reject a "company" value that is obviously CTA/UI debris, a job board's
+/// own brand, separator/markup debris, a placeholder, or an implausible
+/// shape — rather than a real employer name. Pure, no I/O, never panics.
+///
+/// Mirrors the intent (and the conservatism) of `sanitizeCompanyName`, the
+/// existing TS gate on AI-EXTRACTED metadata
+/// (`packages/prompts/src/generate/metadata/metadata.ts`) — this is the
+/// Rust-side twin for a value that never goes through that extraction step
+/// at all: a scraper's own `company` field, ingested straight from the
+/// posting. PR #960's postmortem is the reason this exists: a scraper
+/// returned `"Apply now | LinkedIn"` as the company, and the letter
+/// faithfully addressed it — every downstream validator compares generated
+/// text against the job AD, so a garbage company that IS in the ad (because
+/// the ad's own scrape carried the same debris) passes every one of them.
+///
+/// **Deliberately conservative.** A false positive here silently drops a
+/// real company name from a cover letter — worse than the bug this predicate
+/// exists to catch — so every rule below rejects a SHAPE a real employer
+/// name cannot plausibly have, never merely an unusual one. Real names that
+/// must survive: `"Johnson & Johnson"`, `"Ben & Jerry's"`, `"Yahoo!"`,
+/// `"Booking.com"`, `"37signals"`.
+///
+/// **`"X"` (a single character) is deliberately rejected too**, even though
+/// it is the real, current legal name of the company formerly known as
+/// Twitter. A bare single character reaching this predicate is overwhelmingly
+/// scraper truncation (a stray initial, a cut-off selector), not a genuine
+/// application to X Corp — and the false-positive cost for the rare real
+/// case is soft: the letter omits the company line and names only the role,
+/// which the existing prompt contract already handles gracefully (no
+/// placeholder, no crash — see `packages/prompts/src/generate/cover-letter/
+/// cover-letter.ts`). Accepting that one narrow, low-cost trade is what lets
+/// this predicate reject single-character garbage everywhere else.
+pub fn is_implausible_company(name: &str) -> bool {
+    let trimmed = name.trim();
+    let chars: Vec<char> = trimmed.chars().collect();
+
+    if chars.is_empty() {
+        return true;
+    }
+    if chars.len() == 1 {
+        return true;
+    }
+    if chars.len() > MAX_COMPANY_CHARS {
+        return true;
+    }
+
+    // Separator / markup debris a scraper's selector miss commonly leaves
+    // behind (breadcrumbs, a "CTA | Board" concatenation, raw HTML).
+    if trimmed.contains(['|', '·', '<', '>']) {
+        return true;
+    }
+    if has_html_entity(trimmed) {
+        return true;
+    }
+
+    let alnum = chars.iter().filter(|c| c.is_alphanumeric()).count();
+    if alnum == 0 {
+        return true;
+    }
+    let non_space = chars.iter().filter(|c| !c.is_whitespace()).count();
+    // "Mostly punctuation": fewer than half the non-space characters are
+    // alphanumeric. The lightest punctuation-bearing real name above,
+    // "Ben & Jerry's", is still ~80% alphanumeric — comfortably clear of
+    // this floor.
+    if alnum * 2 < non_space {
+        return true;
+    }
+
+    let normalized = trimmed.to_lowercase();
+
+    if PLACEHOLDER_NAMES.contains(&normalized.as_str()) {
+        return true;
+    }
+
+    if CTA_PHRASES.iter().any(|p| normalized.contains(p)) {
+        return true;
+    }
+
+    // Word-boundary match, not substring — see `JOB_BOARD_NAMES`'s doc for why.
+    normalized
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .any(|w| JOB_BOARD_NAMES.contains(&w))
 }
 
 /// Compute [`assess_trust`] for `job` and attach it as `job.extra["trust"]` —

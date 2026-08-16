@@ -306,6 +306,98 @@ fn company_matches_host_skips_stop_words() {
 }
 
 // ---------------------------------------------------------------------------
+// is_implausible_company — table-driven (A1 hardening plan)
+// ---------------------------------------------------------------------------
+
+/// Real-world garbage this predicate exists to catch, one row per category
+/// from the hardening plan. `"Apply now | LinkedIn"` is the literal PR #960
+/// report, kept first.
+#[test]
+fn is_implausible_company_rejects_real_world_garbage() {
+    let long_paragraph = "Acme Corp Global Holdings ".repeat(6);
+    let cases: Vec<(&str, &str)> = vec![
+        ("Apply now | LinkedIn", "the literal PR #960 report"),
+        ("Apply Now", "bare CTA debris"),
+        ("View Job", "bare CTA debris"),
+        ("See more", "bare CTA debris"),
+        ("Easy Apply", "bare CTA debris"),
+        ("Apply on Indeed", "\"apply on …\" CTA debris"),
+        ("LinkedIn", "job-board brand standing in for the employer"),
+        ("Indeed", "job-board brand standing in for the employer"),
+        ("Glassdoor", "job-board brand standing in for the employer"),
+        ("Xing", "job-board brand standing in for the employer"),
+        ("StepStone", "job-board brand standing in for the employer"),
+        ("Monster", "job-board brand standing in for the employer"),
+        (
+            "ZipRecruiter",
+            "job-board brand standing in for the employer",
+        ),
+        ("Acme <script>alert(1)</script>", "HTML/markup debris"),
+        ("Acme &amp; Co", "HTML-entity debris"),
+        ("***", "mostly/all punctuation"),
+        ("---", "mostly/all punctuation"),
+        ("", "empty"),
+        ("   ", "whitespace-only"),
+        ("n/a", "placeholder"),
+        ("N/A", "placeholder, case-insensitive"),
+        ("None", "placeholder"),
+        ("Unknown", "placeholder"),
+        ("Company", "placeholder"),
+        ("Unternehmen", "placeholder"),
+        (
+            "X",
+            "single-character shape — see the doc comment's X decision",
+        ),
+        ("A", "single-character shape"),
+        (long_paragraph.as_str(), "absurdly long"),
+    ];
+    for (input, reason) in cases {
+        assert!(
+            is_implausible_company(input),
+            "expected {input:?} to be rejected ({reason})"
+        );
+    }
+}
+
+/// Real employer names — punctuation-bearing ones especially — that must
+/// survive every rule above.
+#[test]
+fn is_implausible_company_accepts_legitimate_names_with_punctuation() {
+    let legit = [
+        "Johnson & Johnson",
+        "Ben & Jerry's",
+        "Yahoo!",
+        "Booking.com",
+        "37signals",
+        "Acme Corp",
+        "Stripe",
+        "CHECK24 Vergleichsportal für Versicherungen GmbH",
+    ];
+    for name in legit {
+        assert!(
+            !is_implausible_company(name),
+            "expected {name:?} to be accepted as a plausible employer name"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// assess_trust — implausible company (A1 hardening plan)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn implausible_company_flagged_and_penalized_instead_of_mismatch() {
+    // The host is neither allowlisted nor a match for the company, so a
+    // pre-A1 build would have flagged `CompanyDomainMismatch` (-15) here —
+    // this asserts the implausible-company branch takes priority instead
+    // (-20, exactly one flag), never both.
+    let a = assess_trust("https://boards.example/jobs/1", "Apply now | LinkedIn");
+    assert_eq!(a.score, 80);
+    assert_eq!(a.level, TrustLevel::Medium);
+    assert_eq!(a.flags, vec![TrustFlag::ImplausibleCompany]);
+}
+
+// ---------------------------------------------------------------------------
 // FoundJob wiring — exercises the REAL `build_found_job` projection (the
 // same one `autopilot_run`'s `postings.iter().map(..)` calls), not a
 // hand-retyped mirror that could silently drift (dropped field, swapped args).

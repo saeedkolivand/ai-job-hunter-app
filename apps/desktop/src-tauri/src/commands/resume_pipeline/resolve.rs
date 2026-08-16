@@ -273,6 +273,35 @@ pub(crate) fn job_meta_from_request(
     }
 }
 
+/// The generation boundary for an implausible company name (A1 of the
+/// hardening plan). Runs on the MERGED [`crate::commands::match_resume::
+/// JobPostingMeta`] — after [`resolve_job`], so it covers both the `Cache`
+/// arm (`job_meta_for`, a scraped posting's own `company` field, never
+/// sanitized upstream) and the `Text` arm ([`job_meta_from_request`], a
+/// renderer-supplied string) with one call, rather than two call sites that
+/// could drift.
+///
+/// Blanks `meta.company` to `""` — never `Option::None`, because
+/// `JobPostingMeta.company` is a plain `String` and every existing consumer
+/// (`QualityInput::company_name`'s `research_company_brief` admission check,
+/// the cover-letter prompt's own "company name unknown" branch) already
+/// treats an empty string as "company not known", the identical convention
+/// `sanitizeCompanyName` uses on the TS side for AI-extracted metadata. This
+/// is additive enrichment turned into a SUBTRACTION at the generation
+/// boundary, not a `TrustAssessment`-style flag — deliberately: unlike
+/// `scraping::trust`'s flag-only contract (never drop, only badge), letting a
+/// known-implausible string reach the model as if it were a real employer
+/// name is the actual defect (PR #960), so this one field is the one place
+/// blanking is correct. `title`/`url`/`board` are untouched.
+pub(crate) fn sanitize_job_meta(
+    mut meta: crate::commands::match_resume::JobPostingMeta,
+) -> crate::commands::match_resume::JobPostingMeta {
+    if crate::scraping::trust::is_implausible_company(&meta.company) {
+        meta.company = String::new();
+    }
+    meta
+}
+
 /// What `persist_document` (`mod.rs`) should write into the aggregate's
 /// `job_ad` column. `Cache` stays empty — deliberately, per that fn's own doc:
 /// the postings cache is keyed by the live job id, which a finished run no

@@ -338,6 +338,12 @@ fn generate_filename(request: &ExportRequest, extension: &str) -> String {
         .meta
         .as_ref()
         .and_then(|m| m.company_name.as_ref())
+        // A1 (hardening plan): the renderer builds `GenerationMeta` from
+        // whatever a scraped posting's `company` field held, unsanitized —
+        // an implausible one (`"Apply now | LinkedIn"`) must fall to the same
+        // "Company" default an absent one already does, not land verbatim in
+        // the exported filename a user sees and shares.
+        .filter(|s| !crate::scraping::trust::is_implausible_company(s))
         .map(|s| sanitize_filename(s))
         .unwrap_or_else(|| "Company".to_string());
 
