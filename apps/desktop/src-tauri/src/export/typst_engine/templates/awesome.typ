@@ -121,7 +121,12 @@
 // title+long-contact header's measured content past the old 28mm floor
 // (measured 81.79pt against a 79.37pt floor), which would have made every
 // such header grow the band instead of sitting at the intended thin minimum.
-#let band-min-h = if has-title { 29mm } else { 24mm }
+// Bumped again 29mm → 31mm when the name→title gap was routed through
+// `sp-subtitle-gap` (2pt → 6pt) so the role stopped sitting flush against the
+// name: measured 85.79pt against the 82.20pt (29mm) floor, same failure mode.
+// If you widen ANY header gap here, re-run
+// `awesome_band_contains_its_white_header_text` — it is the pin that catches it.
+#let band-min-h = if has-title { 31mm } else { 24mm }
 
 // Inset above the header content, and the room kept below its last baseline.
 // Typst's default text `bottom-edge` IS the baseline, so `measure(band-box)`
@@ -183,7 +188,7 @@
     if "name" in data.header { data.header.name } else { "" },
   )
   if has-title {
-    block(above: 2pt, below: sp-header-title-below,
+    block(above: sp-subtitle-gap, below: sp-header-title-below,
       text(
         size: section-pt,
         style: if title-italic { "italic" } else { "normal" },

@@ -1049,8 +1049,11 @@ fn awesome_band_contains_its_white_header_text() {
             Some("Principal Distributed Systems Engineer"),
             // 28.0 -> 29.0: `band-min-h`'s has-title floor moved with it (#28,
             // see that constant's doc comment) when the name→contact gap
-            // below was routed through the taller `sp-name-below`.
-            29.0,
+            // below was routed through the taller `sp-name-below`. Then
+            // 29.0 -> 31.0 when the name→title gap was routed through
+            // `sp-subtitle-gap` (2pt -> 6pt) so the role stopped sitting flush
+            // against the name — same failure mode, same constant.
+            31.0,
             "alexandra.konstantinopoulos@example.com | +1 (415) 555-0189 | San Francisco, CA \
              | https://linkedin.com/in/alexandrakonst | https://alexandrakonstantinopoulos.dev",
         ),
