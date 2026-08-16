@@ -242,6 +242,12 @@ pub(super) enum AdmitOutcome {
 /// degrades to its OWN "nothing found" value rather than an error. The guard
 /// rides in the returned tuple so the caller holds the slot for the real work.
 /// `who` only labels the debug log.
+///
+/// `pub(super)`, so a caller below `commands` (the résumé pipeline's opt-in
+/// `cover_letter` research) cannot reach this exact function — it admits
+/// against the SAME bucket via [`crate::pipeline::Completer::admit_research`]
+/// instead, which shares [`crate::limits::AI_RESEARCH_BUCKET`] and its
+/// constants with this one rather than re-declaring them.
 pub(super) fn admit_research(app: &AppHandle, who: &str) -> AdmitOutcome {
     let limiter = app
         .state::<std::sync::Arc<crate::limits::Limiter>>()
@@ -250,9 +256,9 @@ pub(super) fn admit_research(app: &AppHandle, who: &str) -> AdmitOutcome {
     // This is a billable provider web search (Ollama fires two calls: search +
     // synthesis) with no other ceiling, so a looping/compromised renderer
     // varying its inputs must not drive unbounded paid-API spend. One shared
-    // bucket across all three research commands, deliberately.
+    // bucket across every research caller, deliberately.
     let guard = match limiter.acquire(
-        "ai_research",
+        crate::limits::AI_RESEARCH_BUCKET,
         crate::limits::AI_RESEARCH_RATE_MAX,
         crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
     ) {

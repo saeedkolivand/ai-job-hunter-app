@@ -363,6 +363,8 @@ async fn execute(
             today: &clamped.today,
             cover_letter: &clamped.cover_letter,
             include_cover_letter: req.include_cover_letter,
+            company_name: &meta.company,
+            research_company: req.research_company,
             effort: req.effort.as_deref(),
             job_id,
         },

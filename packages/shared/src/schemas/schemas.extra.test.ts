@@ -65,6 +65,7 @@ describe('ResumePipelineRunSchema', () => {
     expect(parsed.jobTitle).toBe('');
     expect(parsed.companyName).toBe('');
     expect(parsed.board).toBe('');
+    expect(parsed.researchCompany).toBe(false);
   });
 
   it('accepts the text-only path — a pasted job ad, no ids', () => {

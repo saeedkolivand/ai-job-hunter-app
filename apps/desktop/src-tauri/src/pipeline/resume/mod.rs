@@ -218,6 +218,19 @@ pub struct QualityInput<'a> {
     /// for every caller that predates it, so this field is the ONLY thing that
     /// changes behavior.
     pub include_cover_letter: bool,
+    /// The run's resolved company identity (`meta.company` — cache-resolved
+    /// on the id path, the request's own `companyName` on the text path).
+    /// Read ONLY by `cover_letter`'s opt-in research call, as the accurate
+    /// override `CompanyResearch::enrich_with`'s heuristic job-ad extraction
+    /// otherwise falls back to. Empty is a real absence, not an omission.
+    pub company_name: &'a str,
+    /// Opt-in: `cover_letter` researches [`Self::company_name`] before writing
+    /// the letter and fences a `<company_research>` block into its prompt
+    /// when a brief comes back non-empty. `false` is a complete no-op for
+    /// this concern — the default for every caller that predates it, so this
+    /// field (like [`Self::include_cover_letter`]) is the ONLY thing that
+    /// changes behavior.
+    pub research_company: bool,
     /// The cross-provider reasoning-effort token, threaded to the draft's
     /// stream request and to the run deadline.
     pub effort: Option<&'a str>,

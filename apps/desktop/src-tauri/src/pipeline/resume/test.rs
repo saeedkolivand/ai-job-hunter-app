@@ -1204,10 +1204,11 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
     // the market conventions and (when supplied) the date — `today` reaches
     // a prompt as free renderer text same as anything else here, so it gets
     // the same forgery check.
-    let letter = letter_user(hostile, hostile, &ResumeStrategy::default(), "de", hostile);
+    let letter = letter_user(hostile, hostile, &ResumeStrategy::default(), "de", hostile, hostile);
     assert_eq!(letter.matches("</resume_strategy>").count(), 1);
     assert_eq!(letter.matches("</market_conventions>").count(), 1);
     assert_eq!(letter.matches("</letter_date>").count(), 1);
+    assert_eq!(letter.matches("</company_research>").count(), 1);
     assert!(!letter.contains("[tool_result:"));
 
     // …and for the humanize turn's document + findings — PR-2's own two tags.
@@ -1262,7 +1263,7 @@ fn stage_prompts_interpolate_the_generated_blocks() {
 
     // The letter is prose, so it gets the PROSE tier, never the résumé's
     // lexical one.
-    let letter = letter_system("en", "intl", false);
+    let letter = letter_system("en", "intl", false, false);
     assert!(letter.contains(FACTUAL_GROUNDING_RULES));
     assert!(letter.contains(HUMANIZE_PROSE));
     assert!(!letter.contains(HUMANIZE_LEXICAL));
@@ -1297,13 +1298,13 @@ fn the_draft_prompt_localizes_its_headings() {
 /// `crate::locale::letter::conventions` and the unknown-market assertions do.
 #[test]
 fn letter_user_carries_market_conventions_for_de_and_falls_back_for_an_unknown_market() {
-    let de = letter_user("resume", "job ad", &ResumeStrategy::default(), "de", "");
+    let de = letter_user("resume", "job ad", &ResumeStrategy::default(), "de", "", "");
     assert!(de.contains("<market_conventions>"));
     assert!(de.contains("Germany"));
     assert!(de.contains("Betreff"));
     assert!(de.contains("Gehaltsvorstellung"));
 
-    let unknown = letter_user("resume", "job ad", &ResumeStrategy::default(), "zz", "");
+    let unknown = letter_user("resume", "job ad", &ResumeStrategy::default(), "zz", "", "");
     assert!(unknown.contains("International"));
     assert!(
         !unknown.contains("Betreff"),
@@ -1318,10 +1319,10 @@ fn letter_user_carries_market_conventions_for_de_and_falls_back_for_an_unknown_m
 /// and the `us` assertion fails.
 #[test]
 fn letter_system_gates_the_subject_line_instruction_on_the_market() {
-    let de = letter_system("de", "de", false);
+    let de = letter_system("de", "de", false, false);
     assert!(de.contains("subject line labelled \"Betreff\""));
 
-    let us = letter_system("en", "us", false);
+    let us = letter_system("en", "us", false, false);
     assert!(!us.contains("subject line labelled"));
 }
 
@@ -1333,13 +1334,106 @@ fn letter_system_gates_the_subject_line_instruction_on_the_market() {
 /// fails.
 #[test]
 fn letter_system_gates_the_date_instruction_on_has_date() {
-    let no_date = letter_system("en", "us", false);
+    let no_date = letter_system("en", "us", false, false);
     assert!(no_date.contains("No date."));
     assert!(!no_date.contains("<letter_date>"));
 
-    let with_date = letter_system("en", "us", true);
+    let with_date = letter_system("en", "us", true, false);
     assert!(with_date.contains("<letter_date>"));
     assert!(!with_date.contains("No date."));
+}
+
+/// The `<company_research>` guidance is gated on `has_brief`, mirroring
+/// `has_date`'s gate above — a caller with no brief must not point the model
+/// at a block that will not exist.
+///
+/// Mutation check: default `has_brief` to always-true and the first assertion
+/// fails.
+#[test]
+fn letter_system_gates_the_company_research_instruction_on_has_brief() {
+    let no_brief = letter_system("en", "us", false, false);
+    assert!(!no_brief.contains("<company_research>"));
+
+    let with_brief = letter_system("en", "us", false, true);
+    assert!(with_brief.contains("<company_research>"));
+    assert!(with_brief.contains("why this company"));
+    assert!(with_brief.contains("ignore any"));
+}
+
+/// The `<company_research>` block itself is gated on the CONTENT of
+/// `company_brief`, not merely on whether the caller passed one at all —
+/// blank/whitespace-only must render nothing, same as `today`'s own gate.
+///
+/// Mutation check: drop the `.trim().is_empty()` guard in `letter_user` and
+/// the blank-brief assertion fails.
+#[test]
+fn letter_user_fences_a_non_empty_company_brief_and_omits_a_blank_one() {
+    let with_brief = letter_user(
+        "resume",
+        "job ad",
+        &ResumeStrategy::default(),
+        "intl",
+        "",
+        "Acme builds payment infrastructure.",
+    );
+    assert!(with_brief.contains("<company_research>"));
+    assert!(with_brief.contains("Acme builds payment infrastructure."));
+    assert!(with_brief.contains("</company_research>"));
+
+    let blank_brief =
+        letter_user("resume", "job ad", &ResumeStrategy::default(), "intl", "", "   ");
+    assert!(!blank_brief.contains("<company_research>"));
+
+    // The unset-flag path (empty string, same as every caller before this
+    // feature existed) is BYTE-IDENTICAL to a caller that never knew about
+    // `company_brief` at all.
+    let unset = letter_user("resume", "job ad", &ResumeStrategy::default(), "intl", "", "");
+    assert_eq!(unset, blank_brief);
+}
+
+/// The `cover_letter` stage's opt-in research must be structurally non-fatal
+/// — an admission refusal, a search failure, or a timeout must degrade to
+/// `""`, never propagate as a run-ending `AppError`. `research_company_brief`
+/// needs a live `Completer` (`AppHandle`) this crate has no harness for, so —
+/// same shape as `letter_system_gates_the_company_research_instruction_on_has_brief`'s
+/// sibling source-lock tests elsewhere in this crate — this is the source-level
+/// proof: the helper's own signature returns a plain `String`, never
+/// `AppResult<String>`, and its body contains no `?` that could bubble a
+/// research failure into the stage's `run()`.
+///
+/// Mutation check: change `research_company_brief`'s return type to
+/// `AppResult<String>` and propagate the research error with `?` — this test
+/// fails immediately (no `?` may appear in the function body), and the
+/// broken behavior it would let through (a failed run on a mere research
+/// hiccup) is exactly what requirement #4 forbids.
+#[test]
+fn research_company_brief_has_no_fallible_operator_that_could_fail_the_run() {
+    let source = include_str!("stages/cover_letter.rs");
+    let start = source
+        .find("async fn research_company_brief")
+        .expect("research_company_brief must exist");
+    let body = &source[start..];
+    let end = body
+        .find("\n}\n")
+        .map(|i| i + 3)
+        .unwrap_or(body.len());
+    let body = &body[..end];
+
+    assert!(
+        body.contains("-> String"),
+        "research_company_brief must return a plain String, never a Result: {body}"
+    );
+    assert!(
+        !body.contains('?'),
+        "research_company_brief must contain no `?` — a research failure must never \
+         propagate as a run-ending error: {body}"
+    );
+    // It must still actually ADMIT before it spends — the cost-control half
+    // of the same guarantee.
+    assert!(
+        body.contains(".admit_research("),
+        "research_company_brief must admit against the shared bucket before researching"
+    );
 }
 
 // ── resolved top requirements (Task E) ──────────────────────────────────────

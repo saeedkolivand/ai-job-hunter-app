@@ -390,6 +390,15 @@ export const ResumePipelineRunSchema = z
      *  caller that never sets this gets byte-identical behavior — the stage
      *  finishes instantly at zero cost, exactly as if it did not exist. */
     includeCoverLetter: z.boolean().default(false),
+    /** Opt-in: research the posting's company before writing the letter and
+     *  fence a `<company_research>` block into its prompt when a brief comes
+     *  back non-empty. Ignored when {@link includeCoverLetter} is false.
+     *  Admitted through the SAME shared `"ai_research"` rate/concurrency/
+     *  daily-budget bucket `ai_research_company` uses — a second, billable
+     *  provider web search, never an unbounded one. Default false: an
+     *  existing caller gets byte-identical behavior (no extra call, no new
+     *  block). */
+    researchCompany: z.boolean().default(false),
   })
   .refine((data) => data.resumeId.trim() !== '' || data.resumeText.trim() !== '', {
     message: 'either resumeId or resumeText is required',
