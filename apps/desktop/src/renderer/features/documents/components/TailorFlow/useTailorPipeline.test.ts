@@ -8,6 +8,7 @@ import type { PipelineRunDetail } from '@ajh/shared/ipc';
 
 import type * as GenerateModule from '@/lib/generate';
 import { exportDOCX, exportPDF } from '@/lib/generate';
+import { keys } from '@/services/query-client';
 
 import { useTailorPipeline } from './useTailorPipeline';
 
@@ -102,8 +103,12 @@ vi.mock('@/lib/generate', async () => {
   };
 });
 
+// A module-scoped, per-test-reset client (not a fresh one per `render()` call)
+// so a test can `vi.spyOn` its `invalidateQueries` and observe what the hook
+// under test does to it.
+let queryClient: QueryClient;
 const wrapper = ({ children }: { children: ReactNode }) =>
-  createElement(QueryClientProvider, { client: new QueryClient() }, children);
+  createElement(QueryClientProvider, { client: queryClient }, children);
 
 const PARAMS = {
   jobDesc: 'a very German-language job ad'.repeat(1), // language detection is best-effort; not asserted precisely
@@ -139,6 +144,7 @@ function detail(overrides: Partial<PipelineRunDetail> = {}): PipelineRunDetail {
 }
 
 beforeEach(() => {
+  queryClient = new QueryClient();
   sessionBus.state = 'idle';
   sessionBus.busy = false;
   sessionBus.runId = null;
@@ -666,5 +672,141 @@ describe('useTailorPipeline — stageLabel fallback (L: no raw snake_case leak)'
     // Never the raw wire name — falls back to pipeline.state.drafting's translation.
     expect(result.current.stageLabel).not.toBe('a_future_stage_this_build_predates');
     expect(result.current.stageLabel).toBe('pipeline.state.drafting');
+  });
+});
+
+// Stage 6d — the fabricated `meta` stub silently dropped the "top requirement
+// hits" metric from a Re-check (`use-quality-recheck.ts` sends
+// `meta.topRequirements` verbatim) and short-circuited the answers
+// assistant's own metadata extraction (`useApplicationAnswers.ts` treats any
+// non-null `meta` as already detected). Reverting to the fabricated
+// `topRequirements: []` makes this fail.
+describe('useTailorPipeline — meta is seeded from the aggregate, not fabricated', () => {
+  it("meta.topRequirements equals the record's list, not an empty array", () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const generation = {
+      id: 'gen-1',
+      candidateName: 'Jane Doe',
+      resumeLanguage: 'de',
+      jobAdLanguage: 'en',
+      mismatch: true,
+      topRequirements: ['Kubernetes', 'Rust'],
+      coverLetterText: '',
+    } as AiGenerationRecord;
+
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.meta?.topRequirements).toEqual(['Kubernetes', 'Rust']);
+    expect(result.current.meta?.candidateName).toBe('Jane Doe');
+    expect(result.current.meta?.resumeLanguage).toBe('de');
+    expect(result.current.meta?.jobAdLanguage).toBe('en');
+    expect(result.current.meta?.mismatch).toBe(true);
+  });
+
+  it('falls back to the derived defaults when no aggregate exists', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const { result } = render();
+
+    expect(result.current.meta?.topRequirements).toEqual([]);
+    expect(result.current.meta?.candidateName).toBe('');
+    expect(result.current.meta?.mismatch).toBe(false);
+  });
+});
+
+// Stage 6d — a run stopped before the `validate` stage (cancel, or a deadline
+// stop at a stage boundary) persists `session.detail.report === null`, which
+// the OLD `session.detail ? session.detail.report : …` ternary took as a
+// final answer and discarded the aggregate's perfectly good report. Reverting
+// the `??` fallback to that ternary makes this fail.
+describe('useTailorPipeline — quality report survives a terminal run with no live report', () => {
+  const minimalReport = {
+    ok: true,
+    issues: [],
+    metrics: {
+      keywordCoverage: null,
+      topRequirementHits: 3,
+      duplicateRatio: 0,
+      rolesSource: 0,
+      rolesOutput: 0,
+    },
+  };
+
+  it('falls back to the persisted report when a terminal detail.report is null', () => {
+    sessionBus.detail = detail({ status: 'cancelled', report: null });
+    const persisted = {
+      schemaVersion: 2,
+      pipeline: 'quality',
+      generatedAt: 0,
+      resume: { report: minimalReport, sourceTextHash: 0 },
+    };
+    const generation = {
+      id: 'gen-1',
+      coverLetterText: '',
+      qualityReport: JSON.stringify(persisted),
+    } as AiGenerationRecord;
+
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.report).not.toBeNull();
+    expect(result.current.report?.resume?.report.metrics.topRequirementHits).toBe(3);
+  });
+
+  it('still prefers the live report when both exist', () => {
+    sessionBus.detail = detail({
+      status: 'completed',
+      report: {
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 0,
+        resume: { report: { ...minimalReport, ok: false }, sourceTextHash: 1 },
+      },
+    });
+    const generation = {
+      id: 'gen-1',
+      coverLetterText: '',
+      qualityReport: JSON.stringify({
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 0,
+        resume: { report: minimalReport, sourceTextHash: 0 },
+      }),
+    } as AiGenerationRecord;
+
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.report?.resume?.sourceTextHash).toBe(1);
+  });
+});
+
+// Stage 6e — a hard failure via the umbrella `job.failed` path (a full queue,
+// no configured provider, a deleted résumé, …) sends `ERROR` straight to the
+// session machine with NO run record ever written (`detail` stays `null`).
+// The old effect gated on `session.detail?.status`, which never exists here,
+// so the aggregate (and Autopilot's score) never refreshed. Reverting to that
+// gate makes this fail.
+describe('useTailorPipeline — a hard failure with no run record still invalidates', () => {
+  it('invalidates aiGenerations AND autopilot once the session reaches ERROR with detail still null', () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { rerender } = render();
+    invalidateSpy.mockClear();
+
+    sessionBus.state = 'error';
+    sessionBus.detail = null;
+    rerender();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: keys.aiGenerations.all });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: keys.autopilot.all });
+  });
+
+  it('does not invalidate while still busy or idle', () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    render();
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    sessionBus.state = 'drafting';
+    const { rerender } = render();
+    invalidateSpy.mockClear();
+    rerender();
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
