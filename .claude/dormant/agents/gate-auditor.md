@@ -23,7 +23,7 @@ rAF-counter FPS sampling; mark those checks self-reported.
 
 Run the checklist in `.claude/dormant/skills/webgl-gate-audit/SKILL.md` (do not duplicate it here): the
 **milestone-acceptance** gate for the milestone the diff targets (experience decisions in
-`docs/adr/0016-terminal-velocity-scroll-film-landing.md`); **scrub + rewind determinism** (the same
+`docs/knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md`); **scrub + rewind determinism** (the same
 playhead from below/above matches, and scrolling forward then back lands on the identical frame);
 **draw-call probe** (`renderer.info.render.calls` under budget, off-screen assets disposed);
 **strobe budget** (<=3 full-frame flashes/rolling-second, content-agnostic); **copy parity** vs

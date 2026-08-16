@@ -73,8 +73,8 @@ still hold._
 
 ## References
 
-- Active experience contract: `docs/adr/0016-terminal-velocity-scroll-film-landing.md`
-  (RIPBOOK, `docs/adr/0015-ripbook-notebook-landing.md`, is the superseded intermediate).
+- Active experience contract: `docs/knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md`
+  (RIPBOOK, `docs/knowledge/decision-records/0015-ripbook-notebook-landing.md`, is the superseded intermediate).
 - Glossary: `docs/CONTEXT.md` (Semantic layer, Experience gate, Passthrough files are active;
   Journey, Beat, and the RIPBOOK terms are superseded).
 - App: `apps/landing`; passthrough source: `landing/`; deploy: `.github/workflows/pages.yml`.

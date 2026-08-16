@@ -42,7 +42,9 @@ function RadarEntryItem({ entry, index }: { entry: TechRadarEntry; index: number
           <>
             {' '}
             See{' '}
-            <a href={`${GITHUB_REPO}/blob/main/docs/adr/${entry.adrSlug}.md`}>
+            <a
+              href={`${GITHUB_REPO}/blob/main/docs/knowledge/decision-records/${entry.adrSlug}.md`}
+            >
               {entry.adrSlug.replace(/^0*(\d+)-/, 'ADR-$1: ').replace(/-/g, ' ')}
             </a>
             .

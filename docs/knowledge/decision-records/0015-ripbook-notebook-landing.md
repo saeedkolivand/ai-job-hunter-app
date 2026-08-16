@@ -143,7 +143,7 @@ what changed:
 
 ## References
 
-- Amended parent: `docs/adr/0014-landing-gl-takeover.md`.
+- Amended parent: `docs/knowledge/decision-records/0014-landing-gl-takeover.md`.
 - Glossary: `docs/CONTEXT.md` (Page, Rip, p-space, Desk pile, Foley, Gibberish voice; and the
   still-binding Semantic layer, Experience gate, Passthrough files, Line boil).
 - Implementation rules: `.claude/skills/webgl-standards/SKILL.md`; gate procedures:

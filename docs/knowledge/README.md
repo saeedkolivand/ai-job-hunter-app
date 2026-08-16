@@ -79,7 +79,35 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-033](decision-records/adr-033-no-model-written-agent-memory.md)                         | No model-written agent memory (immutable run history, not LLM-synthesized state)          |
 | [ADR-034](decision-records/adr-034-cover-letter-export-boundary-completion.md)               | Cover-letter export boundary completes a body-only letter (salutation/sign-off/signature) |
 
-**Newer numbered ADRs** live in `docs/adr/0001-0013` — see per-domain docs for cross-references (e.g., extension-domain.md for ADR-0009/0010, automation-domain.md for ADR-0013).
+### The `NNNN-` series (closed)
+
+A second ADR tree grew under `docs/adr/` on 2026-06-12, twelve days after this one, and ran to 23 records before being folded in here on 2026-08-16. **The files were moved but deliberately not renumbered** — an ADR is a dated record, and its number is cited from commit messages, merged PR bodies, code comments and the published tech radar; renumbering would falsify all of them. The `NNNN-` series is therefore **closed**: cite these by their existing numbers, and give every NEW ADR the next `adr-NNN` number in the series above.
+
+| ADR                                                                                     | Title                                                                   |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [ADR-0001](decision-records/0001-application-aggregate-split.md)                        | Application is the aggregate root; a Generation is a child Document     |
+| [ADR-0002](decision-records/0002-coderabbit-ai-review.md)                               | CodeRabbit as the always-on AI PR reviewer                              |
+| [ADR-0003](decision-records/0003-consolidate-ci-workflows.md)                           | CI workflows consolidated 16 → 9 with a DRY job bootstrap               |
+| [ADR-0004](decision-records/0004-single-source-user-customizable-accent-color.md)       | Single-source accent colour with native OS integration                  |
+| [ADR-0005](decision-records/0005-network-egress-privacy-boundary.md)                    | Network egress and the local-first privacy boundary (8 egress classes)  |
+| [ADR-0006](decision-records/0006-support-page-faq-only-diagnostics-removed.md)          | Support is FAQ-only; the diagnostics dashboard was removed              |
+| [ADR-0007](decision-records/0007-document-color-is-a-knob-not-a-template.md)            | Document colour is a knob, not a template                               |
+| [ADR-0008](decision-records/0008-ai-review-enforcement.md)                              | Mandatory AI review via deterministic schema-1 verdicts                 |
+| [ADR-0009](decision-records/0009-assisted-autofill.md)                                  | Assisted autofill + answer capture — user-initiated, no persistence     |
+| [ADR-0010](decision-records/0010-bridge-hmac-handshake.md)                              | Extension bridge auth via mutual HMAC handshake (protocol v2)           |
+| [ADR-0011](decision-records/0011-extension-ai-assist-optin.md)                          | Extension AI-assist is opt-in (billable egress, distinct from autofill) |
+| [ADR-0012](decision-records/0012-ai-provider-base-url-provenance.md)                    | AI provider `base_url` provenance, not IP filtering                     |
+| [ADR-0013](decision-records/0013-email-confirmation-watching.md)                        | Email-confirmation watching via IMAP app password                       |
+| [ADR-0014](decision-records/0014-landing-gl-takeover.md)                                | Landing becomes a built GL experience with a semantic fallback          |
+| [ADR-0015](decision-records/0015-ripbook-notebook-landing.md)                           | Landing → RIPBOOK full-WebGL kraft notebook                             |
+| [ADR-0016](decision-records/0016-terminal-velocity-scroll-film-landing.md)              | Landing → TERMINAL VELOCITY CG scroll-film                              |
+| [ADR-0017](decision-records/0017-landing-consolidation-static-site.md)                  | Landing returns to a self-contained static site                         |
+| [ADR-0018](decision-records/0018-landing-nextjs-static-export.md)                       | Landing → Next.js static export with real routes                        |
+| [ADR-0019](decision-records/0019-scroll-world-landing-route.md)                         | Landing `/world`: scroll-scrubbed papercraft camera flight              |
+| [ADR-0020](decision-records/0020-crash-reporting.md)                                    | Crash reporting via Sentry — default on, desktop only                   |
+| [ADR-0021](decision-records/0021-editor-owns-resume-header.md)                          | The editor owns the résumé header                                       |
+| [ADR-0022](decision-records/0022-live-model-listing-no-hardcoded-defaults.md)           | Live model listing — providers are the source, no hardcoded defaults    |
+| [ADR-0023](decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md) | Web search is a separate axis from the AI provider                      |
 
 Every ADR carries a `Status` field documenting its lifecycle: `Accepted | Superseded by ADR-NNN | Deprecated`. Retired decisions are visibly retired and linked to their successor, preventing confusion.
 

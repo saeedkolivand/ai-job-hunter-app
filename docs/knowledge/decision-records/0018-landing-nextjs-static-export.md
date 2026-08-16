@@ -160,7 +160,7 @@ The static-HTML fragment pipeline (`src/content/`, `src/components/RawHtml.tsx`,
 
 ## References
 
-- Supersedes-parts-of: `docs/adr/0017-landing-consolidation-static-site.md` (the no-build-step
+- Supersedes-parts-of: `docs/knowledge/decision-records/0017-landing-consolidation-static-site.md` (the no-build-step
   property; the directory consolidation is reaffirmed).
 - Related: `.github/workflows/pages.yml` (deploy step), `apps/landing/next.config.ts`
   (static-export config), `apps/landing/scripts/check-parity.mjs` (parity gate), `apps/landing/src/data/agent-fleet.ts` (typed-data routes).
