@@ -74,7 +74,13 @@ export interface DocumentRecord {
 export interface JobTrustAssessment {
   score: number;
   level: 'high' | 'medium' | 'low';
-  flags: Array<'missingApplyUrl' | 'invalidUrl' | 'suspiciousDomain' | 'companyDomainMismatch'>;
+  flags: Array<
+    | 'missingApplyUrl'
+    | 'invalidUrl'
+    | 'suspiciousDomain'
+    | 'companyDomainMismatch'
+    | 'implausibleCompany'
+  >;
 }
 
 export interface JobPosting {

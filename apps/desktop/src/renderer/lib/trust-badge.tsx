@@ -4,6 +4,25 @@ import type { JobTrustAssessment } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, HoverPopover, Tag } from '@ajh/ui';
 
+type TrustFlag = JobTrustAssessment['flags'][number];
+
+/**
+ * `TrustFlag` → the `jobs.trust.flags.*` key that actually exists. Identity
+ * today, but `Record<TrustFlag, string>` makes this exhaustive at compile
+ * time: a new `TrustFlag` member fails `pnpm typecheck` until mapped here —
+ * the exact class of drift a prior PR shipped (a backend `TrustFlag` variant
+ * reached this union with no locale entry, so `t()` rendered the raw key).
+ * Runtime-checked against the real locale resource by
+ * `trust-badge.test.tsx`'s i18n key-drift guard.
+ */
+const FLAG_KEY: Record<TrustFlag, string> = {
+  missingApplyUrl: 'missingApplyUrl',
+  invalidUrl: 'invalidUrl',
+  suspiciousDomain: 'suspiciousDomain',
+  companyDomainMismatch: 'companyDomainMismatch',
+  implausibleCompany: 'implausibleCompany',
+};
+
 /**
  * Ghost-job trust badge — flag-only, V1: renders NOTHING for `level === 'high'`
  * or a missing `trust` (no badge = trusted, keeps the common case noise-free).
@@ -43,7 +62,7 @@ export function TrustBadge({
 
   const isLow = trust.level === 'low';
   const levelLabel = t(`jobs.trust.level.${trust.level}`);
-  const reasons = trust.flags.map((flag) => t(`jobs.trust.flags.${flag}`)).join(', ');
+  const reasons = trust.flags.map((flag) => t(`jobs.trust.flags.${FLAG_KEY[flag]}`)).join(', ');
   // What the LEVEL means, in plain language. The flag list alone answers "which
   // checks failed" but never "so what?" — "Suspicious domain" doesn't tell a
   // reader whether to skip the posting or just look twice.

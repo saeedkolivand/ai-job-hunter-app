@@ -156,12 +156,17 @@ pub fn assess_trust(url: &str, company: &str) -> TrustAssessment {
 /// scraper's selector lands on the hosting board's own chrome instead of the
 /// employer (a nav link, a "Powered by" footer). Judges the COMPANY STRING
 /// itself — distinct from [`ATS_ALLOWLIST`]/[`SUSPICIOUS_DOMAINS`] above,
-/// which judge the apply URL's host. Matched WHOLE-WORD (see
-/// [`is_implausible_company`]) rather than by substring: a substring check
-/// would false-positive real employers like "Boxing Studio" (contains
-/// "xing") or "Monster Energy" (contains "monster") — the latter is a real,
-/// if unlikely, trade this list accepts explicitly, since on a scraped job
-/// board "Monster" alone is overwhelmingly the board itself.
+/// which judge the apply URL's host. Matched against the ENTIRE normalized
+/// name, not a substring or an isolated word: a bare `"LinkedIn"` is almost
+/// certainly board chrome, but real employers legitimately share a board's
+/// name as one word among several — `"Xing SE"`, `"Indeed Inc"`,
+/// `"Glassdoor Inc"`, `"Monster Worldwide"` all trade under names that
+/// contain a board word, and even a prior word-boundary version of this
+/// check (rejecting the isolated word "xing"/"indeed"/… anywhere in the
+/// name) false-positived every one of them. A false positive here silently
+/// deletes a real employer from a letter — worse than the debris this list
+/// exists to catch — so it only fires when the board name IS the entire
+/// company field, nothing more.
 const JOB_BOARD_NAMES: &[&str] = &[
     "linkedin",
     "indeed",
@@ -173,18 +178,14 @@ const JOB_BOARD_NAMES: &[&str] = &[
 ];
 
 /// Call-to-action / UI copy a broken selector sometimes captures instead of
-/// an employer name — checked as a case-insensitive substring, since the
-/// whole "company" value is usually nothing BUT this text (`"Apply now"`) or
-/// this text concatenated with board chrome (`"Apply now | LinkedIn"`, the
-/// literal PR #960 report). None of these phrases plausibly appears as a
-/// substring inside a real employer's name.
-const CTA_PHRASES: &[&str] = &[
-    "apply now",
-    "view job",
-    "see more",
-    "easy apply",
-    "apply on ",
-];
+/// an employer name, matched against the ENTIRE normalized "company" value
+/// — never as a substring. A substring check against `"apply on "`
+/// previously false-positived the real employer "Apply On Demand Inc". The
+/// board-chrome-appended shape from the literal PR #960 report
+/// (`"Apply now | LinkedIn"`) is caught by the separator rule above instead
+/// of this list, since concatenating a CTA phrase with board chrome no
+/// longer matches any single entry exactly.
+const CTA_PHRASES: &[&str] = &["apply now", "view job", "see more", "easy apply"];
 
 /// Literal placeholders/nulls a form default or a scraper's own fallback
 /// sometimes writes rather than leaving the field empty. Compared against
@@ -249,7 +250,10 @@ fn has_html_entity(s: &str) -> bool {
 /// exists to catch — so every rule below rejects a SHAPE a real employer
 /// name cannot plausibly have, never merely an unusual one. Real names that
 /// must survive: `"Johnson & Johnson"`, `"Ben & Jerry's"`, `"Yahoo!"`,
-/// `"Booking.com"`, `"37signals"`.
+/// `"Booking.com"`, `"37signals"`, and — the reason [`JOB_BOARD_NAMES`] and
+/// [`CTA_PHRASES`] are whole-string matches, not substring/word ones —
+/// `"Xing SE"`, `"Indeed Inc"`, `"Glassdoor Inc"`, `"Monster Worldwide"`,
+/// `"Apply On Demand Inc"`.
 ///
 /// **`"X"` (a single character) is deliberately rejected too**, even though
 /// it is the real, current legal name of the company formerly known as
@@ -303,15 +307,12 @@ pub fn is_implausible_company(name: &str) -> bool {
         return true;
     }
 
-    if CTA_PHRASES.iter().any(|p| normalized.contains(p)) {
+    if CTA_PHRASES.contains(&normalized.as_str()) {
         return true;
     }
 
-    // Word-boundary match, not substring — see `JOB_BOARD_NAMES`'s doc for why.
-    normalized
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .any(|w| JOB_BOARD_NAMES.contains(&w))
+    // Whole-string match, not substring/word — see `JOB_BOARD_NAMES`'s doc.
+    JOB_BOARD_NAMES.contains(&normalized.as_str())
 }
 
 /// Compute [`assess_trust`] for `job` and attach it as `job.extra["trust"]` —
