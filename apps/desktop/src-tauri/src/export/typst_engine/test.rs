@@ -1594,15 +1594,17 @@ Wxwxwxwxwxw  2020 - Present
 /// non-trivial, not crammed against the title. Renders a single entry with a
 /// subtitle and nothing after it, so the last two [`text_lines`] are (title,
 /// subtitle) in that order; asserts the baseline distance between them clears
-/// a per-template threshold picked ~1pt above what the SAME measurement gave
-/// against the unfixed `sp-subtitle-gap = 1pt` (measured directly by
-/// temporarily reverting the constant, not estimated): SwissMinimal 8.56pt →
-/// 10.56pt at the fixed 3pt, CologneNavy 6.65pt → 8.65pt. The baseline gap is
-/// mostly font leading (not spacing alone), which is why the two templates'
-/// absolute numbers differ, and why each gets its own floor instead of one
-/// shared constant. Covers both spacing families: `single_column.typ`
-/// (SwissMinimal) and the independently implemented `cologne_navy.typ`, which
-/// never shares code with it.
+/// a per-template threshold picked ~1pt below what the SAME measurement gives
+/// at the current `sp-subtitle-gap = 6pt` (measured directly, not estimated):
+/// SwissMinimal 8.56pt (1pt) → 10.56pt (3pt) → 13.56pt (6pt), CologneNavy
+/// 6.65pt (1pt) → 8.65pt (3pt) → 11.65pt (6pt). 3pt still read as crammed in
+/// owner review across academic/aria/atelier/awesome/cadence and more, in
+/// Experience, Projects AND Education — hence the second bump. The baseline
+/// gap is mostly font leading (not spacing alone), which is why the two
+/// templates' absolute numbers differ, and why each gets its own floor
+/// instead of one shared constant. Covers both spacing families:
+/// `single_column.typ` (SwissMinimal) and the independently implemented
+/// `cologne_navy.typ`, which never shares code with it.
 #[test]
 fn entry_subtitle_gap_is_non_trivial_regression() {
     const FIXTURE: &str = "\
@@ -1614,8 +1616,8 @@ Senior Engineer
 ";
 
     for (id, min_gap) in [
-        (TemplateId::SwissMinimal, 9.5),
-        (TemplateId::CologneNavy, 7.5),
+        (TemplateId::SwissMinimal, 12.5),
+        (TemplateId::CologneNavy, 10.5),
     ] {
         let t = template_style(id);
         let svg = svg_page1(&model_from_resume_text(FIXTURE), &t, false);
@@ -3194,6 +3196,129 @@ fn letter_refined_us_renders_valid_pdf() {
     assert!(
         lower.find("acme corp").is_some_and(|p| p < pos_sal),
         "refined US: inside address must read before the salutation:\n{lower}"
+    );
+}
+
+/// #28/#3 regression guard: the cover-letter sign-off → signature-name
+/// baseline gap must be non-trivial. All six letter layouts used to hardcode
+/// this independently as a per-layout `v()` literal (20/28/30/34pt); grouped
+/// into one `sp-signature-lead`/`sp-signature-gap`-driven non-breakable block
+/// now (see the `.typ` files) — pin the measured floor so a future
+/// per-layout literal regression can't silently shrink it back unnoticed.
+/// `LETTER_FIXTURE_US` closes "Sincerely, / Jane Smith / Software Engineer",
+/// so the LAST THREE [`text_lines`] on the (single) page are (sign-off, name,
+/// role) in that order — the sign-off→name pair is the third- and
+/// second-to-last, not the last two (those are name→role, `sp-subtitle-gap`).
+#[test]
+fn signature_block_gap_is_non_trivial_regression() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let pages = render_letter_svg_pages(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Classic,
+            ats: false,
+        },
+    )
+    .expect("render_letter_svg_pages(classic) should succeed");
+    let svg = pages.last().expect("at least one page");
+    let lines = text_lines(svg);
+    assert!(
+        lines.len() >= 3,
+        "expected at least sign-off + name + role lines, got {} lines",
+        lines.len()
+    );
+    let name = lines[lines.len() - 2];
+    let signoff = lines[lines.len() - 3];
+    let gap = name.0 - signoff.0;
+    assert!(
+        gap > 30.0,
+        "sign-off→name baseline gap ({gap:.2}pt) must clear 30.00pt — a \
+         regression to a small per-layout literal measures lower here"
+    );
+}
+
+/// Owner-reported regression (screenshot): `letter_refined`'s header puts the
+/// name+role (left, `1fr`) and the contact block (right, `auto`) on the SAME
+/// grid row. A long contact block used to render as one long " | "-joined
+/// line, claiming enough of the `auto` column's width to squeeze the `1fr`
+/// name column into wrapping the candidate's name onto two lines ("Saeed" /
+/// "Kolivand" in the screenshot). The contact block now renders one entry
+/// per line (`render-runs-stacked`), so the `auto` column is only as wide as
+/// its single longest entry. Measures the topmost text line (the name): if
+/// it wrapped, that line would only be the first word ("Saeed"), much
+/// narrower than the full two-word name.
+#[test]
+fn letter_refined_header_name_survives_a_long_contact_block_on_one_line() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let profile = crate::contact_profile::ContactProfile {
+        full_name: Some("Saeed Kolivand".to_string()),
+        email: Some("saeed.kolivand@example.com".to_string()),
+        phone: Some("+49 30 1234 5678".to_string()),
+        location: Some(crate::contact_profile::LocalizedText {
+            default: "Berlin, Germany".to_string(),
+            by_lang: Default::default(),
+        }),
+        linkedin: Some("https://linkedin.com/in/saeedkolivand".to_string()),
+        github: Some("https://github.com/saeedkolivand".to_string()),
+        website: Some("https://saeedkolivand.dev".to_string()),
+        extra_links: [
+            "Portfolio",
+            "Stack Overflow",
+            "Google Scholar",
+            "Speaker Deck",
+            "Dribbble",
+            "Behance",
+            "Medium",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, label)| crate::contact_profile::ContactLink {
+            label: label.to_string(),
+            url: format!("https://example.com/saeed/{i}"),
+        })
+        .collect(),
+        ..Default::default()
+    };
+
+    let pages = render_letter_svg_pages(
+        LETTER_FIXTURE_US,
+        &t,
+        Some(&profile),
+        Some("Saeed Kolivand"),
+        LetterRender {
+            market: "us",
+            lang: "en",
+            layout: LetterLayout::Refined,
+            ats: false,
+        },
+    )
+    .expect("render_letter_svg_pages(refined) should succeed");
+
+    let svg = pages.first().expect("at least one page");
+    let lines = text_lines(svg);
+    assert!(!lines.is_empty(), "expected at least one text line");
+    // The name sits in the LEFT (name+role) grid column, which starts flush
+    // at the page margin (x=72pt for this template's 25.4mm margin) — filter
+    // to that column specifically rather than "topmost line", because a long
+    // enough stacked contact list on the RIGHT can be taller than the left
+    // column and, `horizon`-centred, extend above it.
+    const LEFT_MARGIN_PT: f64 = 72.0;
+    let name_line = lines
+        .iter()
+        .filter(|l| (l.1 - LEFT_MARGIN_PT).abs() < 1.0)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .expect("expected a left-column text line (the name)");
+    let name_width = name_line.2 - name_line.1;
+    assert!(
+        name_width > 90.0,
+        "candidate name line measures only {name_width:.2}pt wide — too narrow \
+         for the full two-word name \"Saeed Kolivand\", indicating it wrapped \
+         onto a second line (all lines: {lines:?})"
     );
 }
 

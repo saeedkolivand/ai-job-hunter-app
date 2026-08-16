@@ -116,6 +116,20 @@ pub fn url_label(url: &str) -> String {
     domain.to_string()
 }
 
+/// True when `label` is just the bare URL text with no friendly wrapping —
+/// the shape a `[label](url)` link takes when the label was typed/pasted as
+/// the raw link rather than chosen (e.g. `[linkedin.com/in/x](https://…)`).
+/// Compares both sides with scheme/`www.` stripped so
+/// `[www.linkedin.com/in/x](https://linkedin.com/in/x)` counts too.
+fn is_bare_url_label(label: &str, url: &str) -> bool {
+    fn bare(s: &str) -> &str {
+        s.trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_start_matches("www.")
+    }
+    bare(label).eq_ignore_ascii_case(bare(url))
+}
+
 /// Return the visible-only text — strips `[label](url)` → `label`.
 /// Used for centering/width calculations so hidden URL bytes don't skew the estimate.
 pub fn display_text(text: &str) -> std::borrow::Cow<'_, str> {
@@ -135,11 +149,21 @@ pub fn split_urls(text: &str) -> Vec<Span> {
 
     let mut matches: Vec<Match> = Vec::new();
 
-    // Markdown links [label](url) — injected by post-processing; take priority
+    // Markdown links [label](url) — injected by post-processing; take
+    // priority. When the label is just the bare URL text (no friendly
+    // wrapping — e.g. a contact line written as
+    // `[linkedin.com/in/x](https://linkedin.com/in/x)`), swap in
+    // `url_label`'s short brand/domain form so the header shows "LinkedIn",
+    // not the full URL, while the link target is unaffected.
     for cap in MD_LINK_RE.captures_iter(text) {
         let full = cap.get(0).unwrap();
         let label = cap[1].to_string();
         let url = cap[2].to_string();
+        let label = if is_bare_url_label(&label, &url) {
+            url_label(&url)
+        } else {
+            label
+        };
         matches.push(Match {
             start: full.start(),
             end: full.end(),
@@ -349,6 +373,37 @@ mod tests {
                     Some("mailto:jane@example.com".to_string())
                 ),
             ]
+        );
+    }
+
+    /// Owner-reported: a contact line written as
+    /// `[linkedin.com/in/x](https://linkedin.com/in/x)` (the shape a pasted
+    /// bare link takes with no chosen label) must show the short brand label
+    /// ("LinkedIn"), not the full URL text, while the link itself survives.
+    #[test]
+    fn tokenize_shortens_a_markdown_link_whose_label_is_the_bare_url() {
+        let rt = tokenize_rich("[linkedin.com/in/jane](https://linkedin.com/in/jane)");
+        assert_eq!(
+            shape(&rt),
+            vec![(
+                "LinkedIn".to_string(),
+                false,
+                Some("https://linkedin.com/in/jane".to_string())
+            )]
+        );
+    }
+
+    /// A deliberately CHOSEN label (not the bare URL) is never overwritten.
+    #[test]
+    fn tokenize_keeps_a_deliberately_chosen_markdown_link_label() {
+        let rt = tokenize_rich("[My Portfolio](https://janedoe.dev/work)");
+        assert_eq!(
+            shape(&rt),
+            vec![(
+                "My Portfolio".to_string(),
+                false,
+                Some("https://janedoe.dev/work".to_string())
+            )]
         );
     }
 

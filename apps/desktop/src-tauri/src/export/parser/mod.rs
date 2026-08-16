@@ -566,8 +566,13 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
         };
     }
 
-    // Bullet detection
-    if let Some(caps) = BULLET_RE.captures(&clean) {
+    // Bullet detection. Matched against `trimmed` (not `clean`) so a
+    // `**bold**` marker or the bullet's own markdown survives into
+    // `raw`/`segments` — matching on the already-markdown-stripped `clean`
+    // here was the root cause of `**bold**` never rendering in any bullet, in
+    // any template, PDF or DOCX: the marker was gone before `raw` was ever
+    // captured.
+    if let Some(caps) = BULLET_RE.captures(trimmed) {
         if let Some(bullet_text) = caps.get(2) {
             let text = bullet_text.as_str();
             return ParsedLine {
@@ -613,20 +618,27 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
         };
     }
 
-    // Job entry: 2+ spaces gap before a date range
-    if let Some(idx) = clean.find("  ") {
-        let left = &clean[..idx];
-        let right = &clean[idx..].trim_start();
+    // Job entry: 2+ spaces gap before a date range. Located in `trimmed` (not
+    // `clean`) so `raw`/`segments` carry the title's own markdown through to
+    // the model — matching on the already-stripped `clean` here silently
+    // erased a bold job title before `raw` was ever captured. `raw` holds
+    // just the title (mirrors the other two `JobEntry` forms below, whose
+    // whole line IS the title); the date stays in `right_text`.
+    if let Some(idx) = trimmed.find("  ") {
+        let left_raw = &trimmed[..idx];
+        let right_raw = trimmed[idx..].trim_start();
+        let right_clean = strip_md(right_raw);
 
-        if DATE_RE.is_match(right) {
-            let word_count = left.split_whitespace().count();
-            if word_count >= 2 || left.len() > 10 {
+        if DATE_RE.is_match(&right_clean) {
+            let left_clean = strip_md(left_raw);
+            let word_count = left_clean.split_whitespace().count();
+            if word_count >= 2 || left_clean.len() > 10 {
                 return ParsedLine {
                     kind: LineKind::JobEntry,
-                    raw: trimmed.to_string(),
-                    text: left.to_string(),
-                    segments: parse_inline_md(left),
-                    right_text: Some(right.to_string()),
+                    raw: left_raw.to_string(),
+                    text: left_clean,
+                    segments: parse_inline_md(left_raw),
+                    right_text: Some(right_clean),
                 };
             }
         }

@@ -89,6 +89,40 @@
   }
 }
 
+// [`render-runs`], but each contact entry starts its own line instead of one
+// long " | "-joined row. The header puts the name and the contact block on
+// the SAME row (grid below); a long joined contact line claims enough
+// horizontal space to squeeze the name column into wrapping onto two lines
+// (the owner's reported "Saeed" / "Kolivand" split) — stacking the entries
+// keeps the contact column no wider than its single longest entry, freeing
+// the row for the name. Splits on the literal " | " separator
+// `ContactProfile::header_markdown` bakes into the joined contact string;
+// links/bold runs never carry that separator, so only plain-text runs split.
+#let render-runs-stacked(runs) = {
+  for r in runs {
+    let t = if r.bold and r.italic {
+      text(weight: "bold", style: "italic", r.text)
+    } else if r.bold {
+      text(weight: "bold", r.text)
+    } else if r.italic {
+      text(style: "italic", r.text)
+    } else {
+      r.text
+    }
+    if "link" in r and r.link != none {
+      link(r.link, text(fill: c-accent, t))
+    } else if not r.bold and not r.italic and r.text.contains(" | ") {
+      let parts = r.text.split(" | ")
+      for (j, part) in parts.enumerate() {
+        if j > 0 { linebreak() }
+        if part != "" { part }
+      }
+    } else {
+      t
+    }
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 #let emit-date-block(date-str) = {
@@ -135,8 +169,10 @@
       data.letterhead.name,
     )
     // Optional professional role under the name (letter-spaced caps accent).
+    // `sp-subtitle-gap` — the résumé entry-title→subtitle token — not a
+    // per-layout literal: same "role crammed against the name" defect.
     if "signature_title" in data and data.signature_title != none {
-      block(above: 3pt,
+      block(above: sp-subtitle-gap,
         text(size: body-pt, fill: c-accent, tracking: 0.08em,
           upper(data.signature_title))
       )
@@ -144,7 +180,10 @@
   },
   align(right + horizon,
     if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-      text(size: body-pt - 0.5pt, fill: c-body, render-runs(data.letterhead.contact))
+      // Stacked (one entry per line), not one long joined row — see
+      // `render-runs-stacked`'s doc comment for why: a long contact block on
+      // the same row as the name otherwise squeezes the name into wrapping.
+      text(size: body-pt - 0.5pt, fill: c-body, render-runs-stacked(data.letterhead.contact))
     } else { "" }
   ),
 )
@@ -229,26 +268,25 @@
   }
 }
 
-// ── Sign-off + generous signature area ────────────────────────────────────────
-
-#if "signoff" in data and data.signoff != none {
-  block(above: 22pt, below: 4pt,
+// ── Sign-off + signature ────────────────────────────────────────────────────
+// Grouped as one non-breakable unit (sign-off, name, role) — see
+// `sp-signature-lead`/`sp-signature-gap` in _scale.typ for why: three
+// independently-spaced lines read as disjointed/cramped even with a generous
+// per-line literal, and a page break must never land between the sign-off
+// and the name it belongs to.
+#block(breakable: false, above: sp-signature-lead, {
+  if "signoff" in data and data.signoff != none {
     text(fill: c-body, data.signoff)
+  }
+  v(sp-signature-gap)
+  text(
+    weight: "bold",
+    fill: c-name,
+    font: (font-name, "Carlito", "Inter"),
+    data.signature_name,
   )
-}
-
-// Extra vertical space for a handwritten signature (larger than Classic).
-#v(34pt)
-
-#text(
-  weight: "bold",
-  fill: c-name,
-  font: (font-name, "Carlito", "Inter"),
-  data.signature_name,
-)
-
-#if "signature_title" in data and data.signature_title != none {
-  block(above: 2pt,
+  if "signature_title" in data and data.signature_title != none {
+    v(sp-subtitle-gap)
     text(size: body-pt - 0.5pt, fill: c-body, data.signature_title)
-  )
-}
+  }
+})

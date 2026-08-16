@@ -224,29 +224,26 @@
   }
 }
 
-// ── Sign-off ──────────────────────────────────────────────────────────────────
-
-#if "signoff" in data and data.signoff != none {
-  block(above: 20pt, below: 4pt,
+// ── Sign-off + signature block ──────────────────────────────────────────────
+// Grouped as one non-breakable unit (sign-off, name, role) — see
+// `sp-signature-lead`/`sp-signature-gap` in _scale.typ: three
+// independently-spaced lines read as disjointed/cramped even with a generous
+// per-line literal, and a page break must never land between the sign-off
+// and the name it belongs to. `sp-signature-gap` mimics the printpdf
+// renderer's "room for a real signature" spacing.
+#block(breakable: false, above: sp-signature-lead, {
+  if "signoff" in data and data.signoff != none {
     text(fill: c-body, data.signoff)
+  }
+  v(sp-signature-gap)
+  text(
+    weight: "bold",
+    fill: c-name,
+    font: (font-name, "Carlito", "Inter"),
+    data.signature_name,
   )
-}
-
-// ── Signature block (name + optional title) ───────────────────────────────────
-// 3 blank lines of gap mimic the printpdf renderer's "room for a real signature"
-// spacing (line_height + 14mm ≈ 20pt gap used below).
-
-#v(20pt)
-
-#text(
-  weight: "bold",
-  fill: c-name,
-  font: (font-name, "Carlito", "Inter"),
-  data.signature_name,
-)
-
-#if "signature_title" in data and data.signature_title != none {
-  block(above: 2pt,
+  if "signature_title" in data and data.signature_title != none {
+    v(sp-subtitle-gap)
     text(size: body-pt - 0.5pt, fill: c-body, data.signature_title)
-  )
-}
+  }
+})
