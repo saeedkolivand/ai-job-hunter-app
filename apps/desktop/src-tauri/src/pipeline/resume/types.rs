@@ -213,7 +213,6 @@ pub struct SkillGroup {
 pub struct ResumeStrategy {
     pub headline_angle: String,
     pub summary_focus: Vec<String>,
-    pub section_order: Vec<String>,
     pub per_company: Vec<CompanyPlan>,
     pub skills_groups: Vec<SkillGroup>,
 }
@@ -222,7 +221,6 @@ impl ResumeStrategy {
     pub const EXAMPLE: &'static str = r#"{
   "headlineAngle": "Payments-platform engineer who ships reliability work",
   "summaryFocus": ["distributed systems", "payments domain"],
-  "sectionOrder": ["summary", "skills", "experience", "projects", "education"],
   "perCompany": [
     {
       "company": "Acme Payments",
@@ -242,7 +240,6 @@ impl ResumeStrategy {
             "properties": {
                 "headlineAngle": { "type": "string" },
                 "summaryFocus": { "type": "array", "items": { "type": "string" } },
-                "sectionOrder": { "type": "array", "items": { "type": "string" } },
                 "perCompany": {
                     "type": "array",
                     "items": {

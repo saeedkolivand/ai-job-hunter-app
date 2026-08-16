@@ -137,8 +137,10 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
             LineKind::JobEntry => {
                 flush_entry(&mut entry, &mut current, &mut preamble);
                 entry = Some(EntryBlock {
-                    // `line.text` is the left-hand part (the date is `right_text`).
-                    title: tokenize_rich(&line.text),
+                    // `line.raw` keeps the title's own markdown (bold/links);
+                    // the date, when the parser split one out, is
+                    // `right_text` and is never part of it.
+                    title: tokenize_rich(&line.raw),
                     subtitle: None,
                     date: line.right_text.clone(),
                     bullets: Vec::new(),
@@ -614,5 +616,98 @@ Senior Front-End Engineer with 6+ years of experience.
         // Prose (terminal punctuation / too long) is never a title.
         assert!(!is_title_like("A passionate engineer who ships."));
         assert!(!is_title_like("Lots and lots and lots of words here now"));
+    }
+
+    /// CRITICAL regression: `**bold**` inside a bullet must survive as a real
+    /// bold [`TextRun`](super::super::rich::TextRun), not just have its `**`
+    /// markers stripped. `BULLET_RE` used to capture the bullet's text from
+    /// the already-markdown-stripped `clean` string, so `raw`/`segments`
+    /// never saw the `**` in the first place — every bullet lost bold, in
+    /// every template, PDF and DOCX alike.
+    #[test]
+    fn bullet_with_bold_marker_produces_a_bold_text_run() {
+        let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+Acme Corp  2020 - Present
+- Migrated to **Rust** and cut latency
+";
+        let m = model_from_resume_text(resume);
+        let experience = m
+            .sections
+            .iter()
+            .find(|s| s.id == SectionId::Experience)
+            .expect("experience section");
+        let entry = experience
+            .blocks
+            .iter()
+            .find_map(|b| match b {
+                Block::Entry(e) => Some(e),
+                _ => None,
+            })
+            .expect("job entry");
+        let bullet = &entry.bullets[0];
+        assert!(
+            bullet.iter().any(|r| r.bold && r.text == "Rust"),
+            "expected a bold \"Rust\" run, got {bullet:?}"
+        );
+    }
+
+    /// CRITICAL regression: a job-entry TITLE carrying `**bold**` must also
+    /// survive — the two-space-gap `JobEntry` arm computed its title from the
+    /// stripped `clean` string too, and the adapter tokenized `line.text`
+    /// (also stripped) rather than a markdown-preserving field.
+    #[test]
+    fn job_entry_title_with_bold_marker_produces_a_bold_text_run() {
+        let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+**Acme Corp**  2020 - Present
+- Led the platform team
+";
+        let m = model_from_resume_text(resume);
+        let experience = m
+            .sections
+            .iter()
+            .find(|s| s.id == SectionId::Experience)
+            .expect("experience section");
+        let entry = experience
+            .blocks
+            .iter()
+            .find_map(|b| match b {
+                Block::Entry(e) => Some(e),
+                _ => None,
+            })
+            .expect("job entry");
+        assert!(
+            entry.title.iter().any(|r| r.bold && r.text == "Acme Corp"),
+            "expected a bold \"Acme Corp\" title run, got {:?}",
+            entry.title
+        );
+        assert_eq!(entry.date.as_deref(), Some("2020 - Present"));
+    }
+
+    /// CRITICAL regression: a markdown link in the header contact line must
+    /// survive as a clickable run, not collapse to plain text once
+    /// `[label](url)` is (mis)handled upstream.
+    #[test]
+    fn contact_markdown_link_survives_as_a_link_run() {
+        let resume = "\
+Jane Doe
+jane@example.com | [linkedin.com/in/jane](https://linkedin.com/in/jane)
+";
+        let m = model_from_resume_text(resume);
+        assert!(
+            m.header
+                .contact
+                .iter()
+                .any(|r| r.link.as_deref() == Some("https://linkedin.com/in/jane")),
+            "expected a link run, got {:?}",
+            m.header.contact
+        );
     }
 }

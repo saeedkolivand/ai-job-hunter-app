@@ -173,7 +173,7 @@
   }
 
   if "contact" in data.header and data.header.contact.len() > 0 {
-    block(above: 4pt, below: 0pt,
+    block(above: sp-name-below, below: 0pt,
       text(size: body-pt, fill: c-body, render-runs(data.header.contact))
     )
   }

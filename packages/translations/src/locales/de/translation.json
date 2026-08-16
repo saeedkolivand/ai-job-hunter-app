@@ -1803,6 +1803,9 @@
       "content": {
         "language_mismatch": "Dieser Text entspricht nicht der Zielsprache."
       },
+      "letter": {
+        "template_placeholder": "Das sieht nach einem nicht ausgefüllten Vorlagen-Platzhalter aus, nicht nach echtem Inhalt — bitte vor dem Versenden ersetzen."
+      },
       "alignment": {
         "low_coverage": "Dieses Dokument deckt wenig vom Vokabular der Stellenanzeige ab — erwäge, mehr davon einzubauen.",
         "missing_top_requirement": "Eine Top-Anforderung aus der Stellenanzeige wird hier nicht belegt."

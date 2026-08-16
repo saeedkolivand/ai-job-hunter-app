@@ -398,3 +398,30 @@ fn declares_a4_page_size_and_fallback_fonts() {
         "bundled font {bundled:?} must not leak"
     );
 }
+
+/// #28 regression guard: the résumé DOCX header's candidate-name paragraph
+/// used to carry NO explicit spacing at all, leaving the name→contact gap to
+/// whatever Word's own default paragraph spacing happens to be. `add_header`
+/// now sets `w:after="180"` (9pt = `pt_to_dxa(9.0)`, matching `_scale.typ`'s
+/// `sp-name-below`) on that paragraph explicitly. Checked by locating the
+/// `w:spacing` tag immediately preceding the name's own `w:t` run — DOCX has
+/// no pixel geometry to measure (see this file's module doc comment), so this
+/// is the OOXML-part equivalent of the render-based checks in
+/// `typst_engine::test`.
+#[test]
+fn resume_docx_header_name_paragraph_has_explicit_spacing_before_contact() {
+    let xml = part(&build(TemplateId::SwissMinimal, false), "word/document.xml");
+    let name_idx = xml
+        .find(">Jane Doe<")
+        .expect("candidate name run must be present in document.xml");
+    let para_start = xml[..name_idx]
+        .rfind("<w:p>")
+        .or_else(|| xml[..name_idx].rfind("<w:p "))
+        .expect("name run must sit inside a <w:p> paragraph");
+    let para_head = &xml[para_start..name_idx];
+    assert!(
+        para_head.contains(r#"w:after="180""#),
+        "the name paragraph must declare `w:after=\"180\"` (9pt) spacing \
+         before the run reaches the contact line; paragraph head: {para_head}"
+    );
+}

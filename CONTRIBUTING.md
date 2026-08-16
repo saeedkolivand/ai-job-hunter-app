@@ -14,6 +14,7 @@ Thank you for contributing. This document covers everything you need to ship a c
 - [Adding a New IPC Capability](#adding-a-new-ipc-capability)
 - [Testing](#testing)
 - [Release Process](#release-process)
+- [Licensing and Contributions](#licensing-and-contributions)
 
 ---
 
@@ -287,3 +288,43 @@ Actions → "🚀 Release" has two independent manual steps:
 2. **`action: build-installers`**: a _separate_ manual dispatch that builds the Tauri installers (Windows NSIS/MSI, Linux AppImage/.deb/.rpm, macOS dmg for Intel + Apple Silicon) and the browser-extension zips, then attaches them to the release.
 
 See `CLAUDE.md` § Release & commits and the header comment in `.github/workflows/release.yml` for the authoritative reference.
+
+---
+
+## Licensing and Contributions
+
+Short version: **contributing here is free, forking is free, and you keep the credit for what you write.** The license restricts commercial resale of the codebase, not participation in it.
+
+### What the license is
+
+This project is under the [PolyForm Noncommercial License 1.0.0](LICENSE) (SPDX: `PolyForm-Noncommercial-1.0.0`), effective 2026-06-14. It is **source-available, not open source** — it is not an OSI-approved license, so please don't describe the project as "open source".
+
+What that means in practice:
+
+The licence turns on **purpose**, not on who you are. `LICENSE` grants "any noncommercial purpose", plus personal use "without any anticipated commercial application", plus use by charities, educational institutions, public research, public safety/health, environmental and government organisations.
+
+| You want to…                                                  | Allowed?                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Use the app for your own job hunt                             | Yes, free                                                           |
+| Read, fork, and modify the source                             | Yes, free                                                           |
+| Use it for research, teaching, or a student project           | Yes, free                                                           |
+| Use it at a charity, university, or government body           | Yes, free — named as a permitted purpose                            |
+| Open a PR against this repo                                   | Yes, please                                                         |
+| Build a noncommercial derivative, even a similar one          | Yes — there is no non-compete clause, only a noncommercial boundary |
+| Run it as an internal tool at a for-profit company            | **Not covered** — that is commercial use; ask for a licence         |
+| Sell it, host it as a paid SaaS, or ship it in a paid product | No — needs a separate commercial licence                            |
+
+The boundary is commercial versus noncommercial, and nothing else. It exists to stop the codebase being repackaged and sold by someone else, not to discourage contributors. For a commercial licence, contact <contact@aijobhunter.app>. Rationale and history live in `docs/knowledge/decision-records/adr-023-polyform-noncommercial-licensing.md`; `LICENSE` is authoritative and this table is only a summary.
+
+### What happens to your contribution
+
+- **You keep the copyright in the code you write.** There is no CLA and no copyright assignment; submitting a PR does not transfer ownership to the maintainer.
+- **You are licensing your contribution to this project under the same PolyForm terms**, so it can ship as part of the app under the license above.
+- **Your authorship is preserved** — git history and the GitHub contributor list are the record, and they aren't rewritten.
+- **Contributions made before 2026-06-14** were made under the project's earlier MIT license; that relicensing was not retroactive, and prior contributors keep the rights they had.
+
+Only contribute code you have the right to contribute: your own work, or work you have permission to submit — not code copied from a source whose license forbids it, and not your employer's proprietary code.
+
+### If the license is a blocker for you
+
+Say so in an issue rather than walking away quietly. If a term is genuinely stopping you from contributing, that's useful signal and worth hearing — the maintainer would rather know than guess.

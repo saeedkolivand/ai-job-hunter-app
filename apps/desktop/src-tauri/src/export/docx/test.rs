@@ -31,6 +31,52 @@ fn resume_request(template_id: TemplateId) -> ExportRequest {
     }
 }
 
+/// Regression: a region-tagged locale (`de-DE`) reaching `ExportRequest` for
+/// a DOCX résumé export must still resolve to the German `Lebenslauf`
+/// section order (Certifications before Skills) — see the matching PDF-path
+/// test in `export/pdf/test.rs` for the full rationale.
+#[test]
+fn ats_mode_resolves_region_tagged_german_locale_to_the_de_order_in_docx() {
+    let request = ExportRequest {
+        text: "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+Acme Corp  2020 - Present
+Did things
+
+EDUCATION
+Some University  2015 - 2019
+
+CERTIFICATIONS
+AWS Certified
+
+SKILLS
+Python, Rust"
+            .to_string(),
+        format: ExportFormat::Docx,
+        document_type: DocumentType::Resume,
+        template_id: TemplateId::SwissMinimal,
+        meta: None,
+        ats_mode: true,
+        locale: Some("de-DE".to_string()),
+        contact: None,
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+    let xml = document_xml(&generate_docx(&request).expect("ats-mode german resume docx"));
+    let cert = xml
+        .find("CERTIFICATIONS")
+        .expect("certifications section present");
+    let skills = xml.find("SKILLS").expect("skills section present");
+    assert!(
+        cert < skills,
+        "de-DE must resolve to the DE_ORDER (certifications before skills) \
+         in the DOCX path too — document.xml: {xml}"
+    );
+}
+
 /// Cover-letter request builder for the letter-layout DOCX tests (PR5).
 fn letter_request(text: &str, layout: LetterLayout) -> ExportRequest {
     ExportRequest {
@@ -1274,6 +1320,41 @@ fn body_only_letter_gets_completed_furniture_in_docx_document_xml() {
             "{market}: paragraph containing {needle2:?} must carry a bold run \
              (<w:b />): {}",
             paras[idx2]
+        );
+    }
+}
+
+/// #28 regression guard: the letterhead name paragraph used to carry only
+/// `w:after="60"` (3pt) in both cover-letter DOCX renderers
+/// (`generate_cover_letter_docx_classic` for `LetterLayout::Classic`,
+/// `generate_cover_letter_docx_layout` for every other layout) — crammed
+/// against the contact line below, the same shape as the PDF `letter_*.typ`
+/// bug. Both now emit `w:after="180"` (9pt = `pt_to_dxa(9.0)`, matching
+/// `_scale.typ`'s `sp-name-below`). Checked on one layout from each renderer.
+#[test]
+fn cover_letter_docx_name_paragraph_has_explicit_nine_point_spacing() {
+    for layout in [LetterLayout::Classic, LetterLayout::Navy] {
+        let xml =
+            document_xml(&generate_docx(&letter_request(REFINED_US_TEXT, layout)).expect("docx"));
+        // Navy (and Banded) uppercase the letterhead name (`uppercase_name`
+        // in `LetterDocxStyle`), so search both cases and take whichever
+        // occurs FIRST — the letterhead is always the earliest paragraph in
+        // the document; a later, plain-cased "Jane Smith" also appears in
+        // the signature block and would match the wrong paragraph.
+        let name_idx = [">Jane Smith<", ">JANE SMITH<"]
+            .into_iter()
+            .filter_map(|needle| xml.find(needle))
+            .min()
+            .unwrap_or_else(|| panic!("{layout:?}: letterhead name run must be present"));
+        let para_start = xml[..name_idx]
+            .rfind("<w:p>")
+            .or_else(|| xml[..name_idx].rfind("<w:p "))
+            .unwrap_or_else(|| panic!("{layout:?}: name run must sit inside a <w:p> paragraph"));
+        let para_head = &xml[para_start..name_idx];
+        assert!(
+            para_head.contains(r#"w:after="180""#),
+            "{layout:?}: name paragraph must declare `w:after=\"180\"` (9pt) \
+             spacing before the run reaches the contact line; paragraph head: {para_head}"
         );
     }
 }
