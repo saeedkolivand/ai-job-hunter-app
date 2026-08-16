@@ -21,7 +21,8 @@ use crate::validate::EMAIL_RE;
 
 use super::{
     issue, looks_like_header_phone, Analysis, ContentIssue, Section, ATS_BULLET_COUNT,
-    ATS_HEADER_IN_BODY, ATS_KEYWORD_DENSITY, ATS_LONG_BULLET, ATS_MISSING_SECTION,
+    ATS_EMPTY_SECTION, ATS_HEADER_IN_BODY, ATS_KEYWORD_DENSITY, ATS_LONG_BULLET,
+    ATS_MISSING_SECTION,
 };
 
 /// Share of the document one keyword may occupy before it reads as stuffing.
@@ -313,6 +314,57 @@ fn missing_section_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         .collect()
 }
 
+/// `ats.empty_section` — a heading survived into the document with nothing
+/// under it.
+///
+/// A Warning, not a Critical, and the severity is the whole design here.
+///
+/// The defect is real and unambiguous — a heading the DOCUMENT ITSELF
+/// introduced and then left blank, model-free to detect. But `repair` acts on
+/// Criticals only (`stages::repair::criticals_by_section`) and its remedy is
+/// to REGENERATE the offending section. For an empty section that remedy is
+/// actively harmful: asked to fill an empty `PROJECTS`, the model invents
+/// projects the candidate does not have — a fabrication, in the one part of
+/// this pipeline whose entire purpose is preventing them. And where the
+/// heading has no `SectionKey` (Certifications/Awards/Publications all
+/// classify `Other`), a Critical is not repairable OR clearable: it parks the
+/// run at `needsReview` with a finding no loop and no user button can action.
+///
+/// The correct remedy is REMOVAL, and it already happens structurally, before
+/// this check is ever consulted: `model::adapter::push_nonempty_section` drops
+/// a zero-content section at the model-building boundary, so the rendered
+/// PDF/DOCX cannot carry one. This issue is therefore the REPORT of a defect
+/// already handled, not the trigger for fixing it.
+///
+/// It is what `draft_system`'s old "order the sections EXACTLY as … do not
+/// drop" phrasing produced when the model read a fixed ORDER as a fixed
+/// MANIFEST and emitted every section on it, real content or not.
+///
+/// Deliberately conservative: a section with even ONE non-blank line survives
+/// untouched, however terse — only a heading with ZERO content beneath it
+/// fires, so a legitimately short section (one Publications entry, a
+/// one-line Award) is never mistaken for an empty one.
+fn empty_section_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    ctx.generated_sections
+        .iter()
+        .skip(1) // section 0 is the header band (`heading: None`), never named
+        .filter(|s| s.heading.is_some())
+        .filter(|s| s.lines.iter().all(|l| l.text.trim().is_empty()))
+        .map(|s| {
+            let name = s.heading.clone().unwrap_or_default();
+            issue(
+                ATS_EMPTY_SECTION,
+                s.heading.as_deref(),
+                format!(
+                    "The \"{name}\" section has a heading but no content under it — remove the \
+                     heading, or fill it in before sending."
+                ),
+                None,
+            )
+        })
+        .collect()
+}
+
 /// `ats.long_bullet` — a bullet that runs past two printed lines.
 fn long_bullet_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     ctx.generated_sections
@@ -411,6 +463,7 @@ pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
     let mut issues = header_in_body_issues(ctx);
     issues.extend(keyword_density_issues(ctx));
     issues.extend(missing_section_issues(ctx));
+    issues.extend(empty_section_issues(ctx));
     issues.extend(long_bullet_issues(ctx));
     issues.extend(bullet_count_issues(ctx));
     issues

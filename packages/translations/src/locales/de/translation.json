@@ -1823,6 +1823,7 @@
         "keyword_density": "Die Schlüsselwortnutzung hier könnte überladen statt natürlich wirken.",
         "header_in_body": "Kontaktartiger Text erscheint außerhalb der Kopfzeile — bitte nach oben verschieben.",
         "missing_section": "Ein erwarteter Abschnitt scheint zu fehlen.",
+        "empty_section": "Eine Abschnittsüberschrift erscheint ohne Inhalt darunter.",
         "long_bullet": "Dieser Aufzählungspunkt ist lang — erwäge, ihn zu straffen.",
         "bullet_count": "Dieser Abschnitt hat eine ungewöhnliche Anzahl an Aufzählungspunkten."
       },

@@ -274,8 +274,10 @@ wrapped in **double asterisks** where they already fit a bullet naturally (max 2
 per bullet; never force one in). Section headings on their own line: \
 {}, {}, {}, {}.
 - Write dates like {}.
-- Order the résumé's sections EXACTLY as: {order}. This order is fixed — do not \
-reorder, drop, or invent a section not in this list.
+- Sections run in this order when you have real content for them: {order}. This is \
+an ORDER, not a checklist — omit any section the source gives you nothing for, and \
+never invent one outside this list. A heading with nothing underneath it is worse \
+than no heading at all.
 - Follow <resume_strategy>: its per-company angles, its skills groups.
 - Every employment entry in the strategy appears, in its order, with its company, \
 title and dates exactly as given.

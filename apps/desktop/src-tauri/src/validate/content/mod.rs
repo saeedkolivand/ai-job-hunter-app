@@ -107,6 +107,11 @@ pub const CONSISTENCY_PROJECT_STRUCTURE: &str = "consistency.project_structure";
 pub const DUPLICATE_BULLET: &str = "duplicate.bullet";
 pub const ATS_KEYWORD_DENSITY: &str = "ats.keyword_density";
 pub const ATS_HEADER_IN_BODY: &str = "ats.header_in_body";
+/// A section heading survived into the generated document with nothing under
+/// it. Deterministic and model-free: a heading followed by zero content lines
+/// is unambiguous, unlike `ATS_MISSING_SECTION`'s opposite case (a section a
+/// parser expects but the résumé never had one to begin with — often fine).
+pub const ATS_EMPTY_SECTION: &str = "ats.empty_section";
 pub const ATS_MISSING_SECTION: &str = "ats.missing_section";
 pub const ATS_LONG_BULLET: &str = "ats.long_bullet";
 pub const ATS_BULLET_COUNT: &str = "ats.bullet_count";
@@ -151,6 +156,7 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (FACTUAL_ALTERED_PROJECT_LINK, Severity::Critical),
     (CONTENT_LANGUAGE_MISMATCH, Severity::Critical),
     (ATS_HEADER_IN_BODY, Severity::Critical),
+    (ATS_EMPTY_SECTION, Severity::Warning),
     (LETTER_TEMPLATE_PLACEHOLDER, Severity::Critical),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),
     (ALIGNMENT_LOW_COVERAGE, Severity::Warning),
@@ -1196,18 +1202,121 @@ pub(crate) fn cap_issues(issues: &mut Vec<ContentIssue>) {
 /// `content.language_mismatch` — the output is not in the language it was asked
 /// for. Critical: a German résumé sent to an English-speaking employer is not a
 /// quality nit, and every downstream comparison is meaningless once it holds.
+///
+/// Two passes, in order. The DOCUMENT pass is a majority read over the whole
+/// text (`languages_align` over everything concatenated) — reliable at that
+/// scale, but it takes roughly a third of a nine-section résumé drifting to a
+/// minority language before the vote flips; one drifted section, or two, reads
+/// as noise inside a long document and never fires. So when the document reads
+/// clean, a SECTION pass checks each section on its own — the shape the
+/// reported defect actually takes ("summary in English, experience in Italian,
+/// skills in English again"). Both passes route through the same
+/// `languages_align` kernel — this is a second SCOPE the language question is
+/// asked over, not a second answer to it.
 fn language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    if !ctx.language_mismatch {
+    if ctx.language_mismatch {
+        return vec![issue(
+            CONTENT_LANGUAGE_MISMATCH,
+            None,
+            format!(
+                "This document does not read as {}, the language it was generated for. \
+                 Re-generate it with the target language set correctly before sending.",
+                ctx.lang
+            ),
+            Some(ctx.lang.clone()),
+        )];
+    }
+    section_language_issues(ctx)
+}
+
+/// Per-section half of [`language_issues`].
+///
+/// Gated on the SAME positive control the document-level check requires
+/// ([`source_is_a_reliable_control`]) rather than a fresh reliability read per
+/// section. The control question — can `whatlang` read THIS candidate's
+/// writing at all — is a property of the candidate's source résumé, not of any
+/// one generated section, and generated/source sections do not line up 1:1 (a
+/// section can be reordered, merged or renamed by the model). Re-deriving
+/// reliability per section would need a source section to compare against and
+/// would reintroduce exactly the false-Critical failure mode
+/// `source_is_a_reliable_control` exists to prevent (R5-F2) — this time per
+/// section instead of per document.
+///
+/// Two more guards a section-scoped read needs that the document-scoped one
+/// does not, both TRADED conservatively toward missing a defect rather than
+/// accusing a truthful section:
+///
+/// * the SAME [`MIN_CHARS_FOR_LANGUAGE_CHECK`] floor, applied per section —
+///   `whatlang` guesses on short text regardless of scope, and most sections
+///   (a one-line Education entry, a short Summary) sit under it on their own;
+/// * only PROSE-BEARING kinds are read at all. `whatlang` needs function
+///   words; a list of proper nouns has none in any language, so it misreads
+///   that shape however long the list runs — padding past the char floor makes
+///   the read more confident-looking, not more reliable. [`SectionKind`] has
+///   only six variants, and `classify_section` has no heading list for
+///   Certifications, Awards, Publications or Languages-spoken — every one of
+///   them lands in [`SectionKind::Other`], which carries exactly the
+///   Skills-shaped risk: a correct English "AWS Certified Solutions Architect
+///   (Professional, 2022)" block clears the char floor and reads as non-English.
+///   So the pass is scoped POSITIVELY to Summary/Experience/Projects rather
+///   than by excluding one kind — an exclusion list silently admits every kind
+///   nobody thought of. Education is out too: institution names are routinely
+///   in the local language inside a correctly-targeted résumé
+///   ("Technische Universität Berlin" in an English CV).
+///
+///   The cost, paid deliberately: a model that drifts ONLY a list-shaped
+///   section is not caught here (the document-level pass still can, if enough
+///   of the rest drifts too). That is the right trade — a false Critical
+///   blanks `keywordCoverage` and suppresses every alignment finding on the
+///   whole document.
+fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    if !source_is_a_reliable_control(ctx.input, &ctx.lang) {
         return Vec::new();
     }
-    vec![issue(
-        CONTENT_LANGUAGE_MISMATCH,
-        None,
-        format!(
-            "This document does not read as {}, the language it was generated for. \
-             Re-generate it with the target language set correctly before sending.",
-            ctx.lang
-        ),
-        Some(ctx.lang.clone()),
-    )]
+    ctx.generated_sections
+        .iter()
+        .skip(1) // section 0 is the header band (name + contact), not prose
+        .filter(|s| {
+            matches!(
+                s.kind,
+                SectionKind::Summary | SectionKind::Experience | SectionKind::Projects
+            )
+        })
+        .filter_map(|section| {
+            let heading = section.heading.as_deref()?;
+            let body = section_text(section);
+            if significant_chars(&body) < MIN_CHARS_FOR_LANGUAGE_CHECK {
+                return None;
+            }
+            if languages_align(&body, &ctx.lang) {
+                return None;
+            }
+            Some(issue(
+                CONTENT_LANGUAGE_MISMATCH,
+                Some(heading),
+                format!(
+                    "The \"{heading}\" section does not read as {}, the language the rest of \
+                     this document is written in. Re-generate it (or that section) before \
+                     sending.",
+                    ctx.lang
+                ),
+                Some(ctx.lang.clone()),
+            ))
+        })
+        .collect()
+}
+
+/// A section's own text — heading plus every line beneath it, one per line —
+/// for a check that reads the section as one span rather than line by line.
+fn section_text(section: &Section) -> String {
+    let mut text = String::new();
+    if let Some(heading) = &section.heading {
+        text.push_str(heading);
+        text.push('\n');
+    }
+    for line in &section.lines {
+        text.push_str(&line.text);
+        text.push('\n');
+    }
+    text
 }

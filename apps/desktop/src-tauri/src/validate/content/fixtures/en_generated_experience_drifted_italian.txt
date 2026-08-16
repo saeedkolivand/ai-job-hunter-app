@@ -1,0 +1,31 @@
+Jane Doe
+jane.doe@example.com | +49 30 1234567 | github.com/janedoe
+
+SUMMARY
+
+Eight years of backend work, most of it on payment systems and the container platforms behind them.
+
+EXPERIENCE
+
+Ingegnere Backend Senior | Acme Payments | 2021 - Present
+- La latenza al checkout è scesa da 480ms a 90ms grazie a una cache Redis davanti al servizio di ledger
+- Ho eseguito i carichi Docker su un cluster Kubernetes che risponde a 12000 richieste al secondo
+- Ho riscritto lo scheduler dei tentativi in Rust, e i pagamenti falliti sono diminuiti del 35%
+
+Sviluppatore Backend | Globex Logistics | 2018 - 2021
+- 40 siti di magazzino fatturano tramite un'API scritta in Python, con PostgreSQL come backend
+- Ho portato la flotta su AWS, con l'intera pipeline di distribuzione scritta in Terraform
+
+PROJECTS
+
+**Ledger CLI** · https://ledger.example.dev · https://github.com/janedoe/ledger · https://www.café-ledger.de
+Rust · SQLite · Clap
+Double-entry bookkeeping for freelancers, on the command line.
+
+SKILLS
+
+Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis
+
+EDUCATION
+
+BSc Computer Science, TU Berlin, 2014 - 2018

@@ -35,6 +35,8 @@ const EN_DROPPED_ROLE: &str = include_str!("fixtures/en_generated_dropped_role.t
 const EN_ALTERED_LINK: &str = include_str!("fixtures/en_generated_altered_project_link.txt");
 const EN_DUPLICATES: &str = include_str!("fixtures/en_generated_duplicate_bullets.txt");
 const EN_WRONG_LANGUAGE: &str = include_str!("fixtures/en_generated_wrong_language.txt");
+const EN_EXPERIENCE_DRIFTED_ITALIAN: &str =
+    include_str!("fixtures/en_generated_experience_drifted_italian.txt");
 const EN_PROJECTS_TIER2: &str = include_str!("fixtures/en_generated_projects_tier2.txt");
 const EN_PROJECTS_TIER3: &str = include_str!("fixtures/en_generated_projects_tier3.txt");
 const EN_PROJECTS_BROKEN: &str = include_str!("fixtures/en_generated_projects_broken.txt");
@@ -360,6 +362,110 @@ fn wrong_language_output_is_critical() {
         "no cascade of derived alignment warnings; got {:?}",
         codes(&report)
     );
+}
+
+/// The blind spot the document-level majority vote leaves open: a single
+/// section drifted to another language inside an otherwise-English résumé.
+/// First proves the premise (the WHOLE-document read stays clean — the
+/// English majority hides the one Italian section), then proves the
+/// per-section pass catches exactly what the document-level one cannot.
+#[test]
+fn a_single_drifted_section_is_caught_even_though_the_document_reads_clean() {
+    assert!(
+        !is_language_mismatch(EN_EXPERIENCE_DRIFTED_ITALIAN, "en"),
+        "premise: the document-level majority vote must NOT fire here — one \
+         Italian section inside a mostly-English résumé is exactly the case \
+         that hides from a whole-document read"
+    );
+
+    let report = en_resume(EN_EXPERIENCE_DRIFTED_ITALIAN, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+    assert_eq!(
+        hits[0].section.as_deref(),
+        Some("EXPERIENCE"),
+        "the finding must name the drifted section, not just the document"
+    );
+}
+
+/// The false-positive risk named alongside the per-section check: a skills
+/// list is language-neutral prose `whatlang` misreads regardless of length.
+/// Padded well past [`MIN_CHARS_FOR_LANGUAGE_CHECK`] so this proves the
+/// SectionKind::Skills exclusion is doing the work — not just the char floor,
+/// which a short list would clear anyway.
+/// The false-positive risk named alongside the per-section check, and the
+/// REALISTIC shape it takes: `whatlang` correctly reads a comma/middot list of
+/// tool names ("Rust · Python · Docker · Kubernetes · PostgreSQL · AWS ·
+/// Terraform · Redis") as ENGLISH — tool names have no German translation —
+/// which is exactly right for the text but wrong for the comparison: a
+/// perfectly ordinary German résumé's Skills section, checked against a
+/// German target, would fail `languages_align(skills_text, "de")` on every
+/// single generation. [`DE_CLEAN`] carries exactly this section unmodified;
+/// this fixture pads it well past [`MIN_CHARS_FOR_LANGUAGE_CHECK`] so the
+/// premise (the padded list clears the per-section char floor on its own,
+/// not just the original short one) is proven rather than assumed.
+#[test]
+fn a_long_skills_list_never_trips_the_per_section_language_check() {
+    let padded = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis · \
+         Go · TypeScript · GraphQL · gRPC · Kafka · RabbitMQ · Elasticsearch · Prometheus · \
+         Grafana · Jenkins · GitLab CI · Helm · Istio · Envoy · Vault · Consul · Nomad · \
+         Ansible · Chef · Puppet · Nginx · HAProxy · Cassandra · MongoDB · ClickHouse",
+    );
+    assert!(
+        significant_chars(&padded) - significant_chars(DE_CLEAN) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: the padded skills list alone must clear the per-section char floor"
+    );
+    assert!(
+        !crate::documents::keywords::languages_align(
+            "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+            "de"
+        ),
+        "premise: whatlang really does read this ordinary tool-name list as \
+         non-German — the exclusion is doing real work, not guarding against \
+         nothing"
+    );
+    let report = validate_content(&ContentInput {
+        generated: &padded,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// Regression: `SectionKind` has six variants and `classify_section` has no
+/// heading list for Certifications, Awards, Publications or Languages-spoken —
+/// they all land in `SectionKind::Other`. A Skills-only exclusion therefore
+/// admitted exactly the shape it was written to keep out: a correct, English
+/// certifications block is proper-noun-heavy, clears the char floor, and reads
+/// as non-English. Firing there would blank `keywordCoverage` and suppress
+/// every alignment finding on an otherwise-perfect résumé.
+#[test]
+fn a_correct_certifications_block_never_trips_the_per_section_language_check() {
+    let certs = "
+
+CERTIFICATIONS
+AWS Certified Solutions Architect - Professional (2022)
+                 Google Cloud Professional Data Engineer (2023)
+                 Certified Kubernetes Administrator CKA (2021)
+";
+    let body = certs.trim_start();
+    assert!(
+        significant_chars(body) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: this block must clear the per-section char floor, or the test          proves nothing about the exclusion"
+    );
+    assert!(
+        !crate::documents::keywords::languages_align(body, "en"),
+        "premise: whatlang really does read this correct ENGLISH certifications          block as non-English — the scoping is doing real work"
+    );
+    let with_certs = format!("{EN_CLEAN}{certs}");
+    let report = en_resume(&with_certs, &en_requirements());
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
 }
 
 /// The two DEGRADED project tiers are legal — the source simply had less data.
@@ -1255,6 +1361,45 @@ fn missing_section_warns_once_per_absent_standard_section() {
     assert_eq!(named, vec!["Education", "Skills"]);
 }
 
+/// Bug 2 (PR#998 regression): the draft prompt's old "order the sections
+/// EXACTLY as … do not drop" phrasing read as a manifest, and the model
+/// obeyed by writing a heading with nothing under it.
+///
+/// A WARNING, deliberately — see `empty_section_issues`'s doc comment. A
+/// Critical would route this to `repair`, whose remedy is to regenerate the
+/// section, which for an empty `PROJECTS` means inventing projects the
+/// candidate does not have. Removal is the correct remedy and
+/// `model::adapter::push_nonempty_section` already performs it structurally;
+/// this issue reports a defect that is handled, it does not trigger the fix.
+#[test]
+fn empty_section_heading_is_reported_but_never_routed_to_repair() {
+    let generated = "EXPERIENCE\n\nAcme | 2021 - Present\n- Shipped the ledger service\n\n\
+                      PROJECTS\n\n\
+                      SKILLS\n\nRust, Go\n\n\
+                      EDUCATION\n\nBSc, TU Berlin, 2018\n";
+    let report = report_for(generated, generated, EN_JOB_AD, &[]);
+    let hits = fired(&report, ATS_EMPTY_SECTION);
+    assert_eq!(
+        hits[0].severity,
+        Severity::Warning,
+        "a Critical here would make `repair` regenerate the empty section, i.e.          invent its content — removal is the remedy, and adapter already does it"
+    );
+    assert_eq!(hits[0].section.as_deref(), Some("PROJECTS"));
+}
+
+/// The false-positive risk named alongside the guard: a section that is
+/// merely TERSE — one real line, not zero — must not be mistaken for an empty
+/// one. Otherwise a legitimate one-entry Publications/Awards section would be
+/// flagged right alongside a genuinely empty one.
+#[test]
+fn a_terse_one_line_section_does_not_trip_the_empty_section_critical() {
+    let generated = "EXPERIENCE\n\nAcme | 2021 - Present\n- Shipped the ledger service\n\n\
+                      PUBLICATIONS\n\nDoe, J. (2022). A short paper.\n\n\
+                      SKILLS\n\nRust, Go\n";
+    let report = report_for(generated, generated, EN_JOB_AD, &[]);
+    silent(&report, ATS_EMPTY_SECTION);
+}
+
 /// Exactly [`ats::MAX_BULLET_CHARS`] is fine; one character more is not.
 #[test]
 fn long_bullet_boundary_is_the_char_budget() {
@@ -2094,7 +2239,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        30,
+        31,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES
@@ -2103,7 +2248,7 @@ fn code_table_is_complete_and_unique() {
         .count();
     assert_eq!(
         criticals, 7,
-        "Criticals are deterministic factual/language/structure defects only"
+        "Criticals are deterministic factual/language/structure defects only — and          only ones whose remedy is a REGENERATE, since that is what `repair` does          with them. `ats.empty_section` is a Warning for exactly that reason."
     );
 }
 
