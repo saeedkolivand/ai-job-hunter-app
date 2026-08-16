@@ -20,7 +20,7 @@ function writeBaseRepo() {
   mkdirSync(join(repoDir, 'apps', 'landing', 'src', 'data'), { recursive: true });
   mkdirSync(join(repoDir, 'apps', 'desktop', 'src-tauri'), { recursive: true });
   mkdirSync(join(repoDir, 'packages', 'shared'), { recursive: true });
-  mkdirSync(join(repoDir, 'docs', 'adr'), { recursive: true });
+  mkdirSync(join(repoDir, 'docs', 'knowledge', 'decision-records'), { recursive: true });
 
   writeFileSync(
     join(repoDir, 'package.json'),
@@ -57,7 +57,10 @@ function writeBaseRepo() {
       'name = "not-a-dependency"',
     ].join('\n')
   );
-  writeFileSync(join(repoDir, 'docs', 'adr', '0001-real-adr.md'), '# real ADR');
+  writeFileSync(
+    join(repoDir, 'docs', 'knowledge', 'decision-records', '0001-real-adr.md'),
+    '# real ADR'
+  );
 }
 
 /** Write tech-radar.ts with the given RADAR array body and run the checker. */
