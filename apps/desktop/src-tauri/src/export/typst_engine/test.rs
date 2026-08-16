@@ -5087,7 +5087,7 @@ fn aria_ats_mode_linearizes_reading_order() {
     use crate::export::typst_engine::render_pdf_with_photo;
     let mut model = model_from_resume_text(PLACEMENT_FIXTURE);
     // Export path linearizes for ATS; replicate it here for the reading-order
-    // check. "us" resolves to the default (skills-driven) market order.
+    // check. "us" resolves to the default (reverse-chronological) order.
     crate::model::transform::linearize(&mut model, "us");
     let t = template_style(TemplateId::Aria);
     let bytes = render_pdf_with_photo(
