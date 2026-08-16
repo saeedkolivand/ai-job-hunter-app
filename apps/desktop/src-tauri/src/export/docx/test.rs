@@ -51,6 +51,24 @@ const REFINED_US_TEXT: &str = "Jane Smith\njane@example.com | https://linkedin.c
 
 const REFINED_DE_TEXT: &str = "Max Müller\nmax@example.de | https://linkedin.com/in/maxmueller\n\nFrankfurt, 2. Juni 2025\n\nFrau Dr. Anna Weber\nMusterfirma GmbH\n\nBetreff: Bewerbung als Software Engineer\n\nSehr geehrte Frau Dr. Weber,\n\nmit großem Interesse habe ich Ihre Stellenausschreibung gelesen und bewerbe mich hiermit.\n\nMit freundlichen Grüßen,\n\nMax Müller\n";
 
+/// Body-only fixture — regression guardrail for the shipped
+/// `complete_letter_text` fix. Mirrors `LETTER_FIXTURE_BODY_ONLY_US` in
+/// `typst_engine/test.rs` (this file's fixtures are one-line `\n`-escaped;
+/// duplicated rather than shared because the two test modules have no
+/// production-code seam to reach a common fixture without touching
+/// non-test code — this file's German fixture already drifts from the PDF
+/// engine's own `LETTER_FIXTURE_DE` vs `REFINED_DE_TEXT` above, so keeping
+/// this new pair in step across both files rather than trying to unify them
+/// matches that existing precedent). No letterhead, no salutation, no
+/// sign-off, no signature — the shape `pipeline::resume::prompts::letter_system`
+/// actually asks the model for. One `**bold**` keyword.
+const LETTER_FIXTURE_BODY_ONLY_US: &str = "I am writing to express my strong interest in the Software Engineer position, where I would bring five years of experience building distributed systems in Rust and Go to a team solving problems at real scale.\n\nDuring my time at Beta Inc, I led the migration of our payments service to a **microservices** architecture, reducing end-to-end latency by 40 percent and cutting infrastructure costs by 30 percent.\n\nI would welcome the opportunity to discuss how my background aligns with your team's needs and how I could contribute from day one.";
+
+/// German body-only fixture — mirrors `LETTER_FIXTURE_BODY_ONLY_DE` in
+/// `typst_engine/test.rs`: a long opening paragraph, a paragraph with digits
+/// and a mid-sentence period ("von 0 % auf 90 %."), and a `**bold**` keyword.
+const LETTER_FIXTURE_BODY_ONLY_DE: &str = "Mit großem Interesse habe ich Ihre Stellenausschreibung für die Position als Software Engineer gelesen und bin überzeugt, dass meine mehrjährige Erfahrung in der Entwicklung verteilter Systeme genau zu den Anforderungen passt, die Sie beschrieben haben.\n\nIn meiner bisherigen Tätigkeit bei der Beta GmbH konnte ich die Testabdeckung von 0 % auf 90 % steigern. Durch die Einführung von **Jest** und einer durchgängigen CI-Pipeline wurde die Codequalität spürbar besser.\n\nÜber eine Einladung zum Vorstellungsgespräch würde ich mich sehr freuen und stehe für Rückfragen jederzeit zur Verfügung.";
+
 /// Every `w:sz w:val="N"` (half-points) found in a DOCX body, in document order.
 /// Deliberately does not match `w:szCs` (the companion complex-script size,
 /// same value) — the literal `w:sz w:val="` substring requires a space right
@@ -1137,5 +1155,105 @@ fn contact_profile_survives_even_when_the_letterhead_name_is_suppressed() {
                 max_size(&with_real_name)
             );
         }
+    }
+}
+
+/// Split `word/document.xml` into one slice per real `<w:p …>` paragraph
+/// element. NOT `xml.split("<w:p>")` (the pattern the Monogram test above
+/// uses): every paragraph this crate's docx-rs version emits carries a
+/// `w14:paraId="…"` attribute (`<w:p w14:paraId="00000001">`), so the bare
+/// `"<w:p>"` literal never actually occurs and that split silently returns
+/// the WHOLE document as one chunk — harmless for that test (it only reads
+/// runs out of the single resulting chunk) but useless for telling two
+/// paragraphs apart, which is exactly what this test needs. Matches on the
+/// character immediately after `<w:p` being `>` or a space, which is true
+/// for a real paragraph tag but false for `<w:pPr>`/`<w:pStyle …>` (`P`/`S`
+/// follow directly with no separator).
+fn docx_paragraphs(xml: &str) -> Vec<&str> {
+    let bytes = xml.as_bytes();
+    let marker = b"<w:p";
+    let mut starts: Vec<usize> = bytes
+        .windows(marker.len() + 1)
+        .enumerate()
+        .filter_map(|(i, w)| {
+            (&w[..marker.len()] == marker && (w[marker.len()] == b'>' || w[marker.len()] == b' '))
+                .then_some(i)
+        })
+        .collect();
+    starts.push(xml.len());
+    starts.windows(2).map(|w| &xml[w[0]..w[1]]).collect()
+}
+
+/// Guardrail for the shipped fix — DOCX side, so PDF and DOCX cannot drift on
+/// this. `generate_docx` (this module's `mod.rs`) never calls
+/// `complete_letter_text` itself — only `export::commands::validate_and_normalize`
+/// does — so `letter_request` bypasses completion exactly like
+/// `typst_engine::render_letter_pdf` does on the PDF side. This test
+/// completes the fixture HERE first, the same seam the sibling PDF tests
+/// (`typst_engine::test::body_only_us_letter_gets_completed_furniture_in_the_pdf_text_layer`
+/// / `..._de_...`) use, before building the `ExportRequest` and rendering.
+#[test]
+fn body_only_letter_gets_completed_furniture_in_docx_document_xml() {
+    for (market, fixture, name, salutation, signoff, needle1, needle2) in [
+        (
+            "us",
+            LETTER_FIXTURE_BODY_ONLY_US,
+            "Jane Smith",
+            "Dear Hiring Manager",
+            "Sincerely",
+            "distributed systems",
+            "microservices",
+        ),
+        (
+            "de",
+            LETTER_FIXTURE_BODY_ONLY_DE,
+            "Max Müller",
+            "Sehr geehrte Damen und Herren",
+            "Mit freundlichen Grüßen",
+            "verteilter Systeme",
+            "Jest",
+        ),
+    ] {
+        let completed = crate::export::letter_shape::complete_letter_text(fixture, market, name);
+        let mut request = letter_request(&completed, LetterLayout::Classic);
+        // `letter_request` defaults `locale: None` (→ `intl`); this fixture's
+        // salutation/sign-off came from `conventions(market)`, so the render
+        // must resolve the SAME market or the two could silently disagree —
+        // mirrors `export::commands::validate_and_normalize`'s own
+        // `request.locale.as_deref().unwrap_or("intl")` computation feeding
+        // both `complete_letter_text` and the render call with one value.
+        request.locale = Some(market.to_string());
+        let xml = document_xml(&generate_docx(&request).expect("docx"));
+
+        assert!(
+            xml.contains(salutation),
+            "{market}: salutation {salutation:?} missing from word/document.xml — \
+             complete_letter_text must have run: {xml}"
+        );
+        assert!(
+            xml.contains(signoff),
+            "{market}: sign-off {signoff:?} missing from word/document.xml — \
+             complete_letter_text must have run: {xml}"
+        );
+        assert!(
+            xml.contains(name),
+            "{market}: signature name {name:?} missing from word/document.xml: {xml}"
+        );
+
+        // Body paragraphs must land as SEPARATE <w:p> elements, not flattened
+        // into one run-on paragraph — the DOCX shape of the same bug the PDF
+        // tests guard ("plain text, no bold, no paragraph spacing").
+        let paras = docx_paragraphs(&xml);
+        let idx1 = paras.iter().position(|p| p.contains(needle1)).unwrap_or_else(|| {
+            panic!("{market}: no <w:p> paragraph contains {needle1:?}: {xml}")
+        });
+        let idx2 = paras.iter().position(|p| p.contains(needle2)).unwrap_or_else(|| {
+            panic!("{market}: no <w:p> paragraph contains {needle2:?}: {xml}")
+        });
+        assert_ne!(
+            idx1, idx2,
+            "{market}: body paragraphs containing {needle1:?} and {needle2:?} must render as \
+             separate <w:p> elements, not merged into one: {xml}"
+        );
     }
 }
