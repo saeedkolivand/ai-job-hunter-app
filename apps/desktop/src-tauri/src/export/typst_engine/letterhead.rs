@@ -27,6 +27,18 @@ pub(super) fn looks_like_date(s: &str) -> bool {
     if t.is_empty() {
         return false;
     }
+    // A date is never a paragraph. Reject a long line BEFORE the digit +
+    // separator heuristic below even gets to run: a prose sentence that
+    // happens to mention a percentage and end in a full stop ("…von 0 % auf
+    // 90 %. Durch die Einführung von Jest…") satisfies "has a digit and a
+    // `.`/`/`/`-`" exactly like a real date does — that shape is what let a
+    // whole body paragraph get classified as `data.date` in production. The
+    // caps are set well above the longest realistic date string in any
+    // supported market, including German's optional weekday-prefixed form
+    // ("Donnerstag, den 2. Januar 2025" — 5 tokens / 31 chars).
+    if t.chars().count() > MAX_DATE_CHARS || t.split_whitespace().count() > MAX_DATE_TOKENS {
+        return false;
+    }
     let has_digit = t.chars().any(|c| c.is_ascii_digit());
     if !has_digit {
         return false;
@@ -44,6 +56,12 @@ pub(super) fn looks_like_date(s: &str) -> bool {
     let has_sep = t.contains('/') || t.contains('.') || t.contains('-');
     has_year || has_sep
 }
+
+/// Maximum character length a date line may have — see [`looks_like_date`]'s
+/// doc comment for why this guard exists.
+const MAX_DATE_CHARS: usize = 48;
+/// Maximum whitespace-separated tokens a date line may have — same reasoning.
+const MAX_DATE_TOKENS: usize = 8;
 
 /// Up to **two** uppercase initials for a letterhead monogram device: the
 /// initial of the first NAME token and the initial of the last one.
@@ -129,6 +147,17 @@ fn monogram_initials(name: &str) -> String {
 /// none of those three, so it passed as "a name" and produced `12` as a
 /// monogram (and, before the `parse_cover_letter` guard existed, rendered
 /// "12 March 2025" as the person's name in every layout's header).
+///
+/// A SHAPE cap is the fifth guard: none of the four rejections above fire on
+/// a plain prose paragraph, so when the "first non-blank line" fallback
+/// landed on a 380-character body paragraph (no salutation/sign-off/subject/
+/// date phrasing at all — just prose), it passed every check and rendered as
+/// the candidate's name, verbatim, in the letterhead AND the signature block.
+/// A person's name is short: [`MAX_NAME_CHARS`]/[`MAX_NAME_TOKENS`] are set
+/// generously above the longest real name in this file's own test suite
+/// ("Maria del Carmen Fernández de la Vega" — 7 tokens / 37 chars, the
+/// `a_real_candidate_name_is_never_suppressed` test still passes), while a
+/// prose paragraph is reliably an order of magnitude past both.
 pub(crate) fn is_letterhead_name(s: &str) -> bool {
     use crate::locale::letter::{is_salutation, is_signoff, is_subject_line};
     let t = s.trim();
@@ -137,7 +166,16 @@ pub(crate) fn is_letterhead_name(s: &str) -> bool {
         && !is_signoff(t)
         && !is_subject_line(t)
         && !looks_like_date(t)
+        && t.chars().count() <= MAX_NAME_CHARS
+        && t.split_whitespace().count() <= MAX_NAME_TOKENS
 }
+
+/// Maximum character length a person's name may have — see
+/// [`is_letterhead_name`]'s doc comment for why this guard exists.
+const MAX_NAME_CHARS: usize = 64;
+/// Maximum whitespace-separated tokens a person's name may have — same
+/// reasoning.
+const MAX_NAME_TOKENS: usize = 8;
 
 /// Initials for the letterhead device, or empty when the "name" is not a name.
 ///
@@ -245,6 +283,19 @@ Software Engineer
         assert!(looks_like_date("2025-06-02"));
         assert!(!looks_like_date("Dear Hiring Manager,"));
         assert!(!looks_like_date("Acme Corp"));
+    }
+
+    /// The production incident this guards: a body paragraph mentioning a
+    /// percentage and ending in a full stop satisfies the digit+separator
+    /// heuristic line-for-line, but it is prose, never a date.
+    #[test]
+    fn looks_like_date_rejects_a_long_prose_paragraph_with_digits_and_periods() {
+        let prose = "Durch die Einführung von Jest konnte ich die Testabdeckung \
+                      von 0 % auf 90 % steigern und die Fehlerquote deutlich senken.";
+        assert!(
+            !looks_like_date(prose),
+            "a prose paragraph must never read as a date"
+        );
     }
 
     // ── monogram_initials ─────────────────────────────────────────────────────
@@ -475,6 +526,23 @@ Software Engineer
                 "{not_a_name:?} must not read as a name"
             );
         }
+    }
+
+    /// The shape cap: a long prose line (the fallback's fifth failure mode,
+    /// past salutation/sign-off/subject/date) is not a name, but a real long
+    /// name — the longest one in this suite — must still pass.
+    #[test]
+    fn is_letterhead_name_rejects_a_long_prose_line_but_keeps_a_real_long_name() {
+        let prose: String = (0..40).map(|_| "word").collect::<Vec<_>>().join(" ");
+        assert!(
+            !is_letterhead_name(&prose),
+            "a 40-word line must not read as a name"
+        );
+
+        assert!(
+            is_letterhead_name("Maria del Carmen Fernández de la Vega"),
+            "a real long name (7 tokens, 37 chars) must still read as a name"
+        );
     }
 
     /// With no candidate name, a date-opening letter must not fabricate a

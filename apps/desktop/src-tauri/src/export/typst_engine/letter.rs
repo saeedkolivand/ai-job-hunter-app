@@ -247,8 +247,23 @@ pub(super) fn parse_cover_letter(
     };
 
     // ── Letterhead ────────────────────────────────────────────────────────────
-    // Name: prefer generation metadata, then first non-blank text line.
+    // Name: prefer generation metadata, then the contact profile's full name,
+    // then the first non-blank text line.
     let raw_lines: Vec<&str> = text.lines().collect();
+
+    // The missing middle rung: the renderer always sends the full
+    // `ContactProfile`, but until now it was consulted only for CASING
+    // (`prefer_profile_casing` below) — a blank `meta_name` fell straight
+    // through to the first-line fallback even when a real name sat right
+    // there on `contact.full_name`. That fallback is not just a body-text
+    // quality issue: `document_meta_preamble("data.letterhead.name", …)`
+    // (`engine.rs`) feeds this same value into the PDF's `author` metadata
+    // field, so a blank `meta_name` with a body-only (letterhead-less) letter
+    // produced an empty PDF author too.
+    let contact_full_name = contact
+        .and_then(|p| p.full_name.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     // B.2: an ALL-CAPS stored name adopts the contact profile's mixed-case
     // casing (when it matches case-insensitively) so the letterhead + signature
@@ -257,15 +272,17 @@ pub(super) fn parse_cover_letter(
     // `resolve_letterhead_candidate` is the shared "prefer meta_name unless
     // blank" decision — both DOCX line-scanners make the identical call, so
     // an empty-string `Some("")` `meta_name` (the shape three renderer call
-    // sites actually send) degrades to the first-line fallback the same way
-    // in every format.
+    // sites actually send) degrades to the fallback the same way in every
+    // format.
     let name_text: String = prefer_profile_casing(
         resolve_letterhead_candidate(meta_name, || {
-            raw_lines
-                .iter()
-                .map(|l| l.trim())
-                .find(|l| !l.is_empty())
-                .unwrap_or("")
+            contact_full_name.unwrap_or_else(|| {
+                raw_lines
+                    .iter()
+                    .map(|l| l.trim())
+                    .find(|l| !l.is_empty())
+                    .unwrap_or("")
+            })
         })
         .to_string(),
         contact,
@@ -342,7 +359,13 @@ pub(super) fn parse_cover_letter(
     // B.1: case-insensitive header-name compare, computed from the final
     // (possibly re-cased) `name_text`, so the applicant's own name — however the
     // model cased it — is skipped rather than landing in the recipient block.
-    let name_lower = name_text.trim().to_lowercase();
+    //
+    // Trailing-punctuation-trimmed to match the `clean` side of every
+    // comparison against this value (`clean.trim().trim_end_matches([',',
+    // '.'])…`) below — a name that legitimately ends in a period never
+    // matched its own header/signature echo before this, because `clean` had
+    // its trailing `.`/`,` stripped and this side did not.
+    let name_lower = name_text.trim().trim_end_matches([',', '.']).to_lowercase();
 
     for raw_line in &raw_lines {
         let trimmed = raw_line.trim();
@@ -434,9 +457,13 @@ pub(super) fn parse_cover_letter(
             // an LLM sign-off in title-case ("Saeed Kolivand") is still recognised
             // as the candidate name even when `name_text` is stored uppercase
             // ("SAEED KOLIVAND") — preventing the name from being promoted to
-            // `signature_title` and rendered a second time.
-            let is_candidate_name = clean.trim().trim_end_matches([',', '.']).to_lowercase()
-                == name_text.trim().to_lowercase();
+            // `signature_title` and rendered a second time. Reuses `name_lower`
+            // (already trailing-punctuation-trimmed above) rather than
+            // recomputing `name_text.trim().to_lowercase()` here — that
+            // untrimmed recomputation was the same asymmetry bug as the
+            // header-echo skip above: a name ending in "." never matched.
+            let is_candidate_name =
+                clean.trim().trim_end_matches([',', '.']).to_lowercase() == name_lower;
             if signature_title.is_none() && !clean.is_empty() && !is_candidate_name {
                 signature_title = Some(clean.to_string());
             }
@@ -1049,5 +1076,91 @@ Saeed Kolivand
         let off = parse_cover_letter("x", None, None, "us", "en", dummy_style(), false);
         assert!(on.opts.ats, "ats=true must reach data.opts.ats");
         assert!(!off.opts.ats, "ats=false must reach data.opts.ats");
+    }
+
+    // ── name-resolution rung: meta_name → contact.full_name → first line ─────
+
+    /// A blank `meta_name` (the shape three renderer call sites actually send
+    /// when no candidate name is known) resolves the name from the attached
+    /// `ContactProfile` rather than falling all the way to the first text
+    /// line — which, on a body-only letterhead-less letter, is a salutation,
+    /// not a name.
+    #[test]
+    fn blank_meta_name_resolves_from_the_contact_profile_before_the_first_line_fallback() {
+        let profile = ContactProfile {
+            full_name: Some("Jane Smith".to_string()),
+            ..Default::default()
+        };
+        let letter = "Dear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\n";
+        for meta in [None, Some("")] {
+            let model =
+                parse_cover_letter(letter, Some(&profile), meta, "us", "en", dummy_style(), false);
+            assert_eq!(
+                model.letterhead.name, "Jane Smith",
+                "meta={meta:?}: the contact profile's name must win over the \
+                 salutation-line fallback"
+            );
+            assert_eq!(model.signature_name, "Jane Smith");
+        }
+    }
+
+    /// With NO contact profile either, the fallback still degrades to the
+    /// first-line rule exactly as before — this rung is additive, not a
+    /// replacement.
+    #[test]
+    fn blank_meta_name_with_no_profile_still_falls_back_to_the_first_line() {
+        let model = parse_cover_letter(
+            "Jane Smith\n\nDear Hiring Manager,\n\nHello there.\n\nSincerely,\n",
+            None,
+            None,
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
+        assert_eq!(model.letterhead.name, "Jane Smith");
+    }
+
+    // ── whole-path integration: `letter_shape::complete_letter_text` feeding
+    //    straight into this parser ──────────────────────────────────────────
+
+    /// The end-to-end fix for the reported bug: a body-only letter with no
+    /// salutation completed by [`crate::export::letter_shape::complete_letter_text`]
+    /// then parsed here must flip `body_started` at the injected salutation,
+    /// so the **bold** paragraph is tokenized into `body` as a rich-text run
+    /// — NOT space-joined into `recipient_lines` as flattened plain text,
+    /// which is what happened before Stage 1: with no salutation in the text,
+    /// `body_started` never flipped, so every paragraph fell into the
+    /// pre-salutation branch.
+    #[test]
+    fn completed_body_only_letter_keeps_bold_as_a_rich_run_in_body() {
+        let body = "I reduced deploy time by **40 percent** using Jest.";
+        let completed = crate::export::letter_shape::complete_letter_text(body, "us", "Jane Smith");
+
+        let model = parse_cover_letter(
+            &completed,
+            None,
+            Some("Jane Smith"),
+            "us",
+            "en",
+            dummy_style(),
+            false,
+        );
+
+        assert!(
+            model.recipient_lines.is_empty(),
+            "the body paragraph must not have fallen into recipient_lines: {:?}",
+            model.recipient_lines
+        );
+        let bold_run_present = model
+            .body
+            .iter()
+            .flatten()
+            .any(|run| run.bold && run.text.contains("40 percent"));
+        assert!(
+            bold_run_present,
+            "the **bold** run must survive as a rich-text run in body: {:?}",
+            model.body
+        );
     }
 }
