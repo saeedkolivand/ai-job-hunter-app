@@ -8,7 +8,7 @@
  * resource entry) — a raw-key stub would just echo the key back and could
  * never fail this way, and TypeScript can't check a key built at runtime.
  * `@ajh/translations` resolves to real source in vitest (see
- * `vitest.config.ts`'s alias) and initializes with the real bundled en/de
+ * `vitest.config.mts`'s alias) and initializes with the real bundled en/de
  * resources as an import side effect, so `t()` here returns real English
  * copy — or, if a key is missing/mistyped, the raw key string, which the
  * tests below assert does NOT appear.
