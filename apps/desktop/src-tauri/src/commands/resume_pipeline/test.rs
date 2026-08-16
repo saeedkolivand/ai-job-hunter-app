@@ -1538,6 +1538,58 @@ fn resolve_job_errors_on_a_cache_miss_even_though_the_request_also_carried_text(
     assert!(matches!(err, crate::error::AppError::Validation(_)));
 }
 
+// ── sanitize_job_meta — the generation boundary (A1 hardening plan) ────────
+
+/// `sanitize_job_meta` blanks an implausible `company` to `""`, the same
+/// "company not known" convention every existing downstream consumer already
+/// treats an empty string as. Anchored to the CONCRETE resulting `Option`
+/// `research_company_brief`'s own admission expression produces
+/// (`(!company.is_empty()).then_some(company)`, `pipeline/resume/stages/
+/// cover_letter.rs`), not merely to `is_implausible_company`'s own bool — a
+/// garbage company must never reach `CompanyResearch`, and therefore never
+/// reach the model's "why this company" paragraph.
+///
+/// Mutation check: remove the `if crate::scraping::trust::is_implausible_company(…)`
+/// guard from `sanitize_job_meta` (return `meta` unchanged) — this test fails
+/// immediately (`admitted` becomes `Some("Apply now | LinkedIn")`).
+#[test]
+fn sanitize_job_meta_blanks_an_implausible_company_before_it_can_reach_company_research() {
+    let garbage = crate::commands::match_resume::JobPostingMeta {
+        company: "Apply now | LinkedIn".to_string(),
+        title: "Staff Engineer".to_string(),
+        url: "https://boards.example/jobs/1".to_string(),
+        board: "linkedin".to_string(),
+    };
+    let sanitized = super::resolve::sanitize_job_meta(garbage);
+    assert_eq!(sanitized.company, "");
+    // `title`/`url`/`board` must survive untouched — only `company` is in scope.
+    assert_eq!(sanitized.title, "Staff Engineer");
+    assert_eq!(sanitized.url, "https://boards.example/jobs/1");
+    assert_eq!(sanitized.board, "linkedin");
+
+    let admitted = (!sanitized.company.trim().is_empty()).then_some(sanitized.company.as_str());
+    assert_eq!(
+        admitted, None,
+        "a garbage company must never reach CompanyResearch"
+    );
+}
+
+/// The legitimate-name counterpart: a real employer name must reach
+/// `QualityInput::company_name`/the persisted `AiGenerationRecord.company_name`
+/// unchanged, so this boundary can't be satisfied by simply blanking
+/// everything.
+#[test]
+fn sanitize_job_meta_leaves_a_legitimate_company_untouched() {
+    let legit = crate::commands::match_resume::JobPostingMeta {
+        company: "Acme Corp".to_string(),
+        ..Default::default()
+    };
+    let sanitized = super::resolve::sanitize_job_meta(legit);
+    assert_eq!(sanitized.company, "Acme Corp");
+    let admitted = (!sanitized.company.trim().is_empty()).then_some(sanitized.company.as_str());
+    assert_eq!(admitted, Some("Acme Corp"));
+}
+
 /// **The error-echo clamp, guarded.** `resolve::echoed`/`ECHO_CHARS_CAP` bound
 /// a request-supplied id echoed into a validation-error message — at base
 /// the equivalent rule was mutation-checked by `commands/agent.rs`
@@ -1660,6 +1712,12 @@ fn execute_routes_resolution_through_the_pure_resolve_functions() {
         source.contains("resolve::run_store_job_url("),
         "the run row's own job_url must route through resolve::run_store_job_url, \
          not reuse the aggregate's job_url directly"
+    );
+    assert!(
+        source.contains("resolve::sanitize_job_meta("),
+        "execute must sanitize the resolved posting identity through \
+         resolve::sanitize_job_meta before it reaches QualityInput::company_name \
+         or the persisted AiGenerationRecord.company_name (A1 hardening plan)"
     );
 }
 

@@ -2425,7 +2425,8 @@
         "missingApplyUrl": "Kein Bewerbungslink",
         "invalidUrl": "Bewerbungslink fehlerhaft",
         "suspiciousDomain": "Verdächtige Domain",
-        "companyDomainMismatch": "Domain stimmt nicht mit Unternehmen überein"
+        "companyDomainMismatch": "Domain stimmt nicht mit Unternehmen überein",
+        "implausibleCompany": "Firmenname wirkt unplausibel"
       },
       "levelDesc": {
         "medium": "Einige Angaben dieser Anzeige konnten nicht überprüft werden. Sie kann trotzdem echt sein — vor der Bewerbung genauer ansehen.",

@@ -2421,7 +2421,8 @@
         "missingApplyUrl": "Missing apply link",
         "invalidUrl": "Broken apply link",
         "suspiciousDomain": "Suspicious domain",
-        "companyDomainMismatch": "Domain doesn't match company"
+        "companyDomainMismatch": "Domain doesn't match company",
+        "implausibleCompany": "Company name looks implausible"
       },
       "levelDesc": {
         "medium": "Some details of this posting could not be verified. It may still be genuine — worth a second look before applying.",

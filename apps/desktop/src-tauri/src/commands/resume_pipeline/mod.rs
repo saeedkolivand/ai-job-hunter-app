@@ -294,6 +294,13 @@ async fn execute(
         |id| crate::commands::match_resume::job_meta_for(app, id),
         || job_meta_from_request(&clamped),
     )?;
+    // A1 (hardening plan): neither source above sanitizes `company` — a
+    // scraped posting's own field least of all — so this is the one place
+    // every run's company name passes through
+    // `crate::scraping::trust::is_implausible_company` before it can reach
+    // `QualityInput::company_name` (company research) or the persisted
+    // `AiGenerationRecord.company_name` below. See `resolve::sanitize_job_meta`.
+    let meta = resolve::sanitize_job_meta(meta);
     // The posting's OWN url wins over the request's: it was resolved
     // server-side from the cache, and it is the AGGREGATE's key
     // (`AiGenerationRecord.job_url` — see `resolve::job_ad_for_persist`'s doc
