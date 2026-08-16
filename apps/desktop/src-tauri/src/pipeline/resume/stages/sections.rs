@@ -227,3 +227,65 @@ pub fn matches_requested_kind(replacement: &str, expected: SectionKind) -> bool 
     };
     classify_section(heading) == expected
 }
+
+/// A compact ANCHOR of the sibling sections already written in this
+/// generation run — never the whole document — for
+/// [`crate::pipeline::resume::prompts::repair_user`]'s `<document_context>`
+/// block.
+///
+/// **Why an anchor, not the whole document.** A repair round can fan out to
+/// `MAX_SECTIONS_PER_ROUND` sections per round, up to twice
+/// (`Budget::max_repair_attempts`), so whatever this returns is charged up to
+/// 8× per pipeline run. The Summary section (2-4 sentences, the register
+/// every other section is meant to share) and one representative Experience
+/// bullet (the tense/voice the rest of the document's bullets follow) carry
+/// almost the whole signal a section rewrite needs to notice it has drifted
+/// into a different language, voice or tense than its siblings — the failure
+/// PRs #969/#992's per-section fan-out introduced — for a fraction of what
+/// fencing every OTHER section would cost.
+///
+/// **The section being rewritten is excluded by KIND**, not by name: handing
+/// a section its own text as "what to match" would ask it to match the very
+/// text it is about to replace.
+///
+/// Empty when neither anchor survives the exclusion (repairing Summary in a
+/// document with no Experience section, or vice versa) — nothing left to
+/// compare against, so the caller sends no block at all rather than a
+/// misleading partial one (see `prompts::repair_system`'s own `has_context`
+/// gate).
+pub fn context_anchor(sections: &[RawSection], lines: &[&str], skip: SectionKind) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if skip != SectionKind::Summary {
+        if let Some(summary) = sections.iter().find(|s| s.kind == SectionKind::Summary) {
+            parts.push(summary.text(lines));
+        }
+    }
+    if skip != SectionKind::Experience {
+        if let Some(experience) = sections.iter().find(|s| s.kind == SectionKind::Experience) {
+            let text = experience.text(lines);
+            if let Some(bullet) = representative_bullet(&text) {
+                parts.push(bullet.to_string());
+            }
+        }
+    }
+    parts.join("\n\n")
+}
+
+/// The first bullet-marker line in `text`, or its LAST non-empty line when no
+/// marker is found.
+///
+/// Every generated résumé bullet this crate's own fixtures produce opens with
+/// `-`/`•`/`*` (`draft_system`'s structure rule leaves the exact marker to the
+/// model, so this covers the common ones rather than parsing Markdown). The
+/// fallback exists for a source-authored résumé imported verbatim with no
+/// marker at all: its LAST non-empty line is still the closest available
+/// proxy for a bullet, since the heading and the company/title/dates line
+/// always come first in this codebase's own résumé grammar
+/// (`export::parser`).
+fn representative_bullet(text: &str) -> Option<&str> {
+    const MARKERS: [&str; 3] = ["- ", "• ", "* "];
+    text.lines()
+        .map(str::trim)
+        .find(|line| MARKERS.into_iter().any(|marker| line.starts_with(marker)))
+        .or_else(|| text.lines().map(str::trim).rfind(|line| !line.is_empty()))
+}

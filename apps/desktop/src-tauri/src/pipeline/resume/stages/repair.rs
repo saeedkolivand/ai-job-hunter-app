@@ -324,6 +324,13 @@ pub enum SectionOutcome {
 /// `Completer::complete`, which records spend but does not charge (its other
 /// callers charge at admission), and a repair round is exactly the fan-out that
 /// must not sit outside the day's cap.
+///
+/// `document`'s OTHER sections also seed this call's sibling-context anchor
+/// (`sections::context_anchor`, excluding the section being rewritten) — one
+/// value that fixes the SAME blind spot for both callers routed through here:
+/// the repair loop's per-section fan-out and the regenerate button's single
+/// click, neither of which could otherwise see that a sibling section had
+/// drifted into a different language, voice or tense.
 pub async fn regenerate_one_section(
     completer: &Completer,
     source_resume: &str,
@@ -339,12 +346,13 @@ pub async fn regenerate_one_section(
     };
     let lines: Vec<&str> = document.lines().collect();
     let current = section.text(&lines);
+    let context = sections::context_anchor(&split, &lines, section.kind);
 
     completer.charge_daily()?;
     let replacement = completer
         .complete(
-            &repair_system(target_language),
-            &repair_user(source_resume, &current, issues, note),
+            &repair_system(target_language, !context.is_empty()),
+            &repair_user(source_resume, &current, issues, note, &context),
             None,
         )
         .await?;
