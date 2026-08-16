@@ -60,14 +60,14 @@ mod tests {
             SectionId::Experience,
             SectionId::Summary,
         ]);
-        // Default (skills-driven) market: Skills before Experience.
+        // Default market: reverse-chronological, Experience before Skills.
         linearize(&mut m, "us");
         assert_eq!(
             ids(&m),
             vec![
                 SectionId::Summary,
-                SectionId::Skills,
                 SectionId::Experience,
+                SectionId::Skills,
                 SectionId::Education,
             ]
         );
@@ -78,9 +78,13 @@ mod tests {
     /// BOTH orders, not just the default one.
     #[test]
     fn linearize_is_market_aware_and_never_drops_a_custom_section() {
+        // Both orders lead with Experience, so Skills-vs-Education is what
+        // actually discriminates them: default runs Skills then Education,
+        // DE runs Education (Ausbildung) then Skills (Kenntnisse).
         let ordered = |market: &str| {
             let mut m = model_with(&[
                 SectionId::Custom("Speaking".into()),
+                SectionId::Education,
                 SectionId::Skills,
                 SectionId::Experience,
                 SectionId::Summary,
@@ -93,21 +97,23 @@ mod tests {
             ordered("us"),
             vec![
                 SectionId::Summary,
-                SectionId::Skills,
                 SectionId::Experience,
+                SectionId::Skills,
+                SectionId::Education,
                 SectionId::Custom("Speaking".into()),
             ],
-            "default market: skills before experience"
+            "default market: skills before education"
         );
         assert_eq!(
             ordered("de"),
             vec![
                 SectionId::Summary,
                 SectionId::Experience,
+                SectionId::Education,
                 SectionId::Skills,
                 SectionId::Custom("Speaking".into()),
             ],
-            "DE market: experience before skills"
+            "DE market: education before skills"
         );
     }
 

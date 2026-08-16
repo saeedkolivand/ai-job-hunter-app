@@ -1329,16 +1329,17 @@ fn the_draft_prompt_localizes_its_headings() {
 #[test]
 fn the_draft_prompt_injects_the_market_resolved_section_order() {
     let us = draft_system("en", "us");
-    assert!(us.contains("Summary, Skills, Experience, Projects, Education"));
+    assert!(us.contains("Summary, Experience, Skills, Projects, Education"));
 
     let de = draft_system("de", "de");
     assert!(de.contains("Summary, Experience, Education, Certifications, Skills"));
 
-    // The two markets disagree on where Skills sits.
-    assert_ne!(
-        us.contains("Skills, Experience"),
-        de.contains("Skills, Experience")
-    );
+    // Both markets lead with Experience, so Skills-vs-Education is what
+    // actually discriminates them — assert each market lacks the other's
+    // signature, or this passes on two identical strings.
+    assert!(us.contains("Skills, Projects, Education"));
+    assert!(!us.contains("Education, Certifications, Skills"));
+    assert!(!de.contains("Skills, Projects, Education"));
 }
 
 /// A previously-persisted `ResumeStrategy` (from before `sectionOrder` was

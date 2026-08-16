@@ -9,19 +9,25 @@
 //! exporter used a market-blind order that only applied in ATS mode.
 //!
 //! Same market-string convention as [`super::letter::conventions`] (trim +
-//! lowercase, unknown market falls back to the default) — deliberately NOT
-//! `LocaleProfile::get`'s region-tag parsing, since only `de` currently
-//! diverges from the default.
+//! lowercase, unknown market falls back to the default), but the German arm
+//! accepts BOTH live market-id namespaces — `"de"`/`"at"`/`"ch"` as the letter
+//! conventions and the generation pipeline key them, and `"dach"` as
+//! `LocaleProfile` collapses them, which is what actually arrives on the
+//! AI-Generate résumé export path.
 
 use crate::model::document::SectionId;
 
-/// Skills-driven order (US/UK/default): a dedicated Skills block sits above
-/// Experience as a concentrated keyword zone early in the page — 2026 ATS
-/// guidance for skills-driven roles.
+/// Reverse-chronological order (US/UK/default): Experience leads, Skills
+/// follows it. Skills-above-Experience is real advice, but for career-changers
+/// and entry-level candidates — on the continuous-history résumé this app
+/// mostly serves it reads as compensating for thin experience, and it departs
+/// from the reverse-chronological baseline `resume-export-standards` anchors
+/// on. Section position does not affect ATS extraction either way (parsers
+/// bucket by heading text), so this is a convention call, not a parsing one.
 const DEFAULT_ORDER: &[SectionId] = &[
     SectionId::Summary,
-    SectionId::Skills,
     SectionId::Experience,
+    SectionId::Skills,
     SectionId::Projects,
     SectionId::Education,
     SectionId::Certifications,
@@ -85,11 +91,15 @@ mod tests {
     }
 
     #[test]
-    fn default_order_puts_skills_before_experience() {
+    fn default_order_is_reverse_chronological_experience_first() {
         let order = section_order_for("us");
         assert!(
-            position(order, &SectionId::Skills) < position(order, &SectionId::Experience),
-            "skills-driven markets put a dedicated Skills block before Experience"
+            position(order, &SectionId::Experience) < position(order, &SectionId::Skills),
+            "the default market leads with Experience (reverse-chronological)"
+        );
+        assert!(
+            position(order, &SectionId::Skills) < position(order, &SectionId::Education),
+            "Skills still precedes Education on the default order"
         );
     }
 
@@ -129,7 +139,7 @@ mod tests {
     fn prompt_list_renders_canonical_names_in_order() {
         assert_eq!(
             section_order_prompt_list("us"),
-            "Summary, Skills, Experience, Projects, Education, Certifications, \
+            "Summary, Experience, Skills, Projects, Education, Certifications, \
              Languages, Awards, Publications"
         );
         assert_eq!(

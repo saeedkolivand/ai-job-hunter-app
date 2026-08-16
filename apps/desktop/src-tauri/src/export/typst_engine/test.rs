@@ -5106,7 +5106,7 @@ fn aria_ats_mode_linearizes_reading_order() {
         .to_lowercase();
     // ATS linearization (`model::transform::linearize`) reorders `data.sections`
     // to the market's canonical reading order — for the default (skills-driven)
-    // market: Summary, Skills, Experience, Projects, Education, Certifications,
+    // market: Summary, Experience, Skills, Projects, Education, Certifications,
     // Languages, Awards, Publications — it ignores column `placement` entirely,
     // which only shapes the two-column VISUAL layout and never applies in ATS
     // mode. So the Aria placement override (Education → main column) has no
@@ -5119,9 +5119,9 @@ fn aria_ats_mode_linearizes_reading_order() {
         .find("certifications")
         .expect("certifications present");
     assert!(
-        skl < exp && exp < edu && edu < cert,
+        exp < skl && skl < edu && edu < cert,
         "aria ATS reading order wrong (expected default-market order: \
-         skills < experience < education < certifications): {lower}"
+         experience < skills < education < certifications): {lower}"
     );
 }
 
@@ -5333,7 +5333,7 @@ fn saffron_ats_mode_linearizes_reading_order() {
         .join(" ")
         .to_lowercase();
     // Same semantics as `aria_ats_mode_linearizes_reading_order`: ATS mode uses
-    // the default-market canonical order (Summary, Skills, Experience, Projects,
+    // the default-market canonical order (Summary, Experience, Skills, Projects,
     // Education, Certifications, …) regardless of Saffron's placement override
     // (Certifications → main column), which is visual-only and never applies in
     // ATS mode. Include `education` so the expected order isn't coincidentally
@@ -5345,9 +5345,9 @@ fn saffron_ats_mode_linearizes_reading_order() {
         .find("certifications")
         .expect("certifications present");
     assert!(
-        skl < exp && exp < edu && edu < cert,
+        exp < skl && skl < edu && edu < cert,
         "saffron ATS reading order wrong (expected default-market order: \
-         skills < experience < education < certifications): {lower}"
+         experience < skills < education < certifications): {lower}"
     );
 }
 
