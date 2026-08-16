@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.136.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.0...v0.136.1) (2026-08-16)
+
+### 🐛 Bug Fixes
+
+* pipeline timeouts, fence leaks, the generation-application fk, and rust edition 2024 ([#996](https://github.com/saeedkolivand/ai-job-hunter-app/issues/996)) ([3c2aadc](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3c2aadcf48a7247549486399242ae1f483b3e3db)), closes [r#gen](https://github.com/saeedkolivand/r/issues/gen) [r#gen](https://github.com/saeedkolivand/r/issues/gen) [#359](https://github.com/saeedkolivand/ai-job-hunter-app/issues/359)
+
 ## [0.136.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.135.0...v0.136.0) (2026-08-15)
 
 ### ✨ Features
