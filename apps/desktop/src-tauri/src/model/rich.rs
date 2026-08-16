@@ -55,65 +55,82 @@ pub enum Span {
     Link { label: String, url: String },
 }
 
+/// Known domain → friendly brand label. Matched against the bare host with
+/// [`host_matches_domain`] (exact or `.`-boundary suffix), never a raw prefix
+/// — a prefix match would let `linkedin.com.evil.example` borrow the
+/// "LinkedIn" label while linking somewhere else entirely.
+const KNOWN_DOMAINS: &[(&str, &str)] = &[
+    ("linkedin.com", "LinkedIn"),
+    ("github.com", "GitHub"),
+    ("gitlab.com", "GitLab"),
+    ("twitter.com", "Twitter"),
+    ("x.com", "Twitter"),
+    ("behance.net", "Behance"),
+    ("dribbble.com", "Dribbble"),
+    ("medium.com", "Medium"),
+    ("stackoverflow.com", "Stack Overflow"),
+    ("dev.to", "Dev.to"),
+    ("codepen.io", "CodePen"),
+    ("youtube.com", "YouTube"),
+    ("youtu.be", "YouTube"),
+    ("notion.so", "Notion"),
+    ("figma.com", "Figma"),
+    ("npmjs.com", "npm"),
+    ("crates.io", "crates.io"),
+];
+
+/// True when `host` (already scheme/`www.`-stripped, path still attached) IS
+/// `domain`, or is a genuine subdomain of it (`gist.github.com` matches
+/// `github.com`). A lookalike host that merely starts with `domain` as a
+/// string prefix — `linkedin.com.evil.example` — does NOT match, because the
+/// character right after `domain` there is `.` only in the sense that it
+/// extends the SAME label rather than opening a new DNS component boundary;
+/// concretely: `domain` must be the whole host, or preceded by a literal `.`.
+fn host_matches_domain(host: &str, domain: &str) -> bool {
+    host == domain || host.ends_with(&format!(".{domain}"))
+}
+
 /// Map a URL to a friendly display label.
 /// Known domains get a brand name; everything else gets the bare domain (stripped of www.).
 pub fn url_label(url: &str) -> String {
     let lower = url.to_lowercase();
-    // Strip protocol for matching
+    // Strip protocol for matching, then isolate the host from any path so a
+    // domain check never sees `linkedin.com/in/jane` and never mistakes a
+    // path/query segment for part of the host.
     let host = lower
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_start_matches("www.");
-
-    if host.starts_with("linkedin.com") {
-        return "LinkedIn".to_string();
-    }
-    if host.starts_with("github.com") {
-        return "GitHub".to_string();
-    }
-    if host.starts_with("gitlab.com") {
-        return "GitLab".to_string();
-    }
-    if host.starts_with("twitter.com") || host.starts_with("x.com") {
-        return "Twitter".to_string();
-    }
-    if host.starts_with("behance.net") {
-        return "Behance".to_string();
-    }
-    if host.starts_with("dribbble.com") {
-        return "Dribbble".to_string();
-    }
-    if host.starts_with("medium.com") {
-        return "Medium".to_string();
-    }
-    if host.starts_with("stackoverflow.com") {
-        return "Stack Overflow".to_string();
-    }
-    if host.starts_with("dev.to") {
-        return "Dev.to".to_string();
-    }
-    if host.starts_with("codepen.io") {
-        return "CodePen".to_string();
-    }
-    if host.starts_with("youtube.com") || host.starts_with("youtu.be") {
-        return "YouTube".to_string();
-    }
-    if host.starts_with("notion.so") {
-        return "Notion".to_string();
-    }
-    if host.starts_with("figma.com") {
-        return "Figma".to_string();
-    }
-    if host.starts_with("npmjs.com") {
-        return "npm".to_string();
-    }
-    if host.starts_with("crates.io") {
-        return "crates.io".to_string();
-    }
-
-    // Unknown domain: strip www. and use bare domain up to the first /
     let domain = host.split('/').next().unwrap_or(host);
+
+    for (known, label) in KNOWN_DOMAINS {
+        if host_matches_domain(domain, known) {
+            return (*label).to_string();
+        }
+    }
+
+    // Unknown domain: bare domain (scheme/www./path already stripped above).
     domain.to_string()
+}
+
+/// True when `label` is just the bare URL text with no friendly wrapping —
+/// the shape a `[label](url)` link takes when the label was typed/pasted as
+/// the raw link rather than chosen (e.g. `[linkedin.com/in/x](https://…)`).
+/// Compares both sides with scheme/`www.` stripped so
+/// `[www.linkedin.com/in/x](https://linkedin.com/in/x)` counts too.
+fn is_bare_url_label(label: &str, url: &str) -> bool {
+    // Lowercase BEFORE stripping: `trim_start_matches` is a literal byte
+    // match, so an `HTTPS://`/`WWW.`-prefixed label would otherwise survive
+    // untouched while the other side got stripped, and the two would never
+    // compare equal — defeating the whole bare-label check.
+    fn bare(s: &str) -> String {
+        s.to_lowercase()
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_start_matches("www.")
+            .to_string()
+    }
+    bare(label) == bare(url)
 }
 
 /// Return the visible-only text — strips `[label](url)` → `label`.
@@ -135,11 +152,21 @@ pub fn split_urls(text: &str) -> Vec<Span> {
 
     let mut matches: Vec<Match> = Vec::new();
 
-    // Markdown links [label](url) — injected by post-processing; take priority
+    // Markdown links [label](url) — injected by post-processing; take
+    // priority. When the label is just the bare URL text (no friendly
+    // wrapping — e.g. a contact line written as
+    // `[linkedin.com/in/x](https://linkedin.com/in/x)`), swap in
+    // `url_label`'s short brand/domain form so the header shows "LinkedIn",
+    // not the full URL, while the link target is unaffected.
     for cap in MD_LINK_RE.captures_iter(text) {
         let full = cap.get(0).unwrap();
         let label = cap[1].to_string();
         let url = cap[2].to_string();
+        let label = if is_bare_url_label(&label, &url) {
+            url_label(&url)
+        } else {
+            label
+        };
         matches.push(Match {
             start: full.start(),
             end: full.end(),
@@ -352,6 +379,68 @@ mod tests {
         );
     }
 
+    /// Owner-reported: a contact line written as
+    /// `[linkedin.com/in/x](https://linkedin.com/in/x)` (the shape a pasted
+    /// bare link takes with no chosen label) must show the short brand label
+    /// ("LinkedIn"), not the full URL text, while the link itself survives.
+    #[test]
+    fn tokenize_shortens_a_markdown_link_whose_label_is_the_bare_url() {
+        let rt = tokenize_rich("[linkedin.com/in/jane](https://linkedin.com/in/jane)");
+        assert_eq!(
+            shape(&rt),
+            vec![(
+                "LinkedIn".to_string(),
+                false,
+                Some("https://linkedin.com/in/jane".to_string())
+            )]
+        );
+    }
+
+    /// Regression: an uppercase-prefixed bare-URL label (`HTTPS://…`,
+    /// `WWW.…`) must still be recognized as bare and shortened to the brand
+    /// label — the same shape as
+    /// `tokenize_shortens_a_markdown_link_whose_label_is_the_bare_url` but
+    /// with a differently-cased scheme/`www.` prefix on the label side only,
+    /// which used to defeat `is_bare_url_label`'s comparison (it stripped
+    /// case-sensitively before comparing case-insensitively, so a stripped
+    /// url and an un-stripped, differently-cased label never matched).
+    #[test]
+    fn tokenize_shortens_a_markdown_link_whose_label_has_an_uppercase_prefix() {
+        let rt = tokenize_rich("[HTTPS://linkedin.com/in/jane](https://linkedin.com/in/jane)");
+        assert_eq!(
+            shape(&rt),
+            vec![(
+                "LinkedIn".to_string(),
+                false,
+                Some("https://linkedin.com/in/jane".to_string())
+            )]
+        );
+
+        let rt2 = tokenize_rich("[WWW.linkedin.com/in/jane](https://linkedin.com/in/jane)");
+        assert_eq!(
+            shape(&rt2),
+            vec![(
+                "LinkedIn".to_string(),
+                false,
+                Some("https://linkedin.com/in/jane".to_string())
+            )]
+        );
+    }
+
+    /// A deliberately CHOSEN label (not the bare URL) is never overwritten.
+    #[test]
+    fn tokenize_keeps_a_deliberately_chosen_markdown_link_label() {
+        let rt = tokenize_rich("[My Portfolio](https://janedoe.dev/work)");
+        assert_eq!(
+            shape(&rt),
+            vec![(
+                "My Portfolio".to_string(),
+                false,
+                Some("https://janedoe.dev/work".to_string())
+            )]
+        );
+    }
+
     #[test]
     fn tokenize_merges_bold_and_links_in_one_line() {
         let rt = tokenize_rich("**Lead** — [LinkedIn](https://linkedin.com/in/x)");
@@ -483,6 +572,26 @@ mod tests {
             "example.com"
         );
         assert_eq!(url_label("http://my-portfolio.dev"), "my-portfolio.dev");
+    }
+
+    /// Security regression: a lookalike host that merely STARTS WITH a known
+    /// domain string must never borrow that domain's brand label — the
+    /// résumé would render "LinkedIn" as trusted-looking display text while
+    /// linking to an attacker-controlled host. A genuine subdomain
+    /// (`www.linkedin.com`, already covered by
+    /// `url_label_maps_known_domains`) must still resolve correctly.
+    #[test]
+    fn url_label_rejects_a_lookalike_host_prefix_match() {
+        assert_eq!(
+            url_label("https://linkedin.com.evil.example/path"),
+            "linkedin.com.evil.example"
+        );
+        assert_eq!(
+            url_label("https://github.com.attacker.io/repo"),
+            "github.com.attacker.io"
+        );
+        // A real subdomain of a known domain still resolves to the brand.
+        assert_eq!(url_label("https://gist.github.com/jane"), "GitHub");
     }
 
     #[test]

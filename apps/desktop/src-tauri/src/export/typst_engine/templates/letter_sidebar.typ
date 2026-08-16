@@ -201,6 +201,37 @@
   }
 }
 
+// [`render-runs`], but each contact entry starts its own line instead of one
+// long " | "-joined row — the owner-requested "same vertical treatment as
+// letter_refined" for the rail's own contact block, which otherwise relies on
+// ragged auto-wrap that can break mid-entry in the narrow 38mm column.
+// Splits on the literal " | " separator `ContactProfile::header_markdown`
+// bakes into the joined contact string; links/bold runs never carry it.
+#let render-runs-stacked(runs) = {
+  for r in runs {
+    let t = if r.bold and r.italic {
+      text(weight: "bold", style: "italic", r.text)
+    } else if r.bold {
+      text(weight: "bold", r.text)
+    } else if r.italic {
+      text(style: "italic", r.text)
+    } else {
+      r.text
+    }
+    if "link" in r and r.link != none {
+      link(r.link, text(fill: c-accent, t))
+    } else if not r.bold and not r.italic and r.text.contains(" | ") {
+      let parts = r.text.split(" | ")
+      for (j, part) in parts.enumerate() {
+        if j > 0 { linebreak() }
+        if part != "" { part }
+      }
+    } else {
+      t
+    }
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 #let emit-date-block(date-str) = {
@@ -331,7 +362,7 @@
   }
 
   #if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-    block(above: 9pt, text(size: meta-size, fill: c-body, render-runs(data.letterhead.contact)))
+    block(above: sp-name-below, text(size: meta-size, fill: c-body, render-runs-stacked(data.letterhead.contact)))
   }
 ]
 
@@ -437,17 +468,19 @@
   }
 }
 
-// ── Sign-off + signature ──────────────────────────────────────────────────────
-
-#if "signoff" in data and data.signoff != none {
-  block(above: 20pt, below: 4pt, text(fill: c-body, data.signoff))
-}
-
-#v(28pt)
-
-#text(
-  weight: "bold",
-  fill: c-name,
-  font: (font-name, "Carlito", "Inter"),
-  data.signature_name,
-)
+// ── Sign-off + signature ────────────────────────────────────────────────────
+// Grouped as one non-breakable unit — see `sp-signature-lead`/
+// `sp-signature-gap` in _scale.typ: a page break must never land between the
+// sign-off and the name it belongs to.
+#block(breakable: false, above: sp-signature-lead, {
+  if "signoff" in data and data.signoff != none {
+    text(fill: c-body, data.signoff)
+    v(sp-signature-gap)
+  }
+  text(
+    weight: "bold",
+    fill: c-name,
+    font: (font-name, "Carlito", "Inter"),
+    data.signature_name,
+  )
+})

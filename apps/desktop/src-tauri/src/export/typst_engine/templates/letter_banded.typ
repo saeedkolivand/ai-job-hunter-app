@@ -174,7 +174,7 @@
 
 // Right-aligned stacked contact line (below the name, still over the band).
 #if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-  block(above: 5pt,
+  block(above: sp-name-below,
     align(right,
       text(size: body-pt - 0.5pt, fill: c-body, render-runs(data.letterhead.contact))
     )
@@ -226,29 +226,29 @@
   }
 }
 
-// ── Sign-off + signature ──────────────────────────────────────────────────────
-
-#if "signoff" in data and data.signoff != none {
-  block(above: 20pt, below: 4pt,
+// ── Sign-off + signature ────────────────────────────────────────────────────
+// Grouped as one non-breakable unit (sign-off, name, role) — see
+// `sp-signature-lead`/`sp-signature-gap` in _scale.typ: three
+// independently-spaced lines read as disjointed/cramped even with a generous
+// per-line literal, and a page break must never land between the sign-off
+// and the name it belongs to.
+#block(breakable: false, above: sp-signature-lead, {
+  if "signoff" in data and data.signoff != none {
     text(fill: c-body, data.signoff)
-  )
-}
-
-#v(20pt)
-
-#smallcaps(text(
-  weight: "bold",
-  fill: c-name,
-  font: (font-name, "Source Serif 4", "Carlito"),
-  tracking: 0.03em,
-  data.signature_name,
-))
-
-#if "signature_title" in data and data.signature_title != none {
-  block(above: 2pt,
+    v(sp-signature-gap)
+  }
+  smallcaps(text(
+    weight: "bold",
+    fill: c-name,
+    font: (font-name, "Source Serif 4", "Carlito"),
+    tracking: 0.03em,
+    data.signature_name,
+  ))
+  if "signature_title" in data and data.signature_title != none {
+    v(sp-subtitle-gap)
     text(size: body-pt - 0.5pt, fill: c-body, data.signature_title)
-  )
-}
+  }
+})
 
 // Short accent rule footer.
 #block(above: 14pt,

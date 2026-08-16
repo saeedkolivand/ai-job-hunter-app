@@ -9,6 +9,12 @@
 #![allow(dead_code)]
 
 pub mod letter;
+pub mod resume;
+
+// Cross-module callers (`export::typst_engine::letter`,
+// `validate::content::letter`) reach this through the module root per the
+// architecture rules' L1 public-API contract, not the leaf `letter` module.
+pub use letter::is_template_placeholder;
 
 /// Physical page size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

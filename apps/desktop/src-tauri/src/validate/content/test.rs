@@ -251,6 +251,19 @@ fn grounded_letter_produces_no_issues_at_all() {
     );
 }
 
+/// Live-defect regression: a model-emitted template placeholder ("Your
+/// Name") surviving into an otherwise-grounded letter must fire
+/// `letter.template_placeholder` as a Critical. See ADR-034 Consequence #2.
+#[test]
+fn template_placeholder_signature_line_is_critical() {
+    let generated = format!("{EN_LETTER_GROUNDED}Your Name\n");
+    let report = en_letter(&generated);
+    let hits = fired(&report, LETTER_TEMPLATE_PLACEHOLDER);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert_eq!(hits[0].evidence.as_deref(), Some("Your Name"));
+    assert!(!report.ok, "a Critical must clear `ok`");
+}
+
 // ── Per-defect fixtures ─────────────────────────────────────────────────────
 
 #[test]
@@ -2081,7 +2094,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        29,
+        30,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES
@@ -2089,7 +2102,7 @@ fn code_table_is_complete_and_unique() {
         .filter(|(_, s)| *s == Severity::Critical)
         .count();
     assert_eq!(
-        criticals, 6,
+        criticals, 7,
         "Criticals are deterministic factual/language/structure defects only"
     );
 }

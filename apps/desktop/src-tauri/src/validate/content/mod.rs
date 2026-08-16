@@ -91,6 +91,13 @@ pub const FACTUAL_UNSUPPORTED_DATE: &str = "factual.unsupported_date";
 pub const FACTUAL_ALTERED_PROJECT_LINK: &str = "factual.altered_project_link";
 pub const FACTUAL_UNSOURCED_TERM: &str = "factual.unsourced_term";
 pub const CONTENT_LANGUAGE_MISMATCH: &str = "content.language_mismatch";
+/// An unfilled template-placeholder slot (e.g. German "Ihr Name") survived
+/// into the rendered letter text — see ADR-034 Consequence #2. Deterministic:
+/// reuses `locale::letter::is_template_placeholder`, the same predicate the
+/// letter parser uses to stop the placeholder being promoted to
+/// `signature_title`, so this is the mechanical guard for the drift the
+/// parser fix alone cannot catch upstream of export.
+pub const LETTER_TEMPLATE_PLACEHOLDER: &str = "letter.template_placeholder";
 pub const ALIGNMENT_LOW_COVERAGE: &str = "alignment.low_coverage";
 pub const ALIGNMENT_MISSING_TOP_REQUIREMENT: &str = "alignment.missing_top_requirement";
 pub const CONSISTENCY_DATE_ORDER: &str = "consistency.date_order";
@@ -144,6 +151,7 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (FACTUAL_ALTERED_PROJECT_LINK, Severity::Critical),
     (CONTENT_LANGUAGE_MISMATCH, Severity::Critical),
     (ATS_HEADER_IN_BODY, Severity::Critical),
+    (LETTER_TEMPLATE_PLACEHOLDER, Severity::Critical),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),
     (ALIGNMENT_LOW_COVERAGE, Severity::Warning),
     (ALIGNMENT_MISSING_TOP_REQUIREMENT, Severity::Warning),

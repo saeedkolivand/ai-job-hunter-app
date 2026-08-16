@@ -192,6 +192,11 @@
 // `breakable` is a parameter, not a constant: experience entries must reflow
 // (a forced-whole job block left a three-inch dead zone at the foot of page 1
 // during the original design), while projects and education stay whole.
+// Unlike single_column.typ and its siblings, this template has no
+// `entry-bold-for-section` / `emphasize-edu` knob at all: every entry title
+// below is unconditionally bold, education included (#28). That already
+// matches "education titles bold everywhere" — nothing to change here, this
+// note just makes the (in)consistency explicit rather than silent.
 #let render-entry(blk, breakable-entry) = {
   let title-content = if "title" in blk { render-runs(blk.title) } else { "" }
   let date-str = if "date" in blk and blk.date != none { blk.date } else { "" }

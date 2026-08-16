@@ -139,7 +139,7 @@
       pad(top: 7mm, {
         name-text
         if "title" in data.header and data.header.title != none {
-          block(above: 2pt, below: sp-header-title-below,
+          block(above: sp-subtitle-gap, below: sp-header-title-below,
             text(
               size: section-pt,
               style: if title-italic { "italic" } else { "normal" },
@@ -150,7 +150,7 @@
           )
         }
         if "contact" in data.header {
-          block(above: 3pt,
+          block(above: sp-name-below,
             text(
               size: body-pt - 1pt,
               fill: c-band-text,

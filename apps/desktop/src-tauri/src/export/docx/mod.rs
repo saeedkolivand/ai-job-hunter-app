@@ -142,7 +142,10 @@ fn generate_cover_letter_docx_classic(
                                 .color(&colors.name)
                                 .fonts(docx_run_fonts(name_family)),
                         )
-                        .line_spacing(LineSpacing::new().after(60)),
+                        // 9pt (#28), matching `_scale.typ`'s `sp-name-below` —
+                        // was 60 dxa (3pt), crammed against the contact line
+                        // below.
+                        .line_spacing(LineSpacing::new().after(pt_to_dxa(9.0) as u32)),
                 );
             }
 
@@ -662,7 +665,9 @@ fn generate_cover_letter_docx_layout(
                             .color(&colors.name)
                             .fonts(docx_run_fonts(name_family)),
                     )
-                    .line_spacing(LineSpacing::new().after(60));
+                    // 9pt (#28), matching `_scale.typ`'s `sp-name-below` — see
+                    // the identical fix in `generate_cover_letter_docx_classic`.
+                    .line_spacing(LineSpacing::new().after(pt_to_dxa(9.0) as u32));
                 if sty.centred_letterhead {
                     // `letter_navy.typ` centres name, title and contact, then
                     // rules UNDER the lot. The rule therefore goes on the
@@ -1069,6 +1074,11 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
                 request.page_geometry(),
                 request.contact.as_ref(),
                 &request.target_lang(),
+                // "intl" (not "en", a language tag, not a market) — matches
+                // the cover-letter path's fallback below;
+                // `generate_resume_docx_in` canonicalises this through
+                // `LocaleProfile::get` before it reaches `section_order_for`.
+                request.locale.as_deref().unwrap_or("intl"),
             )
             .context("Failed to generate resume DOCX")?
         }
