@@ -420,6 +420,26 @@ export function useTailorPipeline({
     setLetterOverride(null);
     setCurrentStep(0);
     const resumeId = values.resumeDocId ?? '';
+    // Computed HERE, not in a memo — a memo evaluated at mount would go stale
+    // in a session left open across midnight, and a wrong date on a cover
+    // letter is worse than none. `targetLanguage` is a valid BCP-47 tag from
+    // `detectLanguage`, but `toLocaleDateString` still throws `RangeError` on
+    // a malformed one — fall back to the runtime default locale rather than
+    // failing the whole run over a date string.
+    let today: string;
+    try {
+      today = new Date().toLocaleDateString(targetLanguage, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    } catch {
+      today = new Date().toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    }
     const runId = await session.start({
       resumeId,
       resumeText: resumeId ? '' : values.resume,
@@ -430,9 +450,15 @@ export function useTailorPipeline({
       board,
       jobUrl,
       targetLanguage,
+      // Same value the export/preview path already resolved via this hook's
+      // `market` memo — sent through unchanged so the letter prompt and the
+      // export layout agree on one market.
+      market,
+      today,
       topRequirements: [],
       coverLetterText: '',
       includeCoverLetter: values.outputType !== 'resume',
+      researchCompany: values.researchCompany,
     });
     // `session.start` already logged the cause and set `error`/`state` — this
     // is the one thing it can't do itself: a transient, dismissable toast.

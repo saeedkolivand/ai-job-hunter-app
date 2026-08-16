@@ -249,6 +249,73 @@ describe('useTailorPipeline — start() builds the id-wins run request', () => {
   });
 });
 
+// The gap this closes: `market`/`today`/`researchCompany` were added to
+// `ResumePipelineRunSchema` (all `.default()`-ed) but `start()` never sent
+// any of them, so they silently sat at their defaults ('intl', '', false)
+// and the letter-market-conventions/date/company-research features they
+// unlock were inert regardless of the wizard's own state. Real (unmocked)
+// `detectLanguage` fixtures, lifted from the market describe block below.
+describe('useTailorPipeline — start() sends market/today/researchCompany (letter-export contract)', () => {
+  const GERMAN_JOB_AD =
+    'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+  const ENGLISH_JOB_AD =
+    'Experienced software engineer with a strong background in building scalable web applications and distributed backend systems for large organisations.';
+
+  it('sends the German market for a German-language posting', async () => {
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(expect.objectContaining({ market: 'de' }));
+  });
+
+  it('sends the US market for a US-located English posting', async () => {
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD, jobLocation: 'New York, NY, US' });
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(expect.objectContaining({ market: 'us' }));
+  });
+
+  it('sends a non-empty, German-formatted today for a German posting', async () => {
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    // Derived with the SAME `toLocaleDateString` call `start()` uses — asserts
+    // the shape/locale, not a hardcoded literal that would break tomorrow.
+    const expectedToday = new Date().toLocaleDateString('de', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    expect(expectedToday).not.toBe('');
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ today: expectedToday })
+    );
+  });
+
+  it('reflects researchCompany: true from the wizard values', async () => {
+    const { result } = render();
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: true });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ researchCompany: true })
+    );
+  });
+
+  it('reflects researchCompany: false from the wizard values', async () => {
+    const { result } = render();
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ researchCompany: false })
+    );
+  });
+});
+
 describe('useTailorPipeline — document text sources', () => {
   it('reads the résumé from the run detail and the letter from the aggregate record', () => {
     sessionBus.detail = detail({ resumeText: 'RESUME FROM RUN' });
