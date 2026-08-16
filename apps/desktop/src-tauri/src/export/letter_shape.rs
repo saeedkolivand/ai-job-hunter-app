@@ -14,6 +14,20 @@
 //! stored in the DB gets the fix with no regeneration and no per-parser
 //! change — `parse_cover_letter` and the DOCX scanners already know how to
 //! render a salutation/sign-off correctly, they just never received one.
+//!
+//! **Known gap, not fixed here.** [`complete_letter_text`] runs on the WHOLE
+//! `request.text`, including anything ahead of a
+//! `### COMPLETE COVER LETTER ###` marker that `export::pdf`/`export::docx`'s
+//! `extract_section` later strips. `validate_and_normalize`'s own comment
+//! reasons that a marker-wrapped letter (the TS fast-path prompt's shape)
+//! always carries both parts, making this a no-op for it — true for every
+//! letter that prompt actually emits, but not a guarantee this module
+//! enforces. A marker-wrapped document missing ONLY the salutation is NOT a
+//! no-op here: the furniture-skip below (`body_start`) can land the inserted
+//! salutation in the PRE-marker section, where `extract_section` discards it
+//! along with the marker line. The result is a silent no-fix, not
+//! corruption — the letter comes out exactly as incomplete as it went in,
+//! with no error and no signal a fix was attempted and lost.
 
 use crate::export::typst_engine::looks_like_date;
 use crate::locale::letter::{conventions, is_salutation, is_signoff, is_subject_line};

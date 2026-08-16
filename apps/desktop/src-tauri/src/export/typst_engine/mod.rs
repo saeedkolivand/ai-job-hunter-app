@@ -69,7 +69,7 @@ pub(crate) use letterhead::resolve_letterhead_candidate;
 // `letter_shape::complete_letter_text` (sibling `export` module) so the
 // completion step and the parser can never disagree about what counts as a
 // date line — the two already share `is_subject_line` the same way.
-pub(crate) use letterhead::looks_like_date;
+pub(in crate::export) use letterhead::looks_like_date;
 pub use photo::resolve_photo;
 pub use render::RenderOpts;
 // Single source of truth for document-accent hex validation, reused by the

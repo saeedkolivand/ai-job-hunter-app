@@ -81,11 +81,16 @@ impl CompanyResearch {
         // Fast path: cached brief younger than the TTL.
         if let Some(cache) = app.try_state::<KvCache>() {
             if let Some(brief) = cache.get(CACHE_NS, &key, TTL_SECS) {
+                // Length only — never the brief itself (ADR-027): it's free web
+                // prose about a company, not something the redaction pass
+                // (paths/URLs/credentials/hosts/emails) is built to catch, and
+                // this line fires on every staged run and ships in the
+                // diagnostics bundle.
                 tracing::info!(
                     company = %company,
                     source = "cache",
                     chars = brief.len(),
-                    "research: company brief\n{brief}"
+                    "research: company brief"
                 );
                 return EnrichmentResult {
                     key: company,
@@ -122,10 +127,13 @@ impl CompanyResearch {
         // pollute the cover letter nor get cached (a bad miss must not stick for
         // the 7-day TTL).
         if is_no_info(&brief) {
+            // Length only — same discipline as the two `tracing::info!` calls
+            // above/below (ADR-027); this fires on the provider's own filler
+            // text, not attacker input, but it is still not ours to log.
             tracing::info!(
                 company = %company,
                 chars = brief.len(),
-                "research: no usable brief (provider found nothing)\n{brief}"
+                "research: no usable brief (provider found nothing)"
             );
             return EnrichmentResult {
                 key: company,
@@ -133,12 +141,15 @@ impl CompanyResearch {
             };
         }
 
+        // Length only — never the brief itself (ADR-027): it's free web prose
+        // about a company, and this line fires on every staged run with the
+        // research toggle on and ships in the diagnostics bundle.
         tracing::info!(
             company = %company,
             role = %role,
             source = "provider",
             chars = brief.len(),
-            "research: company brief\n{brief}"
+            "research: company brief"
         );
         if let Some(cache) = app.try_state::<KvCache>() {
             cache.set(CACHE_NS, &key, &brief);

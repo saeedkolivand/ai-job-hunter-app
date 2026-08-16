@@ -741,7 +741,7 @@ impl Completer {
     /// distinction to make between them the way `commands::ai::AdmitOutcome`
     /// does for its callers: a refusal always means "skip the research,"
     /// never a failed run. `who` only labels the debug log.
-    pub fn admit_research(&self, who: &str) -> Option<crate::limits::ConcurrencyGuard> {
+    pub(crate) fn admit_research(&self, who: &str) -> Option<crate::limits::ConcurrencyGuard> {
         let limiter = self
             .app
             .state::<std::sync::Arc<crate::limits::Limiter>>()

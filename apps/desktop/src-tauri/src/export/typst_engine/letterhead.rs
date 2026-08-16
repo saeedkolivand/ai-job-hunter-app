@@ -16,13 +16,15 @@
 
 /// Lazy date-pattern regex — matches month names or 4-digit years.
 ///
-/// `pub(crate)` (not private): `letter::parse_cover_letter` also calls this
-/// directly, for the pre-salutation date/recipient dispatch, not just via
-/// [`is_letterhead_name`] below — and `export::letter_shape::complete_letter_text`
-/// (sibling `export` module, re-exported through `typst_engine`'s `mod.rs`)
-/// needs the SAME heuristic so the completion step and the parser never
-/// disagree about what counts as a date line.
-pub(crate) fn looks_like_date(s: &str) -> bool {
+/// `pub(in crate::export)` (not private): `letter::parse_cover_letter` also
+/// calls this directly, for the pre-salutation date/recipient dispatch, not
+/// just via [`is_letterhead_name`] below — and
+/// `export::letter_shape::complete_letter_text` (sibling `export` module,
+/// re-exported through `typst_engine`'s `mod.rs`) needs the SAME heuristic so
+/// the completion step and the parser never disagree about what counts as a
+/// date line. Scoped to `crate::export` rather than the whole crate: every
+/// consumer lives under this module tree, so that is the true minimum.
+pub(in crate::export) fn looks_like_date(s: &str) -> bool {
     // Matches lines that contain digits and common date separators, e.g.:
     //   "June 2, 2025" / "2. Juni 2025" / "02/06/2025" / "2025-06-02"
     //   "2 juin 2025" / "le 2 juin 2025"
