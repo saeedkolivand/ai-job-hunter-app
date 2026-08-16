@@ -268,8 +268,8 @@ pub(crate) fn is_usable_rewrite(original: &str, candidate: &str, tier: HumanizeT
 }
 
 /// Whether a humanize candidate must be discarded — [`super::repair::round_is_worse`]'s
-/// Criticals/role-count/coverage/absence discipline, PLUS one more way to
-/// lose: more `voice.*` flags than the document already carried. A rewrite
+/// Criticals/role-count/coverage/absence/cross-section discipline, PLUS one
+/// more way to lose: more `voice.*` flags than the document already carried. A rewrite
 /// that fixes one flagged line by introducing two more has not improved the
 /// document, whatever the Critical count says.
 ///

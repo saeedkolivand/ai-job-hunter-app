@@ -11,15 +11,17 @@
 //!    [`sections::is_usable_replacement`]).
 //! 4. **A worse round ⇒ revert and stop**, where "worse" is strictly more
 //!    criticals, a role count that fell, a keyword-coverage drop past
-//!    [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`], OR a newly
-//!    INTRODUCED absence — the same floor `humanize`'s single whole-document
-//!    rewrite already held this loop's up-to-8 blind per-section rewrites to,
-//!    now shared rather than humanize-only. The repair is a bet that the
-//!    model can fix what it broke; when the bet loses, the honest move is to
-//!    hand back the draft that was merely wrong rather than the one that is now
-//!    wrong in more places. Equal is not worse — a round that swaps one
-//!    Critical for another has not lost ground, and stopping there would give
-//!    up the second round the budget allows. But a count cannot express LOSS: a
+//!    [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`], a newly
+//!    INTRODUCED absence, OR a GROWN count of a cross-section warning
+//!    (`duplicate.bullet`, `consistency.skill_not_demonstrated`) — the same
+//!    floor `humanize`'s single whole-document rewrite already held this
+//!    loop's up-to-8 blind per-section rewrites to, now shared rather than
+//!    humanize-only. The repair is a bet that the model can fix what it
+//!    broke; when the bet loses, the honest move is to hand back the draft
+//!    that was merely wrong rather than the one that is now wrong in more
+//!    places. Equal is not worse — a round that swaps one Critical for
+//!    another has not lost ground, and stopping there would give up the
+//!    second round the budget allows. But a count cannot express LOSS: a
 //!    rewrite that traded two fabricated metrics for one dropped employer
 //!    scored as an improvement and deleted a job from the résumé. See
 //!    [`round_is_worse`].
@@ -51,7 +53,8 @@ use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{projects, QualityCtx, RunDeadline};
 use crate::pipeline::{Completer, Stage};
 use crate::validate::content::{
-    ContentIssue, ContentReport, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
+    ContentIssue, ContentReport, CONSISTENCY_SKILL_NOT_DEMONSTRATED, DUPLICATE_BULLET,
+    FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
 };
 use crate::validate::Severity;
 
@@ -156,7 +159,7 @@ pub(crate) fn criticals_by_section(
 
 /// Whether a repair round's candidate must be discarded.
 ///
-/// TWO terms, and the second is not a count.
+/// THREE terms, and the last two are not a bare count.
 ///
 /// **The count term.** Strictly more criticals than the draft it was trying to
 /// fix. The strictness is a decision with a gradient in both directions: `>=`
@@ -184,6 +187,24 @@ pub(crate) fn criticals_by_section(
 /// new), while a round that swaps WHICH employer is missing has introduced a
 /// loss and is caught.
 ///
+/// **The CROSS-SECTION term, and why it is a delta rather than a threshold.**
+/// `duplicate.bullet` and `consistency.skill_not_demonstrated` are the two
+/// Warning-level checks in `validate/content` that reason ACROSS sections —
+/// see [`cross_section_regression`] — and repair acts on Criticals only, so
+/// nothing ever consumed them: a round that doubled the whole document
+/// shipped 5 `duplicate.bullet` warnings, and a round that deleted an
+/// employment entry shipped 4 `consistency.skill_not_demonstrated` warnings.
+/// An absolute "has any" gate would also revert on a document that never
+/// regressed at all: rewording two Experience bullets to drop one exact
+/// shared token — an ordinary section rewrite — was measured to raise
+/// `skill_not_demonstrated` from zero to four on an otherwise truthful
+/// document, and a calibrated non-zero threshold would need recalibrating
+/// against that same noise forever. So this asks the same question the
+/// absence term above does: not "does the document carry this warning" but
+/// "did THIS ROUND grow it". A baseline that already carries four is still
+/// repairable; only a round that carries MORE than its own baseline is
+/// worse.
+///
 /// This is a compatible TIGHTENING of rule 4 in the module doc — that rule was
 /// always "never hand back a worse document"; this says what the count could
 /// not express. It fixes quality depth as well as max: quality's repair loop is
@@ -209,9 +230,48 @@ pub(crate) fn round_is_worse(
         return true;
     }
     let carried = absences(before, before_text);
-    absences(after, after_text)
+    if absences(after, after_text)
         .into_iter()
         .any(|pair| !carried.contains(&pair))
+    {
+        return true;
+    }
+    cross_section_regression(before, after)
+}
+
+/// The `validate/content` codes that reason ACROSS sections rather than
+/// within the one section a `repair`/`humanize` rewrite ever sees — exactly
+/// the blind spot per-section generation (PRs #969/#992) opened, because
+/// neither stage below reads a Warning at all.
+///
+/// `duplicate.bullet` pools every bullet from every section into one
+/// comparison (`duplicates::validate`); `consistency.skill_not_demonstrated`
+/// compares Skills against Experience + Projects combined. The other two
+/// `consistency` codes were checked and are deliberately excluded:
+/// `date_order` and `project_structure` each read one section against
+/// itself, and `title_drift` compares the generated Experience section
+/// against the SOURCE résumé's — same-section fidelity to the source, not a
+/// gap a sibling section's blindness could cause.
+const CROSS_SECTION_CODES: [&str; 2] = [DUPLICATE_BULLET, CONSISTENCY_SKILL_NOT_DEMONSTRATED];
+
+/// How many of `report`'s issues carry `code`.
+fn code_count(report: &ContentReport, code: &str) -> usize {
+    report.issues.iter().filter(|i| i.code == code).count()
+}
+
+/// Whether `after` carries more of a [`CROSS_SECTION_CODES`] warning than
+/// `before` did, for at least one of the two codes.
+///
+/// Per-code rather than a summed total: a round that fixes two
+/// `duplicate.bullet` warnings while introducing two new
+/// `consistency.skill_not_demonstrated` ones nets to zero on a combined
+/// count and would read as "not worse", hiding the new problem behind the
+/// unrelated fix. Comparing each code's own count keeps the two from
+/// cancelling each other out.
+fn cross_section_regression(before: &ContentReport, after: &ContentReport) -> bool {
+    CROSS_SECTION_CODES
+        .iter()
+        .any(|code| code_count(after, code) > code_count(before, code))
 }
 
 /// Whether `after`'s keyword coverage fell by
@@ -346,13 +406,21 @@ pub async fn regenerate_one_section(
     };
     let lines: Vec<&str> = document.lines().collect();
     let current = section.text(&lines);
+    // Trimmed HERE, once, so the gate below and `repair_user`'s own
+    // `!context.trim().is_empty()` cannot disagree: a whitespace-only anchor
+    // would otherwise have `repair_system` announce a `<document_context>`
+    // block that `repair_user` then omits — a prompt pointing at absent
+    // evidence. Both parts of the anchor are provably non-whitespace today, so
+    // this closes an invariant that currently spans three files rather than a
+    // reachable bug.
     let context = sections::context_anchor(&split, &lines, section.kind);
+    let context = context.trim();
 
     completer.charge_daily()?;
     let replacement = completer
         .complete(
             &repair_system(target_language, !context.is_empty()),
-            &repair_user(source_resume, &current, issues, note, &context),
+            &repair_user(source_resume, &current, issues, note, context),
             None,
         )
         .await?;

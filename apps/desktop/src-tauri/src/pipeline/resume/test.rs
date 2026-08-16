@@ -38,7 +38,7 @@ use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::cache::KvCache;
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
-    VOICE_AI_TELL_LEXICAL,
+    CONSISTENCY_SKILL_NOT_DEMONSTRATED, DUPLICATE_BULLET, VOICE_AI_TELL_LEXICAL,
 };
 use crate::validate::Severity;
 
@@ -2269,6 +2269,99 @@ fn a_repair_round_that_drops_role_count_or_coverage_is_worse_even_with_fewer_cri
             ANY_TEXT
         ),
         "a coverage move under the threshold with an unchanged role count must not revert"
+    );
+}
+
+/// `n` Warnings of `code` — the cross-section term's COUNT half. Warnings
+/// never flip `ok` (only a Critical does), so this is `ok: true` unlike
+/// [`criticals`] above.
+fn cross_section_warnings(code: &'static str, count: usize) -> ContentReport {
+    ContentReport {
+        ok: true,
+        issues: (0..count)
+            .map(|n| ContentIssue {
+                severity: Severity::Warning,
+                code,
+                section: Some("Skills".to_string()),
+                message: "a cross-section warning".to_string(),
+                evidence: Some(format!("token-{n}")),
+            })
+            .collect(),
+        metrics: ContentMetrics::default(),
+    }
+}
+
+/// **A round that doubles the document is worse — the audit's own measured
+/// regression.** A whole-document duplication produced 5 `duplicate.bullet`
+/// warnings at `duplicateRatio = 1.00` on a document that carried none
+/// before, and shipped because `repair` only ever read Criticals.
+///
+/// Mutation check: comment out `cross_section_regression(before, after)` in
+/// `round_is_worse` and this goes red (confirmed); restored, it is green
+/// (confirmed) — see the module-level report for the exact output.
+#[test]
+fn a_round_that_doubles_the_document_is_worse() {
+    let before = cross_section_warnings(DUPLICATE_BULLET, 0);
+    let after = cross_section_warnings(DUPLICATE_BULLET, 5);
+    assert!(
+        round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "5 new duplicate.bullet warnings on a document that had none is worse"
+    );
+}
+
+/// **The baseline false positive must NOT revert.** Rewording two Experience
+/// bullets to drop one exact shared token — an ordinary section rewrite — was
+/// measured to raise `consistency.skill_not_demonstrated` from zero to four
+/// on an otherwise truthful document. A document that already carries four
+/// before the round and still carries four after must be repairable, or
+/// every one of that document's future rounds would be blocked by noise it
+/// never introduced.
+#[test]
+fn a_baseline_cross_section_warning_that_is_merely_carried_does_not_revert() {
+    let before = cross_section_warnings(CONSISTENCY_SKILL_NOT_DEMONSTRATED, 4);
+    let after = cross_section_warnings(CONSISTENCY_SKILL_NOT_DEMONSTRATED, 4);
+    assert!(
+        !round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "carrying the SAME count of a pre-existing warning is not a regression"
+    );
+}
+
+/// **A round that genuinely GROWS cross-section incoherence is worse.** Four
+/// before, nine after — the shape the task names explicitly, and the mirror
+/// of the test above: same code, only the direction of the delta differs.
+#[test]
+fn a_round_that_grows_a_cross_section_warning_is_worse() {
+    let before = cross_section_warnings(CONSISTENCY_SKILL_NOT_DEMONSTRATED, 4);
+    let after = cross_section_warnings(CONSISTENCY_SKILL_NOT_DEMONSTRATED, 9);
+    assert!(
+        round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "growing four warnings to nine is a regression this round introduced"
+    );
+}
+
+/// **Per-code, not summed — a fix in one code must not hide a regression in
+/// the other.** Two `duplicate.bullet` warnings fixed, two new
+/// `consistency.skill_not_demonstrated` ones introduced elsewhere: a combined
+/// total nets to zero (4 before, 4 after) and would read as "not worse" —
+/// exactly the shape `round_is_worse`'s own module doc already warns a bare
+/// count can hide a loss behind an unrelated improvement.
+///
+/// Mutation check: replace `cross_section_regression`'s per-code `.any` with
+/// a single summed-total comparison and this goes red (confirmed); restored
+/// to per-code, it is green (confirmed).
+#[test]
+fn a_cross_section_regression_in_one_code_reverts_even_when_the_other_code_improves() {
+    let mut before = cross_section_warnings(DUPLICATE_BULLET, 2);
+    before
+        .issues
+        .extend(cross_section_warnings(CONSISTENCY_SKILL_NOT_DEMONSTRATED, 2).issues);
+    let mut after = cross_section_warnings(DUPLICATE_BULLET, 0);
+    after
+        .issues
+        .extend(cross_section_warnings(CONSISTENCY_SKILL_NOT_DEMONSTRATED, 4).issues);
+    assert!(
+        round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "a per-code regression must not be hidden behind an unrelated fix in the other code"
     );
 }
 
