@@ -7,6 +7,7 @@ import type { AiGenerationRecord } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 
 import type * as GenerateModule from '@/lib/generate';
+import { exportDOCX, exportPDF } from '@/lib/generate';
 
 import { useTailorPipeline } from './useTailorPipeline';
 
@@ -155,6 +156,8 @@ beforeEach(() => {
   resolveFabricationMutate.mockClear();
   updateAiGenerationMutate.mockClear();
   mockNotify.error.mockClear();
+  vi.mocked(exportPDF).mockClear();
+  vi.mocked(exportDOCX).mockClear();
 });
 
 describe('useTailorPipeline — start() builds the id-wins run request', () => {
@@ -586,6 +589,69 @@ describe('useTailorPipeline — openClaimsTotal counts BOTH slots (H5)', () => {
     });
     const { result } = render();
     expect(result.current.openClaimsTotal).toBe(0);
+  });
+});
+
+// The bug: `exportAs` used to pass the literal `undefined` in the `locale`
+// position of both `exportPDF`/`exportDOCX`, which the Rust exporter resolves
+// to market "intl" — silently dropping market-specific conventions (e.g. DIN
+// 5008 for a German letter). `resolveMarket` is now computed once from the
+// hook's own `targetLanguage` (detected from `jobDesc`) and threaded through.
+// Real (unmocked) `detectLanguage` fixtures below are lifted verbatim from
+// `packages/shared/src/language-detection.test.ts` — known-reliable inputs.
+describe('useTailorPipeline — export market (DIN 5008 / locale-drop regression)', () => {
+  const GERMAN_JOB_AD =
+    'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+  const ENGLISH_JOB_AD =
+    'Experienced software engineer with a strong background in building scalable web applications and distributed backend systems for large organisations.';
+
+  function exportLocaleArg(mockFn: typeof exportPDF | typeof exportDOCX): unknown {
+    const call = vi.mocked(mockFn).mock.calls.at(-1);
+    return call?.[6];
+  }
+
+  it('sends the German market (not undefined, not "intl") for a German job ad — PDF', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('pdf');
+    });
+
+    expect(exportLocaleArg(exportPDF)).toBe('de');
+  });
+
+  it('sends the German market for a German job ad — DOCX', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('docx');
+    });
+
+    expect(exportLocaleArg(exportDOCX)).toBe('de');
+  });
+
+  it('sends the English/international market for an English job ad — PDF', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('pdf');
+    });
+
+    expect(exportLocaleArg(exportPDF)).toBe('intl');
+  });
+
+  it('never leaves the locale argument undefined, regardless of language', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('docx');
+    });
+
+    expect(exportLocaleArg(exportDOCX)).not.toBeUndefined();
   });
 });
 

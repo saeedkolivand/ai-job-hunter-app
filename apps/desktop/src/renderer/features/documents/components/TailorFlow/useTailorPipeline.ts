@@ -25,6 +25,7 @@ import {
   parseQualityReport,
   PERSIST_DEBOUNCE_MS,
   type QualityReport,
+  resolveMarket,
   type TemplateId,
   unresolvedCount,
 } from '@/lib/generate';
@@ -241,6 +242,14 @@ export function useTailorPipeline({
     return detected === 'unknown' ? 'en' : detected;
   }, [jobDesc]);
 
+  // Export/preview market — this hook has no job-country signal of its own
+  // (no `jobCountry` prop, unlike `AIGeneratePage`'s extracted meta), so
+  // resolution falls through straight to the letter-language default (see
+  // `resolveMarket`). Still far better than the `undefined` this hook used to
+  // send, which the Rust exporter silently treats as "intl" and skips
+  // market-specific conventions (e.g. DIN 5008 for `de`) entirely.
+  const market = useMemo(() => resolveMarket({ targetLanguage }), [targetLanguage]);
+
   // A best-effort stand-in for the fast path's model-extracted `meta`: the
   // staged run resolves job title/company server-side (or from the request,
   // on the text path) but never echoes a structured meta object back over
@@ -428,7 +437,7 @@ export function useTailorPipeline({
           meta ?? undefined,
           templateId,
           atsMode,
-          undefined,
+          market,
           accent,
           letterLayoutId
         );
@@ -440,7 +449,7 @@ export function useTailorPipeline({
           meta ?? undefined,
           templateId,
           atsMode,
-          undefined,
+          market,
           accent,
           letterLayoutId
         );
