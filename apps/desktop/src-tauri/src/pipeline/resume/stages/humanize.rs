@@ -268,10 +268,15 @@ pub(crate) fn is_usable_rewrite(original: &str, candidate: &str, tier: HumanizeT
 }
 
 /// Whether a humanize candidate must be discarded — [`super::repair::round_is_worse`]'s
-/// Criticals/absence discipline, PLUS one more way to lose: more `voice.*`
-/// flags than the document already carried. A rewrite that fixes one flagged
-/// line by introducing two more has not improved the document, whatever the
-/// Critical count says.
+/// Criticals/role-count/coverage/absence discipline, PLUS one more way to
+/// lose: more `voice.*` flags than the document already carried. A rewrite
+/// that fixes one flagged line by introducing two more has not improved the
+/// document, whatever the Critical count says.
+///
+/// The coverage floor used to live here alone; it is now
+/// [`super::repair::coverage_dropped`], folded into `round_is_worse` itself
+/// so `repair`'s own per-section rewrites are held to it too — this function
+/// no longer names it as a separate clause.
 pub(crate) fn humanize_is_worse(
     before: &ContentReport,
     before_text: &str,
@@ -280,34 +285,6 @@ pub(crate) fn humanize_is_worse(
 ) -> bool {
     super::repair::round_is_worse(before, before_text, after, after_text)
         || voice_count(after) > voice_count(before)
-        || coverage_dropped(before, after)
-}
-
-/// Whether `after`'s keyword coverage fell by
-/// [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`] points or more below
-/// `before`'s (the threshold itself counts as a drop, not just anything past
-/// it) —
-/// the SAME points-of-drop threshold `alignment.low_coverage` already reports
-/// at, reused rather than a second invented number. Neither of
-/// [`humanize_is_worse`]'s other two checks looks at keyword coverage at
-/// all, so a rewrite that quietly deletes exact job-ad terms sailed through
-/// both clean before this: no new Critical (deleting a term is not an
-/// absence-shaped fabrication) and no new `voice.*` flag (coverage and voice
-/// are unrelated checks).
-///
-/// `None` on either side (an uncomparable posting — no extractable keywords,
-/// see [`crate::validate::content::ContentMetrics::keyword_coverage`]) never
-/// rejects: there is nothing to compare.
-fn coverage_dropped(before: &ContentReport, after: &ContentReport) -> bool {
-    match (
-        before.metrics.keyword_coverage,
-        after.metrics.keyword_coverage,
-    ) {
-        (Some(before), Some(after)) => {
-            before - after >= crate::validate::content::MIN_COVERAGE_DROP_POINTS
-        }
-        _ => false,
-    }
 }
 
 /// What one document's humanize attempt did — everything the stage needs to

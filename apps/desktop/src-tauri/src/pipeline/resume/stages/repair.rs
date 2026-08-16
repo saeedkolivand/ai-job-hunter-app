@@ -10,7 +10,11 @@
 //!    splicing one in deletes content silently (see
 //!    [`sections::is_usable_replacement`]).
 //! 4. **A worse round ⇒ revert and stop**, where "worse" is strictly more
-//!    criticals OR a newly INTRODUCED absence. The repair is a bet that the
+//!    criticals, a role count that fell, a keyword-coverage drop past
+//!    [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`], OR a newly
+//!    INTRODUCED absence — the same floor `humanize`'s single whole-document
+//!    rewrite already held this loop's up-to-8 blind per-section rewrites to,
+//!    now shared rather than humanize-only. The repair is a bet that the
 //!    model can fix what it broke; when the bet loses, the honest move is to
 //!    hand back the draft that was merely wrong rather than the one that is now
 //!    wrong in more places. Equal is not worse — a round that swaps one
@@ -193,10 +197,48 @@ pub(crate) fn round_is_worse(
     if criticals_of(after) > criticals_of(before) {
         return true;
     }
+    // A role count that fell is worse whatever the Critical totals say — the
+    // ONE signal that saw a deleted employment entry even when the entry's own
+    // company name was not distinctive/checkable enough for `factual.dropped_role`
+    // to fire at all (see `factual::dropped_role_issues`'s own filter). Equal or
+    // higher is not a regression; this only ever tightens the rule.
+    if after.metrics.roles_output < before.metrics.roles_output {
+        return true;
+    }
+    if coverage_dropped(before, after) {
+        return true;
+    }
     let carried = absences(before, before_text);
     absences(after, after_text)
         .into_iter()
         .any(|pair| !carried.contains(&pair))
+}
+
+/// Whether `after`'s keyword coverage fell by
+/// [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`] points or more below
+/// `before`'s (the threshold itself counts as a drop, not just anything past
+/// it) — the SAME points-of-drop threshold `alignment.low_coverage` already
+/// reports at, reused rather than a second invented number.
+///
+/// Shared by [`round_is_worse`] (so `repair`'s up-to-`2 × MAX_SECTIONS_PER_ROUND`
+/// blind per-section rewrites are held to the same coverage floor
+/// `humanize`'s single whole-document rewrite always was) and, through it,
+/// [`super::humanize::humanize_is_worse`] — one threshold, read once, instead
+/// of a second copy that could drift from this one.
+///
+/// `None` on either side (an uncomparable posting — no extractable keywords,
+/// see [`crate::validate::content::ContentMetrics::keyword_coverage`]) never
+/// rejects: there is nothing to compare.
+pub(crate) fn coverage_dropped(before: &ContentReport, after: &ContentReport) -> bool {
+    match (
+        before.metrics.keyword_coverage,
+        after.metrics.keyword_coverage,
+    ) {
+        (Some(before), Some(after)) => {
+            before - after >= crate::validate::content::MIN_COVERAGE_DROP_POINTS
+        }
+        _ => false,
+    }
 }
 
 /// The ABSENCE-shaped Criticals in one report, as `(code, evidence)` pairs.
@@ -307,7 +349,13 @@ pub async fn regenerate_one_section(
         )
         .await?;
     let replacement = replacement.trim();
-    if !sections::is_usable_replacement(replacement) {
+    // Shape first (fence tag, heading, body, single section), THEN identity —
+    // a replacement that names the wrong section is exactly as unusable as one
+    // with no heading at all: neither gets spliced (finding #3, PRs
+    // #969/#992's per-section fan-out).
+    if !sections::is_usable_replacement(replacement)
+        || !sections::matches_requested_kind(replacement, section.kind)
+    {
         return Ok(SectionOutcome::Unusable);
     }
     Ok(SectionOutcome::Replaced(sections::splice(

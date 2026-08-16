@@ -654,6 +654,30 @@ fn survival_tokens(company: &str) -> Vec<String> {
     identity_tokens(company, MIN_SURVIVAL_COMPANY_TOKEN_CHARS)
 }
 
+/// The generated document's own EXPERIENCE section(s), lowercased and joined —
+/// the ONLY place an employment entry legitimately lives.
+///
+/// [`company_survives`] used to search the WHOLE document. That let a Summary
+/// sentence that merely NAMES a former employer ("…at Acme Payments and
+/// Globex Logistics") count as evidence the entry survived, even after a
+/// repair round deleted the entire Globex Logistics entry from EXPERIENCE —
+/// the round-worse guard never saw a `factual.dropped_role`, and a job
+/// silently vanished from the résumé. Scoping the search to the section an
+/// entry actually lives in closes that hole while staying deliberately
+/// generous WITHIN it: a legitimate rewrite may reword a company's
+/// surrounding bullets, and every line of the section (not just its heading)
+/// is still searched.
+fn generated_experience_lower(sections: &[Section]) -> String {
+    sections
+        .iter()
+        .filter(|s| s.kind == SectionKind::Experience)
+        .flat_map(|s| s.lines.iter())
+        .map(|line| line.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_lowercase()
+}
+
 /// Whether `company` still appears in the generated text.
 ///
 /// A long token matches as a SUBSTRING, because German compounds a company name
@@ -718,11 +742,13 @@ pub(super) fn count_roles(sections: &[Section]) -> usize {
 /// decision, whereas a company vanishing from the document entirely is the loss
 /// the candidate would never notice until an interviewer did.
 fn dropped_role_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    let generated_lower = ctx.input.generated.to_lowercase();
+    // Scoped to the generated EXPERIENCE section(s), not the whole document —
+    // see [`generated_experience_lower`].
+    let generated_lower = generated_experience_lower(&ctx.generated_sections);
     entries(&ctx.source_sections)
         .into_iter()
         // Bound the scan before the expensive part: each surviving entry
-        // substring-searches the whole generated document. See
+        // substring-searches the generated EXPERIENCE text. See
         // [`MAX_SCANNED_ENTRIES`].
         .take(MAX_SCANNED_ENTRIES)
         .filter_map(|(company, dates)| {
@@ -1069,11 +1095,19 @@ fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let Some(source) = source else {
         return Vec::new(); // Nothing to compare against.
     };
-    let Some(generated) = ctx.section_of_kind(SectionKind::Projects) else {
+    // ALL generated Projects sections, not just the first — see
+    // `Analysis::generated_sections_of_kind`'s doc. An invented link that
+    // lands in a SECOND Projects section (a duplicate the model produced, or
+    // one already present in an imported résumé) must not go unchecked.
+    let mut generated_sections = ctx
+        .generated_sections_of_kind(SectionKind::Projects)
+        .peekable();
+    if generated_sections.peek().is_none() {
         return Vec::new(); // The section was cut, not rewritten — see above.
-    };
+    }
     let source_entries = project_entry_links(source);
-    let generated_entries = project_entry_links(generated);
+    let generated_entries: Vec<(String, Vec<String>)> =
+        generated_sections.flat_map(project_entry_links).collect();
     let flatten = |entries: &[(String, Vec<String>)]| -> Vec<String> {
         entries.iter().flat_map(|(_, u)| u.clone()).collect()
     };

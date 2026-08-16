@@ -325,6 +325,41 @@ fn altered_project_link_fires_for_the_drop_and_the_invention() {
     );
 }
 
+/// Audit finding #4 (HIGH) — `Analysis::section_of_kind` used to be
+/// first-match-only, so an invented link that landed in a SECOND Projects
+/// section was invisible to `factual::project_link_issues` (Critical-severity)
+/// even though the SAME link in the first section fires cleanly.
+///
+/// Mutation check: change `project_link_issues` back to
+/// `ctx.section_of_kind(SectionKind::Projects)` (single section) and this goes
+/// red — verified (zero `factual.altered_project_link` hits for the second-
+/// section case), then restored to `generated_sections_of_kind` and
+/// re-verified green.
+#[test]
+fn an_invented_link_in_a_second_projects_section_still_fires() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                  Rust · SQLite\n";
+    // Two PROJECTS sections — the shape a repair round or an imported résumé
+    // can leave. The first is untouched; the invented link sits ONLY in the
+    // second.
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                     Rust · SQLite\n\n\
+                     PROJECTS\n\n\
+                     **Side Tracker** · https://github.com/janedoe/side-tracker\n\
+                     Python · Flask\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_ALTERED_PROJECT_LINK);
+    assert!(
+        hits.iter()
+            .any(|i| i.evidence.as_deref() == Some("https://github.com/janedoe/side-tracker")),
+        "an invented link in the SECOND Projects section must fire, not just \
+         the first; got {hits:#?}"
+    );
+    assert!(hits.iter().all(|i| i.severity == Severity::Critical));
+}
+
 #[test]
 fn near_duplicate_bullets_warn_once_on_the_later_bullet() {
     let report = en_resume(EN_DUPLICATES, &en_requirements());
@@ -974,6 +1009,48 @@ fn shortened_company_names_are_not_dropped_roles() {
         &report_for(lookalike, source, EN_JOB_AD, &[]),
         FACTUAL_DROPPED_ROLE,
     );
+}
+
+/// Audit finding #1 (CRITICAL) — `company_survives` used to substring-search
+/// the WHOLE document, so a Summary sentence that merely NAMES a former
+/// employer let a repair round delete the entry entirely and still read as
+/// "survived". Scoping the search to the generated EXPERIENCE section(s)
+/// closes that hole; the Summary mention below must not spare the dropped
+/// entry.
+///
+/// Mutation check: revert `dropped_role_issues` to search
+/// `ctx.input.generated.to_lowercase()` instead of
+/// `generated_experience_lower(&ctx.generated_sections)` and this goes red —
+/// verified (the fixed-fixture form fired, the whole-document form was
+/// silent), then restored to the scoped form and re-verified green.
+#[test]
+fn a_company_named_only_in_the_summary_does_not_spare_a_dropped_experience_entry() {
+    let source = "EXPERIENCE\n\n\
+                  Software Engineer | Acme Payments | 2019 - 2021\n\
+                  - Built the payments core\n\n\
+                  Senior Engineer | Globex Logistics | 2021 - 2023\n\
+                  - Ran the routing platform\n";
+    // A destructive repair round deleted the Globex Logistics entry from
+    // EXPERIENCE, but the Summary — written before the round, untouched by
+    // it — still names both employers.
+    let generated = "SUMMARY\n\n\
+                     Engineer with experience at Acme Payments and Globex Logistics.\n\n\
+                     EXPERIENCE\n\n\
+                     Software Engineer | Acme Payments | 2019 - 2021\n\
+                     - Built the payments core\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_DROPPED_ROLE);
+    assert!(
+        hits[0]
+            .evidence
+            .as_deref()
+            .is_some_and(|e| e.contains("Globex")),
+        "the evidence must name the dropped employer even though a sibling \
+         section still mentions it; got {:?}",
+        hits[0].evidence
+    );
+    assert_eq!(report.metrics.roles_source, 2);
+    assert_eq!(report.metrics.roles_output, 1);
 }
 
 /// H3 — when the detector reads the SOURCE the same "wrong" way it reads the

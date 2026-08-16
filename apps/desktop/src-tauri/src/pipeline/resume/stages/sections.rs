@@ -169,11 +169,15 @@ pub fn splice(text: &str, section: &RawSection, replacement: &str) -> String {
 ///
 /// A TRUNCATED section is a FAILED attempt, not a smaller section: splicing one
 /// in deletes the rest of the original and the document silently loses content.
-/// Three things have to hold — free of any registered fence tag, the
-/// replacement must open with a heading line, and it must carry at least one
-/// line of body under it. (An over-eager model that answers with the whole
-/// résumé is caught by the splice being section-scoped: the extra sections
-/// land inside this section's range and the validator sees the duplicate.)
+/// Four things have to hold — free of any registered fence tag, the
+/// replacement must open with a heading line, it must carry at least one line
+/// of body under it, and it must contain no SECOND heading. (An over-eager
+/// model that answers with the whole résumé used to be waved through on the
+/// theory that the splice is section-scoped, so the extra sections would just
+/// "land inside this section's range" — but the splice does not re-parse what
+/// it inserts, so those sections land in the FINAL document too, doubling
+/// EXPERIENCE/PROJECTS/SKILLS/EDUCATION at export. The heading-count check
+/// below is what actually makes a multi-section answer unusable.)
 ///
 /// **The fence-tag check is the same shape gate `humanize`'s
 /// `is_usable_rewrite` added** (see that module's doc for the incident): the
@@ -199,5 +203,27 @@ pub fn is_usable_replacement(replacement: &str) -> bool {
         .find(|line| !line.text.trim().is_empty())
         .is_some_and(|line| matches!(line.kind, LineKind::SectionHeader))
         || classify_section(first) != SectionKind::Other;
-    opens_with_heading && lines.next().is_some()
+    // A SECOND detected heading means the answer is more than one section —
+    // the whole document, or several — and splicing it in doubles every
+    // section it names.
+    opens_with_heading && lines.next().is_some() && parsed.section_count <= 1
+}
+
+/// Whether a replacement's own leading heading names the SAME section kind it
+/// was asked to regenerate.
+///
+/// `regenerate_one_section` resolves its target by [`SectionKey`] and used to
+/// splice back whatever came back without ever re-checking WHAT it got: asked
+/// for Summary, handed `"SKILLS\n\nRust · Python · Kafka"`, the shape checks
+/// in [`is_usable_replacement`] pass it clean — a well-formed heading with a
+/// body — and the splice silently swapped the résumé's Summary for a second
+/// Skills section, with nothing naming the loss. Re-classified through the
+/// SAME `classify_section` the split used, never a string compare, for the
+/// same reason `key_for_label` reads a heading that way (a German heading
+/// like "Kenntnisse" must still match `SectionKind::Skills`).
+pub fn matches_requested_kind(replacement: &str, expected: SectionKind) -> bool {
+    let Some(heading) = replacement.lines().map(str::trim).find(|l| !l.is_empty()) else {
+        return false;
+    };
+    classify_section(heading) == expected
 }

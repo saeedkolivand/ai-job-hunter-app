@@ -613,6 +613,35 @@ impl<'a> Analysis<'a> {
         self.generated_sections.iter().find(|s| s.kind == kind)
     }
 
+    /// EVERY generated section of `kind`, not just the first.
+    ///
+    /// [`Self::section_of_kind`] answers "the" section — a reasonable
+    /// convenience for a check that only ever needs to know ONE occurrence
+    /// exists (an empty-section warning, a bullet-count check). It is NOT
+    /// reasonable for a check that has to see everything the document claims:
+    /// an invented project link that lands in a SECOND Projects section is
+    /// invisible to `.find()`, and `factual::project_link_issues` is
+    /// Critical-severity, so that blind spot is a real fabrication going
+    /// unreported rather than a cosmetic miss. Use this there.
+    ///
+    /// The two remaining `section_of_kind` consumers
+    /// (`consistency::skill_not_demonstrated_issues`,
+    /// `consistency::project_structure_issues`) stay on the single-section
+    /// form: both are Warning-severity, and the duplicate-section case this
+    /// closes is a repair/humanize-introduced one — guarded directly by
+    /// `sections::is_usable_replacement`'s single-heading check and
+    /// `sections::matches_requested_kind`'s identity check, which make a
+    /// generated duplicate section rare rather than routine. The residual case
+    /// (a user's own résumé, or an import, already carrying two sections of a
+    /// kind) is pre-existing input-quality noise, not something this pipeline
+    /// introduced, and a missed Warning there costs a lot less than a missed
+    /// Critical.
+    pub fn generated_sections_of_kind(&self, kind: SectionKind) -> impl Iterator<Item = &Section> {
+        self.generated_sections
+            .iter()
+            .filter(move |s| s.kind == kind)
+    }
+
     pub fn source_section_of_kind(&self, kind: SectionKind) -> Option<&Section> {
         self.source_sections.iter().find(|s| s.kind == kind)
     }

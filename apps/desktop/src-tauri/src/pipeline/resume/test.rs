@@ -2085,6 +2085,69 @@ fn a_repair_round_that_introduces_an_absence_is_worse_whatever_the_count_says() 
     );
 }
 
+/// Audit finding #5 (MEDIUM-HIGH) — `round_is_worse` used to see only
+/// Criticals and newly-introduced absences. A round that fixed every Critical
+/// while silently dropping an employment entry (`roles_output` fell) or
+/// bleeding keyword coverage past `MIN_COVERAGE_DROP_POINTS` was accepted —
+/// `repair`'s own up-to-8 blind per-section rewrites had a WEAKER revert rule
+/// than `humanize`'s single whole-document one. Both are now first-class
+/// terms, the same numbers the audit measured (roles 2→1, coverage 63→56).
+///
+/// Mutation check: comment out the `roles_output` term in `round_is_worse`
+/// and the first assertion fails; comment out the `coverage_dropped` call and
+/// the second fails — both verified red, then restored and re-verified green.
+#[test]
+fn a_repair_round_that_drops_role_count_or_coverage_is_worse_even_with_fewer_criticals() {
+    let with = |criticals: usize, roles_output: u32, coverage: Option<f64>| ContentReport {
+        ok: criticals == 0,
+        issues: (0..criticals)
+            .map(|n| ContentIssue {
+                severity: Severity::Critical,
+                code: crate::validate::content::FACTUAL_UNSOURCED_METRIC,
+                section: None,
+                message: "an invented figure".to_string(),
+                evidence: Some(format!("{n}0%")),
+            })
+            .collect(),
+        metrics: ContentMetrics {
+            roles_output,
+            keyword_coverage: coverage,
+            ..ContentMetrics::default()
+        },
+    };
+
+    // Two Criticals fixed down to zero — an improvement by the count alone —
+    // but a role silently vanished (the exact "roles 2→1" the audit measured).
+    assert!(
+        round_is_worse(&with(2, 2, None), ANY_TEXT, &with(0, 1, None), ANY_TEXT),
+        "a role count that fell is worse even with every Critical fixed"
+    );
+
+    // The Critical count improved; coverage fell from 63 to 56 — the exact
+    // drop the audit measured, past `MIN_COVERAGE_DROP_POINTS` (5.0).
+    assert!(
+        round_is_worse(
+            &with(1, 2, Some(63.0)),
+            ANY_TEXT,
+            &with(0, 2, Some(56.0)),
+            ANY_TEXT
+        ),
+        "a coverage drop past the threshold is worse even with fewer criticals"
+    );
+
+    // A small coverage move, under the threshold, with the role count
+    // unchanged: neither new term fires, and the round is kept.
+    assert!(
+        !round_is_worse(
+            &with(1, 2, Some(63.0)),
+            ANY_TEXT,
+            &with(0, 2, Some(60.0)),
+            ANY_TEXT
+        ),
+        "a coverage move under the threshold with an unchanged role count must not revert"
+    );
+}
+
 /// **An absence-shaped Critical with NO evidence is skipped, deliberately.**
 ///
 /// `absences` keys on the `(code, evidence)` PAIR, so an issue without evidence
@@ -2696,6 +2759,133 @@ async fn a_missing_section_is_not_counted_as_a_provider_call() {
         "the round happened; it just achieved nothing"
     );
     assert_eq!(document, REPAIR_DRAFT);
+}
+
+/// Audit finding #2 (HIGH) — a replacement carrying the WHOLE document body
+/// (every section, not just the one asked for) used to pass
+/// `is_usable_replacement`'s shape checks — it opens with a heading and
+/// carries a body line under it — and got spliced in whole, doubling every
+/// section it named at export (`model::transform::linearize`'s stable sort
+/// merely parks the duplicates adjacent, it does not drop them).
+/// `is_usable_replacement` now also rejects a replacement carrying a SECOND
+/// detected heading.
+///
+/// The `regenerate` closure here runs the SAME gate `regenerate_one_section`
+/// runs (`sections::is_usable_replacement` + `sections::matches_requested_kind`,
+/// both real production functions) against a canned reply, standing in for
+/// the provider call the way every other `repair_loop` test in this file
+/// does — `regenerate_one_section` itself is a thin `Completer`-calling shim
+/// around exactly this gate, and a `Completer` needs a live `AppHandle`.
+///
+/// Mutation check: drop the `parsed.section_count <= 1` term from
+/// `is_usable_replacement` and this goes red — the whole draft gets spliced
+/// back into itself, `WORK EXPERIENCE` appears twice, and the document
+/// changes even though nothing needed to — verified, then restored and
+/// re-verified green.
+#[tokio::test]
+async fn a_whole_document_reply_is_rejected_rather_than_doubling_every_section() {
+    let (document, _report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        live_deadline(),
+        |key, document, _issues| {
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the section exists");
+            // The model answers with the WHOLE document instead of the one
+            // section it was asked for — the exact over-eager reply the
+            // audit measured.
+            let replacement = document.clone();
+            let outcome = if sections::is_usable_replacement(&replacement)
+                && sections::matches_requested_kind(&replacement, section.kind)
+            {
+                super::stages::SectionOutcome::Replaced(sections::splice(
+                    &document,
+                    section,
+                    &replacement,
+                ))
+            } else {
+                super::stages::SectionOutcome::Unusable
+            };
+            async move { Ok(outcome) }
+        },
+        |_: &str| None,
+        repair_revalidate,
+    )
+    .await
+    .expect("re-validation ran");
+
+    assert_eq!(
+        document, REPAIR_DRAFT,
+        "a whole-document reply must be rejected, not spliced — the draft is unchanged"
+    );
+    assert_eq!(
+        document.matches("WORK EXPERIENCE").count(),
+        1,
+        "the document must never carry a doubled section"
+    );
+    assert_eq!(stats.truncated, 1, "the bad reply is a failed attempt");
+}
+
+/// Audit finding #3 (HIGH) — `regenerate_one_section` resolved its target by
+/// [`SectionKey`] and then spliced back whatever came back WITHOUT ever
+/// re-checking what it got: asked for Summary, handed a Skills section, the
+/// shape checks alone waved it through — a well-formed heading with a body —
+/// and the splice silently swapped the résumé's Summary for a second Skills
+/// section, with nothing naming the loss (the NEXT round's
+/// `sections::find(&split, Summary)` would return `None`, i.e. a silent,
+/// unreported no-op). `sections::matches_requested_kind` re-classifies the
+/// reply through the SAME classifier the split used and rejects a mismatch.
+///
+/// Same closure shape as the finding-#2 test, for the same reason.
+///
+/// Mutation check: drop the `matches_requested_kind` half of the gate and
+/// this goes red — the Summary section is replaced by "SKILLS\n\nRust ·
+/// Python · Kafka" and `PROFESSIONAL SUMMARY` disappears from the document —
+/// verified, then restored and re-verified green.
+#[tokio::test]
+async fn a_wrong_kind_reply_is_rejected_rather_than_replacing_the_wrong_section() {
+    let (document, _report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        live_deadline(),
+        |key, document, _issues| {
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the section exists");
+            // Asked for Summary, the model hands back a Skills section
+            // instead — the exact identity mismatch the audit measured.
+            let replacement = "SKILLS\n\nRust · Python · Kafka";
+            let outcome = if sections::is_usable_replacement(replacement)
+                && sections::matches_requested_kind(replacement, section.kind)
+            {
+                super::stages::SectionOutcome::Replaced(sections::splice(
+                    &document,
+                    section,
+                    replacement,
+                ))
+            } else {
+                super::stages::SectionOutcome::Unusable
+            };
+            async move { Ok(outcome) }
+        },
+        |_: &str| None,
+        repair_revalidate,
+    )
+    .await
+    .expect("re-validation ran");
+
+    assert_eq!(
+        document, REPAIR_DRAFT,
+        "a wrong-kind reply must be rejected — the draft is unchanged"
+    );
+    assert!(
+        document.contains("PROFESSIONAL SUMMARY"),
+        "the résumé must not lose its Summary section entirely; got {document:?}"
+    );
+    assert_eq!(stats.truncated, 1, "the bad reply is a failed attempt");
 }
 
 /// **`normalize` runs on the round's candidate AFTER the section splices and
