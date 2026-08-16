@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.136.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.1...v0.136.2) (2026-08-16)
+
+### 🐛 Bug Fixes
+
+* complete the cover letter at the export boundary and repair the pipeline regressions ([#997](https://github.com/saeedkolivand/ai-job-hunter-app/issues/997)) ([571a50b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/571a50b99d62bc73e26a235d16167f8a007bc4bd))
+
 ## [0.136.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.0...v0.136.1) (2026-08-16)
 
 ### 🐛 Bug Fixes
