@@ -96,9 +96,17 @@ fn prepare_resume_render(request: &ExportRequest) -> ResumeRenderInputs {
 
     // ATS mode: linearize section order to single-column reading order,
     // resolved from the request's market (`locale`) — the same order the
-    // draft prompt was told to follow.
+    // draft prompt was told to follow. Canonicalised through
+    // `LocaleProfile::get` first so a region-tagged locale (`de-DE`, `de_AT`)
+    // still resolves to the market id `section_order_for`'s alias arm
+    // expects, rather than silently falling to the default order — no live
+    // UI surface sends a region-tagged résumé locale today, but the field is
+    // an arbitrary string on the wire contract. `"intl"` (not `"en"`, a
+    // language tag, not a market) matches the cover-letter paths' fallback.
     if request.ats_mode {
-        crate::model::transform::linearize(&mut model, request.locale.as_deref().unwrap_or("en"));
+        let market =
+            crate::locale::LocaleProfile::get(request.locale.as_deref().unwrap_or("intl")).id;
+        crate::model::transform::linearize(&mut model, market);
     }
 
     let page = request.page_geometry();

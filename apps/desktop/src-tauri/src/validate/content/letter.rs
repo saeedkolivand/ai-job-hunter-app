@@ -26,7 +26,7 @@
 //! produce. It stays out until the contract carries the name.
 
 use super::{factual, issue, voice, Analysis, ContentIssue, LETTER_TEMPLATE_PLACEHOLDER};
-use crate::locale::letter::is_template_placeholder;
+use crate::locale::is_template_placeholder;
 
 /// `letter.template_placeholder` — an unfilled template-placeholder slot
 /// (e.g. German "Ihr Name") survived into the rendered letter text. See

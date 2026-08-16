@@ -475,8 +475,8 @@
 #block(breakable: false, above: sp-signature-lead, {
   if "signoff" in data and data.signoff != none {
     text(fill: c-body, data.signoff)
+    v(sp-signature-gap)
   }
-  v(sp-signature-gap)
   text(
     weight: "bold",
     fill: c-name,

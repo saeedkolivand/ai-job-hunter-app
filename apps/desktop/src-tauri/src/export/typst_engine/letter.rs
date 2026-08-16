@@ -215,7 +215,7 @@ fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> Stri
 ///   **bold** phrases survive.
 /// - Post-signoff: first non-blank non-name, non-placeholder line is
 ///   signature_title (an unfilled template slot like "Ihr Name" is dropped,
-///   never promoted — see [`crate::locale::letter::is_template_placeholder`]).
+///   never promoted — see [`crate::locale::is_template_placeholder`]).
 ///
 /// Gracefully handles all-missing parts — body may be empty but never panics.
 ///
@@ -470,8 +470,8 @@ pub(super) fn parse_cover_letter(
             // real title — never promote it (ADR-034 Consequence #2). Test the
             // RAW line too: `clean` has been through `strip_md_links`, which
             // unwraps any whole `[...]` span, so the bracket branch alone dies.
-            let is_placeholder = crate::locale::letter::is_template_placeholder(trimmed)
-                || crate::locale::letter::is_template_placeholder(&clean);
+            let is_placeholder = crate::locale::is_template_placeholder(trimmed)
+                || crate::locale::is_template_placeholder(&clean);
             if signature_title.is_none()
                 && !clean.is_empty()
                 && !is_candidate_name

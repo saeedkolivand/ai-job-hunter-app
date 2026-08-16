@@ -1555,9 +1555,8 @@ fn style_from_template_emphasize_education_true_for_every_template() {
 fn education_entry_title_renders_same_weight_as_experience_entry_title() {
     // Identical date string in both fixtures: the entry-title grid row puts
     // title and date on the SAME baseline (`single_column.typ`'s
-    // `render-entry`), so `text_lines`' last line spans both cells — a
-    // differing date string would confound the width comparison with its own
-    // length, not just the title's weight.
+    // `render-entry`), so a differing date string would confound the width
+    // comparison with its own length, not just the title's weight.
     const EXPERIENCE_ONLY: &str = "\
 Jane Doe
 
@@ -1570,26 +1569,66 @@ Jane Doe
 EDUCATION
 Wxwxwxwxwxw  2020 - Present
 ";
+    // A known-REGULAR anchor: the identical 11-char string, rendered as a
+    // plain paragraph (not an entry title), so its weight is never in
+    // question. Under a section heading (not the leading preamble) so
+    // `model::adapter::is_title_like` can't promote it into the header title
+    // slot instead of a body paragraph.
+    const REGULAR_REFERENCE: &str = "\
+Jane Doe
+
+SUMMARY
+Wxwxwxwxwxw
+";
 
     let t = template_style(TemplateId::SwissMinimal);
     let exp_svg = svg_page1(&model_from_resume_text(EXPERIENCE_ONLY), &t, false);
     let edu_svg = svg_page1(&model_from_resume_text(EDUCATION_ONLY), &t, false);
+    let reg_svg = svg_page1(&model_from_resume_text(REGULAR_REFERENCE), &t, false);
 
+    // The title (body-pt) and date (body-pt - 1pt) render at slightly
+    // different baseline y-coordinates — different font sizes within the same
+    // grid row do not share one text-layout baseline — so each is already its
+    // OWN entry in `text_lines`' per-baseline grouping; `.pop()` (the
+    // bottom-most line) isolates the title's own glyphs without the date's.
     let exp_title = text_lines(&exp_svg)
         .pop()
         .expect("experience fixture must render at least one text line");
     let edu_title = text_lines(&edu_svg)
         .pop()
         .expect("education fixture must render at least one text line");
+    let reg_line = text_lines(&reg_svg)
+        .pop()
+        .expect("regular-reference fixture must render at least one text line");
 
     let exp_width = exp_title.2 - exp_title.1;
     let edu_width = edu_title.2 - edu_title.1;
+    let reg_width = reg_line.2 - reg_line.1;
+
     assert!(
         (exp_width - edu_width).abs() < 0.5,
         "education entry title width ({edu_width:.2}pt) must match the \
          experience entry title width ({exp_width:.2}pt) for the identical \
          string \"Wxwxwxwxwxw\" — a mismatch means one rendered bold and the \
          other did not"
+    );
+    // Anchors the pair above to an absolute floor: a regression that
+    // un-bolds BOTH entry titles would keep them equal to each other while
+    // silently converging on the regular-weight width — this catches that
+    // shape specifically, which the equality check alone cannot.
+    assert!(
+        exp_width > reg_width + 1.0,
+        "experience entry title width ({exp_width:.2}pt) must be \
+         measurably wider than the known-regular rendering of the same \
+         string \"Wxwxwxwxwxw\" ({reg_width:.2}pt) — otherwise the title \
+         is not actually bold"
+    );
+    assert!(
+        edu_width > reg_width + 1.0,
+        "education entry title width ({edu_width:.2}pt) must be \
+         measurably wider than the known-regular rendering of the same \
+         string \"Wxwxwxwxwxw\" ({reg_width:.2}pt) — otherwise the title \
+         is not actually bold"
     );
 }
 
@@ -3243,6 +3282,57 @@ fn signature_block_gap_is_non_trivial_regression() {
         "sign-off→name baseline gap ({gap:.2}pt) must clear 30.00pt — a \
          regression to a small per-layout literal measures lower here"
     );
+}
+
+/// Regression guard: `signoff` is optional (a letter can have none), but
+/// every layout used to emit `v(sp-signature-gap)` unconditionally — so a
+/// letter with no sign-off got an unexplained ~26pt hole before the printed
+/// name. Renders the body-only fixture (no salutation/sign-off in the source
+/// text, so `parse_cover_letter` leaves `signoff: None`) across every letter
+/// layout and asserts the body→name baseline gap stays close to
+/// `sp-signature-lead` (20pt) rather than `sp-signature-lead +
+/// sp-signature-gap` (46pt).
+#[test]
+fn no_signoff_letter_has_no_unexplained_signature_gap() {
+    for layout in [
+        LetterLayout::Classic,
+        LetterLayout::Refined,
+        LetterLayout::Banded,
+        LetterLayout::Navy,
+        LetterLayout::Sidebar,
+        LetterLayout::Monogram,
+    ] {
+        let t = Template::get(TemplateId::SwissMinimal);
+        let pages = render_letter_svg_pages(
+            LETTER_FIXTURE_BODY_ONLY_US,
+            &t,
+            None,
+            Some("Jane Smith"),
+            LetterRender {
+                market: "us",
+                lang: "en",
+                layout,
+                ats: false,
+            },
+        )
+        .unwrap_or_else(|e| panic!("{layout:?}: render_letter_svg_pages should succeed: {e}"));
+        let svg = pages.last().expect("at least one page");
+        let lines = text_lines(svg);
+        assert!(
+            lines.len() >= 2,
+            "{layout:?}: expected at least a body line and the signature name, got {} lines",
+            lines.len()
+        );
+        let name = lines[lines.len() - 1];
+        let last_body = lines[lines.len() - 2];
+        let gap = name.0 - last_body.0;
+        assert!(
+            gap < 40.0,
+            "{layout:?}: body→signature-name baseline gap ({gap:.2}pt) is too \
+             wide for a letter with no sign-off — a regression that still \
+             emits `sp-signature-gap` unconditionally measures ~46pt here"
+        );
+    }
 }
 
 /// Owner-reported regression (screenshot): `letter_refined`'s header puts the

@@ -133,6 +133,66 @@ fn test_generate_pdf_resume_with_meta() {
     assert!(result.is_ok());
 }
 
+/// Regression: a region-tagged locale (`de-DE`) reaching `ExportRequest` must
+/// still resolve to the German `Lebenslauf` section order (Certifications
+/// before Skills), not silently fall to the default order because
+/// `locale::resume::section_order_for`'s alias arm only matches the bare
+/// `"de"`/`"at"`/`"ch"`/`"dach"` tokens. `generate_pdf` canonicalises through
+/// `LocaleProfile::get` before `linearize` sees it.
+#[test]
+fn ats_mode_resolves_region_tagged_german_locale_to_the_de_order() {
+    let text = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+Acme Corp  2020 - Present
+Did things
+
+EDUCATION
+Some University  2015 - 2019
+
+CERTIFICATIONS
+AWS Certified
+
+SKILLS
+Python, Rust";
+    let request = ExportRequest {
+        text: text.to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::Resume,
+        template_id: TemplateId::SwissMinimal,
+        // `target_language` set explicitly so `target_lang()` (a SEPARATE
+        // concern from this test — the document-content language) doesn't
+        // fall back to the raw region-tagged `locale` string, which Typst's
+        // `#set text(lang: ...)` rejects (it wants a bare 2/3-letter code).
+        meta: Some(GenerationMeta {
+            candidate_name: None,
+            job_title: None,
+            company_name: None,
+            target_language: Some("de".to_string()),
+        }),
+        ats_mode: true,
+        locale: Some("de-DE".to_string()),
+        contact: None,
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+    let bytes = generate_pdf(&request).expect("ats-mode german resume pdf");
+    let rendered = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("extract text")
+        .to_lowercase();
+    let cert = rendered
+        .find("certifications")
+        .expect("certifications section present");
+    let skills = rendered.find("skills").expect("skills section present");
+    assert!(
+        cert < skills,
+        "de-DE must resolve to the DE_ORDER (certifications before skills), \
+         not the default order — rendered order was skills-then-certifications: {rendered}"
+    );
+}
+
 // ── candidate_name metadata is a fallback, not an override (H) ───────────────
 
 #[test]

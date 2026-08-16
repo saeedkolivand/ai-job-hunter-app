@@ -1074,7 +1074,11 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
                 request.page_geometry(),
                 request.contact.as_ref(),
                 &request.target_lang(),
-                request.locale.as_deref().unwrap_or("en"),
+                // "intl" (not "en", a language tag, not a market) — matches
+                // the cover-letter path's fallback below;
+                // `generate_resume_docx_in` canonicalises this through
+                // `LocaleProfile::get` before it reaches `section_order_for`.
+                request.locale.as_deref().unwrap_or("intl"),
             )
             .context("Failed to generate resume DOCX")?
         }

@@ -301,16 +301,20 @@ This project is under the [PolyForm Noncommercial License 1.0.0](LICENSE) (SPDX:
 
 What that means in practice:
 
-| You want to…                                                         | Allowed?                                  |
-| -------------------------------------------------------------------- | ----------------------------------------- |
-| Use the app for your own job hunt                                    | Yes, free                                 |
-| Read, fork, and modify the source                                    | Yes, free                                 |
-| Run it as an internal tool at your company                           | Yes — internal use is a permitted purpose |
-| Use it for research, teaching, or a student project                  | Yes, free                                 |
-| Open a PR against this repo                                          | Yes, please                               |
-| Sell it, host it as a paid SaaS, or ship a competing product from it | No — needs a separate commercial license  |
+The licence turns on **purpose**, not on who you are. `LICENSE` grants "any noncommercial purpose", plus personal use "without any anticipated commercial application", plus use by charities, educational institutions, public research, public safety/health, environmental and government organisations.
 
-The restriction exists for one reason: to stop the codebase being repackaged and sold by someone else. It is not intended to discourage contributors. For a commercial license, contact <contact@aijobhunter.app>. Rationale and history live in `docs/knowledge/decision-records/adr-023-polyform-noncommercial-licensing.md`.
+| You want to…                                                  | Allowed?                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Use the app for your own job hunt                             | Yes, free                                                           |
+| Read, fork, and modify the source                             | Yes, free                                                           |
+| Use it for research, teaching, or a student project           | Yes, free                                                           |
+| Use it at a charity, university, or government body           | Yes, free — named as a permitted purpose                            |
+| Open a PR against this repo                                   | Yes, please                                                         |
+| Build a noncommercial derivative, even a similar one          | Yes — there is no non-compete clause, only a noncommercial boundary |
+| Run it as an internal tool at a for-profit company            | **Not covered** — that is commercial use; ask for a licence         |
+| Sell it, host it as a paid SaaS, or ship it in a paid product | No — needs a separate commercial licence                            |
+
+The boundary is commercial versus noncommercial, and nothing else. It exists to stop the codebase being repackaged and sold by someone else, not to discourage contributors. For a commercial licence, contact <contact@aijobhunter.app>. Rationale and history live in `docs/knowledge/decision-records/adr-023-polyform-noncommercial-licensing.md`; `LICENSE` is authoritative and this table is only a summary.
 
 ### What happens to your contribution
 

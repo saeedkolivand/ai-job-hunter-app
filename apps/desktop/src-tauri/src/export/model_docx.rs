@@ -108,6 +108,10 @@ pub(crate) fn generate_resume_docx_in(
     let two_column =
         crate::theme::is_two_column(template.id) && template.two_column.is_some() && !ats_mode;
     if ats_mode {
+        // Canonicalise a region-tagged locale (`de-DE`, `de_AT`) to the market
+        // id `section_order_for`'s alias arm expects — see the matching
+        // comment in `export/pdf/mod.rs`.
+        let market = crate::locale::LocaleProfile::get(market).id;
         transform::linearize(&mut model, market);
     }
 
