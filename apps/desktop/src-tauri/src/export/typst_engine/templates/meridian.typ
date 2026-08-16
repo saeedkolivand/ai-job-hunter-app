@@ -150,7 +150,7 @@
           )
         }
         if "contact" in data.header {
-          block(above: 3pt,
+          block(above: sp-name-below,
             text(
               size: body-pt - 1pt,
               fill: c-band-text,

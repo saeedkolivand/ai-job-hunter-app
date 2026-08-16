@@ -16,7 +16,13 @@
 #let sp-entry         = 15pt     // space below each entry block
 #let sp-bullet-above  = 7pt      // space above the bullet list inside an entry
 #let sp-bullet-gap    = 5pt      // space BETWEEN bullet items within an entry
-#let sp-subtitle-gap  = 1pt      // space above subtitle row
+#let sp-subtitle-gap  = 3pt      // space above subtitle row — 1pt read as crammed
+                                  // against the title (#28); 3pt is the smallest
+                                  // step that reads as a deliberate gap rather
+                                  // than a rounding artifact, while staying
+                                  // inside the tight entry-block rhythm (well
+                                  // under sp-entry's 15pt). Judged by eye against
+                                  // rendered output, not derived from a formula.
 #let sp-subtitle-below = 2pt     // space below subtitle row
 #let sp-header-contact = 14pt    // space below contact line before first section
 #let sp-name-below    = 9pt      // space below candidate name block (before contact)

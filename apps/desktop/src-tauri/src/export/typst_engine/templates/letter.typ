@@ -164,9 +164,12 @@
   )
 }
 
-// Contact line (always below the name).
+// Contact line (always below the name). `above: sp-name-below` matters for the
+// top-right (DIN) branch above, whose name+date `grid(...)` sets no `below:`
+// of its own; in the name-only branch it collapses with that block's own
+// `below: sp-name-below` to the same value either way.
 #if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-  block(below: 4pt,
+  block(above: sp-name-below, below: 4pt,
     text(size: body-pt - 0.5pt, fill: c-body, render-runs(data.letterhead.contact))
   )
 }

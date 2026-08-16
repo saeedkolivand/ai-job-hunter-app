@@ -174,7 +174,7 @@
 
 // Right-aligned stacked contact line (below the name, still over the band).
 #if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-  block(above: 5pt,
+  block(above: sp-name-below,
     align(right,
       text(size: body-pt - 0.5pt, fill: c-body, render-runs(data.letterhead.contact))
     )

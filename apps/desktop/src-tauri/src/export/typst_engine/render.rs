@@ -15,7 +15,7 @@ use serde::Serialize;
 use std::sync::LazyLock;
 
 use crate::export::templates::{SectionStyle, Template};
-use crate::export::types::{FontFamily, TemplateId};
+use crate::export::types::FontFamily;
 use crate::locale::PageGeometry;
 use crate::model::document::{Block, DocumentModel, EntryBlock, Placement, SectionId};
 use crate::model::rich::{RichText, TextRun};
@@ -174,8 +174,13 @@ pub(super) struct JsonStyle {
     pub section_pt: f32,
     pub body_pt: f32,
     /// When `true`, education entry titles are rendered bold (same as other entries).
-    /// When `false` (the default), education entry titles are rendered at normal weight
-    /// to de-emphasize them.  Only the academic template sets this to `true`.
+    /// Always `true` now (#28 — a de-emphasized university line read as a bug, not
+    /// a design choice, and it made the PDF backend disagree with `model_docx.rs`'s
+    /// `RunOpts::entry_title`, which has always forced bold unconditionally). Kept
+    /// as an explicit field — rather than deleted, with `true` inlined into every
+    /// `.typ` template's `entry-bold-for-section` — because that would touch 10
+    /// template files whose errors surface only at Typst render time, not
+    /// `cargo build` time; this single call site is the safer edit.
     pub emphasize_education: bool,
     /// Extra section-heading letter-spacing (tracking) in em units. `0.0` (every
     /// pre-PR3 template) means no tracking; `single_column.typ` only emits
@@ -250,8 +255,9 @@ pub(crate) fn style_from_template(t: &Template) -> JsonStyle {
         SectionStyle::Underline => "underline",
         SectionStyle::BoldOnly => "bold-only",
     };
-    // Only the Academic template emphasizes education entries (keeps them bold).
-    let emphasize_education = t.id == TemplateId::Academic;
+    // Every template bolds education entry titles now, same as every other
+    // section (#28) — see the `JsonStyle::emphasize_education` doc comment.
+    let emphasize_education = true;
     JsonStyle {
         c_name: rgb_to_hex(t.name_color.0, t.name_color.1, t.name_color.2),
         c_section: rgb_to_hex(t.section_color.0, t.section_color.1, t.section_color.2),

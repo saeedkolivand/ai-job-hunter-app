@@ -176,7 +176,12 @@ fn add_header(
             .color(colors.name.as_str())
             .fonts(docx_run_fonts(t.fonts.name_family));
 
-        let mut p = Paragraph::new().add_run(name_run);
+        // 9pt (#28), matching `_scale.typ`'s `sp-name-below` — previously no
+        // explicit spacing at all, leaving the name→contact gap to whatever
+        // Word's own default paragraph spacing happens to be.
+        let mut p = Paragraph::new()
+            .add_run(name_run)
+            .line_spacing(LineSpacing::new().after(pt_to_dxa(9.0) as u32));
 
         // A banded template's PDF (`awesome.typ`) draws a full-width
         // accent-tinted band behind the name. `docx-rs` has no page-background
@@ -435,7 +440,10 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
             subtitle,
             &RunOpts::subtitle(t, ctx.colors),
         )
-        .line_spacing(LineSpacing::new().after(60))
+        // `before` matches `_scale.typ`'s `sp-subtitle-gap` (3pt, #28) so the
+        // subtitle doesn't sit crammed against the title the way the PDF used
+        // to before that fix — DOCX had no "before" spacing here at all.
+        .line_spacing(LineSpacing::new().before(pt_to_dxa(3.0) as u32).after(60))
         .keep_next(true);
         out.push(para);
     }

@@ -115,8 +115,13 @@
 //
 // `band-min-h` keeps the THIN design brief for the common 1–2-line case: the
 // band never shrinks below it, it only grows when the content demands it. A
-// title costs one text line, hence the two values.
-#let band-min-h = if has-title { 28mm } else { 24mm }
+// title costs one text line, hence the two values. The has-title value was
+// bumped 28mm → 29mm when the name→contact gap below was routed through
+// `sp-name-below` (#28, 3pt → 9pt): the taller gap alone pushed a common
+// title+long-contact header's measured content past the old 28mm floor
+// (measured 81.79pt against a 79.37pt floor), which would have made every
+// such header grow the band instead of sitting at the intended thin minimum.
+#let band-min-h = if has-title { 29mm } else { 24mm }
 
 // Inset above the header content, and the room kept below its last baseline.
 // Typst's default text `bottom-edge` IS the baseline, so `measure(band-box)`
@@ -189,7 +194,7 @@
     )
   }
   if "contact" in data.header and data.header.contact.len() > 0 {
-    block(above: 3pt,
+    block(above: sp-name-below,
       text(
         size: body-pt - 1pt,
         fill: c-band-text,

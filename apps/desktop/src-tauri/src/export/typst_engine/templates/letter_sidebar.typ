@@ -331,7 +331,7 @@
   }
 
   #if "contact" in data.letterhead and data.letterhead.contact.len() > 0 {
-    block(above: 9pt, text(size: meta-size, fill: c-body, render-runs(data.letterhead.contact)))
+    block(above: sp-name-below, text(size: meta-size, fill: c-body, render-runs(data.letterhead.contact)))
   }
 ]
 
