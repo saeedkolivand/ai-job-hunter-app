@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-08-13
+Last updated: 2026-08-16
 
 The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
@@ -248,7 +248,40 @@ fonts, and font sizes from the résumé `Template` registry entry. It is
 `LetterMarketConventions` (date placement, recipient block position, sign-off
 style) derived from the job ad's detected locale.
 
-`parse_cover_letter` in `typst_engine/letter.rs` splits the text into
+### Letter text completion contract
+
+The letter undergoes **text completion** in `export/commands/mod.rs::validate_and_normalize`
+via `complete_letter_text` (`export/letter_shape.rs`). This is the **export-time boundary**
+where the application synthesizes missing market-specific parts:
+
+**Input shape:** The pipeline and generation stages produce a **body-only letter** — three
+to five paragraphs of prose with optional leading subject line and/or date (per market
+conventions). No salutation, no sign-off, no signature block.
+
+**Contract rules:**
+
+- The cover letter generation prompt (`pipeline::resume::prompts::letter_system`) explicitly
+  instructs the model: _"Do NOT write a contact header, a salutation line, or a signature
+  block — the application adds them at export time."_ This is a **hard fence** between
+  generation (model-owned body) and export (app-owned furniture).
+- The export completion function detects whether the letter already carries salutation and
+  sign-off (when re-exporting or from alternate sources). If both are present, no completion
+  occurs (idempotency guard).
+- If missing, `complete_letter_text` inserts:
+  - **Salutation** (after any leading subject/date) — resolved from `conventions(market)`, e.g.
+    "Dear Hiring Manager," (US) or "Sehr geehrte Damen und Herren," (DE).
+  - **Sign-off** (at document end) — resolved from market conventions, e.g. "Sincerely," or
+    "Mit freundlichen Grüßen".
+  - **Signature name** (after sign-off) — from the `ContactProfile.name` field, trimmed.
+
+**Why this matters:** The prompt says the app will add these parts; if the generation stage
+ever emits a full letter (salutation + body + sign-off), the parser stops classifying the
+salutation as furniture and mis-categorizes it as body text — the letter renders with
+duplicated salutation (once in the letterhead model, once in the body). The completion
+function is the only place that synthesizes these parts; it is called on every preview
+render and every export, and it is idempotent (already-complete letters pass through unchanged).
+
+`parse_cover_letter` in `typst_engine/letter.rs` splits the completed text into
 `LetterModel` fields (letterhead / date / recipient / subject / salutation / body /
 signoff / signature). The model is serialised to JSON and injected via the Typst
 virtual `data.json` — no user content is ever concatenated into Typst markup
