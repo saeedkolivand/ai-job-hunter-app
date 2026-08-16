@@ -15,7 +15,8 @@
 //! change — `parse_cover_letter` and the DOCX scanners already know how to
 //! render a salutation/sign-off correctly, they just never received one.
 
-use crate::locale::letter::{conventions, is_salutation, is_signoff};
+use crate::export::typst_engine::looks_like_date;
+use crate::locale::letter::{conventions, is_salutation, is_signoff, is_subject_line};
 
 /// Give a body-only letter the furniture the pipeline prompt promises the app
 /// adds. No-op for a letter that already carries its own salutation AND
@@ -42,10 +43,37 @@ pub(crate) fn complete_letter_text(text: &str, market: &str, name: &str) -> Stri
     let mut out = String::new();
 
     if !has_salutation {
+        // Insert the salutation AFTER any leading furniture, not at line 0.
+        // `letter_system` may have the model open the market's own subject
+        // line (`Betreff: …`) and/or a date line BEFORE the body
+        // (`pipeline::resume::prompts::letter_system`), and
+        // `parse_cover_letter` stops classifying subject/date/recipient
+        // lines the moment it sees the salutation (`body_started = true`).
+        // Prepending at the top pushed that furniture into the body instead
+        // of `model.subject` / `model.date`.
+        let lines: Vec<&str> = body.lines().collect();
+        let body_start = lines
+            .iter()
+            .position(|l| {
+                let t = l.trim();
+                !t.is_empty() && !is_subject_line(t) && !looks_like_date(t)
+            })
+            .unwrap_or(lines.len());
+        let mut furniture = &lines[..body_start];
+        while furniture.last().is_some_and(|l| l.trim().is_empty()) {
+            furniture = &furniture[..furniture.len() - 1];
+        }
+
+        if !furniture.is_empty() {
+            out.push_str(&furniture.join("\n"));
+            out.push_str("\n\n");
+        }
         out.push_str(conv.salutations.generic.trim());
         out.push_str("\n\n");
+        out.push_str(&lines[body_start..].join("\n"));
+    } else {
+        out.push_str(body);
     }
-    out.push_str(body);
 
     if !has_signoff {
         out.push_str("\n\n");
@@ -140,5 +168,82 @@ mod tests {
         let out2 = complete_letter_text(has_signoff_only, "us", "Jane Smith");
         assert_eq!(out2.matches("Sincerely,").count(), 1);
         assert!(out2.starts_with("Dear Hiring Manager,\n\n"), "got: {out2:?}");
+    }
+
+    // ── salutation-placement regression: `14bd60c3` taught `letter_system` to
+    //    have the model open a market letter with a subject line and/or a
+    //    date BEFORE the body; the salutation must land AFTER that furniture,
+    //    not at line 0, or it becomes unreachable pre-salutation furniture for
+    //    `parse_cover_letter` (see that module's own end-to-end tests). ────
+
+    #[test]
+    fn inserts_the_salutation_after_a_leading_subject_line() {
+        let body = "Betreff: Bewerbung als Software Engineer\n\n\
+                     Ich bringe sechs Jahre Erfahrung mit.";
+        let out = complete_letter_text(body, "de", "Max Müller");
+        assert!(
+            out.starts_with(
+                "Betreff: Bewerbung als Software Engineer\n\nSehr geehrte Damen und Herren,\n\n"
+            ),
+            "the subject line must stay ahead of the salutation: {out:?}"
+        );
+        assert!(out.contains("Ich bringe sechs Jahre Erfahrung mit."));
+    }
+
+    #[test]
+    fn inserts_the_salutation_after_a_leading_date_line() {
+        let body = "Frankfurt, 12. Januar 2025\n\nIch bringe sechs Jahre Erfahrung mit.";
+        let out = complete_letter_text(body, "de", "Max Müller");
+        assert!(
+            out.starts_with("Frankfurt, 12. Januar 2025\n\nSehr geehrte Damen und Herren,\n\n"),
+            "the date line must stay ahead of the salutation: {out:?}"
+        );
+    }
+
+    #[test]
+    fn inserts_the_salutation_after_subject_and_date_in_either_order() {
+        let subject_then_date = "Betreff: Bewerbung als Software Engineer\n\
+                                  \n12. Januar 2025\n\nIch bringe Erfahrung mit.";
+        let out = complete_letter_text(subject_then_date, "de", "Max Müller");
+        assert!(
+            out.starts_with(
+                "Betreff: Bewerbung als Software Engineer\n\n12. Januar 2025\n\n\
+                 Sehr geehrte Damen und Herren,\n\n"
+            ),
+            "got: {out:?}"
+        );
+
+        let date_then_subject = "12. Januar 2025\n\nBetreff: Bewerbung als Software Engineer\n\n\
+                                  Ich bringe Erfahrung mit.";
+        let out2 = complete_letter_text(date_then_subject, "de", "Max Müller");
+        assert!(
+            out2.starts_with(
+                "12. Januar 2025\n\nBetreff: Bewerbung als Software Engineer\n\n\
+                 Sehr geehrte Damen und Herren,\n\n"
+            ),
+            "got: {out2:?}"
+        );
+    }
+
+    /// `us` never has the model write a subject line, so a body with no
+    /// leading furniture must still get the salutation at the very top —
+    /// the furniture skip must never swallow real body prose.
+    #[test]
+    fn a_market_with_no_subject_line_convention_is_unaffected() {
+        let body = "I am writing to express my interest in the Software Engineer role.";
+        let out = complete_letter_text(body, "us", "Jane Smith");
+        assert!(out.starts_with("Dear Hiring Manager,\n\n"), "got: {out:?}");
+    }
+
+    /// The same request is re-validated on every preview render AND every
+    /// export — running the completion twice (furniture-and-all) must equal
+    /// running it once.
+    #[test]
+    fn is_idempotent_with_leading_furniture() {
+        let body = "Betreff: Bewerbung als Software Engineer\n\n12. Januar 2025\n\n\
+                     Ich bringe sechs Jahre Erfahrung mit.";
+        let once = complete_letter_text(body, "de", "Max Müller");
+        let twice = complete_letter_text(&once, "de", "Max Müller");
+        assert_eq!(once, twice, "once: {once:?}\ntwice: {twice:?}");
     }
 }

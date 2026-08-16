@@ -64,6 +64,12 @@ pub(crate) use letterhead::is_letterhead_name;
 // call sites actually send) can never fall through to a REAL name on the
 // letter's first line in one format while the other renders it.
 pub(crate) use letterhead::resolve_letterhead_candidate;
+// The same date heuristic `parse_cover_letter` and `is_letterhead_name` use to
+// classify a pre-salutation line, now also needed by
+// `letter_shape::complete_letter_text` (sibling `export` module) so the
+// completion step and the parser can never disagree about what counts as a
+// date line — the two already share `is_subject_line` the same way.
+pub(crate) use letterhead::looks_like_date;
 pub use photo::resolve_photo;
 pub use render::RenderOpts;
 // Single source of truth for document-accent hex validation, reused by the
