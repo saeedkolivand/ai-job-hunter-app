@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.136.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.2...v0.136.3) (2026-08-16)
+
+### 🐛 Bug Fixes
+
+* **export:** restore lost bold, kill the letter placeholder, and make section order deterministic ([#998](https://github.com/saeedkolivand/ai-job-hunter-app/issues/998)) ([4d8bc18](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4d8bc1819c903ce94314b98045ddb9e95536680e)), closes [#2](https://github.com/saeedkolivand/ai-job-hunter-app/issues/2)
+
 ## [0.136.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.1...v0.136.2) (2026-08-16)
 
 ### 🐛 Bug Fixes
