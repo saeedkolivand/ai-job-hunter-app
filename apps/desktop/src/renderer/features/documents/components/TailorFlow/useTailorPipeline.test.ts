@@ -379,6 +379,50 @@ describe('useTailorPipeline — the 4-step checklist position', () => {
   });
 });
 
+// The elapsed-timer fix (owner report: the clock reset to 0:00 on
+// navigate-away-and-back): `GeneratingPanel` anchors on this field instead
+// of its own mount time, so it must mirror the run RECORD's own backend
+// timestamp — not anything reset by a remount of this hook.
+describe('useTailorPipeline — runStartedAt (backend-anchored elapsed timer)', () => {
+  it('is null before any run record has loaded', () => {
+    const { result } = render();
+    expect(result.current.runStartedAt).toBeNull();
+  });
+
+  it("mirrors the run record's own startedAt once it loads", () => {
+    sessionBus.detail = detail({ status: 'running', startedAt: 12_345 });
+    const { result } = render();
+    expect(result.current.runStartedAt).toBe(12_345);
+  });
+
+  // The actual owner-reported path: navigating away unmounts the whole flow
+  // (`ApplicationDetailPage` only renders `TailorFlow` while the Documents tab
+  // is active) and a fresh mount reconnects via `initialRunId`/`initialJobId`.
+  // A brand-new hook instance must still read the ORIGINAL start time off the
+  // reconnected run record, not restart it.
+  it('survives an unmount/remount ("navigate away and back") unchanged', () => {
+    sessionBus.detail = detail({ status: 'running', startedAt: 12_345 });
+    const first = render();
+    expect(first.result.current.runStartedAt).toBe(12_345);
+    first.unmount();
+
+    const second = render({ initialRunId: 'run-1', initialJobId: 'job-1' });
+    expect(second.result.current.runStartedAt).toBe(12_345);
+  });
+
+  // Defensive: not reachable with today's `now_ms()`-populated
+  // `pipeline_runs.started_at` column, but `?? null` alone only guards
+  // null/undefined — a `0` (or negative) value would otherwise become the
+  // anchor and render an absurd/negative "N total" caption. `null` here is
+  // what lets `GeneratingPanel`'s own `runStartedAt ?? mountFallback` recover
+  // instead.
+  it('falls back to null (not 0) for a non-positive startedAt', () => {
+    sessionBus.detail = detail({ status: 'running', startedAt: 0 });
+    const { result } = render();
+    expect(result.current.runStartedAt).toBeNull();
+  });
+});
+
 describe('useTailorPipeline — the section-fix / fabrication-review bundle', () => {
   it('is undefined until a run detail exists', () => {
     const { result } = render();

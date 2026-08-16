@@ -4,20 +4,34 @@
 
 pub const STREAM_BASELINE_SECS: u64 = 300;
 
+/// Baseline NON-streaming completion deadline — the local-Ollama analogue
+/// of `STREAM_BASELINE_SECS`, scaled the same way by
+/// `timeouts::ollama_completion_deadline`. A separate constant from
+/// `STREAM_BASELINE_SECS` even though the two share a value today — they
+/// bound different operations, so they can drift independently later.
+pub const OLLAMA_COMPLETION_BASELINE_SECS: u64 = 300;
+
 /// Ascending tier order — see the source-of-truth doc comment for why that
 /// matters (`max` is the TOP tier, not `xhigh`). Any tier not listed here
-/// (including `None`) gets an implicit 1.0 multiplier.
+/// (including `None`) gets an implicit 1.0 multiplier. Shared by both
+/// `stream_deadline` and `ollama_completion_deadline`.
 pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
     &[("medium", 1.5), ("high", 2.0), ("xhigh", 2.5), ("max", 3.0)];
 
-/// The EFFORT-INVARIANT half of one quality-depth run's deadline: every call
-/// whose per-call bound is FLAT — the three JSON stages (each allowed one
-/// re-ask), the repair fan-out (`max_repair_attempts` rounds ×
-/// `MAX_SECTIONS_PER_ROUND` sections), and `humanize`'s up to 2
-/// flagged-document calls, all bounded by `timeouts::OLLAMA_COMPLETION`.
-/// See `qualityRunDeadlineSecs` in packages/shared/src/ai-timeouts.ts for
-/// the full derivation.
-pub const QUALITY_RUN_FIXED_SECS: u64 = 4800;
+/// How many non-streaming round-trips `analyze_job`/`match_evidence`/
+/// `strategy` make in the WORST case: 3 stages × (1 call + 1 allowed
+/// re-ask), each through `Completer::complete_json`.
+pub const QUALITY_RUN_JSON_STAGE_CALLS: u64 = 6;
+
+/// The part of one quality-depth run's deadline that does NOT scale with
+/// effort: the repair fan-out (`max_repair_attempts` rounds ×
+/// `MAX_SECTIONS_PER_ROUND` sections) and `humanize`'s up to 2
+/// flagged-document calls, both bounded by the FLAT
+/// `OLLAMA_COMPLETION_BASELINE_SECS` — `Completer::complete` carries no
+/// `effort` to scale by. See `qualityRunDeadlineSecs` in
+/// packages/shared/src/ai-timeouts.ts for the full derivation, including
+/// why the three JSON stages are NOT in this term any more.
+pub const QUALITY_RUN_FIXED_SECS: u64 = 3000;
 
 /// Effort-SCALED whole-document passes one quality run may make: two — the
 /// draft, and the cover letter when `includeCoverLetter` is set. The repair

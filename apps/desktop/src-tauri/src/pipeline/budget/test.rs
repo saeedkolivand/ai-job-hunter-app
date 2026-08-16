@@ -153,15 +153,15 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
     assert_eq!(
         Budget::RESUME_QUALITY.step_timeout,
         Duration::from_secs(360),
-        "RESUME_QUALITY.step_timeout sits above the 300s OLLAMA_COMPLETION timeout on purpose \
-         (INERT for this flow — see the field's own doc)"
+        "RESUME_QUALITY.step_timeout sits above the 300s OLLAMA_COMPLETION_BASELINE timeout on \
+         purpose (INERT for this flow — see the field's own doc)"
     );
     // 90 min, and DERIVED rather than chosen: it is the effort-blind floor that
-    // must equal `timeouts::quality_run_deadline(None)` — 4800 s of FLAT
-    // per-call bounds (3 JSON stages × 2 round-trips, `max_repair_attempts` ×
-    // `MAX_SECTIONS_PER_ROUND` section rewrites, PLUS PR-2's `humanize`
-    // allowance for ≤2 flagged documents, all at `OLLAMA_COMPLETION`) + 600 s
-    // for the two streamed passes (draft + PR-2's `cover_letter`). The
+    // must equal `timeouts::quality_run_deadline(None)` — at this bottom tier
+    // ONLY (multiplier 1.0), every non-streamed call is still effectively flat:
+    // 3000 s (repair fan-out + `humanize`, always flat) + 1800 s (3 JSON
+    // stages × 2 round-trips, now SCALED above this tier) + 600 s for the two
+    // streamed passes (draft + PR-2's `cover_letter`). The
     // 45-minute version counted the repair fan-out as one effort-scaled
     // draft-equivalent per round, i.e. 600 s instead of 2400 s, so the deadline
     // sat ~1800 s below the calls it wraps; the 75-minute version that fixed

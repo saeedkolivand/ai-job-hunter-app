@@ -5,7 +5,11 @@
 //! change that makes it fail, and each was applied and reverted rather than
 //! assumed. A test that passes with its feature deleted is not a guard.
 
+use std::cell::Cell;
+
 use serde_json::json;
+use serde_json::Value;
+use tempfile::TempDir;
 
 use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
@@ -25,7 +29,9 @@ use super::types::{
     SectionKey, SkillGroup,
 };
 use super::{effective_letter_text, pick, stage_cache_key_for, RunLedger, QUALITY_STAGES};
+use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::{Budget, StoppedReason};
+use crate::pipeline::cache::KvCache;
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
     VOICE_AI_TELL_LEXICAL,
@@ -58,6 +64,21 @@ fn id<'a>(provider: &'a str, model: &'a str, context_window: Option<u32>) -> Sta
         provider,
         model,
         context_window,
+        effort: None,
+    }
+}
+
+/// [`id`] plus an explicit effort — for the one test that needs to vary it.
+fn id_with_effort<'a>(
+    provider: &'a str,
+    model: &'a str,
+    effort: Option<&'a str>,
+) -> StageIdentity<'a> {
+    StageIdentity {
+        provider,
+        model,
+        context_window: None,
+        effort,
     }
 }
 
@@ -124,6 +145,43 @@ fn the_context_window_is_part_of_the_cache_key() {
     );
 }
 
+/// **Effort is an OUTPUT-AFFECTING input too, on a thinking-capable model.**
+/// `complete_structured` sends it as the request's own `think` field
+/// (`ollama::think_level`), which changes the model's actual reasoning depth —
+/// not just how long the caller waits. Before the per-call deadline started
+/// scaling by effort, `pipeline::text_request` hard-coded it to `None` for
+/// every non-streaming call, so it genuinely never varied and omitting it from
+/// the key was correct; once it started reaching the provider, an omitted term
+/// here would let a "high"-effort answer be served back to a "low"-effort
+/// request for the identical résumé/posting/model.
+///
+/// Mutation check (executed): remove `effort` from `key`'s pre-hash (or drop it
+/// from `rebound`/`new`) and the first two assertions fail.
+#[test]
+fn effort_is_part_of_the_cache_key() {
+    let none = StageCacheKey::new(id_with_effort("ollama", "m", None), "seed");
+    let low = StageCacheKey::new(id_with_effort("ollama", "m", Some("low")), "seed");
+    let high = StageCacheKey::new(id_with_effort("ollama", "m", Some("high")), "seed");
+
+    assert_ne!(
+        none.key(),
+        low.key(),
+        "an unset effort must not collide with a set one"
+    );
+    assert_ne!(low.key(), high.key(), "a different effort must miss");
+    assert_eq!(
+        low.key(),
+        StageCacheKey::new(id_with_effort("ollama", "m", Some("low")), "seed").key()
+    );
+    // …and effort travels through `rebound` too, the path an overridden stage
+    // takes.
+    assert_ne!(
+        none.rebound(id_with_effort("ollama", "m", Some("high")))
+            .key(),
+        none.rebound(id_with_effort("ollama", "m", None)).key()
+    );
+}
+
 /// A CHAINED artifact must change every LATER stage's key: `strategy` reads the
 /// analysis, so a different analysis has to miss the strategy cache even though
 /// the run's own inputs are identical.
@@ -147,6 +205,176 @@ fn cache_key_field_boundaries_are_unambiguous() {
     assert_ne!(
         StageCacheKey::new(id("ab", "c", None), "s").key(),
         StageCacheKey::new(id("a", "bc", None), "s").key()
+    );
+}
+
+// ── End to end: a retry after a mid-run failure does not re-spend what already
+//    succeeded ──────────────────────────────────────────────────────────────
+//
+// The incident this proves the fix for: `analyze_job` (3 min) and
+// `match_evidence` (2 min) succeeded, `strategy` then timed out, and the run
+// failed. A retry with UNCHANGED inputs must not re-charge the two stages
+// that already answered — `StageCacheKey` + `KvCache::get`/`set` is the
+// mechanism (`cache::get`/`cache::put` below are the same two functions
+// `analyze.rs`/`evidence.rs`/`strategy.rs` call). Key derivation is pinned in
+// isolation above (`cache_key_discipline_misses_on_version_provider_model_and_window`,
+// `effort_is_part_of_the_cache_key`, …) and the KvCache read/write path is
+// pinned in `pipeline::cache::test` — NEITHER on its own proves a retry
+// actually skips a provider call; this is the one place that does, against a
+// REAL on-disk cache, so a future change to key derivation, the ledger, or
+// stage ordering that quietly breaks the reuse shows up as an assertion
+// failure here instead of staying an "emergent property" nothing guards.
+//
+// Runs the real `StageCacheKey`/`cache::get`/`cache::put` through a FAKE
+// provider (a call counter) rather than the real stage structs: this crate
+// has no Tauri test harness, and every real `Completer` call needs an
+// `AppHandle` (keychain lookup, event emission) this crate cannot construct
+// in a test. `cached_stage_call` below copies the cache-then-call-else-and-
+// extend SEQUENCE verbatim from each real stage's `run()` — see
+// analyze.rs/evidence.rs/strategy.rs — so a drift between it and them could
+// only ever make this test prove MORE reuse than a real run gets, never less;
+// it cannot hide the failure mode it exists to catch (a retry that re-spends).
+
+/// One stage's real sequence: look up the cache under `stage`'s own key: on a
+/// hit, use the cached value and DO NOT touch `calls`; on a miss, call
+/// `answer` (counted), then write it back. Either way, fold the resolved
+/// value into the ROLLING `cache_key` so the next stage's key depends on it —
+/// exactly `analyze.rs`'s `ctx.cache_key.extend(&json)`.
+fn cached_stage_call(
+    cache: &KvCache,
+    stage: &'static str,
+    cache_key: &mut StageCacheKey,
+    calls: &Cell<u32>,
+    answer: impl FnOnce() -> AppResult<Value>,
+) -> AppResult<()> {
+    let key = cache_key.clone();
+    let cached: Option<Value> = super::cache::get(Some(cache), stage, &key);
+    let from_cache = cached.is_some();
+    let value = match cached {
+        Some(v) => v,
+        None => {
+            calls.set(calls.get() + 1);
+            answer()?
+        }
+    };
+    let json = serde_json::to_string(&value).unwrap_or_default();
+    if !from_cache {
+        super::cache::put(Some(cache), stage, &key, &json);
+    }
+    cache_key.extend(&json);
+    Ok(())
+}
+
+/// Mutation checks (both applied and reverted): comment out the
+/// `super::cache::put` call inside `cached_stage_call` (or make
+/// `super::cache::get` always return `None`) and the retry section's first
+/// two assertions fail — the calls come back. Drop `effort` back out of
+/// `StageIdentity`/`StageCacheKey` (reverting the previous commit) and the
+/// LAST section's assertion fails instead: a different-effort request would
+/// silently reuse a same-effort answer, which is exactly the staleness bug
+/// that fix closed — this is where a wrong key shows up as REAL re-spending,
+/// not just a mismatched hash in a unit test.
+#[test]
+fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_succeeded() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache = KvCache::open(dir.path()).expect("open cache");
+
+    let analyze_calls = Cell::new(0u32);
+    let evidence_calls = Cell::new(0u32);
+    let strategy_calls = Cell::new(0u32);
+
+    // The run's own inputs — identical between the failed attempt and the
+    // retry, exactly what "click regenerate with nothing edited" reproduces
+    // (`ResultsPanel`'s `onRegenerate` re-sends the current form values).
+    let seed = "the candidate's résumé\u{1f}the job ad\u{1f}en";
+    let baseline = id_with_effort("ollama", "qwen3-vl-32k:latest", Some("baseline"));
+
+    // ── First attempt: analyze_job and match_evidence succeed, strategy times out ──
+    let mut key = StageCacheKey::new(baseline, seed);
+    cached_stage_call(&cache, "analyze_job", &mut key, &analyze_calls, || {
+        Ok(json!({ "mustHave": ["Rust"], "niceToHave": [], "redFlags": [] }))
+    })
+    .expect("analyze_job answers on the first attempt");
+    cached_stage_call(&cache, "match_evidence", &mut key, &evidence_calls, || {
+        Ok(json!({ "items": [] }))
+    })
+    .expect("match_evidence answers on the first attempt");
+    let first_attempt = cached_stage_call(&cache, "strategy", &mut key, &strategy_calls, || {
+        Err(AppError::Timeout("no response within 300s".to_string()))
+    });
+
+    assert!(
+        first_attempt.is_err(),
+        "the premise: strategy fails on the first attempt"
+    );
+    assert_eq!(analyze_calls.get(), 1);
+    assert_eq!(evidence_calls.get(), 1);
+    assert_eq!(
+        strategy_calls.get(),
+        1,
+        "strategy WAS attempted (that's what timed out) — it just never got to cache an answer"
+    );
+
+    // ── Retry: SAME inputs (a fresh rolling key, same seed/identity — a new
+    //    run), strategy now succeeds ────────────────────────────────────────
+    let mut retry_key = StageCacheKey::new(baseline, seed);
+    cached_stage_call(
+        &cache,
+        "analyze_job",
+        &mut retry_key,
+        &analyze_calls,
+        || panic!("must not re-ask analyze_job — it already answered"),
+    )
+    .expect("analyze_job reuses its cached answer");
+    cached_stage_call(
+        &cache,
+        "match_evidence",
+        &mut retry_key,
+        &evidence_calls,
+        || panic!("must not re-ask match_evidence — it already answered"),
+    )
+    .expect("match_evidence reuses its cached answer");
+    cached_stage_call(&cache, "strategy", &mut retry_key, &strategy_calls, || {
+        Ok(json!({ "companies": [] }))
+    })
+    .expect("strategy gets a real second chance");
+
+    assert_eq!(
+        analyze_calls.get(),
+        1,
+        "a retry with unchanged inputs must not re-spend a stage that already succeeded"
+    );
+    assert_eq!(
+        evidence_calls.get(),
+        1,
+        "a retry with unchanged inputs must not re-spend a stage that already succeeded"
+    );
+    assert_eq!(
+        strategy_calls.get(),
+        2,
+        "strategy has no cached answer from the failed attempt, so it must run for real again \
+         (1 failed attempt + 1 real retry — never served from a cache the failure never wrote)"
+    );
+
+    // ── A third attempt at a DIFFERENT effort must NOT reuse the baseline
+    //    answer — this is where dropping `effort` from the key would show up
+    //    as a real, silent re-spend of the wrong answer rather than a hash
+    //    mismatch in a unit test. ─────────────────────────────────────────
+    let higher_effort = id_with_effort("ollama", "qwen3-vl-32k:latest", Some("high"));
+    let mut different_effort_key = StageCacheKey::new(higher_effort, seed);
+    cached_stage_call(
+        &cache,
+        "analyze_job",
+        &mut different_effort_key,
+        &analyze_calls,
+        || Ok(json!({ "mustHave": ["Rust"], "niceToHave": [], "redFlags": [] })),
+    )
+    .expect("analyze_job answers again at the different effort");
+
+    assert_eq!(
+        analyze_calls.get(),
+        2,
+        "a different effort must miss the cache, never silently reuse the baseline answer"
     );
 }
 
@@ -608,6 +836,28 @@ fn a_truncated_section_is_rejected_rather_than_spliced() {
     assert!(sections::is_usable_replacement(
         "SKILLS\nGo, Rust, Kubernetes"
     ));
+}
+
+/// **BUG-A's shape gap, `repair`'s own copy.** The repair prompt wraps the
+/// section it hands the model as `<resume_section>…</resume_section>` and
+/// asks for "the replacement section" back — a model that echoes the wrapper
+/// instead of just the content would splice the literal tag into the
+/// document, and a heading/body-line count alone would not catch it (the
+/// wrapper only adds a line). Checked for EVERY registered tag, driven from
+/// `prompt_fence::known_fence_tags()` rather than one hardcoded name.
+///
+/// Mutation check: drop the `contains_fence_tag` gate from
+/// `is_usable_replacement` and every assertion below flips true — verified,
+/// then reverted.
+#[test]
+fn is_usable_replacement_rejects_a_replacement_wrapped_in_any_registered_fence_tag() {
+    for tag in crate::prompt_fence::known_fence_tags() {
+        let wrapped = format!("<{tag}>\nSKILLS\nGo, Rust, Kubernetes\n</{tag}>");
+        assert!(
+            !sections::is_usable_replacement(&wrapped),
+            "a replacement wrapped in <{tag}> must be rejected, not spliced"
+        );
+    }
 }
 
 /// A validator's section LABEL maps back through the same classifier the split
@@ -1865,8 +2115,8 @@ async fn the_repair_loop_reverts_a_round_that_adds_criticals() {
 /// **The repair loop is not the only stage that calls a provider twice.**
 ///
 /// `Completer::complete_json` is allowed exactly one re-ask, and it decides on
-/// that second call by itself — between two `OLLAMA_COMPLETION`-bounded round
-/// trips, with no stage boundary in between. `analyze_job`, `match_evidence` and
+/// that second call by itself — between two `ollama_completion_deadline`-bounded
+/// round trips, with no stage boundary in between. `analyze_job`, `match_evidence` and
 /// `strategy` each go through it, so before this guard a run whose deadline
 /// expired during the first call paid for a second one nothing would look at
 /// (three stages × 300 s of it, worst case) and only THEN hit the boundary check.
@@ -1922,8 +2172,9 @@ async fn a_json_stage_does_not_pay_for_a_re_ask_after_the_deadline() {
 
 /// **The deadline is enforced INSIDE the loop.** `StageHooks::before` cannot
 /// reach here: `repair` is the last stage, so there is no boundary after it,
-/// and one round can spend four provider calls at up to `OLLAMA_COMPLETION`
-/// each. A run past its deadline makes NO call and stops with `RunTimeout`,
+/// and one round can spend four provider calls at up to
+/// `OLLAMA_COMPLETION_BASELINE` each. A run past its deadline makes NO call
+/// and stops with `RunTimeout`,
 /// keeping whatever it already had.
 ///
 /// Mutation check: delete the `deadline.passed()` check at the top of the loop
@@ -1959,7 +2210,7 @@ async fn the_repair_loop_stops_at_the_run_deadline_without_paying_for_a_call() {
 
 /// **The deadline is checked between the round's own CALLS, not only between
 /// rounds.** One round can spend `MAX_SECTIONS_PER_ROUND` (4) calls at up to
-/// `OLLAMA_COMPLETION` (300 s) each: a round-granular check lets a run overrun
+/// `OLLAMA_COMPLETION_BASELINE` (300 s) each: a round-granular check lets a run overrun
 /// its deadline by ~20 minutes, which is most of the gap the whole AH2 finding
 /// is about.
 ///
@@ -2495,6 +2746,33 @@ fn is_usable_rewrite_letter_floor_boundary_is_inclusive_at_exactly_ninety_percen
     );
 }
 
+/// **BUG-A regression — the humanize fence-tag leak.** A real run exported a
+/// résumé with `<humanize_document>` as the candidate's name and
+/// `</humanize_document>` as its last line: the model echoed the fence wrapper
+/// `humanize_user` sent it in, and the length floor alone let it through (a
+/// wrapper only ADDS length). Every candidate wrapped in ANY registered fence
+/// tag — not just the one that bit us — must now be rejected, driven off
+/// `prompt_fence::known_fence_tags()` rather than a single hardcoded name so a
+/// future tag added to the registry is covered here for free.
+///
+/// Mutation check: drop the `contains_fence_tag` gate from `is_usable_rewrite`
+/// and every assertion below flips true — verified, then reverted.
+#[test]
+fn is_usable_rewrite_rejects_a_candidate_wrapped_in_any_registered_fence_tag() {
+    let original = "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience \
+                     building ledger systems for regulated banks.\n";
+    for tag in crate::prompt_fence::known_fence_tags() {
+        let wrapped = format!(
+            "<{tag}>\nPROFESSIONAL SUMMARY\nA payments engineer with a decade of experience \
+             building ledger systems for regulated banks.\n</{tag}>"
+        );
+        assert!(
+            !is_usable_rewrite(original, &wrapped, HumanizeTier::Resume),
+            "a candidate wrapped in <{tag}> must be rejected, not accepted as content-clean"
+        );
+    }
+}
+
 /// **HIGH-1 regression — the letter arm's gate.** `should_humanize_letter`
 /// must refuse whenever a run never asked for a letter, and it must do so
 /// even if `letter_body` (which production always feeds `ctx.letter`, never
@@ -2761,6 +3039,43 @@ async fn humanize_one_keeps_the_original_when_the_answer_is_unusable() {
     assert!(
         !attempt.reverted,
         "reverted implies it was graded; this never was"
+    );
+    assert_eq!(attempt.text, original);
+}
+
+/// **BUG-A regression, end to end through the seam.** A candidate that echoes
+/// the SAME `<humanize_document>` tag the real incident leaked is treated
+/// exactly like a truncated/empty answer: discarded before revalidation ever
+/// runs (the `panic!` below would fire if it did), `called` recorded honestly,
+/// `reverted` false because nothing was graded — the shape gate rejected it
+/// first — and the original text kept byte-for-byte.
+#[tokio::test]
+async fn humanize_one_keeps_the_original_when_the_answer_echoes_its_own_fence_tag() {
+    let original =
+        "PROFESSIONAL SUMMARY\nA payments engineer with ten years of experience building \
+         ledger systems.\n";
+    let attempt = humanize_one(
+        live_deadline(),
+        original.to_string(),
+        voice_report(&["robust"]),
+        vec!["[voice.ai_tell_lexical] on the ban list".to_string()],
+        |_text, _findings| async move {
+            Ok(
+                "<humanize_document>\nPROFESSIONAL SUMMARY\nA payments engineer with a decade \
+                of experience building ledger systems.\n</humanize_document>"
+                    .to_string(),
+            )
+        },
+        |_candidate: &str| None,
+        |_candidate| async move { panic!("revalidate must never run over a shape-broken answer") },
+        HumanizeTier::Resume,
+    )
+    .await
+    .expect("no revalidate call means no error path either");
+    assert!(attempt.called);
+    assert!(
+        !attempt.reverted,
+        "reverted implies it was graded; the shape gate rejected it first"
     );
     assert_eq!(attempt.text, original);
 }

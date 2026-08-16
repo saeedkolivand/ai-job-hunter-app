@@ -205,6 +205,19 @@ pub async fn data_export(app: AppHandle) -> Value {
     }
 }
 
+/// Pure gate for the restore-specific relink pass (own doc on
+/// `ApplicationStore::relink_legacy_generations_after_restore` for why this
+/// exact shape is the safety boundary): true only when the bundle replaced
+/// `aiGenerations` but carries no `applications` section at all — the one
+/// shape that is verifiably a pre-`ApplicationStore`-era backup, so it can
+/// never contain a deliberately-detached row. A modern full backup (both
+/// sections present) or a partial one missing `aiGenerations` must both
+/// return `false`, or the relink can resurrect a row a user deliberately
+/// detached before taking the backup.
+fn is_legacy_generations_only_bundle(has_ai_generations: bool, has_applications: bool) -> bool {
+    has_ai_generations && !has_applications
+}
+
 /// Restore all user data from a user-chosen backup file (REPLACE semantics).
 #[tauri::command]
 pub async fn data_import(app: AppHandle) -> Value {
@@ -281,6 +294,40 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<ApplicationStore>() {
         import_into("applications", s.inner());
+        // Restore-specific link pass (own doc on `ApplicationStore::
+        // relink_legacy_generations_after_restore`): a bundle that replaced
+        // `aiGenerations` but carries NO `"applications"` section is
+        // verifiably a pre-`ApplicationStore`-era backup, so its orphaned
+        // legacy rows can never be a deliberately-detached row (that
+        // capability didn't exist yet when it was exported) — safe to
+        // re-link/re-create outside the one-shot boot marker, which would
+        // otherwise leave them stranded forever (the marker was set long
+        // before this import ever ran). A bundle that DOES carry
+        // `"applications"` is a modern full backup: its `aiGenerations` rows
+        // already restore self-consistent `application_id` links via the two
+        // imports above, and it CAN legitimately carry a deliberately
+        // detached row — re-scanning that would resurrect it, so this must
+        // NOT run for that shape.
+        if is_legacy_generations_only_bundle(
+            stores.get("aiGenerations").is_some(),
+            stores.get("applications").is_some(),
+        ) {
+            // Same resolution setup uses (`resolve_and_export_data_dir` — own
+            // doc there), not a bare `app.path().app_data_dir()`: the latter
+            // has no fallback, so on a host where it errors every store still
+            // opened fine through the fallback (the boot marker got set) and
+            // this relink is the ONLY thing that can repair those rows —
+            // skipping it strands them permanently. Idempotent to call again
+            // here: the env var is already exported by setup, so this just
+            // re-resolves and returns the same directory.
+            let data_dir = crate::platform::config::resolve_and_export_data_dir(&app);
+            if let Err(e) = s.inner().relink_legacy_generations_after_restore(&data_dir) {
+                log::warn!(
+                    "[applications] restore relink skipped (non-fatal): {}",
+                    e.code()
+                );
+            }
+        }
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
         import_into("jobPreferences", s.inner());
@@ -343,7 +390,8 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        json, validate_sections, DataStore, PipelineRunStore, ARRAY_SECTIONS, OBJECT_SECTIONS,
+        is_legacy_generations_only_bundle, json, validate_sections, DataStore, PipelineRunStore,
+        ARRAY_SECTIONS, OBJECT_SECTIONS,
     };
     use crate::pipeline::runs::RunRow;
 
@@ -388,6 +436,35 @@ mod tests {
         // An absent section is legal: a backup taken before this store existed
         // must still restore everything it does contain.
         validate_sections(&json!({})).expect("a bundle without the section still restores");
+    }
+
+    /// **FIX-2 mutation guard.** `is_legacy_generations_only_bundle` is the
+    /// entire boundary that stops a modern full backup from resurrecting a
+    /// deliberately-detached row (own doc on the function): exactly one of
+    /// the four presence combinations may gate the restore-specific relink.
+    /// Mutating the `&&` to `||`, or dropping either operand, changes which
+    /// combination(s) return `true` — this asserts all four individually so
+    /// any such mutation reddens the suite.
+    #[test]
+    fn is_legacy_generations_only_bundle_gates_exactly_one_combination() {
+        assert!(
+            !is_legacy_generations_only_bundle(true, true),
+            "a modern full backup (both sections present) must NOT relink — \
+             it can legitimately carry a deliberately-detached row"
+        );
+        assert!(
+            is_legacy_generations_only_bundle(true, false),
+            "aiGenerations replaced with no applications section at all is \
+             the one shape verifiably pre-ApplicationStore-era — must relink"
+        );
+        assert!(
+            !is_legacy_generations_only_bundle(false, true),
+            "no aiGenerations section means nothing to relink"
+        );
+        assert!(
+            !is_legacy_generations_only_bundle(false, false),
+            "neither section present means nothing to relink"
+        );
     }
 
     /// The section key is not a literal anyone maintains twice: it comes from

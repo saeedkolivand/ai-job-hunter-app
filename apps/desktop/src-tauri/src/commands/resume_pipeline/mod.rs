@@ -182,13 +182,20 @@ pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) 
                 guard
             }
             Err(e) => {
-                fail(&app_task, &cancels, &job_id_task, e.to_string()).await;
+                fail(&app_task, &cancels, &job_id_task, e.to_string(), None).await;
                 return;
             }
         };
 
-        if let Err(e) = execute(&app_task, &run_id_task, &job_id_task, &req, &cancel).await {
-            fail(&app_task, &cancels, &job_id_task, e.to_string()).await;
+        if let Err(failure) = execute(&app_task, &run_id_task, &job_id_task, &req, &cancel).await {
+            fail(
+                &app_task,
+                &cancels,
+                &job_id_task,
+                failure.error.to_string(),
+                failure.data,
+            )
+            .await;
             return;
         }
         cancels.unregister(&job_id_task).await;
@@ -197,10 +204,41 @@ pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) 
     json!({ "runId": run_id, "jobId": job_id })
 }
 
+/// The failure [`execute`] hands its caller: a typed message plus OPTIONAL
+/// structured data for `job.failed`'s event payload — for the one case a
+/// caller can say more than the message text alone (currently just the
+/// per-call timeout: WHICH stage, and how long — see
+/// `hooks::timeout_failure_data`). `From<AppError>` covers every ordinary `?`
+/// inside `execute` with `data: None`, so only the arm that actually has more
+/// to say constructs this by hand.
+struct ExecuteFailure {
+    error: AppError,
+    data: Option<Value>,
+}
+
+impl From<AppError> for ExecuteFailure {
+    fn from(error: AppError) -> Self {
+        Self { error, data: None }
+    }
+}
+
 /// Mark the job failed and release its cancel registration — the two calls
-/// every early return owes.
-async fn fail(app: &AppHandle, cancels: &CancelRegistry, job_id: &str, message: String) {
-    crate::commands::jobs::job_fail(app, job_id, message);
+/// every early return owes. `data`, when present, becomes `job.failed`'s
+/// event payload INSTEAD of `message` (see
+/// [`crate::commands::jobs::job_fail_with_data`]) — currently only
+/// [`ExecuteFailure`]'s per-call-timeout arm ever sets one; every other
+/// failure keeps riding as the plain message string it always has.
+async fn fail(
+    app: &AppHandle,
+    cancels: &CancelRegistry,
+    job_id: &str,
+    message: String,
+    data: Option<Value>,
+) {
+    match data {
+        Some(data) => crate::commands::jobs::job_fail_with_data(app, job_id, message, data),
+        None => crate::commands::jobs::job_fail(app, job_id, message),
+    }
     cancels.unregister(job_id).await;
 }
 
@@ -208,14 +246,16 @@ async fn fail(app: &AppHandle, cancels: &CancelRegistry, job_id: &str, message: 
 ///
 /// Split out of the spawn so every failure is ONE `?` and the task body stays
 /// readable — and so the ordering (resolve → record `running` → run → record
-/// terminal) is visible in one place.
+/// terminal) is visible in one place. Returns [`ExecuteFailure`], not a bare
+/// `AppError`, so the ONE arm that has structured `job.failed` data to give
+/// (the per-call timeout) can hand it to the caller alongside the message.
 async fn execute(
     app: &AppHandle,
     run_id: &str,
     job_id: &str,
     req: &ResumePipelineRunRequest,
     cancel: &CancellationToken,
-) -> AppResult<()> {
+) -> Result<(), ExecuteFailure> {
     let clamped = clamp_request(req);
     let completer = Completer::from_active(app)?;
     // ONE resolution per overridden stage, BEFORE the run starts: an override
@@ -386,8 +426,19 @@ async fn execute(
     // user is told succeeded, over a document that never changed, with nothing
     // anywhere saying why. Only `Refused` counts: `Nothing` is the unlinked /
     // empty-draft case, which is benign and already reported by its own path.
-    let refused =
-        save_verdict(ctx.input.source_resume, &ctx.draft, &job_url) == SaveVerdict::Refused;
+    // Gated on `ctx.letter` — the stage's OWN output, the only letter text
+    // this run can actually persist — never `ctx.letter_text()`'s fallback to
+    // `input.cover_letter` (the user's own pasted reference letter, read when
+    // `include_cover_letter = false`). That fallback is real user text this
+    // run never generates and `persist_document` never stores, so gating on
+    // it made a fence tag INCIDENTAL to a pasted reference letter refuse a
+    // save that had nothing wrong with it — discarding a whole run's résumé
+    // and report over text that was never going to be written anywhere. See
+    // `persist_document`'s identical gate below for the save decision itself;
+    // this one only has to AGREE with it for `refused`/`terminal_state` to be
+    // consistent with what was actually written.
+    let verdict = save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, &job_url);
+    let refused = matches!(verdict, SaveVerdict::Refused(_));
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
@@ -472,23 +523,27 @@ async fn execute(
     );
 
     match outcome {
-        // The pipeline finished, and the document it produced was refused. The
-        // row already says `failed`; the JOB has to agree, and the user needs
-        // the reason — the alternative is a green run over an unchanged
-        // document. `execute`'s caller turns this into `job_fail`.
-        Ok(()) if refused => Err(AppError::Message(
-            "The generated résumé came back without any of your work history, so your saved \
-             document was left unchanged. Try again."
-                .to_string(),
-        )),
-        Ok(()) => {
-            crate::commands::jobs::job_complete(
-                app,
-                job_id,
-                json!({ "runId": run_id, "status": status, "text": ctx.draft }),
-            );
-            Ok(())
-        }
+        // The pipeline finished; whether that is a success depends on the SAME
+        // `verdict` `refused` (above) was computed from — matched here
+        // exhaustively, once, rather than re-derived from a bool guard, so a
+        // future `SaveVerdict` variant is a compile error in this match, never
+        // a runtime `unreachable!()` on a spawned run task with no terminal
+        // event to show for it.
+        Ok(()) => match verdict {
+            // The document the pipeline produced was refused. The row already
+            // says `failed`; the JOB has to agree, and the user needs the
+            // reason — the alternative is a green run over an unchanged
+            // document. `execute`'s caller turns this into `job_fail`.
+            SaveVerdict::Refused(reason) => Err(AppError::Message(reason.to_string()).into()),
+            SaveVerdict::Save | SaveVerdict::Nothing => {
+                crate::commands::jobs::job_complete(
+                    app,
+                    job_id,
+                    json!({ "runId": run_id, "status": status, "text": ctx.draft }),
+                );
+                Ok(())
+            }
+        },
         Err(_) if cancelled => {
             crate::commands::jobs::job_cancel(app, job_id);
             Ok(())
@@ -506,7 +561,20 @@ async fn execute(
             );
             Ok(())
         }
-        Err(e) => Err(e),
+        // A per-call deadline failure: the propagated stage error already
+        // carries a reasonable message (see each provider's `complete_impl`),
+        // but `hooks::apply_timeout` recorded exactly which STAGE and how
+        // long — strictly more than the provider layer alone can know — so
+        // `job_fail` gets the actionable version instead of the generic one,
+        // PLUS `timeout_failure_data` for the renderer to localize instead of
+        // splicing the raw stage key into an un-translatable English sentence.
+        Err(e) => Err(match ledger.timeout_detail() {
+            Some((stage, ms)) => ExecuteFailure {
+                error: AppError::Timeout(hooks::timeout_message(stage, ms)),
+                data: Some(hooks::timeout_failure_data(stage, ms)),
+            },
+            None => e.into(),
+        }),
     }
 }
 
@@ -558,6 +626,33 @@ async fn execute(
 /// job-ad text on the `Text` path. `merge_application`'s `pick` keeps the
 /// existing aggregate value whenever the incoming one is empty, so the
 /// `Cache` path's empty string never erases a `job_ad` an earlier save wrote.
+///
+/// **Establishes the Application FK, the same way [`ai_generations_save`]
+/// does — this writer used to skip that step entirely.** ADR 0001 demoted
+/// the generation to a child Document of an Application, but
+/// `ai_generations::merge_application`'s `application_id:
+/// incoming.application_id.or(existing.application_id)` only ever PRESERVES
+/// an id that already arrived on the row; nothing in this pipeline ever
+/// SET one, so the first staged-pipeline save for a posting with no prior
+/// linked generation persisted with `application_id` permanently `NULL` —
+/// invisible to every reader that joins/filters `ai_generations` by
+/// `applicationId`. The résumé masked it: it has its own run-scoped read
+/// path (`PipelineRunDetail.resumeText`, joined by run id, no FK involved),
+/// but the cover letter has no such channel and is unreachable for that
+/// whole class of application.
+///
+/// **Read-only lookup, never create-on-miss** — the same posture as
+/// [`crate::applications::ApplicationStore::link_orphaned_generations`] (own
+/// doc), for the same reason: a staged run is always launched FROM an
+/// existing Application's page, so it's already there by the time this runs.
+/// A run takes minutes; if the user deletes that Application while it's in
+/// flight, an upsert would silently resurrect it the moment the run lands.
+/// A miss here just leaves `application_id: None` — the row stays findable
+/// by `AiGenerationStore::find_for_job` (keyed on `job_url`, not the FK),
+/// only Application-scoped readers miss it, exactly like the error path
+/// below.
+///
+/// [`ai_generations_save`]: crate::commands::ai_generations::ai_generations_save
 fn persist_document(
     app: &AppHandle,
     job_url: &str,
@@ -568,12 +663,18 @@ fn persist_document(
     depth: &str,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
-    if save_verdict(ctx.input.source_resume, &ctx.draft, job_url) != SaveVerdict::Save {
+    // The gate gates `ctx.letter` — what `cover_letter_text` below actually
+    // stores — NOT `ctx.letter_text()`'s fallback to the user's own pasted
+    // reference letter (see the identical comment on `execute`'s own
+    // `save_verdict` call, which this one must agree with). `letter_text` is
+    // still what the wrapper below is built over: the report legitimately
+    // describes whichever text `report::build` was given, stage output or
+    // fallback, and that's what `letter_text()` is for.
+    let letter_text = ctx.letter_text();
+    if save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, job_url) != SaveVerdict::Save
+    {
         return None;
     }
-    // The `cover_letter` stage's own letter when it produced one, falling back
-    // to the renderer-supplied validate-only text — see `QualityCtx::letter_text`.
-    let letter_text = ctx.letter_text();
     let wrapper = report::build(
         depth,
         crate::db::now_ms(),
@@ -583,6 +684,17 @@ fn persist_document(
             .map(|letter| (letter, letter_text)),
     );
     let store = app.try_state::<AiGenerationStore>()?;
+    // Read-only lookup, never create-on-miss — see this function's own doc.
+    // A miss (no Application, or the store isn't running) just leaves the FK
+    // unset; the row is still found by `AiGenerationStore::find_for_job`
+    // (keyed on `job_url`, not the FK) — only Application-scoped readers
+    // miss it, and a later save retries the same idempotent lookup.
+    let application_id = app
+        .try_state::<crate::applications::ApplicationStore>()
+        .and_then(|apps| {
+            let normalized = crate::applications::normalize_job_url(job_url);
+            apps.find_by_job_url(&normalized).map(|found| found.id)
+        });
     let record = AiGenerationRecord {
         id: make_generation_id(),
         created_at: crate::db::now_ms(),
@@ -602,6 +714,7 @@ fn persist_document(
         company_name: meta.company.clone(),
         job_title: meta.title.clone(),
         quality_report: wrapper.clone(),
+        application_id,
         ..empty_record()
     };
     match store.save_application(record) {
@@ -630,21 +743,63 @@ pub(crate) enum SaveVerdict {
     Save,
     /// There was nothing to save, or nowhere to save it.
     Nothing,
-    /// There WAS a document, and [`is_persistable`] rejected it.
-    Refused,
+    /// There WAS a document, and it was rejected — for the user-facing reason
+    /// carried here, surfaced verbatim by `execute` (see
+    /// [`LOST_WORK_HISTORY_MESSAGE`]/[`LEAKED_FENCE_TAG_MESSAGE`]).
+    Refused(&'static str),
 }
 
+/// [`SaveVerdict::Refused`] reason: [`is_persistable`] rejected the draft for
+/// dropping the source's whole work history.
+const LOST_WORK_HISTORY_MESSAGE: &str = "The generated résumé came back without any of your work \
+    history, so your saved document was left unchanged. Try again.";
+
+/// [`SaveVerdict::Refused`] reason: the résumé or letter echoed one of the
+/// internal prompt-fence wrapper tags (`<generated_resume>`,
+/// `<candidate_resume>`, …) instead of real content — see
+/// [`crate::prompt_fence::contains_fence_tag`]. `draft`/`cover_letter` are the
+/// SOLE producers of these documents (unlike `humanize`/`repair`, which can
+/// discard a bad candidate and keep the last-good text they started from), so
+/// `save_verdict` is the last chokepoint that can catch a leak here before it
+/// reaches the saved aggregate and the exported PDF. Refusing to save —
+/// rather than saving with a flagged report — is the deliberate choice: it
+/// costs the run producing nothing this time, but a raw framework artifact
+/// reaching an employer is worse than a document the user has to retry, and
+/// it keeps this gate consistent with [`LOST_WORK_HISTORY_MESSAGE`] above
+/// rather than inventing a second, weaker failure mode for a defect that is
+/// arguably more visible to the reader.
+const LEAKED_FENCE_TAG_MESSAGE: &str = "The generated document came back with an internal \
+    formatting artifact that must never reach your résumé or cover letter, so your saved \
+    document was left unchanged. Try again.";
+
 /// One definition of "will this save", shared by `persist_document` (which
-/// acts on it) and `execute` (which has to report it).
-pub(crate) fn save_verdict(source_resume: &str, draft: &str, job_url: &str) -> SaveVerdict {
+/// acts on it) and `execute` (which has to report it). `letter` is checked
+/// independently of `draft`: `persist_document` writes both documents into
+/// ONE `AiGenerationRecord`, so there is no lower-granularity save to fall
+/// back to — a defect in EITHER document refuses the whole save, the same way
+/// [`is_persistable`] already treats a résumé-only defect as blocking it.
+pub(crate) fn save_verdict(
+    source_resume: &str,
+    draft: &str,
+    letter: &str,
+    job_url: &str,
+) -> SaveVerdict {
     if draft.trim().is_empty() || job_url.trim().is_empty() {
         return SaveVerdict::Nothing;
     }
-    if is_persistable(source_resume, draft) {
-        SaveVerdict::Save
-    } else {
-        SaveVerdict::Refused
+    if !is_persistable(source_resume, draft) {
+        return SaveVerdict::Refused(LOST_WORK_HISTORY_MESSAGE);
     }
+    // `humanize`/`sections` already gate their OWN rewrite candidates against
+    // an echoed fence tag (`is_usable_rewrite`, the splice guard in
+    // `sections.rs`) — but `draft`/`cover_letter` are what FIRST produce this
+    // text, and neither had a shape check of its own before this gate.
+    if crate::prompt_fence::contains_fence_tag(draft)
+        || crate::prompt_fence::contains_fence_tag(letter)
+    {
+        return SaveVerdict::Refused(LEAKED_FENCE_TAG_MESSAGE);
+    }
+    SaveVerdict::Save
 }
 
 /// Whether a run's document may OVERWRITE the posting's saved one.

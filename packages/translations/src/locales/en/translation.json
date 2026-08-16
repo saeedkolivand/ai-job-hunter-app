@@ -1008,7 +1008,7 @@
       },
       "stages": {
         "title": "Per-stage models",
-        "description": "A thorough run works in stages, and each stage can use a different model — a smaller model is enough for the reading steps, while writing benefits from your best one. A step you leave alone runs on the active model. Fast runs use the active model for everything and ignore this card.",
+        "description": "Tailoring a résumé for a job works in stages, and each stage can use a different model — a smaller model is enough for the reading steps, while writing benefits from your best one. A step you leave alone runs on the active model. Generating without a job posting is a single pass and uses the active model throughout.",
         "defaultModel": "Default — {{model}}",
         "defaultNoModel": "Default — no model selected",
         "cliDefaultModel": "CLI default",
@@ -1659,7 +1659,8 @@
         "label": "Remove AI signs",
         "description": "Rewrites only the lines that read as AI-written."
       },
-      "allDone": "All steps completed"
+      "allDone": "All steps completed",
+      "elapsedTotal": "{{time}} total"
     },
     "state": {
       "queued": "Waiting for a free slot…",
@@ -1683,11 +1684,13 @@
       "cancelled": "Cancelled",
       "truncated": "Stopped — the answer was cut off",
       "budgeted": "Stopped — the daily provider limit was reached",
+      "timeout": "Stopped — a step didn't respond in time. Try a faster model or a lower effort level.",
       "runTimeout": "Stopped — the run ran out of time",
       "maxToolCalls": "Stopped at its tool-call limit",
       "maxRepairs": "Stopped — the repair budget ran out",
       "stopped": "Stopped"
     },
+    "timeout": "The \"{{stage}}\" step didn't get a response within {{seconds}}s. Try a faster model or a lower effort level.",
     "runs": {
       "title": "Staged runs for this job",
       "empty": "No staged runs yet for this posting.",

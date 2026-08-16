@@ -5,11 +5,15 @@ import { TEST_IDS } from '@ajh/test-ids';
 
 vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({
-    // The announcer interpolates {{step}}/{{state}} — surface them in the
-    // returned string so a test can assert the exact announcement built.
-    // Every other key (no such params) returns as-is.
-    t: (key: string, opts?: Record<string, unknown>) =>
-      opts && 'step' in opts && 'state' in opts ? `${key}:${opts.step}:${opts.state}` : key,
+    // The announcer interpolates {{step}}/{{state}}, the elapsed caption
+    // interpolates {{time}} — surface them in the returned string so a test
+    // can assert on the exact value built. Every other key (no such params)
+    // returns as-is.
+    t: (key: string, opts?: Record<string, unknown>) => {
+      if (opts && 'step' in opts && 'state' in opts) return `${key}:${opts.step}:${opts.state}`;
+      if (opts && 'time' in opts) return `${key}:${opts.time}`;
+      return key;
+    },
   }),
 }));
 
@@ -44,6 +48,7 @@ function makeProps(overrides: Partial<Parameters<typeof GeneratingPanel>[0]> = {
     thinking: '',
     output: '',
     streamingTarget: 'resume' as const,
+    runStartedAt: null,
     onCancel: noop,
     ...overrides,
   };
@@ -206,16 +211,72 @@ describe('GeneratingPanel — elapsed-time caption (H3)', () => {
     expect(screen.getByText(/0:03/)).toBeInTheDocument();
   });
 
-  it('resets to 0:00 when the active step changes', () => {
+  // Fix for the owner-reported bug: the row previously reset its clock on
+  // every step boundary — now it's anchored on the RUN's start, so a step
+  // change alone must never zero it.
+  it('keeps ticking across a step change instead of resetting', () => {
+    const runStartedAt = Date.now();
     const { rerender } = render(
-      <GeneratingPanel {...makeProps({ currentStep: 0, stageLabel: 'Reading' })} />
+      <GeneratingPanel {...makeProps({ currentStep: 0, stageLabel: 'Reading', runStartedAt })} />
     );
     act(() => {
       vi.advanceTimersByTime(5000);
     });
     expect(screen.getByText(/0:05/)).toBeInTheDocument();
 
-    rerender(<GeneratingPanel {...makeProps({ currentStep: 1, stageLabel: 'Writing' })} />);
+    rerender(
+      <GeneratingPanel {...makeProps({ currentStep: 1, stageLabel: 'Writing', runStartedAt })} />
+    );
+    expect(screen.getByText(/0:05/)).toBeInTheDocument();
+    expect(screen.queryByText(/0:00/)).not.toBeInTheDocument();
+  });
+
+  // The actual owner report — "went to another page and came back" — fully
+  // UNMOUNTS the flow (`ApplicationDetailPage` only renders `TailorFlow`
+  // while `tab === 'documents'`), not just this panel; `runStartedAt` is what
+  // a reconnect passes back in (`useTailorPipeline`'s `session.detail.
+  // startedAt`, the backend's own timestamp) — same value before and after,
+  // because the run row never stopped. Mutation check: reverting to a
+  // `useRef(Date.now())` seeded at mount fails this, because a fresh ref
+  // can't know the run already ran for 65s before this remount.
+  it('continues (does not reset) across a full unmount/remount with the same runStartedAt', () => {
+    const runStartedAt = Date.now() - 65_000;
+    const { unmount } = render(
+      <GeneratingPanel {...makeProps({ currentStep: 0, stageLabel: 'Reading', runStartedAt })} />
+    );
+    expect(screen.getByText(/1:05/)).toBeInTheDocument();
+    unmount();
+
+    render(
+      <GeneratingPanel {...makeProps({ currentStep: 0, stageLabel: 'Reading', runStartedAt })} />
+    );
+    expect(screen.getByText(/1:05/)).toBeInTheDocument();
+    expect(screen.queryByText(/0:00/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to counting from mount when runStartedAt is not known yet', () => {
+    render(
+      <GeneratingPanel
+        {...makeProps({ currentStep: 0, stageLabel: 'Reading', runStartedAt: null })}
+      />
+    );
+    expect(screen.getByText(/0:00/)).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByText(/0:02/)).toBeInTheDocument();
+  });
+
+  // Defensive (not reachable with today's `now_ms()`-populated column, but a
+  // clock-skewed host still passes `useTailorPipeline`'s own `> 0` guard):
+  // `runStartedAt` ahead of THIS client's clock must never render a negative
+  // "N total" caption. Mutation check: drop the `Math.max(0, …)` clamp and
+  // this reads a negative minute/second pair instead of 0:00.
+  it('clamps the elapsed caption at 0:00 when runStartedAt is ahead of this client (clock skew)', () => {
+    const runStartedAt = Date.now() + 5_000;
+    render(
+      <GeneratingPanel {...makeProps({ currentStep: 0, stageLabel: 'Reading', runStartedAt })} />
+    );
     expect(screen.getByText(/0:00/)).toBeInTheDocument();
   });
 });

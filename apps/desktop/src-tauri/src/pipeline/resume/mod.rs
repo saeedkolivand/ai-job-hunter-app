@@ -183,6 +183,12 @@ struct LedgerState {
     cached: u32,
     repair_rounds: u32,
     reverted: bool,
+    /// The stage name + wall-clock ms a [`StoppedReason::Timeout`] fired at —
+    /// content-free per ADR-027 (a code and a duration, never generated text).
+    /// What lets `execute` build an actionable failure message ("the strategy
+    /// step didn't respond within 300s") without threading the stage/duration
+    /// pair through the command by hand.
+    timeout: Option<(&'static str, u64)>,
 }
 
 impl RunLedger {
@@ -225,6 +231,23 @@ impl RunLedger {
 
     pub fn stopped(&self) -> Option<StoppedReason> {
         self.state.lock().stopped
+    }
+
+    /// Record which stage a [`StoppedReason::Timeout`] fired at, and how long
+    /// it had been running. FIRST writer wins, same as [`Self::stop`] — the
+    /// pipeline aborts at the first stage error, so at most one stage can ever
+    /// call this for one run, but the guard keeps the two methods' semantics
+    /// identical rather than assumed.
+    pub fn note_timeout(&self, stage: &'static str, ms: u64) {
+        let mut state = self.state.lock();
+        if state.timeout.is_none() {
+            state.timeout = Some((stage, ms));
+        }
+    }
+
+    /// The stage + duration [`Self::note_timeout`] recorded, if any.
+    pub fn timeout_detail(&self) -> Option<(&'static str, u64)> {
+        self.state.lock().timeout
     }
 
     pub fn note_repair(&self, rounds: u32, reverted: bool) {
@@ -305,7 +328,7 @@ impl<'a> QualityCtx<'a> {
             "{}\u{1f}{}\u{1f}{}",
             input.source_resume, input.job_ad, input.target_language
         );
-        let cache_key = StageCacheKey::new(StageIdentity::of(completer), &seed);
+        let cache_key = StageCacheKey::new(StageIdentity::of(completer, input.effort), &seed);
         Self {
             input,
             default_completer: completer,
@@ -355,12 +378,13 @@ impl<'a> QualityCtx<'a> {
     /// be served back to a run using the default model (and vice versa), which
     /// is the one failure a cache key exists to prevent.
     pub fn stage_cache_key(&self, stage: &str) -> StageCacheKey {
+        let effort = self.input.effort;
         stage_cache_key_for(
             &self.cache_key,
             self.stage_completers,
             self.default_completer,
             stage,
-            StageIdentity::of,
+            move |completer| StageIdentity::of(completer, effort),
         )
     }
 
@@ -368,7 +392,7 @@ impl<'a> QualityCtx<'a> {
     /// [`Completer::complete_json`](crate::pipeline::Completer::complete_json) —
     /// see [`guard_deadline`]. Owned (an `Arc` clone plus a `Copy` clock), so it
     /// does not borrow the context across the call it guards.
-    pub fn deadline_guard(&self) -> impl Fn() -> AppResult<()> + 'static {
+    pub fn deadline_guard(&self) -> impl Fn() -> AppResult<()> + 'static + use<> {
         let ledger = Arc::clone(&self.ledger);
         let deadline = self.deadline;
         move || guard_deadline(&ledger, deadline)
@@ -517,7 +541,7 @@ pub fn run_timeout_error(limit: Duration) -> AppError {
 /// multi-call shape is a JSON stage: [`Completer::complete_json`] is allowed one
 /// re-ask, which is a second full provider call decided on inside the stage, so
 /// a run whose deadline expired during the first call would pay for a second
-/// (up to `OLLAMA_COMPLETION`) that nothing would look at.
+/// (up to `timeouts::ollama_completion_deadline`) that nothing would look at.
 ///
 /// **Hard error rather than the repair loop's "stop and keep".** A JSON stage
 /// has no partial result to keep: the first response failed to parse, so there
