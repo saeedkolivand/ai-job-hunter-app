@@ -376,7 +376,7 @@ export interface AutopilotRun {
   errors: string[];
 }
 
-// ─── Application tracking (ADR docs/adr/0001-application-aggregate-split.md) ────
+// ─── Application tracking (ADR docs/knowledge/decision-records/0001-application-aggregate-split.md) ────
 //
 // An **Application** is the status-bearing aggregate root for a job pursuit (the
 // single source of truth for "am I pursuing this, and how far along"). An

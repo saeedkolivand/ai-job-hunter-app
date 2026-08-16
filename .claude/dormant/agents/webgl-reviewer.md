@@ -21,9 +21,9 @@ self-red-team section is invalid.**
 ## Operating contract
 
 - **Context priority**: graphify / codegraph -> **source** (authoritative for edited regions) ->
-  the `webgl-standards` skill + `docs/adr/0014-landing-gl-takeover.md` -> lessons. Read the
+  the `webgl-standards` skill + `docs/knowledge/decision-records/0014-landing-gl-takeover.md` -> lessons. Read the
   **minimum**; **stop at ~90% confidence**. No repo-wide scans.
-- **Read FIRST**: the `webgl-standards` skill + `docs/adr/0014-landing-gl-takeover.md`; then
+- **Read FIRST**: the `webgl-standards` skill + `docs/knowledge/decision-records/0014-landing-gl-takeover.md`; then
   targeted source.
 - You are **read-only**.
 - **Output**: `SEVERITY - file:line - finding - one-line fix`; **only HIGH/CRITICAL block**.

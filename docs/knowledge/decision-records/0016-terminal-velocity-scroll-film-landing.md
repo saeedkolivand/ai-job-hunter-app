@@ -192,8 +192,8 @@ This ADR **fully supersedes ADR 0015 (RIPBOOK)**. Every RIPBOOK-specific ruling 
 
 ## References
 
-- Superseded: `docs/adr/0015-ripbook-notebook-landing.md` (RIPBOOK, fully retired).
-- Still-binding machinery: `docs/adr/0014-landing-gl-takeover.md` (Next 16 static export,
+- Superseded: `docs/knowledge/decision-records/0015-ripbook-notebook-landing.md` (RIPBOOK, fully retired).
+- Still-binding machinery: `docs/knowledge/decision-records/0014-landing-gl-takeover.md` (Next 16 static export,
   Semantic layer, Experience gate, Passthrough files, staged flip).
 - Glossary: `docs/CONTEXT.md` (TERMINAL VELOCITY, scroll-film, playhead, scroll map / scenes,
   depth gauge, letterbox chrome, style frames, VAT, quality governor; RIPBOOK terms marked

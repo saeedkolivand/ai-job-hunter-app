@@ -24,7 +24,7 @@ and actionlint in-PR — directly overlapping those advisory lanes.
 ## Decision
 
 Adopt **CodeRabbit** (external SaaS, free OSS plan) as the **always-on** AI reviewer,
-configured by [`.coderabbit.yaml`](../../.coderabbit.yaml) whose `path_instructions`
+configured by [`.coderabbit.yaml`](../../../.coderabbit.yaml) whose `path_instructions`
 mirror the Primary-owner map in `.claude/review-routes.json` and the `CLAUDE.md` /
 `.github/copilot-instructions.md` conventions, with `labeling_instructions` mirroring the
 former `.github/labeler.yml`. It is advisory only (`request_changes_workflow: false`) — it

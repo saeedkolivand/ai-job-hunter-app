@@ -1,6 +1,6 @@
 //! Application — the status-bearing aggregate root for a job pursuit.
 //!
-//! Per ADR `docs/adr/0001-application-aggregate-split.md`, an **Application** is
+//! Per ADR `docs/knowledge/decision-records/0001-application-aggregate-split.md`, an **Application** is
 //! the single source of truth for "am I pursuing this job, and how far along am
 //! I". A [`crate::ai_generations`] generation is demoted to a **child Document**
 //! (résumé/cover text) that references its parent via `application_id`.

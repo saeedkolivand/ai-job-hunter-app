@@ -31,7 +31,7 @@ This ADR records the decision behind the template-overhaul series (PRs #590–#5
 decisions the same series settled. It is distinct from [ADR 0004](0004-single-source-user-customizable-accent-color.md),
 which owns the **app-UI** accent color (the interactive-element tint driven by
 `ThemePrefs`). The export accent here is a **separate concept** — see the
-[glossary](../CONTEXT.md) entries for _Document accent_, _Letter layout_, and
+[glossary](../../CONTEXT.md) entries for _Document accent_, _Letter layout_, and
 _Template tier_.
 
 ## Decision
@@ -144,4 +144,4 @@ truthfully advertise that they collapse to a linear single column under ATS mode
 - Frontend registry + tier gate: `apps/desktop/src/renderer/lib/generate/templates/templates.ts` (`TemplateId`, `tier`, `isDesignTier`).
 - Shared contract: `packages/shared/src/ipc/contracts/documents.ts` (`TemplateId`, `accent`, `letterLayoutId`).
 - App-UI accent (distinct concept): [ADR 0004](0004-single-source-user-customizable-accent-color.md).
-- Full contract + roster: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md); glossary: [`docs/CONTEXT.md`](../CONTEXT.md).
+- Full contract + roster: [`docs/EXPORT_TEMPLATES.md`](../../EXPORT_TEMPLATES.md); glossary: [`docs/CONTEXT.md`](../../CONTEXT.md).

@@ -7,7 +7,7 @@
 //      pre-push hook) fails the build when a `subjectKind: 'dependency'`
 //      entry names a package that no longer exists in any package.json /
 //      Cargo.toml on disk — update the entry or remove it.
-//   2. `adrSlug` is checked against docs/adr/ the same way — a dead link
+//   2. `adrSlug` is checked against docs/knowledge/decision-records/ the same way — a dead link
 //      fails loudly instead of quietly pointing nowhere.
 //
 // Every entry object below is intentionally FLAT (no nested objects/arrays)

@@ -2,7 +2,7 @@
 // page — a curated, human-judged Adopt/Trial/Assess/Hold list, NOT derived
 // from package.json: the whole point of a radar is the judgment call, and
 // this repo already learned the hard way (four stale hardcoded AI-model
-// defects in one session, see docs/adr/0022) that a curated list left
+// defects in one session, see docs/knowledge/decision-records/0022) that a curated list left
 // unchecked rots silently until someone ships a bug from it.
 //
 // The asymmetry that makes this check correct rather than a repeat of that
@@ -27,7 +27,7 @@
 //      must match the major the manifest's declared range resolves to — the
 //      check above only proves the PACKAGE exists, not that the claimed
 //      VERSION is still current.
-//   3. Every `adrSlug` must name a real file under docs/adr/.
+//   3. Every `adrSlug` must name a real file under docs/knowledge/decision-records/.
 //   4. Every `id` is unique (it's a React key, a DOM anchor id, and a
 //      layoutBlips() map key — a duplicate silently collides all three).
 //   5. Every `lastReviewed` matches YYYY-MM-DD — the field this whole design
@@ -48,7 +48,7 @@ import { join } from 'node:path';
 
 const ROOT = process.cwd();
 const RADAR_FILE = 'apps/landing/src/data/tech-radar.ts';
-const ADR_DIR = 'docs/adr';
+const ADR_DIR = 'docs/knowledge/decision-records';
 const CARGO_FILE = 'apps/desktop/src-tauri/Cargo.toml';
 
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');

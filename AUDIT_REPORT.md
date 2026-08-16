@@ -2972,9 +2972,9 @@ Commit 92e73b52 (2026-05-23, REQ-01034 era) intentionally set { breaking: true, 
 
 **ADR-0002 and docs/DEPLOYMENT.md still declare CodeRabbit the 'always-on' AI PR reviewer, but PR #532 (REQ-15003) switched it to on-demand (auto_review.enabled: false), and the earlier always-on ledger entries were never marked superseded.**
 
-REQ-07047/REQ-16495/REQ-16001 adopted CodeRabbit as always-on (PR #361, 2026-06-12) and REQ-12067 made a per-PR CodeRabbit review a merge precondition. REQ-15003 (PR #532, 2026-07-02, commit 797a50d4) disabled auto_review so CodeRabbit only reviews when '@coderabbitai review' is commented. Code follows the newer ask, but docs/adr/0002-coderabbit-ai-review.md (lines 5, 24) and docs/DEPLOYMENT.md line 202 still describe the retired always-on model, and REQ-16001/REQ-16495/REQ-12067 carry no superseded_by — the documented per-PR CodeRabbit gate now silently depends on someone remembering to trigger it.
+REQ-07047/REQ-16495/REQ-16001 adopted CodeRabbit as always-on (PR #361, 2026-06-12) and REQ-12067 made a per-PR CodeRabbit review a merge precondition. REQ-15003 (PR #532, 2026-07-02, commit 797a50d4) disabled auto_review so CodeRabbit only reviews when '@coderabbitai review' is commented. Code follows the newer ask, but docs/knowledge/decision-records/0002-coderabbit-ai-review.md (lines 5, 24) and docs/DEPLOYMENT.md line 202 still describe the retired always-on model, and REQ-16001/REQ-16495/REQ-12067 carry no superseded_by — the documented per-PR CodeRabbit gate now silently depends on someone remembering to trigger it.
 
-- **Evidence:** `.coderabbit.yaml:34` @ `797a50d498` · `docs/adr/0002-coderabbit-ai-review.md:24` @ `87861d927e` · `docs/DEPLOYMENT.md:202` @ `797a50d498`
+- **Evidence:** `.coderabbit.yaml:34` @ `797a50d498` · `docs/knowledge/decision-records/0002-coderabbit-ai-review.md:24` @ `87861d927e` · `docs/DEPLOYMENT.md:202` @ `797a50d498`
 - **Requirements:** REQ-07047, REQ-15003, REQ-16495, REQ-12067, REQ-15032
 - **Fix:** Amend ADR-0002 (status note) and docs/DEPLOYMENT.md line 202 to say CodeRabbit is on-demand via '@coderabbitai review' since PR #532; mark REQ-16001/REQ-16495/REQ-12067 superseded by REQ-15003/REQ-15032.
 
@@ -3991,7 +3991,7 @@ REQ-03052 recorded ADR-007 (ai_generations as the application aggregate, applied
 
 - **Evidence:** `docs/knowledge/decision-records/adr-007-ai-generations-application-aggregate.md:5` @ `3e85c34180` · `apps/desktop/src-tauri/src/applications/mod.rs:8` @ `3e85c34180`
 - **Requirements:** REQ-03052, REQ-16000, REQ-16483, REQ-07042
-- **Fix:** Mark ADR-007 as 'Superseded by docs/adr/0001-application-aggregate-split.md' (keeping the still-valid merge-upsert-by-URL part scoped to the child generation record).
+- **Fix:** Mark ADR-007 as 'Superseded by docs/knowledge/decision-records/0001-application-aggregate-split.md' (keeping the still-valid merge-upsert-by-URL part scoped to the child generation record).
 
 ##### `rust-data-006` · rust-data · _orphans_
 
