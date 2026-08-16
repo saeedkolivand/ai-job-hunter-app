@@ -1313,6 +1313,49 @@ pub fn friendly_api_error(
     }
 }
 
+/// Map a *transport* failure (the `send()` that raced a completion HTTP call
+/// never got a response at all) to `AppError::Timeout` or `AppError::Network`.
+/// Distinct from [`friendly_api_error`], which maps a response the server DID
+/// send back.
+///
+/// `is_timeout()` walks `e`'s WHOLE source chain, not just this crate's own
+/// `.timeout()` call: it also matches an inner `hyper::Error::is_timeout()`
+/// and a raw `io::ErrorKind::TimedOut` — so it is reqwest's general "gave up
+/// waiting" signal, not narrowly "the client's own configured deadline
+/// fired". That is still the right classification here: `net::http::shared`
+/// (the sole pooled client every adapter uses) sets no separate
+/// connect/read timeout of its own — see its module doc, "no global
+/// timeout" — so every request's ONLY timing bound is the SAME per-call
+/// `.timeout()` these call sites set, and that bound covers connect through
+/// the last streamed byte. Whichever inner layer is the one that actually
+/// noticed the wait (reqwest's own timer, hyper's, or the OS socket's) is
+/// noticing the SAME deadline elapsing, so `is_timeout() == true` reliably
+/// means this call's own `deadline` is why it stopped waiting, and a retry
+/// against that same deadline would time out again — `AppError::Timeout`,
+/// not `Network`, either way.
+///
+/// `label` names the provider in the message — a fixed string for a
+/// single-provider adapter (Anthropic/Gemini/Ollama), or `self.id.as_str()`
+/// for [`crate::commands::ai_provider::openai::OpenAiClient`], which serves
+/// several [`ProviderId`]s from one client. `deadline` is the per-call bound
+/// that just expired — not read off a shared table here because it varies by
+/// call (Ollama's non-streaming completion scales it by the request's
+/// reasoning effort; see `timeouts::ollama_completion_deadline`).
+pub fn map_completion_transport_error(
+    e: reqwest::Error,
+    label: &str,
+    deadline: std::time::Duration,
+) -> AppError {
+    if e.is_timeout() {
+        AppError::Timeout(format!(
+            "{label}: no response within {}s",
+            deadline.as_secs()
+        ))
+    } else {
+        AppError::Network(format!("{label} unreachable: {e}"))
+    }
+}
+
 /// Redact a generation-failure message before it reaches the renderer.
 ///
 /// This is the choke point every generation-failure path funnels through

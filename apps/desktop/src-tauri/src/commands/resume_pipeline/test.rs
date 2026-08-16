@@ -8,18 +8,19 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::hooks::apply_stop;
+use super::hooks::{apply_stop, apply_timeout, timeout_failure_data, timeout_message};
 use super::max;
 use super::notify::run_notification;
 use super::report;
 use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
+use crate::error::{AppError, AppResult};
 use crate::ipc_contracts::events::PIPELINE_STAGE_PHASES;
 use crate::ipc_contracts::resume_pipeline::ResumePipelineRunRequest;
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{RunLedger, QUALITY_STAGES};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow, RunRow};
-use crate::pipeline::StageInfo;
+use crate::pipeline::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
 };
@@ -796,6 +797,208 @@ fn cancellation_outranks_the_deadline() {
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
 }
 
+/// The THIRD stop seam: a per-call HTTP deadline expiring INSIDE a stage's own
+/// body — as opposed to `apply_stop`'s stage-BOUNDARY checks above, which never
+/// let the stage run at all. `apply_timeout` is `RunHooks::after`'s pure half,
+/// same shape as `apply_stop` is `before`'s.
+///
+/// Mutation check: drop the `if outcome.timed_out` guard in `apply_timeout` and
+/// the second assertion (an ordinary failure) fails; drop `note_timeout` and
+/// the detail assertion does.
+#[test]
+fn apply_timeout_stops_the_run_only_when_the_outcome_says_so() {
+    let ledger = RunLedger::new();
+    apply_timeout(
+        &ledger,
+        &stage_info(true),
+        StageOutcome {
+            ok: false,
+            ms: 300_021,
+            timed_out: true,
+        },
+    );
+    assert_eq!(ledger.stopped(), Some(StoppedReason::Timeout));
+    assert_eq!(ledger.timeout_detail(), Some(("repair", 300_021)));
+
+    let untouched = RunLedger::new();
+    apply_timeout(
+        &untouched,
+        &stage_info(true),
+        StageOutcome {
+            ok: false,
+            ms: 50,
+            timed_out: false,
+        },
+    );
+    assert_eq!(
+        untouched.stopped(),
+        None,
+        "a non-timeout failure must not stop the run through this seam"
+    );
+}
+
+/// The actionable text `execute` hands `job_fail` once `apply_timeout` has
+/// named the stage and the duration — content-free per ADR-027 (a stage name
+/// and a rounded duration, never prompt or document text).
+///
+/// Rounds UP (301s, not 300, for 300_021ms): a `/ 1000` truncation would
+/// silently drop the trailing 21ms, and for a genuinely sub-second timeout
+/// that same truncation floors all the way to "0s" (see
+/// [`a_sub_second_timeout_never_renders_as_0s`]).
+#[test]
+fn timeout_message_names_the_stage_and_rounds_the_duration_to_seconds() {
+    assert_eq!(
+        timeout_message("strategy", 300_021),
+        "The \"strategy\" step didn't get a response within 301s. Try a faster model or a \
+         lower effort level."
+    );
+}
+
+/// **Mutation-testing hook for the fix itself**: a sub-second timeout must
+/// never render as "0s" or ship `seconds: 0` — the exact defect a `/ 1000`
+/// truncation produced. Neither of the two pinned tests above alone could
+/// catch a regression back to truncation because 300_021ms rounds to a
+/// non-zero value either way; this drives a value where truncation and
+/// ceiling diverge to zero vs one.
+///
+/// Mutation check: swap `round_up_seconds`'s `div_ceil(1000).max(1)` back to
+/// plain `/ 1000` and both assertions below fail (`0s`/`0`, not `1s`/`1`) —
+/// applied and reverted.
+#[test]
+fn a_sub_second_timeout_never_renders_as_0s() {
+    assert!(
+        timeout_message("strategy", 250).contains("within 1s"),
+        "{}",
+        timeout_message("strategy", 250)
+    );
+    assert_eq!(
+        timeout_failure_data("strategy", 250),
+        serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 1 })
+    );
+}
+
+/// **`job.failed`'s STRUCTURED payload for the same failure** — what the
+/// renderer actually renders through `pipeline.timeout` now, instead of
+/// [`timeout_message`]'s English sentence (that string still lands on the
+/// job's own tracked `error`, never on `job.failed`'s event `data` — see
+/// `fail`'s doc comment). `"kind": "timeout"` is a discriminator so a
+/// consumer never has to guess a bare `{ stage, seconds }` shape apart from
+/// some other job's payload.
+///
+/// Mutation check: drop the rounding (emit raw milliseconds instead) and the
+/// `seconds` assertion below fails.
+#[test]
+fn timeout_failure_data_carries_the_stage_and_the_rounded_duration() {
+    assert_eq!(
+        timeout_failure_data("strategy", 300_021),
+        serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 301 })
+    );
+}
+
+/// **Wiring pin: `execute`'s per-call-timeout arm actually attaches
+/// [`timeout_failure_data`] to what it hands its caller.** `execute` needs an
+/// `AppHandle` this crate has no harness for (same limitation
+/// `persist_document_source` documents), so this is presence-only — the pure
+/// computation itself is pinned directly by the test above, and the
+/// renderer's consumption of the identical `{ kind, stage, seconds }` shape
+/// is pinned by `use-resume-pipeline-session.test.ts`'s "localizes a per-call
+/// timeout instead of splicing the raw stage key into prose". This is the one
+/// link connecting the two ends that only a source read can confirm without
+/// a live run.
+///
+/// Mutation check: change the timeout arm's `data` field back to `None` (the
+/// pre-fix shape) and this fails.
+#[test]
+fn executes_timeout_arm_attaches_the_structured_failure_data() {
+    let source = include_str!("mod.rs");
+    assert!(
+        source.contains("data: Some(hooks::timeout_failure_data(stage, ms))"),
+        "execute's per-call-timeout arm must attach timeout_failure_data to the \
+         ExecuteFailure it returns — otherwise job.failed's event carries no \
+         structured payload and the renderer's timeout banner never renders"
+    );
+}
+
+/// A fake stage standing in for a provider call that hit its per-call
+/// deadline — exactly what each `complete_impl` now returns for a `reqwest`
+/// timeout (see `commands::ai_provider::ollama::complete_impl` and its
+/// siblings).
+struct TimeoutStage;
+struct FakeCtx;
+#[async_trait::async_trait]
+impl Stage<FakeCtx> for TimeoutStage {
+    fn name(&self) -> &'static str {
+        "strategy"
+    }
+    async fn run(&self, _ctx: &mut FakeCtx) -> AppResult<()> {
+        Err(AppError::Timeout("no response within 300s".to_string()))
+    }
+}
+
+/// A minimal `StageHooks` standing in for `RunHooks::after`'s ONE decision this
+/// module owns — `apply_timeout` — without the `AppHandle` `RunHooks` itself
+/// needs (this crate has no Tauri test harness).
+struct TimeoutOnlyHooks<'a>(&'a RunLedger);
+#[async_trait::async_trait]
+impl StageHooks for TimeoutOnlyHooks<'_> {
+    async fn before(&self, _stage: &StageInfo) -> AppResult<()> {
+        Ok(())
+    }
+    async fn after(&self, stage: &StageInfo, outcome: StageOutcome) {
+        apply_timeout(self.0, stage, outcome);
+    }
+}
+
+/// **End to end (within this crate's reach): a per-call deadline failure
+/// really does yield a run row with the Timeout reason, and a message a user
+/// can act on.**
+///
+/// Chains every pure piece `execute` composes at runtime — `Pipeline::run_hooked`
+/// (computes `StageOutcome::timed_out` from the stage's own `AppError`),
+/// `apply_timeout` (records `StoppedReason::Timeout` + which stage/how long),
+/// `terminal_state` (resolves the row to `failed` + `"timeout"`), and
+/// `timeout_message` (the text `job_fail` ends up carrying) — without the
+/// `AppHandle` the full command needs.
+///
+/// Mutation check: any one of those four broken in isolation (see their own
+/// tests) breaks this one too, proving they are wired together and not just
+/// individually correct.
+#[test]
+fn a_per_call_deadline_failure_produces_a_run_row_with_the_timeout_reason() {
+    tauri::async_runtime::block_on(async {
+        let ledger = RunLedger::new();
+        let mut ctx = FakeCtx;
+        let result = Pipeline::new("resume_quality")
+            .add(TimeoutStage)
+            .run_hooked(&mut ctx, &TimeoutOnlyHooks(&ledger))
+            .await;
+        assert!(result.is_err(), "the stage's own error still propagates");
+
+        assert_eq!(ledger.stopped(), Some(StoppedReason::Timeout));
+        let (stage, ms) = ledger
+            .timeout_detail()
+            .expect("the failing stage's name and duration were recorded");
+        assert_eq!(stage, "strategy");
+        // `ms` is `run_hooked`'s OWN wall-clock reading around the (instant,
+        // fake) stage body — the exact-value math is `timeout_message`'s own
+        // test below; this only proves a real duration reached the ledger.
+        let ms = ms.max(1);
+
+        // The RUN ROW: only `RunTimeout` gets the "still usable" leniency (see
+        // `a_timeout_stopped_run_is_always_a_failure_even_when_something_was_persisted`
+        // below), so this is unconditionally a failure.
+        let (status, reason) = super::hooks::terminal_state(&ledger, false, false, false, false);
+        assert_eq!(status, "failed");
+        assert_eq!(reason.as_deref(), Some("timeout"));
+
+        // The RENDERED message: names the stage, gives a next step — never a
+        // raw token or an empty string, which is the bug this fix closes.
+        let message = timeout_message(stage, ms);
+        assert!(message.contains("strategy"), "{message}");
+        assert!(message.contains("Try a faster model"), "{message}");
+    });
+}
+
 /// The budget floor and the run's own kind string — both load-bearing: the
 /// floor is what `run_deadline` falls back to, and `kind` is half the store's
 /// retention partition, so changing either silently re-partitions someone's
@@ -980,6 +1183,29 @@ fn a_deadline_that_still_saved_a_document_is_not_a_failure() {
     assert_eq!(
         super::hooks::terminal_state(&errored, false, false, true, true),
         ("failed", Some("max_repairs".to_string()))
+    );
+}
+
+/// **Only `RunTimeout` gets the "still usable" leniency `terminal_state`
+/// grants above — `Timeout` never does**, even when a document was somehow
+/// persisted. A per-call deadline inside `analyze_job`/`match_evidence`/
+/// `strategy` means that stage's own JSON never parsed — there is no partial
+/// artifact the way a WHOLE-run deadline caught at a later stage boundary
+/// always has a real document from every stage that already finished. Reusing
+/// `timed_out_with_document`'s leniency for `Timeout` would report
+/// `needsReview`/`completed` over a run that produced nothing this specific
+/// document came from.
+///
+/// Mutation check: fold `Timeout` into `timed_out_with_document`'s match and
+/// this fails (status flips to `completed`).
+#[test]
+fn a_timeout_stopped_run_is_always_a_failure_even_when_something_was_persisted() {
+    let ledger = RunLedger::new();
+    ledger.stop(StoppedReason::Timeout);
+    assert_eq!(
+        super::hooks::terminal_state(&ledger, false, false, false, true),
+        ("failed", Some("timeout".to_string())),
+        "persisted=true must not rescue a Timeout the way it rescues a RunTimeout"
     );
 }
 
@@ -2305,4 +2531,403 @@ fn normalize_regenerated_projects_reports_the_seed_skip_reason() {
         "a declined normalization leaves the text untouched"
     );
     assert_eq!(reason, Some("link_in_description"));
+}
+
+// ── persist_document: the Application FK + the two-document shape ─────────
+
+/// The verbatim source of `persist_document`'s body — from its own `fn` line
+/// through its own top-level closing brace (column 0, so no NESTED `}`
+/// inside the function body can end the scan early; same "opener at a
+/// strictly smaller indent" assumption
+/// `commands::autopilot::tests::every_record_mutation_goes_through_mutate_record`
+/// already documents for this exact idiom). Shared by the two regression
+/// tests below so the extraction logic is not duplicated, and `include_str!`
+/// makes rustc track the file, so this can never silently read a stale copy.
+///
+/// **Why a source pin at all.** `persist_document` takes a live `&AppHandle`
+/// and this crate has no `tauri::test` mock-app harness (see the doc on
+/// `every_record_mutation_goes_through_mutate_record` for the same
+/// limitation) — driving it for real is not available. A source pin is the
+/// cheapest HONEST guard: it fails the instant the exact line it names is
+/// edited away, which is what a mutation check below actually exercises.
+fn persist_document_source() -> String {
+    const SRC: &str = include_str!("mod.rs");
+    let lines: Vec<&str> = SRC.lines().collect();
+    let start = lines
+        .iter()
+        .position(|l| l.trim_start() == "fn persist_document(")
+        .expect("persist_document must still exist under this exact signature line");
+    let end = start
+        + lines[start..]
+            .iter()
+            .position(|l| *l == "}")
+            .expect("persist_document's own top-level closing brace (column 0)");
+    lines[start..=end].join("\n")
+}
+
+/// **Resurrection regression — the lookup must be READ-ONLY.**
+/// `persist_document` briefly called `ApplicationStore::upsert_for_origin`
+/// to establish the FK (see the no-longer-true history in the old version of
+/// this doc, still visible in git blame): that call CREATES an Application
+/// on a `job_url` miss. A staged run takes minutes; if the user deletes the
+/// Application it was launched from while the run is still working, landing
+/// the run then upserting on that url silently RESURRECTS the delete — no
+/// race required, just the plain sequence run-in-flight → delete → run
+/// lands. This is the identical hazard
+/// `ApplicationStore::link_orphaned_generations` already closed at ITS call
+/// site (own doc); `find_by_job_url` is the same read-only primitive, reused
+/// here rather than re-invented.
+///
+/// Pins that `persist_document` looks the Application up READ-ONLY
+/// (`find_by_job_url`, never `upsert_for_origin`) and that a FOUND id still
+/// lands on the persisted record — so the fix narrowed create-on-miss, it
+/// did not disable linking altogether.
+///
+/// Mutation check, both applied and reverted: change `find_by_job_url(` back
+/// to `upsert_for_origin(` and the second assertion fails; delete the
+/// `application_id,` field from the `AiGenerationRecord` literal (falls back
+/// to `..empty_record()`'s `None`) and the third fails.
+///
+/// **This is a SOURCE pin, not a behavior test** — see
+/// [`persist_document_lookup_never_resurrects_a_deleted_application`] and
+/// [`persist_document_lookup_links_to_an_existing_application`] below for
+/// the store-level guards that actually drive the chain this test can only
+/// assert the shape of.
+#[test]
+fn persist_document_looks_up_the_application_read_only_never_creates_one() {
+    let body = persist_document_source();
+    assert!(
+        body.contains("find_by_job_url("),
+        "persist_document must look the Application up READ-ONLY — the same \
+         primitive link_orphaned_generations uses for the identical hazard"
+    );
+    assert!(
+        !body.contains("upsert_for_origin("),
+        "persist_document must never create-on-miss — that is exactly the \
+         resurrection hazard e695f4cf closed at the sibling call site"
+    );
+    assert!(
+        body.contains("application_id,"),
+        "a FOUND id must still land on the AiGenerationRecord literal — otherwise \
+         the fix disabled linking entirely instead of narrowing it to read-only"
+    );
+}
+
+// ── persist_document: the save gate reads ctx.letter, not letter_text() ───
+
+/// **False-positive regression — the save gate must ignore a fence tag in
+/// the user's own PASTED reference letter.**
+///
+/// `persist_document` used to gate `save_verdict` on `ctx.letter_text()`,
+/// which falls back to `input.cover_letter` (the renderer's `coverLetterText`
+/// field, i.e. text the USER supplied) whenever the `cover_letter` stage
+/// produced nothing — the ordinary shape of `include_cover_letter = false`.
+/// `cover_letter_text` on the persisted record is `ctx.letter.clone()`
+/// always, never that fallback (see the field's own doc comment above), so
+/// the gate was inspecting text that was never going to be written to the
+/// aggregate. A registered fence tag occurring INCIDENTALLY inside a user's
+/// own pasted letter — `<question>` is a realistic one, since it is an
+/// ordinary word a real cover letter can contain — refused the ENTIRE save,
+/// résumé included, over a defect that could not possibly reach the saved
+/// document.
+///
+/// Two things are pinned together: the CALL SITE (a source pin — the same
+/// technique `persist_document_looks_up_the_application_read_only_never_creates_one`
+/// above uses, for the same `AppHandle`-harness reason) and the CONSEQUENCE
+/// (`save_verdict`'s own verdict for the two arguments that call could pass),
+/// so a regression that reintroduces the fallback fails here even if the
+/// call site is rewritten in some shape this source pin doesn't literally
+/// match.
+///
+/// Mutation check: revert `persist_document`'s call to
+/// `save_verdict(ctx.input.source_resume, &ctx.draft, letter_text, job_url)`
+/// (i.e. `ctx.letter_text()` bound to a local, the pre-fix shape) and the
+/// source-pin assertions below fail immediately.
+#[test]
+fn persist_document_save_gate_ignores_a_fence_tag_in_the_users_own_pasted_letter() {
+    use super::SaveVerdict;
+
+    let body = persist_document_source();
+    assert!(
+        body.contains("save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, job_url)"),
+        "persist_document must gate save_verdict on &ctx.letter — the text \
+         cover_letter_text actually persists — never letter_text()'s fallback \
+         to the user's own pasted reference letter"
+    );
+    assert!(
+        !body.contains("save_verdict(ctx.input.source_resume, &ctx.draft, letter_text, job_url)"),
+        "the pre-fix call shape (gated on the letter_text() fallback) must be gone"
+    );
+
+    // The consequence: when the stage produced no letter of its own
+    // (`ctx.letter` empty — exactly what `include_cover_letter = false`
+    // leaves it), a fence tag in the user's own pasted reference letter must
+    // not block the save.
+    const SOURCE: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                          - Owned the settlement service\n";
+    const URL: &str = "https://boards.example/jobs/1";
+    let pasted_reference_letter =
+        "Dear team,\n<question>What is the salary range for this role?</question>\nBest,\n";
+
+    assert_eq!(
+        super::save_verdict(SOURCE, SOURCE, "", URL),
+        SaveVerdict::Save,
+        "an empty stage letter must save cleanly regardless of what the \
+         (unsaved) pasted reference letter contains"
+    );
+
+    // Prove the false positive this fix removes: had the gate used
+    // `letter_text()`'s fallback instead (`effective_letter_text` is the same
+    // pure decision `letter_text()` delegates to), THIS run would have been
+    // wrongly refused.
+    let would_have_gated_on =
+        crate::pipeline::resume::effective_letter_text("", pasted_reference_letter);
+    assert!(
+        matches!(
+            super::save_verdict(SOURCE, SOURCE, would_have_gated_on, URL),
+            SaveVerdict::Refused(_)
+        ),
+        "confirms letter_text()'s fallback really would have refused this save — \
+         the false positive the fix above removes"
+    );
+}
+
+/// **The other half — narrowing the gate to `ctx.letter` must not weaken it.**
+/// When the MODEL's own letter output carries a leaked fence tag, that text
+/// lands in `ctx.letter` directly — no fallback involved — so the narrowed
+/// gate must still refuse exactly as before.
+///
+/// Mutation check: remove the `contains_fence_tag(letter)` half of
+/// `save_verdict`'s check and this reddens — proving this test and
+/// `persist_document_save_gate_ignores_a_fence_tag_in_the_users_own_pasted_letter`
+/// above fail for two distinct reasons, not the same one twice.
+#[test]
+fn persist_document_save_gate_still_refuses_a_fence_tag_the_model_itself_produced() {
+    use super::SaveVerdict;
+
+    const SOURCE: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                          - Owned the settlement service\n";
+    const URL: &str = "https://boards.example/jobs/1";
+    let leaked_letter = "<question>\nDear hiring team,\n</question>";
+
+    assert!(
+        matches!(
+            super::save_verdict(SOURCE, SOURCE, leaked_letter, URL),
+            SaveVerdict::Refused(_)
+        ),
+        "a fence tag in the stage's OWN letter output must still refuse the save \
+         once the gate stops reading the letter_text() fallback"
+    );
+}
+
+/// **Delete-cascade guard, independent of how the id got there.** Once
+/// `persist_document`'s (now read-only) lookup finds an id and lands it on
+/// `AiGenerationRecord.application_id`, `AiGenerationStore::save_application`
+/// persists it, and `remove_for_application` — what
+/// `applications_delete(keepDocuments=false)` calls — must actually find and
+/// delete the row through it. `upsert_for_origin` here is only this test's
+/// OWN setup (synthesizing an Application the way the ordinary Save/Apply
+/// flow would, before a staged run ever starts) — not a claim about what
+/// `persist_document` itself calls; see
+/// [`persist_document_lookup_links_to_an_existing_application`] below for the
+/// guard on `persist_document`'s actual lookup.
+///
+/// Mutation check: force `application_id: None` on the record below (the
+/// pre-fix `..empty_record()` shape this FK exists to prevent) and `deleted`
+/// reddens from `1` to `0`.
+#[test]
+fn upsert_for_origin_id_on_the_record_is_what_remove_for_application_finds() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let app_store = crate::applications::ApplicationStore::open(dir.path()).unwrap();
+    let gen_store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let job_url = "https://acme.com/jobs/fk-1";
+    let app_id = app_store
+        .upsert_for_origin(
+            job_url,
+            "linkedin",
+            &crate::applications::ApplicationMeta {
+                company: "Acme".into(),
+                title: "Staff Engineer".into(),
+                ..Default::default()
+            },
+            crate::applications::ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // The shape `persist_document` builds once its lookup finds an id: that
+    // id landing on the record's `application_id` field.
+    let record = AiGenerationRecord {
+        id: "gen-fk-1".into(),
+        job_url: job_url.to_string(),
+        resume_text: "Staff Engineer résumé".into(),
+        application_id: Some(app_id.clone()),
+        ..super::empty_record()
+    };
+    gen_store.save_application(record).unwrap();
+
+    let deleted = gen_store.remove_for_application(&app_id).unwrap();
+    assert_eq!(
+        deleted, 1,
+        "the id persist_document writes onto application_id must be the SAME id \
+         remove_for_application deletes by"
+    );
+}
+
+/// **Store-level no-resurrect guard.** Drives the exact chain
+/// `persist_document`'s lookup now runs (`normalize_job_url` +
+/// `find_by_job_url`) against a REAL `ApplicationStore`, reproducing the
+/// user-visible sequence with **no concurrency involved**: an Application
+/// exists (created the ordinary way — a staged run is always launched FROM
+/// an Application's own page) → the run is in flight for minutes → the user
+/// deletes it → the run lands and the lookup runs. Asserts no Application
+/// was created and the id comes back `None`.
+///
+/// Mutation check: swap this test's own `find_by_job_url` call for
+/// `upsert_for_origin` (the pre-fix shape) and `list()` goes from empty to
+/// `1` — the deleted Application comes back.
+#[test]
+fn persist_document_lookup_never_resurrects_a_deleted_application() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let app_store = crate::applications::ApplicationStore::open(dir.path()).unwrap();
+
+    let job_url = "https://acme.com/jobs/resurrect-1";
+    let app_id = app_store
+        .upsert_for_origin(
+            job_url,
+            "linkedin",
+            &crate::applications::ApplicationMeta {
+                company: "Acme".into(),
+                title: "Staff Engineer".into(),
+                ..Default::default()
+            },
+            crate::applications::ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        app_store.list().len(),
+        1,
+        "the Application the run was launched from exists before the delete"
+    );
+
+    // "the run is in flight, then the user deletes it" — the deletion just
+    // has to happen before the lookup below runs; no race needed to trigger
+    // the hazard.
+    app_store.delete(&app_id, false).unwrap();
+    assert!(
+        app_store.get(&app_id).is_none(),
+        "deletion actually took effect"
+    );
+
+    // Exactly the two lines `persist_document`'s lookup runs.
+    let normalized = crate::applications::normalize_job_url(job_url);
+    let application_id = app_store.find_by_job_url(&normalized).map(|found| found.id);
+
+    assert!(
+        application_id.is_none(),
+        "a deleted Application must not resolve — Some(_) here would mean the \
+         delete got silently resurrected"
+    );
+    assert!(
+        app_store.list().is_empty(),
+        "the lookup itself must never CREATE an Application on a miss"
+    );
+}
+
+/// **Store-level normal-path guard — the fix must not have simply disabled
+/// linking.** Same two-line chain as the guard above, but the Application
+/// still exists when the lookup runs — the common case, since every staged
+/// run is launched FROM an Application's own page. Confirms the id resolves
+/// and actually lands on the persisted generation row, which is the behavior
+/// `28f5833d` existed to add; narrowing create-on-miss must not regress it.
+///
+/// Mutation check: look the wrong url up (`find_by_job_url(job_url)` instead
+/// of the normalized one) and this reddens for any url normalization
+/// changes (e.g. a tracking query param).
+#[test]
+fn persist_document_lookup_links_to_an_existing_application() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let app_store = crate::applications::ApplicationStore::open(dir.path()).unwrap();
+    let gen_store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let job_url = "https://acme.com/jobs/fk-2?utm_source=li";
+    let app_id = app_store
+        .upsert_for_origin(
+            job_url,
+            "linkedin",
+            &crate::applications::ApplicationMeta {
+                company: "Acme".into(),
+                title: "Staff Engineer".into(),
+                ..Default::default()
+            },
+            crate::applications::ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // Exactly the two lines `persist_document`'s lookup runs.
+    let normalized = crate::applications::normalize_job_url(job_url);
+    let application_id = app_store.find_by_job_url(&normalized).map(|found| found.id);
+    assert_eq!(
+        application_id,
+        Some(app_id.clone()),
+        "the Application still exists, so the read-only lookup must still find it \
+         — the resurrection fix narrows create-on-miss, it does not stop finding"
+    );
+
+    let record = AiGenerationRecord {
+        id: "gen-fk-2".into(),
+        job_url: job_url.to_string(),
+        resume_text: "Staff Engineer résumé".into(),
+        application_id,
+        ..super::empty_record()
+    };
+    gen_store.save_application(record).unwrap();
+
+    let saved = gen_store
+        .find_for_job(job_url)
+        .expect("the saved row is findable by job_url");
+    assert_eq!(
+        saved.application_id.as_deref(),
+        Some(app_id.as_str()),
+        "the FK the lookup found must persist onto the row"
+    );
+}
+
+/// **A completed run exposes two DISTINCT documents — pinned by SOURCE
+/// against the exact two lines that build them, not by feeding two
+/// already-distinct literals through the store and asserting they differ.**
+/// A store-round-trip test shaped that way could never fail for what it
+/// claims: it would never call `persist_document` at all, so a regression
+/// INSIDE it — `cover_letter_text: ctx.draft.clone()`, say — would sail
+/// through clean, both fields still non-empty, which is exactly the "both
+/// non-empty" shape that let both the fence-tag leak (BUG-A) and this FK
+/// orphaning (this bug) ship undetected. (`ai_generations`'s own store-level
+/// merge tests already cover the downstream round trip thoroughly; what was
+/// never pinned is the two lines in `persist_document` that decide which
+/// `QualityCtx` field feeds which DB column.)
+///
+/// Pins that `resume_text` and `cover_letter_text` are built from two
+/// DIFFERENT `QualityCtx` fields — `ctx.draft` ("the résumé body") and
+/// `ctx.letter` ("the letter `cover_letter` generated"), per that struct's
+/// own field docs — never the same field read twice.
+///
+/// Mutation check, both applied and reverted: change `cover_letter_text:
+/// ctx.letter.clone()` to `cover_letter_text: ctx.draft.clone()` in
+/// `persist_document` and the second assertion fails.
+#[test]
+fn persist_document_builds_the_two_documents_from_different_ctx_fields() {
+    let body = persist_document_source();
+    assert!(
+        body.contains("resume_text: ctx.draft.clone(),"),
+        "the résumé slot must come from ctx.draft — QualityCtx's own \"the résumé \
+         body\" field"
+    );
+    assert!(
+        body.contains("cover_letter_text: ctx.letter.clone(),"),
+        "the letter slot must come from ctx.letter, NEVER ctx.draft — QualityCtx's \
+         own \"the letter `cover_letter` generated\" field"
+    );
 }

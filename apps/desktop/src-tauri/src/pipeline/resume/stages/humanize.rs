@@ -41,6 +41,23 @@
 //! rule dictionary (antiAiTellProse) can seed English vocabulary into non-English
 //! prose undetected by the per-language lexicon checks. Locale dispatch (using the
 //! per-language prose checks, not the English ones) is the future fix.
+//!
+//! ## Shape, not just content (the `<humanize_document>` leak)
+//!
+//! A real run shipped an exported résumé with `<humanize_document>` as the
+//! candidate's name and `</humanize_document>` as its last line: the model
+//! returned the document WRAPPED in the fence tag `humanize_user` wraps it in
+//! before sending it, and nothing checked for that. Every guard that already
+//! existed — [`is_usable_rewrite`]'s length floor, [`humanize_is_worse`]'s
+//! Critical/voice-flag comparison — grades CONTENT, and a wrapper only ADDS
+//! length and introduces no new finding, so the corrupt candidate sailed
+//! through both clean. `is_usable_rewrite` now also rejects any candidate
+//! containing a registered fence tag
+//! ([`crate::prompt_fence::contains_fence_tag`], checked against the whole
+//! [`crate::prompt_fence`] registry, not just this one tag) — a REVERT, not a
+//! strip-and-keep: a model that echoed the wrapper may have echoed other
+//! scaffolding too, and this stage's job is cosmetic polish, so its failure
+//! mode must be "no improvement", never "corrupted document".
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -176,9 +193,29 @@ pub(crate) fn should_humanize_letter(
 
 /// Whether a rewritten document is usable AT ALL — before it is ever graded.
 ///
-/// Two things have to hold: non-empty (trimmed), and not drastically shorter
-/// than the original. The length floor is tier-dependent, and the asymmetry is
-/// deliberate, not a stricter-is-safer default:
+/// Three things have to hold: non-empty (trimmed), free of any registered
+/// fence tag, and not drastically shorter than the original.
+///
+/// **The fence-tag check is a SHAPE gate, not a content one — the gap a real
+/// incident found.** The humanize contract tells the model to return the FULL
+/// document; a model that returns it WRAPPED in the `<humanize_document>` tag
+/// it was handed produces a candidate that is non-empty, at or over the length
+/// floor (a wrapper only ADDS length), and carries no new voice/factual
+/// finding — every other guard in this stage grades content, and content was
+/// fine. `crate::prompt_fence::contains_fence_tag` is what actually catches it,
+/// checked against the FULL registry so any known tag — not just this one —
+/// is caught, present and future.
+///
+/// **Revert, not repair, and deliberately so.** A model that echoed the fence
+/// wrapper may have echoed other scaffolding too; stripping only the one tag
+/// this stage knows about could leave subtler damage behind while looking
+/// clean. Humanize is a cosmetic, best-effort stage — its failure mode must be
+/// "no improvement", never "corrupted document" — so a shape-broken candidate
+/// is treated exactly like an unusable/truncated one: discarded, original
+/// kept, `called` still recorded so the attempt is not hidden.
+///
+/// The length floor is tier-dependent, and the asymmetry is deliberate, not a
+/// stricter-is-safer default:
 ///
 /// - **Resume tier: 50%**, generous — a rewrite that trims a wordy flagged
 ///   bullet is still legitimate, and `humanize_is_worse` has a REAL backstop
@@ -208,6 +245,9 @@ pub(crate) fn should_humanize_letter(
 pub(crate) fn is_usable_rewrite(original: &str, candidate: &str, tier: HumanizeTier) -> bool {
     let candidate = candidate.trim();
     if candidate.is_empty() {
+        return false;
+    }
+    if crate::prompt_fence::contains_fence_tag(candidate) {
         return false;
     }
     let original_len = original.trim().chars().count();

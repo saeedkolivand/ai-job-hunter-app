@@ -22,6 +22,18 @@ interface Props {
    *  changes after the letter's first token lands. Labels the streaming pane so
    *  a résumé→letter swap mid-run doesn't read as the SAME document continuing. */
   streamingTarget: 'resume' | 'cover';
+  /**
+   * The run's own start timestamp (epoch ms), as recorded by the backend on
+   * `pipeline_runs.started_at` — `null` only in the brief window before the
+   * run record's first fetch lands (or if no run id exists yet). Anchoring
+   * the elapsed caption on this rather than component-mount time is the
+   * whole fix for #993/owner-report: the run keeps going on the backend
+   * regardless of whether this panel is mounted, so a navigate-away-and-back
+   * (which unmounts and reconnects the whole flow, not just this panel —
+   * see `ApplicationDetailPage`'s `tab === 'documents'` gate) must read the
+   * SAME elapsed value, not restart at 0:00.
+   */
+  runStartedAt: number | null;
   onCancel: () => void;
 }
 
@@ -54,24 +66,30 @@ export function GeneratingPanel({
   thinking,
   output,
   streamingTarget,
+  runStartedAt,
   onCancel,
 }: Props) {
   const { t } = useTranslation();
 
-  // Elapsed time on the ACTIVE step, reset every time the step changes.
-  const stepStartRef = useRef(Date.now());
+  // Elapsed time since the RUN started — NOT reset on a step change, and NOT
+  // reset on a remount (`runStartedAt` is the backend's own persisted
+  // timestamp, read fresh from the run record every mount). Falls back to
+  // mount time only for the brief window before that record's first fetch
+  // lands; `mountFallback` is captured once and never reassigned, so it
+  // can't itself become a second "resets on remount" bug.
+  const [mountFallback] = useState(() => Date.now());
+  const anchor = runStartedAt ?? mountFallback;
   const [elapsedSec, setElapsedSec] = useState(0);
   useEffect(() => {
-    stepStartRef.current = Date.now();
-    setElapsedSec(0);
-  }, [currentStep]);
-  useEffect(() => {
-    const id = setInterval(
-      () => setElapsedSec(Math.floor((Date.now() - stepStartRef.current) / 1000)),
-      1000
-    );
+    // Clamped at 0: `anchor` is a backend timestamp, so a clock-skewed host
+    // can put it slightly ahead of this client's `Date.now()` even though
+    // it passed the `> 0` guard on the way in — without the clamp that reads
+    // as a negative "N total" caption instead of just starting at 0:00.
+    const tick = () => setElapsedSec(Math.max(0, Math.floor((Date.now() - anchor) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [anchor]);
 
   // One utterance per step TRANSITION — an aria-hidden icon is the only other
   // state cue on each row, so without this a screen-reader user hears
@@ -146,7 +164,8 @@ export function GeneratingPanel({
                 {active ? (
                   stageLabel && (
                     <span className="mt-0.5 block text-[10px] text-brand-soft">
-                      {stageLabel} · {elapsedLabel(elapsedSec)}
+                      {stageLabel} ·{' '}
+                      {t('pipeline.step.elapsedTotal', { time: elapsedLabel(elapsedSec) })}
                     </span>
                   )
                 ) : (

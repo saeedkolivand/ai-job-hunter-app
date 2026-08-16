@@ -840,7 +840,7 @@ async fn fetch_web_notes<S: crate::commands::ai::AnswerSearcher>(
 pub(super) async fn handle_answer_assist(
     app: &AppHandle,
     req_id: &str,
-    gen: u64,
+    r#gen: u64,
     payload: &Value,
     registry: &super::stream::AssistStreamRegistry,
     sink: &mut dyn super::FrameSink,
@@ -876,7 +876,7 @@ pub(super) async fn handle_answer_assist(
         )),
     };
 
-    unregister_after_request(registry, req_id, gen);
+    unregister_after_request(registry, req_id, r#gen);
     answer_assist_reply(req_id, outcome)
 }
 
@@ -943,9 +943,9 @@ pub(super) async fn handle_answer_assist(
 fn unregister_after_request(
     registry: &super::stream::AssistStreamRegistry,
     req_id: &str,
-    gen: u64,
+    r#gen: u64,
 ) {
-    registry.unregister_gen(req_id, gen);
+    registry.unregister_gen(req_id, r#gen);
 }
 
 #[cfg(test)]

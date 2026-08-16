@@ -512,7 +512,9 @@ impl Completer {
     ) -> AppResult<()> {
         // No declared intent — this caller (agentic tool loop / extension
         // bridge answer.assist) already passes its own explicit `temperature`,
-        // which wins over any adapter default regardless.
+        // which wins over any adapter default regardless. No effort either:
+        // neither caller has a run-level reasoning-effort setting to scale a
+        // deadline by.
         let req = text_request(
             &self.model,
             system,
@@ -520,6 +522,7 @@ impl Completer {
             temperature,
             max_tokens,
             self.context_window,
+            None,
         );
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
@@ -653,6 +656,12 @@ impl Completer {
     /// decision, and making it easy to omit is how the repair loop's between-
     /// calls hole got written the first time. Callers with nothing to guard pass
     /// `|| Ok(())`.
+    /// `effort` is the run's own reasoning-effort token — the SAME one
+    /// `stream_captured`'s caller threads to `chat_stream` — so this stage's
+    /// per-call HTTP deadline scales exactly like a streamed stage's does
+    /// (`timeouts::ollama_completion_deadline`, mirroring `stream_deadline`).
+    /// `None` for a caller with no run-level effort concept, which falls back
+    /// to the same baseline this method always used.
     pub async fn complete_json<T: DeserializeOwned>(
         &self,
         guard: impl Fn() -> AppResult<()>,
@@ -660,13 +669,14 @@ impl Completer {
         user: &str,
         schema_hint: &str,
         schema: Option<&Value>,
+        effort: Option<&str>,
     ) -> AppResult<T> {
         complete_json_with(
             || {
                 guard()?;
                 self.charge_daily()
             },
-            |reask| self.structured_call(system, user, schema_hint, schema, reask),
+            |reask| self.structured_call(system, user, schema_hint, schema, reask, effort),
             |usage| self.record_spend(usage),
         )
         .await
@@ -743,6 +753,7 @@ impl Completer {
         schema_hint: &str,
         schema: Option<&Value>,
         reask: Option<String>,
+        effort: Option<&str>,
     ) -> AppResult<(String, Usage)> {
         let user = match reask {
             Some(reask) => format!("{user}\n\n{reask}"),
@@ -750,8 +761,20 @@ impl Completer {
         };
         // Temperature/max_tokens are deliberately absent (see above); the
         // configured context window is not — a structured call reads the same
-        // oversized artifacts every other stage does.
-        let req = text_request(&self.model, system, &user, None, None, self.context_window);
+        // oversized artifacts every other stage does. `effort` rides along so
+        // the provider's own per-call deadline (Ollama's
+        // `ollama_completion_deadline`) can scale by it, same as a streamed
+        // stage's — see `complete_json`'s own doc for why this parameter
+        // exists.
+        let req = text_request(
+            &self.model,
+            system,
+            &user,
+            None,
+            None,
+            self.context_window,
+            effort,
+        );
         self.provider
             .complete_structured(&self.app, &req, schema_hint, schema)
             .await
@@ -766,7 +789,10 @@ impl Completer {
 /// Extracted so `context_window` has ONE place to be forwarded from. It was
 /// hard-coded `None` in both literals, which is how the user's configured
 /// window silently never reached a staged run while the renderer's own fast
-/// path honored it — a second literal is how that comes back.
+/// path honored it — a second literal is how that comes back. `effort` was
+/// the same story: hard-coded `None` here meant `structured_call`'s per-call
+/// HTTP deadline never scaled by it even though `stream_complete`'s sibling
+/// call (through `chat_stream`) already did.
 pub(crate) fn text_request(
     model: &str,
     system: &str,
@@ -774,6 +800,7 @@ pub(crate) fn text_request(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     context_window: Option<u32>,
+    effort: Option<&str>,
 ) -> AiGenerateRequest {
     AiGenerateRequest {
         model: model.to_string(),
@@ -795,7 +822,7 @@ pub(crate) fn text_request(
         repeat_penalty: None,
         max_tokens,
         context_window,
-        effort: None,
+        effort: effort.map(str::to_string),
         intent: None,
     }
 }
@@ -995,6 +1022,13 @@ impl<C> Pipeline<C> {
             let outcome = StageOutcome {
                 ok: result.is_ok(),
                 ms: started.elapsed().as_millis() as u64,
+                // A per-call HTTP deadline expiring INSIDE the stage body —
+                // distinct from the stage-BOUNDARY run deadline `before()`
+                // guards (that one never reaches `stage.run` at all). Computed
+                // here, not by the hook, because only the raw `AppResult` — not
+                // the `ok`/`ms` pair a hook receives — carries which `AppError`
+                // variant fired.
+                timed_out: matches!(&result, Err(AppError::Timeout(_))),
             };
             hooks.after(&info, outcome).await;
             result?;
@@ -1029,6 +1063,14 @@ pub struct StageOutcome {
     pub ok: bool,
     /// Wall-clock duration of the stage body.
     pub ms: u64,
+    /// The stage's own `AppError` was [`crate::error::AppError::Timeout`] — a
+    /// per-call HTTP deadline expiring, never a stage-boundary run-deadline
+    /// stop (which never runs the stage at all) or any other failure kind.
+    /// `false` whenever `ok` is `true`. What lets a [`StageHooks::after`]
+    /// implementor (e.g. the résumé pipeline's `RunHooks`) record
+    /// [`crate::pipeline::budget::StoppedReason::Timeout`] without being
+    /// handed the error itself.
+    pub timed_out: bool,
 }
 
 /// Per-stage lifecycle callbacks for [`Pipeline::run_hooked`].

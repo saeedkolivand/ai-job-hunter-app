@@ -397,6 +397,16 @@ const R3_ALLOW: &[&str] = &[
     // read + its atomic claim. Persistence still lives entirely inside the
     // `applications` domain store — see applications::reminders.
     "applications/reminders.rs",
+    // Same store, same reason: the legacy `ai_generations` backfill + its
+    // durable one-shot marker (own doc on `ApplicationStore::
+    // backfill_from_generations`). The marker itself lives on the
+    // applications connection; the backfill (and its restore-specific
+    // cousin, `relink_legacy_generations_after_restore`) additionally opens
+    // a SECOND connection onto the sibling `ai_generations.db` to read and
+    // link its rows — exactly as `link_orphaned_generations` does. Still one
+    // domain store's persistence, just spanning the two connections that
+    // store's own job requires.
+    "applications/migrations.rs",
     "documents/mod.rs",
     // Same store, split only to stay under R8's LOC cap: the
     // `repair_pre_pdf_text_string_mojibake` migration body. Persistence

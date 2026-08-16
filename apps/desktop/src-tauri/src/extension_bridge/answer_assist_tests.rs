@@ -731,9 +731,9 @@ fn unregister_after_request_removes_a_pending_entry_left_by_an_early_gate_failur
     // simulated here directly), then the call fails before ever reaching
     // `compose_draft_stream` — nothing else would ever clean up this entry.
     let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
-    let gen = registry.begin("req-1").expect("a fresh reqId");
+    let r#gen = registry.begin("req-1").expect("a fresh reqId");
 
-    unregister_after_request(&registry, "req-1", gen);
+    unregister_after_request(&registry, "req-1", r#gen);
 
     assert!(
         !registry.contains("req-1"),
@@ -755,10 +755,10 @@ fn unregister_after_request_also_removes_a_running_entry_on_a_successful_outcome
     // `compose_draft_stream`, which no longer unregisters itself) must
     // still be cleaned up here, or a successful reqId would leak forever.
     let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
-    let gen = registry.begin("req-1").expect("a fresh reqId");
+    let r#gen = registry.begin("req-1").expect("a fresh reqId");
     assert!(registry.register("req-1", "job-1")); // the Pending -> Running move
 
-    unregister_after_request(&registry, "req-1", gen);
+    unregister_after_request(&registry, "req-1", r#gen);
 
     assert!(
         !registry.contains("req-1"),
@@ -787,8 +787,8 @@ fn unregister_after_request_then_a_fresh_begin_for_the_same_req_id_succeeds() {
     // that NEW entry out from under it (the exact clobber the single-owner
     // + generation-scoping fixes close together).
     let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
-    let gen = registry.begin("req-1").expect("a fresh reqId");
-    unregister_after_request(&registry, "req-1", gen);
+    let r#gen = registry.begin("req-1").expect("a fresh reqId");
+    unregister_after_request(&registry, "req-1", r#gen);
 
     assert!(
         registry.begin("req-1").is_some(),

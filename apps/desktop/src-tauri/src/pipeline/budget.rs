@@ -69,7 +69,7 @@ pub struct Budget {
     /// deleted along with `agent/` (PR-5 step 2).
     /// [`crate::pipeline::Pipeline::run_hooked`] never enforced it either — a
     /// staged run's per-call bounds are the HTTP timeouts of the calls a stage
-    /// makes (`timeouts::stream_deadline` / `timeouts::OLLAMA_COMPLETION`), and
+    /// makes (`timeouts::stream_deadline` / `timeouts::ollama_completion_deadline`), and
     /// its whole-run bound is [`Self::run_timeout`], checked at every stage
     /// boundary AND inside the one stage that fans out (`stages::repair`).
     /// Documented rather than fixed: wrapping every stage in
@@ -121,21 +121,35 @@ impl Budget {
     /// **`run_timeout` = 90 min**, raised from an unvalidated 30 (via a wrong
     /// 45, then 75) and now DERIVED from the fan-out that actually runs: it is
     /// the effort-blind FLOOR that must agree with
-    /// `timeouts::quality_run_deadline(None)`, which is
-    /// `fixed + baseline × passes × 1.0` = 4800 s + 600 s = 5400 s. The fixed
-    /// term is every call whose per-call bound is FLAT — 3 JSON stages × 2
-    /// round-trips (1800 s), the repair fan-out (`max_repair_attempts` (2)
-    /// rounds × `MAX_SECTIONS_PER_ROUND` (4) sections, 2400 s), and `humanize`'s
-    /// worst case (≤2 flagged documents, 600 s), all at the 300 s
-    /// `OLLAMA_COMPLETION` bound — and the scaled term is TWO streamed calls,
-    /// the draft and the cover letter (`cover_letter` stage, PR-2). The
-    /// 75-minute version counted only ONE streamed pass and no `humanize` term,
-    /// so raising either without raising this floor reopens the inversion the
-    /// 45-minute bug already taught: the renderer's own client timeout firing
-    /// before the backend's, instead of after it — the backend must give up
-    /// first because it is the side that knows WHY. Pinned by
+    /// `timeouts::quality_run_deadline(None)`, which is `flat + jsonStages ×
+    /// ollamaCompletionDeadline(None) + baseline × passes × 1.0` = 3000 s +
+    /// 1800 s + 600 s = 5400 s. Two of the three terms are FLAT ONLY at this
+    /// bottom tier (multiplier 1.0) and SCALE above it — see
+    /// `timeouts::ollama_completion_deadline`'s doc for why only 10 of the
+    /// run's 16 non-streamed calls stay flat at every effort:
+    ///
+    /// * the flat term — the repair fan-out (`max_repair_attempts` (2) rounds
+    ///   × `MAX_SECTIONS_PER_ROUND` (4) sections, 2400 s) and `humanize`'s
+    ///   worst case (≤2 flagged documents, 600 s), always at the 300 s
+    ///   `OLLAMA_COMPLETION_BASELINE` bound — `Completer::complete` carries no
+    ///   effort to scale by;
+    /// * the JSON-stage term — 3 JSON stages × 2 round-trips (1800 s at this
+    ///   tier), now scaled by `ollama_completion_deadline` the same way the
+    ///   next term already was;
+    /// * the scaled term — TWO streamed calls, the draft and the cover letter
+    ///   (`cover_letter` stage, PR-2).
+    ///
+    /// The 75-minute version counted only ONE streamed pass and no `humanize`
+    /// term; a later fix counted the JSON stages as flat everywhere, which is
+    /// what left them pinned to 300 s no matter how high the run's effort was
+    /// set — the fix `ollama_completion_deadline` and this floor's re-derived
+    /// arithmetic both exist for. Raising any of these without raising this
+    /// floor to match reopens the inversion the 45-minute bug already taught:
+    /// the renderer's own client timeout firing before the backend's, instead
+    /// of after it — the backend must give up first because it is the side
+    /// that knows WHY. Pinned by
     /// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`
-    /// and by `quality_run_deadline_clears_the_inner_per_call_bounds`, which
+    /// and by `quality_run_deadline_equals_the_inner_per_call_bounds`, which
     /// computes those inner bounds from the fan-out constants themselves; the
     /// effort-scaled deadline above this floor is picked by
     /// `pipeline::resume::run_deadline`.

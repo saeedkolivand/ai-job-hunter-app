@@ -18,10 +18,11 @@ use super::stream::{stream_response, StreamPiece};
 use super::structured;
 use super::timeouts;
 use super::{
-    model_entry, parse_rfc3339_millis, resolve_intent, single_shot_turn, AgentTurn,
-    AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace,
-    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
-    PROSE_GROUNDED_TEMPERATURE, PROSE_REPEAT_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    map_completion_transport_error, model_entry, parse_rfc3339_millis, resolve_intent,
+    single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities,
+    ProviderId, RequestTrace, SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    DETERMINISTIC_TEMPERATURE, PROSE_GROUNDED_TEMPERATURE, PROSE_REPEAT_PENALTY, PROSE_TEMPERATURE,
+    PROSE_TOP_P,
 };
 
 const EMBED_MODEL: &str = "nomic-embed-text";
@@ -443,7 +444,7 @@ impl AiProvider for OllamaClient {
 
         let resp = match super::retry::send_with_retry(
             || crate::net::http::shared().post(&endpoint).json(&body),
-            timeouts::OLLAMA_COMPLETION,
+            timeouts::OLLAMA_COMPLETION_BASELINE,
         )
         .await
         {
@@ -1203,18 +1204,25 @@ async fn complete_impl(
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
 
+    // Scaled by the SAME effort that governs `chat_stream`'s deadline — see
+    // `timeouts::ollama_completion_deadline`'s doc for why this is the only
+    // one of the three non-structured completion callers below (`complete`/
+    // `complete_with_usage`, which set `structured: None`) that can actually
+    // raise it above the baseline: those two have no `AiGenerateRequest` to
+    // read an effort off, so they fall back to the same flat bound as before.
+    let deadline = timeouts::ollama_completion_deadline(structured.as_ref().and_then(|s| s.effort));
     let body = build_complete_body(model, system, user, temperature, structured);
 
     let resp = match super::retry::send_with_retry(
         || crate::net::http::shared().post(&endpoint).json(&body),
-        timeouts::OLLAMA_COMPLETION,
+        deadline,
     )
     .await
     {
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            return Err(AppError::Network(format!("Ollama unreachable: {e}")));
+            return Err(map_completion_transport_error(e, "Ollama", deadline));
         }
     };
     let status = resp.status();

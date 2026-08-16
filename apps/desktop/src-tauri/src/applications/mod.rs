@@ -302,13 +302,28 @@ pub struct StatusEvent {
     pub note: String,
 }
 
+/// 2026-06-11T00:00:00Z ms: a day before PR #359 (Applications) merged, so
+/// `created_at` earlier is provably LEGACY (create-on-miss is correct); at/
+/// after it, TREATED as modern — misclassifying legacy only strands it from
+/// `find_for_job`, while the reverse RESURRECTS a deletion. Still relinked
+/// later by `link_orphaned_generations`; only CREATING one is refused.
+///
+/// **Second line of defence, not the fix**: a genuinely pre-epoch row stays
+/// pre-epoch forever, so this alone cannot stop create → delete → FK detaches
+/// to NULL → still pre-epoch and unlinked → recreated. `migrations.rs`'s
+/// one-shot backfill marker is what closes that; this just keeps a
+/// never-backfilled legacy row from misclassifying as modern before the
+/// marker exists.
+const APPLICATIONS_FEATURE_EPOCH_MS: u64 = 1_781_136_000_000;
+
 pub struct ApplicationStore {
     conn: Mutex<Connection>,
 }
 
 impl ApplicationStore {
-    /// Open `applications.db`, run migrations, then run the one-time backfill from
-    /// the sibling `ai_generations.db` (idempotent — safe on every boot).
+    /// Open `applications.db`, run migrations, then run the lookup-only orphan
+    /// link (every boot) and the one-time legacy backfill from the sibling
+    /// `ai_generations.db` (own doc on [`Self::backfill_from_generations`]).
     pub fn open(data_dir: &Path) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("applications.db");
@@ -317,13 +332,30 @@ impl ApplicationStore {
         let store = Self {
             conn: Mutex::new(conn),
         };
-        // The ai_generations FK column + the backfill touch the SEPARATE
-        // ai_generations.db, so they can't be ordinary applications.db migrations.
-        // Run them here, guarded so a re-run is a no-op.
+        // Both touch the SEPARATE ai_generations.db. ORDER IS LOAD-BEARING:
+        // lookup-only `link_orphaned_generations` (own doc, safe every boot)
+        // runs FIRST — reversed, the wide backfill's unconditional scan
+        // resolves every row first, leaving nothing for the lookup-only pass.
+        // Reordering alone does NOT stop resurrecting a deleted Application —
+        // only `backfill_from_generations` running exactly once (own doc)
+        // closes that.
+        // `{}`/`e.code()`, never `{e}` — a `rusqlite::Error::InvalidPath` embeds
+        // the offending path in its `Display`, which `AppError::from` preserves,
+        // so interpolating `e` directly here would leak an absolute path into
+        // the log (repo path-privacy rule). `.code()` is a fixed, path-free
+        // category string, exactly what it exists for (own doc on `AppError::code`).
+        if let Err(e) = store.link_orphaned_generations(data_dir) {
+            log::warn!(
+                "[applications] orphaned-generation link skipped (non-fatal): {}",
+                e.code()
+            );
+        }
+        // Pre-ADR-0001 legacy backfill: no Application ever existed for these.
+        // No-ops immediately once its one-shot marker is set (own doc).
         if let Err(e) = store.backfill_from_generations(data_dir) {
             // Non-fatal: a backfill failure must never block app boot. Worst case
             // the table is empty and the user re-derives via the normal flow.
-            log::warn!("[applications] backfill skipped (non-fatal): {e}");
+            log::warn!("[applications] backfill skipped (non-fatal): {}", e.code());
         }
         Ok(store)
     }
@@ -334,106 +366,90 @@ impl ApplicationStore {
         conn.execute("DELETE FROM status_events", []).ok();
     }
 
-    /// Forward-safe, idempotent backfill from the pre-split `ai_generations.db`:
+    /// Forward-safe, idempotent, **lookup-only** backfill: link every orphaned
+    /// `ai_generations` row (non-empty `job_url`, `application_id` still NULL)
+    /// to its Application, keyed by normalized `job_url` — the SAME key
+    /// [`Self::upsert_for_origin`] merges new saves on. Returns the number of
+    /// rows actually linked, so a caller (and a test) can tell a real backfill
+    /// from a no-op one.
     ///
-    /// 1. `ALTER TABLE ai_generations ADD COLUMN application_id` (+ index) — guarded
-    ///    by [`crate::db::column_exists`] so a re-run is a no-op.
-    /// 2. For each generation, ensure exactly one `Application(status=applied,
-    ///    applied_at=created_at)` keyed by `normalize(job_url)` (empty url → its own
-    ///    uuid so link-less generations each get a distinct Application), link the
-    ///    gen's `application_id`, and seed one status event.
+    /// **Deliberately never creates an Application — the reason this is a
+    /// SEPARATE function from [`Self::backfill_from_generations`], not a
+    /// second pass through it.** That backfill predates ADR-0001 entirely: for
+    /// those rows no Application ever existed anywhere, so creating one is the
+    /// correct — the only possible — repair. The rows THIS backfill targets are
+    /// different in kind: every staged-pipeline run is launched FROM an
+    /// Application's own page, so the Application for an orphaned row almost
+    /// always already exists, created independently of the generation save
+    /// that failed to link to it (see `commands::resume_pipeline::mod::
+    /// persist_document`'s own doc for how that save came to omit the FK). A
+    /// row this lookup cannot match therefore means one of two things, and
+    /// BOTH must leave `application_id` NULL rather than guess:
     ///
-    /// Re-running is safe: a gen that already carries a non-empty `application_id`
-    /// is skipped, and Applications are looked up by normalized url before insert,
-    /// so no duplicates accrue.
-    fn backfill_from_generations(&self, data_dir: &Path) -> AppResult<()> {
+    /// * the user has since deleted that Application — creating one here would
+    ///   RESURRECT it, which is exactly the defect a lookup-only backfill
+    ///   avoids (an upsert-style backfill would recreate it silently, and the
+    ///   user would never know their delete was undone);
+    /// * the row is a genuinely unlinked generation with no Application to
+    ///   find (an id-less/unsaved apply attempt, a stale/renamed url).
+    ///
+    /// A WRONG link is worse than a missing one: it would put someone's résumé
+    /// under an unrelated Application and delete it along with THAT
+    /// Application the next time the user deletes it. `Self::find_by_job_url`
+    /// is the existing READ-ONLY primitive for exactly this — the same one
+    /// `extension_bridge`'s `applied.check` handler uses because it must never
+    /// fetch-or-write either.
+    ///
+    /// **Safe to re-run, and re-run on every boot on purpose** (same posture
+    /// as `backfill_from_generations`): the `WHERE application_id IS NULL`
+    /// selection is itself the idempotency guard — a row this backfill already
+    /// linked is excluded from the next run's scan, and a row it could not
+    /// match stays eligible, so a later boot picks it up the moment its
+    /// Application exists (e.g. the user re-generates, re-creating the link
+    /// through the ordinary save path).
+    ///
+    /// No new schema migration: `AiGenerationStore`'s own `add_application_id`
+    /// migration already added the column and its index long before this
+    /// backfill was written, and this is DATA repair, not a schema change — so
+    /// there is nothing to append to either store's position-indexed
+    /// `MIGRATIONS` array for it.
+    fn link_orphaned_generations(&self, data_dir: &Path) -> AppResult<usize> {
         let gen_path = data_dir.join("ai_generations.db");
         if !gen_path.exists() {
-            return Ok(()); // fresh install — nothing to migrate
+            return Ok(0); // fresh install — nothing to link
         }
         let gen_conn = crate::db::open(&gen_path)?;
-
-        // Step 1: add the FK column + index if absent (idempotent guard).
         if !crate::db::column_exists(&gen_conn, "ai_generations", "application_id") {
-            gen_conn.execute_batch(
-                "ALTER TABLE ai_generations ADD COLUMN application_id TEXT;
-                 CREATE INDEX IF NOT EXISTS idx_ai_generations_application_id
-                     ON ai_generations(application_id);",
-            )?;
-        }
-
-        struct GenRow {
-            id: String,
-            created_at: u64,
-            candidate: String,
-            title: String,
-            company: String,
-            job_url: String,
-            board: String,
-            answers: Vec<ApplicationAnswer>,
-            brief: String,
-            application_id: Option<String>,
+            // AiGenerationStore has never run its own migrations on this
+            // install yet — nothing to backfill against.
+            return Ok(0);
         }
 
         let mut stmt = gen_conn.prepare(
-            "SELECT id, created_at, candidate_name, job_title, company_name,
-                    job_url, board, application_answers, company_brief, application_id
-             FROM ai_generations
-             ORDER BY created_at ASC",
+            "SELECT id, job_url FROM ai_generations \
+             WHERE job_url != '' AND (application_id IS NULL OR application_id = '')",
         )?;
-        let rows: Vec<GenRow> = stmt
-            .query_map([], |row| {
-                let answers_json: String = row.get(7)?;
-                let app_id: Option<String> = row.get(9).unwrap_or(None);
-                Ok(GenRow {
-                    id: row.get(0)?,
-                    created_at: ts_from_db(row.get::<_, i64>(1)?),
-                    candidate: row.get(2)?,
-                    title: row.get(3)?,
-                    company: row.get(4)?,
-                    job_url: row.get(5)?,
-                    board: row.get(6)?,
-                    answers: serde_json::from_str(&answers_json).unwrap_or_default(),
-                    brief: row.get(8)?,
-                    application_id: app_id.filter(|s| !s.is_empty()),
-                })
-            })?
-            .filter_map(|r| r.ok())
+        let orphans: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(Result::ok)
             .collect();
         drop(stmt);
 
-        for g in rows {
-            if g.application_id.is_some() {
-                continue; // already linked — idempotent skip
-            }
-            let normalized = normalize_job_url(&g.job_url);
-            let meta = ApplicationMeta {
-                company: g.company,
-                title: g.title,
-                candidate: g.candidate,
-                brief: g.brief,
-                job_description: String::new(), // ponytail: legacy generations carry no JD column
-                answers: g.answers,
-                job_summary: String::new(),
-                salary_min: None,
-                salary_max: None,
-                salary_currency: None,
+        let mut linked = 0usize;
+        for (gen_id, job_url) in orphans {
+            let normalized = normalize_job_url(&job_url);
+            // Read-only lookup — see this function's own doc for why an
+            // upsert is never the right call here.
+            let Some(app) = self.find_by_job_url(&normalized) else {
+                continue; // no resolvable Application — stays NULL, never guessed
             };
-            // Empty url → a fresh per-gen Application (no shared key to merge on);
-            // non-empty url → merge into that url's Application if one exists.
-            let app_id = self.upsert_internal(
-                &normalized,
-                &g.board,
-                &meta,
-                &meta.job_description,
-                Some(g.created_at),
-            )?;
             gen_conn.execute(
                 "UPDATE ai_generations SET application_id = ?2 WHERE id = ?1",
-                params![g.id, app_id],
+                params![gen_id, app.id],
             )?;
+            linked += 1;
         }
-        Ok(())
+        Ok(linked)
     }
 
     // ── Reads ─────────────────────────────────────────────────────────────────
