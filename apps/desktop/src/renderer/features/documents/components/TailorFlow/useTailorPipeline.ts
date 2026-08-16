@@ -530,6 +530,11 @@ export function useTailorPipeline({
     exportAs,
     editActiveOutput,
     meta,
+    // Export/preview market — see the computation's doc comment above. The live
+    // preview (GenerationOutput → PdfPreview) needs the SAME value the export
+    // sends, or the on-screen letter's salutation/sign-off silently disagrees
+    // with the downloaded one (the Rust exporter defaults to "intl" on `undefined`).
+    market,
     report,
     pipelineReview,
     openClaimsTotal,

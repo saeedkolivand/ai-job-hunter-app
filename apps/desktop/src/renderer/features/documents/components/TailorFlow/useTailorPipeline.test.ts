@@ -659,6 +659,20 @@ describe('useTailorPipeline — export market (DIN 5008 / locale-drop regression
 
     expect(exportLocaleArg(exportDOCX)).not.toBeUndefined();
   });
+
+  // The live preview (GenerationOutput → PdfPreview) reads this SAME value off
+  // the hook's return, not the export call args — without it exposed here the
+  // preview silently renders under market "intl" while the export renders under
+  // "de" (a German posting shows an English salutation on screen but a German
+  // one in the downloaded file). Asserting the exposed value directly, not just
+  // the export call, is what would fail if a future edit dropped it from the
+  // return object.
+  it('exposes the resolved market on the hook return (not just the export call)', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+
+    expect(result.current.market).toBe('de');
+  });
 });
 
 describe('useTailorPipeline — stageLabel fallback (L: no raw snake_case leak)', () => {

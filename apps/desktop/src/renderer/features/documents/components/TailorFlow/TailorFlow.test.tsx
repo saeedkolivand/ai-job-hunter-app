@@ -118,6 +118,7 @@ const genMock = {
   exportAs: vi.fn(),
   editActiveOutput: vi.fn(),
   meta: null,
+  market: undefined as string | undefined,
   report: null,
   pipelineReview: undefined,
   recheck: undefined,
@@ -260,17 +261,20 @@ vi.mock('./ResultsPanel', () => ({
     onAtsModeChange,
     templateId,
     atsMode,
+    market,
   }: {
     onEditSettings?: () => void;
     onTemplateChange?: (v: string) => void;
     onAtsModeChange?: (v: boolean) => void;
     templateId?: string;
     atsMode?: boolean;
+    market?: string;
   }) => (
     <div
       data-testid={TEST_IDS.documents.resultsPanel}
       data-templateid={templateId}
       data-atsmode={String(atsMode)}
+      data-market={market ?? ''}
     >
       <div role="button" tabIndex={0} onClick={onEditSettings}>
         edit-settings
@@ -402,6 +406,7 @@ beforeEach(() => {
   genMock.coverOut = '';
   genMock.output = '';
   genMock.error = null;
+  genMock.market = undefined;
   genMock.start.mockClear();
   genMock.cancel.mockClear();
   jobAdSummaryMock.generate.mockClear();
@@ -542,6 +547,23 @@ describe('TailorFlow — persistence injection', () => {
     const panel = screen.getByTestId(TEST_IDS.documents.resultsPanel);
     expect(panel).toHaveAttribute('data-templateid', 'classic');
     expect(panel).toHaveAttribute('data-atsmode', 'true');
+  });
+
+  // Regression guard: `gen.market` (resolved by `useTailorPipeline` from the job
+  // description's detected language) used to never reach the live preview — the
+  // Rust exporter falls back to market "intl" on an unset value, so a German
+  // posting showed an English salutation on screen but a German one in the
+  // downloaded PDF/DOCX. Asserts the FORWARDED value, not just that a render
+  // happened, so dropping this prop again fails the test.
+  it('forwards gen.market to ResultsPanel as `market` (not undefined) when done', () => {
+    genMock.hasOutput = true;
+    genMock.market = 'de';
+    renderFlow({});
+
+    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toHaveAttribute(
+      'data-market',
+      'de'
+    );
   });
 
   it('calls persistence.setTemplateId when ResultsPanel fires onTemplateChange', async () => {
