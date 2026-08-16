@@ -7,6 +7,8 @@ import type { AiGenerationRecord } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 
 import type * as GenerateModule from '@/lib/generate';
+import { exportDOCX, exportPDF } from '@/lib/generate';
+import { keys } from '@/services/query-client';
 
 import { useTailorPipeline } from './useTailorPipeline';
 
@@ -101,8 +103,12 @@ vi.mock('@/lib/generate', async () => {
   };
 });
 
+// A module-scoped, per-test-reset client (not a fresh one per `render()` call)
+// so a test can `vi.spyOn` its `invalidateQueries` and observe what the hook
+// under test does to it.
+let queryClient: QueryClient;
 const wrapper = ({ children }: { children: ReactNode }) =>
-  createElement(QueryClientProvider, { client: new QueryClient() }, children);
+  createElement(QueryClientProvider, { client: queryClient }, children);
 
 const PARAMS = {
   jobDesc: 'a very German-language job ad'.repeat(1), // language detection is best-effort; not asserted precisely
@@ -138,6 +144,7 @@ function detail(overrides: Partial<PipelineRunDetail> = {}): PipelineRunDetail {
 }
 
 beforeEach(() => {
+  queryClient = new QueryClient();
   sessionBus.state = 'idle';
   sessionBus.busy = false;
   sessionBus.runId = null;
@@ -155,6 +162,8 @@ beforeEach(() => {
   resolveFabricationMutate.mockClear();
   updateAiGenerationMutate.mockClear();
   mockNotify.error.mockClear();
+  vi.mocked(exportPDF).mockClear();
+  vi.mocked(exportDOCX).mockClear();
 });
 
 describe('useTailorPipeline — start() builds the id-wins run request', () => {
@@ -237,6 +246,73 @@ describe('useTailorPipeline — start() builds the id-wins run request', () => {
       await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
     });
     expect(mockNotify.error).not.toHaveBeenCalled();
+  });
+});
+
+// The gap this closes: `market`/`today`/`researchCompany` were added to
+// `ResumePipelineRunSchema` (all `.default()`-ed) but `start()` never sent
+// any of them, so they silently sat at their defaults ('intl', '', false)
+// and the letter-market-conventions/date/company-research features they
+// unlock were inert regardless of the wizard's own state. Real (unmocked)
+// `detectLanguage` fixtures, lifted from the market describe block below.
+describe('useTailorPipeline — start() sends market/today/researchCompany (letter-export contract)', () => {
+  const GERMAN_JOB_AD =
+    'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+  const ENGLISH_JOB_AD =
+    'Experienced software engineer with a strong background in building scalable web applications and distributed backend systems for large organisations.';
+
+  it('sends the German market for a German-language posting', async () => {
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(expect.objectContaining({ market: 'de' }));
+  });
+
+  it('sends the US market for a US-located English posting', async () => {
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD, jobLocation: 'New York, NY, US' });
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(expect.objectContaining({ market: 'us' }));
+  });
+
+  it('sends a non-empty, German-formatted today for a German posting', async () => {
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    // Derived with the SAME `toLocaleDateString` call `start()` uses — asserts
+    // the shape/locale, not a hardcoded literal that would break tomorrow.
+    const expectedToday = new Date().toLocaleDateString('de', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    expect(expectedToday).not.toBe('');
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ today: expectedToday })
+    );
+  });
+
+  it('reflects researchCompany: true from the wizard values', async () => {
+    const { result } = render();
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: true });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ researchCompany: true })
+    );
+  });
+
+  it('reflects researchCompany: false from the wizard values', async () => {
+    const { result } = render();
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ researchCompany: false })
+    );
   });
 });
 
@@ -589,6 +665,103 @@ describe('useTailorPipeline — openClaimsTotal counts BOTH slots (H5)', () => {
   });
 });
 
+// The bug: `exportAs` used to pass the literal `undefined` in the `locale`
+// position of both `exportPDF`/`exportDOCX`, which the Rust exporter resolves
+// to market "intl" — silently dropping market-specific conventions (e.g. DIN
+// 5008 for a German letter). `resolveMarket` is now computed once from the
+// hook's own `targetLanguage` (detected from `jobDesc`) and threaded through.
+// Real (unmocked) `detectLanguage` fixtures below are lifted verbatim from
+// `packages/shared/src/language-detection.test.ts` — known-reliable inputs.
+describe('useTailorPipeline — export market (DIN 5008 / locale-drop regression)', () => {
+  const GERMAN_JOB_AD =
+    'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+  const ENGLISH_JOB_AD =
+    'Experienced software engineer with a strong background in building scalable web applications and distributed backend systems for large organisations.';
+
+  function exportLocaleArg(mockFn: typeof exportPDF | typeof exportDOCX): unknown {
+    const call = vi.mocked(mockFn).mock.calls.at(-1);
+    return call?.[6];
+  }
+
+  it('sends the German market (not undefined, not "intl") for a German job ad — PDF', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('pdf');
+    });
+
+    expect(exportLocaleArg(exportPDF)).toBe('de');
+  });
+
+  it('sends the German market for a German job ad — DOCX', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('docx');
+    });
+
+    expect(exportLocaleArg(exportDOCX)).toBe('de');
+  });
+
+  it('sends the English/international market for an English job ad — PDF', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('pdf');
+    });
+
+    expect(exportLocaleArg(exportPDF)).toBe('intl');
+  });
+
+  it('never leaves the locale argument undefined, regardless of language', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD });
+
+    await act(async () => {
+      await result.current.exportAs('docx');
+    });
+
+    expect(exportLocaleArg(exportDOCX)).not.toBeUndefined();
+  });
+
+  // The live preview (GenerationOutput → PdfPreview) reads this SAME value off
+  // the hook's return, not the export call args — without it exposed here the
+  // preview silently renders under market "intl" while the export renders under
+  // "de" (a German posting shows an English salutation on screen but a German
+  // one in the downloaded file). Asserting the exposed value directly, not just
+  // the export call, is what would fail if a future edit dropped it from the
+  // return object.
+  it('exposes the resolved market on the hook return (not just the export call)', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: GERMAN_JOB_AD });
+
+    expect(result.current.market).toBe('de');
+  });
+
+  // `jobLocation` is the found job's free-text location (e.g. "New York, NY,
+  // US") — previously never read, so an ENGLISH posting always fell through
+  // to `LANGUAGE_TO_MARKET.en === 'intl'` (A4) even for a US applicant.
+  it('a US-located English posting resolves market "us" (US Letter), not "intl"', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({
+      jobDesc: ENGLISH_JOB_AD,
+      jobLocation: 'New York, NY, US',
+    });
+
+    expect(result.current.market).toBe('us');
+  });
+
+  it('an unlocated English posting still falls back to "intl"', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD, jobLocation: undefined });
+
+    expect(result.current.market).toBe('intl');
+  });
+});
+
 describe('useTailorPipeline — stageLabel fallback (L: no raw snake_case leak)', () => {
   it('falls back to the translated coarse state for a stage name this build does not have copy for', () => {
     sessionBus.state = 'drafting';
@@ -600,5 +773,140 @@ describe('useTailorPipeline — stageLabel fallback (L: no raw snake_case leak)'
     // Never the raw wire name — falls back to pipeline.state.drafting's translation.
     expect(result.current.stageLabel).not.toBe('a_future_stage_this_build_predates');
     expect(result.current.stageLabel).toBe('pipeline.state.drafting');
+  });
+});
+
+// Stage 6d — the fabricated `meta` stub silently dropped the "top requirement
+// hits" metric from a Re-check (`use-quality-recheck.ts` sends
+// `meta.topRequirements` verbatim) and short-circuited the answers
+// assistant's own metadata extraction (`useApplicationAnswers.ts` treats any
+// non-null `meta` as already detected). Reverting to the fabricated
+// `topRequirements: []` makes this fail.
+describe('useTailorPipeline — meta is seeded from the aggregate, not fabricated', () => {
+  it("meta.topRequirements equals the record's list, not an empty array", () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const generation = {
+      id: 'gen-1',
+      candidateName: 'Jane Doe',
+      resumeLanguage: 'de',
+      jobAdLanguage: 'en',
+      mismatch: true,
+      topRequirements: ['Kubernetes', 'Rust'],
+      coverLetterText: '',
+    } as AiGenerationRecord;
+
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.meta?.topRequirements).toEqual(['Kubernetes', 'Rust']);
+    expect(result.current.meta?.candidateName).toBe('Jane Doe');
+    expect(result.current.meta?.resumeLanguage).toBe('de');
+    expect(result.current.meta?.jobAdLanguage).toBe('en');
+    expect(result.current.meta?.mismatch).toBe(true);
+  });
+
+  it('falls back to the derived defaults when no aggregate exists', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const { result } = render();
+
+    expect(result.current.meta?.topRequirements).toEqual([]);
+    expect(result.current.meta?.candidateName).toBe('');
+    expect(result.current.meta?.mismatch).toBe(false);
+  });
+});
+
+// Stage 6d — a run stopped before the `validate` stage (cancel, or a deadline
+// stop at a stage boundary) persists `session.detail.report === null`, which
+// the OLD `session.detail ? session.detail.report : …` ternary took as a
+// final answer and discarded the aggregate's perfectly good report. Reverting
+// the `??` fallback to that ternary makes this fail.
+describe('useTailorPipeline — quality report survives a terminal run with no live report', () => {
+  const minimalReport = {
+    ok: true,
+    issues: [],
+    metrics: {
+      keywordCoverage: null,
+      topRequirementHits: 3,
+      duplicateRatio: 0,
+      rolesSource: 0,
+      rolesOutput: 0,
+    },
+  };
+
+  it('falls back to the persisted report when a terminal detail.report is null', () => {
+    sessionBus.detail = detail({ status: 'cancelled', report: null });
+    const persisted = {
+      schemaVersion: 2,
+      pipeline: 'quality',
+      generatedAt: 0,
+      resume: { report: minimalReport, sourceTextHash: 0 },
+    };
+    const generation = {
+      id: 'gen-1',
+      coverLetterText: '',
+      qualityReport: JSON.stringify(persisted),
+    } as AiGenerationRecord;
+
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.report).not.toBeNull();
+    expect(result.current.report?.resume?.report.metrics.topRequirementHits).toBe(3);
+  });
+
+  it('still prefers the live report when both exist', () => {
+    sessionBus.detail = detail({
+      status: 'completed',
+      report: {
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 0,
+        resume: { report: { ...minimalReport, ok: false }, sourceTextHash: 1 },
+      },
+    });
+    const generation = {
+      id: 'gen-1',
+      coverLetterText: '',
+      qualityReport: JSON.stringify({
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 0,
+        resume: { report: minimalReport, sourceTextHash: 0 },
+      }),
+    } as AiGenerationRecord;
+
+    const { result } = render({ latestGeneration: generation });
+
+    expect(result.current.report?.resume?.sourceTextHash).toBe(1);
+  });
+});
+
+// Stage 6e — a hard failure via the umbrella `job.failed` path (a full queue,
+// no configured provider, a deleted résumé, …) sends `ERROR` straight to the
+// session machine with NO run record ever written (`detail` stays `null`).
+// The old effect gated on `session.detail?.status`, which never exists here,
+// so the aggregate (and Autopilot's score) never refreshed. Reverting to that
+// gate makes this fail.
+describe('useTailorPipeline — a hard failure with no run record still invalidates', () => {
+  it('invalidates aiGenerations AND autopilot once the session reaches ERROR with detail still null', () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { rerender } = render();
+    invalidateSpy.mockClear();
+
+    sessionBus.state = 'error';
+    sessionBus.detail = null;
+    rerender();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: keys.aiGenerations.all });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: keys.autopilot.all });
+  });
+
+  it('does not invalidate while still busy or idle', () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    render();
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    sessionBus.state = 'drafting';
+    const { rerender } = render();
+    rerender();
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });

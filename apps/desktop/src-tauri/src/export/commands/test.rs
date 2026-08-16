@@ -268,3 +268,172 @@ fn test_generate_filename() {
     assert!(filename.contains("resume"));
     assert!(filename.ends_with(".docx"));
 }
+
+/// `meta.candidate_name: Some("")` (the shape TailorFlow actually sends) must
+/// fall through to the attached `ContactProfile`'s name rather than winning
+/// as an empty string — before the non-blank filter, `Some("")` stayed
+/// `Some` and never reached this fallback rung at all.
+#[test]
+fn generate_filename_falls_back_to_contact_profile_when_meta_name_is_blank() {
+    use super::super::types::{
+        DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
+    };
+    use crate::contact_profile::ContactProfile;
+
+    let request = ExportRequest {
+        text: "Test".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::Classic,
+        meta: Some(GenerationMeta {
+            candidate_name: Some(String::new()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: None,
+        contact: Some(ContactProfile {
+            full_name: Some("Jane Smith".to_string()),
+            ..Default::default()
+        }),
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+
+    let filename = generate_filename(&request, "pdf");
+    assert!(
+        filename.starts_with("Jane-Smith-"),
+        "must fall back to the contact profile's name, not \"Candidate\": {filename}"
+    );
+}
+
+/// With no name anywhere (no meta, no contact), the filename still degrades
+/// to "Candidate" — the fallback rung is additive, not a replacement.
+#[test]
+fn generate_filename_falls_back_to_candidate_with_no_name_anywhere() {
+    use super::super::types::{DocumentType, ExportFormat, LetterLayout, TemplateId};
+
+    let request = ExportRequest {
+        text: "Test".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::Classic,
+        meta: None,
+        ats_mode: false,
+        locale: None,
+        contact: None,
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+
+    let filename = generate_filename(&request, "pdf");
+    assert!(filename.starts_with("Candidate-"), "got: {filename}");
+}
+
+// ── validate_and_normalize completes a body-only cover letter (Stage 1) ───────
+
+/// The core fix: a body-only cover letter (no salutation, no sign-off — the
+/// exact shape the staged pipeline emits per its own prompt) is completed at
+/// the shared export boundary, so PDF, DOCX and the live preview all inherit
+/// the fix from this one call site.
+#[test]
+fn validate_and_normalize_completes_a_body_only_cover_letter() {
+    use super::super::types::GenerationMeta;
+
+    let mut request = ExportRequest {
+        text: "I am writing to express my interest in this role.".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::Classic,
+        meta: Some(GenerationMeta {
+            candidate_name: Some("Jane Smith".to_string()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: Some("us".to_string()),
+        contact: None,
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+
+    validate_and_normalize(&mut request).expect("validate_and_normalize should succeed");
+
+    assert!(
+        request.text.starts_with("Dear Hiring Manager,"),
+        "got: {:?}",
+        request.text
+    );
+    assert!(
+        request.text.trim_end().ends_with("Sincerely,\nJane Smith"),
+        "got: {:?}",
+        request.text
+    );
+}
+
+/// `meta.candidate_name: Some("")` must fall through to the attached
+/// `ContactProfile`'s name for the LETTER sign-off too, not just the
+/// filename — both call sites route through the same `resolve_candidate_name`
+/// helper, so this pins that they stay in lockstep.
+#[test]
+fn validate_and_normalize_signs_off_with_contact_profile_when_meta_name_is_blank() {
+    use super::super::types::GenerationMeta;
+    use crate::contact_profile::ContactProfile;
+
+    let mut request = ExportRequest {
+        text: "I am writing to express my interest in this role.".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::Classic,
+        meta: Some(GenerationMeta {
+            candidate_name: Some(String::new()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: Some("us".to_string()),
+        contact: Some(ContactProfile {
+            full_name: Some("Jane Smith".to_string()),
+            ..Default::default()
+        }),
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+
+    validate_and_normalize(&mut request).expect("validate_and_normalize should succeed");
+
+    assert!(
+        request.text.trim_end().ends_with("Sincerely,\nJane Smith"),
+        "must sign off with the contact profile's name, not blank: {:?}",
+        request.text
+    );
+}
+
+/// The gate is `document_type == CoverLetter` — a résumé request must never
+/// run the letter-completion pass.
+#[test]
+fn validate_and_normalize_leaves_a_resume_untouched_by_letter_completion() {
+    let mut request = ExportRequest {
+        text: "Some résumé body text with no salutation at all.".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::Resume,
+        template_id: TemplateId::Classic,
+        meta: None,
+        ats_mode: false,
+        locale: Some("us".to_string()),
+        contact: None,
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+    let original = request.text.clone();
+
+    validate_and_normalize(&mut request).expect("validate_and_normalize should succeed");
+
+    assert_eq!(
+        request.text, original,
+        "a résumé request must not gain a salutation/sign-off"
+    );
+}

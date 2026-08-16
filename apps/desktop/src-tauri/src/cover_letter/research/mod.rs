@@ -81,17 +81,37 @@ impl CompanyResearch {
         // Fast path: cached brief younger than the TTL.
         if let Some(cache) = app.try_state::<KvCache>() {
             if let Some(brief) = cache.get(CACHE_NS, &key, TTL_SECS) {
+                // Length only — never the brief itself (ADR-027): it's free web
+                // prose about a company, not something the redaction pass
+                // (paths/URLs/credentials/hosts/emails) is built to catch, and
+                // this line fires on every staged run and ships in the
+                // diagnostics bundle.
                 tracing::info!(
                     company = %company,
                     source = "cache",
                     chars = brief.len(),
-                    "research: company brief\n{brief}"
+                    "research: company brief"
                 );
                 return EnrichmentResult {
                     key: company,
                     content: brief,
                 };
             }
+        }
+
+        // Charge the per-provider DAILY ceiling only NOW — right before the
+        // real provider call, after the cache check above has already come
+        // back empty. `Completer::admit_research` (both this crate's and
+        // the résumé pipeline's callers admit through it) only acquires the
+        // rate/concurrency slot; charging the daily budget any earlier —
+        // the pre-fix shape — burned a day's allowance on every cache hit,
+        // since a hit never reaches this line at all.
+        if let Err(e) = completer.charge_daily() {
+            tracing::debug!("research: daily budget exceeded for {company}: {e}");
+            return EnrichmentResult {
+                key: company,
+                content: String::new(),
+            };
         }
 
         // Provider-native research, bounded so generation never stalls. Any
@@ -122,10 +142,13 @@ impl CompanyResearch {
         // pollute the cover letter nor get cached (a bad miss must not stick for
         // the 7-day TTL).
         if is_no_info(&brief) {
+            // Length only — same discipline as the two `tracing::info!` calls
+            // above/below (ADR-027); this fires on the provider's own filler
+            // text, not attacker input, but it is still not ours to log.
             tracing::info!(
                 company = %company,
                 chars = brief.len(),
-                "research: no usable brief (provider found nothing)\n{brief}"
+                "research: no usable brief (provider found nothing)"
             );
             return EnrichmentResult {
                 key: company,
@@ -133,12 +156,15 @@ impl CompanyResearch {
             };
         }
 
+        // Length only — never the brief itself (ADR-027): it's free web prose
+        // about a company, and this line fires on every staged run with the
+        // research toggle on and ships in the diagnostics bundle.
         tracing::info!(
             company = %company,
             role = %role,
             source = "provider",
             chars = brief.len(),
-            "research: company brief\n{brief}"
+            "research: company brief"
         );
         if let Some(cache) = app.try_state::<KvCache>() {
             cache.set(CACHE_NS, &key, &brief);
@@ -365,5 +391,33 @@ mod tests {
             gig-economy apps. Recently raised funding to expand into Europe, which \
             is relevant for a backend engineer joining the payments team.";
         assert!(!is_no_info(brief));
+    }
+
+    /// The daily-budget-on-cache-hit fix: `enrich_with` must check its cache
+    /// and return on a hit BEFORE it ever reaches `completer.charge_daily()`.
+    /// Same source-position technique `pipeline::resume::test`'s sibling
+    /// `research_company_brief_has_no_fallible_operator_...` test uses for
+    /// this crate's other AppHandle-requiring, harness-less research code —
+    /// an honest structural guard, not a substitute for an integration test
+    /// this crate has no `tauri::test` harness to write.
+    #[test]
+    fn enrich_with_checks_the_cache_before_charging_the_daily_budget() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn enrich_with")
+            .expect("enrich_with must exist");
+        let body = &source[start..];
+        let cache_check_pos = body
+            .find("cache.get(CACHE_NS")
+            .expect("enrich_with must check its cache");
+        let charge_pos = body
+            .find("completer.charge_daily()")
+            .expect("enrich_with must charge the daily ceiling before a real provider call");
+        assert!(
+            cache_check_pos < charge_pos,
+            "enrich_with must check its cache BEFORE charging the daily budget — a cache \
+             hit must never spend a day's provider allowance: cache check at byte \
+             {cache_check_pos}, daily charge at byte {charge_pos}"
+        );
     }
 }

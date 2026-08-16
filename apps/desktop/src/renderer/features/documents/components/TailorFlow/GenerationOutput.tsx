@@ -46,6 +46,11 @@ interface Props {
   accent?: string;
   /** Per-export cover-letter layout; undefined → the backend renders classic. */
   letterLayoutId?: LetterLayoutId;
+  /** Export/preview market (from `useTailorPipeline`'s `resolveMarket`) — mirrors
+   *  the real export so the live preview's letter conventions (salutation,
+   *  sign-off) match the downloaded document instead of silently falling back
+   *  to "intl" (see `PdfPreview`'s `locale` prop). */
+  market?: string;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (v: boolean) => void;
   onAccentChange: (accent: string | undefined) => void;
@@ -93,6 +98,7 @@ export function GenerationOutput({
   atsMode,
   accent,
   letterLayoutId,
+  market,
   onTemplateChange,
   onAtsModeChange,
   onAccentChange,
@@ -464,6 +470,7 @@ export function GenerationOutput({
                   atsMode={atsMode}
                   accent={accent}
                   letterLayoutId={letterLayoutId}
+                  locale={market}
                   paused={!editable}
                   className="h-full w-full"
                 />

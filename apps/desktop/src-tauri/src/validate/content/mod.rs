@@ -70,6 +70,7 @@ mod voice;
 /// carry" would make the generator and the grader disagree about a truthful
 /// document — the duplicated-heuristic defect this codebase has paid for
 /// before. One definition, re-exported, rather than two that drift.
+pub use self::alignment::MIN_COVERAGE_DROP_POINTS;
 pub use self::consistency::{project_entry_starts, MAX_PROJECT_DESCRIPTION_LINES};
 pub use self::factual::{canonical_link, link_href, names_a_resource, urls_in};
 

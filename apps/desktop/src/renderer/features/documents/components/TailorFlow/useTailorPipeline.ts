@@ -16,6 +16,7 @@ import { errorClass, errorDetail } from '@/lib/error-class';
 import {
   buildFilename,
   buildSectionVerdicts,
+  countryFromLocation,
   exportDOCX,
   exportPDF,
   exportTXT,
@@ -25,9 +26,11 @@ import {
   parseQualityReport,
   PERSIST_DEBOUNCE_MS,
   type QualityReport,
+  resolveMarket,
   type TemplateId,
   unresolvedCount,
 } from '@/lib/generate';
+import { RESUME_PIPELINE_BUSY_STATES } from '@/lib/machines/resume-pipeline.machine';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
 import { keys } from '@/services/query-client';
 import { useUpdateAiGeneration } from '@/services/use-ai-generations';
@@ -50,6 +53,10 @@ interface Params {
   jobUrl: string;
   jobTitle: string;
   companyName: string;
+  /** Free-text job location as written on the ad (e.g. "New York, NY, US",
+   *  "Köln, Deutschland") — feeds {@link countryFromLocation} for the export
+   *  market. Empty/absent when the posting doesn't state one. */
+  jobLocation?: string;
   /** The board the job came from (e.g. "linkedin"), text-path posting identity. */
   board: string;
   canUse: boolean;
@@ -88,6 +95,7 @@ export function useTailorPipeline({
   jobUrl,
   jobTitle,
   companyName,
+  jobLocation,
   board,
   canUse,
   hasDesc,
@@ -226,48 +234,87 @@ export function useTailorPipeline({
   // `PipelineQualityReport`'s doc comment) — every slot the fast path's parser
   // produces is present here too, plus the pipeline-only `fabrications`, which
   // `QualityReportSlot` already documents as opaque additional data. No cast
-  // needed: `PipelineQualityReportSlot` is a strict superset. Cold-entry falls
-  // back to the aggregate's OWN persisted wrapper, parsed the same way the
-  // fast path always has — never both at once, so a live run's own report
-  // can't be shadowed by a stale persisted one.
-  const report: QualityReport | null = session.detail
-    ? session.detail.report
-    : latestGeneration
-      ? parseQualityReport(latestGeneration.qualityReport)
-      : null;
+  // needed: `PipelineQualityReportSlot` is a strict superset. Prefers the live
+  // run's own report, but falls back to the aggregate's persisted wrapper
+  // (parsed the same way the fast path always has) whenever the live one is
+  // absent — both for a cold entry (no `session.detail` at all) AND for a run
+  // that ended before the `validate` stage ever ran (cancel, or a deadline
+  // stop at a stage boundary), which leaves `session.detail.report === null`.
+  // Without the fallback either case blanks the whole quality panel even
+  // though the aggregate still holds a perfectly good report from an earlier
+  // run.
+  const report: QualityReport | null =
+    session.detail?.report ?? parseQualityReport(latestGeneration?.qualityReport);
 
   const targetLanguage = useMemo(() => {
     const detected = detectLanguage(jobDesc);
     return detected === 'unknown' ? 'en' : detected;
   }, [jobDesc]);
 
+  // Export/preview market — derived from the found job's free-text `location`
+  // (unlike `AIGeneratePage`'s extracted meta, this hook never had a structured
+  // `jobCountry`), falling back to the letter-language default when the
+  // location doesn't resolve to a known country (see `resolveMarket`). Still
+  // far better than the `undefined` this hook used to send, which the Rust
+  // exporter silently treats as "intl" and skips market-specific conventions
+  // (e.g. DIN 5008 for `de`, US Letter for `us`) entirely.
+  const market = useMemo(
+    () =>
+      resolveMarket({
+        jobCountry: countryFromLocation(jobLocation, targetLanguage),
+        targetLanguage,
+      }),
+    [jobLocation, targetLanguage]
+  );
+
   // A best-effort stand-in for the fast path's model-extracted `meta`: the
   // staged run resolves job title/company server-side (or from the request,
   // on the text path) but never echoes a structured meta object back over
-  // IPC. `candidateName` stays blank — ADR-0021 makes the editor the header's
-  // authority at export time, so this only costs the filename's cosmetic
-  // fallback ("Candidate-…"), never the document itself.
+  // IPC. Seeded from `latestGeneration` (the job's persisted aggregate, when
+  // one exists) rather than fabricated — a blank `topRequirements` silently
+  // strips the "top requirement hits" metric out of a Re-check
+  // (`use-quality-recheck.ts`), and a non-null-but-empty `meta` short-circuits
+  // the answers assistant's own metadata extraction
+  // (`useApplicationAnswers.ts` treats any non-null `meta` as already
+  // detected). `jobTitle`/`companyName` stay off the live props, not the
+  // record — this hook already gets those fresh off the current posting every
+  // render, which a persisted record can lag. `candidateName` only feeds the
+  // export FILENAME's cosmetic fallback ("Candidate-…") — ADR-0021 keeps the
+  // editor as the header's authority at export time, unaffected by this.
   const meta: GenerationMeta | null = hasOutput
     ? {
-        candidateName: '',
+        candidateName: latestGeneration?.candidateName || '',
         jobTitle,
         companyName,
-        resumeLanguage: targetLanguage,
-        jobAdLanguage: targetLanguage,
-        mismatch: false,
+        resumeLanguage: latestGeneration?.resumeLanguage || targetLanguage,
+        jobAdLanguage: latestGeneration?.jobAdLanguage || targetLanguage,
+        mismatch: latestGeneration?.mismatch ?? false,
         targetLanguage,
-        topRequirements: [],
+        topRequirements: latestGeneration?.topRequirements ?? [],
       }
     : null;
 
-  // Refresh the aggregate (letter text, quality-report fallback context) once
-  // the run leaves `running` — nothing else invalidates it, and the app's
-  // global refetch-on-focus/mount is off.
-  const status = session.detail?.status;
+  // Refresh the aggregate (letter text, quality-report fallback context) and
+  // the autopilot score once the SESSION reaches a terminal state — nothing
+  // else invalidates either, and the app's global refetch-on-focus/mount is
+  // off. Keyed on `session.state`, not `session.detail?.status`: a run that
+  // dies via the umbrella `job.failed` path (a full queue, no configured
+  // provider, a deleted résumé, …) sends `ERROR` straight to the machine with
+  // NO run record ever written (see `use-resume-pipeline-session.ts`'s
+  // `handleJobEvent` doc) — `detail` stays `null` forever, so gating on its
+  // `status` field would leave the panel showing stale pre-run data
+  // indefinitely. "Terminal" here is "not idle and not busy" rather than an
+  // enumerated list, so a future terminal state added to the machine is
+  // covered without an edit here. `pipelineState` as the sole dependency
+  // mirrors this hook's other re-render-loop guards (`onRunStartedRef`,
+  // `persistedRunRef`): a re-render while already terminal is a no-op, only
+  // an actual state change re-fires this.
+  const pipelineState = session.state;
   useEffect(() => {
-    if (!status || status === 'running') return;
+    if (pipelineState === 'idle' || RESUME_PIPELINE_BUSY_STATES.includes(pipelineState)) return;
     void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
-  }, [qc, status]);
+    void qc.invalidateQueries({ queryKey: keys.autopilot.all });
+  }, [qc, pipelineState]);
 
   const onReportChange = useCallback(
     (next: QualityReport) => {
@@ -373,6 +420,26 @@ export function useTailorPipeline({
     setLetterOverride(null);
     setCurrentStep(0);
     const resumeId = values.resumeDocId ?? '';
+    // Computed HERE, not in a memo — a memo evaluated at mount would go stale
+    // in a session left open across midnight, and a wrong date on a cover
+    // letter is worse than none. `targetLanguage` is a valid BCP-47 tag from
+    // `detectLanguage`, but `toLocaleDateString` still throws `RangeError` on
+    // a malformed one — fall back to the runtime default locale rather than
+    // failing the whole run over a date string.
+    let today: string;
+    try {
+      today = new Date().toLocaleDateString(targetLanguage, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    } catch {
+      today = new Date().toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    }
     const runId = await session.start({
       resumeId,
       resumeText: resumeId ? '' : values.resume,
@@ -383,9 +450,15 @@ export function useTailorPipeline({
       board,
       jobUrl,
       targetLanguage,
+      // Same value the export/preview path already resolved via this hook's
+      // `market` memo — sent through unchanged so the letter prompt and the
+      // export layout agree on one market.
+      market,
+      today,
       topRequirements: [],
       coverLetterText: '',
       includeCoverLetter: values.outputType !== 'resume',
+      researchCompany: values.researchCompany,
     });
     // `session.start` already logged the cause and set `error`/`state` — this
     // is the one thing it can't do itself: a transient, dismissable toast.
@@ -428,7 +501,7 @@ export function useTailorPipeline({
           meta ?? undefined,
           templateId,
           atsMode,
-          undefined,
+          market,
           accent,
           letterLayoutId
         );
@@ -440,7 +513,7 @@ export function useTailorPipeline({
           meta ?? undefined,
           templateId,
           atsMode,
-          undefined,
+          market,
           accent,
           letterLayoutId
         );
@@ -497,6 +570,11 @@ export function useTailorPipeline({
     exportAs,
     editActiveOutput,
     meta,
+    // Export/preview market — see the computation's doc comment above. The live
+    // preview (GenerationOutput → PdfPreview) needs the SAME value the export
+    // sends, or the on-screen letter's salutation/sign-off silently disagrees
+    // with the downloaded one (the Rust exporter defaults to "intl" on `undefined`).
+    market,
     report,
     pipelineReview,
     openClaimsTotal,

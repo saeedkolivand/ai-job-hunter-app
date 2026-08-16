@@ -9,7 +9,7 @@
  * safe: `{ filled: false, error }`, NEVER a fill onto a different field.
  *
  * Injected via `answer-fill.ts` (compiled to `answer-fill.js`, a classic
- * script — see `vite.config.ts`'s `injectedEntries` plugin), mirroring
+ * script — see `vite.config.mts`'s `injectedEntries` plugin), mirroring
  * `fill.ts`'s two-step register-then-invoke pattern: the answer text is the
  * user's own past application answer (PII-adjacent), so it is passed in
  * transiently via a second `executeScript({ func, args })` rather than baked

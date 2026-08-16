@@ -25,6 +25,10 @@ pub struct ResumePipelineRunRequest {
     pub job_url: String,
     #[serde(default = "default_resume_pipeline_run_request_target_language")]
     pub target_language: String,
+    #[serde(default = "default_resume_pipeline_run_request_market")]
+    pub market: String,
+    #[serde(default = "default_resume_pipeline_run_request_today")]
+    pub today: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     #[serde(default = "default_resume_pipeline_run_request_top_requirements")]
@@ -33,6 +37,8 @@ pub struct ResumePipelineRunRequest {
     pub cover_letter_text: String,
     #[serde(default = "default_resume_pipeline_run_request_include_cover_letter")]
     pub include_cover_letter: bool,
+    #[serde(default = "default_resume_pipeline_run_request_research_company")]
+    pub research_company: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -90,6 +96,14 @@ fn default_resume_pipeline_run_request_target_language() -> String {
     "en".to_string()
 }
 
+fn default_resume_pipeline_run_request_market() -> String {
+    "intl".to_string()
+}
+
+fn default_resume_pipeline_run_request_today() -> String {
+    "".to_string()
+}
+
 fn default_resume_pipeline_run_request_top_requirements() -> Vec<String> {
     Vec::new()
 }
@@ -99,5 +113,9 @@ fn default_resume_pipeline_run_request_cover_letter_text() -> String {
 }
 
 fn default_resume_pipeline_run_request_include_cover_letter() -> bool {
+    false
+}
+
+fn default_resume_pipeline_run_request_research_company() -> bool {
     false
 }

@@ -366,6 +366,16 @@ export const ResumePipelineRunSchema = z
      *  the `ai_generations` aggregate key. Empty for an unlinked generation. */
     jobUrl: z.string().max(2_048).default(''),
     targetLanguage: z.string().max(32).default('en'),
+    /** Resolved job-market id (see `resolveMarket`) — drives the letter's
+     *  etiquette (`crate::locale::letter::conventions`, the SAME fixture the
+     *  export path reads). Defaults to the international baseline so an
+     *  existing caller that never sets this gets byte-identical behavior. */
+    market: z.string().max(32).default('intl'),
+    /** Today's date, pre-formatted by the renderer per the target locale —
+     *  handed to the letter prompt so the model places it instead of
+     *  inventing one. Empty = no date (the current behavior for every
+     *  existing caller). */
+    today: z.string().max(64).default(''),
     effort: z.string().max(32).optional(),
     /** The posting's top requirements, as the JD-analysis step extracted them —
      *  the same list `resume:validateContent` takes. */
@@ -380,6 +390,15 @@ export const ResumePipelineRunSchema = z
      *  caller that never sets this gets byte-identical behavior — the stage
      *  finishes instantly at zero cost, exactly as if it did not exist. */
     includeCoverLetter: z.boolean().default(false),
+    /** Opt-in: research the posting's company before writing the letter and
+     *  fence a `<company_research>` block into its prompt when a brief comes
+     *  back non-empty. Ignored when {@link includeCoverLetter} is false.
+     *  Admitted through the SAME shared `"ai_research"` rate/concurrency/
+     *  daily-budget bucket `ai_research_company` uses — a second, billable
+     *  provider web search, never an unbounded one. Default false: an
+     *  existing caller gets byte-identical behavior (no extra call, no new
+     *  block). */
+    researchCompany: z.boolean().default(false),
   })
   .refine((data) => data.resumeId.trim() !== '' || data.resumeText.trim() !== '', {
     message: 'either resumeId or resumeText is required',

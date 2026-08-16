@@ -100,7 +100,10 @@ impl<'a> Stage<QualityCtx<'a>> for Validate {
             ctx.draft.clone(),
             ctx.input.source_resume.to_string(),
             ctx.input.job_ad.to_string(),
-            ctx.input.top_requirements.to_vec(),
+            // The RESOLVED list (analyze_job's own extraction, falling back
+            // to the request's) — never `ctx.input.top_requirements`
+            // directly. See `QualityCtx::top_requirements`'s doc.
+            ctx.top_requirements(),
             ctx.input.target_language.to_string(),
             // The `cover_letter` stage's own letter when it produced one,
             // falling back to the renderer-supplied validate-only text — see

@@ -4,6 +4,7 @@ import { detectSections, estimateTokens } from '../context-manager';
 import letterConventionsFixture from '../fixtures/letter-conventions.json';
 import {
   charsPerToken,
+  countryFromLocation,
   countryToCurrency,
   countryToMarket,
   hasLetterConventions,
@@ -144,6 +145,41 @@ describe('countryToMarket + resolveMarket', () => {
     expect(resolveMarket({})).toBe('intl');
     // An invalid override is ignored (falls through to the chain).
     expect(resolveMarket({ override: 'zz', jobCountry: 'US' })).toBe('us');
+  });
+});
+
+describe('countryFromLocation', () => {
+  it('takes a trailing bare alpha-2 code', () => {
+    expect(countryFromLocation('New York, NY, US')).toBe('US');
+  });
+
+  it('matches a native-language country name via Intl.DisplayNames', () => {
+    expect(countryFromLocation('Köln, Deutschland', 'de')).toBe('DE');
+  });
+
+  it('matches the English country name with no language hint', () => {
+    expect(countryFromLocation('Cologne, Germany')).toBe('DE');
+  });
+
+  it('matches a UK segment to a market of "uk"', () => {
+    const code = countryFromLocation('London, UK');
+    expect(resolveMarket({ jobCountry: code })).toBe('uk');
+  });
+
+  it('returns undefined for empty/remote input', () => {
+    expect(countryFromLocation(undefined)).toBeUndefined();
+    expect(countryFromLocation('')).toBeUndefined();
+    expect(countryFromLocation('Remote')).toBeUndefined();
+  });
+
+  it('does not match a US state abbreviation as a country code', () => {
+    expect(countryFromLocation('Vienna, VA')).not.toBe('VA');
+    expect(countryFromLocation('Vienna, VA')).not.toBe('AT');
+    expect(countryFromLocation('Vienna, VA')).toBeUndefined();
+  });
+
+  it('does not substring-match "Austin" against "Austria"', () => {
+    expect(countryFromLocation('Austin, TX, US')).toBe('US');
   });
 });
 
