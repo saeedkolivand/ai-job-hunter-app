@@ -32,13 +32,15 @@ The cover-letter export boundary (in `export/commands/mod.rs::validate_and_norma
 
 1. **All letter exports (PDF, DOCX, preview) inherit completion:** The completion is called in `validate_and_normalize`, which runs before every render. Live previews in the AI-Generate UI, PDF exports, and DOCX exports all see the same completed letter.
 
-2. **Prompt—export coupling is visible:** The prompt says "do NOT write X," and the export does write X. If anyone adds X to the prompt without updating export completion, the tests fail (adversarial body-only fixtures verify the completion path). This is intentional coupling — the alternative (silent duplication) is worse.
+2. **Prompt—export coupling is visible, but only partly enforced.** The prompt says "do NOT write X," and the export writes X. The guard that exists is `letter_system_prompt_still_promises_the_export_adds_the_salutation` (`export/typst_engine/test.rs`): it fires when that instruction is **removed or reworded**, and its failure message names `complete_letter_text` as the thing that must be retired with it. It does **not** fire when the model's output shape drifts while the sentence stays — the adversarial body-only fixtures exercise the completion path, but they never invoke `letter_system`, so they cannot detect that drift either. Nothing mechanical closes that gap today; a change to what the model actually emits still needs a human to re-read this ADR. The coupling is intentional — the alternative (silent duplication) is worse.
 
 3. **Market conventions are centralized:** Salutations and sign-offs come from one source (`conventions`), shared with the resume export for consistency. A future market-data change applies uniformly.
 
 4. **Cross-stage ordering is critical:** If a future stage (or alternate prompt) opens with a subject line or date BEFORE the body, the salutation must be inserted AFTER that furniture, not at line 0. The completion function scans for these furniture lines and positions the salutation after them, not before. This is the guard against the parser mis-classifying the salutation when other prompt changes add subject/date support.
 
 5. **Repair and re-export:** If a user repairs a letter (e.g., via the humanize stage or manual edit), the completed letter is re-validated and may be re-exported. The idempotency guard ensures multiple completion passes do not accumulate salutations.
+
+6. **Known gap — a marker-wrapped letter missing only its salutation is a silent no-fix.** `complete_letter_text` runs over the whole `request.text`, including any section preceding a `### COMPLETE COVER LETTER ###` marker. For such a document missing only the salutation, the insertion point can land in the pre-marker section, which `extract_section` later discards — the letter renders unchanged rather than corrupted. This lives here as well as in `export/letter_shape.rs`'s module doc because a source comment is refactored away more easily than an ADR consequence, and this boundary's ownership document is where the next reader will look.
 
 ## Related
 

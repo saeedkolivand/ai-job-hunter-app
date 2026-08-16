@@ -906,7 +906,6 @@ describe('useTailorPipeline — a hard failure with no run record still invalida
 
     sessionBus.state = 'drafting';
     const { rerender } = render();
-    invalidateSpy.mockClear();
     rerender();
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
