@@ -263,6 +263,7 @@ export function TailorFlow({
     jobUrl,
     jobTitle: job.title,
     companyName: job.company,
+    jobLocation: job.location,
     board,
     canUse,
     hasDesc,

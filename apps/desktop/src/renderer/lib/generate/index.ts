@@ -96,6 +96,7 @@ export type {
 } from '@ajh/prompts/generate';
 export {
   CONNECTION_NOTE_LIMIT,
+  countryFromLocation,
   EMPHASIS_OPTIONS,
   INTERVIEW_AUDIENCES,
   INTERVIEW_QUESTIONS_PER_AUDIENCE,

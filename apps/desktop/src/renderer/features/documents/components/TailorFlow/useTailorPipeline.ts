@@ -16,6 +16,7 @@ import { errorClass, errorDetail } from '@/lib/error-class';
 import {
   buildFilename,
   buildSectionVerdicts,
+  countryFromLocation,
   exportDOCX,
   exportPDF,
   exportTXT,
@@ -52,6 +53,10 @@ interface Params {
   jobUrl: string;
   jobTitle: string;
   companyName: string;
+  /** Free-text job location as written on the ad (e.g. "New York, NY, US",
+   *  "Köln, Deutschland") — feeds {@link countryFromLocation} for the export
+   *  market. Empty/absent when the posting doesn't state one. */
+  jobLocation?: string;
   /** The board the job came from (e.g. "linkedin"), text-path posting identity. */
   board: string;
   canUse: boolean;
@@ -90,6 +95,7 @@ export function useTailorPipeline({
   jobUrl,
   jobTitle,
   companyName,
+  jobLocation,
   board,
   canUse,
   hasDesc,
@@ -245,13 +251,21 @@ export function useTailorPipeline({
     return detected === 'unknown' ? 'en' : detected;
   }, [jobDesc]);
 
-  // Export/preview market — this hook has no job-country signal of its own
-  // (no `jobCountry` prop, unlike `AIGeneratePage`'s extracted meta), so
-  // resolution falls through straight to the letter-language default (see
-  // `resolveMarket`). Still far better than the `undefined` this hook used to
-  // send, which the Rust exporter silently treats as "intl" and skips
-  // market-specific conventions (e.g. DIN 5008 for `de`) entirely.
-  const market = useMemo(() => resolveMarket({ targetLanguage }), [targetLanguage]);
+  // Export/preview market — derived from the found job's free-text `location`
+  // (unlike `AIGeneratePage`'s extracted meta, this hook never had a structured
+  // `jobCountry`), falling back to the letter-language default when the
+  // location doesn't resolve to a known country (see `resolveMarket`). Still
+  // far better than the `undefined` this hook used to send, which the Rust
+  // exporter silently treats as "intl" and skips market-specific conventions
+  // (e.g. DIN 5008 for `de`, US Letter for `us`) entirely.
+  const market = useMemo(
+    () =>
+      resolveMarket({
+        jobCountry: countryFromLocation(jobLocation, targetLanguage),
+        targetLanguage,
+      }),
+    [jobLocation, targetLanguage]
+  );
 
   // A best-effort stand-in for the fast path's model-extracted `meta`: the
   // staged run resolves job title/company server-side (or from the request,

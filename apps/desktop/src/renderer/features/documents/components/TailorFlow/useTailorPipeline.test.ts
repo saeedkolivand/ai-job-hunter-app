@@ -673,6 +673,26 @@ describe('useTailorPipeline — export market (DIN 5008 / locale-drop regression
 
     expect(result.current.market).toBe('de');
   });
+
+  // `jobLocation` is the found job's free-text location (e.g. "New York, NY,
+  // US") — previously never read, so an ENGLISH posting always fell through
+  // to `LANGUAGE_TO_MARKET.en === 'intl'` (A4) even for a US applicant.
+  it('a US-located English posting resolves market "us" (US Letter), not "intl"', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({
+      jobDesc: ENGLISH_JOB_AD,
+      jobLocation: 'New York, NY, US',
+    });
+
+    expect(result.current.market).toBe('us');
+  });
+
+  it('an unlocated English posting still falls back to "intl"', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME TEXT' });
+    const { result } = render({ jobDesc: ENGLISH_JOB_AD, jobLocation: undefined });
+
+    expect(result.current.market).toBe('intl');
+  });
 });
 
 describe('useTailorPipeline — stageLabel fallback (L: no raw snake_case leak)', () => {
