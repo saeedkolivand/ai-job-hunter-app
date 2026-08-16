@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786856132189,
+  "lastUpdate": 1786896319991,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7427,6 +7427,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 309846,
             "range": "± 13960",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65ea4188c14390b96372d055663d55f8bccd7af4",
+          "message": "docs: fold the second adr tree into the knowledge base (#1000)\n\n* docs: fold the second adr tree into the knowledge base\n\nThe repo had two ADR directories with colliding numbers: docs/adr/0013 was\nemail watching while adr-013 was the resume builder, and both got cited as\n\"ADR-13\". It already caused a wrong citation.\n\ndocs/knowledge/decision-records/ is the canonical one - created 2026-05-31\nwith the knowledge base, indexed in its README, owned by project-steward, and\nthe only one the docs-standards skill points at. docs/adr/ appeared twelve\ndays later, carried no index and no owner, and grew to 23 records because\nnothing stopped it.\n\nThe files are moved but deliberately NOT renumbered. An ADR is a dated record\nand its number is cited from commit messages, merged PR bodies, code comments\nand the published tech radar; the landing benchmark and metrics snapshots are\ngenerated captures of commit text that must not be rewritten. Renumbering\nwould falsify all of it, so the series is folded in as-is and marked closed -\nnew ADRs continue the adr-NNN sequence.\n\nEvery reference follows: 24 live files, the tech radar's ADR_DIR and its\npublic GitHub blob links, and the relative links inside the moved files, which\ngained a directory level. Generated landing snapshots under public/ are left\nuntouched as the historical records they are. check:tech-radar,\ncheck:agent-system and check:landing-drift all pass, and the knowledge README\nnow indexes all 57 ADRs.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* test: repoint the tech-radar fixture at the unified adr directory\n\ncheck-tech-radar.test.mjs builds a synthetic repo and writes its fixture ADR\nto docs/adr/, which no longer exists after the trees were folded together, so\nthe real-adrSlug case resolved against nothing and the check exited 1 where the\ntest expected 0.\n\nThe test was right to fail - it is asserting that a valid slug resolves, and\nthe directory it resolves against moved. Fixture repointed at\ndocs/knowledge/decision-records/; the assertions are unchanged.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: correct accuracy drift the adr move surfaced\n\nMoving 23 ADRs made git read them as new files, so review examined content\nnobody had re-read since it was written. Ten inaccuracies came back, none\nintroduced by the move. Kept separate from the move commit so those 2211\nrelocated lines stay verifiable as byte-identical.\n\nTwo mattered. ADR-0005's privacy guarantee allowed egress only for services\nthe user configures or invokes plus crash reports, while its own body\ndocuments an on-launch updater check - README.md already discloses that, so\nthe ADR was the wrong one; the guarantee now names both classes of automatic\napp-initiated egress. ADR-0009 still described profile.get as authenticated by\na per-frame pairing token, a contract ADR-0010 retired in favour of the mutual\nHMAC handshake, so anyone reading it would have implemented the wrong auth\nmodel; it now points at ADR-0010.\n\nThe rest: ADR-0005 counted seven egress classes where it lists eight; ADR-0008's\ntitle claimed three surfaces where its body describes four and conflated the\nremoved pre-push LLM lane with the deterministic pre-push gates that remain;\nADR-0011 used a field name the bridge does not have and presented snapshot\nsymbols ADR-0012 superseded as current; ADR-0013 claimed email content never\nleaves the device, which conflated IMAP ingress with egress; ADR-0019\nprescribed a prohibited cat command and overstated portability for a file that\nis now ESM-only; ADR-0022 opened two lines with #936 and #937, which Markdown\nparses as malformed headings.\n\nDecisions and rationale are untouched - only claims that no longer match the\ncode.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-16T17:41:41+02:00",
+          "tree_id": "b943e5968f2a08b49a22d93a39a4e1d3b96eccba",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/65ea4188c14390b96372d055663d55f8bccd7af4"
+        },
+        "date": 1786896318787,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2246203,
+            "range": "± 44646",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2668273,
+            "range": "± 20418",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 296856,
+            "range": "± 8800",
             "unit": "ns/iter"
           }
         ]
