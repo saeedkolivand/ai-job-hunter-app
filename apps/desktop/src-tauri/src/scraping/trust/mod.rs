@@ -265,9 +265,13 @@ fn has_html_entity(s: &str) -> bool {
 /// placeholder, no crash — see `packages/prompts/src/generate/cover-letter/
 /// cover-letter.ts`). Accepting that one narrow, low-cost trade is what lets
 /// this predicate reject single-character garbage everywhere else.
-pub fn is_implausible_company(name: &str) -> bool {
+pub(crate) fn is_implausible_company(name: &str) -> bool {
     let trimmed = name.trim();
-    let chars: Vec<char> = trimmed.chars().collect();
+    // Bounded: a scraped value is arbitrary-length attacker-ish input, and the
+    // only length question asked below is "> MAX_COMPANY_CHARS?", which
+    // MAX + 1 answers. Anything reaching the char-ratio checks further down has
+    // already passed that gate, so the cap is a no-op there.
+    let chars: Vec<char> = trimmed.chars().take(MAX_COMPANY_CHARS + 1).collect();
 
     if chars.is_empty() {
         return true;
