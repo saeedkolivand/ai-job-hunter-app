@@ -263,6 +263,7 @@ export function TailorFlow({
     jobUrl,
     jobTitle: job.title,
     companyName: job.company,
+    jobLocation: job.location,
     board,
     canUse,
     hasDesc,
@@ -477,6 +478,7 @@ export function TailorFlow({
         atsMode={persistence.atsMode}
         accent={persistence.accent}
         letterLayoutId={persistence.letterLayoutId}
+        market={gen.market}
         onTemplateChange={setTemplateId}
         onAtsModeChange={setAtsMode}
         onAccentChange={setAccent}

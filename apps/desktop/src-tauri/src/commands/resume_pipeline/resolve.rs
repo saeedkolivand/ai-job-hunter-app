@@ -59,6 +59,11 @@ pub(crate) struct ClampedRequest {
     pub(crate) job_title: String,
     pub(crate) company_name: String,
     pub(crate) board: String,
+    /// Resolved job-market id — see `ResumePipelineRunRequest::market`'s doc.
+    pub(crate) market: String,
+    /// Pre-formatted "today" string for the letter's date line — empty means
+    /// no date. See `ResumePipelineRunRequest::today`'s doc.
+    pub(crate) today: String,
 }
 
 // `include_cover_letter` is a plain `bool` — no free text to clamp, so it rides
@@ -82,6 +87,36 @@ pub(crate) const JOB_IDENTITY_CAP: usize = 512;
 /// identifiers are short slugs (`"linkedin"`, `"indeed"`, an aggregator name),
 /// hence the much smaller cap than [`JOB_IDENTITY_CAP`].
 pub(crate) const BOARD_CAP: usize = 64;
+/// Byte cap on the request's `market` — mirrors the schema's `.max(32)`. A
+/// market id is a short slug (`"de"`, `"intl"`), same cap class as `board`.
+///
+/// **Not the same unit as the schema it mirrors.** Zod's `.max(32)` counts
+/// UTF-16 code units (`String.prototype.length` — 1 per BMP character, 2 per
+/// astral character), while this is a BYTE cap via [`clamp_to_bytes`](crate::applications::clamp_to_bytes). For
+/// `market` specifically the values are always short ASCII slugs
+/// (`"de"`/`"intl"`), so the two units never actually diverge in practice —
+/// documented for the class of cap this belongs to, not because this field
+/// can hit the gap. See [`TODAY_CAP`] for a field where the gap is real.
+pub(crate) const MARKET_CAP: usize = 32;
+/// Byte cap on the request's `today` — mirrors the schema's `.max(64)`. A
+/// pre-formatted date string in any target locale (e.g. `"16 August 2026"`,
+/// `"2026年8月16日"`) fits comfortably; 64 bytes is generous headroom over
+/// every market's `dateFormat` in the shared fixture.
+///
+/// **Not the same unit as the schema it mirrors.** Zod's `.max(64)` counts
+/// UTF-16 code units, while this clamps to 64 BYTES via
+/// [`clamp_to_bytes`](crate::applications::clamp_to_bytes). For a multi-byte script — the `"2026年8月16日"` example above is 10 UTF-16
+/// units (well under 64) but 28 UTF-8 bytes per its CJK characters (3 bytes
+/// each) — a value can pass the renderer's Zod check and still get silently
+/// byte-truncated (at the nearest earlier char boundary, never mid-character)
+/// server-side. Harmless for `today` today: every market's real `dateFormat`
+/// output sits far under 64 bytes even for CJK locales, and a truncated date
+/// string only degrades the letter's date line, nothing security- or
+/// correctness-load-bearing. Flagged here rather than "fixed" because
+/// switching either side's unit is a real behavior change outside this
+/// finding's scope (CodeRabbit PR #997/6) — the limits themselves stay
+/// exactly as they are.
+pub(crate) const TODAY_CAP: usize = 64;
 
 /// Clamp every renderer-supplied free-text field of a run request. Pure, so the
 /// caps are a test rather than a claim.
@@ -112,6 +147,8 @@ pub(crate) fn clamp_request(req: &ResumePipelineRunRequest) -> ClampedRequest {
         job_title: clamp_to_bytes(req.job_title.clone(), JOB_IDENTITY_CAP),
         company_name: clamp_to_bytes(req.company_name.clone(), JOB_IDENTITY_CAP),
         board: clamp_to_bytes(req.board.clone(), BOARD_CAP),
+        market: clamp_to_bytes(req.market.clone(), MARKET_CAP),
+        today: clamp_to_bytes(req.today.clone(), TODAY_CAP),
     }
 }
 

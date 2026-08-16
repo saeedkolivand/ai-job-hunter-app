@@ -58,12 +58,17 @@ pub const AI_GENERATE_CONCURRENCY_MAX: usize = 3;
 /// become the unbounded resource.
 pub const AI_GENERATE_QUEUE_MAX: usize = 20;
 
-/// The `"ai_research"` command bucket: shared by every web-research lookup
-/// (`ai_lookup_salary`, `ai_research_company`, and `ai_research_answer`) so
-/// they share one rate + concurrency ceiling instead of each needing its own
-/// tuning. At most this many starts per [`RATE_WINDOW`].
+/// The shared command-bucket name every web-research lookup admits against —
+/// `ai_lookup_salary`, `ai_research_company`, `ai_research_answer`
+/// (`commands::ai::admit_research`), and the staged résumé pipeline's opt-in
+/// `cover_letter` research (`pipeline::Completer::admit_research`) — so they
+/// share ONE rate + concurrency ceiling instead of each needing its own
+/// tuning, or worse, a second bucket a typo'd literal could silently open. A
+/// named constant rather than each call site spelling `"ai_research"` again.
+pub const AI_RESEARCH_BUCKET: &str = "ai_research";
+/// [`AI_RESEARCH_BUCKET`]: at most this many starts per [`RATE_WINDOW`].
 pub const AI_RESEARCH_RATE_MAX: usize = 20;
-/// `"ai_research"` bucket: at most this many in-flight at once.
+/// [`AI_RESEARCH_BUCKET`]: at most this many in-flight at once.
 pub const AI_RESEARCH_CONCURRENCY_MAX: usize = 3;
 
 /// `scrape_board` / `scrape_url`: at most this many starts per [`RATE_WINDOW`].

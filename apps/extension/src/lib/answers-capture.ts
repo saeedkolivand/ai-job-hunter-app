@@ -12,7 +12,7 @@
  * (`./field-signal`) so the two directions (fill vs. capture) never drift on
  * what counts as "labelled"/"hidden"/"ambiguous". This module and
  * `autofill.ts` are still bundled into SEPARATE injected files (`capture.js`
- * / `fill.js`) via isolated Rollup passes (see `vite.config.ts`'s
+ * / `fill.js`) via isolated Rollup passes (see `vite.config.mts`'s
  * `injectedEntries` plugin), so the shared helpers are inlined into EACH
  * rather than hoisted into a chunk that either classic script would then
  * have to `import`.

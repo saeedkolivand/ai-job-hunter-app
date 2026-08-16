@@ -35,6 +35,7 @@ import {
   exportPDF,
   exportTXT,
   PERSIST_DEBOUNCE_MS,
+  resolveMarket,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
@@ -183,6 +184,20 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     if (!text) return;
     const docType = type === 'resume' ? 'resume' : 'cover-letter';
     const filename = buildFilename(meta, docType, exportFormat);
+    // Cover-letter market — the backend's `complete_letter_text` synthesizes a
+    // body-only letter's salutation/sign-off from this locale, defaulting to
+    // "intl" (English) when omitted, regardless of the letter's real language.
+    // Resolved the same way `AIGeneratePage`/`useTailorPipeline` do. This record
+    // carries no structured job location/country (unlike `GenerationMeta`'s
+    // optional `jobCountry`), so language is the whole signal here — the correct
+    // floor per `resolveMarket`'s own country → language → intl priority.
+    // Résumé export keeps `locale` unset, mirroring `AIGeneratePage.doExport`
+    // (there `locale` is the user's own template-locale picker, not the job
+    // market; this card has no such picker, so there's nothing to preserve).
+    const coverLetterLocale =
+      docType === 'cover-letter'
+        ? resolveMarket({ targetLanguage: meta.targetLanguage })
+        : undefined;
     setExporting(type);
     try {
       if (exportFormat === 'pdf') {
@@ -193,7 +208,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
           meta,
           exportTemplate,
           false,
-          undefined,
+          coverLetterLocale,
           exportAccent
         );
       } else if (exportFormat === 'docx') {
@@ -204,7 +219,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
           meta,
           exportTemplate,
           false,
-          undefined,
+          coverLetterLocale,
           exportAccent
         );
       } else {

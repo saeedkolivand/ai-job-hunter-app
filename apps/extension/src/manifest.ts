@@ -1,7 +1,7 @@
 /**
  * Manifest source of truth (MV3) for both browser targets.
  *
- * The Vite build (`vite.config.ts`) selects a target via the `BROWSER` env and
+ * The Vite build (`vite.config.mts`) selects a target via the `BROWSER` env and
  * emits the resolved object as `manifest.json` into that target's `dist/`. We
  * keep one typed base and apply only the per-browser delta so the two manifests
  * can never silently diverge.

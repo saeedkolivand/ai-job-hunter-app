@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-08-12
+Last updated: 2026-08-16
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -77,6 +77,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-031](decision-records/adr-031-url-import-persists-provenance-and-harvests.md)           | URL import persists provenance and feeds slug harvesting                                  |
 | [ADR-032](decision-records/adr-032-generation-pipeline-ownership-and-rule-enforcement.md)    | Generation-pipeline ownership — mechanical core-rule enforcement (Rust orchestration)     |
 | [ADR-033](decision-records/adr-033-no-model-written-agent-memory.md)                         | No model-written agent memory (immutable run history, not LLM-synthesized state)          |
+| [ADR-034](decision-records/adr-034-cover-letter-export-boundary-completion.md)               | Cover-letter export boundary completes a body-only letter (salutation/sign-off/signature) |
 
 **Newer numbered ADRs** live in `docs/adr/0001-0013` — see per-domain docs for cross-references (e.g., extension-domain.md for ADR-0009/0010, automation-domain.md for ADR-0013).
 

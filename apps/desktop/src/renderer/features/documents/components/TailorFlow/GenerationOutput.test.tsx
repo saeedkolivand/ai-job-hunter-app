@@ -71,11 +71,15 @@ vi.mock('@/components/generation/EditableOutput', () => ({
   ),
 }));
 
-// PdfPreview mock — renders its `text` prop into a testid so tests can inspect
-// the committed text without launching the real Typst/PDF pipeline.
+// PdfPreview mock — renders its `text` and `locale` props into a testid (the
+// latter as a data attribute) so tests can inspect the committed text AND the
+// market/locale GenerationOutput actually forwards, without launching the real
+// Typst/PDF pipeline.
 vi.mock('@/components/generation/PdfPreview', () => ({
-  PdfPreview: ({ text }: { text: string }) => (
-    <div data-testid={TEST_IDS.documents.pdfPreview}>{text}</div>
+  PdfPreview: ({ text, locale }: { text: string; locale?: string }) => (
+    <div data-testid={TEST_IDS.documents.pdfPreview} data-locale={locale ?? ''}>
+      {text}
+    </div>
   ),
 }));
 
@@ -1094,6 +1098,30 @@ describe('GenerationOutput', () => {
 
       // Resume must show the typed value — committed by the flush at tab-switch time.
       expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Typed resume');
+    });
+  });
+
+  // ── 8b. Export/preview market → PdfPreview's `locale` ────────────────────────
+  // Regression guard: `useTailorPipeline` resolves the export market and passes
+  // it as `market`, but the live preview used to receive no locale at all (the
+  // Rust exporter then silently falls back to market "intl" for the preview
+  // while the real export uses the resolved one — a German posting showed an
+  // English salutation on screen but a German one in the download). Asserting
+  // the actual forwarded value, not just that a render happened, is what would
+  // fail if this prop were ever dropped again.
+
+  describe('Export/preview market', () => {
+    it('forwards a German market to PdfPreview as `locale` (not undefined)', () => {
+      render(<GenerationOutput {...makeProps({ market: 'de' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveAttribute(
+        'data-locale',
+        'de'
+      );
+    });
+
+    it('leaves `locale` empty when no market was resolved', () => {
+      render(<GenerationOutput {...makeProps({ market: undefined })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveAttribute('data-locale', '');
     });
   });
 

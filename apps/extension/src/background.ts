@@ -24,7 +24,7 @@ import type {
 import type { FillAnswerResult } from './lib/answer-fill';
 // Same type-only rationale as the autofill.ts import above — capture.js /
 // capture-questions.js are ALSO classic-script injection targets (see
-// vite.config.ts's `injectedEntries`), so this import must stay type-only
+// vite.config.mts's `injectedEntries`), so this import must stay type-only
 // (erased at build) to keep answers-capture.ts's runtime code out of the
 // background's bundle.
 import type { CapturedAnswer, FilledField, ScannedQuestion } from './lib/answers-capture';

@@ -12,11 +12,14 @@
  * - `links/`        — URL splitting for clickable hyperlinks in DOCX.
  * - `types`         — shared types: `ExportRequest`, `ExportResult`, `TemplateId`, …
  * - `commands/`     — Tauri command wrappers (`documents_export_document`, …).
+ * - `letter_shape`  — completes a body-only cover letter with the
+ *   salutation/sign-off furniture the generation prompt promises the app adds.
  */
 
 pub mod commands;
 pub mod docx;
 pub mod docx_renderer;
+pub mod letter_shape;
 pub mod links;
 pub mod model_docx;
 pub mod parser;

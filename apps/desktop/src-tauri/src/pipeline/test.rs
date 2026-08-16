@@ -965,3 +965,91 @@ fn a_wire_request_context_window_is_bounded_like_a_stored_one() {
     assert!(super::vet_wire_request(&mut req).is_ok());
     assert_eq!(req.context_window, None);
 }
+
+// ── Completer::admit_research (shared "ai_research" bucket) ────────────────
+
+/// `Completer::admit_research` is the résumé pipeline's ONLY way to reach the
+/// `"ai_research"` bucket — the same one `commands::ai::admit_research` gates
+/// `ai_research_company`/`ai_lookup_salary`/`ai_research_answer` behind (see
+/// that method's own doc for why it exists rather than the pipeline reaching
+/// the `pub(super)` command function directly). `Completer` needs a live
+/// `AppHandle` this crate has no harness for, so — same shape as
+/// `commands::resume_pipeline::test`'s
+/// `the_regenerate_section_bucket_refuses_a_caller_past_its_concurrency_cap` —
+/// the assertion is on the exact bucket/constants the method's source uses,
+/// against a real bare `Limiter`.
+///
+/// Mutation check: raise `AI_RESEARCH_CONCURRENCY_MAX` and this still passes
+/// (the loop bound is derived from that same constant, deliberately, so it
+/// pins the MECHANISM, not the number); make `Limiter::acquire` return `Ok`
+/// on a full gate and the refusal assertion fails; leak the guard's permit
+/// and the re-open assertion does.
+#[test]
+fn the_ai_research_bucket_refuses_a_caller_past_its_concurrency_cap() {
+    let limiter = std::sync::Arc::new(crate::limits::Limiter::default());
+    let held: Vec<_> = (0..crate::limits::AI_RESEARCH_CONCURRENCY_MAX)
+        .map(|index| {
+            limiter
+                .acquire(
+                    crate::limits::AI_RESEARCH_BUCKET,
+                    crate::limits::AI_RESEARCH_RATE_MAX,
+                    crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
+                )
+                .unwrap_or_else(|e| panic!("slot {index} must be admitted: {e}"))
+        })
+        .collect();
+
+    let refused = limiter.acquire(
+        crate::limits::AI_RESEARCH_BUCKET,
+        crate::limits::AI_RESEARCH_RATE_MAX,
+        crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
+    );
+    assert!(
+        matches!(refused, Err(crate::error::AppError::RateLimited(_))),
+        "the shared bucket must refuse a caller past its concurrency cap"
+    );
+    drop(held);
+    assert!(
+        limiter
+            .acquire(
+                crate::limits::AI_RESEARCH_BUCKET,
+                crate::limits::AI_RESEARCH_RATE_MAX,
+                crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
+            )
+            .is_ok(),
+        "the guard is RAII — releasing it must re-open the slot"
+    );
+}
+
+/// The source-level half of the lock above, PLUS the "one bucket, not two"
+/// guarantee: `commands::ai::admit_research` (the three research commands'
+/// admission) and `Completer::admit_research` (the résumé pipeline's
+/// `cover_letter` research) must both acquire `crate::limits::AI_RESEARCH_BUCKET`
+/// — never a second, independently-spelled bucket name, which is exactly the
+/// drift that would reopen the unbounded-spend hole the shared bucket exists
+/// to close. `Completer` needs a live `AppHandle` to actually run, so this is
+/// provable only by reading the source, the same reason
+/// `commands::resume_pipeline::test`'s
+/// `every_provider_calling_command_admits_before_it_spends` is grep-shaped.
+///
+/// Mutation check: replace either site's constant with a literal
+/// `"ai_research"` string (still functionally the same bucket, but no longer
+/// PROVABLY the same one without reading both files) and this fails.
+#[test]
+fn the_pipeline_and_the_command_admit_against_the_same_named_bucket_constant() {
+    let pipeline_source = include_str!("mod.rs");
+    assert!(
+        pipeline_source.contains("fn admit_research(&self, who: &str)"),
+        "Completer::admit_research must exist"
+    );
+    assert!(
+        pipeline_source.contains("crate::limits::AI_RESEARCH_BUCKET"),
+        "Completer::admit_research must acquire the SHARED bucket constant, not a literal"
+    );
+
+    let command_source = include_str!("../commands/ai/mod.rs");
+    assert!(
+        command_source.contains("crate::limits::AI_RESEARCH_BUCKET"),
+        "commands::ai::admit_research must acquire the SAME shared bucket constant"
+    );
+}

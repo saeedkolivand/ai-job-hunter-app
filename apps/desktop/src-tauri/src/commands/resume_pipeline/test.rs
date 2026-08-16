@@ -73,6 +73,10 @@ fn run_request_carries_only_identity_no_budget_and_no_routing() {
     // finishes instantly at zero cost, byte-identical to a build that never
     // had the stage at all.
     assert!(!req.include_cover_letter);
+    // Same treatment for `researchCompany`: an existing caller that omits it
+    // gets the no-op default — no research call, no `<company_research>`
+    // block, byte-identical to a build that never had the toggle at all.
+    assert!(!req.research_company);
 
     // Re-serializing must not resurrect any of them: the round-trip is exactly
     // the field set the backend owns.
