@@ -73,6 +73,21 @@ describe('TrustBadge — resolved level labels', () => {
 // i18n key-drift guard — the point of this file. Every `TrustFlag` must
 // resolve through `jobs.trust.flags.${flag}` to real copy; a broken template
 // string / missing resource entry would leave the raw key visible instead.
+//
+// `FLAG_LABEL: Record<TrustFlag, string>` is deliberately a mapped-type
+// object literal, not a plain `{}` cast — TypeScript requires every member
+// of `TrustFlag` as a key (and rejects unknown ones), so a `TrustFlag`
+// member added to the shared union without a matching entry here fails
+// `pnpm typecheck`, not just this one vitest file. That's real, not
+// incidental: a PR once added `TrustFlag::ImplausibleCompany` on the Rust
+// side, forgot to touch the shared TS union, and this guard had nothing to
+// iterate — its fixture is DERIVED FROM the union, so it can only ever test
+// what the union already knows about. Once the union is current (which is a
+// still-manual step; there's no Rust→TS codegen here), this Record closes
+// the rest of the loop by refusing to compile until every member has real
+// copy. Mutation-tested: deleting one `FLAG_LABEL` entry after adding a
+// union member reproduces exactly this failure mode (`tsc` red); see the PR
+// handoff for the observed result.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FLAG_LABEL: Record<TrustFlag, string> = {
@@ -80,6 +95,7 @@ const FLAG_LABEL: Record<TrustFlag, string> = {
   invalidUrl: 'Broken apply link',
   suspiciousDomain: 'Suspicious domain',
   companyDomainMismatch: "Domain doesn't match company",
+  implausibleCompany: 'Company name looks implausible',
 };
 
 const ALL_FLAGS = Object.keys(FLAG_LABEL) as TrustFlag[];
