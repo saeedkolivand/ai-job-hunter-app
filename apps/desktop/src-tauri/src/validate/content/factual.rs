@@ -667,15 +667,39 @@ fn survival_tokens(company: &str) -> Vec<String> {
 /// generous WITHIN it: a legitimate rewrite may reword a company's
 /// surrounding bullets, and every line of the section (not just its heading)
 /// is still searched.
+///
+/// Falls back to the WHOLE document when the generated résumé has no
+/// `SectionKind::Experience` section at all. "Absent" is not the same fact as
+/// "deleted", and conflating them is a false accusation on a truthful
+/// document: `classify_section` recognises `work experience` /
+/// `berufserfahrung` / `employment` and a few more, but NOT `Work History` or
+/// `Selected Roles`, which land in `Other`. Measured on a résumé carrying both
+/// roles verbatim — heading `WORK EXPERIENCE` gives 0 issues, `WORK HISTORY`
+/// gives 2 `factual.dropped_role` Criticals. Those are terminal:
+/// `criticals_by_section` resolves them to `SectionKey::Experience`, which
+/// `find` cannot locate, so no repair runs and the user is told two jobs
+/// vanished from a document that still contains them.
+///
+/// The sibling `project_link_issues` already guards its absent section
+/// explicitly; this mirrors it, preferring the pre-scoping behaviour (a
+/// possible MISS) over a guaranteed false Critical — the scoping exists to
+/// catch a rare regression and must not manufacture a common one.
 fn generated_experience_lower(sections: &[Section]) -> String {
-    sections
-        .iter()
-        .filter(|s| s.kind == SectionKind::Experience)
-        .flat_map(|s| s.lines.iter())
-        .map(|line| line.text.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
-        .to_lowercase()
+    let joined = |only_experience: bool| {
+        sections
+            .iter()
+            .filter(|s| !only_experience || s.kind == SectionKind::Experience)
+            .flat_map(|s| s.lines.iter())
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_lowercase()
+    };
+    let scoped = joined(true);
+    if scoped.is_empty() {
+        return joined(false);
+    }
+    scoped
 }
 
 /// Whether `company` still appears in the generated text.

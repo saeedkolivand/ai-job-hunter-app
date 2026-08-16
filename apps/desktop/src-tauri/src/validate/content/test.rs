@@ -5308,3 +5308,30 @@ fn a_www_prefix_is_the_same_link() {
         FACTUAL_ALTERED_PROJECT_LINK,
     );
 }
+
+/// Regression: scoping the survival search to `SectionKind::Experience` turned
+/// "this résumé has no section my classifier calls Experience" into "these jobs
+/// were deleted". `classify_section` does not know `Work History` or `Selected
+/// Roles`, so a truthful résumé using either earned two unclearable Criticals —
+/// unclearable because `criticals_by_section` routes them to
+/// `SectionKey::Experience`, which `find` cannot locate, so no repair runs.
+#[test]
+fn an_unrecognised_experience_heading_is_not_read_as_deleted_jobs() {
+    let src = "Jane Doe\n\nWORK EXPERIENCE\nAcme Payments | 2021 - Present\n\
+               - Led the settlement migration to Rust across fourteen markets\n\n\
+               Globex Logistics | 2018 - 2021\n\
+               - Built a distributed scheduler handling four million jobs a day\n";
+    for heading in ["WORK EXPERIENCE", "WORK HISTORY", "SELECTED ROLES"] {
+        let generated = src.replace("WORK EXPERIENCE", heading);
+        let report = report_for(&generated, src, EN_JOB_AD, &[]);
+        let dropped = codes(&report)
+            .iter()
+            .filter(|c| **c == FACTUAL_DROPPED_ROLE)
+            .count();
+        assert_eq!(
+            dropped, 0,
+            "heading {heading:?}: both roles are present verbatim, so nothing was \
+             dropped; got {dropped} factual.dropped_role"
+        );
+    }
+}
