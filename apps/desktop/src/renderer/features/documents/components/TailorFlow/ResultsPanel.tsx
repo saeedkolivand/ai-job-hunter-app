@@ -74,6 +74,9 @@ interface Props {
   accent?: string;
   /** Per-export cover-letter layout; undefined → the backend renders classic. */
   letterLayoutId?: LetterLayoutId;
+  /** Export/preview market — forwarded straight through to `GenerationOutput`'s
+   *  live preview (see its own doc comment). */
+  market?: string;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (v: boolean) => void;
   onAccentChange: (accent: string | undefined) => void;
@@ -137,6 +140,7 @@ export function ResultsPanel({
   atsMode,
   accent,
   letterLayoutId,
+  market,
   onTemplateChange,
   onAtsModeChange,
   onAccentChange,
@@ -282,6 +286,7 @@ export function ResultsPanel({
           atsMode={atsMode}
           accent={accent}
           letterLayoutId={letterLayoutId}
+          market={market}
           onTemplateChange={onTemplateChange}
           onAtsModeChange={onAtsModeChange}
           onAccentChange={onAccentChange}

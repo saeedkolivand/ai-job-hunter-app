@@ -19,7 +19,7 @@
  * Bundled with an `import` from `./lib/field-signal` (unlike most injected
  * classic-script entries, this is SAFE for a `chrome.scripting.executeScript`
  * target): built by its OWN isolated Rollup pass — see the `injectedEntries`
- * plugin in `vite.config.ts` — mirroring `capture.ts`'s convention, so the
+ * plugin in `vite.config.mts` — mirroring `capture.ts`'s convention, so the
  * import is inlined and never shares a chunk with another entry.
  */
 

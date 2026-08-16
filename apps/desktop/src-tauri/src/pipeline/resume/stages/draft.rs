@@ -45,6 +45,10 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         let completer = ctx.completer_for(NAME);
+        // Read out of `ctx` before it is borrowed mutably again below —
+        // `top_requirements()` reads `ctx.analysis`, which `analyze_job`
+        // already finished writing by the time this stage runs.
+        let top_requirements = ctx.top_requirements();
         // Deliberately NOT cached: a cache hit emits no `ai:stream` deltas, so
         // the user would watch an empty pane while an already-known answer was
         // "generated". See `pipeline::resume::cache`'s module doc.
@@ -57,7 +61,12 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
                 },
                 AiGenerateRequestMessage {
                     role: "user".to_string(),
-                    content: draft_user(ctx.input.source_resume, ctx.input.job_ad, &ctx.strategy),
+                    content: draft_user(
+                        ctx.input.source_resume,
+                        ctx.input.job_ad,
+                        &ctx.strategy,
+                        &top_requirements,
+                    ),
                 },
             ],
             locale: ctx.input.target_language.to_string(),

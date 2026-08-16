@@ -978,3 +978,91 @@ export function resolveMarket(input: ResolveMarketInput): string {
     'intl'
   );
 }
+
+/** Segment delimiters for {@link countryFromLocation} — the country is conventionally
+ *  the last comma/dash/slash/pipe/paren-separated chunk of a free-text location. */
+const LOCATION_SEGMENT_SPLIT = /[,\-|/()]/;
+
+/** Forms `Intl.DisplayNames` does not itself produce, keyed lowercase → the ISO code
+ *  `COUNTRY_TO_MARKET` understands. Deliberately tiny — see the ponytail note below. */
+const COUNTRY_NAME_ALIASES: Record<string, string> = {
+  usa: 'US',
+  'u.s.': 'US',
+  'u.s.a.': 'US',
+  'u.k.': 'GB',
+  'great britain': 'GB',
+  england: 'GB',
+  scotland: 'GB',
+  wales: 'GB',
+};
+
+// Reverse country-name → ISO-code index, memoised per locale at module scope
+// (built lazily on first use of that locale, never rebuilt on every call).
+const countryNameIndexCache = new Map<string, ReadonlyMap<string, string>>();
+
+/** Reverse name→code index for one locale, over exactly the codes {@link COUNTRY_TO_MARKET}
+ *  lists. An unsupported/malformed locale (or a runtime without full-ICU `DisplayNames`)
+ *  degrades to an empty index rather than throwing. */
+function countryNameIndex(locale: string): ReadonlyMap<string, string> {
+  const key = locale.trim().toLowerCase();
+  const cached = countryNameIndexCache.get(key);
+  if (cached) return cached;
+  const index = new Map<string, string>();
+  try {
+    const displayNames = new Intl.DisplayNames([locale], { type: 'region' });
+    for (const code of Object.keys(COUNTRY_TO_MARKET)) {
+      const name = displayNames.of(code);
+      if (name) index.set(name.toLowerCase(), code);
+    }
+  } catch {
+    // Empty index for this locale — countryFromLocation falls through to the
+    // English index / alias table / no match.
+  }
+  countryNameIndexCache.set(key, index);
+  return index;
+}
+
+/**
+ * Extract an ISO-3166 alpha-2 country from a free-text job location (e.g.
+ * "New York, NY, US", "Köln, Deutschland", "London, UK") for {@link resolveMarket}'s
+ * `jobCountry` input — so an English posting in the US gets US Letter, not the
+ * `en`→`intl` default's A4.
+ *
+ * ponytail: segment matching only — whole comma/dash/slash/pipe/paren-separated
+ * segments, right-to-left (the country is conventionally last), never a substring
+ * of the raw string (a substring match would let "Austin" hit "Austria"). No
+ * fuzzy matching, no geocoding, and only the countries {@link COUNTRY_TO_MARKET}
+ * already knows — not a general-purpose gazetteer.
+ */
+export function countryFromLocation(location?: string, language?: string): string | undefined {
+  const trimmed = (location ?? '').trim();
+  if (!trimmed) return undefined;
+
+  const segments = trimmed
+    .split(LOCATION_SEGMENT_SPLIT)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const englishIndex = countryNameIndex('en');
+  const langIndex = language ? countryNameIndex(language) : undefined;
+
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const segment = segments[i];
+    if (segment === undefined) continue;
+    const lower = segment.toLowerCase();
+
+    // Bare alpha-2 segment, e.g. "US" in "New York, NY, US" — must already be a
+    // known key ("VA" in "Vienna, VA" is not one, so it's correctly rejected).
+    if (segment.length === 2 && COUNTRY_TO_MARKET[segment.toUpperCase()]) {
+      return segment.toUpperCase();
+    }
+
+    const alias = COUNTRY_NAME_ALIASES[lower];
+    if (alias) return alias;
+
+    const hit = englishIndex.get(lower) ?? langIndex?.get(lower);
+    if (hit) return hit;
+  }
+
+  return undefined;
+}

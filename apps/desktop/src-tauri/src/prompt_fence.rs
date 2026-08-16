@@ -191,6 +191,15 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // instruction about what to rewrite.
         "humanize_document",
         "humanize_findings",
+        // `top_requirements` (`draft_user`), `market_conventions` and
+        // `letter_date` (`letter_user`): three more blocks composed
+        // alongside the tags above in the SAME user turn — a job ad or a
+        // prior-stage artifact forging any of these could pose as the
+        // pipeline's own resolved keyword list, market etiquette, or
+        // today's date.
+        "top_requirements",
+        "market_conventions",
+        "letter_date",
     ]
     .into_iter()
     .map(|tag| (tag, compile_fence_tag_pattern(tag)))

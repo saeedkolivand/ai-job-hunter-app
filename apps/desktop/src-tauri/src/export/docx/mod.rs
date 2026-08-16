@@ -99,7 +99,6 @@ fn generate_cover_letter_docx_classic(
         }
 
         let clean = strip_md(trimmed);
-        let _segments = super::parser::parse_inline_md(trimmed);
 
         // Locale-aware: recognize salutations/sign-offs across every supported
         // market (was English/German only).
@@ -267,8 +266,14 @@ fn generate_cover_letter_docx_classic(
             continue;
         }
 
-        // Body paragraphs — use proper spacing via pPr, no blank-paragraph spacers
-        let para = render_cover_letter_paragraph(&clean, template, &colors, body_family);
+        // Body paragraphs — use proper spacing via pPr, no blank-paragraph spacers.
+        // `trimmed`, NOT `clean`: `render_cover_letter_paragraph` runs its own
+        // `parse_inline_md` to turn `**bold**` into a real bold run, but `clean`
+        // has already had every `**` stripped by `strip_md` above — passing it
+        // here fed `parse_inline_md` text with no markers left to find, so
+        // `**microservices**` rendered as plain "microservices" with no bold
+        // run at all.
+        let para = render_cover_letter_paragraph(trimmed, template, &colors, body_family);
         docx = docx.add_paragraph(para);
     }
 
@@ -933,8 +938,11 @@ fn generate_cover_letter_docx_layout(
             continue;
         }
 
-        // Body paragraphs — unchanged in both layouts.
-        let para = render_cover_letter_paragraph(&clean, template, &colors, body_family);
+        // Body paragraphs — unchanged in both layouts. `trimmed`, not `clean` —
+        // see the identical fix + comment in `generate_cover_letter_docx_classic`
+        // above; `clean` has already had every `**` stripped, which silently
+        // dropped bold formatting in every non-Classic letter layout too.
+        let para = render_cover_letter_paragraph(trimmed, template, &colors, body_family);
         docx = docx.add_paragraph(para);
     }
 

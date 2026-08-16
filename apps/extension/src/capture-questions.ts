@@ -9,7 +9,7 @@
  * Bundled with ZERO `import` statements: `./lib/answers-capture` (and the
  * `./lib/field-signal` helpers it shares with `autofill.ts`/`capture.ts`) is
  * inlined here because this file is built by its OWN isolated Rollup pass —
- * see the `injectedEntries` plugin in `vite.config.ts` — so it never shares a
+ * see the `injectedEntries` plugin in `vite.config.mts` — so it never shares a
  * chunk with `fill.js`/`capture.js`/`answer-fill.js`.
  */
 

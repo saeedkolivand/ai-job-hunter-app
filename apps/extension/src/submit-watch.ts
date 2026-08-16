@@ -5,7 +5,7 @@
  * right after any existing page gesture (autofill / answer-fill / answers-
  * capture / import scan) WHEN the auto-track opt-in is on — see
  * `background.ts`'s `maybeArmSubmitWatch`. Runs as a CLASSIC script (no ES
- * modules), so after the isolated Rollup pass (`vite.config.ts`'s
+ * modules), so after the isolated Rollup pass (`vite.config.mts`'s
  * `injectedEntries`) it carries ZERO `import` statements; its only runtime
  * import is the pure `./lib/submit-watch`, inlined by that pass.
  *

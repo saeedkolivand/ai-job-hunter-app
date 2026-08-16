@@ -645,4 +645,7 @@ const EXPECTED_FENCE_TAGS: &[&str] = &[
     "generated_resume",
     "humanize_document",
     "humanize_findings",
+    "top_requirements",
+    "market_conventions",
+    "letter_date",
 ];

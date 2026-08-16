@@ -14,7 +14,7 @@
  * Build note: `fill.js` and `capture.js` are each injected via
  * `chrome.scripting.executeScript({ files: [...] })` as CLASSIC scripts (no
  * ES module support) — they must bundle with ZERO `import` statements. Since
- * BOTH now genuinely share this module at runtime, `vite.config.ts` builds
+ * BOTH now genuinely share this module at runtime, `vite.config.mts` builds
  * each in its OWN isolated Rollup pass (the `injectedEntries` plugin) so this
  * file is inlined into EACH bundle rather than hoisted into a shared chunk
  * that either classic script would then have to `import`.

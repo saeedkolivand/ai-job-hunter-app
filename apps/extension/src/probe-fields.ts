@@ -22,7 +22,7 @@
  * Bundled with ZERO `import` statements: `./lib/answers-capture` and
  * `./lib/autofill` are inlined here because this file is built by its OWN
  * isolated Rollup pass — see the `injectedEntries` plugin in
- * `vite.config.ts` — so it never shares a chunk with the other injected
+ * `vite.config.mts` — so it never shares a chunk with the other injected
  * entries.
  */
 

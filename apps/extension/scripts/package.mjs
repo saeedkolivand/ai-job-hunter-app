@@ -27,7 +27,7 @@ const TARGETS = ['chrome', 'firefox'];
 
 // `fill.js`/`capture.js`/`capture-questions.js`/`answer-fill.js` are injected
 // via `chrome.scripting.executeScript({ files: [...] })` as CLASSIC scripts —
-// no ES module support. `vite.config.ts`'s `injectedEntries` plugin builds
+// no ES module support. `vite.config.mts`'s `injectedEntries` plugin builds
 // them each in an isolated Rollup pass specifically so no `import`/`export`
 // statement ever leaks in (see field-signal.ts's header comment); this is the
 // automated guard that invariant doesn't silently regress.
@@ -72,7 +72,7 @@ function assertClassicScripts(srcDir) {
       console.error(
         `error: ${rel(filePath)} contains an import/export statement — it must be a classic ` +
           `script (chrome.scripting.executeScript({ files: [...] }) can't load ES modules). ` +
-          `The injectedEntries isolated-build guarantee in vite.config.ts has regressed.`
+          `The injectedEntries isolated-build guarantee in vite.config.mts has regressed.`
       );
       process.exit(1);
     }

@@ -3,8 +3,9 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::{
     docx::generate_docx,
+    letter_shape::complete_letter_text,
     pdf::{generate_pdf, generate_preview_svg},
-    types::{ExportFormat, ExportRequest, ExportResult, PreviewResult},
+    types::{DocumentType, ExportFormat, ExportRequest, ExportResult, PreviewResult},
 };
 use crate::error::{AppError, AppResult};
 use crate::observability::Span;
@@ -12,6 +13,33 @@ use crate::validate::{validate_and_fix, ExportReport, Severity};
 
 /// MIME type for every page string returned by the SVG live-preview path.
 const SVG_MIME: &str = "image/svg+xml";
+
+/// Resolve the candidate's name from an [`ExportRequest`], one rung at a time:
+/// `meta.candidate_name` (trimmed, non-blank) first, then `contact.full_name`
+/// (trimmed, non-blank), else `None`. Both rungs are filtered non-blank because
+/// `meta.candidate_name: Some("")` is a shape callers actually send (TailorFlow),
+/// and without the filter it would win as an empty string — an `Option::Some("")`,
+/// not `None` — and never fall through to the profile rung below.
+///
+/// Shared by [`validate_and_normalize`] (which signs off the completed letter
+/// text) and [`generate_filename`] (which names the downloaded file) so the two
+/// never drift on which rung wins.
+fn resolve_candidate_name(request: &ExportRequest) -> Option<&str> {
+    request
+        .meta
+        .as_ref()
+        .and_then(|m| m.candidate_name.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            request
+                .contact
+                .as_ref()
+                .and_then(|c| c.full_name.as_deref())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })
+}
 
 /// Reject empty input and run the same text-normalization passes every export
 /// path uses (Unicode normalize → strip stray Markdown → dash typography), so
@@ -39,6 +67,28 @@ fn validate_and_normalize(request: &mut ExportRequest) -> AppResult<()> {
     request.text = super::parser::normalize_unicode(&request.text);
     request.text = super::parser::sanitize_markdown(&request.text);
     request.text = super::parser::typography(&request.text);
+
+    // Cover letters only, and LAST — after unicode/markdown/typography have
+    // already run — so `complete_letter_text`'s own `is_salutation`/
+    // `is_signoff` line-detection sees text with smart quotes/NBSP already
+    // folded to ASCII and stray `*`/`` ` `` already stripped (both would
+    // otherwise cause a false-negative "no salutation found" and double the
+    // furniture on a letter that actually had one, just mangled). The
+    // appended salutation/sign-off strings come from the trusted locale
+    // fixture, so they need none of the three passes themselves. Downstream
+    // `extract_section("### COMPLETE COVER LETTER ###")` (pdf/mod.rs,
+    // docx/mod.rs) still works unchanged: the staged pipeline's body-only
+    // text carries no such marker, so completion runs on the whole text and
+    // extraction later falls through to that same (now complete) text; a
+    // marker-wrapped letter from the TS fast-path prompt already has both
+    // parts, so `complete_letter_text` is a no-op and never touches the
+    // marker line.
+    if request.document_type == DocumentType::CoverLetter {
+        let market = request.locale.as_deref().unwrap_or("intl");
+        let name = resolve_candidate_name(request).unwrap_or("");
+        request.text = complete_letter_text(&request.text, market, name);
+    }
+
     Ok(())
 }
 
@@ -269,11 +319,12 @@ pub async fn documents_export_and_save(
 
 /// Generate filename from metadata
 fn generate_filename(request: &ExportRequest, extension: &str) -> String {
-    let name = request
-        .meta
-        .as_ref()
-        .and_then(|m| m.candidate_name.as_ref())
-        .map(|s| sanitize_filename(s))
+    // Meta name first (fallback only — never overrides text-derived content
+    // elsewhere), then the contact profile's name, then "Candidate" — the same
+    // chain `validate_and_normalize` uses to sign off the letter text, via
+    // `resolve_candidate_name` so the two never drift.
+    let name = resolve_candidate_name(request)
+        .map(sanitize_filename)
         .unwrap_or_else(|| "Candidate".to_string());
 
     let role = request

@@ -280,6 +280,34 @@ pub(crate) fn humanize_is_worse(
 ) -> bool {
     super::repair::round_is_worse(before, before_text, after, after_text)
         || voice_count(after) > voice_count(before)
+        || coverage_dropped(before, after)
+}
+
+/// Whether `after`'s keyword coverage fell by
+/// [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`] points or more below
+/// `before`'s (the threshold itself counts as a drop, not just anything past
+/// it) —
+/// the SAME points-of-drop threshold `alignment.low_coverage` already reports
+/// at, reused rather than a second invented number. Neither of
+/// [`humanize_is_worse`]'s other two checks looks at keyword coverage at
+/// all, so a rewrite that quietly deletes exact job-ad terms sailed through
+/// both clean before this: no new Critical (deleting a term is not an
+/// absence-shaped fabrication) and no new `voice.*` flag (coverage and voice
+/// are unrelated checks).
+///
+/// `None` on either side (an uncomparable posting — no extractable keywords,
+/// see [`crate::validate::content::ContentMetrics::keyword_coverage`]) never
+/// rejects: there is nothing to compare.
+fn coverage_dropped(before: &ContentReport, after: &ContentReport) -> bool {
+    match (
+        before.metrics.keyword_coverage,
+        after.metrics.keyword_coverage,
+    ) {
+        (Some(before), Some(after)) => {
+            before - after >= crate::validate::content::MIN_COVERAGE_DROP_POINTS
+        }
+        _ => false,
+    }
 }
 
 /// What one document's humanize attempt did — everything the stage needs to
@@ -524,6 +552,10 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         // would still be alive (via `humanize_one`'s `.await`) when `ctx.draft`
         // is written below, which the borrow checker rightly refuses.
         let letter_for_resume_revalidate = ctx.letter_text().to_string();
+        // Same reason, same timing: the RESOLVED list
+        // (`QualityCtx::top_requirements`'s doc), read once before `ctx.draft`
+        // starts getting rewritten below.
+        let top_requirements = ctx.top_requirements();
 
         if resume_flagged > 0 {
             // The SAME three gates `humanize_one` itself checks first, mirrored
@@ -569,12 +601,13 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                                 |candidate: &str| projects::normalize_projects(candidate, &seeds),
                                 |candidate| {
                                     let letter = letter_for_resume_revalidate.clone();
+                                    let top_requirements = top_requirements.clone();
                                     async move {
                                         let (report, _letter_report) = validate_documents(
                                             candidate,
                                             input.source_resume.to_string(),
                                             input.job_ad.to_string(),
-                                            input.top_requirements.to_vec(),
+                                            top_requirements,
                                             input.target_language.to_string(),
                                             letter,
                                         )
@@ -640,12 +673,13 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                                 |_candidate: &str| None,
                                 |candidate| {
                                     let draft = draft_for_revalidate.clone();
+                                    let top_requirements = top_requirements.clone();
                                     async move {
                                         let (_resume_report, letter_report) = validate_documents(
                                             draft,
                                             input.source_resume.to_string(),
                                             input.job_ad.to_string(),
-                                            input.top_requirements.to_vec(),
+                                            top_requirements,
                                             input.target_language.to_string(),
                                             candidate,
                                         )
