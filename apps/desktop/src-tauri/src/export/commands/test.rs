@@ -269,6 +269,51 @@ fn test_generate_filename() {
     assert!(filename.ends_with(".docx"));
 }
 
+/// A1 (hardening plan) — end-to-end, anchored to the RENDERED filename a user
+/// actually sees/saves/shares, not to `is_implausible_company`'s own bool: a
+/// scraper-supplied garbage company (the literal PR #960 report) must fall
+/// back to the same `"Company"` default an absent one already produces,
+/// never appear verbatim in the exported file's name.
+///
+/// Mutation check: remove the `.filter(|s| !crate::scraping::trust::
+/// is_implausible_company(s))` line from `generate_filename` — this test
+/// fails immediately (the filename contains the raw garbage instead of
+/// falling back to `"Company"`).
+#[test]
+fn generate_filename_falls_back_to_company_default_for_an_implausible_name() {
+    use super::super::types::{
+        DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
+    };
+
+    let request = ExportRequest {
+        text: "Test".to_string(),
+        format: ExportFormat::Docx,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::SwissMinimal,
+        meta: Some(GenerationMeta {
+            candidate_name: Some("John Doe".to_string()),
+            job_title: Some("Software Engineer".to_string()),
+            company_name: Some("Apply now | LinkedIn".to_string()),
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: None,
+        contact: None,
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+
+    let filename = generate_filename(&request, "pdf");
+    assert!(
+        filename.contains("Company"),
+        "expected the absent-company fallback, got {filename:?}"
+    );
+    assert!(
+        !filename.contains("LinkedIn") && !filename.contains("Apply"),
+        "the garbage company must never reach the rendered filename, got {filename:?}"
+    );
+}
+
 /// `meta.candidate_name: Some("")` (the shape TailorFlow actually sends) must
 /// fall through to the attached `ContactProfile`'s name rather than winning
 /// as an empty string — before the non-blank filter, `Some("")` stayed

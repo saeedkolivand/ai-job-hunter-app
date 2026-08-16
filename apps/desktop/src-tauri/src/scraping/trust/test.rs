@@ -306,6 +306,148 @@ fn company_matches_host_skips_stop_words() {
 }
 
 // ---------------------------------------------------------------------------
+// is_implausible_company — table-driven (A1 hardening plan)
+// ---------------------------------------------------------------------------
+
+/// Real-world garbage this predicate exists to catch, one row per category
+/// from the hardening plan. `"Apply now | LinkedIn"` is the literal PR #960
+/// report, kept first.
+#[test]
+fn is_implausible_company_rejects_real_world_garbage() {
+    let long_paragraph = "Acme Corp Global Holdings ".repeat(6);
+    let cases: Vec<(&str, &str)> = vec![
+        ("Apply now | LinkedIn", "the literal PR #960 report"),
+        ("Apply Now", "bare CTA debris"),
+        ("View Job", "bare CTA debris"),
+        ("See more", "bare CTA debris"),
+        ("Easy Apply", "bare CTA debris"),
+        ("LinkedIn", "job-board brand standing in for the employer"),
+        ("Indeed", "job-board brand standing in for the employer"),
+        ("Glassdoor", "job-board brand standing in for the employer"),
+        ("Xing", "job-board brand standing in for the employer"),
+        ("StepStone", "job-board brand standing in for the employer"),
+        ("Monster", "job-board brand standing in for the employer"),
+        (
+            "ZipRecruiter",
+            "job-board brand standing in for the employer",
+        ),
+        ("Acme <script>alert(1)</script>", "HTML/markup debris"),
+        ("Acme &amp; Co", "HTML-entity debris"),
+        ("***", "mostly/all punctuation"),
+        ("---", "mostly/all punctuation"),
+        ("", "empty"),
+        ("   ", "whitespace-only"),
+        ("n/a", "placeholder"),
+        ("N/A", "placeholder, case-insensitive"),
+        ("None", "placeholder"),
+        ("Unknown", "placeholder"),
+        ("Company", "placeholder"),
+        ("Unternehmen", "placeholder"),
+        (
+            "X",
+            "single-character shape — see the doc comment's X decision",
+        ),
+        ("A", "single-character shape"),
+        (long_paragraph.as_str(), "absurdly long"),
+    ];
+    for (input, reason) in cases {
+        assert!(
+            is_implausible_company(input),
+            "expected {input:?} to be rejected ({reason})"
+        );
+    }
+}
+
+/// Real employer names — punctuation-bearing ones especially — that must
+/// survive every rule above.
+#[test]
+fn is_implausible_company_accepts_legitimate_names_with_punctuation() {
+    let legit = [
+        "Johnson & Johnson",
+        "Ben & Jerry's",
+        "Yahoo!",
+        "Booking.com",
+        "37signals",
+        "Acme Corp",
+        "Stripe",
+        "CHECK24 Vergleichsportal für Versicherungen GmbH",
+        "Boxing Studio",
+        "Müller & Söhne GmbH",
+    ];
+    for name in legit {
+        assert!(
+            !is_implausible_company(name),
+            "expected {name:?} to be accepted as a plausible employer name"
+        );
+    }
+}
+
+/// Regression for a HIGH finding on commit ff87e93f: the pre-fix
+/// `JOB_BOARD_NAMES` (word-boundary) and `CTA_PHRASES` (substring) checks
+/// silently deleted real employers from letters, because each one either
+/// shares a board's name as one word among several or opens with the same
+/// prefix as a CTA phrase. Whole-string matching (see both consts' doc
+/// comments) fixes every one of these without reopening the PR #960 hole —
+/// see [`apply_now_pipe_linkedin_is_caught_only_by_the_separator_rule`]
+/// below for proof that report is still caught.
+#[test]
+fn is_implausible_company_accepts_real_employers_sharing_a_board_word_or_cta_prefix() {
+    let real_employers = [
+        "Monster Worldwide",
+        "Xing SE",
+        "Indeed Inc",
+        "Glassdoor Inc",
+        "Apply On Demand Inc",
+    ];
+    for name in real_employers {
+        assert!(
+            !is_implausible_company(name),
+            "expected {name:?} to be accepted as a plausible employer name"
+        );
+    }
+}
+
+/// The literal PR #960 report, isolated from the big garbage table above so
+/// the coverage is provable rather than accidental: after the whole-string
+/// fix, this input is no longer caught by `JOB_BOARD_NAMES`
+/// (`"apply now | linkedin"` != `"linkedin"`) or `CTA_PHRASES`
+/// (`"apply now | linkedin"` != `"apply now"`) — the separator rule
+/// (`trimmed.contains(['|', …])`) is the only remaining rule that fires.
+/// Mutation-tested by temporarily deleting that check (see the PR handoff
+/// for the observed red/green result).
+#[test]
+fn apply_now_pipe_linkedin_is_caught_only_by_the_separator_rule() {
+    assert!(is_implausible_company("Apply now | LinkedIn"));
+}
+
+/// Accepted trade-off, not a bug: making `CTA_PHRASES` an exact whole-string
+/// match (to stop false-positiving "Apply On Demand Inc") also means a CTA
+/// phrase concatenated with a board name — but without a separator
+/// character — no longer matches either list, so this shape now reads as
+/// plausible. Pinned here so a future reader sees the gap was a deliberate
+/// choice, not a rediscovered regression.
+#[test]
+fn cta_plus_board_name_without_a_separator_is_an_accepted_false_negative() {
+    assert!(!is_implausible_company("Apply on Indeed"));
+}
+
+// ---------------------------------------------------------------------------
+// assess_trust — implausible company (A1 hardening plan)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn implausible_company_flagged_and_penalized_instead_of_mismatch() {
+    // The host is neither allowlisted nor a match for the company, so a
+    // pre-A1 build would have flagged `CompanyDomainMismatch` (-15) here —
+    // this asserts the implausible-company branch takes priority instead
+    // (-20, exactly one flag), never both.
+    let a = assess_trust("https://boards.example/jobs/1", "Apply now | LinkedIn");
+    assert_eq!(a.score, 80);
+    assert_eq!(a.level, TrustLevel::Medium);
+    assert_eq!(a.flags, vec![TrustFlag::ImplausibleCompany]);
+}
+
+// ---------------------------------------------------------------------------
 // FoundJob wiring — exercises the REAL `build_found_job` projection (the
 // same one `autopilot_run`'s `postings.iter().map(..)` calls), not a
 // hand-retyped mirror that could silently drift (dropped field, swapped args).
