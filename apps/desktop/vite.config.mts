@@ -16,28 +16,28 @@ export default defineConfig({
       // Exact-match regex so `@ajh/ui/css` still resolves to the package.
       {
         find: /^@ajh\/ui$/,
-        replacement: path.resolve(__dirname, '../../packages/ui/src/index.ts'),
+        replacement: path.resolve(import.meta.dirname, '../../packages/ui/src/index.ts'),
       },
       // Same rationale as @ajh/ui: resolve translations to SOURCE so editing
       // translation.json / the i18n config hot-reloads in dev instead of serving
       // the prebuilt dist. Exact-match so any future subpath still hits the package.
       {
         find: /^@ajh\/translations$/,
-        replacement: path.resolve(__dirname, '../../packages/translations/src/index.ts'),
+        replacement: path.resolve(import.meta.dirname, '../../packages/translations/src/index.ts'),
       },
       // Resolve test-id constants to SOURCE — production components import this
       // package so Vite must know the path in both dev and build modes.
       {
         find: /^@ajh\/test-ids$/,
-        replacement: path.resolve(__dirname, '../../packages/test-ids/src/index.ts'),
+        replacement: path.resolve(import.meta.dirname, '../../packages/test-ids/src/index.ts'),
       },
-      { find: '@', replacement: path.resolve(__dirname, 'src/renderer') },
+      { find: '@', replacement: path.resolve(import.meta.dirname, 'src/renderer') },
     ],
   },
   plugins: [
     TanStackRouterVite({
-      routesDirectory: path.resolve(__dirname, 'src/renderer/routes'),
-      generatedRouteTree: path.resolve(__dirname, 'src/renderer/routeTree.gen.ts'),
+      routesDirectory: path.resolve(import.meta.dirname, 'src/renderer/routes'),
+      generatedRouteTree: path.resolve(import.meta.dirname, 'src/renderer/routeTree.gen.ts'),
     }),
     react(),
     tailwindcss(),

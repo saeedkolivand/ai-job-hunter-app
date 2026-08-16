@@ -30,7 +30,7 @@
  * Build note: like `fill.ts`/`answer-fill.ts`, `submit-watch.js` is injected
  * via `chrome.scripting.executeScript({ files: [...] })` as a CLASSIC script, so
  * it must carry ZERO `import` statements after the isolated Rollup pass
- * (`vite.config.ts`'s `injectedEntries`) inlines this module + its `field-signal`
+ * (`vite.config.mts`'s `injectedEntries`) inlines this module + its `field-signal`
  * dependency.
  */
 
