@@ -5,7 +5,7 @@ argument-hint: [phase - defaults to the phase the current diff targets]
 
 Run the current **apps/landing WebGL phase gate** on rendered output.
 
-1. Load the `webgl-gate-audit` skill; read the target phase in `docs/adr/0014-landing-gl-takeover.md`.
+1. Load the `webgl-gate-audit` skill; read the target phase in `docs/knowledge/decision-records/0014-landing-gl-takeover.md`.
 2. Ensure the dev server is up: `pnpm --filter @ajh/landing dev` (http://localhost:3000).
 3. Spawn **only** the `gate-auditor` subagent (Task). It drives the browser via Chrome DevTools MCP:
    scrolls to exact t positions, screenshots, records traces, reads the console.
