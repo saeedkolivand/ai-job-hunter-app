@@ -53,11 +53,21 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
             messages: vec![
                 AiGenerateRequestMessage {
                     role: "system".to_string(),
-                    content: letter_system(ctx.input.target_language),
+                    content: letter_system(
+                        ctx.input.target_language,
+                        ctx.input.market,
+                        !ctx.input.today.trim().is_empty(),
+                    ),
                 },
                 AiGenerateRequestMessage {
                     role: "user".to_string(),
-                    content: letter_user(ctx.input.source_resume, ctx.input.job_ad, &ctx.strategy),
+                    content: letter_user(
+                        ctx.input.source_resume,
+                        ctx.input.job_ad,
+                        &ctx.strategy,
+                        ctx.input.market,
+                        ctx.input.today,
+                    ),
                 },
             ],
             locale: ctx.input.target_language.to_string(),

@@ -107,6 +107,63 @@ pub(crate) fn effective_letter_text<'a>(stage_letter: &'a str, request_letter: &
     }
 }
 
+/// Item + per-item byte cap on the RESOLVED requirement list below — the
+/// SAME values as the wire schema (`packages/shared/src/schemas/index.ts`,
+/// `topRequirements: z.array(z.string().max(300)).max(50)`) and its Rust
+/// mirror (`commands::resume::{TOP_REQUIREMENTS_CAP, TOP_REQUIREMENT_BYTES_CAP}`).
+/// Duplicated as local literals rather than imported: this module is L2 and
+/// `commands` is L3 (`docs/architecture-rules.md` — L2 may not depend on
+/// L3), and both numbers actually mirror the wire schema, not each other.
+const RESOLVED_REQUIREMENTS_CAP: usize = 50;
+const RESOLVED_REQUIREMENT_BYTES_CAP: usize = 300;
+
+/// The run's actual requirement list — every downstream reader
+/// ([`QualityCtx::top_requirements`], and through it `stages::validate`,
+/// `stages::draft`'s emphasis directive, and the persisted aggregate) goes
+/// through this rather than [`QualityInput::top_requirements`] directly, so
+/// none of them can disagree about which list is "the" requirements.
+///
+/// **Prefers the `analyze_job` stage's OWN extraction** — `analysis.must_have`
+/// then `analysis.nice_to_have`, deduped case-insensitively and capped like
+/// the wire schema — over the request's own list: the analysis is what this
+/// pipeline actually asked the model to extract FROM the posting, so a run
+/// that produced one should never fall back to whatever the caller happened
+/// to send. Falls back to `fallback` (the request's own list) only when the
+/// analysis produced nothing — a run whose `analyze_job` stage has not run
+/// yet, or one that genuinely extracted zero requirements.
+///
+/// This closes the root cause behind three symptoms at once: the renderer
+/// used to send `topRequirements: []` unconditionally, making the request's
+/// list the run's ONLY source — the quality panel's coverage metric read as
+/// unmeasured (`validate::content::alignment::validate`'s empty-list branch),
+/// the `alignment.missing_top_requirement` finding could never fire, and
+/// `persist_document` saved that same empty list, which
+/// `ai_generations::merge_application`'s pick-non-empty merge then silently
+/// froze — a stale or even a different posting's requirements kept showing
+/// as this one's keyword chips.
+pub(crate) fn resolved_top_requirements(analysis: &JobAnalysis, fallback: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for requirement in analysis.must_have.iter().chain(analysis.nice_to_have.iter()) {
+        let clamped = crate::applications::clamp_to_bytes(
+            requirement.trim().to_string(),
+            RESOLVED_REQUIREMENT_BYTES_CAP,
+        );
+        if clamped.is_empty() || !seen.insert(clamped.to_lowercase()) {
+            continue;
+        }
+        out.push(clamped);
+        if out.len() >= RESOLVED_REQUIREMENTS_CAP {
+            break;
+        }
+    }
+    if out.is_empty() {
+        fallback.to_vec()
+    } else {
+        out
+    }
+}
+
 /// The BINDING: pick the routing for `stage`, then derive that stage's cache
 /// key from the routing that was picked.
 ///
@@ -144,6 +201,13 @@ pub struct QualityInput<'a> {
     /// The language the document must be written in.
     pub target_language: &'a str,
     pub top_requirements: &'a [String],
+    /// Resolved job-market id (`crate::locale::letter::conventions`'s key) —
+    /// drives the letter's market etiquette. `"intl"` is the wire default.
+    pub market: &'a str,
+    /// Today's date, pre-formatted by the caller for the target locale — the
+    /// letter prompt places this exactly rather than inventing one. Empty
+    /// means no date (see `letter_system`'s `has_date` gate).
+    pub today: &'a str,
     /// An already-generated cover letter to validate alongside the résumé;
     /// empty when no letter is in scope. Legacy/validate-only: the `cover_letter`
     /// stage's OWN output (`QualityCtx::letter`) takes precedence over this once
@@ -418,6 +482,14 @@ impl<'a> QualityCtx<'a> {
     /// build), while the DECISION here needs only two `&str`s.
     pub fn letter_text(&self) -> &str {
         effective_letter_text(&self.letter, self.input.cover_letter)
+    }
+
+    /// The run's actual requirement list — see [`resolved_top_requirements`]
+    /// for the precedence rule. Every reader of "the top requirements" past
+    /// `analyze_job` must call this, never [`QualityInput::top_requirements`]
+    /// directly.
+    pub fn top_requirements(&self) -> Vec<String> {
+        resolved_top_requirements(&self.analysis, self.input.top_requirements)
     }
 
     /// How many Criticals the current report carries. `0` when nothing has been

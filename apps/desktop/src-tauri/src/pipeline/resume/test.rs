@@ -28,7 +28,10 @@ use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
     SectionKey, SkillGroup,
 };
-use super::{effective_letter_text, pick, stage_cache_key_for, RunLedger, QUALITY_STAGES};
+use super::{
+    effective_letter_text, pick, resolved_top_requirements, stage_cache_key_for, RunLedger,
+    QUALITY_STAGES,
+};
 use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::cache::KvCache;
@@ -1178,9 +1181,17 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
         "a forged marker must be broken"
     );
 
-    // …and the same for the draft turn, which composes THREE blocks.
-    let draft = draft_user(hostile, hostile, &ResumeStrategy::default());
+    // …and the same for the draft turn, which composes FOUR blocks — the
+    // resolved top-requirements list included, since it can carry a hostile
+    // requirement string the analysis extracted from the posting.
+    let draft = draft_user(
+        hostile,
+        hostile,
+        &ResumeStrategy::default(),
+        &[hostile.to_string()],
+    );
     assert_eq!(draft.matches("</resume_strategy>").count(), 1);
+    assert_eq!(draft.matches("</top_requirements>").count(), 1);
     assert!(!draft.contains("[tool_result:"));
 
     // …and for the repair turn's user note, which is typed by a human but could
@@ -1189,9 +1200,14 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
     assert_eq!(repair.matches("</section_note>").count(), 1);
     assert!(repair.contains("< /job_posting>"));
 
-    // …and for the letter turn, which composes the same three blocks as draft.
-    let letter = letter_user(hostile, hostile, &ResumeStrategy::default());
+    // …and for the letter turn, which composes the same blocks as draft plus
+    // the market conventions and (when supplied) the date — `today` reaches
+    // a prompt as free renderer text same as anything else here, so it gets
+    // the same forgery check.
+    let letter = letter_user(hostile, hostile, &ResumeStrategy::default(), "de", hostile);
     assert_eq!(letter.matches("</resume_strategy>").count(), 1);
+    assert_eq!(letter.matches("</market_conventions>").count(), 1);
+    assert_eq!(letter.matches("</letter_date>").count(), 1);
     assert!(!letter.contains("[tool_result:"));
 
     // …and for the humanize turn's document + findings — PR-2's own two tags.
@@ -1246,7 +1262,7 @@ fn stage_prompts_interpolate_the_generated_blocks() {
 
     // The letter is prose, so it gets the PROSE tier, never the résumé's
     // lexical one.
-    let letter = letter_system("en");
+    let letter = letter_system("en", "intl", false);
     assert!(letter.contains(FACTUAL_GROUNDING_RULES));
     assert!(letter.contains(HUMANIZE_PROSE));
     assert!(!letter.contains(HUMANIZE_LEXICAL));
@@ -1268,6 +1284,101 @@ fn the_draft_prompt_localizes_its_headings() {
     assert!(german.contains("Berufserfahrung"));
     assert!(german.contains("Kenntnisse"));
     assert!(!german.contains("Work Experience"));
+}
+
+// ── letter market conventions (Task A/B) ────────────────────────────────────
+
+/// The `<market_conventions>` block is built from the SAME fixture the export
+/// path reads — `de` carries its DIN-5008 specifics, and an unknown market id
+/// falls back to the international baseline rather than fabricating one.
+///
+/// Mutation check: hardcode the block instead of reading `conventions(market)`
+/// and the `de` assertions fail; drop the fallback in
+/// `crate::locale::letter::conventions` and the unknown-market assertions do.
+#[test]
+fn letter_user_carries_market_conventions_for_de_and_falls_back_for_an_unknown_market() {
+    let de = letter_user("resume", "job ad", &ResumeStrategy::default(), "de", "");
+    assert!(de.contains("<market_conventions>"));
+    assert!(de.contains("Germany"));
+    assert!(de.contains("Betreff"));
+    assert!(de.contains("Gehaltsvorstellung"));
+
+    let unknown = letter_user("resume", "job ad", &ResumeStrategy::default(), "zz", "");
+    assert!(unknown.contains("International"));
+    assert!(
+        !unknown.contains("Betreff"),
+        "an unknown market must never fabricate a German subject-line label"
+    );
+}
+
+/// The subject-line instruction only appears for a market whose
+/// `subject_line.used` is true — `us` has none, `de` does.
+///
+/// Mutation check: drop the `conv.subject_line.used` gate in `letter_system`
+/// and the `us` assertion fails.
+#[test]
+fn letter_system_gates_the_subject_line_instruction_on_the_market() {
+    let de = letter_system("de", "de", false);
+    assert!(de.contains("subject line labelled \"Betreff\""));
+
+    let us = letter_system("en", "us", false);
+    assert!(!us.contains("subject line labelled"));
+}
+
+/// The date instruction is gated on `has_date`, never the market alone — a
+/// caller with no `today` string keeps the current "no date" behavior, and
+/// only a caller that supplies one gets pointed at `<letter_date>`.
+///
+/// Mutation check: default `has_date` to always-true and the first assertion
+/// fails.
+#[test]
+fn letter_system_gates_the_date_instruction_on_has_date() {
+    let no_date = letter_system("en", "us", false);
+    assert!(no_date.contains("No date."));
+    assert!(!no_date.contains("<letter_date>"));
+
+    let with_date = letter_system("en", "us", true);
+    assert!(with_date.contains("<letter_date>"));
+    assert!(!with_date.contains("No date."));
+}
+
+// ── resolved top requirements (Task E) ──────────────────────────────────────
+
+/// The root-cause fix: the run's requirement list comes from `analyze_job`'s
+/// own extraction — must-haves first, then nice-to-haves, deduped
+/// case-insensitively — even when the request sent an empty list (today's
+/// renderer always does).
+///
+/// Mutation check: return `fallback` unconditionally and this fails.
+#[test]
+fn resolved_top_requirements_prefers_the_analysis_over_an_empty_request_list() {
+    let analysis = JobAnalysis {
+        must_have: vec![
+            "Kubernetes".to_string(),
+            "kubernetes".to_string(), // case-insensitive duplicate
+            "payments domain".to_string(),
+        ],
+        nice_to_have: vec!["GraphQL".to_string()],
+        ..JobAnalysis::default()
+    };
+    let resolved = resolved_top_requirements(&analysis, &[]);
+    assert_eq!(
+        resolved,
+        vec![
+            "Kubernetes".to_string(),
+            "payments domain".to_string(),
+            "GraphQL".to_string(),
+        ]
+    );
+}
+
+/// A run whose analysis produced nothing (not yet run, or genuinely empty)
+/// falls back to the request's own list rather than losing it.
+#[test]
+fn resolved_top_requirements_falls_back_when_the_analysis_produced_nothing() {
+    let fallback = vec!["fallback requirement".to_string()];
+    let resolved = resolved_top_requirements(&JobAnalysis::default(), &fallback);
+    assert_eq!(resolved, fallback);
 }
 
 // ── `Draft::run`'s deterministic half — projects normalization + the ledger
@@ -1416,6 +1527,7 @@ fn the_strategy_artifact_survives_a_max_roster_uncapped() {
         "Jane Doe\nEXPERIENCE\n- Built things",
         "We need it all.",
         &strategy,
+        &[],
     );
     let last_company = format!("Company Number {MAX_COMPANY_PLANS} Payments Systems");
     assert!(
@@ -2841,6 +2953,40 @@ fn humanize_is_worse_still_reverts_on_a_new_critical_even_with_fewer_voice_flags
     });
     after.ok = false;
     assert!(humanize_is_worse(&before, ANY_TEXT, &after, ANY_TEXT));
+}
+
+/// **The coverage floor**: a rewrite that quietly deletes exact job-ad terms
+/// is worse even with NO new Critical and NO new voice flag —
+/// `round_is_worse` and `voice_count` are both blind to keyword coverage.
+///
+/// Mutation check: drop `coverage_dropped` from `humanize_is_worse` and the
+/// first assertion fails.
+#[test]
+fn humanize_is_worse_reverts_on_a_coverage_drop_even_with_nothing_else_worse() {
+    let with_coverage = |coverage: f64| ContentReport {
+        ok: true,
+        issues: Vec::new(),
+        metrics: ContentMetrics {
+            keyword_coverage: Some(coverage),
+            ..ContentMetrics::default()
+        },
+    };
+    let before = with_coverage(80.0);
+
+    // A drop past `MIN_COVERAGE_DROP_POINTS` (5.0) — nothing else about the
+    // report changed.
+    let dropped = with_coverage(70.0);
+    assert!(humanize_is_worse(&before, ANY_TEXT, &dropped, ANY_TEXT));
+
+    // A drop under the threshold is not worth reverting over.
+    let small_drop = with_coverage(77.0);
+    assert!(!humanize_is_worse(&before, ANY_TEXT, &small_drop, ANY_TEXT));
+
+    // An uncomparable posting (`None` coverage) never rejects on coverage
+    // alone — `round_is_worse`/`voice_count` still decide, and both are clean
+    // here.
+    let uncomparable = ok_report();
+    assert!(!humanize_is_worse(&before, ANY_TEXT, &uncomparable, ANY_TEXT));
 }
 
 /// **Zero findings is a zero-cost no-op** — the gate the stage itself applies

@@ -25,6 +25,10 @@ pub struct ResumePipelineRunRequest {
     pub job_url: String,
     #[serde(default = "default_resume_pipeline_run_request_target_language")]
     pub target_language: String,
+    #[serde(default = "default_resume_pipeline_run_request_market")]
+    pub market: String,
+    #[serde(default = "default_resume_pipeline_run_request_today")]
+    pub today: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     #[serde(default = "default_resume_pipeline_run_request_top_requirements")]
@@ -88,6 +92,14 @@ fn default_resume_pipeline_run_request_job_url() -> String {
 
 fn default_resume_pipeline_run_request_target_language() -> String {
     "en".to_string()
+}
+
+fn default_resume_pipeline_run_request_market() -> String {
+    "intl".to_string()
+}
+
+fn default_resume_pipeline_run_request_today() -> String {
+    "".to_string()
 }
 
 fn default_resume_pipeline_run_request_top_requirements() -> Vec<String> {

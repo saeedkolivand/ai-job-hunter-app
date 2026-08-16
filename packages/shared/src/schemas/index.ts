@@ -366,6 +366,16 @@ export const ResumePipelineRunSchema = z
      *  the `ai_generations` aggregate key. Empty for an unlinked generation. */
     jobUrl: z.string().max(2_048).default(''),
     targetLanguage: z.string().max(32).default('en'),
+    /** Resolved job-market id (see `resolveMarket`) — drives the letter's
+     *  etiquette (`crate::locale::letter::conventions`, the SAME fixture the
+     *  export path reads). Defaults to the international baseline so an
+     *  existing caller that never sets this gets byte-identical behavior. */
+    market: z.string().max(32).default('intl'),
+    /** Today's date, pre-formatted by the renderer per the target locale —
+     *  handed to the letter prompt so the model places it instead of
+     *  inventing one. Empty = no date (the current behavior for every
+     *  existing caller). */
+    today: z.string().max(64).default(''),
     effort: z.string().max(32).optional(),
     /** The posting's top requirements, as the JD-analysis step extracted them —
      *  the same list `resume:validateContent` takes. */

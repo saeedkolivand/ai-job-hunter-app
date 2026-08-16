@@ -359,6 +359,8 @@ async fn execute(
             job_ad: &job_ad,
             target_language: &clamped.target_language,
             top_requirements: &clamped.top_requirements,
+            market: &clamped.market,
+            today: &clamped.today,
             cover_letter: &clamped.cover_letter,
             include_cover_letter: req.include_cover_letter,
             effort: req.effort.as_deref(),
@@ -699,7 +701,12 @@ fn persist_document(
         id: make_generation_id(),
         created_at: crate::db::now_ms(),
         target_language: clamped.target_language.clone(),
-        top_requirements: clamped.top_requirements.clone(),
+        // The RESOLVED list, not `clamped.top_requirements` (the request's
+        // own, usually empty today): see `QualityCtx::top_requirements`'s
+        // doc. Persisting the request's list here is what let an empty save
+        // silently freeze whatever a PRIOR run had saved
+        // (`ai_generations::merge_application`'s pick-non-empty merge).
+        top_requirements: ctx.top_requirements(),
         resume_text: ctx.draft.clone(),
         // ONLY the stage-generated letter, never the fallback: `save_application`'s
         // merge-upsert treats an empty `cover_letter_text` as "keep the
