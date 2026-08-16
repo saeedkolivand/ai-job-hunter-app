@@ -94,9 +94,11 @@ fn prepare_resume_render(request: &ExportRequest) -> ResumeRenderInputs {
         contact.apply_to_header(&mut model.header, &request.target_lang());
     }
 
-    // ATS mode: linearize section order to single-column reading order.
+    // ATS mode: linearize section order to single-column reading order,
+    // resolved from the request's market (`locale`) — the same order the
+    // draft prompt was told to follow.
     if request.ats_mode {
-        crate::model::transform::linearize(&mut model);
+        crate::model::transform::linearize(&mut model, request.locale.as_deref().unwrap_or("en"));
     }
 
     let page = request.page_geometry();

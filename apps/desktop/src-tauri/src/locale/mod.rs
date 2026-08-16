@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 
 pub mod letter;
+pub mod resume;
 
 /// Physical page size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -5086,8 +5086,9 @@ fn aria_ats_mode_drops_photo() {
 fn aria_ats_mode_linearizes_reading_order() {
     use crate::export::typst_engine::render_pdf_with_photo;
     let mut model = model_from_resume_text(PLACEMENT_FIXTURE);
-    // Export path linearizes for ATS; replicate it here for the reading-order check.
-    crate::model::transform::linearize(&mut model);
+    // Export path linearizes for ATS; replicate it here for the reading-order
+    // check. "us" resolves to the default (skills-driven) market order.
+    crate::model::transform::linearize(&mut model, "us");
     let t = template_style(TemplateId::Aria);
     let bytes = render_pdf_with_photo(
         &model,
@@ -5104,12 +5105,13 @@ fn aria_ats_mode_linearizes_reading_order() {
         .join(" ")
         .to_lowercase();
     // ATS linearization (`model::transform::linearize`) reorders `data.sections`
-    // to the fixed canonical ATS reading order (Summary, Experience, Skills,
-    // Projects, Education, Certifications, Languages, Awards, Publications) — it
-    // ignores column `placement` entirely, which only shapes the two-column
-    // VISUAL layout and never applies in ATS mode. So the Aria placement override
-    // (Education → main column) has no bearing here: the expected order is the
-    // canonical ATS order, not the placement-projected one.
+    // to the market's canonical reading order — for the default (skills-driven)
+    // market: Summary, Skills, Experience, Projects, Education, Certifications,
+    // Languages, Awards, Publications — it ignores column `placement` entirely,
+    // which only shapes the two-column VISUAL layout and never applies in ATS
+    // mode. So the Aria placement override (Education → main column) has no
+    // bearing here: the expected order is the canonical market order, not the
+    // placement-projected one.
     let exp = lower.find("experience").expect("experience present");
     let skl = lower.find("skills").expect("skills present");
     let edu = lower.find("education").expect("education present");
@@ -5117,9 +5119,9 @@ fn aria_ats_mode_linearizes_reading_order() {
         .find("certifications")
         .expect("certifications present");
     assert!(
-        exp < skl && skl < edu && edu < cert,
-        "aria ATS reading order wrong (expected canonical ATS order: \
-         experience < skills < education < certifications): {lower}"
+        skl < exp && exp < edu && edu < cert,
+        "aria ATS reading order wrong (expected default-market order: \
+         skills < experience < education < certifications): {lower}"
     );
 }
 
@@ -5313,7 +5315,8 @@ fn saffron_ats_mode_drops_photo() {
 fn saffron_ats_mode_linearizes_reading_order() {
     use crate::export::typst_engine::render_pdf_with_photo;
     let mut model = model_from_resume_text(PLACEMENT_FIXTURE);
-    crate::model::transform::linearize(&mut model);
+    // "us" resolves to the default (skills-driven) market order.
+    crate::model::transform::linearize(&mut model, "us");
     let t = template_style(TemplateId::Saffron);
     let bytes = render_pdf_with_photo(
         &model,
@@ -5330,8 +5333,8 @@ fn saffron_ats_mode_linearizes_reading_order() {
         .join(" ")
         .to_lowercase();
     // Same semantics as `aria_ats_mode_linearizes_reading_order`: ATS mode uses
-    // the canonical ATS order (Summary, Experience, Skills, Projects, Education,
-    // Certifications, …) regardless of Saffron's placement override
+    // the default-market canonical order (Summary, Skills, Experience, Projects,
+    // Education, Certifications, …) regardless of Saffron's placement override
     // (Certifications → main column), which is visual-only and never applies in
     // ATS mode. Include `education` so the expected order isn't coincidentally
     // satisfied by only checking two of the four sections.
@@ -5342,9 +5345,9 @@ fn saffron_ats_mode_linearizes_reading_order() {
         .find("certifications")
         .expect("certifications present");
     assert!(
-        exp < skl && skl < edu && edu < cert,
-        "saffron ATS reading order wrong (expected canonical ATS order: \
-         experience < skills < education < certifications): {lower}"
+        skl < exp && exp < edu && edu < cert,
+        "saffron ATS reading order wrong (expected default-market order: \
+         skills < experience < education < certifications): {lower}"
     );
 }
 

@@ -57,6 +57,7 @@ pub(crate) fn generate_resume_docx(
         crate::locale::LocaleProfile::default().page_geometry(),
         None,
         "en",
+        "en",
     )
 }
 
@@ -68,6 +69,10 @@ pub(crate) fn generate_resume_docx(
 /// with the PDF backend (same `apply_to_header` call, same localization by
 /// `lang`) so both documents' headers stay in lockstep whichever side (text
 /// or profile) actually supplied them.
+///
+/// `market` (the request's `locale`, e.g. `"de"`) is distinct from `lang` (the
+/// document's WRITTEN language, `target_lang()`) — a candidate can write an
+/// English résumé for a German posting. Only `market` drives ATS section order.
 pub(crate) fn generate_resume_docx_in(
     text: &str,
     meta: Option<&GenerationMeta>,
@@ -76,6 +81,7 @@ pub(crate) fn generate_resume_docx_in(
     geom: PageGeometry,
     contact: Option<&crate::contact_profile::ContactProfile>,
     lang: &str,
+    market: &str,
 ) -> AppResult<Docx> {
     let mut model = model_from_resume_text(text);
 
@@ -102,7 +108,7 @@ pub(crate) fn generate_resume_docx_in(
     let two_column =
         crate::theme::is_two_column(template.id) && template.two_column.is_some() && !ats_mode;
     if ats_mode {
-        transform::linearize(&mut model);
+        transform::linearize(&mut model, market);
     }
 
     let colors = setup_colors(template);

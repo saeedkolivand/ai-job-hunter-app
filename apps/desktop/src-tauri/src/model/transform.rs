@@ -1,20 +1,7 @@
 //! Pure model transforms: ATS linearization and locale-driven section reordering.
 
 use super::document::{DocumentModel, SectionId};
-
-/// Canonical single-column reading order used for ATS linearization. Sections
-/// not listed keep their relative order and follow the listed ones.
-const ATS_ORDER: &[SectionId] = &[
-    SectionId::Summary,
-    SectionId::Experience,
-    SectionId::Skills,
-    SectionId::Projects,
-    SectionId::Education,
-    SectionId::Certifications,
-    SectionId::Languages,
-    SectionId::Awards,
-    SectionId::Publications,
-];
+use crate::locale::resume::section_order_for;
 
 /// Reorder `model.sections` to follow `order`. Sections whose id isn't in
 /// `order` keep their original relative order and are appended after the ordered
@@ -28,13 +15,17 @@ pub fn reorder_sections(model: &mut DocumentModel, order: &[SectionId]) {
     });
 }
 
-/// Reorder the model into an ATS-safe, single-column reading order in place.
+/// Reorder the model into a market-aware, single-column reading order in place.
 ///
 /// In ATS mode the visual layout collapses to one column (a theme/layout
 /// concern); this guarantees the underlying section sequence reads sensibly
 /// top-to-bottom regardless of where the theme would have placed each section.
-pub fn linearize(model: &mut DocumentModel) {
-    reorder_sections(model, ATS_ORDER);
+/// The order itself is resolved from `market` by
+/// [`crate::locale::resume::section_order_for`] — the SAME source
+/// `pipeline::resume::prompts::draft_system` injects into the draft prompt,
+/// so the model's section order and the exporter's order can never disagree.
+pub fn linearize(model: &mut DocumentModel, market: &str) {
+    reorder_sections(model, section_order_for(market));
 }
 
 #[cfg(test)]
@@ -69,15 +60,54 @@ mod tests {
             SectionId::Experience,
             SectionId::Summary,
         ]);
-        linearize(&mut m);
+        // Default (skills-driven) market: Skills before Experience.
+        linearize(&mut m, "us");
         assert_eq!(
             ids(&m),
             vec![
                 SectionId::Summary,
-                SectionId::Experience,
                 SectionId::Skills,
+                SectionId::Experience,
                 SectionId::Education,
             ]
+        );
+    }
+
+    /// Two markets really do disagree on the order, AND a section `linearize`
+    /// has never heard of (`Custom`) still survives and lands last — under
+    /// BOTH orders, not just the default one.
+    #[test]
+    fn linearize_is_market_aware_and_never_drops_a_custom_section() {
+        let ordered = |market: &str| {
+            let mut m = model_with(&[
+                SectionId::Custom("Speaking".into()),
+                SectionId::Skills,
+                SectionId::Experience,
+                SectionId::Summary,
+            ]);
+            linearize(&mut m, market);
+            ids(&m)
+        };
+
+        assert_eq!(
+            ordered("us"),
+            vec![
+                SectionId::Summary,
+                SectionId::Skills,
+                SectionId::Experience,
+                SectionId::Custom("Speaking".into()),
+            ],
+            "default market: skills before experience"
+        );
+        assert_eq!(
+            ordered("de"),
+            vec![
+                SectionId::Summary,
+                SectionId::Experience,
+                SectionId::Skills,
+                SectionId::Custom("Speaking".into()),
+            ],
+            "DE market: experience before skills"
         );
     }
 

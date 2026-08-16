@@ -1069,6 +1069,7 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
                 request.page_geometry(),
                 request.contact.as_ref(),
                 &request.target_lang(),
+                request.locale.as_deref().unwrap_or("en"),
             )
             .context("Failed to generate resume DOCX")?
         }

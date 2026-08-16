@@ -1281,7 +1281,7 @@ fn stage_prompts_interpolate_the_generated_blocks() {
 
     let evidence = match_evidence_system();
     let strategy = strategy_system();
-    let draft = draft_system("en");
+    let draft = draft_system("en", "us");
 
     assert!(evidence.contains(FACTUAL_GROUNDING_RULES));
     assert!(strategy.contains(FACTUAL_GROUNDING_RULES));
@@ -1313,10 +1313,51 @@ fn stage_prompts_interpolate_the_generated_blocks() {
 /// path uses, so a German run asks for German headings.
 #[test]
 fn the_draft_prompt_localizes_its_headings() {
-    let german = draft_system("de-DE");
+    let german = draft_system("de-DE", "de");
     assert!(german.contains("Berufserfahrung"));
     assert!(german.contains("Kenntnisse"));
     assert!(!german.contains("Work Experience"));
+}
+
+/// The section order is a FIXED instruction resolved from `market`, not left
+/// to the model — and the two markets really do disagree, so this can't pass
+/// by accident with a single hardcoded order string.
+///
+/// Mutation check: hardcode `draft_system`'s order text instead of reading
+/// `locale::resume::section_order_for(market)` and the "de" branch's
+/// assertions fail (the string would stay the US order for every market).
+#[test]
+fn the_draft_prompt_injects_the_market_resolved_section_order() {
+    let us = draft_system("en", "us");
+    assert!(us.contains("Summary, Skills, Experience, Projects, Education"));
+
+    let de = draft_system("de", "de");
+    assert!(de.contains("Summary, Experience, Education, Certifications, Skills"));
+
+    // The two markets disagree on where Skills sits.
+    assert_ne!(
+        us.contains("Skills, Experience"),
+        de.contains("Skills, Experience")
+    );
+}
+
+/// A previously-persisted `ResumeStrategy` (from before `sectionOrder` was
+/// removed from the struct) must still deserialize — the field is IGNORED,
+/// not an error, because the struct has no `deny_unknown_fields` and every
+/// field carries `#[serde(default)]`.
+#[test]
+fn resume_strategy_deserializes_a_legacy_blob_with_the_removed_section_order_key() {
+    let legacy = r#"{
+        "headlineAngle": "Payments-platform engineer",
+        "summaryFocus": ["distributed systems"],
+        "sectionOrder": ["summary", "skills", "experience", "projects", "education"],
+        "perCompany": [],
+        "skillsGroups": []
+    }"#;
+    let strategy: ResumeStrategy =
+        serde_json::from_str(legacy).expect("legacy sectionOrder key must be ignored, not error");
+    assert_eq!(strategy.headline_angle, "Payments-platform engineer");
+    assert_eq!(strategy.summary_focus, vec!["distributed systems"]);
 }
 
 // ── letter market conventions (Task A/B) ────────────────────────────────────
@@ -1661,13 +1702,6 @@ fn the_strategy_artifact_survives_a_max_roster_uncapped() {
     let strategy = ResumeStrategy {
         headline_angle: angle.to_string(),
         summary_focus: (0..6).map(|i| format!("focus area number {i}")).collect(),
-        section_order: vec![
-            "summary".to_string(),
-            "skills".to_string(),
-            "experience".to_string(),
-            "projects".to_string(),
-            "education".to_string(),
-        ],
         per_company,
         skills_groups: (0..6)
             .map(|group| SkillGroup {
