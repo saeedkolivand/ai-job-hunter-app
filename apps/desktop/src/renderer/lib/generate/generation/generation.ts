@@ -185,7 +185,12 @@ export async function extractMetadata(
     );
     const meta = validateMetadata(raw);
     if (meta) {
-      // Override with client-side detection
+      // Override with client-side detection. `targetLanguage` is deliberately
+      // NOT overridden here — `validateMetadata` already sets it to the
+      // model's own `jobAdLanguage` (`metadata.ts:211`), i.e. the AD's
+      // language, which is the correct target. The heuristic fallback below
+      // now agrees: both paths seed `targetLanguage` from the job ad, never
+      // the source résumé (see that block's comment for the bug this fixes).
       return {
         ...meta,
         resumeLanguage: clientSideDetection.resumeName,
@@ -223,7 +228,14 @@ export async function extractMetadata(
     resumeLanguage: clientSideDetection.resumeName,
     jobAdLanguage: clientSideDetection.jobAdName,
     mismatch: clientSideDetection.mismatch,
-    targetLanguage: clientSideDetection.resumeName,
+    // Defect B: the target is who we're writing FOR — the job ad's language —
+    // not whatever language the candidate's existing résumé happens to be
+    // written in. Seeding from `resumeName` pinned an English résumé applying
+    // to a German ad to English by design; once persisted, `useTailorPipeline`'s
+    // precedence chain would then PREFER that wrong value on every later run
+    // too. Matches the non-heuristic path above, which never overrides
+    // `targetLanguage` and so already targets the ad via `metadata.ts:211`.
+    targetLanguage: clientSideDetection.jobAdName,
     topRequirements: [],
   };
 }
