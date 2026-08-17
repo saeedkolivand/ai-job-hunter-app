@@ -74,7 +74,7 @@ Use these pre-detected languages for your analysis. DO NOT perform your own lang
   const conv = resumeConventions(meta.jobAdLanguage ?? meta.targetLocale);
   const marketNote = `
 ### MARKET CONVENTIONS (job-ad locale: ${meta.jobAdLanguage ?? meta.targetLocale ?? 'unknown'})
-Standard section headers for this market: ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}. Treat these and their direct English equivalents as ATS-standard — do not penalize a resume for using them. Judge date formatting against this market's convention (e.g. ${conv.dateExample}), not a fixed US or German style.`;
+Standard section headers for this market: ${conv.headers.Summary} / ${conv.headers.Experience} / ${conv.headers.Education} / ${conv.headers.Skills}. Treat these and their direct English equivalents as ATS-standard — do not penalize a resume for using them. Judge date formatting against this market's convention (e.g. ${conv.dateExample}), not a fixed US or German style.`;
 
   // Truncate the resume per the resolved strategy; the job ad is capped and
   // fenced by buildJobAdBlock() at each use site below.

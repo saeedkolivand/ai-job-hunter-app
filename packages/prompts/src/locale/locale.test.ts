@@ -78,9 +78,23 @@ describe('estimateTokens — per-locale factor', () => {
 
 describe('resumeConventions', () => {
   it('returns localized headers, with an English fallback for unknown locales', () => {
-    expect(resumeConventions('de').headers.experience).toBe('Berufserfahrung');
-    expect(resumeConventions('fr').headers.skills).toBe('Compétences');
-    expect(resumeConventions('xx').headers.experience).toBe('Work Experience');
+    expect(resumeConventions('de').headers.Experience).toBe('Berufserfahrung');
+    expect(resumeConventions('fr').headers.Skills).toBe('Compétences');
+    expect(resumeConventions('xx').headers.Experience).toBe('Work Experience');
+  });
+
+  it('covers every ordered id — Projects/Certifications/Languages/Awards/Publications, not just the original four', () => {
+    // Regression: the German headers used to stop at
+    // summary/experience/education/skills, so `section_order_prompt_list`
+    // handed the model the raw English words for the other 5 sections while
+    // instructing it to write German — the model invented its own German
+    // names ("Projekte") that no recogniser vocabulary matched.
+    const de = resumeConventions('de').headers;
+    expect(de.Projects).toBe('Projekte');
+    expect(de.Certifications).toBe('Zertifikate');
+    expect(de.Languages).toBe('Sprachen');
+    expect(de.Awards).toBe('Auszeichnungen');
+    expect(de.Publications).toBe('Publikationen');
   });
 });
 

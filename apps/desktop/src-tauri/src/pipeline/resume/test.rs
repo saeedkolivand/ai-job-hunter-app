@@ -17,8 +17,8 @@ use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
     company_roster_block, draft_language_retry_note, draft_system, draft_user, humanize_system,
     humanize_user, language_name, letter_system, letter_user, match_evidence_system,
-    match_evidence_user, repair_system, repair_user, strategy_system, strategy_user, HumanizeTier,
-    ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP, SIBLING_CONTEXT_CAP,
+    match_evidence_user, repair_system, repair_user, section_order_prompt_list, strategy_system,
+    strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP, SIBLING_CONTEXT_CAP,
 };
 use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
@@ -1704,22 +1704,116 @@ fn draft_language_retry_note_names_the_language() {
     assert!(!note.contains(" in de"));
 }
 
+/// `section_order_prompt_list` renders every section as `lang`'s localized
+/// header, not the raw English `SectionId` debug word — the producer half of
+/// the reported bug (a German résumé rendered "Projekte" and "Ausbildung &
+/// Sprachen" as body text: the model invented German names for headings the
+/// prompt handed it in English).
+///
+/// Mutation check: revert the function body to `format!("{id:?}")` per id
+/// (dropping the `resume_conventions`/`.header` lookup) — RAN, went red on
+/// both the "de" and "it" assertions (`Projects`/`Certifications` and
+/// `Progetti`/`Certificazioni` respectively — the German and Italian
+/// assertions fail in OPPOSITE directions, `contains` vs `!contains`, so a
+/// revert cannot pass by accident), reverted.
+#[test]
+fn section_order_prompt_list_localizes_every_section_not_just_the_first_four() {
+    let en = section_order_prompt_list("en", "us");
+    assert!(en.contains("Professional Summary, Work Experience, Skills, Projects, Education"));
+
+    let de = section_order_prompt_list("de", "de");
+    assert!(de.contains("Projekte"), "Projects must be localized");
+    assert!(
+        de.contains("Zertifikate"),
+        "Certifications must be localized"
+    );
+    assert!(!de.contains("Projects"));
+    assert!(!de.contains("Certifications"));
+
+    let it = section_order_prompt_list("it", "it");
+    assert!(it.contains("Progetti"), "Projects must be localized");
+    assert!(
+        it.contains("Certificazioni"),
+        "Certifications must be localized"
+    );
+    assert!(!it.contains("Projects"));
+    assert!(!it.contains("Certifications"));
+}
+
 /// The draft prompt is localized off the SAME `resume_conventions` the renderer
-/// path uses, so a German run asks for German headings.
+/// path uses, so a German run asks for German headings — including the FIVE
+/// sections (Projects, Certifications, Languages, Awards, Publications) that
+/// used to fall through to their raw English `SectionId` debug word inside
+/// the "Sections run in this order" list even though the prompt told the
+/// model to write German. A German CV that has real content for all nine
+/// sections must never see an English section name anywhere in this prompt.
+///
+/// Mutation check: swap `resume_conventions(lang)` for `resume_conventions("en")`
+/// only inside `section_order_prompt_list` (leaving the four-heading line
+/// localized) — RAN, went red (`Projekte`/`Zertifikate` missing, `Projects`/
+/// `Certifications` present instead), reverted.
 #[test]
 fn the_draft_prompt_localizes_its_headings() {
     let german = draft_system("de-DE", "de");
     assert!(german.contains("Berufserfahrung"));
     assert!(german.contains("Kenntnisse"));
     assert!(!german.contains("Work Experience"));
+
+    // The order list localizes every section, not just the four headings.
+    assert!(
+        german.contains("Projekte"),
+        "Projects must be localized in the order list"
+    );
+    assert!(
+        german.contains("Zertifikate"),
+        "Certifications must be localized in the order list"
+    );
+    assert!(
+        german.contains("Sprachen"),
+        "Languages must be localized in the order list"
+    );
+    assert!(
+        german.contains("Auszeichnungen"),
+        "Awards must be localized in the order list"
+    );
+    assert!(
+        german.contains("Publikationen"),
+        "Publications must be localized in the order list"
+    );
+    assert!(!german.contains("Projects"));
+    assert!(!german.contains("Certifications"));
+    assert!(!german.contains("Publications"));
+}
+
+/// The anti-merge clause PR #1003 dropped when it reworded the order
+/// instruction into "an ORDER, not a checklist" — without it, a model reading
+/// "omit any section you have nothing for" as licence to also MERGE two
+/// sections under one joined heading ("Ausbildung & Sprachen") rather than
+/// writing each on its own line or omitting one outright.
+///
+/// Mutation check: delete the "One heading per section" bullet — RAN, went
+/// red (no "Never combine two sections" text in the output), reverted.
+#[test]
+fn the_draft_prompt_forbids_merged_section_headings() {
+    for (lang, market) in [("en", "us"), ("de", "de")] {
+        let prompt = draft_system(lang, market);
+        assert!(
+            prompt.contains("Never combine two sections under a joined heading"),
+            "{lang}/{market}: the anti-merge clause must survive"
+        );
+        assert!(
+            prompt.contains("Ausbildung & Sprachen"),
+            "{lang}/{market}: the worked (bad) example must survive, or the rule reads as abstract"
+        );
+    }
 }
 
 /// The section order is a FIXED instruction resolved from `market`, not left
 /// to the model — and the two markets really do disagree, so this can't pass
 /// The skills section's SHAPE is the application's decision, not the model's.
 ///
-/// Nothing used to specify it — `resume_conventions.skills` is only the
-/// localized heading ("Kenntnisse"), so the model picked, and the repo's own
+/// Nothing used to specify it — `resume_conventions.header("Skills")` is only
+/// the localized heading ("Kenntnisse"), so the model picked, and the repo's own
 /// fixtures disagree (one middot-separated, one comma-separated). One bullet
 /// per skill spends a line on a single word; a twenty-skill list becomes twenty
 /// lines against a one-to-two-page budget, and an ATS extracts a comma list
@@ -1758,16 +1852,16 @@ fn the_draft_prompt_fixes_the_skills_section_shape() {
 #[test]
 fn the_draft_prompt_injects_the_market_resolved_section_order() {
     let us = draft_system("en", "us");
-    assert!(us.contains("Summary, Experience, Skills, Projects, Education"));
+    assert!(us.contains("Professional Summary, Work Experience, Skills, Projects, Education"));
 
     let de = draft_system("de", "de");
-    assert!(de.contains("Summary, Experience, Education, Certifications, Skills"));
+    assert!(de.contains("Profil, Berufserfahrung, Ausbildung, Zertifikate, Kenntnisse"));
 
     // Both markets lead with Experience, so Skills-vs-Education is what
     // actually discriminates them — assert each market lacks the other's
     // signature, or this passes on two identical strings.
     assert!(us.contains("Skills, Projects, Education"));
-    assert!(!us.contains("Education, Certifications, Skills"));
+    assert!(!us.contains("Ausbildung, Zertifikate, Kenntnisse"));
     assert!(!de.contains("Skills, Projects, Education"));
 }
 

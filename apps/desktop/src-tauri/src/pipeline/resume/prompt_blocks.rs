@@ -60,11 +60,31 @@ pub const HUMANIZE_PROSE: &str =
 /// range example.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResumeConventions {
-    pub summary: &'static str,
-    pub experience: &'static str,
-    pub education: &'static str,
-    pub skills: &'static str,
+    /// (canonical `SectionId` Debug name, localized header) pairs — every
+    /// ordered id `locale::resume::section_order_for` can emit has an entry,
+    /// generated from the TS `Record<ResumeSectionHeaderId, string>`, which
+    /// the compiler refuses to build unless every locale names every id.
+    headers: &'static [(&'static str, &'static str)],
     pub date_example: &'static str,
+}
+
+impl ResumeConventions {
+    /// Localized header for `section_id`'s canonical `SectionId` Debug name
+    /// (e.g. `"Summary"`, `"Certifications"`). Falls back to `section_id`
+    /// itself — unreachable for any id `locale::resume::section_order_for`
+    /// emits, since `headers` is total over that set, but cheaper than a
+    /// panic for a caller that passes an id outside it. Takes `section_id`'s
+    /// own lifetime (rather than `&'static str`) so a caller can pass a
+    /// borrowed `format!(...)` temporary, like `section_order_prompt_list`
+    /// does.
+    pub fn header<'a>(&self, section_id: &'a str) -> &'a str {
+        for &(id, name) in self.headers {
+            if id == section_id {
+                return name;
+            }
+        }
+        section_id
+    }
 }
 
 /// Résumé conventions for `lang`, falling back to English for any locale the
@@ -75,53 +95,102 @@ pub fn resume_conventions(lang: &str) -> ResumeConventions {
     let key: String = lang.chars().take(2).flat_map(char::to_lowercase).collect();
     match key.as_str() {
         "de" => ResumeConventions {
-            summary: "Profil",
-            experience: "Berufserfahrung",
-            education: "Ausbildung",
-            skills: "Kenntnisse",
+            headers: &[
+                ("Summary", "Profil"),
+                ("Experience", "Berufserfahrung"),
+                ("Education", "Ausbildung"),
+                ("Skills", "Kenntnisse"),
+                ("Projects", "Projekte"),
+                ("Certifications", "Zertifikate"),
+                ("Languages", "Sprachen"),
+                ("Awards", "Auszeichnungen"),
+                ("Publications", "Publikationen"),
+            ],
             date_example: "01/2021 – 03/2023",
         },
         "es" => ResumeConventions {
-            summary: "Perfil",
-            experience: "Experiencia profesional",
-            education: "Formación",
-            skills: "Habilidades",
+            headers: &[
+                ("Summary", "Perfil"),
+                ("Experience", "Experiencia profesional"),
+                ("Education", "Formación"),
+                ("Skills", "Habilidades"),
+                ("Projects", "Proyectos"),
+                ("Certifications", "Certificaciones"),
+                ("Languages", "Idiomas"),
+                ("Awards", "Premios"),
+                ("Publications", "Publicaciones"),
+            ],
             date_example: "enero 2021 – marzo 2023",
         },
         "fr" => ResumeConventions {
-            summary: "Profil",
-            experience: "Expérience professionnelle",
-            education: "Formation",
-            skills: "Compétences",
+            headers: &[
+                ("Summary", "Profil"),
+                ("Experience", "Expérience professionnelle"),
+                ("Education", "Formation"),
+                ("Skills", "Compétences"),
+                ("Projects", "Projets"),
+                ("Certifications", "Certifications"),
+                ("Languages", "Langues"),
+                ("Awards", "Distinctions"),
+                ("Publications", "Publications"),
+            ],
             date_example: "janvier 2021 – mars 2023",
         },
         "it" => ResumeConventions {
-            summary: "Profilo",
-            experience: "Esperienza professionale",
-            education: "Formazione",
-            skills: "Competenze",
+            headers: &[
+                ("Summary", "Profilo"),
+                ("Experience", "Esperienza professionale"),
+                ("Education", "Formazione"),
+                ("Skills", "Competenze"),
+                ("Projects", "Progetti"),
+                ("Certifications", "Certificazioni"),
+                ("Languages", "Lingue"),
+                ("Awards", "Riconoscimenti"),
+                ("Publications", "Pubblicazioni"),
+            ],
             date_example: "gennaio 2021 – marzo 2023",
         },
         "nl" => ResumeConventions {
-            summary: "Profiel",
-            experience: "Werkervaring",
-            education: "Opleiding",
-            skills: "Vaardigheden",
+            headers: &[
+                ("Summary", "Profiel"),
+                ("Experience", "Werkervaring"),
+                ("Education", "Opleiding"),
+                ("Skills", "Vaardigheden"),
+                ("Projects", "Projecten"),
+                ("Certifications", "Certificaten"),
+                ("Languages", "Talen"),
+                ("Awards", "Onderscheidingen"),
+                ("Publications", "Publicaties"),
+            ],
             date_example: "01/2021 – 03/2023",
         },
         "pt" => ResumeConventions {
-            summary: "Perfil",
-            experience: "Experiência profissional",
-            education: "Formação",
-            skills: "Competências",
+            headers: &[
+                ("Summary", "Perfil"),
+                ("Experience", "Experiência profissional"),
+                ("Education", "Formação"),
+                ("Skills", "Competências"),
+                ("Projects", "Projetos"),
+                ("Certifications", "Certificações"),
+                ("Languages", "Idiomas"),
+                ("Awards", "Prémios"),
+                ("Publications", "Publicações"),
+            ],
             date_example: "janeiro 2021 – março 2023",
         },
         // "en" and every uncurated locale.
         _ => ResumeConventions {
-            summary: "Professional Summary",
-            experience: "Work Experience",
-            education: "Education",
-            skills: "Skills",
+            headers: &[
+                ("Summary", "Professional Summary"),
+                ("Experience", "Work Experience"),
+                ("Education", "Education"),
+                ("Skills", "Skills"),
+                ("Projects", "Projects"),
+                ("Certifications", "Certifications"),
+                ("Languages", "Languages"),
+                ("Awards", "Awards"),
+                ("Publications", "Publications"),
+            ],
             date_example: "January 2021 – March 2023",
         },
     }
