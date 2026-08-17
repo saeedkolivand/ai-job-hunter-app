@@ -7,7 +7,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 ## Desktop / [Tauri][tauri]
 
 - **Capabilities** — `apps/desktop/src-tauri/capabilities/default.json`: least privilege. A new IPC command exposed without (or with over-broad) capability is HIGH.
-- **CSP** — `apps/desktop/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to [Ollama][ollama] (`127.0.0.1:11434`). Extension bridge allows loopback WebSocket range `ws://127.0.0.1:47615-47620` (extension_bridge/mod.rs PORT_RANGE). Opt-in company-logo enrichment allows `https://logo.clearbit.com` (img-src) and `https://autocomplete.clearbit.com` (connect-src). Any further widening is HIGH/CRITICAL.
+- **CSP** — `apps/desktop/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to Ollama on loopback, the extension bridge to the loopback WebSocket range (`extension_bridge/mod.rs` `PORT_RANGE`), and opt-in company-logo enrichment to the two Clearbit hosts. The hosts and ports themselves are owned by `tauri.conf.json` and enumerated in `apps/desktop/src-tauri/tests/egress.rs`'s `EGRESS` const, which fails CI on drift — not restated here. Any further widening is HIGH/CRITICAL.
 - **Updater** — `updater/` + the signing key + `latest.json` integrity. A broken/unsigned update path is CRITICAL.
 
 ## Application / secrets

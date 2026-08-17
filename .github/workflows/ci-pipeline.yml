@@ -124,6 +124,14 @@ jobs:
               - 'apps/desktop/src-tauri/**'
               - '.github/workflows/**'
               - '.github/actions/**'
+              # The egress inventory (tests/egress.rs) include_str!s these two
+              # declaration files, so a change to either must run the Rust
+              # quality-checks job. Without them a manifest-only edge sets the
+              # "extension" filter, not "rust", and EGRESS-4 — the wildcard
+              # host guard — never runs on the exact change class it exists
+              # to catch. tauri.conf.json is already covered by src-tauri/**.
+              - 'apps/desktop/vite.config.mts'
+              - 'apps/extension/src/manifest.ts'
             extension:
               - 'apps/extension/**'
               - 'packages/shared/**'

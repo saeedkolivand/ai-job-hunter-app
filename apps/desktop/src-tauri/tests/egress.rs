@@ -860,7 +860,12 @@ fn find_bare_scheme_or_wildcard(content: &str) -> Vec<String> {
 fn egress_4_declaration_files_have_no_bare_scheme_or_wildcard_source() {
     let mut v = Vec::new();
     for (path, content) in DECL_FILES {
-        for hit in find_bare_scheme_or_wildcard(content) {
+        // Comment-strip first, mirroring extract_from_decl_files's pipeline —
+        // otherwise a comment merely mentioning a bare scheme (e.g. `// see
+        // http: handling`) fails this gate with no real CSP/manifest source
+        // behind it.
+        let clean = strip_comment_lines(content);
+        for hit in find_bare_scheme_or_wildcard(&clean) {
             v.push(format!("{path}: {hit}"));
         }
     }
@@ -938,6 +943,39 @@ mod egress_4_detection_logic {
         assert!(
             hits.is_empty(),
             "a wildcard SUBDOMAIN of a real domain must not be flagged; got {hits:?}"
+        );
+    }
+
+    /// Regression guard for the EGRESS-4 cry-wolf gap: unlike EGRESS-1/2
+    /// (`extract_from_decl_files`), the test that calls this function used to
+    /// scan the RAW, unstripped declaration-file text, so a comment merely
+    /// mentioning a bare scheme (`// see http: handling`) failed the gate
+    /// with no real CSP/manifest source behind it. Mutation-checked: with the
+    /// call site's `strip_comment_lines` reverted, the first assertion below
+    /// (against the STRIPPED text) goes red because the raw scanner still
+    /// finds the comment; restoring it goes green again. The second assertion
+    /// pins that the raw scanner genuinely does still flag the same text
+    /// un-stripped — proving the fix is the stripping step at the call site,
+    /// not a change that made `find_bare_scheme_or_wildcard` itself blind to
+    /// real hits.
+    #[test]
+    fn ignores_a_bare_scheme_mentioned_only_in_a_comment_line() {
+        let raw = "// see http: handling\nconnect-src 'self' https://api.example.org";
+
+        let clean = super::strip_comment_lines(raw);
+        let hits = find_bare_scheme_or_wildcard(&clean);
+        assert!(
+            hits.is_empty(),
+            "a bare scheme mentioned only inside a comment line must not trip EGRESS-4 once \
+             comments are stripped (mirroring the EGRESS-1/2 pipeline); got {hits:?}"
+        );
+
+        let raw_hits = find_bare_scheme_or_wildcard(raw);
+        assert!(
+            !raw_hits.is_empty(),
+            "sanity check failed: the raw (unstripped) text should still be flagged directly by \
+             the scanner — if this is empty too, the comment-false-positive guard above is \
+             untested"
         );
     }
 }

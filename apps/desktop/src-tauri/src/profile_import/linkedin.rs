@@ -356,47 +356,18 @@ mod tests {
         }
     }
 
-    // ── fetch_page: the fetch path must be SSRF-guarded ───────────────────────
-    //
-    // `url` is user-pasted, attacker-influenced input, so `fetch_page` must
-    // route it through `net::http::get_guarded_following_redirects` (IP
-    // validation before connecting) rather than the plain pooled `shared()`
-    // client. Asserting only `Err(_)` here would pass for the wrong reason —
-    // an unguarded client hitting an unlistened loopback port also errors
-    // (connection refused). Instead this test proves the stronger property: a
-    // REAL, listening loopback socket never receives a connection attempt at
-    // all, which only a pre-connect SSRF rejection (not a failed connect)
-    // explains.
-
-    #[tokio::test]
-    async fn fetch_page_never_dials_the_loopback_literal_it_rejects() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
-        listener
-            .set_nonblocking(true)
-            .expect("set listener non-blocking");
-        let port = listener.local_addr().unwrap().port();
-
-        let err = fetch_page(&format!("http://127.0.0.1:{port}/in/x"))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, AppError::Network(_)), "got {err:?}");
-
-        // Poll briefly for a connection a guarded fetch must never make. The
-        // guarded rejection is a synchronous, pre-network check, so under
-        // correct code this returns false almost immediately; 300ms is ample
-        // margin without making the test slow.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
-        let mut connected = false;
-        while std::time::Instant::now() < deadline {
-            if listener.accept().is_ok() {
-                connected = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert!(
-            !connected,
-            "fetch_page dialed the rejected loopback socket — the SSRF guard was bypassed"
-        );
-    }
+    // `fetch_page`'s SSRF-guard test lives in a sibling `_test.rs` file, not
+    // here — see the `#[path]` module declaration below for why.
 }
+
+// `fetch_page_never_dials_the_loopback_literal_it_rejects` must scope
+// `AJH_DATA_DIR` (fetch_page's real-disk `has_linkedin_session` read) for its
+// duration to be hermetic. That literal is banned from any non-`platform/**`
+// source by `tests/architecture.rs::r4_env_access_only_in_platform` UNLESS
+// the file is itself recognized as a test file (`*test.rs`/`*tests.rs`) —
+// this flat `linkedin.rs` isn't, by name, so the mutation is split into its
+// own `#[path]`-declared file, exactly like `commands/ai_provider`'s
+// `anthropic_tests.rs`.
+#[cfg(test)]
+#[path = "linkedin_ssrf_test.rs"]
+mod ssrf_hermetic_test;

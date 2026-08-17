@@ -90,11 +90,26 @@ enum Platform {
 /// `http://127.0.0.1:9200/linkedin.com/in/x` (loopback egress) both classify
 /// as LinkedIn. Exact/suffix host match only, mirroring
 /// `scraping::scrape_url::try_linkedin`'s guard: a bare `ends_with("linkedin.com")`
-/// alone would also match `evillinkedin.com` (missing the `.` boundary).
+/// alone would also match `evillinkedin.com` (missing the `.` boundary), and
+/// `strip_suffix` (rather than `ends_with`) additionally rejects an EMPTY
+/// leading label — `https://.linkedin.com/in/x` — which `ends_with` alone
+/// would accept.
+///
+/// Defence in depth, not the load-bearing control: `net::http::get_guarded*`
+/// already rejects any non-HTTP(S) scheme before connecting, so a
+/// `file://`/`foo://` URL can never actually reach the network. Checking the
+/// scheme here too just keeps this function honest about what it classifies
+/// as LinkedIn, independent of what a later layer would have done with it.
 fn detect_platform(url: &str) -> Option<Platform> {
     let parsed = reqwest::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
     let host = parsed.host_str()?.to_ascii_lowercase();
-    let is_linkedin_host = host == "linkedin.com" || host.ends_with(".linkedin.com");
+    let is_linkedin_host = host == "linkedin.com"
+        || host
+            .strip_suffix(".linkedin.com")
+            .is_some_and(|label| !label.is_empty());
     if is_linkedin_host && parsed.path().to_ascii_lowercase().contains("/in/") {
         Some(Platform::LinkedIn)
     } else {
@@ -161,5 +176,38 @@ mod tests {
     #[test]
     fn rejects_unparseable_input() {
         assert!(detect_platform("not a url").is_none());
+    }
+
+    // ── detect_platform: scheme is checked, not just the host ─────────────────
+
+    #[test]
+    fn rejects_file_scheme_even_with_a_real_linkedin_host() {
+        // Defence in depth: get_guarded* already rejects non-HTTP(S) schemes
+        // before connecting, but detect_platform must not classify this as
+        // LinkedIn either.
+        assert!(detect_platform("file://linkedin.com/in/x").is_none());
+    }
+
+    #[test]
+    fn rejects_an_arbitrary_non_http_scheme() {
+        assert!(detect_platform("foo://linkedin.com/in/x").is_none());
+    }
+
+    #[test]
+    fn accepts_https_www_linkedin_still_works() {
+        // Sibling of accepts_www_host, pinned against the exact URL shape the
+        // scheme + empty-label checks above must NOT regress.
+        assert!(matches!(
+            detect_platform("https://www.linkedin.com/in/x"),
+            Some(Platform::LinkedIn)
+        ));
+    }
+
+    #[test]
+    fn rejects_an_empty_leading_label_before_the_real_domain() {
+        // ".linkedin.com".ends_with(".linkedin.com") is true, so the old
+        // `ends_with` check alone would wrongly accept this: the host is
+        // effectively empty + a dot, not a real subdomain.
+        assert!(detect_platform("https://.linkedin.com/in/x").is_none());
     }
 }

@@ -58,7 +58,7 @@ No runtime behavior changes: every current call already complies. The fix is to 
   - Class 5 (Location autocomplete): `apps/desktop/src-tauri/src/commands/geocoding.rs` (Photon fallback; bundled index in `apps/desktop/src-tauri/geodata/`, see `apps/desktop/src-tauri/geodata/README.md` for license).
   - Class 6 (Optional enrichment): `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit), `apps/desktop/src-tauri/tauri.conf.json` (CSP enforcement).
   - Class 7 (Email-confirmation watching): `apps/desktop/src-tauri/src/email_watch/` (IMAP).
-  - Class 8 (Crash reporting): Sentry integration in `apps/desktop/src-tauri/src/crash_reporting/mod.rs` (DSN and filtering at `:108` and `:239`) and `crash_reporting/transport.rs`, wired via `lib.rs:399` (`crash_reporting::init`) and `lib.rs:487` (`tauri_plugin_sentry::init`).
+  - Class 8 (Crash reporting): Sentry integration in `apps/desktop/src-tauri/src/crash_reporting/mod.rs` (the `DSN` const and the event filter) and `crash_reporting/transport.rs`, wired from `lib.rs` via `crash_reporting::init` and `tauri_plugin_sentry::init`.
   - Profile import: `apps/desktop/src-tauri/src/profile_import/github.rs` (GitHub).
 - Opt-in setting: `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (company-logo preference, default OFF).
 - Machine-readable inventory: `apps/desktop/src-tauri/tests/egress.rs` (EGRESS const).

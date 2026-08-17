@@ -134,6 +134,11 @@ const fail = (check, file, detail) => failures.push({ check, file, detail });
 
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
 
+/** Vitest/spec sources are never a published surface — excluded from both
+ * prose corpora (checks 7 and 8) so a fixture cannot satisfy a disclosure
+ * floor or trip a banned-phrase guard. */
+const isTestSource = (p) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
+
 // ── Check 1: cited file paths exist ─────────────────────────────────────────
 // Single- or double-quoted strings rooted at a real top-level dir. Strip a
 // trailing `:<line>` locator; existsSync resolves both files and directories.
@@ -418,7 +423,6 @@ function checkEgressDisclosure() {
   // planting a probe name in that spec alone satisfied the presence floor and
   // the check stayed green, which is the same one-level-too-high narrowing this
   // check was already fixed for once.
-  const isTestSource = (p) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
   const files = EGRESS_DISCLOSURE_SURFACES.flatMap((root) => {
     const found = textFilesUnder(root)?.filter((p) => !isTestSource(p)) ?? null;
     if (found === null) {
@@ -481,7 +485,11 @@ const ABSOLUTE_EGRESS_CLAIM_RES = [
 
 function checkAbsoluteEgressClaim() {
   for (const root of EGRESS_PROSE_ROOTS) {
-    const files = textFilesUnder(root);
+    // Same test/spec exclusion check 7 applies. A banned phrase inside a Vitest
+    // fixture — a snapshot of the old privacy copy, say — is not published
+    // prose, and failing on it would train people to weaken the guard. This
+    // direction fails closed, so it is consistency rather than a live bug.
+    const files = textFilesUnder(root)?.filter((p) => !isTestSource(p)) ?? null;
     if (files === null) {
       fail(
         'Egress-claim scan source moved',
@@ -532,7 +540,15 @@ function checkChartJsPin() {
     );
     return;
   }
-  const actual = createHash('sha256').update(read(CHART_JS_FILE)).digest('hex');
+  // Hash the RAW BYTES, never `read()`'s utf8-decoded string. Node substitutes
+  // U+FFFD for any invalid sequence, so a re-vendor carrying non-UTF-8 bytes
+  // would hash to something `sha256sum chart.min.js` disagrees with — and the
+  // asset's own header comment quotes a hash a human is meant to verify that
+  // way. Identical for today's file (it is valid UTF-8); this keeps the pin
+  // honest for whatever is vendored next.
+  const actual = createHash('sha256')
+    .update(readFileSync(join(ROOT, CHART_JS_FILE)))
+    .digest('hex');
   if (actual !== CHART_JS_SHA256) {
     fail(
       'Vendored chart.js hash drift',
