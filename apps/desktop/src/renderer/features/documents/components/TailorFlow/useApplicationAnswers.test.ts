@@ -518,6 +518,63 @@ describe('useApplicationAnswers', () => {
     });
   });
 
+  describe('unconfident target language is never persisted', () => {
+    const guessedMeta = {
+      candidateName: 'Jane',
+      jobTitle: 'Engineer',
+      companyName: 'Acme',
+      resumeLanguage: 'en',
+      jobAdLanguage: 'en',
+      mismatch: false,
+      targetLanguage: 'en',
+      topRequirements: [],
+    };
+
+    it('sends empty language fields when meta was seeded from an unconfident guess', async () => {
+      const { result } = render({ meta: guessedMeta, targetLanguageConfident: false });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: '', resumeLanguage: '', jobAdLanguage: '' })
+      );
+    });
+
+    it('still persists the real language fields when meta was confidently detected', async () => {
+      const { result } = render({ meta: guessedMeta, targetLanguageConfident: true });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: 'en', resumeLanguage: 'en', jobAdLanguage: 'en' })
+      );
+    });
+
+    it('an unconfident guess survives into a rewrite re-save via updateAnswer too', async () => {
+      const { result } = render({ meta: guessedMeta, targetLanguageConfident: false });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+      save.mockClear();
+
+      await act(async () => {
+        await result.current.updateAnswer('why-company', 'Rewritten');
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: '', resumeLanguage: '', jobAdLanguage: '' })
+      );
+    });
+  });
+
   describe('web-search fan-out cap', () => {
     it('caps per-question searches at WEB_SEARCH_MAX_PER_RUN; the rest still answer without web grounding', async () => {
       // The registry alone must exceed the cap for this test to be meaningful.

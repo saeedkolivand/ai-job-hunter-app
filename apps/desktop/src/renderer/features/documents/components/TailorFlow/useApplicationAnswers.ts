@@ -42,6 +42,13 @@ interface Params {
   researchCompany: boolean;
   /** Metadata already detected by the tailor flow — skips a re-extract when set. */
   meta?: GenerationMeta | null;
+  /** True when `meta`'s targetLanguage/resumeLanguage/jobAdLanguage came from a
+   *  confident detection (see `resolveTargetLanguage` in `useTailorPipeline.ts`).
+   *  `false` means those three fields are the tier-4 English guess — usable for
+   *  THIS generation, but never for `saveAnswers` (mirrors `useTailorPipeline`'s
+   *  own `wireTargetLanguage`). Irrelevant when `meta` is absent: this hook then
+   *  re-extracts its own metadata, unrelated to that guess. */
+  targetLanguageConfident?: boolean;
   canUse: boolean;
   hasDesc: boolean;
   /** Links the answers to the per-job application record (merge-upsert by url). */
@@ -106,6 +113,7 @@ export function useApplicationAnswers({
   model,
   researchCompany,
   meta,
+  targetLanguageConfident,
   canUse,
   hasDesc,
   jobUrl,
@@ -138,6 +146,7 @@ export function useApplicationAnswers({
   const lastSaveContextRef = useRef<{
     detected: GenerationMeta;
     brief: string;
+    languageIsGuess: boolean;
   } | null>(null);
   // Mirror of `answers` state for stable reads inside async callbacks without stale
   // closures. Kept in sync by an effect — never mutated inside a setAnswers updater
@@ -169,15 +178,21 @@ export function useApplicationAnswers({
   const saveAnswers = async (
     detected: GenerationMeta,
     brief: string,
-    results: ApplicationAnswer[]
+    results: ApplicationAnswer[],
+    languageIsGuess: boolean
   ) => {
     await api.aiGenerations.save({
       candidateName: detected.candidateName,
       jobTitle: detected.jobTitle,
       companyName: detected.companyName,
-      resumeLanguage: detected.resumeLanguage,
-      jobAdLanguage: detected.jobAdLanguage,
-      targetLanguage: detected.targetLanguage,
+      // A guessed target language must never reach the record — same
+      // invariant `useTailorPipeline`'s `session.start()` already enforces on
+      // the wire. Blank, not omitted: the Rust `pick()` merge keeps whatever
+      // the record already holds for a blank incoming field, so this can
+      // never destroy a real stored value either.
+      resumeLanguage: languageIsGuess ? '' : detected.resumeLanguage,
+      jobAdLanguage: languageIsGuess ? '' : detected.jobAdLanguage,
+      targetLanguage: languageIsGuess ? '' : detected.targetLanguage,
       mismatch: detected.mismatch,
       topRequirements: detected.topRequirements,
       mode: 'ats',
@@ -199,6 +214,10 @@ export function useApplicationAnswers({
     setError(null);
     try {
       const detected = meta ?? (await extractMetadata(resume, jobDesc, model));
+      // Only `meta`'s own language fields can be the tailor flow's unconfident
+      // guess (see `resolveTargetLanguage`) — a fresh `extractMetadata()`
+      // result is a separate detection, unrelated to that guess.
+      const languageIsGuess = !!meta && targetLanguageConfident === false;
       const brief = researchCompany ? await fetchCompanyBrief(jobDesc, detected.companyName) : '';
       const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
       if (searchWeb && chosen.length > WEB_SEARCH_MAX_PER_RUN) {
@@ -277,8 +296,8 @@ export function useApplicationAnswers({
 
       // Persist onto the per-job application record (merge-upsert by jobUrl), so
       // answers + brief live alongside the résumé/cover the tailor flow saved.
-      await saveAnswers(detected, brief, results);
-      lastSaveContextRef.current = { detected, brief };
+      await saveAnswers(detected, brief, results, languageIsGuess);
+      lastSaveContextRef.current = { detected, brief, languageIsGuess };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate answers');
     } finally {
@@ -312,7 +331,7 @@ export function useApplicationAnswers({
       const q = APPLICATION_QUESTIONS.find((p) => p.id === qId) ?? custom.find((c) => c.id === qId);
       return { id: qId, question: q?.question ?? qId, answer: ans };
     });
-    await saveAnswers(ctx.detected, ctx.brief, allAnswers);
+    await saveAnswers(ctx.detected, ctx.brief, allAnswers, ctx.languageIsGuess);
   };
 
   return {

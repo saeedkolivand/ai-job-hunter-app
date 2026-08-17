@@ -692,6 +692,15 @@ export function useTailorPipeline({
     exportAs,
     editActiveOutput,
     meta,
+    // Whether `meta`'s three language fields are a confident detection or the
+    // tier-4 English guess (see `resolveTargetLanguage`'s doc comment). `meta`
+    // itself keeps carrying the guess unconditionally — every current-run
+    // consumer (live preview, rewrite locale, filename, job-ad summary) needs
+    // a usable value NOW, exactly like `start()`'s own local `targetLanguage`.
+    // Only a SAVE path (`useApplicationAnswers`, `useInterviewQuestions`) may
+    // use this flag to withhold the guess from the wire, mirroring
+    // `wireTargetLanguage` below.
+    targetLanguageConfident,
     // Export/preview market — see the computation's doc comment above. The live
     // preview (GenerationOutput → PdfPreview) needs the SAME value the export
     // sends, or the on-screen letter's salutation/sign-off silently disagrees

@@ -937,6 +937,22 @@ describe('useTailorPipeline — targetLanguage precedence is wired end to end', 
     });
     expect(sessionBus.start).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: '' }));
   });
+
+  // The hook's own `targetLanguageConfident` is the value the two sibling
+  // save paths (`useApplicationAnswers`, `useInterviewQuestions`) key off of
+  // to withhold a guessed language from THEIR persist calls — it must track
+  // `resolveTargetLanguage`'s own verdict, not just default to `true`.
+  it('exposes targetLanguageConfident: false alongside a guessed meta.targetLanguage', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const { result } = render({ jobDesc: '', latestGeneration: undefined });
+    expect(result.current.targetLanguageConfident).toBe(false);
+    expect(result.current.meta?.targetLanguage).toBe('en');
+  });
+
+  it('exposes targetLanguageConfident: true when the language was actually detected', () => {
+    const { result } = render({ jobDesc: GERMAN_JOB_AD, latestGeneration: undefined });
+    expect(result.current.targetLanguageConfident).toBe(true);
+  });
 });
 
 // Stage 6d — a run stopped before the `validate` stage (cancel, or a deadline
