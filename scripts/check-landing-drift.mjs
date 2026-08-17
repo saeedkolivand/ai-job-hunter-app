@@ -13,6 +13,12 @@
 //   4. Forbidden-term denylist for the removed engine (anchored; the verb "applies" is fine).
 //   5. Every board-count claim matches the live SCRAPERS registry entry count.
 //   6. No stale "zero/no telemetry" privacy claim (ADR-0020 made it untrue).
+//   7. Every publicly-named third party in the egress inventory
+//      (apps/desktop/src-tauri/tests/egress.rs) is named somewhere in the
+//      public prose (README.md, SECURITY.md, apps/landing/src) — a presence
+//      floor, not a semantic check.
+//   8. No over-absolute "the only network calls…" / "no network calls other
+//      than…" claim — the exact shape ADR-0005 exists because of.
 // Secret-scan (ALL landing html/js): no committed GitHub token — the site is public.
 //
 // Check 6 reaches beyond apps/landing/ — to README.md, SECURITY.md and branding/ —
@@ -355,6 +361,83 @@ function checkTelemetryClaim() {
   }
 }
 
+// ── Check 7: egress disclosure — every publicly-named third party from the
+// egress inventory must be named somewhere in the public prose ─────────────
+// apps/desktop/src-tauri/tests/egress.rs's `EGRESS` const marks each outbound
+// host `public_name: Some("…")` when that third party must be disclosed by
+// name. This is a PRESENCE FLOOR (substring), same idiom as checkPaths above:
+// a page could name "Exa" in an unrelated sentence and still pass. It only
+// catches the real failure mode this whole guard exists for — the vendor is
+// nowhere on the page at all. Check 8 below (the banned-phrase guard) is the
+// other half of the pair: this check catches an omission, that one catches a
+// false claim of completeness.
+const EGRESS_FILE = 'apps/desktop/src-tauri/tests/egress.rs';
+const EGRESS_PROSE_ROOTS = ['README.md', 'SECURITY.md', 'apps/landing/src'];
+const PUBLIC_NAME_RE = /public_name:\s*Some\("([^"]+)"\)/g;
+
+function checkEgressDisclosure() {
+  const names = new Set();
+  for (const [, name] of read(EGRESS_FILE).matchAll(PUBLIC_NAME_RE)) names.add(name);
+  if (names.size === 0) {
+    // Fail loud rather than open — mirrors check 5's countScrapers self-guard:
+    // a regex that silently stops matching would turn this into a permanently
+    // green no-op, worse than not having the check at all.
+    fail(
+      'Egress-disclosure parse failed',
+      EGRESS_FILE,
+      'found zero `public_name: Some("…")` rows — the extractor regex no longer matches; update it'
+    );
+    return;
+  }
+  const prose = EGRESS_PROSE_ROOTS.flatMap((root) => textFilesUnder(root) ?? [])
+    .map(read)
+    .join('\n');
+  for (const name of names) {
+    if (!prose.includes(name)) {
+      fail(
+        'Undisclosed third party',
+        EGRESS_FILE,
+        `'${name}' is marked public_name: Some("${name}") but does not appear in README.md, ` +
+          `SECURITY.md, or apps/landing/src — name it, e.g. in ` +
+          `apps/landing/src/components/privacy/sections/Desktop.tsx`
+      );
+    }
+  }
+}
+
+// ── Check 8: over-absolute egress-summary phrase guard ──────────────────────
+// The 2026-07 audit (ADR-0005) found exactly this sentence shape false once
+// already: "the only network calls are X" / "no network calls other than X"
+// goes stale the next time a new integration ships, because it claims
+// completeness instead of describing what's disclosed. Same banned-phrase
+// idiom as check 6's TELEMETRY_CLAIM_RE.
+const ABSOLUTE_EGRESS_CLAIM_RE =
+  /\b(?:the )?only network calls?\b|\bno network calls?\s+other than\b/gi;
+
+function checkAbsoluteEgressClaim() {
+  for (const root of EGRESS_PROSE_ROOTS) {
+    const files = textFilesUnder(root);
+    if (files === null) {
+      fail(
+        'Egress-claim scan source moved',
+        root,
+        'listed in EGRESS_PROSE_ROOTS but no longer exists'
+      );
+      continue;
+    }
+    for (const file of files) {
+      for (const [match] of read(file).matchAll(ABSOLUTE_EGRESS_CLAIM_RE)) {
+        fail(
+          'Over-absolute egress claim',
+          file,
+          `contains '${match}' — this sentence shape goes false the moment a new integration ` +
+            `ships (ADR-0005); describe what's disclosed without claiming completeness`
+        );
+      }
+    }
+  }
+}
+
 // ── Secret-scan: no committed GitHub token on the public site ───────────────
 const TOKEN_RE = /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
 
@@ -396,6 +479,8 @@ if (!existsSync(join(ROOT, SCRAPERS_FILE))) {
 }
 
 checkTelemetryClaim();
+checkEgressDisclosure();
+checkAbsoluteEgressClaim();
 
 for (const file of SECRET_SCAN_FILES) {
   if (!existsSync(join(ROOT, file))) {
@@ -412,8 +497,8 @@ for (const file of SECRET_SCAN_FILES) {
 
 if (failures.length === 0) {
   console.log(
-    '✓ landing diagrams in sync with source (paths, IPC contracts, registries, no secrets) ' +
-      'and no stale no-telemetry claim'
+    '✓ landing diagrams in sync with source (paths, IPC contracts, registries, no secrets), ' +
+      'no stale no-telemetry claim, and egress disclosure matches the EGRESS inventory'
   );
   process.exit(0);
 }

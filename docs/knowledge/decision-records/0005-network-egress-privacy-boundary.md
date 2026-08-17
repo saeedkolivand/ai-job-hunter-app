@@ -43,14 +43,23 @@ No runtime behavior changes: every current call already complies. The fix is to 
 
 ## Consequences
 
-- **README.md and SECURITY.md must be rewritten** to state the personal-data guarantee and enumerate the eight egress classes. (Tracked as a develop/modify item, not yet applied.)
-- **A new egress endpoint now has a written test to pass:** does it send personal data (prohibited) or a public identifier/typed query (opt-in, default OFF, CSP-scoped)? This is the reference for future review.
+- **README.md and SECURITY.md have been updated** to state the personal-data guarantee and enumerate the egress classes.
+- **A new egress endpoint now has a written test to pass:** does it send personal data (prohibited) or a public identifier/typed query (opt-in, default OFF, CSP-scoped)? This is the reference for future review. The machine-readable inventory lives in `apps/desktop/src-tauri/tests/egress.rs`.
 - **The opt-in enrichment pattern (Clearbit) is now the sanctioned template** for feature-driven egress: default OFF, minimal CSP, public identifier only.
 - **No behavior changes ship from this ADR.** If a future decision adds a hard offline mode, it supersedes option 2 here.
 
 ## References
 
 - Privacy claims: `README.md` ("What It Does"), `SECURITY.md` ("Security posture").
-- Egress sites: `apps/desktop/src-tauri/src/commands/geocoding.rs` (Photon — fallback only; the bundled index in `apps/desktop/src-tauri/geodata/` makes the common case a no-egress lookup, see `apps/desktop/src-tauri/geodata/README.md` for the data license + attribution), `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs` (Adzuna/JSearch), the updater wiring in `apps/desktop/src-tauri/src/lib.rs`, `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit, opt-in).
+- Egress sites by class:
+  - Class 2 (Job boards/aggregators): `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs` (Adzuna), `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JSearch/RapidAPI, Jooble, Apify).
+  - Class 3 (Web search): `apps/desktop/src-tauri/src/commands/ai_provider/search/mod.rs` (Exa).
+  - Class 4 (Updater): `apps/desktop/src-tauri/tauri.conf.json` (endpoint configuration), `apps/desktop/src-tauri/src/updater/mod.rs` (polling loop), `apps/desktop/src-tauri/src/lib.rs` (setup hook).
+  - Class 5 (Location autocomplete): `apps/desktop/src-tauri/src/commands/geocoding.rs` (Photon fallback; bundled index in `apps/desktop/src-tauri/geodata/`, see `apps/desktop/src-tauri/geodata/README.md` for license).
+  - Class 6 (Optional enrichment): `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit), `apps/desktop/src-tauri/tauri.conf.json` (CSP enforcement).
+  - Class 7 (Email-confirmation watching): `apps/desktop/src-tauri/src/email_watch/` (IMAP).
+  - Class 8 (Crash reporting): Sentry integration in `apps/desktop/src-tauri/src/observability.rs`.
+  - Profile import: `apps/desktop/src-tauri/src/profile_import/github.rs` (GitHub).
 - Opt-in setting: `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (company-logo preference, default OFF).
+- Machine-readable inventory: `apps/desktop/src-tauri/tests/egress.rs` (EGRESS const, 59 rows).
 - Audit finding: `p2-contra-cross-001` (AUDIT_REPORT.md §4).
