@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.137.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.137.0...v0.137.1) (2026-08-17)
+
+### 🐛 Bug Fixes
+
+* generate the résumé in the job ad's language, and notice when it doesn't ([#1004](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1004)) ([d8b693c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d8b693c6a3ae29adc06c4922444b80fcdfcba8c1)), closes [#1003](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1003) [#1002-adjacent](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1002-adjacent)
+
 ## [0.137.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.3...v0.137.0) (2026-08-17)
 
 ### ✨ Features
