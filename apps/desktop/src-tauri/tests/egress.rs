@@ -28,6 +28,13 @@
 //! - `format!("{base}/api/x")` where `base` is a **runtime-configurable**
 //!   value (an env override, a user-typed IMAP host, a user-pasted URL) has no
 //!   static host in the source literal at all and cannot be extracted.
+//! - A host supplied **only via a build-time secret** — `option_env!`/`env!`
+//!   reading a value a CI workflow injects into the environment, never
+//!   checked into this repo in any form — is a *different* limitation from
+//!   the runtime-configurable case above: there, a real literal exists in
+//!   source but is a template; here, no literal ever exists at all, in any
+//!   build anyone can reproduce locally. [`UNEXTRACTABLE`] documents these by
+//!   prose instead, since there is no string for EGRESS-1/2 to check.
 //! - A real host nested inside a `#[cfg(test)]` **mod block** that the
 //!   stripper (below) fails to detect as such would be silently skipped —
 //!   see `egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target`
@@ -65,7 +72,7 @@ struct Egress {
     /// Never `None` for a named third party.
     public_name: Option<&'static str>,
     /// What it is and what gates it. Free text — one host can have several
-    /// roles (`www.linkedin.com` has four), so there is deliberately no
+    /// roles (`www.linkedin.com` has five), so there is deliberately no
     /// `Class` enum field here.
     note: &'static str,
 }
@@ -122,7 +129,7 @@ const EGRESS: &[Egress] = &[
     Egress { host: "www.themuse.com", public_name: None, note: "The Muse board fetch. scraping/boards/themuse/mod.rs." },
     Egress { host: "news.ycombinator.com", public_name: None, note: "Y Combinator (\"Who's Hiring\") board site, alongside the Firebase API host. scraping/boards/ycombinator/mod.rs." },
     Egress { host: "hacker-news.firebaseio.com", public_name: None, note: "Y Combinator (\"Who's Hiring\") board Firebase API fetch. scraping/boards/ycombinator/mod.rs." },
-    Egress { host: "www.linkedin.com", public_name: None, note: "Four roles: login page (board_login), native board search + geo-typeahead (scraping/boards/linkedin, scraping/linkedin/api_client), the Apify actor's LinkedIn URL construction (aggregator fallback), and the single-pasted-URL resolver (scrape_url)." },
+    Egress { host: "www.linkedin.com", public_name: None, note: "Five roles: login page (board_login), native board search + geo-typeahead (scraping/boards/linkedin, scraping/linkedin/api_client), the Apify actor's LinkedIn URL construction (aggregator fallback), the single-pasted-URL resolver (scrape_url), and profile import's user-pasted-URL fetch (profile_import/linkedin.rs) — the last two never contribute a literal here; the host is whatever the user pasted, redirect-resolved (see the module doc's runtime-configurable-base caveat)." },
     Egress { host: "secure.indeed.com", public_name: None, note: "Indeed login page, opened for the user to authenticate. scraping/board_login/mod.rs." },
     Egress { host: "login.xing.com", public_name: None, note: "Xing login page, opened for the user to authenticate. scraping/board_login/mod.rs." },
     Egress { host: "www.glassdoor.com", public_name: None, note: "Glassdoor login page, opened for the user to authenticate. scraping/board_login/mod.rs." },
@@ -136,7 +143,8 @@ const EGRESS: &[Egress] = &[
     // ── Email-confirmation watching (ADR-0005 class 7) — opt-in, default OFF.
     Egress { host: "imap.gmail.com", public_name: Some("IMAP"), note: "Default (v1 Gmail-branded) IMAP host for opt-in email-confirmation watching; DATA not a hardcoded destination — user-configurable, credential OS-keychain-backed. Scheme-less: email_watch/imap_client.rs::DEFAULT_IMAP_HOST (see SCHEMELESS)." },
 
-    // ── Updater (ADR-0005 class 4) — on-launch version check, no user data.
+    // ── Updater (ADR-0005 class 4) — first check 10s after launch, then every
+    // 4h for the rest of the session (updater/mod.rs:314,317), no user data.
     Egress { host: "github.com", public_name: Some("GitHub"), note: "Updater version-check endpoint, configured in tauri.conf.json's plugins.updater.endpoints; also the Help-menu doc/issues/changelog links opened in the user's browser, never fetched by net::http. lib.rs, updater/mod.rs, commands/menu.rs." },
 
     // ── Optional enrichment (ADR-0005 class 6) — opt-in, default OFF, from
@@ -160,19 +168,77 @@ const EGRESS: &[Egress] = &[
     Egress { host: "boards.eu.greenhouse.io", public_name: None, note: "Greenhouse EU-region careers-page host, same bare-literal recognizer. scraping/ats_ref.rs::greenhouse_slug." },
 ];
 
+/// Egress declared by class, not by host string, because no host string
+/// exists anywhere in this repo to declare: it arrives via a secret injected
+/// only into the signed release build. Deliberately a SEPARATE list from
+/// [`EGRESS`], not a row with a placeholder host in it — EGRESS-1 extracts
+/// from source text, and EGRESS-2 re-checks every `EGRESS` row is STILL
+/// present in source text; a class with no source text at all fits neither
+/// direction. Folding it into `EGRESS` would force a choice between two bad
+/// outcomes: a fake placeholder host that EGRESS-2 would then fail forever
+/// (nothing to find, by design), or leaving the row's `host` field
+/// meaningless. A third, explicitly-unchecked list says the true thing:
+/// documented, not verified.
+struct UnextractableEgress {
+    /// Third-party name — every row here is a real SDK talking to a named
+    /// vendor, so unlike [`Egress::public_name`] this is never `None`.
+    public_name: &'static str,
+    /// What it is, why no literal exists to extract, and where the real
+    /// answer lives (repo-relative paths, so a reader can go verify by hand
+    /// rather than trust this comment).
+    note: &'static str,
+}
+
+#[rustfmt::skip]
+const UNEXTRACTABLE: &[UnextractableEgress] = &[
+    // ── Crash reporting (ADR-0005 class 8) — default ON, gated on shown
+    // consent (Settings::transmits = enabled && consent_shown).
+    UnextractableEgress {
+        public_name: "Sentry",
+        note: "Crash-report ingest host, carried inside the DSN. The DSN is a GitHub Actions \
+               secret (AJH_SENTRY_DSN) injected ONLY by .github/workflows/release.yml's signed \
+               release job, read at compile time via build.rs into \
+               option_env!(\"AJH_SENTRY_DSN\") (crash_reporting/mod.rs:108) — every local build, \
+               every contributor clone, and every non-release CI check compiles with DSN = None \
+               and cannot transmit at all, so the host is not merely hard to extract, it does \
+               not exist in any reproducible build of this repo. Further gated by opt-out \
+               consent (Settings::transmits, crash_reporting/mod.rs) and the wire-gate transport \
+               that re-checks consent and drops unredactable envelopes per-send \
+               (crash_reporting/transport.rs).",
+    },
+];
+
 /// Hosts that only ever appear WITHOUT a `scheme://` prefix in real code (a
 /// bare comparison/DNS-label const, not a `scheme://host` literal) —
 /// EGRESS-1's scheme-anchored extractor can never see these, so EGRESS-2
 /// checks them by searching for the quoted literal (`"host"`) in
 /// comment-stripped, non-test source instead of extracted-set membership.
-const SCHEMELESS: &[&str] = &[
-    "jobs.personio.de",
-    "jobs.personio.com",
-    "ats.rippling.com",
-    "boards.greenhouse.io",
-    "job-boards.greenhouse.io",
-    "boards.eu.greenhouse.io",
-    "imap.gmail.com",
+///
+/// `owning_files` scopes that search to the specific file(s) each host is
+/// actually declared in, rather than the whole tree — an un-scoped `contains`
+/// over every file joined together is vacuously satisfied by ANY bare
+/// occurrence anywhere, including one that has nothing to do with egress.
+/// Concretely: `scraping/trust/mod.rs`'s 31-hostname `ATS_ALLOWLIST` (a
+/// suffix-match trust-policy list, not an egress declaration) happens to
+/// contain 3 of these 7 literals as ordinary data — deleting the real
+/// declaring site while that allowlist entry stays would leave an un-scoped
+/// check green.
+struct Schemeless {
+    host: &'static str,
+    /// Every file (relative to `src/`) whose real (non-test) code legitimately
+    /// declares this bare literal. Present in any one of these is enough.
+    owning_files: &'static [&'static str],
+}
+
+#[rustfmt::skip]
+const SCHEMELESS: &[Schemeless] = &[
+    Schemeless { host: "jobs.personio.de", owning_files: &["scraping/boards/personio/mod.rs"] },
+    Schemeless { host: "jobs.personio.com", owning_files: &["scraping/boards/personio/mod.rs"] },
+    Schemeless { host: "ats.rippling.com", owning_files: &["scraping/ats_ref.rs", "scraping/boards/rippling/mod.rs"] },
+    Schemeless { host: "boards.greenhouse.io", owning_files: &["scraping/ats_ref.rs"] },
+    Schemeless { host: "job-boards.greenhouse.io", owning_files: &["scraping/ats_ref.rs"] },
+    Schemeless { host: "boards.eu.greenhouse.io", owning_files: &["scraping/ats_ref.rs"] },
+    Schemeless { host: "imap.gmail.com", owning_files: &["email_watch/imap_client.rs"] },
 ];
 
 /// Declared dynamic-host sites: a `scheme://` literal whose entire authority
@@ -260,20 +326,102 @@ fn rust_sources() -> Vec<RustSource> {
 
 // ── #[cfg(test)] mod-block stripper ─────────────────────────────────────────
 
-/// Strip column-0 `#[cfg(test)]` … `mod name { … }` blocks (real inline test
-/// code with its own scheme-qualified fixture URLs) from `content`. Does
-/// **not** touch a `#[cfg(test)]` that sits on anything else (`use`, `const`,
-/// `enum`, `fn`, or a `#[path = "…"] mod name;` external-file reference) —
-/// those hold no inline test code to leak, and the naive "strip to the next
-/// standalone `}`" approach would delete real declarations. Dozens of
-/// column-0 `#[cfg(test)]` attributes in this tree sit on something other
-/// than a `mod … {` block (e.g. `validate/content/mod.rs:66` on a `use`,
-/// `commands/ai_provider/stream.rs:528` on `enum StreamSink {`,
+/// Does `lines[i]` open a `#[cfg(test)]` … `mod name { … }` region? Returns
+/// the line index the `mod … {` line itself sits on. `None` for a
+/// `#[cfg(test)]` whose attribute chain lands on anything else (`use`,
+/// `const`, `enum`, `fn`, or a `#[path = "…"] mod name;` external-file
+/// reference) — those hold no inline test code to leak, and the naive "strip
+/// to the next standalone `}`" approach would delete real declarations.
+/// Dozens of column-0 `#[cfg(test)]` attributes in this tree sit on something
+/// other than a `mod … {` block (e.g. `validate/content/mod.rs:66` on a
+/// `use`, `commands/ai_provider/stream.rs:528` on `enum StreamSink {`,
 /// `commands/ai_provider/anthropic.rs:1394` on a `#[path] mod tests;`
 /// external-file reference) — `egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target`
-/// pins exactly those three as regression cases, rather than pinning a total
-/// region count (which would redden every time anyone anywhere adds an
-/// unrelated `#[cfg(test)] mod tests { … }` — a routine, desirable change).
+/// pins exactly those three as regression cases.
+///
+/// Only matches at column 0 (`lines[i] == "#[cfg(test)]"` exactly, no
+/// indentation, no trailing content) — an indented or otherwise-decorated
+/// `#[cfg(test)] mod tests { … }` (nested inside another mod, for example) is
+/// silently left un-stripped. Fail-safe today by inspection (every indented
+/// `#[cfg(test)]` in this tree sits on a fn or field, never a `mod` block),
+/// but if that ever changes, the failure mode is confusing rather than
+/// silent: a real host inside the un-stripped fixture would surface as an
+/// EGRESS-1 failure whose fix-it message tells a developer to add a TEST
+/// fixture host to the real inventory.
+fn cfg_test_mod_open(lines: &[&str], i: usize) -> Option<usize> {
+    if lines[i] != "#[cfg(test)]" {
+        return None;
+    }
+    // Skip forward past any directly-following attribute lines (e.g.
+    // `#[path = "…"]`) to find what the attribute chain lands on.
+    let mut j = i + 1;
+    while j < lines.len() && lines[j].trim_start().starts_with("#[") {
+        j += 1;
+    }
+    if j >= lines.len() {
+        return None;
+    }
+    let t = lines[j].trim_start();
+    let t_end = t.trim_end();
+    // Strip an optional `pub`/`pub(...)` visibility prefix, THEN require the
+    // next token to be exactly `mod ` — a bare `t.starts_with("pub(")` check
+    // (without stripping to the token after it) also matches a
+    // `#[cfg(test)]`-annotated test-only HELPER function/impl such as
+    // `pub(super) fn row_counts() -> (usize, usize) {`
+    // (commands/geocoding/geonames.rs), which is real code, not a module
+    // block, and must not be stripped.
+    let after_vis = if let Some(rest) = t.strip_prefix("pub(") {
+        match rest.find(')') {
+            Some(close) => rest[close + 1..].trim_start(),
+            None => t,
+        }
+    } else if let Some(rest) = t.strip_prefix("pub ") {
+        rest.trim_start()
+    } else {
+        t
+    };
+    (after_vis.starts_with("mod ") && t_end.ends_with('{')).then_some(j)
+}
+
+/// Brace-count forward from `open_line` (a `mod … {` line) to find where the
+/// naive, string-unaware counter decides the block closes. Naive: counts
+/// every `{`/`}` BYTE including ones inside string literals — usually
+/// harmless, since a real `mod … { … }` block's own Rust-syntax braces
+/// balance regardless, but a string literal that itself contains an
+/// UNBALANCED `{`/`}` (a JSON fixture testing corrupt input, or RTF's own
+/// `{`/`}` control-word syntax) throws the running count off, either closing
+/// the region too early (mid-line, inside a later string) or never closing it
+/// at all (running to EOF). See
+/// `egress_stripped_regions_close_on_a_column_zero_brace_or_a_known_exception`
+/// for the invariant this naivety is checked against, and its three known
+/// exceptions.
+///
+/// Returns the line index the scan stopped on — `lines.len()` if depth never
+/// reached <= 0 before the file ended.
+fn brace_close_line(lines: &[&str], open_line: usize) -> usize {
+    let mut depth = 0i32;
+    let mut k = open_line;
+    let mut started = false;
+    while k < lines.len() {
+        for ch in lines[k].chars() {
+            if ch == '{' {
+                depth += 1;
+                started = true;
+            } else if ch == '}' {
+                depth -= 1;
+            }
+        }
+        if started && depth <= 0 {
+            break;
+        }
+        k += 1;
+    }
+    k
+}
+
+/// Strip every `#[cfg(test)]` … `mod name { … }` region [`cfg_test_mod_open`]
+/// finds (real inline test code with its own scheme-qualified fixture URLs)
+/// from `content`, using [`brace_close_line`] to find each region's end.
 ///
 /// Returns the content with those regions removed, plus how many regions were
 /// stripped (used only as a loose sanity signal, never an exact pin).
@@ -283,71 +431,46 @@ fn strip_cfg_test_mod_blocks(content: &str) -> (String, usize) {
     let mut stripped = 0usize;
     let mut i = 0usize;
     while i < lines.len() {
-        if lines[i] == "#[cfg(test)]" {
-            // Skip forward past any directly-following attribute lines (e.g.
-            // `#[path = "…"]`) to find what the attribute chain lands on.
-            let mut j = i + 1;
-            while j < lines.len() && lines[j].trim_start().starts_with("#[") {
-                j += 1;
-            }
-            let opens_mod = j < lines.len() && {
-                let t = lines[j].trim_start();
-                let t_end = t.trim_end();
-                // Strip an optional `pub`/`pub(...)` visibility prefix, THEN
-                // require the next token to be exactly `mod ` — a bare
-                // `t.starts_with("pub(")` check (without stripping to the
-                // token after it) also matches a `#[cfg(test)]`-annotated
-                // test-only HELPER function/impl such as
-                // `pub(super) fn row_counts() -> (usize, usize) {`
-                // (commands/geocoding/geonames.rs), which is real code, not a
-                // module block, and must not be stripped.
-                let after_vis = if let Some(rest) = t.strip_prefix("pub(") {
-                    match rest.find(')') {
-                        Some(close) => rest[close + 1..].trim_start(),
-                        None => t,
-                    }
-                } else if let Some(rest) = t.strip_prefix("pub ") {
-                    rest.trim_start()
-                } else {
-                    t
-                };
-                after_vis.starts_with("mod ") && t_end.ends_with('{')
-            };
-            if opens_mod {
-                // Brace-count from j to find the matching close. Naive: counts
-                // every `{`/`}` BYTE including ones inside string literals —
-                // safe here because every test fixture in this tree with
-                // embedded braces (JSON strings) is itself balanced, verified
-                // empirically: every stripped region resolves with zero URL
-                // leaks past its boundary (no test-only fixture host — e.g.
-                // `https://ats.rippling.com`, `https://jobs.lever.co` — ever
-                // appears in the extracted set).
-                let mut depth = 0i32;
-                let mut k = j;
-                let mut started = false;
-                while k < lines.len() {
-                    for ch in lines[k].chars() {
-                        if ch == '{' {
-                            depth += 1;
-                            started = true;
-                        } else if ch == '}' {
-                            depth -= 1;
-                        }
-                    }
-                    if started && depth <= 0 {
-                        break;
-                    }
-                    k += 1;
-                }
-                stripped += 1;
-                i = k + 1;
-                continue;
-            }
+        if let Some(open_line) = cfg_test_mod_open(&lines, i) {
+            let close_line = brace_close_line(&lines, open_line);
+            stripped += 1;
+            i = close_line + 1;
+            continue;
         }
         out.push(lines[i]);
         i += 1;
     }
     (out.join("\n"), stripped)
+}
+
+/// For every `#[cfg(test)] mod … { … }` region [`cfg_test_mod_open`] finds in
+/// `content`, whether [`brace_close_line`] closed it on a column-0 `}` — the
+/// shape every real `mod … { … }` block closes with under this repo's
+/// rustfmt config (a top-level item's closing brace is never indented).
+/// `false` covers both known failure shapes of the naive counter: a mid-line
+/// close (a brace inside a string decremented the count early, so real code
+/// AFTER that point was not stripped and got scanned as if it were
+/// production source) and a run to EOF (a brace inside a string was never
+/// balanced, so the count never returned to zero and the "region" swallowed
+/// the rest of the file). Used only by
+/// `egress_stripped_regions_close_on_a_column_zero_brace_or_a_known_exception`
+/// below — a diagnostic twin of the stripper, not part of the extraction
+/// pipeline, so nothing about what gets stripped changes by its existing.
+fn region_closes_on_column_zero_brace(content: &str) -> Vec<bool> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < lines.len() {
+        if let Some(open_line) = cfg_test_mod_open(&lines, i) {
+            let close_line = brace_close_line(&lines, open_line);
+            let clean = close_line < lines.len() && lines[close_line].starts_with('}');
+            out.push(clean);
+            i = close_line + 1;
+            continue;
+        }
+        i += 1;
+    }
+    out
 }
 
 fn strip_comment_lines(content: &str) -> String {
@@ -367,18 +490,26 @@ const STOP_BYTES: &[u8] = b"/?#\"'`)],;<> \t\r\n";
 /// recognized scheme word bounded by a non-alphanumeric (or start-of-string),
 /// return the scheme's start byte index. The `*` alternative catches MV3
 /// match patterns (`*://*.example.com/*`).
+///
+/// Matched case-insensitively — schemes are case-insensitive per RFC 3986
+/// §3.1, and browsers/curl/reqwest all accept `HTTPS://…`, so a literal
+/// spelled that way must be exactly as visible here as a lowercase one.
+/// Compared on bytes rather than `str` slices so this can never panic on a
+/// char-boundary: a matching ASCII byte run can only ever land on codepoint
+/// boundaries (a UTF-8 continuation byte is never a valid ASCII byte value).
 fn scheme_start(content: &str, pos: usize) -> Option<usize> {
-    let before = &content[..pos];
-    if before.ends_with('*') {
+    let bytes = content.as_bytes();
+    if pos >= 1 && bytes[pos - 1] == b'*' {
         let start = pos - 1;
-        if start == 0 || !content.as_bytes()[start - 1].is_ascii_alphanumeric() {
+        if start == 0 || !bytes[start - 1].is_ascii_alphanumeric() {
             return Some(start);
         }
     }
     for w in SCHEME_WORDS {
-        if before.ends_with(w) {
-            let start = pos - w.len();
-            if start == 0 || !content.as_bytes()[start - 1].is_ascii_alphanumeric() {
+        let wl = w.len();
+        if pos >= wl && bytes[pos - wl..pos].eq_ignore_ascii_case(w.as_bytes()) {
+            let start = pos - wl;
+            if start == 0 || !bytes[start - 1].is_ascii_alphanumeric() {
                 return Some(start);
             }
         }
@@ -487,6 +618,45 @@ fn scan_one(rel: &str, content: &str, hosts: &mut HostSites, dynamic: &mut Dynam
     }
 }
 
+#[cfg(test)]
+mod scan_one_case_sensitivity {
+    use super::scan_one;
+
+    /// RFC 3986 §3.1 schemes are case-insensitive, and every real HTTP client
+    /// (browsers, curl, reqwest) accepts `HTTPS://…` — a literal spelled that
+    /// way must be exactly as visible to the extractor as a lowercase one, or
+    /// a real host behind it silently evades EGRESS-1.
+    #[test]
+    fn recognizes_an_uppercase_scheme() {
+        let mut hosts = super::HostSites::new();
+        let mut dynamic = super::DynamicSites::new();
+        scan_one(
+            "probe.rs",
+            "let u = \"HTTPS://api.acme-corp.io/x\";",
+            &mut hosts,
+            &mut dynamic,
+        );
+        assert!(
+            hosts.contains_key("api.acme-corp.io"),
+            "an uppercase HTTPS:// scheme must be recognized; got {hosts:?}"
+        );
+    }
+
+    /// Mixed case must be caught too, not just all-uppercase.
+    #[test]
+    fn recognizes_a_mixed_case_scheme() {
+        let mut hosts = super::HostSites::new();
+        let mut dynamic = super::DynamicSites::new();
+        scan_one(
+            "probe.rs",
+            "let u = \"HttpS://api.acme-corp.io/x\";",
+            &mut hosts,
+            &mut dynamic,
+        );
+        assert!(hosts.contains_key("api.acme-corp.io"), "got {hosts:?}");
+    }
+}
+
 /// Run the full pipeline (strip cfg(test) mod blocks, strip comments, scan)
 /// over the scanned Rust source tree. Returns `(hosts, dynamic_sites,
 /// total_stripped_regions)`.
@@ -541,7 +711,7 @@ fn egress_1_every_extracted_host_is_declared() {
         msg.push_str(&format!("  {host}  (first seen at {rel}: `{snippet}`)\n"));
     }
     msg.push_str(
-        "\nTo fix: add an `Egress {{ host, public_name, note }}` row for each host above to \
+        "\nTo fix: add an `Egress { host, public_name, note }` row for each host above to \
          the `EGRESS` const in apps/desktop/src-tauri/tests/egress.rs. If it is a NEW \
          third-party service not already covered by an existing ADR-0005 egress class, also \
          update the enumeration in README.md, SECURITY.md, and \
@@ -558,23 +728,31 @@ fn egress_2_every_declared_host_is_still_in_source() {
     extract_from_decl_files(&mut hosts, &mut dynamic);
 
     // Comment-stripped, cfg(test)-mod-stripped Rust text for the SCHEMELESS
-    // bare-literal search — NOT a raw `contains` over unstripped file text,
-    // which would be vacuously satisfied by the 31-hostname `ATS_ALLOWLIST`
-    // policy list at scraping/trust/mod.rs:76-108 (a suffix-match allowlist,
-    // not an egress declaration) or by a stale doc-comment mention.
-    let schemeless_text: String = rust_sources()
-        .iter()
+    // bare-literal search, keyed by file — NOT one blob joined across the
+    // whole tree (vacuously satisfied by ANY bare occurrence anywhere, e.g.
+    // the 31-hostname `ATS_ALLOWLIST` policy list at
+    // scraping/trust/mod.rs:76-108, a suffix-match allowlist, not an egress
+    // declaration, that happens to contain 3 of the 7 SCHEMELESS literals as
+    // ordinary data) and NOT a raw `contains` over unstripped file text
+    // (vacuously satisfied by a stale doc-comment mention). Each
+    // [`Schemeless`] row names its own `owning_files`; the search below is
+    // scoped to exactly those.
+    let schemeless_by_file: BTreeMap<String, String> = rust_sources()
+        .into_iter()
         .map(|f| {
             let (no_mods, _) = strip_cfg_test_mod_blocks(&f.content);
-            strip_comment_lines(&no_mods)
+            (f.rel, strip_comment_lines(&no_mods))
         })
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect();
 
     let mut dead: Vec<&str> = Vec::new();
     for e in EGRESS {
-        let present = if SCHEMELESS.contains(&e.host) {
-            schemeless_text.contains(&format!("\"{}\"", e.host))
+        let present = if let Some(sl) = SCHEMELESS.iter().find(|s| s.host == e.host) {
+            sl.owning_files.iter().any(|file| {
+                schemeless_by_file
+                    .get(*file)
+                    .is_some_and(|content| content.contains(&format!("\"{}\"", e.host)))
+            })
         } else {
             hosts.contains_key(e.host)
         };
@@ -632,11 +810,17 @@ fn egress_3_dynamic_host_sites_are_declared() {
 
 // ── EGRESS-4: no bare scheme / wildcard host in the declaration files ──────
 
-/// A CSP/manifest source that is a bare scheme (`https:` with no `//…`) or an
-/// explicit wildcard host (`*://*/*`, `<all_urls>`) defeats the whole point
-/// of an enumerated inventory — it allows ANY host. Deliberately separate
-/// from the extractor (which only recognizes `scheme://host` literals) rather
-/// than folding this into the authority-extraction rule.
+/// A CSP/manifest source that is a bare scheme (`https:` with no `//…`), a
+/// scheme-wildcard host (`*://*/*`, `<all_urls>`), OR a **fixed-scheme**
+/// wildcard host (`https://*`, `https://*/*`) defeats the whole point of an
+/// enumerated inventory — pinning the scheme doesn't narrow which host may
+/// answer, so all three are equally ANY-host. Deliberately separate from the
+/// extractor (which only recognizes `scheme://host` literals as *declarable*
+/// hosts) rather than folding this into the authority-extraction rule — this
+/// function's job is to REJECT a wildcard, not record it as a dynamic site:
+/// `EGRESS-3`'s `DYNAMIC_SITES` is for a legitimate single templated URL
+/// (`https://{host}`, filled with one real value at runtime), not a CSP glob
+/// that admits every host in existence.
 fn find_bare_scheme_or_wildcard(content: &str) -> Vec<String> {
     let mut hits = Vec::new();
     if content.contains("*://*/*") {
@@ -652,6 +836,19 @@ fn find_bare_scheme_or_wildcard(content: &str) -> Vec<String> {
             let after = pos + scheme.len();
             if !content[after..].starts_with("//") {
                 hits.push(format!("bare scheme `{scheme}` (no `//` following)"));
+            } else {
+                // Fixed-scheme wildcard host: the same "no real label
+                // survives `*`-filtering" test EGRESS-1's extractor uses to
+                // recognize a dynamic site, reused here to recognize an
+                // any-host CSP/MV3 source instead (`https://*`,
+                // `https://*/*`, but not `https://*.example.com/*`, which
+                // narrows to one real domain).
+                let auth_start = after + 2;
+                let auth_end = authority_end(content.as_bytes(), auth_start);
+                let raw_auth = &content[auth_start..auth_end];
+                if matches!(process_authority(raw_auth), Some(None)) {
+                    hits.push(format!("wildcard host pattern `{scheme}//{raw_auth}`"));
+                }
             }
             start = after;
         }
@@ -709,6 +906,38 @@ mod egress_4_detection_logic {
         assert!(
             hits.is_empty(),
             "a normal scheme://host source must not be flagged; got {hits:?}"
+        );
+    }
+
+    /// The gap the wildcard-scheme-only check (`*://*/*`) missed: a FIXED
+    /// scheme with a wildcard host is just as much "any host" — CSP's own
+    /// syntax for it.
+    #[test]
+    fn flags_a_fixed_scheme_csp_wildcard_host() {
+        let hits = find_bare_scheme_or_wildcard("connect-src 'self' https://*");
+        assert_eq!(
+            hits.len(),
+            1,
+            "a fixed-scheme any-host CSP source must be flagged; got {hits:?}"
+        );
+    }
+
+    /// Same gap, MV3's `host_permissions` spelling.
+    #[test]
+    fn flags_a_fixed_scheme_mv3_wildcard_host() {
+        let hits = find_bare_scheme_or_wildcard(r#"host_permissions: ["https://*/*"]"#);
+        assert_eq!(hits.len(), 1, "got {hits:?}");
+    }
+
+    /// A wildcard SUBDOMAIN narrows to one real domain — not an any-host
+    /// source, and must not be flagged (it's a normal declarable host, caught
+    /// by the ordinary extractor instead).
+    #[test]
+    fn does_not_flag_a_narrowed_wildcard_subdomain() {
+        let hits = find_bare_scheme_or_wildcard("connect-src 'self' https://*.example.com/*");
+        assert!(
+            hits.is_empty(),
+            "a wildcard SUBDOMAIN of a real domain must not be flagged; got {hits:?}"
         );
     }
 }
@@ -774,6 +1003,68 @@ fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
     );
 }
 
+/// Pins the real invariant the naive brace counter should be judged against —
+/// every stripped `#[cfg(test)] mod … { … }` region closes on a column-0
+/// `}`, never mid-line and never at EOF — rather than the false claim this
+/// module's doc comment used to carry ("every test fixture in this tree with
+/// embedded braces is itself balanced, verified empirically"). It was not: 3
+/// of 95 regions in this tree mis-resolve, each from an unbalanced-brace
+/// STRING LITERAL the naive counter cannot see past, listed here by name
+/// rather than silently excluded from the count:
+///
+///   - `crash_reporting/mod.rs` — `"{ not json"` (a deliberately-invalid JSON
+///     fixture) has one embedded `{` and no matching `}`, offsetting the
+///     trailing `mod tests { … }` block's count by +1 for the rest of the
+///     file, so it runs to EOF.
+///   - `extraction/rtf.rs` — RTF's own `{`/`}` control-word syntax inside
+///     string fixtures (e.g. `"{\\rtf1\\ansi …}"`) offsets the count, so its
+///     `mod tests { … }` block also runs to EOF.
+///   - `pipeline/json.rs` — `r#"{"note":"a \" then }","a":1}"#` has a `}`
+///     INSIDE the quoted string value, which the naive counter reads as a
+///     real closing brace and stops on, two statements before the block's
+///     real end.
+///
+/// None of these hides a real host TODAY — verified by hand against the
+/// extracted set, and structurally impossible for the first two, since a
+/// region that "closes" at EOF has nothing after it to hide. `pipeline/json.rs`
+/// is the one case where a real host COULD have been hidden in principle (the
+/// truncation leaves real lines unstripped, and those lines can and do
+/// contain scheme-qualified fixture URLs elsewhere in that same test module)
+/// — none of them are non-reserved hosts today, but this is exactly the
+/// failure mode the module doc's "What this test does NOT prove" section
+/// already names as a limitation.
+///
+/// A NEW file failing this check is not automatically safe the same way —
+/// investigate before adding it to `KNOWN_EXCEPTIONS`.
+#[test]
+fn egress_stripped_regions_close_on_a_column_zero_brace_or_a_known_exception() {
+    const KNOWN_EXCEPTIONS: &[&str] = &[
+        "crash_reporting/mod.rs",
+        "extraction/rtf.rs",
+        "pipeline/json.rs",
+    ];
+    let mut bad = Vec::new();
+    for f in rust_sources() {
+        if !f.content.contains("#[cfg(test)]") {
+            continue;
+        }
+        let all_clean = region_closes_on_column_zero_brace(&f.content)
+            .into_iter()
+            .all(|ok| ok);
+        if !all_clean && !KNOWN_EXCEPTIONS.contains(&f.rel.as_str()) {
+            bad.push(f.rel);
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "\na #[cfg(test)] mod region in a NEW file does not close on a column-0 `}}` (mid-line \
+         close or ran to EOF) — investigate whether a real host could be hidden past the \
+         truncation/overrun (mid-line close is the dangerous direction: it leaves real code \
+         un-stripped), then either fix the fixture's brace balance or add the file to \
+         KNOWN_EXCEPTIONS in apps/desktop/src-tauri/tests/egress.rs with a reason: {bad:?}\n"
+    );
+}
+
 /// Every row must justify itself: a non-empty note (so this stays a real
 /// audit trail, not decoration), and per `Egress::public_name`'s own doc
 /// comment, a non-empty name when one is given.
@@ -805,4 +1096,44 @@ fn egress_hosts_are_unique() {
         }
     }
     assert!(dupes.is_empty(), "duplicate EGRESS host row(s): {dupes:?}");
+}
+
+/// [`UNEXTRACTABLE`]'s equivalent of `egress_rows_are_documented` — every row
+/// must have a real vendor name and a non-empty note, the same audit-trail
+/// contract as [`EGRESS`].
+#[test]
+fn egress_unextractable_rows_are_documented() {
+    let mut bad = Vec::new();
+    for e in UNEXTRACTABLE {
+        if e.public_name.trim().is_empty() {
+            bad.push("(unnamed row): empty public_name".to_string());
+        }
+        if e.note.trim().is_empty() {
+            bad.push(format!("{}: empty note", e.public_name));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "UNEXTRACTABLE rows missing documentation: {bad:?}"
+    );
+}
+
+/// Regression guard for the HIGH this row exists to fix: ADR-0005 class 8
+/// (crash reporting) had zero inventory coverage despite being the only
+/// default-ON automatic egress in the product. Deliberately independent of
+/// [`egress_unextractable_rows_are_documented`] (a shape check that would
+/// stay green even if every row were deleted) — this asserts the SPECIFIC
+/// row exists, so deleting it is what actually goes red. Mutation-checked:
+/// deleting the Sentry row from `UNEXTRACTABLE` turns this test red while
+/// every other egress test (including `egress_2_every_declared_host_is_still_in_source`)
+/// stays exactly as it was — proof `UNEXTRACTABLE` cannot influence EGRESS-2,
+/// since EGRESS-2 iterates `EGRESS` only and never reads this const.
+#[test]
+fn egress_declares_the_sentry_crash_reporting_class() {
+    assert!(
+        UNEXTRACTABLE.iter().any(|e| e.public_name == "Sentry"),
+        "ADR-0005 class 8 (crash reporting) must have a declared-but-unextractable row in \
+         UNEXTRACTABLE — see the module doc's build-time-secret bullet for why it cannot be a \
+         normal EGRESS row"
+    );
 }

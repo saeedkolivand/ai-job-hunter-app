@@ -14,11 +14,14 @@
 //   5. Every board-count claim matches the live SCRAPERS registry entry count.
 //   6. No stale "zero/no telemetry" privacy claim (ADR-0020 made it untrue).
 //   7. Every publicly-named third party in the egress inventory
-//      (apps/desktop/src-tauri/tests/egress.rs) is named somewhere in the
-//      public prose (README.md, SECURITY.md, apps/landing/src) — a presence
-//      floor, not a semantic check.
-//   8. No over-absolute "the only network calls…" / "no network calls other
-//      than…" claim — the exact shape ADR-0005 exists because of.
+//      (apps/desktop/src-tauri/tests/egress.rs) is named, as a whole word, on
+//      the actual disclosure surfaces (README.md, SECURITY.md, the /privacy
+//      page) — a presence floor, not a semantic check.
+//   8. No over-absolute "the only network calls…" / "sends … only to…" /
+//      "no data leaves … except…" family of claim — the shape ADR-0005
+//      exists because of.
+//   9. The vendored chart.js matches its pinned sha256 (catches a silent edit
+//      or re-vendor to a different, unverified build).
 // Secret-scan (ALL landing html/js): no committed GitHub token — the site is public.
 //
 // Check 6 reaches beyond apps/landing/ — to README.md, SECURITY.md and branding/ —
@@ -28,6 +31,7 @@
 //
 // Read-only. Run via `pnpm check:landing-drift`; CI runs it in the Lint & Format job.
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -362,18 +366,36 @@ function checkTelemetryClaim() {
 }
 
 // ── Check 7: egress disclosure — every publicly-named third party from the
-// egress inventory must be named somewhere in the public prose ─────────────
+// egress inventory must be named, as a whole word, on the actual disclosure
+// surfaces ───────────────────────────────────────────────────────────────
 // apps/desktop/src-tauri/tests/egress.rs's `EGRESS` const marks each outbound
 // host `public_name: Some("…")` when that third party must be disclosed by
-// name. This is a PRESENCE FLOOR (substring), same idiom as checkPaths above:
-// a page could name "Exa" in an unrelated sentence and still pass. It only
-// catches the real failure mode this whole guard exists for — the vendor is
-// nowhere on the page at all. Check 8 below (the banned-phrase guard) is the
+// name. This is a PRESENCE FLOOR — a page could still name "Exa" in an
+// unrelated sentence and pass — but it must be an actual word match, not a
+// bare substring: a case-sensitive `includes()` over all of apps/landing/src
+// let 'Exa' pass on "Exact-pinned"/"Example]" and let 'GitHub'/'IMAP' pass on
+// any mention anywhere in the tree (mission-control's own GitHub-API code,
+// unrelated to privacy disclosure), so deleting the real disclosure stayed
+// green. Fixed two ways: \b-anchored per-name regex, AND a corpus narrowed to
+// where a disclosure would actually live — README, SECURITY, and the
+// /privacy page's source (PrivacyBody.tsx + sections/) — not every .ts/.tsx
+// file under apps/landing/src. Check 8 below (the banned-phrase guard) is the
 // other half of the pair: this check catches an omission, that one catches a
 // false claim of completeness.
 const EGRESS_FILE = 'apps/desktop/src-tauri/tests/egress.rs';
-const EGRESS_PROSE_ROOTS = ['README.md', 'SECURITY.md', 'apps/landing/src'];
-const PUBLIC_NAME_RE = /public_name:\s*Some\("([^"]+)"\)/g;
+const EGRESS_DISCLOSURE_SURFACES = [
+  'README.md',
+  'SECURITY.md',
+  'apps/landing/src/components/privacy',
+];
+// Two shapes, deliberately: `EGRESS` rows carry `public_name: Option<&str>`
+// (`Some("…")`), while `UNEXTRACTABLE` rows carry a bare `public_name: "…"`
+// because there is no host string to make optional — Sentry's ingest host
+// lives inside a build-time-secret DSN and exists in no reproducible build.
+// Matching only the `Some(…)` form would leave the ONE default-ON automatic
+// egress unenforced here, which is the exact gap this check exists to close.
+const PUBLIC_NAME_RE = /public_name:\s*(?:Some\(\s*)?"([^"]+)"/g;
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function checkEgressDisclosure() {
   const names = new Set();
@@ -385,20 +407,33 @@ function checkEgressDisclosure() {
     fail(
       'Egress-disclosure parse failed',
       EGRESS_FILE,
-      'found zero `public_name: Some("…")` rows — the extractor regex no longer matches; update it'
+      'found zero `public_name` rows (EGRESS or UNEXTRACTABLE) — the extractor regex no longer matches; update it'
     );
     return;
   }
-  const prose = EGRESS_PROSE_ROOTS.flatMap((root) => textFilesUnder(root) ?? [])
-    .map(read)
-    .join('\n');
+  const files = EGRESS_DISCLOSURE_SURFACES.flatMap((root) => {
+    const found = textFilesUnder(root);
+    if (found === null) {
+      // Fail loud rather than open — same idiom as checks 5/6/8: a moved
+      // disclosure surface silently shrinking the corpus is the exact bug
+      // this check was just fixed for.
+      fail(
+        'Egress-disclosure scan source moved',
+        root,
+        'listed in EGRESS_DISCLOSURE_SURFACES but no longer exists — update the list'
+      );
+      return [];
+    }
+    return found;
+  });
+  const prose = files.map(read).join('\n');
   for (const name of names) {
-    if (!prose.includes(name)) {
+    if (!new RegExp(String.raw`\b${escapeRegExp(name)}\b`).test(prose)) {
       fail(
         'Undisclosed third party',
         EGRESS_FILE,
-        `'${name}' is marked public_name: Some("${name}") but does not appear in README.md, ` +
-          `SECURITY.md, or apps/landing/src — name it, e.g. in ` +
+        `'${name}' carries public_name in the egress inventory but does not appear as a whole word ` +
+          `in README.md, SECURITY.md, or apps/landing/src/components/privacy — name it, e.g. in ` +
           `apps/landing/src/components/privacy/sections/Desktop.tsx`
       );
     }
@@ -410,9 +445,31 @@ function checkEgressDisclosure() {
 // already: "the only network calls are X" / "no network calls other than X"
 // goes stale the next time a new integration ships, because it claims
 // completeness instead of describing what's disclosed. Same banned-phrase
-// idiom as check 6's TELEMETRY_CLAIM_RE.
-const ABSOLUTE_EGRESS_CLAIM_RE =
-  /\b(?:the )?only network calls?\b|\bno network calls?\s+other than\b/gi;
+// idiom as check 6's TELEMETRY_CLAIM_RE. A mutation review found the original
+// single regex caught only that one literal shape — 2 of 10 realistic
+// rewordings, missing both live instances in README.md/SECURITY.md ("sends
+// data only to services you configure or invoke", "the one thing the app
+// sends on its own behalf is…"). Broadened to the shape family below; each
+// pattern is deliberately anchored (a generic-data noun for the "sends…only
+// to…" shape, an "other"/exception-clause requirement for the "no…calls"
+// shape) so a true, narrowly-scoped claim elsewhere on the site — "sends that
+// HTML only to the local app" (Extension.tsx), "no network call is ever
+// made" (one specific write-action) — does not also trip it.
+const EGRESS_PROSE_ROOTS = ['README.md', 'SECURITY.md', 'apps/landing/src'];
+const ABSOLUTE_EGRESS_CLAIM_RES = [
+  // "(the) only network/outbound calls/connections/requests/traffic"
+  /\b(?:the )?only\s+(?:network|outbound)\s+(?:calls?|connections?|requests?|traffic)\b/gi,
+  // "no other network/outbound X" OR "no network/outbound X other than/except/besides"
+  /\bno\s+other\s+(?:network|outbound)\s+(?:calls?|connections?|requests?|traffic)\b|\bno\s+(?:network|outbound)\s+(?:calls?|connections?|requests?|traffic)\b[^.]{0,40}?\b(?:other than|except|besides)\b/gi,
+  // "(the) only {calls|requests} the app makes"
+  /\bonly\s+(?:calls?|requests?)\s+the\s+app\s+makes\b/gi,
+  // "sends … data/information/traffic … only to …"
+  /\bsends?\b[^.]{0,20}?\b(?:data|information|traffic)\b[^.]{0,40}?\bonly\s+to\b/gi,
+  // "the one thing … sends … is" — completeness phrased as a singleton
+  /\bthe\s+one\s+thing\b[^.]{0,60}?\bsends?\b/gi,
+  // "no <noun> leaves your device/machine/computer except/other than/besides"
+  /\bno\s+\w+\s+leaves?\s+your\s+(?:device|machine|computer)\b[^.]{0,40}?\b(?:except|other than|besides)\b/gi,
+];
 
 function checkAbsoluteEgressClaim() {
   for (const root of EGRESS_PROSE_ROOTS) {
@@ -426,15 +483,40 @@ function checkAbsoluteEgressClaim() {
       continue;
     }
     for (const file of files) {
-      for (const [match] of read(file).matchAll(ABSOLUTE_EGRESS_CLAIM_RE)) {
-        fail(
-          'Over-absolute egress claim',
-          file,
-          `contains '${match}' — this sentence shape goes false the moment a new integration ` +
-            `ships (ADR-0005); describe what's disclosed without claiming completeness`
-        );
+      const text = read(file);
+      for (const re of ABSOLUTE_EGRESS_CLAIM_RES) {
+        for (const [match] of text.matchAll(re)) {
+          fail(
+            'Over-absolute egress claim',
+            file,
+            `contains '${match}' — this sentence shape goes false the moment a new integration ` +
+              `ships (ADR-0005); describe what's disclosed without claiming completeness`
+          );
+        }
       }
     }
+  }
+}
+
+// ── Check 9: vendored chart.js hash pin ─────────────────────────────────────
+// chart.min.js is hand-vendored (see its own header comment) rather than
+// CDN-loaded, so nothing but a human re-fetching it ever changes these bytes.
+// Pin the sha256 here so a silent edit/replacement — accidental or not — is
+// caught in CI instead of shipping unnoticed. Bump this hash only alongside a
+// deliberate re-vendor (update the header comment's own verified hash too).
+const CHART_JS_FILE = 'apps/landing/public/benchmarks/chart.min.js';
+const CHART_JS_SHA256 = '9f8701efa23e00ec6779325eb85d77bc101ebf65e37df5faa1966270e7da5c37';
+
+function checkChartJsPin() {
+  if (!existsSync(join(ROOT, CHART_JS_FILE))) return; // covered by SECRET_SCAN_FILES's own moved-source guard
+  const actual = createHash('sha256').update(read(CHART_JS_FILE)).digest('hex');
+  if (actual !== CHART_JS_SHA256) {
+    fail(
+      'Vendored chart.js hash drift',
+      CHART_JS_FILE,
+      `sha256 is ${actual}, expected ${CHART_JS_SHA256} — if this is a deliberate re-vendor, ` +
+        `update CHART_JS_SHA256 (and the file's own header comment) together`
+    );
   }
 }
 
@@ -481,6 +563,7 @@ if (!existsSync(join(ROOT, SCRAPERS_FILE))) {
 checkTelemetryClaim();
 checkEgressDisclosure();
 checkAbsoluteEgressClaim();
+checkChartJsPin();
 
 for (const file of SECRET_SCAN_FILES) {
   if (!existsSync(join(ROOT, file))) {

@@ -21,7 +21,7 @@ Network egress is **permitted** and enumerated by class, each with a gating rule
 1. **AI provider** (user-configured) — required for the core generate/match/answer features; the user chooses the provider and supplies the key.
 2. **Job boards and aggregators** (scraping) — the app's core function; disclosed. Sends only search parameters and fetches public postings.
 3. **Web search** — optional, opt-in, off until the user enables it.
-4. **Updater** (GitHub releases) — an on-launch version check; sends no user data.
+4. **Updater** (GitHub releases) — a version check 10 s after launch, then every 4 h; sends only app version and OS/architecture.
 5. **Location autocomplete** — **offline by default**: a bundled GeoNames index (`apps/desktop/src-tauri/geodata/`, CC BY 4.0) answers virtually every query with no network call at all. Only a query the index cannot match reaches Photon (photon.komoot.io, OpenStreetMap/ODbL) as a fallback; it sends only the location text the user types and returns city/country only. Nominatim was retired here — its usage policy forbids autocomplete.
 6. **Optional enrichment** (e.g. Clearbit logos) — must be **opt-in and default OFF**, CSP-scoped to the minimum hosts, and send no more than a public identifier (a company name). With the setting off, nothing leaves the device.
 7. **Email-confirmation watching** (IMAP to user's own mail host) — opt-in, default OFF; credential user-supplied and OS-keychain-backed; email content never leaves the device. See [ADR 0013](0013-email-confirmation-watching.md).
@@ -58,8 +58,8 @@ No runtime behavior changes: every current call already complies. The fix is to 
   - Class 5 (Location autocomplete): `apps/desktop/src-tauri/src/commands/geocoding.rs` (Photon fallback; bundled index in `apps/desktop/src-tauri/geodata/`, see `apps/desktop/src-tauri/geodata/README.md` for license).
   - Class 6 (Optional enrichment): `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit), `apps/desktop/src-tauri/tauri.conf.json` (CSP enforcement).
   - Class 7 (Email-confirmation watching): `apps/desktop/src-tauri/src/email_watch/` (IMAP).
-  - Class 8 (Crash reporting): Sentry integration in `apps/desktop/src-tauri/src/observability.rs`.
+  - Class 8 (Crash reporting): Sentry integration in `apps/desktop/src-tauri/src/crash_reporting/mod.rs` (DSN and filtering at `:108` and `:239`) and `crash_reporting/transport.rs`, wired via `lib.rs:399` (`crash_reporting::init`) and `lib.rs:487` (`tauri_plugin_sentry::init`).
   - Profile import: `apps/desktop/src-tauri/src/profile_import/github.rs` (GitHub).
 - Opt-in setting: `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (company-logo preference, default OFF).
-- Machine-readable inventory: `apps/desktop/src-tauri/tests/egress.rs` (EGRESS const, 59 rows).
+- Machine-readable inventory: `apps/desktop/src-tauri/tests/egress.rs` (EGRESS const).
 - Audit finding: `p2-contra-cross-001` (AUDIT_REPORT.md §4).
