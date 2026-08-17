@@ -12,7 +12,7 @@ name: 🚀 CI Pipeline
 #   - type-check: TypeScript type checking
 #   - tests: JavaScript and Rust test suites
 #   - build-verification: Production build validation
-#   - quality-checks: Rust fmt, clippy, architecture boundary tests (R1-R8), cargo-deny, cargo-machete
+#   - quality-checks: Rust fmt, clippy, architecture boundary tests (R1-R15), egress inventory, cargo-deny, cargo-machete
 #   - secret-scan: Gitleaks credential detection (PRs only)
 # ──────────────────────────────────────────────────────────────────────
 
@@ -936,7 +936,7 @@ jobs:
           cargo clippy --all-targets --all-features --locked -- -D warnings
           echo "::endgroup::"
 
-      # Architecture boundary enforcement — docs/architecture-rules.md (R1–R8).
+      # Architecture boundary enforcement — docs/architecture-rules.md (R1–R15).
       # Supersedes the previous ad-hoc grep guardrails: the rules now live in a
       # versioned Rust test (tests/architecture.rs) with explicit, dead-entry-guarded
       # allowlists, so drift is blocked and exceptions can't silently rot.
@@ -945,6 +945,18 @@ jobs:
         run: |
           echo "::group::Running architecture boundary tests"
           cargo test --test architecture --locked
+          echo "::endgroup::"
+
+      # Network-egress inventory — docs/architecture-rules.md (EGRESS row),
+      # ADR-0005. A standalone sibling of the architecture test: every
+      # scheme://host literal in src/** (plus the CSP/manifest declaration
+      # files) must be declared in tests/egress.rs's EGRESS const, and every
+      # declared host must still be present in source.
+      - name: 🌐 Egress Inventory Tests
+        working-directory: apps/desktop/src-tauri
+        run: |
+          echo "::group::Running egress inventory tests"
+          cargo test --test egress --locked
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
@@ -978,7 +990,8 @@ jobs:
           echo "|-------|---------|" >> $GITHUB_STEP_SUMMARY
           echo "| Formatting | \`cargo fmt --check\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Lints | \`cargo clippy -D warnings\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Architecture boundaries | \`cargo test --test architecture\` (R1–R8) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Architecture boundaries | \`cargo test --test architecture\` (R1–R15) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Egress inventory | \`cargo test --test egress\` (ADR-0005) |" >> $GITHUB_STEP_SUMMARY
           echo "| Supply chain | \`cargo deny check\` (advisories/licenses/bans/sources) |" >> $GITHUB_STEP_SUMMARY
           echo "| Unused deps | \`cargo machete\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
