@@ -110,7 +110,8 @@ _Avoid_: conflating with market/locale; assuming it matches the company's locati
 An etiquette + page-size identifier (`us`, `de`, `intl`) resolved from the job's country by the scraper.
 Governs letter conventions (salutation, sign-off, date format), résumé section order and paper size for
 export. **Not a language** — a German job ad targeting English still follows `de` market conventions if
-the company is in Germany. Contracts: `Pipeline::market`, `export::commands::market_of_job`, `locale/`.
+the company is in Germany. Contracts: `QualityInput::market`, `crate::locale::{letter,resume}`, and
+`resolveMarket` on the renderer side.
 _Avoid_: using it as a language tag; conflating with UI/i18n language
 
 **Locale**:
