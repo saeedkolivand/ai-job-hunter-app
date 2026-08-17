@@ -63,8 +63,8 @@ use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{projects, QualityCtx, RunDeadline};
 use crate::pipeline::{Completer, Stage};
 use crate::validate::content::{
-    ContentIssue, ContentReport, CONSISTENCY_SKILL_NOT_DEMONSTRATED, DUPLICATE_BULLET,
-    FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
+    ContentIssue, ContentReport, CONSISTENCY_SKILL_NOT_DEMONSTRATED, CONTENT_LANGUAGE_MISMATCH,
+    DUPLICATE_BULLET, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
 };
 use crate::validate::Severity;
 
@@ -125,10 +125,23 @@ pub(super) fn issue_line(issue: &ContentIssue) -> String {
 /// commonest Critical unrepairable, which is the silent version of a repair
 /// loop that does nothing.
 ///
-/// A Critical that resolves to neither (a document-wide language mismatch, a
-/// finding in the leading band) is deliberately excluded: there is no section to
+/// A Critical that resolves to neither a label nor a containing section (a
+/// finding in the leading band) is excluded: there is no section to
 /// regenerate, and re-running one at random would not fix it. Those survive to
 /// the terminal review.
+///
+/// **The document-wide `content.language_mismatch` Critical (`section: None`)
+/// is excluded EXPLICITLY, before either lookup runs, not left to fall through
+/// them.** Its evidence used to be the bare target-language code (`"de"`,
+/// `"en"`), and [`sections::containing`]'s substring search matches those two
+/// letters inside ordinary words (*der*, *Kunden*, *engineer*, *management*) —
+/// so the fallback alone would route a whole-document translation failure to
+/// whatever section happened to contain them, and `repair` would spend up to
+/// `max_repair_attempts` provider calls regenerating that section against
+/// "offending text: de", which can never clear a document-wide Critical. The
+/// draft-stage retry (`Draft::run`) is this Critical's actual remedy; a
+/// per-section language Critical still carries a `section` label and still
+/// routes through [`sections::key_for_label`] as normal.
 ///
 /// **The ORDER is the reason this returns a `Vec` rather than the `BTreeMap` it
 /// builds.** A round can only afford [`MAX_SECTIONS_PER_ROUND`] sections, and a
@@ -149,6 +162,12 @@ pub(crate) fn criticals_by_section(
         .iter()
         .filter(|issue| issue.severity == Severity::Critical)
     {
+        // See the doc above: a document-wide language Critical has no section
+        // to regenerate, and must not be let fall through to the
+        // `sections::containing` substring fallback below.
+        if issue.code == CONTENT_LANGUAGE_MISMATCH && issue.section.is_none() {
+            continue;
+        }
         let key = sections::key_for_label(issue.section.as_deref()).or_else(|| {
             let span = issue.evidence.as_deref()?;
             sections::containing(&split, &lines, span)

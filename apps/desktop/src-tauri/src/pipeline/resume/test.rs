@@ -39,7 +39,8 @@ use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::cache::KvCache;
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
-    CONSISTENCY_SKILL_NOT_DEMONSTRATED, DUPLICATE_BULLET, VOICE_AI_TELL_LEXICAL,
+    CONSISTENCY_SKILL_NOT_DEMONSTRATED, CONTENT_LANGUAGE_MISMATCH, DUPLICATE_BULLET,
+    VOICE_AI_TELL_LEXICAL,
 };
 use crate::validate::Severity;
 
@@ -2372,6 +2373,83 @@ fn repair_groups_only_criticals_and_only_ones_it_can_regenerate() {
     assert!(
         criticals_by_section(source, &warning_only).is_empty(),
         "warnings must not schedule a repair round"
+    );
+}
+
+/// A document-wide `content.language_mismatch` Critical (`section: None`) must
+/// never schedule a repair round. Its evidence used to be the bare
+/// target-language code (`d32f755c` now sets it to `None` as belt), but this
+/// test constructs the issue with `evidence: Some("de")` ANYWAY — proving the
+/// ROUTING rule, not the emission accident, so a later change that restores
+/// evidence on this Critical cannot silently re-open the mis-route.
+///
+/// The fixture's own summary line contains the word "developer" — a plain
+/// substring match on "de" — so this also pins that the routing skip fires
+/// BEFORE `sections::containing`'s substring fallback ever gets a chance to
+/// (mis-)match it.
+///
+/// Mutation check: remove the `CONTENT_LANGUAGE_MISMATCH` arm in
+/// `criticals_by_section` — RAN, went red (the Critical routed to `summary`
+/// via the substring fallback), reverted.
+#[test]
+fn a_document_wide_language_critical_routes_to_no_section() {
+    let document = "PROFESSIONAL SUMMARY\nA senior developer leading platform teams.\n\n\
+                     WORK EXPERIENCE\n\nAcme Corp | Staff Engineer | 2021 - Present\n\
+                     - Built the ledger service\n";
+    assert!(
+        document.contains("de"),
+        "fixture premise: the document must contain the substring the old routing bug matched on"
+    );
+
+    let report = ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: Severity::Critical,
+            code: CONTENT_LANGUAGE_MISMATCH,
+            section: None,
+            message: "the document is not in the requested language".to_string(),
+            evidence: Some("de".to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    };
+
+    assert!(
+        criticals_by_section(document, &report).is_empty(),
+        "a document-wide language Critical must not schedule any section for repair"
+    );
+}
+
+/// Sibling of the test above: a PER-SECTION `content.language_mismatch`
+/// Critical (it carries a `section` label) must still route normally — the
+/// fix must not be over-broad and swallow every language finding.
+///
+/// Mutation check: make the skip in `criticals_by_section` unconditional on
+/// the code alone (drop the `issue.section.is_none()` half) — RAN, went red
+/// (this Critical stopped scheduling `summary`), reverted.
+#[test]
+fn a_per_section_language_critical_still_routes() {
+    let document = "PROFESSIONAL SUMMARY\nA senior developer leading platform teams.\n\n\
+                     WORK EXPERIENCE\n\nAcme Corp | Staff Engineer | 2021 - Present\n\
+                     - Built the ledger service\n";
+    let report = ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: Severity::Critical,
+            code: CONTENT_LANGUAGE_MISMATCH,
+            section: Some("PROFESSIONAL SUMMARY".to_string()),
+            message: "this section drifted into a different language".to_string(),
+            evidence: Some("developer".to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    };
+
+    let grouped = criticals_by_section(document, &report);
+    assert!(
+        grouped
+            .iter()
+            .any(|(key, _)| *key == SectionKey::Summary.to_wire()),
+        "a per-section language Critical must still schedule its section for repair; got {:?}",
+        grouped.iter().map(|(key, _)| key).collect::<Vec<_>>()
     );
 }
 
