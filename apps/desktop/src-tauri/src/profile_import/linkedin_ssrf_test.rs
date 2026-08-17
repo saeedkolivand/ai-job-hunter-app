@@ -5,7 +5,7 @@
 //! Why the split: `fetch_page` calls `has_linkedin_session()` before the
 //! guarded request, which resolves `platform::config::data_dir()` and reads
 //! a real cookie file from disk (diagnostic only — the result never affects
-//! the outcome, but the read itself touches host state unless `AJH_DATA_DIR`
+//! the outcome, but the read itself touches host state unless the data dir
 //! is pointed at a scratch directory for the test's duration). R4
 //! (`tests/architecture.rs::r4_env_access_only_in_platform`) bans that env
 //! var's literal name from any non-`platform/**` source that ISN'T itself a
@@ -32,24 +32,16 @@ use super::*;
 #[tokio::test]
 #[serial_test::serial]
 async fn fetch_page_never_dials_the_loopback_literal_it_rejects() {
-    // Scope AJH_DATA_DIR to an empty temp dir so has_linkedin_session()'s
-    // real-disk read never touches the developer's or CI runner's actual
-    // data dir. `#[serial]` is this crate's established idiom for an
-    // env-mutating test (see platform/chrome/test.rs,
-    // email_watch_scheduler.rs): it prevents racing any OTHER
-    // `#[serial]`-tagged mutator of the same var. It does NOT fully protect
-    // against platform/config.rs's own `data_dir_honors_env_then_falls_back`,
-    // which mutates this same var without `#[serial]` (a pre-existing gap in
-    // that file, outside this file's scope) — harmless here regardless,
-    // since `load_cookies` never panics on a bad/foreign path and this test's
-    // assertions never depend on `has_linkedin_session`'s return value.
+    // Scope the data dir to an empty temp dir so has_linkedin_session()'s
+    // real-disk read never touches the developer's or CI runner's actual data
+    // dir. The guard lives in platform/config.rs because that module is the
+    // sole owner of that env var — this file never names it, which
+    // is what R4 is actually asking for. It restores on drop, so a panicking
+    // assertion below cannot leak the override into the next test.
+    // `#[serial]` is still required: the variable is process-global and the
+    // resolver's own test mutates it directly.
     let tmp = tempfile::TempDir::new().expect("create temp data dir");
-    let previous = std::env::var_os("AJH_DATA_DIR");
-    // SAFETY: test-only; #[serial]-scoped; restored below before any
-    // assertion can early-return past it.
-    unsafe {
-        std::env::set_var("AJH_DATA_DIR", tmp.path());
-    }
+    let _data_dir = crate::platform::config::DataDirGuard::set(tmp.path());
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
     listener
@@ -58,14 +50,6 @@ async fn fetch_page_never_dials_the_loopback_literal_it_rejects() {
     let port = listener.local_addr().unwrap().port();
 
     let result = fetch_page(&format!("http://127.0.0.1:{port}/in/x")).await;
-
-    // SAFETY: test-only; restores the pre-test value.
-    unsafe {
-        match &previous {
-            Some(v) => std::env::set_var("AJH_DATA_DIR", v),
-            None => std::env::remove_var("AJH_DATA_DIR"),
-        }
-    }
 
     let err = result.unwrap_err();
     assert!(matches!(err, AppError::Network(_)), "got {err:?}");
