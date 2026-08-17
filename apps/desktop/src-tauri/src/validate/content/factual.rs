@@ -1190,8 +1190,19 @@ fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
             ));
         }
     }
+    // `generated_urls` is the UNION of every generated Projects section
+    // (`Analysis::generated_sections_of_kind`'s doc) — the same invented URL
+    // can appear in two of them (a duplicate the model produced, or one
+    // already present in an imported résumé), and without a seen-set each
+    // occurrence pushed its own identical Critical. Deduped on the SAME
+    // `canonical_link` key the comparison itself uses, so two spellings of one
+    // invented resource still collapse to one finding — `HashSet::insert`
+    // returning `false` on the second occurrence is exactly "already
+    // reported".
+    let mut reported_invented: HashSet<String> = HashSet::new();
     for url in &generated_urls {
-        if !source_keys.contains(&canonical_link(url)) {
+        let key = canonical_link(url);
+        if !source_keys.contains(&key) && reported_invented.insert(key) {
             issues.push(issue(
                 FACTUAL_ALTERED_PROJECT_LINK,
                 Some("Projects"),

@@ -868,6 +868,22 @@ describe('useTailorPipeline — targetLanguage prefers the previous generation o
     );
   });
 
+  // `a || b` picks the first NON-EMPTY and validates only that, so an invalid
+  // but present resumeLanguage used to short-circuit a perfectly valid
+  // jobAdLanguage and send us to detection instead.
+  it('falls through an invalid resumeLanguage to a valid jobAdLanguage', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const generation = {
+      id: 'gen-invalid',
+      resumeLanguage: 'not-a-language',
+      jobAdLanguage: 'de',
+      coverLetterText: '',
+    } as AiGenerationRecord;
+
+    const { result } = render({ jobDesc: '', latestGeneration: generation });
+    expect(result.current.meta?.targetLanguage).toBe('de');
+  });
+
   // The middle rung of the fallback chain, previously untested.
   it('falls back to jobAdLanguage when resumeLanguage is empty', async () => {
     sessionBus.detail = detail({ resumeText: 'RESUME' });

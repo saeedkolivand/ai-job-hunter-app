@@ -1364,7 +1364,7 @@ fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
             if languages_align(&body, &ctx.lang) {
                 return None;
             }
-            Some(issue(
+            let mut found = issue(
                 CONTENT_LANGUAGE_MISMATCH,
                 Some(heading),
                 format!(
@@ -1374,7 +1374,12 @@ fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
                     ctx.lang
                 ),
                 Some(ctx.lang.clone()),
-            ))
+            );
+            // `Other` (Volunteer/Awards/…) has no `SectionKey` — downgraded so it surfaces, not blocks.
+            if section.kind == SectionKind::Other {
+                found.severity = Severity::Warning;
+            }
+            Some(found)
         })
         .collect()
 }

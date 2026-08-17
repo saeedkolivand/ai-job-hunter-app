@@ -265,10 +265,16 @@ export function useTailorPipeline({
     // permanently dark for that document — and `toLocaleDateString('German')`
     // silently formats the letter date in English rather than throwing.
     // `toLanguageCode` exists for exactly this NAME<->CODE gap.
-    const persisted = toLanguageCode(
-      latestGeneration?.resumeLanguage || latestGeneration?.jobAdLanguage || ''
-    );
-    if (/^[a-z]{2}$/.test(persisted)) return persisted;
+    // Each field is normalized and validated INDEPENDENTLY, then the first
+    // valid one wins. `a || b` picks the first non-EMPTY and validates only
+    // that, so a legacy-invalid `resumeLanguage` would short-circuit the
+    // fallback and send us to detection while a perfectly good `jobAdLanguage`
+    // sat unread — the same "a present value is not a usable one" mistake this
+    // whole memo exists to fix, one rung down.
+    const persisted = [latestGeneration?.resumeLanguage, latestGeneration?.jobAdLanguage]
+      .map((value) => toLanguageCode(value ?? ''))
+      .find((code) => /^[a-z]{2}$/.test(code));
+    if (persisted) return persisted;
     const detected = detectLanguage(jobDesc);
     return detected === 'unknown' ? 'en' : detected;
   }, [jobDesc, latestGeneration?.resumeLanguage, latestGeneration?.jobAdLanguage]);

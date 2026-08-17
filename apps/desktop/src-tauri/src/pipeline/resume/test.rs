@@ -16,6 +16,7 @@ use super::prompts::{
     company_roster_block, draft_system, draft_user, humanize_system, humanize_user, letter_system,
     letter_user, match_evidence_system, match_evidence_user, repair_system, repair_user,
     strategy_system, strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP,
+    SIBLING_CONTEXT_CAP,
 };
 use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
@@ -917,6 +918,36 @@ fn a_reply_naming_certifications_and_awards_is_rejected_as_more_than_one_section
     );
 }
 
+/// **PR #1003 finding 2 (MAJOR).** A user-authored Markdown ATX heading
+/// (`## Leadership`) is a THIRD real-but-unrecognised heading shape,
+/// independent of the other two `real_section_count` already covers
+/// (ALL-CAPS company names, `is_known_section_name`'s list): `parse_line`
+/// promotes an ATX heading to `LineKind::SectionHeader` regardless of whether
+/// its NAME matches `classify_section` or `SECTION_NAMES` — that is the whole
+/// point of the syntax. Before this fix, neither test recognised
+/// "Leadership"/"Speaking Engagements", so `real_section_count` read 1
+/// (SUMMARY only) and a three-section ATX reply passed the gate.
+///
+/// Mutation check: drop the `strip_atx_heading(&line.raw).is_some()` arm from
+/// `real_section_count`'s filter and this goes red.
+#[test]
+fn a_reply_naming_custom_atx_headings_is_rejected_as_more_than_one_section() {
+    let reply = "SUMMARY\n\n\
+        Backend engineer with eight years on payment and container platforms.\n\n\
+        ## Leadership\n\n\
+        Mentored four engineers through their first on-call rotation.\n\n\
+        ## Speaking Engagements\n\n\
+        Spoke at two regional backend meetups about payment reliability.";
+    assert!(
+        !sections::is_usable_replacement(reply),
+        "\"## Leadership\" and \"## Speaking Engagements\" are both real \
+         headings neither `classify_section` nor `is_known_section_name` \
+         recognises — `real_section_count` must still count them through the \
+         ATX marker itself, or this three-section reply reads as one and gets \
+         spliced whole into the Summary range; got {reply:?}"
+    );
+}
+
 /// **BUG-A's shape gap, `repair`'s own copy.** The repair prompt wraps the
 /// section it hands the model as `<resume_section>…</resume_section>` and
 /// asks for "the replacement section" back — a model that echoes the wrapper
@@ -1006,6 +1037,41 @@ fn context_anchor_is_empty_when_no_sibling_survives_the_exclusion() {
     assert_eq!(
         sections::context_anchor(&split, &lines, SectionKind::Summary),
         ""
+    );
+}
+
+/// **PR #1003 finding 4 (MINOR).** `summary.text(lines)` used to be pushed
+/// into the anchor with no bound of its own — the only bound was
+/// `SIBLING_CONTEXT_CAP`, applied later by `fenced()` in `repair_user`, which
+/// truncates SILENTLY. A pathological (or merely very long) Summary section
+/// was therefore built here in full, and a Summary at or past the cap on its
+/// own would crowd the Experience bullet pushed after it out of the fenced
+/// block entirely — the LATER cap has no way to know a bullet was even meant
+/// to survive alongside it.
+///
+/// Mutation check: drop the `.take(SIBLING_CONTEXT_CAP)` from
+/// `context_anchor`'s Summary arm and this goes red — the anchor's Summary
+/// half grows past the cap and the Experience bullet is crowded out.
+#[test]
+fn context_anchor_caps_a_pathological_summary_so_the_sibling_bullet_survives() {
+    let huge_summary = "x ".repeat(SIBLING_CONTEXT_CAP); // far past the cap on its own
+    let text = format!(
+        "PROFESSIONAL SUMMARY\n{huge_summary}\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n"
+    );
+    let split = sections::split(&text);
+    let lines: Vec<&str> = text.lines().collect();
+    let anchor = sections::context_anchor(&split, &lines, SectionKind::Skills);
+    assert!(
+        anchor.chars().count() <= SIBLING_CONTEXT_CAP + 200,
+        "the Summary half must be bounded at the layer that BUILDS the \
+         anchor, not just at the later fence layer that truncates silently; \
+         anchor was {} chars",
+        anchor.chars().count()
+    );
+    assert!(
+        anchor.contains("Built the ledger service"),
+        "a capped Summary must leave room for the Experience bullet rather \
+         than crowding it out of the anchor entirely; got {anchor:?}"
     );
 }
 
@@ -1566,11 +1632,11 @@ fn the_draft_prompt_fixes_the_skills_section_shape() {
         );
         assert!(
             prompt.contains("never one bullet per skill"),
-            "{lang}/{market}: the prohibition must be explicit — a described shape              alone was read as a manifest once already on this branch"
+            "{lang}/{market}: the prohibition must be explicit — a described shape alone was read as a manifest once already on this branch"
         );
         assert!(
             prompt.contains("Languages: Rust, Go, TypeScript"),
-            "{lang}/{market}: the worked example must survive, or the instruction              is abstract enough for a small model to ignore"
+            "{lang}/{market}: the worked example must survive, or the instruction is abstract enough for a small model to ignore"
         );
     }
 }
@@ -3202,6 +3268,26 @@ async fn a_whole_document_reply_is_rejected_rather_than_doubling_every_section()
             // section it was asked for — the exact over-eager reply the
             // audit measured.
             let replacement = document.clone();
+            // Finding 5, PR #1003 — premise: `sections::accepts` runs BOTH
+            // `is_usable_replacement` (the heading-count check this test
+            // exists to exercise) AND `matches_requested_kind` (an identity
+            // check). If the whole-document reply's own first heading did NOT
+            // match the section under repair, `matches_requested_kind` alone
+            // would reject it — and the mutation check above (drop
+            // `real_section_count`'s `<= 1` term) would then NOT flip this
+            // test red, because the identity mismatch would still reject it
+            // on its own. `document.clone()`'s first heading is always
+            // REPAIR_DRAFT's first section ("PROFESSIONAL SUMMARY"), so this
+            // only holds when the section under repair IS that same kind;
+            // pinned here rather than left implicit.
+            assert!(
+                sections::matches_requested_kind(&replacement, section.kind),
+                "premise: the whole-document reply's own first heading must \
+                 match the section kind under repair ({:?}), or this test is \
+                 exercising `matches_requested_kind` instead of the heading- \
+                 count check it exists to prove",
+                section.kind
+            );
             let outcome = if sections::accepts(&replacement, section.kind) {
                 super::stages::SectionOutcome::Replaced(sections::splice(
                     &document,

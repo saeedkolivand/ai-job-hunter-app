@@ -11,9 +11,10 @@
 //! "section-scoped" fix must not do.
 
 use crate::documents::evidence::{classify_section, SectionKind};
-use crate::export::parser::{is_known_section_name, parse_resume};
+use crate::export::parser::{is_known_section_name, parse_resume, strip_atx_heading};
 use crate::export::types::{LineKind, ParsedDocument};
 
+use crate::pipeline::resume::prompts::SIBLING_CONTEXT_CAP;
 use crate::pipeline::resume::types::SectionKey;
 
 /// One section of a generated document, as a line range over the source text.
@@ -237,13 +238,27 @@ pub fn is_usable_replacement(replacement: &str) -> bool {
 /// Certifications/Awards sections duplicated below. [`is_known_section_name`]
 /// closes that gap without forking `SECTION_NAMES`: a company name like
 /// "ACME PAYMENTS GMBH" matches neither test and is correctly not counted.
+///
+/// A THIRD real-but-unrecognised shape needs its own test: a user-authored
+/// Markdown ATX heading (`## Leadership`). `parse_line` promotes one to
+/// `LineKind::SectionHeader` unconditionally — independent of whether its
+/// NAME matches `classify_section` or `SECTION_NAMES` (that is the whole
+/// point of ATX syntax; see [`strip_atx_heading`]'s own doc) — so a custom
+/// heading outside BOTH lists was silently uncounted, and a multi-section
+/// reply using ATX syntax passed this gate and got spliced in whole.
+/// [`strip_atx_heading`] asks `line.raw` the SAME shape question `parse_line`
+/// already answered, rather than re-deriving it: any `SectionHeader` line
+/// whose `raw` opens with an ATX marker can only have been promoted by that
+/// branch, since it runs first and returns immediately when it matches.
 fn real_section_count(parsed: &ParsedDocument) -> usize {
     parsed
         .lines
         .iter()
         .filter(|line| matches!(line.kind, LineKind::SectionHeader))
         .filter(|line| {
-            classify_section(&line.text) != SectionKind::Other || is_known_section_name(&line.text)
+            classify_section(&line.text) != SectionKind::Other
+                || is_known_section_name(&line.text)
+                || strip_atx_heading(&line.raw).is_some()
         })
         .count()
 }
@@ -306,11 +321,26 @@ pub fn accepts(replacement: &str, expected: SectionKind) -> bool {
 /// compare against, so the caller sends no block at all rather than a
 /// misleading partial one (see `prompts::repair_system`'s own `has_context`
 /// gate).
+///
+/// **The Summary half is capped HERE, at [`SIBLING_CONTEXT_CAP`], not only at
+/// [`prompts::repair_user`](crate::pipeline::resume::prompts::repair_user)'s
+/// `fenced()` call.** That later cap is the ENFORCED bound end-to-end (it also
+/// covers whatever this function's own bullet half adds), but it is silent —
+/// `prompt_fence::fenced` truncates with no marker — and it runs after this
+/// whole anchor is already built. A pathological (or merely long,
+/// multi-paragraph) Summary section used to be built here in full first, only
+/// to be cut later; worse, a Summary at or past the cap on its own would crowd
+/// the Experience bullet pushed after it out of the fenced block entirely.
+/// Bounding the Summary at the layer that BUILDS it keeps the anchor's own
+/// cost bounded (this fans out up to 8× per run, see above) and guarantees
+/// room survives for the bullet — the same constant as the later fence, not a
+/// second number to drift out of sync with it.
 pub fn context_anchor(sections: &[RawSection], lines: &[&str], skip: SectionKind) -> String {
     let mut parts: Vec<String> = Vec::new();
     if skip != SectionKind::Summary {
         if let Some(summary) = sections.iter().find(|s| s.kind == SectionKind::Summary) {
-            parts.push(summary.text(lines));
+            let text = summary.text(lines);
+            parts.push(text.chars().take(SIBLING_CONTEXT_CAP).collect());
         }
     }
     if skip != SectionKind::Experience {

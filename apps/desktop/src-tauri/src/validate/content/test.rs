@@ -397,6 +397,46 @@ fn an_invented_link_in_a_second_projects_section_still_fires() {
     assert!(hits.iter().all(|i| i.severity == Severity::Critical));
 }
 
+/// **PR #1003 finding 3 (MAJOR).** `generated_urls` unions every generated
+/// Projects section's links (the test above proves that union is needed) —
+/// but the invention loop pushed one issue per OCCURRENCE, unlike the rest of
+/// this function, which already keys everything else off the canonical link.
+/// The SAME invented URL appearing in two generated Projects sections (a
+/// duplicate the model produced, or one already present in an imported
+/// résumé) used to read as two identical Criticals for one fabrication.
+///
+/// Mutation check: drop the `reported_invented.insert(key)` half of the
+/// invention loop's condition and this goes red — two identical Criticals for
+/// `weekend-tracker`.
+#[test]
+fn the_same_invented_link_in_two_generated_projects_sections_reports_once() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                  Rust · SQLite\n";
+    // The genuine link survives unaltered in the first section; the SAME
+    // invented link appears once in EACH of the two generated sections.
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                     Rust · SQLite\n\n\
+                     **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                     Swift · CoreData\n\n\
+                     SIDE PROJECTS\n\n\
+                     **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                     Swift · CoreData\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_ALTERED_PROJECT_LINK);
+    assert_eq!(
+        hits.len(),
+        1,
+        "the same invented link in two generated Projects sections must \
+         report once, not once per occurrence; got {hits:#?}"
+    );
+    assert_eq!(
+        hits[0].evidence.as_deref(),
+        Some("https://github.com/janedoe/weekend-tracker")
+    );
+}
+
 /// **Confirmation-review finding 3, test C.** `project_link_issues` used to
 /// widen its GENERATED side to every Projects section (the test above) but
 /// left the SOURCE side reading only the first — so a source résumé with
@@ -670,6 +710,84 @@ AWS Certified Solutions Architect - Professional (2022)
     let with_certs = format!("{EN_CLEAN}{certs}");
     let report = en_resume(&with_certs, &en_requirements());
     silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// **PR #1003 finding 1 (CRITICAL).** A Volunteer heading is real —
+/// `export::parser`'s `SECTION_NAMES` promotes it to a `SectionHeader` line —
+/// but `classify_section`'s six variants have no arm for it, so it lands in
+/// `SectionKind::Other` exactly like Certifications/Awards do. Unlike those,
+/// `pipeline::resume::stages::sections::key_of` maps `SectionKind::Other` to
+/// no `SectionKey`, so `criticals_by_section` cannot route a Critical
+/// labelled here to anything `repair` can regenerate — and the run's own
+/// regenerate button has no section to target either. A Critical would park
+/// the run at `needsReview` behind a finding nothing can ever clear, so this
+/// must fire as a Warning, not a Critical.
+///
+/// Mutation check: drop the `section.kind == SectionKind::Other` guard from
+/// `section_language_issues` (i.e. always leave the table's declared
+/// Critical) and this goes red — the hit reads Critical.
+#[test]
+fn a_drifted_volunteer_section_warns_rather_than_blocks() {
+    let volunteer = "\n\nVOLUNTEER\n\n\
+        Ho aiutato una piccola organizzazione no profit locale a digitalizzare i \
+        propri archivi cartacei, costruendo uno strumento di catalogazione che i \
+        volontari potessero usare senza alcuna formazione tecnica.\n";
+    let generated = format!("{EN_CLEAN}{volunteer}");
+    assert!(
+        !is_language_mismatch(&generated, "en"),
+        "premise: the document-level majority vote must NOT fire — one drifted \
+         Volunteer section inside an otherwise-English résumé is exactly the \
+         case the section-level pass exists to catch"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].section.as_deref(), Some("VOLUNTEER"));
+    assert_eq!(
+        hits[0].severity,
+        Severity::Warning,
+        "a Volunteer heading has no SectionKey to repair — a Critical here \
+         would be unclearable; got {hits:#?}"
+    );
+    assert!(
+        report.ok,
+        "a Warning alone must not block the report; got ok={}",
+        report.ok
+    );
+}
+
+/// **PR #1003 finding 1 (CRITICAL), Awards variant.** Same unroutable-section
+/// shape as the Volunteer test above, proven on a second heading
+/// `SECTION_NAMES` knows and `classify_section` does not, so the fix is
+/// proven on more than the one heading that happened to motivate it.
+///
+/// Mutation check: same as the Volunteer test above.
+#[test]
+fn a_drifted_awards_section_warns_rather_than_blocks() {
+    let awards = "\n\nAWARDS\n\n\
+        Ho ricevuto il premio Employee of the Year per aver guidato la migrazione \
+        della piattaforma di pagamenti verso la nuova architettura a container, \
+        riducendo i tempi di inattività del servizio durante il cambio.\n";
+    let generated = format!("{EN_CLEAN}{awards}");
+    assert!(
+        !is_language_mismatch(&generated, "en"),
+        "premise: the document-level majority vote must NOT fire — one drifted \
+         Awards section inside an otherwise-English résumé is exactly the case \
+         the section-level pass exists to catch"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].section.as_deref(), Some("AWARDS"));
+    assert_eq!(
+        hits[0].severity,
+        Severity::Warning,
+        "an Awards heading has no SectionKey to repair — a Critical here would \
+         be unclearable; got {hits:#?}"
+    );
+    assert!(
+        report.ok,
+        "a Warning alone must not block the report; got ok={}",
+        report.ok
+    );
 }
 
 /// The two DEGRADED project tiers are legal — the source simply had less data.
