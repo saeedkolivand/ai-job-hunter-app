@@ -10,7 +10,7 @@ import type * as GenerateModule from '@/lib/generate';
 import { exportDOCX, exportPDF } from '@/lib/generate';
 import { keys } from '@/services/query-client';
 
-import { useTailorPipeline } from './useTailorPipeline';
+import { resolveTargetLanguage, useTailorPipeline } from './useTailorPipeline';
 
 // Echoes the key verbatim, EXCEPT: a key outside these two small "known"
 // sets (mirroring the real `pipeline.stage.*`/`pipeline.state.*` catalog)
@@ -814,17 +814,88 @@ describe('useTailorPipeline — meta is seeded from the aggregate, not fabricate
   });
 });
 
-// The bug: Regenerate re-derived `targetLanguage` from `jobDesc` on every
-// render via `detectLanguage`, which returns 'unknown' (collapsed here to
-// 'en') for text under 20 chars — discarding whatever language the PREVIOUS
-// generation actually used the moment `jobDesc` is empty/short, even though
-// `latestGeneration.resumeLanguage`/`jobAdLanguage` already hold the answer.
-describe('useTailorPipeline — targetLanguage prefers the previous generation over re-detecting', () => {
-  it("resolves targetLanguage from the previous generation's resumeLanguage even when jobDesc is empty (the failing regenerate condition)", async () => {
+// `resolveTargetLanguage` — the pure precedence chain `useTailorPipeline`'s
+// `targetLanguage` memo wraps. Tested directly (no hook, no session mock) per
+// the plan's "extract into a pure exported helper" note; the hook-level
+// tests below cover the WIRING (the memo's output actually reaching
+// `session.start`/`meta`), not the precedence logic itself.
+describe('resolveTargetLanguage — precedence chain (Defect A/B fix)', () => {
+  const GERMAN_JOB_AD =
+    'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+
+  it('prefers the persisted targetLanguage — the field the staged pipeline actually writes — over everything else', () => {
+    const generation = { targetLanguage: 'de', jobAdLanguage: 'en' } as AiGenerationRecord;
+    expect(resolveTargetLanguage(generation, '')).toEqual({ language: 'de', confident: true });
+  });
+
+  // The English-lock regression test (Defect B): a résumé written in English
+  // must NEVER pin the target the moment the pipeline hasn't confidently
+  // written one yet — only the job ad's own language may. Mutation: read
+  // `latestGeneration.resumeLanguage` back into the chain (tier 1 or 2) →
+  // this goes red (`'en'` instead of `'de'`).
+  it('ignores the source résumé language entirely, even when present on the record', () => {
+    const generation = {
+      resumeLanguage: 'English',
+      targetLanguage: '',
+      jobAdLanguage: '',
+    } as AiGenerationRecord;
+    expect(resolveTargetLanguage(generation, GERMAN_JOB_AD)).toEqual({
+      language: 'de',
+      confident: true,
+    });
+  });
+
+  // The SAME persisted field carries two shapes: `extractMetadata` (the
+  // AIGeneratePage flow) writes a display NAME like "German", every other
+  // writer an ISO code, and `save_application` merges both into one record.
+  // Preferring "German" verbatim is WORSE than the bug this chain fixes —
+  // Rust truncates it to "ge", which matches no language arm, so the
+  // language checks go dark for that document.
+  it('normalizes a persisted language NAME to its ISO code before preferring it', () => {
+    const generation = { targetLanguage: 'German', jobAdLanguage: '' } as AiGenerationRecord;
+    expect(resolveTargetLanguage(generation, '')).toEqual({ language: 'de', confident: true });
+  });
+
+  // Each tier is validated INDEPENDENTLY: an invalid-but-present targetLanguage
+  // must not short-circuit a perfectly good jobAdLanguage one rung down.
+  it('falls through an invalid targetLanguage to a valid jobAdLanguage', () => {
+    const generation = {
+      targetLanguage: 'not-a-language',
+      jobAdLanguage: 'de',
+    } as AiGenerationRecord;
+    expect(resolveTargetLanguage(generation, '')).toEqual({ language: 'de', confident: true });
+  });
+
+  it('falls back to jobAdLanguage when targetLanguage is empty', () => {
+    const generation = { targetLanguage: '', jobAdLanguage: 'de' } as AiGenerationRecord;
+    expect(resolveTargetLanguage(generation, '')).toEqual({ language: 'de', confident: true });
+  });
+
+  it('detects the language from the job ad when there is no previous generation (first run)', () => {
+    expect(resolveTargetLanguage(undefined, GERMAN_JOB_AD)).toEqual({
+      language: 'de',
+      confident: true,
+    });
+  });
+
+  // The negative case the owner explicitly asked to be pinned: when nothing
+  // is confident, the chain still returns a usable code (generation must
+  // proceed) — but flags it `confident: false` so the caller keeps it off
+  // the wire. Mutation: return `confident: true` unconditionally → red.
+  it('marks the last-resort English fallback as NOT confident, unlike a real detection', () => {
+    expect(resolveTargetLanguage(undefined, '')).toEqual({ language: 'en', confident: false });
+  });
+});
+
+describe('useTailorPipeline — targetLanguage precedence is wired end to end', () => {
+  const GERMAN_JOB_AD =
+    'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+
+  it('resolves targetLanguage from the previous generation even when jobDesc is empty (the failing regenerate condition)', async () => {
     sessionBus.detail = detail({ resumeText: 'RESUME' });
     const generation = {
       id: 'gen-1',
-      resumeLanguage: 'de',
+      targetLanguage: 'de',
       jobAdLanguage: 'en',
       coverLetterText: '',
     } as AiGenerationRecord;
@@ -841,66 +912,7 @@ describe('useTailorPipeline — targetLanguage prefers the previous generation o
     );
   });
 
-  // The SAME persisted field carries two shapes: `extractMetadata` (the
-  // AIGeneratePage flow) writes a display NAME like "German", every other
-  // writer an ISO code, and `save_application` merges both into one record.
-  // Preferring "German" verbatim is WORSE than the bug this memo fixes —
-  // Rust truncates it to "ge", which matches no language arm, so the language
-  // checks go dark for that document.
-  it('normalizes a persisted language NAME to its ISO code before preferring it', async () => {
-    sessionBus.detail = detail({ resumeText: 'RESUME' });
-    const generation = {
-      id: 'gen-name',
-      resumeLanguage: 'German',
-      jobAdLanguage: '',
-      coverLetterText: '',
-    } as AiGenerationRecord;
-
-    const { result } = render({ jobDesc: '', latestGeneration: generation });
-
-    expect(result.current.meta?.targetLanguage).toBe('de');
-
-    await act(async () => {
-      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
-    });
-    expect(sessionBus.start).toHaveBeenCalledWith(
-      expect.objectContaining({ targetLanguage: 'de' })
-    );
-  });
-
-  // `a || b` picks the first NON-EMPTY and validates only that, so an invalid
-  // but present resumeLanguage used to short-circuit a perfectly valid
-  // jobAdLanguage and send us to detection instead.
-  it('falls through an invalid resumeLanguage to a valid jobAdLanguage', async () => {
-    sessionBus.detail = detail({ resumeText: 'RESUME' });
-    const generation = {
-      id: 'gen-invalid',
-      resumeLanguage: 'not-a-language',
-      jobAdLanguage: 'de',
-      coverLetterText: '',
-    } as AiGenerationRecord;
-
-    const { result } = render({ jobDesc: '', latestGeneration: generation });
-    expect(result.current.meta?.targetLanguage).toBe('de');
-  });
-
-  // The middle rung of the fallback chain, previously untested.
-  it('falls back to jobAdLanguage when resumeLanguage is empty', async () => {
-    sessionBus.detail = detail({ resumeText: 'RESUME' });
-    const generation = {
-      id: 'gen-jobad',
-      resumeLanguage: '',
-      jobAdLanguage: 'de',
-      coverLetterText: '',
-    } as AiGenerationRecord;
-
-    const { result } = render({ jobDesc: '', latestGeneration: generation });
-    expect(result.current.meta?.targetLanguage).toBe('de');
-  });
-
   it('detects targetLanguage from the job ad when there is no previous generation (first run)', async () => {
-    const GERMAN_JOB_AD =
-      'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
     const { result } = render({ jobDesc: GERMAN_JOB_AD, latestGeneration: undefined });
 
     await act(async () => {
@@ -909,6 +921,37 @@ describe('useTailorPipeline — targetLanguage prefers the previous generation o
     expect(sessionBus.start).toHaveBeenCalledWith(
       expect.objectContaining({ targetLanguage: 'de' })
     );
+  });
+
+  // The negative case: a guessed language must be neither PERSISTED nor
+  // PREFERRED (owner decision). This is the "neither persisted" half —
+  // `resolveTargetLanguage`'s "not confident" test above pins the "neither
+  // preferred" half (a future run's tier 1 can only prefer what actually
+  // reached the wire). Mutation: send `targetLanguage` (the resolved 'en')
+  // instead of `wireTargetLanguage` in `start()` → this goes red.
+  it('never sends a guessed language for persistence — the wire targetLanguage is empty when nothing was confident', async () => {
+    const { result } = render({ jobDesc: '', latestGeneration: undefined });
+
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: '' }));
+  });
+
+  // The hook's own `targetLanguageConfident` is the value the two sibling
+  // save paths (`useApplicationAnswers`, `useInterviewQuestions`) key off of
+  // to withhold a guessed language from THEIR persist calls — it must track
+  // `resolveTargetLanguage`'s own verdict, not just default to `true`.
+  it('exposes targetLanguageConfident: false alongside a guessed meta.targetLanguage', () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const { result } = render({ jobDesc: '', latestGeneration: undefined });
+    expect(result.current.targetLanguageConfident).toBe(false);
+    expect(result.current.meta?.targetLanguage).toBe('en');
+  });
+
+  it('exposes targetLanguageConfident: true when the language was actually detected', () => {
+    const { result } = render({ jobDesc: GERMAN_JOB_AD, latestGeneration: undefined });
+    expect(result.current.targetLanguageConfident).toBe(true);
   });
 });
 

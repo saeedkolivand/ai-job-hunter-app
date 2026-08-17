@@ -7,23 +7,26 @@
 
 use std::cell::Cell;
 
+use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::json;
 use serde_json::Value;
 use tempfile::TempDir;
 
 use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
-    company_roster_block, draft_system, draft_user, humanize_system, humanize_user, letter_system,
-    letter_user, match_evidence_system, match_evidence_user, repair_system, repair_user,
-    strategy_system, strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP,
-    SIBLING_CONTEXT_CAP,
+    company_roster_block, draft_language_retry_note, draft_system, draft_user, humanize_system,
+    humanize_user, language_name, letter_system, letter_user, match_evidence_system,
+    match_evidence_user, repair_system, repair_user, strategy_system, strategy_user, HumanizeTier,
+    ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP, SIBLING_CONTEXT_CAP,
 };
 use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
 use super::stages::{
     criticals_by_section, exceeds_humanize_cap, ground, humanize_is_worse, humanize_one,
-    is_usable_rewrite, research_company_brief, reseed, round_is_worse, seed_company_roster,
-    should_humanize_letter, voice_count, voice_findings, MAX_COMPANY_PLANS,
+    is_usable_rewrite, research_company_brief, reseed, round_is_worse, run_draft_attempt,
+    seed_company_roster, should_humanize_letter, voice_count, voice_findings, DraftEnv,
+    LanguageRetryOutcome, MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
@@ -33,13 +36,15 @@ use super::{
     effective_letter_text, pick, resolved_top_requirements, stage_cache_key_for, RunLedger,
     QUALITY_STAGES,
 };
+use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::documents::evidence::SectionKind;
 use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::cache::KvCache;
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
-    CONSISTENCY_SKILL_NOT_DEMONSTRATED, DUPLICATE_BULLET, VOICE_AI_TELL_LEXICAL,
+    CONSISTENCY_SKILL_NOT_DEMONSTRATED, CONTENT_LANGUAGE_MISMATCH, DUPLICATE_BULLET,
+    VOICE_AI_TELL_LEXICAL,
 };
 use crate::validate::Severity;
 
@@ -1156,7 +1161,10 @@ fn repair_system_gates_the_document_context_instruction_on_has_context() {
 
     let with_context = repair_system("en", true);
     assert!(with_context.contains("<document_context>"));
-    assert!(with_context.contains("language, voice and tense"));
+    assert!(with_context.contains("voice and tense"));
+    // The output language is PINNED over the sibling context, not matched
+    // from it — see `the_repair_prompt_pins_the_output_language_over_sibling_context`.
+    assert!(with_context.contains("The output language is English"));
 }
 
 // ── SectionKey ───────────────────────────────────────────────────────────────
@@ -1595,6 +1603,107 @@ fn stage_prompts_interpolate_the_generated_blocks() {
     assert!(!humanize_letter.contains(HUMANIZE_LEXICAL));
 }
 
+/// The draft prompt must order a TRANSLATION, not just describe the target
+/// language — this is the generation-side half of the cross-language-résumé
+/// fix. The rule has to coexist with the grounding/fidelity clauses, not
+/// replace them: an English source résumé translated into German still has
+/// to draw every fact from `<candidate_resume>`, and employment entries still
+/// carry their company/title/dates verbatim.
+///
+/// Mutation check: delete the translate bullet (leaving the rest of `Structure:`
+/// untouched) — RAN, went red (no `TRANSLATE` in the output), reverted.
+#[test]
+fn the_draft_prompt_orders_a_translation() {
+    let prompt = draft_system("de", "de");
+    assert!(prompt.contains("TRANSLATE"));
+    assert!(prompt.contains("German"));
+    assert!(prompt.contains(
+        "Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>"
+    ));
+    assert!(prompt.contains("exactly as given"));
+}
+
+/// Every SYSTEM prompt in this file must name the target language in English
+/// ("German") rather than interpolate the bare 2-char code ("de") a model
+/// reads as an abbreviation, not an instruction.
+///
+/// Mutation check: revert `letter_system`'s `system_language_name` call back
+/// to `system_language` — RAN, went red on EVERY language in the loop (not
+/// just `de`), because the bare-code assertion is now parameterized on the
+/// loop variable instead of hard-coded to `", in de."`; reverted.
+#[test]
+fn every_system_prompt_names_the_language_rather_than_its_code() {
+    for (lang, name) in [
+        ("de", "German"),
+        ("fr", "French"),
+        ("ja", "Japanese"),
+        ("en", "English"),
+    ] {
+        let draft = draft_system(lang, "intl");
+        let repair = repair_system(lang, false);
+        let letter = letter_system(lang, "intl", false, false);
+        let humanize = humanize_system(HumanizeTier::Resume, lang);
+        let bare_code = format!(", in {lang}.");
+        for prompt in [&draft, &repair, &letter, &humanize] {
+            assert!(
+                prompt.contains(name),
+                "{lang}: expected {name:?} in {prompt:?}"
+            );
+            assert!(
+                !prompt.contains(&bare_code),
+                "{lang}: bare code leaked through"
+            );
+        }
+    }
+
+    // The `(in {lang})` clause inside the subject-line rule reads the SAME
+    // name, not a second unconverted interpolation.
+    let de_letter = letter_system("de", "de", false, false);
+    assert!(de_letter.contains("subject line labelled \"Betreff\" (in German), on its own line"));
+}
+
+/// A language `language_name` has no curated entry for falls back to the bare
+/// code — the ADR-010-safe fallback `language_name`'s doc comment promises.
+/// `draft_system` must still build a usable prompt for it.
+///
+/// Mutation check: change the fallback arm from `other => other` to a fixed
+/// string — RAN, went red (`language_name("xx")` stopped equaling `"xx"`),
+/// reverted.
+#[test]
+fn an_uncurated_language_falls_back_to_the_bare_code() {
+    assert_eq!(language_name("xx"), "xx");
+    let prompt = draft_system("xx", "intl");
+    assert!(prompt.contains("in xx"));
+}
+
+/// After a partial repair, the untouched sibling sections may still be in the
+/// SOURCE language — the repair prompt must pin the output language over
+/// whatever the siblings demonstrate, or the model imitates their language
+/// right back.
+///
+/// Mutation check: revert to the bare "Match the language, voice and tense you
+/// OBSERVE there" wording (drop the override sentence) — RAN, went red (no
+/// "output language is German" clause), reverted.
+#[test]
+fn the_repair_prompt_pins_the_output_language_over_sibling_context() {
+    let prompt = repair_system("de", true);
+    assert!(prompt.contains("The output language is German, whatever the siblings are written in"));
+}
+
+/// The draft retry's corrective note names the language and never leaks the
+/// bare code — it is read by a model, not logged for a human who already
+/// knows the ISO tag.
+///
+/// Mutation check: interpolate the raw `lang` argument instead of
+/// `system_language_name(lang)` — RAN, went red (`German` disappeared, the
+/// literal `de-DE` code appeared instead), reverted.
+#[test]
+fn draft_language_retry_note_names_the_language() {
+    let note = draft_language_retry_note("de-DE");
+    assert!(note.contains("German"));
+    assert!(!note.contains(" in de"));
+}
+
 /// The draft prompt is localized off the SAME `resume_conventions` the renderer
 /// path uses, so a German run asks for German headings.
 #[test]
@@ -1967,6 +2076,291 @@ fn apply_projects_normalization_is_a_no_op_when_every_entry_is_invented() {
     assert_eq!(artifact["projectsMatched"], 0);
 }
 
+// ── `Draft::run`'s at-most-once language retry ──────────────────────────────
+
+// Real, already-calibrated fixtures (shared with `validate::content::test`,
+// which pins their detected language) rather than hand-written strings — a
+// language-detection guard tested against text no detector was ever shown to
+// confidently read would prove nothing.
+const RETRY_EN_SOURCE: &str = include_str!("../../validate/content/fixtures/en_source_resume.txt");
+const RETRY_EN_JOB_AD: &str = include_str!("../../validate/content/fixtures/en_job_ad.txt");
+const RETRY_EN_CLEAN: &str = include_str!("../../validate/content/fixtures/en_generated_clean.txt");
+// Actually GERMAN prose (the fixture name is the EN scenario it belongs to,
+// not its own language) — the wrong-language first draft this whole family
+// exists to catch.
+const RETRY_WRONG_LANGUAGE: &str =
+    include_str!("../../validate/content/fixtures/en_generated_wrong_language.txt");
+// A DIFFERENT German document, so "the still-wrong retry is discarded" is
+// provable by content, not just by two identical strings comparing equal.
+const RETRY_DE_CLEAN: &str = include_str!("../../validate/content/fixtures/de_generated_clean.txt");
+
+/// The retry is kept ONLY when it actually fixed the language. A still-wrong
+/// retry keeps the FIRST draft — the canonical prompt's own answer — not the
+/// candidate, mirroring `repair::round_is_worse`'s never-hand-back-a-worse-
+/// document floor.
+///
+/// Mutation check: drop the second `document_language_mismatch` check in
+/// `draft_with_language_retry` (keep the retry unconditionally) — RAN, went
+/// red on the second half (the still-German candidate shipped instead of the
+/// first draft), reverted.
+#[tokio::test]
+async fn the_draft_retry_keeps_the_second_attempt_only_when_it_fixed_the_language() {
+    // The retry FIXES the language.
+    let (kept, _artifact, retry) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |is_retry| {
+            let text = if is_retry {
+                RETRY_EN_CLEAN
+            } else {
+                RETRY_WRONG_LANGUAGE
+            };
+            async move { Ok(text.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert_eq!(
+        retry,
+        LanguageRetryOutcome::Fixed,
+        "a wrong first draft must trigger the retry, and this one fixed it"
+    );
+    assert!(
+        kept.contains("SUMMARY") && !kept.contains("ZUSAMMENFASSUNG"),
+        "a retry that fixed the language must ship, not the wrong-language first draft"
+    );
+
+    // The retry is STILL wrong (a different German document).
+    let (kept, _artifact, retry) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |is_retry| {
+            let text = if is_retry {
+                RETRY_DE_CLEAN
+            } else {
+                RETRY_WRONG_LANGUAGE
+            };
+            async move { Ok(text.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert_eq!(
+        retry,
+        LanguageRetryOutcome::StillWrong,
+        "a wrong first draft must trigger the retry, and this one stayed wrong"
+    );
+    assert!(
+        kept.contains("ZUSAMMENFASSUNG"),
+        "a still-wrong retry must not replace the first, canonical-prompt draft"
+    );
+    assert!(
+        !kept.contains("PROFIL"),
+        "the still-wrong candidate must never ship"
+    );
+}
+
+/// The retry fires AT MOST ONCE: one extra provider call when the first draft
+/// is wrong, none when it is already right. This pins the MECHANICAL bound (a
+/// call counter); the STRUCTURAL argument for why it cannot fire twice is in
+/// `draft.rs`'s own module doc.
+///
+/// Mutation check: replace the single retry `match` in
+/// `draft_with_language_retry` with a bounded `for _ in 0..3 { .. }` loop that
+/// keeps retrying while the candidate is still wrong — RAN, went red (4 calls
+/// instead of 2 on the wrong-first-draft case), reverted. (An UNBOUNDED
+/// `while` was not run by hand: the injected closure below always returns the
+/// same wrong-language text, so an unbounded loop would spin for the whole
+/// `live_deadline()` wall-clock allowance instead of failing fast — the
+/// bounded loop is the same category of mutation without the hang.)
+#[tokio::test]
+async fn the_draft_retries_at_most_once() {
+    let mut calls = 0u32;
+    let (_kept, _artifact, retry) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |_is_retry| {
+            calls += 1;
+            async move { Ok(RETRY_WRONG_LANGUAGE.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert_eq!(retry, LanguageRetryOutcome::StillWrong);
+    assert_eq!(calls, 2, "a wrong first draft must retry exactly once");
+
+    let mut calls = 0u32;
+    let (_kept, _artifact, retry) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |_is_retry| {
+            calls += 1;
+            async move { Ok(RETRY_EN_CLEAN.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert_eq!(retry, LanguageRetryOutcome::NotNeeded);
+    assert_eq!(calls, 1, "a correct first draft must never retry");
+}
+
+/// A retry refused before any round trip — the shape a `charge_daily`
+/// ceiling refusal takes in [`run_draft_attempt`] (it errors BEFORE
+/// `DraftEnv::complete` is ever called) — must produce `Errored`, not one of
+/// the two outcomes that made a round trip. `Draft::run`'s ledger fix
+/// (`ctx.ledger.count_call` gated on `retry.called()`) depends on exactly
+/// this: `Errored` must never be mistaken for a billed call. Proven at this
+/// seam because `Draft::run` itself needs a live `Completer`/`AppHandle`
+/// this crate has no test harness for.
+///
+/// Mutation check: change `LanguageRetryOutcome::called` back to
+/// `!matches!(self, Self::NotNeeded)` (the old `retried` bool's behavior,
+/// counting every attempt regardless of whether a round trip happened) —
+/// RAN, went red (`retry.called()` read `true` for this `Errored` case),
+/// reverted.
+#[tokio::test]
+async fn a_retry_refused_before_any_round_trip_is_not_counted_as_a_call() {
+    let (kept, _artifact, retry) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |is_retry| async move {
+            if is_retry {
+                // No round trip is ever sent for this branch — the exact
+                // shape `charge_daily`'s `?` short-circuit produces.
+                Err(AppError::RateLimited("daily budget exhausted".to_string()))
+            } else {
+                Ok(RETRY_WRONG_LANGUAGE.to_string())
+            }
+        },
+    )
+    .await
+    .expect("the first call never errors in this test");
+    assert_eq!(retry, LanguageRetryOutcome::Errored);
+    assert!(
+        !retry.called(),
+        "a refused retry made no round trip and must not be billed"
+    );
+    // The retry's failure is not this stage's failure — the first,
+    // wrong-language draft is still what ships.
+    assert!(kept.contains("ZUSAMMENFASSUNG"));
+}
+
+/// [`DraftEnv`] fake — records which channel [`run_draft_attempt`] called,
+/// and how many times, without a live `Completer`/`AppHandle`.
+#[derive(Default)]
+struct FakeDraftEnv {
+    streamed_calls: Mutex<u32>,
+    completed_calls: Mutex<u32>,
+    charge_calls: Mutex<u32>,
+}
+
+fn draft_attempt_request() -> AiGenerateRequest {
+    AiGenerateRequest {
+        model: String::new(),
+        messages: vec![
+            AiGenerateRequestMessage {
+                role: "system".to_string(),
+                content: "sys".to_string(),
+            },
+            AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: "usr".to_string(),
+            },
+        ],
+        locale: "en".to_string(),
+        temperature: None,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        repeat_penalty: None,
+        max_tokens: None,
+        context_window: None,
+        effort: None,
+        intent: None,
+    }
+}
+
+#[async_trait]
+impl DraftEnv for FakeDraftEnv {
+    async fn stream_captured(&self, _job_id: &str, _req: AiGenerateRequest) -> AppResult<String> {
+        *self.streamed_calls.lock() += 1;
+        Ok("streamed draft".to_string())
+    }
+    async fn complete(&self, _system: &str, _user: &str) -> AppResult<String> {
+        *self.completed_calls.lock() += 1;
+        Ok("captured draft".to_string())
+    }
+    fn charge_daily(&self) -> AppResult<()> {
+        *self.charge_calls.lock() += 1;
+        Ok(())
+    }
+}
+
+/// **The retry never streams** — the direct guard for the double-render
+/// defect fixed on this branch (`draft.rs`'s module doc): before
+/// `run_draft_attempt` existed, [`Draft::run`](super::stages::Draft)'s
+/// closure called the streamed channel on BOTH attempts, so a wrong-language
+/// retry rendered a second document appended to the first in the live pane.
+/// This asserts the ABSOLUTE observable — which channel fired, and how many
+/// times — never a comparison between two derived values.
+///
+/// Mutation check: swap the two arms of `run_draft_attempt`'s `if is_retry`
+/// (route the retry through `stream_captured` and the first attempt through
+/// `charge_daily` + `complete`) — RAN, went red (`streamed_calls` reads 0
+/// after the first attempt and 1 only after the retry, the reverse of what
+/// this test requires), reverted.
+#[tokio::test]
+async fn the_draft_retry_never_streams() {
+    let env = FakeDraftEnv::default();
+
+    let first = run_draft_attempt(&env, "job-1", false, draft_attempt_request())
+        .await
+        .expect("first attempt succeeds");
+    assert_eq!(first, "streamed draft");
+    assert_eq!(
+        *env.streamed_calls.lock(),
+        1,
+        "the first attempt must stream"
+    );
+    assert_eq!(
+        *env.completed_calls.lock(),
+        0,
+        "the first attempt must never call the non-streaming channel"
+    );
+
+    let retry = run_draft_attempt(&env, "job-1", true, draft_attempt_request())
+        .await
+        .expect("retry succeeds");
+    assert_eq!(retry, "captured draft");
+    assert_eq!(
+        *env.streamed_calls.lock(),
+        1,
+        "the retry must NOT add a second stream over the same job_id — that is exactly the \
+         double-render defect (see draft.rs's module doc)"
+    );
+    assert_eq!(
+        *env.completed_calls.lock(),
+        1,
+        "the retry must call the non-streaming channel exactly once"
+    );
+    assert_eq!(
+        *env.charge_calls.lock(),
+        1,
+        "the retry must charge the daily ceiling itself — stream_captured does that internally \
+         for the first attempt, but the fake never routes through it"
+    );
+}
+
 /// The seeded roster reaches the model as DATA, with its identity fields
 /// intact — that is what makes "the roster is fixed" a statement the model can
 /// act on rather than a rule only Rust knows.
@@ -2270,6 +2664,83 @@ fn repair_groups_only_criticals_and_only_ones_it_can_regenerate() {
     assert!(
         criticals_by_section(source, &warning_only).is_empty(),
         "warnings must not schedule a repair round"
+    );
+}
+
+/// A document-wide `content.language_mismatch` Critical (`section: None`) must
+/// never schedule a repair round. Its evidence used to be the bare
+/// target-language code (`d32f755c` now sets it to `None` as belt), but this
+/// test constructs the issue with `evidence: Some("de")` ANYWAY — proving the
+/// ROUTING rule, not the emission accident, so a later change that restores
+/// evidence on this Critical cannot silently re-open the mis-route.
+///
+/// The fixture's own summary line contains the word "developer" — a plain
+/// substring match on "de" — so this also pins that the routing skip fires
+/// BEFORE `sections::containing`'s substring fallback ever gets a chance to
+/// (mis-)match it.
+///
+/// Mutation check: remove the `CONTENT_LANGUAGE_MISMATCH` arm in
+/// `criticals_by_section` — RAN, went red (the Critical routed to `summary`
+/// via the substring fallback), reverted.
+#[test]
+fn a_document_wide_language_critical_routes_to_no_section() {
+    let document = "PROFESSIONAL SUMMARY\nA senior developer leading platform teams.\n\n\
+                     WORK EXPERIENCE\n\nAcme Corp | Staff Engineer | 2021 - Present\n\
+                     - Built the ledger service\n";
+    assert!(
+        document.contains("de"),
+        "fixture premise: the document must contain the substring the old routing bug matched on"
+    );
+
+    let report = ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: Severity::Critical,
+            code: CONTENT_LANGUAGE_MISMATCH,
+            section: None,
+            message: "the document is not in the requested language".to_string(),
+            evidence: Some("de".to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    };
+
+    assert!(
+        criticals_by_section(document, &report).is_empty(),
+        "a document-wide language Critical must not schedule any section for repair"
+    );
+}
+
+/// Sibling of the test above: a PER-SECTION `content.language_mismatch`
+/// Critical (it carries a `section` label) must still route normally — the
+/// fix must not be over-broad and swallow every language finding.
+///
+/// Mutation check: make the skip in `criticals_by_section` unconditional on
+/// the code alone (drop the `issue.section.is_none()` half) — RAN, went red
+/// (this Critical stopped scheduling `summary`), reverted.
+#[test]
+fn a_per_section_language_critical_still_routes() {
+    let document = "PROFESSIONAL SUMMARY\nA senior developer leading platform teams.\n\n\
+                     WORK EXPERIENCE\n\nAcme Corp | Staff Engineer | 2021 - Present\n\
+                     - Built the ledger service\n";
+    let report = ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: Severity::Critical,
+            code: CONTENT_LANGUAGE_MISMATCH,
+            section: Some("PROFESSIONAL SUMMARY".to_string()),
+            message: "this section drifted into a different language".to_string(),
+            evidence: Some("developer".to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    };
+
+    let grouped = criticals_by_section(document, &report);
+    assert!(
+        grouped
+            .iter()
+            .any(|(key, _)| *key == SectionKey::Summary.to_wire()),
+        "a per-section language Critical must still schedule its section for repair; got {:?}",
+        grouped.iter().map(|(key, _)| key).collect::<Vec<_>>()
     );
 }
 

@@ -518,6 +518,83 @@ describe('useApplicationAnswers', () => {
     });
   });
 
+  describe('unconfident target language is never persisted', () => {
+    const guessedMeta = {
+      candidateName: 'Jane',
+      jobTitle: 'Engineer',
+      companyName: 'Acme',
+      resumeLanguage: 'en',
+      jobAdLanguage: 'en',
+      mismatch: false,
+      targetLanguage: 'en',
+      topRequirements: [],
+    };
+
+    it('sends empty language fields when meta was seeded from an unconfident guess', async () => {
+      const { result } = render({ meta: guessedMeta, targetLanguageConfident: false });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: '', resumeLanguage: '', jobAdLanguage: '' })
+      );
+    });
+
+    it('still persists the real language fields when meta was confidently detected', async () => {
+      const { result } = render({ meta: guessedMeta, targetLanguageConfident: true });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: 'en', resumeLanguage: 'en', jobAdLanguage: 'en' })
+      );
+    });
+
+    it('persists the freshly-detected language when meta is null, even with targetLanguageConfident: false', async () => {
+      // `languageIsGuess` is `!!meta && targetLanguageConfident === false` — with
+      // no `meta` at all, `generate()` re-extracts its own fresh metadata (a
+      // SEPARATE detection, unrelated to a caller's stale confidence flag), and
+      // that detection's language fields must still reach `save`, not ''. Also
+      // guards against a mutant that drops `!!meta &&` from the condition: such
+      // a mutant would blank these fields purely because `targetLanguageConfident`
+      // is `false` here, regardless of `meta`.
+      const { result } = render({ meta: null, targetLanguageConfident: false });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: 'en', resumeLanguage: 'en', jobAdLanguage: 'en' })
+      );
+    });
+
+    it('an unconfident guess survives into a rewrite re-save via updateAnswer too', async () => {
+      const { result } = render({ meta: guessedMeta, targetLanguageConfident: false });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+      save.mockClear();
+
+      await act(async () => {
+        await result.current.updateAnswer('why-company', 'Rewritten');
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: '', resumeLanguage: '', jobAdLanguage: '' })
+      );
+    });
+  });
+
   describe('web-search fan-out cap', () => {
     it('caps per-question searches at WEB_SEARCH_MAX_PER_RUN; the rest still answer without web grounding', async () => {
       // The registry alone must exceed the cap for this test to be meaningful.

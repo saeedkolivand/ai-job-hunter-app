@@ -77,6 +77,57 @@ unmatched query reaches Photon.
 _Avoid_: "OpenStreetMap/Nominatim city suggestions" (Nominatim was retired — its usage
 policy forbids autocomplete), "opt-in location autocomplete" (it is not, by design)
 
+## Domain — Generation & Languages
+
+**Target language**:
+The language the output résumé or cover letter must be written in. Wire `targetLanguage` (TS) or Rust
+`target_language`, persisted as `ai_generations.target_language`. Derived from the job ad's detected language,
+never from the source résumé. An empty value on the wire means detection did not succeed: the run still
+uses a default, but nothing is stored, so a guess can never become the preferred value on a later run.
+See **source résumé language** and **job-ad language** below for the evidence sources.
+_Avoid_: using the source-résumé language as a fallback, guessing when detection is absent
+
+**Source résumé language**:
+The language the candidate's stored résumé is written in. Wire `resumeLanguage`, persisted as
+`ai_generations.resume_language` — a different column from `DocumentRecord.locale`, which is the stored
+document's own tag. Diagnostic only; never used as the generation target, and never read by the tailor
+flow's language resolution. Written unconditionally by `extractMetadata`, so unlike **target language**
+it carries no confidence guarantee — which is exactly why it must not be consulted as a target.
+_Avoid_: using this to set the target language (the job ad is the authority); conflating with `target_language`
+
+**Job-ad language**:
+The posting's own language, detected on ingest. Wire `jobAdLanguage`. The primary evidence for determining
+the **target language**. Detected renderer-side with **franc** (`detectLanguage`), which reports no
+confidence score — it gates on length and returns `'unknown'` when it cannot tell, and only a non-unknown
+answer commits the target. Do not confuse this with the reliability bar on Rust's **whatlang**-based
+`detected_language` (`documents::keywords`), which validates the GENERATED output after the fact and
+never picks the target — that bar is the library's own, owned by that function, not restated here.
+Two detectors, two questions. Distinct from
+the posting's country market (a German posting can still target English, e.g. a tech company branch
+in Germany hiring globally). Handled by the scraper/import path; not user-configurable.
+_Avoid_: conflating with market/locale; assuming it matches the company's location country
+
+**Market**:
+An etiquette + page-size identifier (`us`, `de`, `intl`) resolved from the job's country by the scraper.
+Governs letter conventions (salutation, sign-off, date format), résumé section order and paper size for
+export. **Not a language** — a German job ad targeting English still follows `de` market conventions if
+the company is in Germany. Contracts: `QualityInput::market`, `crate::locale::{letter,resume}`, and
+`resolveMarket` on the renderer side.
+_Avoid_: using it as a language tag; conflating with UI/i18n language
+
+**Locale**:
+Overloaded term — two meanings in different contracts. (1) Document-level **language tag** (`ISO-639-1`:
+`en`, `de`, etc), stored as `DocumentRecord.locale`, set on import or generation if detected confidently.
+(2) In `export/` and `packages/prompts/src/locale`, the **market** sense above (an etiquette identifier).
+The two should never be confused; consult the owning module for which sense is meant.
+_Avoid_: relying on context clues; always use the owning module's own definition when in doubt
+
+**UI language**:
+The app's interface language (`i18n`, selected by the user in Settings). Independent of all the above
+— a German UI may generate documents in English from an English job ad, or any combination. Wired via
+`@ajh/translations` and the `useTranslation()` hook; never affects generation or export language choices.
+_Avoid_: changing generation language when the user changes UI language
+
 ## Domain — Matching
 
 **Match score**:
