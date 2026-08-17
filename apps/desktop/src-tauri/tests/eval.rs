@@ -289,6 +289,12 @@ const CASES: &[Case] = &[
         Label::Planted(&[("content.language_mismatch", Severity::Critical)])
     ),
     case!(
+        "en_generated_experience_drifted_italian.txt",
+        "en",
+        DocKind::Resume,
+        Label::Planted(&[("content.language_mismatch", Severity::Critical)])
+    ),
+    case!(
         "en_generated_duplicate_bullets.txt",
         "en",
         DocKind::Resume,

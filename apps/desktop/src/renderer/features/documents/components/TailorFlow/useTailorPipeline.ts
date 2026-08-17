@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { type AiGenerationRecord, detectLanguage } from '@ajh/shared';
+import { type AiGenerationRecord, detectLanguage, toLanguageCode } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
@@ -246,10 +246,38 @@ export function useTailorPipeline({
   const report: QualityReport | null =
     session.detail?.report ?? parseQualityReport(latestGeneration?.qualityReport);
 
+  // Regenerate must keep writing in whatever language the last run actually
+  // produced, not re-detect from `jobDesc` and collapse to English the moment
+  // detection can't tell (empty/short text, an unmapped ISO code, franc
+  // returning `und`) — `latestGeneration` already carries the answer.
+  // `resumeLanguage` wins (what the document was actually written in), then
+  // `jobAdLanguage`, and only a FIRST run (no prior generation) falls through
+  // to detecting off the current job ad, defaulting to English as the last
+  // resort.
   const targetLanguage = useMemo(() => {
+    // Normalized, never trusted verbatim: the SAME persisted field carries two
+    // shapes. `extractMetadata` (the AIGeneratePage flow, both its success and
+    // heuristic paths) writes a display NAME — "German" — while every other
+    // writer stores an ISO code, and `save_application` merges both into one
+    // record keyed by job URL. Handing "German" downstream is worse than the
+    // bug this whole memo fixes: Rust's `normalize_language` truncates it to
+    // "ge", which matches no `languages_align` arm, so the language checks go
+    // permanently dark for that document — and `toLocaleDateString('German')`
+    // silently formats the letter date in English rather than throwing.
+    // `toLanguageCode` exists for exactly this NAME<->CODE gap.
+    // Each field is normalized and validated INDEPENDENTLY, then the first
+    // valid one wins. `a || b` picks the first non-EMPTY and validates only
+    // that, so a legacy-invalid `resumeLanguage` would short-circuit the
+    // fallback and send us to detection while a perfectly good `jobAdLanguage`
+    // sat unread — the same "a present value is not a usable one" mistake this
+    // whole memo exists to fix, one rung down.
+    const persisted = [latestGeneration?.resumeLanguage, latestGeneration?.jobAdLanguage]
+      .map((value) => toLanguageCode(value ?? ''))
+      .find((code) => /^[a-z]{2}$/.test(code));
+    if (persisted) return persisted;
     const detected = detectLanguage(jobDesc);
     return detected === 'unknown' ? 'en' : detected;
-  }, [jobDesc]);
+  }, [jobDesc, latestGeneration?.resumeLanguage, latestGeneration?.jobAdLanguage]);
 
   // Export/preview market — derived from the found job's free-text `location`
   // (unlike `AIGeneratePage`'s extracted meta, this hook never had a structured

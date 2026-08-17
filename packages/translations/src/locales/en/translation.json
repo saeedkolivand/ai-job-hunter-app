@@ -1819,6 +1819,7 @@
         "keyword_density": "Keyword usage here may read as stuffed rather than natural.",
         "header_in_body": "Contact-shaped text appears outside the header — move it up top.",
         "missing_section": "An expected section seems to be missing.",
+        "empty_section": "A section heading appears with no content underneath it.",
         "long_bullet": "This bullet is long — consider tightening it.",
         "bullet_count": "This section has an unusual number of bullets."
       },

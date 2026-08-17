@@ -10,12 +10,28 @@
 //!    splicing one in deletes content silently (see
 //!    [`sections::is_usable_replacement`]).
 //! 4. **A worse round ⇒ revert and stop**, where "worse" is strictly more
-//!    criticals OR a newly INTRODUCED absence. The repair is a bet that the
-//!    model can fix what it broke; when the bet loses, the honest move is to
-//!    hand back the draft that was merely wrong rather than the one that is now
-//!    wrong in more places. Equal is not worse — a round that swaps one
-//!    Critical for another has not lost ground, and stopping there would give
-//!    up the second round the budget allows. But a count cannot express LOSS: a
+//!    criticals, a role count that fell, a keyword-coverage drop past
+//!    [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`], a newly
+//!    INTRODUCED absence, a GROWN `duplicate.bullet` count (always — see
+//!    below), OR — only when the round did NOT also reduce the Critical
+//!    count — a GROWN `consistency.skill_not_demonstrated` count. The two
+//!    cross-section codes are gated differently on purpose: the false
+//!    positive that motivated gating (see [`round_is_worse`]'s own doc) was
+//!    measured against `consistency.skill_not_demonstrated` — an ordinary
+//!    bullet reword nudging one shared token — and never against
+//!    `duplicate.bullet`, which is the ONE signal that ever caught a round
+//!    doubling the whole document; gating that one too would veto the exact
+//!    round it exists to catch (Criticals fixed, the document also doubled).
+//!    It is still the same floor `humanize`'s single whole-document rewrite
+//!    already held this loop's up-to-8 blind per-section rewrites to,
+//!    whenever a round buys nothing on Criticals, now shared rather than
+//!    humanize-only for the skill-token code. The repair is a
+//!    bet that the model can fix what it broke; when the bet loses, the
+//!    honest move is to hand back the draft
+//!    that was merely wrong rather than the one that is now wrong in more
+//!    places. Equal is not worse — a round that swaps one Critical for
+//!    another has not lost ground, and stopping there would give up the
+//!    second round the budget allows. But a count cannot express LOSS: a
 //!    rewrite that traded two fabricated metrics for one dropped employer
 //!    scored as an improvement and deleted a job from the résumé. See
 //!    [`round_is_worse`].
@@ -47,7 +63,8 @@ use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{projects, QualityCtx, RunDeadline};
 use crate::pipeline::{Completer, Stage};
 use crate::validate::content::{
-    ContentIssue, ContentReport, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
+    ContentIssue, ContentReport, CONSISTENCY_SKILL_NOT_DEMONSTRATED, DUPLICATE_BULLET,
+    FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
 };
 use crate::validate::Severity;
 
@@ -152,7 +169,7 @@ pub(crate) fn criticals_by_section(
 
 /// Whether a repair round's candidate must be discarded.
 ///
-/// TWO terms, and the second is not a count.
+/// THREE terms, and the last two are not a bare count.
 ///
 /// **The count term.** Strictly more criticals than the draft it was trying to
 /// fix. The strictness is a decision with a gradient in both directions: `>=`
@@ -180,6 +197,48 @@ pub(crate) fn criticals_by_section(
 /// new), while a round that swaps WHICH employer is missing has introduced a
 /// loss and is caught.
 ///
+/// **The CROSS-SECTION terms, why they are a delta rather than a threshold,
+/// and why the two codes are gated differently.** `duplicate.bullet` and
+/// `consistency.skill_not_demonstrated` are the two Warning-level checks in
+/// `validate/content` that reason ACROSS sections — see [`code_grew`] — and
+/// repair acts on Criticals only, so nothing ever consumed them: a round that
+/// doubled the whole document shipped 5 `duplicate.bullet` warnings, and a
+/// round that deleted an employment entry shipped 4
+/// `consistency.skill_not_demonstrated` warnings. An absolute "has any" gate
+/// would also revert on a document that never regressed at all: rewording two
+/// Experience bullets to drop one exact shared token — an ordinary section
+/// rewrite — was measured to raise `skill_not_demonstrated` from zero to four
+/// on an otherwise truthful document, and a calibrated non-zero threshold
+/// would need recalibrating against that same noise forever. So both codes
+/// ask the same question the absence term above does: not "does the document
+/// carry this warning" but "did THIS ROUND grow it". A baseline that already
+/// carries four is still repairable; only a round that carries MORE than its
+/// own baseline is worse.
+///
+/// **`consistency.skill_not_demonstrated`'s delta alone still false-positives
+/// on ordinary rewrite noise, so it is also GATED on the Critical count.**
+/// "Did this round grow it" says nothing about WHY: the same ordinary-rewrite
+/// noise that raises an already-elevated baseline is exactly what raises a
+/// round's own before→after delta from zero the FIRST time that section is
+/// ever touched — a round that took Criticals from five to zero while
+/// rewording one Experience bullet enough to shift one shared token was
+/// reverted on precisely that shape, discarding the fix the module doc's own
+/// rule 4 says a Warning must never veto. So this ONE code's term only fires
+/// when `criticals_of(after) >= criticals_of(before)` — it may sink a round
+/// that bought nothing on the metric this whole module is scoped to, never
+/// one that fixed what it was asked to fix.
+///
+/// **`duplicate.bullet` stays UNGATED.** The noise measurement above is about
+/// `consistency.skill_not_demonstrated` specifically — an ordinary bullet
+/// reword shifting a shared SKILL token — and was never observed for
+/// `duplicate.bullet`, which fires on repeated bullet TEXT, not shared
+/// vocabulary; an ordinary rewrite does not duplicate a bullet it also
+/// rewords. `duplicate.bullet` is also the ONE signal that ever caught a
+/// round doubling the whole document (the very first example above). Gating
+/// it the same way as the skill-token code would veto exactly the round the
+/// gate exists to catch: Criticals fixed, the whole document also duplicated
+/// underneath the fix.
+///
 /// This is a compatible TIGHTENING of rule 4 in the module doc — that rule was
 /// always "never hand back a worse document"; this says what the count could
 /// not express. It fixes quality depth as well as max: quality's repair loop is
@@ -190,13 +249,90 @@ pub(crate) fn round_is_worse(
     after: &ContentReport,
     after_text: &str,
 ) -> bool {
-    if criticals_of(after) > criticals_of(before) {
+    let criticals_before = criticals_of(before);
+    let criticals_after = criticals_of(after);
+    if criticals_after > criticals_before {
+        return true;
+    }
+    // A role count that fell is worse whatever the Critical totals say — the
+    // ONE signal that saw a deleted employment entry even when the entry's own
+    // company name was not distinctive/checkable enough for `factual.dropped_role`
+    // to fire at all (see `factual::dropped_role_issues`'s own filter). Equal or
+    // higher is not a regression; this only ever tightens the rule.
+    if after.metrics.roles_output < before.metrics.roles_output {
+        return true;
+    }
+    if coverage_dropped(before, after) {
         return true;
     }
     let carried = absences(before, before_text);
-    absences(after, after_text)
+    if absences(after, after_text)
         .into_iter()
         .any(|pair| !carried.contains(&pair))
+    {
+        return true;
+    }
+    // UNGATED: see the doc above for why `duplicate.bullet` is never gated on
+    // the Critical count.
+    if code_grew(before, after, DUPLICATE_BULLET) {
+        return true;
+    }
+    // Gated: `consistency.skill_not_demonstrated` may only veto a round that
+    // bought NOTHING on Criticals. See the doc above for the false-positive
+    // this closes.
+    criticals_after >= criticals_before
+        && code_grew(before, after, CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+}
+
+/// How many of `report`'s issues carry `code`.
+fn code_count(report: &ContentReport, code: &str) -> usize {
+    report.issues.iter().filter(|i| i.code == code).count()
+}
+
+/// Whether `after` carries more of `code` than `before` did — the shared core
+/// [`round_is_worse`] applies once per cross-section code
+/// (`duplicate.bullet`, `consistency.skill_not_demonstrated`), each under its
+/// own gate. See `round_is_worse`'s own doc for why the two codes are gated
+/// differently.
+///
+/// **Accepted blind spot, the Warning-side mirror of [`absences`]'s own:**
+/// `code_count` reads `report.issues`, which is already the POST-`cap_issues`
+/// list — `validate_content` truncates Warnings before Criticals once a
+/// report is pinned at `MAX_CONTENT_ISSUES` (200) — so a `before` report
+/// already at the cap can show a code undercounted against an uncapped
+/// `after`, reading as growth that never happened. Reaching it needs a report
+/// already pinned at 200 issues, the same reachability `absences` accepts for
+/// the Critical side; this is the same deliberate choice, stated rather than
+/// hidden, not a fix.
+fn code_grew(before: &ContentReport, after: &ContentReport, code: &str) -> bool {
+    code_count(after, code) > code_count(before, code)
+}
+
+/// Whether `after`'s keyword coverage fell by
+/// [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`] points or more below
+/// `before`'s (the threshold itself counts as a drop, not just anything past
+/// it) — the SAME points-of-drop threshold `alignment.low_coverage` already
+/// reports at, reused rather than a second invented number.
+///
+/// Shared by [`round_is_worse`] (so `repair`'s up-to-`2 × MAX_SECTIONS_PER_ROUND`
+/// blind per-section rewrites are held to the same coverage floor
+/// `humanize`'s single whole-document rewrite always was) and, through it,
+/// [`super::humanize::humanize_is_worse`] — one threshold, read once, instead
+/// of a second copy that could drift from this one.
+///
+/// `None` on either side (an uncomparable posting — no extractable keywords,
+/// see [`crate::validate::content::ContentMetrics::keyword_coverage`]) never
+/// rejects: there is nothing to compare.
+pub(crate) fn coverage_dropped(before: &ContentReport, after: &ContentReport) -> bool {
+    match (
+        before.metrics.keyword_coverage,
+        after.metrics.keyword_coverage,
+    ) {
+        (Some(before), Some(after)) => {
+            before - after >= crate::validate::content::MIN_COVERAGE_DROP_POINTS
+        }
+        _ => false,
+    }
 }
 
 /// The ABSENCE-shaped Criticals in one report, as `(code, evidence)` pairs.
@@ -282,6 +418,13 @@ pub enum SectionOutcome {
 /// `Completer::complete`, which records spend but does not charge (its other
 /// callers charge at admission), and a repair round is exactly the fan-out that
 /// must not sit outside the day's cap.
+///
+/// `document`'s OTHER sections also seed this call's sibling-context anchor
+/// (`sections::context_anchor`, excluding the section being rewritten) — one
+/// value that fixes the SAME blind spot for both callers routed through here:
+/// the repair loop's per-section fan-out and the regenerate button's single
+/// click, neither of which could otherwise see that a sibling section had
+/// drifted into a different language, voice or tense.
 pub async fn regenerate_one_section(
     completer: &Completer,
     source_resume: &str,
@@ -297,17 +440,31 @@ pub async fn regenerate_one_section(
     };
     let lines: Vec<&str> = document.lines().collect();
     let current = section.text(&lines);
+    // Trimmed HERE, once, so the gate below and `repair_user`'s own
+    // `!context.trim().is_empty()` cannot disagree: a whitespace-only anchor
+    // would otherwise have `repair_system` announce a `<document_context>`
+    // block that `repair_user` then omits — a prompt pointing at absent
+    // evidence. Both parts of the anchor are provably non-whitespace today, so
+    // this closes an invariant that currently spans three files rather than a
+    // reachable bug.
+    let context = sections::context_anchor(&split, &lines, section.kind);
+    let context = context.trim();
 
     completer.charge_daily()?;
     let replacement = completer
         .complete(
-            &repair_system(target_language),
-            &repair_user(source_resume, &current, issues, note),
+            &repair_system(target_language, !context.is_empty()),
+            &repair_user(source_resume, &current, issues, note, context),
             None,
         )
         .await?;
     let replacement = replacement.trim();
-    if !sections::is_usable_replacement(replacement) {
+    // Shape first (fence tag, heading, body, single section), THEN identity —
+    // a replacement that names the wrong section is exactly as unusable as one
+    // with no heading at all: neither gets spliced (finding #3, PRs
+    // #969/#992's per-section fan-out). `sections::accepts` is the ONE gate,
+    // shared with this function's own tests — see its doc.
+    if !sections::accepts(replacement, section.kind) {
         return Ok(SectionOutcome::Unusable);
     }
     Ok(SectionOutcome::Replaced(sections::splice(

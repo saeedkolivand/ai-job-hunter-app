@@ -12,8 +12,12 @@
 //! not re-classify or enrich. Inline formatting is recovered with
 //! [`tokenize_rich`], so links survive as first-class runs (and bold survives
 //! wherever the parser preserved it). Content is never dropped: unrecognized or
-//! out-of-place lines fall back to paragraphs. The structured extractor that
-//! builds the model directly (skipping this text round-trip) arrives in Phase 6.
+//! out-of-place lines fall back to paragraphs. The one exception is a heading
+//! with nothing beneath it — a heading the source or a generator wrote and
+//! never filled in carries no content to lose, and [`push_nonempty_section`]
+//! drops it rather than let it render as a visibly empty section. The
+//! structured extractor that builds the model directly (skipping this text
+//! round-trip) arrives in Phase 6.
 //!
 //! Resumes only. Cover letters have a fundamentally different shape (letterhead,
 //! date, recipient, salutation, body, closing, signature) and stay on the legacy
@@ -54,6 +58,22 @@ fn push_block(block: Block, current: &mut Option<Section>, preamble: &mut Vec<Bl
     match current {
         Some(section) => section.blocks.push(block),
         None => preamble.push(block),
+    }
+}
+
+/// Push a finished section into `sections`, unless it is a heading with no
+/// content beneath it.
+///
+/// A heading followed by zero blocks carries nothing the candidate wrote —
+/// there is no content here to lose, only a label with nothing under it, which
+/// is what the reported "empty Projects/Publications section" bug looked like
+/// once rendered. A legitimately terse section (even one short paragraph or
+/// bullet) has at least one block and survives untouched; only the
+/// zero-content case is dropped, so nothing a source document or a generator
+/// actually wrote is ever discarded here.
+fn push_nonempty_section(section: Section, sections: &mut Vec<Section>) {
+    if !section.blocks.is_empty() {
+        sections.push(section);
     }
 }
 
@@ -124,7 +144,7 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
             LineKind::SectionHeader => {
                 flush_entry(&mut entry, &mut current, &mut preamble);
                 if let Some(section) = current.take() {
-                    sections.push(section);
+                    push_nonempty_section(section, &mut sections);
                 }
                 seen_section = true;
                 current = Some(Section {
@@ -204,7 +224,7 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
     // Final flush of any open entry / section.
     flush_entry(&mut entry, &mut current, &mut preamble);
     if let Some(section) = current.take() {
-        sections.push(section);
+        push_nonempty_section(section, &mut sections);
     }
 
     // Leading content under no heading becomes an untitled Summary section so it
@@ -398,6 +418,50 @@ SPEAKING ENGAGEMENTS
         let m = model_from_resume_text("");
         assert_eq!(m.header, HeaderBlock::default());
         assert!(m.sections.is_empty());
+    }
+
+    /// Bug 2 (PR#998 regression): the source résumé has no projects, and the
+    /// generated text — realistically, from a model that still wrote the
+    /// heading despite the prompt fix — carries a "PROJECTS" heading with
+    /// nothing under it before the next real section. The produced
+    /// [`DocumentModel`] (what actually gets rendered) must not carry a
+    /// Projects section at all. Anchored on the model the PDF/DOCX backends
+    /// consume, not on the prompt string.
+    #[test]
+    fn a_heading_with_nothing_under_it_never_reaches_the_document_model() {
+        let generated = "Jane Doe\njane@example.com\n\n\
+                          EXPERIENCE\nAcme Corp  2020 - Present\n- Shipped things\n\n\
+                          PROJECTS\n\n\
+                          SKILLS\n- Rust, TypeScript\n";
+        let m = model_from_resume_text(generated);
+        let ids: Vec<&SectionId> = m.sections.iter().map(|s| &s.id).collect();
+        assert!(
+            !ids.contains(&&SectionId::Projects),
+            "an empty Projects heading must not survive into the rendered model; got {ids:?}"
+        );
+        assert_eq!(
+            ids,
+            vec![&SectionId::Experience, &SectionId::Skills],
+            "Experience and Skills, the two sections with real content, are untouched"
+        );
+    }
+
+    /// The other half of the same guard: a section that is merely TERSE — one
+    /// short line, not zero — must survive. Otherwise the empty-section drop
+    /// would destroy a legitimate one-entry Publications/Awards section along
+    /// with the genuinely empty ones.
+    #[test]
+    fn a_terse_one_line_section_is_not_mistaken_for_an_empty_one() {
+        let generated = "Jane Doe\njane@example.com\n\n\
+                          PUBLICATIONS\nDoe, J. (2022). A short paper.\n\n\
+                          SKILLS\n- Rust\n";
+        let m = model_from_resume_text(generated);
+        let publications = m
+            .sections
+            .iter()
+            .find(|s| s.id == SectionId::Publications)
+            .expect("the one-line Publications section must survive");
+        assert_eq!(publications.blocks.len(), 1);
     }
 
     #[test]

@@ -35,6 +35,8 @@ const EN_DROPPED_ROLE: &str = include_str!("fixtures/en_generated_dropped_role.t
 const EN_ALTERED_LINK: &str = include_str!("fixtures/en_generated_altered_project_link.txt");
 const EN_DUPLICATES: &str = include_str!("fixtures/en_generated_duplicate_bullets.txt");
 const EN_WRONG_LANGUAGE: &str = include_str!("fixtures/en_generated_wrong_language.txt");
+const EN_EXPERIENCE_DRIFTED_ITALIAN: &str =
+    include_str!("fixtures/en_generated_experience_drifted_italian.txt");
 const EN_PROJECTS_TIER2: &str = include_str!("fixtures/en_generated_projects_tier2.txt");
 const EN_PROJECTS_TIER3: &str = include_str!("fixtures/en_generated_projects_tier3.txt");
 const EN_PROJECTS_BROKEN: &str = include_str!("fixtures/en_generated_projects_broken.txt");
@@ -298,6 +300,43 @@ fn dropped_role_is_critical_and_names_the_employer() {
     assert_eq!(report.metrics.roles_output, 1);
 }
 
+/// **Confirmation-review finding 3, test B.** `generated_experience_lower`
+/// used to fall back to searching the WHOLE document once the Experience
+/// section's own text was empty — exactly what a heading-only (wiped)
+/// Experience section always produces. A Summary sentence that merely NAMES
+/// a former employer then read as evidence the employer "survived", even
+/// though every role naming it is gone: measured on commit 8c74ccd1's own
+/// branch as `factual.dropped_role = 0`, `ok = true` on a résumé whose entire
+/// employment history had been deleted, and never pinned by a test.
+///
+/// `EN_SOURCE` already has "Globex Logistics" as a real employer (see
+/// `dropped_role_is_critical_and_names_the_employer` above); this reuses it
+/// rather than a company name unproven against `distinctive_tokens`/
+/// `survival_tokens`.
+///
+/// Mutation check: revert `generated_experience_lower` to the
+/// text-emptiness fallback (drop the `has_experience` gate) and this goes
+/// red — Globex Logistics is found via the Summary sentence and the
+/// Critical never fires.
+#[test]
+fn a_wiped_experience_section_still_flags_a_dropped_role_named_only_in_the_summary() {
+    let generated = "Jane Doe\n\
+         jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+         SUMMARY\n\n\
+         Backend engineer, most recently leading payments reliability work \
+         after Globex Logistics.\n\n\
+         EXPERIENCE\n\n";
+    let report = en_resume(generated, &en_requirements());
+    let hits = fired(&report, FACTUAL_DROPPED_ROLE);
+    assert!(
+        hits.iter()
+            .any(|i| i.evidence.as_deref().is_some_and(|e| e.contains("Globex"))),
+        "Globex Logistics is named only in the Summary, not in the (wiped) \
+         Experience section — the old text-emptiness fallback searched the \
+         whole document and let this slip through silently; got {hits:#?}"
+    );
+}
+
 /// A changed link surfaces as BOTH halves: the candidate's own URL is gone and
 /// an unknown one appeared. Both are Critical — a reviewer following the wrong
 /// link is the failure this prevents.
@@ -321,6 +360,114 @@ fn altered_project_link_fires_for_the_drop_and_the_invention() {
         !evidence.contains(&"https://ledger.example.dev"),
         "an unchanged link must never fire; got {evidence:?}"
     );
+}
+
+/// Audit finding #4 (HIGH) — `Analysis::section_of_kind` used to be
+/// first-match-only, so an invented link that landed in a SECOND Projects
+/// section was invisible to `factual::project_link_issues` (Critical-severity)
+/// even though the SAME link in the first section fires cleanly.
+///
+/// Mutation check: change `project_link_issues` back to
+/// `ctx.section_of_kind(SectionKind::Projects)` (single section) and this goes
+/// red — verified (zero `factual.altered_project_link` hits for the second-
+/// section case), then restored to `generated_sections_of_kind` and
+/// re-verified green.
+#[test]
+fn an_invented_link_in_a_second_projects_section_still_fires() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                  Rust · SQLite\n";
+    // Two PROJECTS sections — the shape a repair round or an imported résumé
+    // can leave. The first is untouched; the invented link sits ONLY in the
+    // second.
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                     Rust · SQLite\n\n\
+                     PROJECTS\n\n\
+                     **Side Tracker** · https://github.com/janedoe/side-tracker\n\
+                     Python · Flask\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_ALTERED_PROJECT_LINK);
+    assert!(
+        hits.iter()
+            .any(|i| i.evidence.as_deref() == Some("https://github.com/janedoe/side-tracker")),
+        "an invented link in the SECOND Projects section must fire, not just \
+         the first; got {hits:#?}"
+    );
+    assert!(hits.iter().all(|i| i.severity == Severity::Critical));
+}
+
+/// **PR #1003 finding 3 (MAJOR).** `generated_urls` unions every generated
+/// Projects section's links (the test above proves that union is needed) —
+/// but the invention loop pushed one issue per OCCURRENCE, unlike the rest of
+/// this function, which already keys everything else off the canonical link.
+/// The SAME invented URL appearing in two generated Projects sections (a
+/// duplicate the model produced, or one already present in an imported
+/// résumé) used to read as two identical Criticals for one fabrication.
+///
+/// Mutation check: drop the `reported_invented.insert(key)` half of the
+/// invention loop's condition and this goes red — two identical Criticals for
+/// `weekend-tracker`.
+#[test]
+fn the_same_invented_link_in_two_generated_projects_sections_reports_once() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                  Rust · SQLite\n";
+    // The genuine link survives unaltered in the first section; the SAME
+    // invented link appears once in EACH of the two generated sections.
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                     Rust · SQLite\n\n\
+                     **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                     Swift · CoreData\n\n\
+                     SIDE PROJECTS\n\n\
+                     **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                     Swift · CoreData\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_ALTERED_PROJECT_LINK);
+    assert_eq!(
+        hits.len(),
+        1,
+        "the same invented link in two generated Projects sections must \
+         report once, not once per occurrence; got {hits:#?}"
+    );
+    assert_eq!(
+        hits[0].evidence.as_deref(),
+        Some("https://github.com/janedoe/weekend-tracker")
+    );
+}
+
+/// **Confirmation-review finding 3, test C.** `project_link_issues` used to
+/// widen its GENERATED side to every Projects section (the test above) but
+/// left the SOURCE side reading only the first — so a source résumé with
+/// both a "PROJECTS" and a "SIDE PROJECTS" section accused the candidate of
+/// inventing their OWN link, unclearably, whenever it lived in the second
+/// section: `criticals_by_section` routes the finding to the FIRST Projects
+/// section, which never contained it.
+///
+/// Both source sections classify `SectionKind::Projects` — `SECTION_NAMES`
+/// recognises "projects" and "side projects" as separate exact headings —
+/// and the generated document here carries BOTH links unaltered.
+///
+/// Mutation check: change `project_link_issues`'s source side back to
+/// `ctx.section_of_kind(SectionKind::Projects)` (first section only) and
+/// this goes red — the Weekend Tracker link, sourced only from the second
+/// section, reads as invented.
+#[test]
+fn a_link_sourced_only_from_a_second_side_projects_section_is_not_flagged_as_invented() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                  Rust · SQLite\n\n\
+                  SIDE PROJECTS\n\n\
+                  **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                  Swift · CoreData\n";
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                     Rust · SQLite\n\n\
+                     **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                     Swift · CoreData\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    silent(&report, FACTUAL_ALTERED_PROJECT_LINK);
 }
 
 #[test]
@@ -359,6 +506,287 @@ fn wrong_language_output_is_critical() {
         !codes(&report).contains(&ALIGNMENT_LOW_COVERAGE),
         "no cascade of derived alignment warnings; got {:?}",
         codes(&report)
+    );
+}
+
+/// The blind spot the document-level majority vote leaves open: a single
+/// section drifted to another language inside an otherwise-English résumé.
+/// First proves the premise (the WHOLE-document read stays clean — the
+/// English majority hides the one Italian section), then proves the
+/// per-section pass catches exactly what the document-level one cannot.
+#[test]
+fn a_single_drifted_section_is_caught_even_though_the_document_reads_clean() {
+    assert!(
+        !is_language_mismatch(EN_EXPERIENCE_DRIFTED_ITALIAN, "en"),
+        "premise: the document-level majority vote must NOT fire here — one \
+         Italian section inside a mostly-English résumé is exactly the case \
+         that hides from a whole-document read"
+    );
+
+    let report = en_resume(EN_EXPERIENCE_DRIFTED_ITALIAN, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+    assert_eq!(
+        hits[0].section.as_deref(),
+        Some("EXPERIENCE"),
+        "the finding must name the drifted section, not just the document"
+    );
+}
+
+/// **Confirmation-review finding 4 (MEDIUM).** `char::is_lowercase()` is
+/// `false` for every character in a caseless script (Arabic, Hebrew, CJK,
+/// Thai, Devanagari), so a naive lowercase-word-RATIO reads 0 for a section
+/// written in one and `looks_like_prose` skips it — the exact same drifted-
+/// Experience-section shape [`a_single_drifted_section_is_caught_even_though_the_document_reads_clean`]
+/// proves is caught in Italian must ALSO be caught in Arabic, and before this
+/// commit it was (via the `SectionKind` allowlist this replaced, which never
+/// asked whether the text "looked like prose" at all).
+#[test]
+fn a_drifted_experience_section_in_a_caseless_script_is_still_caught() {
+    let generated = "Jane Doe\n\
+        jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+        SUMMARY\n\n\
+        Eight years of backend work, most of it on payment systems and the \
+        container platforms behind them.\n\n\
+        EXPERIENCE\n\n\
+        مهندس أول للأنظمة الخلفية في شركة أكمي للمدفوعات من عام 2021 حتى الآن\n\
+        - قمت بخفض زمن الاستجابة عند الدفع من 480 مللي ثانية إلى 90 مللي ثانية \
+        من خلال إضافة ذاكرة تخزين مؤقت أمام خدمة دفتر الحسابات\n\
+        - قمت بتشغيل حاويات دوكر على عنقود كوبرنيتيس يستجيب لاثني عشر ألف طلب \
+        في كل ثانية\n\n\
+        PROJECTS\n\n\
+        **Ledger CLI** · https://github.com/janedoe/ledger\n\
+        Rust · SQLite\n\
+        Double-entry bookkeeping for freelancers.\n\n\
+        SKILLS\n\n\
+        Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis\n\n\
+        EDUCATION\n\n\
+        BSc Computer Science, TU Berlin, 2014 - 2018\n";
+    assert!(
+        !is_language_mismatch(generated, "en"),
+        "premise: the document-level majority vote must NOT fire here — one \
+         Arabic section inside a mostly-English résumé is exactly the case \
+         that hides from a whole-document read"
+    );
+    let report = en_resume(generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+    assert_eq!(
+        hits[0].section.as_deref(),
+        Some("EXPERIENCE"),
+        "the finding must name the drifted section, not just the document; got {hits:#?}"
+    );
+}
+
+/// The false-positive risk named alongside the per-section check: a skills
+/// list is language-neutral prose `whatlang` misreads regardless of length.
+/// Padded well past [`MIN_CHARS_FOR_LANGUAGE_CHECK`] so this proves the
+/// SectionKind::Skills exclusion is doing the work — not just the char floor,
+/// which a short list would clear anyway.
+/// The false-positive risk named alongside the per-section check, and the
+/// REALISTIC shape it takes: `whatlang` correctly reads a comma/middot list of
+/// tool names ("Rust · Python · Docker · Kubernetes · PostgreSQL · AWS ·
+/// Terraform · Redis") as ENGLISH — tool names have no German translation —
+/// which is exactly right for the text but wrong for the comparison: a
+/// perfectly ordinary German résumé's Skills section, checked against a
+/// German target, would fail `languages_align(skills_text, "de")` on every
+/// single generation. [`DE_CLEAN`] carries exactly this section unmodified;
+/// this fixture pads it well past [`MIN_CHARS_FOR_LANGUAGE_CHECK`] so the
+/// premise (the padded list clears the per-section char floor on its own,
+/// not just the original short one) is proven rather than assumed.
+#[test]
+fn a_long_skills_list_never_trips_the_per_section_language_check() {
+    let padded = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis · \
+         Go · TypeScript · GraphQL · gRPC · Kafka · RabbitMQ · Elasticsearch · Prometheus · \
+         Grafana · Jenkins · GitLab CI · Helm · Istio · Envoy · Vault · Consul · Nomad · \
+         Ansible · Chef · Puppet · Nginx · HAProxy · Cassandra · MongoDB · ClickHouse",
+    );
+    assert!(
+        significant_chars(&padded) - significant_chars(DE_CLEAN) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: the padded skills list alone must clear the per-section char floor"
+    );
+    assert!(
+        !crate::documents::keywords::languages_align(
+            "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+            "de"
+        ),
+        "premise: whatlang really does read this ordinary tool-name list as \
+         non-German — the exclusion is doing real work, not guarding against \
+         nothing"
+    );
+    let report = validate_content(&ContentInput {
+        generated: &padded,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// **Confirmation-review finding 1 (HIGH).** `looks_like_prose` replaced a
+/// `SectionKind` allowlist that was the ONLY thing keeping
+/// `SectionKind::Skills` out of the per-section language check. Canonical
+/// tool-name casing IS lowercase (`pandas`, `numpy`, `git`, `nginx`, `dbt`) —
+/// the opposite of what the doc this replaces claimed ("has not been
+/// observed") — and [`PROSE_LOWERCASE_WORD_RATIO`] (0.2) is one word in five,
+/// so a genuinely lowercase tool list clears it easily. Measured on commit
+/// 8c74ccd1's own branch: a truthful German `KENNTNISSE` section with a
+/// Python/data stack earned a false Critical.
+///
+/// Unlike [`a_long_skills_list_never_trips_the_per_section_language_check`]
+/// above — whose fixture is Title-Case and so never exercised this path at
+/// all, which is exactly why that guard test stayed green through the
+/// regression — every tool name here is genuinely lowercase.
+///
+/// Mutation check: drop the `section.kind != SectionKind::Skills` filter
+/// from `section_language_issues` and this goes red.
+#[test]
+fn a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_language_check() {
+    let lowercase_tools = "pandas · numpy · scikit-learn · pytest · git · bash · npm · nginx · \
+                            dbt · kubectl · docker · kubernetes · terraform · ansible · jenkins \
+                            · grafana · prometheus · redis · postgresql · elasticsearch";
+    let generated = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        lowercase_tools,
+    );
+    assert!(
+        significant_chars(lowercase_tools) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: the lowercase tool list alone must clear the per-section char floor"
+    );
+    assert!(
+        looks_like_prose(lowercase_tools),
+        "premise: a genuinely lowercase tool list reads as PROSE under the \
+         0.2 ratio — this is the exact false positive the SectionKind::Skills \
+         exclusion exists to catch, not a hypothetical one"
+    );
+    assert!(
+        !crate::documents::keywords::languages_align(lowercase_tools, "de"),
+        "premise: whatlang really does read this lowercase tool list as \
+         non-German — the exclusion is doing real work, not guarding against \
+         nothing"
+    );
+    let report = validate_content(&ContentInput {
+        generated: &generated,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// Regression: `SectionKind` has six variants and `classify_section` has no
+/// heading list for Certifications, Awards, Publications or Languages-spoken —
+/// they all land in `SectionKind::Other`. A Skills-only exclusion therefore
+/// admitted exactly the shape it was written to keep out: a correct, English
+/// certifications block is proper-noun-heavy, clears the char floor, and reads
+/// as non-English. Firing there would blank `keywordCoverage` and suppress
+/// every alignment finding on an otherwise-perfect résumé.
+#[test]
+fn a_correct_certifications_block_never_trips_the_per_section_language_check() {
+    let certs = "
+
+CERTIFICATIONS
+AWS Certified Solutions Architect - Professional (2022)
+                 Google Cloud Professional Data Engineer (2023)
+                 Certified Kubernetes Administrator CKA (2021)
+";
+    let body = certs.trim_start();
+    assert!(
+        significant_chars(body) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: this block must clear the per-section char floor, or the test          proves nothing about the exclusion"
+    );
+    assert!(
+        !crate::documents::keywords::languages_align(body, "en"),
+        "premise: whatlang really does read this correct ENGLISH certifications          block as non-English — the scoping is doing real work"
+    );
+    let with_certs = format!("{EN_CLEAN}{certs}");
+    let report = en_resume(&with_certs, &en_requirements());
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// **PR #1003 finding 1 (CRITICAL).** A Volunteer heading is real —
+/// `export::parser`'s `SECTION_NAMES` promotes it to a `SectionHeader` line —
+/// but `classify_section`'s six variants have no arm for it, so it lands in
+/// `SectionKind::Other` exactly like Certifications/Awards do. Unlike those,
+/// `pipeline::resume::stages::sections::key_of` maps `SectionKind::Other` to
+/// no `SectionKey`, so `criticals_by_section` cannot route a Critical
+/// labelled here to anything `repair` can regenerate — and the run's own
+/// regenerate button has no section to target either. A Critical would park
+/// the run at `needsReview` behind a finding nothing can ever clear, so this
+/// must fire as a Warning, not a Critical.
+///
+/// Mutation check: drop the `section.kind == SectionKind::Other` guard from
+/// `section_language_issues` (i.e. always leave the table's declared
+/// Critical) and this goes red — the hit reads Critical.
+#[test]
+fn a_drifted_volunteer_section_warns_rather_than_blocks() {
+    let volunteer = "\n\nVOLUNTEER\n\n\
+        Ho aiutato una piccola organizzazione no profit locale a digitalizzare i \
+        propri archivi cartacei, costruendo uno strumento di catalogazione che i \
+        volontari potessero usare senza alcuna formazione tecnica.\n";
+    let generated = format!("{EN_CLEAN}{volunteer}");
+    assert!(
+        !is_language_mismatch(&generated, "en"),
+        "premise: the document-level majority vote must NOT fire — one drifted \
+         Volunteer section inside an otherwise-English résumé is exactly the \
+         case the section-level pass exists to catch"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].section.as_deref(), Some("VOLUNTEER"));
+    assert_eq!(
+        hits[0].severity,
+        Severity::Warning,
+        "a Volunteer heading has no SectionKey to repair — a Critical here \
+         would be unclearable; got {hits:#?}"
+    );
+    assert!(
+        report.ok,
+        "a Warning alone must not block the report; got ok={}",
+        report.ok
+    );
+}
+
+/// **PR #1003 finding 1 (CRITICAL), Awards variant.** Same unroutable-section
+/// shape as the Volunteer test above, proven on a second heading
+/// `SECTION_NAMES` knows and `classify_section` does not, so the fix is
+/// proven on more than the one heading that happened to motivate it.
+///
+/// Mutation check: same as the Volunteer test above.
+#[test]
+fn a_drifted_awards_section_warns_rather_than_blocks() {
+    let awards = "\n\nAWARDS\n\n\
+        Ho ricevuto il premio Employee of the Year per aver guidato la migrazione \
+        della piattaforma di pagamenti verso la nuova architettura a container, \
+        riducendo i tempi di inattività del servizio durante il cambio.\n";
+    let generated = format!("{EN_CLEAN}{awards}");
+    assert!(
+        !is_language_mismatch(&generated, "en"),
+        "premise: the document-level majority vote must NOT fire — one drifted \
+         Awards section inside an otherwise-English résumé is exactly the case \
+         the section-level pass exists to catch"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].section.as_deref(), Some("AWARDS"));
+    assert_eq!(
+        hits[0].severity,
+        Severity::Warning,
+        "an Awards heading has no SectionKey to repair — a Critical here would \
+         be unclearable; got {hits:#?}"
+    );
+    assert!(
+        report.ok,
+        "a Warning alone must not block the report; got ok={}",
+        report.ok
     );
 }
 
@@ -870,6 +1298,48 @@ fn shortened_company_names_are_not_dropped_roles() {
     );
 }
 
+/// Audit finding #1 (CRITICAL) — `company_survives` used to substring-search
+/// the WHOLE document, so a Summary sentence that merely NAMES a former
+/// employer let a repair round delete the entry entirely and still read as
+/// "survived". Scoping the search to the generated EXPERIENCE section(s)
+/// closes that hole; the Summary mention below must not spare the dropped
+/// entry.
+///
+/// Mutation check: revert `dropped_role_issues` to search
+/// `ctx.input.generated.to_lowercase()` instead of
+/// `generated_experience_lower(&ctx.generated_sections)` and this goes red —
+/// verified (the fixed-fixture form fired, the whole-document form was
+/// silent), then restored to the scoped form and re-verified green.
+#[test]
+fn a_company_named_only_in_the_summary_does_not_spare_a_dropped_experience_entry() {
+    let source = "EXPERIENCE\n\n\
+                  Software Engineer | Acme Payments | 2019 - 2021\n\
+                  - Built the payments core\n\n\
+                  Senior Engineer | Globex Logistics | 2021 - 2023\n\
+                  - Ran the routing platform\n";
+    // A destructive repair round deleted the Globex Logistics entry from
+    // EXPERIENCE, but the Summary — written before the round, untouched by
+    // it — still names both employers.
+    let generated = "SUMMARY\n\n\
+                     Engineer with experience at Acme Payments and Globex Logistics.\n\n\
+                     EXPERIENCE\n\n\
+                     Software Engineer | Acme Payments | 2019 - 2021\n\
+                     - Built the payments core\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_DROPPED_ROLE);
+    assert!(
+        hits[0]
+            .evidence
+            .as_deref()
+            .is_some_and(|e| e.contains("Globex")),
+        "the evidence must name the dropped employer even though a sibling \
+         section still mentions it; got {:?}",
+        hits[0].evidence
+    );
+    assert_eq!(report.metrics.roles_source, 2);
+    assert_eq!(report.metrics.roles_output, 1);
+}
+
 /// H3 — when the detector reads the SOURCE the same "wrong" way it reads the
 /// output, the detector is the unreliable party, not the document. Firing there
 /// produced a Critical the user cannot act on AND blanked `keywordCoverage`,
@@ -1253,6 +1723,45 @@ fn missing_section_warns_once_per_absent_standard_section() {
     let hits = fired(&report, ATS_MISSING_SECTION);
     let named: Vec<&str> = hits.iter().filter_map(|i| i.evidence.as_deref()).collect();
     assert_eq!(named, vec!["Education", "Skills"]);
+}
+
+/// Bug 2 (PR#998 regression): the draft prompt's old "order the sections
+/// EXACTLY as … do not drop" phrasing read as a manifest, and the model
+/// obeyed by writing a heading with nothing under it.
+///
+/// A WARNING, deliberately — see `empty_section_issues`'s doc comment. A
+/// Critical would route this to `repair`, whose remedy is to regenerate the
+/// section, which for an empty `PROJECTS` means inventing projects the
+/// candidate does not have. Removal is the correct remedy and
+/// `model::adapter::push_nonempty_section` already performs it structurally;
+/// this issue reports a defect that is handled, it does not trigger the fix.
+#[test]
+fn empty_section_heading_is_reported_but_never_routed_to_repair() {
+    let generated = "EXPERIENCE\n\nAcme | 2021 - Present\n- Shipped the ledger service\n\n\
+                      PROJECTS\n\n\
+                      SKILLS\n\nRust, Go\n\n\
+                      EDUCATION\n\nBSc, TU Berlin, 2018\n";
+    let report = report_for(generated, generated, EN_JOB_AD, &[]);
+    let hits = fired(&report, ATS_EMPTY_SECTION);
+    assert_eq!(
+        hits[0].severity,
+        Severity::Warning,
+        "a Critical here would make `repair` regenerate the empty section, i.e.          invent its content — removal is the remedy, and adapter already does it"
+    );
+    assert_eq!(hits[0].section.as_deref(), Some("PROJECTS"));
+}
+
+/// The false-positive risk named alongside the guard: a section that is
+/// merely TERSE — one real line, not zero — must not be mistaken for an empty
+/// one. Otherwise a legitimate one-entry Publications/Awards section would be
+/// flagged right alongside a genuinely empty one.
+#[test]
+fn a_terse_one_line_section_does_not_trip_the_empty_section_critical() {
+    let generated = "EXPERIENCE\n\nAcme | 2021 - Present\n- Shipped the ledger service\n\n\
+                      PUBLICATIONS\n\nDoe, J. (2022). A short paper.\n\n\
+                      SKILLS\n\nRust, Go\n";
+    let report = report_for(generated, generated, EN_JOB_AD, &[]);
+    silent(&report, ATS_EMPTY_SECTION);
 }
 
 /// Exactly [`ats::MAX_BULLET_CHARS`] is fine; one character more is not.
@@ -2094,7 +2603,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        30,
+        31,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES
@@ -2103,7 +2612,7 @@ fn code_table_is_complete_and_unique() {
         .count();
     assert_eq!(
         criticals, 7,
-        "Criticals are deterministic factual/language/structure defects only"
+        "Criticals are deterministic factual/language/structure defects only — and          only ones whose remedy is a REGENERATE, since that is what `repair` does          with them. `ats.empty_section` is a Warning for exactly that reason."
     );
 }
 
@@ -2503,6 +3012,9 @@ fn factual_and_alignment_thresholds_are_pinned() {
     assert_eq!(consistency::MAX_PROJECT_DESCRIPTION_LINES, 3);
     assert_eq!(consistency::MAX_SKILLS_LABEL_WORDS, 3);
     assert_eq!(MIN_CHARS_FOR_LANGUAGE_CHECK, 120);
+    // Confirmation-review finding 3: the 0.2 threshold was asserted nowhere.
+    // One word in five opening lowercase is enough to read a section as prose.
+    assert_eq!(PROSE_LOWERCASE_WORD_RATIO, 0.2);
 }
 
 /// The skills-label strip must BITE at its boundary and stop there: a short
@@ -5085,4 +5597,31 @@ fn a_www_prefix_is_the_same_link() {
         &report_for(altered, source, EN_JOB_AD, &[]),
         FACTUAL_ALTERED_PROJECT_LINK,
     );
+}
+
+/// Regression: scoping the survival search to `SectionKind::Experience` turned
+/// "this résumé has no section my classifier calls Experience" into "these jobs
+/// were deleted". `classify_section` does not know `Work History` or `Selected
+/// Roles`, so a truthful résumé using either earned two unclearable Criticals —
+/// unclearable because `criticals_by_section` routes them to
+/// `SectionKey::Experience`, which `find` cannot locate, so no repair runs.
+#[test]
+fn an_unrecognised_experience_heading_is_not_read_as_deleted_jobs() {
+    let src = "Jane Doe\n\nWORK EXPERIENCE\nAcme Payments | 2021 - Present\n\
+               - Led the settlement migration to Rust across fourteen markets\n\n\
+               Globex Logistics | 2018 - 2021\n\
+               - Built a distributed scheduler handling four million jobs a day\n";
+    for heading in ["WORK EXPERIENCE", "WORK HISTORY", "SELECTED ROLES"] {
+        let generated = src.replace("WORK EXPERIENCE", heading);
+        let report = report_for(&generated, src, EN_JOB_AD, &[]);
+        let dropped = codes(&report)
+            .iter()
+            .filter(|c| **c == FACTUAL_DROPPED_ROLE)
+            .count();
+        assert_eq!(
+            dropped, 0,
+            "heading {heading:?}: both roles are present verbatim, so nothing was \
+             dropped; got {dropped} factual.dropped_role"
+        );
+    }
 }
