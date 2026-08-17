@@ -642,8 +642,16 @@ impl<'a> Analysis<'a> {
             .filter(move |s| s.kind == kind)
     }
 
-    pub fn source_section_of_kind(&self, kind: SectionKind) -> Option<&Section> {
-        self.source_sections.iter().find(|s| s.kind == kind)
+    /// EVERY source section of `kind` — the SOURCE-side mirror of
+    /// [`Self::generated_sections_of_kind`]. `factual::project_link_issues` used
+    /// to read only the FIRST source section of a kind on this side while the
+    /// generated side already read every one, so a SECOND source Projects
+    /// section's links (`SECTION_NAMES` recognises both "projects" and "side
+    /// projects", and both classify `Projects`) dropped out of the sourced set
+    /// — a document that changed nothing accused itself of inventing its own
+    /// link.
+    pub fn source_sections_of_kind(&self, kind: SectionKind) -> impl Iterator<Item = &Section> {
+        self.source_sections.iter().filter(move |s| s.kind == kind)
     }
 }
 
@@ -1258,46 +1266,75 @@ fn language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     section_language_issues(ctx)
 }
 
+/// Share of `text`'s alphabetic-initial words that open LOWERCASE — the
+/// discriminator [`section_language_issues`] uses in place of a heading-kind
+/// allowlist to decide whether a section reads as PROSE at all.
+///
+/// A list item — a certification, a tool name, a keyword line — is written in
+/// Title Case almost without exception. A sentence in any language this
+/// pipeline supports is not, however heavily it capitalizes its OWN nouns
+/// (German capitalizes every one): it still connects them with lowercase
+/// articles, prepositions, pronouns and verbs. So the signal is not case
+/// itself (language-dependent) but how MUCH of the text sits in lowercase —
+/// exactly the function-word density `whatlang` needs to read a language from
+/// at all, without needing to know what that language is first.
+///
+/// *Accepted cost, stated:* an all-lowercase technical list ("javascript,
+/// python, docker") would read as prose here. Real résumés write tool names in
+/// their own casing (`JavaScript`, `Docker`), so this has not been observed —
+/// and the cost if it ever is is a possible false Critical, the same direction
+/// the kind allowlist this replaces already accepted for `SectionKind::Other`.
+const PROSE_LOWERCASE_WORD_RATIO: f64 = 0.2;
+
+fn looks_like_prose(text: &str) -> bool {
+    let mut words = 0usize;
+    let mut lowercase_initial = 0usize;
+    for word in text.split_whitespace() {
+        let Some(first) = word.chars().next() else {
+            continue;
+        };
+        if !first.is_alphabetic() {
+            continue; // A bare number, a bullet marker, a parenthesised year.
+        }
+        words += 1;
+        if first.is_lowercase() {
+            lowercase_initial += 1;
+        }
+    }
+    words > 0 && (lowercase_initial as f64 / words as f64) >= PROSE_LOWERCASE_WORD_RATIO
+}
+
 /// Per-section half of [`language_issues`].
 ///
 /// Gated on the SAME positive control the document-level check requires
 /// ([`source_is_a_reliable_control`]) rather than a fresh reliability read per
-/// section. The control question — can `whatlang` read THIS candidate's
-/// writing at all — is a property of the candidate's source résumé, not of any
-/// one generated section, and generated/source sections do not line up 1:1 (a
-/// section can be reordered, merged or renamed by the model). Re-deriving
-/// reliability per section would need a source section to compare against and
-/// would reintroduce exactly the false-Critical failure mode
-/// `source_is_a_reliable_control` exists to prevent (R5-F2) — this time per
-/// section instead of per document.
+/// section — the control question is a property of the candidate's source
+/// résumé, not of any one generated section.
 ///
 /// Two more guards a section-scoped read needs that the document-scoped one
 /// does not, both TRADED conservatively toward missing a defect rather than
 /// accusing a truthful section:
 ///
-/// * the SAME [`MIN_CHARS_FOR_LANGUAGE_CHECK`] floor, applied per section —
-///   `whatlang` guesses on short text regardless of scope, and most sections
-///   (a one-line Education entry, a short Summary) sit under it on their own;
-/// * only PROSE-BEARING kinds are read at all. `whatlang` needs function
-///   words; a list of proper nouns has none in any language, so it misreads
-///   that shape however long the list runs — padding past the char floor makes
-///   the read more confident-looking, not more reliable. [`SectionKind`] has
-///   only six variants, and `classify_section` has no heading list for
-///   Certifications, Awards, Publications or Languages-spoken — every one of
-///   them lands in [`SectionKind::Other`], which carries exactly the
-///   Skills-shaped risk: a correct English "AWS Certified Solutions Architect
-///   (Professional, 2022)" block clears the char floor and reads as non-English.
-///   So the pass is scoped POSITIVELY to Summary/Experience/Projects rather
-///   than by excluding one kind — an exclusion list silently admits every kind
-///   nobody thought of. Education is out too: institution names are routinely
-///   in the local language inside a correctly-targeted résumé
-///   ("Technische Universität Berlin" in an English CV).
+/// * the SAME [`MIN_CHARS_FOR_LANGUAGE_CHECK`] floor, applied per section;
+/// * only sections that [`looks_like_prose`] — `whatlang` needs function words
+///   to read at all, and a list has none in any language, however long it
+///   runs.
+///
+///   This used to be a heading-KIND allowlist
+///   (Summary/Experience/Projects), which was wrong in BOTH directions: too
+///   NARROW, because `classify_section` has no heading list for "Work
+///   History" or "Selected Roles" — a drifted section under either heading
+///   was invisible to this pass entirely; and too WIDE, because an Experience
+///   section that is ITSELF a keyword list ("Kafka, PostgreSQL, Kubernetes,
+///   Terraform, Grafana.") satisfies the kind test and `whatlang` misreads it
+///   exactly as it misreads a Skills line — burning a repair round on a
+///   truthful section. A content test closes both: it doesn't care what the
+///   heading is called, and it doesn't care what `SectionKind` the classifier
+///   guessed.
 ///
 ///   The cost, paid deliberately: a model that drifts ONLY a list-shaped
 ///   section is not caught here (the document-level pass still can, if enough
-///   of the rest drifts too). That is the right trade — a false Critical
-///   blanks `keywordCoverage` and suppresses every alignment finding on the
-///   whole document.
+///   of the rest drifts too) — the same trade the kind allowlist already made.
 fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     if !source_is_a_reliable_control(ctx.input, &ctx.lang) {
         return Vec::new();
@@ -1305,16 +1342,13 @@ fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     ctx.generated_sections
         .iter()
         .skip(1) // section 0 is the header band (name + contact), not prose
-        .filter(|s| {
-            matches!(
-                s.kind,
-                SectionKind::Summary | SectionKind::Experience | SectionKind::Projects
-            )
-        })
         .filter_map(|section| {
             let heading = section.heading.as_deref()?;
             let body = section_text(section);
             if significant_chars(&body) < MIN_CHARS_FOR_LANGUAGE_CHECK {
+                return None;
+            }
+            if !looks_like_prose(&body) {
                 return None;
             }
             if languages_align(&body, &ctx.lang) {

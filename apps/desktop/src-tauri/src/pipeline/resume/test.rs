@@ -842,6 +842,34 @@ fn a_truncated_section_is_rejected_rather_than_spliced() {
     ));
 }
 
+/// **MEDIUM finding fix.** `ParsedDocument::section_count` counts every
+/// detected `SectionHeader` LINE, and `export::parser`'s ALL-CAPS heading
+/// heuristic cannot tell a genuine second heading from an ALL-CAPS employer
+/// name inside the section being replaced — measured through the real parser
+/// at `section_count == 3` for exactly this two-employer reply. Rejecting on
+/// that raw count silently no-opped the REGENERATE button on a document with
+/// real Criticals still unfixed, because every realistic multi-entry
+/// Experience reply carries at least one ALL-CAPS company name.
+///
+/// Mutation check: revert `real_section_count(&parsed) <= 1` to
+/// `parsed.section_count <= 1` in `is_usable_replacement` and this fails.
+#[test]
+fn a_realistic_multi_entry_experience_reply_with_all_caps_employers_is_usable() {
+    let replacement = "EXPERIENCE\n\n\
+         ACME PAYMENTS GMBH\n\
+         Senior Engineer  2019 - 2021\n\
+         - Led the checkout migration to the new ledger service\n\
+         - Cut p95 latency by 30% across the payments API\n\n\
+         GLOBEX LOGISTICS\n\
+         Engineer  2016 - 2019\n\
+         - Built the shipment-tracking pipeline";
+    assert!(
+        sections::is_usable_replacement(replacement),
+        "two ALL-CAPS employer names inside one Experience section must not \
+         read as a second real section; got {replacement:?}"
+    );
+}
+
 /// **BUG-A's shape gap, `repair`'s own copy.** The repair prompt wraps the
 /// section it hands the model as `<resume_section>…</resume_section>` and
 /// asks for "the replacement section" back — a model that echoes the wrapper
@@ -931,6 +959,27 @@ fn context_anchor_is_empty_when_no_sibling_survives_the_exclusion() {
     assert_eq!(
         sections::context_anchor(&split, &lines, SectionKind::Summary),
         ""
+    );
+}
+
+/// **LOW finding fix.** `representative_bullet`'s fallback used to return the
+/// section's LAST non-empty line with no exclusion for the heading line
+/// itself — so a heading-only Experience section (no body, no bullets at all)
+/// handed `context_anchor` its own heading, "WORK EXPERIENCE", as "the voice
+/// to imitate" for the sibling section being rewritten.
+///
+/// Mutation check: drop the `.skip(1)` from `representative_bullet`'s
+/// fallback and this fails — the anchor gains "WORK EXPERIENCE".
+#[test]
+fn context_anchor_skips_a_heading_only_experience_section_rather_than_anchoring_its_own_heading() {
+    let text = "PROFESSIONAL SUMMARY\nA payments engineer.\n\nWORK EXPERIENCE\n";
+    let split = sections::split(text);
+    let lines: Vec<&str> = text.lines().collect();
+    let anchor = sections::context_anchor(&split, &lines, SectionKind::Skills);
+    assert_eq!(
+        anchor, "PROFESSIONAL SUMMARY\nA payments engineer.\n",
+        "a heading-only Experience section must contribute nothing, not its own heading; \
+         got {anchor:?}"
     );
 }
 
@@ -2365,6 +2414,34 @@ fn a_cross_section_regression_in_one_code_reverts_even_when_the_other_code_impro
     );
 }
 
+/// **A cross-section Warning must not veto a round that fixed every
+/// Critical.** The bug this closes: a round taking Criticals from five to
+/// zero while an ordinary Experience bullet reword also nudged
+/// `consistency.skill_not_demonstrated` up by one — exactly the "ordinary
+/// rewrite noise" the module's own baseline-false-positive doc already names
+/// — used to be reverted by `cross_section_regression` regardless, discarding
+/// a genuine fix and burning the loop's second budgeted round for nothing.
+///
+/// Mutation check: drop the `criticals_after >= criticals_before` gate from
+/// `round_is_worse` (running `cross_section_regression` unconditionally) and
+/// this goes red.
+#[test]
+fn a_cross_section_warning_does_not_veto_a_round_that_fixed_every_critical() {
+    let before = criticals(5);
+    let mut after = criticals(0);
+    after.issues.push(ContentIssue {
+        severity: Severity::Warning,
+        code: CONSISTENCY_SKILL_NOT_DEMONSTRATED,
+        section: Some("Skills".to_string()),
+        message: "a cross-section warning".to_string(),
+        evidence: Some("token-0".to_string()),
+    });
+    assert!(
+        !round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "fixing every Critical must not be discarded for one new cross-section Warning"
+    );
+}
+
 /// **An absence-shaped Critical with NO evidence is skipped, deliberately.**
 ///
 /// `absences` keys on the `(code, evidence)` PAIR, so an issue without evidence
@@ -2988,17 +3065,17 @@ async fn a_missing_section_is_not_counted_as_a_provider_call() {
 /// detected heading.
 ///
 /// The `regenerate` closure here runs the SAME gate `regenerate_one_section`
-/// runs (`sections::is_usable_replacement` + `sections::matches_requested_kind`,
-/// both real production functions) against a canned reply, standing in for
-/// the provider call the way every other `repair_loop` test in this file
-/// does — `regenerate_one_section` itself is a thin `Completer`-calling shim
-/// around exactly this gate, and a `Completer` needs a live `AppHandle`.
+/// runs — `sections::accepts`, the real production predicate, not a
+/// hand-rebuilt copy of it — against a canned reply, standing in for the
+/// provider call the way every other `repair_loop` test in this file does —
+/// `regenerate_one_section` itself is a thin `Completer`-calling shim around
+/// exactly this gate, and a `Completer` needs a live `AppHandle`.
 ///
-/// Mutation check: drop the `parsed.section_count <= 1` term from
-/// `is_usable_replacement` and this goes red — the whole draft gets spliced
-/// back into itself, `WORK EXPERIENCE` appears twice, and the document
-/// changes even though nothing needed to — verified, then restored and
-/// re-verified green.
+/// Mutation check: drop the `real_section_count(&parsed) <= 1` term from
+/// `is_usable_replacement` (which `sections::accepts` calls) and this goes
+/// red — the whole draft gets spliced back into itself, `WORK EXPERIENCE`
+/// appears twice, and the document changes even though nothing needed to —
+/// verified, then restored and re-verified green.
 #[tokio::test]
 async fn a_whole_document_reply_is_rejected_rather_than_doubling_every_section() {
     let (document, _report, _letter, stats) = super::stages::repair_loop(
@@ -3014,9 +3091,7 @@ async fn a_whole_document_reply_is_rejected_rather_than_doubling_every_section()
             // section it was asked for — the exact over-eager reply the
             // audit measured.
             let replacement = document.clone();
-            let outcome = if sections::is_usable_replacement(&replacement)
-                && sections::matches_requested_kind(&replacement, section.kind)
-            {
+            let outcome = if sections::accepts(&replacement, section.kind) {
                 super::stages::SectionOutcome::Replaced(sections::splice(
                     &document,
                     section,
@@ -3055,12 +3130,15 @@ async fn a_whole_document_reply_is_rejected_rather_than_doubling_every_section()
 /// unreported no-op). `sections::matches_requested_kind` re-classifies the
 /// reply through the SAME classifier the split used and rejects a mismatch.
 ///
-/// Same closure shape as the finding-#2 test, for the same reason.
+/// Same closure shape as the finding-#2 test, for the same reason — this one
+/// also calls `sections::accepts`, the shared production predicate, so a
+/// mutation to EITHER half of the gate it wraps is caught here exactly as it
+/// would be caught in `regenerate_one_section` itself.
 ///
-/// Mutation check: drop the `matches_requested_kind` half of the gate and
-/// this goes red — the Summary section is replaced by "SKILLS\n\nRust ·
-/// Python · Kafka" and `PROFESSIONAL SUMMARY` disappears from the document —
-/// verified, then restored and re-verified green.
+/// Mutation check: drop the `matches_requested_kind` call from
+/// `sections::accepts` and this goes red — the Summary section is replaced by
+/// "SKILLS\n\nRust · Python · Kafka" and `PROFESSIONAL SUMMARY` disappears
+/// from the document — verified, then restored and re-verified green.
 #[tokio::test]
 async fn a_wrong_kind_reply_is_rejected_rather_than_replacing_the_wrong_section() {
     let (document, _report, _letter, stats) = super::stages::repair_loop(
@@ -3075,9 +3153,7 @@ async fn a_wrong_kind_reply_is_rejected_rather_than_replacing_the_wrong_section(
             // Asked for Summary, the model hands back a Skills section
             // instead — the exact identity mismatch the audit measured.
             let replacement = "SKILLS\n\nRust · Python · Kafka";
-            let outcome = if sections::is_usable_replacement(replacement)
-                && sections::matches_requested_kind(replacement, section.kind)
-            {
+            let outcome = if sections::accepts(replacement, section.kind) {
                 super::stages::SectionOutcome::Replaced(sections::splice(
                     &document,
                     section,

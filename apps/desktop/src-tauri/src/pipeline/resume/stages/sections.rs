@@ -177,7 +177,10 @@ pub fn splice(text: &str, section: &RawSection, replacement: &str) -> String {
 /// "land inside this section's range" — but the splice does not re-parse what
 /// it inserts, so those sections land in the FINAL document too, doubling
 /// EXPERIENCE/PROJECTS/SKILLS/EDUCATION at export. The heading-count check
-/// below is what actually makes a multi-section answer unusable.)
+/// below is what actually makes a multi-section answer unusable — counted by
+/// [`real_section_count`], not by raw `SectionHeader` lines, so an ALL-CAPS
+/// employer name inside the section being replaced does not itself read as a
+/// second section.)
 ///
 /// **The fence-tag check is the same shape gate `humanize`'s
 /// `is_usable_rewrite` added** (see that module's doc for the incident): the
@@ -203,10 +206,33 @@ pub fn is_usable_replacement(replacement: &str) -> bool {
         .find(|line| !line.text.trim().is_empty())
         .is_some_and(|line| matches!(line.kind, LineKind::SectionHeader))
         || classify_section(first) != SectionKind::Other;
-    // A SECOND detected heading means the answer is more than one section —
-    // the whole document, or several — and splicing it in doubles every
-    // section it names.
-    opens_with_heading && lines.next().is_some() && parsed.section_count <= 1
+    // A SECOND REAL heading means the answer is more than one section — the
+    // whole document, or several — and splicing it in doubles every section
+    // it names.
+    opens_with_heading && lines.next().is_some() && real_section_count(&parsed) <= 1
+}
+
+/// How many of `parsed`'s detected `LineKind::SectionHeader` lines classify to
+/// an actual section kind, rather than [`SectionKind::Other`].
+///
+/// `ParsedDocument::section_count` counts every `SectionHeader` LINE, and the
+/// ALL-CAPS heading heuristic behind it (`export::parser`) cannot tell a
+/// genuine second heading from an ALL-CAPS employer name inside the very
+/// section being replaced — "ACME PAYMENTS GMBH" parses as a heading exactly
+/// like "EXPERIENCE" does, so `section_count` was 2 on a legitimate
+/// single-section reply and [`is_usable_replacement`] rejected it, truncating
+/// a repair that had nothing wrong with it. Re-classifying through the SAME
+/// [`classify_section`] the split uses turns the heading count into a SECTION
+/// count: a company name (or an unrecognised sub-heading like "Languages"
+/// under Skills) classifies `Other` and is not counted, while a real second
+/// Summary/Skills/Experience/Education/Projects heading is.
+fn real_section_count(parsed: &ParsedDocument) -> usize {
+    parsed
+        .lines
+        .iter()
+        .filter(|line| matches!(line.kind, LineKind::SectionHeader))
+        .filter(|line| classify_section(&line.text) != SectionKind::Other)
+        .count()
 }
 
 /// Whether a replacement's own leading heading names the SAME section kind it
@@ -226,6 +252,20 @@ pub fn matches_requested_kind(replacement: &str, expected: SectionKind) -> bool 
         return false;
     };
     classify_section(heading) == expected
+}
+
+/// Whether a regenerated section is acceptable to splice in at all: usable in
+/// shape ([`is_usable_replacement`]) AND naming the section kind it was
+/// actually asked to regenerate ([`matches_requested_kind`]).
+///
+/// The ONE gate `regenerate_one_section` runs — and the only one its own
+/// tests run, by calling this function rather than rebuilding the same two
+/// calls inside a test closure. A hand-rebuilt copy proves the ingredients
+/// work; it does not prove the production wiring calls them, which a
+/// mutation on `regenerate_one_section`'s own condition would not have caught
+/// before this existed.
+pub fn accepts(replacement: &str, expected: SectionKind) -> bool {
+    is_usable_replacement(replacement) && matches_requested_kind(replacement, expected)
 }
 
 /// A compact ANCHOR of the sibling sections already written in this
@@ -271,8 +311,9 @@ pub fn context_anchor(sections: &[RawSection], lines: &[&str], skip: SectionKind
     parts.join("\n\n")
 }
 
-/// The first bullet-marker line in `text`, or its LAST non-empty line when no
-/// marker is found.
+/// The first bullet-marker line in `text`, or its LAST non-empty line AFTER
+/// the heading when no marker is found — `None` when the section carries no
+/// body at all.
 ///
 /// Every generated résumé bullet this crate's own fixtures produce opens with
 /// `-`/`•`/`*` (`draft_system`'s structure rule leaves the exact marker to the
@@ -282,10 +323,28 @@ pub fn context_anchor(sections: &[RawSection], lines: &[&str], skip: SectionKind
 /// proxy for a bullet, since the heading and the company/title/dates line
 /// always come first in this codebase's own résumé grammar
 /// (`export::parser`).
+///
+/// `text` is a [`RawSection::text`], heading line included, and the heading
+/// is always skipped for the fallback: a heading-ONLY Experience section (no
+/// body at all) used to have this return the heading itself — "EXPERIENCE",
+/// verbatim — as "the voice to imitate" for [`context_anchor`]'s prompt
+/// anchor, which is not a bullet by any reading.
 fn representative_bullet(text: &str) -> Option<&str> {
     const MARKERS: [&str; 3] = ["- ", "• ", "* "];
-    text.lines()
-        .map(str::trim)
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    if let Some(bullet) = lines
+        .iter()
         .find(|line| MARKERS.into_iter().any(|marker| line.starts_with(marker)))
-        .or_else(|| text.lines().map(str::trim).rfind(|line| !line.is_empty()))
+    {
+        return Some(bullet);
+    }
+    // Index 0 is always the heading (`RawSection::text` includes it) —
+    // `skip(1)` before searching backward so a heading-only section (no body
+    // at all) returns `None` instead of handing the heading itself back.
+    lines
+        .iter()
+        .skip(1)
+        .rev()
+        .find(|line| !line.is_empty())
+        .copied()
 }

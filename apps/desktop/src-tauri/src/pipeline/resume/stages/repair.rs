@@ -12,12 +12,18 @@
 //! 4. **A worse round ⇒ revert and stop**, where "worse" is strictly more
 //!    criticals, a role count that fell, a keyword-coverage drop past
 //!    [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`], a newly
-//!    INTRODUCED absence, OR a GROWN count of a cross-section warning
-//!    (`duplicate.bullet`, `consistency.skill_not_demonstrated`) — the same
-//!    floor `humanize`'s single whole-document rewrite already held this
-//!    loop's up-to-8 blind per-section rewrites to, now shared rather than
-//!    humanize-only. The repair is a bet that the model can fix what it
-//!    broke; when the bet loses, the honest move is to hand back the draft
+//!    INTRODUCED absence, OR — only when the round did NOT also reduce the
+//!    Critical count — a GROWN count of a cross-section warning
+//!    (`duplicate.bullet`, `consistency.skill_not_demonstrated`). That gate
+//!    is load-bearing, not cosmetic: applying the cross-section term
+//!    unconditionally discarded a round that took Criticals from five to
+//!    zero at the cost of one Warning raised by ordinary bullet-rewrite
+//!    noise (see [`round_is_worse`]'s own doc). It is still the same floor
+//!    `humanize`'s single whole-document rewrite already held this loop's
+//!    up-to-8 blind per-section rewrites to, whenever a round buys nothing
+//!    on Criticals, now shared rather than humanize-only. The repair is a
+//!    bet that the model can fix what it broke; when the bet loses, the
+//!    honest move is to hand back the draft
 //!    that was merely wrong rather than the one that is now wrong in more
 //!    places. Equal is not worse — a round that swaps one Critical for
 //!    another has not lost ground, and stopping there would give up the
@@ -205,6 +211,18 @@ pub(crate) fn criticals_by_section(
 /// repairable; only a round that carries MORE than its own baseline is
 /// worse.
 ///
+/// **But the delta alone still false-positives, so it is also GATED on the
+/// Critical count.** "Did this round grow it" says nothing about WHY: the
+/// same ordinary-rewrite noise that raises an already-elevated baseline is
+/// exactly what raises a round's own before→after delta from zero the FIRST
+/// time that section is ever touched — a round that took Criticals from five
+/// to zero while rewording one Experience bullet enough to shift one shared
+/// token was reverted on precisely that shape, discarding the fix the module
+/// doc's own rule 4 says a Warning must never veto. So the cross-section term
+/// only fires when `criticals_of(after) >= criticals_of(before)` — a Warning
+/// may sink a round that bought nothing on the metric this whole module is
+/// scoped to, never one that fixed what it was asked to fix.
+///
 /// This is a compatible TIGHTENING of rule 4 in the module doc — that rule was
 /// always "never hand back a worse document"; this says what the count could
 /// not express. It fixes quality depth as well as max: quality's repair loop is
@@ -215,7 +233,9 @@ pub(crate) fn round_is_worse(
     after: &ContentReport,
     after_text: &str,
 ) -> bool {
-    if criticals_of(after) > criticals_of(before) {
+    let criticals_before = criticals_of(before);
+    let criticals_after = criticals_of(after);
+    if criticals_after > criticals_before {
         return true;
     }
     // A role count that fell is worse whatever the Critical totals say — the
@@ -236,7 +256,10 @@ pub(crate) fn round_is_worse(
     {
         return true;
     }
-    cross_section_regression(before, after)
+    // Gated: a cross-section Warning may only veto a round that bought
+    // NOTHING on Criticals. See the doc above for the false-positive this
+    // closes.
+    criticals_after >= criticals_before && cross_section_regression(before, after)
 }
 
 /// The `validate/content` codes that reason ACROSS sections rather than
@@ -268,6 +291,16 @@ fn code_count(report: &ContentReport, code: &str) -> usize {
 /// count and would read as "not worse", hiding the new problem behind the
 /// unrelated fix. Comparing each code's own count keeps the two from
 /// cancelling each other out.
+///
+/// **Accepted blind spot, the Warning-side mirror of [`absences`]'s own:**
+/// `code_count` reads `report.issues`, which is already the POST-`cap_issues`
+/// list — `validate_content` truncates Warnings before Criticals once a
+/// report is pinned at `MAX_CONTENT_ISSUES` (200) — so a `before` report
+/// already at the cap can show a code undercounted against an uncapped
+/// `after`, reading as growth that never happened. Reaching it needs a report
+/// already pinned at 200 issues, the same reachability `absences` accepts for
+/// the Critical side; this is the same deliberate choice, stated rather than
+/// hidden, not a fix.
 fn cross_section_regression(before: &ContentReport, after: &ContentReport) -> bool {
     CROSS_SECTION_CODES
         .iter()
@@ -428,10 +461,9 @@ pub async fn regenerate_one_section(
     // Shape first (fence tag, heading, body, single section), THEN identity —
     // a replacement that names the wrong section is exactly as unusable as one
     // with no heading at all: neither gets spliced (finding #3, PRs
-    // #969/#992's per-section fan-out).
-    if !sections::is_usable_replacement(replacement)
-        || !sections::matches_requested_kind(replacement, section.kind)
-    {
+    // #969/#992's per-section fan-out). `sections::accepts` is the ONE gate,
+    // shared with this function's own tests — see its doc.
+    if !sections::accepts(replacement, section.kind) {
         return Ok(SectionOutcome::Unusable);
     }
     Ok(SectionOutcome::Replaced(sections::splice(

@@ -684,6 +684,17 @@ fn survival_tokens(company: &str) -> Vec<String> {
 /// explicitly; this mirrors it, preferring the pre-scoping behaviour (a
 /// possible MISS) over a guaranteed false Critical — the scoping exists to
 /// catch a rare regression and must not manufacture a common one.
+///
+/// **Existence, not emptiness, decides the fallback.** An earlier version
+/// tested `scoped.is_empty()` — literally no text under the Experience
+/// heading — which conflates two different situations: "no Experience section
+/// exists" (fall back, correctly) and "an Experience section exists, but its
+/// body was wiped" (also empty, but every entry under it WAS dropped). The
+/// second case searched the whole document instead, found the employer's name
+/// in an untouched Summary sentence, and read a wiped work history as fine.
+/// The fallback is now gated on whether a `SectionKind::Experience` section is
+/// present at all, so a present-but-wiped section stays scoped to its own
+/// (empty) text and every entry correctly reads as dropped.
 fn generated_experience_lower(sections: &[Section]) -> String {
     let joined = |only_experience: bool| {
         sections
@@ -695,11 +706,11 @@ fn generated_experience_lower(sections: &[Section]) -> String {
             .join("\n")
             .to_lowercase()
     };
-    let scoped = joined(true);
-    if scoped.is_empty() {
+    let has_experience = sections.iter().any(|s| s.kind == SectionKind::Experience);
+    if !has_experience {
         return joined(false);
     }
-    scoped
+    joined(true)
 }
 
 /// Whether `company` still appears in the generated text.
@@ -1115,10 +1126,21 @@ fn project_entry_name(entry: &[&ParsedLine]) -> String {
 /// registered severity and an i18n key in both locales for a message that would
 /// read "you did a normal thing".)
 fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    let source = ctx.source_section_of_kind(SectionKind::Projects);
-    let Some(source) = source else {
+    // ALL source Projects sections, unioned — not just the first. `SECTION_NAMES`
+    // recognises both "projects" and "side projects", and both classify
+    // `Projects`, so a second source Projects section is ordinary, not rare.
+    // Reading only the first left the second one's links out of the sourced
+    // set, so a document that never changed a thing accused itself of
+    // inventing its own link — and unclearably: `criticals_by_section` routes
+    // the finding to the FIRST Projects section, which never contained it.
+    let mut source_sections = ctx
+        .source_sections_of_kind(SectionKind::Projects)
+        .peekable();
+    if source_sections.peek().is_none() {
         return Vec::new(); // Nothing to compare against.
-    };
+    }
+    let source_entries: Vec<(String, Vec<String>)> =
+        source_sections.flat_map(project_entry_links).collect();
     // ALL generated Projects sections, not just the first — see
     // `Analysis::generated_sections_of_kind`'s doc. An invented link that
     // lands in a SECOND Projects section (a duplicate the model produced, or
@@ -1129,7 +1151,6 @@ fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     if generated_sections.peek().is_none() {
         return Vec::new(); // The section was cut, not rewritten — see above.
     }
-    let source_entries = project_entry_links(source);
     let generated_entries: Vec<(String, Vec<String>)> =
         generated_sections.flat_map(project_entry_links).collect();
     let flatten = |entries: &[(String, Vec<String>)]| -> Vec<String> {
