@@ -146,10 +146,15 @@ describe('extractMetadata', () => {
       emit('sorry, no json available');
       done();
       const meta = await p;
-      // Mutation: revert `targetLanguage: clientSideDetection.jobAdName` to
-      // `.resumeName` (generation.ts) → this goes red ('English' instead of
-      // 'German') — this is the English-lock regression this test pins.
-      expect(meta.targetLanguage).toBe('German');
+      // `targetLanguage` must be the ISO CODE ('de'), not the display NAME
+      // ('German') `resumeLanguage`/`jobAdLanguage` carry — it is persisted
+      // verbatim to `ai_generations.target_language` and read back by Rust's
+      // `normalize_language`, which takes the first two alphanumeric chars:
+      // 'German' silently becomes 'ge', matching no language arm.
+      // Mutation: revert `targetLanguage: clientSideDetection.jobAd` to
+      // `.jobAdName` (generation.ts) → this goes red ('German' instead of
+      // 'de').
+      expect(meta.targetLanguage).toBe('de');
       expect(meta.resumeLanguage).toBe('English');
       expect(meta.jobAdLanguage).toBe('German');
     });

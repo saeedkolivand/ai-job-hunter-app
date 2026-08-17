@@ -235,7 +235,15 @@ export async function extractMetadata(
     // precedence chain would then PREFER that wrong value on every later run
     // too. Matches the non-heuristic path above, which never overrides
     // `targetLanguage` and so already targets the ad via `metadata.ts:211`.
-    targetLanguage: clientSideDetection.jobAdName,
+    //
+    // `.jobAd` (the ISO 639-1 CODE), never `.jobAdName` (the display NAME):
+    // `targetLanguage` is persisted verbatim to `ai_generations.target_language`
+    // and read back by Rust's `normalize_language` (`validate/content/mod.rs`),
+    // which takes the first two alphanumeric chars — `'German'` becomes `'ge'`,
+    // matching no language arm and silently disabling every per-language check
+    // for the document. `resumeLanguage`/`jobAdLanguage` below stay NAMES on
+    // purpose (they're read through `toLanguageCode` at every consumer).
+    targetLanguage: clientSideDetection.jobAd,
     topRequirements: [],
   };
 }

@@ -556,6 +556,26 @@ describe('useApplicationAnswers', () => {
       );
     });
 
+    it('persists the freshly-detected language when meta is null, even with targetLanguageConfident: false', async () => {
+      // `languageIsGuess` is `!!meta && targetLanguageConfident === false` — with
+      // no `meta` at all, `generate()` re-extracts its own fresh metadata (a
+      // SEPARATE detection, unrelated to a caller's stale confidence flag), and
+      // that detection's language fields must still reach `save`, not ''. Also
+      // guards against a mutant that drops `!!meta &&` from the condition: such
+      // a mutant would blank these fields purely because `targetLanguageConfident`
+      // is `false` here, regardless of `meta`.
+      const { result } = render({ meta: null, targetLanguageConfident: false });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: 'en', resumeLanguage: 'en', jobAdLanguage: 'en' })
+      );
+    });
+
     it('an unconfident guess survives into a rewrite re-save via updateAnswer too', async () => {
       const { result } = render({ meta: guessedMeta, targetLanguageConfident: false });
       act(() => result.current.toggle('why-company'));
