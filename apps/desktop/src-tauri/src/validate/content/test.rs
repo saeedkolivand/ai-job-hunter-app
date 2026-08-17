@@ -1652,8 +1652,7 @@ fn per_language_samples() -> Vec<(&'static str, String)> {
         .map(|(code, sentence, reps)| {
             (
                 *code,
-                std::iter::repeat(*sentence)
-                    .take(*reps)
+                std::iter::repeat_n(*sentence, *reps)
                     .collect::<Vec<_>>()
                     .join(" "),
             )
