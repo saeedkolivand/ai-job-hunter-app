@@ -330,7 +330,7 @@ export interface ResumeConventions {
    * below until it is given a real name. Previously only 4 of the 9 ordered
    * ids were covered; the other 5 fell through to the raw English `SectionId`
    * debug word even while the model was told to write, say, German — see
-   * `locale::resume::section_order_prompt_list`'s doc comment.
+   * `pipeline::resume::prompts::section_order_prompt_list`'s doc comment.
    */
   headers: Record<ResumeSectionHeaderId, string>;
   /** Example of a market-conventional date range. */

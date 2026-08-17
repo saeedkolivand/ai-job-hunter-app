@@ -1740,6 +1740,115 @@ fn section_order_prompt_list_localizes_every_section_not_just_the_first_four() {
     assert!(!it.contains("Certifications"));
 }
 
+/// Producer vocabulary vs recogniser buckets, swept exhaustively: no heading
+/// `resume_conventions` can emit, in any curated locale, may classify as a
+/// DIFFERENT section's kind. Landing on `SectionKind::Other` is fine (the
+/// recogniser simply has no bucket for Certifications/Languages/Awards);
+/// landing on the wrong one is not — a regenerate would then rewrite the
+/// wrong section.
+///
+/// `locale::resume`'s own collision test states the rejected German
+/// alternatives and the reasoning behind them, but it names its cases as
+/// literals and covers only de + it. This is the mechanical half: it names no
+/// heading at all, so a locale or id added later is swept without anyone
+/// remembering to extend a list. It found the Portuguese `Competências` →
+/// `Other` gap fixed in `SKILLS_HEADINGS`.
+///
+/// Mutation check: removed `"competênc"` from `SKILLS_HEADINGS` — RAN, went
+/// red on pt/Skills, restored.
+#[test]
+fn no_localized_heading_lands_in_another_sections_bucket() {
+    use crate::documents::evidence::{classify_section, SectionKind};
+    use crate::pipeline::resume::prompt_blocks::{resume_conventions, RESUME_CONVENTION_LOCALES};
+
+    // Only the ids the recogniser actually has a bucket for; the rest may
+    // legitimately answer `Other` and are asserted not to steal a bucket.
+    let expected = |id: &str| match id {
+        "Summary" => Some(SectionKind::Summary),
+        "Experience" => Some(SectionKind::Experience),
+        "Education" => Some(SectionKind::Education),
+        "Skills" => Some(SectionKind::Skills),
+        "Projects" => Some(SectionKind::Projects),
+        _ => None,
+    };
+
+    for &lang in RESUME_CONVENTION_LOCALES {
+        let conventions = resume_conventions(lang);
+        for id in conventions.ids() {
+            let heading = conventions.header(id);
+            let kind = classify_section(heading);
+            match expected(id) {
+                // Exactly `want`, not `want || Other`. Allowing `Other` was
+                // the first draft and it made the sweep unable to fail: a
+                // heading the recogniser simply does not know reads the same
+                // as one it knows correctly. Measured across all 7 locales,
+                // every bucketed id already lands on its own bucket, so the
+                // slack bought nothing and cost the whole guard.
+                Some(want) => assert_eq!(
+                    kind, want,
+                    "locale {lang:?} heading {heading:?} (SectionId::{id}) classifies as \
+                     {kind:?}, not {want:?} — a regenerate would rewrite the wrong section"
+                ),
+                None => assert_eq!(
+                    kind,
+                    SectionKind::Other,
+                    "locale {lang:?} heading {heading:?} (SectionId::{id}) has no bucket of \
+                     its own, so anything but Other means it was filed under another section"
+                ),
+            }
+        }
+    }
+}
+
+/// `ResumeConventions::header` falls back to the raw `SectionId` debug word on
+/// a miss instead of panicking, and nothing in the type system ties the TS
+/// `ResumeSectionHeaderId` union to the `SectionId`s `section_order_for`
+/// actually emits. So the fallback is reachable by ordinary maintenance —
+/// adding `SectionId::Volunteer` to an order const compiles, typechecks, and
+/// passes `gen:prompts:check`, and the only symptom is the literal English
+/// word `Volunteer` inside a prompt demanding Italian. (The ADR-010 face of
+/// the same hole: a `SectionId::Custom(s)` in an order const would render
+/// user-derived text straight into the SYSTEM slot.)
+///
+/// This is the guard for that. It never names an id: it enumerates whatever
+/// `section_order_for` emits and asserts every curated locale has a real
+/// entry for each.
+///
+/// Mutation check: added `SectionId::Volunteer` to `IT_ORDER` — RAN, went red
+/// (`cargo test` and `pnpm gen:prompts:check` both stayed green, which is the
+/// whole point), reverted.
+#[test]
+fn every_ordered_section_id_has_a_real_localized_header() {
+    use crate::pipeline::resume::prompt_blocks::{resume_conventions, RESUME_CONVENTION_LOCALES};
+
+    // Every market `locale::resume::section_order_for` branches on, plus an
+    // unknown one for the default arm. A market added there without a line
+    // here is still covered on the ID axis as long as it reuses an existing
+    // order; a market with a BRAND NEW order const is the one case that needs
+    // this list extended, which is why the default arm is asserted too.
+    for market in ["us", "de", "at", "ch", "dach", "it", "zz"] {
+        for id in crate::locale::resume::section_order_for(market) {
+            let debug_name = format!("{id:?}");
+            for &lang in RESUME_CONVENTION_LOCALES {
+                // Membership, NOT `header(id) != id`. The value comparison
+                // looks equivalent and is not: French for "Certifications" is
+                // "Certifications", so a curated, correct entry would read as
+                // a fallback. Asking whether the KEY exists is the property
+                // that actually distinguishes a translation from a miss.
+                assert!(
+                    resume_conventions(lang)
+                        .ids()
+                        .any(|have| have == debug_name),
+                    "market {market:?} orders SectionId::{debug_name}, but locale \
+                     {lang:?} has no header entry for it — `header` would silently \
+                     hand the model the English word {debug_name:?} while telling \
+                     it to write {lang}"
+                );
+            }
+        }
+    }
+}
+
 /// The draft prompt is localized off the SAME `resume_conventions` the renderer
 /// path uses, so a German run asks for German headings — including the FIVE
 /// sections (Projects, Certifications, Languages, Awards, Publications) that

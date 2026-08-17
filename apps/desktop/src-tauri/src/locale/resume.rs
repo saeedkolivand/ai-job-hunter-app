@@ -15,11 +15,7 @@
 //! `LocaleProfile` collapses them, which is what actually arrives on the
 //! AI-Generate résumé export path.
 //!
-//! Italy has no such second namespace to alias: `LocaleProfile` (see
-//! `locale::mod.rs`) has no Italy profile at all, so a `target_country`- or
-//! job-ad-language-derived `recommend::pick_locale` call for an Italian user
-//! currently falls through to the "en"/intl default rather than "it" — a
-//! separate, larger gap outside this file's scope. The market string this
+//! Italy has no such second namespace to alias. The market string this
 //! file actually reads on the AI-Generate résumé path is the pipeline's own
 //! `market` field (`req.market`, IPC-supplied), keyed the same way
 //! `letter::conventions` keys it, and BOTH the TS `COUNTRY_TO_MARKET` (`IT`)
@@ -167,6 +163,15 @@ mod tests {
     #[test]
     fn it_order_runs_education_and_certifications_right_after_experience() {
         let order = section_order_for("it");
+        // "right AFTER Experience" is half this test's name and was the half
+        // it did not assert: every other assertion here is `… < Skills`, so
+        // an order burying Experience below Education — the exact opposite of
+        // what `IT_ORDER`'s own doc claims — stayed green.
+        assert!(
+            position(order, &SectionId::Experience) < position(order, &SectionId::Education),
+            "Experience must lead the Italian order; Education follows it, \
+             the same shape as the German Lebenslauf"
+        );
         assert!(
             position(order, &SectionId::Education) < position(order, &SectionId::Skills),
             "Education must not be buried under Skills on the Italian order"

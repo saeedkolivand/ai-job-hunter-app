@@ -85,7 +85,23 @@ impl ResumeConventions {
         }
         section_id
     }
+
+    /// Every canonical `SectionId` Debug name this locale names a header for,
+    /// in the curated order. Lets a guard enumerate the ID axis from the data
+    /// itself rather than restating it as a parallel literal list — which is
+    /// how `header`'s silent `section_id` fallback could otherwise become
+    /// reachable without any test noticing.
+    pub fn ids(&self) -> impl Iterator<Item = &'static str> {
+        self.headers.iter().map(|&(id, _)| id)
+    }
 }
+
+/// Every locale `resume_conventions` has a curated entry for, mirrored from
+/// the TS `RESUME_CONVENTION_LOCALES`. The companion to
+/// [`ResumeConventions::ids`] for the OTHER axis: a guard loops over this
+/// instead of hardcoding the locale list, so a locale added on the TS side
+/// cannot slip past a Rust-side check that never visits it.
+pub const RESUME_CONVENTION_LOCALES: &[&str] = &["de", "en", "es", "fr", "it", "nl", "pt"];
 
 /// Résumé conventions for `lang`, falling back to English for any locale the
 /// prompt side has no curated entry for — the same normalization

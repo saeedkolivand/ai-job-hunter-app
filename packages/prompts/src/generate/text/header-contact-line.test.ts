@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import allCapsHeadings from '../../fixtures/all-caps-headings.json';
 import fixture from '../../fixtures/header-contact-line.json';
+import sectionNameJoins from '../../fixtures/section-name-joins.json';
 import {
   isAllCapsSectionHeading,
   isFirstLineContactShaped,
@@ -41,6 +42,19 @@ describe('isKnownSectionName', () => {
   it("does NOT recognize a job-title line — that is isAllCapsSectionHeading's job, with its own exclusion", () => {
     expect(isKnownSectionName('SENIOR SOFTWARE ENGINEER')).toBe(false);
     expect(isKnownSectionName('Jane Doe')).toBe(false);
+  });
+
+  // The `" & "` join arm is PREDICATE behaviour, not vocabulary, so the
+  // section-names.json list gate is structurally blind to it — it compares
+  // the two name lists and cannot see a rule that combines two names. Rust's
+  // `is_known_section_name` reads this same fixture, so the two arms cannot
+  // drift the way they did when Rust gained the join alone.
+  it('matches the shared join fixture for every line', () => {
+    const cases = sectionNameJoins as { line: string; known: boolean }[];
+    expect(cases.length).toBeGreaterThan(0);
+    for (const { line, known } of cases) {
+      expect(isKnownSectionName(line), `join drift for ${JSON.stringify(line)}`).toBe(known);
+    }
   });
 });
 

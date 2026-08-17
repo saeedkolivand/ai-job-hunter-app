@@ -390,6 +390,56 @@ fn skills_group_labelled_with_new_section_word_stays_text() {
     );
 }
 
+/// Parity guard for `is_known_section_name`'s `" & "` arm — the half of that
+/// predicate the section-names fixture structurally cannot see. That fixture
+/// compares two name LISTS; the join arm is a rule that combines two entries,
+/// so Rust could (and did) gain it while the TS mirror
+/// (`isKnownSectionName`) kept answering `false` for every merged heading,
+/// with every existing test still green.
+///
+/// The three-part cases pin `split_once`'s cut-at-the-FIRST-separator
+/// semantics, which is load bearing because one entry contains a separator of
+/// its own ("certifications & training").
+#[test]
+fn section_name_joins_match_the_ts_predicate_fixture() {
+    #[derive(serde::Deserialize)]
+    struct Case {
+        line: String,
+        known: bool,
+    }
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/prompts/src/fixtures/section-name-joins.json");
+    let raw = std::fs::read_to_string(&path).expect(
+        "read section-name-joins parity fixture \
+         (packages/prompts/src/fixtures/section-name-joins.json)",
+    );
+    let cases: Vec<Case> =
+        serde_json::from_str(&raw).expect("parse section-name-joins parity fixture");
+
+    assert!(
+        !cases.is_empty(),
+        "section-name-joins parity fixture must not be empty"
+    );
+    assert!(
+        cases.iter().any(|c| c.known) && cases.iter().any(|c| !c.known),
+        "the fixture must carry BOTH accepted and rejected joins — one-sided, \
+         it passes for a predicate hardwired to that answer"
+    );
+    for c in &cases {
+        // Same reasoning as the sibling fixtures: `parse_line` only ever runs
+        // this predicate on `strip_md(trimmed)`.
+        let clean = strip_md(c.line.trim());
+        assert_eq!(
+            is_known_section_name(&clean),
+            c.known,
+            "is_known_section_name drift for {:?} (clean: {:?})",
+            c.line,
+            clean
+        );
+    }
+}
+
 // ── Recurrence guard: producer/recogniser contract, mechanically enforced ──
 
 /// Every heading `pipeline::resume::prompt_blocks::resume_conventions` can
@@ -400,29 +450,26 @@ fn skills_group_labelled_with_new_section_word_stays_text() {
 /// is the shape that broke in the reported bug). This closes the loop
 /// mechanically: a future SectionId or locale added to the producer's total
 /// `headers` record without a matching recogniser entry fails HERE, not in a
-/// screenshot.
+/// screenshot. Both axes are enumerated from the generated data itself
+/// (`RESUME_CONVENTION_LOCALES` and `ResumeConventions::ids`) rather than
+/// restated as literal lists — a hardcoded list is exactly how a guard ends up
+/// never visiting the new thing it was written to catch.
+///
+/// Mutation check on the locale axis: added an 8th locale (`sv`) to the TS
+/// `CONVENTIONS` with headings absent from `SECTION_NAMES` and re-ran
+/// `pnpm gen:prompts` — RAN, went red naming `sv`, reverted. With the old
+/// hardcoded `LOCALES` list it would have stayed green.
 ///
 /// Whether this guard would have caught the ORIGINALLY reported bug, if it
 /// had existed beforehand: see the report — the honest answer is nuanced,
 /// not a flat yes.
 #[test]
 fn every_producer_heading_is_recognised_by_the_parser() {
-    const SECTION_IDS: &[&str] = &[
-        "Summary",
-        "Experience",
-        "Education",
-        "Skills",
-        "Projects",
-        "Certifications",
-        "Languages",
-        "Awards",
-        "Publications",
-    ];
-    const LOCALES: &[&str] = &["en", "de", "fr", "es", "it", "nl", "pt"];
+    use crate::pipeline::resume::prompt_blocks::{resume_conventions, RESUME_CONVENTION_LOCALES};
 
-    for &lang in LOCALES {
-        let conventions = crate::pipeline::resume::prompt_blocks::resume_conventions(lang);
-        for &id in SECTION_IDS {
+    for &lang in RESUME_CONVENTION_LOCALES {
+        let conventions = resume_conventions(lang);
+        for id in conventions.ids() {
             let heading = conventions.header(id);
             let line = parse_line(heading, 5, &[]);
             assert!(
