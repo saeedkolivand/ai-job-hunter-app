@@ -201,6 +201,37 @@ pub fn languages_align(job_text: &str, resume_locale: &str) -> bool {
     }
 }
 
+/// The ISO-639-1 tag this crate has a use for `lang`, or `None` for every
+/// other whatlang-recognised language (Polish, Swedish, Czech, Romanian,
+/// Greek, …). The one 19-language table [`detect_locale_tag`] (stemmer
+/// selection, unconditional) and [`detected_language`] (language IDENTITY,
+/// confidence-gated) both read from, so the two answers cannot silently
+/// diverge into two different sets of "languages this crate knows".
+fn locale_tag_of(lang: Lang) -> Option<&'static str> {
+    match lang {
+        Lang::Eng => Some("en"),
+        Lang::Deu => Some("de"),
+        Lang::Fra => Some("fr"),
+        Lang::Spa => Some("es"),
+        Lang::Ita => Some("it"),
+        Lang::Por => Some("pt"),
+        Lang::Nld => Some("nl"),
+        Lang::Cmn => Some("zh"),
+        Lang::Jpn => Some("ja"),
+        Lang::Kor => Some("ko"),
+        Lang::Vie => Some("vi"),
+        Lang::Tha => Some("th"),
+        Lang::Ara => Some("ar"),
+        Lang::Heb => Some("he"),
+        Lang::Hin => Some("hi"),
+        Lang::Ben => Some("bn"),
+        Lang::Tur => Some("tr"),
+        Lang::Ukr => Some("uk"),
+        Lang::Rus => Some("ru"),
+        _ => None,
+    }
+}
+
 /// Best-effort language tag for text whose locale is not stored — the shape
 /// [`languages_align`] expects on its `resume_locale` side.
 ///
@@ -209,28 +240,68 @@ pub fn languages_align(job_text: &str, resume_locale: &str) -> bool {
 /// mapped to their own tags rather than collapsing into the `"en"` fallback:
 /// a Japanese résumé that answered `"en"` here would align with an English
 /// posting and get stemmed by the English Snowball stemmer.
+///
+/// Deliberately **unconditional** on `whatlang`'s confidence, unlike
+/// [`detected_language`]: this picks a STEMMER, and a low-confidence German
+/// read still beats stemming German prose with the English algorithm — some
+/// stemmer must be chosen, and English is not a privileged default here the
+/// way it is for the IDENTITY question. Shares [`locale_tag_of`]'s table with
+/// `detected_language` so the two functions can only ever differ in POLICY
+/// (gated vs. not), never in which languages they recognise.
 pub fn detect_locale_tag(text: &str) -> &'static str {
-    match detect(text).map(|i| i.lang()) {
-        Some(Lang::Deu) => "de",
-        Some(Lang::Fra) => "fr",
-        Some(Lang::Spa) => "es",
-        Some(Lang::Ita) => "it",
-        Some(Lang::Por) => "pt",
-        Some(Lang::Nld) => "nl",
-        Some(Lang::Cmn) => "zh",
-        Some(Lang::Jpn) => "ja",
-        Some(Lang::Kor) => "ko",
-        Some(Lang::Vie) => "vi",
-        Some(Lang::Tha) => "th",
-        Some(Lang::Ara) => "ar",
-        Some(Lang::Heb) => "he",
-        Some(Lang::Hin) => "hi",
-        Some(Lang::Ben) => "bn",
-        Some(Lang::Tur) => "tr",
-        Some(Lang::Ukr) => "uk",
-        Some(Lang::Rus) => "ru",
-        _ => "en",
+    detect(text)
+        .and_then(|info| locale_tag_of(info.lang()))
+        .unwrap_or("en")
+}
+
+/// Confidence `whatlang` must clear before its answer is trusted as this
+/// text's language, in [`detected_language`]. Below this, `whatlang` is
+/// guessing, not reading — documentation of the bar `whatlang::Info::is_reliable`
+/// uses internally, **not** a copy compared against independently:
+/// [`detected_language`] calls `info.is_reliable()` directly, so this crate's
+/// "confident" and the library's own cannot drift apart even at the boundary
+/// (`is_reliable` is `confidence() > 0.9`, strictly greater — a value of
+/// exactly `0.9` is NOT reliable, a distinction a hand-rolled `< 0.9`
+/// comparison against this const got backwards; see
+/// `test::whatlang_reliability_boundary_is_strictly_greater_than_0_9` for the
+/// boundary pinned directly against the library).
+///
+/// Calibrated against this crate's own fixtures, not picked in the abstract:
+/// every full résumé, job ad and drifted-résumé-SECTION in the
+/// `validate::content` fixture corpus reads at confidence 1.0; the two
+/// documented false-positive shapes — a keyword-soup job ad ("Terraform AWS
+/// PostgreSQL Kubernetes platform engineer") and a short certifications block
+/// — read at 0.08 and 0.13. There is real air between the two clusters at 0.9.
+pub const MIN_DETECTION_CONFIDENCE: f64 = 0.9;
+
+/// The ISO-639-1 tag for `text`'s detected language, or `None` when the
+/// detector's answer has no tag here — either because `whatlang` was not
+/// confident enough ([`MIN_DETECTION_CONFIDENCE`]), or because it read a
+/// language [`locale_tag_of`] does not cover. The language-IDENTITY question,
+/// kept separate from [`languages_align`]'s stemmer-compatibility question.
+///
+/// `None` rather than an `"en"` guess for anything whatlang recognises outside
+/// [`locale_tag_of`]'s table (Polish, Swedish, Czech, Romanian, Greek, …): an
+/// identity answer that silently says "this is English" for a language it
+/// never looked at would produce a false Critical the moment a caller compares
+/// it against any target other than `"en"`. And `None` rather than a guess
+/// below the confidence bar, for the same reason `validate::content` states
+/// everywhere else: where a check cannot be made reliably it goes quiet rather
+/// than guessing.
+///
+/// Every caller of this function is either an ACCUSATION (a document read as
+/// the wrong language) or an ENABLING/CORROBORATING check (is the target
+/// language itself credible). The confidence gate protects the first
+/// direction — a low-confidence `None` can never manufacture a false
+/// accusation — and only ever makes the second one quieter. A mis-calibrated
+/// [`MIN_DETECTION_CONFIDENCE`] can make this function under-fire; it cannot
+/// make it lie.
+pub fn detected_language(text: &str) -> Option<&'static str> {
+    let info = detect(text)?;
+    if !info.is_reliable() {
+        return None;
     }
+    locale_tag_of(info.lang())
 }
 
 /// Normalize text to a language-agnostic keyword set: lowercase,
@@ -507,6 +578,251 @@ pub fn coverage_score(resume_text: &str, job_text: &str) -> f64 {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// `detected_language` must not duplicate whatlang's own reliability
+    /// arithmetic in a second, hand-rolled comparison that can silently drift
+    /// out of step with it — it delegates to `Info::is_reliable()` directly
+    /// (see that function's doc comment). Two things pinned here:
+    ///
+    /// * whatlang's own boundary is `confidence() > 0.9`, STRICTLY greater,
+    ///   not `>=` — a confidence of exactly `0.9` is NOT reliable, while
+    ///   anything above it is. That is the exact distinction the OLD code
+    ///   (`info.confidence() < MIN_DETECTION_CONFIDENCE`) got backwards,
+    ///   silently ACCEPTING a confidence of precisely `0.9`.
+    /// * [`MIN_DETECTION_CONFIDENCE`] itself stays in step with whatlang's
+    ///   real, live threshold: both assertions probe `Info::is_reliable()` at
+    ///   OUR const's value, so if a future edit ever moved the const away
+    ///   from whatlang's actual `0.9` (in EITHER direction) one of the two
+    ///   assertions flips.
+    ///
+    /// Mutation check (performed, not hypothetical): raising
+    /// `MIN_DETECTION_CONFIDENCE` to `0.95` turns the first assertion red
+    /// (`at_the_bar.is_reliable()` becomes `true` at 0.95, since whatlang's
+    /// real bar is still 0.9); reverting to `0.9` turns it green again.
+    ///
+    /// What this test does NOT (and, short of finding real text whatlang
+    /// scores at exactly `0.9`, cannot) prove in a black-box way: that
+    /// [`detected_language`] itself still calls `is_reliable()` rather than a
+    /// reintroduced hand-rolled copy — for every OTHER confidence value the
+    /// two formulations agree, so no ordinary fixture can tell them apart
+    /// (verified: reverting `detected_language` to the old `confidence() <
+    /// MIN_DETECTION_CONFIDENCE` comparison does NOT turn any test in this
+    /// module red, this one included). The delegation itself is enforced by
+    /// reading the one line of source next to this test, the same "true by
+    /// construction, not by a coincidental second number" argument the doc
+    /// comment above makes.
+    #[test]
+    fn whatlang_reliability_boundary_is_strictly_greater_than_0_9() {
+        let at_the_bar =
+            whatlang::Info::new(whatlang::Script::Latin, Lang::Eng, MIN_DETECTION_CONFIDENCE);
+        assert!(
+            !at_the_bar.is_reliable(),
+            "whatlang's own bar is confidence > 0.9, not >=; exactly 0.9 must not be reliable"
+        );
+        let just_above = whatlang::Info::new(
+            whatlang::Script::Latin,
+            Lang::Eng,
+            MIN_DETECTION_CONFIDENCE + 0.0001,
+        );
+        assert!(just_above.is_reliable());
+    }
+
+    /// English plus the six Snowball languages: full-sentence prose, the shape
+    /// [`detected_language`] is actually asked about in practice, reads
+    /// confidently and correctly. Anchored to the exact tag, not to
+    /// `detect_locale_tag` agreeing with itself — a passing pair that
+    /// compared two derived values against each other would survive a
+    /// regression that broke both the same way.
+    #[test]
+    fn detected_language_identifies_english_and_the_six_snowball_languages() {
+        let cases: &[(&str, &str)] = &[
+            (
+                "en",
+                "The candidate has eight years of backend experience with payment systems.",
+            ),
+            (
+                "de",
+                "Die Kandidatin hat acht Jahre Erfahrung im Backend-Bereich mit Zahlungssystemen.",
+            ),
+            (
+                "fr",
+                "La candidate a huit ans d'expérience dans les systèmes de paiement back-end.",
+            ),
+            (
+                "es",
+                "La candidata tiene ocho años de experiencia en sistemas de pago de backend.",
+            ),
+            (
+                "it",
+                "La candidata ha otto anni di esperienza nei sistemi di pagamento backend.",
+            ),
+            (
+                "pt",
+                "A candidata tem oito anos de experiência em sistemas de pagamento de backend.",
+            ),
+            (
+                "nl",
+                "De kandidaat heeft acht jaar ervaring met backend-betalingssystemen.",
+            ),
+        ];
+        for (expected, text) in cases {
+            assert_eq!(
+                detected_language(text),
+                Some(*expected),
+                "text {text:?} should confidently detect as {expected}"
+            );
+        }
+    }
+
+    /// All twelve non-Latin languages `detect_locale_tag` already enumerated —
+    /// script alone gives `whatlang` a strong, near-1.0-confidence signal, so
+    /// these must all clear [`MIN_DETECTION_CONFIDENCE`] too. Full coverage
+    /// (all 19 languages `locale_tag_of` curates, together with the six
+    /// Snowball languages above) is the mechanical guard for "consistent
+    /// across every language" — without it the next language added to
+    /// `locale_tag_of` could silently drift out of step with what
+    /// `detected_language` actually detects.
+    #[test]
+    fn detected_language_identifies_non_latin_scripts() {
+        let cases: &[(&str, &str)] = &[
+            ("zh", "我是一名后端工程师，在支付系统和容器平台方面工作了八年。"),
+            ("ja", "私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。"),
+            ("ko", "저는 8년 동안 결제 시스템과 컨테이너 플랫폼을 구축해 온 백엔드 엔지니어입니다."),
+            ("vi", "Tôi là kỹ sư backend với tám năm kinh nghiệm trong các hệ thống thanh toán và nền tảng container."),
+            ("th", "ฉันเป็นวิศวกรแบ็กเอนด์ที่มีประสบการณ์แปดปีในระบบชำระเงินและแพลตฟอร์มคอนเทนเนอร์"),
+            ("ar", "أنا مهندس أنظمة خلفية لدي ثماني سنوات من الخبرة في أنظمة الدفع ومنصات الحاويات."),
+            ("he", "אני מהנדס backend עם שמונה שנות ניסיון במערכות תשלומים ופלטפורמות מכולות."),
+            ("hi", "मैं एक बैकएंड इंजीनियर हूं जिसके पास भुगतान प्रणालियों और कंटेनर प्लेटफार्मों में आठ साल का अनुभव है।"),
+            ("bn", "আমি একজন ব্যাকএন্ড ইঞ্জিনিয়ার যার পেমেন্ট সিস্টেম এবং কন্টেইনার প্ল্যাটফর্মে আট বছরের অভিজ্ঞতা রয়েছে।"),
+            ("tr", "Ödeme sistemleri ve konteyner platformlarında sekiz yıllık deneyime sahip bir backend mühendisiyim."),
+            ("uk", "Я бекенд-інженер з восьмирічним досвідом роботи з платіжними системами та контейнерними платформами."),
+            ("ru", "Я бэкенд-инженер с восьмилетним опытом работы с платёжными системами."),
+        ];
+        for (expected, text) in cases {
+            assert_eq!(
+                detected_language(text),
+                Some(*expected),
+                "text {text:?} should confidently detect as {expected}"
+            );
+        }
+    }
+
+    /// A language `whatlang` knows and reads confidently, but this crate has
+    /// no tag for (Polish, Swedish, Czech, Romanian, Greek, …) — the exact
+    /// false-Critical risk `detected_language` returning `"en"` here would
+    /// have created. `locale_tag_of` simply has no arm for `Lang::Pol`, so this
+    /// is `None` regardless of confidence.
+    #[test]
+    fn detected_language_is_none_for_a_language_this_crate_does_not_curate() {
+        let polish = "Kandydatka ma osiem lat doświadczenia w systemach płatności backendowych.";
+        assert!(
+            detect(polish).is_some_and(
+                |i| i.lang() == Lang::Pol && i.confidence() >= MIN_DETECTION_CONFIDENCE
+            ),
+            "premise: whatlang must confidently read this as Polish, or the test proves nothing \
+             about the uncovered-language branch specifically (vs. the confidence-floor branch)"
+        );
+        assert_eq!(detected_language(polish), None);
+    }
+
+    /// The two documented false-positive shapes from `validate::content`'s own
+    /// history — a keyword-soup job ad and a short certifications block —
+    /// read as a language with LOW confidence. `detected_language` must go
+    /// quiet on both, the same "goes quiet rather than guesses" posture as
+    /// every other check in this crate.
+    ///
+    /// Mutation check: delete the `!info.is_reliable()` gate in
+    /// `detected_language` (i.e. fall straight through to `locale_tag_of`)
+    /// and this goes red — both texts resolve to a confident-looking but
+    /// wrong `Some(_)`.
+    #[test]
+    fn detected_language_goes_quiet_below_the_confidence_floor() {
+        let terse_ad = "Terraform AWS PostgreSQL Kubernetes platform engineer";
+        let certs_block =
+            "CERTIFICATIONS\nAWS Certified Solutions Architect - Professional (2022)\n\
+            Google Cloud Professional Data Engineer (2023)\n\
+            Certified Kubernetes Administrator CKA (2021)";
+        for text in [terse_ad, certs_block] {
+            let info = detect(text).expect("whatlang must produce SOME guess to prove this case");
+            assert!(
+                info.confidence() < MIN_DETECTION_CONFIDENCE,
+                "premise: {text:?} must be a LOW-confidence read ({:.4}), or this test is not \
+                 exercising the confidence gate at all",
+                info.confidence()
+            );
+            assert_eq!(detected_language(text), None, "text: {text:?}");
+        }
+    }
+
+    /// `detect_locale_tag` (stemmer selection, unconditional) and
+    /// `detected_language` (identity, confidence-gated) share
+    /// [`locale_tag_of`]'s table by construction, but this pins the OBSERVABLE
+    /// contract rather than trusting the shared-code argument alone: whenever
+    /// `detected_language` confidently names a language, `detect_locale_tag`
+    /// must name the exact same one — the two may differ only when
+    /// `detected_language` goes quiet (low confidence, or an uncovered
+    /// language), where `detect_locale_tag` still has to pick SOME stemmer.
+    ///
+    /// Mutation check: add a `.filter(|info| info.is_reliable())` gate to
+    /// `detect_locale_tag` (making it confidence-gated like `detected_language`)
+    /// — RAN, went red (`detect_locale_tag` fell back to "en" for the
+    /// low-confidence-but-covered fixture instead of picking the covered
+    /// language), reverted.
+    #[test]
+    fn detect_locale_tag_and_detected_language_agree_whenever_both_answer() {
+        let samples = [
+            "The candidate has eight years of backend experience with payment systems.",
+            "Die Kandidatin hat acht Jahre Erfahrung im Backend-Bereich mit Zahlungssystemen.",
+            "私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。",
+            "Terraform AWS PostgreSQL Kubernetes platform engineer",
+            "Kandydatka ma osiem lat doświadczenia w systemach płatności backendowych.",
+        ];
+        for text in samples {
+            if let Some(identity) = detected_language(text) {
+                assert_eq!(
+                    detect_locale_tag(text),
+                    identity,
+                    "detect_locale_tag and detected_language disagreed on {text:?}"
+                );
+            }
+        }
+        // And the always-picks-a-stemmer half: `detect_locale_tag` never goes
+        // quiet, even where `detected_language` does. A LOW-confidence read
+        // still names a covered language here (unconditional, by design —
+        // see the doc comment); an UNCOVERED language (no `locale_tag_of`
+        // arm at all) is the one case that still falls back to "en".
+        let terse = "Terraform AWS PostgreSQL Kubernetes platform engineer";
+        let info = detect(terse).expect("whatlang must produce SOME guess to prove this case");
+        assert!(
+            info.confidence() < MIN_DETECTION_CONFIDENCE,
+            "premise: {terse:?} must be a LOW-confidence read, or this no longer exercises the \
+             confidence-agnostic half of detect_locale_tag"
+        );
+        // Derived, not hardcoded: which language whatlang names for this text is a whatlang
+        // implementation detail (a version bump can shift its guess), not this crate's
+        // contract. What the test needs is that whatlang's guess IS a covered language, so
+        // "unconditional on confidence" is distinguishable from "always falls back to en".
+        let expected = locale_tag_of(info.lang()).expect(
+            "premise: whatlang's guess for this text must be a COVERED language, or this \
+             assertion cannot tell 'unconditional on confidence' apart from 'always falls back \
+             to en'",
+        );
+        assert_ne!(
+            expected, "en",
+            "premise: the covered language must differ from the fallback, or a confidence-gate \
+             regression would coincidentally still agree with the unconditional answer"
+        );
+        assert_eq!(
+            detect_locale_tag(terse),
+            expected,
+            "low-confidence but still a covered language — detect_locale_tag must still pick it"
+        );
+        assert_eq!(
+            detect_locale_tag("Kandydatka ma osiem lat doświadczenia w systemach płatności backendowych."),
+            "en",
+            "Polish has no locale_tag_of arm at all, confidence aside — falls back to the English stemmer, unchanged from before this crate had a confidence gate"
+        );
+    }
 
     #[test]
     fn keywords_filters_short_and_stopwords() {

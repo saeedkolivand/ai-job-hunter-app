@@ -43,6 +43,14 @@ interface Params {
   model: string;
   /** Reuse already-detected metadata when available — skips a re-extract. */
   meta?: GenerationMeta | null;
+  /** True when `meta`'s targetLanguage/resumeLanguage/jobAdLanguage came from a
+   *  confident detection (see `resolveTargetLanguage` in `useTailorPipeline.ts`).
+   *  `false` means those three fields are the tier-4 English guess — usable for
+   *  the language default below, but never for the `aiGenerations.save` call
+   *  (mirrors `useTailorPipeline`'s own `wireTargetLanguage`). Irrelevant when
+   *  `meta` is absent: this hook then re-extracts its own metadata, unrelated
+   *  to that guess. */
+  targetLanguageConfident?: boolean;
   canUse: boolean;
   hasDesc: boolean;
   /** Links the questions to the per-job application record (merge-upsert by url). */
@@ -71,6 +79,7 @@ export function useInterviewQuestions({
   jobDesc,
   model,
   meta,
+  targetLanguageConfident,
   canUse,
   hasDesc,
   jobUrl,
@@ -119,6 +128,10 @@ export function useInterviewQuestions({
     setError(null);
     try {
       const detected = meta ?? (await extractMetadata(resume, jobDesc, model));
+      // Only `meta`'s own language fields can be the tailor flow's unconfident
+      // guess (see `resolveTargetLanguage`) — a fresh `extractMetadata()`
+      // result is a separate detection, unrelated to that guess.
+      const languageIsGuess = !!meta && targetLanguageConfident === false;
       // Always gather company/role research — interview questions are only as good
       // as the intel behind them (server-cached, so it dedupes with other flows).
       const brief = await fetchCompanyBrief(jobDesc, detected.companyName);
@@ -145,14 +158,20 @@ export function useInterviewQuestions({
         candidateName: detected.candidateName,
         jobTitle: detected.jobTitle,
         companyName: detected.companyName,
-        resumeLanguage: detected.resumeLanguage,
-        jobAdLanguage: detected.jobAdLanguage,
         // NOT the picked language. `targetLanguage` is a SHARED field on the
         // per-job aggregate (the Rust merge is a non-blank-wins `pick`), read by
         // the email tab, the export meta and the tailor seed — writing the
         // questions' output language here would silently switch the email draft
         // and the export header. The pick stays generation-only.
-        targetLanguage: detected.targetLanguage,
+        //
+        // A guessed target language must never reach the record either — same
+        // invariant `useTailorPipeline`'s `session.start()` already enforces on
+        // the wire. Blank, not omitted: the Rust `pick()` merge keeps whatever
+        // the record already holds for a blank incoming field, so this can
+        // never destroy a real stored value.
+        resumeLanguage: languageIsGuess ? '' : detected.resumeLanguage,
+        jobAdLanguage: languageIsGuess ? '' : detected.jobAdLanguage,
+        targetLanguage: languageIsGuess ? '' : detected.targetLanguage,
         mismatch: detected.mismatch,
         topRequirements: detected.topRequirements,
         mode: 'ats',

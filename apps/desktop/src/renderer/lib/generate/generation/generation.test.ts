@@ -126,6 +126,56 @@ describe('extractMetadata', () => {
     expect(meta.jobTitle).toBe('Senior Engineer');
     expect(meta.companyName).toBe('Acme');
   });
+
+  // Defect B (cross-language generation fix): the target is who we're
+  // writing FOR — the job ad's language — never whatever language the
+  // candidate's existing résumé happens to be written in. An English résumé
+  // applying to a German ad must not be pinned to English. Known-reliable
+  // franc fixtures, lifted verbatim from `packages/shared/src/language-detection.test.ts`
+  // (also reused by `useTailorPipeline.test.ts`).
+  describe('targetLanguage targets the job ad, not the source résumé (Defect B)', () => {
+    const ENGLISH_RESUME =
+      'Experienced software engineer with a strong background in building scalable web applications and distributed backend systems for large organisations.';
+    const GERMAN_JOB_AD =
+      'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+
+    it('the heuristic fallback (model returned no JSON) targets the ad, not the résumé', async () => {
+      register();
+      const p = extractMetadata(ENGLISH_RESUME, GERMAN_JOB_AD, 'llama3');
+      await flushUntilStreaming();
+      emit('sorry, no json available');
+      done();
+      const meta = await p;
+      // `targetLanguage` must be the ISO CODE ('de'), not the display NAME
+      // ('German') `resumeLanguage`/`jobAdLanguage` carry — it is persisted
+      // verbatim to `ai_generations.target_language` and read back by Rust's
+      // `normalize_language`, which takes the first two alphanumeric chars:
+      // 'German' silently becomes 'ge', matching no language arm.
+      // Mutation: revert `targetLanguage: clientSideDetection.jobAd` to
+      // `.jobAdName` (generation.ts) → this goes red ('German' instead of
+      // 'de').
+      expect(meta.targetLanguage).toBe('de');
+      expect(meta.resumeLanguage).toBe('English');
+      expect(meta.jobAdLanguage).toBe('German');
+    });
+
+    // The non-heuristic (model-JSON) path was ALREADY correct — it never
+    // overrides `targetLanguage`, which `validateMetadata` already sets to
+    // the model's own `jobAdLanguage` (`metadata.ts:211`). Pinned here so a
+    // future change can't silently reintroduce the résumé-language bug on
+    // this path too.
+    it('the non-heuristic (model JSON) path also targets the ad, not the résumé', async () => {
+      register();
+      const p = extractMetadata(ENGLISH_RESUME, GERMAN_JOB_AD, 'llama3');
+      await flushUntilStreaming();
+      emit(
+        '{"candidateName":"X","jobTitle":"Y","companyName":"Z","resumeLanguage":"en","jobAdLanguage":"de"}'
+      );
+      done();
+      const meta = await p;
+      expect(meta.targetLanguage).toBe('de');
+    });
+  });
 });
 
 describe('generateResume', () => {

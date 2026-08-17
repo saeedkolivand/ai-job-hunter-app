@@ -1,6 +1,6 @@
 # ADR-032: Generation-pipeline ownership — mechanical core-rule enforcement
 
-Last updated: 2026-08-15
+Last updated: 2026-08-17
 
 **Status:** Accepted
 
@@ -34,6 +34,15 @@ The staged résumé pipeline enforces the core rule structurally and mechanicall
 
 7. **Observability is content-free.** Every stage logs lifecycle (name, duration, cached-vs-live, attempt, ok), parsed-output outcome (native/fallback/re-ask/hard-fail), and validator summary. No résumé text, no evidence spans, no prompt fragments ever log. The run row and persisted events table carry the full audit trail.
 
+## Amendment (2026-08-17): Language-mismatch enforcement
+
+The decision that language misalignment is a deterministic Critical (outlined in Decision §2) was documented but not delivered for the cross-language case (English source, non-English target). Three causes compounded: the control asked the wrong question, the identity check routed through a stemmer predicate (wrong for most languages), and the prompt never instructed translation. Amended enforcement (now ships):
+
+- **Language identity** (`documents::keywords::detected_language`) is a separate function from `languages_align` (stemming compatibility). It returns `Option<&'static str>` ISO-639-1 tag when `whatlang` reads the text reliably — the decision delegates to `whatlang`'s own `Info::is_reliable()`, which is _strictly_ greater than 0.9, so the bar cannot drift from the library's; `None` otherwise (covers 19 curated languages; every other language is a no-op, not a mis-detection). **Two detectors decide this question:** the renderer uses **franc** to pick the target, Rust uses **whatlang** to check the output. Their disagreement is NOT uniformly fail-quiet: corroborating the target fails quiet (no witness, no Critical), but reading the generated document fails **loud** — a confident-but-wrong read there raises a Critical on a truthful document and suppresses `keyword_coverage` and every alignment finding. `whatlang`'s `confidence()` is a top-1-vs-top-2 margin rather than a probability, so a terse noun-phrase résumé can be misread at maximum confidence. That asymmetry is a known open limit, not a graceful degradation.
+- **Corroboration** (`target_is_corroborated`) replaces the broken `source_is_a_reliable_control`. The target language is credible when either the job ad OR the source résumé confidently reads as it — a document-agnostic question, so a translation run is no longer disqualified from being graded on its own translation output.
+- **Whole-document language failure** is automatically retried ONCE inside the Draft stage. The retry is bounded structurally rather than by state: two straight-line calls with no loop and no flag, in a stage constructed fresh per run — so there is nothing to reset, and a second attempt would require a visible change of shape. A second failure falls through to Validate, raises the Critical, and parks the run at `needsReview`. Per-section language Criticals still route to Repair (unchanged).
+- **Critical contract:** `validate::content` is never called from `export/` (ADR-034). A Critical does **not** block export — it parks the run at `needsReview` for user review. This is unchanged; documented here so the fix is not read as an export gate.
+
 ## Consequences
 
 - **Quality pipeline only for apply:** the staged quality pipeline is the sole production route in the apply flow. No depth selection offered to users; no depth negotiation. The fast path is available as a separate entry point in the Resume Builder and AI Generate features, not as a cheaper setting on the apply flow.
@@ -47,7 +56,7 @@ The staged résumé pipeline enforces the core rule structurally and mechanicall
 ## Related
 
 - `apps/desktop/src-tauri/src/pipeline/resume/` — stage orchestration + prompts + validation
-- `apps/desktop/src-tauri/src/validate/content/` — deterministic content validators (factual, alignment, consistency, voice, ATS, letter)
+- `apps/desktop/src-tauri/src/validate/content/` — deterministic content validators (factual, alignment, consistency, language, voice, ATS, letter); `language.rs` submodule added for R8 line-cap compliance
 - `apps/desktop/src-tauri/src/documents/evidence/mod.rs` — evidence extraction and ranking
 - `packages/prompts/scripts/gen-prompts-rust.ts` — prompt codegen (TS → Rust frozen blocks)
 - ADR-010 (untrusted-input fencing) — fence tag patterns, hostile-input boundaries

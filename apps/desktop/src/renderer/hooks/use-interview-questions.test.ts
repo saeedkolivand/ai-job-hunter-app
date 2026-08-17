@@ -237,6 +237,52 @@ describe('useInterviewQuestions', () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'en' }));
   });
 
+  describe('unconfident target language is never persisted', () => {
+    it('sends empty language fields when meta was seeded from an unconfident guess', async () => {
+      const { result } = render({
+        ...params,
+        meta: metaWithLanguage('en'),
+        targetLanguageConfident: false,
+      });
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: '', resumeLanguage: '', jobAdLanguage: '' })
+      );
+    });
+
+    it('still persists the real language fields when meta was confidently detected', async () => {
+      const { result } = render({
+        ...params,
+        meta: metaWithLanguage('en'),
+        targetLanguageConfident: true,
+      });
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ targetLanguage: 'en', resumeLanguage: 'en', jobAdLanguage: 'en' })
+      );
+    });
+
+    it('an unconfident flag with no meta at all is a no-op (extractMetadata path is unrelated)', async () => {
+      // No `meta` → generate() re-extracts fresh; a stale/irrelevant confidence
+      // flag from a caller that never passed `meta` must not blank the record.
+      const { result } = render({ ...params, targetLanguageConfident: false });
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'en' }));
+    });
+  });
+
   it('generates in a detected language the picker cannot name, and says so', async () => {
     const { result } = render({ ...params, jobDesc: DUTCH_JD });
     // What the picker displays IS what generates — no silent "English".
