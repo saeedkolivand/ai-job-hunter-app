@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.137.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.3...v0.137.0) (2026-08-17)
+
+### ✨ Features
+
+* **scraping:** treat an implausible scraped company name as absent ([#1001](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1001)) ([83a322e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/83a322e6fa2967b952d1aee58f8033a6800a2bfb)), closes [#960](https://github.com/saeedkolivand/ai-job-hunter-app/issues/960)
+
+### 🐛 Bug Fixes
+
+* **pipeline:** catch per-section language drift, drop empty sections, and keep the regenerate language ([#1003](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1003)) ([93f0fc0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/93f0fc0d0e191bd5c434b11e7158e24bd5f7afa9)), closes [#969](https://github.com/saeedkolivand/ai-job-hunter-app/issues/969) [#992](https://github.com/saeedkolivand/ai-job-hunter-app/issues/992) [#998](https://github.com/saeedkolivand/ai-job-hunter-app/issues/998) [969/#992](https://github.com/969/ai-job-hunter-app/issues/992) [969/#992](https://github.com/969/ai-job-hunter-app/issues/992)
+
+### 📚 Documentation
+
+* fold the second adr tree into the knowledge base ([#1000](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1000)) ([65ea418](https://github.com/saeedkolivand/ai-job-hunter-app/commit/65ea4188c14390b96372d055663d55f8bccd7af4)), closes [#936](https://github.com/saeedkolivand/ai-job-hunter-app/issues/936) [#937](https://github.com/saeedkolivand/ai-job-hunter-app/issues/937)
+* make adr-034's placeholder note a thin pointer ([#999](https://github.com/saeedkolivand/ai-job-hunter-app/issues/999)) ([823ed82](https://github.com/saeedkolivand/ai-job-hunter-app/commit/823ed82ee36be9374eccaf92a170caa31bd030c4)), closes [#998](https://github.com/saeedkolivand/ai-job-hunter-app/issues/998)
+
 ## [0.136.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.136.2...v0.136.3) (2026-08-16)
 
 ### 🐛 Bug Fixes
