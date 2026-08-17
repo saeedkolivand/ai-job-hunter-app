@@ -1,11 +1,14 @@
-//! `draft` — the whole résumé body, in one streamed call.
+//! `draft` — the whole résumé body, in one streamed call, with an at-most-once
+//! corrective retry when the streamed draft comes back in the wrong language.
 //!
 //! ## Why this one streams and the others do not
 //!
 //! A JSON stage produces an artifact nobody reads; streaming it would show the
 //! user a wall of braces. The draft is the document, and it takes the longest,
 //! so it streams under the run's own umbrella `jobId` — the id `jobs.cancel`
-//! already reaches and the id the renderer already filters `ai:stream` on.
+//! already reaches and the id the renderer already filters `ai:stream` on. A
+//! retry streams a SECOND draft over the first, under the same job id — the
+//! renderer just sees more deltas, exactly as if the model kept writing.
 //!
 //! **That stream is DISPLAY-ONLY.** The shared stream machinery marks the job
 //! completed when the last delta lands, which is several stages before the run
@@ -13,6 +16,32 @@
 //! event. The renderer contract says so explicitly, because treating
 //! `awaitAiStream` resolving as "done" would show an unvalidated, unrepaired
 //! draft as the final document.
+//!
+//! ## The language retry is structurally at-most-once
+//!
+//! [`draft_with_language_retry`] is a single straight-line `if`: call the
+//! model once, and call it a SECOND time only when
+//! [`document_language_mismatch`] fires on the first draft and the run's own
+//! deadline has not passed. There is no flag and no counter — `retried` is a
+//! local returned once and dropped, `Draft` is a unit struct with no fields,
+//! and a fresh one is constructed per run. Nothing here persists across
+//! calls, so there is nothing to reset and nothing a caller could get wrong —
+//! this repo has a recorded history of "run this once" guards that latched
+//! and never released. Making this run twice means turning the `if` in
+//! [`draft_with_language_retry`] into a `while`, a visible diff to that
+//! function's own body, not a state that could silently drift.
+//!
+//! The retry's own call failing (a provider error, or the day's provider
+//! ceiling refusing it) is never THIS stage's failure: the run already has a
+//! usable, if wrong-language, first draft, so the failure is caught and the
+//! first draft is kept — the same never-propagate-a-best-effort-failure rule
+//! `humanize::humanize_one` already holds for its one rewrite attempt. And
+//! the retry is kept ONLY when it actually fixed the language: two
+//! wrong-language drafts are equally wrong, and the first came from the
+//! canonical prompt, so a tie keeps the first — the same
+//! never-hand-back-a-worse-document floor `repair::round_is_worse` holds.
+
+use std::future::Future;
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -20,9 +49,10 @@ use serde_json::{json, Value};
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::error::AppResult;
 use crate::pipeline::resume::projects::{self, ProjectsNormalizeOutcome};
-use crate::pipeline::resume::prompts::{draft_system, draft_user};
-use crate::pipeline::resume::QualityCtx;
+use crate::pipeline::resume::prompts::{draft_language_retry_note, draft_system, draft_user};
+use crate::pipeline::resume::{QualityCtx, RunDeadline};
 use crate::pipeline::Stage;
+use crate::validate::content::document_language_mismatch;
 
 pub struct Draft;
 
@@ -49,6 +79,9 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
         // `top_requirements()` reads `ctx.analysis`, which `analyze_job`
         // already finished writing by the time this stage runs.
         let top_requirements = ctx.top_requirements();
+        // `QualityInput` is `Copy` — a local copy so the retry closure below
+        // can move it without holding a borrow of `ctx` across the `.await`.
+        let input = ctx.input;
         // Deliberately NOT cached: a cache hit emits no `ai:stream` deltas, so
         // the user would watch an empty pane while an already-known answer was
         // "generated". See `pipeline::resume::cache`'s module doc.
@@ -57,19 +90,19 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
             messages: vec![
                 AiGenerateRequestMessage {
                     role: "system".to_string(),
-                    content: draft_system(ctx.input.target_language, ctx.input.market),
+                    content: draft_system(input.target_language, input.market),
                 },
                 AiGenerateRequestMessage {
                     role: "user".to_string(),
                     content: draft_user(
-                        ctx.input.source_resume,
-                        ctx.input.job_ad,
+                        input.source_resume,
+                        input.job_ad,
                         &ctx.strategy,
                         &top_requirements,
                     ),
                 },
             ],
-            locale: ctx.input.target_language.to_string(),
+            locale: input.target_language.to_string(),
             // Sampling comes from the provider's own profile for the declared
             // intent (#958) — an explicit temperature here would override every
             // adapter's tuned value with one number for all ten of them.
@@ -84,19 +117,93 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
             // RESUME_CAP + JOB_CAP ≈ 32k chars), so it is the call that most
             // needs the setting to arrive.
             context_window: completer.context_window(),
-            effort: ctx.input.effort.map(str::to_string),
+            effort: input.effort.map(str::to_string),
             intent: Some(DRAFT_INTENT.to_string()),
         };
 
-        let text = completer.stream_captured(ctx.input.job_id, req).await?;
-        ctx.ledger.count_call(false);
+        let (draft, mut artifact, retried) = draft_with_language_retry(
+            input.source_resume,
+            input.job_ad,
+            input.target_language,
+            ctx.deadline,
+            move |is_retry| {
+                let mut attempt = req.clone();
+                if is_retry {
+                    // Rust-owned corrective note, appended to the SYSTEM slot —
+                    // ADR-010 holds, nothing renderer-supplied reaches it.
+                    attempt.messages[0]
+                        .content
+                        .push_str(&draft_language_retry_note(input.target_language));
+                }
+                completer.stream_captured(input.job_id, attempt)
+            },
+        )
+        .await?;
 
-        let (draft, artifact) = apply_projects_normalization(ctx.input.source_resume, text);
+        // The first call always happened (its own error already propagated
+        // above); the retry is a second round-trip only when it fired.
+        ctx.ledger.count_call(false);
+        if retried {
+            ctx.ledger.count_call(false);
+        }
+        artifact["languageRetry"] = json!(retried);
         // Length + projects-normalize counts only — never the draft itself
         // (ADR-027).
         ctx.ledger.record("draft", artifact);
         ctx.draft = draft;
         Ok(())
+    }
+}
+
+/// One streamed draft, plus the at-most-once corrective retry, with the
+/// PROVIDER CALL injected — the same seam shape as `repair::repair_loop` and
+/// `humanize::humanize_one`, and the same reason: `Draft::run` needs a live
+/// `Completer` and this crate has no Tauri harness to build one from, so the
+/// decision here (fire the retry only on a confirmed mismatch and before the
+/// deadline, never propagate a failed retry, keep the retry ONLY if it
+/// actually fixed the language) has to be provable by a test. See the module
+/// doc for why the bound is structural rather than a flag.
+///
+/// `complete(false)` makes the first call; its failure IS this stage's
+/// failure and propagates via `?`, exactly as before this retry existed.
+/// `complete(true)` makes the retry, at most once.
+pub(crate) async fn draft_with_language_retry<F, Fut>(
+    source_resume: &str,
+    job_ad: &str,
+    target_language: &str,
+    deadline: RunDeadline,
+    mut complete: F,
+) -> AppResult<(String, Value, bool)>
+where
+    F: FnMut(bool) -> Fut,
+    Fut: Future<Output = AppResult<String>>,
+{
+    let text = complete(false).await?;
+    let (draft, artifact) = apply_projects_normalization(source_resume, text);
+
+    if deadline.passed()
+        || !document_language_mismatch(&draft, source_resume, job_ad, target_language)
+    {
+        return Ok((draft, artifact, false));
+    }
+
+    match complete(true).await {
+        // The retry itself failing (a provider error, or the day's ceiling
+        // refusing it) is not this stage's failure — the run already has a
+        // usable, if wrong-language, draft. See the module doc.
+        Err(_) => Ok((draft, artifact, true)),
+        Ok(second) => {
+            let (candidate, candidate_artifact) =
+                apply_projects_normalization(source_resume, second);
+            if document_language_mismatch(&candidate, source_resume, job_ad, target_language) {
+                // Still wrong. Two wrong-language drafts are equally wrong,
+                // and the first came from the canonical prompt, so it is the
+                // one that is kept.
+                Ok((draft, artifact, true))
+            } else {
+                Ok((candidate, candidate_artifact, true))
+            }
+        }
     }
 }
 

@@ -2070,6 +2070,134 @@ fn apply_projects_normalization_is_a_no_op_when_every_entry_is_invented() {
     assert_eq!(artifact["projectsMatched"], 0);
 }
 
+// ── `Draft::run`'s at-most-once language retry ──────────────────────────────
+
+// Real, already-calibrated fixtures (shared with `validate::content::test`,
+// which pins their detected language) rather than hand-written strings — a
+// language-detection guard tested against text no detector was ever shown to
+// confidently read would prove nothing.
+const RETRY_EN_SOURCE: &str = include_str!("../../validate/content/fixtures/en_source_resume.txt");
+const RETRY_EN_JOB_AD: &str = include_str!("../../validate/content/fixtures/en_job_ad.txt");
+const RETRY_EN_CLEAN: &str = include_str!("../../validate/content/fixtures/en_generated_clean.txt");
+// Actually GERMAN prose (the fixture name is the EN scenario it belongs to,
+// not its own language) — the wrong-language first draft this whole family
+// exists to catch.
+const RETRY_WRONG_LANGUAGE: &str =
+    include_str!("../../validate/content/fixtures/en_generated_wrong_language.txt");
+// A DIFFERENT German document, so "the still-wrong retry is discarded" is
+// provable by content, not just by two identical strings comparing equal.
+const RETRY_DE_CLEAN: &str = include_str!("../../validate/content/fixtures/de_generated_clean.txt");
+
+/// The retry is kept ONLY when it actually fixed the language. A still-wrong
+/// retry keeps the FIRST draft — the canonical prompt's own answer — not the
+/// candidate, mirroring `repair::round_is_worse`'s never-hand-back-a-worse-
+/// document floor.
+///
+/// Mutation check: drop the second `document_language_mismatch` check in
+/// `draft_with_language_retry` (keep the retry unconditionally) — RAN, went
+/// red on the second half (the still-German candidate shipped instead of the
+/// first draft), reverted.
+#[tokio::test]
+async fn the_draft_retry_keeps_the_second_attempt_only_when_it_fixed_the_language() {
+    // The retry FIXES the language.
+    let (kept, _artifact, retried) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |is_retry| {
+            let text = if is_retry {
+                RETRY_EN_CLEAN
+            } else {
+                RETRY_WRONG_LANGUAGE
+            };
+            async move { Ok(text.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert!(retried, "a wrong first draft must trigger the retry");
+    assert!(
+        kept.contains("SUMMARY") && !kept.contains("ZUSAMMENFASSUNG"),
+        "a retry that fixed the language must ship, not the wrong-language first draft"
+    );
+
+    // The retry is STILL wrong (a different German document).
+    let (kept, _artifact, retried) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |is_retry| {
+            let text = if is_retry {
+                RETRY_DE_CLEAN
+            } else {
+                RETRY_WRONG_LANGUAGE
+            };
+            async move { Ok(text.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert!(retried, "a wrong first draft must trigger the retry");
+    assert!(
+        kept.contains("ZUSAMMENFASSUNG"),
+        "a still-wrong retry must not replace the first, canonical-prompt draft"
+    );
+    assert!(
+        !kept.contains("PROFIL"),
+        "the still-wrong candidate must never ship"
+    );
+}
+
+/// The retry fires AT MOST ONCE: one extra provider call when the first draft
+/// is wrong, none when it is already right. This pins the MECHANICAL bound (a
+/// call counter); the STRUCTURAL argument for why it cannot fire twice is in
+/// `draft.rs`'s own module doc.
+///
+/// Mutation check: replace the single retry `match` in
+/// `draft_with_language_retry` with a bounded `for _ in 0..3 { .. }` loop that
+/// keeps retrying while the candidate is still wrong — RAN, went red (4 calls
+/// instead of 2 on the wrong-first-draft case), reverted. (An UNBOUNDED
+/// `while` was not run by hand: the injected closure below always returns the
+/// same wrong-language text, so an unbounded loop would spin for the whole
+/// `live_deadline()` wall-clock allowance instead of failing fast — the
+/// bounded loop is the same category of mutation without the hang.)
+#[tokio::test]
+async fn the_draft_retries_at_most_once() {
+    let mut calls = 0u32;
+    let (_kept, _artifact, retried) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |_is_retry| {
+            calls += 1;
+            async move { Ok(RETRY_WRONG_LANGUAGE.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert!(retried);
+    assert_eq!(calls, 2, "a wrong first draft must retry exactly once");
+
+    let mut calls = 0u32;
+    let (_kept, _artifact, retried) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |_is_retry| {
+            calls += 1;
+            async move { Ok(RETRY_EN_CLEAN.to_string()) }
+        },
+    )
+    .await
+    .expect("neither call errors in this test");
+    assert!(!retried);
+    assert_eq!(calls, 1, "a correct first draft must never retry");
+}
+
 /// The seeded roster reaches the model as DATA, with its identity fields
 /// intact — that is what makes "the roster is fixed" a statement the model can
 /// act on rather than a rule only Rust knows.
