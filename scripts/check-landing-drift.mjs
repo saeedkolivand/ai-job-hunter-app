@@ -13,6 +13,15 @@
 //   4. Forbidden-term denylist for the removed engine (anchored; the verb "applies" is fine).
 //   5. Every board-count claim matches the live SCRAPERS registry entry count.
 //   6. No stale "zero/no telemetry" privacy claim (ADR-0020 made it untrue).
+//   7. Every publicly-named third party in the egress inventory
+//      (apps/desktop/src-tauri/tests/egress.rs) is named, as a whole word, on
+//      the actual disclosure surfaces (README.md, SECURITY.md, the /privacy
+//      page) — a presence floor, not a semantic check.
+//   8. No over-absolute "the only network calls…" / "sends … only to…" /
+//      "no data leaves … except…" family of claim — the shape ADR-0005
+//      exists because of.
+//   9. The vendored chart.js matches its pinned sha256 (catches a silent edit
+//      or re-vendor to a different, unverified build).
 // Secret-scan (ALL landing html/js): no committed GitHub token — the site is public.
 //
 // Check 6 reaches beyond apps/landing/ — to README.md, SECURITY.md and branding/ —
@@ -22,6 +31,7 @@
 //
 // Read-only. Run via `pnpm check:landing-drift`; CI runs it in the Lint & Format job.
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -62,6 +72,7 @@ const SECRET_SCAN_FILES = [
   'apps/landing/src/data/architecture-map.ts',
   'apps/landing/public/benchmarks/index.html',
   'apps/landing/public/benchmarks/data.js',
+  'apps/landing/public/benchmarks/chart.min.js',
   'scripts/assets/social-card.html',
   'apps/landing/src/data/version.json',
   'apps/landing/src/components/home/HomeBody.tsx',
@@ -122,6 +133,11 @@ const failures = [];
 const fail = (check, file, detail) => failures.push({ check, file, detail });
 
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
+
+/** Vitest/spec sources are never a published surface — excluded from both
+ * prose corpora (checks 7 and 8) so a fixture cannot satisfy a disclosure
+ * floor or trip a banned-phrase guard. */
+const isTestSource = (p) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
 
 // ── Check 1: cited file paths exist ─────────────────────────────────────────
 // Single- or double-quoted strings rooted at a real top-level dir. Strip a
@@ -355,6 +371,194 @@ function checkTelemetryClaim() {
   }
 }
 
+// ── Check 7: egress disclosure — every publicly-named third party from the
+// egress inventory must be named, as a whole word, on the actual disclosure
+// surfaces ───────────────────────────────────────────────────────────────
+// apps/desktop/src-tauri/tests/egress.rs's `EGRESS` const marks each outbound
+// host `public_name: Some("…")` when that third party must be disclosed by
+// name. This is a PRESENCE FLOOR — a page could still name "Exa" in an
+// unrelated sentence and pass — but it must be an actual word match, not a
+// bare substring: a case-sensitive `includes()` over all of apps/landing/src
+// let 'Exa' pass on "Exact-pinned"/"Example]" and let 'GitHub'/'IMAP' pass on
+// any mention anywhere in the tree (mission-control's own GitHub-API code,
+// unrelated to privacy disclosure), so deleting the real disclosure stayed
+// green. Fixed two ways: \b-anchored per-name regex, AND a corpus narrowed to
+// where a disclosure would actually live — README, SECURITY, and the
+// /privacy page's source (PrivacyBody.tsx + sections/) — not every .ts/.tsx
+// file under apps/landing/src. Check 8 below (the banned-phrase guard) is the
+// other half of the pair: this check catches an omission, that one catches a
+// false claim of completeness.
+const EGRESS_FILE = 'apps/desktop/src-tauri/tests/egress.rs';
+const EGRESS_DISCLOSURE_SURFACES = [
+  'README.md',
+  'SECURITY.md',
+  'apps/landing/src/components/privacy',
+];
+// Two shapes, deliberately: `EGRESS` rows carry `public_name: Option<&str>`
+// (`Some("…")`), while `UNEXTRACTABLE` rows carry a bare `public_name: "…"`
+// because there is no host string to make optional — Sentry's ingest host
+// lives inside a build-time-secret DSN and exists in no reproducible build.
+// Matching only the `Some(…)` form would leave the ONE default-ON automatic
+// egress unenforced here, which is the exact gap this check exists to close.
+const PUBLIC_NAME_RE = /public_name:\s*(?:Some\(\s*)?"([^"]+)"/g;
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function checkEgressDisclosure() {
+  const names = new Set();
+  for (const [, name] of read(EGRESS_FILE).matchAll(PUBLIC_NAME_RE)) names.add(name);
+  if (names.size === 0) {
+    // Fail loud rather than open — mirrors check 5's countScrapers self-guard:
+    // a regex that silently stops matching would turn this into a permanently
+    // green no-op, worse than not having the check at all.
+    fail(
+      'Egress-disclosure parse failed',
+      EGRESS_FILE,
+      'found zero `public_name` rows (EGRESS or UNEXTRACTABLE) — the extractor regex no longer matches; update it'
+    );
+    return;
+  }
+  // Test/spec sources are excluded from the corpus. `textFilesUnder` recurses
+  // the whole privacy/ directory, which also holds `PrivacyBody.test.tsx` — and
+  // a vendor named only in a Vitest file is not disclosed to anybody. Verified:
+  // planting a probe name in that spec alone satisfied the presence floor and
+  // the check stayed green, which is the same one-level-too-high narrowing this
+  // check was already fixed for once.
+  const files = EGRESS_DISCLOSURE_SURFACES.flatMap((root) => {
+    const found = textFilesUnder(root)?.filter((p) => !isTestSource(p)) ?? null;
+    if (found === null) {
+      // Fail loud rather than open — same idiom as checks 5/6/8: a moved
+      // disclosure surface silently shrinking the corpus is the exact bug
+      // this check was just fixed for.
+      fail(
+        'Egress-disclosure scan source moved',
+        root,
+        'listed in EGRESS_DISCLOSURE_SURFACES but no longer exists — update the list'
+      );
+      return [];
+    }
+    return found;
+  });
+  const prose = files.map(read).join('\n');
+  for (const name of names) {
+    if (!new RegExp(String.raw`\b${escapeRegExp(name)}\b`).test(prose)) {
+      fail(
+        'Undisclosed third party',
+        EGRESS_FILE,
+        `'${name}' carries public_name in the egress inventory but does not appear as a whole word ` +
+          `in README.md, SECURITY.md, or apps/landing/src/components/privacy — name it, e.g. in ` +
+          `apps/landing/src/components/privacy/sections/Desktop.tsx`
+      );
+    }
+  }
+}
+
+// ── Check 8: over-absolute egress-summary phrase guard ──────────────────────
+// The 2026-07 audit (ADR-0005) found exactly this sentence shape false once
+// already: "the only network calls are X" / "no network calls other than X"
+// goes stale the next time a new integration ships, because it claims
+// completeness instead of describing what's disclosed. Same banned-phrase
+// idiom as check 6's TELEMETRY_CLAIM_RE. A mutation review found the original
+// single regex caught only that one literal shape — 2 of 10 realistic
+// rewordings, missing both live instances in README.md/SECURITY.md ("sends
+// data only to services you configure or invoke", "the one thing the app
+// sends on its own behalf is…"). Broadened to the shape family below; each
+// pattern is deliberately anchored (a generic-data noun for the "sends…only
+// to…" shape, an "other"/exception-clause requirement for the "no…calls"
+// shape) so a true, narrowly-scoped claim elsewhere on the site — "sends that
+// HTML only to the local app" (Extension.tsx), "no network call is ever
+// made" (one specific write-action) — does not also trip it.
+const EGRESS_PROSE_ROOTS = ['README.md', 'SECURITY.md', 'apps/landing/src'];
+const ABSOLUTE_EGRESS_CLAIM_RES = [
+  // "(the) only network/outbound calls/connections/requests/traffic"
+  /\b(?:the )?only\s+(?:network|outbound)\s+(?:calls?|connections?|requests?|traffic)\b/gi,
+  // "no other network/outbound X" OR "no network/outbound X other than/except/besides"
+  /\bno\s+other\s+(?:network|outbound)\s+(?:calls?|connections?|requests?|traffic)\b|\bno\s+(?:network|outbound)\s+(?:calls?|connections?|requests?|traffic)\b[^.]{0,40}?\b(?:other than|except|besides)\b/gi,
+  // "(the) only {calls|requests} the app makes"
+  /\bonly\s+(?:calls?|requests?)\s+the\s+app\s+makes\b/gi,
+  // "sends … data/information/traffic … only to …"
+  /\bsends?\b[^.]{0,20}?\b(?:data|information|traffic)\b[^.]{0,40}?\bonly\s+to\b/gi,
+  // "the one thing … sends … is" — completeness phrased as a singleton
+  /\bthe\s+on(?:e|ly)\s+thing\b[^.]{0,60}?\bsends?\b/gi,
+  // "no <noun> leaves your device/machine/computer except/other than/besides"
+  /\bno\s+\w+\s+leaves?\s+your\s+(?:device|machine|computer)\b[^.]{0,40}?\b(?:except|other than|besides)\b/gi,
+];
+
+function checkAbsoluteEgressClaim() {
+  for (const root of EGRESS_PROSE_ROOTS) {
+    // Same test/spec exclusion check 7 applies. A banned phrase inside a Vitest
+    // fixture — a snapshot of the old privacy copy, say — is not published
+    // prose, and failing on it would train people to weaken the guard. This
+    // direction fails closed, so it is consistency rather than a live bug.
+    const files = textFilesUnder(root)?.filter((p) => !isTestSource(p)) ?? null;
+    if (files === null) {
+      fail(
+        'Egress-claim scan source moved',
+        root,
+        'listed in EGRESS_PROSE_ROOTS but no longer exists'
+      );
+      continue;
+    }
+    for (const file of files) {
+      const text = read(file);
+      for (const re of ABSOLUTE_EGRESS_CLAIM_RES) {
+        for (const [match] of text.matchAll(re)) {
+          fail(
+            'Over-absolute egress claim',
+            file,
+            `contains '${match}' — this sentence shape goes false the moment a new integration ` +
+              `ships (ADR-0005); describe what's disclosed without claiming completeness`
+          );
+        }
+      }
+    }
+  }
+}
+
+// ── Check 9: vendored chart.js hash pin ─────────────────────────────────────
+// chart.min.js is hand-vendored (see its own header comment) rather than
+// CDN-loaded, so nothing but a human re-fetching it ever changes these bytes.
+// Pin the sha256 here so a silent edit/replacement — accidental or not — is
+// caught in CI instead of shipping unnoticed. Bump this hash only alongside a
+// deliberate re-vendor (update the header comment's own verified hash too).
+const CHART_JS_FILE = 'apps/landing/public/benchmarks/chart.min.js';
+const CHART_JS_SHA256 = '9f8701efa23e00ec6779325eb85d77bc101ebf65e37df5faa1966270e7da5c37';
+
+function checkChartJsPin() {
+  // Fail loud, never open. An earlier revision returned silently here on the
+  // claim that SECRET_SCAN_FILES carried the moved-source guard — it did not
+  // list this file, so deleting the very asset this pin exists to protect made
+  // the check pass. It is in that list now (so the run loop's hard-fail covers
+  // a move) and this branch is the belt: an integrity pin that goes quiet when
+  // its subject vanishes is worse than no pin, because the green tick still
+  // reads as "verified".
+  if (!existsSync(join(ROOT, CHART_JS_FILE))) {
+    fail(
+      'Vendored chart.js missing',
+      CHART_JS_FILE,
+      'the pinned vendored asset is gone — restore it, or remove the pin and its ' +
+        'SECRET_SCAN_FILES entry together if the page genuinely no longer needs chart.js'
+    );
+    return;
+  }
+  // Hash the RAW BYTES, never `read()`'s utf8-decoded string. Node substitutes
+  // U+FFFD for any invalid sequence, so a re-vendor carrying non-UTF-8 bytes
+  // would hash to something `sha256sum chart.min.js` disagrees with — and the
+  // asset's own header comment quotes a hash a human is meant to verify that
+  // way. Identical for today's file (it is valid UTF-8); this keeps the pin
+  // honest for whatever is vendored next.
+  const actual = createHash('sha256')
+    .update(readFileSync(join(ROOT, CHART_JS_FILE)))
+    .digest('hex');
+  if (actual !== CHART_JS_SHA256) {
+    fail(
+      'Vendored chart.js hash drift',
+      CHART_JS_FILE,
+      `sha256 is ${actual}, expected ${CHART_JS_SHA256} — if this is a deliberate re-vendor, ` +
+        `update CHART_JS_SHA256 (and the file's own header comment) together`
+    );
+  }
+}
+
 // ── Secret-scan: no committed GitHub token on the public site ───────────────
 const TOKEN_RE = /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
 
@@ -396,6 +600,9 @@ if (!existsSync(join(ROOT, SCRAPERS_FILE))) {
 }
 
 checkTelemetryClaim();
+checkEgressDisclosure();
+checkAbsoluteEgressClaim();
+checkChartJsPin();
 
 for (const file of SECRET_SCAN_FILES) {
   if (!existsSync(join(ROOT, file))) {
@@ -412,8 +619,8 @@ for (const file of SECRET_SCAN_FILES) {
 
 if (failures.length === 0) {
   console.log(
-    '✓ landing diagrams in sync with source (paths, IPC contracts, registries, no secrets) ' +
-      'and no stale no-telemetry claim'
+    '✓ landing diagrams in sync with source (paths, IPC contracts, registries, no secrets), ' +
+      'no stale no-telemetry claim, and egress disclosure matches the EGRESS inventory'
   );
   process.exit(0);
 }

@@ -1,13 +1,13 @@
 # Security rules (the security authority's knowledge)
 
-Last updated: 2026-07-16
+Last updated: 2026-08-17
 
 For `tauri-security-reviewer` (cross-cutting authority). Security/data findings round **UP**. Anchors below are real repo locations.
 
 ## Desktop / [Tauri][tauri]
 
 - **Capabilities** — `apps/desktop/src-tauri/capabilities/default.json`: least privilege. A new IPC command exposed without (or with over-broad) capability is HIGH.
-- **CSP** — `apps/desktop/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to [Ollama][ollama] (`127.0.0.1:11434`). Extension bridge allows loopback WebSocket range `ws://127.0.0.1:47615-47620` (extension_bridge/mod.rs PORT_RANGE) and `https://autocomplete.clearbit.com` (company autocomplete). Any further widening is HIGH/CRITICAL.
+- **CSP** — `apps/desktop/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to Ollama on loopback, the extension bridge to the loopback WebSocket range (`extension_bridge/mod.rs` `PORT_RANGE`), and opt-in company-logo enrichment to the two Clearbit hosts. The hosts and ports themselves are owned by `tauri.conf.json` and enumerated in `apps/desktop/src-tauri/tests/egress.rs`'s `EGRESS` const, which fails CI on drift — not restated here. Any further widening is HIGH/CRITICAL.
 - **Updater** — `updater/` + the signing key + `latest.json` integrity. A broken/unsigned update path is CRITICAL.
 
 ## Application / secrets
@@ -20,17 +20,17 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 
 ## Extension bridge
 
-- **Auth model** — mutual HMAC-SHA256 challenge-response handshake; session tokens never on wire; pairing token in first hello only. See `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (advance_auth/advance_authenticated flow), [ADR-0010](../adr/0010-extension-bridge-hmac-challenge-response.md).
+- **Auth model** — mutual HMAC-SHA256 challenge-response handshake; session tokens never on wire; pairing token in first hello only. See `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (advance_auth/advance_authenticated flow), [ADR-0010](decision-records/0010-bridge-hmac-handshake.md).
 - **Port range** — bounded WebSocket listen: `127.0.0.1:47615-47620`. Out-of-range connections rejected.
-- **Consent gates** — assisted autofill rides the user opt-in (two-gate confirmation); imports gated to desktop online state. See [ADR-0009](../adr/0009-extension-assisted-autofill-two-gate-consent.md).
+- **Consent gates** — assisted autofill rides the user opt-in (two-gate confirmation); imports gated to desktop online state. See [ADR-0009](decision-records/0009-assisted-autofill.md).
 
 ## Email confirmation watching
 
-- **Credentials** — IMAP account credentials stored in OS keychain (same pattern as `credentials/`). Poller (`email_watch_scheduler.rs`) runs in background; parsed emails never logged. See `apps/desktop/src-tauri/src/email_watch/`, [ADR-0013](../adr/0013-email-confirmation-watching.md).
+- **Credentials** — IMAP account credentials stored in OS keychain (same pattern as `credentials/`). Poller (`email_watch_scheduler.rs`) runs in background; parsed emails never logged. See `apps/desktop/src-tauri/src/email_watch/`, [ADR-0013](decision-records/0013-email-confirmation-watching.md).
 
 ## AI provider base URL provenance
 
-- **Backend-owned config** — provider, model, and base URL resolved from backend `AiConfigStore` (not renderer-supplied). Renderer passes only provider _alias_ (e.g. "claude-code" for CLI agents). See `apps/desktop/src-tauri/src/ai_config/mod.rs`, [ADR-0012](../adr/0012-ai-provider-base-url-provenance-backend-owned.md).
+- **Backend-owned config** — provider, model, and base URL resolved from backend `AiConfigStore` (not renderer-supplied). Renderer passes only provider _alias_ (e.g. "claude-code" for CLI agents). See `apps/desktop/src-tauri/src/ai_config/mod.rs`, [ADR-0012](decision-records/0012-ai-provider-base-url-provenance.md).
 
 ## AI security
 

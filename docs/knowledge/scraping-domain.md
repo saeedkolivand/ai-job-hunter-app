@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-07-28
+Last updated: 2026-08-17
 
 Describes the job-scraping subsystem: board registry (24 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -174,7 +174,7 @@ Where a `LocationSpec` pick comes from. Owner: `apps/desktop/src-tauri/src/comma
 - **Photon is the fallback only.** `photon.komoot.io` (OpenStreetMap/ODbL) is reached only when the offline lookup cannot match. The fallback is gated on match **quality**, not on the offline result being empty — a prefix accident (`schweiz` prefix-matching a South African town) looks like confident rows, and autopilot persists `suggestion[0]`'s `countryCode`, so a weak hit must not veto the lookup that would have said Switzerland. Endpoint + timeout constants live in `geocoding.rs`; `suggest_at(endpoint, query)` is the injectable seam that makes the online branch testable against a mock server.
 - **Nominatim is retired.** Its usage policy explicitly forbids autocomplete, and its rate limiting degraded the picker to "no suggestions" exactly when a user typed fastest. Historical mentions in `geocoding.rs` / `useGeocoding.ts` are deliberate ("the Nominatim era"), not stale pointers.
 - **Attribution is mandatory, not decorative.** GeoNames is **CC BY 4.0** and Photon serves **ODbL** OpenStreetMap data — both require credit in a distributed build. The credit line renders in Settings → About (`settings.about.dataAttribution`) at a contrast level chosen to clear WCAG AA; it must not be dropped or dimmed to the surrounding fine-print level.
-- **Privacy boundary.** [ADR 0005](../adr/0005-network-egress-privacy-boundary.md) class 5, plus the exemption clause that PR #893 added: rule 6's opt-in/default-OFF requirement governs _enrichment_ (a call the app makes on its own initiative), not a lookup the user directly invoked by typing into a field. Location autocomplete and job search qualify only while all three hold — user-initiated, no personal data beyond the typed text, and issued Rust-side through `net::http`.
+- **Privacy boundary.** [ADR 0005](decision-records/0005-network-egress-privacy-boundary.md) class 5, plus the exemption clause that PR #893 added: rule 6's opt-in/default-OFF requirement governs _enrichment_ (a call the app makes on its own initiative), not a lookup the user directly invoked by typing into a field. Location autocomplete and job search qualify only while all three hold — user-initiated, no personal data beyond the typed text, and issued Rust-side through `net::http`.
 
 ## Canonical location model & central filter (PR F, 2026-07-11)
 

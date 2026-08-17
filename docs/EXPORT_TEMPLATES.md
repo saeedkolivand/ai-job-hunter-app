@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-08-16
+Last updated: 2026-08-17
 
 The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
@@ -86,7 +86,7 @@ gate in `markdown.roundtrip.test.ts`.
 `"refined-executive"`) are silently mapped to `Classic` via the custom `Deserialize`
 impl — a stale id degrades gracefully rather than breaking export. `"modern"`
 deserializes to `Classic` **forever** (the template was removed; its palette is now
-reachable via the Document accent — see [ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md)).
+reachable via the Document accent — see [ADR 0007](knowledge/decision-records/0007-document-color-is-a-knob-not-a-template.md)).
 
 The `Tier` column is `TemplateTier` (`ats` | `design`) — see [Template tier](#template-tier--ats-mode-toggle).
 Character one-liners are descriptive; the authoritative palette/font/size literals
@@ -163,7 +163,7 @@ A **Document accent** is an optional per-export hex (`#RRGGBB` or bare `RRGGBB`)
 recolors the chosen template's accent — the seam that replaced the removed `Modern`
 "same layout, different color" template. It is passed as `accent?` on the export
 request, is **not persisted**, and **never reads `ThemePrefs`** (distinct from the
-app-UI accent of [ADR 0004](adr/0004-single-source-user-customizable-accent-color.md)).
+app-UI accent of [ADR 0004](knowledge/decision-records/0004-single-source-user-customizable-accent-color.md)).
 Omitted (the default) leaves the template palette untouched; a malformed value is
 ignored. One validator — `typst_engine::normalise_accent` — backs every render path:
 the résumé PDF threads the hex through `RenderOpts.accent`, while the cover-letter and
