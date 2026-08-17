@@ -32,9 +32,22 @@ pub enum SectionId {
 }
 
 impl SectionId {
-    /// Classify a section heading into a canonical id. English baseline; locale
-    /// profiles extend this with localized headings in a later phase. Unknown
-    /// headings become [`SectionId::Custom`] so nothing is ever dropped.
+    /// Classify a section heading into a canonical id. **English-only** — a
+    /// localized heading ("Projekte", "Ausbildung", "Progetti") does not match
+    /// any arm here and becomes [`SectionId::Custom`] instead, so nothing is
+    /// ever dropped, but `locale::resume::section_order_for`'s market-specific
+    /// section order (`model::transform::reorder_sections`) is inert on it: a
+    /// `Custom` section keeps its original position rather than moving to
+    /// where the DE/IT order puts its canonical id. This is a known, recorded
+    /// gap, not a promised-and-pending phase — localizing this classifier
+    /// needs its own collision analysis (the same care
+    /// `documents::evidence::classify_section` and the résumé-conventions
+    /// producer both needed: e.g. a substring match on English "education"
+    /// would need a DIFFERENT German substring than "bildung" alone, which
+    /// also matches "Weiterbildung") and is deliberately out of scope for the
+    /// recogniser fix that added the localized headings to
+    /// `export::parser::SECTION_NAMES` — that fix only decides whether a line
+    /// RENDERS as a heading, not which canonical section it is.
     pub fn from_header(heading: &str) -> Self {
         let h = heading.trim().to_lowercase();
         let has = |needle: &str| h.contains(needle);
