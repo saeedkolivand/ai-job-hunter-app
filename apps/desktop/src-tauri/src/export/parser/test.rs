@@ -223,6 +223,218 @@ fn test_multilingual_sections() {
     assert!(matches!(line.kind, LineKind::SectionHeader));
 }
 
+// ── German/Italian heading recogniser gap (Projekte / Progetti) ────────────
+
+/// The exact reported bug: a Title-Case German "Projekte" heading (not
+/// ALL-CAPS, so `is_all_caps_section_heading` cannot save it) must render as
+/// a SectionHeader, not fall through to body Text.
+#[test]
+fn german_title_case_projekte_is_section_header() {
+    let line = parse_line("Projekte", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::SectionHeader),
+        "Title-Case 'Projekte' must be a SectionHeader, got {:?}",
+        line.kind
+    );
+}
+
+/// The other three German headings the producer can now emit and the
+/// recogniser previously lacked.
+#[test]
+fn german_title_case_new_headings_are_section_headers() {
+    for heading in ["Zertifikate", "Auszeichnungen", "Publikationen"] {
+        let line = parse_line(heading, 5, &[]);
+        assert!(
+            matches!(line.kind, LineKind::SectionHeader),
+            "{heading:?} must be a SectionHeader, got {:?}",
+            line.kind
+        );
+    }
+}
+
+/// Italian is the other priority locale named in the bug report (a real user
+/// works in Italy) — its five new headings must all recognise too.
+#[test]
+fn italian_title_case_new_headings_are_section_headers() {
+    for heading in [
+        "Progetti",
+        "Certificazioni",
+        "Lingue",
+        "Riconoscimenti",
+        "Pubblicazioni",
+    ] {
+        let line = parse_line(heading, 5, &[]);
+        assert!(
+            matches!(line.kind, LineKind::SectionHeader),
+            "{heading:?} must be a SectionHeader, got {:?}",
+            line.kind
+        );
+    }
+}
+
+/// pt-PT "Prémios" is what the producer actually emits; pt-BR "Prêmios" is
+/// accepted too even though the producer never generates it — nothing in the
+/// producer's header table discriminates the two spellings.
+#[test]
+fn portuguese_awards_both_spellings_recognised() {
+    for heading in ["Prémios", "Prêmios"] {
+        let line = parse_line(heading, 5, &[]);
+        assert!(
+            matches!(line.kind, LineKind::SectionHeader),
+            "{heading:?} must be a SectionHeader, got {:?}",
+            line.kind
+        );
+    }
+}
+
+// ── Combined "X & Y" headings (the "Ausbildung & Sprachen" half of the bug) ─
+
+/// The other reported symptom: a merged heading where BOTH halves are
+/// individually known must still render as a heading rather than as an
+/// unstyled paragraph — the producer forbids emitting this shape going
+/// forward, but this covers already-generated documents and any
+/// non-compliant generation.
+#[test]
+fn combined_ampersand_heading_both_known_is_section_header() {
+    let line = parse_line("Ausbildung & Sprachen", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::SectionHeader),
+        "expected SectionHeader for a combined heading with both known halves, got {:?}",
+        line.kind
+    );
+}
+
+/// English combined heading — the join logic is not German-specific.
+#[test]
+fn combined_ampersand_heading_english_is_section_header() {
+    let line = parse_line("Skills & Certifications", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::SectionHeader),
+        "expected SectionHeader, got {:?}",
+        line.kind
+    );
+}
+
+/// The join must NOT recognise a heading when only one half is known, or
+/// neither is — an arbitrary "X & Y" prose line stays Text.
+#[test]
+fn combined_ampersand_heading_requires_both_halves_known() {
+    let one_known = parse_line("Projekte & Craft Beer", 5, &[]);
+    assert!(
+        !matches!(one_known.kind, LineKind::SectionHeader),
+        "one known half must NOT be enough, got {:?}",
+        one_known.kind
+    );
+    let neither_known = parse_line("Beer & Wine", 5, &[]);
+    assert!(
+        !matches!(neither_known.kind, LineKind::SectionHeader),
+        "neither half known must stay non-heading, got {:?}",
+        neither_known.kind
+    );
+}
+
+// ── Blast radius: the new vocabulary must not fire on ordinary content ─────
+
+/// A company literally named after a new section word, in JobEntry shape,
+/// must stay a JobEntry — the exact-match test requires the WHOLE line to
+/// equal the section word, so trailing text (here the date column) already
+/// prevents a false positive; this pins that down for the newly added words.
+#[test]
+fn company_named_after_new_section_word_stays_job_entry() {
+    let line = parse_line("Projekte GmbH  2020 - Present", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::JobEntry),
+        "expected JobEntry, got {:?}",
+        line.kind
+    );
+}
+
+/// A prose bullet that STARTS with a new section word must stay a Bullet —
+/// the whole line, not a prefix, has to match a known name.
+#[test]
+fn bullet_starting_with_new_section_word_stays_bullet() {
+    let line = parse_line(
+        "- Projekte für interne Kunden geleitet und Teams koordiniert",
+        5,
+        &[],
+    );
+    assert!(
+        matches!(line.kind, LineKind::Bullet),
+        "expected Bullet, got {:?}",
+        line.kind
+    );
+}
+
+/// A candidate's own prose sentence that merely CONTAINS a new section word
+/// must stay Text.
+#[test]
+fn prose_line_containing_new_section_word_stays_text() {
+    let line = parse_line("Mehrere Projekte erfolgreich abgeschlossen.", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::Text),
+        "expected Text, got {:?}",
+        line.kind
+    );
+}
+
+/// A grouped skills line labelled with a new section word ("Sprachen:") must
+/// stay Text, not become a heading — the exact-match test requires the whole
+/// line to equal the bare word, and a trailing colon + list is longer than that.
+#[test]
+fn skills_group_labelled_with_new_section_word_stays_text() {
+    let line = parse_line("Sprachen: Deutsch, Englisch, Französisch", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::Text),
+        "expected Text, got {:?}",
+        line.kind
+    );
+}
+
+// ── Recurrence guard: producer/recogniser contract, mechanically enforced ──
+
+/// Every heading `pipeline::resume::prompt_blocks::resume_conventions` can
+/// emit, for every one of the nine ordered `SectionId`s and all seven curated
+/// locales, must be recognised by `export::parser` as a SectionHeader —
+/// exactly as the producer emits it (Title-Case, not ALL-CAPS, since
+/// ALL-CAPS already has its own shape-based recognition path and Title-Case
+/// is the shape that broke in the reported bug). This closes the loop
+/// mechanically: a future SectionId or locale added to the producer's total
+/// `headers` record without a matching recogniser entry fails HERE, not in a
+/// screenshot.
+///
+/// Whether this guard would have caught the ORIGINALLY reported bug, if it
+/// had existed beforehand: see the report — the honest answer is nuanced,
+/// not a flat yes.
+#[test]
+fn every_producer_heading_is_recognised_by_the_parser() {
+    const SECTION_IDS: &[&str] = &[
+        "Summary",
+        "Experience",
+        "Education",
+        "Skills",
+        "Projects",
+        "Certifications",
+        "Languages",
+        "Awards",
+        "Publications",
+    ];
+    const LOCALES: &[&str] = &["en", "de", "fr", "es", "it", "nl", "pt"];
+
+    for &lang in LOCALES {
+        let conventions = crate::pipeline::resume::prompt_blocks::resume_conventions(lang);
+        for &id in SECTION_IDS {
+            let heading = conventions.header(id);
+            let line = parse_line(heading, 5, &[]);
+            assert!(
+                matches!(line.kind, LineKind::SectionHeader),
+                "locale {lang:?} heading {heading:?} (for SectionId::{id}) was not \
+                 recognised as a SectionHeader by export::parser, got {:?}",
+                line.kind
+            );
+        }
+    }
+}
+
 #[test]
 fn test_parse_resume() {
     let text = "John Doe\njohn@example.com\n\nExperience\nSoftware Engineer  Jan 2020 - Present";
