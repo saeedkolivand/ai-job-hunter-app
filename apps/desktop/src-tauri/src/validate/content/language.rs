@@ -170,34 +170,57 @@ pub(super) fn looks_like_prose(text: &str) -> bool {
 
 /// Per-section half of [`language_issues`].
 ///
-/// Gated on `!is_language_mismatch(ctx.input.generated, &ctx.lang)` —
-/// the document as a whole must not CONFIDENTLY read as the wrong language.
-/// That is deliberately weaker than requiring it to confidently read as
-/// RIGHT: a document with exactly one drifted section is, BY CONSTRUCTION,
-/// the shape whose whole-text confidence a section-level check most needs to
-/// survive. Measured on this crate's own fixture (one Italian EXPERIENCE
-/// section inside an otherwise-English résumé): the whole document reads at
-/// confidence 0.28, well under `MIN_DETECTION_CONFIDENCE` — so gating on "the
-/// whole document confidently reads as `lang`" would have made THIS pass
-/// switch itself off in exactly the one case the reported defect actually
-/// takes ("summary in English, experience in Italian, skills in English
-/// again"): the more a document drifts, the LESS confident the whole-text
-/// read becomes, which would make the two mechanisms cancel each other out.
-/// `is_language_mismatch` on its own goes quiet on that same low-confidence
-/// read (`None` never counts as a mismatch), so the gate opens instead of
-/// closing — the section pass gets to look for exactly what corrupted the
-/// document-level confidence in the first place.
+/// Gated on **two** independent conditions, both required — dropping either
+/// one reopens a real false-Critical shape, so neither is a substitute for
+/// the other:
+///
+/// 1. `target_is_corroborated(ctx.input.job_ad, ctx.input.source_resume,
+///    &ctx.lang)` — the target language itself must be credible before a
+///    section can be accused of failing to match it. Without this, a
+///    document written in ANY language — including a genuine, correct
+///    translation into a THIRD language neither witness names — can still
+///    get a section flagged against a `target_language` nothing actually
+///    corroborates (measured: an unreliable/short job ad plus a
+///    differently-language source resume corroborates nothing, yet a
+///    drifted section still read as "wrong" against an uncorroborated
+///    target before this guard existed). This is the document-level check's
+///    own [`target_is_corroborated`] call, applied here too — the document
+///    pass and the section pass must agree on whether `lang` is real, not
+///    just on whether the text matches it.
+/// 2. `!is_language_mismatch(ctx.input.generated, &ctx.lang)` — the document
+///    as a whole must not CONFIDENTLY read as the wrong language. That is
+///    deliberately weaker than requiring it to confidently read as RIGHT: a
+///    document with exactly one drifted section is, BY CONSTRUCTION, the
+///    shape whose whole-text confidence a section-level check most needs to
+///    survive. Measured on this crate's own fixture (one Italian EXPERIENCE
+///    section inside an otherwise-English résumé): the whole document reads
+///    at confidence 0.28, well under `MIN_DETECTION_CONFIDENCE` — so gating
+///    on "the whole document confidently reads as `lang`" would have made
+///    THIS pass switch itself off in exactly the one case the reported
+///    defect actually takes ("summary in English, experience in Italian,
+///    skills in English again"): the more a document drifts, the LESS
+///    confident the whole-text read becomes, which would make the two
+///    mechanisms cancel each other out. `is_language_mismatch` on its own
+///    goes quiet on that same low-confidence read (`None` never counts as a
+///    mismatch), so condition 2 opens instead of closing — the section pass
+///    gets to look for exactly what corrupted the document-level confidence
+///    in the first place. Condition 2 ALONE, however, is not sufficient: it
+///    only asks "is the document confidently wrong", never "is the target
+///    even real" — a document that is neither confidently wrong NOR backed
+///    by any corroborating witness would sail through condition 2 and still
+///    get a section flagged, which is exactly the gap condition 1 closes.
 ///
 /// Replaces the old `source_is_a_reliable_control` gate for the same reason
 /// [`target_is_corroborated`] does — that control read the SOURCE résumé
 /// specifically, which fails open precisely when a translation was expected
 /// (an English source, a German target: the source was never going to read
-/// as German). This gate reads the GENERATED document instead, so it has no
-/// translation blind spot; the accepted cost is symmetric with
-/// [`target_is_corroborated`]'s: a document that confidently reads as some
-/// THIRD, uncorroborated language skips both the document- and section-level
-/// passes together, the same "goes quiet on a real disagreement" posture
-/// this whole module takes.
+/// as German). Condition 2 reads the GENERATED document instead, so it has
+/// no translation blind spot on its own; condition 1 (the corroboration
+/// requirement) is what the old control was actually FOR, restored here in
+/// its document-agnostic form. A document that confidently reads as some
+/// THIRD, uncorroborated language — or an uncorroborated target full stop —
+/// skips both the document- and section-level passes together, the same
+/// "goes quiet on a real disagreement" posture this whole module takes.
 ///
 /// Two more guards a section-scoped read needs that the document-scoped one
 /// does not, both TRADED conservatively toward missing a defect rather than
@@ -217,7 +240,9 @@ pub(super) fn looks_like_prose(text: &str) -> bool {
 ///   section is not caught here (the document-level pass still can, if enough
 ///   of the rest drifts too) — the same trade the kind allowlist already made.
 fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    if is_language_mismatch(ctx.input.generated, &ctx.lang) {
+    if !target_is_corroborated(ctx.input.job_ad, ctx.input.source_resume, &ctx.lang)
+        || is_language_mismatch(ctx.input.generated, &ctx.lang)
+    {
         return Vec::new();
     }
     ctx.generated_sections

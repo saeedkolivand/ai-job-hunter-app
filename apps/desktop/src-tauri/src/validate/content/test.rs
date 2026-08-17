@@ -1449,11 +1449,21 @@ fn language_critical_is_withheld_when_the_source_reads_the_same_way() {
 /// [`language_critical_is_withheld_when_the_source_reads_the_same_way`], from
 /// the other direction (there, both witnesses agreed with the OUTPUT; here,
 /// both witnesses confidently name a DIFFERENT real language than the
-/// target). Silent on BOTH the document AND section passes: `is_language_mismatch`
-/// on the whole document is true here (English confidently isn't `"de"`), and
-/// [`section_language_issues`] short-circuits to an empty `Vec` the moment
-/// the document-level read is itself confidently wrong — so this is not two
-/// separate gaps, it is one gap visible from both entry points.
+/// target). Silent on BOTH the document AND section passes — but for two
+/// SEPARATE reasons that only happen to coincide in this particular fixture,
+/// not because one implies the other in general: `is_language_mismatch` on
+/// the whole document is true here (English confidently isn't `"de"`), which
+/// closes the document pass AND, in this specific case, the `is_language_mismatch`
+/// half of [`section_language_issues`]'s own gate. That coincidence does NOT
+/// generalize — it holds only when the WHOLE document confidently reads as
+/// some other language. A document that drifts only PARTIALLY (ambiguous
+/// whole-text confidence — the exact shape a real section-level drift
+/// produces, and the one [`a_single_drifted_section_is_caught_even_though_the_document_reads_clean`]
+/// pins) does not trip `is_language_mismatch` at all, so
+/// [`section_language_issues`] would stay silent there purely on its OTHER,
+/// independent condition — `target_is_corroborated` — which is exactly what
+/// [`a_drifted_section_stays_quiet_when_the_target_language_is_not_corroborated`]
+/// pins.
 #[test]
 fn a_confidently_english_ad_does_not_corroborate_a_german_target_the_dach_miss() {
     assert!(
@@ -3938,6 +3948,48 @@ fn a_language_critical_needs_at_least_one_reliable_witness() {
         &report_for(EN_WRONG_LANGUAGE, short_source, unreliable_ad, &[]),
         CONTENT_LANGUAGE_MISMATCH,
     );
+}
+
+/// **The bug this whole fix closes, pinned as a permanent regression.**
+/// Before this fix, [`section_language_issues`]'s gate checked ONLY
+/// `is_language_mismatch` on the whole document — never whether the TARGET
+/// language was corroborated by any witness at all — so a section could be
+/// flagged against a `target_language` neither the job ad nor the
+/// candidate's own source résumé ever vouched for. Same defect as
+/// [`a_language_critical_needs_at_least_one_reliable_witness`] above, but at
+/// SECTION scope instead of document scope: `EN_EXPERIENCE_DRIFTED_ITALIAN`
+/// reads confidently English at the WHOLE-document level (premise below), an
+/// unreliable job ad plus a genuinely French source corroborate nothing for
+/// `"en"` (premise below), yet the EXPERIENCE section really is Italian —
+/// before this fix, `section_language_issues` fired a Critical on it anyway,
+/// because its old gate never asked whether `"en"` itself was credible.
+///
+/// Mutation check: drop the `!target_is_corroborated(...) ||` clause from
+/// `section_language_issues` (restoring the old single-condition gate) and
+/// this test goes red — `CONTENT_LANGUAGE_MISMATCH` fires, `Critical`,
+/// `section: Some("EXPERIENCE")`.
+#[test]
+fn a_drifted_section_stays_quiet_when_the_target_language_is_not_corroborated() {
+    let unreliable_ad = "Terraform AWS PostgreSQL Kubernetes platform engineer";
+    assert!(
+        !is_language_mismatch(EN_EXPERIENCE_DRIFTED_ITALIAN, "en"),
+        "premise: the whole document must not confidently read as \
+         non-English — otherwise this test would pass for the WRONG reason \
+         (the is_language_mismatch half of the gate alone, not the \
+         corroboration half this test targets)"
+    );
+    assert!(
+        !document_language_mismatch(EN_WRONG_LANGUAGE, FR_RESUME, unreliable_ad, "en"),
+        "premise: neither this unreliable ad nor a genuinely French source \
+         corroborates \"en\" — proven indirectly via a text already known to \
+         confidently read as non-English (EN_WRONG_LANGUAGE fires when \
+         paired with EN_SOURCE/EN_JOB_AD elsewhere in this file), so a false \
+         result here with the SAME generated text can only be explained by \
+         the corroboration half of document_language_mismatch being false"
+    );
+
+    let report = report_for(EN_EXPERIENCE_DRIFTED_ITALIAN, FR_RESUME, unreliable_ad, &[]);
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
 }
 
 /// R5-F3 — a labelled skills line ("Languages: Rust, Python") is the commonest
