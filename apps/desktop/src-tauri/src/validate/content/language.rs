@@ -1,89 +1,101 @@
 //! Whether the generated document — or one of its sections — reads as the
 //! target language. Split out of `mod.rs` to keep it under R8's line cap
-//! (`docs/architecture-rules.md`); the split changes nothing else.
+//! (`docs/architecture-rules.md`).
+//!
+//! ## Known limit
+//!
+//! Two detectors decide and check the same question. The renderer picks the
+//! target language with **franc**; this module validates with **whatlang**
+//! (via [`detected_language`]). [`target_is_corroborated`] therefore really
+//! asks "does whatlang agree with franc about this ad" — when the two
+//! detectors disagree, the guard goes quiet. Consistent with this module's
+//! posture everywhere else (a check that cannot be made reliably goes quiet
+//! rather than guesses), but it is a real limit, not a future bug report.
 
 use super::{
-    issue, significant_chars, Analysis, ContentInput, ContentIssue, Section, SectionKind, Severity,
+    issue, significant_chars, Analysis, ContentIssue, Section, SectionKind, Severity,
     CONTENT_LANGUAGE_MISMATCH,
 };
-use crate::documents::keywords::languages_align;
+use crate::documents::keywords::detected_language;
 
 /// Below this many non-whitespace characters, `whatlang` guesses. A Critical
 /// language mismatch on a two-line draft would be a false accusation, so the
 /// check goes quiet instead.
 pub(super) const MIN_CHARS_FOR_LANGUAGE_CHECK: usize = 120;
 
-/// Whether `text` is written in something other than `lang`.
+/// Whether `text` is confidently written in something other than `lang`.
 ///
-/// Routed through `languages_align` rather than a bespoke comparison so the
-/// language question has ONE answer in this codebase: it detects `text`'s
-/// language with the same `whatlang` path `keywords.rs` uses and asks whether
-/// that language pairs with the given locale tag. Goes quiet on short text,
-/// where detection is a guess.
+/// Two independent reasons to go quiet, both already the module's stated
+/// posture: too SHORT to read a language from at all
+/// ([`MIN_CHARS_FOR_LANGUAGE_CHECK`]), or [`detected_language`] itself is not
+/// confident (below `documents::keywords::MIN_DETECTION_CONFIDENCE`) or
+/// reads a language this crate does not curate. Either way, `None` never
+/// counts as a mismatch — an unreliable read cannot manufacture an
+/// accusation, it can only fail to make one.
 pub(super) fn is_language_mismatch(text: &str, lang: &str) -> bool {
-    let significant = text.chars().filter(|c| !c.is_whitespace()).count();
-    significant >= MIN_CHARS_FOR_LANGUAGE_CHECK && !languages_align(text, lang)
+    significant_chars(text) >= MIN_CHARS_FOR_LANGUAGE_CHECK
+        && matches!(detected_language(text), Some(found) if found != lang)
 }
 
-/// Whether this report may raise `content.language_mismatch`.
+/// Whether an independent witness — the job ad, or the candidate's own source
+/// résumé — confidently reads as `lang` too, so `lang` itself is credible
+/// enough to accuse a document of failing to match it.
 ///
-/// The generated text reading as the wrong language is necessary but NOT
-/// sufficient. The candidate's own source résumé is the CONTROL: it was written
-/// by a human in the language they meant, so it is what proves the detector can
-/// read this candidate's writing at all. `whatlang` routinely calls a terse,
-/// tech-heavy English résumé Dutch, Norwegian or Tagalog; firing on its word
-/// alone produces a Critical the user cannot act on ("re-generate it in English"
-/// — it *is* in English) and, worse, blanks `keywordCoverage` and suppresses
-/// every alignment finding along with it.
+/// Replaces the old `source_is_a_reliable_control`, which required the SOURCE
+/// specifically to already read as the target — true only when no
+/// translation was needed, i.e. false in exactly the cross-language case this
+/// whole check exists to catch (an English source résumé, a German target).
+/// English source + `target_language: "de"` used to make BOTH witnesses fail
+/// by construction; corroboration asks a document-agnostic question instead
+/// — "is `lang` real" — so a translation run is no longer disqualified from
+/// having its own translation graded.
 ///
-/// So the control must PASS, positively: long enough for the detector to have
-/// read it, and reading as the target language. The earlier form of this guard
-/// only suppressed when the source's misdetected tag EQUALLED the generated
-/// one, which failed open in both directions a real document takes:
-///
-/// * a **short** source — [`is_language_mismatch`] goes quiet below
-///   [`MIN_CHARS_FOR_LANGUAGE_CHECK`], and the guard read that silence as "the
-///   source is fine", i.e. as evidence FOR the accusation;
-/// * a **heavily-reworded** source — two mis-reads of the same English land on
-///   different tags (`nl` vs `tl`) as easily as on one, and the equality test
-///   then treated a detector disagreement as a generation defect.
-///
-/// A genuinely mis-generated document still fires: an English source reads as
-/// English (control passes), the German output does not.
-///
-/// *No confidence signal is used, because there is none to use:* both detector
-/// wrappers this crate owns (`documents::keywords::languages_align` and
-/// `detect_locale_tag`) discard `whatlang`'s `Info` and return only the language,
-/// so `is_reliable()`/`confidence()` are not reachable without a second,
-/// independent detection path in this module — which is exactly the drift the
-/// "one answer to the language question" rule exists to prevent. The length gate
-/// plus a positive control covers the same ground: an unreliable read cannot
-/// pass a control that requires the EXPECTED language.
-pub(super) fn language_mismatch_for(input: &ContentInput, lang: &str) -> bool {
-    is_language_mismatch(input.generated, lang) && source_is_a_reliable_control(input, lang)
+/// No length floor on either witness: `detected_language`'s own confidence
+/// gate is a better-calibrated reliability signal than a raw character count
+/// (see its doc comment) and already absorbs the false-positive risk the old
+/// control's floor existed for — a terse ad or a short certifications block
+/// reads at confidence 0.08–0.13 in this crate's own fixtures, comfortably
+/// below the 0.9 bar, so `detected_language` already answers `None` for them
+/// without a second, redundant length check here.
+fn target_is_corroborated(job_ad: &str, source_resume: &str, lang: &str) -> bool {
+    detected_language(job_ad) == Some(lang) || detected_language(source_resume) == Some(lang)
 }
 
-/// Whether the source résumé can carry the weight of a Critical: long enough for
-/// `whatlang` to be reading rather than guessing, and reading as `lang`.
-fn source_is_a_reliable_control(input: &ContentInput, lang: &str) -> bool {
-    significant_chars(input.source_resume) >= MIN_CHARS_FOR_LANGUAGE_CHECK
-        && languages_align(input.source_resume, lang)
+/// Whether `generated` came back in the wrong language for `target_language`,
+/// given `source_resume` and `job_ad` as witnesses that the target itself is
+/// real (see [`target_is_corroborated`]).
+///
+/// The single answer to "did this run come back in the wrong language" —
+/// [`super::language_issues`] uses it (via [`Analysis::language_mismatch`])
+/// for the deterministic Critical, and the pipeline's draft-retry
+/// (`pipeline::resume::stages::draft`) is meant to call this SAME function
+/// before spending a second model call, so `validate` and the retry guarding
+/// against the same defect can never quietly disagree about what "wrong
+/// language" means.
+pub fn document_language_mismatch(
+    generated: &str,
+    source_resume: &str,
+    job_ad: &str,
+    target_language: &str,
+) -> bool {
+    let lang = super::normalize_language(target_language);
+    is_language_mismatch(generated, &lang) && target_is_corroborated(job_ad, source_resume, &lang)
 }
 
 /// `content.language_mismatch` — the output is not in the language it was asked
 /// for. Critical: a German résumé sent to an English-speaking employer is not a
 /// quality nit, and every downstream comparison is meaningless once it holds.
 ///
-/// Two passes, in order. The DOCUMENT pass is a majority read over the whole
-/// text (`languages_align` over everything concatenated) — reliable at that
+/// Two passes, in order. The DOCUMENT pass is [`Analysis::language_mismatch`]
+/// (a whole-text read via [`document_language_mismatch`]) — reliable at that
 /// scale, but it takes roughly a third of a nine-section résumé drifting to a
 /// minority language before the vote flips; one drifted section, or two, reads
 /// as noise inside a long document and never fires. So when the document reads
 /// clean, a SECTION pass checks each section on its own — the shape the
 /// reported defect actually takes ("summary in English, experience in Italian,
 /// skills in English again"). Both passes route through the same
-/// `languages_align` kernel — this is a second SCOPE the language question is
-/// asked over, not a second answer to it.
+/// `detected_language` kernel — this is a second SCOPE the language question
+/// is asked over, not a second answer to it.
 pub(super) fn language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     if ctx.language_mismatch {
         return vec![issue(
@@ -94,7 +106,7 @@ pub(super) fn language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
                  Re-generate it with the target language set correctly before sending.",
                 ctx.lang
             ),
-            Some(ctx.lang.clone()),
+            None,
         )];
     }
     section_language_issues(ctx)
@@ -120,7 +132,11 @@ pub(super) fn language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 ///   Experience) reads as prose here — canonical tool-name casing (`pandas`,
 ///   `git`, `nginx`) IS lowercase, so this is measured, not hypothetical.
 ///   The call site excludes `SectionKind::Skills` outright (belt and braces)
-///   for exactly this reason.
+///   for exactly this reason — and it is NOT redundant with
+///   `detected_language`'s confidence gate: a comma/middot tool list can read
+///   as a covered-but-wrong language with confidence 1.0 (measured: whatlang
+///   reads a lowercase Python/data-tooling list as confident French), so the
+///   confidence gate alone does not suppress it.
 /// - A caseless script (Arabic, Hebrew, CJK, Thai, Devanagari, …) has no
 ///   uppercase/lowercase distinction at all, so a whole-TEXT ratio would
 ///   always read 0 and silently skip it — worse, since a real drift then
@@ -154,10 +170,34 @@ pub(super) fn looks_like_prose(text: &str) -> bool {
 
 /// Per-section half of [`language_issues`].
 ///
-/// Gated on the SAME positive control the document-level check requires
-/// ([`source_is_a_reliable_control`]) rather than a fresh reliability read per
-/// section — the control question is a property of the candidate's source
-/// résumé, not of any one generated section.
+/// Gated on `!is_language_mismatch(ctx.input.generated, &ctx.lang)` —
+/// the document as a whole must not CONFIDENTLY read as the wrong language.
+/// That is deliberately weaker than requiring it to confidently read as
+/// RIGHT: a document with exactly one drifted section is, BY CONSTRUCTION,
+/// the shape whose whole-text confidence a section-level check most needs to
+/// survive. Measured on this crate's own fixture (one Italian EXPERIENCE
+/// section inside an otherwise-English résumé): the whole document reads at
+/// confidence 0.28, well under `MIN_DETECTION_CONFIDENCE` — so gating on "the
+/// whole document confidently reads as `lang`" would have made THIS pass
+/// switch itself off in exactly the one case the reported defect actually
+/// takes ("summary in English, experience in Italian, skills in English
+/// again"): the more a document drifts, the LESS confident the whole-text
+/// read becomes, which would make the two mechanisms cancel each other out.
+/// `is_language_mismatch` on its own goes quiet on that same low-confidence
+/// read (`None` never counts as a mismatch), so the gate opens instead of
+/// closing — the section pass gets to look for exactly what corrupted the
+/// document-level confidence in the first place.
+///
+/// Replaces the old `source_is_a_reliable_control` gate for the same reason
+/// [`target_is_corroborated`] does — that control read the SOURCE résumé
+/// specifically, which fails open precisely when a translation was expected
+/// (an English source, a German target: the source was never going to read
+/// as German). This gate reads the GENERATED document instead, so it has no
+/// translation blind spot; the accepted cost is symmetric with
+/// [`target_is_corroborated`]'s: a document that confidently reads as some
+/// THIRD, uncorroborated language skips both the document- and section-level
+/// passes together, the same "goes quiet on a real disagreement" posture
+/// this whole module takes.
 ///
 /// Two more guards a section-scoped read needs that the document-scoped one
 /// does not, both TRADED conservatively toward missing a defect rather than
@@ -171,15 +211,13 @@ pub(super) fn looks_like_prose(text: &str) -> bool {
 ///   History"/"Selected Roles" section at all; `looks_like_prose` widens
 ///   coverage to any sentence-shaped section, including ones
 ///   `classify_section` can't name, but it is not a substitute for the
-///   Skills exclusion — a Skills section written in canonical lowercase
-///   tool-name casing (`pandas`, `git`, `nginx`) reads as prose by the same
-///   signal a real sentence does. Keep both.
+///   Skills exclusion (see the false-positive note on [`PROSE_LOWERCASE_WORD_RATIO`]).
 ///
 ///   The cost, paid deliberately: a model that drifts ONLY a list-shaped
 ///   section is not caught here (the document-level pass still can, if enough
 ///   of the rest drifts too) — the same trade the kind allowlist already made.
 fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    if !source_is_a_reliable_control(ctx.input, &ctx.lang) {
+    if is_language_mismatch(ctx.input.generated, &ctx.lang) {
         return Vec::new();
     }
     ctx.generated_sections
@@ -195,7 +233,7 @@ fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
             if !looks_like_prose(&body) {
                 return None;
             }
-            if languages_align(&body, &ctx.lang) {
+            if !matches!(detected_language(&body), Some(found) if found != ctx.lang) {
                 return None;
             }
             let mut found = issue(

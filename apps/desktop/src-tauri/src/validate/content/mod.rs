@@ -61,7 +61,7 @@ mod letter;
 pub mod lexicon;
 mod voice;
 
-use self::language::{language_issues, language_mismatch_for, MIN_CHARS_FOR_LANGUAGE_CHECK};
+use self::language::{language_issues, MIN_CHARS_FOR_LANGUAGE_CHECK};
 // Only `test.rs` (a `super::*` glob import) reaches into these three directly.
 #[cfg(test)]
 use self::language::{is_language_mismatch, looks_like_prose, PROSE_LOWERCASE_WORD_RATIO};
@@ -79,6 +79,13 @@ use self::language::{is_language_mismatch, looks_like_prose, PROSE_LOWERCASE_WOR
 pub use self::alignment::MIN_COVERAGE_DROP_POINTS;
 pub use self::consistency::{project_entry_starts, MAX_PROJECT_DESCRIPTION_LINES};
 pub use self::factual::{canonical_link, link_href, names_a_resource, urls_in};
+/// The single predicate for "did this run come back in the wrong language" —
+/// `validate_content` uses it via [`Analysis::language_mismatch`]; the
+/// pipeline's draft-retry (`pipeline::resume::stages::draft`, a later step of
+/// the same fix) is meant to call this SAME function before spending a
+/// second model call, so the two can never quietly disagree about what "wrong
+/// language" means.
+pub use self::language::document_language_mismatch;
 
 #[cfg(test)]
 mod test;
@@ -528,7 +535,12 @@ impl<'a> Analysis<'a> {
             job_keywords: tokens(input.job_ad),
             generated_keywords: tokens(input.generated),
             source_keywords: tokens(input.source_resume),
-            language_mismatch: language_mismatch_for(input, &lang),
+            language_mismatch: document_language_mismatch(
+                input.generated,
+                input.source_resume,
+                input.job_ad,
+                input.target_language,
+            ),
             aligned,
             stemmer,
             input,
@@ -598,14 +610,17 @@ impl<'a> Analysis<'a> {
     /// survive. Only the ad↔document INTERSECTION is invalid there, and only
     /// `generic_letter` computes one.
     ///
-    /// The reliability half is the same positive control the language Critical
-    /// takes (`language::source_is_a_reliable_control`, R5-F2), against the same
-    /// constant: `languages_align` answers `false` for a MISDETECTED language
-    /// just as readily as for a real one, and a terse ad ("Terraform AWS
-    /// PostgreSQL Kubernetes platform engineer") is a keyword soup the detector
-    /// reads as anything at all. Suppressing on that guess would switch the
-    /// check off for ordinary short postings. "Long enough to read a language
-    /// from" is one bar, not two.
+    /// The reliability half is the same R5-F2 concern the language Critical
+    /// guards against: `languages_align` answers `false` for a MISDETECTED
+    /// language just as readily as for a real one, and a terse ad ("Terraform
+    /// AWS PostgreSQL Kubernetes platform engineer") is a keyword soup the
+    /// detector reads as anything at all. This check stays on the SAME
+    /// [`MIN_CHARS_FOR_LANGUAGE_CHECK`] floor `language.rs`'s guards used to
+    /// share, rather than `detected_language`'s confidence gate: `aligned`
+    /// (above) is computed from `languages_align`, which exposes no
+    /// confidence signal to gate on, so length is the only reliability proxy
+    /// available here. Suppressing on a short-ad guess would switch the check
+    /// off for ordinary short postings.
     fn posting_language_diverges(&self) -> bool {
         !self.aligned && significant_chars(self.input.job_ad) >= MIN_CHARS_FOR_LANGUAGE_CHECK
     }
