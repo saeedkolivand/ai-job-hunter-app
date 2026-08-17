@@ -814,6 +814,104 @@ describe('useTailorPipeline — meta is seeded from the aggregate, not fabricate
   });
 });
 
+// The bug: Regenerate re-derived `targetLanguage` from `jobDesc` on every
+// render via `detectLanguage`, which returns 'unknown' (collapsed here to
+// 'en') for text under 20 chars — discarding whatever language the PREVIOUS
+// generation actually used the moment `jobDesc` is empty/short, even though
+// `latestGeneration.resumeLanguage`/`jobAdLanguage` already hold the answer.
+describe('useTailorPipeline — targetLanguage prefers the previous generation over re-detecting', () => {
+  it("resolves targetLanguage from the previous generation's resumeLanguage even when jobDesc is empty (the failing regenerate condition)", async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const generation = {
+      id: 'gen-1',
+      resumeLanguage: 'de',
+      jobAdLanguage: 'en',
+      coverLetterText: '',
+    } as AiGenerationRecord;
+
+    const { result } = render({ jobDesc: '', latestGeneration: generation });
+
+    expect(result.current.meta?.targetLanguage).toBe('de');
+
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ targetLanguage: 'de' })
+    );
+  });
+
+  // The SAME persisted field carries two shapes: `extractMetadata` (the
+  // AIGeneratePage flow) writes a display NAME like "German", every other
+  // writer an ISO code, and `save_application` merges both into one record.
+  // Preferring "German" verbatim is WORSE than the bug this memo fixes —
+  // Rust truncates it to "ge", which matches no language arm, so the language
+  // checks go dark for that document.
+  it('normalizes a persisted language NAME to its ISO code before preferring it', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const generation = {
+      id: 'gen-name',
+      resumeLanguage: 'German',
+      jobAdLanguage: '',
+      coverLetterText: '',
+    } as AiGenerationRecord;
+
+    const { result } = render({ jobDesc: '', latestGeneration: generation });
+
+    expect(result.current.meta?.targetLanguage).toBe('de');
+
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ targetLanguage: 'de' })
+    );
+  });
+
+  // `a || b` picks the first NON-EMPTY and validates only that, so an invalid
+  // but present resumeLanguage used to short-circuit a perfectly valid
+  // jobAdLanguage and send us to detection instead.
+  it('falls through an invalid resumeLanguage to a valid jobAdLanguage', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const generation = {
+      id: 'gen-invalid',
+      resumeLanguage: 'not-a-language',
+      jobAdLanguage: 'de',
+      coverLetterText: '',
+    } as AiGenerationRecord;
+
+    const { result } = render({ jobDesc: '', latestGeneration: generation });
+    expect(result.current.meta?.targetLanguage).toBe('de');
+  });
+
+  // The middle rung of the fallback chain, previously untested.
+  it('falls back to jobAdLanguage when resumeLanguage is empty', async () => {
+    sessionBus.detail = detail({ resumeText: 'RESUME' });
+    const generation = {
+      id: 'gen-jobad',
+      resumeLanguage: '',
+      jobAdLanguage: 'de',
+      coverLetterText: '',
+    } as AiGenerationRecord;
+
+    const { result } = render({ jobDesc: '', latestGeneration: generation });
+    expect(result.current.meta?.targetLanguage).toBe('de');
+  });
+
+  it('detects targetLanguage from the job ad when there is no previous generation (first run)', async () => {
+    const GERMAN_JOB_AD =
+      'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
+    const { result } = render({ jobDesc: GERMAN_JOB_AD, latestGeneration: undefined });
+
+    await act(async () => {
+      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+    });
+    expect(sessionBus.start).toHaveBeenCalledWith(
+      expect.objectContaining({ targetLanguage: 'de' })
+    );
+  });
+});
+
 // Stage 6d — a run stopped before the `validate` stage (cancel, or a deadline
 // stop at a stage boundary) persists `session.detail.report === null`, which
 // the OLD `session.detail ? session.detail.report : …` ternary took as a

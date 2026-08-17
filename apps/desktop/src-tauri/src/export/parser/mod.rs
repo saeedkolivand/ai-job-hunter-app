@@ -294,6 +294,20 @@ const SECTION_NAMES: &[&str] = &[
     "competências",
 ];
 
+/// Whether `text`, trimmed and lowercased, exactly names one of the parser's
+/// own known section headings — the same exact-match test [`parse_line`] uses
+/// to promote a line to [`LineKind::SectionHeader`] via [`SECTION_NAMES`].
+///
+/// Exposed so callers that need "is this a REAL heading, even one
+/// `documents::evidence::classify_section` has no bucket for" (Certifications,
+/// Licenses, Languages-spoken, Awards, Publications, Volunteer, Work History,
+/// …) can ask without forking a second copy of the list — those headings are
+/// all in [`SECTION_NAMES`], but `classify_section`'s six-variant
+/// `SectionKind` has no arm for any of them and buckets them all as `Other`.
+pub(crate) fn is_known_section_name(text: &str) -> bool {
+    SECTION_NAMES.contains(&text.trim().to_lowercase().as_str())
+}
+
 // Company/role keywords (should NOT be treated as section headers)
 const COMPANY_KEYWORDS: &[&str] = &[
     "NASA",
@@ -456,7 +470,10 @@ fn is_thematic_break(line: &str) -> bool {
 /// A `#hashtag` with no trailing space is NOT a heading and yields `None`. This is
 /// what lets a user-authored custom heading (`## Side Projects`) always classify
 /// as a section heading, independent of the known-name / ALL-CAPS heuristics.
-fn strip_atx_heading(line: &str) -> Option<&str> {
+/// `pub(crate)` so `pipeline::resume::stages::sections::real_section_count`
+/// can ask the same question `parse_line` already answered, rather than
+/// re-deriving the ATX shape a second time.
+pub(crate) fn strip_atx_heading(line: &str) -> Option<&str> {
     let hashes = line.chars().take_while(|&c| c == '#').count();
     if (1..=6).contains(&hashes) && line[hashes..].starts_with(' ') {
         Some(line[hashes..].trim_start())
