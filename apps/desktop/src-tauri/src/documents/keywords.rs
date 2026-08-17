@@ -256,9 +256,15 @@ pub fn detect_locale_tag(text: &str) -> &'static str {
 
 /// Confidence `whatlang` must clear before its answer is trusted as this
 /// text's language, in [`detected_language`]. Below this, `whatlang` is
-/// guessing, not reading — same threshold `whatlang::Info::is_reliable` uses
-/// internally, so this crate's "confident" and the library's own do not
-/// silently drift apart.
+/// guessing, not reading — documentation of the bar `whatlang::Info::is_reliable`
+/// uses internally, **not** a copy compared against independently:
+/// [`detected_language`] calls `info.is_reliable()` directly, so this crate's
+/// "confident" and the library's own cannot drift apart even at the boundary
+/// (`is_reliable` is `confidence() > 0.9`, strictly greater — a value of
+/// exactly `0.9` is NOT reliable, a distinction a hand-rolled `< 0.9`
+/// comparison against this const got backwards; see
+/// `test::whatlang_reliability_boundary_is_strictly_greater_than_0_9` for the
+/// boundary pinned directly against the library).
 ///
 /// Calibrated against this crate's own fixtures, not picked in the abstract:
 /// every full résumé, job ad and drifted-résumé-SECTION in the
@@ -292,7 +298,7 @@ pub const MIN_DETECTION_CONFIDENCE: f64 = 0.9;
 /// make it lie.
 pub fn detected_language(text: &str) -> Option<&'static str> {
     let info = detect(text)?;
-    if info.confidence() < MIN_DETECTION_CONFIDENCE {
+    if !info.is_reliable() {
         return None;
     }
     locale_tag_of(info.lang())
@@ -573,11 +579,52 @@ pub fn coverage_score(resume_text: &str, job_text: &str) -> f64 {
 mod test {
     use super::*;
 
+    /// `detected_language` must not duplicate whatlang's own reliability
+    /// arithmetic in a second, hand-rolled comparison that can silently drift
+    /// out of step with it — it delegates to `Info::is_reliable()` directly
+    /// (see that function's doc comment). Two things pinned here:
+    ///
+    /// * whatlang's own boundary is `confidence() > 0.9`, STRICTLY greater,
+    ///   not `>=` — a confidence of exactly `0.9` is NOT reliable, while
+    ///   anything above it is. That is the exact distinction the OLD code
+    ///   (`info.confidence() < MIN_DETECTION_CONFIDENCE`) got backwards,
+    ///   silently ACCEPTING a confidence of precisely `0.9`.
+    /// * [`MIN_DETECTION_CONFIDENCE`] itself stays in step with whatlang's
+    ///   real, live threshold: both assertions probe `Info::is_reliable()` at
+    ///   OUR const's value, so if a future edit ever moved the const away
+    ///   from whatlang's actual `0.9` (in EITHER direction) one of the two
+    ///   assertions flips.
+    ///
+    /// Mutation check (performed, not hypothetical): raising
+    /// `MIN_DETECTION_CONFIDENCE` to `0.95` turns the first assertion red
+    /// (`at_the_bar.is_reliable()` becomes `true` at 0.95, since whatlang's
+    /// real bar is still 0.9); reverting to `0.9` turns it green again.
+    ///
+    /// What this test does NOT (and, short of finding real text whatlang
+    /// scores at exactly `0.9`, cannot) prove in a black-box way: that
+    /// [`detected_language`] itself still calls `is_reliable()` rather than a
+    /// reintroduced hand-rolled copy — for every OTHER confidence value the
+    /// two formulations agree, so no ordinary fixture can tell them apart
+    /// (verified: reverting `detected_language` to the old `confidence() <
+    /// MIN_DETECTION_CONFIDENCE` comparison does NOT turn any test in this
+    /// module red, this one included). The delegation itself is enforced by
+    /// reading the one line of source next to this test, the same "true by
+    /// construction, not by a coincidental second number" argument the doc
+    /// comment above makes.
     #[test]
-    fn min_detection_confidence_is_pinned() {
-        // whatlang's own `Info::is_reliable()` threshold — see the doc comment
-        // on why this crate deliberately does not pick its own number.
-        assert_eq!(MIN_DETECTION_CONFIDENCE, 0.9);
+    fn whatlang_reliability_boundary_is_strictly_greater_than_0_9() {
+        let at_the_bar =
+            whatlang::Info::new(whatlang::Script::Latin, Lang::Eng, MIN_DETECTION_CONFIDENCE);
+        assert!(
+            !at_the_bar.is_reliable(),
+            "whatlang's own bar is confidence > 0.9, not >=; exactly 0.9 must not be reliable"
+        );
+        let just_above = whatlang::Info::new(
+            whatlang::Script::Latin,
+            Lang::Eng,
+            MIN_DETECTION_CONFIDENCE + 0.0001,
+        );
+        assert!(just_above.is_reliable());
     }
 
     /// English plus the six Snowball languages: full-sentence prose, the shape

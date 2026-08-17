@@ -580,45 +580,64 @@ fn a_drifted_experience_section_in_a_caseless_script_is_still_caught() {
     );
 }
 
-/// Regression / no-false-positive guard for a long, PADDED Title-Case skills
-/// list — no premise restatement needed for the language question itself:
-/// `detected_language` maps this exact list to `None` (whatlang confidently
-/// but WRONGLY reads Title-Case comma/middot tool lists as Catalan, a
-/// language `documents::keywords::locale_tag_of` does not curate — see
-/// `documents::keywords::test::detect_locale_tag_and_detected_language_agree_whenever_both_answer`
-/// for the general shape). **Premise change, stated loudly rather than
-/// silently dropped**: under the OLD `languages_align`-based check this
-/// fixture's mutation check ("drop the `SectionKind::Skills` filter and this
-/// goes red") was meaningful, because `languages_align`'s `_ =>` arm aligned
-/// the misdetected language only with `"en"`, so a German target failed it.
-/// Under `detected_language`, `None` never counts as a mismatch regardless of
-/// the Skills filter, so THIS fixture's mutation check is now VACUOUS — the
-/// belt-and-braces story for a Title-Case tool list is now belt-only
-/// (the confidence-and-coverage-gated `detected_language` itself, not the
-/// Skills exclusion). [`a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_language_check`]
-/// below carries the meaningful mutation check for this shape: a lowercase
-/// tool list that whatlang reads as a COVERED-but-wrong language (French),
-/// which the Skills exclusion alone must still catch.
+/// No-false-positive REGRESSION pin for a long, padded Title-Case skills list
+/// — relabelled honestly, not a mutation-checked guard for any one gate.
+/// **This fixture is suppressed THREE independent ways at once**, so no
+/// single-gate mutation can turn it red here (verified, not assumed — see the
+/// premise assertions below, each anchored to the actual SECTION BODY
+/// [`section_language_issues`] validates, `"KENNTNISSE\n" + the padded list`,
+/// not to the short unpadded `list` a prior version of this test asserted its
+/// premise against while validating the padded one):
+///
+/// 1. `classify_section("KENNTNISSE")` is [`SectionKind::Skills`], so the
+///    per-section pass's `SectionKind::Skills` filter excludes it outright.
+/// 2. A Title-Case, middot-separated list opens every "word" uppercase, so
+///    [`looks_like_prose`] reads it as a LIST, not prose, and excludes it too.
+/// 3. `detected_language` maps this exact list to `None` — whatlang
+///    confidently but WRONGLY reads Title-Case comma/middot tool lists as
+///    Catalan, a language `documents::keywords::locale_tag_of` does not
+///    curate (see
+///    `documents::keywords::test::detect_locale_tag_and_detected_language_agree_whenever_both_answer`)
+///    — so the confidence-and-coverage gate excludes it a third time.
+///
+/// Each gate's OWN mutation-checked guard lives elsewhere, on a fixture that
+/// isolates it: the `SectionKind::Skills` filter's guard is
+/// [`a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_language_check`]
+/// (a LOWERCASE tool list, so it clears `looks_like_prose` and reads as a
+/// COVERED-but-wrong language, leaving the Skills filter as the only thing
+/// standing); `detected_language`'s confidence floor's guard is
+/// [`a_correct_certifications_block_never_trips_the_per_section_language_check`].
+/// This fixture keeps its place anyway as a straightforward "a realistic long
+/// skills list never earns a false Critical" regression, now labelled for
+/// what it actually is.
 #[test]
-fn a_long_skills_list_never_trips_the_per_section_language_check() {
+fn a_long_title_case_skills_list_is_a_no_false_positive_regression() {
     let list = "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis";
-    let padded = DE_CLEAN.replace(
-        list,
+    let padded_list =
         "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis · \
          Go · TypeScript · GraphQL · gRPC · Kafka · RabbitMQ · Elasticsearch · Prometheus · \
          Grafana · Jenkins · GitLab CI · Helm · Istio · Envoy · Vault · Consul · Nomad · \
-         Ansible · Chef · Puppet · Nginx · HAProxy · Cassandra · MongoDB · ClickHouse",
+         Ansible · Chef · Puppet · Nginx · HAProxy · Cassandra · MongoDB · ClickHouse";
+    let padded = DE_CLEAN.replace(list, padded_list);
+    // The exact text `section_language_issues` runs its checks over for the
+    // KENNTNISSE section: `section_text` joins the heading and every line
+    // with `\n` — this is what the premises below must be anchored to, not
+    // the short `list` alone.
+    let section_body = format!("KENNTNISSE\n{padded_list}\n");
+    assert!(
+        significant_chars(&section_body) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: the validated section body must clear the per-section char floor, or gate 3 \
+         below proves nothing"
     );
     assert!(
-        significant_chars(&padded) - significant_chars(DE_CLEAN) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
-        "premise: the padded skills list alone must clear the per-section char floor"
+        !looks_like_prose(&section_body),
+        "premise: a Title-Case, middot-separated list must NOT read as prose — gate 2"
     );
     assert_eq!(
-        crate::documents::keywords::detected_language(list),
+        crate::documents::keywords::detected_language(&section_body),
         None,
         "premise: this ordinary Title-Case tool list is not a covered language under \
-         detected_language — see the doc comment for why this makes the mutation \
-         check vacuous here specifically"
+         detected_language — gate 3"
     );
     let report = validate_content(&ContentInput {
         generated: &padded,
@@ -1414,6 +1433,44 @@ fn language_critical_is_withheld_when_the_source_reads_the_same_way() {
     let real = en_resume(EN_WRONG_LANGUAGE, &en_requirements());
     let hits = fired(&real, CONTENT_LANGUAGE_MISMATCH);
     assert_eq!(hits[0].severity, Severity::Critical);
+}
+
+/// **Advisory MEDIUM (confirmation review).** The DACH miss — the accepted
+/// cost `language.rs:5-13`'s module doc describes in the abstract, pinned as
+/// an actual scenario so a future change cannot quietly start believing this
+/// guard is universal. An English-language job ad (realistic: an
+/// international-facing posting scraped for a DACH-market role), an
+/// untranslated English source, target `"de"`, and the model returns English
+/// anyway — the SAME real defect [`regime_1_the_reported_bug_an_untranslated_english_resume_for_a_german_target_fires`]
+/// catches, just with an English ad instead of a German one. Nothing here
+/// corroborates `"de"`: neither witness confidently reads as German, so
+/// `target_is_corroborated` has no reliable premise for `"de"` at all — the
+/// SAME "goes quiet on a real disagreement" posture as
+/// [`language_critical_is_withheld_when_the_source_reads_the_same_way`], from
+/// the other direction (there, both witnesses agreed with the OUTPUT; here,
+/// both witnesses confidently name a DIFFERENT real language than the
+/// target). Silent on BOTH the document AND section passes: `is_language_mismatch`
+/// on the whole document is true here (English confidently isn't `"de"`), and
+/// [`section_language_issues`] short-circuits to an empty `Vec` the moment
+/// the document-level read is itself confidently wrong — so this is not two
+/// separate gaps, it is one gap visible from both entry points.
+#[test]
+fn a_confidently_english_ad_does_not_corroborate_a_german_target_the_dach_miss() {
+    assert!(
+        !document_language_mismatch(EN_CLEAN, EN_SOURCE, EN_JOB_AD, "de"),
+        "premise: neither witness reads as German, so the target has no corroboration — \
+         the accusation must stay quiet even though the document genuinely never got \
+         translated"
+    );
+    let report = validate_content(&ContentInput {
+        generated: EN_CLEAN, // never translated — the same shape as regime 1
+        source_resume: EN_SOURCE,
+        job_ad: EN_JOB_AD, // English, not German — the one variable that changes
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
 }
 
 // ── Cross-language regime table (the reported-bug fix) ──────────────────────
