@@ -163,7 +163,7 @@ Your résumés, generations, applications, and tracked job data live in a local 
 <summary><strong>🔒 Privacy &amp; data</strong></summary>
 
 - **Credentials in the OS keychain**: encrypted, never in plain text or config files.
-- **All data local**: jobs, résumés, generations, applications in a local SQLite database; **no behavioural analytics**, and the only thing the app sends on its own behalf is an **opt-out crash report**.
+- **All data local**: jobs, résumés, generations, applications in a local SQLite database; **no behavioural analytics**. Two things go out automatically: an update check and an **opt-out crash report**.
 - **Full reset**: one action wipes every store (documents, generations, autopilots, contact/job preferences, caches, keychain entries) back to a clean install.
 - **Multilingual**: UI in English & German; generation in 11 languages: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.
 

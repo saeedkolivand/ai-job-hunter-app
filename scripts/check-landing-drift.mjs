@@ -72,6 +72,7 @@ const SECRET_SCAN_FILES = [
   'apps/landing/src/data/architecture-map.ts',
   'apps/landing/public/benchmarks/index.html',
   'apps/landing/public/benchmarks/data.js',
+  'apps/landing/public/benchmarks/chart.min.js',
   'scripts/assets/social-card.html',
   'apps/landing/src/data/version.json',
   'apps/landing/src/components/home/HomeBody.tsx',
@@ -411,8 +412,15 @@ function checkEgressDisclosure() {
     );
     return;
   }
+  // Test/spec sources are excluded from the corpus. `textFilesUnder` recurses
+  // the whole privacy/ directory, which also holds `PrivacyBody.test.tsx` — and
+  // a vendor named only in a Vitest file is not disclosed to anybody. Verified:
+  // planting a probe name in that spec alone satisfied the presence floor and
+  // the check stayed green, which is the same one-level-too-high narrowing this
+  // check was already fixed for once.
+  const isTestSource = (p) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
   const files = EGRESS_DISCLOSURE_SURFACES.flatMap((root) => {
-    const found = textFilesUnder(root);
+    const found = textFilesUnder(root)?.filter((p) => !isTestSource(p)) ?? null;
     if (found === null) {
       // Fail loud rather than open — same idiom as checks 5/6/8: a moved
       // disclosure surface silently shrinking the corpus is the exact bug
@@ -466,7 +474,7 @@ const ABSOLUTE_EGRESS_CLAIM_RES = [
   // "sends … data/information/traffic … only to …"
   /\bsends?\b[^.]{0,20}?\b(?:data|information|traffic)\b[^.]{0,40}?\bonly\s+to\b/gi,
   // "the one thing … sends … is" — completeness phrased as a singleton
-  /\bthe\s+one\s+thing\b[^.]{0,60}?\bsends?\b/gi,
+  /\bthe\s+on(?:e|ly)\s+thing\b[^.]{0,60}?\bsends?\b/gi,
   // "no <noun> leaves your device/machine/computer except/other than/besides"
   /\bno\s+\w+\s+leaves?\s+your\s+(?:device|machine|computer)\b[^.]{0,40}?\b(?:except|other than|besides)\b/gi,
 ];
@@ -508,7 +516,22 @@ const CHART_JS_FILE = 'apps/landing/public/benchmarks/chart.min.js';
 const CHART_JS_SHA256 = '9f8701efa23e00ec6779325eb85d77bc101ebf65e37df5faa1966270e7da5c37';
 
 function checkChartJsPin() {
-  if (!existsSync(join(ROOT, CHART_JS_FILE))) return; // covered by SECRET_SCAN_FILES's own moved-source guard
+  // Fail loud, never open. An earlier revision returned silently here on the
+  // claim that SECRET_SCAN_FILES carried the moved-source guard — it did not
+  // list this file, so deleting the very asset this pin exists to protect made
+  // the check pass. It is in that list now (so the run loop's hard-fail covers
+  // a move) and this branch is the belt: an integrity pin that goes quiet when
+  // its subject vanishes is worse than no pin, because the green tick still
+  // reads as "verified".
+  if (!existsSync(join(ROOT, CHART_JS_FILE))) {
+    fail(
+      'Vendored chart.js missing',
+      CHART_JS_FILE,
+      'the pinned vendored asset is gone — restore it, or remove the pin and its ' +
+        'SECRET_SCAN_FILES entry together if the page genuinely no longer needs chart.js'
+    );
+    return;
+  }
   const actual = createHash('sha256').update(read(CHART_JS_FILE)).digest('hex');
   if (actual !== CHART_JS_SHA256) {
     fail(
