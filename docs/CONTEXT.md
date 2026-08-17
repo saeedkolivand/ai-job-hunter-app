@@ -28,7 +28,7 @@ never leaves the machine: the app sends data out to services the user configures
 notably the **AI provider**, which receives the résumé and job text it is asked to generate
 from — plus job-board scraping, opt-in web search, the updater check, user-typed location
 autocomplete, and opt-in enrichment. The app's own outbound reporting is limited to
-**crash reporting** (below). See [ADR 0005](adr/0005-network-egress-privacy-boundary.md).
+**crash reporting** (below). See [ADR 0005](knowledge/decision-records/0005-network-egress-privacy-boundary.md).
 _Avoid_: "the only outbound calls are…" (an over-absolute phrasing — the boundary is about
 storage/telemetry, not call count), "no network" / "fully offline" (untrue; scraping is core),
 "personal data never leaves the device" (untrue — the AI provider receives the résumé + job text)
@@ -40,7 +40,7 @@ Research is always two steps — the search backend retrieves, the **AI provider
 synthesizes the brief. Which backend serves a given pass, and why a provider that can
 already search is never redirected to a fallback, is decided in
 `commands/ai_provider/search` and explained in
-[ADR 0023](adr/0023-web-search-is-a-separate-axis-from-the-ai-provider.md).
+[ADR 0023](knowledge/decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md).
 _Avoid_: calling it a "search provider" or listing it among AI providers; "web search is
 on" as a synonym for the research toggle — the toggle asks for a brief, the backend is
 what can serve one
@@ -60,7 +60,7 @@ desktop app fails, the error, its stack trace, the OS/architecture and the app v
 Sentry. Gated on `enabled && consentShown` — the default is on but nothing is sent until the
 setup wizard has shown the choice — and every event is redacted with the same `redact_token`
 pipeline as the diagnostics bundle. Desktop only; the extension is excluded so its AMO
-`data_collection_permissions: ['none']` stays true. See [ADR 0020](adr/0020-crash-reporting.md).
+`data_collection_permissions: ['none']` stays true. See [ADR 0020](knowledge/decision-records/0020-crash-reporting.md).
 _Avoid_: "analytics", "telemetry" as a synonym (no behavioural or usage events are collected —
 only failures), "anonymous usage data", and any phrasing implying documents or job data are
 included
@@ -68,7 +68,7 @@ included
 **User-initiated lookup**:
 A call the user directly invoked by typing into a field and waiting for its result —
 location autocomplete and job search. Explicitly **exempt** from the enrichment
-opt-in/default-OFF rule ([ADR 0005](adr/0005-network-egress-privacy-boundary.md) exemption
+opt-in/default-OFF rule ([ADR 0005](knowledge/decision-records/0005-network-egress-privacy-boundary.md) exemption
 clause): these are the feature, not a garnish, so a toggle would just break them. The
 exemption holds only while all three of user-initiated, no-personal-data (only the literal
 typed text), and Rust-side via `net::http` hold. Location autocomplete additionally answers
@@ -206,7 +206,7 @@ only via a generic label/`autocomplete`/`name` matcher, **never submits**, and i
 **transparent** (shows what it filled). PII is **fetched fresh** from the desktop over the
 same authenticated bridge (`profile.get` → `profile.result`) at fill time and **never
 persisted** in `chrome.storage`. **Opt-in, default OFF, enforced desktop-side** — the app
-refuses `profile.get` when the toggle is off. See [ADR 0009](adr/0009-assisted-autofill.md).
+refuses `profile.get` when the toggle is off. See [ADR 0009](knowledge/decision-records/0009-assisted-autofill.md).
 _Avoid_: auto-apply / auto-submit (autofill never submits — the human does), scrape
 (that's the inbound import path), "fills every field" (empty + unambiguous fields only;
 no file upload; complex ATS partial)
@@ -246,7 +246,7 @@ bridge. **In protocol v2 it is never transmitted** — it is used only as the
 the token over exchanged per-connection nonces; token stays on both machines). Generated
 on app first-run, persisted to the app data dir (per-user file perms), rotatable via the
 `extension_bridge_regenerate_token` IPC command, and shown in Settings to copy/paste into
-the extension. 256-bit random, lowercase hex. See [ADR 0010](adr/0010-bridge-hmac-handshake.md).
+the extension. 256-bit random, lowercase hex. See [ADR 0010](knowledge/decision-records/0010-bridge-hmac-handshake.md).
 _Avoid_: API key, credential (it authenticates only to the local app, never remote);
 "sent on every frame" / a `token` field on the wire (v1 behavior — v2 never puts the
 token on the wire)
@@ -261,7 +261,7 @@ whose **`serverProof` fails verification**, i.e. a rogue/mismatched server; the 
 sends zero PII), `outdated` (a **protocol-version mismatch** — a v2 extension reached a v1
 desktop or vice versa; the user must update the app/extension), and `connected` (the
 **mutual** handshake verified — the only state in which `import`/`profile.get` frames are
-sent). See [ADR 0010](adr/0010-bridge-hmac-handshake.md).
+sent). See [ADR 0010](knowledge/decision-records/0010-bridge-hmac-handshake.md).
 _Avoid_: inferring `bad_token` from a silent close/timeout (v2 auth failure closes with no
 reply → ambiguous with a crash → treat as recoverable `app_not_running`, never falsely
 accuse a good token); an `auth_timeout` phase
@@ -305,8 +305,8 @@ The per-export document color override — an optional hex applied to **one** ex
 résumé or cover letter that recolors the chosen template's accent role. It is **not
 persisted** and **never reads `ThemePrefs`**; `None` (the default) leaves the template's
 built-in palette untouched. Distinct from the app-UI **accent color** — the interactive-
-element tint of [ADR 0004](adr/0004-single-source-user-customizable-accent-color.md), a
-durable user preference. See [ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md).
+element tint of [ADR 0004](knowledge/decision-records/0004-single-source-user-customizable-accent-color.md), a
+durable user preference. See [ADR 0007](knowledge/decision-records/0007-document-color-is-a-knob-not-a-template.md).
 _Avoid_: accent color (ambiguous — that already means the app-UI tint), theme accent,
 brand color
 
@@ -323,7 +323,7 @@ The honesty label on a résumé template: `ats` (single-column, parser-safe) or 
 (photo / multi-column, visually rich). Metadata only, **no render behavior** — it groups
 the gallery and picks which templates surface the ATS-mode toggle. A design-tier template
 collapses to a linear single column (and drops its photo) when ATS mode is on. See
-[ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md).
+[ADR 0007](knowledge/decision-records/0007-document-color-is-a-knob-not-a-template.md).
 _Avoid_: premium tier, template category
 
 ## Domain - Landing experience
@@ -332,7 +332,7 @@ _Avoid_: premium tier, template category
 `apps/landing/`, deployed as flat files to GitHub Pages via `pages.yml`. All authored pages
 are routes (`home`, `creature`, `how-it-works`, `privacy`, `download`); third-party artifacts
 (dashboards, benchmarks, storybook) stay in `public/` as passthrough. Parity gate (`check:parity`)
-ensures byte-shape matching with the legacy static layout. See [ADR 0018](adr/0018-landing-nextjs-static-export.md)
+ensures byte-shape matching with the legacy static layout. See [ADR 0018](knowledge/decision-records/0018-landing-nextjs-static-export.md)
 for full decision record.
 
 **SUPERSEDED** — The TERMINAL VELOCITY scroll-film (ADR 0016, 0015, parts of 0014) was
@@ -360,7 +360,7 @@ Two visual skins on the landing site. Marketing tier (pages 1–4: home, creatur
 privacy) preserves the original hand-authored design and brand tone. Docs tier (planned future,
 PR2–PR4: `/mission-control` + `docs/` pages) uses a unified, separate visual language. They
 share no design language; marketing skin is protected from future refactoring. See
-[ADR 0018](adr/0018-landing-nextjs-static-export.md).
+[ADR 0018](knowledge/decision-records/0018-landing-nextjs-static-export.md).
 _Avoid_: "landing pages" / "public pages" / "web pages" (imprecise); using one tier's design
 for the other
 
@@ -384,7 +384,7 @@ layer. See the ADR for the exact conditions.
 _Avoid_: scattered feature detection (the decision lives in one gate)
 
 **TERMINAL VELOCITY**:
-The active landing concept ([ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)): a
+The active landing concept ([ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)): a
 realistic CG **scroll-film** (~2:40) retelling `landing/index.html`'s story as one continuous
 vertical fall-then-rise, scrolled to watch. Replaces RIPBOOK. The name plays on two meanings:
 the screen (terminal) and the physics of the fall (terminal velocity).
@@ -441,42 +441,42 @@ The runtime tiering system (TERMINAL VELOCITY): detect a startup tier at load, t
 adjust at runtime via a frame-time loop with **hysteresis** - downgrade when performance drops
 below a threshold, upgrade when it recovers above a higher threshold, with a cooldown between
 changes. Turns knobs in a fixed priority order: pixel ratio, post samples, geometry density,
-effect toggles. Thresholds and per-tier ladders are locked in [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md).
+effect toggles. Thresholds and per-tier ladders are locked in [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md).
 _Avoid_: "auto quality" (the order and hysteresis are deliberate, not a bare fps flip-flop);
 the RIPBOOK boil-tier scheme (retired)
 
-**Journey** (superseded - [ADR 0015](adr/0015-ripbook-notebook-landing.md), then [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**Journey** (superseded - [ADR 0015](knowledge/decision-records/0015-ripbook-notebook-landing.md), then [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was the 8-Beat scroll-scrubbed camera ride (0014). Retired. The active landing is the TERMINAL
 VELOCITY **scroll-film** - one continuous shot scrolled as a playhead through 9 **scenes**. Use
 scroll-film / playhead / scene, not Journey (and not the RIPBOOK Page/Rip either).
 _Avoid_: reusing "Journey" for the new model; overloading Autopilot (the app's job-application run)
 
-**Beat** (superseded - [ADR 0015](adr/0015-ripbook-notebook-landing.md), then [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**Beat** (superseded - [ADR 0015](knowledge/decision-records/0015-ripbook-notebook-landing.md), then [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was one of the 8 places the Journey's camera visited (0014). Retired. The TERMINAL VELOCITY unit
 is a **scene** (one of 9); the intervening RIPBOOK **Page** is also retired.
 _Avoid_: reusing "Beat" for a scene or a page
 
-**Page** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**Page** (superseded by [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was one of the 9 RIPBOOK notebook pages. Retired with the notebook. The TERMINAL VELOCITY unit
 is a **scene** in one continuous shot - see Scroll map. No pages, no per-page Exit.
 _Avoid_: reusing Page for a TERMINAL VELOCITY scene; section / panel (those name the semantic-layer DOM)
 
-**Exit** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**Exit** (superseded by [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was the trailing animation that played a RIPBOOK Page out (a Rip, hinge-open, or sign/stamp).
 Retired - the scroll-film has no per-page exits, only continuous camera motion.
 _Avoid_: reusing Exit for TERMINAL VELOCITY scene transitions (there are no cuts)
 
-**Rip** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**Rip** (superseded by [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was the usual RIPBOOK Exit - a scrubbed tear/crumple/fold of a Page. Retired with the notebook;
 TERMINAL VELOCITY has no rips.
 _Avoid_: reusing Rip for any TERMINAL VELOCITY motion
 
-**p-space** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**p-space** (superseded by [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was RIPBOOK's page-local progress `p` (a Page's slice of the global scroll `t`). Retired.
 TERMINAL VELOCITY drives everything off one **playhead** (0->100%), not a per-page remap.
 _Avoid_: reusing `p`/`t` for the playhead; per-scene progress remaps (the film is one timeline)
 
-**Desk pile** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**Desk pile** (superseded by [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was RIPBOOK's stack of exited Pages serving as the progress odometer. Retired. TERMINAL VELOCITY
 shows progress via the **depth gauge + timecode**.
 _Avoid_: reusing Desk pile for any TERMINAL VELOCITY indicator
@@ -497,7 +497,7 @@ The `landing/` files copied verbatim into the exported site by the postbuild
 merge-passthrough script - source that ships unchanged.
 _Avoid_: "static assets" (too generic; see the ADR for the merge mechanics)
 
-**Line boil** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+**Line boil** (superseded by [ADR 0016](knowledge/decision-records/0016-terminal-velocity-scroll-film-landing.md)):
 Was the shader-driven wobble of ink strokes (`uBoil`) that gave RIPBOOK its hand-drawn look.
 Retired - TERMINAL VELOCITY is a PBR realistic film, no ink boil. The only "on twos" that
 carries over is character animation stepped at ~12 fps against a smooth 60 fps camera.

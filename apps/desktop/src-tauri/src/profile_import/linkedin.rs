@@ -88,20 +88,28 @@ async fn fetch_page(url: &str) -> AppResult<String> {
     // currently works. Board scraping and the login flow still use
     // `board_login::build_authed_client` elsewhere; this file just never does.
     let has_session = has_linkedin_session();
-    let client = crate::net::http::shared();
 
-    let resp = client
-        .get(url)
-        .timeout(std::time::Duration::from_secs(15))
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .send()
+    // `url` is user-pasted / attacker-influenced input (the classic SSRF
+    // surface), so it must never reach a plain client — route through
+    // `get_guarded_following_redirects` (net/http.rs), this repo's SSRF
+    // control: it IP-validates the host (rejecting a private/loopback/
+    // cloud-metadata literal or a DNS-rebinding target) before connecting, and
+    // re-validates every redirect hop the same way. Plain `get_guarded`
+    // (single-hop, `Policy::none()`) is not enough here — LinkedIn 301s the
+    // bare apex (`linkedin.com/in/x`, which `detect_platform` accepts) to
+    // `www.linkedin.com/in/x`, so a no-redirect fetch would die on the very
+    // first hop for a large share of legitimately pasted URLs. The small hop
+    // budget mirrors `scraping::scrape_url::resolve_uncached`'s reasoning.
+    let resp = crate::net::http::get_guarded_following_redirects(url, 3)
         .await
         .map_err(|e| {
-            // `.without_url()` strips the request URL (which carries the profile
-            // slug — PII) from the error before it reaches the log or the UI.
+            // Log the error's stable category, not its message: an `AppError`
+            // built from a `reqwest::Error` (`AppError::from`) does not strip
+            // the request URL the way the old `.without_url()` call did, and
+            // the profile slug in it is PII.
             log::warn!(
-                "[profile_import] linkedin fetch failed: has_session={has_session} error={}",
-                e.without_url()
+                "[profile_import] linkedin fetch failed: has_session={has_session} error_code={}",
+                e.code()
             );
             AppError::Network("could not reach linkedin".to_string())
         })?;
@@ -347,4 +355,19 @@ mod tests {
             );
         }
     }
+
+    // `fetch_page`'s SSRF-guard test lives in a sibling `_test.rs` file, not
+    // here — see the `#[path]` module declaration below for why.
 }
+
+// `fetch_page_never_dials_the_loopback_literal_it_rejects` must scope
+// `AJH_DATA_DIR` (fetch_page's real-disk `has_linkedin_session` read) for its
+// duration to be hermetic. That literal is banned from any non-`platform/**`
+// source by `tests/architecture.rs::r4_env_access_only_in_platform` UNLESS
+// the file is itself recognized as a test file (`*test.rs`/`*tests.rs`) —
+// this flat `linkedin.rs` isn't, by name, so the mutation is split into its
+// own `#[path]`-declared file, exactly like `commands/ai_provider`'s
+// `anthropic_tests.rs`.
+#[cfg(test)]
+#[path = "linkedin_ssrf_test.rs"]
+mod ssrf_hermetic_test;

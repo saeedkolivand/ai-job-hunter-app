@@ -1,6 +1,6 @@
 # Email-watch domain (IMAP confirmation-email polling)
 
-Last updated: 2026-07-17 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
+Last updated: 2026-08-17 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
 
 Owned by `extension-author` (frontend settings UI) and `rust-backend-author` (IMAP polling loop); security co-reviewed by `tauri-security-reviewer`.
 
@@ -8,7 +8,7 @@ Owned by `extension-author` (frontend settings UI) and `rust-backend-author` (IM
 
 Complement to extension submit-watch (Layer A, PR #687): listen for **application confirmation emails** on IMAP-enabled personal inboxes and produce a Notification Center card routing to the Application for user confirmation. Polling-based, fully local (zero content egress to AI providers or external services), and v1 **notify-only** (never auto-writes — the user manually confirms the status change via the existing stage-picker UI).
 
-See [ADR-0013](../adr/0013-email-confirmation-watching.md) for the OAuth-vs-app-password economics, zero-content-egress guarantee, and why v1 is notify-only.
+See [ADR-0013](decision-records/0013-email-confirmation-watching.md) for the OAuth-vs-app-password economics, zero-content-egress guarantee, and why v1 is notify-only.
 
 ## Architecture overview
 
@@ -172,6 +172,6 @@ See `packages/shared/src/ipc/contracts/emailWatch.ts` for the wire shapes.
 
 ## Related documents
 
-- [ADR-0013](../adr/0013-email-confirmation-watching.md) — Design decision: IMAP vs OAuth, app-password honesty, notify-only posture, zero-content-egress guarantee, new egress class.
+- [ADR-0013](decision-records/0013-email-confirmation-watching.md) — Design decision: IMAP vs OAuth, app-password honesty, notify-only posture, zero-content-egress guarantee, new egress class.
 - [Extension domain (Layer C, extension-domain.md)](./extension-domain.md) — How Layer A (submit-watch) complements Layer C (email-watch).
 - [Notification Center (notification-center.md)](./notification-center.md) — How `push_and_notify` routes intents.
