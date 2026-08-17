@@ -99,9 +99,10 @@ _Avoid_: using this to set the target language (the job ad is the authority); co
 The posting's own language, detected on ingest. Wire `jobAdLanguage`. The primary evidence for determining
 the **target language**. Detected renderer-side with **franc** (`detectLanguage`), which reports no
 confidence score — it gates on length and returns `'unknown'` when it cannot tell, and only a non-unknown
-answer commits the target. Do not confuse this with `MIN_DETECTION_CONFIDENCE`, the ≥0.9 bar on Rust's
-**whatlang**-based `detected_language`, which validates the GENERATED output after the fact and never
-picks the target. Two detectors, two questions. Distinct from
+answer commits the target. Do not confuse this with the reliability bar on Rust's **whatlang**-based
+`detected_language` (`documents::keywords`), which validates the GENERATED output after the fact and
+never picks the target — that bar is the library's own, owned by that function, not restated here.
+Two detectors, two questions. Distinct from
 the posting's country market (a German posting can still target English, e.g. a tech company branch
 in Germany hiring globally). Handled by the scraper/import path; not user-configurable.
 _Avoid_: conflating with market/locale; assuming it matches the company's location country

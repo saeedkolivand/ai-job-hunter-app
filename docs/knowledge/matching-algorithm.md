@@ -69,7 +69,7 @@ Before scoring, the pipeline detects the target language (the language the outpu
 Fail-quiet is **not** uniform across the two reads, and the difference matters:
 
 - **Corroborating the target** (whatlang reading the job ad or the source résumé) fails quiet. If neither witness confidently reads as the target, no Critical is raised — the validation module's stated posture, that a check which cannot be made reliably goes quiet rather than guessing.
-- **Reading the generated document** fails **loud**. A confident but wrong read there produces a Critical on a truthful document, which suppresses `keyword_coverage` and every alignment finding. whatlang's `confidence()` is a top-1-vs-top-2 margin rather than a probability, so a terse noun-phrase résumé can be read as the wrong language at maximum confidence. This is a known open limit, not a theoretical one.
+- **Reading the generated document** fails **loud**. A confident but wrong read there produces a Critical on a truthful document, which suppresses `keyword_coverage` and every alignment finding. A terse noun-phrase résumé can be read as the wrong language even at the detector's highest reliability — see `documents::keywords::detected_language`, which owns the bar and its limits. This is a known open limit, not a theoretical one.
 
 Coverage score and keyword-only scoring use language detection via `coverage_score()`; the renderer's language choice and Rust's validation are not perfectly in sync.
 
