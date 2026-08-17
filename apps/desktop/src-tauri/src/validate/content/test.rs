@@ -300,6 +300,43 @@ fn dropped_role_is_critical_and_names_the_employer() {
     assert_eq!(report.metrics.roles_output, 1);
 }
 
+/// **Confirmation-review finding 3, test B.** `generated_experience_lower`
+/// used to fall back to searching the WHOLE document once the Experience
+/// section's own text was empty — exactly what a heading-only (wiped)
+/// Experience section always produces. A Summary sentence that merely NAMES
+/// a former employer then read as evidence the employer "survived", even
+/// though every role naming it is gone: measured on commit 8c74ccd1's own
+/// branch as `factual.dropped_role = 0`, `ok = true` on a résumé whose entire
+/// employment history had been deleted, and never pinned by a test.
+///
+/// `EN_SOURCE` already has "Globex Logistics" as a real employer (see
+/// `dropped_role_is_critical_and_names_the_employer` above); this reuses it
+/// rather than a company name unproven against `distinctive_tokens`/
+/// `survival_tokens`.
+///
+/// Mutation check: revert `generated_experience_lower` to the
+/// text-emptiness fallback (drop the `has_experience` gate) and this goes
+/// red — Globex Logistics is found via the Summary sentence and the
+/// Critical never fires.
+#[test]
+fn a_wiped_experience_section_still_flags_a_dropped_role_named_only_in_the_summary() {
+    let generated = "Jane Doe\n\
+         jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+         SUMMARY\n\n\
+         Backend engineer, most recently leading payments reliability work \
+         after Globex Logistics.\n\n\
+         EXPERIENCE\n\n";
+    let report = en_resume(generated, &en_requirements());
+    let hits = fired(&report, FACTUAL_DROPPED_ROLE);
+    assert!(
+        hits.iter()
+            .any(|i| i.evidence.as_deref().is_some_and(|e| e.contains("Globex"))),
+        "Globex Logistics is named only in the Summary, not in the (wiped) \
+         Experience section — the old text-emptiness fallback searched the \
+         whole document and let this slip through silently; got {hits:#?}"
+    );
+}
+
 /// A changed link surfaces as BOTH halves: the candidate's own URL is gone and
 /// an unknown one appeared. Both are Critical — a reviewer following the wrong
 /// link is the failure this prevents.
@@ -358,6 +395,39 @@ fn an_invented_link_in_a_second_projects_section_still_fires() {
          the first; got {hits:#?}"
     );
     assert!(hits.iter().all(|i| i.severity == Severity::Critical));
+}
+
+/// **Confirmation-review finding 3, test C.** `project_link_issues` used to
+/// widen its GENERATED side to every Projects section (the test above) but
+/// left the SOURCE side reading only the first — so a source résumé with
+/// both a "PROJECTS" and a "SIDE PROJECTS" section accused the candidate of
+/// inventing their OWN link, unclearably, whenever it lived in the second
+/// section: `criticals_by_section` routes the finding to the FIRST Projects
+/// section, which never contained it.
+///
+/// Both source sections classify `SectionKind::Projects` — `SECTION_NAMES`
+/// recognises "projects" and "side projects" as separate exact headings —
+/// and the generated document here carries BOTH links unaltered.
+///
+/// Mutation check: change `project_link_issues`'s source side back to
+/// `ctx.section_of_kind(SectionKind::Projects)` (first section only) and
+/// this goes red — the Weekend Tracker link, sourced only from the second
+/// section, reads as invented.
+#[test]
+fn a_link_sourced_only_from_a_second_side_projects_section_is_not_flagged_as_invented() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                  Rust · SQLite\n\n\
+                  SIDE PROJECTS\n\n\
+                  **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                  Swift · CoreData\n";
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                     Rust · SQLite\n\n\
+                     **Weekend Tracker** · https://github.com/janedoe/weekend-tracker\n\
+                     Swift · CoreData\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    silent(&report, FACTUAL_ALTERED_PROJECT_LINK);
 }
 
 #[test]
@@ -424,6 +494,52 @@ fn a_single_drifted_section_is_caught_even_though_the_document_reads_clean() {
     );
 }
 
+/// **Confirmation-review finding 4 (MEDIUM).** `char::is_lowercase()` is
+/// `false` for every character in a caseless script (Arabic, Hebrew, CJK,
+/// Thai, Devanagari), so a naive lowercase-word-RATIO reads 0 for a section
+/// written in one and `looks_like_prose` skips it — the exact same drifted-
+/// Experience-section shape [`a_single_drifted_section_is_caught_even_though_the_document_reads_clean`]
+/// proves is caught in Italian must ALSO be caught in Arabic, and before this
+/// commit it was (via the `SectionKind` allowlist this replaced, which never
+/// asked whether the text "looked like prose" at all).
+#[test]
+fn a_drifted_experience_section_in_a_caseless_script_is_still_caught() {
+    let generated = "Jane Doe\n\
+        jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+        SUMMARY\n\n\
+        Eight years of backend work, most of it on payment systems and the \
+        container platforms behind them.\n\n\
+        EXPERIENCE\n\n\
+        مهندس أول للأنظمة الخلفية في شركة أكمي للمدفوعات من عام 2021 حتى الآن\n\
+        - قمت بخفض زمن الاستجابة عند الدفع من 480 مللي ثانية إلى 90 مللي ثانية \
+        من خلال إضافة ذاكرة تخزين مؤقت أمام خدمة دفتر الحسابات\n\
+        - قمت بتشغيل حاويات دوكر على عنقود كوبرنيتيس يستجيب لاثني عشر ألف طلب \
+        في كل ثانية\n\n\
+        PROJECTS\n\n\
+        **Ledger CLI** · https://github.com/janedoe/ledger\n\
+        Rust · SQLite\n\
+        Double-entry bookkeeping for freelancers.\n\n\
+        SKILLS\n\n\
+        Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis\n\n\
+        EDUCATION\n\n\
+        BSc Computer Science, TU Berlin, 2014 - 2018\n";
+    assert!(
+        !is_language_mismatch(generated, "en"),
+        "premise: the document-level majority vote must NOT fire here — one \
+         Arabic section inside a mostly-English résumé is exactly the case \
+         that hides from a whole-document read"
+    );
+    let report = en_resume(generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+    assert_eq!(
+        hits[0].section.as_deref(),
+        Some("EXPERIENCE"),
+        "the finding must name the drifted section, not just the document; got {hits:#?}"
+    );
+}
+
 /// The false-positive risk named alongside the per-section check: a skills
 /// list is language-neutral prose `whatlang` misreads regardless of length.
 /// Padded well past [`MIN_CHARS_FOR_LANGUAGE_CHECK`] so this proves the
@@ -464,6 +580,59 @@ fn a_long_skills_list_never_trips_the_per_section_language_check() {
     );
     let report = validate_content(&ContentInput {
         generated: &padded,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// **Confirmation-review finding 1 (HIGH).** `looks_like_prose` replaced a
+/// `SectionKind` allowlist that was the ONLY thing keeping
+/// `SectionKind::Skills` out of the per-section language check. Canonical
+/// tool-name casing IS lowercase (`pandas`, `numpy`, `git`, `nginx`, `dbt`) —
+/// the opposite of what the doc this replaces claimed ("has not been
+/// observed") — and [`PROSE_LOWERCASE_WORD_RATIO`] (0.2) is one word in five,
+/// so a genuinely lowercase tool list clears it easily. Measured on commit
+/// 8c74ccd1's own branch: a truthful German `KENNTNISSE` section with a
+/// Python/data stack earned a false Critical.
+///
+/// Unlike [`a_long_skills_list_never_trips_the_per_section_language_check`]
+/// above — whose fixture is Title-Case and so never exercised this path at
+/// all, which is exactly why that guard test stayed green through the
+/// regression — every tool name here is genuinely lowercase.
+///
+/// Mutation check: drop the `section.kind != SectionKind::Skills` filter
+/// from `section_language_issues` and this goes red.
+#[test]
+fn a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_language_check() {
+    let lowercase_tools = "pandas · numpy · scikit-learn · pytest · git · bash · npm · nginx · \
+                            dbt · kubectl · docker · kubernetes · terraform · ansible · jenkins \
+                            · grafana · prometheus · redis · postgresql · elasticsearch";
+    let generated = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        lowercase_tools,
+    );
+    assert!(
+        significant_chars(lowercase_tools) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: the lowercase tool list alone must clear the per-section char floor"
+    );
+    assert!(
+        looks_like_prose(lowercase_tools),
+        "premise: a genuinely lowercase tool list reads as PROSE under the \
+         0.2 ratio — this is the exact false positive the SectionKind::Skills \
+         exclusion exists to catch, not a hypothetical one"
+    );
+    assert!(
+        !crate::documents::keywords::languages_align(lowercase_tools, "de"),
+        "premise: whatlang really does read this lowercase tool list as \
+         non-German — the exclusion is doing real work, not guarding against \
+         nothing"
+    );
+    let report = validate_content(&ContentInput {
+        generated: &generated,
         source_resume: DE_SOURCE,
         job_ad: DE_JOB_AD,
         top_requirements: &[],
@@ -2725,6 +2894,9 @@ fn factual_and_alignment_thresholds_are_pinned() {
     assert_eq!(consistency::MAX_PROJECT_DESCRIPTION_LINES, 3);
     assert_eq!(consistency::MAX_SKILLS_LABEL_WORDS, 3);
     assert_eq!(MIN_CHARS_FOR_LANGUAGE_CHECK, 120);
+    // Confirmation-review finding 3: the 0.2 threshold was asserted nowhere.
+    // One word in five opening lowercase is enough to read a section as prose.
+    assert_eq!(PROSE_LOWERCASE_WORD_RATIO, 0.2);
 }
 
 /// The skills-label strip must BITE at its boundary and stop there: a short

@@ -863,10 +863,57 @@ fn a_realistic_multi_entry_experience_reply_with_all_caps_employers_is_usable() 
          GLOBEX LOGISTICS\n\
          Engineer  2016 - 2019\n\
          - Built the shipment-tracking pipeline";
+    // Premise, checked rather than merely claimed in the docstring above: the
+    // raw parser really does count more than one `SectionHeader` line for
+    // this reply (the two ALL-CAPS employer names) — without this, the test
+    // goes vacuously green the day the parser stops promoting ALL-CAPS
+    // employer names to headings, because `real_section_count` would then
+    // agree with `parsed.section_count` and the distinction this test exists
+    // to prove would no longer be exercised.
+    assert!(
+        crate::export::parser::parse_resume(replacement).section_count > 1,
+        "premise: the raw parser must count more than one SectionHeader line \
+         for two ALL-CAPS employer names inside one Experience section, or \
+         this test is not exercising `real_section_count`'s distinction at all"
+    );
     assert!(
         sections::is_usable_replacement(replacement),
         "two ALL-CAPS employer names inside one Experience section must not \
          read as a second real section; got {replacement:?}"
+    );
+}
+
+/// **Confirmation-review finding 2 (HIGH).** `real_section_count` used to
+/// count a heading as real ONLY when `classify_section` recognised it —
+/// but `classify_section`'s `SectionKind` has no arm for Certifications,
+/// Licenses, Languages-spoken, Awards, Publications or Volunteer, so every
+/// one of those headings classified `Other` and silently stopped counting,
+/// even though the parser's own `SECTION_NAMES` list (and therefore the raw
+/// parser itself) promotes every one of them to a real `SectionHeader` line.
+/// A reply naming three such headings read as ONE section and would have
+/// been spliced in whole, doubling the document's own Certifications and
+/// Awards sections underneath it.
+///
+/// Mutation check: drop the `is_known_section_name` half of
+/// `real_section_count`'s filter (back to `classify_section(&line.text) !=
+/// SectionKind::Other` alone) and this goes red — `real_section_count`
+/// reads 1 (SUMMARY only) and the reply is accepted.
+#[test]
+fn a_reply_naming_certifications_and_awards_is_rejected_as_more_than_one_section() {
+    let reply = "SUMMARY\n\n\
+        Backend engineer with eight years on payment and container platforms.\n\n\
+        CERTIFICATIONS\n\n\
+        AWS Certified Solutions Architect - Professional (2022)\n\n\
+        AWARDS\n\n\
+        Employee of the Year, 2021";
+    assert!(
+        !sections::is_usable_replacement(reply),
+        "CERTIFICATIONS and AWARDS are both real headings `classify_section` \
+         has no bucket for — `real_section_count` must still count them \
+         through `is_known_section_name`, or this three-section reply reads \
+         as one and gets spliced whole into the Summary range while the \
+         document's own Certifications/Awards sections stay duplicated \
+         below; got {reply:?}"
     );
 }
 
@@ -1494,6 +1541,40 @@ fn the_draft_prompt_localizes_its_headings() {
 
 /// The section order is a FIXED instruction resolved from `market`, not left
 /// to the model — and the two markets really do disagree, so this can't pass
+/// The skills section's SHAPE is the application's decision, not the model's.
+///
+/// Nothing used to specify it — `resume_conventions.skills` is only the
+/// localized heading ("Kenntnisse"), so the model picked, and the repo's own
+/// fixtures disagree (one middot-separated, one comma-separated). One bullet
+/// per skill spends a line on a single word; a twenty-skill list becomes twenty
+/// lines against a one-to-two-page budget, and an ATS extracts a comma list
+/// exactly as well.
+///
+/// Asserted against the BUILT PROMPT, not against `resume_conventions`
+/// returning a label — asserting the ingredient rather than the recipe is the
+/// shape that has let fourteen tests on this branch pass while the thing they
+/// guarded was broken. And the prohibition is pinned as well as the form: the
+/// empty-sections defect this branch fixes came from a prompt that described a
+/// shape and was read as licence to do otherwise.
+#[test]
+fn the_draft_prompt_fixes_the_skills_section_shape() {
+    for (lang, market) in [("en", "us"), ("de", "de")] {
+        let prompt = draft_system(lang, market);
+        assert!(
+            prompt.contains("grouped INLINE lists"),
+            "{lang}/{market}: the prompt must state the grouped-inline shape"
+        );
+        assert!(
+            prompt.contains("never one bullet per skill"),
+            "{lang}/{market}: the prohibition must be explicit — a described shape              alone was read as a manifest once already on this branch"
+        );
+        assert!(
+            prompt.contains("Languages: Rust, Go, TypeScript"),
+            "{lang}/{market}: the worked example must survive, or the instruction              is abstract enough for a small model to ignore"
+        );
+    }
+}
+
 /// by accident with a single hardcoded order string.
 ///
 /// Mutation check: hardcode `draft_system`'s order text instead of reading
@@ -2345,9 +2426,9 @@ fn cross_section_warnings(code: &'static str, count: usize) -> ContentReport {
 /// warnings at `duplicateRatio = 1.00` on a document that carried none
 /// before, and shipped because `repair` only ever read Criticals.
 ///
-/// Mutation check: comment out `cross_section_regression(before, after)` in
-/// `round_is_worse` and this goes red (confirmed); restored, it is green
-/// (confirmed) — see the module-level report for the exact output.
+/// Mutation check: comment out the `code_grew(before, after, DUPLICATE_BULLET)`
+/// term in `round_is_worse` and this goes red (confirmed); restored, it is
+/// green (confirmed) — see the module-level report for the exact output.
 #[test]
 fn a_round_that_doubles_the_document_is_worse() {
     let before = cross_section_warnings(DUPLICATE_BULLET, 0);
@@ -2355,6 +2436,36 @@ fn a_round_that_doubles_the_document_is_worse() {
     assert!(
         round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
         "5 new duplicate.bullet warnings on a document that had none is worse"
+    );
+}
+
+/// **Confirmation-review finding 5.** The test above only exercises
+/// `duplicate.bullet` growth with ZERO Criticals on both sides, so it passed
+/// even while `duplicate.bullet` was (wrongly) gated the same way as
+/// `consistency.skill_not_demonstrated` — `criticals_after >= criticals_before`
+/// reads `0 >= 0` as open regardless. This is the shape that gate would have
+/// hidden: a round that FIXES Criticals while ALSO doubling the document.
+/// `duplicate.bullet` must still revert it — it is the one signal that would
+/// otherwise see nothing wrong with a round that halved the Critical count by
+/// duplicating half the résumé underneath the fix.
+///
+/// Mutation check: gate the `DUPLICATE_BULLET` term behind
+/// `criticals_after >= criticals_before` (the same gate
+/// `CONSISTENCY_SKILL_NOT_DEMONSTRATED` uses) and this goes red.
+#[test]
+fn a_doubling_round_is_worse_even_when_it_also_fixed_a_critical() {
+    let mut before = criticals(3);
+    before
+        .issues
+        .extend(cross_section_warnings(DUPLICATE_BULLET, 0).issues);
+    let mut after = criticals(0);
+    after
+        .issues
+        .extend(cross_section_warnings(DUPLICATE_BULLET, 5).issues);
+    assert!(
+        round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "duplicate.bullet growth must revert a round even though it also \
+         fixed every Critical"
     );
 }
 
@@ -2395,9 +2506,9 @@ fn a_round_that_grows_a_cross_section_warning_is_worse() {
 /// exactly the shape `round_is_worse`'s own module doc already warns a bare
 /// count can hide a loss behind an unrelated improvement.
 ///
-/// Mutation check: replace `cross_section_regression`'s per-code `.any` with
-/// a single summed-total comparison and this goes red (confirmed); restored
-/// to per-code, it is green (confirmed).
+/// Mutation check: replace the two separate `code_grew` calls in
+/// `round_is_worse` with a single summed-total comparison and this goes red
+/// (confirmed); restored to per-code, it is green (confirmed).
 #[test]
 fn a_cross_section_regression_in_one_code_reverts_even_when_the_other_code_improves() {
     let mut before = cross_section_warnings(DUPLICATE_BULLET, 2);
@@ -2414,17 +2525,17 @@ fn a_cross_section_regression_in_one_code_reverts_even_when_the_other_code_impro
     );
 }
 
-/// **A cross-section Warning must not veto a round that fixed every
-/// Critical.** The bug this closes: a round taking Criticals from five to
-/// zero while an ordinary Experience bullet reword also nudged
-/// `consistency.skill_not_demonstrated` up by one — exactly the "ordinary
-/// rewrite noise" the module's own baseline-false-positive doc already names
-/// — used to be reverted by `cross_section_regression` regardless, discarding
-/// a genuine fix and burning the loop's second budgeted round for nothing.
+/// **A `consistency.skill_not_demonstrated` Warning must not veto a round
+/// that fixed every Critical.** The bug this closes: a round taking
+/// Criticals from five to zero while an ordinary Experience bullet reword
+/// also nudged `consistency.skill_not_demonstrated` up by one — exactly the
+/// "ordinary rewrite noise" the module's own baseline-false-positive doc
+/// already names — used to revert regardless, discarding a genuine fix and
+/// burning the loop's second budgeted round for nothing.
 ///
 /// Mutation check: drop the `criticals_after >= criticals_before` gate from
-/// `round_is_worse` (running `cross_section_regression` unconditionally) and
-/// this goes red.
+/// the `CONSISTENCY_SKILL_NOT_DEMONSTRATED` term in `round_is_worse` (running
+/// `code_grew` for it unconditionally) and this goes red.
 #[test]
 fn a_cross_section_warning_does_not_veto_a_round_that_fixed_every_critical() {
     let before = criticals(5);

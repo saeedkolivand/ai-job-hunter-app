@@ -294,6 +294,20 @@ const SECTION_NAMES: &[&str] = &[
     "competências",
 ];
 
+/// Whether `text`, trimmed and lowercased, exactly names one of the parser's
+/// own known section headings — the same exact-match test [`parse_line`] uses
+/// to promote a line to [`LineKind::SectionHeader`] via [`SECTION_NAMES`].
+///
+/// Exposed so callers that need "is this a REAL heading, even one
+/// `documents::evidence::classify_section` has no bucket for" (Certifications,
+/// Licenses, Languages-spoken, Awards, Publications, Volunteer, Work History,
+/// …) can ask without forking a second copy of the list — those headings are
+/// all in [`SECTION_NAMES`], but `classify_section`'s six-variant
+/// `SectionKind` has no arm for any of them and buckets them all as `Other`.
+pub(crate) fn is_known_section_name(text: &str) -> bool {
+    SECTION_NAMES.contains(&text.trim().to_lowercase().as_str())
+}
+
 // Company/role keywords (should NOT be treated as section headers)
 const COMPANY_KEYWORDS: &[&str] = &[
     "NASA",

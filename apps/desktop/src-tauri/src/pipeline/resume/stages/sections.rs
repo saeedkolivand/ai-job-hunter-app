@@ -11,7 +11,7 @@
 //! "section-scoped" fix must not do.
 
 use crate::documents::evidence::{classify_section, SectionKind};
-use crate::export::parser::parse_resume;
+use crate::export::parser::{is_known_section_name, parse_resume};
 use crate::export::types::{LineKind, ParsedDocument};
 
 use crate::pipeline::resume::types::SectionKey;
@@ -212,8 +212,9 @@ pub fn is_usable_replacement(replacement: &str) -> bool {
     opens_with_heading && lines.next().is_some() && real_section_count(&parsed) <= 1
 }
 
-/// How many of `parsed`'s detected `LineKind::SectionHeader` lines classify to
-/// an actual section kind, rather than [`SectionKind::Other`].
+/// How many of `parsed`'s detected `LineKind::SectionHeader` lines are a REAL
+/// section, rather than a company/role name the ALL-CAPS heuristic
+/// misclassified as one.
 ///
 /// `ParsedDocument::section_count` counts every `SectionHeader` LINE, and the
 /// ALL-CAPS heading heuristic behind it (`export::parser`) cannot tell a
@@ -221,17 +222,29 @@ pub fn is_usable_replacement(replacement: &str) -> bool {
 /// section being replaced — "ACME PAYMENTS GMBH" parses as a heading exactly
 /// like "EXPERIENCE" does, so `section_count` was 2 on a legitimate
 /// single-section reply and [`is_usable_replacement`] rejected it, truncating
-/// a repair that had nothing wrong with it. Re-classifying through the SAME
-/// [`classify_section`] the split uses turns the heading count into a SECTION
-/// count: a company name (or an unrecognised sub-heading like "Languages"
-/// under Skills) classifies `Other` and is not counted, while a real second
-/// Summary/Skills/Experience/Education/Projects heading is.
+/// a repair that had nothing wrong with it.
+///
+/// A real heading is either of two things — never just `classify_section`
+/// alone. [`classify_section`]'s `SectionKind` has only six variants
+/// (Experience/Education/Projects/Skills/Summary/Other), so a genuine
+/// "CERTIFICATIONS", "AWARDS" or "LANGUAGES" heading — every one of which IS
+/// in `export::parser`'s own known-section-name list and gets promoted to
+/// `LineKind::SectionHeader` by the parser itself — would classify `Other`
+/// and silently stop counting as real, which is exactly the doubling bug
+/// this function exists to prevent: a reply like
+/// `"SUMMARY\n…\n\nCERTIFICATIONS\n…\n\nAWARDS\n…"` would read as ONE real
+/// section and get spliced in whole, leaving the document's own
+/// Certifications/Awards sections duplicated below. [`is_known_section_name`]
+/// closes that gap without forking `SECTION_NAMES`: a company name like
+/// "ACME PAYMENTS GMBH" matches neither test and is correctly not counted.
 fn real_section_count(parsed: &ParsedDocument) -> usize {
     parsed
         .lines
         .iter()
         .filter(|line| matches!(line.kind, LineKind::SectionHeader))
-        .filter(|line| classify_section(&line.text) != SectionKind::Other)
+        .filter(|line| {
+            classify_section(&line.text) != SectionKind::Other || is_known_section_name(&line.text)
+        })
         .count()
 }
 

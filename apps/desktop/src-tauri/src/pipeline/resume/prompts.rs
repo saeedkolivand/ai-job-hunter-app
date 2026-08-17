@@ -297,6 +297,11 @@ an ORDER, not a checklist — omit any section the source gives you nothing for,
 never invent one outside this list. A heading with nothing underneath it is worse \
 than no heading at all.
 - Follow <resume_strategy>: its per-company angles, its skills groups.
+- Write the skills section as grouped INLINE lists, never one bullet per skill: a \
+short group label, a colon, then that group's skills separated by commas on the SAME \
+line, one line per group (\"Languages: Rust, Go, TypeScript\"). A bullet per skill \
+spends a whole line on one word and pushes the résumé past its page budget for \
+nothing — an applicant tracking system extracts a comma list exactly as well.
 - Every employment entry in the strategy appears, in its order, with its company, \
 title and dates exactly as given.
 - <top_requirements> lists this posting's top requirements. Where one already \

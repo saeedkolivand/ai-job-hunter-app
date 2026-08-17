@@ -12,16 +12,20 @@
 //! 4. **A worse round ⇒ revert and stop**, where "worse" is strictly more
 //!    criticals, a role count that fell, a keyword-coverage drop past
 //!    [`crate::validate::content::MIN_COVERAGE_DROP_POINTS`], a newly
-//!    INTRODUCED absence, OR — only when the round did NOT also reduce the
-//!    Critical count — a GROWN count of a cross-section warning
-//!    (`duplicate.bullet`, `consistency.skill_not_demonstrated`). That gate
-//!    is load-bearing, not cosmetic: applying the cross-section term
-//!    unconditionally discarded a round that took Criticals from five to
-//!    zero at the cost of one Warning raised by ordinary bullet-rewrite
-//!    noise (see [`round_is_worse`]'s own doc). It is still the same floor
-//!    `humanize`'s single whole-document rewrite already held this loop's
-//!    up-to-8 blind per-section rewrites to, whenever a round buys nothing
-//!    on Criticals, now shared rather than humanize-only. The repair is a
+//!    INTRODUCED absence, a GROWN `duplicate.bullet` count (always — see
+//!    below), OR — only when the round did NOT also reduce the Critical
+//!    count — a GROWN `consistency.skill_not_demonstrated` count. The two
+//!    cross-section codes are gated differently on purpose: the false
+//!    positive that motivated gating (see [`round_is_worse`]'s own doc) was
+//!    measured against `consistency.skill_not_demonstrated` — an ordinary
+//!    bullet reword nudging one shared token — and never against
+//!    `duplicate.bullet`, which is the ONE signal that ever caught a round
+//!    doubling the whole document; gating that one too would veto the exact
+//!    round it exists to catch (Criticals fixed, the document also doubled).
+//!    It is still the same floor `humanize`'s single whole-document rewrite
+//!    already held this loop's up-to-8 blind per-section rewrites to,
+//!    whenever a round buys nothing on Criticals, now shared rather than
+//!    humanize-only for the skill-token code. The repair is a
 //!    bet that the model can fix what it broke; when the bet loses, the
 //!    honest move is to hand back the draft
 //!    that was merely wrong rather than the one that is now wrong in more
@@ -193,35 +197,47 @@ pub(crate) fn criticals_by_section(
 /// new), while a round that swaps WHICH employer is missing has introduced a
 /// loss and is caught.
 ///
-/// **The CROSS-SECTION term, and why it is a delta rather than a threshold.**
-/// `duplicate.bullet` and `consistency.skill_not_demonstrated` are the two
-/// Warning-level checks in `validate/content` that reason ACROSS sections —
-/// see [`cross_section_regression`] — and repair acts on Criticals only, so
-/// nothing ever consumed them: a round that doubled the whole document
-/// shipped 5 `duplicate.bullet` warnings, and a round that deleted an
-/// employment entry shipped 4 `consistency.skill_not_demonstrated` warnings.
-/// An absolute "has any" gate would also revert on a document that never
-/// regressed at all: rewording two Experience bullets to drop one exact
-/// shared token — an ordinary section rewrite — was measured to raise
-/// `skill_not_demonstrated` from zero to four on an otherwise truthful
-/// document, and a calibrated non-zero threshold would need recalibrating
-/// against that same noise forever. So this asks the same question the
-/// absence term above does: not "does the document carry this warning" but
-/// "did THIS ROUND grow it". A baseline that already carries four is still
-/// repairable; only a round that carries MORE than its own baseline is
-/// worse.
+/// **The CROSS-SECTION terms, why they are a delta rather than a threshold,
+/// and why the two codes are gated differently.** `duplicate.bullet` and
+/// `consistency.skill_not_demonstrated` are the two Warning-level checks in
+/// `validate/content` that reason ACROSS sections — see [`code_grew`] — and
+/// repair acts on Criticals only, so nothing ever consumed them: a round that
+/// doubled the whole document shipped 5 `duplicate.bullet` warnings, and a
+/// round that deleted an employment entry shipped 4
+/// `consistency.skill_not_demonstrated` warnings. An absolute "has any" gate
+/// would also revert on a document that never regressed at all: rewording two
+/// Experience bullets to drop one exact shared token — an ordinary section
+/// rewrite — was measured to raise `skill_not_demonstrated` from zero to four
+/// on an otherwise truthful document, and a calibrated non-zero threshold
+/// would need recalibrating against that same noise forever. So both codes
+/// ask the same question the absence term above does: not "does the document
+/// carry this warning" but "did THIS ROUND grow it". A baseline that already
+/// carries four is still repairable; only a round that carries MORE than its
+/// own baseline is worse.
 ///
-/// **But the delta alone still false-positives, so it is also GATED on the
-/// Critical count.** "Did this round grow it" says nothing about WHY: the
-/// same ordinary-rewrite noise that raises an already-elevated baseline is
-/// exactly what raises a round's own before→after delta from zero the FIRST
-/// time that section is ever touched — a round that took Criticals from five
-/// to zero while rewording one Experience bullet enough to shift one shared
-/// token was reverted on precisely that shape, discarding the fix the module
-/// doc's own rule 4 says a Warning must never veto. So the cross-section term
-/// only fires when `criticals_of(after) >= criticals_of(before)` — a Warning
-/// may sink a round that bought nothing on the metric this whole module is
-/// scoped to, never one that fixed what it was asked to fix.
+/// **`consistency.skill_not_demonstrated`'s delta alone still false-positives
+/// on ordinary rewrite noise, so it is also GATED on the Critical count.**
+/// "Did this round grow it" says nothing about WHY: the same ordinary-rewrite
+/// noise that raises an already-elevated baseline is exactly what raises a
+/// round's own before→after delta from zero the FIRST time that section is
+/// ever touched — a round that took Criticals from five to zero while
+/// rewording one Experience bullet enough to shift one shared token was
+/// reverted on precisely that shape, discarding the fix the module doc's own
+/// rule 4 says a Warning must never veto. So this ONE code's term only fires
+/// when `criticals_of(after) >= criticals_of(before)` — it may sink a round
+/// that bought nothing on the metric this whole module is scoped to, never
+/// one that fixed what it was asked to fix.
+///
+/// **`duplicate.bullet` stays UNGATED.** The noise measurement above is about
+/// `consistency.skill_not_demonstrated` specifically — an ordinary bullet
+/// reword shifting a shared SKILL token — and was never observed for
+/// `duplicate.bullet`, which fires on repeated bullet TEXT, not shared
+/// vocabulary; an ordinary rewrite does not duplicate a bullet it also
+/// rewords. `duplicate.bullet` is also the ONE signal that ever caught a
+/// round doubling the whole document (the very first example above). Gating
+/// it the same way as the skill-token code would veto exactly the round the
+/// gate exists to catch: Criticals fixed, the whole document also duplicated
+/// underneath the fix.
 ///
 /// This is a compatible TIGHTENING of rule 4 in the module doc — that rule was
 /// always "never hand back a worse document"; this says what the count could
@@ -256,41 +272,28 @@ pub(crate) fn round_is_worse(
     {
         return true;
     }
-    // Gated: a cross-section Warning may only veto a round that bought
-    // NOTHING on Criticals. See the doc above for the false-positive this
-    // closes.
-    criticals_after >= criticals_before && cross_section_regression(before, after)
+    // UNGATED: see the doc above for why `duplicate.bullet` is never gated on
+    // the Critical count.
+    if code_grew(before, after, DUPLICATE_BULLET) {
+        return true;
+    }
+    // Gated: `consistency.skill_not_demonstrated` may only veto a round that
+    // bought NOTHING on Criticals. See the doc above for the false-positive
+    // this closes.
+    criticals_after >= criticals_before
+        && code_grew(before, after, CONSISTENCY_SKILL_NOT_DEMONSTRATED)
 }
-
-/// The `validate/content` codes that reason ACROSS sections rather than
-/// within the one section a `repair`/`humanize` rewrite ever sees — exactly
-/// the blind spot per-section generation (PRs #969/#992) opened, because
-/// neither stage below reads a Warning at all.
-///
-/// `duplicate.bullet` pools every bullet from every section into one
-/// comparison (`duplicates::validate`); `consistency.skill_not_demonstrated`
-/// compares Skills against Experience + Projects combined. The other two
-/// `consistency` codes were checked and are deliberately excluded:
-/// `date_order` and `project_structure` each read one section against
-/// itself, and `title_drift` compares the generated Experience section
-/// against the SOURCE résumé's — same-section fidelity to the source, not a
-/// gap a sibling section's blindness could cause.
-const CROSS_SECTION_CODES: [&str; 2] = [DUPLICATE_BULLET, CONSISTENCY_SKILL_NOT_DEMONSTRATED];
 
 /// How many of `report`'s issues carry `code`.
 fn code_count(report: &ContentReport, code: &str) -> usize {
     report.issues.iter().filter(|i| i.code == code).count()
 }
 
-/// Whether `after` carries more of a [`CROSS_SECTION_CODES`] warning than
-/// `before` did, for at least one of the two codes.
-///
-/// Per-code rather than a summed total: a round that fixes two
-/// `duplicate.bullet` warnings while introducing two new
-/// `consistency.skill_not_demonstrated` ones nets to zero on a combined
-/// count and would read as "not worse", hiding the new problem behind the
-/// unrelated fix. Comparing each code's own count keeps the two from
-/// cancelling each other out.
+/// Whether `after` carries more of `code` than `before` did — the shared core
+/// [`round_is_worse`] applies once per cross-section code
+/// (`duplicate.bullet`, `consistency.skill_not_demonstrated`), each under its
+/// own gate. See `round_is_worse`'s own doc for why the two codes are gated
+/// differently.
 ///
 /// **Accepted blind spot, the Warning-side mirror of [`absences`]'s own:**
 /// `code_count` reads `report.issues`, which is already the POST-`cap_issues`
@@ -301,10 +304,8 @@ fn code_count(report: &ContentReport, code: &str) -> usize {
 /// already pinned at 200 issues, the same reachability `absences` accepts for
 /// the Critical side; this is the same deliberate choice, stated rather than
 /// hidden, not a fix.
-fn cross_section_regression(before: &ContentReport, after: &ContentReport) -> bool {
-    CROSS_SECTION_CODES
-        .iter()
-        .any(|code| code_count(after, code) > code_count(before, code))
+fn code_grew(before: &ContentReport, after: &ContentReport, code: &str) -> bool {
+    code_count(after, code) > code_count(before, code)
 }
 
 /// Whether `after`'s keyword coverage fell by

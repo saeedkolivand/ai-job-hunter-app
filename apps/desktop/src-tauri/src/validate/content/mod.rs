@@ -1279,11 +1279,22 @@ fn language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// exactly the function-word density `whatlang` needs to read a language from
 /// at all, without needing to know what that language is first.
 ///
-/// *Accepted cost, stated:* an all-lowercase technical list ("javascript,
-/// python, docker") would read as prose here. Real résumés write tool names in
-/// their own casing (`JavaScript`, `Docker`), so this has not been observed —
-/// and the cost if it ever is is a possible false Critical, the same direction
-/// the kind allowlist this replaces already accepted for `SectionKind::Other`.
+/// *Accepted cost, in both directions:*
+///
+/// - A lowercase technical list under a heading `classify_section` does NOT
+///   recognize as [`SectionKind::Skills`] ("kafka, postgresql" under
+///   Experience) reads as prose here — canonical tool-name casing (`pandas`,
+///   `git`, `nginx`) IS lowercase, so this is measured, not hypothetical.
+///   The call site excludes `SectionKind::Skills` outright (belt and braces)
+///   for exactly this reason.
+/// - A caseless script (Arabic, Hebrew, CJK, Thai, Devanagari, …) has no
+///   uppercase/lowercase distinction at all, so a whole-TEXT ratio would
+///   always read 0 and silently skip it — worse, since a real drift then
+///   goes unreported. A caseless section still carries a Latin heading word
+///   ahead of it in [`section_text`]'s output ("EXPERIENCE" over an Arabic
+///   body), which would poison a whole-text caseless check too, so
+///   [`looks_like_prose`] decides PER WORD: a word with no case distinction
+///   counts toward the lowercase side, same as a genuine lowercase word.
 const PROSE_LOWERCASE_WORD_RATIO: f64 = 0.2;
 
 fn looks_like_prose(text: &str) -> bool {
@@ -1297,7 +1308,10 @@ fn looks_like_prose(text: &str) -> bool {
             continue; // A bare number, a bullet marker, a parenthesised year.
         }
         words += 1;
-        if first.is_lowercase() {
+        // A caseless-script word can never "open Title Case" the way a Latin
+        // word can, so it counts as lowercase too — see the doc above.
+        let has_case = word.chars().any(|c| c.is_uppercase() || c.is_lowercase());
+        if first.is_lowercase() || !has_case {
             lowercase_initial += 1;
         }
     }
@@ -1316,21 +1330,16 @@ fn looks_like_prose(text: &str) -> bool {
 /// accusing a truthful section:
 ///
 /// * the SAME [`MIN_CHARS_FOR_LANGUAGE_CHECK`] floor, applied per section;
-/// * only sections that [`looks_like_prose`] — `whatlang` needs function words
-///   to read at all, and a list has none in any language, however long it
-///   runs.
-///
-///   This used to be a heading-KIND allowlist
-///   (Summary/Experience/Projects), which was wrong in BOTH directions: too
-///   NARROW, because `classify_section` has no heading list for "Work
-///   History" or "Selected Roles" — a drifted section under either heading
-///   was invisible to this pass entirely; and too WIDE, because an Experience
-///   section that is ITSELF a keyword list ("Kafka, PostgreSQL, Kubernetes,
-///   Terraform, Grafana.") satisfies the kind test and `whatlang` misreads it
-///   exactly as it misreads a Skills line — burning a repair round on a
-///   truthful section. A content test closes both: it doesn't care what the
-///   heading is called, and it doesn't care what `SectionKind` the classifier
-///   guessed.
+/// * a [`SectionKind::Skills`] exclusion, AND only sections that
+///   [`looks_like_prose`] on top of that — belt and braces, not either
+///   alone. The allowlist this replaced was a heading-KIND check
+///   (Summary/Experience/Projects) too NARROW to see a drifted "Work
+///   History"/"Selected Roles" section at all; `looks_like_prose` widens
+///   coverage to any sentence-shaped section, including ones
+///   `classify_section` can't name, but it is not a substitute for the
+///   Skills exclusion — a Skills section written in canonical lowercase
+///   tool-name casing (`pandas`, `git`, `nginx`) reads as prose by the same
+///   signal a real sentence does. Keep both.
 ///
 ///   The cost, paid deliberately: a model that drifts ONLY a list-shaped
 ///   section is not caught here (the document-level pass still can, if enough
@@ -1342,6 +1351,7 @@ fn section_language_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     ctx.generated_sections
         .iter()
         .skip(1) // section 0 is the header band (name + contact), not prose
+        .filter(|section| section.kind != SectionKind::Skills)
         .filter_map(|section| {
             let heading = section.heading.as_deref()?;
             let body = section_text(section);
