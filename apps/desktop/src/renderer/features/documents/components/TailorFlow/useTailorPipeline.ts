@@ -82,6 +82,91 @@ interface Params {
   onRunStarted?: (ids: { runId: string; jobId: string }) => void;
 }
 
+/** {@link resolveTargetLanguage}'s result: the language to actually use for
+ *  THIS run, plus whether that answer is confident. `language` is always a
+ *  real 2-letter code (every downstream consumer — the prompt, the date
+ *  formatter, `resolveMarket` — needs one); `confident` is the separate axis
+ *  that decides what may be REMEMBERED. See the function doc comment. */
+interface TargetLanguageResolution {
+  language: string;
+  confident: boolean;
+}
+
+/**
+ * Resolve the tailor run's target language — an explicit, ordered precedence
+ * chain (owner decision, see the plan's "What to build" §1/§3): a GUESS must
+ * never be preferred over a confident answer, and must never be REMEMBERED
+ * as one either.
+ *
+ * 1. The persisted `targetLanguage` — the field the STAGED PIPELINE actually
+ *    writes (`target_language` → `AiGenerationRecord.targetLanguage`,
+ *    `commands/resume_pipeline/mod.rs:712`). #1003's "keep the regenerate
+ *    language" branch read `resumeLanguage`/`jobAdLanguage` instead, which
+ *    the staged pipeline leaves EMPTY (`empty_record()`), so it was dead on
+ *    this flow — this is the fix.
+ * 2. The persisted `jobAdLanguage` — the fast (AIGeneratePage) path's own
+ *    field, a legitimate target per `metadata.ts:211` (`targetLanguage:
+ *    jobAdLanguage`, i.e. the SAME "target = the ad's language" answer as
+ *    tier 1, just from the other write path).
+ * 3. A fresh, confident detection of the CURRENT job ad (`detectLanguage`
+ *    already returns `'unknown'` rather than a low-confidence guess — <20
+ *    chars, franc `'und'`, or an unmapped code).
+ * 4. `'en'` — the LAST resort. Not a confident fact: every downstream
+ *    consumer needs a concrete 2-letter code to run generation with, so this
+ *    function cannot return "unknown" here. This is the ONLY tier where
+ *    `confident` is `false`.
+ *
+ * `resumeLanguage` — the SOURCE résumé's language — is deliberately never
+ * read. It is the second door the English-lock bug (Defect B) walks through:
+ * an English résumé applying to a German job is not, on its own, evidence
+ * the candidate wants an English document; the job ad's language is the only
+ * legitimate signal for a TARGET.
+ *
+ * Each candidate is normalized ({@link toLanguageCode}) and validated
+ * INDEPENDENTLY before the next tier is tried — the SAME persisted field
+ * carries two shapes across writers (`extractMetadata`'s heuristic fallback
+ * writes a display NAME like "German"; every other writer stores an ISO
+ * code), and a short-circuit on presence-without-validity would send a
+ * perfectly good lower tier to detection unread.
+ *
+ * `confident` is what CALLERS use to decide what may reach the wire: sending
+ * the tier-4 guess to `session.start` and having Rust persist it verbatim
+ * would let a FUTURE run's tier 1 prefer that guess forever — exactly the
+ * bug this chain exists to close. See `start`'s own comment for how the
+ * caller keeps a guess off the wire without a schema change (Rust's own
+ * `ai_generations::pick` already treats an empty incoming field as "keep
+ * whatever is stored").
+ *
+ * Known limit (not fixable here, not worth a test): the renderer detects
+ * with **franc**, Rust's `validate::content` checks with **whatlang** — two
+ * different third-party models can legitimately disagree on the same text.
+ */
+export function resolveTargetLanguage(
+  // Deliberately its own small shape, not `Pick<AiGenerationRecord, …>`: both
+  // fields are OPTIONAL here (a caller may not have a record at all yet),
+  // where `AiGenerationRecord`'s own fields are always-present strings. A
+  // real `AiGenerationRecord` (including one with `resumeLanguage` set) still
+  // satisfies this structurally — see the pure-function tests, which pass a
+  // full record to prove `resumeLanguage` is present on the input yet never
+  // read.
+  latestGeneration: { targetLanguage?: string; jobAdLanguage?: string } | undefined,
+  jobDesc: string
+): TargetLanguageResolution {
+  const persistedTarget = toLanguageCode(latestGeneration?.targetLanguage ?? '');
+  if (/^[a-z]{2}$/.test(persistedTarget)) {
+    return { language: persistedTarget, confident: true };
+  }
+  const persistedJobAd = toLanguageCode(latestGeneration?.jobAdLanguage ?? '');
+  if (/^[a-z]{2}$/.test(persistedJobAd)) {
+    return { language: persistedJobAd, confident: true };
+  }
+  const detected = detectLanguage(jobDesc);
+  if (detected !== 'unknown') {
+    return { language: detected, confident: true };
+  }
+  return { language: 'en', confident: false };
+}
+
 /**
  * Runs the staged quality pipeline for the tailor flow — the replacement for
  * `useTailorGeneration`'s one-shot path (PR-3 of the staged-cutover plan).
@@ -249,35 +334,21 @@ export function useTailorPipeline({
   // Regenerate must keep writing in whatever language the last run actually
   // produced, not re-detect from `jobDesc` and collapse to English the moment
   // detection can't tell (empty/short text, an unmapped ISO code, franc
-  // returning `und`) — `latestGeneration` already carries the answer.
-  // `resumeLanguage` wins (what the document was actually written in), then
-  // `jobAdLanguage`, and only a FIRST run (no prior generation) falls through
-  // to detecting off the current job ad, defaulting to English as the last
-  // resort.
-  const targetLanguage = useMemo(() => {
-    // Normalized, never trusted verbatim: the SAME persisted field carries two
-    // shapes. `extractMetadata` (the AIGeneratePage flow, both its success and
-    // heuristic paths) writes a display NAME — "German" — while every other
-    // writer stores an ISO code, and `save_application` merges both into one
-    // record keyed by job URL. Handing "German" downstream is worse than the
-    // bug this whole memo fixes: Rust's `normalize_language` truncates it to
-    // "ge", which matches no `languages_align` arm, so the language checks go
-    // permanently dark for that document — and `toLocaleDateString('German')`
-    // silently formats the letter date in English rather than throwing.
-    // `toLanguageCode` exists for exactly this NAME<->CODE gap.
-    // Each field is normalized and validated INDEPENDENTLY, then the first
-    // valid one wins. `a || b` picks the first non-EMPTY and validates only
-    // that, so a legacy-invalid `resumeLanguage` would short-circuit the
-    // fallback and send us to detection while a perfectly good `jobAdLanguage`
-    // sat unread — the same "a present value is not a usable one" mistake this
-    // whole memo exists to fix, one rung down.
-    const persisted = [latestGeneration?.resumeLanguage, latestGeneration?.jobAdLanguage]
-      .map((value) => toLanguageCode(value ?? ''))
-      .find((code) => /^[a-z]{2}$/.test(code));
-    if (persisted) return persisted;
-    const detected = detectLanguage(jobDesc);
-    return detected === 'unknown' ? 'en' : detected;
-  }, [jobDesc, latestGeneration?.resumeLanguage, latestGeneration?.jobAdLanguage]);
+  // returning `und`) — `latestGeneration` already carries the answer, WHEN it
+  // is a confident one (see {@link resolveTargetLanguage}'s doc comment for
+  // the owner decision this chain implements: persist/prefer only a confident
+  // value, never a guess).
+  const { language: targetLanguage, confident: targetLanguageConfident } = useMemo(
+    () =>
+      resolveTargetLanguage(
+        {
+          targetLanguage: latestGeneration?.targetLanguage,
+          jobAdLanguage: latestGeneration?.jobAdLanguage,
+        },
+        jobDesc
+      ),
+    [jobDesc, latestGeneration?.targetLanguage, latestGeneration?.jobAdLanguage]
+  );
 
   // Export/preview market — derived from the found job's free-text `location`
   // (unlike `AIGeneratePage`'s extracted meta, this hook never had a structured
@@ -468,6 +539,29 @@ export function useTailorPipeline({
         year: 'numeric',
       });
     }
+    // What goes on the WIRE deliberately differs from `targetLanguage` above
+    // when the resolution wasn't confident (the tier-4 'en' guess): Rust
+    // writes whatever `targetLanguage` it receives straight onto the
+    // `ai_generations` aggregate, UNCONDITIONALLY, at
+    // `commands/resume_pipeline/mod.rs:712` — there is no confidence concept
+    // on that write, and it cannot be added from here (Rust is out of scope
+    // for this change; see the handoff note in the PR). Sending '' instead of
+    // the guess needs no schema change: `ResumePipelineRunSchema.targetLanguage`
+    // (`packages/shared/src/schemas/index.ts`) only `.default('en')`s an
+    // ABSENT key, so an explicit '' passes through untouched;
+    // `normalize_language('')` already treats it as 'en' for every
+    // prompt/validation use; and `ai_generations::pick` (`ai_generations/mod.rs:958`)
+    // already keeps whatever the record had for an empty INCOMING field — the
+    // exact mechanism that already protects `resumeLanguage`/`jobAdLanguage`
+    // from a stale overwrite. A guess therefore still runs THIS generation
+    // (via the local `targetLanguage` above) but is never remembered, so it
+    // can never win `resolveTargetLanguage`'s tier-1 "persisted confident
+    // value" branch on a later run. `AiGenerateRequest.locale` (the draft/
+    // cover-letter stages' own use of this same value) is set from the raw
+    // target_language and is unread by every provider adapter today — an
+    // empty value there is a no-op, not a behavior change (verified by
+    // reading, not editing, `commands/ai_provider/**`).
+    const wireTargetLanguage = targetLanguageConfident ? targetLanguage : '';
     const runId = await session.start({
       resumeId,
       resumeText: resumeId ? '' : values.resume,
@@ -477,7 +571,7 @@ export function useTailorPipeline({
       companyName,
       board,
       jobUrl,
-      targetLanguage,
+      targetLanguage: wireTargetLanguage,
       // Same value the export/preview path already resolved via this hook's
       // `market` memo — sent through unchanged so the letter prompt and the
       // export layout agree on one market.
@@ -598,6 +692,15 @@ export function useTailorPipeline({
     exportAs,
     editActiveOutput,
     meta,
+    // Whether `meta`'s three language fields are a confident detection or the
+    // tier-4 English guess (see `resolveTargetLanguage`'s doc comment). `meta`
+    // itself keeps carrying the guess unconditionally — every current-run
+    // consumer (live preview, rewrite locale, filename, job-ad summary) needs
+    // a usable value NOW, exactly like `start()`'s own local `targetLanguage`.
+    // Only a SAVE path (`useApplicationAnswers`, `useInterviewQuestions`) may
+    // use this flag to withhold the guess from the wire, mirroring
+    // `wireTargetLanguage` below.
+    targetLanguageConfident,
     // Export/preview market — see the computation's doc comment above. The live
     // preview (GenerationOutput → PdfPreview) needs the SAME value the export
     // sends, or the on-screen letter's salutation/sign-off silently disagrees

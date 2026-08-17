@@ -580,43 +580,64 @@ fn a_drifted_experience_section_in_a_caseless_script_is_still_caught() {
     );
 }
 
-/// The false-positive risk named alongside the per-section check: a skills
-/// list is language-neutral prose `whatlang` misreads regardless of length.
-/// Padded well past [`MIN_CHARS_FOR_LANGUAGE_CHECK`] so this proves the
-/// SectionKind::Skills exclusion is doing the work — not just the char floor,
-/// which a short list would clear anyway.
-/// The false-positive risk named alongside the per-section check, and the
-/// REALISTIC shape it takes: `whatlang` correctly reads a comma/middot list of
-/// tool names ("Rust · Python · Docker · Kubernetes · PostgreSQL · AWS ·
-/// Terraform · Redis") as ENGLISH — tool names have no German translation —
-/// which is exactly right for the text but wrong for the comparison: a
-/// perfectly ordinary German résumé's Skills section, checked against a
-/// German target, would fail `languages_align(skills_text, "de")` on every
-/// single generation. [`DE_CLEAN`] carries exactly this section unmodified;
-/// this fixture pads it well past [`MIN_CHARS_FOR_LANGUAGE_CHECK`] so the
-/// premise (the padded list clears the per-section char floor on its own,
-/// not just the original short one) is proven rather than assumed.
+/// No-false-positive REGRESSION pin for a long, padded Title-Case skills list
+/// — relabelled honestly, not a mutation-checked guard for any one gate.
+/// **This fixture is suppressed THREE independent ways at once**, so no
+/// single-gate mutation can turn it red here (verified, not assumed — see the
+/// premise assertions below, each anchored to the actual SECTION BODY
+/// [`section_language_issues`] validates, `"KENNTNISSE\n" + the padded list`,
+/// not to the short unpadded `list` a prior version of this test asserted its
+/// premise against while validating the padded one):
+///
+/// 1. `classify_section("KENNTNISSE")` is [`SectionKind::Skills`], so the
+///    per-section pass's `SectionKind::Skills` filter excludes it outright.
+/// 2. A Title-Case, middot-separated list opens every "word" uppercase, so
+///    [`looks_like_prose`] reads it as a LIST, not prose, and excludes it too.
+/// 3. `detected_language` maps this exact list to `None` — whatlang
+///    confidently but WRONGLY reads Title-Case comma/middot tool lists as
+///    Catalan, a language `documents::keywords::locale_tag_of` does not
+///    curate (see
+///    `documents::keywords::test::detect_locale_tag_and_detected_language_agree_whenever_both_answer`)
+///    — so the confidence-and-coverage gate excludes it a third time.
+///
+/// Each gate's OWN mutation-checked guard lives elsewhere, on a fixture that
+/// isolates it: the `SectionKind::Skills` filter's guard is
+/// [`a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_language_check`]
+/// (a LOWERCASE tool list, so it clears `looks_like_prose` and reads as a
+/// COVERED-but-wrong language, leaving the Skills filter as the only thing
+/// standing); `detected_language`'s confidence floor's guard is
+/// [`a_correct_certifications_block_never_trips_the_per_section_language_check`].
+/// This fixture keeps its place anyway as a straightforward "a realistic long
+/// skills list never earns a false Critical" regression, now labelled for
+/// what it actually is.
 #[test]
-fn a_long_skills_list_never_trips_the_per_section_language_check() {
-    let padded = DE_CLEAN.replace(
-        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+fn a_long_title_case_skills_list_is_a_no_false_positive_regression() {
+    let list = "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis";
+    let padded_list =
         "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis · \
          Go · TypeScript · GraphQL · gRPC · Kafka · RabbitMQ · Elasticsearch · Prometheus · \
          Grafana · Jenkins · GitLab CI · Helm · Istio · Envoy · Vault · Consul · Nomad · \
-         Ansible · Chef · Puppet · Nginx · HAProxy · Cassandra · MongoDB · ClickHouse",
+         Ansible · Chef · Puppet · Nginx · HAProxy · Cassandra · MongoDB · ClickHouse";
+    let padded = DE_CLEAN.replace(list, padded_list);
+    // The exact text `section_language_issues` runs its checks over for the
+    // KENNTNISSE section: `section_text` joins the heading and every line
+    // with `\n` — this is what the premises below must be anchored to, not
+    // the short `list` alone.
+    let section_body = format!("KENNTNISSE\n{padded_list}\n");
+    assert!(
+        significant_chars(&section_body) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: the validated section body must clear the per-section char floor, or gate 3 \
+         below proves nothing"
     );
     assert!(
-        significant_chars(&padded) - significant_chars(DE_CLEAN) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
-        "premise: the padded skills list alone must clear the per-section char floor"
+        !looks_like_prose(&section_body),
+        "premise: a Title-Case, middot-separated list must NOT read as prose — gate 2"
     );
-    assert!(
-        !crate::documents::keywords::languages_align(
-            "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
-            "de"
-        ),
-        "premise: whatlang really does read this ordinary tool-name list as \
-         non-German — the exclusion is doing real work, not guarding against \
-         nothing"
+    assert_eq!(
+        crate::documents::keywords::detected_language(&section_body),
+        None,
+        "premise: this ordinary Title-Case tool list is not a covered language under \
+         detected_language — gate 3"
     );
     let report = validate_content(&ContentInput {
         generated: &padded,
@@ -639,18 +660,23 @@ fn a_long_skills_list_never_trips_the_per_section_language_check() {
 /// 8c74ccd1's own branch: a truthful German `KENNTNISSE` section with a
 /// Python/data stack earned a false Critical.
 ///
-/// Unlike [`a_long_skills_list_never_trips_the_per_section_language_check`]
-/// above — whose fixture is Title-Case and so never exercised this path at
-/// all, which is exactly why that guard test stayed green through the
-/// regression — every tool name here is genuinely lowercase.
+/// **Premise restated for `detected_language`, and deliberately a DIFFERENT
+/// tool list than before.** The original fixture (a `pandas`/`numpy`/… list)
+/// reads as Catalan under `whatlang` — like the Title-Case list above, that
+/// is not a covered language, so `detected_language` already answers `None`
+/// and the mutation check would be vacuous. This fixture is chosen because it
+/// confidently reads as **French** — a language `documents::keywords::locale_tag_of`
+/// DOES curate — so `detected_language` returns `Some("fr")` and the Skills
+/// exclusion is doing real, provable work, not guarding against nothing.
 ///
 /// Mutation check: drop the `section.kind != SectionKind::Skills` filter
 /// from `section_language_issues` and this goes red.
 #[test]
 fn a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_language_check() {
-    let lowercase_tools = "pandas · numpy · scikit-learn · pytest · git · bash · npm · nginx · \
-                            dbt · kubectl · docker · kubernetes · terraform · ansible · jenkins \
-                            · grafana · prometheus · redis · postgresql · elasticsearch";
+    let lowercase_tools = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
+                            docker kubernetes terraform ansible jenkins grafana prometheus \
+                            redis postgresql elasticsearch java spring hibernate maven gradle \
+                            jira confluence";
     let generated = DE_CLEAN.replace(
         "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
         lowercase_tools,
@@ -666,10 +692,15 @@ fn a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_languag
          exclusion exists to catch, not a hypothetical one"
     );
     assert!(
-        !crate::documents::keywords::languages_align(lowercase_tools, "de"),
-        "premise: whatlang really does read this lowercase tool list as \
-         non-German — the exclusion is doing real work, not guarding against \
-         nothing"
+        matches!(
+            crate::documents::keywords::detected_language(lowercase_tools),
+            Some(found) if found != "de"
+        ),
+        "premise: whatlang confidently (and wrongly) reads this lowercase tool list as some \
+         OTHER covered language than the target \"de\" — the exact property this test needs \
+         (which language whatlang names is a whatlang implementation detail, not this crate's \
+         contract), so detected_language does not already suppress this on its own; the Skills \
+         exclusion is what is doing the work"
     );
     let report = validate_content(&ContentInput {
         generated: &generated,
@@ -689,23 +720,50 @@ fn a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_languag
 /// certifications block is proper-noun-heavy, clears the char floor, and reads
 /// as non-English. Firing there would blank `keywordCoverage` and suppress
 /// every alignment finding on an otherwise-perfect résumé.
+///
+/// **Fixture changed, premise restated.** The original Title-Case bullet
+/// fixture never actually exercised the language comparison at all: its
+/// lowercase-initial-word ratio is 0.0, so `looks_like_prose` filters it out
+/// before `detected_language` is ever consulted — a "passes for the wrong
+/// reason" gap pre-dating this fix, surfaced while restating this premise
+/// rather than carried forward silently. This fixture keeps the block's
+/// proper-noun density (still confidently misdetected — French, confidence
+/// ~0.13, well under `MIN_DETECTION_CONFIDENCE`) but lowercase-leads each
+/// line so it genuinely clears the prose ratio, so the test exercises
+/// `detected_language`'s CONFIDENCE gate specifically (this section is
+/// `SectionKind::Other`, not `Skills`, so the Skills exclusion plays no part
+/// here at all).
+///
+/// Mutation check: delete the confidence gate in
+/// `documents::keywords::detected_language` (fall straight through to
+/// `locale_tag_of`) and this goes red — see
+/// `documents::keywords::test::detected_language_goes_quiet_below_the_confidence_floor`,
+/// which pins the same fixture shape's confidence directly.
 #[test]
 fn a_correct_certifications_block_never_trips_the_per_section_language_check() {
     let certs = "
 
 CERTIFICATIONS
-AWS Certified Solutions Architect - Professional (2022)
-                 Google Cloud Professional Data Engineer (2023)
-                 Certified Kubernetes Administrator CKA (2021)
+aws certified solutions architect - professional (2022)
+                 google cloud professional data engineer (2023)
+                 certified kubernetes administrator cka (2021)
 ";
     let body = certs.trim_start();
     assert!(
         significant_chars(body) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
-        "premise: this block must clear the per-section char floor, or the test          proves nothing about the exclusion"
+        "premise: this block must clear the per-section char floor, or the test proves \
+         nothing about the exclusion"
     );
     assert!(
-        !crate::documents::keywords::languages_align(body, "en"),
-        "premise: whatlang really does read this correct ENGLISH certifications          block as non-English — the scoping is doing real work"
+        looks_like_prose(body),
+        "premise: this block must clear the prose ratio, or the test silently exercises \
+         nothing but the looks_like_prose filter — the exact gap being fixed here"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(body),
+        None,
+        "premise: whatlang reads this correct ENGLISH certifications block as French with \
+         LOW confidence — the confidence gate is doing the real work, not a coincidence"
     );
     let with_certs = format!("{EN_CLEAN}{certs}");
     let report = en_resume(&with_certs, &en_requirements());
@@ -1340,10 +1398,19 @@ fn a_company_named_only_in_the_summary_does_not_spare_a_dropped_experience_entry
     assert_eq!(report.metrics.roles_output, 1);
 }
 
-/// H3 — when the detector reads the SOURCE the same "wrong" way it reads the
-/// output, the detector is the unreliable party, not the document. Firing there
-/// produced a Critical the user cannot act on AND blanked `keywordCoverage`,
-/// taking every alignment finding down with it.
+/// H3 (premise restated for `target_is_corroborated`) — the ORIGINAL claim was
+/// "the detector reads the source the same wrong way it reads the output, so
+/// the detector is the unreliable party." That framing no longer fits: BOTH
+/// fixtures here really are German (`detected_language` reads them
+/// confidently, correctly, as `"de"` — this is not a misdetection). The
+/// accurate reason this stays quiet is narrower and still real: NEITHER
+/// witness (job ad, source résumé) confidently reads as `"en"`, so `"en"`
+/// itself is not corroborated as a credible target, and the accusation has
+/// no reliable premise to stand on. This is the documented DACH-style
+/// accepted cost from `language.rs`'s module doc: a genuinely English-target
+/// run against a German ad and a German source is NOT caught here — this
+/// module goes quiet on a real detector/target disagreement rather than
+/// guessing which side is right.
 #[test]
 fn language_critical_is_withheld_when_the_source_reads_the_same_way() {
     // Both documents are German; the target language says English.
@@ -1370,6 +1437,370 @@ fn language_critical_is_withheld_when_the_source_reads_the_same_way() {
     let real = en_resume(EN_WRONG_LANGUAGE, &en_requirements());
     let hits = fired(&real, CONTENT_LANGUAGE_MISMATCH);
     assert_eq!(hits[0].severity, Severity::Critical);
+}
+
+/// **Advisory MEDIUM (confirmation review).** The DACH miss — the accepted
+/// cost `language.rs:5-13`'s module doc describes in the abstract, pinned as
+/// an actual scenario so a future change cannot quietly start believing this
+/// guard is universal. An English-language job ad (realistic: an
+/// international-facing posting scraped for a DACH-market role), an
+/// untranslated English source, target `"de"`, and the model returns English
+/// anyway — the SAME real defect [`regime_1_the_reported_bug_an_untranslated_english_resume_for_a_german_target_fires`]
+/// catches, just with an English ad instead of a German one. Nothing here
+/// corroborates `"de"`: neither witness confidently reads as German, so
+/// `target_is_corroborated` has no reliable premise for `"de"` at all — the
+/// SAME "goes quiet on a real disagreement" posture as
+/// [`language_critical_is_withheld_when_the_source_reads_the_same_way`], from
+/// the other direction (there, both witnesses agreed with the OUTPUT; here,
+/// both witnesses confidently name a DIFFERENT real language than the
+/// target). Silent on BOTH the document AND section passes — but for two
+/// SEPARATE reasons that only happen to coincide in this particular fixture,
+/// not because one implies the other in general: `is_language_mismatch` on
+/// the whole document is true here (English confidently isn't `"de"`), which
+/// closes the document pass AND, in this specific case, the `is_language_mismatch`
+/// half of [`section_language_issues`]'s own gate. That coincidence does NOT
+/// generalize — it holds only when the WHOLE document confidently reads as
+/// some other language. A document that drifts only PARTIALLY (ambiguous
+/// whole-text confidence — the exact shape a real section-level drift
+/// produces, and the one [`a_single_drifted_section_is_caught_even_though_the_document_reads_clean`]
+/// pins) does not trip `is_language_mismatch` at all, so
+/// [`section_language_issues`] would stay silent there purely on its OTHER,
+/// independent condition — `target_is_corroborated` — which is exactly what
+/// [`a_drifted_section_stays_quiet_when_the_target_language_is_not_corroborated`]
+/// pins.
+#[test]
+fn a_confidently_english_ad_does_not_corroborate_a_german_target_the_dach_miss() {
+    assert!(
+        !document_language_mismatch(EN_CLEAN, EN_SOURCE, EN_JOB_AD, "de"),
+        "premise: neither witness reads as German, so the target has no corroboration — \
+         the accusation must stay quiet even though the document genuinely never got \
+         translated"
+    );
+    let report = validate_content(&ContentInput {
+        generated: EN_CLEAN, // never translated — the same shape as regime 1
+        source_resume: EN_SOURCE,
+        job_ad: EN_JOB_AD, // English, not German — the one variable that changes
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+// ── Cross-language regime table (the reported-bug fix) ──────────────────────
+//
+// The six regimes hand-verified in the plan for this fix, each pinned as its
+// own regression so a future change to `document_language_mismatch` cannot
+// silently reintroduce the original bug (a translation run scored `criticals=0`
+// on a fully-untranslated résumé) or reopen any of the false positives the old
+// `source_is_a_reliable_control` gate existed to prevent.
+
+/// Regime 1 — THE REPORTED BUG. A German ad, an English source (translation
+/// expected), target `"de"`, and the model returns English anyway. Under the
+/// OLD `source_is_a_reliable_control` gate this was DEAD BY CONSTRUCTION:
+/// `languages_align(EN_SOURCE, "de")` is false, so the control never passed —
+/// dead in the exact one scenario it exists for. `target_is_corroborated`
+/// asks the AD instead (`detected_language(DE_JOB_AD) == Some("de")`), which
+/// does not depend on whether a translation happened.
+#[test]
+fn regime_1_the_reported_bug_an_untranslated_english_resume_for_a_german_target_fires() {
+    let report = validate_content(&ContentInput {
+        generated: EN_CLEAN, // never translated — the reported defect
+        source_resume: EN_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+}
+
+/// Regime 2 — the SAME ad/source pair as regime 1, but the model did its job:
+/// a genuine German translation. Must stay quiet — the fix must not turn every
+/// correct translation into a false Critical.
+#[test]
+fn regime_2_a_correct_translation_for_the_same_ad_and_source_stays_quiet() {
+    let report = validate_content(&ContentInput {
+        generated: DE_CLEAN, // correctly translated
+        source_resume: EN_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// Regime 3 — a same-language (no-translation) non-Latin run. This is a FIX,
+/// not a regression pin: under the OLD `languages_align`-routed guard,
+/// `is_language_mismatch(japanese_text, "ja")` was `true` unconditionally —
+/// `languages_align`'s non-Latin arm returns `false` for EVERY locale,
+/// including the script's own — so a same-language Japanese run raised a
+/// false Critical purely because of which arm of `languages_align` fired, not
+/// because anything was wrong. `detected_language` has a real `"ja"` arm.
+#[test]
+fn regime_3_a_same_language_japanese_run_no_longer_raises_a_false_critical() {
+    let ja = "私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。 \
+              私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。 \
+              私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。 \
+              私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。 \
+              私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。";
+    let report = validate_content(&ContentInput {
+        generated: ja,
+        source_resume: ja,
+        job_ad: ja,
+        top_requirements: &[],
+        target_language: "ja",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// Regime 4 — a target this crate does not curate (Polish is not one of the
+/// nineteen `documents::keywords::locale_tag_of` languages). `detected_language`
+/// answers `None` for Polish text no matter how confidently `whatlang` reads
+/// it, so a correct Polish résumé must never earn a false Critical just
+/// because the target language has no entry in the table.
+#[test]
+fn regime_4_an_uncurated_target_language_never_raises_a_false_critical() {
+    let pl = "Kandydatka ma osiem lat doświadczenia w systemach płatności backendowych. \
+              Kandydatka ma osiem lat doświadczenia w systemach płatności backendowych. \
+              Kandydatka ma osiem lat doświadczenia w systemach płatności backendowych.";
+    assert_eq!(
+        crate::documents::keywords::detected_language(pl),
+        None,
+        "premise: Polish is confidently read but not a curated tag — see \
+         documents::keywords::test::detected_language_is_none_for_a_language_this_crate_does_not_curate"
+    );
+    let report = validate_content(&ContentInput {
+        generated: pl,
+        source_resume: pl,
+        job_ad: pl,
+        top_requirements: &[],
+        target_language: "pl",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// Regime 5 — a target `"en"` where BOTH witnesses confidently read as a
+/// COVERED but WRONG language (French — the same lowercase tool-list misread
+/// the Skills exclusion test above measures). Neither witness corroborates
+/// `"en"`, so the accusation stays quiet even though the generated text is
+/// genuinely German (a real mismatch, had `"en"` been corroborated). The
+/// module's own doc comment frames this generically as a franc/whatlang
+/// detector disagreement (the renderer's target-picker vs. this module's
+/// validator); this is the concrete "both witnesses read as some OTHER
+/// language" instance of that same accepted limit.
+///
+/// Mutation check: change `target_is_corroborated` to always return `true` —
+/// RAN, went red (`content.language_mismatch` fired even though neither
+/// witness actually corroborates "en"), reverted.
+#[test]
+fn regime_5_neither_witness_corroborating_the_target_stays_quiet() {
+    let misread_as_french = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
+        docker kubernetes terraform ansible jenkins grafana prometheus redis postgresql \
+        elasticsearch java spring hibernate maven gradle jira confluence";
+    assert!(
+        matches!(
+            crate::documents::keywords::detected_language(misread_as_french),
+            Some(found) if found != "en"
+        ),
+        "premise: whatlang confidently reads this text as some covered language OTHER than \
+         the target \"en\" — which language it names is a whatlang implementation detail, \
+         not this crate's contract; what regime 5 needs is that neither witness corroborates \
+         \"en\""
+    );
+    let report = validate_content(&ContentInput {
+        generated: EN_WRONG_LANGUAGE, // genuinely German — would fire if "en" were corroborated
+        source_resume: misread_as_french,
+        job_ad: misread_as_french,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// One text per language [`detected_language`](crate::documents::keywords::detected_language)
+/// covers — the full 19-language set `documents::keywords::locale_tag_of`
+/// curates — long enough to clear [`MIN_CHARS_FOR_LANGUAGE_CHECK`] and
+/// confidently detected. Built by repeating a short sentence per language
+/// rather than composing longer original prose this file's author cannot
+/// verify is grammatical in all nineteen languages: repetition is redundant
+/// content, not wrong content, and `whatlang`'s n-gram model reads it the
+/// same way it would read a longer original. The SAME sentences
+/// `documents::keywords::test::detected_language_identifies_*` pins at the
+/// primitive level, so a regression in either place is visible in both.
+fn per_language_samples() -> Vec<(&'static str, String)> {
+    let sentences: &[(&str, &str, usize)] = &[
+        (
+            "en",
+            "The candidate has eight years of backend experience with payment systems.",
+            3,
+        ),
+        (
+            "de",
+            "Die Kandidatin hat acht Jahre Erfahrung im Backend-Bereich mit Zahlungssystemen.",
+            3,
+        ),
+        (
+            "fr",
+            "La candidate a huit ans d'expérience dans les systèmes de paiement back-end.",
+            3,
+        ),
+        (
+            "es",
+            "La candidata tiene ocho años de experiencia en sistemas de pago de backend.",
+            3,
+        ),
+        (
+            "it",
+            "La candidata ha otto anni di esperienza nei sistemi di pagamento backend.",
+            3,
+        ),
+        (
+            "pt",
+            "A candidata tem oito anos de experiência em sistemas de pagamento de backend.",
+            3,
+        ),
+        (
+            "nl",
+            "De kandidaat heeft acht jaar ervaring met backend-betalingssystemen.",
+            3,
+        ),
+        ("zh", "我是一名后端工程师，在支付系统和容器平台方面工作了八年。", 5),
+        (
+            "ja",
+            "私はバックエンドエンジニアで、決済システムとコンテナプラットフォームの構築を8年間担当してきました。",
+            3,
+        ),
+        (
+            "ko",
+            "저는 8년 동안 결제 시스템과 컨테이너 플랫폼을 구축해 온 백엔드 엔지니어입니다.",
+            5,
+        ),
+        (
+            "vi",
+            "Tôi là kỹ sư backend với tám năm kinh nghiệm trong các hệ thống thanh toán và nền tảng container.",
+            3,
+        ),
+        (
+            "th",
+            "ฉันเป็นวิศวกรแบ็กเอนด์ที่มีประสบการณ์แปดปีในระบบชำระเงินและแพลตฟอร์มคอนเทนเนอร์",
+            3,
+        ),
+        (
+            "ar",
+            "أنا مهندس أنظمة خلفية لدي ثماني سنوات من الخبرة في أنظمة الدفع ومنصات الحاويات.",
+            3,
+        ),
+        (
+            "he",
+            "אני מהנדס backend עם שמונה שנות ניסיון במערכות תשלומים ופלטפורמות מכולות.",
+            3,
+        ),
+        (
+            "hi",
+            "मैं एक बैकएंड इंजीनियर हूं जिसके पास भुगतान प्रणालियों और कंटेनर प्लेटफार्मों में आठ साल का अनुभव है।",
+            3,
+        ),
+        (
+            "bn",
+            "আমি একজন ব্যাকএন্ড ইঞ্জিনিয়ার যার পেমেন্ট সিস্টেম এবং কন্টেইনার প্ল্যাটফর্মে আট বছরের অভিজ্ঞতা রয়েছে।",
+            3,
+        ),
+        (
+            "tr",
+            "Ödeme sistemleri ve konteyner platformlarında sekiz yıllık deneyime sahip bir backend mühendisiyim.",
+            3,
+        ),
+        (
+            "uk",
+            "Я бекенд-інженер з восьмирічним досвідом роботи з платіжними системами та контейнерними платформами.",
+            3,
+        ),
+        (
+            "ru",
+            "Я бэкенд-инженер с восьмилетним опытом работы с платёжными системами.",
+            3,
+        ),
+    ];
+    sentences
+        .iter()
+        .map(|(code, sentence, reps)| {
+            (
+                *code,
+                std::iter::repeat_n(*sentence, *reps)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+        })
+        .collect()
+}
+
+/// The mechanical guard for "consistent across every language `detected_language`
+/// covers": for each language, its OWN text must never fire against its own
+/// target, and its text must fire against every OTHER language's target — the
+/// exact per-language sweep this fix's owner asked for explicitly.
+///
+/// Mutation check: hardcode `is_language_mismatch` to always return `false`
+/// and every `_fires` assertion in this test goes red; hardcode it to always
+/// return `true` and every `_stays_silent` assertion goes red — the table
+/// cannot be satisfied by a guard that answers one way regardless of input.
+#[test]
+fn every_curated_language_is_silent_for_itself_and_fires_for_every_other() {
+    let samples = per_language_samples();
+    for (lang, text) in &samples {
+        assert!(
+            !is_language_mismatch(text, lang),
+            "a document confidently written in {lang} must not mismatch its own target"
+        );
+    }
+    for (lang, _) in &samples {
+        for (other_lang, other_text) in &samples {
+            if lang == other_lang {
+                continue;
+            }
+            assert!(
+                is_language_mismatch(other_text, lang),
+                "a document confidently written in {other_lang} must mismatch target {lang}"
+            );
+        }
+    }
+}
+
+/// [`target_is_corroborated`] is private to `language.rs`; exercised here
+/// through [`document_language_mismatch`] (re-exported crate-wide) rather than
+/// duplicating a second access path to a private function.
+///
+/// Mutation check: change the `||` in `target_is_corroborated` to `&&` (i.e.
+/// require BOTH witnesses to agree) and this goes red — the reported bug's
+/// own regime (regime 1 above) only ever has ONE corroborating witness (the
+/// ad; the source is untranslated English), so `&&` would silently
+/// reintroduce the exact defect this fix exists to close.
+#[test]
+fn either_witness_alone_is_enough_to_corroborate_the_target() {
+    // Corroborated by the ad ALONE (source is untranslated English) — regime
+    // 1's own shape, confirmed again through the public entry point.
+    assert!(document_language_mismatch(
+        EN_CLEAN, EN_SOURCE, DE_JOB_AD, "de"
+    ));
+
+    // Corroborated by the SOURCE alone: the ad does not confidently read as
+    // "de" at all (it confidently reads as French — an aggregator snippet in
+    // the wrong locale is the realistic shape), but the candidate's own
+    // German source résumé is enough on its own.
+    let misread_as_french = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
+        docker kubernetes terraform ansible jenkins grafana prometheus redis postgresql \
+        elasticsearch java spring hibernate maven gradle jira confluence";
+    assert!(document_language_mismatch(
+        EN_CLEAN,
+        DE_SOURCE,
+        misread_as_french,
+        "de"
+    ));
 }
 
 /// H4 — "still there" is spelled in more than one way. A source that writes
@@ -3471,33 +3902,107 @@ fn a_dropped_projects_section_is_not_an_altered_link() {
     );
 }
 
-/// R5-F2 — the false-positive guard only suppressed when the source's
-/// misdetected tag EQUALLED the generated one, so it failed OPEN for a source
-/// too short to detect (`whatlang` guesses, `is_language_mismatch` goes quiet,
-/// and the guard read that silence as "the source is fine") and for a source
-/// misdetected as some THIRD language. A Critical accusation needs a reliable
-/// premise on BOTH sides.
+/// R5-F2 (superseded by `target_is_corroborated`) — the OLD single-source
+/// control required the CANDIDATE'S OWN résumé specifically to vouch for the
+/// target, so it failed OPEN whenever the source could not (too short to
+/// detect, or misdetected as a third language) — even when the JOB AD
+/// independently and confidently corroborated that SAME target. That was too
+/// narrow a premise: an ad genuinely written in English is real evidence
+/// "en" was a credible target, whether or not the candidate's own résumé is
+/// long enough to read, or happens to be in French. `target_is_corroborated`
+/// widened the control to EITHER witness on purpose — this is the
+/// DACH/translation case from the OTHER direction, where the ad (not the
+/// source) is the reliable witness, and it now correctly fires here instead
+/// of staying silent. See
+/// [`a_language_critical_needs_at_least_one_reliable_witness`] for the case
+/// this test used to conflate with these two: NEITHER witness can vouch for
+/// the target, which still stays quiet.
 #[test]
-fn a_language_critical_needs_a_reliable_source_control() {
-    // Too short for the detector to read at all — cannot decide.
+fn a_confidently_reliable_job_ad_corroborates_even_when_the_source_cannot() {
+    // Too short for the detector to read at all — the SOURCE alone cannot
+    // decide, but the job ad is a full, confident "en" read on its own, so
+    // the target is still credible and the real mismatch still fires.
     let short_source = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\nEngineer | Acme | 2021\n";
-    silent(
-        &report_for(EN_WRONG_LANGUAGE, short_source, EN_JOB_AD, &[]),
-        CONTENT_LANGUAGE_MISMATCH,
-    );
+    let too_short_source_report = report_for(EN_WRONG_LANGUAGE, short_source, EN_JOB_AD, &[]);
+    let hits = fired(&too_short_source_report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
 
-    // A source that reads as a THIRD language: the detector disagrees with the
-    // target on both documents, which is a detector problem, not something the
-    // user can fix by re-generating.
-    silent(
-        &report_for(EN_WRONG_LANGUAGE, FR_RESUME, EN_JOB_AD, &[]),
-        CONTENT_LANGUAGE_MISMATCH,
-    );
+    // A source reading as a THIRD language (French) does not disqualify the
+    // ad's corroboration either — the ad, not the source, is the witness that
+    // matters in this pair.
+    let third_language_source_report = report_for(EN_WRONG_LANGUAGE, FR_RESUME, EN_JOB_AD, &[]);
+    let hits = fired(&third_language_source_report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
 
-    // The real defect — a long English source, a German output — still fires.
+    // The original defect this whole family guards — a long English source, a
+    // German output — obviously still fires too.
     let real = en_resume(EN_WRONG_LANGUAGE, &en_requirements());
     let hits = fired(&real, CONTENT_LANGUAGE_MISMATCH);
     assert_eq!(hits[0].severity, Severity::Critical);
+}
+
+/// The genuine "cannot decide" case R5-F2's fixtures no longer exercise: BOTH
+/// witnesses fail. The source is too short to detect, AND the ad is the
+/// documented keyword-soup shape (`documents::keywords::test::detected_language_goes_quiet_below_the_confidence_floor`
+/// pins its confidence at ~0.08) — neither can vouch for `"en"`, so the
+/// accusation has no reliable premise on either side and must stay quiet, the
+/// same "goes quiet on a real disagreement" posture
+/// [`language_critical_is_withheld_when_the_source_reads_the_same_way`] takes
+/// from the other direction.
+///
+/// Mutation check: change `target_is_corroborated`'s `||` to always `true`
+/// (i.e. drop corroboration entirely) and this goes red — the mismatch fires
+/// on the German `generated` text alone.
+#[test]
+fn a_language_critical_needs_at_least_one_reliable_witness() {
+    let short_source = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\nEngineer | Acme | 2021\n";
+    let unreliable_ad = "Terraform AWS PostgreSQL Kubernetes platform engineer";
+    silent(
+        &report_for(EN_WRONG_LANGUAGE, short_source, unreliable_ad, &[]),
+        CONTENT_LANGUAGE_MISMATCH,
+    );
+}
+
+/// **The bug this whole fix closes, pinned as a permanent regression.**
+/// Before this fix, [`section_language_issues`]'s gate checked ONLY
+/// `is_language_mismatch` on the whole document — never whether the TARGET
+/// language was corroborated by any witness at all — so a section could be
+/// flagged against a `target_language` neither the job ad nor the
+/// candidate's own source résumé ever vouched for. Same defect as
+/// [`a_language_critical_needs_at_least_one_reliable_witness`] above, but at
+/// SECTION scope instead of document scope: `EN_EXPERIENCE_DRIFTED_ITALIAN`
+/// reads confidently English at the WHOLE-document level (premise below), an
+/// unreliable job ad plus a genuinely French source corroborate nothing for
+/// `"en"` (premise below), yet the EXPERIENCE section really is Italian —
+/// before this fix, `section_language_issues` fired a Critical on it anyway,
+/// because its old gate never asked whether `"en"` itself was credible.
+///
+/// Mutation check: drop the `!target_is_corroborated(...) ||` clause from
+/// `section_language_issues` (restoring the old single-condition gate) and
+/// this test goes red — `CONTENT_LANGUAGE_MISMATCH` fires, `Critical`,
+/// `section: Some("EXPERIENCE")`.
+#[test]
+fn a_drifted_section_stays_quiet_when_the_target_language_is_not_corroborated() {
+    let unreliable_ad = "Terraform AWS PostgreSQL Kubernetes platform engineer";
+    assert!(
+        !is_language_mismatch(EN_EXPERIENCE_DRIFTED_ITALIAN, "en"),
+        "premise: the whole document must not confidently read as \
+         non-English — otherwise this test would pass for the WRONG reason \
+         (the is_language_mismatch half of the gate alone, not the \
+         corroboration half this test targets)"
+    );
+    assert!(
+        !document_language_mismatch(EN_WRONG_LANGUAGE, FR_RESUME, unreliable_ad, "en"),
+        "premise: neither this unreliable ad nor a genuinely French source \
+         corroborates \"en\" — proven indirectly via a text already known to \
+         confidently read as non-English (EN_WRONG_LANGUAGE fires when \
+         paired with EN_SOURCE/EN_JOB_AD elsewhere in this file), so a false \
+         result here with the SAME generated text can only be explained by \
+         the corroboration half of document_language_mismatch being false"
+    );
+
+    let report = report_for(EN_EXPERIENCE_DRIFTED_ITALIAN, FR_RESUME, unreliable_ad, &[]);
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
 }
 
 /// R5-F3 — a labelled skills line ("Languages: Rust, Python") is the commonest
