@@ -1,6 +1,6 @@
 # Anti-Abuse Rate & Concurrency Limits
 
-Last updated: 2026-08-13
+Last updated: 2026-08-17
 
 Canonical source: `apps/desktop/src-tauri/src/limits/mod.rs`
 
@@ -37,7 +37,7 @@ Three independent guards (all process-local, reset on restart):
 
 1. **Sliding-window request-rate cap** — at most `max_requests` accepted starts of a given command within the last [`RATE_WINDOW`] (60 seconds). Old timestamps age out, so it is a true rolling window.
 2. **Concurrency cap** — at most `max_concurrent` in-flight calls of a command, held as an RAII [`ConcurrencyGuard`] that OWNS a semaphore permit, so a panicking/early-returning handler can never leak a slot. Two admission styles share one budget: `acquire` **rejects** when full, `acquire_queued` **waits** (bounded by a queue-depth cap) — the tailoring pipeline uses the latter, since every call there is a deliberate click.
-3. **Per-vendor daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted billable requests per vendor per UTC day (reset at midnight UTC). Keyed by vendor name, not by `ProviderId`, so a **search backend** that bills separately (`exa`) charges its own bucket rather than spending the AI provider's — see [ADR 0023](../adr/0023-web-search-is-a-separate-axis-from-the-ai-provider.md). **Multi-provider runs** — when per-stage overrides route different stages to different providers (e.g., local Ollama + cloud provider), each provider's cap is charged independently. A max-depth run pays for six stages: `analyze_job`, `match_evidence`, `strategy`, `sections`, `repair`, `llm_judge` (verified in `pipeline/resume/mod.rs::MAX_STAGES`). The free stages (`assemble`, `validate`, override hooks) do not consume provider calls. At a single provider this costs 6 calls per run; with per-stage overrides spreading stages across different providers, each provider's cap is charged independently and linearly.
+3. **Per-vendor daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted billable requests per vendor per UTC day (reset at midnight UTC). Keyed by vendor name, not by `ProviderId`, so a **search backend** that bills separately (`exa`) charges its own bucket rather than spending the AI provider's — see [ADR 0023](decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md). **Multi-provider runs** — when per-stage overrides route different stages to different providers (e.g., local Ollama + cloud provider), each provider's cap is charged independently. A max-depth run pays for six stages: `analyze_job`, `match_evidence`, `strategy`, `sections`, `repair`, `llm_judge` (verified in `pipeline/resume/mod.rs::MAX_STAGES`). The free stages (`assemble`, `validate`, override hooks) do not consume provider calls. At a single provider this costs 6 calls per run; with per-stage overrides spreading stages across different providers, each provider's cap is charged independently and linearly.
 
 Defaults are intentionally **generous** so normal interactive use never trips them; they exist to stop pathological loops, not to throttle a human.
 

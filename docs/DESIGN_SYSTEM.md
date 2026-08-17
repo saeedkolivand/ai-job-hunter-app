@@ -1,12 +1,12 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-07-16 (v0.116.0)
+Last updated: 2026-08-17 (v0.116.0)
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
 > **Design language: Apple (hybrid).** The system follows the Apple design language (`DESIGN-apple.md`) — typography-led, restrained chrome, flat surfaces with hairline elevation, the single product shadow, and the Apple type/radius grammar. **Two deliberate divergences from the Apple spec:**
 >
-> 1. **Accent is the brand teal** (`--color-brand`, shipped default `#5bb8b7` dark / `#2b7a78` light — **user-customizable** per [ADR 0004](adr/0004-single-source-user-customizable-accent-color.md)), not Apple's Action Blue.
+> 1. **Accent is the brand teal** (`--color-brand`, shipped default `#5bb8b7` dark / `#2b7a78` light — **user-customizable** per [ADR 0004](knowledge/decision-records/0004-single-source-user-customizable-accent-color.md)), not Apple's Action Blue.
 > 2. **Colorful action buttons** are allowed (Apple mandates a single accent). They are _semantic_ (run/edit/delete), token-driven (`--color-action-*`), and never decorative.
 >
 > "Hybrid" depth: content surfaces are flat (`.surface-card`); frosted **glass is reserved for hero surfaces only** — modals, the dashboard hero, and chrome (sidebar/titlebar/sticky bars). Decorative gradients and glows live in content. A **slim, accent-tinted aurora** (ribbons, nebulae, and cursor glow, gated by performance mode) sits as the ambient backdrop behind all surfaces; it is always present when performance allows.

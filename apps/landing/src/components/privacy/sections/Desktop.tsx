@@ -71,12 +71,14 @@ export function Desktop() {
           fetched over HTTP like the other boards; the only local-Chromium use is an optional login
           window that saves your LinkedIn session cookie to a per-board profile on your machine (to
           enrich authenticated searches) — not the scrape transport. The walled aggregator boards
-          (Indeed, Glassdoor, StepStone, Xing, Workday) are reached via the Adzuna/JSearch
+          (Indeed, Glassdoor, StepStone, Xing, Workday) are reached via the Adzuna/JSearch/Jooble
           aggregator API using your own API key — no browser required. <b>Adzuna</b> requests go
           directly to Adzuna's API. <b>JSearch</b> requests go through <b>RapidAPI</b> (the API
-          gateway for JSearch) using your RapidAPI key. We run no proxy or intermediary; there is no
-          AI Job Hunter server in the path. Adzuna, JSearch, and RapidAPI requests are subject to
-          their respective terms of service and privacy policies.
+          gateway for JSearch) using your RapidAPI key. <b>Jooble</b> requests go directly to
+          Jooble's API, using your own Jooble key, and are made only as a last-resort fallback after
+          Adzuna and JSearch. We run no proxy or intermediary; there is no AI Job Hunter server in
+          the path. Adzuna, JSearch, RapidAPI, and Jooble requests are subject to their respective
+          terms of service and privacy policies.
         </p>
         <p>
           <b>LinkedIn via Apify (opt-in, off by default).</b> Enabling the "Include LinkedIn
@@ -129,10 +131,20 @@ export function Desktop() {
         <br />
         <b>No behavioural analytics.</b> There is no Google Analytics, PostHog, Segment, Mixpanel,
         Amplitude or Datadog, and no advertising or cross-site tracking. Nothing records which
-        features you use or what you search for. AI Job Hunter also checks for updates by contacting
-        its update server; this transmits only your current app version and operating system /
-        architecture. Other than that, the only network calls are the AI-provider and job-board
-        requests described above, which you trigger.
+        features you use or what you search for.
+        <br />
+        <br />
+        <b>Two things happen automatically, without you asking:</b> AI Job Hunter checks for updates
+        periodically — starting shortly after launch, then every few hours — by contacting{' '}
+        <b>GitHub</b>, transmitting only your current app version and operating system /
+        architecture; and, like that check, the crash report described above is something the app
+        sends on its own, not something you trigger.
+        <br />
+        <br />A few other calls happen only when you turn on the feature behind them: an opt-in{' '}
+        <b>Exa</b> search for AI-assisted company research, a <b>Photon</b> lookup as a
+        location-autocomplete fallback when the offline index has no match, opt-in <b>Clearbit</b>{' '}
+        company-logo lookups, and — if you enable email-confirmation watching — a connection to your{' '}
+        <b>IMAP</b> provider.
       </div>
     </>
   );
