@@ -269,34 +269,85 @@ const SECTION_NAMES: &[&str] = &[
     "sprachen",
     "zusammenfassung",
     "profil",
+    "projekte",
+    "zertifikate",
+    "auszeichnungen",
+    "publikationen",
     // French
     "expérience professionnelle",
     "formation",
     "compétences",
+    "projets",
+    "langues",
+    "distinctions",
     // Spanish (shares "perfil" with Portuguese below)
     "perfil",
     "experiencia profesional",
     "formación",
     "habilidades",
+    "proyectos",
+    "certificaciones",
+    "idiomas",
+    "premios",
+    "publicaciones",
     // Italian
     "profilo",
     "esperienza professionale",
     "formazione",
     "competenze",
+    "progetti",
+    "certificazioni",
+    "lingue",
+    "riconoscimenti",
+    "pubblicazioni",
     // Dutch
     "profiel",
     "werkervaring",
     "opleiding",
     "vaardigheden",
+    "projecten",
+    "certificaten",
+    "talen",
+    "onderscheidingen",
+    "publicaties",
     // Portuguese
     "experiência profissional",
     "formação",
     "competências",
+    "projetos",
+    "certificações",
+    // "idiomas" (Languages) is shared with Spanish above — the producer
+    // (`pipeline::resume::prompt_blocks::resume_conventions`) emits the same
+    // word for both locales, so one entry covers both.
+    // pt-PT "prémios" is what the producer actually emits (see
+    // prompt_blocks.rs); pt-BR "prêmios" is added too — nothing in the
+    // producer's header table discriminates the two spellings, so the
+    // recogniser accepts both even though only one is ever generated.
+    "prémios",
+    "prêmios",
+    "publicações",
 ];
 
 /// Whether `text`, trimmed and lowercased, exactly names one of the parser's
 /// own known section headings — the same exact-match test [`parse_line`] uses
-/// to promote a line to [`LineKind::SectionHeader`] via [`SECTION_NAMES`].
+/// to promote a line to [`LineKind::SectionHeader`] via [`SECTION_NAMES`] —
+/// OR is a two-section AMPERSAND JOIN ("Ausbildung & Sprachen") where BOTH
+/// halves are themselves known names.
+///
+/// The résumé prompt's own "never combine two sections under a joined
+/// heading" clause (`pipeline::resume::prompts::draft_system`) means a fresh
+/// generation should not produce this shape, but it still shows up on
+/// already-generated documents and on an occasional non-compliant
+/// generation — that is exactly how "Ausbildung & Sprachen" was reported.
+/// This does NOT split the line into two sections: the bullets underneath a
+/// merged heading have no reliable per-line split point (there is nothing on
+/// a bullet that says which half of the join it belongs to), so splitting
+/// would risk silently misattributing content, a worse outcome than one
+/// heading covering both. Recognising the join only keeps it OFF the
+/// body-text path: a single, non-ideal-but-visible heading beats a merged
+/// heading rendering as an unstyled paragraph, both for our own rendering and
+/// for a real ATS reading the exported PDF/DOCX, which buckets by heading
+/// text and gets zero heading signal from a plain paragraph line.
 ///
 /// Exposed so callers that need "is this a REAL heading, even one
 /// `documents::evidence::classify_section` has no bucket for" (Certifications,
@@ -305,7 +356,13 @@ const SECTION_NAMES: &[&str] = &[
 /// all in [`SECTION_NAMES`], but `classify_section`'s six-variant
 /// `SectionKind` has no arm for any of them and buckets them all as `Other`.
 pub(crate) fn is_known_section_name(text: &str) -> bool {
-    SECTION_NAMES.contains(&text.trim().to_lowercase().as_str())
+    let lower = text.trim().to_lowercase();
+    if SECTION_NAMES.contains(&lower.as_str()) {
+        return true;
+    }
+    lower.split_once(" & ").is_some_and(|(left, right)| {
+        SECTION_NAMES.contains(&left.trim()) && SECTION_NAMES.contains(&right.trim())
+    })
 }
 
 // Company/role keywords (should NOT be treated as section headers)
@@ -487,7 +544,6 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     let trimmed = raw.trim();
     let clean = strip_md(trimmed);
     let segments = parse_inline_md(trimmed);
-    let lower = clean.to_lowercase();
 
     // Blank line
     if clean.is_empty() {
@@ -556,7 +612,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
             .get(..idx)
             .is_some_and(|head| head.iter().all(|l| l.trim().is_empty()))
     {
-        if SECTION_NAMES.contains(&lower.as_str()) {
+        if is_known_section_name(&clean) {
             return ParsedLine {
                 kind: LineKind::SectionHeader,
                 raw: trimmed.to_string(),
@@ -603,7 +659,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     }
 
     // Tab-indented bullet
-    if raw.starts_with('\t') && clean.len() > 5 && !SECTION_NAMES.contains(&lower.as_str()) {
+    if raw.starts_with('\t') && clean.len() > 5 && !is_known_section_name(&clean) {
         return ParsedLine {
             kind: LineKind::Bullet,
             raw: trimmed.to_string(),
@@ -613,8 +669,9 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
         };
     }
 
-    // Section header: known name
-    if SECTION_NAMES.contains(&lower.as_str()) {
+    // Section header: known name (including a two-section "X & Y" ampersand
+    // join where both halves are known — see `is_known_section_name`)
+    if is_known_section_name(&clean) {
         return ParsedLine {
             kind: LineKind::SectionHeader,
             raw: trimmed.to_string(),

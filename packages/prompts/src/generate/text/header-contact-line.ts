@@ -99,9 +99,30 @@ const KNOWN_SECTION_NAMES = new Set<string>(sectionNames);
  * résumé headers for (en/de/fr/es/it/nl/pt). See {@link isAllCapsSectionHeading}
  * for the shape-based sibling that catches an ALL-CAPS heading not literally
  * in this list.
+ *
+ * Also accepts an `" & "` join of two known names ("Ausbildung & Sprachen",
+ * "Skills & Certifications"), mirroring the same arm in Rust's
+ * `is_known_section_name`. Models merge two headings onto one line often
+ * enough that the draft prompt has a rule against it; recognising the merged
+ * shape is what keeps the line a heading instead of body text absorbed into
+ * the section above. The shared `section-names.json` fixture pins the
+ * VOCABULARY both sides share — this arm is predicate behaviour, so it has to
+ * be mirrored by hand and is pinned by that fixture's `joins` cases.
  */
 export function isKnownSectionName(line: string): boolean {
-  return KNOWN_SECTION_NAMES.has(toClean(line).toLowerCase());
+  const lower = toClean(line).toLowerCase();
+  if (KNOWN_SECTION_NAMES.has(lower)) return true;
+  // `indexOf`, not `split`, to mirror Rust's `split_once(" & ")`: it cuts at
+  // the FIRST separator and leaves the rest whole. That difference is load
+  // bearing, because a known name can itself contain " & " ("certifications &
+  // training"), so "skills & certifications & training" is a two-part join to
+  // Rust and would be a three-part reject to `split`.
+  const at = lower.indexOf(' & ');
+  if (at < 0) return false;
+  return (
+    KNOWN_SECTION_NAMES.has(lower.slice(0, at).trim()) &&
+    KNOWN_SECTION_NAMES.has(lower.slice(at + 3).trim())
+  );
 }
 
 /** Mirrors the Rust parser's `COMPANY_KEYWORDS` — whole-word tokens that make

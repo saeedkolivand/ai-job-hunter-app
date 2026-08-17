@@ -211,7 +211,7 @@ export function buildInterviewResumePrompt(
 ): string {
   // Section headers + date format follow the target market's conventions.
   const conv = resumeConventions(meta.targetLanguage);
-  const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}; and one consistent date format like ${conv.dateExample}.`;
+  const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.Summary} / ${conv.headers.Experience} / ${conv.headers.Education} / ${conv.headers.Skills}; and one consistent date format like ${conv.dateExample}.`;
   const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const hasSummary = Boolean(answers.summary?.trim());
 
