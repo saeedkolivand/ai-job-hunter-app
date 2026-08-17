@@ -26,7 +26,7 @@ use super::stages::{
     criticals_by_section, exceeds_humanize_cap, ground, humanize_is_worse, humanize_one,
     is_usable_rewrite, research_company_brief, reseed, round_is_worse, run_draft_attempt,
     seed_company_roster, should_humanize_letter, voice_count, voice_findings, DraftEnv,
-    MAX_COMPANY_PLANS,
+    LanguageRetryOutcome, MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
@@ -1628,8 +1628,9 @@ fn the_draft_prompt_orders_a_translation() {
 /// reads as an abbreviation, not an instruction.
 ///
 /// Mutation check: revert `letter_system`'s `system_language_name` call back
-/// to `system_language` — RAN, went red (`", in de."` reappeared and `German`
-/// disappeared from the `de` case), reverted.
+/// to `system_language` — RAN, went red on EVERY language in the loop (not
+/// just `de`), because the bare-code assertion is now parameterized on the
+/// loop variable instead of hard-coded to `", in de."`; reverted.
 #[test]
 fn every_system_prompt_names_the_language_rather_than_its_code() {
     for (lang, name) in [
@@ -1642,13 +1643,14 @@ fn every_system_prompt_names_the_language_rather_than_its_code() {
         let repair = repair_system(lang, false);
         let letter = letter_system(lang, "intl", false, false);
         let humanize = humanize_system(HumanizeTier::Resume, lang);
+        let bare_code = format!(", in {lang}.");
         for prompt in [&draft, &repair, &letter, &humanize] {
             assert!(
                 prompt.contains(name),
                 "{lang}: expected {name:?} in {prompt:?}"
             );
             assert!(
-                !prompt.contains(", in de."),
+                !prompt.contains(&bare_code),
                 "{lang}: bare code leaked through"
             );
         }
@@ -2104,7 +2106,7 @@ const RETRY_DE_CLEAN: &str = include_str!("../../validate/content/fixtures/de_ge
 #[tokio::test]
 async fn the_draft_retry_keeps_the_second_attempt_only_when_it_fixed_the_language() {
     // The retry FIXES the language.
-    let (kept, _artifact, retried) = super::stages::draft_with_language_retry(
+    let (kept, _artifact, retry) = super::stages::draft_with_language_retry(
         RETRY_EN_SOURCE,
         RETRY_EN_JOB_AD,
         "en",
@@ -2120,14 +2122,18 @@ async fn the_draft_retry_keeps_the_second_attempt_only_when_it_fixed_the_languag
     )
     .await
     .expect("neither call errors in this test");
-    assert!(retried, "a wrong first draft must trigger the retry");
+    assert_eq!(
+        retry,
+        LanguageRetryOutcome::Fixed,
+        "a wrong first draft must trigger the retry, and this one fixed it"
+    );
     assert!(
         kept.contains("SUMMARY") && !kept.contains("ZUSAMMENFASSUNG"),
         "a retry that fixed the language must ship, not the wrong-language first draft"
     );
 
     // The retry is STILL wrong (a different German document).
-    let (kept, _artifact, retried) = super::stages::draft_with_language_retry(
+    let (kept, _artifact, retry) = super::stages::draft_with_language_retry(
         RETRY_EN_SOURCE,
         RETRY_EN_JOB_AD,
         "en",
@@ -2143,7 +2149,11 @@ async fn the_draft_retry_keeps_the_second_attempt_only_when_it_fixed_the_languag
     )
     .await
     .expect("neither call errors in this test");
-    assert!(retried, "a wrong first draft must trigger the retry");
+    assert_eq!(
+        retry,
+        LanguageRetryOutcome::StillWrong,
+        "a wrong first draft must trigger the retry, and this one stayed wrong"
+    );
     assert!(
         kept.contains("ZUSAMMENFASSUNG"),
         "a still-wrong retry must not replace the first, canonical-prompt draft"
@@ -2170,7 +2180,7 @@ async fn the_draft_retry_keeps_the_second_attempt_only_when_it_fixed_the_languag
 #[tokio::test]
 async fn the_draft_retries_at_most_once() {
     let mut calls = 0u32;
-    let (_kept, _artifact, retried) = super::stages::draft_with_language_retry(
+    let (_kept, _artifact, retry) = super::stages::draft_with_language_retry(
         RETRY_EN_SOURCE,
         RETRY_EN_JOB_AD,
         "en",
@@ -2182,11 +2192,11 @@ async fn the_draft_retries_at_most_once() {
     )
     .await
     .expect("neither call errors in this test");
-    assert!(retried);
+    assert_eq!(retry, LanguageRetryOutcome::StillWrong);
     assert_eq!(calls, 2, "a wrong first draft must retry exactly once");
 
     let mut calls = 0u32;
-    let (_kept, _artifact, retried) = super::stages::draft_with_language_retry(
+    let (_kept, _artifact, retry) = super::stages::draft_with_language_retry(
         RETRY_EN_SOURCE,
         RETRY_EN_JOB_AD,
         "en",
@@ -2198,8 +2208,51 @@ async fn the_draft_retries_at_most_once() {
     )
     .await
     .expect("neither call errors in this test");
-    assert!(!retried);
+    assert_eq!(retry, LanguageRetryOutcome::NotNeeded);
     assert_eq!(calls, 1, "a correct first draft must never retry");
+}
+
+/// A retry refused before any round trip — the shape a `charge_daily`
+/// ceiling refusal takes in [`run_draft_attempt`] (it errors BEFORE
+/// `DraftEnv::complete` is ever called) — must produce `Errored`, not one of
+/// the two outcomes that made a round trip. `Draft::run`'s ledger fix
+/// (`ctx.ledger.count_call` gated on `retry.called()`) depends on exactly
+/// this: `Errored` must never be mistaken for a billed call. Proven at this
+/// seam because `Draft::run` itself needs a live `Completer`/`AppHandle`
+/// this crate has no test harness for.
+///
+/// Mutation check: change `LanguageRetryOutcome::called` back to
+/// `!matches!(self, Self::NotNeeded)` (the old `retried` bool's behavior,
+/// counting every attempt regardless of whether a round trip happened) —
+/// RAN, went red (`retry.called()` read `true` for this `Errored` case),
+/// reverted.
+#[tokio::test]
+async fn a_retry_refused_before_any_round_trip_is_not_counted_as_a_call() {
+    let (kept, _artifact, retry) = super::stages::draft_with_language_retry(
+        RETRY_EN_SOURCE,
+        RETRY_EN_JOB_AD,
+        "en",
+        live_deadline(),
+        |is_retry| async move {
+            if is_retry {
+                // No round trip is ever sent for this branch — the exact
+                // shape `charge_daily`'s `?` short-circuit produces.
+                Err(AppError::RateLimited("daily budget exhausted".to_string()))
+            } else {
+                Ok(RETRY_WRONG_LANGUAGE.to_string())
+            }
+        },
+    )
+    .await
+    .expect("the first call never errors in this test");
+    assert_eq!(retry, LanguageRetryOutcome::Errored);
+    assert!(
+        !retry.called(),
+        "a refused retry made no round trip and must not be billed"
+    );
+    // The retry's failure is not this stage's failure — the first,
+    // wrong-language draft is still what ships.
+    assert!(kept.contains("ZUSAMMENFASSUNG"));
 }
 
 /// [`DraftEnv`] fake — records which channel [`run_draft_attempt`] called,

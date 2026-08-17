@@ -762,6 +762,12 @@ mod test {
     /// must name the exact same one — the two may differ only when
     /// `detected_language` goes quiet (low confidence, or an uncovered
     /// language), where `detect_locale_tag` still has to pick SOME stemmer.
+    ///
+    /// Mutation check: add a `.filter(|info| info.is_reliable())` gate to
+    /// `detect_locale_tag` (making it confidence-gated like `detected_language`)
+    /// — RAN, went red (`detect_locale_tag` fell back to "en" for the
+    /// low-confidence-but-covered fixture instead of picking the covered
+    /// language), reverted.
     #[test]
     fn detect_locale_tag_and_detected_language_agree_whenever_both_answer() {
         let samples = [
@@ -785,9 +791,30 @@ mod test {
         // still names a covered language here (unconditional, by design —
         // see the doc comment); an UNCOVERED language (no `locale_tag_of`
         // arm at all) is the one case that still falls back to "en".
+        let terse = "Terraform AWS PostgreSQL Kubernetes platform engineer";
+        let info = detect(terse).expect("whatlang must produce SOME guess to prove this case");
+        assert!(
+            info.confidence() < MIN_DETECTION_CONFIDENCE,
+            "premise: {terse:?} must be a LOW-confidence read, or this no longer exercises the \
+             confidence-agnostic half of detect_locale_tag"
+        );
+        // Derived, not hardcoded: which language whatlang names for this text is a whatlang
+        // implementation detail (a version bump can shift its guess), not this crate's
+        // contract. What the test needs is that whatlang's guess IS a covered language, so
+        // "unconditional on confidence" is distinguishable from "always falls back to en".
+        let expected = locale_tag_of(info.lang()).expect(
+            "premise: whatlang's guess for this text must be a COVERED language, or this \
+             assertion cannot tell 'unconditional on confidence' apart from 'always falls back \
+             to en'",
+        );
+        assert_ne!(
+            expected, "en",
+            "premise: the covered language must differ from the fallback, or a confidence-gate \
+             regression would coincidentally still agree with the unconditional answer"
+        );
         assert_eq!(
-            detect_locale_tag("Terraform AWS PostgreSQL Kubernetes platform engineer"),
-            "pt",
+            detect_locale_tag(terse),
+            expected,
             "low-confidence but still a covered language — detect_locale_tag must still pick it"
         );
         assert_eq!(

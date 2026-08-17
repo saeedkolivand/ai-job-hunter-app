@@ -135,7 +135,7 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
         // above) instead of borrowing the closure's OWN captured state —
         // the latter cannot outlive an `FnMut` call and is a compile error.
         let env: &dyn DraftEnv = &env;
-        let (draft, mut artifact, retried) = draft_with_language_retry(
+        let (draft, mut artifact, retry) = draft_with_language_retry(
             input.source_resume,
             input.job_ad,
             input.target_language,
@@ -155,12 +155,16 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
         .await?;
 
         // The first call always happened (its own error already propagated
-        // above); the retry is a second round-trip only when it fired.
+        // above); the retry counts only when it actually made a round trip —
+        // `LanguageRetryOutcome::called`'s doc explains why `Errored` (a
+        // `charge_daily` refusal before any round trip, OR the retry's own
+        // provider error) must NOT count, mirroring `repair.rs`'s
+        // no-call-was-made rule for the same metric.
         ctx.ledger.count_call(false);
-        if retried {
+        if retry.called() {
             ctx.ledger.count_call(false);
         }
-        artifact["languageRetry"] = json!(retried);
+        artifact["languageRetry"] = json!(retry.attempted());
         // Length + projects-normalize counts only — never the draft itself
         // (ADR-027).
         ctx.ledger.record("draft", artifact);
@@ -233,6 +237,57 @@ pub(crate) async fn run_draft_attempt(
     }
 }
 
+/// What the at-most-once corrective retry did — four outcomes previously
+/// flattened into one `bool` (`retried`) that could not distinguish "no
+/// round trip happened" from "one happened and was discarded", so
+/// [`Draft::run`] counted a call on every non-`NotNeeded` outcome including
+/// `Errored`, over-reporting `RunLedger::metrics.calls` whenever the retry's
+/// own `charge_daily` refused before any round trip was sent. Mirrors
+/// [`super::humanize::HumanizeAttempt`]'s shape for the same class of
+/// problem, sized to this stage's simpler (single, at-most-once) retry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LanguageRetryOutcome {
+    /// The first draft already matched the target language, or the run's
+    /// deadline had already passed — no retry was attempted.
+    NotNeeded,
+    /// The retry's own call errored: a provider failure, OR `charge_daily`
+    /// refused before any round trip was sent (see [`DraftEnv::charge_daily`]
+    /// on [`run_draft_attempt`]'s retry branch). The first draft is kept.
+    /// Either way there is no completed round trip to bill — see
+    /// [`Self::called`].
+    Errored,
+    /// The retry's round trip completed but the result was STILL the wrong
+    /// language — the first draft is kept (see the module doc's
+    /// never-hand-back-a-worse-document floor). One round trip to bill.
+    StillWrong,
+    /// The retry's round trip completed and fixed the language — the
+    /// retry's draft is kept. One round trip to bill.
+    Fixed,
+}
+
+impl LanguageRetryOutcome {
+    /// Whether an actual provider round trip happened for the retry — the
+    /// ONLY gate [`crate::pipeline::resume::RunLedger::count_call`] should
+    /// read for this stage's retry. `Errored` never counts: `repair.rs`'s
+    /// `Ok(SectionOutcome::Missing) => {}` arm states the same rule for the
+    /// same metric ("No call was made, so nothing is counted — a metric
+    /// that reported a round-trip here would over-report every run").
+    pub(crate) fn called(self) -> bool {
+        matches!(self, Self::StillWrong | Self::Fixed)
+    }
+
+    /// The diagnostic bit the run artifact's `languageRetry` field has
+    /// always recorded: was a corrective retry attempted at all, called or
+    /// not. Kept distinct from [`Self::called`] on purpose — the artifact is
+    /// a content-free diagnostic (ADR-027), not a billing signal, and its
+    /// existing meaning (true whenever the first draft needed a retry,
+    /// whether or not that retry actually reached the provider) must not
+    /// shift just because the billing gate was fixed.
+    pub(crate) fn attempted(self) -> bool {
+        !matches!(self, Self::NotNeeded)
+    }
+}
+
 /// One streamed-or-captured draft, plus the at-most-once corrective retry,
 /// with the PROVIDER CALL injected — the same seam shape as
 /// `repair::repair_loop` and `humanize::humanize_one`, and the same reason:
@@ -252,7 +307,7 @@ pub(crate) async fn draft_with_language_retry<F, Fut>(
     target_language: &str,
     deadline: RunDeadline,
     mut complete: F,
-) -> AppResult<(String, Value, bool)>
+) -> AppResult<(String, Value, LanguageRetryOutcome)>
 where
     F: FnMut(bool) -> Fut,
     Fut: Future<Output = AppResult<String>>,
@@ -263,14 +318,15 @@ where
     if deadline.passed()
         || !document_language_mismatch(&draft, source_resume, job_ad, target_language)
     {
-        return Ok((draft, artifact, false));
+        return Ok((draft, artifact, LanguageRetryOutcome::NotNeeded));
     }
 
     match complete(true).await {
         // The retry itself failing (a provider error, or the day's ceiling
         // refusing it) is not this stage's failure — the run already has a
-        // usable, if wrong-language, draft. See the module doc.
-        Err(_) => Ok((draft, artifact, true)),
+        // usable, if wrong-language, draft. See the module doc. Also no
+        // round trip to bill either way — see `LanguageRetryOutcome::called`.
+        Err(_) => Ok((draft, artifact, LanguageRetryOutcome::Errored)),
         Ok(second) => {
             let (candidate, candidate_artifact) =
                 apply_projects_normalization(source_resume, second);
@@ -278,9 +334,9 @@ where
                 // Still wrong. Two wrong-language drafts are equally wrong,
                 // and the first came from the canonical prompt, so it is the
                 // one that is kept.
-                Ok((draft, artifact, true))
+                Ok((draft, artifact, LanguageRetryOutcome::StillWrong))
             } else {
-                Ok((candidate, candidate_artifact, true))
+                Ok((candidate, candidate_artifact, LanguageRetryOutcome::Fixed))
             }
         }
     }

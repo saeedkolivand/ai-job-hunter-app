@@ -691,12 +691,16 @@ fn a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_languag
          0.2 ratio — this is the exact false positive the SectionKind::Skills \
          exclusion exists to catch, not a hypothetical one"
     );
-    assert_eq!(
-        crate::documents::keywords::detected_language(lowercase_tools),
-        Some("fr"),
-        "premise: whatlang confidently (and wrongly) reads this lowercase tool list as \
-         French — a COVERED language, so detected_language does not already suppress \
-         this on its own; the Skills exclusion is what is doing the work"
+    assert!(
+        matches!(
+            crate::documents::keywords::detected_language(lowercase_tools),
+            Some(found) if found != "de"
+        ),
+        "premise: whatlang confidently (and wrongly) reads this lowercase tool list as some \
+         OTHER covered language than the target \"de\" — the exact property this test needs \
+         (which language whatlang names is a whatlang implementation detail, not this crate's \
+         contract), so detected_language does not already suppress this on its own; the Skills \
+         exclusion is what is doing the work"
     );
     let report = validate_content(&ContentInput {
         generated: &generated,
@@ -1589,15 +1593,24 @@ fn regime_4_an_uncurated_target_language_never_raises_a_false_critical() {
 /// detector disagreement (the renderer's target-picker vs. this module's
 /// validator); this is the concrete "both witnesses read as some OTHER
 /// language" instance of that same accepted limit.
+///
+/// Mutation check: change `target_is_corroborated` to always return `true` —
+/// RAN, went red (`content.language_mismatch` fired even though neither
+/// witness actually corroborates "en"), reverted.
 #[test]
 fn regime_5_neither_witness_corroborating_the_target_stays_quiet() {
     let misread_as_french = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
         docker kubernetes terraform ansible jenkins grafana prometheus redis postgresql \
         elasticsearch java spring hibernate maven gradle jira confluence";
-    assert_eq!(
-        crate::documents::keywords::detected_language(misread_as_french),
-        Some("fr"),
-        "premise: whatlang confidently reads this text as French, not English"
+    assert!(
+        matches!(
+            crate::documents::keywords::detected_language(misread_as_french),
+            Some(found) if found != "en"
+        ),
+        "premise: whatlang confidently reads this text as some covered language OTHER than \
+         the target \"en\" — which language it names is a whatlang implementation detail, \
+         not this crate's contract; what regime 5 needs is that neither witness corroborates \
+         \"en\""
     );
     let report = validate_content(&ContentInput {
         generated: EN_WRONG_LANGUAGE, // genuinely German — would fire if "en" were corroborated

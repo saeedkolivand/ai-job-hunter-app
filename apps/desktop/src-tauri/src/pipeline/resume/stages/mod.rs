@@ -37,6 +37,7 @@ pub(crate) use self::cover_letter::research_company_brief;
 #[cfg(test)]
 pub(crate) use self::draft::{
     apply_projects_normalization, draft_with_language_retry, run_draft_attempt, DraftEnv,
+    LanguageRetryOutcome,
 };
 #[cfg(test)]
 pub(crate) use self::evidence::ground;
