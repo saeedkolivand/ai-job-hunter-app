@@ -13,10 +13,10 @@ use tempfile::TempDir;
 
 use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
-    company_roster_block, draft_system, draft_user, humanize_system, humanize_user, letter_system,
-    letter_user, match_evidence_system, match_evidence_user, repair_system, repair_user,
-    strategy_system, strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP,
-    SIBLING_CONTEXT_CAP,
+    company_roster_block, draft_language_retry_note, draft_system, draft_user, humanize_system,
+    humanize_user, language_name, letter_system, letter_user, match_evidence_system,
+    match_evidence_user, repair_system, repair_user, strategy_system, strategy_user, HumanizeTier,
+    ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP, SIBLING_CONTEXT_CAP,
 };
 use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
@@ -1156,7 +1156,10 @@ fn repair_system_gates_the_document_context_instruction_on_has_context() {
 
     let with_context = repair_system("en", true);
     assert!(with_context.contains("<document_context>"));
-    assert!(with_context.contains("language, voice and tense"));
+    assert!(with_context.contains("voice and tense"));
+    // The output language is PINNED over the sibling context, not matched
+    // from it — see `the_repair_prompt_pins_the_output_language_over_sibling_context`.
+    assert!(with_context.contains("The output language is English"));
 }
 
 // ── SectionKey ───────────────────────────────────────────────────────────────
@@ -1593,6 +1596,105 @@ fn stage_prompts_interpolate_the_generated_blocks() {
     let humanize_letter = humanize_system(HumanizeTier::Letter, "en");
     assert!(humanize_letter.contains(HUMANIZE_PROSE));
     assert!(!humanize_letter.contains(HUMANIZE_LEXICAL));
+}
+
+/// The draft prompt must order a TRANSLATION, not just describe the target
+/// language — this is the generation-side half of the cross-language-résumé
+/// fix. The rule has to coexist with the grounding/fidelity clauses, not
+/// replace them: an English source résumé translated into German still has
+/// to draw every fact from `<candidate_resume>`, and employment entries still
+/// carry their company/title/dates verbatim.
+///
+/// Mutation check: delete the translate bullet (leaving the rest of `Structure:`
+/// untouched) — RAN, went red (no `TRANSLATE` in the output), reverted.
+#[test]
+fn the_draft_prompt_orders_a_translation() {
+    let prompt = draft_system("de", "de");
+    assert!(prompt.contains("TRANSLATE"));
+    assert!(prompt.contains("German"));
+    assert!(prompt.contains(
+        "Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>"
+    ));
+    assert!(prompt.contains("exactly as given"));
+}
+
+/// Every SYSTEM prompt in this file must name the target language in English
+/// ("German") rather than interpolate the bare 2-char code ("de") a model
+/// reads as an abbreviation, not an instruction.
+///
+/// Mutation check: revert `letter_system`'s `system_language_name` call back
+/// to `system_language` — RAN, went red (`", in de."` reappeared and `German`
+/// disappeared from the `de` case), reverted.
+#[test]
+fn every_system_prompt_names_the_language_rather_than_its_code() {
+    for (lang, name) in [
+        ("de", "German"),
+        ("fr", "French"),
+        ("ja", "Japanese"),
+        ("en", "English"),
+    ] {
+        let draft = draft_system(lang, "intl");
+        let repair = repair_system(lang, false);
+        let letter = letter_system(lang, "intl", false, false);
+        let humanize = humanize_system(HumanizeTier::Resume, lang);
+        for prompt in [&draft, &repair, &letter, &humanize] {
+            assert!(
+                prompt.contains(name),
+                "{lang}: expected {name:?} in {prompt:?}"
+            );
+            assert!(
+                !prompt.contains(", in de."),
+                "{lang}: bare code leaked through"
+            );
+        }
+    }
+
+    // The `(in {lang})` clause inside the subject-line rule reads the SAME
+    // name, not a second unconverted interpolation.
+    let de_letter = letter_system("de", "de", false, false);
+    assert!(de_letter.contains("subject line labelled \"Betreff\" (in German), on its own line"));
+}
+
+/// A language `language_name` has no curated entry for falls back to the bare
+/// code — the ADR-010-safe fallback `language_name`'s doc comment promises.
+/// `draft_system` must still build a usable prompt for it.
+///
+/// Mutation check: change the fallback arm from `other => other` to a fixed
+/// string — RAN, went red (`language_name("xx")` stopped equaling `"xx"`),
+/// reverted.
+#[test]
+fn an_uncurated_language_falls_back_to_the_bare_code() {
+    assert_eq!(language_name("xx"), "xx");
+    let prompt = draft_system("xx", "intl");
+    assert!(prompt.contains("in xx"));
+}
+
+/// After a partial repair, the untouched sibling sections may still be in the
+/// SOURCE language — the repair prompt must pin the output language over
+/// whatever the siblings demonstrate, or the model imitates their language
+/// right back.
+///
+/// Mutation check: revert to the bare "Match the language, voice and tense you
+/// OBSERVE there" wording (drop the override sentence) — RAN, went red (no
+/// "output language is German" clause), reverted.
+#[test]
+fn the_repair_prompt_pins_the_output_language_over_sibling_context() {
+    let prompt = repair_system("de", true);
+    assert!(prompt.contains("The output language is German, whatever the siblings are written in"));
+}
+
+/// The draft retry's corrective note names the language and never leaks the
+/// bare code — it is read by a model, not logged for a human who already
+/// knows the ISO tag.
+///
+/// Mutation check: interpolate the raw `lang` argument instead of
+/// `system_language_name(lang)` — RAN, went red (`German` disappeared, the
+/// literal `de-DE` code appeared instead), reverted.
+#[test]
+fn draft_language_retry_note_names_the_language() {
+    let note = draft_language_retry_note("de-DE");
+    assert!(note.contains("German"));
+    assert!(!note.contains(" in de"));
 }
 
 /// The draft prompt is localized off the SAME `resume_conventions` the renderer
