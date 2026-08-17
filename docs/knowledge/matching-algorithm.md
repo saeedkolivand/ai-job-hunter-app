@@ -59,6 +59,17 @@ Both scores are cached in SQLite:
 - `posting_vectors` table: stores embeddings (keyed by job_id, one row per posting); text_hash + provider/model columns pin the embedded text and embedding space so mismatches are cache misses.
 - `match_scores` table: composite PK encodes formula version, so changes to the keyword algorithm automatically invalidate old cached results.
 
+## Language Detection in Scoring
+
+Before scoring, the pipeline detects the target language (the language the output résumé/letter must use). **Two independent detectors decide this question:**
+
+- The **renderer** uses **franc** (`packages/shared/src/language-detection.ts`) to pick the target language from the job ad.
+- The **Rust validation layer** uses **whatlang** (`apps/desktop/src-tauri/src/documents/keywords.rs::detected_language`) to verify the generated output matches the target.
+
+When the two detectors disagree on the job ad's language, the validation guard goes quiet rather than raising a false Critical — consistent with the validation module's posture: a check that cannot be made reliably goes quiet rather than guesses. This is a real limit and belongs here for context: coverage score and keyword-only scoring use language detection via `coverage_score()`; the renderer's language choice and Rust's validation are not perfectly in sync, but disagreement is rare and is handled gracefully.
+
+Language-specific stemming for keyword matching uses `languages_align` (`documents/keywords.rs`), a separate function from `detected_language`; the two ask different questions and must never drift. See `detected_language`'s doc comment and the language-validation module docs for details.
+
 ## Testing
 
 Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for stemming, matching, language detection), `commands/autopilot/tests.rs` (ranking uses the shared kernel; the phase-2 gate, cost bounds and degrade rules), and `commands/match_resume/test.rs` (the combined formula's weights, the degrade boundary, and the per-round-trip embed charge — all driven through the real `score_one` against a real `DocumentStore`). See ARCHITECTURE_STATUS.md for the full coverage.
