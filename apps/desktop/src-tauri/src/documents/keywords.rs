@@ -731,9 +731,10 @@ mod test {
     /// quiet on both, the same "goes quiet rather than guesses" posture as
     /// every other check in this crate.
     ///
-    /// Mutation check: delete the `confidence() < MIN_DETECTION_CONFIDENCE`
-    /// gate (i.e. fall straight through to `locale_tag_of`) and this goes red
-    /// — both texts resolve to a confident-looking but wrong `Some(_)`.
+    /// Mutation check: delete the `!info.is_reliable()` gate in
+    /// `detected_language` (i.e. fall straight through to `locale_tag_of`)
+    /// and this goes red — both texts resolve to a confident-looking but
+    /// wrong `Some(_)`.
     #[test]
     fn detected_language_goes_quiet_below_the_confidence_floor() {
         let terse_ad = "Terraform AWS PostgreSQL Kubernetes platform engineer";

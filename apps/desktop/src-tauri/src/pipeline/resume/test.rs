@@ -7,6 +7,8 @@
 
 use std::cell::Cell;
 
+use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::json;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -22,8 +24,9 @@ use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
 use super::stages::{
     criticals_by_section, exceeds_humanize_cap, ground, humanize_is_worse, humanize_one,
-    is_usable_rewrite, research_company_brief, reseed, round_is_worse, seed_company_roster,
-    should_humanize_letter, voice_count, voice_findings, MAX_COMPANY_PLANS,
+    is_usable_rewrite, research_company_brief, reseed, round_is_worse, run_draft_attempt,
+    seed_company_roster, should_humanize_letter, voice_count, voice_findings, DraftEnv,
+    MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
@@ -33,6 +36,7 @@ use super::{
     effective_letter_text, pick, resolved_top_requirements, stage_cache_key_for, RunLedger,
     QUALITY_STAGES,
 };
+use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::documents::evidence::SectionKind;
 use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::{Budget, StoppedReason};
@@ -2196,6 +2200,112 @@ async fn the_draft_retries_at_most_once() {
     .expect("neither call errors in this test");
     assert!(!retried);
     assert_eq!(calls, 1, "a correct first draft must never retry");
+}
+
+/// [`DraftEnv`] fake — records which channel [`run_draft_attempt`] called,
+/// and how many times, without a live `Completer`/`AppHandle`.
+#[derive(Default)]
+struct FakeDraftEnv {
+    streamed_calls: Mutex<u32>,
+    completed_calls: Mutex<u32>,
+    charge_calls: Mutex<u32>,
+}
+
+fn draft_attempt_request() -> AiGenerateRequest {
+    AiGenerateRequest {
+        model: String::new(),
+        messages: vec![
+            AiGenerateRequestMessage {
+                role: "system".to_string(),
+                content: "sys".to_string(),
+            },
+            AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: "usr".to_string(),
+            },
+        ],
+        locale: "en".to_string(),
+        temperature: None,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        repeat_penalty: None,
+        max_tokens: None,
+        context_window: None,
+        effort: None,
+        intent: None,
+    }
+}
+
+#[async_trait]
+impl DraftEnv for FakeDraftEnv {
+    async fn stream_captured(&self, _job_id: &str, _req: AiGenerateRequest) -> AppResult<String> {
+        *self.streamed_calls.lock() += 1;
+        Ok("streamed draft".to_string())
+    }
+    async fn complete(&self, _system: &str, _user: &str) -> AppResult<String> {
+        *self.completed_calls.lock() += 1;
+        Ok("captured draft".to_string())
+    }
+    fn charge_daily(&self) -> AppResult<()> {
+        *self.charge_calls.lock() += 1;
+        Ok(())
+    }
+}
+
+/// **The retry never streams** — the direct guard for the double-render
+/// defect fixed on this branch (`draft.rs`'s module doc): before
+/// `run_draft_attempt` existed, [`Draft::run`](super::stages::Draft)'s
+/// closure called the streamed channel on BOTH attempts, so a wrong-language
+/// retry rendered a second document appended to the first in the live pane.
+/// This asserts the ABSOLUTE observable — which channel fired, and how many
+/// times — never a comparison between two derived values.
+///
+/// Mutation check: swap the two arms of `run_draft_attempt`'s `if is_retry`
+/// (route the retry through `stream_captured` and the first attempt through
+/// `charge_daily` + `complete`) — RAN, went red (`streamed_calls` reads 0
+/// after the first attempt and 1 only after the retry, the reverse of what
+/// this test requires), reverted.
+#[tokio::test]
+async fn the_draft_retry_never_streams() {
+    let env = FakeDraftEnv::default();
+
+    let first = run_draft_attempt(&env, "job-1", false, draft_attempt_request())
+        .await
+        .expect("first attempt succeeds");
+    assert_eq!(first, "streamed draft");
+    assert_eq!(
+        *env.streamed_calls.lock(),
+        1,
+        "the first attempt must stream"
+    );
+    assert_eq!(
+        *env.completed_calls.lock(),
+        0,
+        "the first attempt must never call the non-streaming channel"
+    );
+
+    let retry = run_draft_attempt(&env, "job-1", true, draft_attempt_request())
+        .await
+        .expect("retry succeeds");
+    assert_eq!(retry, "captured draft");
+    assert_eq!(
+        *env.streamed_calls.lock(),
+        1,
+        "the retry must NOT add a second stream over the same job_id — that is exactly the \
+         double-render defect (see draft.rs's module doc)"
+    );
+    assert_eq!(
+        *env.completed_calls.lock(),
+        1,
+        "the retry must call the non-streaming channel exactly once"
+    );
+    assert_eq!(
+        *env.charge_calls.lock(),
+        1,
+        "the retry must charge the daily ceiling itself — stream_captured does that internally \
+         for the first attempt, but the fake never routes through it"
+    );
 }
 
 /// The seeded roster reaches the model as DATA, with its identity fields

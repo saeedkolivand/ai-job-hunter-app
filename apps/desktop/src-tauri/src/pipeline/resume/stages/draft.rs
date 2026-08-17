@@ -6,16 +6,23 @@
 //! A JSON stage produces an artifact nobody reads; streaming it would show the
 //! user a wall of braces. The draft is the document, and it takes the longest,
 //! so it streams under the run's own umbrella `jobId` — the id `jobs.cancel`
-//! already reaches and the id the renderer already filters `ai:stream` on. A
-//! retry streams a SECOND draft over the first, under the same job id — the
-//! renderer just sees more deltas, exactly as if the model kept writing.
+//! already reaches and the id the renderer already filters `ai:stream` on.
 //!
-//! **That stream is DISPLAY-ONLY.** The shared stream machinery marks the job
-//! completed when the last delta lands, which is several stages before the run
-//! is finished; the run's completion signal is the terminal `pipeline:stage`
-//! event. The renderer contract says so explicitly, because treating
-//! `awaitAiStream` resolving as "done" would show an unvalidated, unrepaired
-//! draft as the final document.
+//! **The retry never streams.** The renderer clears its buffer only at
+//! `start()`/`reset()` and at the `cover_letter` stage-start event — all
+//! outside this stage — so a SECOND stream over the SAME `job_id` would land
+//! on top of the first with nothing telling the pane the model restarted:
+//! two contact headers, two of every section, for the whole retry. So
+//! [`run_draft_attempt`] routes the retry through [`DraftEnv::complete`], a
+//! single non-streaming call, instead of [`DraftEnv::stream_captured`] — the
+//! pane simply holds its last frame for the retry's duration.
+//!
+//! **The first attempt's stream is DISPLAY-ONLY.** The shared stream machinery
+//! marks the job completed when the last delta lands, which is several stages
+//! before the run is finished; the run's completion signal is the terminal
+//! `pipeline:stage` event. The renderer contract says so explicitly, because
+//! treating `awaitAiStream` resolving as "done" would show an unvalidated,
+//! unrepaired draft as the final document.
 //!
 //! ## The language retry is structurally at-most-once
 //!
@@ -51,7 +58,7 @@ use crate::error::AppResult;
 use crate::pipeline::resume::projects::{self, ProjectsNormalizeOutcome};
 use crate::pipeline::resume::prompts::{draft_language_retry_note, draft_system, draft_user};
 use crate::pipeline::resume::{QualityCtx, RunDeadline};
-use crate::pipeline::Stage;
+use crate::pipeline::{Completer, Stage};
 use crate::validate::content::document_language_mismatch;
 
 pub struct Draft;
@@ -121,6 +128,13 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
             intent: Some(DRAFT_INTENT.to_string()),
         };
 
+        let env = LiveDraftEnv { completer };
+        // A plain reference, established here rather than as `&env` inside
+        // the closure below: `&dyn DraftEnv` is `Copy`, so the closure
+        // captures a COPY of the reference itself (exactly like `completer`
+        // above) instead of borrowing the closure's OWN captured state —
+        // the latter cannot outlive an `FnMut` call and is a compile error.
+        let env: &dyn DraftEnv = &env;
         let (draft, mut artifact, retried) = draft_with_language_retry(
             input.source_resume,
             input.job_ad,
@@ -135,7 +149,7 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
                         .content
                         .push_str(&draft_language_retry_note(input.target_language));
                 }
-                completer.stream_captured(input.job_id, attempt)
+                run_draft_attempt(env, input.job_id, is_retry, attempt)
             },
         )
         .await?;
@@ -155,14 +169,79 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
     }
 }
 
-/// One streamed draft, plus the at-most-once corrective retry, with the
-/// PROVIDER CALL injected — the same seam shape as `repair::repair_loop` and
-/// `humanize::humanize_one`, and the same reason: `Draft::run` needs a live
-/// `Completer` and this crate has no Tauri harness to build one from, so the
-/// decision here (fire the retry only on a confirmed mismatch and before the
-/// deadline, never propagate a failed retry, keep the retry ONLY if it
-/// actually fixed the language) has to be provable by a test. See the module
-/// doc for why the bound is structural rather than a flag.
+/// A draft attempt's provider seam — the ONE decision that separates the
+/// streamed first attempt from the never-streamed retry sits behind a trait,
+/// exactly like `autopilot_helpers::NoteEnv`: this crate has no way to fake a
+/// live `Completer`/`AppHandle`, so [`run_draft_attempt`]'s branch (the fix
+/// for the double-render defect the module doc describes) has to be provable
+/// with a fake instead. Prod wiring is [`LiveDraftEnv`].
+#[async_trait]
+pub(crate) trait DraftEnv: Send + Sync {
+    /// The FIRST attempt only: streamed under the run's `job_id`, so the
+    /// live pane fills in as the model writes. Charges the daily ceiling
+    /// itself (see [`Completer::stream_captured`]).
+    async fn stream_captured(&self, job_id: &str, req: AiGenerateRequest) -> AppResult<String>;
+    /// The RETRY only: a single non-streaming call. Never reaches
+    /// `ai:stream`, so a retry can never double the renderer's buffer — see
+    /// the module doc.
+    async fn complete(&self, system: &str, user: &str) -> AppResult<String>;
+    /// Charge one call against the shared per-provider daily ceiling. The
+    /// streamed channel charges internally; the captured channel charges
+    /// explicitly here, mirroring `repair`/`humanize`'s own
+    /// `charge_daily` + `complete` pairing for their non-streaming calls.
+    fn charge_daily(&self) -> AppResult<()>;
+}
+
+/// Production [`DraftEnv`]: the resolved [`Completer`] for this stage. A
+/// thin wrapper rather than implementing the trait on `Completer` directly —
+/// `Completer` already has inherent `stream_captured`/`complete`/
+/// `charge_daily` methods of its own, and this keeps the two unambiguous.
+struct LiveDraftEnv<'a> {
+    completer: &'a Completer,
+}
+
+#[async_trait]
+impl DraftEnv for LiveDraftEnv<'_> {
+    async fn stream_captured(&self, job_id: &str, req: AiGenerateRequest) -> AppResult<String> {
+        self.completer.stream_captured(job_id, req).await
+    }
+    async fn complete(&self, system: &str, user: &str) -> AppResult<String> {
+        self.completer.complete(system, user, None).await
+    }
+    fn charge_daily(&self) -> AppResult<()> {
+        self.completer.charge_daily()
+    }
+}
+
+/// One draft attempt through `env` — `is_retry` selects the channel: `false`
+/// is the first, canonical call and always streams; `true` is the retry and
+/// NEVER streams (see the module doc for why). This function IS the fix for
+/// the double-render defect: before it existed, [`Draft::run`]'s closure
+/// called the streamed channel unconditionally on both attempts.
+pub(crate) async fn run_draft_attempt(
+    env: &dyn DraftEnv,
+    job_id: &str,
+    is_retry: bool,
+    req: AiGenerateRequest,
+) -> AppResult<String> {
+    if is_retry {
+        env.charge_daily()?;
+        env.complete(&req.messages[0].content, &req.messages[1].content)
+            .await
+    } else {
+        env.stream_captured(job_id, req).await
+    }
+}
+
+/// One streamed-or-captured draft, plus the at-most-once corrective retry,
+/// with the PROVIDER CALL injected — the same seam shape as
+/// `repair::repair_loop` and `humanize::humanize_one`, and the same reason:
+/// `Draft::run` needs a live `Completer` and this crate has no Tauri harness
+/// to build one from, so the decision here (fire the retry only on a
+/// confirmed mismatch and before the deadline, never propagate a failed
+/// retry, keep the retry ONLY if it actually fixed the language) has to be
+/// provable by a test. See the module doc for why the bound is structural
+/// rather than a flag.
 ///
 /// `complete(false)` makes the first call; its failure IS this stage's
 /// failure and propagates via `?`, exactly as before this retry existed.
