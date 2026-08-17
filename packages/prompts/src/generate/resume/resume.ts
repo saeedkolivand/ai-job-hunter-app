@@ -281,7 +281,7 @@ export function buildResumePrompt(
   const langNote = meta.mismatch
     ? `IMPORTANT: The resume is in ${meta.resumeLanguage} but the job ad is in ${meta.jobAdLanguage}. Rewrite entirely in ${meta.targetLanguage} using job market terminology native to that market.`
     : `Write in ${meta.targetLanguage}.`;
-  const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}; and one consistent date format like ${conv.dateExample}.`;
+  const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.Summary} / ${conv.headers.Experience} / ${conv.headers.Education} / ${conv.headers.Skills}; and one consistent date format like ${conv.dateExample}.`;
 
   const { block: linksBlock } = parseLinksFromResume(resume);
   // Project / publication / portfolio links that belong on their own items (#18) —
@@ -380,10 +380,10 @@ Line 2: Job title (plain text)
 Line 3: City, Country | email | phone | LinkedIn | GitHub
 Use the short label names from CANDIDATE PROFILE LINKS (e.g. "LinkedIn", "GitHub"). Do NOT write full URLs on this line.
 (blank line)
-${conv.headers.summary.toUpperCase()}
+${conv.headers.Summary.toUpperCase()}
 (summary paragraph)
 (blank line)
-${conv.headers.experience.toUpperCase()}
+${conv.headers.Experience.toUpperCase()}
 (blank line)
 Role Title, Company Name (${conv.dateExample})
 • Bullet using CAR format with **bolded tech**
@@ -391,7 +391,7 @@ Role Title, Company Name (${conv.dateExample})
 (blank line)
 Repeat the block above for EVERY role in <candidate_resume>, most recent first — one block per employer/role, none omitted.
 (blank line)
-${conv.headers.skills.toUpperCase()}
+${conv.headers.Skills.toUpperCase()}
 Category: Skill1, **Skill2**, Skill3
 ...
 (blank line)

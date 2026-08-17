@@ -14,6 +14,14 @@
 //! conventions and the generation pipeline key them, and `"dach"` as
 //! `LocaleProfile` collapses them, which is what actually arrives on the
 //! AI-Generate résumé export path.
+//!
+//! Italy has no such second namespace to alias. The market string this
+//! file actually reads on the AI-Generate résumé path is the pipeline's own
+//! `market` field (`req.market`, IPC-supplied), keyed the same way
+//! `letter::conventions` keys it, and BOTH the TS `COUNTRY_TO_MARKET` (`IT`)
+//! and `LANGUAGE_TO_MARKET` (`it`) tables already agree on the single
+//! canonical id `"it"` — unlike Germany's three-country split, there is no
+//! second spelling to accept here.
 
 use crate::model::document::SectionId;
 
@@ -36,7 +44,7 @@ const DEFAULT_ORDER: &[SectionId] = &[
     SectionId::Publications,
 ];
 
-/// German Lebenslauf order: Berufserfahrung → Ausbildung → Weiterbildung →
+/// German Lebenslauf order: Berufserfahrung → Ausbildung → Zertifikate →
 /// Kenntnisse — skills run late, not as an early keyword block.
 const DE_ORDER: &[SectionId] = &[
     SectionId::Summary,
@@ -45,6 +53,40 @@ const DE_ORDER: &[SectionId] = &[
     SectionId::Certifications,
     SectionId::Skills,
     SectionId::Languages,
+    SectionId::Projects,
+    SectionId::Awards,
+    SectionId::Publications,
+];
+
+/// Italian CV order. Like the German Lebenslauf, `Istruzione e formazione`
+/// (Education) and any `Certificazioni` sit right after `Esperienza
+/// professionale` — Italian hiring reads a titled qualification as core
+/// structure, not something to bury under Skills/Projects the way the US
+/// default does.
+///
+/// **Reviewable call, not a copy of [`DE_ORDER`]:** Languages runs BEFORE
+/// Skills here — the one position this order deliberately does NOT mirror
+/// the German one. Italy's Europass CV, still the reference format most
+/// Italian hirers recognise, nests "Lingue straniere" (foreign-language
+/// competence) as the FIRST subsection of "Competenze personali", ahead of
+/// any general or digital-skills subsection — the opposite of the German
+/// convention, where a language table is usually the LAST thing in the
+/// skills block. If a native reviewer disagrees, swapping these two back to
+/// the German order is a one-line change, not a rethink of the rest of the
+/// list.
+///
+/// Projects and the Awards/Publications tail stay last, same reasoning as
+/// every market in this file: neither is a section a traditional Italian CV
+/// has by default, so an application with real content for them still gets
+/// a heading, just not one that crowds out Experience/Education/
+/// Certifications/Languages/Skills for it.
+const IT_ORDER: &[SectionId] = &[
+    SectionId::Summary,
+    SectionId::Experience,
+    SectionId::Education,
+    SectionId::Certifications,
+    SectionId::Languages,
+    SectionId::Skills,
     SectionId::Projects,
     SectionId::Awards,
     SectionId::Publications,
@@ -64,22 +106,12 @@ pub fn section_order_for(market: &str) -> &'static [SectionId] {
         // silently receive the default order depending on which surface set
         // the market.
         "de" | "at" | "ch" | "dach" => DE_ORDER,
+        // No alias to accept here — see the module doc comment: unlike
+        // Germany, Italy has only one live market-id spelling ("it") on
+        // every namespace that actually reaches this function.
+        "it" => IT_ORDER,
         _ => DEFAULT_ORDER,
     }
-}
-
-/// Render `section_order_for(market)` as a comma-separated list of canonical
-/// English section names, for injecting into the draft prompt as a FIXED
-/// instruction (the model is told the order rather than inventing one). Not a
-/// localized heading — see `prompt_blocks::resume_conventions` for the small
-/// subset of headings (summary/skills/experience/education) that ARE
-/// localized for the "Structure:" line.
-pub fn section_order_prompt_list(market: &str) -> String {
-    section_order_for(market)
-        .iter()
-        .map(|id| format!("{id:?}"))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 #[cfg(test)]
@@ -129,23 +161,87 @@ mod tests {
     }
 
     #[test]
+    fn it_order_runs_education_and_certifications_right_after_experience() {
+        let order = section_order_for("it");
+        // "right AFTER Experience" is half this test's name and was the half
+        // it did not assert: every other assertion here is `… < Skills`, so
+        // an order burying Experience below Education — the exact opposite of
+        // what `IT_ORDER`'s own doc claims — stayed green.
+        assert!(
+            position(order, &SectionId::Experience) < position(order, &SectionId::Education),
+            "Experience must lead the Italian order; Education follows it, \
+             the same shape as the German Lebenslauf"
+        );
+        assert!(
+            position(order, &SectionId::Education) < position(order, &SectionId::Skills),
+            "Education must not be buried under Skills on the Italian order"
+        );
+        assert!(
+            position(order, &SectionId::Certifications) < position(order, &SectionId::Skills),
+            "Certifications must not be buried under Skills on the Italian order"
+        );
+        // The reviewable call this order makes on purpose: Languages before
+        // Skills, the one spot it does NOT mirror `DE_ORDER`.
+        assert!(
+            position(order, &SectionId::Languages) < position(order, &SectionId::Skills),
+            "Italian Languages must precede Skills — Europass nests language \
+             competence as the FIRST skills subsection, opposite of the German order"
+        );
+    }
+
+    /// Mirrors `german_market_aliases_all_resolve_to_the_de_order`: Italy has
+    /// only ONE live spelling to accept (see the module doc comment), but the
+    /// case/whitespace handling still needs covering, and the market must
+    /// resolve to something OTHER than the silent US default.
+    #[test]
+    fn italian_market_resolves_to_the_it_order() {
+        for market in ["it", "IT", "  it  "] {
+            assert_eq!(
+                section_order_for(market),
+                IT_ORDER,
+                "market {market:?} must resolve to the Italian order"
+            );
+        }
+        assert_ne!(
+            section_order_for("it"),
+            DEFAULT_ORDER,
+            "an Italian market must not silently fall back to the US-shaped default"
+        );
+    }
+
+    #[test]
     fn unknown_market_falls_back_to_default() {
         assert_eq!(section_order_for("zz"), DEFAULT_ORDER);
         assert_eq!(section_order_for(""), DEFAULT_ORDER);
         assert_eq!(section_order_for("  De  "), DE_ORDER);
     }
 
+    /// The producer side's chosen vocabulary must not collide with the
+    /// recognizer's own heading buckets (`documents::evidence::classify_section`)
+    /// — a collision would file a re-parsed/regenerated section under the
+    /// WRONG bucket. Verified by actually calling the classifier, not by
+    /// eyeballing its substring lists.
+    ///
+    /// The two REJECTED German alternatives are asserted here too, as the
+    /// negative case that justifies picking the words used above them:
+    /// "Sprachkenntnisse" (contains "kenntnis") reads as Skills, and
+    /// "Weiterbildung" (contains "bildung") reads as Education, colliding
+    /// with "Ausbildung".
     #[test]
-    fn prompt_list_renders_canonical_names_in_order() {
-        assert_eq!(
-            section_order_prompt_list("us"),
-            "Summary, Experience, Skills, Projects, Education, Certifications, \
-             Languages, Awards, Publications"
-        );
-        assert_eq!(
-            section_order_prompt_list("de"),
-            "Summary, Experience, Education, Certifications, Skills, Languages, \
-             Projects, Awards, Publications"
-        );
+    fn localized_headers_do_not_collide_with_the_recognizers_buckets() {
+        use crate::documents::evidence::{classify_section, SectionKind};
+
+        // German — the traps this branch's fix specifically avoids.
+        assert_eq!(classify_section("Zertifikate"), SectionKind::Other);
+        assert_eq!(classify_section("Sprachen"), SectionKind::Other);
+        assert_eq!(classify_section("Sprachkenntnisse"), SectionKind::Skills);
+        assert_eq!(classify_section("Weiterbildung"), SectionKind::Education);
+
+        // Italian.
+        assert_eq!(classify_section("Progetti"), SectionKind::Projects);
+        assert_eq!(classify_section("Certificazioni"), SectionKind::Other);
+        assert_eq!(classify_section("Lingue"), SectionKind::Other);
+        assert_eq!(classify_section("Riconoscimenti"), SectionKind::Other);
+        assert_eq!(classify_section("Pubblicazioni"), SectionKind::Other);
     }
 }

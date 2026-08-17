@@ -109,6 +109,7 @@ impl LocaleProfile {
             "fr" => Self::fr(),
             "nl" => Self::nl(),
             "eu" => Self::eu(),
+            "it" => Self::it(),
             _ => Self::intl(),
         }
     }
@@ -117,7 +118,7 @@ impl LocaleProfile {
     fn is_known_region(token: &str) -> bool {
         matches!(
             token,
-            "us" | "uk" | "gb" | "de" | "at" | "ch" | "fr" | "nl" | "eu" | "dach"
+            "us" | "uk" | "gb" | "de" | "at" | "ch" | "fr" | "nl" | "eu" | "dach" | "it"
         )
     }
 
@@ -130,6 +131,7 @@ impl LocaleProfile {
             Self::fr(),
             Self::nl(),
             Self::eu(),
+            Self::it(),
             Self::intl(),
         ]
     }
@@ -204,6 +206,31 @@ impl LocaleProfile {
     pub fn eu() -> LocaleProfile {
         LocaleProfile {
             id: "eu",
+            page_size: PageSize::A4,
+            photo: PhotoPolicy::Optional,
+            max_pages: 3,
+        }
+    }
+
+    /// Italy — A4, photo optional, Europass-length tolerance.
+    ///
+    /// Every field here numerically matches [`Self::eu()`] — Italy has no
+    /// distinct paper size or photo convention beyond the generic-EU/Europass
+    /// baseline, and `locale::resume::IT_ORDER`'s doc comment independently
+    /// grounds the Italian CV in the same Europass reference format that
+    /// justifies `eu()`'s 3-page tolerance (German-style itemised history
+    /// rather than a US-style 2-page summary).
+    ///
+    /// This is still its own constructor, not an `"it" => Self::eu()` alias,
+    /// because the **id** must stay distinct: `recommend::pick_locale`
+    /// forwards this id verbatim as the export `market` string, and
+    /// `locale::resume::section_order_for` matches the literal `"it"` to
+    /// select `IT_ORDER`. Aliasing to `eu()` (id `"eu"`) would resolve the
+    /// page/photo conventions correctly but silently hand an Italian user the
+    /// DEFAULT section order again — the exact bug this profile exists to fix.
+    pub fn it() -> LocaleProfile {
+        LocaleProfile {
+            id: "it",
             page_size: PageSize::A4,
             photo: PhotoPolicy::Optional,
             max_pages: 3,
@@ -300,16 +327,16 @@ mod tests {
     #[test]
     fn all_markets_are_distinct_and_present() {
         let all = LocaleProfile::all();
-        assert_eq!(all.len(), 7);
+        assert_eq!(all.len(), 8);
         let ids: std::collections::HashSet<&str> = all.iter().map(|p| p.id).collect();
-        for id in ["us", "uk", "dach", "fr", "nl", "eu", "en"] {
+        for id in ["us", "uk", "dach", "fr", "nl", "eu", "it", "en"] {
             assert!(ids.contains(id), "missing market {id}");
         }
     }
 
     #[test]
     fn non_us_markets_are_a4() {
-        for id in ["uk", "de", "fr", "nl", "eu", "intl"] {
+        for id in ["uk", "de", "fr", "nl", "eu", "it", "intl"] {
             assert_eq!(
                 LocaleProfile::get(id).page_size,
                 PageSize::A4,
@@ -320,11 +347,11 @@ mod tests {
 
     #[test]
     fn max_pages_follows_the_market_not_the_paper_size() {
-        // Anglophone + FR/NL cap at 2; DACH and generic-EU tolerate 3.
+        // Anglophone + FR/NL cap at 2; DACH, generic-EU, and IT tolerate 3.
         for id in ["us", "uk", "fr", "nl", "en", "zz"] {
             assert_eq!(LocaleProfile::get(id).max_pages, 2, "{id} should cap at 2");
         }
-        for id in ["de", "at", "ch", "eu"] {
+        for id in ["de", "at", "ch", "eu", "it"] {
             assert_eq!(LocaleProfile::get(id).max_pages, 3, "{id} should allow 3");
         }
         // Resolves through locale tags, like every other profile field.
@@ -333,5 +360,28 @@ mod tests {
         // US is Letter but still caps at 2 — length is not paper size.
         assert_eq!(LocaleProfile::get("us").page_size, PageSize::Letter);
         assert_eq!(LocaleProfile::get("us").max_pages, 2);
+    }
+
+    /// The gap this change closes: before this, `LocaleProfile::get("it")`
+    /// fell through to `intl()` (id "en", photo Never, 2 pages), which made
+    /// `recommend::pick_locale` forward "en" downstream — the id
+    /// `locale::resume::section_order_for` reads to select a market's section
+    /// order — so an Italian user's already-committed `IT_ORDER` was
+    /// unreachable on the auto-recommendation path.
+    #[test]
+    fn italy_resolves_to_a_dedicated_profile_not_the_english_default() {
+        let it = LocaleProfile::get("it");
+        assert_eq!(
+            it.id, "it",
+            "must not silently collapse to \"en\" or \"eu\""
+        );
+        assert_ne!(it.id, "en");
+        assert_eq!(it.page_size, PageSize::A4);
+        assert_eq!(it.photo, PhotoPolicy::Optional);
+        assert_eq!(it.max_pages, 3);
+        // Case/whitespace/locale-tag handling, like every other market.
+        assert_eq!(LocaleProfile::get("IT"), it);
+        assert_eq!(LocaleProfile::get("  it  "), it);
+        assert_eq!(LocaleProfile::get("it-IT"), it);
     }
 }
