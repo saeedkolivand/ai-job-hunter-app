@@ -82,20 +82,26 @@ policy forbids autocomplete), "opt-in location autocomplete" (it is not, by desi
 **Target language**:
 The language the output résumé or cover letter must be written in. Wire `targetLanguage` (TS) or Rust
 `target_language`, persisted as `ai_generations.target_language`. Derived from the job ad's detected language,
-never from the source résumé; never auto-guessed. An empty value on the wire means the detection was
-not confident enough to persist — the default is used and no value is stored. See **source résumé language**
-and **job-ad language** below for the evidence sources.
+never from the source résumé. An empty value on the wire means detection did not succeed: the run still
+uses a default, but nothing is stored, so a guess can never become the preferred value on a later run.
+See **source résumé language** and **job-ad language** below for the evidence sources.
 _Avoid_: using the source-résumé language as a fallback, guessing when detection is absent
 
 **Source résumé language**:
-The language the candidate's stored résumé is written in. Wire `resumeLanguage`, stored as
-`DocumentRecord.locale`. Diagnostic only; never used as the generation target. Set only if a language
-was **confidently** detected on document import or during a prior generation; a guess is never persisted.
+The language the candidate's stored résumé is written in. Wire `resumeLanguage`, persisted as
+`ai_generations.resume_language` — a different column from `DocumentRecord.locale`, which is the stored
+document's own tag. Diagnostic only; never used as the generation target, and never read by the tailor
+flow's language resolution. Written unconditionally by `extractMetadata`, so unlike **target language**
+it carries no confidence guarantee — which is exactly why it must not be consulted as a target.
 _Avoid_: using this to set the target language (the job ad is the authority); conflating with `target_language`
 
 **Job-ad language**:
 The posting's own language, detected on ingest. Wire `jobAdLanguage`. The primary evidence for determining
-the **target language**; when confident (≥0.9 detection confidence), it commits the target. Distinct from
+the **target language**. Detected renderer-side with **franc** (`detectLanguage`), which reports no
+confidence score — it gates on length and returns `'unknown'` when it cannot tell, and only a non-unknown
+answer commits the target. Do not confuse this with `MIN_DETECTION_CONFIDENCE`, the ≥0.9 bar on Rust's
+**whatlang**-based `detected_language`, which validates the GENERATED output after the fact and never
+picks the target. Two detectors, two questions. Distinct from
 the posting's country market (a German posting can still target English, e.g. a tech company branch
 in Germany hiring globally). Handled by the scraper/import path; not user-configurable.
 _Avoid_: conflating with market/locale; assuming it matches the company's location country

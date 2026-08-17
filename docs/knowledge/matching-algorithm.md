@@ -66,7 +66,12 @@ Before scoring, the pipeline detects the target language (the language the outpu
 - The **renderer** uses **franc** (`packages/shared/src/language-detection.ts`) to pick the target language from the job ad.
 - The **Rust validation layer** uses **whatlang** (`apps/desktop/src-tauri/src/documents/keywords.rs::detected_language`) to verify the generated output matches the target.
 
-When the two detectors disagree on the job ad's language, the validation guard goes quiet rather than raising a false Critical — consistent with the validation module's posture: a check that cannot be made reliably goes quiet rather than guesses. This is a real limit and belongs here for context: coverage score and keyword-only scoring use language detection via `coverage_score()`; the renderer's language choice and Rust's validation are not perfectly in sync, but disagreement is rare and is handled gracefully.
+Fail-quiet is **not** uniform across the two reads, and the difference matters:
+
+- **Corroborating the target** (whatlang reading the job ad or the source résumé) fails quiet. If neither witness confidently reads as the target, no Critical is raised — the validation module's stated posture, that a check which cannot be made reliably goes quiet rather than guessing.
+- **Reading the generated document** fails **loud**. A confident but wrong read there produces a Critical on a truthful document, which suppresses `keyword_coverage` and every alignment finding. whatlang's `confidence()` is a top-1-vs-top-2 margin rather than a probability, so a terse noun-phrase résumé can be read as the wrong language at maximum confidence. This is a known open limit, not a theoretical one.
+
+Coverage score and keyword-only scoring use language detection via `coverage_score()`; the renderer's language choice and Rust's validation are not perfectly in sync.
 
 Language-specific stemming for keyword matching uses `languages_align` (`documents/keywords.rs`), a separate function from `detected_language`; the two ask different questions and must never drift. See `detected_language`'s doc comment and the language-validation module docs for details.
 
