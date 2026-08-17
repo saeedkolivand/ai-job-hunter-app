@@ -168,6 +168,32 @@ fn locale_defaults_to_international_english() {
     assert_eq!(r.locale, "en");
 }
 
+/// The Italy gap this arm closes: before it, an Italian job ad's language
+/// fell through the `match lang` default and resolved to "en" — the same id
+/// as the international default — so an Italian job never reached the
+/// dedicated `LocaleProfile::it()` (A4 / photo optional / 3-page budget) or,
+/// downstream, `locale::resume::IT_ORDER`.
+#[test]
+fn locale_follows_italian_job_ad_language() {
+    let mut s = signals("Sviluppatore Software", "mid", &["Java"]);
+    s.job_ad_language = Some("it".to_string());
+    let r = recommend(&s);
+    assert_eq!(r.locale, "it");
+    assert_ne!(r.locale, "en");
+}
+
+/// `target_country` for Italy resolves through the same `LocaleProfile`
+/// registry `us`/`gb` already do (see `target_country_wins_over_language`),
+/// so this exercises the country branch specifically, not just the language
+/// fallback covered above.
+#[test]
+fn target_country_it_resolves_to_the_italian_market() {
+    let mut s = signals("Software Engineer", "mid", &["Go"]);
+    s.job_ad_language = Some("en".to_string());
+    s.target_country = Some("it".to_string());
+    assert_eq!(recommend(&s).locale, "it");
+}
+
 #[test]
 fn target_country_wins_over_language() {
     // A US posting written in English → US (Letter), not the international default.
