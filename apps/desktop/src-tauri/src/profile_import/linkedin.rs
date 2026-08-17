@@ -88,20 +88,28 @@ async fn fetch_page(url: &str) -> AppResult<String> {
     // currently works. Board scraping and the login flow still use
     // `board_login::build_authed_client` elsewhere; this file just never does.
     let has_session = has_linkedin_session();
-    let client = crate::net::http::shared();
 
-    let resp = client
-        .get(url)
-        .timeout(std::time::Duration::from_secs(15))
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .send()
+    // `url` is user-pasted / attacker-influenced input (the classic SSRF
+    // surface), so it must never reach a plain client — route through
+    // `get_guarded_following_redirects` (net/http.rs), this repo's SSRF
+    // control: it IP-validates the host (rejecting a private/loopback/
+    // cloud-metadata literal or a DNS-rebinding target) before connecting, and
+    // re-validates every redirect hop the same way. Plain `get_guarded`
+    // (single-hop, `Policy::none()`) is not enough here — LinkedIn 301s the
+    // bare apex (`linkedin.com/in/x`, which `detect_platform` accepts) to
+    // `www.linkedin.com/in/x`, so a no-redirect fetch would die on the very
+    // first hop for a large share of legitimately pasted URLs. The small hop
+    // budget mirrors `scraping::scrape_url::resolve_uncached`'s reasoning.
+    let resp = crate::net::http::get_guarded_following_redirects(url, 3)
         .await
         .map_err(|e| {
-            // `.without_url()` strips the request URL (which carries the profile
-            // slug — PII) from the error before it reaches the log or the UI.
+            // Log the error's stable category, not its message: an `AppError`
+            // built from a `reqwest::Error` (`AppError::from`) does not strip
+            // the request URL the way the old `.without_url()` call did, and
+            // the profile slug in it is PII.
             log::warn!(
-                "[profile_import] linkedin fetch failed: has_session={has_session} error={}",
-                e.without_url()
+                "[profile_import] linkedin fetch failed: has_session={has_session} error_code={}",
+                e.code()
             );
             AppError::Network("could not reach linkedin".to_string())
         })?;
@@ -346,5 +354,49 @@ mod tests {
                 "status {status} message must not suggest logging in: {msg:?}"
             );
         }
+    }
+
+    // ── fetch_page: the fetch path must be SSRF-guarded ───────────────────────
+    //
+    // `url` is user-pasted, attacker-influenced input, so `fetch_page` must
+    // route it through `net::http::get_guarded_following_redirects` (IP
+    // validation before connecting) rather than the plain pooled `shared()`
+    // client. Asserting only `Err(_)` here would pass for the wrong reason —
+    // an unguarded client hitting an unlistened loopback port also errors
+    // (connection refused). Instead this test proves the stronger property: a
+    // REAL, listening loopback socket never receives a connection attempt at
+    // all, which only a pre-connect SSRF rejection (not a failed connect)
+    // explains.
+
+    #[tokio::test]
+    async fn fetch_page_never_dials_the_loopback_literal_it_rejects() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+        listener
+            .set_nonblocking(true)
+            .expect("set listener non-blocking");
+        let port = listener.local_addr().unwrap().port();
+
+        let err = fetch_page(&format!("http://127.0.0.1:{port}/in/x"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Network(_)), "got {err:?}");
+
+        // Poll briefly for a connection a guarded fetch must never make. The
+        // guarded rejection is a synchronous, pre-network check, so under
+        // correct code this returns false almost immediately; 300ms is ample
+        // margin without making the test slow.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+        let mut connected = false;
+        while std::time::Instant::now() < deadline {
+            if listener.accept().is_ok() {
+                connected = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            !connected,
+            "fetch_page dialed the rejected loopback socket — the SSRF guard was bypassed"
+        );
     }
 }
