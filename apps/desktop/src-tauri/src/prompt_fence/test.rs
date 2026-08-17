@@ -643,6 +643,7 @@ const EXPECTED_FENCE_TAGS: &[&str] = &[
     "source_entry",
     "project_seed",
     "generated_resume",
+    "document_context",
     "humanize_document",
     "humanize_findings",
     "top_requirements",

@@ -654,6 +654,65 @@ fn survival_tokens(company: &str) -> Vec<String> {
     identity_tokens(company, MIN_SURVIVAL_COMPANY_TOKEN_CHARS)
 }
 
+/// The generated document's own EXPERIENCE section(s), lowercased and joined —
+/// the ONLY place an employment entry legitimately lives.
+///
+/// [`company_survives`] used to search the WHOLE document. That let a Summary
+/// sentence that merely NAMES a former employer ("…at Acme Payments and
+/// Globex Logistics") count as evidence the entry survived, even after a
+/// repair round deleted the entire Globex Logistics entry from EXPERIENCE —
+/// the round-worse guard never saw a `factual.dropped_role`, and a job
+/// silently vanished from the résumé. Scoping the search to the section an
+/// entry actually lives in closes that hole while staying deliberately
+/// generous WITHIN it: a legitimate rewrite may reword a company's
+/// surrounding bullets, and every line of the section (not just its heading)
+/// is still searched.
+///
+/// Falls back to the WHOLE document when the generated résumé has no
+/// `SectionKind::Experience` section at all. "Absent" is not the same fact as
+/// "deleted", and conflating them is a false accusation on a truthful
+/// document: `classify_section` recognises `work experience` /
+/// `berufserfahrung` / `employment` and a few more, but NOT `Work History` or
+/// `Selected Roles`, which land in `Other`. Measured on a résumé carrying both
+/// roles verbatim — heading `WORK EXPERIENCE` gives 0 issues, `WORK HISTORY`
+/// gives 2 `factual.dropped_role` Criticals. Those are terminal:
+/// `criticals_by_section` resolves them to `SectionKey::Experience`, which
+/// `find` cannot locate, so no repair runs and the user is told two jobs
+/// vanished from a document that still contains them.
+///
+/// The sibling `project_link_issues` already guards its absent section
+/// explicitly; this mirrors it, preferring the pre-scoping behaviour (a
+/// possible MISS) over a guaranteed false Critical — the scoping exists to
+/// catch a rare regression and must not manufacture a common one.
+///
+/// **Existence, not emptiness, decides the fallback.** An earlier version
+/// tested `scoped.is_empty()` — literally no text under the Experience
+/// heading — which conflates two different situations: "no Experience section
+/// exists" (fall back, correctly) and "an Experience section exists, but its
+/// body was wiped" (also empty, but every entry under it WAS dropped). The
+/// second case searched the whole document instead, found the employer's name
+/// in an untouched Summary sentence, and read a wiped work history as fine.
+/// The fallback is now gated on whether a `SectionKind::Experience` section is
+/// present at all, so a present-but-wiped section stays scoped to its own
+/// (empty) text and every entry correctly reads as dropped.
+fn generated_experience_lower(sections: &[Section]) -> String {
+    let joined = |only_experience: bool| {
+        sections
+            .iter()
+            .filter(|s| !only_experience || s.kind == SectionKind::Experience)
+            .flat_map(|s| s.lines.iter())
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_lowercase()
+    };
+    let has_experience = sections.iter().any(|s| s.kind == SectionKind::Experience);
+    if !has_experience {
+        return joined(false);
+    }
+    joined(true)
+}
+
 /// Whether `company` still appears in the generated text.
 ///
 /// A long token matches as a SUBSTRING, because German compounds a company name
@@ -718,11 +777,13 @@ pub(super) fn count_roles(sections: &[Section]) -> usize {
 /// decision, whereas a company vanishing from the document entirely is the loss
 /// the candidate would never notice until an interviewer did.
 fn dropped_role_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    let generated_lower = ctx.input.generated.to_lowercase();
+    // Scoped to the generated EXPERIENCE section(s), not the whole document —
+    // see [`generated_experience_lower`].
+    let generated_lower = generated_experience_lower(&ctx.generated_sections);
     entries(&ctx.source_sections)
         .into_iter()
         // Bound the scan before the expensive part: each surviving entry
-        // substring-searches the whole generated document. See
+        // substring-searches the generated EXPERIENCE text. See
         // [`MAX_SCANNED_ENTRIES`].
         .take(MAX_SCANNED_ENTRIES)
         .filter_map(|(company, dates)| {
@@ -1065,15 +1126,33 @@ fn project_entry_name(entry: &[&ParsedLine]) -> String {
 /// registered severity and an i18n key in both locales for a message that would
 /// read "you did a normal thing".)
 fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    let source = ctx.source_section_of_kind(SectionKind::Projects);
-    let Some(source) = source else {
+    // ALL source Projects sections, unioned — not just the first. `SECTION_NAMES`
+    // recognises both "projects" and "side projects", and both classify
+    // `Projects`, so a second source Projects section is ordinary, not rare.
+    // Reading only the first left the second one's links out of the sourced
+    // set, so a document that never changed a thing accused itself of
+    // inventing its own link — and unclearably: `criticals_by_section` routes
+    // the finding to the FIRST Projects section, which never contained it.
+    let mut source_sections = ctx
+        .source_sections_of_kind(SectionKind::Projects)
+        .peekable();
+    if source_sections.peek().is_none() {
         return Vec::new(); // Nothing to compare against.
-    };
-    let Some(generated) = ctx.section_of_kind(SectionKind::Projects) else {
+    }
+    let source_entries: Vec<(String, Vec<String>)> =
+        source_sections.flat_map(project_entry_links).collect();
+    // ALL generated Projects sections, not just the first — see
+    // `Analysis::generated_sections_of_kind`'s doc. An invented link that
+    // lands in a SECOND Projects section (a duplicate the model produced, or
+    // one already present in an imported résumé) must not go unchecked.
+    let mut generated_sections = ctx
+        .generated_sections_of_kind(SectionKind::Projects)
+        .peekable();
+    if generated_sections.peek().is_none() {
         return Vec::new(); // The section was cut, not rewritten — see above.
-    };
-    let source_entries = project_entry_links(source);
-    let generated_entries = project_entry_links(generated);
+    }
+    let generated_entries: Vec<(String, Vec<String>)> =
+        generated_sections.flat_map(project_entry_links).collect();
     let flatten = |entries: &[(String, Vec<String>)]| -> Vec<String> {
         entries.iter().flat_map(|(_, u)| u.clone()).collect()
     };
@@ -1111,8 +1190,19 @@ fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
             ));
         }
     }
+    // `generated_urls` is the UNION of every generated Projects section
+    // (`Analysis::generated_sections_of_kind`'s doc) — the same invented URL
+    // can appear in two of them (a duplicate the model produced, or one
+    // already present in an imported résumé), and without a seen-set each
+    // occurrence pushed its own identical Critical. Deduped on the SAME
+    // `canonical_link` key the comparison itself uses, so two spellings of one
+    // invented resource still collapse to one finding — `HashSet::insert`
+    // returning `false` on the second occurrence is exactly "already
+    // reported".
+    let mut reported_invented: HashSet<String> = HashSet::new();
     for url in &generated_urls {
-        if !source_keys.contains(&canonical_link(url)) {
+        let key = canonical_link(url);
+        if !source_keys.contains(&key) && reported_invented.insert(key) {
             issues.push(issue(
                 FACTUAL_ALTERED_PROJECT_LINK,
                 Some("Projects"),

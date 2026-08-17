@@ -183,6 +183,17 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         "source_entry",
         "project_seed",
         "generated_resume",
+        // The repair turn's own sibling-context block
+        // (`pipeline::resume::prompts::repair_user`'s `<document_context>`,
+        // built by `stages::sections::context_anchor`): an anchor of the
+        // OTHER already-written sections (the Summary, one Experience
+        // bullet), composed alongside `resume_section` and `section_issues`
+        // in the SAME user turn. It carries PRIOR-STAGE MODEL OUTPUT — the
+        // very document this repair round is correcting one section of — so
+        // it is exactly as untrusted as `resume_strategy` above, and a
+        // forged sibling riding in through the résumé, the section text, or
+        // the user's own note must not be able to pose as it.
+        "document_context",
         // PR-2's `humanize` stage (`pipeline::resume::prompts::humanize_user`):
         // the WHOLE document being rewritten and the flagged-line findings
         // list, composed into one turn exactly like the tags above it. A
