@@ -104,7 +104,14 @@
       <div class="small">Powered by <a rel="noopener" href="https://github.com/marketplace/actions/continuous-benchmark">github-action-benchmark</a></div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.2/dist/Chart.min.js"></script>
+    <!--
+      Self-hosted, not CDN-loaded: this origin also stores a GitHub PAT in
+      localStorage for /mission-control (see ../../src/lib/mission-control/config.ts
+      and ../../src/components/mission-control/CspMeta.tsx's ORIGIN INVARIANT) —
+      no third-party script may run on ANY page here, ever. See chart.min.js's
+      header for source/version/license/hash provenance.
+    -->
+    <script src="chart.min.js"></script>
     <script src="data.js"></script>
     <script id="main-script">
       'use strict';
