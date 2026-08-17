@@ -94,6 +94,43 @@ pub fn env_override(key: &str) -> Option<String> {
     std::env::var(key).ok()
 }
 
+/// Test-only RAII scope for the data dir, so a test needing an isolated one
+/// does not have to touch `AJH_DATA_DIR` itself.
+///
+/// This module's own doc calls it the **sole owner** of that variable, and R4
+/// enforces it — but R4's test exempts test files, so the rule was enforceable
+/// everywhere except the place a test would actually reach for it. This closes
+/// that gap: a caller names a directory, never the variable.
+///
+/// Restores on `Drop` rather than at the end of the test body, so a panicking
+/// or early-returning assertion cannot leak the override into whatever runs
+/// next. Callers still need `#[serial]` — the variable is process-global, and
+/// a guard cannot serialize what it cannot see.
+#[cfg(test)]
+pub(crate) struct DataDirGuard(Option<std::ffi::OsString>);
+
+#[cfg(test)]
+impl DataDirGuard {
+    /// Point `data_dir()` at `path` until the guard drops.
+    pub(crate) fn set(path: &std::path::Path) -> Self {
+        let previous = std::env::var_os(DATA_DIR_ENV);
+        // SAFETY: test-only, and callers hold `#[serial]`.
+        unsafe { std::env::set_var(DATA_DIR_ENV, path) };
+        Self(previous)
+    }
+}
+
+#[cfg(test)]
+impl Drop for DataDirGuard {
+    fn drop(&mut self) {
+        // SAFETY: as above — restoring exactly what was read in `set`.
+        match self.0.take() {
+            Some(previous) => unsafe { std::env::set_var(DATA_DIR_ENV, previous) },
+            None => unsafe { std::env::remove_var(DATA_DIR_ENV) },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,7 +138,12 @@ mod tests {
     // Env-var override and default are exercised in a single test: `AJH_DATA_DIR`
     // is process-global, so splitting them into parallel tests races (one's
     // remove_var can land between the other's set_var and read).
+    // `#[serial]` because this mutates the process-global var directly (it is
+    // testing the resolver itself, so it cannot go through `DataDirGuard`).
+    // Without it, it races any other `#[serial]` mutator — which was a real
+    // gap once a second test elsewhere began scoping the same variable.
     #[test]
+    #[serial_test::serial]
     fn data_dir_honors_env_then_falls_back() {
         // Override via env var.
         unsafe {
