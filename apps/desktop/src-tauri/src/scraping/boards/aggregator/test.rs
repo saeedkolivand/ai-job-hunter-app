@@ -1,3 +1,4 @@
+use super::freehire::fetch_freehire;
 use super::*;
 use crate::scraping::http::FetchOptions;
 
@@ -1294,17 +1295,37 @@ fn block_on<F: std::future::Future>(fut: F) -> F::Output {
         .block_on(fut)
 }
 
-/// Unconfigured aggregator (store readable, no keys) → `needs_keys() == true`, so
-/// the engine skips it with "needs-keys" instead of a silent keyless-empty.
+/// An aggregator with NO keys at all no longer reports `needs_keys()` — the
+/// keyless freehire tier can answer a search on its own, so skipping the board
+/// would skip the one provider a fresh install actually has.
+///
+/// This inverts the previous contract deliberately. `needs-keys` existed
+/// because a keyless aggregator search could only ever come back empty; that
+/// premise is what changed, not the skip's reasoning. The cost, accepted: a
+/// keyless user whose freehire search finds nothing now reads "no jobs found"
+/// rather than a prompt to add keys. Settings → API Keys still surfaces the
+/// keyed tiers, and showing a "needs keys" skip to a user whose search WOULD
+/// have returned jobs is the worse of the two failures.
+///
+/// A keyring READ FAULT is still not a needs-keys skip — that is
+/// `aggregator_store_read_failure_is_not_a_needs_keys_skip`, which is
+/// unaffected because it never depended on this returning true.
+///
+/// Mutation check: dropped `FreehireProvider` from
+/// `aggregator_has_configured_provider` — RAN, went red here, restored.
 #[test]
-fn aggregator_needs_keys_when_unconfigured() {
+fn keyless_aggregator_still_runs_because_freehire_needs_no_key() {
     let _guard = AGG_KEYRING_LOCK.lock().unwrap();
     crate::credentials::install_mock_keyring();
     clear_aggregator_slots();
 
     assert!(
-        AggregatorScraper.needs_keys(),
-        "an aggregator with no configured provider keys must report needs_keys()==true"
+        FreehireProvider::new().is_configured(),
+        "the keyless tier must report configured with no credential present"
+    );
+    assert!(
+        !AggregatorScraper.needs_keys(),
+        "with a keyless tier available the board must run rather than skip for keys"
     );
 }
 
@@ -4356,5 +4377,310 @@ fn jsearch_url_carries_the_amount_derived_num_pages() {
     assert!(
         three.contains("query=engineer%20in%20Berlin"),
         "the combined query must stay URL-encoded; got: {three}"
+    );
+}
+
+// ── freehire (keyless tier) ────────────────────────────────────────────────────
+
+/// A 2xx response round-trips through `fetch_freehire` into a `"freehire-"`
+/// -prefixed posting, and the description is passed through UNCHANGED — the
+/// request asks for `description_format=markdown`, so unlike Jooble's HTML
+/// snippet there is nothing to convert, and converting anyway would mangle it.
+#[tokio::test]
+async fn freehire_ok_response_maps_end_to_end() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"data":[{"public_slug":"senior-rust-acme-x1","title":"Senior Rust Engineer",
+                "company":"Acme","location":"Munich, Bavaria","url":"https://apply.example.com/j/1",
+                "description":"Our mission at **Acme** is to ship.","posted_at":"2026-08-08T02:25:32Z",
+                "source":"workable","work_mode":"remote"}],"meta":{"total":1}}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let items = fetch_freehire(&server.uri(), "rust", "de", false, None, make_token())
+        .await
+        .expect("a 2xx freehire response must map");
+
+    assert_eq!(items.len(), 1);
+    let job = &items[0];
+    assert_eq!(
+        job.external_id.as_deref(),
+        Some("freehire-senior-rust-acme-x1")
+    );
+    assert_eq!(job.id, "aggregator:freehire-senior-rust-acme-x1");
+    assert_eq!(job.title, "Senior Rust Engineer");
+    assert_eq!(job.company, "Acme");
+    assert_eq!(job.source, "aggregator");
+    assert_eq!(
+        job.description.as_deref(),
+        Some("Our mission at **Acme** is to ship."),
+        "markdown was requested, so the description must survive verbatim — an \
+         HTML-to-markdown pass here would escape or strip the emphasis"
+    );
+    assert!(job.posted_at.is_some(), "an RFC3339 posted_at must parse");
+    assert_eq!(
+        job.extra.get("aggregatorSource").and_then(|v| v.as_str()),
+        Some("workable"),
+        "freehire's own upstream must be carried so a posting is not attributed \
+         to freehire itself"
+    );
+}
+
+/// The request is built from the PUBLISHED spec: the documented
+/// `/agent/jobs/search` path, `q` as the full-text parameter (NOT the
+/// undocumented `/jobs/search`'s `query`), and `description_format=markdown` so
+/// scoring never needs a per-result detail fetch.
+///
+/// Mutation check: changed `q=` to `query=` in `fetch_freehire` — RAN, went red
+/// here, restored. Same for dropping `description_format`.
+#[tokio::test]
+async fn freehire_request_follows_the_published_spec() {
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/agent/jobs/search"))
+        .and(query_param("q", "rust engineer"))
+        .and(query_param("description_format", "markdown"))
+        .and(query_param("countries", "de"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    fetch_freehire(
+        &server.uri(),
+        "rust engineer",
+        "de",
+        false,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("the spec-shaped request must succeed");
+    // MockServer verifies `.expect(1)` on drop: a request that missed any of the
+    // matchers above leaves it unsatisfied and panics here.
+}
+
+/// A GUESSED country must NOT become a `countries` filter. `AggregatorScraper`
+/// defaults `country` to "de" when the caller supplied none, and pinning the
+/// keyless tier to that guess is precisely the guessed-market bug already fixed
+/// for Adzuna — a search with no country would silently become German-only.
+///
+/// Mutation check: dropped the `!country_guessed` condition — RAN, went red
+/// here, restored.
+#[tokio::test]
+async fn freehire_does_not_filter_by_a_guessed_country() {
+    use wiremock::matchers::{method, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(query_param_is_missing("countries"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    fetch_freehire(&server.uri(), "rust", "de", true, None, make_token())
+        .await
+        .expect("a guessed-country search must still run");
+}
+
+/// Non-2xx surfaces as a prefixed `Err` at the `fetch_freehire` level, so the
+/// failure stays observable and testable...
+#[tokio::test]
+async fn freehire_non_2xx_maps_to_prefixed_err() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("upstream down"))
+        .mount(&server)
+        .await;
+
+    let msg = fetch_freehire(&server.uri(), "rust", "de", false, None, make_token())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        msg.starts_with("freehire:"),
+        "the error must name the provider; got: {msg}"
+    );
+    assert!(
+        msg.contains("503"),
+        "the status must be carried; got: {msg}"
+    );
+}
+
+/// ...but the PROVIDER swallows it to `Ok(empty)`. Nobody configured this tier
+/// — it is always on — so a third party's outage must never become a board
+/// error on a search the user never pointed at them. This is the one provider
+/// where a failure is not the user's to read.
+///
+/// Mutation check: changed the `Err` arm in `FreehireProvider::search` to
+/// `Err(e)` — RAN, went red here, restored.
+#[tokio::test]
+async fn freehire_provider_degrades_silently_rather_than_failing_the_board() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+        .mount(&server)
+        .await;
+
+    let result = FreehireProvider::with_base_url(server.uri())
+        .search("rust", "", "de", false, None, None, make_token())
+        .await;
+
+    assert!(
+        matches!(result, Ok(ref items) if items.is_empty()),
+        "the keyless tier must degrade to Ok(empty), never Err — got {result:?}"
+    );
+}
+
+/// A row missing the fields a posting cannot exist without (title, url) is
+/// DROPPED rather than mapped to a blank entry, and does not take the valid
+/// rows in the same response with it.
+#[tokio::test]
+async fn freehire_drops_unusable_rows_without_losing_the_page() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"data":[
+                {"title":"No URL","company":"A"},
+                {"url":"https://example.com/j/2","company":"B"},
+                {"public_slug":"ok-1","title":"Good","url":"https://example.com/j/3"}
+            ]}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let items = fetch_freehire(&server.uri(), "rust", "de", false, None, make_token())
+        .await
+        .expect("a page with unusable rows must still map the usable ones");
+
+    assert_eq!(items.len(), 1, "only the complete row maps");
+    assert_eq!(items[0].title, "Good");
+}
+
+/// A slugless row keys off its URL, not a shared constant — otherwise every
+/// slugless posting in a page would collapse into one under `dedupe`.
+#[tokio::test]
+async fn freehire_slugless_rows_key_off_their_url_not_each_other() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"data":[
+                {"title":"One","url":"https://example.com/j/1"},
+                {"title":"Two","url":"https://example.com/j/2"}
+            ]}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let items = fetch_freehire(&server.uri(), "rust", "de", false, None, make_token())
+        .await
+        .expect("slugless rows must map");
+
+    assert_eq!(items.len(), 2);
+    assert_ne!(
+        items[0].external_id, items[1].external_id,
+        "two slugless postings must not share one dedup key"
+    );
+}
+
+/// `limit` is clamped to the spec's 1..=100 range. Sending 0 or >100 is a 4xx
+/// on the real API, not a silent clamp, so an out-of-range `amount` would turn
+/// the whole tier off rather than just capping it.
+#[tokio::test]
+async fn freehire_clamps_limit_to_the_specs_range() {
+    use wiremock::matchers::{method, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(query_param("limit", "100"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    fetch_freehire(
+        &server.uri(),
+        "rust",
+        "de",
+        false,
+        Some(5_000),
+        make_token(),
+    )
+    .await
+    .expect("an over-large amount must clamp, not fail");
+}
+
+/// The keyless tier is LAST: a keyed provider's non-empty result short-circuits
+/// before freehire is ever consulted. Without this, adding an always-configured
+/// provider would quietly start mixing a keyless source into every search that
+/// Adzuna already answered.
+///
+/// Mutation check: moved the freehire block to the TOP of `primary_chain`,
+/// ahead of every keyed tier — RAN, went red here (wiremock's `.expect(0)`
+/// verification fired), restored. Note the weaker mutation "move it above the
+/// Jooble block" would NOT be caught: `primary_chain` short-circuits at Adzuna
+/// in this fixture, so freehire's position relative to Jooble is invisible to
+/// it. What this pins is "after the keyed tiers", not the exact rung.
+#[tokio::test]
+async fn freehire_is_not_consulted_when_a_keyed_tier_already_answered() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    // `.expect(0)`: any request at all fails verification on drop.
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![sample_posting("a-1", "adzuna")],
+        )),
+        Box::new(FreehireProvider::with_base_url(server.uri())),
+    ];
+
+    let items = primary_chain(
+        &providers,
+        "rust",
+        "",
+        "de",
+        false,
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a keyed Ok must resolve the chain");
+
+    assert_eq!(
+        items.len(),
+        1,
+        "the keyed provider's result must be returned"
     );
 }

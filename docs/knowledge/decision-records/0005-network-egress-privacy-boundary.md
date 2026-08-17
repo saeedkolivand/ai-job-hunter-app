@@ -19,7 +19,7 @@ The local-first privacy boundary is defined in terms of **storage and telemetry*
 Network egress is **permitted** and enumerated by class, each with a gating rule:
 
 1. **AI provider** (user-configured) — required for the core generate/match/answer features; the user chooses the provider and supplies the key.
-2. **Job boards and aggregators** (scraping) — the app's core function; disclosed. Sends only search parameters and fetches public postings.
+2. **Job boards and aggregators** (scraping) — the app's core function; disclosed. Sends only search parameters and fetches public postings. One aggregator tier (freehire) is **keyless**: it needs no credential, so unlike every other tier it can run on a fresh install before anything is configured — which is the whole reason it exists, since a keyless aggregator search could otherwise only ever return nothing. It stays inside this class because it sends the same thing the keyed tiers do (search keywords, and a country code only when the user picked one) and because it is tried LAST, after every keyed tier. Its failures degrade to empty rather than to a board error: nobody opted into it, so a third party's outage must not surface as an error on a search the user never aimed at them.
 3. **Web search** — optional, opt-in, off until the user enables it.
 4. **Updater** (GitHub releases) — a version check 10 s after launch, then every 4 h; sends only app version and OS/architecture.
 5. **Location autocomplete** — **offline by default**: a bundled GeoNames index (`apps/desktop/src-tauri/geodata/`, CC BY 4.0) answers virtually every query with no network call at all. Only a query the index cannot match reaches Photon (photon.komoot.io, OpenStreetMap/ODbL) as a fallback; it sends only the location text the user types and returns city/country only. Nominatim was retired here — its usage policy forbids autocomplete.
@@ -52,7 +52,7 @@ No runtime behavior changes: every current call already complies. The fix is to 
 
 - Privacy claims: `README.md` ("What It Does"), `SECURITY.md` ("Security posture").
 - Egress sites by class:
-  - Class 2 (Job boards/aggregators): `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs` (Adzuna), `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JSearch/RapidAPI, Jooble, Apify).
+  - Class 2 (Job boards/aggregators): `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs` (Adzuna), `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JSearch/RapidAPI, Jooble, Apify), `apps/desktop/src-tauri/src/scraping/boards/aggregator/freehire.rs` (freehire, keyless).
   - Class 3 (Web search): `apps/desktop/src-tauri/src/commands/ai_provider/search/mod.rs` (Exa).
   - Class 4 (Updater): `apps/desktop/src-tauri/tauri.conf.json` (endpoint configuration), `apps/desktop/src-tauri/src/updater/mod.rs` (polling loop), `apps/desktop/src-tauri/src/lib.rs` (setup hook).
   - Class 5 (Location autocomplete): `apps/desktop/src-tauri/src/commands/geocoding.rs` (Photon fallback; bundled index in `apps/desktop/src-tauri/geodata/`, see `apps/desktop/src-tauri/geodata/README.md` for license).

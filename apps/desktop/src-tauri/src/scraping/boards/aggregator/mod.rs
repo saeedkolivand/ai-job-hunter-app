@@ -43,8 +43,10 @@ use crate::scraping::types::{
 };
 
 mod adzuna;
+mod freehire;
 mod providers;
 use adzuna::*;
+use freehire::FreehireProvider;
 use providers::*;
 
 /// Below this many results from a supported market, a non-empty `where` retries
@@ -222,6 +224,7 @@ async fn primary_chain(
     let primary = providers.iter().find(|p| p.provider_id() == "adzuna");
     let fallback = providers.iter().find(|p| p.provider_id() == "jsearch");
     let jooble = providers.iter().find(|p| p.provider_id() == "jooble");
+    let freehire = providers.iter().find(|p| p.provider_id() == "freehire");
 
     // Track whether each provider was CONFIGURED but its call FAILED, so we can
     // distinguish "keys present, request failed" from "no keys at all" at the
@@ -370,7 +373,7 @@ async fn primary_chain(
                     // undocumented, so raising it is a separate decision from the
                     // amount-bounded page loop. Unchanged from before that loop.
                     None,
-                    signal,
+                    signal.clone(),
                 )
                 .await
             {
@@ -381,6 +384,43 @@ async fn primary_chain(
                     // Fall through to the sparse-guessed salvage / diagnostic below,
                     // same as a JSearch failure would without Jooble configured.
                 }
+            }
+        }
+    }
+
+    // Try freehire — the KEYLESS tier, below every keyed one.
+    //
+    // Reached only here, once no keyed provider produced a decisive result. It
+    // is ALWAYS "configured" (no key to have), so unlike the tiers above, this
+    // is what a fresh install actually searches with — and it is also why it
+    // must not pre-empt the sparse-guessed salvage or the diagnostic below
+    // unless it genuinely has jobs to show.
+    //
+    // Only a NON-EMPTY result short-circuits. Every keyed tier treats its own
+    // `Ok(empty)` as decisive ("this provider says there are no such jobs"),
+    // but that rule earns its keep from the user having chosen that provider.
+    // Nobody chose this one, so an empty answer from it is not evidence about
+    // the search — it must not swallow a configured provider's failure
+    // diagnostic or the salvaged guessed-market hits. `search` never returns
+    // `Err` here (it degrades internally, see `FreehireProvider::search`), so
+    // the error arm is unreachable defence rather than a live path.
+    if let Some(f) = freehire {
+        if f.is_configured() {
+            match f
+                .search(
+                    query,
+                    location,
+                    country,
+                    country_guessed,
+                    date_filter,
+                    amount,
+                    signal.clone(),
+                )
+                .await
+            {
+                Ok(items) if !items.is_empty() => return Ok(dedupe(items)),
+                Ok(_) => {}
+                Err(e) => log::warn!("[aggregator] freehire keyless tier failed: {e}"),
             }
         }
     }
@@ -653,6 +693,15 @@ fn aggregator_has_configured_provider() -> bool {
         || JSearchProvider::new().is_configured()
         || JoobleProvider::new().is_configured()
         || ApifyLinkedInProvider::new().is_configured()
+        // Keyless — always true, so this function is now always true and the
+        // `needs-keys` skip never fires. That is the intended consequence, not
+        // an oversight: the skip existed because a keyless aggregator search
+        // could only ever return nothing, and with freehire it can return
+        // jobs. A keyring READ FAULT is still classified separately by
+        // `aggregator_store_error`, so the one case this function's `false`
+        // used to protect (surface a store fault, don't call it needs-keys) is
+        // unaffected.
+        || FreehireProvider::new().is_configured()
 }
 
 /// First keyring READ error across the aggregator's provider credential slots
@@ -774,6 +823,9 @@ impl Scraper for AggregatorScraper {
             // Additive, opt-in, paid: only runs when the toggle is ON and a token
             // is present (gated in `ApifyLinkedInProvider::is_configured`).
             Box::new(ApifyLinkedInProvider::new()),
+            // KEYLESS tier, below every keyed one. Always "configured", so it
+            // is what a fresh install with no API keys actually searches with.
+            Box::new(FreehireProvider::new()),
         ];
         // `amount` caps the OUTPUT; `provider_amount` is the only thing that buys
         // upstream calls — the free tiers' page budgets AND the paid Apify tier
