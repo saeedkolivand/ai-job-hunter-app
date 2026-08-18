@@ -244,6 +244,9 @@ const mockSplitMutate = vi.fn();
 let stubbedViewedData: { url?: string }[] = [];
 let stubbedOpenedData: { url?: string }[] = [];
 
+/** Board id → live health, as `useBoardsHealth` returns it. Mutated per test. */
+let mockBoardHealth = new Map<string, unknown>();
+
 vi.mock('@/services', () => ({
   useOpenExternal: () => ({ mutate: mockOpenExternal, mutateAsync: mockOpenExternal }),
   usePersistJob: () => ({ mutateAsync: mockPersistJobAsync }),
@@ -251,6 +254,10 @@ vi.mock('@/services', () => ({
   useInteractions: (type: string) => ({
     data: type === 'viewed' ? stubbedViewedData : stubbedOpenedData,
   }),
+  // Track B1 — the card reads the LIVE per-board reliability verdict rather than
+  // taking it off the stored run record. Empty by default here; the health
+  // suite below overrides it.
+  useBoardsHealth: () => ({ data: mockBoardHealth }),
 }));
 
 // Cluster/agency chips are covered in their own suites; stubbed here so this
@@ -334,6 +341,7 @@ beforeEach(() => {
   mockSplitMutate.mockClear();
   stubbedViewedData = [];
   stubbedOpenedData = [];
+  mockBoardHealth = new Map<string, unknown>();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1515,5 +1523,48 @@ describe('AutopilotCard — foundJobs honors its own per-card sort', () => {
     expect(orderFor('/a-')).toEqual(['https://example.com/a-a', 'https://example.com/a-c']);
     // Card B: untouched — still its own stored (relevance) order.
     expect(orderFor('/b-')).toEqual(['https://example.com/b-c', 'https://example.com/b-a']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Track B1 — board reliability is read LIVE, not off the stored record
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — board reliability', () => {
+  it('badges a board using the CURRENT verdict, not one frozen into the record', async () => {
+    const user = userEvent.setup();
+    // The stored run summary carries NO health (it is stripped on persist) —
+    // everything the badge shows must come from the live query.
+    mockBoardHealth = new Map<string, unknown>([
+      [
+        'wwr',
+        {
+          status: 'failing',
+          consecutiveFailures: 4,
+          verifiedRuns: 9,
+          failedRuns: 4,
+          lastSuccessAt: Date.now() - 6 * 24 * 60 * 60 * 1000,
+          failingSince: Date.now() - 5 * 24 * 60 * 60 * 1000,
+        },
+      ],
+    ]);
+    renderCard(withRun('completedWithErrors', [{ board: 'wwr', count: 0, error: 'HTTP 500' }]));
+
+    await user.click(screen.getByLabelText('autopilot.boardResults.infoLabel'));
+    expect(await screen.findByText(/health\.failingSince/)).toBeInTheDocument();
+  });
+
+  it('shows no reliability badge while the live verdict says the board is fine', async () => {
+    const user = userEvent.setup();
+    mockBoardHealth = new Map<string, unknown>([
+      ['wwr', { status: 'healthy', consecutiveFailures: 0, verifiedRuns: 9, failedRuns: 0 }],
+    ]);
+    renderCard(withRun('completedWithErrors', [{ board: 'wwr', count: 0, error: 'HTTP 500' }]));
+
+    await user.click(screen.getByLabelText('autopilot.boardResults.infoLabel'));
+    // This run's own failure is still explained…
+    expect(await screen.findByText(/HTTP 500/)).toBeInTheDocument();
+    // …but nothing claims a standing outage.
+    expect(screen.queryByText(/health\./)).toBeNull();
   });
 });

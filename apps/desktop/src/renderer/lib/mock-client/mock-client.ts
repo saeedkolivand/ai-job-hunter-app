@@ -259,6 +259,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     boards: {
       catalog: async () => [],
+      health: async () => [],
       connect: async () => ({ connected: false }),
       disconnect: noop,
       getStatus: async () => ({ connected: false }),

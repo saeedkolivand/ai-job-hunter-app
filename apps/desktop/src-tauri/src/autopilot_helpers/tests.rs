@@ -1,6 +1,7 @@
 use parking_lot::Mutex;
 
 use super::*;
+use crate::observability::{redact_token, MAX_REASON_LEN};
 use crate::scraping::BoardScrapeSummary;
 
 fn summary(board: &str, error: Option<&str>, skipped: Option<&str>) -> BoardScrapeSummary {
@@ -20,6 +21,7 @@ fn summary_full(
         skipped: skipped.map(String::from),
         truncated: truncated.map(String::from),
         note: None,
+        health: None,
     }
 }
 
@@ -184,7 +186,7 @@ fn sanitize_reason_caps_overlong_input() {
     let long = "x".repeat(500);
     let out = sanitize_reason(&long);
     assert!(
-        out.chars().count() <= super::MAX_REASON_LEN + 1, // +1 for the ellipsis
+        out.chars().count() <= MAX_REASON_LEN + 1, // +1 for the ellipsis
         "sanitized reason must be length-capped; got {} chars",
         out.chars().count()
     );
@@ -395,6 +397,95 @@ fn url_branch_still_wins_over_json_credential_marker() {
         !out.contains("secret"),
         "secret must not leak through URL token; got: {out}"
     );
+}
+
+// ── H3: multi-token credential shapes (Authorization/Bearer, spaced `=`,
+//        bare-prefixed secret with no marker at all) ──────────────────────
+
+#[test]
+fn authorization_bearer_token_is_redacted() {
+    for (raw, secret) in [
+        (
+            "request failed: Authorization: Bearer ghp_deadbeef12345 rejected",
+            "ghp_deadbeef12345",
+        ),
+        ("Authorization: Basic dXNlcjpwYXNz denied", "dXNlcjpwYXNz"),
+    ] {
+        let out = sanitize_reason(raw);
+        assert!(
+            out.contains("<credential-redacted>"),
+            "credential placeholder must appear for {raw:?}; got: {out}"
+        );
+        assert!(
+            !out.contains(secret),
+            "secret value leaked from {raw:?}; got: {out}"
+        );
+    }
+}
+
+#[test]
+fn authorization_scheme_word_alone_is_not_a_marker() {
+    // `Bearer`/`Basic` only redact the NEXT token when they directly follow an
+    // `Authorization:` marker — bare prose using either word must survive.
+    assert_eq!(sanitize_reason("Basic auth failed"), "Basic auth failed");
+    assert_eq!(
+        sanitize_reason("Bearer token missing from the request"),
+        "Bearer token missing from the request"
+    );
+}
+
+#[test]
+fn spaced_credential_assignment_is_redacted() {
+    // `redact_token` alone only catches the GLUED `token=value` shape (see
+    // `redact_standalone_credential_assignments`); a SPACED assignment needs
+    // the two-token lookahead in `redact_tokens`.
+    for (raw, secret) in [
+        ("token = abc123xyz rejected", "abc123xyz"),
+        ("secret = s3cr3t-val leaked", "s3cr3t-val"),
+    ] {
+        let out = sanitize_reason(raw);
+        assert!(
+            out.contains("<credential-redacted>"),
+            "credential placeholder must appear for {raw:?}; got: {out}"
+        );
+        assert!(
+            !out.contains(secret),
+            "secret value leaked from {raw:?}; got: {out}"
+        );
+    }
+}
+
+#[test]
+fn bare_prefixed_secret_is_redacted_with_no_marker_at_all() {
+    // A known credential-token PREFIX (GitHub PAT, OpenAI/Anthropic key, AWS
+    // access key id) is unambiguous by shape alone — no `Authorization:`,
+    // `Bearer`, or `=` needed to flag it.
+    for raw in [
+        "board rejected ghp_1234567890abcdef with 401",
+        "provider call failed: sk-ant-abc123xyz",
+        "leaked AKIAIOSFODNN7EXAMPLE in the response body",
+    ] {
+        let out = sanitize_reason(raw);
+        assert!(
+            out.contains("<credential-redacted>"),
+            "bare secret must be redacted for {raw:?}; got: {out}"
+        );
+    }
+}
+
+#[test]
+fn ordinary_log_prose_with_credential_lookalike_words_survives_untouched() {
+    // Mutation guard for the new marker chains above: none of these must
+    // trip — no `Authorization:` immediately before Bearer/Basic, and no
+    // marker word immediately followed by a literal `=`.
+    for raw in [
+        "invalid auth token for board, please check your Basic auth settings",
+        "Basic auth failed",
+        "missing password field in the request",
+        "token refresh needed before retry",
+    ] {
+        assert_eq!(sanitize_reason(raw), raw, "benign message altered: {raw:?}");
+    }
 }
 
 // ── AI notes (Phase 4) ────────────────────────────────────────────────────

@@ -2369,6 +2369,16 @@
         "rowsDropped_other": "{{count}} Zeilen unlesbar — Board-Format eventuell geändert",
         "companiesFailed_one": "{{count}} Firma konnte nicht abgerufen werden",
         "companiesFailed_other": "{{count}} Firmen konnten nicht abgerufen werden"
+      },
+      "health": {
+        "failingSince_one": "seit {{count}} Lauf gestört · zuletzt erfolgreich {{since}}",
+        "failingSince_other": "seit {{count}} Läufen gestört · zuletzt erfolgreich {{since}}",
+        "neverWorkedSince": "hat hier noch nie funktioniert · gestört, erstmals {{since}}",
+        "neverWorked_one": "hat hier noch nie funktioniert · {{count}} fehlgeschlagener Lauf",
+        "neverWorked_other": "hat hier noch nie funktioniert · {{count}} fehlgeschlagene Läufe",
+        "stale": "nicht mehr geprüft seit dem letzten Erfolg, {{since}}",
+        "staleUnknown": "lange nicht geprüft",
+        "flaky": "unzuverlässig · {{count}} von {{total}} Läufen fehlgeschlagen"
       }
     },
     "viewList": "Liste",

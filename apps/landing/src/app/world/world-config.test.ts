@@ -37,19 +37,46 @@ describe('world-config data integrity', () => {
     expect(sections.at(-1)?.cta).toBeDefined();
   });
 
-  it('roots every section asset path under /world/ (media lands later, not checked on disk)', () => {
+  // Posters and clips are hosted differently on purpose: the stills are ~2 MB
+  // total and ship in `public/` so the route paints before anything is fetched,
+  // while the 62 MB of clips come from the R2 bucket behind cdn.aijobhunter.app.
+  //
+  // Asserted against LITERALS, not against the config's own base, so a
+  // regression that breaks the URL cannot move the expectation along with it.
+  // The host matters as much as the shape: `scrub-engine` loads clips with
+  // `fetch().then(r => r.blob())`, so they must come from an origin that sends
+  // `Access-Control-Allow-Origin`. A same-origin `/world/vid/...` path or a
+  // GitHub release URL both LOOK fine and both break the route.
+  const CLIP_URL = /^https:\/\/cdn\.aijobhunter\.app\/world\/vid\/[\w.-]+\.mp4$/;
+
+  it('serves every poster still from /world/ in the deployed site', () => {
     for (const section of sections) {
       expect(section.still.startsWith('/world/')).toBe(true);
       expect(section.stillMobile.startsWith('/world/')).toBe(true);
-      expect(section.clip.startsWith('/world/')).toBe(true);
-      expect(section.clipMobile.startsWith('/world/')).toBe(true);
     }
   });
 
-  it('roots every connector asset path under /world/', () => {
-    for (const path of [...connectors, ...connectorsMobile]) {
-      expect(path.startsWith('/world/')).toBe(true);
+  it('serves every clip from the CORS-enabled asset host, never from the site itself', () => {
+    for (const section of sections) {
+      expect(section.clip).toMatch(CLIP_URL);
+      expect(section.clipMobile).toMatch(CLIP_URL);
     }
+  });
+
+  it('serves every connector from that same host', () => {
+    for (const path of [...connectors, ...connectorsMobile]) {
+      expect(path).toMatch(CLIP_URL);
+    }
+  });
+
+  it('serves every clip from ONE origin, so a half-finished migration cannot ship', () => {
+    const origins = new Set(
+      [...sections.flatMap((s) => [s.clip, s.clipMobile]), ...connectors, ...connectorsMobile].map(
+        (url) => new URL(url).origin
+      )
+    );
+    expect(origins.size).toBe(1);
+    expect([...origins][0]).toBe('https://cdn.aijobhunter.app');
   });
 });
 

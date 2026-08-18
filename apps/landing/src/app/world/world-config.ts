@@ -1,8 +1,12 @@
 // Config for the /world scroll-scrubbed camera-flight route. Kept as plain,
 // unit-testable data (world-config.test.ts) separate from the client component
-// that mounts the vendored engine (WorldClient.tsx). Asset paths are absolute
-// from the site root; the media files themselves land in public/world/ later
-// (rendered separately) — the paths are wired now per the approved plan.
+// that mounts the vendored engine (WorldClient.tsx).
+//
+// Poster stills are absolute from the site root and ship in public/world/ —
+// they are ~2 MB total and must paint before anything is fetched. The VIDEO
+// clips do not ship in the repo: 33 files, 62 MB, and re-encoding them rewrites
+// every byte, so a single re-encode round already cost ~38 MB of permanent
+// history. They live in object storage and are addressed through `vid()`.
 
 export interface WorldSectionCta {
   primary: { label: string; href: string };
@@ -39,6 +43,35 @@ export interface WorldConfig {
   connectorsMobile: string[];
 }
 
+// Where the /world clips are served from: an R2 bucket behind
+// cdn.aijobhunter.app, not the repo and not `public/`.
+//
+// Two reasons they are not in git. Video does not delta-compress, so every
+// re-encode writes every byte again as permanent history; one re-encode round
+// had already cost ~38 MB. And serving them from `public/` put them on the
+// Pages site, spending its 100 GB/month soft bandwidth limit — about 5,000
+// visits at this route's 20 MB device-set cap.
+//
+// Why R2 specifically, and not the GitHub release they briefly lived on:
+// `scrub-engine.js` loads each clip with `fetch(url).then(r => r.blob())`, so
+// the response MUST carry `Access-Control-Allow-Origin`. GitHub release
+// downloads do not send it, and the route silently fell back to its poster
+// stills. R2 lets the bucket declare a CORS policy; this origin is on it.
+//
+// Egress from R2 is unmetered, so the bandwidth ceiling is gone rather than
+// moved. Objects are uploaded with `immutable` and a one-year max-age, which is
+// honest because a new clip set means a new key, never a mutated one.
+//
+// Override for offline work: `NEXT_PUBLIC_WORLD_VIDEO_BASE=/world/vid` with the
+// clips in `apps/landing/public/world/vid/` (gitignored). Next inlines this at
+// build time, which is what the static export needs. localhost:3000 is on the
+// bucket's CORS allowlist too, so plain `next dev` works without the override.
+const VIDEO_BASE =
+  process.env.NEXT_PUBLIC_WORLD_VIDEO_BASE ?? 'https://cdn.aijobhunter.app/world/vid';
+
+/** URL for one /world clip. `file` is the bare name, e.g. `slump.mp4`. */
+const vid = (file: string): string => `${VIDEO_BASE}/${file}`;
+
 // Same GitHub repo URL used on the home page finale (src/content/home/body.html).
 const GITHUB_URL = 'https://github.com/saeedkolivand/ai-job-hunter-app';
 
@@ -53,8 +86,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Slump',
       still: '/world/slump.webp',
       stillMobile: '/world/slump-m.webp',
-      clip: '/world/vid/slump.mp4',
-      clipMobile: '/world/vid/slump-m.mp4',
+      clip: vid('slump.mp4'),
+      clipMobile: vid('slump-m.mp4'),
       accent: '#e24b4a',
       scroll: 1.6,
       linger: 0.45,
@@ -68,8 +101,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Doomscroll',
       still: '/world/descent.webp',
       stillMobile: '/world/descent-m.webp',
-      clip: '/world/vid/descent.mp4',
-      clipMobile: '/world/vid/descent-m.mp4',
+      clip: vid('descent.mp4'),
+      clipMobile: vid('descent-m.mp4'),
       accent: '#6cc6ff',
       eyebrow: 'THE DOOMSCROLL',
       title: 'Every board. Every day. Nothing.',
@@ -81,8 +114,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Turn',
       still: '/world/workshop.webp',
       stillMobile: '/world/workshop-m.webp',
-      clip: '/world/vid/workshop.mp4',
-      clipMobile: '/world/vid/workshop-m.mp4',
+      clip: vid('workshop.mp4'),
+      clipMobile: vid('workshop-m.mp4'),
       accent: '#e24b4a',
       eyebrow: 'THE TURN',
       title: 'So I built a robot to do it.',
@@ -94,8 +127,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Robot',
       still: '/world/engine.webp',
       stillMobile: '/world/engine-m.webp',
-      clip: '/world/vid/engine.mp4',
-      clipMobile: '/world/vid/engine-m.mp4',
+      clip: vid('engine.mp4'),
+      clipMobile: vid('engine-m.mp4'),
       accent: '#6cc6ff',
       eyebrow: 'THE ROBOT',
       title: 'It does everything else.',
@@ -107,8 +140,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'Godmode',
       still: '/world/godmode.webp',
       stillMobile: '/world/godmode-m.webp',
-      clip: '/world/vid/godmode.mp4',
-      clipMobile: '/world/vid/godmode-m.mp4',
+      clip: vid('godmode.mp4'),
+      clipMobile: vid('godmode-m.mp4'),
       accent: '#e24b4a',
       eyebrow: 'GODMODE',
       title: 'It hunts while you sleep.',
@@ -120,8 +153,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Offer',
       still: '/world/offer.webp',
       stillMobile: '/world/offer-m.webp',
-      clip: '/world/vid/offer.mp4',
-      clipMobile: '/world/vid/offer-m.mp4',
+      clip: vid('offer.mp4'),
+      clipMobile: vid('offer-m.mp4'),
       accent: '#e24b4a',
       scroll: 1.7,
       linger: 0.5,
@@ -136,18 +169,18 @@ export const WORLD_CONFIG: WorldConfig = {
     },
   ],
   connectors: [
-    '/world/vid/conn1.mp4',
-    '/world/vid/conn2.mp4',
-    '/world/vid/conn3.mp4',
-    '/world/vid/conn4.mp4',
-    '/world/vid/conn5.mp4',
+    vid('conn1.mp4'),
+    vid('conn2.mp4'),
+    vid('conn3.mp4'),
+    vid('conn4.mp4'),
+    vid('conn5.mp4'),
   ],
   connectorsMobile: [
-    '/world/vid/conn1-m.mp4',
-    '/world/vid/conn2-m.mp4',
-    '/world/vid/conn3-m.mp4',
-    '/world/vid/conn4-m.mp4',
-    '/world/vid/conn5-m.mp4',
+    vid('conn1-m.mp4'),
+    vid('conn2-m.mp4'),
+    vid('conn3-m.mp4'),
+    vid('conn4-m.mp4'),
+    vid('conn5-m.mp4'),
   ],
 };
 

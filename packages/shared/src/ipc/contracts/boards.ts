@@ -44,6 +44,10 @@ export interface BoardsContract {
   /** Full scraper catalog (id, label, mode, auth tier, listed) from the registry. */
   catalog(): Promise<BoardCatalogEntry[]>;
 
+  /** Live per-board reliability across runs (Track B1). Boards with no recorded
+   *  history are simply absent. */
+  health(): Promise<BoardHealthEntry[]>;
+
   /** Connect to a board by launching a browser for manual login. */
   connect(req: { boardId: string }): Promise<{ connected: boolean; accountEmail?: string }>;
 
@@ -100,6 +104,64 @@ export interface BoardsContract {
  *     board still reports at most ONE note per run overall.
  *   `<cc>` is an ISO country code; the field never carries the raw location text.
  */
+/**
+ * Verdict of a board's cross-run history (Track B1). Mirrors the Rust
+ * `scraping::board_health::BoardHealthStatus`.
+ *   - `unknown` — never actually contacted (only ever skipped).
+ *   - `healthy` — the last run that contacted it succeeded, recently.
+ *   - `failing` — it is in a failure streak.
+ *   - `stale`   — not failing, but its last confirmed success is over a
+ *     fortnight old (in practice: skipped ever since).
+ *   - `flaky`   — working right now, but failing a meaningful share of its
+ *     recent verified runs (`failedRuns` / `verifiedRuns`) — the alternating
+ *     ok/fail pattern a consecutive-failure streak can't see.
+ */
+export type BoardHealthStatus = 'unknown' | 'healthy' | 'failing' | 'stale' | 'flaky';
+
+/**
+ * One board's reliability across runs, derived in Rust from every previous
+ * run's `BoardScrapeSummary` and attached to the current one — what lets the UI
+ * tell "this board found nothing today" apart from "this board has been broken
+ * since Tuesday".
+ *
+ * Only an UNHEALTHY board carries this (see `BoardHealth::is_noteworthy`): a
+ * healthy board's chip is unchanged. Timestamps are epoch-ms.
+ */
+export interface BoardHealth {
+  status: BoardHealthStatus;
+  /** Length of the current failure streak. Skipped runs neither extend nor
+   *  break it — a skip is not a failure. */
+  consecutiveFailures: number;
+  /** Last run that returned results (or an empty-but-successful answer).
+   *  Absent = the board has never succeeded. */
+  lastSuccessAt?: number;
+  /** Last run that contacted the board at all (success OR error). Absent =
+   *  only ever skipped, so nothing has been verified. */
+  lastVerifiedAt?: number;
+  /** Start of the CURRENT failure streak — the "broken since" timestamp. */
+  failingSince?: number;
+  /** Why the streak is failing, capped in Rust. Still sanitized at display
+   *  time like every other persisted reason. */
+  lastError?: string;
+  /** The scrape `jobId` of the run that produced this state — the per-board
+   *  correlation id for the logs. Only ever set by a run that actually
+   *  contacted the board, so a skipped run never claims authorship. */
+  lastRunId?: string;
+  /** Runs that actually contacted the board (ok + error) within a decayed
+   *  rolling window (Rust bounds it, not the board's entire history); skips
+   *  are excluded because they verify nothing. */
+  verifiedRuns: number;
+  /** Failures among those windowed runs. `failedRuns / verifiedRuns` is the
+   *  flapping signal a consecutive-failure counter structurally cannot express. */
+  failedRuns: number;
+}
+
+/** One board's live verdict, as returned by `boards_health`. */
+export interface BoardHealthEntry {
+  board: string;
+  health: BoardHealth;
+}
+
 export interface BoardScrapeSummary {
   board: string;
   count: number;
@@ -107,10 +169,16 @@ export interface BoardScrapeSummary {
   skipped?: 'needs-login' | 'needs-company' | 'needs-keys';
   truncated?: string;
   note?: string;
+  /** Cross-run reliability, present only when the board is unhealthy AND this
+   *  is a LIVE scrape response. Never persisted (it is cross-run state, not part
+   *  of this run) — a stored run record carries none, and the Autopilot card
+   *  reads the current verdict from `boards_health` instead. */
+  health?: BoardHealth;
 }
 
 export const BOARDS_CHANNELS = {
   catalog: 'boards:catalog',
+  health: 'boards:health',
   connect: 'boards:connect',
   disconnect: 'boards:disconnect',
   getStatus: 'boards:getStatus',

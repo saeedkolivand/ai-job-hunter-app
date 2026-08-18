@@ -109,6 +109,31 @@ describe('presentFabrication', () => {
   it('treats empty evidence as orphaned, not as matching everything', () => {
     expect(presentFabrication({ ...VALID, evidence: '   ' }, document)).toBe('orphaned');
   });
+
+  // Coherence with `isFabricationResolved`: for a `remove` verdict, this must
+  // return 'resolved' in EXACTLY the cases the other function calls resolved
+  // — same line-anchored bug scenario, checked from the presentation side.
+  describe('line-anchored Remove — coherent with isFabricationResolved', () => {
+    const anchored: Fabrication = {
+      issueKey: 'factual.unsourced_certification#0',
+      code: 'factual.unsourced_certification',
+      evidence: 'CKA',
+      line: 'Certified Kubernetes Administrator (CKA).',
+      decision: 'remove',
+    };
+
+    it('reads resolved once the anchored line is gone, span or no span elsewhere', () => {
+      const edited = 'PROFESSIONAL SUMMARY\nA payments engineer.\n\nPROJECTS\n- CKA prep tool.\n';
+      expect(presentFabrication(anchored, edited)).toBe('resolved');
+      expect(isFabricationResolved(anchored, edited)).toBe(true);
+    });
+
+    it('reads markedForRemoval while the anchored line is still there', () => {
+      const untouched = 'PROFESSIONAL SUMMARY\nCertified Kubernetes Administrator (CKA).\n';
+      expect(presentFabrication(anchored, untouched)).toBe('markedForRemoval');
+      expect(isFabricationResolved(anchored, untouched)).toBe(false);
+    });
+  });
 });
 
 describe('isFabricationResolved', () => {
@@ -122,10 +147,56 @@ describe('isFabricationResolved', () => {
     expect(isFabricationResolved({ ...VALID, decision: 'keep' }, document)).toBe(true);
   });
 
-  it('is true for Remove ONLY once the evidence is gone', () => {
+  it('is true for Remove ONLY once the evidence is gone (legacy entry, no line)', () => {
     const removed = { ...VALID, decision: 'remove' } as const;
     expect(isFabricationResolved(removed, document)).toBe(false);
     expect(isFabricationResolved(removed, 'Summary\nLed the migration.')).toBe(true);
+  });
+
+  // ── THE bug (reported on PR #1024): removing the flagged LINE must resolve
+  // the entry even when the bare evidence span legitimately recurs elsewhere
+  // in the document — a certification acronym also in a skills line, a date
+  // fragment that is also a phone-number substring. An evidence-only check
+  // (searching `documentText` for `entry.evidence`) stays stuck forever here;
+  // the fix reads the anchored `line` instead, mirroring Rust's
+  // `entry_resolved`.
+  //
+  // Mutation check: revert to `!evidencePresent(entry, documentText)` (the
+  // pre-fix body) and this fails — see the report for the executed run.
+  it('resolves a Remove once the anchored LINE is gone, even when the bare evidence span survives elsewhere', () => {
+    const anchored: Fabrication = {
+      issueKey: 'factual.unsourced_certification#0',
+      code: 'factual.unsourced_certification',
+      evidence: 'CKA',
+      line: 'Certified Kubernetes Administrator (CKA).',
+      decision: 'remove',
+    };
+    // The flagged bullet is gone; an unrelated project note still names the
+    // same bare acronym.
+    const edited = [
+      'PROFESSIONAL SUMMARY',
+      'A payments engineer.',
+      '',
+      'PROJECTS',
+      '- Built a CKA exam prep tool for study groups.',
+    ].join('\n');
+    expect(edited).toContain('CKA'); // the span still exists in the document…
+    expect(isFabricationResolved(anchored, edited)).toBe(true); // …but the entry must read resolved.
+  });
+
+  // The mirror: the anchored line is STILL in the document (the removal
+  // never actually happened), so the entry must stay unresolved even though
+  // nothing about the evidence check changed.
+  it('does not resolve a Remove while the anchored line is still in the document', () => {
+    const anchored: Fabrication = {
+      issueKey: 'factual.unsourced_certification#0',
+      code: 'factual.unsourced_certification',
+      evidence: 'CKA',
+      line: 'Certified Kubernetes Administrator (CKA).',
+      decision: 'remove',
+    };
+    const untouched = 'PROFESSIONAL SUMMARY\nCertified Kubernetes Administrator (CKA).\n';
+    expect(isFabricationResolved(anchored, untouched)).toBe(false);
   });
 });
 
