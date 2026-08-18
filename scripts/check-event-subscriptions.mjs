@@ -180,27 +180,34 @@ const SUBSCRIBERS = {
   },
   'features/onboarding/steps/ollama/ModelSelectionPanel/useModelPull.ts': {
     mount: 'route-scoped',
-    hash: 'df7f51d3d579',
+    hash: '71a03a907c6d',
     note:
       'A multi-GB pull survives any unmount — and the trigger really is ANY unmount, not just ' +
       'skipping the step: switching to the Cloud/CLI tab and back, or Back/Forward through ' +
       'the wizard, both tear this hook down. On mount it now re-reads the job registry and ' +
-      "adopts a still-active `ai.pull_model` job, so progress resumes and the run's " +
-      'completion handling still fires. Clicking Download again cannot start a second ' +
-      'concurrent pull: `ai_pull_model` uses `job_start_exclusive` and hands back the ' +
-      "existing job id to re-attach to. Right after adopting, it also re-reads that job's " +
-      'OWN current status (`jobs_get`) and settles immediately if already `completed`/' +
-      "`failed` — closing the race where the job's ONE terminal event fires in the gap " +
-      'between the registry list resolving and `pullJobId` committing, which would ' +
+      'adopts a still-active `ai.pull_model` job for the SAME model this panel shows, so ' +
+      "progress resumes and the run's completion handling still fires. `ai_pull_model` keys " +
+      'its exclusivity on (kind, model) via `job_start_exclusive_keyed` and stamps the model ' +
+      'onto the payload from job START, so a second click for the SAME model re-attaches ' +
+      'to the existing job id, while a DIFFERENT model pulls independently — this reattach ' +
+      "read filters on `payload.model` too, so it cannot adopt someone else's running pull " +
+      'and show its progress under the wrong card. Right after adopting, it also re-reads ' +
+      "that job's OWN current status (`jobs_get`) and settles immediately if already " +
+      "`completed`/`failed` — closing the race where the job's ONE terminal event fires in " +
+      'the gap between the registry list resolving and `pullJobId` committing, which would ' +
       'otherwise be dropped for good and leave the panel reporting `pulling` forever (PR ' +
-      '#1036 review finding). That commit is synchronous into a ref, not left to the next ' +
-      'render, because a promise that resolves purely through microtasks (a real IPC ' +
-      'response included) can settle before React ever gets a scheduler turn. NOT ' +
-      'recovered, still deliberately: a pull that reaches a terminal state entirely BEFORE ' +
-      'the registry snapshot is taken — finished during the unmount gap, never observed as ' +
-      'still running/queued — is never adopted at all, so its success toast and the ' +
-      'health/models recheck are not retroactively fired; doing that on every later mount ' +
-      'would be worse than missing them once.',
+      '#1036 review finding). A set of already-settled job ids stops that reconcile read ' +
+      "re-adopting the SAME job forever off a jobs-list cache that hasn't refetched yet " +
+      '(review found the settle would otherwise loop, double-firing the toast, at the rate ' +
+      'of one redundant IPC round trip per cycle, until an unrelated job event happened to ' +
+      'invalidate the cache). `mountedRef` is restored on effect SETUP, not just cleared on ' +
+      'cleanup — the production app renders inside StrictMode, whose dev-only extra ' +
+      'setup→cleanup→setup pass otherwise leaves it permanently false and every later ' +
+      'reconcile read silently drops. NOT recovered, still deliberately: a pull that reaches ' +
+      'a terminal state entirely BEFORE the registry snapshot is taken — finished during the ' +
+      'unmount gap, never observed as still running/queued — is never adopted at all, so its ' +
+      'success toast and the health/models recheck are not retroactively fired; doing that ' +
+      'on every later mount would be worse than missing them once.',
   },
   'features/settings/components/ai-settings/EmbeddingsSettings/index.tsx': {
     mount: 'route-scoped',

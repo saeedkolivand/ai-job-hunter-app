@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { createMockClient, withProviders } from '@/test-support';
+import { createMockClient, makeQueryClient, withProviders } from '@/test-support';
 
 import { useModelPull } from './useModelPull';
 
@@ -25,13 +25,18 @@ vi.mock('@ajh/ui', () => ({ useNotification: () => notifyApi }));
 
 afterEach(() => vi.restoreAllMocks());
 
+// `payload.model` defaults to 'llama3' — every test below renders
+// `useModelPull({ selectedModel: 'llama3' })`, and the reattach effect's
+// adoption predicate now requires `job.payload?.model === selectedModel`
+// (`ai_pull_model` keys its exclusivity on (kind, model) and stamps the
+// model onto the payload from job START, not just on completion).
 function makeJob(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'job-123',
     kind: 'ai.pull_model',
     status: 'running',
     progress: 0,
-    payload: null,
+    payload: { model: 'llama3' },
     retries: 0,
     maxRetries: 3,
     createdAt: Date.now(),
@@ -91,6 +96,34 @@ describe('useModelPull — reattach on mount', () => {
     });
     expect(result.current.pullState).toBe('idle');
   });
+
+  // Rust review follow-up: `ai_pull_model`'s exclusivity moved from keying on
+  // job KIND alone to (kind, model), so a running pull of gpt-oss and one of
+  // llama3 can coexist. Without checking `payload.model` here, this panel
+  // (showing llama3) would adopt the gpt-oss job and render ITS progress
+  // under the llama3 card — refusing the NEW request at the command only
+  // guards a fresh `handlePull`, not this registry scan.
+  it('ignores a running pull of a different model and stays idle', async () => {
+    const client = createMockClient({
+      'jobs.list': vi
+        .fn()
+        .mockResolvedValue([makeJob({ id: 'job-other-model', payload: { model: 'gpt-oss' } })]),
+      'jobs.get': vi.fn(),
+    });
+
+    const { result } = renderHook(() => useModelPull({ selectedModel: 'llama3' }), {
+      wrapper: withProviders(client),
+    });
+
+    await waitFor(() => expect(client.jobs.list).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(result.current.pullState).toBe('idle');
+    // Not adopted at all, not adopted-then-reconciled: the reconcile read
+    // (`jobs.get`) must never fire for a job that failed the model check.
+    expect(client.jobs.get).not.toHaveBeenCalled();
+  });
 });
 
 // ── Adoption race: a terminal event that arrives before `pullJobId` commits ──
@@ -125,6 +158,14 @@ describe('useModelPull — reconciles a stale adoption', () => {
       wrapper: withProviders(client),
     });
 
+    // Prove the listener is actually wired before relying on firing it — a
+    // `handler?.(…)` on a `null` handler is a silent no-op, and both this and
+    // the reconcile assertions below would still pass even if the live
+    // subscription were never registered at all (findings the reconcile read
+    // is supposed to be tested WITH a real event in flight, not without one).
+    await waitFor(() => expect(client.jobs.onEvent).toHaveBeenCalled());
+    expect(handler).not.toBeNull();
+
     // Fires the ACTUAL ordering the review flagged: the terminal event
     // arrives while `jobs.list()` is still in flight, so `pullJobId` is
     // still null and the live listener's identity check drops it.
@@ -143,10 +184,15 @@ describe('useModelPull — reconciles a stale adoption', () => {
 
     // No second job.completed is ever coming for this job — only the
     // reconcile read (`jobs.get`, right after adoption) can notice it
-    // already finished.
+    // already finished. Exact counts (not just "was called"): `jobQueue`'s
+    // cached snapshot never refetches inside this test, so an unfixed hook
+    // (PR #1036 review finding) re-adopts the same stale 'running' entry the
+    // instant `resetTracking` clears `pullJobId`, calling `jobs.get` and the
+    // success toast a SECOND time — these pin that regression shut.
     await waitFor(() => expect(result.current.pullState).toBe('done'));
+    expect(client.jobs.get).toHaveBeenCalledTimes(1);
     expect(client.jobs.get).toHaveBeenCalledWith(jobId);
-    expect(notifyApi.success).toHaveBeenCalled();
+    expect(notifyApi.success).toHaveBeenCalledTimes(1);
   });
 
   it('settles a job that already failed before the registry read resolved', async () => {
@@ -170,6 +216,9 @@ describe('useModelPull — reconciles a stale adoption', () => {
       wrapper: withProviders(client),
     });
 
+    await waitFor(() => expect(client.jobs.onEvent).toHaveBeenCalled());
+    expect(handler).not.toBeNull();
+
     act(() => handler?.({ type: 'job.failed', jobId, data: 'model not found' }));
 
     await act(async () => {
@@ -178,7 +227,50 @@ describe('useModelPull — reconciles a stale adoption', () => {
     });
 
     await waitFor(() => expect(result.current.pullState).toBe('error'));
+    expect(client.jobs.get).toHaveBeenCalledTimes(1);
     expect(client.jobs.get).toHaveBeenCalledWith(jobId);
-    expect(notifyApi.error).toHaveBeenCalled();
+    expect(notifyApi.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── mountedRef must survive React.StrictMode's setup→cleanup→setup ──────────
+//
+// PR #1036 review finding (MINOR): the production app renders inside
+// React.StrictMode (main.tsx). StrictMode double-invokes an effect in
+// development — setup, cleanup, setup — while preserving hook state between
+// the two setups. `mountedRef` used to be set `true` only by the initial
+// `useRef(true)` and back to `false` by the cleanup, with nothing restoring
+// it on the SECOND setup — so after StrictMode's dance it is permanently
+// `false`, and the reconcile read's `if (!mountedRef.current …) return;`
+// guard drops every settle for the rest of this hook instance's life.
+describe('useModelPull — survives React.StrictMode remount', () => {
+  it('still settles a job that completed, after StrictMode setup→cleanup→setup', async () => {
+    const jobId = 'job-strictmode';
+    const client = createMockClient({
+      'jobs.list': vi.fn().mockResolvedValue([makeJob({ id: jobId })]),
+      'jobs.get': vi.fn().mockResolvedValue(makeJob({ id: jobId, status: 'completed' })),
+      'jobs.onEvent': vi.fn(() => () => {}),
+    });
+    const queryClient = makeQueryClient();
+
+    // `reactStrictMode: true` is testing-library's OWN option for this —
+    // NOT rendering a `<React.StrictMode>` element through a custom
+    // `wrapper` component, which looks equivalent but is NOT: testing-library
+    // wraps StrictMode around `wrapper` only when told to via this option
+    // (`strictModeIfNeeded` in its source), so a `<StrictMode>` nested a
+    // level deeper inside a hand-rolled wrapper never gets the double
+    // setup→cleanup→setup pass — confirmed empirically (a throwaway probe
+    // effect counted setups=1/cleanups=0 with the manual-wrapper form and
+    // setups=2/cleanups=1 with this option) before trusting this test to
+    // pin the fix. Wrap ONLY this test — adding it to `withProviders`
+    // itself would skew every other suite's call counts.
+    const { result } = renderHook(() => useModelPull({ selectedModel: 'llama3' }), {
+      wrapper: withProviders(client, queryClient),
+      reactStrictMode: true,
+    });
+
+    // An unfixed hook gets stuck on 'pulling' forever here instead — the
+    // reconcile read's own guard silently drops the settle.
+    await waitFor(() => expect(result.current.pullState).toBe('done'));
   });
 });
