@@ -95,6 +95,14 @@ const FLAKY_FAIL_PERCENT: u32 = 25;
 ///
 /// Twice [`FLAKY_MIN_RUNS`] so a decay can never drop `verified_runs` below the
 /// minimum sample [`is_flaky`] itself requires.
+///
+/// This is a window of RUNS, not of time, and the two only coincide at a steady
+/// cadence. On the daily autopilot it spans roughly one to two weeks, which
+/// lines up with [`STALE_AFTER_MS`]; for someone scraping manually several
+/// times an afternoon the same 16 runs can span hours, so the verdict forgets
+/// this morning's trouble by evening. Deliberate — the counter has no clock and
+/// a run is the only evidence a board ever produces — but do not read
+/// "recent reliability" here as a calendar claim.
 const FLAKY_WINDOW_CAP: u32 = FLAKY_MIN_RUNS * 2;
 
 /// Max stored length of the remembered failure reason.
@@ -366,10 +374,22 @@ fn is_flaky(h: &BoardHealth) -> bool {
 /// `8, 2` (25.0%, now flaky) on a run that was a plain success. Proportional
 /// scaling can only round the ratio DOWN (floor), so a decay step alone can
 /// never flip a board from not-flaky to flaky.
+/// The rescale is done in `u64`. In `u32`, `failed * next_verified` overflows
+/// once the product passes ~4.29e9 and `saturating_mul` clamps it BEFORE the
+/// divide, which destroys the very proportionality this function exists to
+/// preserve: `(200_000, 150_000)` — a 75% failure rate — decayed to `(12, 2)`,
+/// i.e. 17%, reading not-flaky. Unreachable through [`fold`], which caps
+/// `verified` at [`FLAKY_WINDOW_CAP`] after every call, but reachable from a
+/// hand-edited row — the same threat model this module already defends against
+/// for a negative tally, so it is defended here too rather than left to the
+/// next caller to rediscover.
 fn decay_tallies(mut verified: u32, mut failed: u32) -> (u32, u32) {
     while verified > FLAKY_WINDOW_CAP {
         let next_verified = verified / 2;
-        failed = failed.saturating_mul(next_verified) / verified;
+        // `failed <= verified` is an invariant of `fold`, and floor-scaling
+        // preserves it, so the result is always <= next_verified and the
+        // narrowing cast cannot truncate.
+        failed = (u64::from(failed) * u64::from(next_verified) / u64::from(verified)) as u32;
         verified = next_verified;
     }
     (verified, failed)

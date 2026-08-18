@@ -420,6 +420,41 @@ fn decay_collapses_an_oversized_legacy_tally_in_one_fold_call() {
 }
 
 #[test]
+fn decay_preserves_the_failure_rate_of_a_huge_tally_not_just_the_cap() {
+    // The sibling test above pins only that the CAP is respected, so it stays
+    // green while the ratio is destroyed. That is exactly what happened: in
+    // `u32`, `failed * next_verified` overflows past ~4.29e9 and
+    // `saturating_mul` clamps BEFORE the divide, so a board that failed 75% of
+    // 200_000 runs decayed to 2-in-12 (17%) and read HEALTHY.
+    //
+    // Anchored to an absolute expectation (a rate near 75%), not to whatever
+    // the function happens to return, so a regression cannot move both sides.
+    let (verified, failed) = decay_tallies(200_000, 150_000);
+    assert!(
+        verified <= FLAKY_WINDOW_CAP,
+        "cap must still hold; got {verified}"
+    );
+    // 200_000 takes 14 halvings to reach the cap, and floor-scaling can only
+    // round DOWN, so 75% legitimately erodes to ~67%. The absolute floor that
+    // matters is that a board failing three runs in four must not come out the
+    // other side looking better than a coin flip. The overflow bug produced
+    // 17%, which fails this; a correct rescale cannot.
+    let pct = failed * 100 / verified;
+    assert!(
+        pct >= 50,
+        "a 75% failure rate must not decay below a coin flip; got {failed}/{verified} = {pct}%"
+    );
+    assert!(
+        is_flaky(&BoardHealth {
+            verified_runs: verified,
+            failed_runs: failed,
+            ..BoardHealth::empty()
+        }),
+        "a board failing three runs in four must still read flaky after decay"
+    );
+}
+
+#[test]
 fn skips_do_not_count_toward_either_run_tally() {
     let mut h = Some(fold_at(None, &ok("wwr", 3), T0));
     for i in 1..=5 {
