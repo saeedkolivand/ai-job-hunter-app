@@ -270,6 +270,18 @@ pub fn record_decision(wrapper: &str, issue_key: &str, decision: &str) -> Option
 /// which applies exactly this rule — still showed the same entry as pending:
 /// the two sides of one run disagreeing about whether it was finished.
 ///
+/// **Reads the anchored `line` when the entry carries one, never `evidence`
+/// alone.** `evidence` is routinely a bare token — a certification acronym, a
+/// bare year, a bare figure — and a bare token can legitimately recur on a
+/// DIFFERENT line the user never touched (a different bullet, a project name
+/// naming the same acronym). Searching for it anywhere in the document asks
+/// "does this substring still exist", not "is the flagged bullet gone", and
+/// strands a genuinely-applied Remove in `needsReview` forever. `line` is the
+/// exact anchor a Remove is applied against ([`containing_line`]), so checking
+/// it here asks the SAME question the removal answered. Only falls back to
+/// `evidence` when the entry carries no `line` — a report persisted before the
+/// field existed, or one whose span had no honest anchor to begin with.
+///
 /// An unrecognized decision token reads as undecided (the renderer's
 /// `parseDecision` rule), never as a verdict the user never gave. An entry
 /// with a blank span reads as absent rather than as a match against
@@ -278,6 +290,10 @@ fn entry_resolved(entry: &Value, document_text: &str) -> bool {
     match entry.get("decision").and_then(Value::as_str) {
         Some("keep") => true,
         Some("remove") => {
+            if let Some(line) = entry.get("line").and_then(Value::as_str) {
+                let line = line.trim();
+                return line.is_empty() || !document_text.contains(line);
+            }
             let span = entry
                 .get("evidence")
                 .and_then(Value::as_str)
