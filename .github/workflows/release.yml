@@ -237,6 +237,8 @@ jobs:
 
       - name: 🦀 Setup Rust
         # Pinned to the version in apps/desktop/src-tauri/rust-toolchain.toml
+        # (enforced by `pnpm check:toolchain-pin`, which reads the trailing
+        # "# <version>" comment below — keep it accurate)
         # (same SHA as .github/actions/setup-rust — bump both together).
         uses: dtolnay/rust-toolchain@032958afbdc797a9164d3bc0b56325c1308924a5 # 1.97.1
 
