@@ -65,7 +65,20 @@ Examples: `menu.takePending()` (menu + action intents), `autopilot.takePendingFo
 - **Phase 4:** Typed payload structs in Rust (shipped — `apps/desktop/src-tauri/src/ipc_contracts/event_payloads.rs`, codegen'd from `packages/shared/src/schemas/index.ts`; tray dispatch_menu still passes `serde_json::Value`)
 - **Phase 6:** Jobs namespace collapse (merge `jobs:event` with autopilot stream)
 
+## What an event is allowed to be
+
+An event is a **notification that a durable record changed** — never the record
+itself. A listener only receives events while its component is mounted, and the
+backend work does not unmount with it, so any event can be missed, including a
+terminal one. Nothing may exist only as an event.
+
+Read the rule, the transient boundary and the accepted exceptions in
+`docs/knowledge/persistence.md` § State ownership before adding a channel or a
+subscriber; the mount lifetime of every subscribing file is enforced by
+`pnpm check:event-subscriptions`.
+
 ## References
 
+- State ownership: `docs/knowledge/persistence.md` (which side of an event is authoritative)
 - Architecture: `docs/ARCHITECTURE.md` (IPC section)
 - Patterns: `docs/PATTERNS.md` (messaging, event-driven)
