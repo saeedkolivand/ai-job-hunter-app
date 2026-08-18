@@ -180,18 +180,21 @@ const SUBSCRIBERS = {
   },
   'features/onboarding/steps/ollama/ModelSelectionPanel/useModelPull.ts': {
     mount: 'route-scoped',
-    hash: 'a9e9d139751f',
+    hash: '71a03a907c6d',
     note:
       'A multi-GB pull survives any unmount — and the trigger really is ANY unmount, not just ' +
       'skipping the step: switching to the Cloud/CLI tab and back, or Back/Forward through ' +
       'the wizard, both tear this hook down. On mount it now re-reads the job registry and ' +
-      "adopts a still-active `ai.pull_model` job, so progress resumes and the run's " +
-      'completion handling still fires. Clicking Download again cannot start a second ' +
-      'concurrent pull: `ai_pull_model` uses `job_start_exclusive` and hands back the ' +
-      "existing job id to re-attach to. Right after adopting, it also re-reads that job's " +
-      'OWN current status (`jobs_get`) and settles immediately if already `completed`/' +
-      "`failed` — closing the race where the job's ONE terminal event fires in the gap " +
-      'between the registry list resolving and `pullJobId` committing, which would ' +
+      'adopts a still-active `ai.pull_model` job for the SAME model this panel shows, so ' +
+      "progress resumes and the run's completion handling still fires. `ai_pull_model` keys " +
+      'its exclusivity on (kind, model) via `job_start_exclusive_keyed` and stamps the model ' +
+      'onto the payload from job START, so a second click for the SAME model re-attaches ' +
+      'to the existing job id, while a DIFFERENT model pulls independently — this reattach ' +
+      "read filters on `payload.model` too, so it cannot adopt someone else's running pull " +
+      'and show its progress under the wrong card. Right after adopting, it also re-reads ' +
+      "that job's OWN current status (`jobs_get`) and settles immediately if already " +
+      "`completed`/`failed` — closing the race where the job's ONE terminal event fires in " +
+      'the gap between the registry list resolving and `pullJobId` committing, which would ' +
       'otherwise be dropped for good and leave the panel reporting `pulling` forever (PR ' +
       '#1036 review finding). A set of already-settled job ids stops that reconcile read ' +
       "re-adopting the SAME job forever off a jobs-list cache that hasn't refetched yet " +

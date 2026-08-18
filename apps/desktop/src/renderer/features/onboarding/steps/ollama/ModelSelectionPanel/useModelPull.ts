@@ -130,7 +130,18 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     if (pullJobId) return;
     const active = jobQueue.data?.find(
       (job) =>
+        // `ai_pull_model` now keys its exclusivity on (kind, model) —
+        // `job_start_exclusive_keyed` — and stamps the model onto the job's
+        // payload from the START, not just on completion, so it round-trips
+        // through both `jobs_list` and `jobs_get`. Checking it here is what
+        // stops this effect adopting a running pull of a DIFFERENT model
+        // than the one this panel shows: refusing a second pull at the
+        // command only guards the NEW request, not this reattach read. The
+        // failed-check case must never reach adoption at all (not adopt then
+        // reconcile away), which is exactly what filtering inside this
+        // `.find()` predicate — before `active` exists — guarantees.
         job.kind === 'ai.pull_model' &&
+        (job.payload as { model?: string } | null | undefined)?.model === selectedModel &&
         !settledJobIdsRef.current.has(job.id) &&
         (job.status === 'running' || job.status === 'streaming' || job.status === 'queued')
     );
@@ -168,7 +179,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
       .catch((err) => {
         console.error('[modelPull] reconcile read failed', { jobId: active.id, err });
       });
-  }, [jobQueue.data, pullJobId, finishOk, finishFailed]);
+  }, [jobQueue.data, pullJobId, selectedModel, finishOk, finishFailed]);
 
   useJobEvents((event) => {
     if (event.type === 'job.stream' && event.jobId === pullJobIdRef.current) {

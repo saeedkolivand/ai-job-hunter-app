@@ -25,13 +25,18 @@ vi.mock('@ajh/ui', () => ({ useNotification: () => notifyApi }));
 
 afterEach(() => vi.restoreAllMocks());
 
+// `payload.model` defaults to 'llama3' — every test below renders
+// `useModelPull({ selectedModel: 'llama3' })`, and the reattach effect's
+// adoption predicate now requires `job.payload?.model === selectedModel`
+// (`ai_pull_model` keys its exclusivity on (kind, model) and stamps the
+// model onto the payload from job START, not just on completion).
 function makeJob(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'job-123',
     kind: 'ai.pull_model',
     status: 'running',
     progress: 0,
-    payload: null,
+    payload: { model: 'llama3' },
     retries: 0,
     maxRetries: 3,
     createdAt: Date.now(),
@@ -90,6 +95,34 @@ describe('useModelPull — reattach on mount', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(result.current.pullState).toBe('idle');
+  });
+
+  // Rust review follow-up: `ai_pull_model`'s exclusivity moved from keying on
+  // job KIND alone to (kind, model), so a running pull of gpt-oss and one of
+  // llama3 can coexist. Without checking `payload.model` here, this panel
+  // (showing llama3) would adopt the gpt-oss job and render ITS progress
+  // under the llama3 card — refusing the NEW request at the command only
+  // guards a fresh `handlePull`, not this registry scan.
+  it('ignores a running pull of a different model and stays idle', async () => {
+    const client = createMockClient({
+      'jobs.list': vi
+        .fn()
+        .mockResolvedValue([makeJob({ id: 'job-other-model', payload: { model: 'gpt-oss' } })]),
+      'jobs.get': vi.fn(),
+    });
+
+    const { result } = renderHook(() => useModelPull({ selectedModel: 'llama3' }), {
+      wrapper: withProviders(client),
+    });
+
+    await waitFor(() => expect(client.jobs.list).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(result.current.pullState).toBe('idle');
+    // Not adopted at all, not adopted-then-reconciled: the reconcile read
+    // (`jobs.get`) must never fire for a job that failed the model check.
+    expect(client.jobs.get).not.toHaveBeenCalled();
   });
 });
 
