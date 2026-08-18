@@ -283,6 +283,43 @@ pub enum SectionKind {
 /// experience), which is what makes them unconditional: no other section word
 /// on the same heading can outrank them. The BARE word for "experience" is not
 /// here — it is ambiguous, see [`AMBIGUOUS_EXPERIENCE_HEADINGS`].
+const EXPERIENCE_HEADINGS: &[&str] = &[
+    "employment",
+    "work experience",
+    "professional experience",
+    "berufserfahrung",
+    "berufliche erfahrung",
+    "arbeitserfahrung",
+    // "Beruflicher Werdegang" is as standard a German experience heading as
+    // "Berufserfahrung", and classifying it `Other` discarded every bullet
+    // under it. A substring, like the compounds above: "Ausbildungswerdegang"
+    // reaching Experience first is a far smaller error than losing the section.
+    "werdegang",
+    "expérience professionnelle",
+    // Work-qualified, no second reading, no substring risk — same profile as
+    // the other terms this change teaches.
+    "parcours professionnel",
+    "experiencia profesional",
+    "esperienza professionale",
+    // Italian plurals, WORK-QUALIFIED and unconditional — deliberately not the
+    // bare `esperienze`, which a review proved re-creates this very commit's
+    // bug one language over: "Esperienze di formazione" is an EDUCATION
+    // heading, and the ambiguous set yields only to summary/skills, never to
+    // education, so a bare stem there resolves Experience and files a degree
+    // as a job. Qualified spellings also stay out of the section-DELETING
+    // hole the ambiguous list's own doc warns about: "Esperienze
+    // professionali e competenze" reaches Experience here, where the bare
+    // stem would have lost it to Skills.
+    "esperienze professionali",
+    "esperienze lavorative",
+    // Sweep finds: German "Praxiserfahrung" is not caught by the
+    // word-bounded `erfahrung` (it is a compound, not a separate word), and
+    // Dutch "Werkervaring" already is. Both name a work history outright.
+    "praxiserfahrung",
+    "werkervaring",
+    "experiência profissional",
+];
+
 /// Headings that contain an EXPERIENCE stem but unambiguously name an
 /// EDUCATION section, checked BEFORE the experience test so the substring
 /// cannot win.
@@ -308,31 +345,18 @@ pub enum SectionKind {
 /// better than either.
 const EDUCATION_OVERRIDES_EXPERIENCE: &[&str] = &[
     "akademischer werdegang",
+    // German declines and compounds `werdegang` freely, so an exact-phrase
+    // list is only as good as its membership. A review found the next four
+    // already in the wild — "Wissenschaftlicher Werdegang" heads the academic
+    // CV this feature is for — each of them filing a degree as a job on main
+    // and on the first draft of this fix alike.
+    "akademischen werdegang",
+    "wissenschaftlicher werdegang",
+    "wissenschaftlichen werdegang",
+    "schulischer werdegang",
+    "bildungswerdegang",
     "akademische laufbahn",
     "ausbildungswerdegang",
-];
-
-const EXPERIENCE_HEADINGS: &[&str] = &[
-    "employment",
-    "work experience",
-    "professional experience",
-    "berufserfahrung",
-    "berufliche erfahrung",
-    "arbeitserfahrung",
-    // "Beruflicher Werdegang" is as standard a German experience heading as
-    // "Berufserfahrung", and classifying it `Other` discarded every bullet
-    // under it. A substring, like the compounds above: "Ausbildungswerdegang"
-    // reaching Experience first is a far smaller error than losing the section.
-    "werdegang",
-    "expérience professionnelle",
-    "experiencia profesional",
-    "esperienza professionale",
-    // Sweep finds: German "Praxiserfahrung" is not caught by the
-    // word-bounded `erfahrung` (it is a compound, not a separate word), and
-    // Dutch "Werkervaring" already is. Both name a work history outright.
-    "praxiserfahrung",
-    "werkervaring",
-    "experiência profissional",
 ];
 
 /// The bare German word for "experience", matched with [`contains_word`].
@@ -386,8 +410,6 @@ const AMBIGUOUS_EXPERIENCE_HEADINGS: &[&str] = &[
     "expérience",
     "experiencia",
     "esperienza",
-    // Plural of the stem above; same ambiguity, so the same yield rules.
-    "esperienze",
     "experiência",
 ];
 const EDUCATION_HEADINGS: &[&str] = &[
@@ -395,12 +417,10 @@ const EDUCATION_HEADINGS: &[&str] = &[
     "academic",
     "ausbildung",
     "bildung",
-    // Sweep finds. German "Studium" and Italian "Istruzione" are the ordinary
-    // words for an education section in their markets and matched nothing;
-    // `istruzione` is the very heading `resume_conventions("it")` teaches the
-    // model to write.
+    // Sweep find. German "Studium" is the ordinary word for an education
+    // section and matched nothing. Safe as a substring: "Auslandsstudium",
+    // "Selbststudium" and "Studium Generale" are all education headings.
     "studium",
-    "istruzione",
     "opleiding",
 ];
 
@@ -421,6 +441,12 @@ const EDUCATION_HEADINGS: &[&str] = &[
 /// (`Weiterbildung` → `bildung`, `Berufsausbildung` → `ausbildung`), which a
 /// both-ends boundary would break.
 const EDUCATION_HEADINGS_WORD_BOUNDED: &[&str] = &[
+    // Italian "Istruzione" — the very heading `resume_conventions("it")`
+    // teaches the model to write, and it matched nothing. WORD-BOUNDED for
+    // the same reason `formation` below is: `distruzione` contains
+    // `istruzione` exactly as `information` contains `formation`.
+    "istruzione",
+    "istruzioni",
     "formation",
     "formations",
     "formación",
@@ -961,6 +987,11 @@ mod lexicon_parity {
         "educazione",
         "ervaring",
         "escolaridade",
+        // Back on the list after a review proved the bare stem cannot be
+        // taught safely: only the WORK-QUALIFIED plurals ("esperienze
+        // professionali/lavorative") are in `EXPERIENCE_HEADINGS`, so the bare
+        // word is an honest miss rather than a misfile.
+        "esperienze",
         "estudios",
         "études",
         "expertise",
@@ -971,7 +1002,6 @@ mod lexicon_parity {
         "objetivo",
         "onderwijs",
         "over mij",
-        "parcours professionnel",
         "portfolio",
         "qualifications",
         "résumé",
@@ -1060,6 +1090,24 @@ mod lexicon_parity {
             unexpected_misses.is_empty(),
             "these lexicon terms classify as Other and are not in KNOWN_MISSES — either              teach the classifier or add them there with a reason: {unexpected_misses:?}"
         );
+        // Third direction, and the one the first draft left open: an entry
+        // that names no lexicon term at all. Without this, KNOWN_MISSES could
+        // be padded with anything and still "shrink deliberately" — a review
+        // proved it by adding `"zzz-not-a-lexicon-term"` and watching the
+        // suite stay green.
+        let lexicon: std::collections::HashSet<&str> =
+            cases.iter().map(|c| c.term.as_str()).collect();
+        let dead: Vec<&str> = KNOWN_MISSES
+            .iter()
+            .chain(LANGUAGES_CLASSIFY_AS_SKILLS.iter())
+            .copied()
+            .filter(|t| !lexicon.contains(t))
+            .collect();
+        assert!(
+            dead.is_empty(),
+            "these entries name no lexicon term, so they exempt nothing and only              make the list look longer than the real gap: {dead:?}"
+        );
+
         assert!(
             fixed_misses.is_empty(),
             "these terms now classify correctly but are still listed in KNOWN_MISSES —              remove them, so the list can only shrink deliberately: {fixed_misses:?}"
