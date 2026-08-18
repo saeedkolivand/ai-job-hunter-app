@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787022560201,
+  "lastUpdate": 1787026340021,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7805,6 +7805,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 306602,
             "range": "± 19146",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "21ba80e3feafb91f34c1e85e8bf9f031d2431321",
+          "message": "fix(evidence): stop filing academic records as work experience (#1011)\n\n* fix(evidence): stop filing german academic records as work experience\n\nFound by sweeping every term in the renderer's `SECTION_LEXICON` through\n`classify_section` — 197 terms, which nothing had ever compared. The two sides\nanswer the same question from different data: the TS lexicon drives\n`detectSections`, this classifier drives `extract_evidence`.\n\n**The bug.** German \"Akademischer Werdegang\" — a standard heading for an\nacademic record — contains `werdegang`, which is an unconditional entry in\n`EXPERIENCE_HEADINGS`, and that test runs first. So it classified as\nExperience. Not a cosmetic mislabel: prose under an Experience heading reaches\n`extract_evidence`'s role arm, so degree entries became work bullets under\nroles the candidate never held. Same failure the module already documents for\n\"Kenntnisse und Erfahrungen\", one list away.\n\nFixed with a closed list of three exact phrases checked BEFORE the experience\ntest, not by generalising. The general fix — letting\n`AMBIGUOUS_EXPERIENCE_HEADINGS` yield to education as it yields to summary and\nskills — would overturn a documented decision: Education and Projects are\nexcluded from that yield set on purpose, because \"Project Experience\" really is\na work history in a consultant's CV. These three phrases have no second\nreading, so they need no rule. A control asserts \"Beruflicher Werdegang\" and\nbare \"Werdegang\" are still Experience, so the exception did not swallow the\nrule.\n\n**The wider gap.** The same sweep found 44 lexicon terms classifying as `Other`\n— coverage gaps rather than misfiles, since the section checks just don't run.\nClosed the ones for the two markets the owner prioritised and that carry no\nambiguity: `praxiserfahrung`, `studium` (de), `istruzione`, `esperienze` (it).\n`istruzione` is the very heading `resume_conventions(\"it\")` teaches the model\nto write, so the producer and the recogniser disagreed about Italian education.\n\nThe remaining 40 are enumerated in `KNOWN_MISSES` rather than tolerated in\nbulk. The list is asserted in BOTH directions: a new lexicon term that nothing\nrecognises fails, and fixing one without removing it from the list fails too —\nso it can only shrink deliberately. That turns a silent gap into a reviewed\ninventory. They are mostly Summary/Skills synonyms in fr/es/it/nl/pt, and they\nare not free to close: these consts are substring tests, and `expertise`,\n`portfolio` and `studi` have second readings (Italian \"studio\" contains\n`studi`), so they need word-bounded handling rather than a bare push.\n\n`Languages` terms landing on `Skills` are allowlisted explicitly with the\nreason — `SectionKind` has no `Languages` variant, and \"Sprachkenntnisse\" was\nrejected as a German producer heading for exactly this — rather than being\nswept up by the wrong-bucket rule.\n\nThe fixture is a flattened copy of `SECTION_LEXICON` because Rust cannot parse\nthe TS source; a vitest guard asserts the copy still equals the live lexicon,\nwhich is what stops the Rust sweep from checking yesterday's vocabulary and\nreporting green.\n\nFour mutations run, all red at baseline-green: dropping the precedence branch,\nremoving a newly-taught term, shrinking KNOWN_MISSES without fixing anything,\nand fixing a miss while leaving it listed.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(evidence): stop the italian fix from re-creating the bug it was fixing\n\nPre-PR review BLOCKED the first draft, and the finding is the sharpest kind:\nthe same commit that fixed \"Akademischer Werdegang\" re-introduced that exact\nbug one language over.\n\nPutting the bare stem `esperienze` in `AMBIGUOUS_EXPERIENCE_HEADINGS` looked\nlike a free plural of `esperienza`. It is not: that set yields to Summary and\nSkills but never to Education, and the experience arm runs first. So\n\"Esperienze di formazione\" — an Italian EDUCATION heading — went Education →\nExperience. Priced end to end, a degree entry under it became a fabricated job:\nthe candidate \"held\" the title `Laurea Magistrale in Informatica` at\n`Politecnico di Milano`. It also defeated this change's own new `istruzione`\nentry on \"Istruzione ed esperienze\".\n\nOnly the WORK-QUALIFIED plurals are taught, in the unconditional list beside\ntheir singular: `esperienze professionali`, `esperienze lavorative`. That also\nkeeps them out of the section-DELETING hole the ambiguous list's own doc warns\nabout — \"Esperienze professionali e competenze\" now reaches Experience, where\nthe bare stem lost it to Skills. The bare word returns to `KNOWN_MISSES` as an\nhonest miss.\n\nThe rest, all reproduced by the review:\n\n- The exact-phrase override list missed the nearest siblings of the heading it\n  was written for. `Wissenschaftlicher Werdegang` heads the academic CV this\n  feature exists for, and filed a degree as a job. Added it plus\n  `schulischer`/`bildungs`- and the `akademischen`/`wissenschaftlichen`\n  declensions. German compounds and declines `werdegang` freely, so membership\n  is the cost of the closed-list approach — paid here rather than deferred.\n- `istruzione` as a bare substring also matched `distruzione`. Moved to the\n  word-bounded list, which exists in this file for precisely this\n  (`formation` ⊂ `information`). Controls verified: `costruzione`,\n  `ricostruzione`, `Informazioni personali` all still `Other`.\n- **`EXPERIENCE_HEADINGS` had lost its doc comment.** The new const was\n  inserted between that doc and its item, so the whole run attached to the new\n  const and the old one rendered undocumented. Second time this exact slip\n  happened tonight — the Italy locale profile had it too.\n- `KNOWN_MISSES` could be padded with entries naming no lexicon term at all;\n  the review proved it with `\"zzz-not-a-lexicon-term\"`. Third assertion added,\n  covering the Languages allowlist too.\n- `parcours professionnel` is work-qualified French with no second reading, so\n  it is taught rather than listed as a gap.\n\nBoth remaining corrections were forced by the guard itself rather than by me:\nremoving bare `esperienze` made the sweep demand it back on the list, and\nteaching `parcours professionnel` made the sweep demand it be removed from it.\nThat is the bidirectional inventory doing its job on its own author.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* test(evidence): cover every override phrase, both directions\n\nAI Review on #1011: 5 of the 8 `EDUCATION_OVERRIDES_EXPERIENCE` phrases had no\ntest at all — the assertion list still named the original three after the list\ngrew to eight, so a typo in any of the five would have shipped silently. Same\nfor the new `esperienze professionali`/`lavorative` entries, and the doc comment\nstill said \"these three phrases\".\n\nFixing it the obvious way produced a test that passes for the wrong reason, and\na mutation run caught it: driving the loop off the const covers a phrase ADDED\nwithout thought, but it is self-referential — deleting an entry deletes its own\nassertion. Removing `wissenschaftlicher werdegang` left the test GREEN.\n\nSo both halves are now present: a hand-written membership assertion (catches a\ndeletion) and the const-driven loop (catches an addition), the loop also\ncase-varying each phrase to prove the lowercasing rather than assume it.\n\nAdds `italian_experience_plurals_do_not_capture_education_headings`, which pins\nthe HIGH the earlier review reproduced — \"Esperienze di formazione\" must stay\nEducation, the work-qualified plurals must reach Experience, \"Esperienze\nprofessionali e competenze\" must not fall into the section-deleting Skills\nhole, and the bare stem must stay an honest `Other`. Those behaviours were\nverified with a throwaway probe when the fix landed and pinned by nothing.\n\nMutations, all red at baseline-green: dropping a previously-untested override\nphrase, dropping a taught Italian plural, re-introducing the bare `esperienze`\nstem, and reverting `istruzione` to a bare substring.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T05:59:42+02:00",
+          "tree_id": "c1411353858c4d6a81541db0f20cbc4cdc713d49",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/21ba80e3feafb91f34c1e85e8bf9f031d2431321"
+        },
+        "date": 1787026336069,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1981210,
+            "range": "± 49264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2370861,
+            "range": "± 11251",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 210365,
+            "range": "± 1557",
             "unit": "ns/iter"
           }
         ]
