@@ -69,7 +69,10 @@ function stage(
   return { runId, jobId: JOB_ID, stage: name, phase, index, total: 6, attempt: 1 };
 }
 
-function detail(status: PipelineRunDetail['status']): PipelineRunDetail {
+function detail(
+  status: PipelineRunDetail['status'],
+  stoppedReason?: string | null
+): PipelineRunDetail {
   return {
     runId: RUN_ID,
     jobUrl: 'https://example.test/job',
@@ -77,6 +80,7 @@ function detail(status: PipelineRunDetail['status']): PipelineRunDetail {
     depth: 'quality',
     status,
     startedAt: 1,
+    ...(stoppedReason !== undefined ? { stoppedReason } : {}),
     metrics: {},
     events: [],
     report: null,
@@ -359,6 +363,44 @@ describe('useResumePipelineSession', () => {
     const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
     await waitFor(() => expect(result.current.state).toBe('done'));
     expect(result.current.runId).toBe(RUN_ID);
+  });
+
+  // ── The failure reason survives a remount the live listener missed ────────
+  //
+  // `job.failed` only ever reaches `setError` while a listener is mounted at
+  // the moment it fires. A fresh mount that reconnects to an already-failed
+  // run never saw that event, so without a fallback `error` stays `null`
+  // forever even though the record says exactly why the run stopped.
+  describe('the failure reason survives a remount that missed job.failed', () => {
+    it('derives the reason from the persisted stoppedReason when no live event ever arrived', async () => {
+      // Simulates a fresh mount reconnecting to a run that already failed
+      // while unmounted — no `bus.job?.(...)` call anywhere in this test.
+      bus.detail = detail('failed', 'run_timeout');
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.error).toBeTruthy();
+      expect(result.current.error).toContain('ran out of time');
+    });
+
+    it('prefers the live job.failed message over the persisted reason when both exist', async () => {
+      const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() => bus.job?.(jobFailed(JOB_ID, 'the provider refused the request')));
+      await waitFor(() => expect(result.current.state).toBe('error'));
+
+      // The record catches up on a later poll with a DIFFERENT reason — the
+      // live message, which arrived first-hand, must still win.
+      bus.detail = detail('failed', 'timeout');
+      rerender();
+      expect(result.current.error).toBe('the provider refused the request');
+    });
+
+    it('says nothing for a failed run that recorded no reason at all', async () => {
+      bus.detail = detail('failed', null);
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.error).toBeNull();
+    });
   });
 
   // ── A read that never succeeds must not read as "still working" ───────────

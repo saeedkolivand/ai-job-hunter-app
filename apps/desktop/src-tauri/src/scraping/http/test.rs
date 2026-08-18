@@ -647,13 +647,20 @@ async fn fetch_text_transport_error_does_not_leak_query_secret() {
         url,
         FetchOptions {
             retries: 0,
+            // Port 9 (discard) is refused instantly on Unix, but Windows lets the
+            // connect attempt sit until its own timeout — which added over a minute
+            // to every `cargo test` run on this platform. The ceiling makes the test
+            // bounded everywhere without weakening it: a refused connection still
+            // fails fast, a hung one fails at 500ms, and BOTH are the transport
+            // errors whose `Display` must not carry the query string.
+            timeout: Some(Duration::from_millis(500)),
             ..Default::default()
         },
         signal,
     )
     .await;
 
-    let err = result.expect_err("connection to a refusing port must fail");
+    let err = result.expect_err("an unreachable port must fail");
     let msg = err.to_string();
     assert!(
         !msg.contains("SECRET"),

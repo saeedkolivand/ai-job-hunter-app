@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::data_store::DataStore;
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 mod harvest;
 pub use harvest::harvest_ats_refs;
@@ -171,7 +172,10 @@ impl DiscoveredCompanyStore {
         ) {
             Ok(s) => s,
             Err(e) => {
-                log::warn!("[discovered] search prepare failed ({e}); returning empty");
+                log::warn!(
+                    "[discovered] search prepare failed ({}); returning empty",
+                    sanitize_reason(&e.to_string())
+                );
                 return Vec::new();
             }
         };
@@ -179,7 +183,10 @@ impl DiscoveredCompanyStore {
         match rows {
             Ok(rows) => rows.filter_map(Result::ok).collect(),
             Err(e) => {
-                log::warn!("[discovered] search query failed ({e}); returning empty");
+                log::warn!(
+                    "[discovered] search query failed ({}); returning empty",
+                    sanitize_reason(&e.to_string())
+                );
                 Vec::new()
             }
         }
@@ -232,7 +239,10 @@ impl DiscoveredCompanyStore {
         ) {
             Ok(s) => s,
             Err(e) => {
-                log::warn!("[discovered] watched prepare failed ({e}); returning empty");
+                log::warn!(
+                    "[discovered] watched prepare failed ({}); returning empty",
+                    sanitize_reason(&e.to_string())
+                );
                 return Vec::new();
             }
         };
@@ -242,7 +252,10 @@ impl DiscoveredCompanyStore {
         match rows {
             Ok(rows) => rows.filter_map(Result::ok).collect(),
             Err(e) => {
-                log::warn!("[discovered] watched query failed ({e}); returning empty");
+                log::warn!(
+                    "[discovered] watched query failed ({}); returning empty",
+                    sanitize_reason(&e.to_string())
+                );
                 Vec::new()
             }
         }
@@ -262,7 +275,10 @@ impl DiscoveredCompanyStore {
         ) {
             Ok(s) => s,
             Err(e) => {
-                log::warn!("[discovered] watched_companies prepare failed ({e}); returning empty");
+                log::warn!(
+                    "[discovered] watched_companies prepare failed ({}); returning empty",
+                    sanitize_reason(&e.to_string())
+                );
                 return Vec::new();
             }
         };
@@ -270,7 +286,10 @@ impl DiscoveredCompanyStore {
         match rows {
             Ok(rows) => rows.filter_map(Result::ok).collect(),
             Err(e) => {
-                log::warn!("[discovered] watched_companies query failed ({e}); returning empty");
+                log::warn!(
+                    "[discovered] watched_companies query failed ({}); returning empty",
+                    sanitize_reason(&e.to_string())
+                );
                 Vec::new()
             }
         }

@@ -48,6 +48,7 @@
 // which carries no path filter, so it cannot be skipped by a diff that happens to
 // miss the renderer.
 
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -98,65 +99,153 @@ const SUBSCRIBERS = {
   },
 
   // ── Debt: backend work whose only listener is route-scoped ────────────────
+  //
+  // `hash` is a tripwire, not part of the invariant above: 12 hex chars of the
+  // subscriber file's own sha256 (see `hashBytes`/`staleNoteEntries`). When the
+  // file's current hash no longer matches, the note was written about a version
+  // of the code that no longer exists — re-read the file, fix the note if it
+  // drifted, and paste in the new hash `staleNoteEntries` prints. This is
+  // deliberately dumb: it fires on a pure rename or comment tweak too, same as
+  // a snapshot test. That is the correct trade — the alternative is a note that
+  // silently outlives the code it describes, which is exactly how 8 of these 9
+  // notes went stale with nobody noticing.
+  //
+  // KNOWN BLIND SPOT, measured the first time this fired for real: the hash
+  // covers the DECLARED file only, so a note also goes stale when the behaviour
+  // it describes changes in something that file merely CALLS. Both misses came
+  // from one batch — JobsPage's note was fixed inside `useScraping.ts`, and
+  // update-section's inside `services/use-updater/` plus the Rust updater —
+  // and neither declared file was touched, so neither tripped. Hashing the
+  // transitive import graph would fire on nearly every commit and be ignored
+  // within a week, so the trade stands; the entries that were fixed elsewhere
+  // say so in their own note instead. Re-read a note whenever you change what
+  // its file DEPENDS on, not only the file itself.
 
   'hooks/use-resume-pipeline-session.ts': {
     mount: 'route-scoped',
+    hash: '10ff9d4443cb',
     note:
-      'Mounts THREE subscriptions (job events, pipeline stages, draft stream) from ' +
-      'features/documents/components/TailorFlow/GeneratingPanel.tsx — ' +
-      'route-scoped AND conditionally rendered, so a generation that runs for minutes ' +
-      'drops every stage event emitted while the user is elsewhere. Reconnect covers most ' +
-      'of that: the session store keeps `applicationApply.applyRun`, TailorFlow hands it ' +
-      'back as initialRunId/initialJobId, and the hook re-reads the run record and replays ' +
-      'its persisted stage trail — so a remounted panel shows real progress and can still ' +
-      'cancel. What is NOT recoverable is the streamed draft/letter/thinking text: it is ' +
-      'useState with no durable transcript, so a reconnected run jumps to the finished ' +
-      'document instead of the live stream.',
+      'Mounted in TailorFlow/index.tsx (not GeneratingPanel, which takes only props) via ' +
+      "useTailorPipeline → useResumePipelineSession. Reconnect (the session store's " +
+      'applyRun → run-record re-read + stage-trail replay) restores progress, the step ' +
+      'checklist, and Cancel, so a remounted panel is not blank. A run that FAILS while the ' +
+      "user is elsewhere now shows why: `error` falls back to the run record's " +
+      '`stoppedReason`, so returning no longer lands on a bare "configuring" wizard as if ' +
+      'Generate had never been pressed. NOT recovered: the streamed draft/letter/thinking ' +
+      'text (useState, no transcript — a reconnected run jumps straight to the finished ' +
+      "document), and the live message's exact stage/seconds detail, since the record " +
+      'persists only the wire token.',
   },
   'features/jobs/hooks/useScraping.ts': {
     mount: 'route-scoped',
+    hash: 'b16ef7bcd515',
     note:
-      'Scrape progress. Unmounting also discards the in-flight job id, which breaks the ' +
-      '"cancel the previous scrape first" exclusivity contract: the orphan keeps writing ' +
-      'into the postings cache and can no longer be cancelled from the UI, while the ' +
-      'always-mounted status bar still shows it running.',
+      'Nothing user-visible is lost on a route change any more. The progress readout used to ' +
+      'show a false 0% for the rest of the run — on the default single-board search ' +
+      '`scrape:progress` fires once, at completion, so it never self-corrected — and now ' +
+      "falls back to the job record's persisted `progress`, which the watchdog was already " +
+      'fetching and discarding. The watchdog also has a leading tick, so recovery is ' +
+      'immediate rather than 2.5s late. A scrape that FAILS off-page now restores a ' +
+      'sanitized reason instead of an unexplained empty list, and the completed path ' +
+      'invalidates the postings cache the way the live event handler does. Still bounded by ' +
+      'the 2.5s poll: between ticks the fraction is as stale as the last poll.',
   },
   'features/jobs/components/JobsPage/index.tsx': {
     mount: 'route-scoped',
+    hash: 'b2df3b57b2c8',
     note:
-      'A scrape that finishes while the user is elsewhere drops its terminal job event, so ' +
-      'the per-board diagnostics strip ("aggregator: 429 rate limited") is lost for that ' +
-      'run — the one thing that explains an empty result.',
+      'A scrape that ends off-page — completed OR failed — now comes back explained. The ' +
+      "watchdog re-reads the job record's `result.boards` for the diagnostics strip, writes " +
+      'a sanitized failure note on the failed branch, and invalidates the postings cache so ' +
+      'a remount inside the 30s query staleTime cannot show 0 jobs for a scrape that found ' +
+      'some. Cancelled stays deliberately bare: the user initiated it, so there is nothing ' +
+      'to explain. NOTE this page composes the fix rather than containing it — all of it ' +
+      "lives in `useScraping.ts`, so this entry's own hash could not have detected the " +
+      'change (see the dependency caveat above).',
   },
   'features/autopilot/hooks/useAutopilotRun.ts': {
     mount: 'route-scoped',
+    hash: 'bf031614c42a',
     note:
-      'The originally-reported bug. Partly mitigated: the card now falls back to the ' +
-      "backend's persisted runStatus and the list is invalidated on a terminal step, so a " +
-      'run survives navigation visibly. The step LOG is still lost.',
+      "The originally-reported bug, now closed on both halves. The card reads the backend's " +
+      'persisted `runStatus`, and `useAutopilots` sets `staleTime: 0` so every remount ' +
+      'refetches — previously it inherited the 30s default with nothing invalidating on run ' +
+      'START, so right after create-then-auto-run the card could show idle with an enabled ' +
+      'Run button for a live run. The inline error / "already running" banner now lives in ' +
+      'the session store and survives navigation. Still lost, accepted: every step-log line ' +
+      '(mount-local reducer — only per-board summaries persist, not the rank/re-rank detail ' +
+      'that explains a thin result). The terminal-step invalidation does NOT help while ' +
+      'unmounted — the subscription itself is torn down — so the remount refetch is the ' +
+      'recovery, not that call.',
   },
   'features/onboarding/steps/ollama/ModelSelectionPanel/useModelPull.ts': {
     mount: 'route-scoped',
+    hash: '71a03a907c6d',
     note:
-      'A multi-GB Ollama pull loses its progress and its completion event when the ' +
-      'onboarding step is skipped or navigated away from. The pull itself continues.',
+      'A multi-GB pull survives any unmount — and the trigger really is ANY unmount, not just ' +
+      'skipping the step: switching to the Cloud/CLI tab and back, or Back/Forward through ' +
+      'the wizard, both tear this hook down. On mount it now re-reads the job registry and ' +
+      'adopts a still-active `ai.pull_model` job for the SAME model this panel shows, so ' +
+      "progress resumes and the run's completion handling still fires. `ai_pull_model` keys " +
+      'its exclusivity on (kind, model) via `job_start_exclusive_keyed` and stamps the model ' +
+      'onto the payload from job START, so a second click for the SAME model re-attaches ' +
+      'to the existing job id, while a DIFFERENT model pulls independently — this reattach ' +
+      "read filters on `payload.model` too, so it cannot adopt someone else's running pull " +
+      'and show its progress under the wrong card. Right after adopting, it also re-reads ' +
+      "that job's OWN current status (`jobs_get`) and settles immediately if already " +
+      "`completed`/`failed` — closing the race where the job's ONE terminal event fires in " +
+      'the gap between the registry list resolving and `pullJobId` committing, which would ' +
+      'otherwise be dropped for good and leave the panel reporting `pulling` forever (PR ' +
+      '#1036 review finding). A set of already-settled job ids stops that reconcile read ' +
+      "re-adopting the SAME job forever off a jobs-list cache that hasn't refetched yet " +
+      '(review found the settle would otherwise loop, double-firing the toast, at the rate ' +
+      'of one redundant IPC round trip per cycle, until an unrelated job event happened to ' +
+      'invalidate the cache). `mountedRef` is restored on effect SETUP, not just cleared on ' +
+      'cleanup — the production app renders inside StrictMode, whose dev-only extra ' +
+      'setup→cleanup→setup pass otherwise leaves it permanently false and every later ' +
+      'reconcile read silently drops. NOT recovered, still deliberately: a pull that reaches ' +
+      'a terminal state entirely BEFORE the registry snapshot is taken — finished during the ' +
+      'unmount gap, never observed as still running/queued — is never adopted at all, so its ' +
+      'success toast and the health/models recheck are not retroactively fired; doing that ' +
+      'on every later mount would be worse than missing them once.',
   },
   'features/settings/components/ai-settings/EmbeddingsSettings/index.tsx': {
     mount: 'route-scoped',
+    hash: '0de0f20640fd',
     note:
-      'Re-index completion is handled only by the Settings panel that started it, and the ' +
-      "panel ignores the backend's own `indexing` flag on remount.",
+      'Completion is reported only by the panel that started the run: its `useJobEvents` ' +
+      'handler unsubscribes on unmount, so the complete / partial-failure / failure toast is ' +
+      'lost and never re-raised (no notification-center record either). The button also ' +
+      'reverts to "Re-index now" mid-run because its busy state is local (`reindexJobId` / ' +
+      "`reembed.isPending`), not the backend's `indexing` flag. That flag IS read on remount " +
+      '— it only drives the stale-count copy line, which is hidden whenever `stale === 0`, ' +
+      'and a re-index of already-indexed documents keeps `stale` at 0 for the whole run, so ' +
+      'it never has anywhere to render. No data loss or double-billing: `ai_reembed_all` ' +
+      'hands back the already-running job id.',
   },
   'features/settings/components/update-section/index.tsx': {
     mount: 'route-scoped',
+    hash: '896ef1fd88e1',
     note:
-      'The THIRD independent `useUpdater` instance, each with its own subscription and its ' +
-      'own local status. The other two are always-mounted (the banner and the menu), so the ' +
-      'update itself is never lost — but this copy resets to idle on every route change, so ' +
-      'a download started in Settings shows no progress when the user returns.',
+      'The THIRD `useUpdater` instance, alongside the always-mounted banner and menu — but ' +
+      'the three no longer disagree. `useUpdater` keeps status AND the download-progress ' +
+      'readout (speed, time remaining) in one module-level store all instances share — the ' +
+      'byte counts need no store slot of their own, since they are derived straight off the ' +
+      "shared status's `downloaded`/`total` fields — so a remounted panel immediately shows " +
+      'a download another instance already knew about, numbers included, instead of a LIVE ' +
+      '"Check now" over work in flight or a correct label sitting over a blank/zero progress ' +
+      'readout (an earlier pass on this PR shared only `status`, leaving the metrics ' +
+      'per-instance — closed by folding them into the same store). Two backend guards close ' +
+      'the rest: `updater_check` returns the known state BEFORE emitting `checking` when a ' +
+      "download is running or done (so it neither blanks the banner nor clears Rust's " +
+      '`downloaded_bytes` and forces a re-download), and `updater_download` is guarded ' +
+      'against re-entry by a Drop-based guard that cannot latch. NOTE the fix lives in ' +
+      "`services/use-updater/` and the Rust updater, so this entry's own hash could not have " +
+      'detected it (see the dependency caveat above).',
   },
   'features/monitoring/hooks/useActivityFeed.ts': {
     mount: 'route-scoped',
+    hash: 'e1923404534f',
     note:
       'ACCEPTED, not debt. A live activity feed is a view of the current moment; there is no ' +
       'per-run state to preserve and nothing is lost by only listening while the monitoring ' +
@@ -164,10 +253,20 @@ const SUBSCRIBERS = {
   },
   'features/dashboard/components/AISystemStatus/index.tsx': {
     mount: 'route-scoped',
+    hash: '55fe0b8309f1',
     note:
-      'ACCEPTED, not debt. useWorkerActivity feeding a live "what is busy right now" readout; ' +
-      'the reading is re-derived from the job registry on mount, so there is no history a ' +
-      'missed event could have cost it.',
+      'Not accepted-by-design: the safety here is real but conditional. StatusBar mounts the ' +
+      'identical `useWorkerActivity` from routes/__root.tsx (inside `ProtocolVersionGate`), ' +
+      'so the shared job-events cache keeps invalidating while this card is unmounted and the ' +
+      'counts read correctly on return — but that is an UNENFORCED cross-file coupling; ' +
+      'nothing checks that StatusBar keeps being rendered everywhere, and this entry is the ' +
+      'only place the dependency is written down. There is also a real gap: React Query ' +
+      "defaults to `networkMode: 'online'` (no override here) and the client sets " +
+      '`refetchOnReconnect: false`, so with `navigator.onLine` false every fetch this card ' +
+      'depends on pauses and nothing re-drives it — the card then shows stale/idle counts for ' +
+      'backend work (embeddings, local-Ollama generation) that keeps running regardless of ' +
+      'network state. Minor: `refreshing`, the spinner flag, is local and drops mid-refresh ' +
+      'on unmount.',
   },
 };
 
@@ -372,12 +471,58 @@ export function discoverSubscribers(hooks, rendererDir = RENDERER) {
 }
 
 /**
+ * First 12 hex chars of a file's sha256 — enough to detect any byte change
+ * without carrying a 64-char digest around in a hand-edited table.
+ */
+export function hashBytes(bytes) {
+  return createHash('sha256').update(bytes).digest('hex').slice(0, 12);
+}
+
+/**
+ * Route-scoped entries whose stored `hash` no longer matches their subscriber
+ * file's CURRENT bytes — i.e. the file changed since the note was last read
+ * against it, so the note may be describing code that no longer exists.
+ *
+ * `readFile(relPath)` is injected (default: read from the real renderer tree)
+ * so this stays a pure function of its inputs: a test can hand it a fixture
+ * reader instead of touching the real tree, and — the one thing a stale-note
+ * guard's own test must never do — this file's own tests do not hash a real
+ * file and then compare that hash to itself.
+ *
+ * Only `route-scoped` entries carry a `hash`. An `always`-mounted entry's note
+ * is a much weaker claim ("this is only ever called from routes/__root.tsx"),
+ * true by construction of where the call sites live rather than a description
+ * of what navigating away costs — and the always-mounted files here
+ * (routes/__root.tsx, StatusBar, …) are touched often for unrelated UI work,
+ * so hashing them would mostly generate noise on the debt list this exists to
+ * keep honest, not on the structural fact those entries actually assert.
+ */
+export function staleNoteEntries(
+  inventory = SUBSCRIBERS,
+  readFile = (rel) => readFileSync(join(RENDERER, rel))
+) {
+  const stale = [];
+  for (const [file, entry] of Object.entries(inventory)) {
+    if (!entry.hash) continue;
+    const currentHash = hashBytes(readFile(file));
+    if (currentHash !== entry.hash) stale.push({ file, note: entry.note, currentHash });
+  }
+  return stale;
+}
+
+/**
  * Every violation, as human-readable lines. Empty means the invariant holds.
  *
  * Returned rather than printed so the check is testable without capturing
  * stdout or trapping `process.exit`.
  */
-export function violations(inventory = SUBSCRIBERS, hooks, subscribers, namespaced = []) {
+export function violations(
+  inventory = SUBSCRIBERS,
+  hooks,
+  subscribers,
+  namespaced = [],
+  staleNotes = []
+) {
   const problems = [];
 
   // Discovery resolves imported BINDINGS, which handles `as` aliases but not a
@@ -462,6 +607,48 @@ export function violations(inventory = SUBSCRIBERS, hooks, subscribers, namespac
     );
   }
 
+  // Vacuity hole (found reviewing #1036): staleNoteEntries only looks at
+  // entries that HAVE a hash, so a route-scoped entry that omits the key
+  // skips the tripwire below forever — silently, since nothing else requires
+  // the key to be present. Checked here, ahead of staleness, so a missing or
+  // malformed hash is reported as its own violation instead of quietly
+  // reading as "nothing to report". `always`-mounted entries stay exempt:
+  // their note is a structural claim about WHERE the file is called from
+  // (true by construction of the call site), not a description of what
+  // navigating away costs, so there is nothing for a content hash to police.
+  const missingHash = Object.entries(inventory)
+    .filter(([, e]) => e.mount === 'route-scoped' && !/^[0-9a-f]{12}$/.test(e.hash ?? ''))
+    .map(([f]) => f);
+  if (missingHash.length > 0) {
+    problems.push(
+      'A route-scoped entry must carry a `hash` (12 hex chars, from hashBytes()) so its ' +
+        'note goes stale when the subscriber file changes — without one the tripwire below ' +
+        'never fires, no matter how far the file drifts:\n' +
+        missingHash.map((f) => `    ${f}`).join('\n')
+    );
+  }
+
+  // The tripwire. A note is a claim about the code at a specific point in
+  // time; a changed file invalidates that claim until a human re-reads it.
+  // This fires on ANY byte change to the subscriber file — including a pure
+  // rename, comment, or formatting tweak — by design: the failure mode this
+  // guards is a note that silently outlives the code it describes (8 of the
+  // 9 route-scoped notes here did exactly that), and the fix is always a
+  // one-line hash update, cheap next to the cost of finding out a year late.
+  if (staleNotes.length > 0) {
+    problems.push(
+      'These subscriber files changed since their note was last checked against them — the\n' +
+        '  note may no longer describe the code. Re-read the file, fix the note if it drifted,\n' +
+        '  then paste in the new hash shown below:\n' +
+        staleNotes
+          .map(
+            ({ file, note, currentHash }) =>
+              `    ${file}\n` + `      current note: "${note}"\n` + `      new hash: ${currentHash}`
+          )
+          .join('\n')
+    );
+  }
+
   return problems;
 }
 
@@ -469,7 +656,8 @@ export function violations(inventory = SUBSCRIBERS, hooks, subscribers, namespac
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const hooks = discoverSubscriptionHooks();
   const subscribers = discoverSubscribers(hooks);
-  const problems = violations(SUBSCRIBERS, hooks, subscribers, namespaceImporters());
+  const staleNotes = staleNoteEntries(SUBSCRIBERS);
+  const problems = violations(SUBSCRIBERS, hooks, subscribers, namespaceImporters(), staleNotes);
 
   if (problems.length > 0) {
     for (const p of problems) console.error(`✗ ${p}`);

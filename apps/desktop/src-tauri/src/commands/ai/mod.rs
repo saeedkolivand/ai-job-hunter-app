@@ -5,10 +5,11 @@ use tauri::{AppHandle, Manager};
 use crate::credentials::CredentialStore;
 use crate::db::new_job_id;
 use crate::documents::{embedding_space_changed, DocumentStore, EmbeddingConfig};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
-use crate::jobs::{JobStatus, JobTracker};
+use crate::jobs::{JobStatus, JobTracker, KeyedExclusiveStart};
+use crate::observability::sanitize_reason;
 use crate::postings::PostingsCache;
 
 use super::ai_provider::{
@@ -591,9 +592,33 @@ pub async fn ai_lookup_salary(
 }
 
 #[tauri::command]
-pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
+pub async fn ai_pull_model(app: AppHandle, model: String) -> AppResult<Value> {
     let job_id = new_job_id();
-    crate::commands::jobs::job_start(&app, &job_id, "ai.pull_model");
+    // Exclusive per (kind, model), not kind alone: a returning caller (a
+    // remounted onboarding step showing an idle Download button) must
+    // re-attach to a pull of the SAME model already in flight — same
+    // check-then-act reasoning as `claim_embed_job`. A pull of a DIFFERENT
+    // model already running is refused rather than silently joined: joining
+    // would hand the caller progress for a model it never asked for while its
+    // own request never ran at all, and two concurrent multi-GB downloads
+    // would compete for the same bandwidth and disk anyway.
+    match crate::commands::jobs::job_start_exclusive_keyed(
+        &app,
+        &job_id,
+        "ai.pull_model",
+        "model",
+        &model,
+    ) {
+        KeyedExclusiveStart::Joined(existing) => {
+            return Ok(json!({ "jobId": existing }));
+        }
+        KeyedExclusiveStart::Started => {}
+        KeyedExclusiveStart::Busy(active_model) => {
+            return Err(AppError::Validation(format!(
+                "Already downloading \"{active_model}\" — wait for it to finish before starting another model."
+            )));
+        }
+    }
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
@@ -613,7 +638,7 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
         }
     });
 
-    json!({ "jobId": job_id })
+    Ok(json!({ "jobId": job_id }))
 }
 
 #[tauri::command]
@@ -1106,7 +1131,11 @@ async fn run_embed_job(
                         {
                             Ok(()) => done += 1,
                             Err(e) => {
-                                log::warn!("reembed write failed for {}: {e}", doc.id);
+                                log::warn!(
+                                    "reembed write failed for {}: {}",
+                                    doc.id,
+                                    sanitize_reason(&e.to_string())
+                                );
                                 first_error.get_or_insert_with(|| e.to_string());
                                 failed += 1;
                             }

@@ -37,12 +37,27 @@ pub struct UpdaterState {
     pub pending_version: Option<String>,
     /// Raw bytes from the last successful download.
     pub downloaded_bytes: Option<Vec<u8>>,
+    /// Set for the lifetime of one `updater_download` call (cleared by
+    /// [`DownloadGuard`] on every exit path, including a panic). Lets
+    /// `updater_check`/`updater_download` recognize "a transfer is already
+    /// running" without polling the update plugin — the single re-entrancy
+    /// flag both commands share.
+    pub downloading: bool,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn emit_status(app: &AppHandle, status: Value) {
     emit_event(app, UPDATER_STATUS, status);
+}
+
+/// Whether a download for the pending update has already finished or is
+/// still running — the single predicate both `updater_check` (don't discard
+/// it) and `updater_download` (don't start a second one) key their guard on.
+/// Split out so it is testable against a plain [`UpdaterState`], without a
+/// live `AppHandle` (this crate has no `tauri::test` mock-app harness).
+fn download_in_progress_or_done(state: &UpdaterState) -> bool {
+    state.downloading || state.downloaded_bytes.is_some()
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -52,6 +67,30 @@ fn emit_status(app: &AppHandle, status: Value) {
 /// Stores the Update object for use by updater_download.
 #[tauri::command]
 pub async fn updater_check(app: AppHandle) -> Value {
+    // A finished or in-flight download must never be thrown away by a fresh
+    // check. `check()` below unconditionally replaces `pending_update` and
+    // resets `downloaded_bytes` to `None` on success — correct the FIRST
+    // time, but a returning caller (a remounted route, or a stale "Check now"
+    // button rendered over work that is already running) would otherwise
+    // discard an already-downloaded release — forcing a full re-download —
+    // or swap the `Update` object out from under a transfer still in flight.
+    // Report the state that is already known instead of re-fetching: the
+    // caller wants to re-attach, not restart.
+    {
+        let state = app.state::<Mutex<UpdaterState>>();
+        let guard = state.lock();
+        if let Some(version) = guard.pending_version.clone() {
+            if download_in_progress_or_done(&guard) {
+                return json!({
+                    "available": true,
+                    "version": version,
+                    "downloaded": guard.downloaded_bytes.is_some(),
+                    "downloading": guard.downloading,
+                });
+            }
+        }
+    }
+
     emit_status(&app, json!({ "state": "checking" }));
 
     let updater = match app.updater() {
@@ -101,19 +140,56 @@ pub async fn updater_check(app: AppHandle) -> Value {
     }
 }
 
+/// Clears [`UpdaterState::downloading`] when it drops — on the success
+/// return, the error return, OR a panic unwind mid-transfer — so a download
+/// that dies partway through can never leave the flag stuck `true` and
+/// permanently refuse every future `updater_download` call.
+struct DownloadGuard(AppHandle);
+
+impl Drop for DownloadGuard {
+    fn drop(&mut self) {
+        if let Some(state) = self.0.try_state::<Mutex<UpdaterState>>() {
+            state.lock().downloading = false;
+        }
+    }
+}
+
 /// Download the pending update with progress events.
 /// Uses the Update object stored by updater_check — no re-fetch.
 /// Emits downloading(percent) → downloaded(version) | error.
+///
+/// Not re-entrant: a second call while one is already in flight (or one
+/// already finished) refuses rather than starting a second transfer of the
+/// same release — progress/completion is broadcast on `updater:status` to
+/// every listener regardless of which call started the download, so a
+/// second caller has nothing useful to do but wait.
 #[tauri::command]
 pub async fn updater_download(app: AppHandle) -> Value {
     let (update, version) = {
         let state = app.state::<Mutex<UpdaterState>>();
-        let guard = state.lock();
+        let mut guard = state.lock();
         match (guard.pending_update.clone(), guard.pending_version.clone()) {
-            (Some(u), Some(v)) => (u, v),
+            (Some(u), Some(v)) => {
+                // Checked and claimed under the SAME lock as the reads above,
+                // so two concurrent calls can't both observe "not downloading"
+                // before either sets the flag — the check-then-act race
+                // `job_start_exclusive` closes for jobs; this is the
+                // updater's version of the same fix, over a plain bool
+                // instead of the job tracker.
+                if download_in_progress_or_done(&guard) {
+                    return json!({
+                        "version": v,
+                        "downloaded": guard.downloaded_bytes.is_some(),
+                        "downloading": guard.downloading,
+                    });
+                }
+                guard.downloading = true;
+                (u, v)
+            }
             _ => return json!({ "error": "no pending update — call updater_check first" }),
         }
     };
+    let _guard = DownloadGuard(app.clone());
 
     let app_clone = app.clone();
     let bytes = update

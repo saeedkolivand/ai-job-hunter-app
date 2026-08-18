@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -22,73 +22,138 @@ export type UpdateStatus =
   | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string };
 
+interface UpdaterSnapshot {
+  status: UpdateStatus;
+  downloadSpeed: string;
+  timeRemaining: string;
+}
+
+// `status` AND the download-progress readout (speed, time remaining) are
+// shared MODULE state, not local `useState`/`useRef`. There are three
+// independent useUpdater() call sites (this settings panel, the always-mounted
+// banner, and the menu), each with its OWN `updater:status` subscription; the
+// banner/menu never unmount, so they never lose it, but the settings panel
+// mounts/unmounts with route navigation. There is no backend command to ask
+// "what's the status right now" — only this push event — so a fresh instance
+// previously had no way to learn the truth and rendered a stale 'idle',
+// including a live "Check now" button for an update that was already
+// downloading or done. Not React Query: there is nothing to FETCH, only a
+// pushed value to remember, so a plain synchronous external store (every
+// mounted instance reads the SAME value, updated the instant any one of them
+// receives an event) is the whole fix — no extra `check()` call, no re-fetch.
+//
+// `downloadedBytes`/`totalBytes` don't get a store slot at all: the
+// `downloading` status variant already carries `.downloaded`/`.total`, so
+// every instance derives them straight off the (already-shared) `status`
+// below — one source of truth instead of a second copy that can fall out of
+// sync with it.
+//
+// `downloadSpeed`/`timeRemaining` are rate calculations, so unlike the byte
+// counts they need HISTORY (a previous sample + its timestamp) to compute.
+// That history (`prevBytes`/`prevTime` below) is module-level too, for the
+// same reason `status` is: a settings panel that unmounts mid-download and
+// remounts must not restart its own blank history and sit through one more
+// silent tick before the first speed reading appears. The banner keeps an
+// `updater.onStatus` listener alive for the whole download, so in practice a
+// remount only adds a second listener recomputing the same delta from the
+// same shared previous sample — idempotent, because once the first listener
+// advances `prevBytes` for an event the rest see `bytes === prevBytes` and
+// skip. Reset on `downloaded`/`error` keeps a finished download from leaking
+// a stale sample into the next one.
+//
+// "The banner never unmounts" is ALMOST true and deliberately not relied on:
+// `__root.tsx` renders it inside `ProtocolVersionGate`, which swaps in an
+// ErrorState *instead of* children on a protocol mismatch, so every listener
+// can in fact go away at once. The consequence is bounded — the next event
+// after the gate reopens computes one speed reading against a stale
+// timestamp, then self-corrects — and it only arises in a state where the app
+// is already showing a fatal error, so guarding it would be code for a
+// cosmetic glitch nobody reaches. Written down because the same
+// "always-mounted" assumption has been asserted twice on this PR and was
+// imprecise both times.
+let sharedSnapshot: UpdaterSnapshot = {
+  status: { state: 'idle' },
+  downloadSpeed: '',
+  timeRemaining: '',
+};
+let prevBytes = 0;
+let prevTime = 0;
+let lastSpeedUpdate = 0;
+let lastTimeUpdate = 0;
+
+const updateStatusListeners = new Set<() => void>();
+function setSharedSnapshot(next: UpdaterSnapshot) {
+  sharedSnapshot = next;
+  updateStatusListeners.forEach((listener) => listener());
+}
+function subscribeToUpdateStatus(listener: () => void) {
+  updateStatusListeners.add(listener);
+  return () => updateStatusListeners.delete(listener);
+}
+function getSharedSnapshot() {
+  return sharedSnapshot;
+}
+
+function recordStatus(newStatus: UpdateStatus) {
+  let downloadSpeed = sharedSnapshot.downloadSpeed;
+  let timeRemaining = sharedSnapshot.timeRemaining;
+
+  if (newStatus.state === 'downloading') {
+    const now = Date.now();
+    const bytes = newStatus.downloaded ?? 0;
+    const total = newStatus.total ?? 0;
+
+    if (prevTime > 0 && bytes > prevBytes) {
+      const bytesPerSecond = calculateDownloadSpeed(bytes, prevBytes, now, prevTime);
+
+      if (bytesPerSecond > 0) {
+        // Throttle speed updates to every 500ms
+        if (now - lastSpeedUpdate > 500) {
+          downloadSpeed = formatDownloadSpeed(bytesPerSecond);
+          lastSpeedUpdate = now;
+        }
+
+        // Calculate time remaining (throttled to 500ms)
+        if (total > 0 && bytes > 0 && bytes < total && now - lastTimeUpdate > 500) {
+          timeRemaining = formatTimeRemaining(calculateTimeRemaining(total, bytes, bytesPerSecond));
+          lastTimeUpdate = now;
+        }
+      }
+    }
+
+    prevBytes = bytes;
+    prevTime = now;
+  } else if (newStatus.state === 'downloaded' || newStatus.state === 'error') {
+    downloadSpeed = '';
+    timeRemaining = '';
+    prevBytes = 0;
+    prevTime = 0;
+    lastSpeedUpdate = 0;
+    lastTimeUpdate = 0;
+  }
+
+  setSharedSnapshot({ status: newStatus, downloadSpeed, timeRemaining });
+}
+
+/** Test-only: reset the shared status between tests (module state persists across `it()`s). */
+export function resetUpdaterStatusForTests() {
+  sharedSnapshot = { status: { state: 'idle' }, downloadSpeed: '', timeRemaining: '' };
+  prevBytes = 0;
+  prevTime = 0;
+  lastSpeedUpdate = 0;
+  lastTimeUpdate = 0;
+}
+
 export function useUpdater() {
   const api = useAppClient();
-  const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' });
-  const [downloadSpeed, setDownloadSpeed] = useState<string>('');
-  const [downloadedBytes, setDownloadedBytes] = useState<number>(0);
-  const [totalBytes, setTotalBytes] = useState<number>(0);
-  const [timeRemaining, setTimeRemaining] = useState<string>('');
-
-  const prevBytesRef = useRef(0);
-  const prevTimeRef = useRef(0);
-  const lastSpeedUpdateRef = useRef(0);
-  const lastTimeUpdateRef = useRef(0);
+  const { status, downloadSpeed, timeRemaining } = useSyncExternalStore(
+    subscribeToUpdateStatus,
+    getSharedSnapshot
+  );
 
   useEffect(() => {
     const off = api.updater.onStatus((s: unknown) => {
-      const newStatus = s as UpdateStatus;
-      setStatus(newStatus);
-
-      // Track download metrics
-      if (newStatus.state === 'downloading') {
-        const now = Date.now();
-        const bytes = newStatus.downloaded ?? 0;
-        const total = newStatus.total ?? 0;
-
-        setDownloadedBytes(bytes);
-        setTotalBytes(total);
-
-        // Calculate download speed
-        if (prevTimeRef.current > 0 && bytes > prevBytesRef.current) {
-          const bytesPerSecond = calculateDownloadSpeed(
-            bytes,
-            prevBytesRef.current,
-            now,
-            prevTimeRef.current
-          );
-
-          if (bytesPerSecond > 0) {
-            // Throttle speed updates to every 500ms
-            if (now - lastSpeedUpdateRef.current > 500) {
-              setDownloadSpeed(formatDownloadSpeed(bytesPerSecond));
-              lastSpeedUpdateRef.current = now;
-            }
-
-            // Calculate time remaining (throttled to 500ms)
-            if (total > 0 && bytes > 0 && bytes < total) {
-              if (now - lastTimeUpdateRef.current > 500) {
-                const remainingSeconds = calculateTimeRemaining(total, bytes, bytesPerSecond);
-                setTimeRemaining(formatTimeRemaining(remainingSeconds));
-                lastTimeUpdateRef.current = now;
-              }
-            }
-          }
-        }
-
-        prevBytesRef.current = bytes;
-        prevTimeRef.current = now;
-      } else if (newStatus.state === 'downloaded' || newStatus.state === 'error') {
-        // Reset download state
-        setDownloadSpeed('');
-        setDownloadedBytes(0);
-        setTotalBytes(0);
-        setTimeRemaining('');
-        prevBytesRef.current = 0;
-        prevTimeRef.current = 0;
-        lastSpeedUpdateRef.current = 0;
-        lastTimeUpdateRef.current = 0;
-      }
+      recordStatus(s as UpdateStatus);
     });
     return () => {
       off();
@@ -98,6 +163,9 @@ export function useUpdater() {
   const check = useCallback(() => api.updater.check(), [api]);
   const download = useCallback(() => api.updater.download(), [api]);
   const install = useCallback(() => api.updater.install(), [api]);
+
+  const downloadedBytes = status.state === 'downloading' ? (status.downloaded ?? 0) : 0;
+  const totalBytes = status.state === 'downloading' ? (status.total ?? 0) : 0;
 
   return {
     status,

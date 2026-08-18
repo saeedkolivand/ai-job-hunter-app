@@ -27,6 +27,7 @@ use super::super::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
 use super::common::matches_filters;
+use crate::observability::sanitize_reason;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -217,13 +218,19 @@ impl Scraper for ComeetScraper {
 
         let company_uid = crate::credentials::read_credential(&format!("ai:{COMEET_COMPANY_UID}"))
             .unwrap_or_else(|e| {
-                log::warn!("[comeet] {COMEET_COMPANY_UID} keyring error: {e}");
+                log::warn!(
+                    "[comeet] {COMEET_COMPANY_UID} keyring error: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 None
             })
             .filter(|s| !s.trim().is_empty());
         let token = crate::credentials::read_credential(&format!("ai:{COMEET_API_TOKEN}"))
             .unwrap_or_else(|e| {
-                log::warn!("[comeet] {COMEET_API_TOKEN} keyring error: {e}");
+                log::warn!(
+                    "[comeet] {COMEET_API_TOKEN} keyring error: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 None
             })
             .filter(|s| !s.trim().is_empty());

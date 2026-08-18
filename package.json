@@ -41,6 +41,7 @@
     "check:event-subscriptions": "node scripts/check-event-subscriptions.mjs",
     "check:toolchain-pin": "node scripts/check-toolchain-pin.mjs",
     "check:adr-citations": "node scripts/check-adr-citations.mjs",
+    "check:log-error-leaks": "node scripts/check-log-error-leaks.mjs",
     "clean": "pnpm -r exec rimraf dist out .turbo node_modules/.cache",
     "clean:turbo": "pnpm -r exec rimraf .turbo node_modules/.cache/turbo",
     "storybook": "pnpm --filter @ajh/ui storybook",

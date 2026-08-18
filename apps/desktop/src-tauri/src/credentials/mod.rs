@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 pub(crate) const SERVICE: &str = "com.ajh.tauri";
 
@@ -76,7 +77,10 @@ pub struct CredentialStore {
 impl CredentialStore {
     pub fn new(data_dir: &PathBuf) -> Self {
         if let Err(e) = std::fs::create_dir_all(data_dir) {
-            log::warn!("[credentials] failed to create data dir (metadata writes may fail): {e}");
+            log::warn!(
+                "[credentials] failed to create data dir (metadata writes may fail): {}",
+                sanitize_reason(&e.to_string())
+            );
         }
         Self {
             meta_file: data_dir.join("credential-meta.json"),
@@ -185,7 +189,7 @@ impl CredentialStore {
             // Report empty to this read-only caller, but do NOT cache it — a later
             // `set` must not mistake an unreadable index for an empty one.
             Err(e) => {
-                log::error!("[credentials] {e}");
+                log::error!("[credentials] {}", sanitize_reason(&e.to_string()));
                 HashMap::new()
             }
         }

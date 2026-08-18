@@ -3,6 +3,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::sanitize_quality_report;
 use crate::ipc_contracts::ai::{AiGenerationSaveRequest, AiGenerationUpdateRequest};
+use crate::observability::sanitize_reason;
 
 #[tauri::command]
 pub async fn ai_generations_list(app: AppHandle) -> Value {
@@ -101,7 +102,10 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
             // Non-fatal: a failed Application upsert must not lose the generation the
             // user just produced. The generation save below is the user-visible action;
             // the aggregate (and the FK, via boot-time backfill) can be re-derived.
-            Err(e) => log::warn!("[ai_generations] application upsert failed (non-fatal): {e}"),
+            Err(e) => log::warn!(
+                "[ai_generations] application upsert failed (non-fatal): {}",
+                sanitize_reason(&e.to_string())
+            ),
         }
     }
 

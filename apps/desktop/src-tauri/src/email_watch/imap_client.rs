@@ -42,6 +42,7 @@ use std::time::Duration;
 use native_tls::TlsConnector;
 
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 /// Default IMAP host/port — v1's Settings UI is Gmail-branded, but the value
 /// is DATA (stored in `EmailWatchStore`'s `account` row), not hardcoded into
@@ -449,7 +450,10 @@ fn connect_with_timeout(
         let tls = match connector.connect(host, tcp) {
             Ok(tls) => tls,
             Err(e) => {
-                log::warn!("[email_watch] TLS handshake with {host}:{port} failed: {e}");
+                log::warn!(
+                    "[email_watch] TLS handshake with {host}:{port} failed: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 last_err = AppError::Network("could not connect to the mail server".to_string());
                 continue;
             }

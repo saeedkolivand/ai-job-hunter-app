@@ -59,6 +59,12 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, EXTENSION_BRIDGE_CHANGED};
+use crate::observability::sanitize_reason;
+
+use self::persist::{
+    load_ai_assist_optin, load_autofill_optin, load_or_create_token, new_token,
+    persist_ai_assist_optin, persist_autofill_optin, persist_token,
+};
 
 mod answer_assist;
 mod answer_rewrite;
@@ -77,6 +83,7 @@ mod match_live;
 /// Wire `type` constants (the TS-mirrored protocol table) — see its module doc.
 pub mod msg;
 pub mod native_host;
+mod persist;
 pub mod register;
 /// The `token.revoked` wire surface + its no-oracle gate — see its module doc.
 mod revoke;
@@ -304,7 +311,8 @@ impl BridgeState {
             *token = fresh.clone();
         }
         if let Err(e) = persist_token(&self.data_dir, &fresh) {
-            log::warn!("[extension_bridge] failed to persist regenerated token (non-fatal): {e}");
+            let reason = sanitize_reason(&e.to_string());
+            log::warn!("[extension_bridge] failed to persist regenerated token: {reason}");
         }
         fresh
     }
@@ -329,7 +337,8 @@ impl BridgeState {
     pub fn set_autofill_enabled(&self, enabled: bool) {
         self.autofill_enabled.store(enabled, Ordering::Relaxed);
         if let Err(e) = persist_autofill_optin(&self.data_dir, enabled) {
-            log::warn!("[extension_bridge] failed to persist autofill opt-in (non-fatal): {e}");
+            let reason = sanitize_reason(&e.to_string());
+            log::warn!("[extension_bridge] failed to persist autofill opt-in: {reason}");
         }
     }
 
@@ -349,7 +358,8 @@ impl BridgeState {
     pub fn set_ai_assist(&self, enabled: bool) {
         self.ai_assist_enabled.store(enabled, Ordering::Relaxed);
         if let Err(e) = persist_ai_assist_optin(&self.data_dir, enabled) {
-            log::warn!("[extension_bridge] failed to persist ai-assist opt-in (non-fatal): {e}");
+            let reason = sanitize_reason(&e.to_string());
+            log::warn!("[extension_bridge] failed to persist ai-assist opt-in: {reason}");
         }
     }
 
@@ -429,88 +439,6 @@ impl crate::data_store::Resettable for BridgeState {
         self.set_ai_assist(false);
         self.set_autotrack_enabled(false);
     }
-}
-
-/// A 32-byte random token, lowercase hex (64 chars).
-fn new_token() -> String {
-    use rand::Rng;
-    let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Read the persisted token, or create + persist a fresh one on first run (or
-/// if the stored value is corrupt/empty).
-fn load_or_create_token(data_dir: &Path) -> String {
-    let path = data_dir.join(TOKEN_FILE);
-    if let Ok(s) = std::fs::read_to_string(&path) {
-        let trimmed = s.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-    let fresh = new_token();
-    if let Err(e) = persist_token(data_dir, &fresh) {
-        log::warn!("[extension_bridge] failed to persist initial token (non-fatal): {e}");
-    }
-    fresh
-}
-
-/// Read the persisted autofill opt-in (`"1"` ⇒ on). Absent / any other value ⇒
-/// OFF, so a first run and a corrupt flag both default to the safe (off) state.
-fn load_autofill_optin(data_dir: &Path) -> bool {
-    std::fs::read_to_string(data_dir.join(AUTOFILL_OPTIN_FILE))
-        .map(|s| s.trim() == "1")
-        .unwrap_or(false)
-}
-
-fn persist_autofill_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
-    std::fs::create_dir_all(data_dir)?;
-    std::fs::write(
-        data_dir.join(AUTOFILL_OPTIN_FILE),
-        if enabled { "1" } else { "0" },
-    )
-}
-
-/// Read the persisted AI-answer-assist opt-in. Absent file / parse failure →
-/// OFF (the safe state), mirroring [`load_autofill_optin`]'s degrade-to-off
-/// discipline. Only the `enabled` flag is honored: an OLD file that also
-/// carried a `provider`/`model`/`base_url` snapshot is still read fine — the
-/// extra fields are ignored, so a user who opted in before task #16 stays
-/// opted in (the active provider is resolved from the backend
-/// [`crate::ai_config::AiConfigStore`] at answer-time, never that stale
-/// snapshot).
-fn load_ai_assist_optin(data_dir: &Path) -> bool {
-    std::fs::read_to_string(data_dir.join(AI_ASSIST_OPTIN_FILE))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| v.get("enabled").and_then(Value::as_bool))
-        .unwrap_or(false)
-}
-
-fn persist_ai_assist_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
-    std::fs::create_dir_all(data_dir)?;
-    std::fs::write(
-        data_dir.join(AI_ASSIST_OPTIN_FILE),
-        json!({ "enabled": enabled }).to_string(),
-    )
-}
-
-fn persist_token(data_dir: &Path, token: &str) -> std::io::Result<()> {
-    std::fs::create_dir_all(data_dir)?;
-    std::fs::write(data_dir.join(TOKEN_FILE), token)?;
-    // Restrict the token file to the owner (best-effort) on unix so a
-    // multi-user box can't read the pairing secret. Applies on both
-    // first-create and rotate.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(
-            data_dir.join(TOKEN_FILE),
-            std::fs::Permissions::from_mode(0o600),
-        );
-    }
-    Ok(())
 }
 
 /// Spawn the bridge server via the Tauri async runtime. Fire-and-forget: a
@@ -796,7 +724,8 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         let msg = match frame {
             Ok(m) => m,
             Err(e) => {
-                log::warn!("[extension_bridge] read error: {e}");
+                let reason = sanitize_reason(&e.to_string());
+                log::warn!("[extension_bridge] read error: {reason}");
                 break;
             }
         };

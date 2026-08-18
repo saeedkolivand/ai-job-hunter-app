@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   calculateDownloadSpeed,
@@ -9,7 +9,7 @@ import {
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
-import { useJobEvents, usePullModel } from '@/services';
+import { fetchJob, useJobEvents, useJobQueue, usePullModel } from '@/services';
 
 type PullState = 'idle' | 'pulling' | 'done' | 'error';
 
@@ -23,6 +23,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
   const pullModel = usePullModel();
+  const jobQueue = useJobQueue();
 
   const [pullState, setPullState] = useState<PullState>('idle');
   const [pullProgress, setPullProgress] = useState(0);
@@ -36,8 +37,40 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
   const lastSpeedUpdateRef = useRef(0);
   const lastTimeUpdateRef = useRef(0);
 
+  // The reattach effect's reconcile read below needs the CURRENT `pullJobId`
+  // from inside an async `.then()`, where a closure only has the value from
+  // whichever render scheduled it — a ref synced every render is the
+  // standard way to read "now" from there (same discipline as
+  // `useResumePipelineSession`'s `jobIdRef`).
+  const pullJobIdRef = useRef(pullJobId);
+  pullJobIdRef.current = pullJobId;
+  // True while this hook instance is mounted. Deliberately its OWN effect
+  // with an empty dep array — tying it to the reattach effect below would
+  // flip it false the instant that effect adopts a job (its deps include
+  // `pullJobId`, which the adoption itself changes), cancelling that
+  // effect's own reconcile read before it can resolve. Set in the SETUP
+  // half too, not just left `true` from the initial ref value: StrictMode
+  // runs setup → cleanup → setup again while preserving state, so without
+  // this the second setup leaves it `false` from the first cleanup and every
+  // later reconcile read exits early, permanently stuck reporting `pulling`.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  // Job ids this hook instance has already settled (via the reconcile read
+  // below or a live terminal event) — see the reattach effect for why this
+  // is needed to stop it re-adopting the same job forever.
+  const settledJobIdsRef = useRef<Set<string>>(new Set());
+
   /** Clear the transient per-download tracking (job id, speed, ETA, byte counters). */
-  const resetTracking = () => {
+  const resetTracking = useCallback(() => {
+    // Synchronous, same reasoning as the adopt/handlePull assignments below:
+    // a `setState` call does not update the ref for anything that reads it
+    // before the next render commits.
+    pullJobIdRef.current = null;
     setPullJobId(null);
     setDownloadSpeed('');
     setTimeRemaining('');
@@ -47,21 +80,38 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     prevTimeRef.current = 0;
     lastSpeedUpdateRef.current = 0;
     lastTimeUpdateRef.current = 0;
-  };
+  }, []);
 
-  const finishOk = () => {
-    setPullProgress(100);
-    setPullState('done');
-    resetTracking();
-    notify.success({ message: t('onboarding.ai.downloaded', { model: selectedModel }) });
-    onDownloadComplete?.();
-  };
+  // Both take the settling job's id so they can record it as settled — see
+  // `settledJobIdsRef` above.
+  const finishOk = useCallback(
+    (jobId: string) => {
+      settledJobIdsRef.current.add(jobId);
+      setPullProgress(100);
+      setPullState('done');
+      resetTracking();
+      notify.success({ message: t('onboarding.ai.downloaded', { model: selectedModel }) });
+      onDownloadComplete?.();
+    },
+    [resetTracking, notify, t, selectedModel, onDownloadComplete]
+  );
+
+  const finishFailed = useCallback(
+    (jobId: string) => {
+      settledJobIdsRef.current.add(jobId);
+      setPullState('error');
+      resetTracking();
+      notify.error({ message: t('onboarding.ai.downloadFailed') });
+    },
+    [resetTracking, notify, t]
+  );
 
   const handlePull = async () => {
     setPullState('pulling');
     setPullProgress(0);
     try {
       const result = await pullModel.mutateAsync(selectedModel);
+      pullJobIdRef.current = result.jobId;
       setPullJobId(result.jobId);
     } catch (err) {
       setPullState('error');
@@ -69,8 +119,70 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     }
   };
 
+  // Re-attach to a pull already running in the backend job registry — `pullJobId`
+  // lives only in this hook's own state, so ANY unmount of this panel (not just
+  // navigating away: switching to the Cloud/CLI tab and back, or Back/Forward
+  // through the wizard) loses it forever and no later job.stream/job.completed
+  // can match again. `ai_pull_model` is exclusive, so at most one can be running
+  // app-wide — reattaching to whichever the registry still reports means this
+  // panel resumes tracking the SAME job instead of quietly going deaf.
+  useEffect(() => {
+    if (pullJobId) return;
+    const active = jobQueue.data?.find(
+      (job) =>
+        // `ai_pull_model` now keys its exclusivity on (kind, model) —
+        // `job_start_exclusive_keyed` — and stamps the model onto the job's
+        // payload from the START, not just on completion, so it round-trips
+        // through both `jobs_list` and `jobs_get`. Checking it here is what
+        // stops this effect adopting a running pull of a DIFFERENT model
+        // than the one this panel shows: refusing a second pull at the
+        // command only guards the NEW request, not this reattach read. The
+        // failed-check case must never reach adoption at all (not adopt then
+        // reconcile away), which is exactly what filtering inside this
+        // `.find()` predicate — before `active` exists — guarantees.
+        job.kind === 'ai.pull_model' &&
+        (job.payload as { model?: string } | null | undefined)?.model === selectedModel &&
+        !settledJobIdsRef.current.has(job.id) &&
+        (job.status === 'running' || job.status === 'streaming' || job.status === 'queued')
+    );
+    if (!active) return;
+
+    // Synchronous — `pullJobIdRef` must read as "now watching this job"
+    // before the microtask queue below (and `useJobEvents`, if a real event
+    // is already pending) gets a turn. A `setState` call alone does not: it
+    // only updates the ref on the NEXT render commit, and an already-resolved
+    // mock promise (a real IPC response resolves the same way) can unwind
+    // entirely through microtasks without ever yielding the macrotask turn
+    // React's scheduler needs — same discipline as `useResumePipelineSession`.
+    pullJobIdRef.current = active.id;
+    setPullJobId(active.id);
+    setPullState('pulling');
+
+    // The registry snapshot above can already be stale by the time this
+    // commits: `ai.pull_model` fires its ONE job.completed/job.failed the
+    // instant the pull ends, and `useJobEvents` below drops any event whose
+    // jobId doesn't match a `pullJobId` that isn't set yet — `jobQueue.data`
+    // takes a full IPC round trip to resolve, so a terminal event landing in
+    // that gap is gone for good; no second one is coming to correct it.
+    // Re-read this job's OWN current status right after adopting it so the
+    // panel settles regardless of whether that race actually happened,
+    // instead of depending on catching the event at the right moment.
+    void fetchJob(active.id)
+      .then((job) => {
+        if (!mountedRef.current || pullJobIdRef.current !== active.id) return;
+        if (job?.status === 'completed') {
+          finishOk(active.id);
+        } else if (job?.status === 'failed') {
+          finishFailed(active.id);
+        }
+      })
+      .catch((err) => {
+        console.error('[modelPull] reconcile read failed', { jobId: active.id, err });
+      });
+  }, [jobQueue.data, pullJobId, selectedModel, finishOk, finishFailed]);
+
   useJobEvents((event) => {
-    if (event.type === 'job.stream' && event.jobId === pullJobId) {
+    if (event.type === 'job.stream' && event.jobId === pullJobIdRef.current) {
       const data = event.data as {
         status?: string;
         p?: number;
@@ -122,14 +234,12 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
       }
 
       if (data?.status === 'success') {
-        finishOk();
+        finishOk(event.jobId);
       }
-    } else if (event.type === 'job.completed' && event.jobId === pullJobId) {
-      finishOk();
-    } else if (event.type === 'job.failed' && event.jobId === pullJobId) {
-      setPullState('error');
-      resetTracking();
-      notify.error({ message: t('onboarding.ai.downloadFailed') });
+    } else if (event.type === 'job.completed' && event.jobId === pullJobIdRef.current) {
+      finishOk(event.jobId);
+    } else if (event.type === 'job.failed' && event.jobId === pullJobIdRef.current) {
+      finishFailed(event.jobId);
     }
   });
 

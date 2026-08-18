@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   discoverSubscribers,
   discoverSubscriptionHooks,
+  hashBytes,
   importedBindings,
   stripCommentsAndStrings,
   namespaceImporters,
+  staleNoteEntries,
   SUBSCRIBERS,
   violations,
 } from './check-event-subscriptions.mjs';
@@ -300,6 +302,60 @@ describe('namespaceImporters', () => {
   });
 });
 
+describe('hashBytes', () => {
+  it('matches a hand-written expected value, not its own output', () => {
+    // 'hello' is a well-known sha256 test vector
+    // (2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824), typed
+    // in here independently of the implementation — the repo's own lesson from
+    // #998-#1003 is that comparing a hash to itself proves nothing.
+    expect(hashBytes('hello')).toBe('2cf24dba5fb0');
+  });
+
+  it('changes when a single byte changes', () => {
+    expect(hashBytes('hello')).not.toBe(hashBytes('hellp'));
+  });
+});
+
+describe('staleNoteEntries', () => {
+  const inventory = {
+    'features/thing/index.tsx': {
+      mount: 'route-scoped',
+      hash: hashBytes('original content'),
+      note: 'x',
+    },
+    'always/thing.ts': { mount: 'always', note: 'no hash — exempt' },
+  };
+
+  it('reports nothing when the stored hash matches the file', () => {
+    const readFile = () => 'original content';
+    expect(staleNoteEntries(inventory, readFile)).toEqual([]);
+  });
+
+  it('flags an entry whose subscriber file content changed since the hash was recorded', () => {
+    // The mutation this guards against: someone edits the behavior a note
+    // describes without re-reading (or updating) the note.
+    const readFile = (rel) =>
+      rel === 'features/thing/index.tsx' ? 'MUTATED content' : 'original content';
+    const stale = staleNoteEntries(inventory, readFile);
+
+    expect(stale).toHaveLength(1);
+    expect(stale[0].file).toBe('features/thing/index.tsx');
+    expect(stale[0].note).toBe('x');
+    expect(stale[0].currentHash).toBe(hashBytes('MUTATED content'));
+  });
+
+  it('skips entries with no stored hash (the always-mounted exemption)', () => {
+    // The route-scoped entry legitimately drifts here too (readFile always
+    // returns something other than 'original content') — the point is that
+    // the hash-less always-mounted entry is never even checked, let alone
+    // flagged, no matter what its file contains.
+    const readFile = () => 'anything at all, never checked';
+    const stale = staleNoteEntries(inventory, readFile);
+
+    expect(stale.map((s) => s.file)).not.toContain('always/thing.ts');
+  });
+});
+
 describe('violations', () => {
   const hooks = ['a', 'b', 'c', 'd', 'e'];
   const subs = ['f1', 'f2', 'f3', 'f4', 'f5'];
@@ -327,7 +383,9 @@ describe('violations', () => {
   });
 
   it('rejects a route-scoped entry whose note explains nothing', () => {
-    const lazy = { ...ok, f5: { mount: 'route-scoped', note: 'todo' } };
+    // A valid hash keeps this isolated to the note-length concern — see the
+    // hash-presence block below for the separate missing-hash check.
+    const lazy = { ...ok, f5: { mount: 'route-scoped', hash: hashBytes('x'), note: 'todo' } };
     const problems = violations(lazy, hooks, subs);
 
     expect(problems).toHaveLength(1);
@@ -342,6 +400,45 @@ describe('violations', () => {
     };
 
     expect(violations(typo, hooks, subs)[0]).toContain('f5');
+  });
+
+  // ── The hash-presence hole (found reviewing #1036) ────────────────────────
+  // staleNoteEntries only checks entries that HAVE a hash, so a route-scoped
+  // entry that omits the key never goes stale — permanently, silently. These
+  // prove violations() catches the omission itself, independent of staleness.
+
+  it('rejects a route-scoped entry with no hash — its note could never go stale', () => {
+    const noHash = {
+      ...ok,
+      f5: { mount: 'route-scoped', note: 'a note long enough to pass the length test' },
+    };
+    const problems = violations(noHash, hooks, subs);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('f5');
+    expect(problems[0]).toContain('hash');
+  });
+
+  it('rejects a route-scoped entry whose hash is not a valid 12-hex-char value', () => {
+    const badHash = {
+      ...ok,
+      f5: {
+        mount: 'route-scoped',
+        hash: 'not-a-hash!!',
+        note: 'a note long enough to pass the length test',
+      },
+    };
+    const problems = violations(badHash, hooks, subs);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('f5');
+  });
+
+  it('does not require a hash for an always-mounted entry', () => {
+    // `ok` is every entry at mount: 'always' with no hash at all — this is
+    // the deliberate exemption, proven by staying green rather than by a
+    // special case bolted onto the assertion.
+    expect(violations(ok, hooks, subs)).toEqual([]);
   });
 
   // ── The vacuity guards ────────────────────────────────────────────────────
@@ -369,6 +466,22 @@ describe('violations', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('compared against nothing');
   });
+
+  // ── The hash tripwire ─────────────────────────────────────────────────────
+
+  it('passes staleNotes through untouched when empty', () => {
+    expect(violations(ok, hooks, subs, [], [])).toEqual([]);
+  });
+
+  it('fails and prints the note + file when a subscriber file drifted from its hash', () => {
+    const drifted = [{ file: 'f3', note: 'what f3 loses', currentHash: 'deadbeef0000' }];
+    const problems = violations(ok, hooks, subs, [], drifted);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('f3');
+    expect(problems[0]).toContain('what f3 loses');
+    expect(problems[0]).toContain('deadbeef0000');
+  });
 });
 
 describe('against the real renderer', () => {
@@ -390,5 +503,37 @@ describe('against the real renderer', () => {
 
   it('holds the invariant', () => {
     expect(violations(SUBSCRIBERS, hooks, subscribers)).toEqual([]);
+  });
+
+  it('every route-scoped note hash matches its real subscriber file right now', () => {
+    // The end-to-end proof for "with correct hashes, the check passes": this
+    // hashes the ACTUAL files on disk and compares against what is committed
+    // in SUBSCRIBERS, then runs that result through violations() exactly like
+    // the CLI entrypoint does.
+    const staleNotes = staleNoteEntries(SUBSCRIBERS);
+    expect(staleNotes).toEqual([]);
+    expect(violations(SUBSCRIBERS, hooks, subscribers, [], staleNotes)).toEqual([]);
+  });
+
+  it('DETECTS a mutated subscriber file end-to-end, via a temp fixture', () => {
+    // Proves the tripwire fires through the full violations() pipeline, not
+    // just the pure staleNoteEntries() unit above — without touching the real
+    // tree. A subscriber file changes; its note (unedited) is now a claim
+    // about code that no longer exists, and the guard must say so.
+    const inventory = {
+      'features/thing/index.tsx': {
+        mount: 'route-scoped',
+        hash: hashBytes('export function Thing() { return null; }'),
+        note: 'a note describing the ORIGINAL behavior, now stale',
+      },
+    };
+    const mutatedRead = () => 'export function Thing() { return <div>mutated!</div>; }';
+
+    const staleNotes = staleNoteEntries(inventory, mutatedRead);
+    const problems = violations(inventory, hooks, subscribers, [], staleNotes);
+
+    expect(staleNotes).toHaveLength(1);
+    expect(problems.some((p) => p.includes('features/thing/index.tsx'))).toBe(true);
+    expect(problems.some((p) => p.includes('now stale'))).toBe(true);
   });
 });

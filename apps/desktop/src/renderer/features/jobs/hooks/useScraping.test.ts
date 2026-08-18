@@ -22,6 +22,7 @@ const mutateAsync = vi.fn().mockResolvedValue({ jobId: 'j1' });
 const cancelMutateAsync = vi.fn().mockResolvedValue(undefined);
 /** Job-tracker poll used by the watchdog; defaults to a still-running job. */
 const fetchJobMock = vi.fn().mockResolvedValue({ status: 'running' });
+const invalidatePostingsMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/services', async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
@@ -31,7 +32,7 @@ vi.mock('@/services', async (importActual) => {
     useCancelJob: () => ({ mutateAsync: cancelMutateAsync }),
     fetchJob: (jobId: string) => fetchJobMock(jobId),
     useScrapeProgress: () => null,
-    useInvalidatePostings: () => vi.fn().mockResolvedValue(undefined),
+    useInvalidatePostings: () => invalidatePostingsMock,
   };
 });
 
@@ -85,6 +86,7 @@ beforeEach(() => {
   mutateAsync.mockClear().mockResolvedValue({ jobId: 'j1' });
   cancelMutateAsync.mockClear().mockResolvedValue(undefined);
   fetchJobMock.mockClear().mockResolvedValue({ status: 'running' });
+  invalidatePostingsMock.mockClear().mockResolvedValue(undefined);
 });
 
 // ---------------------------------------------------------------------------
@@ -290,7 +292,10 @@ describe('useScraping — the in-flight job survives a route change', () => {
   });
 
   it('a remount onto a job that already FINISHED settles to a finished state', async () => {
-    fetchJobMock.mockResolvedValue({ status: 'completed', result: { boards: [] } });
+    // Still running while `first` is mounted — the leading watchdog poll (see
+    // the progress-fallback tests below) must not settle it before the page
+    // ever navigates away, or this test would stop exercising the remount path.
+    fetchJobMock.mockResolvedValue({ status: 'running' });
     vi.useFakeTimers();
     try {
       const form = makeForm();
@@ -299,6 +304,9 @@ describe('useScraping — the in-flight job survives a route change', () => {
         await first.result.current.startScrape();
       });
       first.unmount();
+
+      // The job finishes only now, while nothing is mounted to hear the event.
+      fetchJobMock.mockResolvedValue({ status: 'completed', result: { boards: [] } });
 
       // The job.completed EVENT is never delivered — the subscription lives on
       // the unmounted page. Only the watchdog can reconcile this.
@@ -343,6 +351,139 @@ describe('useScraping — per-board diagnostics survive', () => {
       });
 
       expect(useSessionStore.getState().jobs.scrapeSummaries).toEqual(boards);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Defect 4 — a remount mid-scrape must not report a false 0% for the rest of
+// the run. `useScrapeProgress` (mocked here to `null`, matching the real hook
+// resetting on every mount) never fires again on the single-board default, so
+// the persisted `JobRecord.progress` the watchdog already polls is the only
+// surviving source of truth.
+// ---------------------------------------------------------------------------
+
+describe('useScraping — progress survives a route change', () => {
+  it('reports the backend-persisted fraction immediately after a remount', async () => {
+    fetchJobMock.mockResolvedValue({ status: 'running', progress: 0.8 });
+    const form = makeForm();
+
+    const first = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await first.result.current.startScrape();
+    });
+    first.unmount();
+
+    const second = renderHookWithClient(() => useScraping(noopNotify, form));
+    // The leading (non-timer) poll must resolve before this assertion — flush
+    // the microtask queue without touching fake timers.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(second.result.current.scrapeProgress).toBe(0.8);
+  });
+
+  it('does not fabricate progress when the backend has none yet', async () => {
+    fetchJobMock.mockResolvedValue({ status: 'running' });
+    const form = makeForm();
+
+    const first = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await first.result.current.startScrape();
+    });
+    first.unmount();
+
+    const second = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(second.result.current.scrapeProgress).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Defect 5 — a scrape that fails while the user is on another route must come
+// back with an explanation (chip strip + note), not silently to an empty
+// strip — and the backend error must be sanitized the same way the live
+// `job.failed` event path already is (path-privacy: AGENTS.md).
+// ---------------------------------------------------------------------------
+
+describe('useScraping — a failed scrape explains itself after a route change', () => {
+  it('restores scrapeSummaries/scrapeFailureNote, sanitized, after failing off-page', async () => {
+    fetchJobMock.mockResolvedValue({ status: 'running' });
+    const form = makeForm();
+
+    const first = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await first.result.current.startScrape();
+    });
+    first.unmount();
+
+    // The job fails only now, while nothing is mounted to hear the event —
+    // and the backend error carries a local path, same as a real filesystem
+    // failure would.
+    fetchJobMock.mockResolvedValue({
+      status: 'failed',
+      error: 'failed to read C:\\Users\\alice\\creds.json',
+    });
+    vi.useFakeTimers();
+    try {
+      const second = renderHookWithClient(() => useScraping(noopNotify, form));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2600);
+      });
+
+      expect(second.result.current.scraping).toBe(false);
+      const { scrapeSummaries, scrapeFailureNote, scrapeOutcome } = useSessionStore.getState().jobs;
+      // An empty (not stale/undefined) strip — the caller renders it whenever
+      // the array is non-null, so `[]` is what makes the note actually show.
+      expect(scrapeSummaries).toEqual([]);
+      expect(scrapeFailureNote).toContain('failed to read');
+      expect(scrapeFailureNote).toContain('<path-redacted>');
+      expect(scrapeFailureNote).not.toMatch(/alice/i);
+      // The drawer's own outcome note (`ScrapeForm`) must be the SAME sanitized
+      // text, not the raw backend string — reopening "New Scrape" later must
+      // never show the path either.
+      expect(scrapeOutcome?.note).toBe(scrapeFailureNote);
+      expect(scrapeOutcome?.note).not.toMatch(/alice/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Defect 6 — the watchdog's own completion recovery must invalidate the
+// postings cache exactly like the live `job.completed` event handler does, or
+// a 30s `staleTime` leaves the pre-scrape (possibly empty) list on screen.
+// ---------------------------------------------------------------------------
+
+describe('useScraping — completing off-page still refreshes the postings cache', () => {
+  it('invalidates postings after the watchdog recovers a completed scrape', async () => {
+    fetchJobMock.mockResolvedValue({ status: 'running' });
+    const form = makeForm();
+
+    const first = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await first.result.current.startScrape();
+    });
+    first.unmount();
+
+    fetchJobMock.mockResolvedValue({ status: 'completed', result: { boards: [] } });
+    vi.useFakeTimers();
+    try {
+      renderHookWithClient(() => useScraping(noopNotify, form));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2600);
+      });
+
+      expect(invalidatePostingsMock).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
