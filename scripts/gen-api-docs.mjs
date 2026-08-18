@@ -20,17 +20,29 @@
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import prettier from 'prettier';
 import ts from 'typescript';
 
+// Anchored to this file, never to `process.cwd()`: run from anywhere but the
+// repo root, a cwd-relative generator reads no contracts and writes its output
+// outside the repo.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Repo-relative by design: these strings are printed into the page too.
 const CONTRACT_DIR = 'packages/shared/src/ipc/contracts';
 const INDEX_FILE = join(CONTRACT_DIR, 'index.ts');
 const OUT_FILE = 'docs/API.md';
 
+/** Absolute path for a repo-relative one — filesystem access only. */
+function abs(p) {
+  return resolve(REPO_ROOT, p);
+}
+
 /** Repo-relative, forward-slashed path (path privacy: never absolute). */
 function repoPath(p) {
-  return relative(process.cwd(), resolve(p)).split('\\').join('/');
+  return relative(REPO_ROOT, abs(p)).split('\\').join('/');
 }
 
 function fail(message) {
@@ -41,9 +53,10 @@ function fail(message) {
 
 /** @returns {Map<string, ts.SourceFile>} keyed by repo-relative file path. */
 function parseContractFiles() {
-  const files = readdirSync(CONTRACT_DIR)
+  const dir = abs(CONTRACT_DIR);
+  const files = readdirSync(dir)
     .filter((f) => f.endsWith('.ts'))
-    .map((f) => join(CONTRACT_DIR, f));
+    .map((f) => join(dir, f));
   const parsed = new Map();
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
@@ -88,7 +101,9 @@ function docOf(node, sf) {
 /** Source text of `node`, verbatim, excluding its TSDoc block. */
 function signatureText(node, sf) {
   const text = sf.text.slice(node.getStart(sf, /* includeJsDocComment */ false), node.getEnd());
-  if (text.startsWith('/*')) fail(`doc comment leaked into a signature in ${sf.fileName}`);
+  if (text.startsWith('/*')) {
+    fail(`doc comment leaked into a signature in ${repoPath(sf.fileName)}`);
+  }
   return text;
 }
 
@@ -439,54 +454,68 @@ function renderIndex(rows) {
 
 // ── Main ──────────────────────────────────────────────────────────────────
 
-const sources = parseContractFiles();
-const indexSf = sources.get(repoPath(INDEX_FILE));
-if (!indexSf) fail(`${repoPath(INDEX_FILE)} not found`);
+async function main() {
+  const sources = parseContractFiles();
+  const indexSf = sources.get(repoPath(INDEX_FILE));
+  if (!indexSf) fail(`${repoPath(INDEX_FILE)} not found`);
 
-const ctx = {
-  namespaces: namespaceMap(indexSf),
-  channelConsts: channelConstMap(indexSf),
-  decls: collectDeclarations(new Map([...sources].filter(([f]) => f !== repoPath(INDEX_FILE)))),
-  consts: collectConsts(new Map([...sources].filter(([f]) => f !== repoPath(INDEX_FILE)))),
-};
+  const ctx = {
+    namespaces: namespaceMap(indexSf),
+    channelConsts: channelConstMap(indexSf),
+    decls: collectDeclarations(new Map([...sources].filter(([f]) => f !== repoPath(INDEX_FILE)))),
+    consts: collectConsts(new Map([...sources].filter(([f]) => f !== repoPath(INDEX_FILE)))),
+  };
 
-// Every contract file must be reachable from IpcContract: a namespace that
-// exists in the directory but not in the union is invisible to the renderer,
-// and silently missing from this page is exactly the failure being fixed.
-const documentedFiles = new Set(
-  [...ctx.namespaces.values()].map((name) => ctx.decls.get(name)?.file)
-);
-const orphans = [...sources.keys()].filter(
-  (f) => f !== repoPath(INDEX_FILE) && !documentedFiles.has(f)
-);
-if (orphans.length > 0) {
-  fail(`contract files not referenced by IpcContract: ${orphans.join(', ')}`);
+  // Every contract file must be reachable from IpcContract: a namespace that
+  // exists in the directory but not in the union is invisible to the renderer,
+  // and silently missing from this page is exactly the failure being fixed.
+  const documentedFiles = new Set(
+    [...ctx.namespaces.values()].map((name) => ctx.decls.get(name)?.file)
+  );
+  const orphans = [...sources.keys()].filter(
+    (f) => f !== repoPath(INDEX_FILE) && !documentedFiles.has(f)
+  );
+  if (orphans.length > 0) {
+    fail(`contract files not referenced by IpcContract: ${orphans.join(', ')}`);
+  }
+
+  const namespaces = [...ctx.namespaces.keys()].sort((a, b) => a.localeCompare(b));
+  const rendered = namespaces.map((namespace) => ({
+    namespace,
+    ...renderNamespace(namespace, ctx),
+  }));
+
+  const body = [
+    PREAMBLE(protocolVersion(indexSf)),
+    renderIndex(rendered),
+    '',
+    rendered.map((r) => r.markdown).join('\n---\n\n'),
+  ].join('\n');
+
+  const config = await prettier.resolveConfig(abs(OUT_FILE));
+  const formatted = await prettier.format(body, {
+    ...config,
+    parser: 'markdown',
+    filepath: abs(OUT_FILE),
+  });
+  writeFileSync(abs(OUT_FILE), formatted);
+
+  const methods = rendered.reduce((n, r) => n + r.methodCount, 0);
+  const documented = rendered.reduce((n, r) => n + r.documentedCount, 0);
+  console.log(
+    `Generated ${posix.normalize(OUT_FILE)} — ${rendered.length} namespaces, ${methods} methods, ` +
+      `${documented} with TSDoc (${methods - documented} without).`
+  );
 }
 
-const namespaces = [...ctx.namespaces.keys()].sort((a, b) => a.localeCompare(b));
-const rendered = namespaces.map((namespace) => ({
-  namespace,
-  ...renderNamespace(namespace, ctx),
-}));
-
-const body = [
-  PREAMBLE(protocolVersion(indexSf)),
-  renderIndex(rendered),
-  '',
-  rendered.map((r) => r.markdown).join('\n---\n\n'),
-].join('\n');
-
-const config = await prettier.resolveConfig(OUT_FILE);
-const formatted = await prettier.format(body, {
-  ...config,
-  parser: 'markdown',
-  filepath: OUT_FILE,
-});
-writeFileSync(OUT_FILE, formatted);
-
-const methods = rendered.reduce((n, r) => n + r.methodCount, 0);
-const documented = rendered.reduce((n, r) => n + r.documentedCount, 0);
-console.log(
-  `Generated ${posix.normalize(OUT_FILE)} — ${rendered.length} namespaces, ${methods} methods, ` +
-    `${documented} with TSDoc (${methods - documented} without).`
-);
+try {
+  await main();
+} catch (error) {
+  // Path privacy: print the message alone. Node's default handler prints a
+  // stack trace full of absolute paths, and a filesystem error carries one in
+  // its message, so the repo root is stripped out of both.
+  const message = error instanceof Error ? error.message : String(error);
+  const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
+  console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
+  process.exitCode = 1;
+}
