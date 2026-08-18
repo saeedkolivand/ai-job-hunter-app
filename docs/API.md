@@ -539,6 +539,8 @@ calls always cost $0.
 | `unloadModel` | `ai:unloadModel` |
 | `embed`       | `ai:embed`       |
 
+`AI_CHANNELS` registers 5 of this namespace's 29 methods; the rest have no entry in it.
+
 ### Types — `ai`
 
 Declared in `packages/shared/src/ipc/contracts/ai.ts`.
@@ -1042,6 +1044,8 @@ Returns a sync unsubscribe handle.
 | `track`           | `applications:track`           |
 | `saveFromPosting` | `applications:saveFromPosting` |
 
+`APPLICATIONS_CHANNELS` registers 7 of this namespace's 8 methods; the rest have no entry in it.
+
 ### Types — `applications`
 
 Declared in `packages/shared/src/ipc/contracts/applications.ts`.
@@ -1230,6 +1234,8 @@ case — only set by a cold-start deep link). Mirrors `menu.takePending`.
 | `run`    | `autopilot:run`    |
 | `pause`  | `autopilot:pause`  |
 | `resume` | `autopilot:resume` |
+
+`AUTOPILOT_CHANNELS` registers 8 of this namespace's 11 methods; the rest have no entry in it.
 
 ### Types — `autopilot`
 
@@ -1563,6 +1569,8 @@ not in the static allowlist.
 | ---------- | -------------------- |
 | `status`   | `cliAgents:status`   |
 | `redetect` | `cliAgents:redetect` |
+
+`CLI_AGENTS_CHANNELS` registers 2 of this namespace's 3 methods; the rest have no entry in it.
 
 ### Types — `cliAgents`
 
@@ -2044,6 +2052,8 @@ Query key) — the preview is requested on demand, like an export.
 | `exportAndSave`       | `documents:export_and_save`       |
 | `renderPreviewImages` | `documents:render_preview_images` |
 
+`DOCUMENTS_CHANNELS` registers 8 of this namespace's 9 methods; the rest have no entry in it.
+
 ### Types — `documents`
 
 Declared in `packages/shared/src/ipc/contracts/documents.ts`.
@@ -2463,6 +2473,8 @@ sync unsubscribe handle — mirrors `ApplicationsContract.onChanged`.
 | `autoTrackEnabled`    | `extensionBridge:autoTrackEnabled`    |
 | `setAutoTrackEnabled` | `extensionBridge:setAutoTrackEnabled` |
 
+`EXTENSION_BRIDGE_CHANNELS` registers 8 of this namespace's 9 methods; the rest have no entry in it.
+
 ### Types — `extensionBridge`
 
 Declared in `packages/shared/src/ipc/contracts/extensionBridge.ts`.
@@ -2777,6 +2789,8 @@ onEvent(handler: (event: JobEvent) => void): () => void;
 | `cancel` | `jobs:cancel` |
 | `retry`  | `jobs:retry`  |
 
+`JOBS_CHANNELS` registers 4 of this namespace's 5 methods; the rest have no entry in it.
+
 ### Referenced types — `jobs`
 
 - `packages/shared/src/types/index.ts` — `JobEvent`, `JobRecord`
@@ -2947,7 +2961,7 @@ loop is live (on mount and on window focus/visibility-restore). Returns
 
 ### Channels — `menu`
 
-`menu` declares no channel constants — it is not part of `IPC_CHANNELS`.
+`menu` has no `*_CHANNELS` constant and is absent from `IPC_CHANNELS`.
 
 ### Types — `menu`
 
@@ -3070,7 +3084,7 @@ unsubscribe. See the Rust `notifications:toast` emit in `push_and_notify`.
 
 ### Channels — `notifications`
 
-`NOTIFICATIONS_CHANNELS` is empty — this namespace exposes no invoke channels.
+`NOTIFICATIONS_CHANNELS` in `packages/shared/src/ipc/contracts/notifications.ts` is declared and empty — no channel name is registered here. Read the constant's own doc comment for where the names come from.
 
 ### Referenced types — `notifications`
 
@@ -3550,6 +3564,8 @@ Subscribe to the `pipeline:stage` progress stream. Returns an unsubscribe fn.
 | `regenerateSection`  | `resumePipeline:regenerateSection`  |
 | `resolveFabrication` | `resumePipeline:resolveFabrication` |
 
+`RESUME_PIPELINE_CHANNELS` registers 5 of this namespace's 6 methods; the rest have no entry in it.
+
 ### Types — `resumePipeline`
 
 Declared in `packages/shared/src/ipc/contracts/resumePipeline.ts`.
@@ -3842,6 +3858,8 @@ persistJob(req: { job: Record<string, unknown>; interactionType: string }): Prom
 | `clearPostings`     | `scrape:clearPostings`     |
 | `listInteractions`  | `scrape:listInteractions`  |
 
+`SCRAPE_CHANNELS` registers 8 of this namespace's 9 methods; the rest have no entry in it.
+
 ### Referenced types — `scrape`
 
 - `packages/shared/src/events/scrape.ts` — `ScrapeProgressEvent`
@@ -4040,6 +4058,8 @@ unsubscribe handle.
 | `openDevtools`       | `system:openDevtools`       |
 | `getProtocolVersion` | `system:getProtocolVersion` |
 
+`SYSTEM_CHANNELS` registers 15 of this namespace's 16 methods; the rest have no entry in it.
+
 ### Referenced types — `system`
 
 - `packages/shared/src/types/index.ts` — `AppMetrics`, `Locale`, `PerformanceBackendConfig`, `RuntimeHealth`
@@ -4102,6 +4122,8 @@ onStatus(handler: (status: unknown) => void): () => void;
 | `download`  | `updater:download`  |
 | `install`   | `updater:install`   |
 | `changelog` | `updater:changelog` |
+
+`UPDATER_CHANNELS` registers 4 of this namespace's 5 methods; the rest have no entry in it.
 
 ### Types — `updater`
 

@@ -297,7 +297,7 @@ function renderNamespace(namespace, ctx) {
   out.push(`### Channels — \`${namespace}\``, '');
   if (!constName) {
     out.push(
-      `\`${namespace}\` declares no channel constants — it is not part of \`IPC_CHANNELS\`.`,
+      `\`${namespace}\` has no \`*_CHANNELS\` constant and is absent from \`IPC_CHANNELS\`.`,
       ''
     );
   } else {
@@ -305,12 +305,25 @@ function renderNamespace(namespace, ctx) {
     if (!entry) fail(`${namespace}: ${constName} not found in ${CONTRACT_DIR}`);
     const channels = readChannels(entry);
     if (channels.length === 0) {
-      out.push(`\`${constName}\` is empty — this namespace exposes no invoke channels.`, '');
+      out.push(
+        `\`${constName}\` in \`${entry.file}\` is declared and empty — no channel name is ` +
+          "registered here. Read the constant's own doc comment for where the names come from.",
+        ''
+      );
     } else {
       out.push(`\`${constName}\` in \`${entry.file}\`:`, '');
       out.push('| Key | Channel |', '| --- | --- |');
       out.push(...channels.map(([k, v]) => `| \`${k}\` | \`${v}\` |`));
       out.push('');
+      // A partial registry is a real, checkable fact — state the arithmetic
+      // rather than inferring what the unregistered methods do instead.
+      if (channels.length !== members.length) {
+        out.push(
+          `\`${constName}\` registers ${channels.length} of this namespace's ` +
+            `${members.length} methods; the rest have no entry in it.`,
+          ''
+        );
+      }
     }
   }
 
