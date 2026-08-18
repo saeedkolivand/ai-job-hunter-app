@@ -34,39 +34,39 @@ service hook, query key — see `AGENTS.md` rule 14.
 
 ## Namespaces
 
-| Namespace                             | Methods | Summary                                                                          |
-| ------------------------------------- | ------- | -------------------------------------------------------------------------------- |
-| [`ai`](#ai)                           | 29      |                                                                                  |
-| [`aiGenerations`](#aigenerations)     | 5       |                                                                                  |
-| [`applications`](#applications)       | 8       | Application-tracking capability (ADR 0001).                                      |
-| [`autopilot`](#autopilot)             | 11      |                                                                                  |
-| [`boards`](#boards)                   | 6       |                                                                                  |
-| [`cliAgents`](#cliagents)             | 3       |                                                                                  |
-| [`contactProfile`](#contactprofile)   | 3       |                                                                                  |
-| [`credentials`](#credentials)         | 1       |                                                                                  |
-| [`data`](#data)                       | 2       | Full app-data backup & restore (all persistent stores).                          |
-| [`dedup`](#dedup)                     | 1       | Cross-board dedup (ADR-029):                                                     |
-| [`dialog`](#dialog)                   | 1       |                                                                                  |
-| [`discovery`](#discovery)             | 3       | Discovery namespace (ADR-030 §f):                                                |
-| [`documents`](#documents)             | 9       |                                                                                  |
-| [`emailWatch`](#emailwatch)           | 5       |                                                                                  |
-| [`extensionBridge`](#extensionbridge) | 9       |                                                                                  |
-| [`geocode`](#geocode)                 | 1       |                                                                                  |
-| [`github`](#github)                   | 1       |                                                                                  |
-| [`jobPreferences`](#jobpreferences)   | 5       |                                                                                  |
-| [`jobs`](#jobs)                       | 5       |                                                                                  |
-| [`linkedin`](#linkedin)               | 5       |                                                                                  |
-| [`match`](#match)                     | 2       |                                                                                  |
-| [`menu`](#menu)                       | 3       |                                                                                  |
-| [`notifications`](#notifications)     | 9       | Notification Center capability (Phase 2).                                        |
-| [`privacy`](#privacy)                 | 5       |                                                                                  |
-| [`referrals`](#referrals)             | 3       |                                                                                  |
-| [`resume`](#resume)                   | 2       |                                                                                  |
-| [`resumePipeline`](#resumepipeline)   | 6       | The staged résumé pipeline — one fixed stage sequence; there is no depth choice. |
-| [`scrape`](#scrape)                   | 9       |                                                                                  |
-| [`support`](#support)                 | 1       |                                                                                  |
-| [`system`](#system)                   | 16      |                                                                                  |
-| [`updater`](#updater)                 | 5       |                                                                                  |
+| Namespace                             | Methods | Summary                                                                                                                                |
+| ------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [`ai`](#ai)                           | 29      |                                                                                                                                        |
+| [`aiGenerations`](#aigenerations)     | 5       |                                                                                                                                        |
+| [`applications`](#applications)       | 8       | Application-tracking capability (ADR 0001).                                                                                            |
+| [`autopilot`](#autopilot)             | 11      | Job-discovery agent:                                                                                                                   |
+| [`boards`](#boards)                   | 6       |                                                                                                                                        |
+| [`cliAgents`](#cliagents)             | 3       |                                                                                                                                        |
+| [`contactProfile`](#contactprofile)   | 3       | The candidate's stored contact fields (name, email, phone, location, LinkedIn, GitHub, website, custom links), localized per language. |
+| [`credentials`](#credentials)         | 1       |                                                                                                                                        |
+| [`data`](#data)                       | 2       | Full app-data backup & restore (all persistent stores).                                                                                |
+| [`dedup`](#dedup)                     | 1       | Cross-board dedup (ADR-029):                                                                                                           |
+| [`dialog`](#dialog)                   | 1       |                                                                                                                                        |
+| [`discovery`](#discovery)             | 3       | Discovery namespace (ADR-030 §f):                                                                                                      |
+| [`documents`](#documents)             | 9       |                                                                                                                                        |
+| [`emailWatch`](#emailwatch)           | 5       |                                                                                                                                        |
+| [`extensionBridge`](#extensionbridge) | 9       |                                                                                                                                        |
+| [`geocode`](#geocode)                 | 1       |                                                                                                                                        |
+| [`github`](#github)                   | 1       |                                                                                                                                        |
+| [`jobPreferences`](#jobpreferences)   | 5       |                                                                                                                                        |
+| [`jobs`](#jobs)                       | 5       |                                                                                                                                        |
+| [`linkedin`](#linkedin)               | 5       |                                                                                                                                        |
+| [`match`](#match)                     | 2       |                                                                                                                                        |
+| [`menu`](#menu)                       | 3       |                                                                                                                                        |
+| [`notifications`](#notifications)     | 9       | Notification Center capability (Phase 2).                                                                                              |
+| [`privacy`](#privacy)                 | 5       |                                                                                                                                        |
+| [`referrals`](#referrals)             | 3       |                                                                                                                                        |
+| [`resume`](#resume)                   | 2       |                                                                                                                                        |
+| [`resumePipeline`](#resumepipeline)   | 6       | The staged résumé pipeline — one fixed stage sequence; there is no depth choice.                                                       |
+| [`scrape`](#scrape)                   | 9       |                                                                                                                                        |
+| [`support`](#support)                 | 1       |                                                                                                                                        |
+| [`system`](#system)                   | 16      |                                                                                                                                        |
+| [`updater`](#updater)                 | 5       |                                                                                                                                        |
 
 ## `ai`
 
@@ -109,6 +109,28 @@ Contract: `AiContract` in `packages/shared/src/ipc/contracts/ai.ts`
 ```ts
 generate(req: AiGenerateRequest): Promise<{ jobId: string }>;
 ```
+
+Start a generation. Returns as soon as the job is queued; the content
+arrives on `onStream`, keyed by the returned `jobId`.
+
+The request shape is `AiGenerateRequestSchema` in
+`packages/shared/src/schemas/index.ts` (code-generated into
+`apps/desktop/src-tauri/src/ipc_contracts/ai.rs` by `pnpm gen:ipc`). Read
+the schema for the field list — it is the source of truth and this doc
+deliberately does not restate it.
+
+Two fields whose behaviour does not follow from their types:
+
+- **`intent`** — the caller declares what the generation is _for_; each
+  provider adapter then picks its own sampling numbers
+  (`AiProvider::sampling_profile` in
+  `apps/desktop/src-tauri/src/commands/ai_provider/mod.rs`). The accepted
+  values are generated from the schema into `ipc_contracts/ai_intents.rs`,
+  so they cannot drift from a list nobody wrote down here.
+- **`temperature`** (and the other numeric sampling fields) — an explicit
+  **override** that beats `intent` on every adapter. In practice it is only
+  ever set by the per-model "Custom temperature" control in Settings; it is
+  not a default the app applies.
 
 #### `ai.activeConfig`
 
@@ -278,8 +300,8 @@ used by the cover-letter "fit" paragraph and company-specific application
 answers. Reuses the shared enricher: the active provider's own web search
 (native tool, or the Ollama Web Search API for Ollama), cached. Degrades
 gracefully — an empty brief, never an error, when the provider can't search
-or the search fails. The brief is reference context only; the prompt treats
-it as untrusted.
+or the search fails. The brief is reference context only; every prompt that
+consumes it fences it as untrusted input (ADR-010).
 
 #### `ai.lookupSalary`
 
@@ -349,8 +371,19 @@ embed(req: {
   >;
 ```
 
-Synchronous embedding — returns the vector, or `{ error }` on any provider/config
-failure (a context-length overflow, a missing key, an unreachable host, …).
+Synchronous embedding — returns the vector, or `{ error }` on any
+provider/config failure (a context-length overflow, a missing key, an
+unreachable host, …).
+
+`model` is part of the wire shape but the handler does not read it: the
+active embedding config persisted in the document store always wins
+(`ai_embed` → `documents::embed`).
+
+Input longer than the provider's per-chunk limit is split, embedded per
+chunk, mean-pooled and L2-normalized into one vector. A context-length
+overflow is retried adaptively INSIDE this same call (the chunk is halved
+down to a floor, and the working cap is learned once per document) — never
+a follow-up request the caller has to issue.
 
 #### `ai.setProviderKey`
 
@@ -396,6 +429,11 @@ listProviderModels(req: { provider: string; baseUrl?: string }): Promise<Provide
 
 Fetch available models from a cloud provider using its stored API key.
 `baseUrl` is forwarded for OpenAI-compatible servers.
+
+Rejects — never resolves with a partial list — when the stored key is
+missing or refused, the provider is unreachable, or the catalogue response
+cannot be parsed. There is no cached-list fallback, so verifying a
+freshly-entered key in onboarding cannot pass on stale data.
 
 #### `ai.modelCapabilities`
 
@@ -705,6 +743,12 @@ list(): Promise<AiGenerationRecord[]>;
 ```ts
 save(req: AiGenerationSaveRequest): Promise<AiGenerationSaveResult>;
 ```
+
+Per-job merge-upsert keyed on `jobUrl` (`merge_application` in
+`apps/desktop/src-tauri/src/ai_generations/mod.rs`): a résumé, a cover
+letter, application answers and a company brief produced by separate
+generation actions all land on ONE row when they share a `jobUrl`. A save
+with no `jobUrl` (a manual generation) inserts its own row instead.
 
 #### `aiGenerations.update`
 
@@ -1050,6 +1094,12 @@ export interface ApplicationChangedEvent {
 
 ## `autopilot`
 
+Job-discovery agent: saved searches that run on a schedule, then rank and
+surface the matching jobs. It never submits anything — auto-apply was
+removed, so a stored cover letter is a reusable starting point for the apply
+assistant, and the opt-in `assistant` notes are read-only enrichment. The
+user tailors and applies by hand.
+
 Contract: `AutopilotContract` in `packages/shared/src/ipc/contracts/autopilot.ts`
 
 ### Methods — `autopilot`
@@ -1224,7 +1274,16 @@ Contract: `BoardsContract` in `packages/shared/src/ipc/contracts/boards.ts`
 catalog(): Promise<BoardCatalogEntry[]>;
 ```
 
-Full scraper catalog (id, label, mode, auth tier, listed) from the registry.
+Full scraper catalog (id, label, mode, auth tier, listed) from the
+registry — `SCRAPERS` in
+`apps/desktop/src-tauri/src/scraping/boards/mod.rs`, whose per-scraper
+`Scraper` impl owns the auth tier and the listed flag.
+
+The canonical id list is `BOARD_IDS` in
+`packages/shared/src/schemas/index.ts`; it is not restated here, because
+every copy of it has gone stale. `indeed`, `stepstone`, `xing`, `workday`
+and `glassdoor` are no longer direct scrapers (ADR-026) — their postings
+now arrive through the `aggregator` board.
 
 #### `boards.health`
 
@@ -1267,7 +1326,15 @@ Get current connection status for a board.
 importCookies(req: { boardId: string }): Promise<CookieImportResult>;
 ```
 
-Try to import session cookies from the user's installed Chromium browsers.
+Try to import session cookies from the user's installed Chromium browsers
+(Chrome, Edge, Brave), so the user can skip the in-app re-login.
+
+Writes the SAME artifacts the in-app browser login produces, so nothing
+downstream changes. Best-effort by design and never a regression: a missing
+browser, a locked profile or a store this cannot decrypt all resolve as
+non-error outcomes (see `CookieImportOutcome`), not as failures. Which
+cookie encryption versions are covered, and why, is documented at the
+implementation: `apps/desktop/src-tauri/src/scraping/board_login/import.rs`.
 
 ### Channels — `boards`
 
@@ -1537,6 +1604,13 @@ export interface CliAgentInstallResult {
 ---
 
 ## `contactProfile`
+
+The candidate's stored contact fields (name, email, phone, location, LinkedIn,
+GitHub, website, custom links), localized per language.
+
+It seeds the header of every generated document. It does not police it: at
+export time the document text owns the résumé header, and the profile is the
+fallback for an empty one (ADR-0021).
 
 Contract: `ContactProfileContract` in `packages/shared/src/ipc/contracts/contactProfile.ts`
 
@@ -2481,6 +2555,12 @@ Contract: `GeocodeContract` in `packages/shared/src/ipc/contracts/geocode.ts`
 suggest(query: string): Promise<GeocodeSuggestion[]>;
 ```
 
+Location autocomplete, filtered to city-level and country-level results
+only (`to_city_country` in
+`apps/desktop/src-tauri/src/commands/geocoding/`) — a street or a venue is
+never a job-search location. `display` reads `"City, Country"` for a city
+and the bare country name for a country-level match.
+
 ### Channels — `geocode`
 
 `GEOCODE_CHANNELS` in `packages/shared/src/ipc/contracts/geocode.ts`:
@@ -2790,6 +2870,15 @@ Contract: `MatchContract` in `packages/shared/src/ipc/contracts/match.ts`
 resume(req: MatchResumeRequest): Promise<MatchScore>;
 ```
 
+Score one résumé against one job. The single scoring path: the jobs list
+asks for a score per row as that row renders, rather than running one pass
+over everything (the one-shot `match_resume_batch` command was removed —
+it had no consumers).
+
+Keyword-only by default. Semantic (embedding) scoring is opt-in per
+request via `semanticScoringEnabled`; omitting it means keyword-only, not
+"provider decides".
+
 #### `match.trimSuggestions`
 
 ```ts
@@ -3090,7 +3179,11 @@ export interface PrivacyResetResult {
  * `enabled` is the user's choice and defaults to **true**. `consentShown`
  * records whether the setup wizard has actually put that choice in front of
  * them; nothing is transmitted until it has, so a default nobody saw never
- * silently reports.
+ * silently reports. Transmission requires BOTH flags (`Settings::transmits`).
+ *
+ * These two are the whole surface — see ADR-0020. There is no analytics
+ * toggle and no retention setting because there is no behavioural analytics to
+ * switch off, and retention belongs to the processor, not to the app.
  */
 export interface CrashReportingSettings {
   enabled: boolean;

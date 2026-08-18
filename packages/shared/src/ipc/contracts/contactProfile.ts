@@ -37,6 +37,14 @@ export interface ContactProfile {
   photo?: string;
 }
 
+/**
+ * The candidate's stored contact fields (name, email, phone, location, LinkedIn,
+ * GitHub, website, custom links), localized per language.
+ *
+ * It seeds the header of every generated document. It does not police it: at
+ * export time the document text owns the résumé header, and the profile is the
+ * fallback for an empty one (ADR-0021).
+ */
 export interface ContactProfileContract {
   get(): Promise<ContactProfile>;
   /**
