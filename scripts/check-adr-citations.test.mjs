@@ -71,6 +71,39 @@ describe('classifyAdrFiles', () => {
     // An ADR nothing can cite by number is a real problem, not a nuisance.
     expect(INV.unclassified).toEqual(['README-not-an-adr.md']);
   });
+
+  it('reports two files claiming one number instead of letting one overwrite the other', () => {
+    // A map keyed by identifier holds one file per key, so the second write
+    // silently wins and every citation of 013 then names two records while
+    // still "resolving". Retaining the claim is what makes that visible.
+    const dup = classifyAdrFiles([
+      'adr-013-resume-builder-base-plus-handoff.md',
+      'adr-013-something-else.md',
+    ]);
+    expect(dup.duplicates).toHaveLength(1);
+    expect(dup.duplicates[0]).toContain('adr-013-resume-builder-base-plus-handoff.md');
+    expect(dup.duplicates[0]).toContain('adr-013-something-else.md');
+    // Both files stay resolvable as PATHS — they are both on disk.
+    expect(dup.all).toHaveLength(2);
+  });
+
+  it('resolves a path to the file a duplicate number displaced from the map', () => {
+    // The displaced file exists; reporting its path as dangling would be a
+    // false positive pointing at a file the reader can open.
+    const dup = classifyAdrFiles([
+      'adr-013-resume-builder-base-plus-handoff.md',
+      'adr-013-something-else.md',
+    ]);
+    const r = scanText('a.md', 'see decision-records/adr-013-something-else.md', dup);
+    expect(r.pathRefs).toBe(1);
+    expect(r.badPaths).toEqual([]);
+  });
+
+  it('finds no duplicate when each number is claimed once', () => {
+    // Guards the reverse: a duplicate detector that always fires is no better
+    // than one that never does.
+    expect(INV.duplicates).toEqual([]);
+  });
 });
 
 describe('scanText — number citations', () => {
@@ -175,6 +208,20 @@ describe('scan', () => {
     expect(stats.citations).toBe(2);
     expect(stats.badCites).toHaveLength(1);
   });
+
+  it('validates a closed-series path whose label never spells the three letters', () => {
+    // The pre-filter's blind spot. A closed-series filename is all digits and
+    // a slug, and `decision-records/` says nothing either, so a file linking
+    // one under a plain-English label contains no `adr` substring at all — and
+    // was skipped before the path was ever resolved. The link below is dead;
+    // if the pre-filter drops the file, this reports zero problems and passes.
+    const files = [{ path: 'd.md', text: '[Email watching](decision-records/0099-gone.md)' }];
+    expect(/adr/i.test(files[0].text)).toBe(false); // the premise, asserted
+    const stats = scan(files, INV);
+    expect(stats.pathRefs).toBe(1);
+    expect(stats.badPaths).toHaveLength(1);
+    expect(stats.badPaths[0]).toContain('0099-gone.md');
+  });
 });
 
 describe('violations — vacuity guards', () => {
@@ -206,7 +253,7 @@ describe('violations — vacuity guards', () => {
   // The two that matter most. A form dying is the realistic failure — the
   // pattern stops matching `ADR NNN` while `ADR-NNN` keeps working — and a
   // total-only floor cannot see it, because the surviving form dilutes it.
-  // Measured on the real repo: the spaced form is 143 of 911, so losing ALL
+  // Measured on the real repo: the spaced form is 143 of 913, so losing ALL
   // of it is a ~16% dip that any safe total-only floor sails past.
   it('fails when ONLY the spaced form dies, even though the total looks healthy', () => {
     const stats = healthy({ byForm: { hyphen: MIN_HYPHEN_CITATIONS + 200, spaced: 0 } });
@@ -257,6 +304,15 @@ describe('violations — reporting', () => {
     expect(problems.join('\n')).toContain('ADR-13');
   });
 
+  it('reports two files claiming the same number', () => {
+    // Without this the citation still resolves, so nothing else in the check
+    // can notice — the ambiguity is in the inventory, not in any citation.
+    const withDup = classifyAdrFiles([...adrFilenames(), 'adr-013-a-second-claim.md']);
+    const problems = violations(healthy(), withDup, MIN_SCANNED_FILES);
+    expect(problems.join('\n')).toContain('adr-013-a-second-claim.md');
+    expect(problems.join('\n')).toContain('more than one file');
+  });
+
   it('reports an ADR file belonging to neither series', () => {
     const withStray = classifyAdrFiles([...adrFilenames(), 'stray-note.md']);
     const problems = violations(healthy(), withStray, MIN_SCANNED_FILES);
@@ -281,6 +337,13 @@ describe('the real repo', () => {
 
   it('has no ADR file that belongs to neither series', () => {
     expect(inv.unclassified).toEqual([]);
+  });
+
+  it('has no number claimed by two records', () => {
+    expect(inv.duplicates).toEqual([]);
+    // Anchored to an absolute rather than to the map sizes, which is the
+    // number duplicates would quietly shrink.
+    expect(inv.all).toHaveLength(inv.closed.size + inv.open.size + inv.unclassified.length);
   });
 
   it('actually reads the repo and finds citations in it', () => {

@@ -44,6 +44,8 @@
 //      four digits mean the closed series, three mean the open one.
 //   3. No citation is written with one or two digits, because that is
 //      ambiguous between the two series and no tool can recover the intent.
+//   4. No number is claimed by two files in the same series, which would make
+//      every citation of it ambiguous no matter how it was written.
 //
 // The ADR inventory is DISCOVERED from the directory, not listed here, so a new
 // ADR is covered the day it is written.
@@ -85,15 +87,15 @@ const BINARY =
 // nothing, or the citation regex stops matching, the guard goes green while
 // checking nothing at all. These floors turn that silence into a failure.
 //
-// At the time of writing the repo scans 2285 files and finds 911 citations,
-// 143 path references and 57 ADRs.
+// At the time of writing the repo scans 2286 files and finds 913 citations,
+// 151 path references and 57 ADRs.
 const MIN_SCANNED_FILES = 500;
 const MIN_ADR_FILES = 40;
 /**
  * Citations are floored PER FORM, because the failure being guarded is a form
  * dying — the pattern quietly ceasing to match `ADR NNN` while `ADR-NNN` keeps
  * working. A single total can only ever see that diluted by the forms that
- * survived: the spaced form is 143 of 911 today, so losing all of it is a ~16%
+ * survived: the spaced form is 143 of 913 today, so losing all of it is a ~16%
  * dip that any total-only floor loose enough to be safe would sail past. Worse,
  * a total tuned to catch it today silently stops meaning that as the mix
  * shifts — a batch of new ADRs cited mostly with hyphens would restore the
@@ -103,7 +105,7 @@ const MIN_ADR_FILES = 40;
  * own floor no matter what the other does. The total stays as a cheap backstop
  * for a collapse that somehow spares both forms proportionally.
  *
- * Current counts: 768 hyphen, 143 spaced, 911 total.
+ * Current counts: 770 hyphen, 143 spaced, 913 total.
  *
  * So if one of these fails, suspect the pattern FIRST. Drifting down through
  * them means someone removed hundreds of references — confirm that was
@@ -120,20 +122,45 @@ const MIN_PATH_REFS = 50;
  * `closed` is keyed by the four-digit number, `open` by the three-digit one —
  * the same keys a citation is classified into, so resolution is a map lookup
  * rather than a second, separately-drifting pattern.
+ *
+ * A map keyed by identifier cannot hold two files claiming the same number: a
+ * second one just overwrites the first, and every citation of that number then
+ * "resolves" while naming two records — the exact ambiguity this whole check
+ * exists to prevent, arriving through the inventory instead of through a
+ * citation. So the claims are counted before the maps are read, `duplicates`
+ * carries any number claimed twice, and `all` keeps every filename so a path
+ * reference to the overwritten file still resolves rather than being reported
+ * as missing while it sits on disk.
  */
 export function classifyAdrFiles(filenames) {
   const closed = new Map();
   const open = new Map();
   const unclassified = [];
+  const all = [];
+  // Padded number → every file claiming it. The padding already separates the
+  // series (four digits closed, three open), so one map cannot conflate them.
+  const claims = new Map();
   for (const name of filenames) {
     if (!name.endsWith('.md')) continue;
+    all.push(name);
     const closedMatch = /^(\d{4})-/.exec(name);
     const openMatch = /^adr-(\d{3})-/.exec(name);
-    if (closedMatch) closed.set(closedMatch[1], name);
-    else if (openMatch) open.set(openMatch[1], name);
-    else unclassified.push(name);
+    if (!closedMatch && !openMatch) {
+      unclassified.push(name);
+      continue;
+    }
+    const number = (closedMatch ?? openMatch)[1];
+    const map = closedMatch ? closed : open;
+    // First claimant wins the map slot, so which file a duplicate displaces
+    // does not depend on directory order; the duplicate is reported anyway.
+    if (!map.has(number)) map.set(number, name);
+    if (!claims.has(number)) claims.set(number, []);
+    claims.get(number).push(name);
   }
-  return { closed, open, unclassified };
+  const duplicates = [...claims]
+    .filter(([, names]) => names.length > 1)
+    .map(([number, names]) => `ADR-${number} → ${names.join(', ')}`);
+  return { closed, open, unclassified, duplicates, all };
 }
 
 /** ADR filenames on disk. */
@@ -173,7 +200,10 @@ export function scanText(path, text, inv) {
   let citations = 0;
   const byForm = { hyphen: 0, spaced: 0 };
 
-  const known = new Set([...inv.closed.values(), ...inv.open.values(), ...inv.unclassified]);
+  // Every filename, not just the ones holding a map slot: a path reference
+  // names a FILE, and a file displaced from the map by a duplicate number is
+  // still on disk. Resolving paths through the maps would report it missing.
+  const known = new Set(inv.all);
 
   // 1. Explicit path references into the ADR directory.
   for (const m of text.matchAll(/(?:docs\/knowledge\/)?decision-records\/([\w.-]+?\.md)/g)) {
@@ -228,8 +258,14 @@ export function scan(files, inv) {
     ambiguous: [],
   };
   for (const { path, text } of files) {
-    // Cheap pre-filter: most of the repo never says "adr" at all.
-    if (!/adr/i.test(text)) continue;
+    // Cheap pre-filter: most of the repo never mentions a decision record at
+    // all. BOTH markers are needed. A closed-series path reference —
+    // `decision-records/0001-something` — contains no `adr` substring
+    // anywhere, so a file whose only reference was one of those, under a link
+    // label that spells no letters A-D-R either, was skipped entirely and its
+    // path never resolved. That is the half of the directory this check is
+    // least able to lose, since the closed series is the one nothing renames.
+    if (!/adr|decision-records/i.test(text)) continue;
     const r = scanText(path, text, inv);
     total.pathRefs += r.pathRefs;
     total.citations += r.citations;
@@ -321,6 +357,16 @@ export function violations(stats, inv, scannedFiles) {
         counts.map((c) => `    ${c}`).join('\n')
     );
     return problems;
+  }
+
+  if (inv.duplicates.length > 0) {
+    problems.push(
+      'These ADR numbers are claimed by more than one file, so every citation of them\n' +
+        '  identifies two records at once:\n' +
+        inv.duplicates.map((d) => `    ${d}`).join('\n') +
+        '\n  Renumber one of them. A citation that resolves is not the same as a citation\n' +
+        '  that resolves to ONE record, and this check cannot tell the difference for you.'
+    );
   }
 
   if (inv.unclassified.length > 0) {
