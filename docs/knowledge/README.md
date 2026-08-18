@@ -31,7 +31,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [github-projects-import.md](github-projects-import.md)           | GitHub repository import for resume builder Projects step: Rust fetch + SSRF guard, AI bullet generation, modal UI         |
 | [document-record-wire-format.md](document-record-wire-format.md) | DocumentRecord serde renames = backup-bundle on-disk format; intentional divergence from TS app model                      |
 | [matching-algorithm.md](matching-algorithm.md)                   | Keyword-coverage scoring kernel (Autopilot + ATS), caching, gap analysis, intentional flat-coverage simplification         |
-| [persistence.md](persistence.md)                                 | SQLite + transactions, `db::open`, DataStore trait, backup/restore, Resettable registry                                    |
+| [persistence.md](persistence.md)                                 | State ownership + transient boundary, SQLite/`db::open`, DataStore, backup/restore, Resettable, JSON exceptions            |
 | [anti-abuse-limits.md](anti-abuse-limits.md)                     | Rate + concurrency limits, per-provider daily ceilings, runtime configuration                                              |
 | [performance-rules.md](performance-rules.md)                     | Hot paths, async-runtime discipline, query-client tuning, token/cost                                                       |
 | [security-rules.md](security-rules.md)                           | Capabilities, CSP, deps, secrets, privacy/GDPR, updater                                                                    |

@@ -254,3 +254,7 @@ post-commit
 
 CLAUDE.local.md
 docs/NEXT_ISSUES.md
+
+# /world video clips ship as GitHub release assets (world-assets-vN), not in git.
+# See apps/landing/src/app/world/world-config.ts. A local copy here is fine and ignored.
+apps/landing/public/world/vid/
