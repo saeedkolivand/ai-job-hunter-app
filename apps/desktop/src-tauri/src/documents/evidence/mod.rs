@@ -336,8 +336,11 @@ const EXPERIENCE_HEADINGS: &[&str] = &[
 /// the way it yields to summary and skills — would overturn a documented
 /// decision (see that const: Education and Projects are excluded from the
 /// yield set on purpose, because "Project Experience" really is a work
-/// history in a consultant's CV). These three phrases have no such second
-/// reading, so they need no rule.
+/// history in a consultant's CV). Every phrase here has an explicit education
+/// qualifier and so has no such second reading, which is what lets membership
+/// stand in for a rule. The cost is that membership must be kept up: a review
+/// found four more already in the wild after the first three were written, so
+/// every entry is asserted individually below rather than sampled.
 ///
 /// This also supersedes one line of [`EXPERIENCE_HEADINGS`]'s `werdegang`
 /// note, which accepted "Ausbildungswerdegang" landing on Experience as
@@ -1119,17 +1122,40 @@ mod lexicon_parity {
     /// still reach Education.
     #[test]
     fn education_headings_carrying_an_experience_stem_reach_education() {
-        for heading in [
-            "Akademischer Werdegang",
-            "akademische laufbahn",
-            "AUSBILDUNGSWERDEGANG",
-        ] {
-            assert_eq!(
-                classify_section(heading),
-                SectionKind::Education,
-                "{heading:?} names an academic record; classifying it Experience files                  degree entries as work bullets under roles the candidate never held"
-            );
+        // TWO lists on purpose, because either alone passes for the wrong
+        // reason. The loop below drives off the const, so a phrase ADDED
+        // without thought is still asserted — but that is self-referential:
+        // deleting an entry deletes its own assertion, and a mutation run
+        // proved exactly that (removing `wissenschaftlicher werdegang` left
+        // this test green). So the membership check comes first and is
+        // written out by hand; it is the half that catches a deletion.
+        assert_eq!(
+            super::EDUCATION_OVERRIDES_EXPERIENCE,
+            &[
+                "akademischer werdegang",
+                "akademischen werdegang",
+                "wissenschaftlicher werdegang",
+                "wissenschaftlichen werdegang",
+                "schulischer werdegang",
+                "bildungswerdegang",
+                "akademische laufbahn",
+                "ausbildungswerdegang",
+            ],
+            "the override list changed — every entry is load-bearing (each one              was found filing a degree as a job), so a removal must be a              deliberate edit here, not a silent side effect"
+        );
+
+        // Case-varied to prove the lowercasing in `classify_section` rather
+        // than assuming it.
+        for phrase in super::EDUCATION_OVERRIDES_EXPERIENCE {
+            for heading in [phrase.to_string(), phrase.to_uppercase()] {
+                assert_eq!(
+                    classify_section(&heading),
+                    SectionKind::Education,
+                    "{heading:?} names an academic record; classifying it Experience                      files degree entries as work bullets under roles the candidate                      never held"
+                );
+            }
         }
+
         // Control: the same stem WITHOUT an education qualifier is still a work
         // history, so the exception must not have swallowed the rule.
         assert_eq!(
@@ -1137,5 +1163,56 @@ mod lexicon_parity {
             SectionKind::Experience
         );
         assert_eq!(classify_section("Werdegang"), SectionKind::Experience);
+    }
+
+    /// The Italian half of the same invariant, and the regression a pre-PR
+    /// review caught in the first draft of this change: putting the BARE stem
+    /// `esperienze` in [`AMBIGUOUS_EXPERIENCE_HEADINGS`] sent "Esperienze di
+    /// formazione" — an education heading — to Experience, because that set
+    /// yields to summary and skills but never to education. A degree entry
+    /// under it became a fabricated job.
+    ///
+    /// Only the WORK-QUALIFIED plurals are taught, so this pins both
+    /// directions at once: the education headings stay Education, the
+    /// qualified plurals reach Experience, and the bare word is an honest
+    /// miss rather than a misfile.
+    #[test]
+    fn italian_experience_plurals_do_not_capture_education_headings() {
+        for heading in [
+            "Esperienze di formazione",
+            "Formazione ed esperienze",
+            "Istruzione ed esperienze",
+        ] {
+            assert_eq!(
+                classify_section(heading),
+                SectionKind::Education,
+                "{heading:?} is an education heading; a bare `esperienze` stem files                  its degrees as work bullets"
+            );
+        }
+
+        for heading in [
+            "Esperienze professionali",
+            "Esperienze lavorative",
+            // Work-qualified spellings must also stay OUT of the
+            // section-deleting Skills hole `AMBIGUOUS_EXPERIENCE_HEADINGS`
+            // documents — nothing in `extract_evidence` reads a Skills
+            // section, so a work history landing there is erased, not
+            // mislabelled.
+            "Esperienze professionali e competenze",
+        ] {
+            assert_eq!(
+                classify_section(heading),
+                SectionKind::Experience,
+                "{heading:?} is work-qualified and must reach Experience"
+            );
+        }
+
+        // The bare stem is deliberately NOT taught: it cannot be, without
+        // re-opening the education capture above. `Other` is the honest
+        // answer and `KNOWN_MISSES` records it.
+        assert_eq!(classify_section("Esperienze"), SectionKind::Other);
+        // Substring control for the word-bounded `istruzione`.
+        assert_eq!(classify_section("Distruzione"), SectionKind::Other);
+        assert_eq!(classify_section("Istruzione"), SectionKind::Education);
     }
 }
