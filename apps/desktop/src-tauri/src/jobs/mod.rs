@@ -211,13 +211,21 @@ impl JobTracker {
 
     /// Register a new job as running.
     pub fn start(&mut self, id: &str, kind: &str) {
+        self.start_with_payload(id, kind, Value::Null);
+    }
+
+    /// [`Self::start`], recording `payload` instead of `Value::Null` — the
+    /// shared body [`Self::start_exclusive_keyed`] uses to stamp the
+    /// distinguishing key (e.g. the model being pulled) onto the record it
+    /// creates, so a later caller can read it back off `job.payload`.
+    fn start_with_payload(&mut self, id: &str, kind: &str, payload: Value) {
         let now = now_ms();
         let record = JobRecord {
             id: id.to_string(),
             kind: kind.to_string(),
             status: JobStatus::Running,
             progress: 0.0,
-            payload: Value::Null,
+            payload,
             result: None,
             error: None,
             retries: 0,
@@ -259,6 +267,49 @@ impl JobTracker {
         }
         self.start(id, kind);
         None
+    }
+
+    /// Like [`Self::start_exclusive`], but the exclusion group is `kind` PLUS
+    /// a caller-supplied `key` (e.g. the model being pulled) rather than
+    /// `kind` alone.
+    ///
+    /// `kind`-only exclusivity is wrong here: a returning caller must join a
+    /// pull of the SAME model already in flight, but a request for a
+    /// DIFFERENT model must not silently adopt that unrelated job — the
+    /// caller would watch (and eventually believe it received) a download it
+    /// never asked for, while its own request never ran at all. Reusing
+    /// `start_exclusive`'s kind-only match here would do exactly that.
+    ///
+    /// Returns `Ok(None)` when this job was started (the key is stamped onto
+    /// its `payload` under `key_field`, readable back via [`Self::get`]);
+    /// `Ok(Some(existing_id))` when a job of `kind` with the SAME key is
+    /// already active (join it, same as `start_exclusive`); `Err(other_key)`
+    /// when a job of `kind` with a DIFFERENT key is active — the caller
+    /// decides how to report that conflict (this tracker has no i18n/error
+    /// layer of its own).
+    pub fn start_exclusive_keyed(
+        &mut self,
+        id: &str,
+        kind: &str,
+        key_field: &str,
+        key: &str,
+    ) -> Result<Option<String>, String> {
+        if let Some(existing) = self.jobs.values().find(|j| {
+            j.kind == kind
+                && matches!(
+                    j.status,
+                    JobStatus::Running | JobStatus::Queued | JobStatus::Streaming
+                )
+        }) {
+            let existing_key = existing.payload.get(key_field).and_then(Value::as_str);
+            return if existing_key == Some(key) {
+                Ok(Some(existing.id.clone()))
+            } else {
+                Err(existing_key.unwrap_or("unknown").to_string())
+            };
+        }
+        self.start_with_payload(id, kind, serde_json::json!({ key_field: key }));
+        Ok(None)
     }
 
     /// Wipe the job-execution log — in-memory records and the `jobs` table.

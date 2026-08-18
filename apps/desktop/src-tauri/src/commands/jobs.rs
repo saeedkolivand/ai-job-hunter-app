@@ -57,6 +57,32 @@ pub fn job_start_exclusive(
     existing
 }
 
+/// Like [`job_start_exclusive`], but the exclusion group is `kind` PLUS a
+/// caller-supplied `key` (e.g. the model being pulled) rather than `kind`
+/// alone — see [`JobTracker::start_exclusive_keyed`] for why kind-only
+/// exclusivity is wrong for a command whose kind never varies but whose
+/// target (the model) does.
+///
+/// `Ok(None)`: started, event emitted. `Ok(Some(id))`: a job of `kind` for
+/// the SAME key is already active — join it. `Err(other_key)`: a job of
+/// `kind` for a DIFFERENT key is active — the caller decides how to refuse.
+pub fn job_start_exclusive_keyed(
+    app: &AppHandle,
+    id: &str,
+    kind: &str,
+    key_field: &str,
+    key: &str,
+) -> Result<Option<String>, String> {
+    let outcome = app
+        .state::<Mutex<JobTracker>>()
+        .lock()
+        .start_exclusive_keyed(id, kind, key_field, key);
+    if matches!(outcome, Ok(None)) {
+        emit_job_event(app, "job.started", id, None);
+    }
+    outcome
+}
+
 /// Park a job behind the concurrency limiter: status → `queued`, emitting
 /// `job.queued` with how many callers are ahead of it.
 ///

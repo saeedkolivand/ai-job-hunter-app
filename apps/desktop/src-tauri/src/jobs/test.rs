@@ -195,6 +195,57 @@ fn test_start_exclusive_ignores_unrelated_groups() {
     assert_eq!(tracker.get("job-2").unwrap().status, JobStatus::Running);
 }
 
+// ── start_exclusive_keyed: `ai.pull_model` must dedupe per MODEL, not just
+// kind — PR #1036 review finding. `start_exclusive` alone would join a
+// request for "qwen2.5" to an already-running "llama3" pull, handing the
+// caller progress for a model it never asked for while its own request
+// silently never runs.
+// ────────────────────────────────────────────────────────────────────────
+
+/// Same model, second request: still joins the running job and returns its
+/// id — the ORIGINAL `start_exclusive` fix, which must not regress.
+#[test]
+fn test_start_exclusive_keyed_same_key_joins_the_running_job() {
+    let mut tracker = JobTracker::default();
+    let first = tracker.start_exclusive_keyed("job-1", "ai.pull_model", "model", "llama3");
+    assert_eq!(first, Ok(None));
+
+    let second = tracker.start_exclusive_keyed("job-2", "ai.pull_model", "model", "llama3");
+    assert_eq!(second, Ok(Some("job-1".to_string())));
+    // The second call must not have registered "job-2" at all.
+    assert!(tracker.get("job-2").is_none());
+}
+
+/// Different model, second request: refused rather than silently joined to
+/// the wrong job — the defect this test guards against.
+#[test]
+fn test_start_exclusive_keyed_different_key_is_refused_not_joined() {
+    let mut tracker = JobTracker::default();
+    let first = tracker.start_exclusive_keyed("job-1", "ai.pull_model", "model", "llama3");
+    assert_eq!(first, Ok(None));
+
+    let second = tracker.start_exclusive_keyed("job-2", "ai.pull_model", "model", "qwen2.5");
+    assert_eq!(
+        second,
+        Err("llama3".to_string()),
+        "a different model must be refused, never silently joined to job-1"
+    );
+    assert!(
+        tracker.get("job-2").is_none(),
+        "a refused request must not register a job either"
+    );
+}
+
+/// The key survives the round trip: a joined caller (or anything reading the
+/// job list) can read back which model a pull is actually for.
+#[test]
+fn test_start_exclusive_keyed_records_the_key_on_the_payload() {
+    let mut tracker = JobTracker::default();
+    let _ = tracker.start_exclusive_keyed("job-1", "ai.pull_model", "model", "llama3");
+    let job = tracker.get("job-1").unwrap();
+    assert_eq!(job.payload, json!({ "model": "llama3" }));
+}
+
 #[test]
 fn test_interrupted_running_job_marked_failed_on_reload() {
     use tempfile::TempDir;
