@@ -289,6 +289,19 @@ jobs:
       - name: 🦀 cargo check (all targets)
         working-directory: apps/desktop/src-tauri
         run: cargo check --all-targets --locked
+      # This job is `check` only (see the comment above), so `std::fs::rename`
+      # over an EXISTING file (postings::InteractionStore::save's write-then-
+      # rename) was never actually EXECUTED on Windows — rename-over-existing
+      # has different underlying semantics per platform (MoveFileExW needs
+      # MOVEFILE_REPLACE_EXISTING; POSIX rename(2) replaces unconditionally),
+      # and this repo has a recorded history of platform-exclusive code
+      # compiling nowhere until release. One narrowly-targeted `cargo test`,
+      # not the whole suite — the point is this ONE rename call, not Windows
+      # test coverage generally, which would cost real runner minutes (billed
+      # at 2x) for no new signal on everything else already proven on Linux.
+      - name: 🪟 Atomic file-replace test (Windows rename-over-existing)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --lib postings::test::save_replaces_the_file_atomically_and_leaves_no_temp_file --locked
 
   # ── Rust test-quality (PR + manual; never on push-to-main) ───────────────────
   cargo-hack:
