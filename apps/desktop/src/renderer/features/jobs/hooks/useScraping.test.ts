@@ -290,7 +290,10 @@ describe('useScraping — the in-flight job survives a route change', () => {
   });
 
   it('a remount onto a job that already FINISHED settles to a finished state', async () => {
-    fetchJobMock.mockResolvedValue({ status: 'completed', result: { boards: [] } });
+    // Still running while `first` is mounted — the leading watchdog poll (see
+    // the progress-fallback tests below) must not settle it before the page
+    // ever navigates away, or this test would stop exercising the remount path.
+    fetchJobMock.mockResolvedValue({ status: 'running' });
     vi.useFakeTimers();
     try {
       const form = makeForm();
@@ -299,6 +302,9 @@ describe('useScraping — the in-flight job survives a route change', () => {
         await first.result.current.startScrape();
       });
       first.unmount();
+
+      // The job finishes only now, while nothing is mounted to hear the event.
+      fetchJobMock.mockResolvedValue({ status: 'completed', result: { boards: [] } });
 
       // The job.completed EVENT is never delivered — the subscription lives on
       // the unmounted page. Only the watchdog can reconcile this.
@@ -346,5 +352,55 @@ describe('useScraping — per-board diagnostics survive', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Defect 4 — a remount mid-scrape must not report a false 0% for the rest of
+// the run. `useScrapeProgress` (mocked here to `null`, matching the real hook
+// resetting on every mount) never fires again on the single-board default, so
+// the persisted `JobRecord.progress` the watchdog already polls is the only
+// surviving source of truth.
+// ---------------------------------------------------------------------------
+
+describe('useScraping — progress survives a route change', () => {
+  it('reports the backend-persisted fraction immediately after a remount', async () => {
+    fetchJobMock.mockResolvedValue({ status: 'running', progress: 0.8 });
+    const form = makeForm();
+
+    const first = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await first.result.current.startScrape();
+    });
+    first.unmount();
+
+    const second = renderHookWithClient(() => useScraping(noopNotify, form));
+    // The leading (non-timer) poll must resolve before this assertion — flush
+    // the microtask queue without touching fake timers.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(second.result.current.scrapeProgress).toBe(0.8);
+  });
+
+  it('does not fabricate progress when the backend has none yet', async () => {
+    fetchJobMock.mockResolvedValue({ status: 'running' });
+    const form = makeForm();
+
+    const first = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await first.result.current.startScrape();
+    });
+    first.unmount();
+
+    const second = renderHookWithClient(() => useScraping(noopNotify, form));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(second.result.current.scrapeProgress).toBeNull();
   });
 });

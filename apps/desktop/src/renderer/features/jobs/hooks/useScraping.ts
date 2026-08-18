@@ -40,7 +40,18 @@ export function useScraping(
   const cancelJob = useCancelJob();
   // Live boards-done/total fraction (0..1) for the in-flight scrape; null until
   // the first board completes and after the scrape ends (scrapeJobId → null).
-  const scrapeProgress = useScrapeProgress(scrapeJobId);
+  // On the default single-board config the only event fires as the run ends,
+  // and a remount always resets this to null (see `useScrapeProgress`) — so on
+  // its own this stays null for the whole run after a route change.
+  const liveScrapeProgress = useScrapeProgress(scrapeJobId);
+  // Backend-persisted fallback for the gap above. `job_progress` (Rust) writes
+  // the SAME fraction into `JobRecord.progress` that the `scrape:progress`
+  // event carries (commands/scrape.rs) — not a guess, just a durable copy the
+  // watchdog below already fetches. Reset whenever the tracked job changes.
+  const [backendProgress, setBackendProgress] = useState<number | null>(null);
+  // Prefer the live event (lower latency) once one has arrived this mount;
+  // otherwise fall back to the last polled backend value.
+  const scrapeProgress = liveScrapeProgress ?? backendProgress;
 
   const doScrape = async (amount: number, replace: boolean) => {
     const res = (await scrapeBoards.mutateAsync({
@@ -190,14 +201,20 @@ export function useScraping(
   useEffect(() => {
     if (!scrapeJobId) return;
     let cancelled = false;
+    setBackendProgress(null);
     const check = async () => {
       try {
         const job = (await fetchJob(scrapeJobId)) as {
           status?: string;
+          progress?: number;
           error?: string;
           result?: { boards?: BoardScrapeSummary[] };
         } | null;
         if (cancelled || !job?.status) return;
+        // Seed/refresh the fallback used above regardless of terminal status —
+        // a 'failed'/'cancelled' tick still wants the last-known fraction for
+        // the instant before `finishScrape` clears `scrapeJobId`.
+        if (typeof job.progress === 'number') setBackendProgress(job.progress);
         if (job.status === 'completed') {
           // The tracker keeps the same `{ count, boards }` payload the
           // `job.completed` EVENT carries, so a scrape that finished while the
@@ -212,6 +229,10 @@ export function useScraping(
         // Transient — retry on the next tick.
       }
     };
+    // Leading call: without it the first tick was a full 2.5s after mount, so
+    // a remount mid-scrape showed a false 0% for that whole window even though
+    // the backend fraction was available immediately.
+    void check();
     const id = setInterval(() => void check(), 2500);
     return () => {
       cancelled = true;
