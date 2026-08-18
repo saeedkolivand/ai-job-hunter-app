@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useSessionStore } from './session-store';
+import { makeJobsDefaults, useSessionStore } from './session-store';
 
 const initial = useSessionStore.getState();
 
@@ -57,19 +57,44 @@ describe('useSessionStore', () => {
   it('patches jobs, resumes and settings slices', () => {
     useSessionStore.getState().setJobs({ filter: 'react', sortBy: 'company' });
     expect(useSessionStore.getState().jobs).toEqual({
+      ...makeJobsDefaults(),
       filter: 'react',
       sortBy: 'company',
-      viewMode: 'split',
-      selectedId: null,
-      listScrollTop: 0,
-      hideAgency: false,
     });
+    const defaults = makeJobsDefaults();
+    // Anchored to absolutes as well as the spread, so a default that silently
+    // flips (e.g. `replacePending` starting true, which would make the next
+    // scrape wipe the persisted postings) can't ride along in the defaults.
+    expect(defaults.lastSearchSignature).toBe('');
+    expect(defaults.replacePending).toBe(false);
+    expect(defaults.scrapeJobId).toBeNull();
+    expect(defaults.scrapeSummaries).toEqual([]);
+    expect(defaults.scrapeFailureNote).toBeNull();
+    expect(defaults.scrapeOutcome).toBeNull();
 
     useSessionStore.getState().setResumes({ tab: 'activity' });
     expect(useSessionStore.getState().resumes.tab).toBe('activity');
 
     useSessionStore.getState().setSettings({ activeSection: 'ai' });
     expect(useSessionStore.getState().settings.activeSection).toBe('ai');
+  });
+
+  it('the jobs defaults hand out FRESH arrays, never a shared instance', () => {
+    // Two resets must not share `scrapeSummaries` or the arrays inside
+    // `scrapeForm`: aliasing them would let a mutation through one reset show
+    // up in every other.
+    const a = makeJobsDefaults();
+    const b = makeJobsDefaults();
+    expect(a.scrapeSummaries).not.toBe(b.scrapeSummaries);
+    expect(a.scrapeForm).not.toBe(b.scrapeForm);
+    expect(a.scrapeForm.boards).not.toBe(b.scrapeForm.boards);
+    expect(a.scrapeForm.companies).not.toBe(b.scrapeForm.companies);
+
+    // …and mutating one leaves the other at its absolute default.
+    a.scrapeSummaries.push({ board: 'linkedin', count: 1 });
+    a.scrapeForm.boards.push('greenhouse');
+    expect(b.scrapeSummaries).toEqual([]);
+    expect(b.scrapeForm.boards).toEqual(['aggregator']);
   });
 
   it('jobs slice defaults to split view with no selection', () => {
