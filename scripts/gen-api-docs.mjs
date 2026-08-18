@@ -16,7 +16,8 @@
 // script does not know how to render is a hard error, never a guess.
 //
 // Run with `pnpm gen:api`; CI enforces freshness via `pnpm gen:api:check`
-// (regenerate + `git diff --exit-code`).
+// (regenerate + `git diff --exit-code HEAD` — against HEAD, so staging a
+// regenerated copy cannot stand in for committing it).
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
