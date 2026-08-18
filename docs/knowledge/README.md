@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-08-16
+Last updated: 2026-08-18
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -82,6 +82,8 @@ Read the minimum; **stop at ~90% confidence**.
 ### The `NNNN-` series (closed)
 
 A second ADR tree grew under `docs/adr/` on 2026-06-12, twelve days after this one, and ran to 23 records before being folded in here on 2026-08-16. **The files were moved but deliberately not renumbered** — an ADR is a dated record, and its number is cited from commit messages, merged PR bodies, code comments and the published tech radar; renumbering would falsify all of them. The `NNNN-` series is therefore **closed**: cite these by their existing numbers, and give every NEW ADR the next `adr-NNN` number in the series above.
+
+Because every number from 1 to 23 exists in **both** series, the digit count is what disambiguates a citation: **four digits mean the closed series** (`ADR-0013` — email-confirmation watching), **three mean the open one** (`ADR-013` — the résumé builder). Keep that padding in commit messages, code comments, docs and tech-radar `adrSlug`s. `pnpm check:agent-system` guards both series against index drift and `pnpm check:tech-radar` resolves every `adrSlug` to a real file, but nothing can recover which ADR a mis-padded number was meant to point at.
 
 | ADR                                                                                     | Title                                                                   |
 | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
