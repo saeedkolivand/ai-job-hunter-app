@@ -180,7 +180,7 @@ const SUBSCRIBERS = {
   },
   'features/onboarding/steps/ollama/ModelSelectionPanel/useModelPull.ts': {
     mount: 'route-scoped',
-    hash: '66b7dd5ae605',
+    hash: 'df7f51d3d579',
     note:
       'A multi-GB pull survives any unmount — and the trigger really is ANY unmount, not just ' +
       'skipping the step: switching to the Cloud/CLI tab and back, or Back/Forward through ' +
@@ -188,10 +188,19 @@ const SUBSCRIBERS = {
       "adopts a still-active `ai.pull_model` job, so progress resumes and the run's " +
       'completion handling still fires. Clicking Download again cannot start a second ' +
       'concurrent pull: `ai_pull_model` uses `job_start_exclusive` and hands back the ' +
-      'existing job id to re-attach to. NOT recovered, deliberately: a pull that reaches a ' +
-      'terminal state inside the unmount/remount gap — re-firing a success toast and the ' +
-      'health/models recheck for an already-finished job on every later mount would be worse ' +
-      'than missing them once.',
+      "existing job id to re-attach to. Right after adopting, it also re-reads that job's " +
+      'OWN current status (`jobs_get`) and settles immediately if already `completed`/' +
+      "`failed` — closing the race where the job's ONE terminal event fires in the gap " +
+      'between the registry list resolving and `pullJobId` committing, which would ' +
+      'otherwise be dropped for good and leave the panel reporting `pulling` forever (PR ' +
+      '#1036 review finding). That commit is synchronous into a ref, not left to the next ' +
+      'render, because a promise that resolves purely through microtasks (a real IPC ' +
+      'response included) can settle before React ever gets a scheduler turn. NOT ' +
+      'recovered, still deliberately: a pull that reaches a terminal state entirely BEFORE ' +
+      'the registry snapshot is taken — finished during the unmount gap, never observed as ' +
+      'still running/queued — is never adopted at all, so its success toast and the ' +
+      'health/models recheck are not retroactively fired; doing that on every later mount ' +
+      'would be worse than missing them once.',
   },
   'features/settings/components/ai-settings/EmbeddingsSettings/index.tsx': {
     mount: 'route-scoped',
