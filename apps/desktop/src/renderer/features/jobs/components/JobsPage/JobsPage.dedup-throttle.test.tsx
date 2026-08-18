@@ -50,8 +50,9 @@ const invalidateSpy = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
  * the component state.  setLivePostings is vi.fn() so tests can inspect
  * .mock.calls and call .mockClear() without casts.
  *
- * `replacePendingRef` is exposed here so tests can set `.current = true` to
- * exercise the eager-invalidation branch in the job.stream handler.
+ * The replace latch now lives in the session store (`jobs.replacePending`), so
+ * tests set it there to exercise the eager-invalidation branch in the
+ * job.stream handler.
  *
  * Kept as a plain-object container (accessed by property reference inside the
  * vi.mock factory) so hoisting of vi.mock doesn't cause TDZ issues.
@@ -59,7 +60,6 @@ const invalidateSpy = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const scrapingState = {
   livePostings: [] as Posting[],
   setLivePostings: vi.fn<(updater: Posting[] | ((prev: Posting[]) => Posting[])) => void>(),
-  replacePendingRef: { current: false },
 };
 
 // ---------------------------------------------------------------------------
@@ -72,8 +72,6 @@ vi.mock('@/features/jobs/hooks/useScraping', () => ({
     scrapeOutcome: null,
     livePostings: scrapingState.livePostings,
     setLivePostings: scrapingState.setLivePostings,
-    scrapeJobRef: { current: 'job-abc' },
-    replacePendingRef: scrapingState.replacePendingRef,
     startScrape: vi.fn(),
     cancelScrape: vi.fn(),
     noteScrapeFinished: vi.fn(),
@@ -95,14 +93,9 @@ vi.mock('@/hooks/useDefaultResumeId', () => ({
   useDefaultResumeId: () => null,
 }));
 
-vi.mock('@/store/session-store', () => ({
-  useSessionStore: () => ({
-    jobs: { filter: '', sortBy: 'newest', viewMode: 'list' },
-    setJobs: vi.fn(),
-    setSettings: vi.fn(),
-  }),
-}));
-
+// The session store is REAL — the page reads the active job id and the replace
+// latch back from it synchronously (`getState()`), which a plain object stub
+// cannot model. `resetSessionJobs()` seeds it per test.
 vi.mock('@/hooks/use-format-relative-time', () => ({
   useFormatRelativeTime: () => (ts: number) => String(ts),
 }));
@@ -159,7 +152,17 @@ vi.mock('@ajh/ui', () => ({
 }));
 
 // Import AFTER mocks.
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
+
 import { JobsPage } from './index';
+
+/** `scrapeJobId: 'job-abc'` matches the jobId fireStreamEvent() emits, so the
+ *  page's active-job guard accepts the synthetic stream items. */
+function resetSessionJobs(replacePending = false) {
+  useSessionStore.setState({
+    jobs: { ...makeJobsDefaults(), viewMode: 'list', scrapeJobId: 'job-abc', replacePending },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -263,6 +266,7 @@ function renderedIds(): string[] {
 
 describe('JobsPage — allPostings dedup (via rendered list)', () => {
   beforeEach(() => {
+    resetSessionJobs();
     scrapingState.livePostings = [];
     invalidateSpy.mockClear();
   });
@@ -412,8 +416,8 @@ describe('allPostings merge formula — pure function', () => {
 
 describe('JobsPage — stream invalidation throttle', () => {
   beforeEach(() => {
+    resetSessionJobs();
     scrapingState.livePostings = [];
-    scrapingState.replacePendingRef.current = false;
     invalidateSpy.mockClear();
     vi.useFakeTimers();
   });
@@ -535,23 +539,23 @@ describe('JobsPage — stream invalidation throttle', () => {
     unmount();
   });
 
-  it('replacePendingRef=true → invalidatePostings called immediately (eager, before throttle window)', async () => {
-    // The "first item of a new search" branch: when replacePendingRef.current is
-    // true the handler resets the ref to false, replaces livePostings with just
-    // the new item, and calls invalidatePostings() DIRECTLY — bypassing the
-    // ~1 s timer so the backend cache is flushed without waiting.
-    scrapingState.replacePendingRef.current = true;
+  it('replacePending=true → invalidatePostings called immediately (eager, before throttle window)', async () => {
+    // The "first item of a new search" branch: when jobs.replacePending is true
+    // the handler clears the latch, replaces livePostings with just the new
+    // item, and calls invalidatePostings() DIRECTLY — bypassing the ~1 s timer
+    // so the backend cache is flushed without waiting.
+    resetSessionJobs(true);
     const { unmount } = renderPage();
 
-    // Fire one stream event while replacePendingRef is true.
+    // Fire one stream event while replacePending is true.
     fireStreamEvent(posting('replace-item'));
 
     // Assert BEFORE advancing fake timers — the eager call must have happened
     // synchronously within the event handler, not deferred to the throttle.
     expect(invalidateSpy).toHaveBeenCalledTimes(1);
 
-    // The ref must be consumed (reset to false) so a second tick falls through
-    // to the normal throttled path (no immediate second call).
+    // The latch must be consumed (reset to false) so a second tick falls
+    // through to the normal throttled path (no immediate second call).
     fireStreamEvent(posting('follow-up'));
 
     // Still only the one eager call — the follow-up is now throttled.
@@ -566,21 +570,21 @@ describe('JobsPage — stream invalidation throttle', () => {
     unmount();
   });
 
-  it('replacePendingRef=true + rejection → no unhandled rejection, ref consumed, follow-up is throttled', async () => {
+  it('replacePending=true + rejection → no unhandled rejection, latch consumed, follow-up is throttled', async () => {
     // Make the eager invalidatePostings call reject once.
     invalidateSpy.mockRejectedValueOnce(new Error('eager network error'));
-    scrapingState.replacePendingRef.current = true;
+    resetSessionJobs(true);
     const { unmount } = renderPage();
 
-    // (a) Fire one stream event while replacePendingRef is true — the eager path
+    // (a) Fire one stream event while replacePending is true — the eager path
     // runs, the rejection must be swallowed (no unhandled rejection / test throw).
     fireStreamEvent(posting('eager-reject-item'));
 
     // The eager call happened immediately (synchronous — before any timer).
     expect(invalidateSpy).toHaveBeenCalledTimes(1);
 
-    // (b) The ref must have been consumed (reset to false) so the next tick is
-    // handled by the throttled path, not another eager call.
+    // (b) The latch must have been consumed (reset to false) so the next tick
+    // is handled by the throttled path, not another eager call.
     fireStreamEvent(posting('eager-follow-up'));
 
     // Still only the one eager call right now — the follow-up is throttled.
