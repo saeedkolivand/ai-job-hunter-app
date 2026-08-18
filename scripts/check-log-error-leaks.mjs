@@ -1,4 +1,5 @@
-// Drift guard: no bare `{e}` interpolation of a caught error inside a
+// Drift guard: no bare interpolation of a caught error — captured (`{e}`,
+// `{err}`, `{error}`) or positional (`"...{}...", e`) — inside a
 // `log::{warn,error,info,debug}!` call under apps/desktop/src-tauri/src.
 //
 // ── The defect this exists to stop ──────────────────────────────────────────
@@ -21,24 +22,30 @@
 //
 // ── What this checks ─────────────────────────────────────────────────────────
 //
-// Every `log::{warn,error,info,debug}!(...)` call whose leading string
-// literal interpolates a bound error via the literal captured-identifier
-// form `{e}` (Rust 2021 format-string capture — the only shape this
-// codebase's ~250 log call sites ever used for an error binding; a
-// positional `"{}", e` call is not detected — see the note on `findLeaks`).
+// Every `log::{warn,error,info,debug}!(...)` call that interpolates a bound
+// error identifier — captured in the format string (`{e}`, `{err}`,
+// `{error}`, Rust 2021 format-string capture) or passed as a bare positional
+// argument (`"...{}...", e`). Bounded to those three binding names because
+// they are the only ones this codebase's ~264 log call sites ever use for a
+// caught error — see `ERROR_BINDING_NAMES` for the measurement. A caught
+// error re-bound to some OTHER name before logging is still a blind spot; no
+// static scan without real type information can rule that out, and
+// introducing one here would itself be a conspicuous, reviewable departure
+// from every existing call site.
 //
-// NOT "no site may ever print `{e}`" — an error whose `Display` structurally
-// cannot carry a path/URL/host/credential (a pure JSON/PDF parse failure, a
-// fixed-string domain error) loses real diagnostic value for nothing if it is
-// forced through `.code()`. This enforces that the question was ANSWERED:
-// every surviving `{e}` site is declared in ALLOWLIST with a one-line reason,
-// tagged `safe` (provably cannot leak) or `debt` (a real leak candidate this
-// pass did not fix — see each entry). A newly introduced site fails until
-// someone writes that sentence, mirroring check-event-subscriptions.mjs.
+// NOT "no site may ever print an error" — an error whose `Display`
+// structurally cannot carry a path/URL/host/credential (a pure JSON/PDF
+// parse failure, a fixed-string domain error) loses real diagnostic value for
+// nothing if it is forced through `.code()`. This enforces that the question
+// was ANSWERED: every surviving site is declared in ALLOWLIST with a
+// one-line reason, tagged `safe` (provably cannot leak) or `debt` (a real
+// leak candidate this pass did not fix — see each entry). A newly introduced
+// site fails until someone writes that sentence, mirroring
+// check-event-subscriptions.mjs.
 //
-// Both directions are checked, so the list cannot rot: an undeclared `{e}`
-// site fails, and so does an ALLOWLIST entry that no longer corresponds to a
-// real site (fixed, moved, or deleted) — see `violations()`.
+// Both directions are checked, so the list cannot rot: an undeclared site
+// fails, and so does an ALLOWLIST entry that no longer corresponds to a real
+// site (fixed, moved, or deleted) — see `violations()`.
 //
 // `scraping/**` was originally left as 45 `debt` entries (scraping-applier's
 // domain, AGENTS.md / CLAUDE.md domain routing, out of the first pass's
@@ -54,6 +61,19 @@
 // in-memory parse/task failure that never had a path/URL to begin with. Zero
 // `debt` entries remain; the tag stays available (see `status` below) for a
 // future pass that needs to record a real leak it isn't fixing yet.
+//
+// A later review (of #1036) found the detector only matched the literal
+// `{e}`, so `{err}` and a bare positional `e` bypassed it entirely — three
+// live, undeclared sites: `postings/mod.rs:382` and
+// `platform/linux_appimage.rs:170` (`{err}`), and `autopilot_helpers/mod.rs:151`
+// (positional `err`). `findLeaks` was widened to catch all three shapes; all
+// three newly-surfaced sites were traced and declared `safe` — none crosses
+// a path/URL/host/credential (an in-memory serde_json parse, a
+// `Command::exec()` `io::Error` whose Display never embeds the program path,
+// and a board-scrape failure string that bottoms out at the same
+// already-safe chokepoint as the 24 `httpChokepointSafe()` entries above,
+// since every registered scraper is `ScraperMode::Http`). See each entry's
+// own reason for the trace.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -80,6 +100,16 @@ const ALLOWLIST = {
       "serde_json::from_value type-mismatch parsing the app's own Autopilot " +
       'record on the load path — a pure parse failure, never a path/URL.',
   },
+  'autopilot_helpers/mod.rs:151': {
+    status: 'safe',
+    reason:
+      'err is BoardScrapeSummary.error (scraping/engine/mod.rs run_boards), sourced from ' +
+      "scraper.search()'s anyhow::Error or the fixed 'Unknown board: <id>' resolution " +
+      'failure. Every registered scraper (scraping/boards/mod.rs SCRAPERS) reports ' +
+      'ScraperMode::Http — ScraperMode::Browser is unused, #[allow(dead_code)] — so this ' +
+      'bottoms out at the same fetch_text/fetch_json chokepoint the 24 ' +
+      'httpChokepointSafe() entries below already rely on, one hop further up the stack.',
+  },
   'autopilot_helpers/mod.rs:395': {
     status: 'safe',
     reason:
@@ -103,6 +133,13 @@ const ALLOWLIST = {
       "net::http::read_text_capped's error path already calls reqwest::Error::" +
       'without_url() before wrapping in AppError::Network (see accumulate_capped in ' +
       'net/http.rs) — the URL is stripped upstream of this call site.',
+  },
+  'postings/mod.rs:382': {
+    status: 'safe',
+    reason:
+      "err: &serde_json::Error is back_up_corrupt_file's parameter — the from_str parse " +
+      'failure of interactions.json content already read into memory (map_mut). Same ' +
+      'in-memory-parse shape as inMemoryParseSafe() below, never a path/URL/host/credential.',
   },
   'postings/mod.rs:424': {
     status: 'safe',
@@ -143,6 +180,14 @@ const ALLOWLIST = {
     reason:
       'TcpListener::accept() failure is a local socket-resource error (e.g. EMFILE); it ' +
       'carries no peer address or path — the peer is a separate, unread `_peer` binding.',
+  },
+  'platform/linux_appimage.rs:170': {
+    status: 'safe',
+    reason:
+      'err is the std::io::Error Command::exec() returns when execve() fails — its ' +
+      'Display is only the OS errno message (e.g. "No such file or directory (os error ' +
+      '2)"); Rust does not embed the failed program path in that error, so `exe`\'s ' +
+      'absolute path never reaches this log line.',
   },
 
   // ── scraping/**: fetch_text/fetch_json chokepoint already strips the URL ──
@@ -272,20 +317,118 @@ function lineOf(text, at) {
 }
 
 /**
- * Every `log::{warn,error,info,debug}!(...)` call site, under `srcDir`, whose
- * leading string-literal argument contains the literal captured-identifier
- * `{e}`.
+ * The identifiers this codebase's log call sites use for a caught/bound
+ * error when interpolating it directly — captured (`{e}`/`{err}`/`{error}`)
+ * or positional (`"...{}...", e`), the latter optionally `&`/`*`-prefixed.
  *
- * Detects only the captured-identifier form (`"...{e}..."`), which is the
- * shape every log call in this codebase used for an error binding at the time
- * this guard was written. A positional call (`log::warn!("...{}...", e)`)
- * would dodge detection — not handled, since introducing that shape here
- * would itself be a conspicuous, reviewable stylistic departure, and this
- * guard's job is to catch the shape that actually recurred 145 times, not
- * every theoretical rewrite of it.
+ * Bounded to these three rather than "any identifier": a scan of every
+ * `{ident}` capture across all ~264 log call sites in the crate found `e`
+ * (45 sites) and `err` (2 sites) as the only ones naming an error — every
+ * other captured identifier (`host`, `port`, `board_id`, `reason`, `page`, …)
+ * is an ordinary data field. Matching on any identifier would flag every one
+ * of those too, drowning the real leak candidates in noise on normal log
+ * content. `error` is included for the same convention `err` was, even
+ * though nothing currently spells it that way.
+ */
+const ERROR_BINDING_NAMES = ['e', 'err', 'error'];
+const capturedErrorRe = new RegExp(`\\{(?:${ERROR_BINDING_NAMES.join('|')})\\}`);
+const positionalErrorRe = new RegExp(`^[&*]*(?:${ERROR_BINDING_NAMES.join('|')})$`);
+
+/**
+ * From `start` — the index in `text` right after a log macro's leading
+ * format-string literal, still inside the macro call's own opening paren —
+ * returns the raw text of the remaining arguments up to that call's matching
+ * closing paren. Respects nested parens and string/char literals, so a `)`
+ * inside a method call (`e.to_string()`) or a nested string does not end the
+ * scan early. Returns `null` if the source runs out first (malformed or
+ * truncated input — should not happen against real source).
+ */
+function restOfCall(text, start) {
+  let depth = 1; // already inside the macro call's opening '('
+  let i = start;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const quote = c;
+      i++;
+      while (i < text.length && text[i] !== quote) {
+        if (text[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return text.slice(start, i);
+    }
+    i++;
+  }
+  return null;
+}
+
+/**
+ * Splits `argsText` on top-level commas — a comma inside a nested call
+ * (`sanitize_reason(&e.to_string())`) or a string does not split — returning
+ * each raw segment together with the offset (into `argsText`) it starts at.
+ */
+function splitTopLevelArgs(argsText) {
+  const args = [];
+  let depth = 0;
+  let start = 0;
+  let i = 0;
+  while (i < argsText.length) {
+    const c = argsText[i];
+    if (c === '"' || c === "'") {
+      const quote = c;
+      i++;
+      while (i < argsText.length && argsText[i] !== quote) {
+        if (argsText[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    if (c === ',' && depth === 0) {
+      args.push({ raw: argsText.slice(start, i), start });
+      start = i + 1;
+    }
+    i++;
+  }
+  if (start < argsText.length) args.push({ raw: argsText.slice(start), start });
+  return args;
+}
+
+/**
+ * The offset (into `argsText`) of the first top-level argument that is a
+ * bare error-binding identifier — `e`, `err`, `error`, `&err`, … — with
+ * nothing else attached. A method call (`e.code()`, `e.kind()`,
+ * `sanitize_reason(&e.to_string())`) never matches: it is not a bare
+ * identifier, which is what keeps the sanctioned safe forms out of this
+ * check without naming them specially. `null` when no argument qualifies.
+ */
+function findPositionalErrorArg(argsText) {
+  for (const { raw, start } of splitTopLevelArgs(argsText)) {
+    if (!positionalErrorRe.test(raw.trim())) continue;
+    return start + (raw.length - raw.trimStart().length);
+  }
+  return null;
+}
+
+/**
+ * Every `log::{warn,error,info,debug}!(...)` call site, under `srcDir`, that
+ * interpolates a bound error identifier — captured in the format string
+ * (`{e}`, `{err}`, `{error}`) or passed as a bare positional argument
+ * (`"...{}...", e`). See `ERROR_BINDING_NAMES` for why detection is bounded
+ * to those three names rather than every identifier.
  *
  * Returns `{ key, file, line }[]`, `key` being `"<path relative to src/>:<line>"`
- * — the ALLOWLIST's own key shape.
+ * — the ALLOWLIST's own key shape. `line` is the line the identifier itself
+ * sits on (for a multi-line format string, or an argument list wrapped onto
+ * its own line, that is not necessarily the `log::` call's own line).
  */
 export function findLeaks(srcDir = join(REPO_ROOT, SRC_REL)) {
   const found = [];
@@ -296,9 +439,18 @@ export function findLeaks(srcDir = join(REPO_ROOT, SRC_REL)) {
     callRe.lastIndex = 0;
     let m;
     while ((m = callRe.exec(text))) {
-      const braceOffset = m[0].indexOf('{e}');
-      if (braceOffset === -1) continue;
-      const line = lineOf(text, m.index + braceOffset);
+      const captured = capturedErrorRe.exec(m[0]);
+      if (captured) {
+        const line = lineOf(text, m.index + captured.index);
+        found.push({ key: `${rel}:${line}`, file: rel, line });
+        continue;
+      }
+
+      const rest = restOfCall(text, m.index + m[0].length);
+      if (rest === null) continue;
+      const argOffset = findPositionalErrorArg(rest);
+      if (argOffset === null) continue;
+      const line = lineOf(text, m.index + m[0].length + argOffset);
       found.push({ key: `${rel}:${line}`, file: rel, line });
     }
   }
@@ -320,7 +472,8 @@ export function violations(inventory = ALLOWLIST, leaks) {
   const undeclared = leaks.filter((l) => !declaredKeys.has(l.key));
   if (undeclared.length > 0) {
     problems.push(
-      'These log call sites interpolate a caught error via bare `{e}`, which can leak ' +
+      'These log call sites interpolate a caught error, captured or positional, which can ' +
+        'leak ' +
         'an absolute path (rusqlite::Error::InvalidPath, a filesystem std::io::Error), a ' +
         'credential-bearing URL (reqwest::Error), or a host:port into the log — and are ' +
         'not declared in ALLOWLIST:\n' +

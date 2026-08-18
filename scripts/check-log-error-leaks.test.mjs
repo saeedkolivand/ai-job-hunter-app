@@ -63,6 +63,11 @@ describe('findLeaks', () => {
     expect(findLeaks(root)).toEqual([]);
   });
 
+  it('does not flag `.kind()`', () => {
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", e.kind());\n' });
+    expect(findLeaks(root)).toEqual([]);
+  });
+
   it('does not flag sanitize_reason(&e.to_string())', () => {
     const root = writeSrc({
       'foo.rs': 'log::warn!("[foo] failed: {}", sanitize_reason(&e.to_string()));\n',
@@ -70,13 +75,41 @@ describe('findLeaks', () => {
     expect(findLeaks(root)).toEqual([]);
   });
 
-  it('does not flag a positional `{}, e` call — a known, documented blind spot', () => {
+  it('flags a positional bare `e` argument — the vacuity hole review found live', () => {
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", e);\n' });
+    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+  });
+
+  it('flags a positional bare `err` argument, `&`-prefixed', () => {
+    // The exact shape live at autopilot_helpers/mod.rs:151 before this fix.
+    const root = writeSrc({
+      'foo.rs': "log::warn!(\"[foo] board '{}' failed (error='{}')\", board, &err);\n",
+    });
+    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+  });
+
+  it('does not flag a positional argument named something other than e/err/error', () => {
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] status: {}", status);\n' });
     expect(findLeaks(root)).toEqual([]);
   });
 
-  it('does not flag `{err}` or any other identifier — only the literal `{e}` capture', () => {
+  it('flags `{err}` — a captured identifier this scanner used to miss entirely', () => {
+    // Live (before this fix) at postings/mod.rs:382 and
+    // platform/linux_appimage.rs:170.
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {err}");\n' });
+    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+  });
+
+  it('flags `{error}` too, for the same reason as `{err}`', () => {
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {error}");\n' });
+    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+  });
+
+  it('does not flag a captured identifier that is not an error-binding name', () => {
+    // Bounded matching, not "any identifier" — see ERROR_BINDING_NAMES. `host`
+    // and `port` are real, frequent captures in this crate's log calls, and
+    // neither is an error.
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] connecting to {host}:{port}");\n' });
     expect(findLeaks(root)).toEqual([]);
   });
 
