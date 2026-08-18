@@ -31,6 +31,8 @@
     "gen:ipc:check": "pnpm --filter @ajh/shared gen:ipc:check",
     "gen:prompts": "pnpm --filter @ajh/prompts gen:prompts",
     "gen:prompts:check": "pnpm --filter @ajh/prompts gen:prompts:check",
+    "gen:api": "node scripts/gen-api-docs.mjs",
+    "gen:api:check": "node scripts/gen-api-docs.mjs && git diff --exit-code -- docs/API.md",
     "gen:geonames": "node scripts/build-geonames-index.mjs",
     "gen:workflows": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md",
     "gen:workflows:check": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md && git diff --exit-code -- .github/workflows/README.md README.md",
