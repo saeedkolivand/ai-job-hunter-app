@@ -791,7 +791,10 @@ pub fn run() {
             // Process-local, holds no user data.
             let scraper_engine = std::sync::Arc::new(ScraperEngine::new());
             app.manage(scraper_engine.cancel_registry());
-            app.manage(scraper_engine);
+            // Cloned into state rather than moved: the engine is also handed its
+            // per-board reliability store further down (that store is opened with
+            // the other L1 stores, after this point).
+            app.manage(scraper_engine.clone());
             // In-memory anti-abuse limiter (rate + concurrency + per-provider daily
             // ceiling) for the expensive commands `ai_generate`, `scrape_board`, and
             // `scrape_url`. Process-local; resets on restart. Not in the reset
@@ -845,6 +848,22 @@ pub fn run() {
             match pipeline::runs::PipelineRunStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "pipeline_runs", store),
                 Err(e) => log::warn!("[setup] pipeline run store failed to open (non-fatal): {e}"),
+            }
+            // Per-board reliability history (Track B1): ONE row per board, folded
+            // from every run's `BoardScrapeSummary`, so a chip can tell "found
+            // nothing today" apart from "broken since Tuesday". Bounded by the
+            // scraper registry (~24 rows) — it has no growth axis and nothing to
+            // prune. Machine-local diagnostics: wiped on factory reset,
+            // deliberately NOT in the backup bundle (like `email_watch`).
+            // Registered last, so its label sits at the tail of
+            // `MANAGE_RESETTABLE_LABELS`.
+            match scraping::board_health::BoardHealthStore::open(&data_dir) {
+                Ok(store) => {
+                    let store = std::sync::Arc::new(store);
+                    scraper_engine.set_health_store(store.clone());
+                    manage_resettable(app, &mut reset_registry, "board_health", store);
+                }
+                Err(e) => log::warn!("[setup] board health store failed to open (non-fatal): {e}"),
             }
 
             // Guard: the registry must contain exactly the labels the

@@ -4384,3 +4384,197 @@ async fn scrape_boards_zero_drops_still_emits_unconditional_note_for_non_support
          got {supporting:?}"
     );
 }
+
+// ── Track B1: per-board reliability history ─────────────────────────────────
+
+/// Build an engine with a real (temp-dir) board-health store attached. The
+/// `TempDir` is returned so the DB outlives the engine.
+fn engine_with_health() -> (
+    tempfile::TempDir,
+    ScraperEngine,
+    Arc<crate::scraping::BoardHealthStore>,
+) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let store = Arc::new(crate::scraping::BoardHealthStore::open(dir.path()).unwrap());
+    let engine = ScraperEngine::new();
+    engine.set_health_store(store.clone());
+    (dir, engine, store)
+}
+
+/// Two runs where one board fails both times and another succeeds both times:
+/// the failing board's summary must carry a GROWING failure streak, while the
+/// healthy board's summary carries no health at all (nothing to badge).
+///
+/// This is the user-visible point of Track B1 — after this, "0 results" from a
+/// working board and "0 results" from a week-long outage no longer look alike.
+#[tokio::test]
+async fn scrape_boards_attaches_a_growing_failure_streak_to_the_failing_board() {
+    static FAKE_OK: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(2));
+    static FAKE_FAIL: std::sync::LazyLock<FailingScraper> =
+        std::sync::LazyLock::new(|| FailingScraper);
+
+    let (_dir, engine, store) = engine_with_health();
+    let boards = vec!["ok-board".to_string(), "fail-board".to_string()];
+    let resolve = |id: &str| match id {
+        "ok-board" => Ok(&*FAKE_OK as &'static dyn super::super::types::Scraper),
+        "fail-board" => Ok(&*FAKE_FAIL as &'static dyn super::super::types::Scraper),
+        other => Err(anyhow::anyhow!("Unknown board: {other}")),
+    };
+
+    let (_, summaries) = engine
+        .scrape_boards_with_resolver(
+            &boards,
+            fake_input(5),
+            "job-health-1".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            resolve,
+        )
+        .await
+        .expect("one failing board must not fail the run");
+
+    assert!(
+        summaries[0].health.is_none(),
+        "a healthy board must carry no badge; got {:?}",
+        summaries[0].health
+    );
+    let first = summaries[1]
+        .health
+        .clone()
+        .expect("a failing board must carry its history");
+    assert_eq!(first.consecutive_failures, 1);
+    assert_eq!(first.status, crate::scraping::BoardHealthStatus::Failing);
+    assert_eq!(first.last_success_at, None);
+    assert_eq!(first.last_run_id.as_deref(), Some("job-health-1"));
+
+    let (_, summaries) = engine
+        .scrape_boards_with_resolver(
+            &boards,
+            fake_input(5),
+            "job-health-2".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            resolve,
+        )
+        .await
+        .expect("second run");
+
+    let second = summaries[1]
+        .health
+        .clone()
+        .expect("the streak must still be reported on the second run");
+    assert_eq!(second.consecutive_failures, 2, "the streak must GROW");
+    assert_eq!(
+        second.failing_since, first.failing_since,
+        "the streak keeps its original start"
+    );
+    assert_eq!(second.last_run_id.as_deref(), Some("job-health-2"));
+    // The store agrees with what rode the summary.
+    assert_eq!(
+        store.health_for("fail-board").unwrap().consecutive_failures,
+        2
+    );
+    assert!(
+        store
+            .health_for("ok-board")
+            .unwrap()
+            .last_success_at
+            .is_some(),
+        "the successful board's success must still be recorded, badge or not"
+    );
+}
+
+/// A user cancel makes every in-flight board report an error. Recording those
+/// would manufacture a failure streak out of the user's own click, so a
+/// cancelled run must leave the history completely untouched.
+#[tokio::test]
+async fn a_cancelled_run_records_no_board_history() {
+    static FAKE_OK: std::sync::LazyLock<UncancellableScraper> =
+        std::sync::LazyLock::new(|| UncancellableScraper { count: 3 });
+    static FAKE_FAIL: std::sync::LazyLock<FailingScraper> =
+        std::sync::LazyLock::new(|| FailingScraper);
+
+    let (_dir, engine, store) = engine_with_health();
+    let token = CancellationToken::new();
+    engine.register_token("job-cancelled", token.clone()).await;
+    token.cancel();
+
+    let (_, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["ok-board".to_string(), "fail-board".to_string()],
+            fake_input(3),
+            "job-cancelled".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "ok-board" => Ok(&*FAKE_OK as &'static dyn super::super::types::Scraper),
+                "fail-board" => Ok(&*FAKE_FAIL as &'static dyn super::super::types::Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("partial success under cancel returns Ok");
+
+    assert!(
+        summaries.iter().all(|s| s.health.is_none()),
+        "a cancelled run must not badge anything; got {summaries:?}"
+    );
+    assert!(
+        store.health_for("fail-board").is_none(),
+        "a user cancel must not be recorded as a board failure"
+    );
+    assert!(
+        store.health_for("ok-board").is_none(),
+        "a cancelled run records nothing at all, not even the successes"
+    );
+}
+
+/// A board that is SKIPPED (never contacted) must not be recorded as failing —
+/// the `skipped` vs `error` distinction, checked end-to-end through the engine
+/// rather than only on the pure fold.
+#[tokio::test]
+async fn a_skipped_board_gets_no_failure_history_from_the_engine() {
+    // A company-scoped ATS board with no curated seed and no user slugs is
+    // skipped `needs-company` before any fetch, so it is never contacted.
+    static ATS: std::sync::LazyLock<SeedCapturingScraper> =
+        std::sync::LazyLock::new(|| SeedCapturingScraper::ats("no-seed-ats"));
+
+    let (_dir, engine, store) = engine_with_health();
+    let mut input = fake_input(3);
+    input.companies = Vec::new();
+
+    let (_, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["skipme".to_string()],
+            input,
+            "job-skip".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |_| Ok(&*ATS as &'static dyn super::super::types::Scraper),
+        )
+        .await
+        .expect("a fully-skipped run still returns Ok");
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(
+        summaries[0].skipped.as_deref(),
+        Some("needs-company"),
+        "board must be skipped, not run"
+    );
+    assert!(
+        summaries[0].health.is_none(),
+        "a skipped board is not unhealthy; got {:?}",
+        summaries[0].health
+    );
+    let stored = store
+        .health_for("skipme")
+        .expect("the skip is still recorded as 'seen, not verified'");
+    assert_eq!(stored.consecutive_failures, 0, "a skip is not a failure");
+    assert_eq!(stored.last_verified_at, None, "a skip verifies nothing");
+    assert_eq!(stored.last_run_id.as_deref(), Some("job-skip"));
+}

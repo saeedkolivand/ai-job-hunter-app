@@ -100,6 +100,47 @@ export interface BoardsContract {
  *     board still reports at most ONE note per run overall.
  *   `<cc>` is an ISO country code; the field never carries the raw location text.
  */
+/**
+ * Verdict of a board's cross-run history (Track B1). Mirrors the Rust
+ * `scraping::board_health::BoardHealthStatus`.
+ *   - `unknown` — never actually contacted (only ever skipped).
+ *   - `healthy` — the last run that contacted it succeeded, recently.
+ *   - `failing` — it is in a failure streak.
+ *   - `stale`   — not failing, but its last confirmed success is over a
+ *     fortnight old (in practice: skipped ever since).
+ */
+export type BoardHealthStatus = 'unknown' | 'healthy' | 'failing' | 'stale';
+
+/**
+ * One board's reliability across runs, derived in Rust from every previous
+ * run's `BoardScrapeSummary` and attached to the current one — what lets the UI
+ * tell "this board found nothing today" apart from "this board has been broken
+ * since Tuesday".
+ *
+ * Only an UNHEALTHY board carries this (see `BoardHealth::is_noteworthy`): a
+ * healthy board's chip is unchanged. Timestamps are epoch-ms.
+ */
+export interface BoardHealth {
+  status: BoardHealthStatus;
+  /** Length of the current failure streak. Skipped runs neither extend nor
+   *  break it — a skip is not a failure. */
+  consecutiveFailures: number;
+  /** Last run that returned results (or an empty-but-successful answer).
+   *  Absent = the board has never succeeded. */
+  lastSuccessAt?: number;
+  /** Last run that contacted the board at all (success OR error). Absent =
+   *  only ever skipped, so nothing has been verified. */
+  lastVerifiedAt?: number;
+  /** Start of the CURRENT failure streak — the "broken since" timestamp. */
+  failingSince?: number;
+  /** Why the streak is failing, capped in Rust. Still sanitized at display
+   *  time like every other persisted reason. */
+  lastError?: string;
+  /** The scrape `jobId` of the run that produced this state — the per-board
+   *  correlation id for the logs. */
+  lastRunId?: string;
+}
+
 export interface BoardScrapeSummary {
   board: string;
   count: number;
@@ -107,6 +148,9 @@ export interface BoardScrapeSummary {
   skipped?: 'needs-login' | 'needs-company' | 'needs-keys';
   truncated?: string;
   note?: string;
+  /** Cross-run reliability, present only when the board is failing or stale.
+   *  Absent on every record persisted before Track B1. */
+  health?: BoardHealth;
 }
 
 export const BOARDS_CHANNELS = {

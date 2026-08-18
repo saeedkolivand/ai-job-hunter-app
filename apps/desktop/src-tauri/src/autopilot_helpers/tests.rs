@@ -20,6 +20,7 @@ fn summary_full(
         skipped: skipped.map(String::from),
         truncated: truncated.map(String::from),
         note: None,
+        health: None,
     }
 }
 

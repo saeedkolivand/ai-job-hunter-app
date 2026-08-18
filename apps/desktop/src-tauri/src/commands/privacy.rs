@@ -87,6 +87,13 @@ impl Resettable for DedupStore {
         self.clear_all();
     }
 }
+impl Resettable for std::sync::Arc<crate::scraping::BoardHealthStore> {
+    fn reset(&self) {
+        // Forget every board's reliability history — after a factory reset the
+        // chips start from "unknown", not from the previous install's grudges.
+        self.clear_all();
+    }
+}
 impl Resettable for DiscoveredCompanyStore {
     fn reset(&self) {
         // Wipe every passively-harvested ATS slug + watched-company star (ADR-030).
@@ -173,6 +180,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "dedup_tombstones",
     "discovered_companies",
     "pipeline_runs",
+    "board_health",
 ];
 
 /// Registry of factory-reset actions, populated as stores are managed and
@@ -616,6 +624,7 @@ mod tests {
         reg.register::<DedupStore>("dedup_tombstones");
         reg.register::<DiscoveredCompanyStore>("discovered_companies");
         reg.register::<PipelineRunStore>("pipeline_runs");
+        reg.register::<std::sync::Arc<crate::scraping::BoardHealthStore>>("board_health");
 
         let labels = reg.labels();
         for label in expected {
