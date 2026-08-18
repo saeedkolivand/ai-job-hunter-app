@@ -38,6 +38,7 @@
     "check:landing-drift": "node scripts/check-landing-drift.mjs",
     "check:agent-system": "node scripts/check-agent-system.mjs",
     "check:tech-radar": "node scripts/check-tech-radar.mjs",
+    "check:event-subscriptions": "node scripts/check-event-subscriptions.mjs",
     "check:toolchain-pin": "node scripts/check-toolchain-pin.mjs",
     "clean": "pnpm -r exec rimraf dist out .turbo node_modules/.cache",
     "clean:turbo": "pnpm -r exec rimraf .turbo node_modules/.cache/turbo",
