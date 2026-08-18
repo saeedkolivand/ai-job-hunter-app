@@ -284,6 +284,32 @@ fn full_url_with_credential_query_still_wins_url_branch() {
 }
 
 #[test]
+fn board_prefixed_posting_id_embedding_a_url_is_redacted() {
+    // `documents::posting_vector_or_embed`'s failed-upsert log line redacts
+    // `job_id` with `redact_token` (not `sanitize_reason` — a posting id is
+    // one token, never whitespace-split prose). Most boards build an opaque
+    // `board:external-id` (e.g. `"greenhouse:12345"`, left untouched below),
+    // but `breezy`/`pinpoint`/`themuse` build theirs as
+    // `format!("{BOARD_ID}:{url}")`, embedding the posting's full URL — this
+    // pins that shape actually redacts, closing the CodeRabbit-flagged gap.
+    let url_embedding_id = "pinpoint:https://boards.example.com/jobs/42?ref=abc";
+    let out = redact_token(url_embedding_id);
+    assert!(
+        out.contains("<url-redacted>"),
+        "a board:url-shaped posting id must be redacted; got: {out}"
+    );
+    assert!(
+        !out.contains("boards.example.com"),
+        "host must not survive: {out}"
+    );
+
+    // The common case — an opaque board:external-id — must pass through
+    // unchanged, or the fix would cost every OTHER board's log
+    // debuggability to close a leak only these three boards have.
+    assert_eq!(redact_token("greenhouse:12345"), "greenhouse:12345");
+}
+
+#[test]
 fn credential_marker_does_not_over_redact_benign_words() {
     // The `marker=` shape (the `=`) is required: bare words like `keyword` or a
     // prose `token` (no `=`) must survive verbatim — no false positives.
