@@ -40,15 +40,20 @@
 // site fails, and so does an ALLOWLIST entry that no longer corresponds to a
 // real site (fixed, moved, or deleted) — see `violations()`.
 //
-// `debt` entries are scraping/** sites: `scraping/**` is scraping-applier's
-// domain (AGENTS.md / CLAUDE.md domain routing), out of this pass's
-// primary-path scope. They are pattern-identical to sites fixed elsewhere in
-// this same pass (mostly a `reqwest::Error` embedding the request URL, or a
-// `keyring` error) and are very likely genuine leaks — recorded rather than
-// fixed here so the fix is reviewable by that domain's own author, not so it
-// is forgotten. `pnpm check:log-error-leaks` will keep failing on any NEW
-// site added anywhere in the crate, `scraping/**` included, the whole time
-// this debt sits open.
+// `scraping/**` was originally left as 45 `debt` entries (scraping-applier's
+// domain, AGENTS.md / CLAUDE.md domain routing, out of the first pass's
+// primary-path scope). scraping-applier-author triaged all 45 by tracing each
+// `{e}`'s concrete type: 12 were genuine leaks (a `reqwest::Error` NOT routed
+// through `scraping::http`'s `.without_url()` chokepoint, a keyring error, or
+// a filesystem path op) and are now fixed with
+// `observability::sanitize_reason(&e.to_string())`; the remaining 33 are
+// declared `safe` — either the error crosses `scraping::http::fetch_text`/
+// `fetch_json` (the fleet chokepoint that already strips the request URL
+// before wrapping in `AppError::Network`, so the Adzuna/JSearch/Jooble/Apify
+// API key in the query string never reaches the log), or it is a pure
+// in-memory parse/task failure that never had a path/URL to begin with. Zero
+// `debt` entries remain; the tag stays available (see `status` below) for a
+// future pass that needs to record a real leak it isn't fixing yet.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -140,67 +145,100 @@ const ALLOWLIST = {
       'carries no peer address or path — the peer is a separate, unread `_peer` binding.',
   },
 
-  // ── debt: scraping-applier domain, out of this pass's scope ───────────────
-  'scraping/board_health/mod.rs:594': scrapingDebt(),
-  'scraping/board_login/mod.rs:202': scrapingDebt(),
-  'scraping/board_login/import.rs:98': scrapingDebt(),
-  'scraping/board_login/import.rs:174': scrapingDebt(),
-  'scraping/boards/greenhouse/mod.rs:110': scrapingDebt(),
-  'scraping/boards/breezy/mod.rs:100': scrapingDebt(),
-  'scraping/boards/breezy/mod.rs:287': scrapingDebt(),
-  'scraping/boards/ycombinator/mod.rs:109': scrapingDebt(),
-  'scraping/boards/aggregator/adzuna.rs:264': scrapingDebt(),
-  'scraping/boards/aggregator/adzuna.rs:269': scrapingDebt(),
-  'scraping/boards/aggregator/adzuna.rs:422': scrapingDebt(),
-  'scraping/boards/aggregator/adzuna.rs:555': scrapingDebt(),
-  'scraping/engine/mod.rs:1081': scrapingDebt(),
-  'scraping/boards/arbeitnow/mod.rs:81': scrapingDebt(),
-  'scraping/boards/bamboohr/mod.rs:204': scrapingDebt(),
-  'scraping/boards/arbeitsagentur/mod.rs:164': scrapingDebt(),
-  'scraping/boards/aggregator/mod.rs:336': scrapingDebt(),
-  'scraping/boards/aggregator/mod.rs:370': scrapingDebt(),
-  'scraping/boards/aggregator/mod.rs:403': scrapingDebt(),
-  'scraping/boards/aggregator/mod.rs:491': scrapingDebt(),
-  'scraping/boards/aggregator/mod.rs:725': scrapingDebt(),
-  'scraping/boards/aggregator/providers.rs:171': scrapingDebt(),
-  'scraping/boards/aggregator/providers.rs:430': scrapingDebt(),
-  'scraping/boards/aggregator/providers.rs:777': scrapingDebt(),
-  'scraping/boards/ashby/mod.rs:146': scrapingDebt(),
-  'scraping/boards/aggregator/freehire.rs:465': scrapingDebt(),
-  'scraping/boards/comeet/mod.rs:69': scrapingDebt(),
-  'scraping/boards/comeet/mod.rs:220': scrapingDebt(),
-  'scraping/boards/comeet/mod.rs:226': scrapingDebt(),
-  'scraping/boards/workable/mod.rs:116': scrapingDebt(),
-  'scraping/boards/workable/mod.rs:294': scrapingDebt(),
-  'scraping/linkedin/api_client/mod.rs:356': scrapingDebt(),
-  'scraping/boards/lever/mod.rs:143': scrapingDebt(),
-  'scraping/boards/pinpoint/mod.rs:181': scrapingDebt(),
-  'scraping/boards/jobicy/mod.rs:64': scrapingDebt(),
-  'scraping/boards/jobicy/mod.rs:165': scrapingDebt(),
-  'scraping/boards/smartrecruiters/mod.rs:142': scrapingDebt(),
-  'scraping/boards/smartrecruiters/mod.rs:180': scrapingDebt(),
-  'scraping/boards/themuse/mod.rs:193': scrapingDebt(),
-  'scraping/http/mod.rs:332': scrapingDebt(),
-  'scraping/http/mod.rs:442': scrapingDebt(),
-  'scraping/boards/recruitee/mod.rs:117': scrapingDebt(),
-  'scraping/boards/rippling/mod.rs:89': scrapingDebt(),
-  'scraping/boards/rippling/mod.rs:230': scrapingDebt(),
-  'scraping/boards/personio/mod.rs:208': scrapingDebt(),
+  // ── scraping/**: fetch_text/fetch_json chokepoint already strips the URL ──
+  // Every site below calls (directly, or one anyhow-wrapped hop away via the
+  // Adzuna/JSearch/Jooble/Apify providers) `scraping::http::fetch_text` /
+  // `fetch_json`. Its transport-failure branch calls `reqwest::Error::
+  // without_url()` before wrapping in `AppError::Network` (see `fetch_text`'s
+  // `Err(e) =>` arm in scraping/http/mod.rs), and every other error variant it
+  // can return (`AppError::Provider("HTTP <status>")`,
+  // `AppError::Validation("Response too large")`,
+  // `AppError::Parse(<generic schema-drift string>)`, `AppError::Cancelled`)
+  // is a fixed, path/URL-free message. So the request URL — which for Adzuna/
+  // JSearch/Jooble/Apify carries an API key in the query string — never
+  // reaches these log lines even on failure. Traced individually against the
+  // current source, not pattern-matched.
+  'scraping/boards/greenhouse/mod.rs:110': httpChokepointSafe(),
+  'scraping/boards/breezy/mod.rs:287': httpChokepointSafe(),
+  'scraping/boards/ycombinator/mod.rs:109': httpChokepointSafe(),
+  'scraping/boards/aggregator/adzuna.rs:429': httpChokepointSafe(),
+  'scraping/boards/aggregator/adzuna.rs:562': httpChokepointSafe(),
+  'scraping/boards/arbeitnow/mod.rs:81': httpChokepointSafe(),
+  'scraping/boards/bamboohr/mod.rs:204': httpChokepointSafe(),
+  'scraping/boards/arbeitsagentur/mod.rs:164': httpChokepointSafe(),
+  'scraping/boards/aggregator/mod.rs:336': httpChokepointSafe(),
+  'scraping/boards/aggregator/mod.rs:370': httpChokepointSafe(),
+  'scraping/boards/aggregator/mod.rs:403': httpChokepointSafe(),
+  'scraping/boards/aggregator/mod.rs:491': httpChokepointSafe(),
+  'scraping/boards/aggregator/mod.rs:725': httpChokepointSafe(),
+  'scraping/boards/ashby/mod.rs:146': httpChokepointSafe(),
+  'scraping/boards/aggregator/freehire.rs:465': httpChokepointSafe(),
+  'scraping/boards/workable/mod.rs:294': httpChokepointSafe(),
+  'scraping/boards/lever/mod.rs:143': httpChokepointSafe(),
+  'scraping/boards/pinpoint/mod.rs:181': httpChokepointSafe(),
+  'scraping/boards/smartrecruiters/mod.rs:142': httpChokepointSafe(),
+  'scraping/boards/smartrecruiters/mod.rs:180': httpChokepointSafe(),
+  'scraping/boards/themuse/mod.rs:193': httpChokepointSafe(),
+  'scraping/boards/recruitee/mod.rs:117': httpChokepointSafe(),
+  'scraping/boards/rippling/mod.rs:230': httpChokepointSafe(),
+  'scraping/boards/personio/mod.rs:208': httpChokepointSafe(),
+
+  // ── scraping/**: pure in-memory parse of already-fetched data ─────────────
+  // `serde_json::from_value`/`from_str` on a JSON value/body already read into
+  // memory — Display is a schema-mismatch message ("missing field `x`",
+  // "invalid type: …"), structurally incapable of carrying a path/URL/host/
+  // credential.
+  'scraping/boards/breezy/mod.rs:100': inMemoryParseSafe(),
+  'scraping/boards/jobicy/mod.rs:64': inMemoryParseSafe(),
+  'scraping/boards/jobicy/mod.rs:165': inMemoryParseSafe(),
+  'scraping/boards/comeet/mod.rs:70': inMemoryParseSafe(),
+  'scraping/boards/rippling/mod.rs:89': inMemoryParseSafe(),
+  'scraping/boards/workable/mod.rs:116': inMemoryParseSafe(),
+  'scraping/http/mod.rs:332': inMemoryParseSafe(),
+
+  'scraping/http/mod.rs:442': {
+    status: 'safe',
+    reason:
+      "htmd::convert parses an already-fetched, in-memory HTML string (html_to_markdown's " +
+      'own fallback path) — its Display is a structural markdown-conversion failure, never ' +
+      'a path/URL/host/credential.',
+  },
+  'scraping/engine/mod.rs:1081': {
+    status: 'safe',
+    reason:
+      'tokio::task::JoinError from the record_health spawn_blocking handle (the task ' +
+      'panicked or was cancelled) — its Display names only the task id and panic/cancel ' +
+      'state, never a path/URL/host/credential. Distinct from the sibling arm 3 lines ' +
+      'above, which IS a path-carrying AppError from the store and already uses .code() ' +
+      'for exactly that reason.',
+  },
 };
 
-/** Factory rather than one repeated literal so every `debt` entry stays easy
- * to scan for its (shared) rationale in one place; still one explicit
- * ALLOWLIST entry per site, so the undeclared/stale checks below cover each
- * individually. */
-function scrapingDebt() {
+/** Factory for the fetch_text/fetch_json-chokepoint shape — see the comment
+ * above the first entry that uses it for the full rationale; kept as one
+ * factory so the reasoning is written once and every site stays independently
+ * declared (the undeclared/stale checks below still cover each individually). */
+function httpChokepointSafe() {
   return {
-    status: 'debt',
+    status: 'safe',
     reason:
-      "scraping-applier domain (AGENTS.md domain routing) — out of this pass's " +
-      'primary-path scope. Pattern-identical to sites fixed elsewhere in this pass ' +
-      '(a reqwest::Error embedding the request URL, or a keyring error) and very ' +
-      "likely a genuine leak — needs a follow-up fix from that domain's author, not " +
-      'yet applied here.',
+      'Every error here originates from scraping::http::fetch_text/fetch_json (or, for ' +
+      'the Adzuna/JSearch/Jooble/Apify providers, a thin anyhow wrapper one hop away from ' +
+      "the same call) — the fleet's HTTP chokepoint for named-board scrapers, whose " +
+      'transport-failure branch already calls reqwest::Error::without_url() before ' +
+      'wrapping in AppError::Network, and whose other error variants (HTTP-status, ' +
+      'body-too-large, generic schema-drift, cancelled) are fixed path/URL-free messages.',
+  };
+}
+
+/** Factory for the pure in-memory-parse shape — see the comment above the
+ * first entry that uses it. */
+function inMemoryParseSafe() {
+  return {
+    status: 'safe',
+    reason:
+      'serde_json parsing an already-fetched, in-memory JSON value/body — a pure schema-' +
+      'mismatch failure, never a path, URL, host, or credential.',
   };
 }
 

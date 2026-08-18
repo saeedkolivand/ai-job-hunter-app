@@ -14,6 +14,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+use crate::observability::sanitize_reason;
 use crate::scraping::http::{fetch_json, html_to_markdown, FetchOptions};
 use crate::scraping::types::JobPosting;
 
@@ -261,12 +262,18 @@ impl AdzunaProvider {
         Self {
             app_id: crate::credentials::read_credential(&format!("ai:{ADZUNA_APP_ID}"))
                 .unwrap_or_else(|e| {
-                    log::warn!("[aggregator] {ADZUNA_APP_ID} keyring error: {e}");
+                    log::warn!(
+                        "[aggregator] {ADZUNA_APP_ID} keyring error: {}",
+                        sanitize_reason(&e.to_string())
+                    );
                     None
                 }),
             app_key: crate::credentials::read_credential(&format!("ai:{ADZUNA_APP_KEY}"))
                 .unwrap_or_else(|e| {
-                    log::warn!("[aggregator] {ADZUNA_APP_KEY} keyring error: {e}");
+                    log::warn!(
+                        "[aggregator] {ADZUNA_APP_KEY} keyring error: {}",
+                        sanitize_reason(&e.to_string())
+                    );
                     None
                 }),
             note_sink: None,

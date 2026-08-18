@@ -1,5 +1,6 @@
 use super::client::LinkedInHttpClient;
 use super::session::LinkedInSessionData;
+use crate::observability::sanitize_reason;
 use crate::scraping::types::JobPosting;
 use anyhow::Result;
 use scraper::Html;
@@ -353,7 +354,8 @@ impl LinkedInJobsApiClient {
                 // A later page failed → keep the pages we already have (and streamed).
                 Err(e) => {
                     log::warn!(
-                        "[linkedin] page {page} failed: {e}; returning {} collected",
+                        "[linkedin] page {page} failed: {}; returning {} collected",
+                        sanitize_reason(&e.to_string()),
                         all_jobs.len()
                     );
                     break;
