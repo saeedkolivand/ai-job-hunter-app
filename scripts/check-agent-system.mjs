@@ -10,7 +10,8 @@
 //
 // Checks:
 //   1. Stale tokens — dead import/package/arch references in .claude, docs, AI configs.
-//   2. ADR index ↔ files — README lists exactly the ADRs on disk.
+//   2. ADR index ↔ files — README LINKS exactly the ADRs on disk (a prose mention
+//      is not an index entry, and a link outliving its file is drift too).
 //   3. Routes ↔ agents — every routed owner has an agent file (and the fallback exists).
 //   4. Agents ↔ CLAUDE.md — every agent appears in the project CLAUDE.md routing table.
 //   5. Author/critic pairs — each declared author + its independent critic both exist.
@@ -31,7 +32,8 @@
 // Read-only. Run via `pnpm check:agent-system`; wired into .husky/pre-push + ci-pipeline.yml.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = process.cwd();
 
@@ -155,22 +157,50 @@ function checkStaleTokens() {
 }
 
 // ── Check 2: ADR index ↔ files ───────────────────────────────────────────────
+/**
+ * The index invariant as a pure function of the two things it compares, so it
+ * can be tested without a fixture repo on disk.
+ *
+ * Both directions are decided by LINK TARGETS, never by whether the slug
+ * appears somewhere in the file. A substring test is satisfied by prose: a row
+ * can be deleted from the index table while a sentence elsewhere in the README
+ * still names the record, and the check stays green over a README that no
+ * longer indexes it — which is the entire failure being guarded. The README is
+ * the index, and a record is indexed only when something links to it.
+ *
+ * Exported for the tests; the caller turns each string into a failure.
+ */
+export function adrIndexProblems(onDisk, readme) {
+  const problems = [];
+  // Two filename series live here: the open `adr-NNN-` one and the closed
+  // `NNNN-` one folded in from the retired second ADR tree (#1000). Both are
+  // indexed in the README, so both must be guarded — matching only `adr-` let
+  // a closed-series ADR be dropped from the index, or linked after deletion,
+  // without this check noticing.
+  const linked = new Set(
+    [...readme.matchAll(/decision-records\/((?:adr-)?\d[\w-]*)\.md/g)].map(([, name]) => name)
+  );
+  for (const adr of onDisk) {
+    if (!linked.has(adr)) {
+      problems.push(`missing index link for ${adr} (present on disk)`);
+    }
+  }
+  // Linked-but-absent: any decision-records ADR link whose file is gone.
+  for (const name of linked) {
+    if (!onDisk.includes(name)) {
+      problems.push(`links ${name} — no such file in ${ADR_DIR}/`);
+    }
+  }
+  return problems;
+}
+
 function checkAdrIndex() {
   if (!exists(ADR_DIR) || !exists(KNOWLEDGE_README)) return;
   const onDisk = readdirSync(join(ROOT, ADR_DIR))
-    .filter((f) => /^adr-\d+.*\.md$/.test(f))
+    .filter((f) => /^(?:adr-)?\d+.*\.md$/.test(f))
     .map((f) => f.replace(/\.md$/, ''));
-  const readme = read(KNOWLEDGE_README);
-  for (const adr of onDisk) {
-    if (!readme.includes(adr)) {
-      fail('ADR index drift', KNOWLEDGE_README, `missing index entry for ${adr} (present on disk)`);
-    }
-  }
-  // Linked-but-absent: any decision-records/adr-* link whose file is gone.
-  for (const [, name] of readme.matchAll(/decision-records\/(adr-[\w-]+)\.md/g)) {
-    if (!onDisk.includes(name)) {
-      fail('ADR index drift', KNOWLEDGE_README, `links ${name} — no such file in ${ADR_DIR}/`);
-    }
+  for (const detail of adrIndexProblems(onDisk, read(KNOWLEDGE_README))) {
+    fail('ADR index drift', KNOWLEDGE_README, detail);
   }
 }
 
@@ -485,34 +515,38 @@ function checkModelTiering() {
 }
 
 // ── Run ──────────────────────────────────────────────────────────────────────
-checkStaleTokens();
-checkAdrIndex();
-checkRoutes();
-checkClaudeMd();
-checkPairs();
-checkExplainer();
-checkAiConfigs();
-checkRouteGlobs();
-checkReferencedAgents();
-checkModelTiering();
+// Skipped when the module is imported by the test file, which exercises the
+// pure checks directly rather than running the whole guard against the repo.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  checkStaleTokens();
+  checkAdrIndex();
+  checkRoutes();
+  checkClaudeMd();
+  checkPairs();
+  checkExplainer();
+  checkAiConfigs();
+  checkRouteGlobs();
+  checkReferencedAgents();
+  checkModelTiering();
 
-if (failures.length === 0) {
-  console.log(
-    '✓ agent system in sync (tokens, ADR index, routes, CLAUDE.md, pairs, explainer, AI configs, route globs, referenced agents, model tiering)'
-  );
-  process.exit(0);
-}
+  if (failures.length === 0) {
+    console.log(
+      '✓ agent system in sync (tokens, ADR index, routes, CLAUDE.md, pairs, explainer, AI configs, route globs, referenced agents, model tiering)'
+    );
+    process.exit(0);
+  }
 
-console.error(`✗ agent-system drift detected — ${failures.length} issue(s):\n`);
-const byCheck = new Map();
-for (const f of failures) {
-  if (!byCheck.has(f.check)) byCheck.set(f.check, []);
-  byCheck.get(f.check).push(f);
+  console.error(`✗ agent-system drift detected — ${failures.length} issue(s):\n`);
+  const byCheck = new Map();
+  for (const f of failures) {
+    if (!byCheck.has(f.check)) byCheck.set(f.check, []);
+    byCheck.get(f.check).push(f);
+  }
+  for (const [check, items] of byCheck) {
+    console.error(`  ${check}:`);
+    for (const { file, detail } of items) console.error(`    - ${file}: ${detail}`);
+    console.error('');
+  }
+  console.error('Fix the agent definitions / routes / docs / AI configs above, then re-run.');
+  process.exit(1);
 }
-for (const [check, items] of byCheck) {
-  console.error(`  ${check}:`);
-  for (const { file, detail } of items) console.error(`    - ${file}: ${detail}`);
-  console.error('');
-}
-console.error('Fix the agent definitions / routes / docs / AI configs above, then re-run.');
-process.exit(1);
