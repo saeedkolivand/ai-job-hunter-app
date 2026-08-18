@@ -221,15 +221,20 @@ const SUBSCRIBERS = {
     hash: '896ef1fd88e1',
     note:
       'The THIRD `useUpdater` instance, alongside the always-mounted banner and menu — but ' +
-      'the three no longer disagree. `useUpdater` keeps status in a module-level store all ' +
-      'instances share, so a remounted panel immediately shows a download another instance ' +
-      'already knew about instead of rendering a LIVE "Check now" over work in flight. Two ' +
-      'backend guards close the rest: `updater_check` returns the known state BEFORE emitting ' +
-      '`checking` when a download is running or done (so it neither blanks the banner nor ' +
-      "clears Rust's `downloaded_bytes` and forces a re-download), and `updater_download` is " +
-      'guarded against re-entry by a Drop-based guard that cannot latch. NOTE the fix lives ' +
-      "in `services/use-updater/` and the Rust updater, so this entry's own hash could not " +
-      'have detected it (see the dependency caveat above).',
+      'the three no longer disagree. `useUpdater` keeps status AND the download-progress ' +
+      'readout (speed, time remaining) in one module-level store all instances share — the ' +
+      'byte counts need no store slot of their own, since they are derived straight off the ' +
+      "shared status's `downloaded`/`total` fields — so a remounted panel immediately shows " +
+      'a download another instance already knew about, numbers included, instead of a LIVE ' +
+      '"Check now" over work in flight or a correct label sitting over a blank/zero progress ' +
+      'readout (an earlier pass on this PR shared only `status`, leaving the metrics ' +
+      'per-instance — closed by folding them into the same store). Two backend guards close ' +
+      'the rest: `updater_check` returns the known state BEFORE emitting `checking` when a ' +
+      "download is running or done (so it neither blanks the banner nor clears Rust's " +
+      '`downloaded_bytes` and forces a re-download), and `updater_download` is guarded ' +
+      'against re-entry by a Drop-based guard that cannot latch. NOTE the fix lives in ' +
+      "`services/use-updater/` and the Rust updater, so this entry's own hash could not have " +
+      'detected it (see the dependency caveat above).',
   },
   'features/monitoring/hooks/useActivityFeed.ts': {
     mount: 'route-scoped',

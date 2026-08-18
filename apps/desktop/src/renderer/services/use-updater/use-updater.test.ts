@@ -97,4 +97,33 @@ describe('useUpdater', () => {
       total: 10,
     });
   });
+
+  it('a remounted instance sees the in-flight download metrics, not just the status label', () => {
+    // Same shape as the remount test above, but for the progress readout: a
+    // panel that mounts fresh mid-download must see the speed/eta/byte counts
+    // an already-mounted instance (the banner) computed from events the new
+    // instance's own effect never received — not a blank/zero readout until
+    // its next tick.
+    let t = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => t);
+    const banner = setup();
+
+    t = 1000;
+    banner.emit({ state: 'downloading', percent: 10, downloaded: 1_000_000, total: 10_000_000 });
+    t = 2000; // 1s later, clears the 500ms throttle
+    banner.emit({ state: 'downloading', percent: 20, downloaded: 3_000_000, total: 10_000_000 });
+
+    expect(banner.hook.result.current.downloadSpeed).toMatch(/\/s$/);
+    expect(banner.hook.result.current.timeRemaining).toBeTruthy();
+
+    const settingsPanel = setup();
+    expect(settingsPanel.hook.result.current.downloadSpeed).toBe(
+      banner.hook.result.current.downloadSpeed
+    );
+    expect(settingsPanel.hook.result.current.timeRemaining).toBe(
+      banner.hook.result.current.timeRemaining
+    );
+    expect(settingsPanel.hook.result.current.downloadedBytes).toBe(3_000_000);
+    expect(settingsPanel.hook.result.current.totalBytes).toBe(10_000_000);
+  });
 });
