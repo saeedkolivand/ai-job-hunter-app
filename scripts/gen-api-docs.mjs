@@ -101,6 +101,27 @@ function isExported(node) {
   return (node.modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
 }
 
+/**
+ * Record `name -> entry`, failing on a collision.
+ *
+ * These maps are keyed by bare declaration name across every contract file, so
+ * a name exported by two files would silently overwrite the first: a namespace
+ * would then resolve to the wrong file's declaration and this page would render
+ * another file's interface under it — plausibly, and wrongly. Qualifying the key
+ * by file would paper over a real clash instead of surfacing it, so a duplicate
+ * export is a hard error for a human to resolve.
+ */
+function addUnique(map, name, entry, kind) {
+  const prior = map.get(name);
+  if (prior) {
+    fail(
+      `duplicate exported ${kind} \`${name}\` in ${prior.file} and ${entry.file} — ` +
+        'contract exports share a single name space here; rename one'
+    );
+  }
+  map.set(name, entry);
+}
+
 /** Every exported interface / type alias in the contract files, by name. */
 function collectDeclarations(sources) {
   const decls = new Map();
@@ -110,7 +131,7 @@ function collectDeclarations(sources) {
         (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) &&
         isExported(stmt)
       ) {
-        decls.set(stmt.name.text, { file, sf, node: stmt });
+        addUnique(decls, stmt.name.text, { file, sf, node: stmt }, 'type');
       }
     }
   }
@@ -124,7 +145,9 @@ function collectConsts(sources) {
     for (const stmt of sf.statements) {
       if (!ts.isVariableStatement(stmt) || !isExported(stmt)) continue;
       for (const decl of stmt.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name)) consts.set(decl.name.text, { file, sf, node: decl });
+        if (ts.isIdentifier(decl.name)) {
+          addUnique(consts, decl.name.text, { file, sf, node: decl }, 'const');
+        }
       }
     }
   }
