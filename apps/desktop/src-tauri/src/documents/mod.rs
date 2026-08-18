@@ -1202,10 +1202,18 @@ pub(crate) async fn posting_vector_or_embed<E: Embedder + ?Sized>(
     // must not fail the score — it only means the NEXT call re-embeds (and
     // re-charges) this posting. Logged rather than dropped, because a
     // persistently failing write is invisible otherwise and reads downstream as
-    // "the cache never hits". Content-free: the id and the error, never the text.
+    // "the cache never hits". Never the text — but `job_id` is NOT always the
+    // opaque `board:external-id` shape it looks like: `breezy`/`pinpoint`/
+    // `themuse` build their [`crate::scraping::JobPosting::id`] as
+    // `format!("{BOARD_ID}:{url}")`, embedding the posting's full URL. Redact
+    // it with the same shape-based classifier the error already goes through,
+    // rather than hashing — that would cost every OTHER board's (the
+    // majority) debuggable `greenhouse:12345`-style id to close a leak only
+    // these three have.
     if let Err(e) = store.upsert_posting_vector(job_id, &hash, &v) {
         log::warn!(
-            "[documents] posting vector not cached for {job_id}: {}",
+            "[documents] posting vector not cached for {}: {}",
+            crate::observability::redact_token(job_id),
             sanitize_reason(&e.to_string())
         );
     }
