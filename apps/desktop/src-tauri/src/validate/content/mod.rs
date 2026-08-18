@@ -104,11 +104,28 @@ pub const FACTUAL_DROPPED_ROLE: &str = "factual.dropped_role";
 pub const FACTUAL_UNSUPPORTED_DATE: &str = "factual.unsupported_date";
 pub const FACTUAL_ALTERED_PROJECT_LINK: &str = "factual.altered_project_link";
 pub const FACTUAL_UNSOURCED_TERM: &str = "factual.unsourced_term";
-/// A tenure the source résumé cannot support — see `credentials`. Critical on
-/// the strength of the calibration in `test.rs`: the comparison is on a NUMBER,
-/// which is the one thing that survives translation and paraphrase unchanged,
-/// and it only ever fires on an OVERSTATEMENT of what the source itself says or
-/// dates.
+/// A tenure the source résumé cannot support — see `credentials`.
+///
+/// **A Warning, chosen against the shipping criterion rather than by failing
+/// it.** The measurement permitted a Critical: zero false positives across 25
+/// truthful documents, while reading the tenure sentences this repo's own
+/// fixtures write verbatim. What argues the other way is the SHAPE of the
+/// input. Two independent review rounds found five distinct registers that
+/// produced false Criticals — `$1.2M per year`, `a 30 year old mainframe`,
+/// `2015 - Actualidad`, `quinze années`, a block headed `EARLIER ROLES` — and
+/// each time the corpus was green before the next register was named. The
+/// claims side reads unbounded natural-language prose in seven languages,
+/// discriminated by three hand-curated word lists; the corpus can only ever
+/// falsify it, never establish it.
+///
+/// The cost of being wrong is not symmetric either. This code's section is the
+/// SUMMARY, which `repair` can regenerate, so a false one would spend provider
+/// calls rewriting a correct summary against "offending text: 15 years" and
+/// could pressure the model into understating a tenure the candidate really
+/// has. A Warning cannot: `criticals_by_section` never sees it.
+///
+/// `factual.unsourced_certification` stays Critical because its trigger is
+/// three bounded vocabularies intersecting, not prose.
 pub const FACTUAL_INFLATED_EXPERIENCE: &str = "factual.inflated_experience";
 /// A certification the source résumé never names. Critical: a certification is
 /// the most checkable claim on a résumé — an employer can look it up — so an
@@ -191,13 +208,13 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (FACTUAL_DROPPED_ROLE, Severity::Critical),
     (FACTUAL_UNSUPPORTED_DATE, Severity::Critical),
     (FACTUAL_ALTERED_PROJECT_LINK, Severity::Critical),
-    (FACTUAL_INFLATED_EXPERIENCE, Severity::Critical),
     (FACTUAL_UNSOURCED_CERTIFICATION, Severity::Critical),
     (CONTENT_LANGUAGE_MISMATCH, Severity::Critical),
     (ATS_HEADER_IN_BODY, Severity::Critical),
     (ATS_EMPTY_SECTION, Severity::Warning),
     (LETTER_TEMPLATE_PLACEHOLDER, Severity::Critical),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),
+    (FACTUAL_INFLATED_EXPERIENCE, Severity::Warning),
     (FACTUAL_UNSOURCED_INSTITUTION, Severity::Warning),
     (ALIGNMENT_LOW_COVERAGE, Severity::Warning),
     (ALIGNMENT_MISSING_TOP_REQUIREMENT, Severity::Warning),

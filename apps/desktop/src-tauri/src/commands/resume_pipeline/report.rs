@@ -31,31 +31,23 @@ use crate::validate::Severity;
 /// ABSENCE — "keep" and "remove" are both meaningless for it, and listing it in
 /// a Remove/Keep panel would ask a question with no correct answer. It still
 /// appears in the report as a Critical.
-/// The two credential Criticals are here because a Critical that is NOT listed
-/// keeps its run in `needsReview` forever ([`still_needs_review`]), and both
-/// name a span the user can look at and decide about.
+/// `factual.unsourced_certification` is here because a Critical that is NOT
+/// listed keeps its run in `needsReview` forever ([`still_needs_review`]), and
+/// it names a span the user can look at and decide about. It is also the one
+/// Critical the repair loop cannot regenerate a section for — `SectionKey` has
+/// no Certifications variant — so this panel is its only resolution path.
 ///
-/// Their repair stories DIFFER, and the difference matters:
-/// `factual.unsourced_certification` has no section the loop could regenerate
-/// (`SectionKey` has no Certifications variant), so the panel is its only
-/// resolution path; `factual.inflated_experience` DOES route — its section is
-/// the summary — so a false one would spend real provider calls rewriting a
-/// correct summary against "offending text: 15 years", and could pressure the
-/// model into understating a true tenure. That is the sharper reason its
-/// false-positive rate had to be measured at zero before it shipped Critical,
-/// and it is why listing it here is a resolution path rather than a workaround.
-///
-/// `factual.unsourced_institution` is deliberately ABSENT. It is a Warning, and
-/// listing a Warning here would park the run until the user decided it — which
-/// is exactly the "advisory" claim its registration makes being false. The
-/// precedent that says otherwise (`factual.unsourced_term`, also a Warning) is
-/// left alone rather than copied.
+/// The two credential WARNINGS (`factual.inflated_experience`,
+/// `factual.unsourced_institution`) are deliberately absent. Listing a Warning
+/// here parks the run until the user decides it, which would make the
+/// "advisory" claim their registration makes false. The precedent that says
+/// otherwise (`factual.unsourced_term`, also a Warning) is left alone rather
+/// than copied.
 const FABRICATION_CODES: &[&str] = &[
     crate::validate::content::FACTUAL_UNSOURCED_METRIC,
     crate::validate::content::FACTUAL_UNSUPPORTED_DATE,
     crate::validate::content::FACTUAL_UNSOURCED_TERM,
     crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
-    crate::validate::content::FACTUAL_INFLATED_EXPERIENCE,
     crate::validate::content::FACTUAL_UNSOURCED_CERTIFICATION,
 ];
 
