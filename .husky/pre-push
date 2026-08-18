@@ -154,7 +154,24 @@ if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ] && [ "$PUSHED_NON_HEAD"
       pnpm check:landing-drift
     fi
     echo "▶ Prettier-checking changed docs..."
-    printf '%s\n' "$own_files" | xargs pnpm exec prettier --check --ignore-unknown
+    # Only files that still EXIST. `own_files` is a diff list, so it includes
+    # deletions, and prettier exits non-zero on a path it cannot open, which
+    # made every commit that deletes a doc unpushable.
+    #
+    # `if`/`fi` rather than `[ -e ] && printf`: under `set -e` the loop's exit
+    # status is its LAST iteration's, so a trailing deletion made the whole
+    # command substitution exit 1 and aborted the hook silently. `if` with a
+    # false condition exits 0, so file ordering stops mattering.
+    #
+    # The empty case is guarded with a test rather than `xargs -r`: `-r` is a
+    # GNU extension and BSD/macOS xargs does not accept it. Without the guard a
+    # deletions-only commit would run bare `prettier --check`, which walks the
+    # whole tree.
+    existing_docs=$(printf '%s\n' "$own_files" \
+      | while IFS= read -r f; do if [ -e "$f" ]; then printf '%s\n' "$f"; fi; done)
+    if [ -n "$existing_docs" ]; then
+      printf '%s\n' "$existing_docs" | xargs pnpm exec prettier --check --ignore-unknown
+    fi
     echo "✓ Docs/meta fast path complete"
     exit 0
   fi
