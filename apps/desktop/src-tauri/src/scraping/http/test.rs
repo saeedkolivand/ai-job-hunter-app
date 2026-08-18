@@ -8,6 +8,9 @@ fn test_fetch_options_default() {
     assert!(opts.body.is_none());
     // Default retries raised to 2 to allow one 429/503 backoff before giving up.
     assert_eq!(opts.retries, 2);
+    // `None` keeps the shared browser-shaped DEFAULT_UA — a board opts INTO an
+    // identifying UA (e.g. freehire), it is never on by default.
+    assert!(opts.user_agent.is_none());
 }
 
 /// `FetchOptions.timeout` backward-safe contract (item 4):
@@ -326,6 +329,65 @@ async fn test_fetch_json_preserves_caller_headers() {
 
     let parsed = result.expect("fetch_json should succeed and deserialize the response");
     assert!(parsed.ok, "expected ok:true — X-API-Key header was dropped");
+}
+
+/// `FetchOptions::user_agent` REPLACES the shared client's default UA rather
+/// than riding alongside it — the exact bug it exists to close: putting
+/// `user-agent` in `opts.headers` instead would have appended a second header
+/// line (`RequestBuilder::header` appends, it does not replace), sending BOTH
+/// `DEFAULT_UA` and the override on the wire. Checked via
+/// `MockServer::received_requests` (not just a `header()` matcher, which only
+/// proves the override value is PRESENT, not that the default is ABSENT) so a
+/// regression back to `opts.headers` would show two header values, not one.
+///
+/// Mutation check: reverted `fetch_text`'s `user-agent` line back to the
+/// unconditional `request.header("user-agent", DEFAULT_UA)` (dropping the
+/// `opts.user_agent` branch) — RAN, went red (`values.len()` became 1 with
+/// the WRONG value: `DEFAULT_UA`, not the override — reqwest's client-default
+/// merge only backfills when the request sent NO value for the header, so an
+/// unconditional literal write, not an append, is what the un-fixed line
+/// actually did), restored.
+#[tokio::test]
+async fn test_fetch_text_user_agent_override_replaces_not_appends() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    let signal = tokio_util::sync::CancellationToken::new();
+
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&mock_server)
+        .await;
+
+    fetch_text(
+        &mock_server.uri(),
+        FetchOptions {
+            user_agent: Some("custom-agent/1.0".to_string()),
+            ..Default::default()
+        },
+        signal,
+    )
+    .await
+    .expect("the request must succeed");
+
+    let requests = mock_server.received_requests().await.expect(
+        "wiremock request recording must be on by default; if this fails, recording was \
+         disabled somewhere upstream of this test",
+    );
+    assert_eq!(requests.len(), 1);
+    let values: Vec<&str> = requests[0]
+        .headers
+        .get_all("user-agent")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .collect();
+    assert_eq!(
+        values,
+        vec!["custom-agent/1.0"],
+        "exactly one user-agent value must reach the wire, and it must be the override — \
+         not the override alongside DEFAULT_UA, and not DEFAULT_UA alone"
+    );
 }
 
 /// fetch_text must abort the stream before fully buffering when the body exceeds

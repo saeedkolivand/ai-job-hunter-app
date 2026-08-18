@@ -58,6 +58,14 @@ pub struct FetchOptions {
     pub method: Option<reqwest::Method>,
     pub body: Option<String>,
     pub retries: u32,
+    /// Per-request `User-Agent` override. `None` keeps [`DEFAULT_UA`] (the
+    /// shared browser-shaped UA most boards rely on to look like an ordinary
+    /// browser). Set this — rather than putting `user-agent` in `headers` —
+    /// for a board that wants to identify itself: `headers` entries are
+    /// applied via `RequestBuilder::header`, which APPENDS rather than
+    /// replaces, so a `user-agent` there would ride alongside [`DEFAULT_UA`]
+    /// as a second header line instead of overriding it.
+    pub user_agent: Option<String>,
     /// Per-request byte cap. `None` falls back to the shared `MAX_BYTES` (8 MB).
     /// Use only for feeds known to exceed 8 MB (e.g. the GTJ RSS feed at ~10 MB).
     pub max_bytes: Option<usize>,
@@ -83,6 +91,7 @@ impl Default for FetchOptions {
             method: None,
             body: None,
             retries: 2,
+            user_agent: None,
             max_bytes: None,
             timeout: None,
             redact_path: false,
@@ -131,7 +140,10 @@ pub async fn fetch_text(
             _ => client.get(url),
         };
 
-        request = request.header("user-agent", DEFAULT_UA);
+        request = request.header(
+            "user-agent",
+            opts.user_agent.as_deref().unwrap_or(DEFAULT_UA),
+        );
 
         // Only add the broad HTML accept when the caller hasn't already set one.
         // This prevents a double `accept` header when fetch_json (which prepends
