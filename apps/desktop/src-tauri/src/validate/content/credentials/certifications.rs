@@ -289,6 +289,10 @@ fn spans_are_adjacent(line: &str, first_end: usize, second_start: usize) -> bool
 /// check rather than a false accusation.
 fn cert_claims_on_line(line: &str, side: Side) -> Vec<(CertArm, Vec<String>, String)> {
     let mut out = Vec::new();
+    // One allocation per LINE, not one per acronym: the source pass asks the
+    // same 23 questions of the same lowercased text, and `to_lowercase` had
+    // been re-allocating a fresh String on every one of those checks.
+    let lower_line = (side == Side::Source).then(|| line.to_lowercase());
     for (acronym, key, expansion) in CERT_ACRONYMS {
         let found = match side {
             Side::Claims => contains_upper_acronym(line, acronym),
@@ -296,9 +300,9 @@ fn cert_claims_on_line(line: &str, side: Side) -> Vec<(CertArm, Vec<String>, Str
             // skills line, or spelling the certification out in full, still
             // supports the claim.
             Side::Source => {
-                let lower = line.to_lowercase();
-                contains_phrase(&lower, &acronym.to_lowercase())
-                    || (!expansion.is_empty() && contains_phrase(&lower, expansion))
+                let lower = lower_line.as_deref().unwrap_or_default();
+                contains_phrase(lower, &acronym.to_lowercase())
+                    || (!expansion.is_empty() && contains_phrase(lower, expansion))
             }
         };
         if found {
@@ -392,25 +396,50 @@ pub fn source_cert_keys(source: &str) -> HashSet<String> {
 
 /// Certifications the generated document names that the source never does.
 ///
-/// Deduplicated on the canonical issuer key, with the ACRONYM arm passed first
-/// so it wins a key both arms found. One credential written both ways is one
-/// finding, and it is the one whose evidence is the stronger of the two - the
-/// alternative lets document order decide a severity.
+/// Two dedup keys, not one, because "one credential written both ways is one
+/// finding" and "two DIFFERENT credentials share an issuer" are different
+/// claims and `keys[0]` alone cannot tell them apart — an earlier version
+/// deduped every arm on the issuer key, so a document inventing BOTH `CKA` and
+/// `CKS` (two distinct Kubernetes certifications) reported only one, silently
+/// dropping the other from the user's review.
+///
+/// The ACRONYM arm dedups on its own acronym spelling (`keys.last()` — unique
+/// per credential, `cka` vs `cks`), not the issuer, so distinct acronyms from
+/// one issuer both survive. Each accepted acronym then claims its issuer, so
+/// an ISSUER-PHRASE claim for that same issuer merges into it rather than
+/// becoming a second finding — that is the "written both ways" case the
+/// original dedup existed for, and it is the one whose evidence is the
+/// stronger of the two arms: acronyms are processed first, so document order
+/// never decides a severity.
 pub fn unsupported_certs(generated_sections: &[Section], source: &str) -> Vec<CertClaim> {
     let known = source_cert_keys(source);
-    let mut seen = HashSet::new();
     let (acronyms, phrases): (Vec<CertClaim>, Vec<CertClaim>) = cert_claims(generated_sections)
         .into_iter()
         .filter(|claim| !claim.keys.iter().any(|key| known.contains(key)))
         .partition(|claim| claim.arm == CertArm::Acronym);
-    acronyms
-        .into_iter()
-        .chain(phrases)
-        .filter(|claim| {
-            claim
-                .keys
-                .first()
-                .is_some_and(|key| seen.insert(key.clone()))
-        })
-        .collect()
+
+    let mut seen_specific = HashSet::new();
+    let mut seen_issuers = HashSet::new();
+    let mut out: Vec<CertClaim> = Vec::new();
+    for claim in acronyms {
+        let Some(specific) = claim.keys.last() else {
+            continue;
+        };
+        if seen_specific.insert(specific.clone()) {
+            if let Some(issuer) = claim.keys.first() {
+                seen_issuers.insert(issuer.clone());
+            }
+            out.push(claim);
+        }
+    }
+    for claim in phrases {
+        if claim
+            .keys
+            .first()
+            .is_some_and(|key| seen_issuers.insert(key.clone()))
+        {
+            out.push(claim);
+        }
+    }
+    out
 }
