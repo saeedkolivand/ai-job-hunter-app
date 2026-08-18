@@ -2365,7 +2365,7 @@
       "health": {
         "failingSince_one": "down for {{count}} run · last worked {{since}}",
         "failingSince_other": "down for {{count}} runs · last worked {{since}}",
-        "neverWorkedSince": "has never worked here · failing for {{since}}",
+        "neverWorkedSince": "has never worked here · first failed {{since}}",
         "neverWorked_one": "has never worked here · {{count}} failed run",
         "neverWorked_other": "has never worked here · {{count}} failed runs",
         "stale": "not checked since it last worked, {{since}}",
