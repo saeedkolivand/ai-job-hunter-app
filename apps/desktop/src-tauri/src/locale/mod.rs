@@ -110,6 +110,9 @@ impl LocaleProfile {
             "nl" => Self::nl(),
             "eu" => Self::eu(),
             "it" => Self::it(),
+            "es" => Self::es(),
+            "pt" => Self::pt(),
+            "br" => Self::br(),
             _ => Self::intl(),
         }
     }
@@ -118,7 +121,19 @@ impl LocaleProfile {
     fn is_known_region(token: &str) -> bool {
         matches!(
             token,
-            "us" | "uk" | "gb" | "de" | "at" | "ch" | "fr" | "nl" | "eu" | "dach" | "it"
+            "us" | "uk"
+                | "gb"
+                | "de"
+                | "at"
+                | "ch"
+                | "fr"
+                | "nl"
+                | "eu"
+                | "dach"
+                | "it"
+                | "es"
+                | "pt"
+                | "br"
         )
     }
 
@@ -132,6 +147,9 @@ impl LocaleProfile {
             Self::nl(),
             Self::eu(),
             Self::it(),
+            Self::es(),
+            Self::pt(),
+            Self::br(),
             Self::intl(),
         ]
     }
@@ -228,6 +246,56 @@ impl LocaleProfile {
     /// select `IT_ORDER`. Aliasing to `eu()` (id `"eu"`) would resolve the
     /// page/photo conventions correctly but silently hand an Italian user the
     /// DEFAULT section order again — the exact bug this profile exists to fix.
+    /// Spain. A4 + photo, like the other southern-European markets, but capped
+    /// at **2 pages**, not Italy's 3 — Spanish CV guidance is consistently
+    /// "máximo dos páginas", and the app's page cap is advice the export
+    /// actually enforces, so inheriting Italy's 3 would quietly license a
+    /// longer document than the market expects.
+    ///
+    /// Its own constructor rather than an alias, for the reason Italy's is:
+    /// `recommend::pick_locale` forwards this `id` verbatim and
+    /// `locale::resume::section_order_for` matches the literal string, so
+    /// aliasing to `eu()` would hand back the id `"eu"` and silently restore
+    /// the US section order.
+    pub fn es() -> LocaleProfile {
+        LocaleProfile {
+            id: "es",
+            page_size: PageSize::A4,
+            photo: PhotoPolicy::Optional,
+            max_pages: 2,
+        }
+    }
+
+    /// Portugal. Same shape as [`Self::es`] — A4, photo optional, 2 pages.
+    pub fn pt() -> LocaleProfile {
+        LocaleProfile {
+            id: "pt",
+            page_size: PageSize::A4,
+            photo: PhotoPolicy::Optional,
+            max_pages: 2,
+        }
+    }
+
+    /// Brazil — a separate market id in the TS `COUNTRY_TO_MARKET` table
+    /// (`BR: 'br'`, not `'pt'`), so it needs its own profile or it falls
+    /// through to the US-shaped default the way Spain and Portugal did.
+    ///
+    /// **Reviewable call, and the one place it deliberately differs from
+    /// [`Self::pt`]: `photo: Never`.** Brazilian hiring guidance has moved
+    /// against photos on CVs on anti-discrimination grounds, unlike Portugal
+    /// where they remain unremarkable. Same language, same section order,
+    /// different norm — which is exactly why it is a distinct profile rather
+    /// than an alias. If a Brazilian reviewer disagrees, this is a one-line
+    /// change.
+    pub fn br() -> LocaleProfile {
+        LocaleProfile {
+            id: "br",
+            page_size: PageSize::A4,
+            photo: PhotoPolicy::Never,
+            max_pages: 2,
+        }
+    }
+
     pub fn it() -> LocaleProfile {
         LocaleProfile {
             id: "it",
@@ -327,10 +395,25 @@ mod tests {
     #[test]
     fn all_markets_are_distinct_and_present() {
         let all = LocaleProfile::all();
-        assert_eq!(all.len(), 8);
         let ids: std::collections::HashSet<&str> = all.iter().map(|p| p.id).collect();
-        for id in ["us", "uk", "dach", "fr", "nl", "eu", "it", "en"] {
-            assert!(ids.contains(id), "missing market {id}");
+        assert_eq!(ids.len(), all.len(), "two profiles share an id: {ids:?}");
+
+        // The property, rather than a restated list: every profile `all()`
+        // advertises must resolve back to ITSELF through `get`. That is the
+        // contract the rest of the app depends on — `recommend::pick_locale`
+        // forwards a profile's `id` verbatim and downstream code calls `get`
+        // on it — and it is exactly what a missing `get` arm breaks, silently
+        // and with every hardcoded-list test still green. Spain, Portugal and
+        // Brazil each shipped that way until this test stopped naming names.
+        for profile in &all {
+            assert_eq!(
+                LocaleProfile::get(profile.id).id,
+                profile.id,
+                "market {:?} is offered by `all()` but does not round-trip through \
+                 `get` — it falls back to the international default, taking the \
+                 US section order with it",
+                profile.id
+            );
         }
     }
 
