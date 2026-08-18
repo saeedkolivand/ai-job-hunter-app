@@ -7,6 +7,7 @@ import {
   discoverSubscribers,
   discoverSubscriptionHooks,
   importedBindings,
+  stripCommentsAndStrings,
   namespaceImporters,
   SUBSCRIBERS,
   violations,
@@ -121,6 +122,42 @@ describe('discoverSubscriptionHooks', () => {
     expect(discoverSubscriptionHooks(services)).toEqual(['useActivity', 'useJobEvents']);
   });
 
+  it("is not promoted by the NEXT hook's doc comment", () => {
+    // The bug that shipped. A declaration slice runs to the next `export`, so the
+    // doc comment belonging to the hook BELOW lands inside this one's body. The
+    // real `services/use-jobs` has exactly this: a doc comment on `useJob` reading
+    // "a `useJobEvents()` subscription MUST be mounted somewhere in the tree",
+    // which promoted the plain query hook above it and dragged every file calling
+    // that query into the inventory.
+    write(
+      'services/use-jobs/use-jobs.ts',
+      PLAIN_HOOK('useJobQueue') +
+        `\n/**\n * HARD REQUIREMENT: a \`useJobEvents()\` subscription MUST be mounted.\n */\n` +
+        SUBSCRIBING_HOOK('useJobEvents', 'jobs', 'Event')
+    );
+
+    expect(discoverSubscriptionHooks(services)).toEqual(['useJobEvents']);
+  });
+
+  it('is not promoted by a commented-out call', () => {
+    write('services/use-jobs/use-jobs.ts', SUBSCRIBING_HOOK('useJobEvents', 'jobs', 'Event'));
+    write(
+      'services/use-dead/use-dead.ts',
+      `import { useJobEvents } from '../use-jobs/use-jobs';\nexport const useDead = () => {\n  // useJobEvents(noop);\n};`
+    );
+
+    expect(discoverSubscriptionHooks(services)).toEqual(['useJobEvents']);
+  });
+
+  it('is not promoted by a listener registration that only appears in a string', () => {
+    write(
+      'services/use-doc/use-doc.ts',
+      `export const useDoc = () => logger.warn('call api.jobs.onEvent( to subscribe');`
+    );
+
+    expect(discoverSubscriptionHooks(services)).toEqual([]);
+  });
+
   it('does not promote a hook that merely sits in a file next to a subscriber', () => {
     // Guards the closure against the sloppy version: "this FILE subscribes" would
     // promote every hook in it and cascade to their callers.
@@ -194,6 +231,35 @@ describe('discoverSubscribers', () => {
     );
 
     expect(discoverSubscribers(['useJobEvents'], renderer)).toEqual([]);
+  });
+});
+
+describe('stripCommentsAndStrings', () => {
+  it('preserves length and line structure so match offsets stay valid', () => {
+    const src = `const a = 1; // note
+/* block */ const b = 2;`;
+    const out = stripCommentsAndStrings(src);
+
+    const lines = (text) => text.split(/\r?\n/).length;
+    expect(out).toHaveLength(src.length);
+    expect(lines(out)).toBe(lines(src));
+  });
+
+  it('does not let a // inside a URL string eat the rest of the line', () => {
+    // Why this is a scanner and not a regex. A naive `//.*$` strip would delete
+    // the real call after the URL — a guard that silently MISSES a subscription,
+    // which is the one failure direction it must not have.
+    const src = `const u = 'https://x.dev'; api.jobs.onEvent(cb);`;
+
+    expect(stripCommentsAndStrings(src)).toContain('api.jobs.onEvent(');
+  });
+
+  it('blanks a comment and a string but keeps the surrounding code', () => {
+    const out = stripCommentsAndStrings(`useX(); /* useY() */ const s = 'useZ()';`);
+
+    expect(out).toContain('useX()');
+    expect(out).not.toContain('useY()');
+    expect(out).not.toContain('useZ()');
   });
 });
 
