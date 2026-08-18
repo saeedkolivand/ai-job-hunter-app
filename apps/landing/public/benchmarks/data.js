@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787027224539,
+  "lastUpdate": 1787032582707,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7889,6 +7889,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 271899,
             "range": "± 33582",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a62bbd25d789145aa50703fc26e88e7324584c6a",
+          "message": "fix(scraping): register jobicy in the shared board list and make the drift impossible (#1014)\n\n`SCRAPERS` holds 24 boards; the renderer's `BOARD_IDS` held 23. The missing one\nis `jobicy` — a fully registered scraper with `id() == \"jobicy\"`, `listed()`\ndefaulting to true (so the catalog offers it), and en/de labels already written.\nIt was simply never added to the shared list, and nothing on either side could\nsee that, because nothing compared them.\n\nHarmless today only by accident: the codegen lowers `z.enum` to `Vec<String>`,\nso the id that actually crosses IPC is validated by the registry lookup rather\nthan by the enum. The schema comment claimed the opposite — that each entry\n\"is already constrained to a known BoardId\" server-side — which is why the gap\nread as safe. Corrected in place.\n\n`pnpm gen:ipc` now emits the shared list to `ipc_contracts/board_ids.rs` (same\nshape as the existing DATE_FILTER_OPTIONS / AI_GENERATE_INTENTS emitters), and a\nRust test compares it against `SCRAPERS` in both directions: one catches a board\nadded to the registry and forgotten in TS, the other a board removed from the\nregistry while the TS list still promises it to the `BoardId` type.\n\nMutation-checked: removing `jobicy` from the shared list again fails the test\nwith `registered here but absent from packages/shared BOARD_IDS: [\"jobicy\"]`.\n\nDeliberately NOT done: `assert_eq!(health.scrapers.len(), 24)` stays a literal.\nDeriving it from `SCRAPERS.len()` — as the original audit item suggested — would\nmake it vacuous, since it is the only guard that notices a scraper being\ndeleted. The parity test above removes the duplication that actually drifts; the\nliteral keeps guarding the thing a self-referential count cannot.\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T07:31:33+02:00",
+          "tree_id": "c777e5900a6c7f5c64690c281457e7570d275dec",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a62bbd25d789145aa50703fc26e88e7324584c6a"
+        },
+        "date": 1787032581381,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2224888,
+            "range": "± 98690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2713999,
+            "range": "± 42375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 319848,
+            "range": "± 4763",
             "unit": "ns/iter"
           }
         ]
