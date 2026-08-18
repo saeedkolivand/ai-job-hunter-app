@@ -148,7 +148,11 @@ pub async fn autopilot_scrape(
                     );
                 }
                 if let Some(ref err) = s.error {
-                    log::warn!("[autopilot] board '{}' failed (error='{}')", s.board, err);
+                    log::warn!(
+                        "[autopilot] board '{}' failed (error='{}')",
+                        s.board,
+                        sanitize_reason(err)
+                    );
                 }
             }
             (postings, summaries)
