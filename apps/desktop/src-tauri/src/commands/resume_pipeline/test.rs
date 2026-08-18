@@ -561,6 +561,52 @@ fn a_recorded_but_unapplied_remove_keeps_the_run_unfinished() {
     assert!(!report::still_needs_review(&current, &edited, ""));
 }
 
+/// **Resolution reads the anchored `line`, not a bare-`evidence` substring
+/// search across the whole document.**
+///
+/// `evidence` is routinely a bare token (a certification acronym here) that
+/// can legitimately recur on a DIFFERENT line the user never touched — a
+/// project bullet naming the same acronym, say. `entry_resolved`'s job is "is
+/// the flagged BULLET gone", not "does this substring exist anywhere" —
+/// checking `evidence` alone answers the wrong question and strands a
+/// genuinely-applied removal in `needsReview` forever.
+///
+/// Mutation check: revert `entry_resolved` to search `evidence` alone (drop
+/// the `line` branch) and the final assertion fails — the run stays stuck at
+/// 1 unresolved entry even though the flagged bullet is gone.
+#[test]
+fn resolution_reads_the_anchored_line_not_a_recurring_bare_token() {
+    let text = "PROFESSIONAL SUMMARY\nCertified Kubernetes Administrator (CKA).\n\n\
+                WORK EXPERIENCE\n- Built the ledger service\n";
+    let wrapper = report::build("quality", 1, Some((&fabrication_report("CKA"), text)), None);
+    let entry = only_fabrication(&wrapper);
+    assert_eq!(
+        entry["line"],
+        json!("Certified Kubernetes Administrator (CKA)."),
+        "the bare acronym is unique in this document, so it anchors"
+    );
+    let key = entry["issueKey"].as_str().expect("a key").to_string();
+    let decided = report::record_decision(&wrapper, &key, "remove").expect("a known key");
+
+    // The user removes exactly the flagged bullet — the anchored one — and
+    // separately writes an unrelated project note that also names "CKA".
+    let edited = "PROFESSIONAL SUMMARY\nA payments engineer.\n\nWORK EXPERIENCE\n\
+                  - Built the ledger service\n\nPROJECTS\n\
+                  - Built a CKA exam prep tool for study groups.\n";
+    assert!(
+        edited.contains("CKA"),
+        "the unrelated project bullet still names the bare token"
+    );
+    assert!(!edited.contains("Certified Kubernetes Administrator (CKA)."));
+    assert_eq!(
+        report::unresolved_count(&decided, edited, ""),
+        0,
+        "the flagged bullet is gone; a DIFFERENT line naming the same bare token must not \
+         strand the run"
+    );
+    assert!(!report::still_needs_review(&decided, edited, ""));
+}
+
 /// **Only the INVENTED-link arm of `factual.altered_project_link` is
 /// reviewable.** The validator's other arm — a SOURCE link missing or altered
 /// in the output — names an ABSENCE, exactly like `factual.dropped_role`: its

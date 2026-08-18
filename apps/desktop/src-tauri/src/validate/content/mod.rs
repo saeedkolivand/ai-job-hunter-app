@@ -54,6 +54,7 @@ pub(crate) use crate::documents::evidence::contains_word as contains_phrase;
 mod alignment;
 mod ats;
 mod consistency;
+mod credentials;
 mod duplicates;
 mod factual;
 mod language;
@@ -103,6 +104,63 @@ pub const FACTUAL_DROPPED_ROLE: &str = "factual.dropped_role";
 pub const FACTUAL_UNSUPPORTED_DATE: &str = "factual.unsupported_date";
 pub const FACTUAL_ALTERED_PROJECT_LINK: &str = "factual.altered_project_link";
 pub const FACTUAL_UNSOURCED_TERM: &str = "factual.unsourced_term";
+/// A tenure the source résumé cannot support — see `credentials`.
+///
+/// **A Warning, chosen against the shipping criterion rather than by failing
+/// it.** The measurement permitted a Critical: zero false positives across 25
+/// truthful documents, while reading the tenure sentences this repo's own
+/// fixtures write verbatim. What argues the other way is the SHAPE of the
+/// input. Two independent review rounds found five distinct registers that
+/// produced false Criticals — `$1.2M per year`, `a 30 year old mainframe`,
+/// `2015 - Actualidad`, `quinze années`, a block headed `EARLIER ROLES` — and
+/// each time the corpus was green before the next register was named. The
+/// claims side reads unbounded natural-language prose in seven languages,
+/// discriminated by three hand-curated word lists; the corpus can only ever
+/// falsify it, never establish it.
+///
+/// The cost of being wrong is not symmetric either. This code's section is the
+/// SUMMARY, which `repair` can regenerate, so a false one would spend provider
+/// calls rewriting a correct summary against "offending text: 15 years" and
+/// could pressure the model into understating a tenure the candidate really
+/// has. A Warning cannot: `criticals_by_section` never sees it.
+///
+/// `factual.unsourced_certification` stays Critical because its trigger is
+/// three bounded vocabularies intersecting, not prose.
+pub const FACTUAL_INFLATED_EXPERIENCE: &str = "factual.inflated_experience";
+/// A certification the source résumé never names, found by its ACRONYM: an
+/// uppercase, word-bounded token from a curated 23-entry list.
+///
+/// Critical, and the only credential code that is. A certification is the most
+/// checkable claim on a résumé — an employer can look it up — and this arm's
+/// evidence is genuinely bounded: it reads no prose, and each token means one
+/// thing on a résumé in any language. Three review rounds produced no false
+/// positive from it.
+pub const FACTUAL_UNSOURCED_CERTIFICATION: &str = "factual.unsourced_certification";
+/// A credential the source résumé never names, found by an ISSUER beside a
+/// certification word in prose (`AWS Certified Solutions Architect`).
+///
+/// A Warning, split out of `factual.unsourced_certification` because it rests
+/// on a different evidence class: unbounded natural language in seven
+/// languages, discriminated by three curated vocabularies. It has been measured
+/// wrong twice — "Certified the release on AWS each Thursday" (a verb), then
+/// "Docker Certified images" (a vendor's adjective) — each time on the first
+/// adversarial pass after a green corpus. That is the same shape, and the same
+/// cadence, as `factual.inflated_experience`, and it earns the same tier.
+/// Keeping one code for both arms would have made the Critical reachable from
+/// the prose path.
+pub const FACTUAL_UNSOURCED_CREDENTIAL: &str = "factual.unsourced_credential";
+/// The generated document names a place of study while the source names none
+/// at all. A Warning, deliberately: this is the residue of a value comparison
+/// that MEASURED a false positive on truthful cross-language output (see
+/// `credentials::unsupported_institutions`), so the surviving check is scoped
+/// to a whole invented education section.
+///
+/// Advisory at the RUN level too, not just in this table — which took a
+/// deliberate omission to make true. A Warning listed in
+/// `commands::resume_pipeline::report::FABRICATION_CODES` parks its run in
+/// `needsReview` until the user decides it, so this code is kept out of that
+/// list; "advisory" that blocks a run is not advisory.
+pub const FACTUAL_UNSOURCED_INSTITUTION: &str = "factual.unsourced_institution";
 pub const CONTENT_LANGUAGE_MISMATCH: &str = "content.language_mismatch";
 /// An unfilled template-placeholder slot (e.g. German "Ihr Name") survived
 /// into the rendered letter text — see ADR-034 Consequence #2. Deterministic:
@@ -167,11 +225,15 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (FACTUAL_DROPPED_ROLE, Severity::Critical),
     (FACTUAL_UNSUPPORTED_DATE, Severity::Critical),
     (FACTUAL_ALTERED_PROJECT_LINK, Severity::Critical),
+    (FACTUAL_UNSOURCED_CERTIFICATION, Severity::Critical),
     (CONTENT_LANGUAGE_MISMATCH, Severity::Critical),
     (ATS_HEADER_IN_BODY, Severity::Critical),
     (ATS_EMPTY_SECTION, Severity::Warning),
     (LETTER_TEMPLATE_PLACEHOLDER, Severity::Critical),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),
+    (FACTUAL_INFLATED_EXPERIENCE, Severity::Warning),
+    (FACTUAL_UNSOURCED_CREDENTIAL, Severity::Warning),
+    (FACTUAL_UNSOURCED_INSTITUTION, Severity::Warning),
     (ALIGNMENT_LOW_COVERAGE, Severity::Warning),
     (ALIGNMENT_MISSING_TOP_REQUIREMENT, Severity::Warning),
     (CONSISTENCY_DATE_ORDER, Severity::Warning),
@@ -1081,10 +1143,12 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
     let (requirement_hits, duplicate_ratio, roles_source, roles_output) = match input.doc_kind {
         DocKind::CoverLetter => {
             issues.extend(letter::validate(&ctx));
+            issues.extend(credentials::validate(&ctx));
             (None, 0.0, 0, 0)
         }
         DocKind::Resume => {
             issues.extend(factual::validate(&ctx));
+            issues.extend(credentials::validate(&ctx));
             let (alignment_issues, hits) = alignment::validate(&ctx);
             issues.extend(alignment_issues);
             issues.extend(consistency::validate(&ctx));
