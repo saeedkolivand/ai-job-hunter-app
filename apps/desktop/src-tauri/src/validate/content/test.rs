@@ -3045,7 +3045,12 @@ fn code_table_is_complete_and_unique() {
         .count();
     assert_eq!(
         criticals, 8,
-        "Criticals are deterministic factual/language/structure defects only, and every          one needs a RESOLUTION PATH or its run sits in needsReview forever: either a          REGENERATE (what `repair` does with a section-keyed finding — which is why          `ats.empty_section` is a Warning) or a Remove/Keep row in the review panel          (`report::FABRICATION_CODES`, which is how the two credential Criticals          clear, since `SectionKey` has no Certifications variant to regenerate)."
+        "Criticals are deterministic factual/language/structure defects only, and every \
+         one needs a RESOLUTION PATH or its run sits in needsReview forever: either a \
+         REGENERATE (what `repair` does with a section-keyed finding — which is why \
+         `ats.empty_section` is a Warning) or a Remove/Keep row in the review panel \
+         (`report::FABRICATION_CODES`, which is how the two credential Criticals \
+         clear, since `SectionKey` has no Certifications variant to regenerate)."
     );
 }
 
@@ -6541,12 +6546,28 @@ const EXTRACTS_AN_INSTITUTION: &[&str] = &[
 ///
 /// Run with `cargo test --all-features credential_extractor_calibration -- --nocapture`
 /// to read the table.
+/// A FROZEN reference year for the calibration corpus, not `reference_year`'s
+/// own clock read.
+///
+/// Every open-ended fixture here (`es_actualidad`, `two_block_history`,
+/// `numeric_month_opener`, `de_generated_from_en_source`) is sized against
+/// "today" — and an open span's allowance only ever WIDENS as the calendar
+/// advances (`career_span_years`'s own doc calls this "monotone-loosening"),
+/// so the zero-false-positive assertion below stays safe forever going
+/// forward on the live clock too. What a live clock costs is reproducibility:
+/// the table cannot be re-run at an earlier date to audit a past run, and the
+/// recall arms carry no explicit anchor. Pinned at the value the live clock
+/// already resolves to, so freezing it changes nothing this test currently
+/// asserts — the boundary tests below already use this same pattern
+/// (`career_span_years(&source, Some(2026))`).
+const CALIBRATION_REFERENCE_YEAR: u32 = 2026;
+
 #[test]
 fn credential_extractor_calibration() {
     let probe = |label: &str, generated: &str, source: &str| {
         let generated_sections = split_sections(generated, DocKind::Resume);
         let source_sections = split_sections(source, DocKind::Resume);
-        let reference = credentials::reference_year(source, generated);
+        let reference = Some(CALIBRATION_REFERENCE_YEAR);
         let supported = credentials::supported_years(source, reference);
         let years = credentials::inflated_years_claims(&generated_sections, source, reference);
         let certs = credentials::unsupported_certs(&generated_sections, source);
@@ -6602,11 +6623,13 @@ fn credential_extractor_calibration() {
     };
 
     println!("\n── truthful documents (every finding here is a FALSE POSITIVE) ──");
+    let truthful = truthful_documents();
     let mut fp = (0, 0, 0, 0);
     let mut extracts_tenure: BTreeSet<&str> = BTreeSet::new();
     let mut extracts_certification: BTreeSet<&str> = BTreeSet::new();
     let mut extracts_institution: BTreeSet<&str> = BTreeSet::new();
-    for (label, generated, source) in truthful_documents() {
+    let mut by_value_false_positives: BTreeSet<&str> = BTreeSet::new();
+    for (label, generated, source) in &truthful {
         let m = probe(label, generated, source);
         fp = (
             fp.0 + m.flagged.0,
@@ -6622,6 +6645,9 @@ fn credential_extractor_calibration() {
         }
         if m.extracted.2 {
             extracts_institution.insert(label);
+        }
+        if m.flagged.2 > 0 {
+            by_value_false_positives.insert(label);
         }
     }
 
@@ -6642,7 +6668,7 @@ fn credential_extractor_calibration() {
     println!(
         "\nFALSE POSITIVES over {} truthful documents: years={} certs={} \
          edu_by_value={} edu_by_absence={}\n",
-        truthful_documents().len(),
+        truthful.len(),
         fp.0,
         fp.1,
         fp.2,
@@ -6694,11 +6720,17 @@ fn credential_extractor_calibration() {
          quality panel on a résumé that is fine; re-open the tier decision before \
          loosening this"
     );
-    // …and the rejected one, pinned at the number that rejected it. Not `> 0`:
-    // a range would let the value comparison quietly get worse while still
-    // "failing as expected".
+    // …and the rejected one, pinned to the SPECIFIC fixture that rejected it —
+    // not a corpus-wide count. A count trips on any unrelated truthful fixture
+    // whose institution also happens to translate, and points a reader at this
+    // design decision instead of at their new fixture; a hand-written
+    // membership list (the same pattern the three `extracts_*` sets above use)
+    // keeps its meaning as the corpus grows.
     assert_eq!(
-        fp.2, 1,
+        by_value_false_positives,
+        ["de_translated_institution"]
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
         "the by-VALUE institution comparison is recorded as producing exactly one false \
          positive on this corpus (the translated institution). If that changed, the \
          reason A2c ships as an absence check needs restating, not silently updating"
@@ -6719,7 +6751,11 @@ const EN_SOURCE_FOUR_YEARS: &str = "Jane Doe\n\n\
 
 /// The credential family's thresholds, pinned like every other named `const` in
 /// this module. A silently-loosened threshold is how a validator stops
-/// validating — and two of these five bound a CRITICAL.
+/// validating — and NONE of these eight bounds the sole CRITICAL code path
+/// (`factual.unsourced_certification`'s acronym arm, gated by the curated
+/// 23-entry list and a word-boundary check, not a numeric threshold): all
+/// eight bound a WARNING instead — tenure, or the certification issuer-phrase
+/// arm.
 #[test]
 fn credential_thresholds_are_pinned() {
     // One year, because a year column carries no months: `2018 - 2021` is
@@ -7400,6 +7436,72 @@ fn a_degree_token_counts_as_education_when_the_institution_has_no_marker_word() 
     );
 }
 
+/// A `Certified Scrum Master` credential is not a Master's DEGREE — reading it
+/// as one lets a source with no education section at all satisfy
+/// `source_has_education`, which silences the whole institution-invention
+/// check for a document that invented one whole.
+///
+/// Mutation check: drop the "scrum master" exclusion from `names_a_degree`
+/// and this goes red — the invented `TU Berlin` stops being reported.
+#[test]
+fn a_scrum_master_credential_is_not_a_masters_degree() {
+    let source = "Jane Doe\n\nCERTIFICATIONS\n\nCertified Scrum Master\n\n\
+         EXPERIENCE\n\nBackend Engineer | Acme | 2019 - Present\n\
+         - Built the ledger service\n";
+    let generated = "Jane Doe\n\nEDUCATION\n\nBSc Computer Science, TU Berlin, 2014 - 2018\n";
+    assert!(
+        codes(&report_for(generated, source, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_UNSOURCED_INSTITUTION),
+        "the source names no education at all; a Scrum Master credential must not spare an \
+         invented institution"
+    );
+}
+
+/// The same invented institution named on two Education lines is one finding,
+/// the same rule [`credentials::inflated_years_claims`] and
+/// [`credentials::unsupported_certs`] already apply to their own duplicates.
+///
+/// Mutation check: drop the dedup filter from `unsupported_institutions` and
+/// this goes red — the same `TU Berlin` is reported twice.
+#[test]
+fn an_institution_named_twice_is_reported_once() {
+    let source = "Jane Doe\n\nEXPERIENCE\n\nBackend Engineer | Acme | 2019 - Present\n\
+         - Built the ledger service\n";
+    let generated = "Jane Doe\n\nEDUCATION\n\n\
+         BSc Computer Science, TU Berlin, 2014 - 2018\n\
+         MSc Software Engineering, TU Berlin, 2018 - 2020\n";
+    let generated_sections = split_sections(generated, DocKind::Resume);
+    let source_sections = split_sections(source, DocKind::Resume);
+    let found =
+        credentials::unsupported_institutions(&generated_sections, source, &source_sections);
+    assert_eq!(
+        found.len(),
+        1,
+        "the same institution named twice is one invention, not two: {found:?}"
+    );
+}
+
+/// The institution arm is skipped for a LETTER — a letter has no education
+/// section to read, so naming one there must never fire
+/// `factual.unsourced_institution`, however unsourced the school.
+///
+/// Without this, `credentials::validate`'s `ctx.input.doc_kind == DocKind::Resume`
+/// gate could be deleted and every OTHER letter test in this file would still
+/// pass, which is a gate no test actually pins.
+#[test]
+fn a_letter_naming_an_institution_is_never_checked_for_one() {
+    let source = "Jane Doe\n\nEXPERIENCE\n\nBackend Engineer | Acme | 2019 - Present\n\
+         - Built the ledger service\n";
+    let generated = "Dear Hiring Manager,\n\n\
+         I have since built payment platforms.\n\n\
+         EDUCATION\n\nBSc Computer Science, TU Berlin, 2014 - 2018\n\n\
+         Sincerely,\nJane Doe\n";
+    silent(
+        &letter_report_for(generated, source, EN_JOB_AD),
+        FACTUAL_UNSOURCED_INSTITUTION,
+    );
+}
+
 /// A summary sentence, as this repo's own truthful fixtures actually write one.
 ///
 /// None of the first six carries an experience word, and an inflated résumé
@@ -7588,7 +7690,7 @@ fn a_numeric_month_after_an_opener_still_reads_as_an_open_span() {
 /// adjacent. Seven of seven fired once adjacency alone was the rule.
 ///
 /// A real certification names a role its holder is certified to fill, so the
-/// claims side requires one within `CERT_ROLE_NOUN_WINDOW_CHARS`.
+/// claims side requires one within `CERT_ROLE_NOUN_WINDOW_TOKENS`.
 ///
 /// Mutation check: drop `names_a_certified_role` from the claims arm and the
 /// whole first loop goes red.
@@ -7671,6 +7773,33 @@ fn a_summary_sentence_about_a_system_is_not_a_tenure_claim() {
     }
 }
 
+/// A DERIVATIONAL noun built on a role noun is not the role itself:
+/// `architecture` contains `architect`, `engineering` contains `engineer`,
+/// `expertise` contains `expert` — none of them name a PERSON, and a bare
+/// `contains` used to let all three satisfy `names_a_role` on the SUBJECT
+/// test, which is exactly the register that test was built to reject (see the
+/// doc above).
+///
+/// Mutation check: revert `role_noun_matches` to `t.contains(role)` and every
+/// line here goes red.
+#[test]
+fn a_derivational_noun_does_not_name_the_role_it_derives_from() {
+    for sentence in [
+        "Rebuilt a platform architecture with 15 years of accumulated technical debt.",
+        "Modernised the release engineering practice with 12 years of accumulated scripts.",
+        "Deep expertise with 15 years of undocumented legacy quirks.",
+    ] {
+        let doc = format!("Jane Doe\n\nSUMMARY\n\n{sentence}\n");
+        let claims = credentials::years_claims(&split_sections(&doc, DocKind::Resume));
+        assert!(
+            claims.is_empty(),
+            "a derivational noun is not a role, so this is not a tenure claim: {sentence} \
+             (read {:?})",
+            claims.iter().map(|c| c.years).collect::<Vec<_>>()
+        );
+    }
+}
+
 /// The subject may be a two-word job title, and the head noun comes last in
 /// some languages and first in others.
 #[test]
@@ -7727,6 +7856,32 @@ fn a_vendor_term_is_not_a_credential_however_the_sentence_ends() {
                 .contains(&FACTUAL_UNSOURCED_CREDENTIAL),
             "{credential} names the role it certifies and must be reported"
         );
+    }
+}
+
+/// A derivational noun built on a [`credentials::ROLE_NOUNS`] entry is NOT the
+/// role itself: `architecture` contains `architect`, `engineering` contains
+/// `engineer`, `expertise` contains `expert` — none of them name a person, and
+/// a bare `contains` used to let all three satisfy `names_a_role` on the
+/// certification arm's role-noun window, turning an ordinary sentence about a
+/// PRODUCT or a PRACTICE into an invented credential.
+///
+/// Mutation check: revert `role_noun_matches` to `t.contains(role)` and every
+/// line here goes red.
+#[test]
+fn a_derivational_noun_is_not_a_credentialed_role_either() {
+    for line in [
+        "- Wrote the AWS Certified cloud architecture guide for new hires",
+        "- Ran the AWS Certified release engineering runbook for the team",
+        "- Documented the AWS Certified support expertise wiki for on-call",
+    ] {
+        let generated = format!(
+            "Jane Doe\n\nEXPERIENCE\n\n\
+             Platform Engineer | Acme Payments | 2019 - Present\n{line}\n"
+        );
+        let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+        silent(&report, FACTUAL_UNSOURCED_CERTIFICATION);
+        silent(&report, FACTUAL_UNSOURCED_CREDENTIAL);
     }
 }
 
@@ -7809,4 +7964,54 @@ fn a_certification_named_in_both_forms_is_reported_once_by_its_stronger_arm() {
         codes(&report)
     );
     silent(&report, FACTUAL_UNSOURCED_CREDENTIAL);
+}
+
+/// Two DIFFERENT acronyms sharing an issuer are two findings, not one.
+///
+/// `CKA` and `CKS` both key to `kubernetes` (the issuer, not the credential),
+/// and deduping on that shared key alone silently dropped the second invented
+/// certification — the user fixed CKA and shipped CKS untouched. Same shape
+/// for `CCNA`/`CCNP` on `cisco`.
+///
+/// Mutation check: dedup on `keys.first()` (the issuer key) again, for every
+/// arm, and the `len()` assertion drops to 1.
+#[test]
+fn two_different_acronyms_from_one_issuer_are_two_findings() {
+    for (first, second) in [("CKA", "CKS"), ("CCNA", "CCNP")] {
+        let generated = format!("Jane Doe\n\nCERTIFICATIONS\n\n{first}\n{second}\n");
+        let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+        let evidence: Vec<&str> = fired(&report, FACTUAL_UNSOURCED_CERTIFICATION)
+            .iter()
+            .filter_map(|i| i.evidence.as_deref())
+            .collect();
+        assert_eq!(
+            evidence.len(),
+            2,
+            "{first} and {second} are two distinct invented certifications; report carried {:?}",
+            codes(&report)
+        );
+        assert!(evidence.contains(&first) && evidence.contains(&second));
+    }
+}
+
+/// [`SPELLED_NUMBERS`] repeats two spellings across language blocks
+/// (`quatorze`: French AND Portuguese; `tres`: Spanish AND Portuguese) — both
+/// map to the same value in each case, so the repeat is harmless for what
+/// `YEARS_RE` matches, but only once the word list is actually deduplicated.
+///
+/// Mutation check: sort by `Reverse(len)` alone before deduping (the bug
+/// `spelled_number_words` replaced) and this goes red — the two repeats above
+/// are no longer adjacent once grouped by LENGTH instead of by VALUE, so
+/// `Vec::dedup` (consecutive-only) misses them.
+#[test]
+fn the_spelled_number_vocabulary_has_no_duplicate_spelling() {
+    let words = credentials::spelled_number_words();
+    let mut sorted = words.clone();
+    sorted.sort_unstable();
+    let mut deduped = sorted.clone();
+    deduped.dedup();
+    assert_eq!(
+        sorted, deduped,
+        "a spelling repeats in the alternation: {words:?}"
+    );
 }
