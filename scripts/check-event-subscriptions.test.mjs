@@ -383,7 +383,9 @@ describe('violations', () => {
   });
 
   it('rejects a route-scoped entry whose note explains nothing', () => {
-    const lazy = { ...ok, f5: { mount: 'route-scoped', note: 'todo' } };
+    // A valid hash keeps this isolated to the note-length concern — see the
+    // hash-presence block below for the separate missing-hash check.
+    const lazy = { ...ok, f5: { mount: 'route-scoped', hash: hashBytes('x'), note: 'todo' } };
     const problems = violations(lazy, hooks, subs);
 
     expect(problems).toHaveLength(1);
@@ -398,6 +400,45 @@ describe('violations', () => {
     };
 
     expect(violations(typo, hooks, subs)[0]).toContain('f5');
+  });
+
+  // ── The hash-presence hole (found reviewing #1036) ────────────────────────
+  // staleNoteEntries only checks entries that HAVE a hash, so a route-scoped
+  // entry that omits the key never goes stale — permanently, silently. These
+  // prove violations() catches the omission itself, independent of staleness.
+
+  it('rejects a route-scoped entry with no hash — its note could never go stale', () => {
+    const noHash = {
+      ...ok,
+      f5: { mount: 'route-scoped', note: 'a note long enough to pass the length test' },
+    };
+    const problems = violations(noHash, hooks, subs);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('f5');
+    expect(problems[0]).toContain('hash');
+  });
+
+  it('rejects a route-scoped entry whose hash is not a valid 12-hex-char value', () => {
+    const badHash = {
+      ...ok,
+      f5: {
+        mount: 'route-scoped',
+        hash: 'not-a-hash!!',
+        note: 'a note long enough to pass the length test',
+      },
+    };
+    const problems = violations(badHash, hooks, subs);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('f5');
+  });
+
+  it('does not require a hash for an always-mounted entry', () => {
+    // `ok` is every entry at mount: 'always' with no hash at all — this is
+    // the deliberate exemption, proven by staying green rather than by a
+    // special case bolted onto the assertion.
+    expect(violations(ok, hooks, subs)).toEqual([]);
   });
 
   // ── The vacuity guards ────────────────────────────────────────────────────

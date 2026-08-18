@@ -586,6 +586,27 @@ export function violations(
     );
   }
 
+  // Vacuity hole (found reviewing #1036): staleNoteEntries only looks at
+  // entries that HAVE a hash, so a route-scoped entry that omits the key
+  // skips the tripwire below forever — silently, since nothing else requires
+  // the key to be present. Checked here, ahead of staleness, so a missing or
+  // malformed hash is reported as its own violation instead of quietly
+  // reading as "nothing to report". `always`-mounted entries stay exempt:
+  // their note is a structural claim about WHERE the file is called from
+  // (true by construction of the call site), not a description of what
+  // navigating away costs, so there is nothing for a content hash to police.
+  const missingHash = Object.entries(inventory)
+    .filter(([, e]) => e.mount === 'route-scoped' && !/^[0-9a-f]{12}$/.test(e.hash ?? ''))
+    .map(([f]) => f);
+  if (missingHash.length > 0) {
+    problems.push(
+      'A route-scoped entry must carry a `hash` (12 hex chars, from hashBytes()) so its ' +
+        'note goes stale when the subscriber file changes — without one the tripwire below ' +
+        'never fires, no matter how far the file drifts:\n' +
+        missingHash.map((f) => `    ${f}`).join('\n')
+    );
+  }
+
   // The tripwire. A note is a claim about the code at a specific point in
   // time; a changed file invalidates that claim until a human re-reads it.
   // This fires on ANY byte change to the subscriber file — including a pure
