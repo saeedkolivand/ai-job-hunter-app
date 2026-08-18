@@ -283,6 +283,35 @@ pub enum SectionKind {
 /// experience), which is what makes them unconditional: no other section word
 /// on the same heading can outrank them. The BARE word for "experience" is not
 /// here — it is ambiguous, see [`AMBIGUOUS_EXPERIENCE_HEADINGS`].
+/// Headings that contain an EXPERIENCE stem but unambiguously name an
+/// EDUCATION section, checked BEFORE the experience test so the substring
+/// cannot win.
+///
+/// Found by sweeping every term in the TS `SECTION_LEXICON` through this
+/// classifier: "Akademischer Werdegang" — a standard German heading for an
+/// academic record — contains `werdegang` and so classified as Experience.
+/// That is the expensive direction, not a cosmetic mislabel: prose under an
+/// Experience heading reaches [`extract_evidence`]'s role arm, so degree
+/// entries became work bullets under roles the candidate never held.
+///
+/// A closed list of exact phrases rather than a rule, deliberately. The
+/// general fix — letting [`AMBIGUOUS_EXPERIENCE_HEADINGS`] yield to education
+/// the way it yields to summary and skills — would overturn a documented
+/// decision (see that const: Education and Projects are excluded from the
+/// yield set on purpose, because "Project Experience" really is a work
+/// history in a consultant's CV). These three phrases have no such second
+/// reading, so they need no rule.
+///
+/// This also supersedes one line of [`EXPERIENCE_HEADINGS`]'s `werdegang`
+/// note, which accepted "Ausbildungswerdegang" landing on Experience as
+/// cheaper than losing the section. It now lands on Education, which is
+/// better than either.
+const EDUCATION_OVERRIDES_EXPERIENCE: &[&str] = &[
+    "akademischer werdegang",
+    "akademische laufbahn",
+    "ausbildungswerdegang",
+];
+
 const EXPERIENCE_HEADINGS: &[&str] = &[
     "employment",
     "work experience",
@@ -298,6 +327,10 @@ const EXPERIENCE_HEADINGS: &[&str] = &[
     "expérience professionnelle",
     "experiencia profesional",
     "esperienza professionale",
+    // Sweep finds: German "Praxiserfahrung" is not caught by the
+    // word-bounded `erfahrung` (it is a compound, not a separate word), and
+    // Dutch "Werkervaring" already is. Both name a work history outright.
+    "praxiserfahrung",
     "werkervaring",
     "experiência profissional",
 ];
@@ -353,6 +386,8 @@ const AMBIGUOUS_EXPERIENCE_HEADINGS: &[&str] = &[
     "expérience",
     "experiencia",
     "esperienza",
+    // Plural of the stem above; same ambiguity, so the same yield rules.
+    "esperienze",
     "experiência",
 ];
 const EDUCATION_HEADINGS: &[&str] = &[
@@ -360,6 +395,12 @@ const EDUCATION_HEADINGS: &[&str] = &[
     "academic",
     "ausbildung",
     "bildung",
+    // Sweep finds. German "Studium" and Italian "Istruzione" are the ordinary
+    // words for an education section in their markets and matched nothing;
+    // `istruzione` is the very heading `resume_conventions("it")` teaches the
+    // model to write.
+    "studium",
+    "istruzione",
     "opleiding",
 ];
 
@@ -443,7 +484,11 @@ pub fn classify_section(heading: &str) -> SectionKind {
     let skills = has(SKILLS_HEADINGS);
     let ambiguous_experience =
         has(AMBIGUOUS_EXPERIENCE_HEADINGS) || has_word(EXPERIENCE_HEADINGS_WORD_BOUNDED);
-    if has(EXPERIENCE_HEADINGS) || (ambiguous_experience && !summary && !skills) {
+    // Before the experience test, not after: these carry an experience
+    // SUBSTRING, so anything downstream of that test is unreachable for them.
+    if has(EDUCATION_OVERRIDES_EXPERIENCE) {
+        SectionKind::Education
+    } else if has(EXPERIENCE_HEADINGS) || (ambiguous_experience && !summary && !skills) {
         SectionKind::Experience
     } else if has(EDUCATION_HEADINGS) || has_word(EDUCATION_HEADINGS_WORD_BOUNDED) {
         SectionKind::Education
@@ -866,3 +911,183 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod lexicon_parity {
+    use super::{classify_section, SectionKind};
+
+    /// Every heading term the renderer's `SECTION_LEXICON` knows, swept
+    /// through this classifier.
+    ///
+    /// The two sides answer the same question from different data — the TS
+    /// lexicon drives `detectSections`, this drives `extract_evidence` — and
+    /// nothing compared them until a sweep found German "Akademischer
+    /// Werdegang" classifying as **Experience**, because it contains
+    /// `werdegang`. That is the expensive direction: prose under an Experience
+    /// heading reaches `extract_evidence`'s role arm, so degree entries became
+    /// work bullets under roles the candidate never held.
+    ///
+    /// What this pins, in order of what each costs:
+    ///
+    /// 1. **No term may land in another section's bucket.** This catches the
+    ///    class of bug above and has zero exceptions.
+    /// 2. **The known misses are enumerated, not tolerated in bulk.** A term
+    ///    falling to `Other` is a coverage gap, not a misfile — the
+    ///    section-specific checks simply do not run. Listing all 40 turns a
+    ///    silent gap into a reviewed inventory: adding a lexicon term without
+    ///    teaching this classifier fails here, and FIXING one fails here too,
+    ///    so the list can only shrink deliberately.
+    ///
+    /// The list is dominated by Summary and Skills synonyms in fr/es/it/nl/pt
+    /// (`objectif`, `conoscenze`, `samenvatting`). Closing them is additive
+    /// but not free: every entry in the heading consts is a SUBSTRING test
+    /// against real headings, and `expertise`, `portfolio` and `studi` have
+    /// second readings (Italian "studio" contains `studi`), so they need the
+    /// word-bounded treatment rather than a bare push. Left as a bounded,
+    /// visible task rather than a silent one.
+    const KNOWN_MISSES: &[&str] = &[
+        "à propos",
+        "abilità",
+        "aptitudes",
+        "competenties",
+        "conhecimentos",
+        "conocimientos",
+        "conoscenze",
+        "diplômes",
+        "doelstelling",
+        "educação",
+        "educación",
+        "éducation",
+        "educazione",
+        "ervaring",
+        "escolaridade",
+        "estudios",
+        "études",
+        "expertise",
+        "kennis",
+        "loopbaan",
+        "obiettivo",
+        "objectif",
+        "objetivo",
+        "onderwijs",
+        "over mij",
+        "parcours professionnel",
+        "portfolio",
+        "qualifications",
+        "résumé",
+        "resumen",
+        "resumo",
+        "riassunto",
+        "samenvatting",
+        "savoir-faire",
+        "sobre mí",
+        "sobre mim",
+        "sommario",
+        "studi",
+        "studie",
+        "über mich",
+    ];
+
+    /// `SectionKind` has no `Languages` variant, so a language heading has no
+    /// bucket of its own. Skills is the closest true answer and matches what
+    /// the résumé conventions already rely on — "Sprachkenntnisse" was
+    /// rejected as a German producer heading for exactly this reason.
+    /// Allowlisted explicitly rather than swept under the wrong-bucket rule,
+    /// so adding a `Languages` variant later has to come past this comment.
+    const LANGUAGES_CLASSIFY_AS_SKILLS: &[&str] = &["language skills", "sprachkenntnisse"];
+
+    fn expected(section: &str) -> Option<SectionKind> {
+        match section {
+            "Summary" => Some(SectionKind::Summary),
+            "Experience" => Some(SectionKind::Experience),
+            "Education" => Some(SectionKind::Education),
+            "Skills" => Some(SectionKind::Skills),
+            "Projects" => Some(SectionKind::Projects),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn every_renderer_lexicon_term_classifies_consistently() {
+        #[derive(serde::Deserialize)]
+        struct Case {
+            section: String,
+            term: String,
+        }
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../packages/prompts/src/fixtures/section-lexicon.json");
+        let raw = std::fs::read_to_string(&path).expect(
+            "read section-lexicon parity fixture              (packages/prompts/src/fixtures/section-lexicon.json)",
+        );
+        let cases: Vec<Case> =
+            serde_json::from_str(&raw).expect("parse section-lexicon parity fixture");
+        assert!(!cases.is_empty(), "the lexicon fixture must not be empty");
+
+        let mut unexpected_misses = Vec::new();
+        let mut fixed_misses = Vec::new();
+
+        for c in &cases {
+            let kind = classify_section(&c.term);
+            let known_miss = KNOWN_MISSES.contains(&c.term.as_str());
+
+            match expected(&c.section) {
+                Some(want) if kind == want => {
+                    if known_miss {
+                        fixed_misses.push(c.term.as_str());
+                    }
+                }
+                Some(_) if kind == SectionKind::Other => {
+                    if !known_miss {
+                        unexpected_misses.push(c.term.as_str());
+                    }
+                }
+                Some(want) => panic!(
+                    "{:?} term {:?} classifies as {kind:?}, not {want:?} — it landed in                      ANOTHER section's bucket, which MISFILES its content rather than                      merely skipping it",
+                    c.section, c.term
+                ),
+                None => assert!(
+                    kind == SectionKind::Other
+                        || LANGUAGES_CLASSIFY_AS_SKILLS.contains(&c.term.as_str()),
+                    "{:?} term {:?} has no bucket of its own but classified as {kind:?}",
+                    c.section,
+                    c.term
+                ),
+            }
+        }
+
+        assert!(
+            unexpected_misses.is_empty(),
+            "these lexicon terms classify as Other and are not in KNOWN_MISSES — either              teach the classifier or add them there with a reason: {unexpected_misses:?}"
+        );
+        assert!(
+            fixed_misses.is_empty(),
+            "these terms now classify correctly but are still listed in KNOWN_MISSES —              remove them, so the list can only shrink deliberately: {fixed_misses:?}"
+        );
+    }
+
+    /// The precedence exception stated as behaviour rather than list
+    /// membership: each of these carries an EXPERIENCE substring and must
+    /// still reach Education.
+    #[test]
+    fn education_headings_carrying_an_experience_stem_reach_education() {
+        for heading in [
+            "Akademischer Werdegang",
+            "akademische laufbahn",
+            "AUSBILDUNGSWERDEGANG",
+        ] {
+            assert_eq!(
+                classify_section(heading),
+                SectionKind::Education,
+                "{heading:?} names an academic record; classifying it Experience files                  degree entries as work bullets under roles the candidate never held"
+            );
+        }
+        // Control: the same stem WITHOUT an education qualifier is still a work
+        // history, so the exception must not have swallowed the rule.
+        assert_eq!(
+            classify_section("Beruflicher Werdegang"),
+            SectionKind::Experience
+        );
+        assert_eq!(classify_section("Werdegang"), SectionKind::Experience);
+    }
+}
