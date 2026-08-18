@@ -3034,7 +3034,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        31,
+        34,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES
@@ -3042,8 +3042,8 @@ fn code_table_is_complete_and_unique() {
         .filter(|(_, s)| *s == Severity::Critical)
         .count();
     assert_eq!(
-        criticals, 7,
-        "Criticals are deterministic factual/language/structure defects only — and          only ones whose remedy is a REGENERATE, since that is what `repair` does          with them. `ats.empty_section` is a Warning for exactly that reason."
+        criticals, 9,
+        "Criticals are deterministic factual/language/structure defects only, and every          one needs a RESOLUTION PATH or its run sits in needsReview forever: either a          REGENERATE (what `repair` does with a section-keyed finding — which is why          `ats.empty_section` is a Warning) or a Remove/Keep row in the review panel          (`report::FABRICATION_CODES`, which is how the two credential Criticals          clear, since `SectionKey` has no Certifications variant to regenerate)."
     );
 }
 
@@ -6250,16 +6250,40 @@ fn invented_documents() -> Vec<(&'static str, &'static str, &'static str)> {
     ]
 }
 
-/// **The measurement that has to happen before a severity is chosen.**
+/// The VALUE comparison A2c was specified as, run here rather than shipped:
+/// does any 4+ character non-numeric token of the institution appear in the
+/// source at all?
+///
+/// It lives in the test file because it is a REJECTED design, and the
+/// measurement that rejected it has to keep running — a rejection recorded only
+/// in a comment stops being true the moment someone re-derives the idea. See
+/// `institution_value_comparison_fires_on_a_correctly_translated_institution`.
+fn institution_absent_by_value(institution: &str, source: &str) -> bool {
+    let source_lower = source.to_lowercase();
+    let tokens: Vec<String> = institution
+        .split(|c: char| !c.is_alphanumeric())
+        .map(str::to_lowercase)
+        .filter(|t| t.chars().count() >= 4)
+        .filter(|t| !t.chars().all(|c| c.is_ascii_digit()))
+        .filter(|t| !credentials::names_an_institution(t))
+        .collect();
+    !tokens.is_empty() && !tokens.iter().any(|t| source_lower.contains(t.as_str()))
+}
+
+/// **The measurement that chose the severities, kept as a guard.**
 ///
 /// This repo has already shipped one false Critical on a truthful résumé, and a
 /// false Critical here is not a cosmetic miss: it blanks `keywordCoverage` and
-/// suppresses every alignment finding on a document that is fine. So each new
-/// extractor is run over every truthful document the repo owns FIRST, and the
-/// severities are picked from what this prints — not from what the checks are
-/// called.
+/// suppresses every alignment finding on a document that is fine. So each
+/// extractor was run over every truthful document the repo owns BEFORE it was
+/// wired into `validate_content`, and the tiers were picked from this table.
 ///
-/// Run with `cargo test --all-features credential_extractor_calibration -- --nocapture`.
+/// It still runs, and now asserts, because a printed table nobody checks is a
+/// comment: the zero false positives that made `factual.inflated_experience`
+/// and `factual.unsourced_certification` Critical have to keep being zero.
+///
+/// Run with `cargo test --all-features credential_extractor_calibration -- --nocapture`
+/// to read the table.
 #[test]
 fn credential_extractor_calibration() {
     let probe = |label: &str, generated: &str, source: &str| {
@@ -6274,7 +6298,11 @@ fn credential_extractor_calibration() {
             reference,
         );
         let certs = credentials::unsupported_certs(&generated_sections, source);
-        let by_value = credentials::institutions_absent_by_value(&generated_sections, source);
+        let by_value: Vec<(String, Option<String>)> =
+            credentials::institutions(&generated_sections)
+                .into_iter()
+                .filter(|(name, _)| institution_absent_by_value(name, source))
+                .collect();
         let by_absence =
             credentials::unsupported_institutions(&generated_sections, source, &source_sections);
         // The EXTRACTED spans are printed next to the FLAGGED ones on purpose.
@@ -6320,7 +6348,16 @@ fn credential_extractor_calibration() {
 
     println!("\n── documents carrying a known invention (recall) ──");
     for (label, generated, source) in invented_documents() {
-        probe(label, generated, source);
+        let (years, certs, _, by_absence) = probe(label, generated, source);
+        // Recall is asserted next to the false-positive budget on purpose: a
+        // check that fires on nothing scores a perfect zero above.
+        let found = match label {
+            "inflated_years" => years,
+            "invented_certification" => certs,
+            "invented_education" => by_absence,
+            other => panic!("unlabelled invention fixture: {other}"),
+        };
+        assert!(found > 0, "{label}: the planted invention was not reported");
     }
 
     println!(
@@ -6332,4 +6369,413 @@ fn credential_extractor_calibration() {
         fp.2,
         fp.3
     );
+
+    // The two SHIPPED Criticals, and the shipped Warning: absolute zero, which
+    // is the measurement their tier was chosen on.
+    assert_eq!(
+        (fp.0, fp.1, fp.3),
+        (0, 0, 0),
+        "a credential check fired on a truthful document — a Critical here blanks the \
+         quality panel on a résumé that is fine; re-open the tier decision before \
+         loosening this"
+    );
+    // …and the rejected one, pinned at the number that rejected it. Not `> 0`:
+    // a range would let the value comparison quietly get worse while still
+    // "failing as expected".
+    assert_eq!(
+        fp.2, 1,
+        "the by-VALUE institution comparison is recorded as producing exactly one false \
+         positive on this corpus (the translated institution). If that changed, the \
+         reason A2c ships as an absence check needs restating, not silently updating"
+    );
+}
+
+/// A source with a CLOSED career: two roles, 2016–2020, four years, and it
+/// states no tenure of its own. The allowance is therefore a pure date
+/// computation and cannot move with the calendar — which is what makes the
+/// boundary below an absolute number rather than a value derived from the same
+/// code the assertion is checking.
+const EN_SOURCE_FOUR_YEARS: &str = "Jane Doe\n\n\
+     EXPERIENCE\n\n\
+     Backend Developer | Globex Logistics | 2018 - 2020\n\
+     - Built the billing API in Python and PostgreSQL\n\n\
+     Junior Developer | Initrode | 2016 - 2018\n\
+     - Maintained the reporting jobs\n";
+
+/// The credential family's thresholds, pinned like every other named `const` in
+/// this module. A silently-loosened threshold is how a validator stops
+/// validating — and two of these five bound a CRITICAL.
+#[test]
+fn credential_thresholds_are_pinned() {
+    // One year, because a year column carries no months: `2018 - 2021` is
+    // anywhere from 24 to 47 months, and one year is exactly the amount by
+    // which subtracting the two numbers can understate the truth.
+    assert_eq!(credentials::CAREER_SPAN_SLACK_YEARS, 1);
+    assert_eq!(credentials::CLAIM_CONTEXT_CHARS, 40);
+    assert_eq!(credentials::MAX_PLAUSIBLE_TENURE_YEARS, 60);
+    assert_eq!(credentials::CERT_ISSUER_WINDOW_CHARS, 60);
+    assert_eq!(credentials::CERT_EVIDENCE_LINE_CHARS, 120);
+}
+
+fn summary_claiming(text: &str) -> String {
+    format!("Jane Doe\n\nSUMMARY\n\n{text}\n")
+}
+
+/// A2a positive: the audit's own example. Four years of dated employment, a
+/// summary claiming eight, and nothing in the source that says eight.
+#[test]
+fn a_tenure_the_source_dates_cannot_reach_is_critical_and_quotes_the_span() {
+    let report = report_for(
+        &summary_claiming("Backend engineer with 8+ years of experience in payments."),
+        EN_SOURCE_FOUR_YEARS,
+        EN_JOB_AD,
+        &[],
+    );
+    assert_eq!(
+        first_evidence(&report, FACTUAL_INFLATED_EXPERIENCE),
+        Some("8+ years"),
+        "the finding must fire and quote the span the document wrote; report carried {:?}",
+        codes(&report)
+    );
+    assert!(
+        !report.ok,
+        "an inflated tenure is Critical, so `ok` is false"
+    );
+}
+
+/// A2a boundary, anchored to an ABSOLUTE expected number rather than to the
+/// allowance the check itself computes.
+///
+/// The source covers 2016–2020: four years by date subtraction, five once
+/// `credentials::CAREER_SPAN_SLACK_YEARS` pays for the months a year column
+/// does not carry. So 5 is the last claim that passes and 6 is the first that
+/// fails — spelled out here, not computed, because a test that recomputes the
+/// boundary from the same constant passes however wrong the constant is.
+#[test]
+fn the_tenure_allowance_is_the_dated_span_plus_exactly_one_year() {
+    for (years, should_fire) in [(4, false), (5, false), (6, true), (9, true)] {
+        let report = report_for(
+            &summary_claiming(&format!(
+                "Backend engineer with {years} years of experience in payments."
+            )),
+            EN_SOURCE_FOUR_YEARS,
+            EN_JOB_AD,
+            &[],
+        );
+        assert_eq!(
+            codes(&report).contains(&FACTUAL_INFLATED_EXPERIENCE),
+            should_fire,
+            "a claim of {years} years against a 2016-2020 source (4 dated + 1 slack = 5 \
+             allowed) should {}fire; report carried {:?}",
+            if should_fire { "" } else { "not " },
+            codes(&report)
+        );
+    }
+}
+
+/// A2a negative, and the reason the rule is "exceeds" rather than "matches":
+/// a candidate who rounds DOWN has not fabricated anything.
+#[test]
+fn understating_a_tenure_is_never_a_fabrication() {
+    let report = report_for(
+        &summary_claiming("Backend engineer with 3 years of experience in payments."),
+        EN_SOURCE_FOUR_YEARS,
+        EN_JOB_AD,
+        &[],
+    );
+    silent(&report, FACTUAL_INFLATED_EXPERIENCE);
+}
+
+/// A2a negative: the source's own stated tenure is evidence even when its dates
+/// are shorter. A résumé that says "eight years" and only dates the last two
+/// roles is an ordinary résumé, not a fabrication.
+#[test]
+fn a_tenure_the_source_itself_states_is_supported_whatever_its_dates_cover() {
+    let source = format!("Jane Doe\n\nSUMMARY\n\nEight years in payments.\n{EN_SOURCE_FOUR_YEARS}");
+    let report = report_for(
+        &summary_claiming("Backend engineer with 8 years of experience in payments."),
+        &source,
+        EN_JOB_AD,
+        &[],
+    );
+    silent(&report, FACTUAL_INFLATED_EXPERIENCE);
+}
+
+/// A2a cross-language — the case this check exists to survive. English source,
+/// German output, the SAME number: a value comparison on words would see
+/// nothing in common, and a comparison on the number sees 8 = 8.
+#[test]
+fn a_german_tenure_generated_from_an_english_source_compares_on_the_number() {
+    let truthful = "Jana Mustermann\n\nPROFIL\n\nAcht Jahre Erfahrung im Zahlungsverkehr.\n";
+    let inflated = "Jana Mustermann\n\nPROFIL\n\nVierzehn Jahre Erfahrung im Zahlungsverkehr.\n";
+    let source = format!("Jane Doe\n\nSUMMARY\n\nEight years in payments.\n{EN_SOURCE_FOUR_YEARS}");
+
+    silent(
+        &report_for(truthful, &source, EN_JOB_AD, &[]),
+        FACTUAL_INFLATED_EXPERIENCE,
+    );
+    assert!(
+        codes(&report_for(inflated, &source, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_INFLATED_EXPERIENCE),
+        "a German claim of fourteen years against an English source stating eight must \
+         still be caught — the number is what crosses the language boundary"
+    );
+}
+
+/// A2a mutation check: delete the FEATURE, not the constant.
+///
+/// Without the experience-context requirement, every `<number> years` in the
+/// document is a tenure claim — and an ordinary bullet about a 20-year-old
+/// system becomes a Critical. This assertion is what goes red if the context
+/// gate is removed, so it is the gate's proof of work rather than a second
+/// reading of it.
+#[test]
+fn a_number_of_years_with_no_experience_context_is_not_a_tenure_claim() {
+    let generated = "Jane Doe\n\nEXPERIENCE\n\n\
+         Backend Developer | Globex Logistics | 2018 - 2020\n\
+         - Replaced a 20 year old COBOL settlement batch with a Rust service\n\
+         - Cut the 12 years of accumulated schema drift down to one migration\n";
+    let report = report_for(generated, EN_SOURCE_FOUR_YEARS, EN_JOB_AD, &[]);
+    silent(&report, FACTUAL_INFLATED_EXPERIENCE);
+}
+
+/// The tenure check reads the system clock — once, to close an open-ended
+/// "2019 – Present" — and this pins what happens when the clock cannot be
+/// trusted.
+///
+/// A clock reading EARLIER than a year the documents themselves name is wrong,
+/// and using it would shrink the allowance into an accusation. The span
+/// evidence is dropped instead. Both halves are asserted, because a test that
+/// only shows silence cannot tell "the guard worked" from "nothing ever fires":
+/// the same document without the future year reports the same claim.
+#[test]
+fn a_year_the_clock_has_not_reached_drops_the_span_evidence_rather_than_shrinking_it() {
+    let source = "Jane Doe
+
+EXPERIENCE
+
+         Backend Developer | Globex Logistics | 2019 - Present
+         - Built the billing API in Python and PostgreSQL
+";
+    let with_future_year = format!(
+        "{source}- Signed the platform support contract through 2099
+"
+    );
+    let generated = summary_claiming("Backend engineer with 20 years of experience in payments.");
+
+    assert!(
+        codes(&report_for(&generated, source, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_INFLATED_EXPERIENCE),
+        "control: against a 2019-Present source, twenty years is an inflation"
+    );
+    silent(
+        &report_for(&generated, &with_future_year, EN_JOB_AD, &[]),
+        FACTUAL_INFLATED_EXPERIENCE,
+    );
+}
+
+/// A2b positive: a certification the source never names, quoted whole.
+#[test]
+fn a_certification_the_source_never_names_is_critical() {
+    let generated = "Jane Doe\n\nCERTIFICATIONS\n\n\
+         AWS Certified Solutions Architect - Professional\n";
+    let report = report_for(generated, EN_SOURCE, EN_JOB_AD, &[]);
+    assert_eq!(
+        first_evidence(&report, FACTUAL_UNSOURCED_CERTIFICATION),
+        Some("AWS Certified Solutions Architect - Professional"),
+        "the finding must fire and quote the entry; report carried {:?}",
+        codes(&report)
+    );
+    assert!(!report.ok);
+}
+
+/// A2b: an acronym is checked against the source case-INSENSITIVELY, so a
+/// source that writes it in a skills line still supports the claim — while the
+/// generated side only reads it as a certification in caps.
+#[test]
+fn a_certification_acronym_is_supported_by_any_casing_in_the_source() {
+    let generated = "Jane Doe\n\nCERTIFICATIONS\n\nPMP\n";
+    let with_source = format!("{EN_SOURCE}\n\nCERTIFICATIONS\n\npmp (2021)\n");
+    silent(
+        &report_for(generated, &with_source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_CERTIFICATION,
+    );
+    assert!(
+        codes(&report_for(generated, EN_SOURCE, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+        "without the source entry the same document must be reported — otherwise the \
+         assertion above passes because nothing ever fires"
+    );
+}
+
+/// A2b negative, and the one that decides whether this check can ship at all:
+/// a source that HOLDS the certification must clear a reworded restatement of
+/// it.
+#[test]
+fn a_reworded_certification_the_source_holds_is_not_reported() {
+    let source = "Jane Doe\n\nCERTIFICATIONS\n\n\
+         AWS Certified Solutions Architect - Associate\n\
+         Certified Kubernetes Administrator (CKA)\n";
+    let generated = "Jane Doe\n\nCERTIFICATIONS\n\nAWS Certified Solutions Architect\nCKA\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_CERTIFICATION,
+    );
+}
+
+/// A2b cross-language: German output, English source, same issuer. The
+/// comparison is on the ISSUER KEY, which is a proper noun in both languages —
+/// `Zertifizierter` and `Certified` never have to match each other.
+#[test]
+fn a_german_certification_generated_from_an_english_source_matches_on_the_issuer() {
+    let source = "Jane Doe\n\nCERTIFICATIONS\n\nAWS Certified Solutions Architect - Associate\n";
+    let truthful =
+        "Jana Mustermann\n\nZERTIFIZIERUNGEN\n\nZertifizierter AWS Solutions Architect\n";
+    let invented = "Jana Mustermann\n\nZERTIFIZIERUNGEN\n\nZertifizierter Cisco Netzwerkexperte\n";
+
+    silent(
+        &report_for(truthful, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_CERTIFICATION,
+    );
+    assert!(
+        codes(&report_for(invented, source, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+        "a Cisco certification on an AWS-only source is an invention in any language"
+    );
+}
+
+/// A2b mutation check: delete the FEATURE — the issuer requirement — and
+/// "certified" on its own becomes a credential.
+///
+/// A bullet about certifying a release, or about a certified data centre, is
+/// ordinary résumé prose. It must produce nothing, and this is the assertion
+/// that goes red if the "an issuer must sit near the certification word" rule
+/// is dropped in favour of matching the word alone.
+#[test]
+fn a_certification_word_with_no_issuer_near_it_is_not_a_credential() {
+    let generated = "Jane Doe\n\nEXPERIENCE\n\n\
+         Backend Developer | Globex Logistics | 2018 - 2020\n\
+         - Certified the settlement release each Thursday against the ISO checklist\n\
+         - Moved the ledger into a certified data centre in Frankfurt\n";
+    let report = report_for(generated, EN_SOURCE_FOUR_YEARS, EN_JOB_AD, &[]);
+    silent(&report, FACTUAL_UNSOURCED_CERTIFICATION);
+}
+
+/// A2c positive: the source has no education section and names no institution
+/// anywhere, and the output invented one. A Warning, not a Critical — see
+/// `credentials::unsupported_institutions` for what was measured.
+#[test]
+fn an_education_section_invented_onto_a_source_that_has_none_is_a_warning() {
+    let generated =
+        "Jane Doe\n\nEDUCATION\n\nMSc Computer Science, Stanford University, 2012 - 2014\n";
+    let report = report_for(generated, EN_SOURCE_FOUR_YEARS, EN_JOB_AD, &[]);
+    assert_eq!(
+        first_evidence(&report, FACTUAL_UNSOURCED_INSTITUTION),
+        Some("Stanford University"),
+        "the finding must fire and quote the institution, never the degree; report \
+         carried {:?}",
+        codes(&report)
+    );
+    // The SEVERITY of this finding, not `report.ok` — the same document also
+    // drops both of the source's roles, so the report is blocked for a reason
+    // that has nothing to do with education. Asserting `ok` here would pass on
+    // the strength of the wrong Critical.
+    assert_eq!(
+        fired(&report, FACTUAL_UNSOURCED_INSTITUTION)[0].severity,
+        Severity::Warning,
+        "an invented institution is advisory: the value comparison that would justify a \
+         Critical measured a false positive on truthful cross-language output"
+    );
+}
+
+/// A2c negative and mutation check in one: the source DOES name a place of
+/// study, so nothing is reported however different the institution is.
+///
+/// Drop the "the source names no institution at all" guard and this goes red,
+/// because `TU Berlin` and `Stanford University` share nothing — which is
+/// precisely the value comparison that was rejected.
+#[test]
+fn an_institution_is_never_compared_by_value_against_a_source_that_has_one() {
+    let generated =
+        "Jane Doe\n\nEDUCATION\n\nMSc Computer Science, Stanford University, 2012 - 2014\n";
+    let report = report_for(generated, EN_SOURCE, EN_JOB_AD, &[]);
+    silent(&report, FACTUAL_UNSOURCED_INSTITUTION);
+}
+
+/// A2c cross-language, and the measurement that scoped the check down: the
+/// German rendering of an English source's institution is CORRECT output, and
+/// the value comparison calls it an invention.
+///
+/// Both halves are asserted. The shipped check stays silent; the rejected one
+/// fires — so this fails if the value comparison is ever re-adopted, and also
+/// if it silently stops being wrong (in which case the scoping decision is the
+/// thing to revisit, deliberately).
+#[test]
+fn institution_value_comparison_fires_on_a_correctly_translated_institution() {
+    let source = "Jane Doe\n\nEDUCATION\n\n\
+         BSc Computer Science, Technical University of Munich, 2014 - 2018\n";
+    let generated = "Jana Mustermann\n\nAUSBILDUNG\n\n\
+         BSc Informatik, Technische Universität München, 2014 - 2018\n";
+
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_INSTITUTION,
+    );
+    assert!(
+        institution_absent_by_value("Technische Universität München", source),
+        "the rejected value comparison is recorded as firing here; if it no longer does, \
+         the reason A2c ships as an absence check has changed and must be restated"
+    );
+}
+
+/// A letter is checked for tenure and certifications too — that is where "I
+/// bring 12 years of experience" actually gets written — but the JOB AD may
+/// never vouch for either.
+///
+/// The ad here demands ten years and an AWS certification. Both are statements
+/// about the ROLE; letting them count as evidence would make every posting its
+/// own alibi for a letter that echoes it back.
+#[test]
+fn a_letters_credentials_are_measured_against_the_resume_never_the_posting() {
+    let ad = "We need 10+ years of experience and an AWS Certified Solutions Architect.";
+    let letter = "Jane Doe\n\nDear Hiring Manager,\n\n\
+         I bring 10 years of experience to this role, and I am an AWS Certified Solutions \
+         Architect.\n\nBest regards,\nJane Doe\n";
+    let report = letter_report_for(letter, EN_SOURCE_FOUR_YEARS, ad);
+    let fired = codes(&report);
+    assert!(
+        fired.contains(&FACTUAL_INFLATED_EXPERIENCE),
+        "the posting's own '10+ years' must not vouch for the letter; got {fired:?}"
+    );
+    assert!(
+        fired.contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+        "the posting's own certification requirement must not vouch for the letter; got \
+         {fired:?}"
+    );
+}
+
+/// Both clean fixtures are pinned to a COMPLETELY empty report elsewhere in
+/// this file, which already covers the credential family there. This pins the
+/// other end: the paraphrased pair, whose sources state a tenure in words and
+/// whose output re-states it in different ones.
+#[test]
+fn the_paraphrased_fixtures_credentials_survive_being_reworded() {
+    let de = validate_content(&ContentInput {
+        generated: DE_PARAPHRASED,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    let en = report_for(EN_PARAPHRASED, EN_SOURCE, EN_JOB_AD, &[]);
+    for report in [&de, &en] {
+        for code in [
+            FACTUAL_INFLATED_EXPERIENCE,
+            FACTUAL_UNSOURCED_CERTIFICATION,
+            FACTUAL_UNSOURCED_INSTITUTION,
+        ] {
+            silent(report, code);
+        }
+    }
 }

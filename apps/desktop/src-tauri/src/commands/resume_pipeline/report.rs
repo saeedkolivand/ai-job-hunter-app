@@ -31,11 +31,22 @@ use crate::validate::Severity;
 /// ABSENCE — "keep" and "remove" are both meaningless for it, and listing it in
 /// a Remove/Keep panel would ask a question with no correct answer. It still
 /// appears in the report as a Critical.
+/// The three credential codes are here for the same reason and one more: a
+/// Critical that is NOT listed here keeps its run in `needsReview` forever
+/// ([`still_needs_review`]), and neither of the two credential Criticals has a
+/// section the repair loop could regenerate — `SectionKey` has no
+/// Certifications variant, and an inflated tenure lives in the summary the
+/// model just wrote. Both name a span the user can look at and decide about, so
+/// the review panel is their resolution path; omitting them would strand the
+/// run with a finding and no action.
 const FABRICATION_CODES: &[&str] = &[
     crate::validate::content::FACTUAL_UNSOURCED_METRIC,
     crate::validate::content::FACTUAL_UNSUPPORTED_DATE,
     crate::validate::content::FACTUAL_UNSOURCED_TERM,
     crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
+    crate::validate::content::FACTUAL_INFLATED_EXPERIENCE,
+    crate::validate::content::FACTUAL_UNSOURCED_CERTIFICATION,
+    crate::validate::content::FACTUAL_UNSOURCED_INSTITUTION,
 ];
 
 /// djb2, byte-for-byte the renderer's `hashText`.

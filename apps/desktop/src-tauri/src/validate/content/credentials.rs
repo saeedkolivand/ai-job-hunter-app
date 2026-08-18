@@ -41,7 +41,10 @@ use regex::Regex;
 use crate::documents::evidence::{is_open_ended, years_in, SectionKind};
 use crate::export::types::LineKind;
 
-use super::{contains_phrase, Section};
+use super::{
+    contains_phrase, issue, Analysis, ContentIssue, DocKind, Section, FACTUAL_INFLATED_EXPERIENCE,
+    FACTUAL_UNSOURCED_CERTIFICATION, FACTUAL_UNSOURCED_INSTITUTION,
+};
 
 // ── A2a: years of experience ────────────────────────────────────────────────
 
@@ -293,31 +296,53 @@ pub(super) fn years_claims(sections: &[Section]) -> Vec<YearsClaim> {
     out
 }
 
-/// The year every open-ended span in the source is measured against.
+/// The year an open-ended span in the source is measured against — `None` when
+/// there is no trustworthy answer.
 ///
-/// `max(clock, the latest year either document names)`. The clock is the ONE
-/// non-hermetic input in this file and it is bounded on purpose: a machine
-/// whose clock is behind degrades to the documents' own evidence instead of
-/// shrinking the allowance, and a clock that is ahead only ever widens it. Both
-/// directions of error therefore SPARE a claim.
-pub(super) fn reference_year(source: &str, generated: &str) -> u32 {
+/// This is the ONE non-hermetic input in the file, and `factual.rs`'s
+/// neighbouring date check is proud of never reading the clock at all. It has
+/// to be read here: "2021 – Present" is what almost every résumé's current role
+/// says, and without a today there is no span to compare a tenure against, so a
+/// clock-free version of this check would be inert on the majority of real
+/// documents.
+///
+/// **Self-validating rather than trusted.** A clock reading EARLIER than a year
+/// the documents themselves name is wrong — a dead CMOS battery, a fresh VM
+/// before its first NTP sync — and using it would shrink the allowance and
+/// manufacture the exact false Critical this family exists to avoid (a source
+/// dated "2016 – Present" with a clock stuck at 1970 makes a truthful "8 years"
+/// read as an eight-fold exaggeration). So the clock is checked against the
+/// documents and DISCARDED when it fails, taking the span evidence with it: the
+/// check then falls back on what the source states in words, or goes quiet.
+///
+/// A clock that is AHEAD needs no guard — it only ever widens the allowance.
+/// The cost of the rule is a document carrying a future year (a typo, a
+/// start-date-in-advance entry), which reads as an untrustworthy clock and goes
+/// quiet. A missed check, which is this family's chosen direction of error.
+pub(super) fn reference_year(source: &str, generated: &str) -> Option<u32> {
     let documented = years_in(source)
         .into_iter()
         .chain(years_in(generated))
         .max()
         .unwrap_or(0);
     let clock = chrono::Utc::now().year().max(0) as u32;
-    clock.max(documented)
+    (clock >= documented).then_some(clock)
 }
 
 /// The span the source's own employment dates cover, earliest start to latest
-/// end, with an open-ended entry ending at `reference_year`.
+/// end, with an open-ended entry ending at `reference`.
 ///
 /// The CAREER span, not the sum of the roles: a gap between two jobs is not
 /// something to accuse anybody over, and the career reading is the larger of
 /// the two. `None` when no source entry carries a year — nothing to compare
-/// against, so the check goes quiet.
-pub(super) fn career_span_years(source_sections: &[Section], reference_year: u32) -> Option<u32> {
+/// against, so the check goes quiet — and equally `None` when an entry is
+/// open-ended and [`reference_year`] had no trustworthy today to close it with:
+/// one unbounded end makes the whole career span unknown, and "unknown" must
+/// never be read as "short".
+pub(super) fn career_span_years(
+    source_sections: &[Section],
+    reference: Option<u32>,
+) -> Option<u32> {
     let mut earliest: Option<u32> = None;
     let mut latest: Option<u32> = None;
     for (_, dates) in super::factual::entries(source_sections) {
@@ -326,7 +351,7 @@ pub(super) fn career_span_years(source_sections: &[Section], reference_year: u32
             continue;
         };
         let end = if is_open_ended(&dates) {
-            reference_year
+            reference?
         } else {
             years.iter().copied().max().unwrap_or(start)
         };
@@ -345,7 +370,7 @@ pub(super) fn career_span_years(source_sections: &[Section], reference_year: u32
 pub(super) fn supported_years(
     source: &str,
     source_sections: &[Section],
-    reference: u32,
+    reference: Option<u32>,
 ) -> Option<u32> {
     let stated = stated_years(source);
     let span = career_span_years(source_sections, reference).map(|s| s + CAREER_SPAN_SLACK_YEARS);
@@ -365,7 +390,7 @@ pub(super) fn inflated_years_claims(
     generated_sections: &[Section],
     source: &str,
     source_sections: &[Section],
-    reference: u32,
+    reference: Option<u32>,
 ) -> Vec<(YearsClaim, u32)> {
     let Some(supported) = supported_years(source, source_sections, reference) else {
         return Vec::new();
@@ -586,11 +611,6 @@ pub(super) fn unsupported_certs(generated_sections: &[Section], source: &str) ->
 
 // ── A2c: education institutions ─────────────────────────────────────────────
 
-/// Minimum characters of an institution token before its absence from the
-/// source counts as evidence. Below it the token is an abbreviation ("TU",
-/// "FH") that occurs inside unrelated words.
-pub(super) const MIN_INSTITUTION_TOKEN_CHARS: usize = 4;
-
 /// Words that name an institution, in the languages this pipeline writes.
 /// Matched case-insensitively, word-bounded.
 static INSTITUTION_MARKER_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -648,42 +668,6 @@ pub(super) fn institutions(sections: &[Section]) -> Vec<(String, Option<String>)
     out
 }
 
-/// The tokens of an institution name whose absence from a source would be
-/// evidence: 4+ characters, minus the marker word itself.
-pub(super) fn institution_tokens(institution: &str) -> Vec<String> {
-    INSTITUTION_MARKER_RE
-        .replace_all(institution, " ")
-        .split(|c: char| !c.is_alphanumeric())
-        .map(str::to_lowercase)
-        .filter(|t| t.chars().count() >= MIN_INSTITUTION_TOKEN_CHARS)
-        // A year is not an identity: `2014` in a source's own date column would
-        // vouch for any institution whose name happens to sit next to one.
-        .filter(|t| !t.chars().all(|c| c.is_ascii_digit()))
-        .collect()
-}
-
-/// **Calibration probe — the VALUE comparison, measured before it was
-/// rejected.** An institution whose tokens appear nowhere in the source.
-///
-/// This is the check A2c was specified as, and the reason it does not ship is
-/// in `test.rs`: city names translate exactly as degree titles do (München ↔
-/// Munich, Wien ↔ Vienna, Köln ↔ Cologne), so a correct German rendering of an
-/// English source's "Technical University of Munich" has no token in common
-/// with it and reads as an invention.
-pub(super) fn institutions_absent_by_value(
-    generated_sections: &[Section],
-    source: &str,
-) -> Vec<(String, Option<String>)> {
-    let source_lower = source.to_lowercase();
-    institutions(generated_sections)
-        .into_iter()
-        .filter(|(name, _)| {
-            let tokens = institution_tokens(name);
-            !tokens.is_empty() && !tokens.iter().any(|t| source_lower.contains(t.as_str()))
-        })
-        .collect()
-}
-
 /// Institutions the source cannot support AT ALL — the translation-safe residue
 /// of A2c.
 ///
@@ -698,6 +682,25 @@ pub(super) fn institutions_absent_by_value(
 /// heading a real CV writes, so a source whose education sits under an
 /// unrecognised heading would look sectionless — the marker scan over the WHOLE
 /// source text is what stops that from becoming an accusation.
+///
+/// ## What was measured, and why the VALUE comparison is not here
+///
+/// A2c was specified as "compare the institution NAME against the source", on
+/// the reasoning that institutions are proper nouns and proper nouns survive
+/// translation. They do; their CITIES do not.
+/// `institution_value_comparison_fires_on_a_correctly_translated_institution`
+/// in `test.rs` runs that version and pins its result: a correct German
+/// rendering of an English source's "Technical University of Munich" —
+/// "Technische Universität München" — shares no token with the source and reads
+/// as an invention. One false finding out of thirteen truthful documents, on
+/// exactly the cross-language path #1004 shipped. Degree titles were the
+/// predicted hazard; city names are the same hazard one level down, and
+/// "compare institutions, not degrees" does not escape it.
+///
+/// So the value comparison ships in neither tier — not as a Critical, and not
+/// as the Warning it was scoped to be, because "when uncertain, warn" is about
+/// findings that are uncertain, not findings that are known-wrong on a document
+/// class we generate every day.
 pub(super) fn unsupported_institutions(
     generated_sections: &[Section],
     source: &str,
@@ -711,4 +714,79 @@ pub(super) fn unsupported_institutions(
         return Vec::new();
     }
     institutions(generated_sections)
+}
+
+// ── The dispatcher ──────────────────────────────────────────────────────────
+
+/// Every credential check, in a stable order.
+///
+/// Run for a LETTER as well as a résumé, minus the education arm: "I bring 12
+/// years of experience" and "as an AWS Certified Solutions Architect" are
+/// letter sentences at least as often as résumé lines, and the truth base for
+/// both is the source RÉSUMÉ alone. Not the job ad — unlike a metric, which a
+/// letter may legitimately quote back from the posting, a posting's "5+ years
+/// required" is a statement about the ROLE, and letting it vouch for the
+/// candidate would make every ad its own alibi. The education arm is skipped
+/// because a letter has no education section to read; `institutions` would find
+/// nothing anyway, and saying so here is cheaper than making a reader prove it.
+pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
+    let source = ctx.input.source_resume;
+    let reference = reference_year(source, ctx.input.generated);
+    let mut issues: Vec<ContentIssue> = inflated_years_claims(
+        &ctx.generated_sections,
+        source,
+        &ctx.source_sections,
+        reference,
+    )
+    .into_iter()
+    .map(|(claim, supported)| {
+        issue(
+            FACTUAL_INFLATED_EXPERIENCE,
+            claim.section.as_deref(),
+            format!(
+                "\"{}\" claims more experience than your source résumé supports — it states, \
+                 and its dates cover, at most {supported} years. Correct it to a figure your \
+                 own document backs.",
+                claim.raw
+            ),
+            Some(claim.raw),
+        )
+    })
+    .collect();
+
+    issues.extend(
+        unsupported_certs(&ctx.generated_sections, source)
+            .into_iter()
+            .map(|claim| {
+                issue(
+                    FACTUAL_UNSOURCED_CERTIFICATION,
+                    claim.section.as_deref(),
+                    format!(
+                        "\"{}\" is not in your source résumé. A certification is checkable by \
+                         the employer — remove it, or add it to your own résumé first.",
+                        claim.raw
+                    ),
+                    Some(claim.raw),
+                )
+            }),
+    );
+
+    if ctx.input.doc_kind == DocKind::Resume {
+        issues.extend(
+            unsupported_institutions(&ctx.generated_sections, source, &ctx.source_sections)
+                .into_iter()
+                .map(|(name, section)| {
+                    issue(
+                        FACTUAL_UNSOURCED_INSTITUTION,
+                        section.as_deref(),
+                        format!(
+                            "\"{name}\" appears here, but your source résumé names no place of \
+                             study at all. Add it to your own résumé, or remove the section."
+                        ),
+                        Some(name),
+                    )
+                }),
+        );
+    }
+    issues
 }

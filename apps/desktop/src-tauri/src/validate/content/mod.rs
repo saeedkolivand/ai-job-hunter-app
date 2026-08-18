@@ -54,14 +54,6 @@ pub(crate) use crate::documents::evidence::contains_word as contains_phrase;
 mod alignment;
 mod ats;
 mod consistency;
-/// Years of experience, certifications and education — the invention classes
-/// the metric family cannot see.
-///
-/// **`cfg(test)` for now, on purpose.** These extractors have not been wired
-/// into [`validate_content`] and emit no issue: a check that has not been
-/// measured on documents that are FINE has not earned a severity yet. The
-/// measurement is `credential_extractor_calibration` in `test.rs`.
-#[cfg(test)]
 mod credentials;
 mod duplicates;
 mod factual;
@@ -112,6 +104,23 @@ pub const FACTUAL_DROPPED_ROLE: &str = "factual.dropped_role";
 pub const FACTUAL_UNSUPPORTED_DATE: &str = "factual.unsupported_date";
 pub const FACTUAL_ALTERED_PROJECT_LINK: &str = "factual.altered_project_link";
 pub const FACTUAL_UNSOURCED_TERM: &str = "factual.unsourced_term";
+/// A tenure the source résumé cannot support — see `credentials`. Critical on
+/// the strength of the calibration in `test.rs`: the comparison is on a NUMBER,
+/// which is the one thing that survives translation and paraphrase unchanged,
+/// and it only ever fires on an OVERSTATEMENT of what the source itself says or
+/// dates.
+pub const FACTUAL_INFLATED_EXPERIENCE: &str = "factual.inflated_experience";
+/// A certification the source résumé never names. Critical: a certification is
+/// the most checkable claim on a résumé — an employer can look it up — so an
+/// invented one is the costliest fabrication in the family, and the trigger set
+/// is a curated issuer + acronym list rather than an inference.
+pub const FACTUAL_UNSOURCED_CERTIFICATION: &str = "factual.unsourced_certification";
+/// The generated document names a place of study while the source names none
+/// at all. A Warning, deliberately: this is the residue of a value comparison
+/// that MEASURED a false positive on truthful cross-language output (see
+/// `credentials::unsupported_institutions`), so the surviving check is scoped
+/// to a whole invented education section and stays advisory even there.
+pub const FACTUAL_UNSOURCED_INSTITUTION: &str = "factual.unsourced_institution";
 pub const CONTENT_LANGUAGE_MISMATCH: &str = "content.language_mismatch";
 /// An unfilled template-placeholder slot (e.g. German "Ihr Name") survived
 /// into the rendered letter text — see ADR-034 Consequence #2. Deterministic:
@@ -176,11 +185,14 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (FACTUAL_DROPPED_ROLE, Severity::Critical),
     (FACTUAL_UNSUPPORTED_DATE, Severity::Critical),
     (FACTUAL_ALTERED_PROJECT_LINK, Severity::Critical),
+    (FACTUAL_INFLATED_EXPERIENCE, Severity::Critical),
+    (FACTUAL_UNSOURCED_CERTIFICATION, Severity::Critical),
     (CONTENT_LANGUAGE_MISMATCH, Severity::Critical),
     (ATS_HEADER_IN_BODY, Severity::Critical),
     (ATS_EMPTY_SECTION, Severity::Warning),
     (LETTER_TEMPLATE_PLACEHOLDER, Severity::Critical),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),
+    (FACTUAL_UNSOURCED_INSTITUTION, Severity::Warning),
     (ALIGNMENT_LOW_COVERAGE, Severity::Warning),
     (ALIGNMENT_MISSING_TOP_REQUIREMENT, Severity::Warning),
     (CONSISTENCY_DATE_ORDER, Severity::Warning),
@@ -1090,10 +1102,12 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
     let (requirement_hits, duplicate_ratio, roles_source, roles_output) = match input.doc_kind {
         DocKind::CoverLetter => {
             issues.extend(letter::validate(&ctx));
+            issues.extend(credentials::validate(&ctx));
             (None, 0.0, 0, 0)
         }
         DocKind::Resume => {
             issues.extend(factual::validate(&ctx));
+            issues.extend(credentials::validate(&ctx));
             let (alignment_issues, hits) = alignment::validate(&ctx);
             issues.extend(alignment_issues);
             issues.extend(consistency::validate(&ctx));

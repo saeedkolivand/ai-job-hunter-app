@@ -1798,7 +1798,10 @@
         "dropped_role": "Eine Position aus deinem Lebenslauf fehlt scheinbar in diesem Dokument.",
         "unsupported_date": "Dieses Datum stimmt nicht mit deinem Lebenslauf überein — bitte prüfen.",
         "altered_project_link": "Ein Projektlink hier unterscheidet sich von deinem Lebenslauf — bitte prüfen, ob er korrekt ist.",
-        "unsourced_term": "Dieser Begriff taucht in deinem Lebenslauf nicht auf — bitte auf Richtigkeit prüfen."
+        "unsourced_term": "Dieser Begriff taucht in deinem Lebenslauf nicht auf — bitte auf Richtigkeit prüfen.",
+        "inflated_experience": "Hier werden mehr Jahre Erfahrung angegeben, als dein Lebenslauf hergibt — bitte vor dem Versenden korrigieren.",
+        "unsourced_certification": "Diese Zertifizierung steht nicht in deinem Lebenslauf — sie ist überprüfbar, also entferne sie, falls sie nicht echt ist.",
+        "unsourced_institution": "Dein Lebenslauf nennt keine Ausbildungsstätte — bitte diesen Bildungseintrag prüfen."
       },
       "content": {
         "language_mismatch": "Dieser Text entspricht nicht der Zielsprache."
