@@ -2569,8 +2569,8 @@ suggest(query: string): Promise<GeocodeSuggestion[]>;
 
 Location autocomplete, filtered to city-level and country-level results
 only (`to_city_country` in
-`apps/desktop/src-tauri/src/commands/geocoding/`) — a street or a venue is
-never a job-search location. `display` reads `"City, Country"` for a city
+`apps/desktop/src-tauri/src/commands/geocoding.rs`) — a street or a venue
+is never a job-search location. `display` reads `"City, Country"` for a city
 and the bare country name for a country-level match.
 
 ### Channels — `geocode`
