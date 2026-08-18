@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 use crate::credentials::CredentialStore;
 use crate::db::new_job_id;
 use crate::documents::{embedding_space_changed, DocumentStore, EmbeddingConfig};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
 use crate::jobs::{JobStatus, JobTracker};
@@ -592,20 +592,30 @@ pub async fn ai_lookup_salary(
 }
 
 #[tauri::command]
-pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
+pub async fn ai_pull_model(app: AppHandle, model: String) -> AppResult<Value> {
     let job_id = new_job_id();
-    // Exclusive, not `job_start`: a returning caller (a remounted onboarding
-    // step showing an idle Download button) must re-attach to a pull already
-    // in flight, not start a second multi-GB download of the same model —
-    // same check-then-act reasoning as `claim_embed_job`, over the one job
-    // kind this command ever starts.
-    if let Some(existing) = crate::commands::jobs::job_start_exclusive(
+    // Exclusive per (kind, model), not kind alone: a returning caller (a
+    // remounted onboarding step showing an idle Download button) must
+    // re-attach to a pull of the SAME model already in flight — same
+    // check-then-act reasoning as `claim_embed_job`. A pull of a DIFFERENT
+    // model already running is refused rather than silently joined: joining
+    // would hand the caller progress for a model it never asked for while its
+    // own request never ran at all, and two concurrent multi-GB downloads
+    // would compete for the same bandwidth and disk anyway.
+    match crate::commands::jobs::job_start_exclusive_keyed(
         &app,
         &job_id,
         "ai.pull_model",
-        &["ai.pull_model"],
+        "model",
+        &model,
     ) {
-        return json!({ "jobId": existing });
+        Ok(Some(existing)) => return Ok(json!({ "jobId": existing })),
+        Ok(None) => {}
+        Err(active_model) => {
+            return Err(AppError::Validation(format!(
+                "Already downloading \"{active_model}\" — wait for it to finish before starting another model."
+            )));
+        }
     }
 
     let job_id_clone = job_id.clone();
@@ -626,7 +636,7 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
         }
     });
 
-    json!({ "jobId": job_id })
+    Ok(json!({ "jobId": job_id }))
 }
 
 #[tauri::command]
