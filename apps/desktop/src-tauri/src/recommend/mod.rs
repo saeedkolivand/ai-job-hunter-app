@@ -327,6 +327,8 @@ fn pick_locale(signals: &RecommendSignals) -> String {
         "fr" => "fr",
         "nl" => "nl",
         "it" => "it",
+        "es" => "es",
+        "pt" => "pt",
         _ => "en",
     }
     .to_string()
