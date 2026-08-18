@@ -1027,3 +1027,109 @@ fn topmost_n_caps_at_the_available_link_count() {
     assert_eq!(topmost_n(&[&only], 5).len(), 1);
     assert!(topmost_n(&[], 3).is_empty());
 }
+
+// ── ADR-002 golden parity, actually enforced ─────────────────────────────────
+
+/// The content every ATS must be able to read back out of an exported résumé,
+/// drawn from [`RESUME`] — the same fixture both backends render.
+///
+/// Anchored on the SOURCE, deliberately. The obvious harness compares the PDF
+/// text to the DOCX text, and that is the shape this repo has shipped broken
+/// before: two derived values with nothing absolute behind them, so a change
+/// that drops a section from BOTH backends keeps the test green while the
+/// candidate silently submits a résumé missing their education. Comparing each
+/// rendering against the input cannot pass that way.
+///
+/// Deliberately not the whole fixture verbatim: line breaks, hyphenation,
+/// column order and glyph runs legitimately differ between a Typst page and a
+/// Word document. What may NOT differ is whether a fact survived.
+const PARITY_CONTENT: &[&str] = &[
+    "Jane Doe",
+    "EXPERIENCE",
+    "Acme Corp",
+    "Senior Engineer",
+    "Led a team of five engineers",
+    "SKILLS",
+    "Rust",
+    "TypeScript",
+    "EDUCATION",
+    "State University",
+    "BSc Computer Science",
+];
+
+/// Normalize an extraction for containment checks: collapse whitespace (both
+/// backends break lines differently and `strip_xml_tags` injects spaces at
+/// every tag boundary) and lowercase.
+fn parity_normalize(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// **ADR-002's "golden parity" claim, enforced for the first time.**
+///
+/// The ADR says the two backends are kept "in golden parity where the design
+/// requires, pinned by deterministic golden snapshot tests". The per-backend
+/// tests were real, but nothing rendered ONE document through BOTH and checked
+/// that the same facts came out — so a backend could silently drop a section
+/// and only that backend's own snapshot would notice, if it covered it at all.
+///
+/// That is not hypothetical for this codebase: DOCX body bold had never
+/// rendered at all, and a macOS incident shipped with the two formats
+/// disagreeing. An ATS reads the extracted text, so a fact that survives one
+/// export and not the other means the candidate submits a materially different
+/// résumé depending on the button they pressed.
+///
+/// Runs the whole canonical roster rather than a sample, for the reason
+/// [`typst_every_canonical_template_pdf_passes_validation`] gives: a template
+/// nobody rendered is a template nobody validated.
+#[test]
+fn every_canonical_template_carries_the_same_facts_into_pdf_and_docx() {
+    let mut checked = 0;
+
+    for id in CANONICAL_TEMPLATE_IDS {
+        let pdf_bytes = crate::export::pdf::generate_pdf(&req(ExportFormat::Pdf, id, false))
+            .unwrap_or_else(|e| panic!("{id:?}: pdf export failed: {e}"));
+        let docx_bytes = crate::export::docx::generate_docx(&req(ExportFormat::Docx, id, false))
+            .unwrap_or_else(|e| panic!("{id:?}: docx export failed: {e}"));
+
+        let pdf = parity_normalize(
+            &super::extract_pdf_text(&pdf_bytes)
+                .unwrap_or_else(|e| panic!("{id:?}: pdf text extraction failed: {e}")),
+        );
+        let docx = parity_normalize(
+            &super::extract_docx_text(&docx_bytes)
+                .unwrap_or_else(|e| panic!("{id:?}: docx text extraction failed: {e}")),
+        );
+
+        // Guard the guard: an extractor that silently returns nothing would
+        // make every containment check below vacuous.
+        assert!(
+            pdf.len() > 100 && docx.len() > 100,
+            "{id:?}: extraction produced almost nothing (pdf {} chars, docx {} chars) — \
+             the parity assertions below would pass vacuously",
+            pdf.len(),
+            docx.len()
+        );
+
+        for fact in PARITY_CONTENT {
+            let needle = parity_normalize(fact);
+            let in_pdf = pdf.contains(&needle);
+            let in_docx = docx.contains(&needle);
+            assert!(
+                in_pdf && in_docx,
+                "{id:?}: {fact:?} survived into {} but not {} — an ATS reads the \
+                 extracted text, so the two formats are not the same résumé",
+                if in_pdf { "the PDF" } else { "the DOCX" },
+                if in_pdf { "the DOCX" } else { "the PDF" }
+            );
+        }
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "the canonical roster was empty, so this proved nothing"
+    );
+}
