@@ -66,6 +66,50 @@ const RETRY_BACKOFF: Duration = Duration::from_secs(12 * 60);
 const DEFAULT_HOUR: u32 = 9;
 const DEFAULT_MINUTE: u32 = 0;
 
+/// Width of the per-autopilot schedule jitter window.
+///
+/// Every install created before the run-time picker defaults to 09:00
+/// ([`DEFAULT_HOUR`]/[`DEFAULT_MINUTE`]), and the tick is 60 s wide — so without
+/// this, every default-schedule install in a time zone hits the same third-party
+/// APIs inside the same minute. That is a thundering herd against hosts we do
+/// not own, and this repo's own logs already show `adzuna: HTTP 503` on
+/// scheduled runs.
+///
+/// Ten minutes, deliberately: wide enough to spread a herd across ten tick
+/// windows, far enough under the shortest interval (hourly) that a shifted
+/// occurrence can never overtake the next one, and small enough that a user who
+/// chose 09:00 is not surprised by what they see.
+const SCHEDULE_JITTER_WINDOW_SECS: i64 = 10 * 60;
+
+/// Hourly is the tightest schedule this scheduler supports. If the window ever
+/// grew past an hour, a shifted occurrence could jump the NEXT one and silently
+/// skip a run — a failure no runtime test would catch, because they all use
+/// small offsets. Asserted at COMPILE time rather than as a test: a test
+/// comparing two constants is a tautology clippy rightly rejects, and this makes
+/// the bad value unbuildable instead of merely reported.
+const _: () = assert!(SCHEDULE_JITTER_WINDOW_SECS < 3600);
+
+/// A stable per-autopilot offset inside [0, [`SCHEDULE_JITTER_WINDOW_SECS`]).
+///
+/// **Deterministic, not random**, and that is the whole design. The occurrence
+/// stays a single well-defined instant, so everything built on it still holds:
+/// catch-up after a missed occurrence, the no-double-run property once
+/// `lastRunAt` is stamped at/after it, and reproducible tests. A random delay
+/// would have meant sleeping inside the tick, which reopens both.
+///
+/// FNV-1a rather than `DefaultHasher`: the standard hasher is explicitly NOT
+/// guaranteed stable across Rust releases, and an offset that moved on a
+/// toolchain bump would silently shift every user's schedule. Ids are UUIDs, so
+/// the low bits are already well distributed.
+fn jitter_for(id: &str) -> chrono::Duration {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in id.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    chrono::Duration::seconds((hash % SCHEDULE_JITTER_WINDOW_SECS as u64) as i64)
+}
+
 /// Build a local `DateTime` for `date` (taken from `anchor`) at `h:m:00`.
 /// Returns `None` only for the rare non-existent local wall-clock times (DST
 /// spring-forward gaps), in which case the caller treats the occurrence as
@@ -92,6 +136,7 @@ fn last_occurrence_ms(
     hour: Option<u32>,
     minute: Option<u32>,
     now: DateTime<Local>,
+    jitter: chrono::Duration,
 ) -> Option<i64> {
     // Clamp out-of-range times to the safe default rather than trusting the
     // stored value — `local_at` would otherwise return `None` forever.
@@ -102,7 +147,7 @@ fn last_occurrence_ms(
             // Every hour at `:m`. This hour's `:m` if already past it, else the
             // previous hour's `:m`.
             let m = minute.unwrap_or(DEFAULT_MINUTE);
-            let this_hour = local_at(&now, now.hour(), m)?;
+            let this_hour = local_at(&now, now.hour(), m)? + jitter;
             let occ = if this_hour <= now {
                 this_hour
             } else {
@@ -114,7 +159,7 @@ fn last_occurrence_ms(
             // Today at `h:m` if already past it, else yesterday's `h:m`.
             let h = hour.unwrap_or(DEFAULT_HOUR);
             let m = minute.unwrap_or(DEFAULT_MINUTE);
-            let today = local_at(&now, h, m)?;
+            let today = local_at(&now, h, m)? + jitter;
             let occ = if today <= now {
                 today
             } else {
@@ -127,7 +172,7 @@ fn last_occurrence_ms(
             // candidates (today + yesterday, both offsets) that is `<= now`.
             let h = hour.unwrap_or(DEFAULT_HOUR);
             let m = minute.unwrap_or(DEFAULT_MINUTE);
-            let base = local_at(&now, h, m)?;
+            let base = local_at(&now, h, m)? + jitter;
             let twelve = chrono::Duration::hours(12);
             let day = chrono::Duration::days(1);
             [base, base + twelve, base - day, base + twelve - day]
@@ -151,6 +196,7 @@ fn is_schedulable(ap: &Autopilot) -> bool {
             ap.schedule_hour,
             ap.schedule_minute,
             Local::now(),
+            jitter_for(&ap.id),
         )
         .is_some()
 }
@@ -164,6 +210,7 @@ fn is_due(ap: &Autopilot) -> bool {
         ap.schedule_hour,
         ap.schedule_minute,
         Local::now(),
+        jitter_for(&ap.id),
     ) else {
         return false; // manual/unknown — never auto-run
     };
@@ -468,13 +515,109 @@ mod test {
         now_at(h, m) - chrono::Duration::days(1)
     }
 
+    /// The existing occurrence assertions predate jitter and describe the pure
+    /// clock arithmetic, so they pass zero explicitly rather than inheriting a
+    /// default — the shift gets its own tests below.
+    const NO_JITTER: chrono::Duration = chrono::Duration::zero();
+
+    // ── jitter ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn jitter_is_stable_for_an_id_and_inside_the_window() {
+        // Stability is the property the whole design rests on: the occurrence has
+        // to be the SAME instant on every tick, or catch-up and no-double-run both
+        // break. Absolute bound, not a comparison against the constant re-derived.
+        let id = "3170f7e8-b2f9-4c84-beac-754b509d554b";
+        let first = jitter_for(id);
+
+        assert_eq!(
+            first,
+            jitter_for(id),
+            "the same id must always jitter the same"
+        );
+        assert!(first >= chrono::Duration::zero());
+        assert!(first < chrono::Duration::seconds(600));
+    }
+
+    #[test]
+    fn jitter_actually_spreads_a_herd() {
+        // The point of the feature. Without a spread this is an elaborate no-op,
+        // so assert a real one: 200 ids must land in many distinct minutes, not
+        // all in the same one.
+        let buckets: std::collections::HashSet<i64> = (0..200)
+            .map(|i| jitter_for(&format!("ap-{i}-4c84-beac-754b509d554b")).num_minutes())
+            .collect();
+
+        assert!(
+            buckets.len() >= 8,
+            "200 autopilots landed in only {} distinct minutes — the herd is not spread",
+            buckets.len()
+        );
+    }
+
+    #[test]
+    fn jitter_moves_the_occurrence_by_exactly_the_offset() {
+        // now 14:30, daily 09:00, jitter 7m → today 09:07, not 09:00.
+        let now = now_at(14, 30);
+        let seven = chrono::Duration::minutes(7);
+
+        assert_eq!(
+            last_occurrence_ms("daily", Some(9), Some(0), now, seven),
+            Some((now_at(9, 0) + seven).timestamp_millis())
+        );
+    }
+
+    #[test]
+    fn a_jittered_occurrence_is_not_due_until_the_offset_has_passed() {
+        // The behaviour a user would notice, and the one a careless implementation
+        // gets wrong: between the nominal time and the offset, TODAY's occurrence
+        // has not happened yet, so the most recent one is still YESTERDAY's.
+        let five = chrono::Duration::minutes(5);
+
+        // 09:02 — inside the offset. Yesterday's 09:05 is the latest reached.
+        assert_eq!(
+            last_occurrence_ms("daily", Some(9), Some(0), now_at(9, 2), five),
+            Some((yesterday_at(9, 0) + five).timestamp_millis()),
+            "before the offset elapses, today's occurrence must not count as reached"
+        );
+        // 09:06 — past it. Today's 09:05.
+        assert_eq!(
+            last_occurrence_ms("daily", Some(9), Some(0), now_at(9, 6), five),
+            Some((now_at(9, 0) + five).timestamp_millis())
+        );
+    }
+
+    #[test]
+    fn every_schedule_kind_still_yields_exactly_one_occurrence_per_period() {
+        // Sweep a full day minute by minute under a real offset and count how many
+        // distinct occurrences a daily schedule reports. Exactly one transition
+        // means one run per day: no double-run, no skipped day.
+        let offset = chrono::Duration::minutes(9);
+        let seen: std::collections::HashSet<i64> = (0..24 * 60)
+            .map(|i| now_at(0, 0) + chrono::Duration::minutes(i))
+            .filter_map(|t| last_occurrence_ms("daily", Some(9), Some(0), t, offset))
+            .collect();
+
+        assert_eq!(
+            seen.len(),
+            2,
+            "a daily schedule swept across one day must report yesterday's occurrence              then today's — exactly one transition"
+        );
+    }
+
     // ── last_occurrence_ms ─────────────────────────────────────────────────
 
     #[test]
     fn manual_and_unknown_have_no_occurrence() {
         let now = now_at(14, 30);
-        assert_eq!(last_occurrence_ms("manual", None, None, now), None);
-        assert_eq!(last_occurrence_ms("weekly", None, None, now), None);
+        assert_eq!(
+            last_occurrence_ms("manual", None, None, now, NO_JITTER),
+            None
+        );
+        assert_eq!(
+            last_occurrence_ms("weekly", None, None, now, NO_JITTER),
+            None
+        );
     }
 
     #[test]
@@ -482,17 +625,17 @@ mod test {
         // minute 15, now 14:30 → this hour's 14:15.
         let now = now_at(14, 30);
         assert_eq!(
-            last_occurrence_ms("hourly", None, Some(15), now),
+            last_occurrence_ms("hourly", None, Some(15), now, NO_JITTER),
             Some(now_at(14, 15).timestamp_millis())
         );
         // minute 45, now 14:30 (not yet reached) → previous hour's 13:45.
         assert_eq!(
-            last_occurrence_ms("hourly", None, Some(45), now),
+            last_occurrence_ms("hourly", None, Some(45), now, NO_JITTER),
             Some(now_at(13, 45).timestamp_millis())
         );
         // scheduleHour is ignored for hourly; default minute is 0.
         assert_eq!(
-            last_occurrence_ms("hourly", Some(7), None, now),
+            last_occurrence_ms("hourly", Some(7), None, now, NO_JITTER),
             Some(now_at(14, 0).timestamp_millis())
         );
     }
@@ -502,12 +645,12 @@ mod test {
         // 09:00 default, now 14:30 → today 09:00.
         let now = now_at(14, 30);
         assert_eq!(
-            last_occurrence_ms("daily", None, None, now),
+            last_occurrence_ms("daily", None, None, now, NO_JITTER),
             Some(now_at(9, 0).timestamp_millis())
         );
         // Scheduled 18:30, now 14:30 (not yet) → yesterday 18:30.
         assert_eq!(
-            last_occurrence_ms("daily", Some(18), Some(30), now),
+            last_occurrence_ms("daily", Some(18), Some(30), now, NO_JITTER),
             Some(yesterday_at(18, 30).timestamp_millis())
         );
     }
@@ -517,19 +660,19 @@ mod test {
         // Base 09:00 (+12h = 21:00). now 14:30 → the 09:00 slot (21:00 not reached).
         let now = now_at(14, 30);
         assert_eq!(
-            last_occurrence_ms("twice_daily", Some(9), Some(0), now),
+            last_occurrence_ms("twice_daily", Some(9), Some(0), now, NO_JITTER),
             Some(now_at(9, 0).timestamp_millis())
         );
         // now 22:00 → the 21:00 slot is now the latest reached today.
         let now_late = now_at(22, 0);
         assert_eq!(
-            last_occurrence_ms("twice_daily", Some(9), Some(0), now_late),
+            last_occurrence_ms("twice_daily", Some(9), Some(0), now_late, NO_JITTER),
             Some(now_at(21, 0).timestamp_millis())
         );
         // Before both of today's slots (now 06:00) → yesterday's later slot 21:00.
         let now_early = now_at(6, 0);
         assert_eq!(
-            last_occurrence_ms("twice_daily", Some(9), Some(0), now_early),
+            last_occurrence_ms("twice_daily", Some(9), Some(0), now_early, NO_JITTER),
             Some(yesterday_at(21, 0).timestamp_millis())
         );
     }
@@ -611,7 +754,7 @@ mod test {
             ("daily", None, None),
             ("twice_daily", Some(9), Some(0)),
         ] {
-            let occ = last_occurrence_ms(schedule, hour, minute, now)
+            let occ = last_occurrence_ms(schedule, hour, minute, now, NO_JITTER)
                 .expect("recurring schedule has an occurrence");
             // last_run exactly at the occurrence → not due (boundary is `<`).
             assert!(
