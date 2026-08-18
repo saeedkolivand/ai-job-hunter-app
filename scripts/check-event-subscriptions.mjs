@@ -49,7 +49,7 @@
 // miss the renderer.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -88,6 +88,13 @@ const SUBSCRIBERS = {
   'components/ui/UpdateBanner/index.tsx': {
     mount: 'always',
     note: 'Rendered by routes/__root.tsx. Subscribes via useUpdater.',
+  },
+  'components/layout/StatusBar/index.tsx': {
+    mount: 'always',
+    note:
+      'The app-shell status bar, rendered by routes/__root.tsx. Subscribes via ' +
+      'useWorkerActivity, and is the one surface that keeps telling the truth about ' +
+      'in-flight work while every route-scoped copy below has forgotten it.',
   },
 
   // ── Debt: backend work whose only listener is route-scoped ────────────────
@@ -152,6 +159,19 @@ const SUBSCRIBERS = {
       'per-run state to preserve and nothing is lost by only listening while the monitoring ' +
       'page is open.',
   },
+  'features/monitoring/components/MonitoringPage/index.tsx': {
+    mount: 'route-scoped',
+    note:
+      'ACCEPTED, not debt. Subscribes via useWorkerActivity to render what is running RIGHT ' +
+      'NOW; the reading is re-derived from the job registry on mount, so there is no history ' +
+      'a missed event could have cost it.',
+  },
+  'features/dashboard/components/AISystemStatus/index.tsx': {
+    mount: 'route-scoped',
+    note:
+      'ACCEPTED, not debt. Same shape as the monitoring page — useWorkerActivity feeding a ' +
+      'live "what is busy" readout, re-derived from the job registry on mount.',
+  },
 };
 
 /** Minimum note length for a route-scoped entry to count as an explanation. */
@@ -173,6 +193,9 @@ function sourceFiles(dir) {
   return out;
 }
 
+/** Normalize a relative path to POSIX separators, so keys are stable on Windows. */
+const toPosix = (rel) => rel.split(sep).join('/');
+
 /**
  * The subscription hooks, discovered from `services/` rather than listed.
  *
@@ -182,27 +205,112 @@ function sourceFiles(dir) {
  * is written, which a hardcoded list could never promise.
  */
 export function discoverSubscriptionHooks(servicesDir = SERVICES) {
-  const names = new Set();
+  // Every exported hook in services/, with its own body and the source of the
+  // file it came from. The file source is kept because the closure below has to
+  // resolve import aliases, which are a per-file fact.
+  const hooks = new Map();
   for (const file of sourceFiles(servicesDir)) {
     const src = readFileSync(file, 'utf8');
     const decls = [...src.matchAll(/export\s+(?:const|function)\s+(use[A-Z]\w*)/g)];
     for (const [index, match] of decls.entries()) {
       const start = match.index ?? 0;
       const end = decls[index + 1]?.index ?? src.length;
-      if (/\bapi\.\w+\.on[A-Z]\w*\s*\(/.test(src.slice(start, end))) names.add(match[1]);
+      hooks.set(match[1], { body: src.slice(start, end), src });
     }
   }
-  return [...names].sort();
+
+  // Seed: hooks that register a listener themselves.
+  const subscribing = new Set(
+    [...hooks].filter(([, h]) => /\bapi\.\w+\.on[A-Z]\w*\s*\(/.test(h.body)).map(([name]) => name)
+  );
+
+  // Close transitively. A services hook that COMPOSES another subscription hook
+  // subscribes just as much as one that registers the listener itself, and a
+  // seed-only scan would leave every caller of the wrapper unclassified — the
+  // guard silently narrower than it looks. Iterating to a fixed point also
+  // handles a chain of wrappers, not just one level.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [name, { body, src }] of hooks) {
+      if (subscribing.has(name)) continue;
+      const callable = [...subscribing, ...importedBindings(src, [...subscribing])];
+      if (callable.some((s) => new RegExp(`\\b${s}\\s*\\(`).test(body))) {
+        subscribing.add(name);
+        changed = true;
+      }
+    }
+  }
+
+  return [...subscribing].sort();
+}
+
+/**
+ * The LOCAL names a file has bound to any of `hooks`, following `as` aliases.
+ *
+ * Matching on the exported name alone is not sound in either direction, and a
+ * guard that can be stepped around by renaming is worse than none:
+ *
+ *   * `import { useJobEvents as useEvents }` then `useEvents(cb)` subscribes
+ *     exactly as much as the unaliased form, and a name-only scan misses it —
+ *     an unclassified subscriber silently dropping events on navigation, which
+ *     is the entire defect this check exists to prevent;
+ *   * a file that happens to declare its own local `useJobEvents` and never
+ *     imports ours would be reported as a subscriber it is not.
+ *
+ * Binding to the import is what makes both cases correct: a call only counts
+ * when the name it calls actually resolves to a service hook.
+ *
+ * Type-only imports are skipped — `import type { useJobEvents }` cannot call
+ * anything.
+ */
+export function importedBindings(src, hooks) {
+  const bindings = new Set();
+  const wanted = new Set(hooks);
+  // `[^}]*` spans newlines, which matters: this repo's import blocks are
+  // multi-line whenever more than two or three names are imported.
+  for (const match of src.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from/g)) {
+    if (match[1]) continue; // `import type { … }`
+    for (const specifier of match[2].split(',')) {
+      const text = specifier.trim();
+      if (!text || text.startsWith('type ')) continue; // inline `{ type Foo }`
+      const [imported, alias] = text.split(/\s+as\s+/).map((s) => s.trim());
+      if (imported && wanted.has(imported)) bindings.add(alias || imported);
+    }
+  }
+  return bindings;
+}
+
+/**
+ * Files that import a namespace from a services module (`import * as s from
+ * '@/services'`).
+ *
+ * Nothing in the repo does this today, and supporting it would mean resolving
+ * member expressions. Rather than let the pattern silently defeat discovery, it
+ * is reported as a violation with an explanation — a guard whose blind spots are
+ * visible is honest; one whose blind spots are silent is theatre.
+ */
+export function namespaceImporters(rendererDir = RENDERER) {
+  return sourceFiles(rendererDir)
+    .filter((f) => !toPosix(relative(rendererDir, f)).startsWith('services/'))
+    .filter((f) =>
+      /import\s+\*\s+as\s+\w+\s+from\s+['"][^'"]*services[^'"]*['"]/.test(readFileSync(f, 'utf8'))
+    )
+    .map((f) => toPosix(relative(rendererDir, f)))
+    .sort();
 }
 
 /** Files outside `services/` that call any discovered subscription hook. */
 export function discoverSubscribers(hooks, rendererDir = RENDERER) {
   if (hooks.length === 0) return [];
-  const pattern = new RegExp(`\\b(?:${hooks.join('|')})\\s*\\(`);
   return sourceFiles(rendererDir)
-    .filter((f) => !relative(rendererDir, f).split('\\').join('/').startsWith('services/'))
-    .filter((f) => pattern.test(readFileSync(f, 'utf8')))
-    .map((f) => relative(rendererDir, f).split('\\').join('/'))
+    .filter((f) => !toPosix(relative(rendererDir, f)).startsWith('services/'))
+    .filter((f) => {
+      const src = readFileSync(f, 'utf8');
+      const bindings = [...importedBindings(src, hooks)];
+      if (bindings.length === 0) return false;
+      return new RegExp(`\\b(?:${bindings.join('|')})\\s*\\(`).test(src);
+    })
+    .map((f) => toPosix(relative(rendererDir, f)))
     .sort();
 }
 
@@ -212,8 +320,21 @@ export function discoverSubscribers(hooks, rendererDir = RENDERER) {
  * Returned rather than printed so the check is testable without capturing
  * stdout or trapping `process.exit`.
  */
-export function violations(inventory = SUBSCRIBERS, hooks, subscribers) {
+export function violations(inventory = SUBSCRIBERS, hooks, subscribers, namespaced = []) {
   const problems = [];
+
+  // Discovery resolves imported BINDINGS, which handles `as` aliases but not a
+  // namespace import. Reported rather than ignored, so the blind spot is visible
+  // instead of silently letting a subscriber through.
+  if (namespaced.length > 0) {
+    problems.push(
+      'These files import a services namespace (`import * as x from "…/services"`), which\n' +
+        '  this check cannot resolve to individual hooks — a subscription behind one would go\n' +
+        '  undiscovered. Use named imports instead, or extend importedBindings() to resolve\n' +
+        '  member expressions:\n' +
+        namespaced.map((f) => `    ${f}`).join('\n')
+    );
+  }
 
   // ── Vacuity guards ───────────────────────────────────────────────────────
   // Everything after this is a set comparison, and a set comparison against an
@@ -291,7 +412,7 @@ export function violations(inventory = SUBSCRIBERS, hooks, subscribers) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const hooks = discoverSubscriptionHooks();
   const subscribers = discoverSubscribers(hooks);
-  const problems = violations(SUBSCRIBERS, hooks, subscribers);
+  const problems = violations(SUBSCRIBERS, hooks, subscribers, namespaceImporters());
 
   if (problems.length > 0) {
     for (const p of problems) console.error(`✗ ${p}`);

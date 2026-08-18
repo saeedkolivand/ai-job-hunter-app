@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   discoverSubscribers,
   discoverSubscriptionHooks,
+  importedBindings,
+  namespaceImporters,
   SUBSCRIBERS,
   violations,
 } from './check-event-subscriptions.mjs';
@@ -78,6 +80,57 @@ describe('discoverSubscriptionHooks', () => {
 
     expect(discoverSubscriptionHooks(services)).toEqual([]);
   });
+
+  it('counts a WRAPPER that composes a subscription hook instead of registering one', () => {
+    // The real gap this closes: `useWorkerActivity` never touches `api.*.on*`, it
+    // calls `useJobEvents`. Without the closure it is not a subscription hook, so
+    // its callers — the always-mounted status bar and two live dashboards — were
+    // invisible to the guard entirely.
+    write('services/use-jobs/use-jobs.ts', SUBSCRIBING_HOOK('useJobEvents', 'jobs', 'Event'));
+    write(
+      'services/use-activity/use-activity.ts',
+      `import { useJobEvents } from '../use-jobs/use-jobs';\nexport const useActivity = () => { useJobEvents(noop); };`
+    );
+
+    expect(discoverSubscriptionHooks(services)).toEqual(['useActivity', 'useJobEvents']);
+  });
+
+  it('closes a CHAIN of wrappers, not just one level', () => {
+    // Why a fixed point rather than a single extra pass: the second wrapper is
+    // only reachable once the first has been promoted.
+    write('services/use-jobs/use-jobs.ts', SUBSCRIBING_HOOK('useJobEvents', 'jobs', 'Event'));
+    write(
+      'services/use-a/use-a.ts',
+      `import { useJobEvents } from '../use-jobs/use-jobs';\nexport const useA = () => { useJobEvents(noop); };`
+    );
+    write(
+      'services/use-b/use-b.ts',
+      `import { useA } from '../use-a/use-a';\nexport const useB = () => { useA(); };`
+    );
+
+    expect(discoverSubscriptionHooks(services)).toEqual(['useA', 'useB', 'useJobEvents']);
+  });
+
+  it('follows an alias when a wrapper renames what it composes', () => {
+    write('services/use-jobs/use-jobs.ts', SUBSCRIBING_HOOK('useJobEvents', 'jobs', 'Event'));
+    write(
+      'services/use-activity/use-activity.ts',
+      `import { useJobEvents as useEv } from '../use-jobs/use-jobs';\nexport const useActivity = () => { useEv(noop); };`
+    );
+
+    expect(discoverSubscriptionHooks(services)).toEqual(['useActivity', 'useJobEvents']);
+  });
+
+  it('does not promote a hook that merely sits in a file next to a subscriber', () => {
+    // Guards the closure against the sloppy version: "this FILE subscribes" would
+    // promote every hook in it and cascade to their callers.
+    write(
+      'services/use-jobs/use-jobs.ts',
+      SUBSCRIBING_HOOK('useJobEvents', 'jobs', 'Event') + PLAIN_HOOK('useJobs')
+    );
+
+    expect(discoverSubscriptionHooks(services)).toEqual(['useJobEvents']);
+  });
 });
 
 describe('discoverSubscribers', () => {
@@ -102,6 +155,82 @@ describe('discoverSubscribers', () => {
     write('features/thing/index.tsx', `const useJobEventsFormatter = () => {};`);
 
     expect(discoverSubscribers(['useJobEvents'], renderer)).toEqual([]);
+  });
+
+  it('follows an `as` alias — the rename that would otherwise walk past the guard', () => {
+    // A guard that can be stepped around by renaming an import is worse than
+    // none: this subscribes exactly as much as the unaliased form.
+    write(
+      'features/thing/index.tsx',
+      `import { useJobEvents as useEvents } from '@/services';\nuseEvents(cb);`
+    );
+
+    expect(discoverSubscribers(['useJobEvents'], renderer)).toEqual(['features/thing/index.tsx']);
+  });
+
+  it('follows an alias inside a MULTI-LINE import block', () => {
+    // The realistic shape — this repo wraps any import of more than a few names,
+    // and a `[^}]` class that did not span newlines would miss every one.
+    write(
+      'features/thing/index.tsx',
+      `import {\n  useJobs,\n  useJobEvents as useEvents,\n  useCancelJob,\n} from '@/services';\nuseEvents(cb);`
+    );
+
+    expect(discoverSubscribers(['useJobEvents'], renderer)).toEqual(['features/thing/index.tsx']);
+  });
+
+  it('ignores a same-named LOCAL function that was never imported', () => {
+    // The false-positive direction. Reporting this file would push someone to
+    // add an inventory entry for a subscription that does not exist.
+    write('features/thing/index.tsx', `function useJobEvents() {}\nuseJobEvents();`);
+
+    expect(discoverSubscribers(['useJobEvents'], renderer)).toEqual([]);
+  });
+
+  it('ignores a type-only import, which cannot call anything', () => {
+    write(
+      'features/thing/index.tsx',
+      `import type { useJobEvents } from '@/services';\ndeclare const x: typeof useJobEvents;`
+    );
+
+    expect(discoverSubscribers(['useJobEvents'], renderer)).toEqual([]);
+  });
+});
+
+describe('importedBindings', () => {
+  it('returns the local name, not the exported one, for an alias', () => {
+    const src = `import { useJobEvents as useEvents, useJobs } from '@/services';`;
+
+    expect([...importedBindings(src, ['useJobEvents', 'useJobs'])].sort()).toEqual([
+      'useEvents',
+      'useJobs',
+    ]);
+  });
+
+  it('skips an inline `type` specifier inside a value import', () => {
+    const src = `import { type useJobEvents, useJobs } from '@/services';`;
+
+    expect([...importedBindings(src, ['useJobEvents', 'useJobs'])]).toEqual(['useJobs']);
+  });
+});
+
+describe('namespaceImporters', () => {
+  it('reports a services namespace import rather than silently missing it', () => {
+    // Nothing does this today. Supporting it means resolving member expressions;
+    // until then the blind spot is surfaced, because a guard with SILENT blind
+    // spots is theatre.
+    write(
+      'features/thing/index.tsx',
+      `import * as services from '@/services';\nservices.useJobEvents(cb);`
+    );
+
+    expect(namespaceImporters(renderer)).toEqual(['features/thing/index.tsx']);
+  });
+
+  it('does not report an ordinary named import', () => {
+    write('features/thing/index.tsx', `import { useJobEvents } from '@/services';`);
+
+    expect(namespaceImporters(renderer)).toEqual([]);
   });
 });
 
@@ -158,6 +287,14 @@ describe('violations', () => {
 
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('vacuous');
+  });
+
+  it('reports a namespace importer as a blind spot rather than ignoring it', () => {
+    const problems = violations(ok, hooks, subs, ['features/thing/index.tsx']);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('features/thing/index.tsx');
+    expect(problems[0]).toContain('namespace');
   });
 
   it('fails loudly when subscriber discovery finds nothing', () => {
