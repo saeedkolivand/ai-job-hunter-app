@@ -169,7 +169,17 @@ function AutopilotPage() {
           ) : (
             <div className="space-y-3">
               {autopilots.map((ap) => {
-                const runState = runStates[ap._id] ?? 'idle';
+                // `runStates` is this mount's live event state and starts EMPTY:
+                // navigating to Settings unmounts this page, so a run still in
+                // flight comes back with no local state at all. The backend's
+                // persisted `runStatus` is the durable truth, so fall back to it
+                // — otherwise the card renders 'idle' (no badge exists for
+                // `inProgress`, by design), the Run button re-enables, and the
+                // click is refused by the backend's concurrent-run guard with
+                // "a run is already in progress" for a run the UI just claimed
+                // was finished.
+                const runState =
+                  runStates[ap._id] ?? (ap.runStatus === 'inProgress' ? 'scraping' : 'idle');
                 return (
                   <AutopilotCard
                     key={ap._id}
