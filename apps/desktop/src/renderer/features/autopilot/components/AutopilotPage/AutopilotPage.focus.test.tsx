@@ -65,17 +65,22 @@ vi.mock('@/services', async (importOriginal) => {
 let capturedOnApply: ((job: AutopilotFoundJob) => void) | null = null;
 // Captures the focusedJobUrl prop so the Back-navigation flow can assert it's forwarded.
 let capturedFocusedJobUrl: string | null | undefined = null;
+// Captures the runState prop — the card's ONLY running/idle signal.
+let capturedRunState: string | undefined;
 
 vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
   AutopilotCard: ({
     onApply,
     focusedJobUrl,
+    runState,
   }: {
     onApply: (job: AutopilotFoundJob) => void;
     focusedJobUrl?: string | null;
+    runState?: string;
   }) => {
     capturedOnApply = onApply;
     capturedFocusedJobUrl = focusedJobUrl;
+    capturedRunState = runState;
     return <div data-testid={TEST_IDS.autopilot.card} />;
   },
 }));
@@ -88,9 +93,13 @@ vi.mock('@/features/autopilot/components/EmptyState', () => ({
   EmptyState: () => <div data-testid={TEST_IDS.autopilot.emptyState} />,
 }));
 
+// Mutable so a test can put the hook in the state a real mount would be in
+// (empty after a navigation; a terminal state once a step event was observed).
+let mockRunStates: Record<string, string> = {};
+
 vi.mock('@/features/autopilot/hooks/useAutopilotRun', () => ({
   useAutopilotRun: () => ({
-    runStates: {},
+    runStates: mockRunStates,
     stepLogs: {},
     error: null,
     setError: vi.fn(),
@@ -125,6 +134,8 @@ beforeEach(() => {
   mockAutopilotList = [];
   capturedOnApply = null;
   capturedFocusedJobUrl = null;
+  capturedRunState = undefined;
+  mockRunStates = {};
   currentSearch = {};
 });
 
@@ -287,6 +298,84 @@ describe('AutopilotPage — handleApply board provenance', () => {
     });
 
     expect(mockMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ board: 'aggregator' }));
+  });
+});
+
+/**
+ * The mocked `useAutopilotRun` returns `runStates: {}` — which is exactly the
+ * real hook's state on a FRESH MOUNT. That is the reported bug's setup: the user
+ * started a run, navigated to Settings, and came back to a remounted page whose
+ * local run state had been discarded while the run kept executing in Rust.
+ */
+describe('AutopilotPage — a run still in flight survives the remount', () => {
+  const withRunStatus = (runStatus: Autopilot['runStatus']): Autopilot => ({
+    ...makeAutopilot(['indeed']),
+    runStatus,
+  });
+
+  it('reads the persisted inProgress status when this mount has no local run state', async () => {
+    mockAutopilotList = [withRunStatus('inProgress')];
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    // Absolute expectation, not "not idle": 'scraping' is a busyState, which is
+    // what disables the Run button. Landing on 'idle' is the bug — the card
+    // claims the run finished, the button re-arms, and the backend refuses the
+    // click with "a run is already in progress".
+    expect(capturedRunState).toBe('scraping');
+  });
+
+  it('stays idle for a run that is genuinely over', async () => {
+    // The negative half: without this, a fallback that ignored `runStatus` and
+    // always returned 'scraping' would pass the test above.
+    mockAutopilotList = [withRunStatus('completed')];
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    expect(capturedRunState).toBe('idle');
+  });
+
+  it('stays idle for an autopilot that has never run', async () => {
+    mockAutopilotList = [makeAutopilot(['indeed'])]; // no runStatus at all
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    expect(capturedRunState).toBe('idle');
+  });
+
+  it('does not strand the card when the concurrent run FAILS', async () => {
+    // The path with no terminal step event at all: the Rust failure arm calls
+    // `job_fail` and returns early, so nothing ever announces the end. A card
+    // pinned to a busy state by inference would sit there forever; only
+    // `runStatus` records the outcome, so 'idle' has to hand control back to it.
+    mockRunStates = { 'ap-1': 'idle' }; // what `already-running` leaves behind
+    mockAutopilotList = [withRunStatus('failed')];
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    expect(capturedRunState).toBe('idle');
+  });
+
+  it('keeps a locally-observed terminal state while the list query is still stale', async () => {
+    // The opposite direction: this mount SAW the `complete` step, so it knows
+    // the run is over before the invalidation lands. Reading the backend first
+    // would flip a finished card back to 'scraping' for one render.
+    mockRunStates = { 'ap-1': 'done' };
+    mockAutopilotList = [withRunStatus('inProgress')]; // stale
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    expect(capturedRunState).toBe('done');
   });
 });
 

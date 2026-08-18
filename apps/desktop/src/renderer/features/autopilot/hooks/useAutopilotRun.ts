@@ -8,6 +8,7 @@ import { transition as machineTransition } from '@/lib/machine';
 import { autopilotRunMachine, stepToEvent } from '@/lib/machines/autopilot-run.machine';
 import {
   useAutopilotStepEvents,
+  useInvalidateAutopilots,
   usePauseAutopilot,
   useRemoveAutopilot,
   useResumeAutopilot,
@@ -43,34 +44,45 @@ export function useAutopilotRun() {
   const pauseAutopilot = usePauseAutopilot();
   const resumeAutopilot = useResumeAutopilot();
   const removeAutopilot = useRemoveAutopilot();
+  const invalidateAutopilots = useInvalidateAutopilots();
 
-  const handleStep = useCallback((event: AutopilotStepEvent) => {
-    // Both patches DERIVE from the current value, so they must read the
-    // reducer's `prev` — not the render snapshot this callback closed over.
-    // Two step events for the same autopilotId inside one React batch would
-    // otherwise both start from the same base, and the second would overwrite
-    // the first: a dropped step-log line and a skipped state transition.
-    const ev = stepToEvent(event.step);
-    if (ev) {
-      setRunStates((prev) => ({
-        [event.autopilotId]: machineTransition(
-          autopilotRunMachine,
-          prev[event.autopilotId] ?? 'idle',
-          ev
-        ),
+  const handleStep = useCallback(
+    (event: AutopilotStepEvent) => {
+      // Both patches DERIVE from the current value, so they must read the
+      // reducer's `prev` — not the render snapshot this callback closed over.
+      // Two step events for the same autopilotId inside one React batch would
+      // otherwise both start from the same base, and the second would overwrite
+      // the first: a dropped step-log line and a skipped state transition.
+      const ev = stepToEvent(event.step);
+      if (ev) {
+        setRunStates((prev) => ({
+          [event.autopilotId]: machineTransition(
+            autopilotRunMachine,
+            prev[event.autopilotId] ?? 'idle',
+            ev
+          ),
+        }));
+      }
+      // Read the clock at dispatch time, not inside the reducer body: under
+      // StrictMode dev double-invocation the reducer runs twice from the same base,
+      // and `Date.now()` there would produce two different timestamps (impure).
+      const ts = Date.now();
+      setStepLogs((prev) => ({
+        [event.autopilotId]: [
+          ...(prev[event.autopilotId] ?? []).slice(-49),
+          { step: event.step, detail: event.detail, ts },
+        ],
       }));
-    }
-    // Read the clock at dispatch time, not inside the reducer body: under
-    // StrictMode dev double-invocation the reducer runs twice from the same base,
-    // and `Date.now()` there would produce two different timestamps (impure).
-    const ts = Date.now();
-    setStepLogs((prev) => ({
-      [event.autopilotId]: [
-        ...(prev[event.autopilotId] ?? []).slice(-49),
-        { step: event.step, detail: event.detail, ts },
-      ],
-    }));
-  }, []);
+      // A run that ENDS is the only moment the persisted record changes, and the
+      // `runAutopilot` mutation's own invalidation only fires for a run this mount
+      // started and stayed mounted for. Refresh here so a run that finished while
+      // the user was on another page — and a scheduled run nobody clicked — lands
+      // its found jobs and its `runStatus` on the card instead of waiting for the
+      // next navigation.
+      if (event.step === 'complete' || event.step === 'cancelled') invalidateAutopilots();
+    },
+    [invalidateAutopilots]
+  );
 
   useAutopilotStepEvents(handleStep);
 
@@ -94,8 +106,17 @@ export function useAutopilotRun() {
       // resolves with `{ skipped: "already-running" }` instead of running.
       // Nothing happened from THIS call, so it's neither a failure (no red
       // 'error' state) nor a success ('done' would misreport a run that never
-      // occurred) — revert the optimistic 'scraping' state back to idle and
-      // surface a distinct, honest message via the same banner `error` uses.
+      // occurred) — revert the optimistic 'scraping' and surface a distinct,
+      // honest message via the same banner `error` uses.
+      //
+      // Reverting to 'idle' is safe HERE only because 'idle' is what hands the
+      // card back to the backend's `runStatus` (see AutopilotPage). The refusal
+      // proves a run is in flight, so the card still shows one — but it now
+      // does so on evidence that keeps being re-read, rather than on a local
+      // guess. Pinning 'scraping' here instead would strand the card forever
+      // when that concurrent run FAILS: the Rust failure path returns early
+      // without emitting any step, so no terminal event ever arrives to clear
+      // it. Only `runStatus` records that outcome.
       if (result.skipped === 'already-running') {
         setRunStates({ [id]: 'idle' });
         setError(t('autopilot.wizard.alreadyRunning'));
