@@ -327,10 +327,22 @@ jobs:
           pnpm check:event-subscriptions
           echo "::endgroup::"
 
-      - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure'
+      # One ADR directory holds TWO numbering series, and every number up to 23
+      # exists in both — ADR-0013 is email watching, ADR-013 is the resume
+      # builder. Only the zero padding separates them, and a mis-padded citation
+      # cannot be traced back to what its author meant.
+      - name: 📑 Check ADR citation drift
+        id: adr_citations
+        continue-on-error: true
         run: |
-          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, or event-subscription drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', and 'pnpm check:event-subscriptions' locally to fix."
+          echo "::group::Checking ADR citation drift"
+          pnpm check:adr-citations
+          echo "::endgroup::"
+
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure' || steps.adr_citations.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, event-subscription, or ADR-citation drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', 'pnpm check:event-subscriptions', and 'pnpm check:adr-citations' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 
