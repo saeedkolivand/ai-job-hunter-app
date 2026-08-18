@@ -37,8 +37,11 @@ use crate::validate::Severity;
 /// Critical the repair loop cannot regenerate a section for — `SectionKey` has
 /// no Certifications variant — so this panel is its only resolution path.
 ///
-/// The two credential WARNINGS (`factual.inflated_experience`,
-/// `factual.unsourced_institution`) are deliberately absent. Listing a Warning
+/// The three credential WARNINGS (`factual.inflated_experience`,
+/// `factual.unsourced_credential`, `factual.unsourced_institution`) are
+/// deliberately absent. The middle one is the PROSE arm of the same check the
+/// entry above is the acronym arm of: same family, different evidence,
+/// different tier, and only the bounded one may park a run. Listing a Warning
 /// here parks the run until the user decides it, which would make the
 /// "advisory" claim their registration makes false. The precedent that says
 /// otherwise (`factual.unsourced_term`, also a Warning) is left alone rather

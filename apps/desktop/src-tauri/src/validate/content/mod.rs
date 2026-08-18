@@ -127,11 +127,28 @@ pub const FACTUAL_UNSOURCED_TERM: &str = "factual.unsourced_term";
 /// `factual.unsourced_certification` stays Critical because its trigger is
 /// three bounded vocabularies intersecting, not prose.
 pub const FACTUAL_INFLATED_EXPERIENCE: &str = "factual.inflated_experience";
-/// A certification the source résumé never names. Critical: a certification is
-/// the most checkable claim on a résumé — an employer can look it up — so an
-/// invented one is the costliest fabrication in the family, and the trigger set
-/// is a curated issuer + acronym list rather than an inference.
+/// A certification the source résumé never names, found by its ACRONYM: an
+/// uppercase, word-bounded token from a curated 23-entry list.
+///
+/// Critical, and the only credential code that is. A certification is the most
+/// checkable claim on a résumé — an employer can look it up — and this arm's
+/// evidence is genuinely bounded: it reads no prose, and each token means one
+/// thing on a résumé in any language. Three review rounds produced no false
+/// positive from it.
 pub const FACTUAL_UNSOURCED_CERTIFICATION: &str = "factual.unsourced_certification";
+/// A credential the source résumé never names, found by an ISSUER beside a
+/// certification word in prose (`AWS Certified Solutions Architect`).
+///
+/// A Warning, split out of `factual.unsourced_certification` because it rests
+/// on a different evidence class: unbounded natural language in seven
+/// languages, discriminated by three curated vocabularies. It has been measured
+/// wrong twice — "Certified the release on AWS each Thursday" (a verb), then
+/// "Docker Certified images" (a vendor's adjective) — each time on the first
+/// adversarial pass after a green corpus. That is the same shape, and the same
+/// cadence, as `factual.inflated_experience`, and it earns the same tier.
+/// Keeping one code for both arms would have made the Critical reachable from
+/// the prose path.
+pub const FACTUAL_UNSOURCED_CREDENTIAL: &str = "factual.unsourced_credential";
 /// The generated document names a place of study while the source names none
 /// at all. A Warning, deliberately: this is the residue of a value comparison
 /// that MEASURED a false positive on truthful cross-language output (see
@@ -215,6 +232,7 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (LETTER_TEMPLATE_PLACEHOLDER, Severity::Critical),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),
     (FACTUAL_INFLATED_EXPERIENCE, Severity::Warning),
+    (FACTUAL_UNSOURCED_CREDENTIAL, Severity::Warning),
     (FACTUAL_UNSOURCED_INSTITUTION, Severity::Warning),
     (ALIGNMENT_LOW_COVERAGE, Severity::Warning),
     (ALIGNMENT_MISSING_TOP_REQUIREMENT, Severity::Warning),

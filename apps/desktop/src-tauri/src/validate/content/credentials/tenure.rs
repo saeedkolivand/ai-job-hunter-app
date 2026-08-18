@@ -10,6 +10,7 @@ use regex::Regex;
 use crate::documents::evidence::{is_open_ended, years_in, SectionKind};
 
 use super::super::{contains_phrase, Section};
+use super::{names_a_role, word_tokens};
 
 // ── The claim, and what the source supports ────────────────────────────────
 
@@ -342,19 +343,15 @@ const TENURE_FOLLOWERS: &[&str] = &[
     "op",
 ];
 
-/// Characters that end a clause. A tenure span is judged against the clause it
-/// opens, not against the whole line.
-const CLAUSE_BOUNDARIES: &[char] = &[
-    '.', ',', ';', ':', '\u{2014}', '\u{2013}', '(', ')', '|', '\u{b7}', '\u{2022}',
-];
-
-/// The lowercased words of `text`.
-fn word_tokens(text: &str) -> Vec<String> {
-    text.split(|c: char| !c.is_alphanumeric() && c != '\'')
-        .filter(|t| !t.is_empty())
-        .map(str::to_lowercase)
-        .collect()
-}
+/// How many tokens of the SUBJECT are read, looking for the person the tenure
+/// belongs to.
+///
+/// Two, because a job title is routinely two words and the head noun comes
+/// last: "Backend engineer", "Ingénieure backend", "Senior Software Engineer",
+/// "Product Designer". One token would drop the French and Dutch orderings; a
+/// whole-clause scan would re-admit "The engineer rebuilt a platform with 15
+/// years of debt", which is the register this rule exists to reject.
+pub const TENURE_SUBJECT_TOKENS: usize = 2;
 
 /// True when the span `[start, end)` reads as a claim about the candidate's own
 /// working life rather than about a system, a contract or a migration.
@@ -374,11 +371,28 @@ fn word_tokens(text: &str) -> Vec<String> {
 /// removing that wholesale stopped six of twenty-one truthful fixtures being
 /// read at all.
 ///
-/// So the summary admission is kept and made shape-aware: the span must OPEN a
-/// clause (nothing before it but a [`TENURE_LEAD_INS`] word) and be FOLLOWED by
-/// a [`TENURE_FOLLOWERS`] token. The three legacy-system sentences fail both
-/// halves independently — "a 30 year old", "and cut a 40 year legacy" are
-/// preceded by an article, and "retired 12 years of" by a verb.
+/// So the summary admission is kept and made shape-aware, on the SUBJECT and
+/// on the follower.
+///
+/// ## The subject is where it separates, and that was measured
+///
+/// A first cut asked only that the span open a clause. That reads a sentence
+/// about a SYSTEM as a claim about a person, fifteen times out of fifteen:
+/// "Rebuilt a platform with 15 years of accumulated technical debt", "Joined a
+/// team with 12 years of shipping history", "Inherited a codebase with 20 years
+/// in production" — and the same shape in every language, built from these very
+/// lead-in and follower lists. The message then tells the user to correct a
+/// true sentence about a platform.
+///
+/// The critic printed the clause head for every false positive and every
+/// truthful line and got total separation on ONE position: the false ones end
+/// in `platform | team | codebase | stack | ledger | service | mainframe`, the
+/// truthful ones in `engineer | developer | designer | Ingenieurin`, or open
+/// the line. So the subject must be a PERSON ([`super::ROLE_NOUNS`]) or absent.
+///
+/// The follower list is deliberately NOT where this is fixed: `of|in|on|at`
+/// follow any counted noun phrase whatever, and no vocabulary in that position
+/// separates a platform's years from a person's.
 fn is_tenure_context(line: &str, start: usize, end: usize, allow_summary_shape: bool) -> bool {
     let window = context_window(line, start, end, CLAIM_CONTEXT_CHARS).to_lowercase();
     if EXPERIENCE_CONTEXT
@@ -390,11 +404,24 @@ fn is_tenure_context(line: &str, start: usize, end: usize, allow_summary_shape: 
     if !allow_summary_shape {
         return false;
     }
-    let head = &line[..start];
-    let clause_start = head.rfind(CLAUSE_BOUNDARIES).map_or(0, |i| i + 1);
-    let opens_clause = word_tokens(&head[clause_start..])
+    // The whole head, not the clause: "Backend engineer, eight years across …"
+    // puts the person one comma back, and a clause-scoped head would see it as
+    // empty and admit anything.
+    let mut head = word_tokens(&line[..start]);
+    // A lead-in is not the subject, it introduces it.
+    if head
         .last()
-        .is_none_or(|last| TENURE_LEAD_INS.contains(&last.as_str()));
+        .is_some_and(|last| TENURE_LEAD_INS.contains(&last.as_str()))
+    {
+        head.pop();
+    }
+    let subject: Vec<String> = head
+        .iter()
+        .rev()
+        .take(TENURE_SUBJECT_TOKENS)
+        .cloned()
+        .collect();
+    let opens_clause = subject.is_empty() || names_a_role(&subject);
     let followed = word_tokens(&line[end..])
         .first()
         .is_some_and(|next| TENURE_FOLLOWERS.contains(&next.as_str()));
@@ -479,14 +506,15 @@ pub fn stated_years(source: &str) -> Option<u32> {
 /// span with an [`EXPERIENCE_CONTEXT`] word within [`CLAIM_CONTEXT_CHARS`] of
 /// it.
 ///
-/// **The context word is the ONLY admission rule**, and an earlier version that
-/// also admitted anything in the SUMMARY — on the reasoning that a summary's
-/// whole job is to state what the candidate has done — was wrong in the way
-/// this family cannot afford. A summary is also where a candidate writes
-/// "replaced a 30 year old mainframe", "retired 12 years of accumulated schema
-/// drift", "cut a 40 year legacy batch": all three fired, all three are
-/// achievements, and the user was told to delete them. A genuine tenure claim
-/// carries `experience` / `Erfahrung` / `experiencia` anyway.
+/// TWO admission rules, both in [`is_tenure_context`] and documented there: an
+/// experience word near the span, or — in a summary only — the shape of a
+/// tenure sentence, which is a PERSON as its subject and a preposition or
+/// participle after it.
+///
+/// Neither admits "replaced a 30 year old mainframe", "retired 12 years of
+/// accumulated schema drift" or "rebuilt a platform with 15 years of technical
+/// debt". All three are achievements a summary really contains, all three once
+/// fired, and each time the user was told to correct a true sentence.
 pub fn years_claims(sections: &[Section]) -> Vec<YearsClaim> {
     let mut out = Vec::new();
     for section in sections {

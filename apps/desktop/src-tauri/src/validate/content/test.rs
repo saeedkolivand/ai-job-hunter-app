@@ -3036,7 +3036,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        34,
+        35,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES
@@ -6731,7 +6731,8 @@ fn credential_thresholds_are_pinned() {
     assert_eq!(credentials::CERT_ISSUER_WINDOW_CHARS, 60);
     assert_eq!(credentials::CERT_EVIDENCE_LINE_CHARS, 120);
     assert_eq!(credentials::SPAN_TAIL_CHARS, 16);
-    assert_eq!(credentials::CERT_ROLE_NOUN_WINDOW_CHARS, 48);
+    assert_eq!(credentials::CERT_ROLE_NOUN_WINDOW_TOKENS, 2);
+    assert_eq!(credentials::TENURE_SUBJECT_TOKENS, 2);
 }
 
 fn summary_claiming(text: &str) -> String {
@@ -6903,13 +6904,14 @@ fn a_certification_the_source_never_names_is_critical() {
     let generated = "Jane Doe\n\nCERTIFICATIONS\n\n\
          AWS Certified Solutions Architect - Professional\n";
     let report = report_for(generated, EN_SOURCE, EN_JOB_AD, &[]);
+    // The PROSE arm, so the Warning code — see
+    // `the_acronym_arm_is_critical_and_the_prose_arm_is_a_warning`.
     assert_eq!(
-        first_evidence(&report, FACTUAL_UNSOURCED_CERTIFICATION),
+        first_evidence(&report, FACTUAL_UNSOURCED_CREDENTIAL),
         Some("AWS Certified Solutions Architect - Professional"),
         "the finding must fire and quote the entry; report carried {:?}",
         codes(&report)
     );
-    assert!(!report.ok);
 }
 
 /// A2b: an acronym is checked against the source case-INSENSITIVELY, so a
@@ -6962,7 +6964,7 @@ fn a_german_certification_generated_from_an_english_source_matches_on_the_issuer
     );
     assert!(
         codes(&report_for(invented, source, EN_JOB_AD, &[]))
-            .contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+            .contains(&FACTUAL_UNSOURCED_CREDENTIAL),
         "a Cisco certification on an AWS-only source is an invention in any language"
     );
 }
@@ -7070,8 +7072,10 @@ fn a_letters_credentials_are_measured_against_the_resume_never_the_posting() {
         fired.contains(&FACTUAL_INFLATED_EXPERIENCE),
         "the posting's own '10+ years' must not vouch for the letter; got {fired:?}"
     );
+    // The PROSE arm — "an AWS Certified Solutions Architect" is an issuer beside
+    // a certification word, which is a Warning since round four.
     assert!(
-        fired.contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+        fired.contains(&FACTUAL_UNSOURCED_CREDENTIAL),
         "the posting's own certification requirement must not vouch for the letter; got \
          {fired:?}"
     );
@@ -7239,15 +7243,33 @@ fn a_certification_word_used_as_a_verb_is_not_a_credential() {
          - Migrated 40 services to Docker and certified each image against CIS\n\
          - Ran the Terraform rollout and certified the result with the auditors\n\
          - Coached the Scrum team and certified the runbook with operations\n";
-    silent(
-        &report_for(generated, EN_SOURCE, EN_JOB_AD, &[]),
-        FACTUAL_UNSOURCED_CERTIFICATION,
-    );
+    let report = report_for(generated, EN_SOURCE, EN_JOB_AD, &[]);
+    silent(&report, FACTUAL_UNSOURCED_CERTIFICATION);
+    silent(&report, FACTUAL_UNSOURCED_CREDENTIAL);
+
+    // The shape that needs ADJACENCY specifically, and that the role-noun rule
+    // cannot reject on its own: a verb, an issuer several words away from it,
+    // and a role noun sitting exactly where a credential would put one.
+    // Without the adjacency test these read as credentials.
+    for line in [
+        "- Certified the release for our AWS solutions architect to sign off",
+        "- Certified each image before handing it to the Docker platform engineer",
+        "- Zertifizierte die Freigabe für unseren AWS Solutions Architect",
+    ] {
+        let generated = format!(
+            "Jane Doe\n\nEXPERIENCE\n\n\
+             Platform Engineer | Acme Payments | 2019 - Present\n{line}\n"
+        );
+        let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+        silent(&report, FACTUAL_UNSOURCED_CERTIFICATION);
+        silent(&report, FACTUAL_UNSOURCED_CREDENTIAL);
+    }
+
     // The control: the adjectival form on the same issuer IS reported.
     let adjectival = "Jane Doe\n\nCERTIFICATIONS\n\nAWS Certified Solutions Architect\n";
     assert!(
         codes(&report_for(adjectival, EN_SOURCE, EN_JOB_AD, &[]))
-            .contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+            .contains(&FACTUAL_UNSOURCED_CREDENTIAL),
         "adjacency is the discriminator, not silence"
     );
 }
@@ -7603,29 +7625,188 @@ fn an_issuer_certified_product_is_not_a_credential() {
         let generated = format!("Jane Doe\n\nCERTIFICATIONS\n\n{credential}\n");
         assert!(
             codes(&report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]))
-                .contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+                .contains(&FACTUAL_UNSOURCED_CREDENTIAL),
             "{credential} certifies a person and must still be reported"
         );
     }
 }
 
-/// One certification, named by its acronym on one line and spelled out on
-/// another, is ONE finding.
+/// A summary sentence about a SYSTEM is not a claim about a person.
 ///
-/// The two passes disagreed about which element of the key list came first, so
-/// the deduplication key differed per pass and the user was told twice about
-/// the same credential.
+/// Fifteen of fifteen fired when the shape rule asked only that the span open a
+/// clause: every one of these is true, and the finding told the user to correct
+/// it. The discriminator is the SUBJECT — `platform | team | codebase | stack |
+/// ledger | service | mainframe` against `engineer | developer | designer |
+/// Ingenieurin` — and it separates completely, which no follower vocabulary
+/// does (`of | in | on | at` follow any counted noun phrase).
+///
+/// Mutation check: drop the `names_a_role` term from `is_tenure_context` and
+/// every line here goes red.
 #[test]
-fn a_certification_named_in_both_forms_is_reported_once() {
+fn a_summary_sentence_about_a_system_is_not_a_tenure_claim() {
+    for sentence in [
+        "Rebuilt a platform with 15 years of accumulated technical debt.",
+        "Joined a team with 12 years of shipping history behind it.",
+        "Inherited a codebase with 20 years in production.",
+        "Owns a service with 30 years at the same bank.",
+        "Modernised a stack with 18 years of accumulated patches.",
+        "Replaced a ledger with 25 years of transaction history.",
+        "Retired a mainframe with 40 years in production.",
+        "Migrated a warehouse with 22 years of order history.",
+        "Supported a gateway with 16 years of uptime.",
+        "Eine Plattform mit 15 Jahren im Betrieb übernommen.",
+        "Repris une plateforme avec 15 années de dette technique.",
+        "Heredó una plataforma con 15 años de deuda técnica.",
+        "Ereditato una piattaforma con 15 anni di debito tecnico.",
+        "Een platform met 15 jaar aan technische schuld overgenomen.",
+        "Herdou uma plataforma com 15 anos de dívida técnica.",
+    ] {
+        let doc = format!("Jane Doe\n\nSUMMARY\n\n{sentence}\n");
+        let claims = credentials::years_claims(&split_sections(&doc, DocKind::Resume));
+        assert!(
+            claims.is_empty(),
+            "this is a sentence about a system, not a tenure: {sentence} (read {:?})",
+            claims.iter().map(|c| c.years).collect::<Vec<_>>()
+        );
+    }
+}
+
+/// The subject may be a two-word job title, and the head noun comes last in
+/// some languages and first in others.
+#[test]
+fn a_two_word_job_title_still_carries_its_tenure() {
+    for sentence in [
+        "Backend engineer with 8 years building distributed services.",
+        "Senior Software Engineer with 12 years across payment systems.",
+        "Ingénieure backend avec 15 années dans les paiements.",
+        "Product Designer, twelve years of design systems.",
+        "Backend-Entwicklerin, acht Jahre im Zahlungsverkehr.",
+    ] {
+        let doc = format!("Jane Doe\n\nSUMMARY\n\n{sentence}\n");
+        assert!(
+            !credentials::years_claims(&split_sections(&doc, DocKind::Resume)).is_empty(),
+            "a person states their tenure here: {sentence}"
+        );
+    }
+}
+
+/// `engineer` matched as a SUBSTRING of `engineers`, anywhere in 48 characters,
+/// so every vendor term from the round before revived with one extra word.
+///
+/// Mutation check: widen `CERT_ROLE_NOUN_WINDOW_TOKENS`, or drop the
+/// `names_a_certified_role` term, and these go red.
+#[test]
+fn a_vendor_term_is_not_a_credential_however_the_sentence_ends() {
+    for line in [
+        "- Standardised on Docker Certified base images for every engineer",
+        "- Led a Certified Scrum team of eight engineers through the migration",
+        "- Moved the ledger onto VMware certified storage arrays our engineers own",
+        "- Deployed onto Kubernetes certified clusters that two engineers maintain",
+        "- Kept the reporting stack on Oracle certified hardware for the engineers",
+        "- Replaced the Cisco certified network gear our engineers had outgrown",
+        "- Shipped Red Hat certified build images to every engineer on the team",
+    ] {
+        let generated = format!(
+            "Jane Doe\n\nEXPERIENCE\n\n\
+             Platform Engineer | Acme Payments | 2019 - Present\n{line}\n"
+        );
+        let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+        silent(&report, FACTUAL_UNSOURCED_CERTIFICATION);
+        silent(&report, FACTUAL_UNSOURCED_CREDENTIAL);
+    }
+    // The control: the role noun sitting where a credential puts it.
+    for credential in [
+        "Docker Certified Associate",
+        "AWS Certified Solutions Architect",
+        "Certified Kubernetes Administrator",
+        "AWS Certified Security - Specialty",
+    ] {
+        let generated = format!("Jane Doe\n\nCERTIFICATIONS\n\n{credential}\n");
+        assert!(
+            codes(&report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]))
+                .contains(&FACTUAL_UNSOURCED_CREDENTIAL),
+            "{credential} names the role it certifies and must be reported"
+        );
+    }
+}
+
+/// `split_sections` promotes a lone `CISSP` to a section heading, so the
+/// credential lived in `Section::heading` and no line-scan could see it.
+///
+/// Sixteen of the twenty-three curated acronyms are four characters or more and
+/// were invisible this way — a hole in the one arm whose evidence justifies a
+/// Critical.
+///
+/// Mutation check: stop scanning `section.heading` in `cert_claims` and the
+/// four-character arms go red.
+#[test]
+fn a_bare_acronym_under_a_certifications_heading_is_still_reported() {
+    for acronym in ["CISSP", "PRINCE2", "RHCSA", "CCNA", "PMP"] {
+        let generated = format!("Jane Doe\n\nCERTIFICATIONS\n\n{acronym}\n");
+        let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+        assert_eq!(
+            first_evidence(&report, FACTUAL_UNSOURCED_CERTIFICATION),
+            Some(acronym),
+            "{acronym} alone under a heading is still a claim; report carried {:?}",
+            codes(&report)
+        );
+    }
+    // The negative half: the same acronyms, present in the source, stay silent.
+    for acronym in ["CISSP", "PRINCE2", "RHCSA", "CCNA", "PMP"] {
+        let generated = format!("Jane Doe\n\nCERTIFICATIONS\n\n{acronym}\n");
+        let source = format!("{EN_SOURCE}\n\nCERTIFICATIONS\n\n{acronym}\n");
+        silent(
+            &report_for(&generated, &source, EN_JOB_AD, &[]),
+            FACTUAL_UNSOURCED_CERTIFICATION,
+        );
+    }
+}
+
+/// The two arms rest on different evidence and therefore carry different
+/// severities — and the Critical must not be reachable from the prose path.
+#[test]
+fn the_acronym_arm_is_critical_and_the_prose_arm_is_a_warning() {
+    let acronym = report_for(
+        "Jane Doe\n\nCERTIFICATIONS\n\nCISSP\n",
+        EN_SOURCE,
+        EN_JOB_AD,
+        &[],
+    );
+    assert_eq!(
+        fired(&acronym, FACTUAL_UNSOURCED_CERTIFICATION)[0].severity,
+        Severity::Critical,
+        "a curated uppercase token is bounded evidence"
+    );
+    silent(&acronym, FACTUAL_UNSOURCED_CREDENTIAL);
+
+    let phrase = report_for(
+        "Jane Doe\n\nCERTIFICATIONS\n\nAWS Certified Solutions Architect\n",
+        EN_SOURCE,
+        EN_JOB_AD,
+        &[],
+    );
+    assert_eq!(
+        fired(&phrase, FACTUAL_UNSOURCED_CREDENTIAL)[0].severity,
+        Severity::Warning,
+        "the prose arm reads unbounded language and has been measured wrong twice"
+    );
+    silent(&phrase, FACTUAL_UNSOURCED_CERTIFICATION);
+}
+
+/// One credential written both ways is one finding, and it is the ACRONYM one —
+/// the stronger evidence of the two. Letting document order pick would let it
+/// decide a severity.
+#[test]
+fn a_certification_named_in_both_forms_is_reported_once_by_its_stronger_arm() {
     let generated = "Jane Doe\n\nCERTIFICATIONS\n\n\
          Certified Kubernetes Administrator\n\
          CKA\n";
     let report = report_for(generated, EN_SOURCE, EN_JOB_AD, &[]);
-    let hits = fired(&report, FACTUAL_UNSOURCED_CERTIFICATION);
     assert_eq!(
-        hits.len(),
+        fired(&report, FACTUAL_UNSOURCED_CERTIFICATION).len(),
         1,
-        "one credential, one finding; got {:?}",
-        hits.iter().map(|i| i.evidence.clone()).collect::<Vec<_>>()
+        "one credential, one finding; report carried {:?}",
+        codes(&report)
     );
+    silent(&report, FACTUAL_UNSOURCED_CREDENTIAL);
 }

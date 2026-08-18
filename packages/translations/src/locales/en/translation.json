@@ -1797,6 +1797,7 @@
         "unsourced_term": "This term doesn't appear in your résumé — make sure it's accurate.",
         "inflated_experience": "This claims more years of experience than your résumé supports — correct it before sending.",
         "unsourced_certification": "This certification isn't in your résumé — an employer can verify it, so remove it unless it's real.",
+        "unsourced_credential": "This reads as a certification your résumé doesn't mention — check it before sending.",
         "unsourced_institution": "Your résumé names no place of study — check this education entry before sending."
       },
       "content": {

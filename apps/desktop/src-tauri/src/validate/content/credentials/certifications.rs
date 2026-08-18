@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use super::super::{contains_phrase, Section};
-use super::contains_upper_acronym;
+use super::{contains_upper_acronym, names_a_role, word_tokens};
 
 // ── The trigger set ────────────────────────────────────────────────────────
 
@@ -179,64 +179,63 @@ static CERT_ISSUER_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(r"(?i)\b({})\b", names.join("|"))).unwrap()
 });
 
-/// How much text after a credential is read looking for the role it names.
-pub const CERT_ROLE_NOUN_WINDOW_CHARS: usize = 48;
+/// How many tokens after a credential are read looking for the role it names.
+///
+/// TWO, and the tightness is the fix. A 48-CHARACTER window let `engineer`
+/// match as a substring of `engineers` five words later, so every vendor term
+/// from the round before revived with one extra word on the end:
+/// "Docker Certified base images for every engineer" and "Certified Scrum team
+/// of eight engineers through the migration" were both false Criticals. A real
+/// credential names its role immediately: `AWS Certified Solutions ARCHITECT`,
+/// `Certified Kubernetes ADMINISTRATOR`, `Red Hat Certified ENGINEER`.
+///
+/// Cost, paid deliberately: a long product string pushes the role out of reach
+/// (`Oracle Certified Java SE 11 Programmer` is four tokens away and is not
+/// read). A missed check on the arm that is now a Warning, weighed against a
+/// false accusation on ordinary engineering prose.
+pub const CERT_ROLE_NOUN_WINDOW_TOKENS: usize = 2;
 
-/// The role a certification certifies somebody to BE.
-///
-/// Adjacency alone kills the verb ("Certified the release on AWS"), but not the
-/// ADJECTIVE, which is grammatically identical to a real credential: `Docker
-/// Certified images`, `Red Hat certified build images`, `VMware certified
-/// storage arrays`, `Certified Scrum team`. Those are vendor marketing terms
-/// applied to PRODUCTS, and seven of seven fired.
-///
-/// A real certification names a person: Solutions ARCHITECT, Kubernetes
-/// ADMINISTRATOR, Scrum MASTER, Network ASSOCIATE. So the claims side requires
-/// one of these within [`CERT_ROLE_NOUN_WINDOW_CHARS`] after the credential —
-/// "team", "images", "arrays" and "clusters" are not people.
-///
-/// Matched as SUBSTRINGS, because German compounds the role straight onto the
-/// subject: `Netzwerkadministrator`, `Netzwerkexperte`. Every entry is long
-/// enough that a substring match is not a coincidence.
-const CERT_ROLE_NOUNS: &[&str] = &[
-    "architect",
-    "administrator",
-    "administrateur",
-    "engineer",
-    "ingénieur",
-    "ingenieur",
-    "associate",
-    "professional",
-    "professionnel",
-    "practitioner",
-    "developer",
-    "entwickler",
-    "expert",
-    "experte",
-    "specialist",
-    "spezialist",
-    "master",
-    "owner",
-    "analyst",
-    "consultant",
-    "auditor",
-    "manager",
-];
+/// Tail words that complete a certification NAME without naming a person:
+/// `AWS Certified Security - Specialty`, `Azure Fundamentals`, `Six Sigma Black
+/// Belt`. Kept apart from [`ROLE_NOUNS`], which is a list of PEOPLE and is
+/// shared with the tenure check's subject-position test.
+const CERT_TAIL_NOUNS: &[&str] = &["specialty", "fundamentals", "belt"];
 
-/// True when a role noun follows the credential closely enough to be its
-/// subject.
+/// True when a role noun is one of the next [`CERT_ROLE_NOUN_WINDOW_TOKENS`]
+/// tokens after the credential - close enough to be its subject.
 fn names_a_certified_role(line: &str, span_end: usize) -> bool {
-    let tail: String = line[span_end..]
-        .chars()
-        .take(CERT_ROLE_NOUN_WINDOW_CHARS)
-        .collect::<String>()
-        .to_lowercase();
-    CERT_ROLE_NOUNS.iter().any(|role| tail.contains(role))
+    let next: Vec<String> = word_tokens(&line[span_end..])
+        .into_iter()
+        .take(CERT_ROLE_NOUN_WINDOW_TOKENS)
+        .collect();
+    names_a_role(&next)
+        || next
+            .iter()
+            .any(|t| CERT_TAIL_NOUNS.iter().any(|tail| t.contains(tail)))
+}
+
+/// Which evidence class a certification claim rests on.
+///
+/// The two carry different severities, and this enum is what keeps the
+/// Critical unreachable from the prose path - see the parent module doc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CertArm {
+    /// An uppercase, word-bounded token from [`CERT_ACRONYMS`]. Bounded
+    /// evidence: no prose is read, and the token means one thing on a resume
+    /// in any language.
+    Acronym,
+    /// An issuer beside a certification word, in prose. Three curated
+    /// vocabularies discriminating unbounded natural language - the same
+    /// evidence class the tenure check ships as a Warning, with the same
+    /// measured failure cadence.
+    IssuerPhrase,
 }
 
 /// One certification a document names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CertClaim {
+    /// Which evidence class found it, and therefore which severity it earns.
+    pub arm: CertArm,
     /// Every key this claim may be recognised by — an acronym contributes both
     /// its own spelling and its issuer's key, so the two passes cannot end up
     /// in different namespaces again. A claim is unsupported only when NONE of
@@ -280,15 +279,15 @@ fn spans_are_adjacent(line: &str, first_end: usize, second_start: usize) -> bool
 /// [`Side::Source`] keeps the wide window, and drops the role-noun test with
 /// it.
 ///
-/// `Source ⊇ Claims` therefore holds for gaps up to
-/// [`CERT_ISSUER_WINDOW_CHARS`] — not unconditionally, because adjacency admits
-/// an unbounded run of punctuation that the window would cut off. A credential
-/// written with more than 60 characters of dashes between its issuer and its
-/// certification word is not a document anyone has. Within that bound the
-/// asymmetry runs the way it must: a source whose prose merely mentions
-/// certifying something on AWS SPARES a generated AWS certification, which is a
-/// missed check rather than a false accusation.
-fn cert_claims_on_line(line: &str, side: Side) -> Vec<(Vec<String>, String)> {
+/// The source side is a superset of the CLAIMS-SIDE PREDICATE for gaps up to
+/// [`CERT_ISSUER_WINDOW_CHARS`] — a bounded claim, and worth stating as the
+/// bounded one it is. Not a superset of every reading: adjacency admits an
+/// unbounded run of punctuation the window would cut off, and the source pass
+/// drops the role-noun test rather than widening it. Within that bound the
+/// asymmetry runs the way it must — a source whose prose merely mentions
+/// certifying something on AWS SPARES a generated AWS certification, a missed
+/// check rather than a false accusation.
+fn cert_claims_on_line(line: &str, side: Side) -> Vec<(CertArm, Vec<String>, String)> {
     let mut out = Vec::new();
     for (acronym, key, expansion) in CERT_ACRONYMS {
         let found = match side {
@@ -309,6 +308,7 @@ fn cert_claims_on_line(line: &str, side: Side) -> Vec<(Vec<String>, String)> {
             // about one credential while the two passes disagreed about which
             // element that was.
             out.push((
+                CertArm::Acronym,
                 vec![(*key).to_string(), acronym.to_lowercase()],
                 (*acronym).to_string(),
             ));
@@ -344,19 +344,33 @@ fn cert_claims_on_line(line: &str, side: Side) -> Vec<(Vec<String>, String)> {
             } else {
                 line[word.start().min(name.start())..end].trim().to_string()
             };
-            out.push((vec![key], raw));
+            out.push((CertArm::IssuerPhrase, vec![key], raw));
         }
     }
     out
 }
 
 /// Every certification the generated document names.
+///
+/// **A section HEADING is scanned as well as its lines**, because
+/// `split_sections` promotes an unrecognised short line to a heading - so
+/// `CERTIFICATIONS` followed by a lone `CISSP` produces a second section headed
+/// `CISSP` with nothing under it, and the credential was invisible. Sixteen of
+/// the twenty-three curated acronyms are four characters or more and were
+/// reachable that way. The hole sat in the one arm whose evidence justifies a
+/// Critical, which is what makes it worth a special case rather than a note.
 pub fn cert_claims(sections: &[Section]) -> Vec<CertClaim> {
     let mut out = Vec::new();
     for section in sections {
-        for line in &section.lines {
-            for (keys, raw) in cert_claims_on_line(&line.text, Side::Claims) {
+        let texts = section
+            .heading
+            .iter()
+            .map(String::as_str)
+            .chain(section.lines.iter().map(|l| l.text.as_str()));
+        for text in texts {
+            for (arm, keys, raw) in cert_claims_on_line(text, Side::Claims) {
                 out.push(CertClaim {
+                    arm,
                     keys,
                     raw,
                     section: section.heading.clone(),
@@ -372,17 +386,26 @@ pub fn source_cert_keys(source: &str) -> HashSet<String> {
     source
         .lines()
         .flat_map(|line| cert_claims_on_line(line, Side::Source))
-        .flat_map(|(keys, _)| keys)
+        .flat_map(|(_, keys, _)| keys)
         .collect()
 }
 
 /// Certifications the generated document names that the source never does.
+///
+/// Deduplicated on the canonical issuer key, with the ACRONYM arm passed first
+/// so it wins a key both arms found. One credential written both ways is one
+/// finding, and it is the one whose evidence is the stronger of the two - the
+/// alternative lets document order decide a severity.
 pub fn unsupported_certs(generated_sections: &[Section], source: &str) -> Vec<CertClaim> {
     let known = source_cert_keys(source);
     let mut seen = HashSet::new();
-    cert_claims(generated_sections)
+    let (acronyms, phrases): (Vec<CertClaim>, Vec<CertClaim>) = cert_claims(generated_sections)
         .into_iter()
         .filter(|claim| !claim.keys.iter().any(|key| known.contains(key)))
+        .partition(|claim| claim.arm == CertArm::Acronym);
+    acronyms
+        .into_iter()
+        .chain(phrases)
         .filter(|claim| {
             claim
                 .keys

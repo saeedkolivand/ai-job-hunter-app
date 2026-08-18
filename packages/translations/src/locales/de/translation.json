@@ -1801,6 +1801,7 @@
         "unsourced_term": "Dieser Begriff taucht in deinem Lebenslauf nicht auf — bitte auf Richtigkeit prüfen.",
         "inflated_experience": "Hier werden mehr Jahre Erfahrung angegeben, als dein Lebenslauf hergibt — bitte vor dem Versenden korrigieren.",
         "unsourced_certification": "Diese Zertifizierung steht nicht in deinem Lebenslauf — sie ist überprüfbar, also entferne sie, falls sie nicht echt ist.",
+        "unsourced_credential": "Das klingt nach einer Zertifizierung, die dein Lebenslauf nicht nennt — bitte vor dem Versenden prüfen.",
         "unsourced_institution": "Dein Lebenslauf nennt keine Ausbildungsstätte — bitte diesen Bildungseintrag prüfen."
       },
       "content": {

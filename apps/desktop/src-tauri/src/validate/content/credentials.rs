@@ -17,11 +17,16 @@
 //!   claim is read just as well, which is why the number words cover every
 //!   language this pipeline writes and why the span is computed from raw text
 //!   rather than from a section classifier.
-//! * **Certifications** are proper nouns and acronyms that survive translation
-//!   verbatim (`AWS Certified Solutions Architect`, `PMP`, `CISSP`). The
-//!   trigger set is CURATED — an explicit issuer list plus an explicit acronym
-//!   list — never "looks capitalised", which would fire on every ordinary
-//!   proper noun in the document.
+//! * **Certifications** split into TWO arms resting on different evidence,
+//!   and they carry different severities for exactly that reason. The
+//!   *acronym* arm matches an uppercase, word-bounded token from a curated
+//!   23-entry list — bounded, no prose reading, and Critical. The *issuer*
+//!   arm reads unbounded prose, discriminating with adjacency plus three
+//!   curated vocabularies (issuers, certification words, and the
+//!   [`ROLE_NOUNS`] a certification certifies somebody to BE), and it is a
+//!   Warning: it has been measured wrong twice, each time on the first
+//!   adversarial pass after a green corpus. Neither arm ever infers a
+//!   certification from capitalisation alone.
 //! * **Education** is the weak one, and it is kept weak on purpose. Degree
 //!   titles TRANSLATE (`Diplom-Informatiker` ↔ `MSc Computer Science`), so a
 //!   value comparison on the degree string fires on correct cross-language
@@ -39,13 +44,75 @@ mod tenure;
 
 use super::{
     issue, Analysis, ContentIssue, DocKind, FACTUAL_INFLATED_EXPERIENCE,
-    FACTUAL_UNSOURCED_CERTIFICATION, FACTUAL_UNSOURCED_INSTITUTION,
+    FACTUAL_UNSOURCED_CERTIFICATION, FACTUAL_UNSOURCED_CREDENTIAL, FACTUAL_UNSOURCED_INSTITUTION,
 };
+
+/// Nouns that name a PERSON by what they do.
+///
+/// One list, two consumers, because both are asking the same question of
+/// different positions in a sentence:
+///
+/// * `certifications` asks what sits AFTER a credential — a certification
+///   certifies somebody to BE something ("Solutions ARCHITECT", "Kubernetes
+///   ADMINISTRATOR"), while a vendor's marketing term qualifies a PRODUCT
+///   ("Docker Certified IMAGES", "Certified Scrum TEAM");
+/// * `tenure` asks what sits BEFORE a tenure claim. The critic measured the
+///   whole false-positive set and the whole truthful set on that one position
+///   and got total separation: the false ones read
+///   "…a platform | team | codebase | stack | ledger | service | mainframe
+///   with N years", and the truthful ones "…engineer | developer | designer
+///   with N years", or opened the line.
+///
+/// Matched as SUBSTRINGS, which is what makes it work across languages without
+/// a second list: `Ingenieurin`, `Entwicklerin` and `Netzwerkadministrator`
+/// all resolve free. Every entry is long enough that a substring match is not
+/// a coincidence.
+pub(super) const ROLE_NOUNS: &[&str] = &[
+    "architect",
+    "administrator",
+    "administrateur",
+    "engineer",
+    "ingénieur",
+    "ingenieur",
+    "associate",
+    "professional",
+    "professionnel",
+    "practitioner",
+    "developer",
+    "entwickler",
+    "designer",
+    "programmer",
+    "expert",
+    "experte",
+    "specialist",
+    "spezialist",
+    "master",
+    "owner",
+    "analyst",
+    "consultant",
+    "auditor",
+    "manager",
+];
+
+/// True when any of `tokens` names a person by what they do.
+pub(super) fn names_a_role(tokens: &[String]) -> bool {
+    tokens
+        .iter()
+        .any(|t| ROLE_NOUNS.iter().any(|role| t.contains(role)))
+}
+
+/// The lowercased words of `text`.
+pub(super) fn word_tokens(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|t| !t.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
 
 // Re-exported flat, so the three families stay ONE vocabulary to their callers
 // and to `test.rs`: the split into `credentials/` is about the LOC cap in
 // `docs/architecture-rules.md` R8, not about the API.
-pub(super) use self::certifications::unsupported_certs;
+pub(super) use self::certifications::{unsupported_certs, CertArm};
 pub(super) use self::education::unsupported_institutions;
 pub(super) use self::tenure::{inflated_years_claims, reference_year};
 
@@ -57,14 +124,14 @@ pub(super) use self::tenure::{inflated_years_claims, reference_year};
 // carries no unused re-export.
 #[cfg(test)]
 pub(super) use self::certifications::{
-    cert_claims, CERT_EVIDENCE_LINE_CHARS, CERT_ISSUER_WINDOW_CHARS, CERT_ROLE_NOUN_WINDOW_CHARS,
+    cert_claims, CERT_EVIDENCE_LINE_CHARS, CERT_ISSUER_WINDOW_CHARS, CERT_ROLE_NOUN_WINDOW_TOKENS,
 };
 #[cfg(test)]
 pub(super) use self::education::{institutions, names_an_institution};
 #[cfg(test)]
 pub(super) use self::tenure::{
     career_span_years, stated_years, supported_years, years_claims, CAREER_SPAN_SLACK_YEARS,
-    CLAIM_CONTEXT_CHARS, MAX_PLAUSIBLE_TENURE_YEARS, SPAN_TAIL_CHARS,
+    CLAIM_CONTEXT_CHARS, MAX_PLAUSIBLE_TENURE_YEARS, SPAN_TAIL_CHARS, TENURE_SUBJECT_TOKENS,
 };
 
 /// True when `acronym` appears in `line` as an UPPERCASE, word-bounded token.
@@ -116,20 +183,34 @@ pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
             })
             .collect();
 
+    // The two arms carry different CODES because they rest on different
+    // evidence, and `issue` reads severity from the code table — so the
+    // Critical is reachable only from the acronym arm, never from the prose
+    // one. See the module doc.
     issues.extend(
         unsupported_certs(&ctx.generated_sections, source)
             .into_iter()
-            .map(|claim| {
-                issue(
+            .map(|claim| match claim.arm {
+                CertArm::Acronym => issue(
                     FACTUAL_UNSOURCED_CERTIFICATION,
                     claim.section.as_deref(),
                     format!(
-                        "\"{}\" is not in your source résumé. A certification is checkable by \
-                         the employer — remove it, or add it to your own résumé first.",
+                        "\"{}\" is not in your source résumé. A certification is checkable by the \
+                         employer — remove it, or add it to your own résumé first.",
                         claim.raw
                     ),
                     Some(claim.raw),
-                )
+                ),
+                CertArm::IssuerPhrase => issue(
+                    FACTUAL_UNSOURCED_CREDENTIAL,
+                    claim.section.as_deref(),
+                    format!(
+                        "\"{}\" reads as a certification your source résumé does not mention. \
+                         Check it before sending — an employer can verify a credential.",
+                        claim.raw
+                    ),
+                    Some(claim.raw),
+                ),
             }),
     );
 
