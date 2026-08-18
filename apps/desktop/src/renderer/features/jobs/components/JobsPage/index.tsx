@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  AGGREGATOR_BOARD_ID,
-  type BoardScrapeSummary,
-  type DATE_FILTER_OPTIONS,
-} from '@ajh/shared';
+import type { BoardScrapeSummary } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { ConfirmModal, Drawer, useNotification } from '@ajh/ui';
 
@@ -13,11 +9,10 @@ import { sanitizeReason } from '@/components/scrape/BoardSummaryChips';
 import { JobsCommandBar } from '@/features/jobs/components/JobsCommandBar';
 import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
-import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import { MatchScoresProvider } from '@/features/jobs/providers';
-import type { JobEvent, Posting } from '@/features/jobs/types';
+import type { JobEvent, Posting, ScrapeFormState } from '@/features/jobs/types';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import {
@@ -42,8 +37,24 @@ export function JobsPage() {
   const clearPostings = useClearPostings();
   const invalidatePostings = useInvalidatePostings();
 
-  const { jobs } = useSessionStore();
-  const { filter, sortBy, hideAgency } = jobs;
+  // `scrapeForm` and the two diagnostics fields live in the session store, not
+  // in this component: they describe a backend scrape that keeps running across
+  // a route change (see `JobsSlice`).
+  //
+  // One selector PER FIELD, never `useSessionStore()` unselected: this page
+  // renders the virtualized posting list plus several sort/filter memo passes,
+  // so subscribing to the whole store would re-render all of it on every
+  // unrelated mutation (a background AI generation, an autopilot run, the job
+  // summary cache). Each selector returns a stored value, never a fresh object
+  // or array literal — that would defeat the default `Object.is` equality and
+  // re-render on every store change anyway.
+  const setJobs = useSessionStore((s) => s.setJobs);
+  const filter = useSessionStore((s) => s.jobs.filter);
+  const sortBy = useSessionStore((s) => s.jobs.sortBy);
+  const hideAgency = useSessionStore((s) => s.jobs.hideAgency);
+  const scrapeForm = useSessionStore((s) => s.jobs.scrapeForm);
+  const scrapeSummaries = useSessionStore((s) => s.jobs.scrapeSummaries);
+  const scrapeFailureNote = useSessionStore((s) => s.jobs.scrapeFailureNote);
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   // Always-mounted opener for the scrape drawer. The drawer normally returns
   // focus to whatever opened it, but the empty-state "Search jobs" CTA unmounts
@@ -51,24 +62,18 @@ export function JobsPage() {
   // <body> on the first-run path.
   const scrapeButtonRef = useRef<HTMLButtonElement>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  // Per-board outcome of the most recent scrape. Kept in page state (not dropped
-  // after reading) so the chip strip persists in the results header once the
-  // form auto-closes, and the empty state can explain a zero result per board.
-  const [lastSummaries, setLastSummaries] = useState<BoardScrapeSummary[]>([]);
-  // An outright scrape failure (no per-board summaries exist for it) — kept
-  // separately so the header/empty-state stay explainable even after the
-  // dismissible form-footer note is gone. Sanitized before it ever reaches
-  // state (the raw error can carry paths/URLs — same rule as chip reasons).
-  const [lastFailureNote, setLastFailureNote] = useState<string | null>(null);
-  const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
-    boards: [AGGREGATOR_BOARD_ID],
-    query: '',
-    location: '',
-    radiusKm: 0,
-    amount: 25,
-    dateFilter: '' as '' | (typeof DATE_FILTER_OPTIONS)[number],
-    companies: [],
-  });
+
+  /**
+   * Patch the scrape form through the store.
+   *
+   * Reads the LATEST slice via `getState()` rather than the render-captured
+   * `scrapeForm` so two changes dispatched in the same tick (#884 — e.g. a
+   * location pick firing onChange then onSelectSuggestion) compose instead of
+   * the second clobbering the first. `setJobs` is a plain patch setter, so the
+   * functional-update guarantee `setState` gave us has to come from here.
+   */
+  const patchScrapeForm = (updates: Partial<ScrapeFormState>) =>
+    setJobs({ scrapeForm: { ...useSessionStore.getState().jobs.scrapeForm, ...updates } });
 
   // One-way prefill: seed the scrape location (+ its countryCode, when the saved
   // preference carries one — autopilot aggregator zero-jobs fix) from the saved
@@ -80,12 +85,14 @@ export function JobsPage() {
   useEffect(() => {
     if (seededLocation.current || !jobPrefs?.location) return;
     seededLocation.current = true;
-    setScrapeForm((f) =>
-      f.location
-        ? f
-        : { ...f, location: jobPrefs.location ?? '', countryCode: jobPrefs.countryCode }
-    );
-  }, [jobPrefs?.location, jobPrefs?.countryCode]);
+    // The ref is per-mount, but the form is not: on a remount the stored
+    // location already satisfies this guard, so re-seeding is a no-op.
+    const form = useSessionStore.getState().jobs.scrapeForm;
+    if (form.location) return;
+    setJobs({
+      scrapeForm: { ...form, location: jobPrefs.location ?? '', countryCode: jobPrefs.countryCode },
+    });
+  }, [jobPrefs?.location, jobPrefs?.countryCode, setJobs]);
 
   const {
     scraping,
@@ -93,8 +100,6 @@ export function JobsPage() {
     scrapeOutcome,
     livePostings,
     setLivePostings,
-    scrapeJobRef,
-    replacePendingRef,
     startScrape,
     cancelScrape,
     noteScrapeFinished,
@@ -108,6 +113,12 @@ export function JobsPage() {
   const throttledInvalidatePostings = useRef(invalidatePostings);
   throttledInvalidatePostings.current = invalidatePostings;
 
+  // Every identity check below reads the store SYNCHRONOUSLY via `getState()`
+  // rather than a `useSessionStore(selector)` value captured in this closure.
+  // The handler runs on backend stream events, not on React's schedule, so a
+  // captured value can be a render behind — which is exactly the staleness the
+  // old `scrapeJobRef` existed to prevent, and would drop stream items or
+  // attribute them to the wrong job.
   useJobEvents((raw: unknown) => {
     const ev = raw as JobEvent;
 
@@ -121,9 +132,9 @@ export function JobsPage() {
         'company' in item &&
         'url' in item
       ) {
-        if (ev.jobId !== scrapeJobRef.current) return;
-        if (replacePendingRef.current) {
-          replacePendingRef.current = false;
+        if (ev.jobId !== useSessionStore.getState().jobs.scrapeJobId) return;
+        if (useSessionStore.getState().jobs.replacePending) {
+          setJobs({ replacePending: false });
           setLivePostings([item]);
           void invalidatePostings().catch(() => {}); // backend already cleared old + added this first item
         } else {
@@ -162,26 +173,25 @@ export function JobsPage() {
           failed: failedNames,
         });
       }
-      // Capture the active job id BEFORE noteScrapeFinished clears scrapeJobRef.
+      // Capture the active job id BEFORE noteScrapeFinished clears it.
       // Guard: only surface diagnostics for the active scrape job — stale
       // `job.completed` events from a previous round must not overwrite the strip.
-      const isActiveJob = ev.jobId === scrapeJobRef.current;
+      const isActiveJob = ev.jobId === useSessionStore.getState().jobs.scrapeJobId;
       noteScrapeFinished(ev.jobId, { ok: true, note });
       void invalidatePostings();
       if (!isActiveJob) return;
       // Persist the full per-board summaries so the chip strip surfaces WHY a
       // board returned 0 (needs-login / needs-company / needs-keys / errored /
       // truncated) — persistently, replacing the previous transient skip-toasts.
-      setLastSummaries(boardSummaries);
-      setLastFailureNote(null);
+      setJobs({ scrapeSummaries: boardSummaries, scrapeFailureNote: null });
     } else if (ev.type === 'job.failed') {
       // Guard: `jobs:event` is a global channel — scrape, AI, autopilot, agent,
       // and pipeline jobs ALL emit `job.failed` on it. Capture isActiveJob
-      // BEFORE noteScrapeFinished (which clears scrapeJobRef on a match) so an
-      // unrelated background failure (e.g. an autopilot run) can't wipe the
+      // BEFORE noteScrapeFinished (which clears the stored job id on a match) so
+      // an unrelated background failure (e.g. an autopilot run) can't wipe the
       // strip or paint a foreign error as "Last scrape failed" — mirrors the
       // job.completed guard above.
-      const isActiveJob = ev.jobId === scrapeJobRef.current;
+      const isActiveJob = ev.jobId === useSessionStore.getState().jobs.scrapeJobId;
       const raw = typeof ev.data === 'string' ? ev.data : t('jobs.scrapeFailed');
       const sanitized = sanitizeReason(raw);
       // noteScrapeFinished stays unconditional — it's internally buffered/
@@ -192,8 +202,7 @@ export function JobsPage() {
       // chip), so keep a minimal sanitized failure note instead: the dismissible
       // form-footer note alone would make the failure invisible again once the
       // form closes/is dismissed.
-      setLastSummaries([]);
-      setLastFailureNote(sanitized);
+      setJobs({ scrapeSummaries: [], scrapeFailureNote: sanitized });
     }
   });
 
@@ -223,8 +232,7 @@ export function JobsPage() {
     setConfirmClear(false);
     await clearPostings.mutateAsync();
     setLivePostings([]);
-    setLastSummaries([]);
-    setLastFailureNote(null);
+    setJobs({ scrapeSummaries: [], scrapeFailureNote: null });
   };
 
   // Start a fresh scrape — drop the previous run's chip strip/failure note so
@@ -239,8 +247,7 @@ export function JobsPage() {
   // focus to <body>. Closing on the click also means a scrape that returns ZERO
   // results still closes the drawer instead of stranding it open (WCAG 2.4.3).
   const handleStartScrape = () => {
-    setLastSummaries([]);
-    setLastFailureNote(null);
+    setJobs({ scrapeSummaries: [], scrapeFailureNote: null });
     setShowScrapeForm(false);
     void startScrape();
   };
@@ -250,7 +257,7 @@ export function JobsPage() {
   // kept and the extra results append (deduped by id).
   const handleShowMore = () => {
     const next = scrapeForm.amount + 25;
-    setScrapeForm({ ...scrapeForm, amount: next });
+    patchScrapeForm({ amount: next });
     void startScrape(next);
   };
 
@@ -341,8 +348,8 @@ export function JobsPage() {
             onClear={() => setConfirmClear(true)}
             onScrape={() => setShowScrapeForm(true)}
             onCancelScrape={cancelScrape}
-            boardSummaries={showDiagnostics ? lastSummaries : []}
-            failureNote={showDiagnostics ? lastFailureNote : null}
+            boardSummaries={showDiagnostics ? scrapeSummaries : []}
+            failureNote={showDiagnostics ? scrapeFailureNote : null}
             scrapeButtonRef={scrapeButtonRef}
           />
 
@@ -351,8 +358,8 @@ export function JobsPage() {
             formatRelativeTime={formatRelativeTime}
             scraping={scraping}
             scrapeProgress={scrapeProgress}
-            boardSummaries={lastSummaries}
-            failureNote={lastFailureNote}
+            boardSummaries={scrapeSummaries}
+            failureNote={scrapeFailureNote}
             // Unfiltered count — lets JobsResults tell "genuinely zero
             // postings" apart from "the text filter hid everything" so the
             // empty state doesn't re-show a prior scrape's diagnostics when a
@@ -382,11 +389,10 @@ export function JobsPage() {
           scraping={scraping}
           scrapeOutcome={scrapeOutcome}
           onToggle={() => setShowScrapeForm(false)}
-          // Functional update (#884): two changes dispatched in one tick (e.g. a
-          // location pick firing onChange then onSelectSuggestion) would
-          // otherwise both spread the SAME captured `scrapeForm` and the first
-          // would be lost.
-          onFormChange={(updates) => setScrapeForm((f) => ({ ...f, ...updates }))}
+          // #884: two changes dispatched in one tick (e.g. a location pick
+          // firing onChange then onSelectSuggestion) must not both spread the
+          // SAME captured `scrapeForm` — `patchScrapeForm` re-reads the store.
+          onFormChange={(updates) => patchScrapeForm(updates)}
           onStart={handleStartScrape}
           onCancel={cancelScrape}
           onGeocode={geocodeSuggest}

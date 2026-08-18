@@ -70,8 +70,13 @@ export function JobsCommandBar({
   scrapeButtonRef,
 }: JobsCommandBarProps) {
   const { t } = useTranslation();
-  const { jobs, setJobs } = useSessionStore();
-  const { filter, sortBy, viewMode, hideAgency } = jobs;
+  // One selector per field (see JobsPage): an unselected `useSessionStore()`
+  // re-renders this bar on every mutation of every other slice.
+  const setJobs = useSessionStore((s) => s.setJobs);
+  const filter = useSessionStore((s) => s.jobs.filter);
+  const sortBy = useSessionStore((s) => s.jobs.sortBy);
+  const viewMode = useSessionStore((s) => s.jobs.viewMode);
+  const hideAgency = useSessionStore((s) => s.jobs.hideAgency);
 
   const trimmedFilter = filter.trim();
   const hasActiveFilter = trimmedFilter.length > 0;
