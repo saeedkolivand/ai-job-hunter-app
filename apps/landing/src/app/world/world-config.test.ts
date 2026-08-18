@@ -39,11 +39,15 @@ describe('world-config data integrity', () => {
 
   // Posters and clips are hosted differently on purpose: the stills are ~2 MB
   // total and ship in `public/` so the route paints before anything is fetched,
-  // while the 62 MB of clips live on a tagged GitHub release. Both halves are
-  // asserted against LITERALS rather than against the config's own base, so a
-  // regression that breaks the URL cannot move the expectation with it.
-  const CLIP_URL =
-    /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/releases\/download\/world-assets-v\d+\/[\w.-]+\.mp4$/;
+  // while the 62 MB of clips come from the R2 bucket behind cdn.aijobhunter.app.
+  //
+  // Asserted against LITERALS, not against the config's own base, so a
+  // regression that breaks the URL cannot move the expectation along with it.
+  // The host matters as much as the shape: `scrub-engine` loads clips with
+  // `fetch().then(r => r.blob())`, so they must come from an origin that sends
+  // `Access-Control-Allow-Origin`. A same-origin `/world/vid/...` path or a
+  // GitHub release URL both LOOK fine and both break the route.
+  const CLIP_URL = /^https:\/\/cdn\.aijobhunter\.app\/world\/vid\/[\w.-]+\.mp4$/;
 
   it('serves every poster still from /world/ in the deployed site', () => {
     for (const section of sections) {
@@ -52,26 +56,27 @@ describe('world-config data integrity', () => {
     }
   });
 
-  it('serves every clip from a pinned release tag, never from the site itself', () => {
+  it('serves every clip from the CORS-enabled asset host, never from the site itself', () => {
     for (const section of sections) {
       expect(section.clip).toMatch(CLIP_URL);
       expect(section.clipMobile).toMatch(CLIP_URL);
     }
   });
 
-  it('serves every connector from the same pinned release tag', () => {
+  it('serves every connector from that same host', () => {
     for (const path of [...connectors, ...connectorsMobile]) {
       expect(path).toMatch(CLIP_URL);
     }
   });
 
-  it('pins every clip to ONE release tag, so a partial bump cannot ship', () => {
-    const tags = new Set(
+  it('serves every clip from ONE origin, so a half-finished migration cannot ship', () => {
+    const origins = new Set(
       [...sections.flatMap((s) => [s.clip, s.clipMobile]), ...connectors, ...connectorsMobile].map(
-        (url) => url.split('/download/')[1]?.split('/')[0]
+        (url) => new URL(url).origin
       )
     );
-    expect(tags.size).toBe(1);
+    expect(origins.size).toBe(1);
+    expect([...origins][0]).toBe('https://cdn.aijobhunter.app');
   });
 });
 
