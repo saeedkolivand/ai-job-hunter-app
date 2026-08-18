@@ -11,6 +11,7 @@ use crate::autopilot_helpers::autopilot_scrape;
 // pick) — shared with the manual scrape path since trust-fix #2.
 use crate::commands::geocoding::derive_country_code;
 use crate::db::{new_job_id, now_ms};
+use crate::observability::sanitize_reason;
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -199,10 +200,16 @@ fn drop_orphaned_resume_cache(
     }
     let id = crate::commands::match_resume::autopilot_resume_id(text);
     if let Err(e) = docs.delete_posting_vector(&id) {
-        log::warn!("[autopilot] could not drop the résumé snapshot vector: {e}");
+        log::warn!(
+            "[autopilot] could not drop the résumé snapshot vector: {}",
+            sanitize_reason(&e.to_string())
+        );
     }
     if let Err(e) = docs.delete_match_scores_for_resume(&id) {
-        log::warn!("[autopilot] could not drop the résumé's cached match scores: {e}");
+        log::warn!(
+            "[autopilot] could not drop the résumé's cached match scores: {}",
+            sanitize_reason(&e.to_string())
+        );
     }
 }
 
@@ -576,7 +583,12 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // a bad/missing provider logs the reason a user needs to debug "notes never run".
     let completer = if autopilot.assistant {
         crate::pipeline::Completer::from_active(&app)
-            .inspect_err(|e| log::info!("[autopilot] AI notes skipped: no usable provider ({e})"))
+            .inspect_err(|e| {
+                log::info!(
+                    "[autopilot] AI notes skipped: no usable provider ({})",
+                    sanitize_reason(&e.to_string())
+                )
+            })
             .ok()
     } else {
         None

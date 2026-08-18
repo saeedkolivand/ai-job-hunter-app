@@ -19,6 +19,7 @@ use crate::email_watch::EmailWatchStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::jobs::JobTracker;
 use crate::notifications::NotificationStore;
+use crate::observability::sanitize_reason;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::runs::PipelineRunStore;
 use crate::postings::{InteractionStore, PostingsCache};
@@ -307,7 +308,10 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     let data_dir = match app.path().app_data_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            log::error!("[privacy] factory reset aborted: could not resolve app data dir: {e}");
+            log::error!(
+                "[privacy] factory reset aborted: could not resolve app data dir: {}",
+                sanitize_reason(&e.to_string())
+            );
             return json!({ "success": false, "error": "could not resolve app data directory" });
         }
     };
@@ -368,7 +372,8 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     if browser_state.exists() {
         if let Err(e) = std::fs::remove_dir_all(&browser_state) {
             log::warn!(
-                "[privacy] factory reset could not remove browser-state (may be locked): {e}"
+                "[privacy] factory reset could not remove browser-state (may be locked): {}",
+                sanitize_reason(&e.to_string())
             );
             browser_state_cleared = false;
         }

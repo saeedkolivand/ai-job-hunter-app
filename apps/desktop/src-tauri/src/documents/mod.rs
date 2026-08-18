@@ -20,6 +20,7 @@ use crate::commands::ai_provider::{
 use crate::data_store::DataStore;
 use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
+use crate::observability::sanitize_reason;
 
 use sql::{
     get_match_score_with_conn, get_vector_with_conn, prune_due, prune_table_locked,
@@ -1203,7 +1204,10 @@ pub(crate) async fn posting_vector_or_embed<E: Embedder + ?Sized>(
     // persistently failing write is invisible otherwise and reads downstream as
     // "the cache never hits". Content-free: the id and the error, never the text.
     if let Err(e) = store.upsert_posting_vector(job_id, &hash, &v) {
-        log::warn!("[documents] posting vector not cached for {job_id}: {e}");
+        log::warn!(
+            "[documents] posting vector not cached for {job_id}: {}",
+            sanitize_reason(&e.to_string())
+        );
     }
     Some(v)
 }
@@ -1345,7 +1349,8 @@ impl DataStore for DocumentStore {
                     // Skip the one vector (it re-embeds on demand) and keep going.
                     if let Err(e) = self.upsert_vector(&record.id, vector) {
                         log::warn!(
-                            "[documents] import: skipping the embedding of one restored document ({e})"
+                            "[documents] import: skipping the embedding of one restored document ({})",
+                            sanitize_reason(&e.to_string())
                         );
                     }
                 }

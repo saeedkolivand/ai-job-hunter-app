@@ -208,10 +208,11 @@ pub(super) fn log_handshake_failure(e: &tokio_tungstenite::tungstenite::Error) {
     use tokio_tungstenite::tungstenite::Error;
 
     let forbidden = matches!(e, Error::Http(r) if r.status() == StatusCode::FORBIDDEN);
+    let reason = crate::observability::sanitize_reason(&e.to_string());
     if forbidden {
-        log::debug!("[extension_bridge] handshake refused (forbidden origin): {e}");
+        log::debug!("[extension_bridge] handshake refused (forbidden origin): {reason}");
     } else {
-        log::warn!("[extension_bridge] handshake rejected/failed: {e}");
+        log::warn!("[extension_bridge] handshake rejected/failed: {reason}");
     }
 }
 

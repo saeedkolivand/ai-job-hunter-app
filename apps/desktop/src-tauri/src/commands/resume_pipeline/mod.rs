@@ -736,11 +736,13 @@ fn persist_document(
     match store.save_application(record) {
         Ok(_) => Some(wrapper),
         Err(e) => {
-            // Non-fatal, and logged rather than swallowed: the run itself
-            // succeeded and its text is already in the renderer's hands via the
-            // stream, so failing the run here would discard a good document
-            // because a merge-upsert lost a race.
-            log::warn!("[pipeline] could not persist the generated résumé (non-fatal): {e}");
+            // Non-fatal, and logged rather than swallowed: the run's text is
+            // already in the renderer's hands via the stream, so failing here
+            // would discard a good document because a merge-upsert lost a race.
+            log::warn!(
+                "[pipeline] could not persist the generated résumé (non-fatal): {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
             None
         }
     }

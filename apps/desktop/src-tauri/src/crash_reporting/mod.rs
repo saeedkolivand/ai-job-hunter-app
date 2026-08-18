@@ -67,6 +67,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::support::redact_lines;
+use crate::observability::sanitize_reason;
 
 mod transport;
 
@@ -192,7 +193,10 @@ fn save_to(data_dir: &Path, settings: Settings) {
         std::fs::write(data_dir.join(FILE_NAME), json)
     };
     if let Err(e) = write() {
-        log::warn!("[crash-reporting] could not persist consent state: {e}");
+        log::warn!(
+            "[crash-reporting] could not persist consent state: {}",
+            sanitize_reason(&e.to_string())
+        );
     }
 }
 

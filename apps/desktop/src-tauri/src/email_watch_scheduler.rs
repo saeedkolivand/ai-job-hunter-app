@@ -39,6 +39,7 @@ use crate::db::now_ms;
 use crate::email_watch::imap_client::{self, DEFAULT_IMAP_HOST, DEFAULT_IMAP_PORT};
 use crate::email_watch::{poller, EmailWatchStatus, EmailWatchStore, CREDENTIAL_SLOT};
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 /// Internal check cadence — how often the loop wakes up to ask "is a real
 /// IMAP check due yet". NOT the interval between real checks (that is
@@ -212,7 +213,10 @@ pub async fn run_check(app: &AppHandle) -> AppResult<EmailWatchStatus> {
 
     let outcome = run_check_inner(app, &store).await;
     if let Err(e) = store.record_check(now_ms()) {
-        log::warn!("[email_watch] failed to record the check timestamp: {e}");
+        log::warn!(
+            "[email_watch] failed to record the check timestamp: {}",
+            sanitize_reason(&e.to_string())
+        );
     }
     outcome?;
     Ok(store.status())

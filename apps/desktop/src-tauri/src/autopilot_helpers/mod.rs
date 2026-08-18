@@ -419,7 +419,10 @@ async fn run_notes_loop(
                 }
             }
             // Best-effort: one job's failure never aborts the rest or the run.
-            Err(e) => log::warn!("[autopilot] AI note generation failed: {e}"),
+            Err(e) => log::warn!(
+                "[autopilot] AI note generation failed: {}",
+                sanitize_reason(&e.to_string())
+            ),
         }
     }
     log::info!(

@@ -9,6 +9,7 @@ use crate::error::AppResult;
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
 use crate::jobs::{JobStatus, JobTracker};
+use crate::observability::sanitize_reason;
 use crate::postings::PostingsCache;
 
 use super::ai_provider::{
@@ -1106,7 +1107,11 @@ async fn run_embed_job(
                         {
                             Ok(()) => done += 1,
                             Err(e) => {
-                                log::warn!("reembed write failed for {}: {e}", doc.id);
+                                log::warn!(
+                                    "reembed write failed for {}: {}",
+                                    doc.id,
+                                    sanitize_reason(&e.to_string())
+                                );
                                 first_error.get_or_insert_with(|| e.to_string());
                                 failed += 1;
                             }
