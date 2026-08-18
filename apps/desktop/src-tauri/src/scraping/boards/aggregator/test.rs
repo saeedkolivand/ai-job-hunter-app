@@ -4828,3 +4828,55 @@ async fn the_keyless_tier_still_answers_when_nothing_failed() {
          whole result — this is the entire point of the feature"
     );
 }
+
+/// One job surfaced by BOTH the sparse keyed tier and the keyless tier must
+/// render once, not twice.
+///
+/// `dedupe` alone cannot do this: `external_id` is provider-prefixed
+/// (`adzuna-…` vs `freehire-…`), so the same posting from two providers is two
+/// distinct keys by construction — which is exactly why `dedupe_by_url` exists
+/// for the additive Apify merge. The freehire merge is the only OTHER
+/// cross-provider merge in `primary_chain`, so it needs the same second pass.
+///
+/// Mutation check: dropped the `dedupe_by_url` wrapper — RAN, went red (2
+/// postings for one job), restored.
+#[tokio::test]
+async fn a_job_found_by_both_the_sparse_and_keyless_tiers_appears_once() {
+    const SHARED_URL: &str = "https://boards.example.com/jobs/shared-1";
+
+    let mut adzuna_hit = sample_posting("dup-1", "adzuna");
+    adzuna_hit.url = SHARED_URL.to_string();
+    let mut freehire_hit = sample_posting("dup-2", "freehire");
+    freehire_hit.url = SHARED_URL.to_string();
+
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok("adzuna", vec![adzuna_hit])),
+        Box::new(FakeProvider::ok("freehire", vec![freehire_hit])),
+    ];
+
+    // Guessed market + a real location: the shape that produces the merge.
+    let items = primary_chain(
+        &providers,
+        "rust",
+        "London",
+        "de",
+        true,
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("the merge must not error");
+
+    assert_eq!(
+        items.len(),
+        1,
+        "the same job from two tiers must collapse to one; got {:?}",
+        items.iter().map(|p| &p.id).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        items[0].external_id.as_deref(),
+        Some("adzuna-dup-1"),
+        "the keyed tier's copy must win — it is first-seen and location-relevant"
+    );
+}

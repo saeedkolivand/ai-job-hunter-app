@@ -77,10 +77,11 @@ export function Desktop() {
           gateway for JSearch) using your RapidAPI key. <b>Jooble</b> requests go directly to
           Jooble's API, using your own Jooble key, and are made only as a last-resort fallback after
           Adzuna and JSearch. <b>freehire</b> is the one aggregator tier that needs no API key, so
-          it is the only one that can run before you have configured anything; it is tried last,
-          after every keyed tier above is unconfigured or has failed, and it receives only your
-          search keywords and (when you have picked one) a country code. We run no proxy or
-          intermediary; there is no AI Job Hunter server in the path. Adzuna, JSearch, RapidAPI,
+          it is the only one that can run before you have configured anything. It is tried last, and
+          only when none of the keyed tiers above <em>failed</em> — if one of your own keys errors,
+          we show you that error rather than quietly answering from freehire instead. It receives
+          only your search keywords and (when you have picked one) a country code. We run no proxy
+          or intermediary; there is no AI Job Hunter server in the path. Adzuna, JSearch, RapidAPI,
           Jooble, and freehire requests are subject to their respective terms of service and privacy
           policies.
         </p>

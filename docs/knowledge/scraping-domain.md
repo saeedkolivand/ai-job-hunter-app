@@ -85,12 +85,9 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 
 **Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) → JSearch (paid fallback) → Jooble (third-tier BYO-key, ~67-country coverage) → ApifyLinkedInProvider (opt-in, token + autofill-gate gated) → **freehire (keyless floor)**.
 
-**freehire is the one tier that needs no key** (`boards/aggregator/freehire.rs`, issue #1002, implemented from the published `openapi.yaml` — not from the maintainer's offered PR, because this repo has no CLA). Consequences worth knowing before touching this area:
+**freehire is the one tier that needs no key** (issue #1002; implemented from the published `openapi.yaml`, not the maintainer's offered PR — no CLA in this repo). Shape only, because the rules below are load-bearing and must not be paraphrased here: the tier, its position, its silent degradation, its skip-on-real-failure guard and its merge-behind-sparse-hits rule are all specified in the module doc of `apps/desktop/src-tauri/src/scraping/boards/aggregator/freehire.rs` and in `primary_chain` (`aggregator/mod.rs`); the egress/privacy side is ADR-0005 class 2.
 
-- Because it is always "configured", `aggregator_has_configured_provider()` is always true and **`needs_keys()` never returns `true` in production any more** — the board always runs. The autopilot "Needs configuration" badge and the Jobs-page needs-keys skip are therefore unreachable for it. Accepted: a keyless search that finds nothing now reads "no jobs found" rather than prompting for keys.
-- It is **skipped entirely when a configured provider FAILED**, so a revoked or rate-limited key still reaches `BoardScrapeSummary.error` instead of being masked by an always-on tier.
-- After a distrusted guessed market its results are **merged behind** the sparse keyed hits, never substituted for them: on a guessed market freehire is location-blind (the documented search has no city parameter) while those hits are not.
-- Its own failures degrade to `Ok(empty)`, never `Err` — the only provider that swallows its errors, because nobody opted into it.
+The one consequence worth knowing before you touch anything else in this subsystem, because it is invisible from the aggregator's own files: a keyless tier is always "configured", so `Scraper::needs_keys()` **never returns `true` in production any more** and the autopilot "Needs configuration" badge is unreachable.
 
 **Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `html_to_markdown()` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
 

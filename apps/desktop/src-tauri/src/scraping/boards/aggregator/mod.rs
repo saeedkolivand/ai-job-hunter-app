@@ -468,14 +468,24 @@ async fn primary_chain(
                 .await
             {
                 Ok(items) if !items.is_empty() => {
-                    let merged = match sparse_guessed_items.take() {
+                    return Ok(match sparse_guessed_items.take() {
+                        // The only CROSS-PROVIDER merge inside this function,
+                        // so it needs both dedup passes. `dedupe` keys on
+                        // `external_id`, which is provider-prefixed
+                        // (`adzuna-…` vs `freehire-…`) and therefore cannot
+                        // collide across providers even for the SAME job —
+                        // see `dedupe_by_url`'s own doc, which exists for
+                        // exactly this reason on the additive Apify merge.
+                        // Without the URL pass, one job surfaced by both tiers
+                        // renders twice.
                         Some(mut sparse) => {
                             sparse.extend(items);
-                            sparse
+                            dedupe_by_url(dedupe(sparse))
                         }
-                        None => items,
-                    };
-                    return Ok(dedupe(merged));
+                        // Single provider — `external_id` is sufficient and
+                        // `canonical_url` collapsing is not wanted.
+                        None => dedupe(items),
+                    });
                 }
                 Ok(_) => {}
                 Err(e) => log::warn!("[aggregator] freehire keyless tier failed: {e}"),
