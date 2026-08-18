@@ -63,8 +63,10 @@ export interface BoardsContract {
  * Per-board outcome from a completed scrape job.
  * - `skipped: "needs-login"` — board bypassed because no session exists.
  * - `skipped: "needs-company"` — ATS board bypassed because no company slug was supplied.
- * - `skipped: "needs-keys"` — key-backed board (the aggregator) bypassed because its
- *   API keys aren't configured; prompt the user to add them in Settings.
+ * - `skipped: "needs-keys"` — key-backed board bypassed because its API keys
+ *   aren't configured; prompt the user to add them in Settings. No board emits
+ *   this today: the aggregator was the only one, and its keyless freehire tier
+ *   can answer without any key, so it never asks to be skipped.
  * - `truncated` — a paginated board kept a partial harvest after a mid-run page
  *   failure (e.g. `"page 3 of 5 failed: HTTP 429"`); `count` is a partial tally,
  *   not the full result set. Absent when the harvest ran to completion.

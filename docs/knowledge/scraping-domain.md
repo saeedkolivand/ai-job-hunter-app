@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-08-17
+Last updated: 2026-08-18
 
 Describes the job-scraping subsystem: board registry (24 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -81,20 +81,24 @@ Two more boards, bringing the registry to 23 (Jobicy later added in #700, bringi
 
 These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their Rust modules are deleted; the registry went from 21 → 16 boards. Coverage is now provided by the Aggregator. The single-job import resolvers (`scrape_url::canonical_job_url` for Indeed, `scrape_url::try_workday`) and the dormant `board_login`/credential machinery are **deliberately kept** — see ADR-026 for the full keep-list and rationale.
 
-## Aggregator board (Adzuna + JSearch + Jooble + Apify)
+## Aggregator board (Adzuna + JSearch + Jooble + Apify + freehire)
 
-**Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) → JSearch (paid fallback) → Jooble (third-tier BYO-key, ~67-country coverage) → ApifyLinkedInProvider (opt-in, token + autofill-gate gated).
+**Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) → JSearch (paid fallback) → Jooble (third-tier BYO-key, ~67-country coverage) → ApifyLinkedInProvider (opt-in, token + autofill-gate gated) → **freehire (keyless floor)**.
+
+**freehire is the one tier that needs no key** (issue #1002; implemented from the published `openapi.yaml`, not the maintainer's offered PR — no CLA in this repo). Shape only, because the rules below are load-bearing and must not be paraphrased here: the tier, its position, its silent degradation, its skip-on-real-failure guard and its merge-behind-sparse-hits rule are all specified in the module doc of `apps/desktop/src-tauri/src/scraping/boards/aggregator/freehire.rs` and in `primary_chain` (`aggregator/mod.rs`); the egress/privacy side is ADR-0005 class 2.
+
+The one consequence worth knowing before you touch anything else in this subsystem, because it is invisible from the aggregator's own files: a keyless tier is always "configured", so `Scraper::needs_keys()` **never returns `true` in production any more** and the autopilot "Needs configuration" badge is unreachable.
 
 **Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `html_to_markdown()` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
 
 **Keys and configuration:**
 
-- Adzuna, JSearch, Jooble, and Apify API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
+- Adzuna, JSearch, Jooble, and Apify API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust). freehire has no key at all, so it has no keyring slot and no `aggregator_store_error` probe.
 - Settings → Jobs exposes UI to enter/remove credentials (seven `AggregatorKeyField` controls: two for Adzuna's app-id/app-key, one each for JSearch/Jooble/Apify token, plus Comeet company UID and API token).
 - Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into the respective slots: `ai:adzuna-app-id`, `ai:adzuna-app-key`, `ai:jsearch-key`, `ai:jooble-key`, `ai:apify-token`, `ai:comeet-company-uid`, `ai:comeet-api-token`.
 - **Path-embedded-key redaction (PR #618):** Jooble embeds its API key in the URL path (`POST https://jooble.org/api/{key}`), unlike Adzuna/JSearch which use query params. New `FetchOptions.redact_path` boolean + `safe_log_url(url, redact_path)` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` redact the entire path when `true`, keeping logs safe. Providers using path-embedded keys must pass `redact_path: true` in their `FetchOptions`.
 
-**Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (AdzunaProvider, JSearchProvider, JoobleProvider, ApifyLinkedInProvider, and JobProvider trait).
+**Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (AdzunaProvider, JSearchProvider, JoobleProvider, ApifyLinkedInProvider, and JobProvider trait), `adzuna.rs` (primary tier) and `freehire.rs` (keyless tier).
 
 **Adzuna country-code limitation (PR #483):**
 
