@@ -2,6 +2,7 @@
 //! see [`unsupported_institutions`] for the measurement that scoped it down
 //! from the value comparison it was specified as.
 
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -85,9 +86,26 @@ const DEGREE_TOKENS: &[&str] = &[
 ];
 
 /// True when `text` names a degree anywhere.
+///
+/// `"master"`/`"masters"` are ambiguous in a way none of the other
+/// [`DEGREE_TOKENS`] are: `Certified Scrum Master` names a CERTIFICATION, not
+/// a degree, and `contains_phrase` is word-bounded, so it reads "Master" out
+/// of that phrase just as readily as out of "Master of Science". Reading it
+/// as a degree there lets a source with NO education section at all satisfy
+/// `source_has_education`, silencing `unsourced_institution` for a document
+/// that invented one whole. Scoped to the exact phrase rather than dropped
+/// outright — a bare "Master, IIT Delhi" line is the shape this layer exists
+/// to catch, and the family's own posture is to skip an ambiguous comparison
+/// rather than guess at it either way.
 fn names_a_degree(text: &str) -> bool {
     let lower = text.to_lowercase();
-    DEGREE_TOKENS.iter().any(|d| contains_phrase(&lower, d))
+    DEGREE_TOKENS.iter().any(|d| {
+        if matches!(*d, "master" | "masters") {
+            contains_phrase(&lower, d) && !contains_phrase(&lower, &format!("scrum {d}"))
+        } else {
+            contains_phrase(&lower, d)
+        }
+    })
 }
 
 /// True when `text` names an institution anywhere.
@@ -177,5 +195,14 @@ pub fn unsupported_institutions(
     if source_has_education {
         return Vec::new();
     }
+    // One invented school is one finding, the same rule the tenure and
+    // certification arms already apply — without it, the same institution
+    // named on two Education lines (or reachable through two of the
+    // `['|', '·', ',', '(', ')']` delimiters on one line) reports twice with
+    // identical evidence.
+    let mut seen = HashSet::new();
     institutions(generated_sections)
+        .into_iter()
+        .filter(|(name, _)| seen.insert(name.to_lowercase()))
+        .collect()
 }
