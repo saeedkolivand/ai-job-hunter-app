@@ -111,6 +111,34 @@ export interface JobInteraction {
   timestamp: number;
 }
 
+/**
+ * Verdict on ONE hard constraint (a non-negotiable), reported alongside the
+ * relevance score and never folded into it. Four values, because "we cannot
+ * tell" is never a pass:
+ *
+ * - `met` / `notMet` — positive evidence on BOTH sides, agreeing or conflicting.
+ * - `unknown` — the candidate stated a preference but no verdict was reachable
+ *   (the posting says nothing, or what they stated is not comparable).
+ * - `noPreference` — the candidate has expressed nothing, so it cannot be
+ *   evaluated at all. Distinct from `unknown`: the user can fix this one.
+ *
+ * `notMet` is advisory. Nothing filters, sorts or gates on it — a wrong
+ * knock-out tells the user not to bother applying, which costs far more than a
+ * wrong relevance number.
+ */
+export type ConstraintStatus = 'met' | 'notMet' | 'unknown' | 'noPreference';
+
+/** One constraint's verdict plus the evidence on each side that produced it. */
+export interface ConstraintCheck {
+  /** Stable machine id (e.g. `'location'`) — the renderer localizes the label. */
+  id: string;
+  status: ConstraintStatus;
+  /** What the posting states about this constraint, verbatim. Absent when it states nothing. */
+  posting?: string;
+  /** What the candidate has stored about it, verbatim. Absent when they set nothing. */
+  candidate?: string;
+}
+
 export interface MatchScore {
   resumeId: string;
   jobId: string;
@@ -122,6 +150,13 @@ export interface MatchScore {
   explanation?: string;
   /** Guidance framing: this score is our estimate, not the employer's verdict. */
   guidance?: string;
+  /**
+   * Hard-constraint pass — reported as its own field so it can never contaminate
+   * the score above. Only the constraints the app has honest candidate-side data
+   * for appear here (today: `location`); see
+   * `commands/match_resume/constraints.rs` for the ones deliberately not shipped.
+   */
+  constraints?: { checks: ConstraintCheck[] };
 }
 
 /** One résumé bullet, ranked by the job vocabulary it carries. */

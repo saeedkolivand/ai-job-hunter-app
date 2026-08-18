@@ -16,7 +16,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::jobs::cancel::CancelRegistry;
 
-mod location_filter;
+/// `pub(crate)` (not private to `engine`) so the L3 hard-constraint pass in
+/// `commands::match_resume::constraints` reuses this module's three-valued
+/// [`location_filter::location_verdict`] instead of forking a second place-name
+/// matcher with its own remote-marker list and exonym table.
+pub(crate) mod location_filter;
 
 /// Per-item keep predicate for a single board (already bound to that board's
 /// name where relevant) — `true` = keep. Trust PR F's central location filter;

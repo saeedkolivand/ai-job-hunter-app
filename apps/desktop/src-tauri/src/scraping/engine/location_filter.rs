@@ -150,43 +150,102 @@ fn requested_needles(requested: &LocationSpec) -> Vec<String> {
     needles
 }
 
-/// True when `posting` should be DROPPED for a search that requested `requested`
-/// from a board that does not filter location server-side. Conservative:
-/// - remote (via the `extra.remote` flag OR a remote marker in the location text) → keep
-/// - empty / unknown location → keep
-/// - no usable requested place tokens (e.g. country-code-only) → keep
+/// What comparing a posting's own location against a requested one actually
+/// established. THREE answers, not two: "we could not decide" is a distinct
+/// outcome from "they agree", and collapsing the two is how an absent fact
+/// becomes a stated one.
+///
+/// [`location_mismatch`] (the scrape-time post-filter) only ever needed the
+/// binary "drop it?" projection of this, and is defined as exactly that below.
+/// The hard-constraint pass in `commands::match_resume::constraints` needs all
+/// three, because it REPORTS the answer to the user instead of acting on it —
+/// and reporting an undecided constraint as a pass (or as a fail) is a lie in
+/// either direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LocationVerdict {
+    /// Positive evidence on both sides, and they agree: the posting is remote,
+    /// or it names a place the request asked for.
+    Match,
+    /// Positive evidence on both sides, and they conflict: the posting names a
+    /// concrete place, is not remote, and NO requested place token appears in
+    /// it. The only answer that is ever a knock-out.
+    Mismatch,
+    /// No comparison was possible — the posting states no location, or the
+    /// request carries no usable place token (country-code-only, or a token
+    /// below [`MIN_TOKEN_LEN`]). Never a pass and never a fail.
+    Undecided,
+}
+
+/// Compare one posting's location text against a requested [`LocationSpec`],
+/// three-valued. Conservative, in the same order [`location_mismatch`] has
+/// always evaluated:
+/// - remote (via the board's `extra.remote` flag OR a remote marker in the
+///   location text) → [`LocationVerdict::Match`]
+/// - empty / unknown posting location → [`LocationVerdict::Undecided`]
+/// - no usable requested place tokens (e.g. country-code-only) →
+///   [`LocationVerdict::Undecided`]
 /// - a diaeresis-spelling variant of the same name, or a curated exonym (see
-///   [`EXONYM_PAIRS`]) → keep (never a false drop on München/Munich, Köln/Cologne)
-/// - otherwise drop only when NO requested token (fold-aware) appears in the
-///   posting location.
+///   [`EXONYM_PAIRS`]) → [`LocationVerdict::Match`] (never a false mismatch on
+///   München/Munich, Köln/Cologne)
+/// - otherwise [`LocationVerdict::Mismatch`], only when NO requested token
+///   (fold-aware) appears in the posting location.
+///
+/// Takes the two posting facts as plain data rather than a [`JobPosting`] so the
+/// L3 constraint pass — which reads a cached posting as `serde_json::Value`, not
+/// as a `JobPosting` — reaches the SAME matcher instead of forking a second one
+/// that would drift on the remote-marker list and the exonym table.
 ///
 /// Pure — the truth table is unit-tested below.
-pub(crate) fn location_mismatch(posting: &JobPosting, requested: &LocationSpec) -> bool {
-    // Never drop a posting a board flagged remote.
-    if posting
-        .extra
-        .get("remote")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        return false;
+pub(crate) fn location_verdict(
+    posting_location: Option<&str>,
+    board_remote: bool,
+    requested: &LocationSpec,
+) -> LocationVerdict {
+    // A posting a board flagged remote can never conflict with a place.
+    if board_remote {
+        return LocationVerdict::Match;
     }
-    // Empty / unknown location → keep.
-    let loc = match posting.location.as_deref().map(str::trim) {
+    // Empty / unknown location → the posting states nothing to compare against.
+    let loc = match posting_location.map(str::trim) {
         Some(l) if !l.is_empty() => l.to_lowercase(),
-        _ => return false,
+        _ => return LocationVerdict::Undecided,
     };
-    // Remote marker in the location text → keep.
+    // Remote marker in the location text.
     if REMOTE_MARKERS.iter().any(|m| loc.contains(m)) {
-        return false;
+        return LocationVerdict::Match;
     }
     let needles = requested_needles(requested);
     if needles.is_empty() {
-        return false; // nothing concrete to match → keep
+        return LocationVerdict::Undecided; // nothing concrete to match
     }
-    // Keep when any requested token (diaeresis/exonym-aware) appears in the
-    // posting location; drop otherwise.
-    !needles.iter().any(|n| contains_folded(&loc, n))
+    // Match when any requested token (diaeresis/exonym-aware) appears in the
+    // posting location.
+    if needles.iter().any(|n| contains_folded(&loc, n)) {
+        LocationVerdict::Match
+    } else {
+        LocationVerdict::Mismatch
+    }
+}
+
+/// True when `posting` should be DROPPED for a search that requested `requested`
+/// from a board that does not filter location server-side.
+///
+/// The binary projection of [`location_verdict`]: **only** an explicit
+/// [`LocationVerdict::Mismatch`] drops. Every other answer — including every
+/// undecided one — keeps, which is the conservative posture this filter has
+/// always had (keeping a wrong-city row is the old lie; dropping a remote or
+/// unknown-location job would be a new one). Defined in terms of the verdict so
+/// the two callers cannot drift into two different remote-marker lists.
+pub(crate) fn location_mismatch(posting: &JobPosting, requested: &LocationSpec) -> bool {
+    let board_remote = posting
+        .extra
+        .get("remote")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    matches!(
+        location_verdict(posting.location.as_deref(), board_remote, requested),
+        LocationVerdict::Mismatch
+    )
 }
 
 /// Drop postings whose location clearly mismatches `requested`, returning the
@@ -408,6 +467,88 @@ mod test {
             location_mismatch(&posting(Some("Den Haag, Netherlands"), false), &req),
             "an exonym pair outside EXONYM_PAIRS is a known, documented gap — must still drop"
         );
+    }
+
+    // ── Three-valued verdict (the constraint pass's source) ────────────────────
+
+    /// Every verdict this matcher can return, pinned to an ABSOLUTE expected
+    /// value per input — not to whatever `location_mismatch` happens to say.
+    #[test]
+    fn location_verdict_answers_match_mismatch_and_undecided() {
+        let berlin = requested("Berlin");
+        // Match: the posting names the requested city.
+        assert_eq!(
+            location_verdict(Some("Berlin, Germany"), false, &berlin),
+            LocationVerdict::Match
+        );
+        // Match: remote, by the board flag even with a far-away location text.
+        assert_eq!(
+            location_verdict(Some("Austin, TX"), true, &berlin),
+            LocationVerdict::Match
+        );
+        // Match: remote, by a marker in the location text.
+        assert_eq!(
+            location_verdict(Some("Remote (US)"), false, &berlin),
+            LocationVerdict::Match
+        );
+        // Mismatch: a concrete, non-remote, non-matching place.
+        assert_eq!(
+            location_verdict(Some("Austin, TX"), false, &berlin),
+            LocationVerdict::Mismatch
+        );
+        // Undecided: the posting states no location at all.
+        assert_eq!(
+            location_verdict(None, false, &berlin),
+            LocationVerdict::Undecided
+        );
+        assert_eq!(
+            location_verdict(Some("   "), false, &berlin),
+            LocationVerdict::Undecided
+        );
+        // Undecided: nothing usable was requested (country-code-only).
+        let cc_only = LocationSpec {
+            country_code: Some("de".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            location_verdict(Some("Austin, TX"), false, &cc_only),
+            LocationVerdict::Undecided
+        );
+    }
+
+    /// The scrape-time filter is EXACTLY the `Mismatch` projection — nothing
+    /// else drops. Anchored on both ends: a hand-written absolute expectation
+    /// per case, plus the equivalence, so a regression that broke both the
+    /// filter and the verdict the same way still fails on the absolutes.
+    #[test]
+    fn location_mismatch_drops_exactly_the_mismatch_verdict() {
+        let berlin = requested("Berlin");
+        // (posting location, board remote flag, expected verdict, expected drop)
+        let cases: &[(Option<&str>, bool, LocationVerdict, bool)] = &[
+            (
+                Some("Berlin, Germany"),
+                false,
+                LocationVerdict::Match,
+                false,
+            ),
+            (Some("Austin, TX"), true, LocationVerdict::Match, false),
+            (Some("Anywhere"), false, LocationVerdict::Match, false),
+            (Some("Austin, TX"), false, LocationVerdict::Mismatch, true),
+            (Some("London, UK"), false, LocationVerdict::Mismatch, true),
+            (None, false, LocationVerdict::Undecided, false),
+            (Some(""), false, LocationVerdict::Undecided, false),
+        ];
+        for (loc, remote, want_verdict, want_drop) in cases {
+            let verdict = location_verdict(*loc, *remote, &berlin);
+            assert_eq!(&verdict, want_verdict, "verdict for {loc:?}/{remote}");
+            let dropped = location_mismatch(&posting(*loc, *remote), &berlin);
+            assert_eq!(dropped, *want_drop, "drop for {loc:?}/{remote}");
+            assert_eq!(
+                dropped,
+                verdict == LocationVerdict::Mismatch,
+                "the filter must be exactly the Mismatch projection ({loc:?}/{remote})"
+            );
+        }
     }
 
     #[test]

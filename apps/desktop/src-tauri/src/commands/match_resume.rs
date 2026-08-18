@@ -21,6 +21,14 @@ use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::locale::LocaleProfile;
 use crate::postings::PostingsCache;
 
+/// The hard-constraint pass — the non-negotiables (can I take this job at all?)
+/// that a relevance score structurally cannot answer. A sibling module rather
+/// than more of this file: it shares nothing with the scoring kernel by design,
+/// and must not be able to reach it. See its module doc for the three rules it
+/// holds to and for which constraints were refused for lack of candidate-side
+/// data.
+mod constraints;
+
 /// Score a resume against a job posting.
 ///
 /// Returns a `MatchScore` (see packages/shared types): a semantic score from
@@ -642,7 +650,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     let semantic_enabled = semantic_enabled_bit(req.semantic_scoring_enabled);
     let job_text = job_text_for(&app, &req.job_id);
 
-    score_one(
+    let scored = score_one(
         &AppScoreIo(&app),
         &store,
         &resume,
@@ -654,7 +662,18 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         MatchSurface::JobsPage,
         None, // user-initiated: not charged against the unattended daily ceiling
     )
-    .await
+    .await;
+
+    // Hard constraints, reported SEPARATELY and computed AFTER the kernel — the
+    // verdict is a sibling field of the score, never an input to it. Deliberately
+    // out here rather than inside `score_one`: `score_one`'s result is cached in
+    // `match_scores` under a key composed of SCORING inputs only, so a verdict
+    // frozen into that row would be served stale for the whole TTL the moment the
+    // user edits their job preferences. Out here it is recomputed every call, and
+    // a cache HIT gets a fresh verdict on a cached score. It also keeps the
+    // Autopilot and extension entry points — which share the kernel but not this
+    // command — byte-identical.
+    constraints::attach(&app, &req.job_id, scored)
 }
 
 /// Build a searchable text blob for a single cached posting JSON value (title +
