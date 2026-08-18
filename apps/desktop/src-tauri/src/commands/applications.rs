@@ -16,7 +16,7 @@ use crate::applications::{
     ApplicationMeta, ApplicationStatus, ApplicationStore, MAX_JOB_DESCRIPTION_BYTES,
 };
 use crate::error::{AppError, AppResult};
-use crate::observability::Span;
+use crate::observability::{sanitize_reason, Span};
 
 // Generated from the Zod schemas in packages/shared by `pnpm gen:ipc`.
 pub use crate::ipc_contracts::applications::{ApplicationTrackRequest, ApplicationUpdateRequest};
@@ -345,13 +345,19 @@ pub async fn applications_delete(app: AppHandle, id: String, keep_documents: boo
     if !keep_documents {
         if let Some(gens) = app.try_state::<crate::ai_generations::AiGenerationStore>() {
             if let Err(e) = gens.remove_for_application(&id) {
-                log::warn!("[applications] failed to delete child generations (non-fatal): {e}");
+                log::warn!(
+                    "[applications] failed to delete child generations (non-fatal): {}",
+                    sanitize_reason(&e.to_string())
+                );
             }
         }
     } else if let Some(gens) = app.try_state::<crate::ai_generations::AiGenerationStore>() {
         // Keep documents: detach them so they survive as orphaned generations.
         if let Err(e) = gens.detach_application(&id) {
-            log::warn!("[applications] failed to detach child generations (non-fatal): {e}");
+            log::warn!(
+                "[applications] failed to detach child generations (non-fatal): {}",
+                sanitize_reason(&e.to_string())
+            );
         }
     }
 

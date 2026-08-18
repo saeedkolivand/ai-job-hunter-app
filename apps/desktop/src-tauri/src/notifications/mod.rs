@@ -222,7 +222,10 @@ impl NotificationStore {
         match serde_json::to_string_pretty(&notifications) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&self.data_file, &json) {
-                    log::warn!("failed to persist notifications to disk: {e}");
+                    log::warn!(
+                        "failed to persist notifications to disk: {}",
+                        crate::observability::sanitize_reason(&e.to_string())
+                    );
                 }
             }
             Err(e) => log::warn!("failed to serialize notifications: {e}"),

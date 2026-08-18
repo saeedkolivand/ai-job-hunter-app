@@ -82,6 +82,7 @@ where
 
 use crate::db::now_ms;
 use crate::error::AppResult;
+use crate::observability::sanitize_reason;
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -779,7 +780,10 @@ impl AutopilotStore {
         // deliberately NOT a retry queue. Migrations that need to *observe* a
         // successful persist still call `write_to_disk` directly.
         if let Err(e) = self.write_to_disk(&map) {
-            log::error!("[autopilot] failed to persist autopilots.json: {e}");
+            log::error!(
+                "[autopilot] failed to persist autopilots.json: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
         *self.cache.lock() = Some(map);
     }

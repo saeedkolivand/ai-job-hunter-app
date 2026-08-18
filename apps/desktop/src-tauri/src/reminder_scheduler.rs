@@ -26,6 +26,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::applications::{ApplicationStore, FollowUpCandidate};
 use crate::db::now_ms;
+use crate::observability::sanitize_reason;
 
 /// How often the sweep runs. A follow-up reminder is a day-grained thing, so a
 /// coarse tick is plenty and keeps the app idle-cheap.
@@ -143,8 +144,9 @@ fn claim_due(store: &ApplicationStore, now: u64) -> Vec<FollowUpCandidate> {
                 }
                 Err(e) => {
                     log::warn!(
-                        "[reminders] could not mark {} notified (skipping): {e}",
-                        c.id
+                        "[reminders] could not mark {} notified (skipping): {}",
+                        c.id,
+                        sanitize_reason(&e.to_string())
                     );
                     false
                 }
@@ -176,7 +178,10 @@ async fn tick(app: &AppHandle) {
         // sweep is idempotent, so dropping this one and retrying next tick is
         // the whole recovery.
         Err(e) => {
-            log::warn!("[reminders] sweep task failed: {e}");
+            log::warn!(
+                "[reminders] sweep task failed: {}",
+                sanitize_reason(&e.to_string())
+            );
             return;
         }
     };

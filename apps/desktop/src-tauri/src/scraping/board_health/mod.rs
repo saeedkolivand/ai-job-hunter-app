@@ -64,6 +64,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 use super::engine::BoardScrapeSummary;
 
@@ -591,7 +592,10 @@ impl BoardHealthStore {
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
         if let Err(e) = conn.execute("DELETE FROM board_health", []) {
-            log::warn!("[board-health] factory reset failed to clear board_health: {e}");
+            log::warn!(
+                "[board-health] factory reset failed to clear board_health: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
     }
 

@@ -310,6 +310,13 @@ node scripts/check-agent-system.mjs
 
 # ── Rust gate (CI `rust` filter) ───────────────────────────────────────────────
 if [ -n "$RUST" ]; then
+  # A bare `{e}` inside a log::{warn,error,info,debug}! call can leak an
+  # absolute path, a credential-bearing URL, or a host:port into the log —
+  # see scripts/check-log-error-leaks.mjs. Pure Node/text scan (no cargo), so
+  # it runs before the `cd` below.
+  echo "▶ Checking for path/URL/credential leaks in log:: error interpolation..."
+  node scripts/check-log-error-leaks.mjs
+
   cd apps/desktop/src-tauri
 
   echo "▶ Running cargo check..."

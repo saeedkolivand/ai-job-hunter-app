@@ -74,7 +74,10 @@ pub fn start(app: &AppHandle) {
     let settings = match UISettings::new() {
         Ok(s) => s,
         Err(e) => {
-            log::warn!("[accent-watcher] UISettings unavailable; live accent disabled: {e}");
+            log::warn!(
+                "[accent-watcher] UISettings unavailable; live accent disabled: {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
             return;
         }
     };
@@ -99,7 +102,10 @@ pub fn start(app: &AppHandle) {
             });
         }
         Err(e) => {
-            log::warn!("[accent-watcher] ColorValuesChanged subscribe failed: {e}");
+            log::warn!(
+                "[accent-watcher] ColorValuesChanged subscribe failed: {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
         }
     }
 }

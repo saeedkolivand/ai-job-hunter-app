@@ -199,7 +199,10 @@ pub(super) fn resolve_answers_save(
     let saved = store.merge_answers(&app.id, incoming).map_err(|e| {
         // Wire-error discipline: never let a raw store error (path/SQL detail)
         // reach `answers_result_reply` — log it, reply a fixed sentinel.
-        log::warn!("[extension_bridge] answers.save store error: {e}");
+        log::warn!(
+            "[extension_bridge] answers.save store error: {}",
+            crate::observability::sanitize_reason(&e.to_string())
+        );
         AppError::Storage("could not save these answers".to_string())
     })?;
 

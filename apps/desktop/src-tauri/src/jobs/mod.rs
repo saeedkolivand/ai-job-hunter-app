@@ -18,6 +18,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::observability::sanitize_reason;
 
 /// Cancellation tokens for in-flight jobs/runs, keyed by id — the tracker's
 /// sibling: this module records what a job DID, `cancel` records how to STOP it.
@@ -135,12 +136,18 @@ impl JobTracker {
         let mut conn = match crate::db::open(&db_path) {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("[jobs] failed to open jobs.db, running in-memory only: {e}");
+                log::warn!(
+                    "[jobs] failed to open jobs.db, running in-memory only: {}",
+                    e.code()
+                );
                 return Self::default();
             }
         };
         if let Err(e) = run_migrations(&mut conn, Self::MIGRATIONS) {
-            log::warn!("[jobs] migration failed, running in-memory only: {e}");
+            log::warn!(
+                "[jobs] migration failed, running in-memory only: {}",
+                sanitize_reason(&e.to_string())
+            );
             return Self::default();
         }
 

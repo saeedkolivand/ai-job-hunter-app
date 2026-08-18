@@ -40,6 +40,7 @@ use anyhow::Result;
 use serde::Serialize;
 
 use super::{get_config, write_auth_status, write_cookies, StoredCookie};
+use crate::observability::sanitize_reason;
 use crate::platform::{detect_chromium_user_data_roots, ChromiumBrowser};
 
 /// Result of an import attempt for a single board. Serializable so the command
@@ -95,8 +96,9 @@ pub fn import_cookies(app_data_dir: &Path, board_id: &str) -> Result<ImportOutco
                 // Per-browser failures are non-fatal: a locked DB we couldn't
                 // copy, a missing Local State key, etc. Log without values.
                 log::debug!(
-                    "[cookie-import] {} root unreadable for {board_id}: {e}",
-                    browser.label()
+                    "[cookie-import] {} root unreadable for {board_id}: {}",
+                    browser.label(),
+                    sanitize_reason(&e.to_string())
                 );
             }
         }
@@ -171,8 +173,9 @@ fn collect_from_root(browser: ChromiumBrowser, root: &Path, board_id: &str) -> R
                 harvest.cookies.extend(rows.cookies);
             }
             Err(e) => log::debug!(
-                "[cookie-import] {} profile read failed for {board_id}: {e}",
-                browser.label()
+                "[cookie-import] {} profile read failed for {board_id}: {}",
+                browser.label(),
+                sanitize_reason(&e.to_string())
             ),
         }
     }

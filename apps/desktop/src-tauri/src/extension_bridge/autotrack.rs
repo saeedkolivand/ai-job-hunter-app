@@ -39,7 +39,10 @@ impl BridgeState {
     pub fn set_autotrack_enabled(&self, enabled: bool) {
         self.autotrack_enabled.store(enabled, Ordering::Relaxed);
         if let Err(e) = persist_autotrack_optin(&self.data_dir, enabled) {
-            log::warn!("[extension_bridge] failed to persist auto-track opt-in (non-fatal): {e}");
+            log::warn!(
+                "[extension_bridge] failed to persist auto-track opt-in (non-fatal): {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
         }
     }
 }

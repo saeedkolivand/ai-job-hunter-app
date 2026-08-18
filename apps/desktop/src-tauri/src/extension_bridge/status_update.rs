@@ -161,7 +161,10 @@ pub(super) fn resolve_status_update(
             // Wire-error discipline: never let a raw store error (path/SQL
             // detail) reach `status_result_reply` — log it, reply a fixed
             // sentinel.
-            log::warn!("[extension_bridge] status.update store error: {e}");
+            log::warn!(
+                "[extension_bridge] status.update store error: {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
             AppError::Storage("could not update this application".to_string())
         })?;
     if !transitioned {

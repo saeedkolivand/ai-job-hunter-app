@@ -17,6 +17,7 @@ use rusqlite::params;
 use super::{ApplicationStatus, ApplicationStore};
 use crate::db::{ts_from_db, ts_to_db};
 use crate::error::AppResult;
+use crate::observability::sanitize_reason;
 
 /// One Application's follow-up reminder state — the minimal projection
 /// [`crate::reminder_scheduler`] sweeps. Not a wire type: it is a query
@@ -67,7 +68,10 @@ impl ApplicationStore {
         ) {
             Ok(stmt) => stmt,
             Err(e) => {
-                log::warn!("[applications] follow-up query failed to prepare: {e}");
+                log::warn!(
+                    "[applications] follow-up query failed to prepare: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 return Vec::new();
             }
         };
@@ -85,12 +89,20 @@ impl ApplicationStore {
         match rows {
             Ok(rows) => rows
                 .filter_map(|r| {
-                    r.inspect_err(|e| log::warn!("[applications] skipped a follow-up row: {e}"))
-                        .ok()
+                    r.inspect_err(|e| {
+                        log::warn!(
+                            "[applications] skipped a follow-up row: {}",
+                            sanitize_reason(&e.to_string())
+                        )
+                    })
+                    .ok()
                 })
                 .collect(),
             Err(e) => {
-                log::warn!("[applications] follow-up query failed: {e}");
+                log::warn!(
+                    "[applications] follow-up query failed: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 Vec::new()
             }
         }

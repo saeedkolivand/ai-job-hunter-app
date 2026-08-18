@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::observability::sanitize_reason;
+
 pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -199,7 +201,10 @@ where
     if connected {
         on_status("Login successful, exporting cookies…");
         if let Err(e) = export_cookies(&page, app_data_dir, board_id).await {
-            log::warn!("[board_login] failed to export cookies for {board_id}: {e}");
+            log::warn!(
+                "[board_login] failed to export cookies for {board_id}: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
     } else {
         on_status("Login cancelled or timed out");
