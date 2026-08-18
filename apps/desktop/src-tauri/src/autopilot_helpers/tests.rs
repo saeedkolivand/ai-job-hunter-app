@@ -1,6 +1,7 @@
 use parking_lot::Mutex;
 
 use super::*;
+use crate::observability::{redact_token, MAX_REASON_LEN};
 use crate::scraping::BoardScrapeSummary;
 
 fn summary(board: &str, error: Option<&str>, skipped: Option<&str>) -> BoardScrapeSummary {
@@ -185,7 +186,7 @@ fn sanitize_reason_caps_overlong_input() {
     let long = "x".repeat(500);
     let out = sanitize_reason(&long);
     assert!(
-        out.chars().count() <= super::MAX_REASON_LEN + 1, // +1 for the ellipsis
+        out.chars().count() <= MAX_REASON_LEN + 1, // +1 for the ellipsis
         "sanitized reason must be length-capped; got {} chars",
         out.chars().count()
     );

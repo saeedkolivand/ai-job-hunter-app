@@ -6,8 +6,8 @@ use tauri::{AppHandle, Manager};
 use zip::write::{ExtendedFileOptions, FileOptions};
 use zip::{CompressionMethod, ZipWriter};
 
-use crate::autopilot_helpers::redact_token;
 use crate::error::{AppError, AppResult};
+use crate::observability::redact_token;
 
 /// Redact every whitespace-delimited token in every line, preserving line
 /// structure. Blank / whitespace-only lines become empty strings.
