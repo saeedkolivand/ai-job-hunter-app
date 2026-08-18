@@ -8,7 +8,7 @@ status: accepted
 
 Until now the app was blind in production. A panic hook appends to `crashes.log`
 (`apps/desktop/src-tauri/src/lib.rs`) and a redacted diagnostics zip
-([ADR 0027](../../knowledge/decision-records/adr-027-diagnostics-bundle-privacy-boundary.md))
+([ADR 027](../../knowledge/decision-records/adr-027-diagnostics-bundle-privacy-boundary.md))
 lets a user export it — but both require the user to notice a failure, find the
 export, and attach it to a GitHub issue by hand. Nobody reports a crash they did
 not see. The renderer was worse: React errors caught by a boundary never reached
@@ -120,4 +120,4 @@ read the mission-control PAT from `localStorage`.
   before the user base grows.
 - Any new field added to a transmitted payload must be assumed to carry PII
   until proven otherwise; extending the redactor remains a security change
-  requiring a test (ADR 0027).
+  requiring a test (ADR 027).
