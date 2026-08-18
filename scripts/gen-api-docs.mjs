@@ -284,7 +284,17 @@ function summarize(doc) {
     .replace(/\s*\n\s*/g, ' ')
     .trim();
   const sentence = /^(.*?[.:])(\s|$)/.exec(firstPara);
-  return (sentence ? sentence[1] : firstPara).replace(/\|/g, '\\|');
+  return (
+    (sentence ? sentence[1] : firstPara)
+      // Backslash first: escaping the pipe first would leave its own escape
+      // escapable, so a source `\` in front of a `|` would re-open the cell break.
+      .replace(/\\/g, '\\\\')
+      .replace(/\|/g, '\\|')
+      // Whatever whitespace survived the paragraph collapse (a lone CR, a
+      // line separator, a bullet-list newline) would otherwise end the row.
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 function fence(lang, body) {
