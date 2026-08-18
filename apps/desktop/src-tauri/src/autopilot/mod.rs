@@ -666,7 +666,22 @@ impl AutopilotStore {
             let assignments = cluster_found_jobs(&mut ap.found_jobs, tombstones, extra_agency);
             new_count = new_cluster_count(&assignments, &new_keys);
             ap.run_status = Some(derive_run_status(&summaries));
-            ap.last_run_summaries = summaries;
+            // Strip the Track B1 `health` before persisting. It is a DISPLAY-TIME
+            // derivation of the live `board_health` store, not state belonging to
+            // this run: freezing it here would (a) show a verdict that stopped
+            // being true the moment the next run landed, and (b) leak it into the
+            // backup bundle — `AutopilotStore::export` writes `lastRunSummaries`
+            // verbatim, so importing on another machine would replay THIS
+            // machine's failure streaks, timestamps, last error and run id as if
+            // that machine had lived them. The store itself is deliberately not a
+            // `DataStore` for exactly that reason; this closes the side door.
+            ap.last_run_summaries = summaries
+                .into_iter()
+                .map(|mut s| {
+                    s.health = None;
+                    s
+                })
+                .collect();
             ap.last_run_at = Some(now);
             ap.updated_at = now;
         }
@@ -1156,7 +1171,22 @@ impl crate::data_store::DataStore for AutopilotStore {
     }
 
     fn export(&self) -> serde_json::Value {
-        serde_json::json!(self.list())
+        // Belt AND braces on the Track B1 board-health verdict. `record_run`
+        // already strips it before persisting, so a record written by this build
+        // carries none — but a record written by an intermediate build (or
+        // restored from one) could, and this is the boundary where it would
+        // leave the machine. The verdict is derived from the LOCAL
+        // `scraping::board_health` store, which is deliberately not a
+        // `DataStore`; letting it ride out inside `lastRunSummaries` would
+        // replay this machine's failure streaks, error text and run ids on
+        // whatever machine imports the bundle.
+        let mut records = self.list();
+        for ap in &mut records {
+            for summary in &mut ap.last_run_summaries {
+                summary.health = None;
+            }
+        }
+        serde_json::json!(records)
     }
 
     fn import(&self, data: &serde_json::Value) -> AppResult<usize> {

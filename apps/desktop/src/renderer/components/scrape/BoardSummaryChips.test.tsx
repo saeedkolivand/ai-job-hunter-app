@@ -28,6 +28,8 @@ vi.mock('@ajh/translations', () => ({
     t: (k: string, opts?: Record<string, unknown>) => {
       // `since` (the Track B1 history chips) is surfaced too, so a test can pin
       // the rendered relative time as an absolute string.
+      if (opts && 'count' in opts && 'total' in opts)
+        return `${k}:${String(opts.count)}/${String(opts.total)}`;
       if (opts && 'count' in opts && 'since' in opts)
         return `${k}:${String(opts.count)}:${String(opts.since)}`;
       if (opts && 'since' in opts) return `${k}:${String(opts.since)}`;
@@ -596,6 +598,8 @@ describe('BoardSummaryChips — board health history', () => {
             health: {
               status: 'failing',
               consecutiveFailures: 4,
+              verifiedRuns: 9,
+              failedRuns: 4,
               lastSuccessAt: NOW - 6 * DAY,
               failingSince: NOW - 5 * DAY,
             },
@@ -624,7 +628,13 @@ describe('BoardSummaryChips — board health history', () => {
             board: 'linkedin',
             count: 0,
             error: 'blocked',
-            health: { status: 'failing', consecutiveFailures: 9, failingSince: NOW - 30 * DAY },
+            health: {
+              status: 'failing',
+              consecutiveFailures: 9,
+              verifiedRuns: 9,
+              failedRuns: 9,
+              failingSince: NOW - 30 * DAY,
+            },
           },
         ]}
       />
@@ -643,7 +653,7 @@ describe('BoardSummaryChips — board health history', () => {
             board: 'linkedin',
             count: 0,
             error: 'blocked',
-            health: { status: 'failing', consecutiveFailures: 9 },
+            health: { status: 'failing', consecutiveFailures: 9, verifiedRuns: 9, failedRuns: 9 },
           },
         ]}
       />
@@ -665,6 +675,8 @@ describe('BoardSummaryChips — board health history', () => {
             health: {
               status: 'failing',
               consecutiveFailures: 3,
+              verifiedRuns: 10,
+              failedRuns: 3,
               lastSuccessAt: NOW - 5 * DAY,
               failingSince: NOW - 4 * DAY,
               lastError: 'HTTP 999 from C:\\Users\\me\\session',
@@ -695,7 +707,13 @@ describe('BoardSummaryChips — board health history', () => {
             board: 'xing',
             count: 0,
             error: 'boom',
-            health: { status: 'failing', consecutiveFailures: 2, lastSuccessAt: NOW - 3 * DAY },
+            health: {
+              status: 'failing',
+              consecutiveFailures: 2,
+              verifiedRuns: 5,
+              failedRuns: 2,
+              lastSuccessAt: NOW - 3 * DAY,
+            },
           },
         ]}
       />
@@ -715,6 +733,8 @@ describe('BoardSummaryChips — board health history', () => {
             health: {
               status: 'stale',
               consecutiveFailures: 0,
+              verifiedRuns: 4,
+              failedRuns: 0,
               lastSuccessAt: NOW - 20 * DAY,
             },
           },
@@ -732,20 +752,26 @@ describe('BoardSummaryChips — board health history', () => {
           {
             board: 'a',
             count: 3,
-            health: { status: 'healthy', consecutiveFailures: 0, lastSuccessAt: NOW },
+            health: {
+              status: 'healthy',
+              consecutiveFailures: 0,
+              verifiedRuns: 4,
+              failedRuns: 0,
+              lastSuccessAt: NOW,
+            },
           },
           {
             board: 'b',
             count: 0,
             skipped: 'needs-keys',
-            health: { status: 'unknown', consecutiveFailures: 0 },
+            health: { status: 'unknown', consecutiveFailures: 0, verifiedRuns: 0, failedRuns: 0 },
           },
           // "failing" with nothing behind it — never render "down for 0 runs".
           {
             board: 'c',
             count: 0,
             error: 'boom',
-            health: { status: 'failing', consecutiveFailures: 0 },
+            health: { status: 'failing', consecutiveFailures: 0, verifiedRuns: 3, failedRuns: 0 },
           },
         ]}
       />
@@ -753,6 +779,62 @@ describe('BoardSummaryChips — board health history', () => {
     // Exactly one chip per board — no history chip anywhere.
     expect(chips()).toHaveLength(3);
     expect(texts().some((s) => s.includes('health.'))).toBe(false);
+  });
+
+  it('reports a flapping board that a consecutive-failure streak cannot see', () => {
+    // The board SUCCEEDED this run and has an empty streak — a streak counter
+    // alone would call it healthy — but it has failed half the runs that reached
+    // it, which is the thing the user actually needs told.
+    render(
+      <BoardSummaryChips
+        now={NOW}
+        summaries={[
+          {
+            board: 'wwr',
+            count: 3,
+            health: {
+              status: 'flaky',
+              consecutiveFailures: 0,
+              verifiedRuns: 12,
+              failedRuns: 6,
+              lastSuccessAt: NOW,
+            },
+          },
+        ]}
+      />
+    );
+    const all = chips();
+    expect(all).toHaveLength(2);
+    expect(all[0]?.getAttribute('data-color')).toBe('success');
+    expect(all[1]?.getAttribute('data-color')).toBe('warning');
+    expect(all[1]?.textContent).toBe('label(wwr) · jobs.boardSummary.health.flaky:6/12');
+  });
+
+  it('says nothing for an incoherent flaky payload', () => {
+    render(
+      <BoardSummaryChips
+        now={NOW}
+        summaries={[
+          // 0 failures cannot make a board flaky…
+          {
+            board: 'a',
+            count: 1,
+            health: { status: 'flaky', consecutiveFailures: 0, verifiedRuns: 9, failedRuns: 0 },
+          },
+          // …nor can more failures than runs.
+          {
+            board: 'b',
+            count: 1,
+            health: { status: 'flaky', consecutiveFailures: 0, verifiedRuns: 2, failedRuns: 9 },
+          },
+        ]}
+      />
+    );
+    // Both boards succeeded and neither got a history chip, so the strip
+    // collapses to the single "all ok" chip — a collapse that a stray health
+    // chip would itself have prevented.
+    expect(chips()).toHaveLength(1);
+    expect(texts()[0]).toBe('jobs.boardSummary.allOk:2');
   });
 
   it('does not badge anything when the backend sends no health at all (pre-B1 records)', () => {

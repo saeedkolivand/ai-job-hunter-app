@@ -41,7 +41,13 @@ import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilo
 import { MatchBand, matchBandDescriptionKey, scoreTier } from '@/lib/match-band';
 import { timeAgo } from '@/lib/time';
 import { TrustBadge } from '@/lib/trust-badge';
-import { useInteractions, useMarkNotDuplicate, useOpenExternal, usePersistJob } from '@/services';
+import {
+  useBoardsHealth,
+  useInteractions,
+  useMarkNotDuplicate,
+  useOpenExternal,
+  usePersistJob,
+} from '@/services';
 
 interface StepLog {
   step: string;
@@ -258,7 +264,25 @@ export function AutopilotCard({
   // Persisted per-board outcome of the most recent run (PR B). Unlike the live
   // step log (below), this survives the run ending, so a zero/partial/failed
   // result stays explainable. Empty for the happy path + pre-summaries records.
-  const lastRunSummaries = ap.lastRunSummaries ?? [];
+  // Memoized because the `?? []` default is a fresh array each render, which
+  // would re-run the health merge below on every render.
+  const lastRunSummaries = useMemo(() => ap.lastRunSummaries ?? [], [ap.lastRunSummaries]);
+  // Track B1 — the cross-run reliability verdict is read LIVE, never taken off
+  // the stored record. `lastRunSummaries` is an immutable snapshot of one run;
+  // health is standing state, so a persisted copy would keep asserting a streak
+  // the store has since cleared (autopilot paused after a bad run, then a manual
+  // scrape succeeds). Merged in here so the chips component stays presentational.
+  const { data: boardHealth } = useBoardsHealth();
+  const summariesWithHealth = useMemo(
+    () =>
+      boardHealth
+        ? lastRunSummaries.map((s) => {
+            const health = boardHealth.get(s.board);
+            return health ? { ...s, health } : s;
+          })
+        : lastRunSummaries,
+    [lastRunSummaries, boardHealth]
+  );
   // Discoverability guard: `runStatus` doesn't escalate for a board that's
   // merely `skipped`/`truncated` beside an otherwise-succeeding board (e.g.
   // "Xing · needs login" next to a clean LinkedIn run reads as plain
@@ -578,7 +602,7 @@ export function AutopilotCard({
                       </Button>
                     }
                   >
-                    <BoardSummaryChips summaries={lastRunSummaries} />
+                    <BoardSummaryChips summaries={summariesWithHealth} />
                   </HoverPopover>
                 </span>
               )}

@@ -608,6 +608,128 @@ fn record_run_persists_summaries_and_derives_status() {
 }
 
 #[test]
+fn record_run_strips_board_health_so_it_never_reaches_a_backup() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "ap",
+        "target": { "board": "aggregator", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    // A run whose summary carries this machine's cross-run reliability verdict.
+    let mut summary = board_summary("aggregator", 0, Some("429 Too Many Requests"), None, None);
+    summary.health = Some(crate::scraping::BoardHealth {
+        status: crate::scraping::BoardHealthStatus::Failing,
+        consecutive_failures: 4,
+        last_success_at: Some(1_767_225_600_000),
+        last_verified_at: Some(1_767_225_600_000),
+        failing_since: Some(1_767_225_600_000),
+        last_error: Some("429 Too Many Requests".into()),
+        last_run_id: Some("job-secret".into()),
+        verified_runs: 9,
+        failed_runs: 4,
+    });
+    store.record_run(
+        &ap.id,
+        0,
+        0,
+        Vec::new(),
+        vec![summary],
+        &no_tombstones(),
+        &[],
+    );
+
+    let reloaded = store.get(&ap.id).unwrap();
+    assert_eq!(reloaded.last_run_summaries.len(), 1);
+    // The run's own diagnostics survive untouched…
+    assert_eq!(
+        reloaded.last_run_summaries[0].error.as_deref(),
+        Some("429 Too Many Requests")
+    );
+    // …but the health verdict is a display-time derivation of the LIVE store and
+    // must not be frozen into a persisted record.
+    assert!(
+        reloaded.last_run_summaries[0].health.is_none(),
+        "health must not be persisted; got {:?}",
+        reloaded.last_run_summaries[0].health
+    );
+
+    // The load-bearing consequence: `AutopilotStore::export` writes
+    // `lastRunSummaries` verbatim into the backup bundle, so a leak here would
+    // replay THIS machine's failure streaks (and `lastRunId`) on another one.
+    let bundle = {
+        use crate::data_store::DataStore as _;
+        serde_json::to_string(&store.export()).unwrap()
+    };
+    assert!(
+        !bundle.contains("\"health\""),
+        "the backup bundle must carry no board-health verdict"
+    );
+    assert!(
+        !bundle.contains("job-secret"),
+        "the backup bundle must carry no board-health run id"
+    );
+}
+
+#[test]
+fn export_strips_board_health_even_from_a_record_that_already_had_it() {
+    use tempfile::TempDir;
+
+    // Independent of `record_run`'s strip: a record written by an intermediate
+    // build (or restored from one) can already carry a verdict, and `export` is
+    // the boundary where it would actually leave the machine.
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    store.create(serde_json::json!({
+        "name": "ap",
+        "target": { "board": "aggregator", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    let mut planted = board_summary("wwr", 0, Some("HTTP 500"), None, None);
+    planted.health = Some(crate::scraping::BoardHealth {
+        status: crate::scraping::BoardHealthStatus::Failing,
+        consecutive_failures: 7,
+        last_success_at: None,
+        last_verified_at: Some(1_767_225_600_000),
+        failing_since: Some(1_767_225_600_000),
+        last_error: Some("machine-a-only".into()),
+        last_run_id: Some("job-machine-a".into()),
+        verified_runs: 11,
+        failed_runs: 7,
+    });
+    let mut records = store.list();
+    records[0].last_run_summaries = vec![planted];
+    store.replace_all(records);
+
+    let bundle = {
+        use crate::data_store::DataStore as _;
+        serde_json::to_string(&store.export()).unwrap()
+    };
+    // The run's own diagnostics still export — only the cross-run verdict is cut.
+    assert!(
+        bundle.contains("HTTP 500"),
+        "the run summary itself exports"
+    );
+    for leak in [
+        "\"health\"",
+        "consecutiveFailures",
+        "machine-a-only",
+        "job-machine-a",
+    ] {
+        assert!(
+            !bundle.contains(leak),
+            "the bundle must not carry '{leak}'; got {bundle}"
+        );
+    }
+}
+
+#[test]
 fn fail_run_without_summaries_marks_failed_and_clears_stale_summaries() {
     use tempfile::TempDir;
 

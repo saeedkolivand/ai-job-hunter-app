@@ -2369,11 +2369,12 @@
       "health": {
         "failingSince_one": "seit {{count}} Lauf gestört · zuletzt erfolgreich {{since}}",
         "failingSince_other": "seit {{count}} Läufen gestört · zuletzt erfolgreich {{since}}",
-        "neverWorkedSince": "hat hier noch nie funktioniert · gestört seit {{since}}",
+        "neverWorkedSince": "hat hier noch nie funktioniert · gestört, erstmals {{since}}",
         "neverWorked_one": "hat hier noch nie funktioniert · {{count}} fehlgeschlagener Lauf",
         "neverWorked_other": "hat hier noch nie funktioniert · {{count}} fehlgeschlagene Läufe",
-        "stale": "seit {{since}} nicht geprüft",
-        "staleUnknown": "lange nicht geprüft"
+        "stale": "nicht mehr geprüft seit dem letzten Erfolg, {{since}}",
+        "staleUnknown": "lange nicht geprüft",
+        "flaky": "unzuverlässig · {{count}} von {{total}} Läufen fehlgeschlagen"
       }
     },
     "viewList": "Liste",

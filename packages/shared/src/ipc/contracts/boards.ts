@@ -44,6 +44,10 @@ export interface BoardsContract {
   /** Full scraper catalog (id, label, mode, auth tier, listed) from the registry. */
   catalog(): Promise<BoardCatalogEntry[]>;
 
+  /** Live per-board reliability across runs (Track B1). Boards with no recorded
+   *  history are simply absent. */
+  health(): Promise<BoardHealthEntry[]>;
+
   /** Connect to a board by launching a browser for manual login. */
   connect(req: { boardId: string }): Promise<{ connected: boolean; accountEmail?: string }>;
 
@@ -109,7 +113,7 @@ export interface BoardsContract {
  *   - `stale`   — not failing, but its last confirmed success is over a
  *     fortnight old (in practice: skipped ever since).
  */
-export type BoardHealthStatus = 'unknown' | 'healthy' | 'failing' | 'stale';
+export type BoardHealthStatus = 'unknown' | 'healthy' | 'failing' | 'stale' | 'flaky';
 
 /**
  * One board's reliability across runs, derived in Rust from every previous
@@ -137,8 +141,21 @@ export interface BoardHealth {
    *  time like every other persisted reason. */
   lastError?: string;
   /** The scrape `jobId` of the run that produced this state — the per-board
-   *  correlation id for the logs. */
+   *  correlation id for the logs. Only ever set by a run that actually
+   *  contacted the board, so a skipped run never claims authorship. */
   lastRunId?: string;
+  /** Lifetime runs that actually contacted the board (ok + error); skips are
+   *  excluded because they verify nothing. */
+  verifiedRuns: number;
+  /** Lifetime failures among those. `failedRuns / verifiedRuns` is the flapping
+   *  signal a consecutive-failure counter structurally cannot express. */
+  failedRuns: number;
+}
+
+/** One board's live verdict, as returned by `boards_health`. */
+export interface BoardHealthEntry {
+  board: string;
+  health: BoardHealth;
 }
 
 export interface BoardScrapeSummary {
@@ -148,13 +165,16 @@ export interface BoardScrapeSummary {
   skipped?: 'needs-login' | 'needs-company' | 'needs-keys';
   truncated?: string;
   note?: string;
-  /** Cross-run reliability, present only when the board is failing or stale.
-   *  Absent on every record persisted before Track B1. */
+  /** Cross-run reliability, present only when the board is unhealthy AND this
+   *  is a LIVE scrape response. Never persisted (it is cross-run state, not part
+   *  of this run) — a stored run record carries none, and the Autopilot card
+   *  reads the current verdict from `boards_health` instead. */
   health?: BoardHealth;
 }
 
 export const BOARDS_CHANNELS = {
   catalog: 'boards:catalog',
+  health: 'boards:health',
   connect: 'boards:connect',
   disconnect: 'boards:disconnect',
   getStatus: 'boards:getStatus',

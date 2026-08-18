@@ -252,6 +252,21 @@ function healthDetail(
       ? t('jobs.boardSummary.health.stale', { since: timeAgo(lastSuccess, now, locale) })
       : t('jobs.boardSummary.health.staleUnknown');
   }
+  // Working right now, but failing a meaningful SHARE of the runs that reach it
+  // — the state a consecutive-failure streak structurally cannot show, because
+  // it resets on every good run in between.
+  if (health.status === 'flaky') {
+    const { failedRuns, verifiedRuns } = health;
+    if (
+      !Number.isInteger(failedRuns) ||
+      !Number.isInteger(verifiedRuns) ||
+      failedRuns < 1 ||
+      verifiedRuns < failedRuns
+    ) {
+      return null;
+    }
+    return t('jobs.boardSummary.health.flaky', { count: failedRuns, total: verifiedRuns });
+  }
   if (health.status !== 'failing') return null;
 
   const failures = health.consecutiveFailures;
