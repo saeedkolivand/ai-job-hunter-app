@@ -667,6 +667,7 @@ describe('BoardSummaryChips — board health history', () => {
               consecutiveFailures: 3,
               lastSuccessAt: NOW - 5 * DAY,
               failingSince: NOW - 4 * DAY,
+              lastError: 'HTTP 999 from C:\\Users\\me\\session',
             },
           },
         ]}
@@ -679,6 +680,27 @@ describe('BoardSummaryChips — board health history', () => {
     expect(all[1]?.textContent).toBe(
       'label(linkedin) · jobs.boardSummary.health.failingSince:3:5 days ago'
     );
+    // The remembered "why" rides as a tooltip — sanitized, since it came out of
+    // a store and crossed IPC — because this run's own chip has no error to show.
+    const hint = all[1]?.querySelector('span[title]')?.getAttribute('title') ?? '';
+    expect(hint).toBe('HTTP 999 from <path-redacted>');
+  });
+
+  it('leaves the history chip untitled when there is no remembered reason', () => {
+    render(
+      <BoardSummaryChips
+        now={NOW}
+        summaries={[
+          {
+            board: 'xing',
+            count: 0,
+            error: 'boom',
+            health: { status: 'failing', consecutiveFailures: 2, lastSuccessAt: NOW - 3 * DAY },
+          },
+        ]}
+      />
+    );
+    expect(chips()[1]?.querySelector('span[title]')).toBeNull();
   });
 
   it('renders a stale board as "not checked since <when>"', () => {

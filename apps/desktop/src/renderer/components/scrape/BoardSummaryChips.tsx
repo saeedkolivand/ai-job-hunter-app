@@ -136,6 +136,11 @@ interface Chip {
    *  "board · detail" split. */
   board: string;
   detail: string;
+  /** Native tooltip. Used by the Track B1 history chip to carry the remembered
+   *  failure reason — the "why did this job source fail?" answer — without
+   *  spending any of the chip's 60-char budget on it. Same self-describing
+   *  `title` convention the badges use. */
+  hint?: string;
 }
 
 /** Map a controlled `skipped` reason to a localized label (never a raw enum). */
@@ -325,11 +330,20 @@ function toChips(
     // or stale, so a working board's strip is byte-identical to before.
     const history = s.health ? healthDetail(s.health, t, locale, now) : null;
     if (history) {
+      // The remembered reason answers "why did this source fail?" for a board
+      // whose CURRENT chip can't (it was skipped, so this run has no error of
+      // its own). Sanitized like every other persisted reason — it crossed IPC
+      // out of a store and is not trusted.
+      const remembered =
+        typeof s.health?.lastError === 'string' && s.health.lastError.trim()
+          ? sanitizeReason(s.health.lastError)
+          : undefined;
       chips.push({
         key: `${boardId}-${i}-health`,
         tone: 'health',
         board,
         detail: capDetail(history),
+        hint: remembered,
       });
     }
   });
@@ -376,7 +390,7 @@ export function BoardSummaryChips({ summaries, className, now }: BoardSummaryChi
           className="max-w-[220px] whitespace-normal break-words text-[10px] font-normal"
         >
           {c.board ? (
-            <span>
+            <span title={c.hint}>
               <span className="font-semibold">{c.board}</span>
               {' · '}
               {c.detail}
