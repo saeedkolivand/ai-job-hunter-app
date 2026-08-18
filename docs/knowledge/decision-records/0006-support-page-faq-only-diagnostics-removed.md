@@ -70,4 +70,8 @@ need — not by resurrecting this speculative, backendless subtree.
   (FAQ via `support-data.ts` `getSupportSections`).
 - Orphaned subtree: the other 22 components under `apps/desktop/src/renderer/features/support/components/`.
 - Backend: `export_diagnostics` + `get_system_info` registration in `apps/desktop/src-tauri/src/lib.rs`; `support` client namespace in `apps/desktop/src/tauri-client/namespaces/support/`.
-- Audit findings: `renderer-feat-3-001`, `p2-b1-ipc-chain-001`, `p2-b1-ipc-chain-002` (AUDIT_REPORT.md §4).
+- Audit findings: `renderer-feat-3-001`, `p2-b1-ipc-chain-001`, `p2-b1-ipc-chain-002`,
+  §4 of the 2026-08-16 full-history audit. That report was a 1.5 MB one-off snapshot
+  scoped to `v0.123.0` and is no longer in the tree; read it with
+  `git show 65ea4188c:AUDIT_REPORT.md`. Its `path:line` citations point at that commit's
+  HEAD, not this one.
