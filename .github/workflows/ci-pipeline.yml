@@ -307,10 +307,22 @@ jobs:
           pnpm check:tech-radar
           echo "::endgroup::"
 
-      - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure'
+      # The Rust toolchain pin lives in TWO places that cannot reference each
+      # other: rust-toolchain.toml (rustup, local dev) and the
+      # dtolnay/rust-toolchain @sha in .github (CI). Bumping one without the
+      # other silently un-pins the build without ever going red on its own.
+      - name: 🦀 Check Rust Toolchain Pin Drift
+        id: toolchain_pin
+        continue-on-error: true
         run: |
-          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, or tech-radar drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', and 'pnpm check:tech-radar' locally to fix."
+          echo "::group::Checking Rust toolchain pin drift"
+          pnpm check:toolchain-pin
+          echo "::endgroup::"
+
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, tech-radar, or toolchain-pin drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', and 'pnpm check:toolchain-pin' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 

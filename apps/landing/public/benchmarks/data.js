@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787018876092,
+  "lastUpdate": 1787022560201,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7763,6 +7763,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293193,
             "range": "± 1932",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9f0f1de1f0705438e61ad0270e73b7113fdbf992",
+          "message": "ci: enforce the Rust toolchain pin instead of asking for it in a comment (#1010)\n\n* ci: enforce the rust toolchain pin instead of asking for it in a comment\n\nThe pin itself already shipped and is correct: `rust-toolchain.toml` pins\n1.97.1, and both `dtolnay/rust-toolchain` uses are pinned to the SHA for that\nsame version. What was missing is any enforcement.\n\nThe two halves cannot reference each other — that action does not read toolchain\nfiles, its `@rev` IS the version selector — so the only thing tying them\ntogether was a comment in three files saying \"bump both together\". That is the\nshape this repo treats as a defect: a stated invariant with nothing checking it.\n\nThe failure is quiet, which is what makes it worth a check. Bump the TOML alone\nand CI keeps building on the old compiler; bump the action alone and every\ndeveloper's machine drifts off what CI validates. Neither goes red on its own —\nthe pin simply stops meaning anything, which is exactly the state it was created\nto end.\n\n`scripts/check-toolchain-pin.mjs` asserts four things: the channel is an exact\nthree-part version rather than a floating one; every `dtolnay/rust-toolchain`\nuse under `.github/` carries a trailing `# <version>` comment (an opaque SHA is\nunreviewable by construction, so the comment is load-bearing, not decoration);\nevery one of those declared versions equals the channel; and the Cargo MSRV is\nnot above the pin, since that pairing cannot compile at all.\n\nIt deliberately does NOT verify that the SHA truly is that version — that needs\na network call, and it is not the mistake people make. The realistic error is\nupdating one place and forgetting the other, which is fully catchable offline.\n\nWired into the `lint-format` job, which has no path filter and so runs on every\nPR — a toolchain drift guard that only fires when Rust files change would miss\nthe case where someone edits only the workflow. The three comments now name\ntheir enforcer instead of asking nicely.\n\nGuard is mutation-tested five ways against the real repo (bump either half\nalone, float the channel back to `stable`, strip a version comment, raise the\nMSRV past the pin) — all red, tree restored clean — plus 11 black-box CLI tests\nover a fake repo tree, following `check-tech-radar.test.mjs`. One of those\ncovers removing CI's pin entirely, which would otherwise pass vacuously: with\nnothing to compare, nothing disagrees.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(ci): reject a moving action ref, not just a mismatched version comment\n\nCodeRabbit on #1010, and it is the same hole as the one this guard was written\nto close.\n\nThe check validated the `# <version>` comment beside each\n`dtolnay/rust-toolchain@<rev>` and never the rev itself, so\n`uses: dtolnay/rust-toolchain@stable # 1.97.1` passed. A moving ref defeats the\npin exactly the way a `stable` channel does — and arguably worse, because the\ncomment beside it is then a claim nothing keeps true: the action can re-point at\na different compiler with no diff in this repo at all. I checked the channel for\nfloating and forgot the other half.\n\nThe test helper defaulted every rev to `deadbeef` — eight characters — and all\n11 tests passed, which is the same blind spot expressed twice. It now uses a\nreal 40-hex SHA, and there are regressions for `@stable`, `@main`, `@v1`,\n`@master` and a truncated SHA, each with a MATCHING version comment so they fail\non the rev rather than incidentally on the comment.\n\nVerified both directions: pointing the real repo's action at `@stable` goes red,\nand removing the SHA check turns two tests red.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T04:55:37+02:00",
+          "tree_id": "99a9b8aae0f4a43cabcb39fb97d2e0b86ca98056",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9f0f1de1f0705438e61ad0270e73b7113fdbf992"
+        },
+        "date": 1787022559052,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2240861,
+            "range": "± 45236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2731066,
+            "range": "± 100256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 306602,
+            "range": "± 19146",
             "unit": "ns/iter"
           }
         ]
