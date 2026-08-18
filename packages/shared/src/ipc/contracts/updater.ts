@@ -21,9 +21,15 @@ export interface ChangelogResult {
 
 /** Result of {@link UpdaterContract.check}. Mirrors the shell's `updater_check`
  *  JSON: an available update with its version, no update, or an error string.
- *  Detailed progress still arrives via the `updater:status` event stream. */
+ *  `downloaded`/`downloading` are only ever `true` together with `available`
+ *  — the backend refuses to discard a download already finished or in
+ *  flight, and reports that state back instead of re-fetching, so a
+ *  returning caller can re-attach rather than restart. Detailed progress
+ *  still arrives via the `updater:status` event stream. */
 export type UpdateCheckResult =
-  { available: true; version: string } | { available: false } | { error: string };
+  | { available: true; version: string; downloaded?: boolean; downloading?: boolean }
+  | { available: false }
+  | { error: string };
 
 export interface UpdaterContract {
   /** Trigger a check. Resolves with the outcome (also emitted on `onStatus`). */

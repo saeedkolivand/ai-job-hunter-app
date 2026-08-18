@@ -114,6 +114,44 @@ fn test_updater_state_bytes_replace() {
     assert_eq!(state.downloaded_bytes, Some(vec![4, 5, 6]));
 }
 
+// ── download_in_progress_or_done: the guard `updater_check` (don't discard)
+// and `updater_download` (don't start a second transfer) both key on ────────
+
+#[test]
+fn test_download_in_progress_or_done_false_when_untouched() {
+    assert!(!download_in_progress_or_done(&UpdaterState::default()));
+}
+
+#[test]
+fn test_download_in_progress_or_done_true_while_downloading() {
+    let state = UpdaterState {
+        downloading: true,
+        ..UpdaterState::default()
+    };
+    assert!(download_in_progress_or_done(&state));
+}
+
+#[test]
+fn test_download_in_progress_or_done_true_once_downloaded() {
+    let state = UpdaterState {
+        downloaded_bytes: Some(vec![1, 2, 3]),
+        ..UpdaterState::default()
+    };
+    assert!(download_in_progress_or_done(&state));
+}
+
+#[test]
+fn test_download_in_progress_or_done_false_after_bytes_taken() {
+    // Mirrors `updater_install`'s `downloaded_bytes.take()` on success — once
+    // consumed, a fresh check/download must be allowed again.
+    let mut state = UpdaterState {
+        downloaded_bytes: Some(vec![1]),
+        ..UpdaterState::default()
+    };
+    state.downloaded_bytes.take();
+    assert!(!download_in_progress_or_done(&state));
+}
+
 // ── Changelog parsing ────────────────────────────────────────────────────────
 
 /// `major.minor.patch` as a tuple for order comparisons in tests only — not a

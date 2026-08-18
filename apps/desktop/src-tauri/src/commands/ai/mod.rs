@@ -593,7 +593,19 @@ pub async fn ai_lookup_salary(
 #[tauri::command]
 pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     let job_id = new_job_id();
-    crate::commands::jobs::job_start(&app, &job_id, "ai.pull_model");
+    // Exclusive, not `job_start`: a returning caller (a remounted onboarding
+    // step showing an idle Download button) must re-attach to a pull already
+    // in flight, not start a second multi-GB download of the same model —
+    // same check-then-act reasoning as `claim_embed_job`, over the one job
+    // kind this command ever starts.
+    if let Some(existing) = crate::commands::jobs::job_start_exclusive(
+        &app,
+        &job_id,
+        "ai.pull_model",
+        &["ai.pull_model"],
+    ) {
+        return json!({ "jobId": existing });
+    }
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
