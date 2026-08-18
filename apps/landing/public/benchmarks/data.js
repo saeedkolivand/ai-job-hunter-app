@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787027224539,
+  "lastUpdate": 1787036898344,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7889,6 +7889,90 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 271899,
             "range": "± 33582",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a62bbd25d789145aa50703fc26e88e7324584c6a",
+          "message": "fix(scraping): register jobicy in the shared board list and make the drift impossible (#1014)\n\n`SCRAPERS` holds 24 boards; the renderer's `BOARD_IDS` held 23. The missing one\nis `jobicy` — a fully registered scraper with `id() == \"jobicy\"`, `listed()`\ndefaulting to true (so the catalog offers it), and en/de labels already written.\nIt was simply never added to the shared list, and nothing on either side could\nsee that, because nothing compared them.\n\nHarmless today only by accident: the codegen lowers `z.enum` to `Vec<String>`,\nso the id that actually crosses IPC is validated by the registry lookup rather\nthan by the enum. The schema comment claimed the opposite — that each entry\n\"is already constrained to a known BoardId\" server-side — which is why the gap\nread as safe. Corrected in place.\n\n`pnpm gen:ipc` now emits the shared list to `ipc_contracts/board_ids.rs` (same\nshape as the existing DATE_FILTER_OPTIONS / AI_GENERATE_INTENTS emitters), and a\nRust test compares it against `SCRAPERS` in both directions: one catches a board\nadded to the registry and forgotten in TS, the other a board removed from the\nregistry while the TS list still promises it to the `BoardId` type.\n\nMutation-checked: removing `jobicy` from the shared list again fails the test\nwith `registered here but absent from packages/shared BOARD_IDS: [\"jobicy\"]`.\n\nDeliberately NOT done: `assert_eq!(health.scrapers.len(), 24)` stays a literal.\nDeriving it from `SCRAPERS.len()` — as the original audit item suggested — would\nmake it vacuous, since it is the only guard that notices a scraper being\ndeleted. The parity test above removes the duplication that actually drifts; the\nliteral keeps guarding the thing a self-referential count cannot.\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T07:31:33+02:00",
+          "tree_id": "c777e5900a6c7f5c64690c281457e7570d275dec",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a62bbd25d789145aa50703fc26e88e7324584c6a"
+        },
+        "date": 1787032581381,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2224888,
+            "range": "± 98690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2713999,
+            "range": "± 42375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 319848,
+            "range": "± 4763",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "160d4a83b7d316ddc0c40b6270729cf6f9fa05a9",
+          "message": "fix(autopilot): jitter scheduled runs so default installs stop herding (#1018)\n\nTrack B3 of the architecture audit.\n\nSchedules are clock-anchored, the tick is 60 s wide, and every record created\nbefore the run-time picker defaults to 09:00. So every default-schedule install\nin a time zone hits the same third-party APIs inside the same minute. This is\nnot theoretical here: the desktop log already shows scheduled runs failing with\n`adzuna: HTTP 503`.\n\nThe offset is DETERMINISTIC per autopilot, derived from its id, not random —\nthat is the whole design. A random delay would have meant sleeping inside the\ntick, which breaks the two properties everything else is built on: catch-up\nafter a missed occurrence, and no-double-run once `lastRunAt` is stamped at or\nafter the occurrence. Shifting the OCCURRENCE instead keeps it a single\nwell-defined instant, so both still hold, and tests stay reproducible.\n\nFNV-1a rather than `DefaultHasher`: the standard hasher is explicitly not stable\nacross Rust releases, and an offset that moved on a toolchain bump would\nsilently shift every user's schedule. Ids are UUIDs, so the low bits are already\nwell distributed.\n\nTen minutes: wide enough to spread a herd across ten tick windows, far enough\nunder the shortest interval (hourly) that a shifted occurrence can never\novertake the next one, small enough not to surprise someone who picked 09:00.\nThat upper bound is a `const _: () = assert!(...)` beside the constant rather\nthan a test — a test comparing two constants is a tautology clippy rejects, and\nthis makes a bad value unbuildable instead of merely reported.\n\nTests cover the offset being stable for an id and inside the window, the\noccurrence moving by exactly the offset, and the behaviour a user would notice:\nbetween the nominal time and the offset, today's occurrence has NOT been reached,\nso the latest is still yesterday's. Plus a full-day minute-by-minute sweep\nasserting exactly one transition — one run per day, no double-run, no skip.\n\nMutation-checked: making the offset always zero fails\n`jitter_actually_spreads_a_herd` with \"200 autopilots landed in only 1 distinct\nminutes\".\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T08:44:43+02:00",
+          "tree_id": "d37f24986f9533fb8e08787f7a5e85b852205b53",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/160d4a83b7d316ddc0c40b6270729cf6f9fa05a9"
+        },
+        "date": 1787036896953,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2188492,
+            "range": "± 57068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2606885,
+            "range": "± 48483",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 300123,
+            "range": "± 2128",
             "unit": "ns/iter"
           }
         ]

@@ -6,11 +6,12 @@
  *   - clusterCanonical === false rows are hidden (collapsed into the canonical).
  *   - Unannotated rows (no cluster fields) always show.
  *   - `hideAgency` (session state) removes isAgency rows.
- *   - The hide-agency toggle writes hideAgency via setJobs.
+ *   - The hide-agency toggle writes hideAgency into the session store.
  *
- * The session-store mock is a mutable container so hideAgency can be toggled
- * per test. All heavy dependencies are module-mocked. `mergePostings` is real —
- * fixtures use distinct urls/ids so nothing collapses at the stage-1 dedup.
+ * The session store is the REAL one (it owns scrape bookkeeping the page reads
+ * back synchronously), seeded per test. All heavy dependencies are
+ * module-mocked. `mergePostings` is real — fixtures use distinct urls/ids so
+ * nothing collapses at the stage-1 dedup.
  */
 
 import type { ReactNode } from 'react';
@@ -19,18 +20,6 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
-
-// Mutable jobs slice — mutate before render to drive hideAgency.
-const jobsState = {
-  filter: '',
-  sortBy: 'newest' as const,
-  viewMode: 'list' as const,
-  selectedId: null as string | null,
-  listScrollTop: 0,
-  hideAgency: false,
-};
-
-const setJobsSpy = vi.fn();
 
 // usePostings container + captured `filtered` forwarded to JobsResults.
 const postingsContainer: { data: Array<Record<string, unknown>> } = { data: [] };
@@ -42,8 +31,6 @@ vi.mock('@/features/jobs/hooks/useScraping', () => ({
     scrapeOutcome: null,
     livePostings: [],
     setLivePostings: vi.fn(),
-    scrapeJobRef: { current: 'job-1' },
-    replacePendingRef: { current: false },
     startScrape: vi.fn(),
     cancelScrape: vi.fn(),
     noteScrapeFinished: vi.fn(),
@@ -60,14 +47,6 @@ vi.mock('@/services', () => ({
 }));
 
 vi.mock('@/hooks/useDefaultResumeId', () => ({ useDefaultResumeId: () => null }));
-
-vi.mock('@/store/session-store', () => ({
-  useSessionStore: () => ({
-    jobs: jobsState,
-    setJobs: (...args: unknown[]) => setJobsSpy(...args),
-    setSettings: vi.fn(),
-  }),
-}));
 
 vi.mock('@/hooks/use-format-relative-time', () => ({
   useFormatRelativeTime: () => (ts: number) => String(ts),
@@ -134,7 +113,15 @@ vi.mock('@ajh/ui', () => {
   };
 });
 
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
+
 import { JobsPage } from './index';
+
+/** Drive the agency filter through the real store (no re-render needed: the
+ *  page subscribes to it, and these tests set it before rendering). */
+function setHideAgency(hideAgency: boolean) {
+  useSessionStore.setState((s) => ({ jobs: { ...s.jobs, hideAgency } }));
+}
 
 function post(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -156,9 +143,8 @@ function filteredIds(): string[] {
 }
 
 beforeEach(() => {
-  setJobsSpy.mockClear();
+  useSessionStore.setState({ jobs: { ...makeJobsDefaults(), viewMode: 'list' } });
   resultsProps.filtered = undefined;
-  jobsState.hideAgency = false;
   postingsContainer.data = [
     post('canonical', { clusterId: 'canonical', clusterCanonical: true }),
     post('collapsed', { clusterId: 'canonical', clusterCanonical: false }),
@@ -182,7 +168,7 @@ describe('JobsPage — cross-board cluster filter', () => {
   });
 
   it('hides agency rows when hideAgency is true (canonical/unannotated still shown)', () => {
-    jobsState.hideAgency = true;
+    setHideAgency(true);
     render(<JobsPage />);
     const ids = new Set(filteredIds());
     expect(ids.has('agency')).toBe(false);
@@ -198,19 +184,19 @@ describe('JobsPage — cross-board cluster filter', () => {
   });
 
   it('hideAgency reduces only the numerator against the distinct denominator', () => {
-    jobsState.hideAgency = true;
+    setHideAgency(true);
     render(<JobsPage />);
     // Agency hidden → 2 visible; denominator stays the distinct base of 3.
     expect(screen.getByText('2 / 3')).toBeInTheDocument();
   });
 
-  it('the hide-agency toggle writes hideAgency via setJobs', async () => {
+  it('the hide-agency toggle writes hideAgency into the session store', async () => {
     const user = userEvent.setup();
     render(<JobsPage />);
     const toggle = within(screen.getByTestId(TEST_IDS.jobs.hideAgencyToggle)).getByRole('button');
     await act(async () => {
       await user.click(toggle);
     });
-    expect(setJobsSpy).toHaveBeenCalledWith({ hideAgency: true });
+    expect(useSessionStore.getState().jobs.hideAgency).toBe(true);
   });
 });
