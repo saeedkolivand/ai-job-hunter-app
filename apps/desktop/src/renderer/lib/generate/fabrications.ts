@@ -125,6 +125,10 @@ export function parseFabrications(value: unknown): Fabrication[] {
  * a `section: None` finding by its evidence. Cheap enough to run at render
  * time; an empty evidence string can't be located and reads as absent rather
  * than as a match against everything.
+ *
+ * This is a PRESENTATION signal only (pending vs. orphaned, below) — never
+ * the resolution check for a `remove` verdict. See {@link removalTakenEffect}
+ * for why those two questions read different fields.
  */
 function evidencePresent(entry: Fabrication, documentText: string): boolean {
   const span = entry.evidence.trim();
@@ -132,35 +136,80 @@ function evidencePresent(entry: Fabrication, documentText: string): boolean {
 }
 
 /**
+ * Has a recorded `remove` verdict actually taken effect against the document
+ * as it stands NOW? Mirrors Rust's `entry_resolved` exactly — same field
+ * priority, same fallback — because this is the predicate that decides
+ * `needsReview`, computed independently on both sides of the IPC boundary.
+ *
+ * **Reads the anchored `line` when the entry carries one, never `evidence`
+ * alone.** `evidence` is routinely a bare token — a certification acronym, a
+ * bare year, a bare figure — and a bare token can legitimately recur on a
+ * DIFFERENT line the user never touched (a different bullet, a project name
+ * quoting the same acronym). That is the exact bug this replaces: the user
+ * deletes the flagged line, the deletion succeeds, and because the span
+ * still exists elsewhere in the document, an evidence-only check kept the
+ * entry stuck at "unresolved" forever. Checking `line` instead asks the same
+ * question `removeEvidenceLines` answered when it deleted — "is the flagged
+ * BULLET gone" — not "does this substring exist somewhere".
+ *
+ * Deliberately does NOT require both signals (line gone AND evidence gone).
+ * ANDing them reintroduces the bug above: the flagged line is deleted, the
+ * bare token legitimately survives elsewhere, and `evidence gone` would be
+ * false forever. The accepted cost is the opposite edge — the user
+ * cosmetically edits the flagged line (rewords it) while literally keeping
+ * the flagged span inside it — which reads as resolved because the ORIGINAL
+ * line text is no longer found verbatim anywhere. There is no honest anchor
+ * that survives an in-place edit: relocating the line by searching for the
+ * bare span is the forbidden move `removeEvidenceLines` refuses for the same
+ * reason. Matches Rust's `entry_resolved`, which takes the identical
+ * trade-off — the two must agree, not just each be independently defensible.
+ *
+ * Only falls back to `evidence` when the entry carries no `line` at all: a
+ * report persisted before the field existed, or a span with no honest
+ * single-line anchor to begin with. An empty/blank line or span reads as
+ * absent rather than as a match against everything.
+ */
+function removalTakenEffect(entry: Fabrication, documentText: string): boolean {
+  const line = entry.line?.trim();
+  if (line !== undefined) return line === '' || !documentText.includes(line);
+  return !evidencePresent(entry, documentText);
+}
+
+/**
  * How to present one entry against the document as it stands NOW.
  *
  * A recorded `remove` is NOT enough to call the entry finished: the verdict is
  * a record of intent, and the document is the record of fact. They agree only
- * once the span is gone.
+ * once the flagged occurrence is gone ({@link removalTakenEffect}).
  */
 export function presentFabrication(
   entry: Fabrication,
   documentText: string
 ): FabricationPresentation {
-  const present = evidencePresent(entry, documentText);
   if (entry.decision === 'keep') return 'resolved';
-  if (entry.decision === 'remove') return present ? 'markedForRemoval' : 'resolved';
-  return present ? 'pending' : 'orphaned';
+  if (entry.decision === 'remove') {
+    return removalTakenEffect(entry, documentText) ? 'resolved' : 'markedForRemoval';
+  }
+  return evidencePresent(entry, documentText) ? 'pending' : 'orphaned';
 }
 
 /**
  * Is this entry genuinely settled?
  *
  * A decision alone is not enough. `keep` settles it outright (nothing has to
- * change). `remove` settles it only when the flagged span is actually ABSENT
- * from the current text — counting a recorded-but-unapplied removal as resolved
- * is what lets the badge turn green over text that is still, verbatim, in the
- * document.
+ * change). `remove` settles it only once {@link removalTakenEffect} agrees —
+ * counting a recorded-but-unapplied removal as resolved is what lets the
+ * badge turn green over text that is still, verbatim, in the document.
+ *
+ * Kept coherent with {@link presentFabrication} on purpose: for a `remove`
+ * verdict, this is `true` exactly when that function returns `'resolved'`
+ * rather than `'markedForRemoval'` — same predicate, so the badge and the
+ * per-bullet row can never disagree about whether one entry is finished.
  */
 export function isFabricationResolved(entry: Fabrication, documentText: string): boolean {
   if (!entry.decision) return false;
   if (entry.decision === 'keep') return true;
-  return !evidencePresent(entry, documentText);
+  return removalTakenEffect(entry, documentText);
 }
 
 /** How many entries still need a verdict OR an applied removal — what keeps a
