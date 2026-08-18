@@ -125,6 +125,14 @@ describe('useModelPull — reconciles a stale adoption', () => {
       wrapper: withProviders(client),
     });
 
+    // Prove the listener is actually wired before relying on firing it — a
+    // `handler?.(…)` on a `null` handler is a silent no-op, and both this and
+    // the reconcile assertions below would still pass even if the live
+    // subscription were never registered at all (findings the reconcile read
+    // is supposed to be tested WITH a real event in flight, not without one).
+    await waitFor(() => expect(client.jobs.onEvent).toHaveBeenCalled());
+    expect(handler).not.toBeNull();
+
     // Fires the ACTUAL ordering the review flagged: the terminal event
     // arrives while `jobs.list()` is still in flight, so `pullJobId` is
     // still null and the live listener's identity check drops it.
@@ -174,6 +182,9 @@ describe('useModelPull — reconciles a stale adoption', () => {
     const { result } = renderHook(() => useModelPull({ selectedModel: 'llama3' }), {
       wrapper: withProviders(client),
     });
+
+    await waitFor(() => expect(client.jobs.onEvent).toHaveBeenCalled());
+    expect(handler).not.toBeNull();
 
     act(() => handler?.({ type: 'job.failed', jobId, data: 'model not found' }));
 
