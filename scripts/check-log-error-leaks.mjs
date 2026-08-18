@@ -74,6 +74,16 @@
 // already-safe chokepoint as the 24 `httpChokepointSafe()` entries above,
 // since every registered scraper is `ScraperMode::Http`). See each entry's
 // own reason for the trace.
+//
+// A follow-up review of that same PR found the positional check still only
+// matched a BARE identifier, missing the equivalent one method call away —
+// `log::warn!("...: {}", e.to_string())`. `findPositionalErrorArg` was
+// widened to also flag `<binding>.to_string()`/`.to_owned()`. Measured
+// against every real log call site before widening: zero currently use
+// either shape positionally (every `.to_string()` near a `log::` call is
+// already the sanctioned `sanitize_reason(&e.to_string())` wrapper, which
+// still does not match — see the comment on `positionalErrorRe`), so this
+// arm is a tripwire, not a fix for a live leak.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -332,7 +342,24 @@ function lineOf(text, at) {
  */
 const ERROR_BINDING_NAMES = ['e', 'err', 'error'];
 const capturedErrorRe = new RegExp(`\\{(?:${ERROR_BINDING_NAMES.join('|')})\\}`);
-const positionalErrorRe = new RegExp(`^[&*]*(?:${ERROR_BINDING_NAMES.join('|')})$`);
+/**
+ * A bare error binding (`e`, `&err`, …), or the same binding stringified —
+ * `e.to_string()` / `err.to_owned()` — one method call away from the exact
+ * same leak. A later review (of #1036) found the positional check only
+ * matched the bare identifier, so `log::warn!("...: {}", e.to_string())`
+ * bypassed it entirely — anchored to the WHOLE top-level argument (see
+ * `findPositionalErrorArg`), so a wrapper like
+ * `sanitize_reason(&e.to_string())` — whose argument text is
+ * `sanitize_reason(&e.to_string())`, not `e.to_string()` — still does not
+ * match. Measured against the crate's real log call sites before adding
+ * this: zero currently use `.to_string()`/`.to_owned()` positionally (every
+ * `.to_string()` near a `log::` call is already inside `sanitize_reason`),
+ * so this arm is a tripwire for a shape nobody has hit yet, not a fix for a
+ * live leak.
+ */
+const positionalErrorRe = new RegExp(
+  `^[&*]*(?:${ERROR_BINDING_NAMES.join('|')})(?:\\.(?:to_string|to_owned)\\(\\))?$`
+);
 
 /**
  * From `start` — the index in `text` right after a log macro's leading
@@ -404,11 +431,14 @@ function splitTopLevelArgs(argsText) {
 
 /**
  * The offset (into `argsText`) of the first top-level argument that is a
- * bare error-binding identifier — `e`, `err`, `error`, `&err`, … — with
- * nothing else attached. A method call (`e.code()`, `e.kind()`,
- * `sanitize_reason(&e.to_string())`) never matches: it is not a bare
- * identifier, which is what keeps the sanctioned safe forms out of this
- * check without naming them specially. `null` when no argument qualifies.
+ * bare error-binding identifier (`e`, `err`, `error`, `&err`, …) or that same
+ * binding stringified (`e.to_string()`, `&err.to_owned()`) — the two shapes
+ * that carry the SAME leak. Any other method call (`e.code()`, `e.kind()`,
+ * `sanitize_reason(&e.to_string())`) never matches: each is a distinct
+ * top-level argument in its own right (`sanitize_reason(&e.to_string())`,
+ * not `e.to_string()`), which is what keeps the sanctioned safe forms out of
+ * this check without naming them specially. `null` when no argument
+ * qualifies.
  */
 function findPositionalErrorArg(argsText) {
   for (const { raw, start } of splitTopLevelArgs(argsText)) {

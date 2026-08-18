@@ -75,6 +75,40 @@ describe('findLeaks', () => {
     expect(findLeaks(root)).toEqual([]);
   });
 
+  it('flags a positional `e.to_string()` — the method-call gap a review found', () => {
+    // The finding: the bare-identifier check missed `e.to_string()`, one
+    // method call away from the exact same leak as a bare `e`.
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", e.to_string());\n' });
+    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+  });
+
+  it('flags a positional `err.to_owned()`, `&`-prefixed, same shape as `.to_string()`', () => {
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", &err.to_owned());\n' });
+    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+  });
+
+  it('flags `error.to_string()` too, for the same reason as `e`/`err`', () => {
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", error.to_string());\n' });
+    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+  });
+
+  it('still does not flag sanitize_reason(&e.to_string()) once .to_string() is matched', () => {
+    // The false-positive risk this widening introduces: sanitize_reason's own
+    // wrapper CONTAINS the literal text `.to_string()` inside it. Excluded by
+    // the wrapping call (sanitize_reason(...) is not itself a bare
+    // `e.to_string()` argument), never by pattern-matching the inner text —
+    // see findPositionalErrorArg's doc comment.
+    const root = writeSrc({
+      'foo.rs': 'log::warn!("[foo] failed: {}", sanitize_reason(&e.to_string()));\n',
+    });
+    expect(findLeaks(root)).toEqual([]);
+  });
+
+  it('does not flag `.to_string()` on a non-error-binding identifier', () => {
+    const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] value: {}", status.to_string());\n' });
+    expect(findLeaks(root)).toEqual([]);
+  });
+
   it('flags a positional bare `e` argument — the vacuity hole review found live', () => {
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", e);\n' });
     expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
