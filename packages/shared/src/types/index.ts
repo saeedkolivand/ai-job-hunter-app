@@ -116,15 +116,19 @@ export interface JobInteraction {
  * relevance score and never folded into it. Four values, because "we cannot
  * tell" is never a pass:
  *
- * - `met` / `notMet` — positive evidence on BOTH sides, agreeing or conflicting.
- * - `unknown` — the candidate stated a preference but no verdict was reachable
- *   (the posting says nothing, or what they stated is not comparable).
+ * - `met` — positive evidence on BOTH sides, and they agree.
+ * - `notMet` — positive evidence on BOTH sides, and they conflict. The only
+ *   knock-out. **No shipped constraint produces it today** (see `constraints`
+ *   on {@link MatchScore}); it is the slot a constraint with real two-sided
+ *   evidence will use.
+ * - `unknown` — no verdict was reachable: the posting says nothing, or what is
+ *   known cannot settle the question.
  * - `noPreference` — the candidate has expressed nothing, so it cannot be
  *   evaluated at all. Distinct from `unknown`: the user can fix this one.
  *
- * `notMet` is advisory. Nothing filters, sorts or gates on it — a wrong
- * knock-out tells the user not to bother applying, which costs far more than a
- * wrong relevance number.
+ * Advisory only. Nothing filters, sorts or gates on it — a wrong knock-out
+ * tells the user not to bother applying, which costs far more than a wrong
+ * relevance number.
  */
 export type ConstraintStatus = 'met' | 'notMet' | 'unknown' | 'noPreference';
 
@@ -135,8 +139,25 @@ export interface ConstraintCheck {
   status: ConstraintStatus;
   /** What the posting states about this constraint, verbatim. Absent when it states nothing. */
   posting?: string;
-  /** What the candidate has stored about it, verbatim. Absent when they set nothing. */
+  /**
+   * What the candidate has stored about it, verbatim. Absent when they set
+   * nothing. For `location` this is their stated **preference** (the
+   * "Preferred Location" setting), not an address and not a mobility limit.
+   */
   candidate?: string;
+}
+
+/**
+ * Whether a check is an actual knock-out — the ONLY safe way to branch on
+ * `status`.
+ *
+ * `ConstraintStatus` is deliberately not boolean-collapsible: `status !== 'met'`
+ * quietly turns both "we could not tell" states into an accusation, which is the
+ * exact failure this whole channel exists to avoid. Use this, and render
+ * `unknown` / `noPreference` as what they are.
+ */
+export function isKnockOut(check: ConstraintCheck): boolean {
+  return check.status === 'notMet';
 }
 
 export interface MatchScore {
@@ -152,9 +173,14 @@ export interface MatchScore {
   guidance?: string;
   /**
    * Hard-constraint pass — reported as its own field so it can never contaminate
-   * the score above. Only the constraints the app has honest candidate-side data
-   * for appear here (today: `location`); see
-   * `commands/match_resume/constraints.rs` for the ones deliberately not shipped.
+   * the score above.
+   *
+   * Only `location` ships today, and only as `met` / `unknown` / `noPreference`:
+   * the candidate side is a search-personalization setting rather than a
+   * mobility statement, and a failed place-name match is absence of evidence
+   * rather than evidence of conflict. Work authorization, employment type and
+   * salary have no candidate-side data in this app at all. See
+   * `commands/match_resume/constraints.rs` for the full reasoning.
    */
   constraints?: { checks: ConstraintCheck[] };
 }
