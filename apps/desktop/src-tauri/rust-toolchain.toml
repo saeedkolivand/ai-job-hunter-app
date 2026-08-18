@@ -11,7 +11,10 @@
 # `dtolnay/rust-toolchain` (used in .github/actions/setup-rust and
 # release.yml) does NOT read this file — its @rev selects the version — so
 # CI is pinned to the SAME version below via that action's SHA. Bump both
-# together.
+# together: `pnpm check:toolchain-pin` (scripts/check-toolchain-pin.mjs, run
+# in CI's lint-format job) fails when they disagree, so this is an enforced
+# invariant rather than a comment asking nicely. It reads the `# <version>`
+# comment beside each action SHA, so that comment must stay accurate.
 #
 # No `components` here: each CI job's `dtolnay/rust-toolchain` step already
 # requests exactly the components it needs (see setup-rust's `components`
