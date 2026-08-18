@@ -66,14 +66,23 @@
 // `{e}`, so `{err}` and a bare positional `e` bypassed it entirely — three
 // live, undeclared sites: `postings/mod.rs:382` and
 // `platform/linux_appimage.rs:170` (`{err}`), and `autopilot_helpers/mod.rs:151`
-// (positional `err`). `findLeaks` was widened to catch all three shapes; all
-// three newly-surfaced sites were traced and declared `safe` — none crosses
-// a path/URL/host/credential (an in-memory serde_json parse, a
-// `Command::exec()` `io::Error` whose Display never embeds the program path,
-// and a board-scrape failure string that bottoms out at the same
-// already-safe chokepoint as the 24 `httpChokepointSafe()` entries above,
-// since every registered scraper is `ScraperMode::Http`). See each entry's
-// own reason for the trace.
+// (positional `err`). `findLeaks` was widened to catch all three shapes.
+// `postings/mod.rs:382` and `platform/linux_appimage.rs:170` were traced and
+// declared `safe` — an in-memory serde_json parse and a `Command::exec()`
+// `io::Error` whose Display never embeds the program path, respectively.
+//
+// `autopilot_helpers/mod.rs:151` was NOT declared safe by tracing: a first
+// pass argued it bottoms out at the fetch_text/fetch_json chokepoint because
+// every registered scraper reports `ScraperMode::Http` — but `ScraperMode` is
+// declared transport, not enforced transport, and `LinkedInScraper` (also
+// `Http`) reaches the network via `LinkedInHttpClient`'s own
+// `reqwest::Client::send()`, bypassing the chokepoint. The exemption was
+// therefore certifying a LIVE leak: a first-page LinkedIn search failure
+// carries the user's own free-text keywords and location in the URL that
+// `From<reqwest::Error> for AppError` never strips. That three-hop argument
+// was unsound, so the site is sanitized directly with
+// `observability::sanitize_reason` instead and carries no ALLOWLIST entry —
+// see the call site.
 //
 // A follow-up review of that same PR found the positional check still only
 // matched a BARE identifier, missing the equivalent one method call away —
@@ -110,17 +119,7 @@ const ALLOWLIST = {
       "serde_json::from_value type-mismatch parsing the app's own Autopilot " +
       'record on the load path — a pure parse failure, never a path/URL.',
   },
-  'autopilot_helpers/mod.rs:151': {
-    status: 'safe',
-    reason:
-      'err is BoardScrapeSummary.error (scraping/engine/mod.rs run_boards), sourced from ' +
-      "scraper.search()'s anyhow::Error or the fixed 'Unknown board: <id>' resolution " +
-      'failure. Every registered scraper (scraping/boards/mod.rs SCRAPERS) reports ' +
-      'ScraperMode::Http — ScraperMode::Browser is unused, #[allow(dead_code)] — so this ' +
-      'bottoms out at the same fetch_text/fetch_json chokepoint the 24 ' +
-      'httpChokepointSafe() entries below already rely on, one hop further up the stack.',
-  },
-  'autopilot_helpers/mod.rs:395': {
+  'autopilot_helpers/mod.rs:399': {
     status: 'safe',
     reason:
       "limits::Limiter::charge_provider_daily's AppError::RateLimited message is a " +

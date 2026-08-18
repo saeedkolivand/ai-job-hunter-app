@@ -154,32 +154,4 @@ mod registry_parity {
             "the two lists must have the same length, not merely overlap"
         );
     }
-
-    /// Every registered board must run in `Http` mode, because a log-leak
-    /// exemption depends on it.
-    ///
-    /// `scripts/check-log-error-leaks.mjs` declares `autopilot_helpers`'
-    /// scrape-failure log safe, and that reasoning runs three hops:
-    /// the error comes from `engine::run_boards`, which reaches every board
-    /// through `scraping::http::fetch_text`/`fetch_json`, whose transport-error
-    /// branch already calls `reqwest::Error::without_url()`. That last hop only
-    /// holds while no board takes the `Browser` arm — and nothing enforced it,
-    /// so the first browser-mode scraper would silently re-open a URL leak that
-    /// a reviewer had already signed off as impossible.
-    ///
-    /// If this fails, the new board is not the bug: re-triage that allowlist
-    /// entry, then decide.
-    #[test]
-    fn every_board_runs_through_the_http_chokepoint() {
-        let browser: Vec<&str> = super::SCRAPERS
-            .iter()
-            .filter(|s| s.mode() != crate::scraping::types::ScraperMode::Http)
-            .map(|s| s.id())
-            .collect();
-        assert!(
-            browser.is_empty(),
-            "these boards no longer run through the HTTP chokepoint, so the \
-             log-leak exemption for autopilot_helpers is no longer sound: {browser:?}"
-        );
-    }
 }
