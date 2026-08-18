@@ -24,7 +24,11 @@ export interface PrivacyResetResult {
  * `enabled` is the user's choice and defaults to **true**. `consentShown`
  * records whether the setup wizard has actually put that choice in front of
  * them; nothing is transmitted until it has, so a default nobody saw never
- * silently reports.
+ * silently reports. Transmission requires BOTH flags (`Settings::transmits`).
+ *
+ * These two are the whole surface — see ADR-0020. There is no analytics
+ * toggle and no retention setting because there is no behavioural analytics to
+ * switch off, and retention belongs to the processor, not to the app.
  */
 export interface CrashReportingSettings {
   enabled: boolean;

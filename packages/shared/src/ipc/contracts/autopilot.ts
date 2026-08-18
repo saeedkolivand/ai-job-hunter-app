@@ -1,6 +1,13 @@
 import type { AutopilotCreate, AutopilotUpdate } from '../../schemas/index.js';
 import type { Autopilot, AutopilotRunStatus } from '../../types/index.js';
 
+/**
+ * Job-discovery agent: saved searches that run on a schedule, then rank and
+ * surface the matching jobs. It never submits anything — auto-apply was
+ * removed, so a stored cover letter is a reusable starting point for the apply
+ * assistant, and the opt-in `assistant` notes are read-only enrichment. The
+ * user tailors and applies by hand.
+ */
 export interface AutopilotContract {
   list(): Promise<Autopilot[]>;
 
