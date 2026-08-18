@@ -21,6 +21,14 @@ use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::locale::LocaleProfile;
 use crate::postings::PostingsCache;
 
+/// The hard-constraint pass — the non-negotiables (can I take this job at all?)
+/// that a relevance score structurally cannot answer. A sibling module rather
+/// than more of this file: it shares nothing with the scoring kernel by design,
+/// and must not be able to reach it. See its module doc for the three rules it
+/// holds to and for which constraints were refused for lack of candidate-side
+/// data.
+mod constraints;
+
 /// Score a resume against a job posting.
 ///
 /// Returns a `MatchScore` (see packages/shared types): a semantic score from
@@ -640,9 +648,9 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     let resume_raw_keywords = parse_resume_keywords(&resume);
     let active = store.embedding_config();
     let semantic_enabled = semantic_enabled_bit(req.semantic_scoring_enabled);
-    let job_text = job_text_for(&app, &req.job_id);
+    let (job_text, posting_facts) = job_text_and_posting_facts(&app, &req.job_id);
 
-    score_one(
+    let scored = score_one(
         &AppScoreIo(&app),
         &store,
         &resume,
@@ -654,7 +662,18 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         MatchSurface::JobsPage,
         None, // user-initiated: not charged against the unattended daily ceiling
     )
-    .await
+    .await;
+
+    // Hard constraints, reported SEPARATELY and computed AFTER the kernel — the
+    // verdict is a sibling field of the score, never an input to it. Deliberately
+    // out here rather than inside `score_one`: `score_one`'s result is cached in
+    // `match_scores` under a key composed of SCORING inputs only, so a verdict
+    // frozen into that row would be served stale for the whole TTL the moment the
+    // user edits their job preferences. Out here it is recomputed every call, and
+    // a cache HIT gets a fresh verdict on a cached score. It also keeps the
+    // Autopilot and extension entry points — which share the kernel but not this
+    // command — byte-identical.
+    constraints::attach(&app, &posting_facts, scored)
 }
 
 /// Build a searchable text blob for a single cached posting JSON value (title +
@@ -689,6 +708,47 @@ pub(crate) fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
         .iter()
         .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(job_id))?;
     posting_to_text(posting)
+}
+
+/// Everything [`match_resume`] needs from the live posting cache, under ONE lock
+/// and ONE linear scan: the JD blob the scoring kernel consumes, and the
+/// posting-side facts the hard-constraint pass compares against.
+///
+/// Split out from [`job_text_for`] (whose other callers want only the text)
+/// rather than letting `constraints` take the lock again for itself. The
+/// duplicate scan was not free in the place it ran: the constraint verdict is
+/// deliberately recomputed even on a `match_scores` cache HIT — see the call
+/// site — so on the Jobs page, the path where the score costs nothing, a second
+/// full scan of the cache would have run on every single call.
+fn job_text_and_posting_facts(
+    app: &AppHandle,
+    job_id: &str,
+) -> (Option<String>, constraints::PostingFacts) {
+    let cache = app.state::<Mutex<PostingsCache>>();
+    let guard = cache.lock();
+    resolve_posting(
+        guard
+            .get_all()
+            .iter()
+            .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(job_id)),
+    )
+}
+
+/// The pure half of [`job_text_and_posting_facts`]: what a resolved (or missing)
+/// cached posting yields for each consumer.
+///
+/// Split out so the hand-off itself is testable without an `AppHandle`.
+/// Replacing the facts here with a default is invisible to every other test —
+/// the constraint pass would silently report on an empty posting forever — which
+/// is exactly the shape that already bit this feature once at the command's tail
+/// expression. `posting_facts_hand_off_carries_the_real_posting` pins it.
+fn resolve_posting(posting: Option<&Value>) -> (Option<String>, constraints::PostingFacts) {
+    match posting {
+        Some(p) => (posting_to_text(p), constraints::posting_facts_from_value(p)),
+        // No such posting: `score_one` returns its job-not-found error, and
+        // `attach` passes that through untouched, so these facts are never read.
+        None => (None, constraints::PostingFacts::default()),
+    }
 }
 
 /// Identity fields of a cached posting: the company/title/url/board an

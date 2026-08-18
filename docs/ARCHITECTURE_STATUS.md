@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-08-11 (PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
+Last updated: 2026-08-18 (PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
 
 ---
 
@@ -323,7 +323,7 @@ Experience-gate machinery (ADR 0014) retired. Static site (now Next.js) remains 
 | Autopilot battery-awareness        | Low      | Pause heavy scraping on battery power; add battery/AC check + allow-on-battery preference (default: pause)                                                        |
 | i18n OllamaResourcesPanel          | Low      | RAM/VRAM labels and lag warnings hardcoded English in ai-settings/AISettingsTab/OllamaResourcesPanel.tsx                                                          |
 | Ai_provider module relocation      | Low      | Relocate ai_provider (~1,450 LOC) from commands/ai_provider/ to top-level src/ai_provider/ L1 module with thin wrappers in commands/ai.rs (architecture)          |
-| Burn down Tauri-coupling allowlist | Low      | 8-entry R2 allowlist in tests/architecture.rs (tauri emit/Manager in non-shell modules); inject emitter/resource port per ADR-0025                                |
+| Burn down Tauri-coupling allowlist | Low      | `R2_ALLOW` in tests/architecture.rs (tauri emit/Manager in non-shell modules); inject an emitter/resource port — see the `TODO(arch)` there, no ADR covers it yet |
 | E2E data backup round-trip test    | Low      | REQ-13006: add verify/E2E test for export→re-import full bundle round-trip (only per-store unit tests exist; needs versioned bundle test)                         |
 | Cloud sync                         | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate                                                                        |
 | Team/shared job tracking           | Low      | Would require cloud sync                                                                                                                                          |

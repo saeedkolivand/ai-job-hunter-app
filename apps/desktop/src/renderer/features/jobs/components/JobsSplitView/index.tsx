@@ -24,15 +24,20 @@ export function JobsSplitView({
   onShowMore,
 }: JobsSplitViewProps) {
   const { t } = useTranslation();
-  const { jobs, setJobs } = useSessionStore();
-  const { selectedId } = jobs;
+  // One selector per field (see JobsPage): this component owns the virtualized
+  // list, so an unselected `useSessionStore()` re-runs it on every mutation of
+  // every other slice.
+  const setJobs = useSessionStore((s) => s.setJobs);
+  const selectedId = useSessionStore((s) => s.jobs.selectedId);
 
   const selectedPosting = display.find((p) => p.id === selectedId) ?? null;
 
   const listScrollRef = useRef<HTMLDivElement>(null);
   // Captured once at mount so the restore effect has a stable reference without
-  // being reactive to subsequent scrollTop saves.
-  const initialScrollTop = useRef(jobs.listScrollTop);
+  // being reactive to subsequent scrollTop saves. Read through `getState()`
+  // rather than a selector for exactly that reason: subscribing here would make
+  // every scroll-save re-render the virtualized list it was saved from.
+  const initialScrollTop = useRef(useSessionStore.getState().jobs.listScrollTop);
   const virtualizer = useVirtualizer({
     count: display.length,
     getScrollElement: () => listScrollRef.current,
