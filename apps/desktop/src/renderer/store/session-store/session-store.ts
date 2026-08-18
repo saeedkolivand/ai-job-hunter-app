@@ -1,9 +1,15 @@
 import { create } from 'zustand';
 
 import type { InterviewAnswers } from '@ajh/prompts/builder';
+import type { BoardScrapeSummary } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
+import {
+  SCRAPE_FORM_DEFAULTS,
+  type ScrapeFormState,
+} from '@/features/jobs/components/ScrapeForm/constants';
+import type { ScrapeOutcome } from '@/features/jobs/types';
 import type {
   EmphasisId,
   GenerationMeta,
@@ -74,6 +80,19 @@ export interface ResumeBuilderSlice {
   atsMode: boolean;
 }
 
+/**
+ * Jobs-page state.
+ *
+ * The `scrape*` fields describe work that runs in the BACKEND and outlives any
+ * route change, so they cannot live in `JobsPage`/`useScraping` component state:
+ * navigating away used to discard the cancel handle, the diagnostics strip and
+ * the replace/append bookkeeping while the Rust job kept streaming.
+ *
+ * Memory-only on purpose — this store is a plain `create<>()` with no persist
+ * middleware, so quitting the app resets every field here. That means there is
+ * no "job id left over from a previous app run" case to defend against; the
+ * only lifetime that matters is the current session.
+ */
 interface JobsSlice {
   filter: string;
   sortBy: 'newest' | 'oldest' | 'company';
@@ -83,6 +102,33 @@ interface JobsSlice {
   listScrollTop: number;
   /** Hide postings flagged as recruiting/staffing agencies (ADR-029 §i). */
   hideAgency: boolean;
+  /**
+   * The search criteria in the scrape drawer. Here rather than in `JobsPage`
+   * because `lastSearchSignature` below is DERIVED from it: if the form reset on
+   * navigation while the signature didn't (or vice versa) the two desync and the
+   * next scrape mis-decides replace-vs-append.
+   */
+  scrapeForm: ScrapeFormState;
+  /**
+   * Signature of the search the currently-displayed postings came from. A scrape
+   * whose signature matches APPENDS ("Show more"); a different one REPLACES.
+   * Empty string = no search has run in this session.
+   */
+  lastSearchSignature: string;
+  /**
+   * Latched by `startScrape` when the signature changed; consumed by the first
+   * `job.stream` item. Moves with `lastSearchSignature` — split across two
+   * lifetimes they desync exactly like the form/signature pair above.
+   */
+  replacePending: boolean;
+  /** jobId of the in-flight scrape; null when idle. The Cancel handle. */
+  scrapeJobId: string | null;
+  /** Outcome of the most recent finished scrape (scrape-form footer note). */
+  scrapeOutcome: ScrapeOutcome | null;
+  /** Per-board diagnostics of the most recent scrape (the chip strip). */
+  scrapeSummaries: BoardScrapeSummary[];
+  /** Sanitized note for an outright scrape failure (which has no per-board data). */
+  scrapeFailureNote: string | null;
 }
 
 type ResumesTab = 'resumes' | 'coverLetters' | 'activity';
@@ -253,6 +299,27 @@ const RESUME_BUILDER_DEFAULTS: ResumeBuilderSlice = {
   atsMode: false,
 };
 
+/**
+ * Exported so tests (and any future reset path) can restore the jobs slice to a
+ * known baseline instead of hand-rolling a partial literal that silently drifts
+ * from the interface.
+ */
+export const JOBS_DEFAULTS: JobsSlice = {
+  filter: '',
+  sortBy: 'newest',
+  viewMode: 'split',
+  selectedId: null,
+  listScrollTop: 0,
+  hideAgency: false,
+  scrapeForm: { ...SCRAPE_FORM_DEFAULTS },
+  lastSearchSignature: '',
+  replacePending: false,
+  scrapeJobId: null,
+  scrapeOutcome: null,
+  scrapeSummaries: [],
+  scrapeFailureNote: null,
+};
+
 // Store
 
 interface SessionState {
@@ -295,14 +362,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   aiGenerate: { ...AI_GENERATE_DEFAULTS },
   analyze: { ...ANALYZE_DEFAULTS },
   resumeBuilder: { ...RESUME_BUILDER_DEFAULTS },
-  jobs: {
-    filter: '',
-    sortBy: 'newest',
-    viewMode: 'split',
-    selectedId: null,
-    listScrollTop: 0,
-    hideAgency: false,
-  },
+  jobs: { ...JOBS_DEFAULTS },
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },
   autopilot: {

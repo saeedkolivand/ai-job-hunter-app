@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useSessionStore } from './session-store';
+import { JOBS_DEFAULTS, useSessionStore } from './session-store';
 
 const initial = useSessionStore.getState();
 
@@ -57,13 +57,19 @@ describe('useSessionStore', () => {
   it('patches jobs, resumes and settings slices', () => {
     useSessionStore.getState().setJobs({ filter: 'react', sortBy: 'company' });
     expect(useSessionStore.getState().jobs).toEqual({
+      ...JOBS_DEFAULTS,
       filter: 'react',
       sortBy: 'company',
-      viewMode: 'split',
-      selectedId: null,
-      listScrollTop: 0,
-      hideAgency: false,
     });
+    // Anchored to absolutes as well as the spread, so a default that silently
+    // flips (e.g. `replacePending` starting true, which would make the next
+    // scrape wipe the persisted postings) can't ride along in JOBS_DEFAULTS.
+    expect(JOBS_DEFAULTS.lastSearchSignature).toBe('');
+    expect(JOBS_DEFAULTS.replacePending).toBe(false);
+    expect(JOBS_DEFAULTS.scrapeJobId).toBeNull();
+    expect(JOBS_DEFAULTS.scrapeSummaries).toEqual([]);
+    expect(JOBS_DEFAULTS.scrapeFailureNote).toBeNull();
+    expect(JOBS_DEFAULTS.scrapeOutcome).toBeNull();
 
     useSessionStore.getState().setResumes({ tab: 'activity' });
     expect(useSessionStore.getState().resumes.tab).toBe('activity');

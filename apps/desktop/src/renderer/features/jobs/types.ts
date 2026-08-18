@@ -45,3 +45,13 @@ export interface JobEvent {
   data?: unknown;
   ts: number;
 }
+
+/**
+ * Terminal outcome of a scrape run — `ok` plus an optional human note (a
+ * partial-failure summary or a sanitized error message). Kept in the session
+ * store so it survives a route change while the backend job keeps running.
+ */
+export interface ScrapeOutcome {
+  ok: boolean;
+  note?: string;
+}

@@ -1,4 +1,4 @@
-import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type DATE_FILTER_OPTIONS } from '@ajh/shared';
 
 export interface ScrapeFormState {
   boards: string[];
@@ -20,3 +20,14 @@ export interface ScrapeFormState {
    */
   companies: string[];
 }
+
+/** Initial scrape form — the session store seeds `jobs.scrapeForm` from this. */
+export const SCRAPE_FORM_DEFAULTS: ScrapeFormState = {
+  boards: [AGGREGATOR_BOARD_ID],
+  query: '',
+  location: '',
+  radiusKm: 0,
+  amount: 25,
+  dateFilter: '',
+  companies: [],
+};
