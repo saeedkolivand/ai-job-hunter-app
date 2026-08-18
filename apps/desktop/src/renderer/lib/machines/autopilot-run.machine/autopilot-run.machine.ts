@@ -32,7 +32,23 @@ export type AutopilotRunEvent =
 
 export const autopilotRunMachine = createMachine<AutopilotRunState, AutopilotRunEvent>({
   transitions: {
-    idle: { START: 'scraping', SCRAPE_START: 'scraping', RESET: 'idle' },
+    // `idle` doubles as "this mount has not seen this autopilot run", which is
+    // the state every card starts in after a navigation — the run state is
+    // component-local while the run itself lives in the backend. So idle accepts
+    // the whole mid-run vocabulary, not just the start: a page remounted during
+    // a run (or a card watching a SCHEDULED run it never clicked) receives
+    // `scrape_done`/`complete` with no preceding `scrape_start`, and dropping
+    // those left the card claiming idle for a run that was still going.
+    idle: {
+      START: 'scraping',
+      SCRAPE_START: 'scraping',
+      SCRAPE_DONE: 'ranking',
+      RANK_DONE: 'ranking',
+      COMPLETE: 'done',
+      CANCEL: 'cancelled',
+      ERROR: 'error',
+      RESET: 'idle',
+    },
     scraping: {
       SCRAPE_DONE: 'ranking',
       RANK_DONE: 'ranking',
@@ -46,9 +62,13 @@ export const autopilotRunMachine = createMachine<AutopilotRunState, AutopilotRun
       CANCEL: 'cancelled',
       ERROR: 'error',
     },
-    done: { RESET: 'idle' },
-    cancelled: { RESET: 'idle' },
-    error: { RESET: 'idle' },
+    // A terminal state is terminal for THIS run only. The next run of the same
+    // autopilot — the scheduler's, or one started from another mount — announces
+    // itself with `scrape_start`, and without this arm the card would sit on the
+    // previous run's outcome while a new one streamed underneath it.
+    done: { SCRAPE_START: 'scraping', RESET: 'idle' },
+    cancelled: { SCRAPE_START: 'scraping', RESET: 'idle' },
+    error: { SCRAPE_START: 'scraping', RESET: 'idle' },
   },
   busyStates: ['scraping', 'ranking'],
   errorStates: ['error'],
