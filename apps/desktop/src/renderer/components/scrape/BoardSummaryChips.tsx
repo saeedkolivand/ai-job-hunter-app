@@ -1,8 +1,9 @@
-import type { BoardScrapeSummary } from '@ajh/shared';
+import type { BoardHealth, BoardScrapeSummary } from '@ajh/shared';
 import { type TFunction, useTranslation } from '@ajh/translations';
 import { cn, Tag } from '@ajh/ui';
 
 import { regionName } from '@/lib/region-name';
+import { timeAgo } from '@/lib/time';
 
 /**
  * Compact per-board diagnostics strip. Renders a `BoardScrapeSummary[]` as one
@@ -111,17 +112,21 @@ function redactToken(token: string): string {
   return placeholder ? token.replace(trimmed, placeholder) : token;
 }
 
-type ChipTone = 'success' | 'error' | 'skipped' | 'truncated' | 'note';
+type ChipTone = 'success' | 'error' | 'skipped' | 'truncated' | 'note' | 'health';
 
 /** Tone → `Tag` colour. Skipped is the neutral "needs configuration" tone;
  *  `note` uses the informational (blue) `processing` tone — distinct from the
- *  error/skip/partial tones — for a benign "how the search was adjusted" hint. */
+ *  error/skip/partial tones — for a benign "how the search was adjusted" hint.
+ *  `health` (Track B1's cross-run history) borrows the amber `warning` tone: it
+ *  is not this run's failure — that already has its own red chip — but the
+ *  standing "this source has been down for a while" context around it. */
 const TONE_COLOR: Record<ChipTone, 'success' | 'error' | 'default' | 'warning' | 'processing'> = {
   success: 'success',
   error: 'error',
   skipped: 'default',
   truncated: 'warning',
   note: 'processing',
+  health: 'warning',
 };
 
 interface Chip {
@@ -131,6 +136,11 @@ interface Chip {
    *  "board · detail" split. */
   board: string;
   detail: string;
+  /** Native tooltip. Used by the Track B1 history chip to carry the remembered
+   *  failure reason — the "why did this job source fail?" answer — without
+   *  spending any of the chip's 60-char budget on it. Same self-describing
+   *  `title` convention the badges use. */
+  hint?: string;
 }
 
 /** Map a controlled `skipped` reason to a localized label (never a raw enum). */
@@ -213,6 +223,73 @@ function noteDetail(note: string, t: TFunction, locale: string): string | null {
   }
 }
 
+/** A finite, positive epoch-ms timestamp, or `null` for anything else. */
+function asTimestamp(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Track B1 — render a board's CROSS-RUN history as a second chip beside its
+ * own result: "down for 4 runs · last worked 6 days ago". Rust only attaches
+ * `health` to an unhealthy board, so a working board's strip is unchanged.
+ *
+ * Returns `null` for anything we should not claim: a healthy/unknown status, a
+ * `failing` verdict with no actual failures behind it, or a malformed payload
+ * (the object crosses IPC and may come from a persisted `lastRunSummaries`
+ * record, so it is validated, not trusted).
+ */
+function healthDetail(
+  health: BoardHealth,
+  t: TFunction,
+  locale: string,
+  now: number
+): string | null {
+  if (!health || typeof health !== 'object') return null;
+  const lastSuccess = asTimestamp(health.lastSuccessAt);
+
+  if (health.status === 'stale') {
+    return lastSuccess
+      ? t('jobs.boardSummary.health.stale', { since: timeAgo(lastSuccess, now, locale) })
+      : t('jobs.boardSummary.health.staleUnknown');
+  }
+  // Working right now, but failing a meaningful SHARE of the runs that reach it
+  // — the state a consecutive-failure streak structurally cannot show, because
+  // it resets on every good run in between.
+  if (health.status === 'flaky') {
+    const { failedRuns, verifiedRuns } = health;
+    if (
+      !Number.isInteger(failedRuns) ||
+      !Number.isInteger(verifiedRuns) ||
+      failedRuns < 1 ||
+      verifiedRuns < failedRuns
+    ) {
+      return null;
+    }
+    return t('jobs.boardSummary.health.flaky', { count: failedRuns, total: verifiedRuns });
+  }
+  if (health.status !== 'failing') return null;
+
+  const failures = health.consecutiveFailures;
+  // A "failing" verdict with no counted failure is incoherent — say nothing
+  // rather than render "down for 0 runs".
+  if (!Number.isInteger(failures) || failures < 1) return null;
+  if (lastSuccess) {
+    return t('jobs.boardSummary.health.failingSince', {
+      count: failures,
+      since: timeAgo(lastSuccess, now, locale),
+    });
+  }
+  // The distinct, load-bearing case: this source has NEVER worked on this
+  // install — a different problem from one that broke last week, and the one a
+  // "0 results" chip hides most completely.
+  const opened = asTimestamp(health.failingSince);
+  return opened
+    ? t('jobs.boardSummary.health.neverWorkedSince', {
+        since: timeAgo(opened, now, locale),
+      })
+    : t('jobs.boardSummary.health.neverWorked', { count: failures });
+}
+
 /**
  * Normalize + classify each summary defensively — the array crosses IPC and may
  * be a legacy/tampered persisted record, so unknown shapes are tolerated (a
@@ -221,7 +298,12 @@ function noteDetail(note: string, t: TFunction, locale: string): string | null {
  * location note slotting below the failure/partial tones: error > skipped >
  * truncated > note > success.
  */
-function toChips(summaries: readonly BoardScrapeSummary[], t: TFunction, locale: string): Chip[] {
+function toChips(
+  summaries: readonly BoardScrapeSummary[],
+  t: TFunction,
+  locale: string,
+  now: number
+): Chip[] {
   if (!Array.isArray(summaries)) return [];
   const chips: Chip[] = [];
   summaries.forEach((raw, i) => {
@@ -256,6 +338,29 @@ function toChips(summaries: readonly BoardScrapeSummary[], t: TFunction, locale:
       detail = t('jobs.boardSummary.count', { count });
     }
     chips.push({ key: `${boardId}-${i}`, tone, board, detail: capDetail(detail) });
+
+    // Track B1 — the cross-run history rides alongside, never replaces, this
+    // run's own chip: "wwr · HTTP 500" then "wwr · down for 4 runs · last
+    // worked 6 days ago". Rust attaches `health` only when the board is failing
+    // or stale, so a working board's strip is byte-identical to before.
+    const history = s.health ? healthDetail(s.health, t, locale, now) : null;
+    if (history) {
+      // The remembered reason answers "why did this source fail?" for a board
+      // whose CURRENT chip can't (it was skipped, so this run has no error of
+      // its own). Sanitized like every other persisted reason — it crossed IPC
+      // out of a store and is not trusted.
+      const remembered =
+        typeof s.health?.lastError === 'string' && s.health.lastError.trim()
+          ? sanitizeReason(s.health.lastError)
+          : undefined;
+      chips.push({
+        key: `${boardId}-${i}-health`,
+        tone: 'health',
+        board,
+        detail: capDetail(history),
+        hint: remembered,
+      });
+    }
   });
   return chips;
 }
@@ -263,11 +368,14 @@ function toChips(summaries: readonly BoardScrapeSummary[], t: TFunction, locale:
 export interface BoardSummaryChipsProps {
   summaries: readonly BoardScrapeSummary[];
   className?: string;
+  /** Injectable clock for the "last worked N ago" history chips — tests pin it
+   *  so the rendered string is an absolute expectation, not a moving one. */
+  now?: number;
 }
 
-export function BoardSummaryChips({ summaries, className }: BoardSummaryChipsProps) {
+export function BoardSummaryChips({ summaries, className, now }: BoardSummaryChipsProps) {
   const { t, i18n } = useTranslation();
-  const boardChips = toChips(summaries, t, i18n.language);
+  const boardChips = toChips(summaries, t, i18n.language, now ?? Date.now());
   if (boardChips.length === 0) return null;
 
   // Noise reduction: a fully clean run (every board succeeded) collapses to one
@@ -297,7 +405,7 @@ export function BoardSummaryChips({ summaries, className }: BoardSummaryChipsPro
           className="max-w-[220px] whitespace-normal break-words text-[10px] font-normal"
         >
           {c.board ? (
-            <span>
+            <span title={c.hint}>
               <span className="font-semibold">{c.board}</span>
               {' · '}
               {c.detail}

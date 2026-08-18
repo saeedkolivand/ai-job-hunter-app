@@ -666,7 +666,22 @@ impl AutopilotStore {
             let assignments = cluster_found_jobs(&mut ap.found_jobs, tombstones, extra_agency);
             new_count = new_cluster_count(&assignments, &new_keys);
             ap.run_status = Some(derive_run_status(&summaries));
-            ap.last_run_summaries = summaries;
+            // Strip the Track B1 `health` before persisting. It is a DISPLAY-TIME
+            // derivation of the live `board_health` store, not state belonging to
+            // this run: freezing it here would (a) show a verdict that stopped
+            // being true the moment the next run landed, and (b) leak it into the
+            // backup bundle — `AutopilotStore::export` writes `lastRunSummaries`
+            // verbatim, so importing on another machine would replay THIS
+            // machine's failure streaks, timestamps, last error and run id as if
+            // that machine had lived them. The store itself is deliberately not a
+            // `DataStore` for exactly that reason; this closes the side door.
+            ap.last_run_summaries = summaries
+                .into_iter()
+                .map(|mut s| {
+                    s.health = None;
+                    s
+                })
+                .collect();
             ap.last_run_at = Some(now);
             ap.updated_at = now;
         }
@@ -729,7 +744,7 @@ impl AutopilotStore {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
         let mut dropped = 0usize;
-        let map: HashMap<String, Autopilot> = raw
+        let mut map: HashMap<String, Autopilot> = raw
             .into_iter()
             .filter_map(|v| match serde_json::from_value::<Autopilot>(v) {
                 Ok(ap) => Some((ap.id.clone(), ap)),
@@ -743,6 +758,15 @@ impl AutopilotStore {
         if dropped > 0 {
             log::warn!("[autopilot] load: dropped {dropped} unparseable record(s)");
         }
+        // Scrub a THIRD sink for the Track B1 board-health verdict (see
+        // `strip_board_health`'s doc): an on-disk file from an intermediate
+        // build predating the `record_run`/`export`/`import` strips, or a
+        // hand-edited one. This cache is a `save()`'s worth of one round trip
+        // away from `record_run`'s own strip too — any OTHER mutation
+        // (`set_run_status`, `stamp_last_run`, …) re-serializes this map
+        // untouched, so a record that entered here with stale health would
+        // otherwise keep re-persisting it forever instead of aging out.
+        strip_board_health(map.values_mut());
         *guard = Some(map.clone());
         map
     }
@@ -1156,15 +1180,51 @@ impl crate::data_store::DataStore for AutopilotStore {
     }
 
     fn export(&self) -> serde_json::Value {
-        serde_json::json!(self.list())
+        // Belt AND braces on the Track B1 board-health verdict. `record_run`
+        // already strips it before persisting, so a record written by this build
+        // carries none — but a record written by an intermediate build (or
+        // restored from one) could, and this is the boundary where it would
+        // leave the machine. The verdict is derived from the LOCAL
+        // `scraping::board_health` store, which is deliberately not a
+        // `DataStore`; letting it ride out inside `lastRunSummaries` would
+        // replay this machine's failure streaks, error text and run ids on
+        // whatever machine imports the bundle.
+        let mut records = self.list();
+        strip_board_health(records.iter_mut());
+        serde_json::json!(records)
     }
 
     fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
-        let items: Vec<Autopilot> =
+        // Same boundary as `export`, the other direction: a legacy/tampered
+        // backup can carry `lastRunSummaries[].health` (the field predates
+        // this strip, or a hand-edited bundle), and `replace_all` below
+        // persists whatever it's handed verbatim — closing this side of the
+        // door is what `export`'s own "belt AND braces" comment describes.
+        let mut items: Vec<Autopilot> =
             serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+        strip_board_health(items.iter_mut());
         let count = items.len();
         self.replace_all(items);
         Ok(count)
+    }
+}
+
+/// Strip the Track B1 `health` verdict from every record's
+/// `last_run_summaries`. It is a DISPLAY-TIME derivation of the live
+/// `board_health` store, never persisted run state (see `record_run`'s own
+/// strip, right above `last_run_summaries` in this file) — this is the same
+/// scrub applied at every boundary that can put non-`record_run`-authored
+/// data into memory or onto disk: `export` (leaving the machine), `import` (a
+/// legacy/tampered backup coming back in), and `AutopilotStore::load` (an
+/// on-disk `autopilots.json` written by an intermediate build before this
+/// strip existed, or edited by hand — `load`'s cache means a mutation
+/// unrelated to `last_run_summaries` would otherwise re-persist such a
+/// record's stale health forever).
+fn strip_board_health<'a>(records: impl IntoIterator<Item = &'a mut Autopilot>) {
+    for ap in records {
+        for summary in &mut ap.last_run_summaries {
+            summary.health = None;
+        }
     }
 }
 
