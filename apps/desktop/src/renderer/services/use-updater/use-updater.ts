@@ -53,15 +53,24 @@ interface UpdaterSnapshot {
 // That history (`prevBytes`/`prevTime` below) is module-level too, for the
 // same reason `status` is: a settings panel that unmounts mid-download and
 // remounts must not restart its own blank history and sit through one more
-// silent tick before the first speed reading appears. Because the
-// always-mounted banner keeps an `updater.onStatus` listener alive for the
-// whole download, this history is never actually gapped by a remount in
-// practice — a remount only adds a second listener recomputing the same
-// delta from the same shared previous sample, which is idempotent (once the
-// first listener advances `prevBytes` for an event, the rest see
-// `bytes === prevBytes` and skip the calculation). Reset on
-// `downloaded`/`error` keeps a finished download from leaking a stale sample
-// into the next one.
+// silent tick before the first speed reading appears. The banner keeps an
+// `updater.onStatus` listener alive for the whole download, so in practice a
+// remount only adds a second listener recomputing the same delta from the
+// same shared previous sample — idempotent, because once the first listener
+// advances `prevBytes` for an event the rest see `bytes === prevBytes` and
+// skip. Reset on `downloaded`/`error` keeps a finished download from leaking
+// a stale sample into the next one.
+//
+// "The banner never unmounts" is ALMOST true and deliberately not relied on:
+// `__root.tsx` renders it inside `ProtocolVersionGate`, which swaps in an
+// ErrorState *instead of* children on a protocol mismatch, so every listener
+// can in fact go away at once. The consequence is bounded — the next event
+// after the gate reopens computes one speed reading against a stale
+// timestamp, then self-corrects — and it only arises in a state where the app
+// is already showing a fatal error, so guarding it would be code for a
+// cosmetic glitch nobody reaches. Written down because the same
+// "always-mounted" assumption has been asserted twice on this PR and was
+// imprecise both times.
 let sharedSnapshot: UpdaterSnapshot = {
   status: { state: 'idle' },
   downloadSpeed: '',
