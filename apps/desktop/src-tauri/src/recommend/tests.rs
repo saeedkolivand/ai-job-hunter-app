@@ -168,11 +168,39 @@ fn locale_defaults_to_international_english() {
     assert_eq!(r.locale, "en");
 }
 
+/// The same gap for Spain and Portugal, closed one release after Italy's.
+///
+/// Both were already live market ids on the TS side (`COUNTRY_TO_MARKET` maps
+/// `ES`/`PT`, `LANGUAGE_TO_MARKET` maps `es`/`pt`) and both fell through
+/// `match lang` to `"en"`, so a Spanish job ad produced Spanish HEADINGS —
+/// `resume_conventions` has curated es/pt entries — in the US section ORDER,
+/// with `photo: Never` and no Europass page budget. Half a localization,
+/// which reads worse than none.
+///
+/// Asserted `!= "en"` as well as the exact id: the equality alone would pass
+/// if the international default were ever renamed to "es".
+///
+/// Mutation check: removed the `"es"`/`"pt"` arms from `pick_locale` — RAN,
+/// went red on both, restored.
+#[test]
+fn locale_follows_iberian_job_ad_language() {
+    for (lang, want) in [("es", "es"), ("pt", "pt")] {
+        let mut s = signals("Desarrollador de Software", "mid", &["Java"]);
+        s.job_ad_language = Some(lang.to_string());
+        let r = recommend(&s);
+        assert_eq!(r.locale, want, "{lang} must resolve to its own market");
+        assert_ne!(
+            r.locale, "en",
+            "{lang} must not fall through to the international default"
+        );
+    }
+}
+
 /// The Italy gap this arm closes: before it, an Italian job ad's language
 /// fell through the `match lang` default and resolved to "en" — the same id
 /// as the international default — so an Italian job never reached the
 /// dedicated `LocaleProfile::it()` (A4 / photo optional / 3-page budget) or,
-/// downstream, `locale::resume::IT_ORDER`.
+/// downstream, `locale::resume::EUROPASS_ORDER`.
 #[test]
 fn locale_follows_italian_job_ad_language() {
     let mut s = signals("Sviluppatore Software", "mid", &["Java"]);

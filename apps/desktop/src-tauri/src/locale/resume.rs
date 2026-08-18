@@ -58,29 +58,37 @@ const DE_ORDER: &[SectionId] = &[
     SectionId::Publications,
 ];
 
-/// Italian CV order. Like the German Lebenslauf, `Istruzione e formazione`
-/// (Education) and any `Certificazioni` sit right after `Esperienza
-/// professionale` — Italian hiring reads a titled qualification as core
+/// Southern-European / Europass CV order — Italy, Spain, Portugal, Brazil.
+/// Like the German Lebenslauf, Education and any Certifications sit right
+/// after Experience: these markets read a titled qualification as core
 /// structure, not something to bury under Skills/Projects the way the US
 /// default does.
 ///
+/// **Why these four and not every non-US market:** they are exactly the
+/// markets whose section HEADINGS are already curated in `resume_conventions`
+/// (`de en es fr it nl pt`, minus the ones with their own order). A market
+/// with no curated headings gets English headings, and giving it a
+/// non-English section ORDER would be half a localization — worse than none,
+/// because the document then matches no market's expectations. So the order
+/// axis deliberately tracks the heading axis.
+///
 /// **Reviewable call, not a copy of [`DE_ORDER`]:** Languages runs BEFORE
 /// Skills here — the one position this order deliberately does NOT mirror
-/// the German one. Italy's Europass CV, still the reference format most
-/// Italian hirers recognise, nests "Lingue straniere" (foreign-language
-/// competence) as the FIRST subsection of "Competenze personali", ahead of
-/// any general or digital-skills subsection — the opposite of the German
-/// convention, where a language table is usually the LAST thing in the
-/// skills block. If a native reviewer disagrees, swapping these two back to
-/// the German order is a one-line change, not a rethink of the rest of the
-/// list.
+/// the German one. The Europass CV, still the reference format these markets
+/// recognise, nests foreign-language competence ("Lingue straniere",
+/// "Idiomas", "Línguas") as the FIRST subsection of personal competences,
+/// ahead of any general or digital-skills subsection — the opposite of the
+/// German convention, where a language table is usually the LAST thing in
+/// the skills block. If a native reviewer disagrees, swapping these two back
+/// to the German order is a one-line change, not a rethink of the rest of
+/// the list.
 ///
 /// Projects and the Awards/Publications tail stay last, same reasoning as
 /// every market in this file: neither is a section a traditional Italian CV
 /// has by default, so an application with real content for them still gets
 /// a heading, just not one that crowds out Experience/Education/
 /// Certifications/Languages/Skills for it.
-const IT_ORDER: &[SectionId] = &[
+const EUROPASS_ORDER: &[SectionId] = &[
     SectionId::Summary,
     SectionId::Experience,
     SectionId::Education,
@@ -109,7 +117,10 @@ pub fn section_order_for(market: &str) -> &'static [SectionId] {
         // No alias to accept here — see the module doc comment: unlike
         // Germany, Italy has only one live market-id spelling ("it") on
         // every namespace that actually reaches this function.
-        "it" => IT_ORDER,
+        // Spain, Portugal and Brazil share Italy's shape here; they differ
+        // from each other on page count and photo policy, which is
+        // `LocaleProfile`'s axis, not this one.
+        "it" | "es" | "pt" | "br" => EUROPASS_ORDER,
         _ => DEFAULT_ORDER,
     }
 }
@@ -166,7 +177,7 @@ mod tests {
         // "right AFTER Experience" is half this test's name and was the half
         // it did not assert: every other assertion here is `… < Skills`, so
         // an order burying Experience below Education — the exact opposite of
-        // what `IT_ORDER`'s own doc claims — stayed green.
+        // what `EUROPASS_ORDER`'s own doc claims — stayed green.
         assert!(
             position(order, &SectionId::Experience) < position(order, &SectionId::Education),
             "Experience must lead the Italian order; Education follows it, \
@@ -189,6 +200,34 @@ mod tests {
         );
     }
 
+    /// Spain, Portugal and Brazil share Italy's Europass shape. They shipped
+    /// resolving to the US-shaped default instead: the TS `COUNTRY_TO_MARKET`
+    /// and `LANGUAGE_TO_MARKET` tables have emitted `es`/`pt`/`br` since
+    /// before Italy was fixed, and nothing on the Rust side had an arm for
+    /// them, so a Spanish CV got Spanish HEADINGS in American ORDER.
+    ///
+    /// Asserted against `DEFAULT_ORDER` as well as the positive case, because
+    /// the positive assertion alone would pass if every market were quietly
+    /// pointed at one shared list.
+    ///
+    /// Mutation check: removed `"es" | "pt" | "br"` from the arm — RAN, went
+    /// red on all three, restored.
+    #[test]
+    fn iberian_and_lusophone_markets_resolve_to_the_europass_order() {
+        for market in ["es", "ES", "  pt  ", "br"] {
+            assert_eq!(
+                section_order_for(market),
+                EUROPASS_ORDER,
+                "market {market:?} must resolve to the Europass order"
+            );
+            assert_ne!(
+                section_order_for(market),
+                DEFAULT_ORDER,
+                "market {market:?} must not silently fall back to the US-shaped default"
+            );
+        }
+    }
+
     /// Mirrors `german_market_aliases_all_resolve_to_the_de_order`: Italy has
     /// only ONE live spelling to accept (see the module doc comment), but the
     /// case/whitespace handling still needs covering, and the market must
@@ -198,7 +237,7 @@ mod tests {
         for market in ["it", "IT", "  it  "] {
             assert_eq!(
                 section_order_for(market),
-                IT_ORDER,
+                EUROPASS_ORDER,
                 "market {market:?} must resolve to the Italian order"
             );
         }
