@@ -343,9 +343,9 @@ fn derive_status(h: &BoardHealth, now: u64) -> BoardHealthStatus {
     }
 }
 
-/// Whether the lifetime failure RATE crosses the flapping threshold. Integer
-/// math (no float rounding), and a hard minimum sample so one bad run out of two
-/// never brands a board.
+/// Whether the windowed failure RATE (see [`decay_tallies`]) crosses the
+/// flapping threshold. Integer math (no float rounding), and a hard minimum
+/// sample so one bad run out of two never brands a board.
 fn is_flaky(h: &BoardHealth) -> bool {
     h.verified_runs >= FLAKY_MIN_RUNS
         && h.failed_runs.saturating_mul(100) >= h.verified_runs.saturating_mul(FLAKY_FAIL_PERCENT)
