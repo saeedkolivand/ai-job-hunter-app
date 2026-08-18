@@ -14,9 +14,25 @@ import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '../query-client';
 import { useCheckBrowser } from '../use-system';
 
+/**
+ * `staleTime: 0` is load-bearing, not an oversight — this list's `runStatus`
+ * is the fallback authority `AutopilotPage` reads whenever ITS OWN run-state
+ * machine starts fresh (a remount has no memory of a run this mount didn't
+ * see start). Nothing invalidates this query when a run STARTS, only when one
+ * ENDS (`useRunAutopilot`'s `onSuccess`), so under the inherited 30s default a
+ * remount inside that window reused a snapshot taken before the run began —
+ * rendering an executing run as idle with an enabled Run button, the exact
+ * symptom the fallback exists to prevent. The read is a cheap local IPC call
+ * (no network round trip), so refetching on every mount costs nothing worth
+ * trading for the staleness window.
+ */
 export const useAutopilots = () => {
   const api = useAppClient();
-  return useQuery({ queryKey: keys.autopilot.all, queryFn: () => api.autopilot.list() });
+  return useQuery({
+    queryKey: keys.autopilot.all,
+    queryFn: () => api.autopilot.list(),
+    staleTime: 0,
+  });
 };
 
 /**
