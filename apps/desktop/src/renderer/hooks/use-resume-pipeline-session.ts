@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { JobEvent, PipelineStageEvent } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
@@ -14,6 +14,7 @@ import {
   stageToEvent,
   statusToEvent,
 } from '@/lib/machines/resume-pipeline.machine';
+import { stoppedSuffix } from '@/lib/stopped-reason';
 import { fetchJob, useCancelJob, useJobEvents } from '@/services/use-jobs';
 import {
   usePipelineDraftStream,
@@ -63,7 +64,12 @@ export interface ResumePipelineSession {
   thinking: string;
   /** The run record: the authority on status, report, metrics and document. */
   detail: PipelineRunDetail | null;
-  /** A start failure, or the stopped reason of a run that ended badly. */
+  /**
+   * A start failure, or the stopped reason of a run that ended badly — the
+   * live `job.failed` message when one arrived, otherwise (a remount that
+   * missed it) the persisted record's own reason. See
+   * `persistedFailureReason`'s doc comment for the fallback's limits.
+   */
   error: string | null;
   starting: boolean;
   start: (req: ResumePipelineRunRequest) => Promise<string | null>;
@@ -252,6 +258,28 @@ export function useResumePipelineSession(
     if (next) send(next);
   }, [status, send]);
 
+  /**
+   * The failure reason for a run whose ONLY trace is the record — a remount
+   * after a `job.failed` the live listener above never saw. `error` (the
+   * `useState` above) is empty in exactly that case: it is written only by
+   * `handleJobEvent`/`start`, both of which require a listener mounted at the
+   * moment the event fired, which a fresh mount by definition was not.
+   *
+   * Reuses the SAME wire→label mapping `ResultsPanel`/`PipelineRunsList`
+   * already use for this exact field, rather than inventing a second one —
+   * it will never carry the live path's stage/seconds specificity (the row
+   * persists `stoppedReason`, not the per-call timeout's duration), but it is
+   * a real, localized reason instead of the silence a bare `error` leaves.
+   * `null` on a `failed` run with no recorded reason (a provider error, a
+   * store failure) — there's nothing to say — and on every non-`failed`
+   * status, where `error` is not what renders the outcome.
+   */
+  const persistedFailureReason = useMemo(() => {
+    if (status !== 'failed') return null;
+    const suffix = stoppedSuffix(detail?.stoppedReason);
+    return suffix ? t(`pipeline.stopped.${suffix}`) : null;
+  }, [status, detail?.stoppedReason, t]);
+
   // …and the same discovery is the only thing that can tell the posting's run
   // LIST its run just ended. Nothing was clicked, so none of the three
   // action-driven invalidators fires, and the list has no poll of its own: left
@@ -415,7 +443,9 @@ export function useResumePipelineSession(
     letterDraft,
     thinking,
     detail,
-    error,
+    // The live message wins when one landed; otherwise fall back to what the
+    // record itself says — see `persistedFailureReason`'s doc comment.
+    error: error ?? persistedFailureReason,
     starting: startRun.isPending,
     start,
     cancel,
