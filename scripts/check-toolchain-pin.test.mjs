@@ -14,6 +14,12 @@ const scriptPath = join(__dirname, 'check-toolchain-pin.mjs');
 // cwd: repoDir, so the script's own hardcoded relative paths resolve.
 const repoDir = join(tmpdir(), `check-toolchain-pin-test-${Date.now()}`);
 
+// A real 40-hex commit SHA shape. The helper originally defaulted to
+// `deadbeef` — 8 chars — and every test passed, which is precisely the hole
+// CodeRabbit found in the checker: it validated the version COMMENT and never
+// the rev itself, so `@stable # 1.97.1` was accepted.
+const VALID_SHA = '032958afbdc797a9164d3bc0b56325c1308924a5';
+
 function writeRepo({ channel = '1.97.1', uses = [], rustVersion = '1.95' } = {}) {
   mkdirSync(join(repoDir, 'apps', 'desktop', 'src-tauri'), { recursive: true });
   mkdirSync(join(repoDir, '.github', 'workflows'), { recursive: true });
@@ -29,7 +35,7 @@ function writeRepo({ channel = '1.97.1', uses = [], rustVersion = '1.95' } = {})
   );
 
   const steps = uses
-    .map((u) => `      - uses: dtolnay/rust-toolchain@${u.rev ?? 'deadbeef'}${u.comment ?? ''}`)
+    .map((u) => `      - uses: dtolnay/rust-toolchain@${u.rev ?? VALID_SHA}${u.comment ?? ''}`)
     .join('\n');
   writeFileSync(
     join(repoDir, '.github', 'workflows', 'ci.yml'),
@@ -89,10 +95,29 @@ describe('check-toolchain-pin', () => {
   });
 
   it('rejects an opaque SHA with no version comment', () => {
-    writeRepo({ uses: [{ rev: 'abc123', comment: '' }] });
+    writeRepo({ uses: [{ rev: VALID_SHA, comment: '' }] });
     const { code, out } = run();
     expect(code).toBe(1);
     expect(out).toContain('no trailing');
+  });
+
+  // A moving ref defeats the pin exactly like a floating channel does, and a
+  // matching version comment makes it LOOK pinned — the comment is then a
+  // claim nothing keeps true.
+  it('rejects a moving action ref even when its version comment matches', () => {
+    for (const rev of ['stable', 'main', 'v1', 'master']) {
+      writeRepo({ uses: [{ rev, comment: ' # 1.97.1' }] });
+      const { code, out } = run();
+      expect(code, `@${rev} should be rejected`).toBe(1);
+      expect(out).toContain('is not a commit');
+    }
+  });
+
+  it('rejects a truncated SHA', () => {
+    writeRepo({ uses: [{ rev: VALID_SHA.slice(0, 7), comment: ' # 1.97.1' }] });
+    const { code, out } = run();
+    expect(code).toBe(1);
+    expect(out).toContain('is not a commit');
   });
 
   it('accepts a v-prefixed version comment', () => {

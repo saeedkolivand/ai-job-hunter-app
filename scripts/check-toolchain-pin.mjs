@@ -21,12 +21,16 @@
 // What this checks:
 //   1. `rust-toolchain.toml` declares an exact `channel` (a pin, not a
 //      floating channel like "stable"/"beta"/"1.97").
-//   2. Every `dtolnay/rust-toolchain@<sha>` use in `.github/` carries a
-//      trailing `# <version>` comment — that comment is the only
-//      human-readable statement of which version the SHA is, so an
+//   2. Every `dtolnay/rust-toolchain@<rev>` use in `.github/` is pinned to a
+//      full 40-hex commit SHA, not a moving reference. `@stable` and `@main`
+//      float exactly the way a `stable` channel does, and a floating action
+//      pin is arguably worse: it silently re-points at a different compiler
+//      with no diff anywhere in this repo.
+//   3. Every such use carries a trailing `# <version>` comment — that comment
+//      is the only human-readable statement of which version the SHA is, so an
 //      uncommented SHA is unreviewable by construction.
-//   3. Every one of those declared versions equals the TOML's channel.
-//   4. `Cargo.toml`'s `rust-version` (the MSRV) is not ABOVE the pinned
+//   4. Every one of those declared versions equals the TOML's channel.
+//   5. `Cargo.toml`'s `rust-version` (the MSRV) is not ABOVE the pinned
 //      toolchain — that combination cannot build at all.
 //
 // What it deliberately does NOT check: that the SHA genuinely is that version.
@@ -74,7 +78,7 @@ if (channel && !/^\d+\.\d+\.\d+$/.test(channel)) {
   );
 }
 
-// ── 2 + 3. Every action pin agrees with it ───────────────────────────────────
+// ── 2-4. Every action pin is a real SHA and agrees with it ───────────────────
 const actionUses = [];
 for (const file of walk(GH_DIR)) {
   if (!/\.ya?ml$/.test(file)) continue;
@@ -97,6 +101,20 @@ if (actionUses.length === 0) {
 }
 
 for (const use of actionUses) {
+  // A moving ref defeats the pin exactly like a floating channel does, and
+  // the version comment beside it is then a claim nothing keeps true: the
+  // action can re-point at a different compiler with no diff in this repo at
+  // all. Checked before the comment, since a `@stable # 1.97.1` line is
+  // perfectly well-commented and still unpinned.
+  if (!/^[0-9a-f]{40}$/i.test(use.rev)) {
+    errors.push(
+      `${use.file}:${use.line}: dtolnay/rust-toolchain@${use.rev} is not a commit ` +
+        `SHA. A moving reference (@stable, @main, @v1) re-points at a different ` +
+        `compiler without any change here, which is the drift this whole file ` +
+        `exists to prevent — pin the full 40-character SHA.`
+    );
+    continue;
+  }
   if (use.version === null) {
     errors.push(
       `${use.file}:${use.line}: dtolnay/rust-toolchain@${use.rev} has no trailing ` +
@@ -144,6 +162,6 @@ if (errors.length > 0) {
 
 console.log(
   `check:toolchain-pin OK — ${TOML} pins ${channel}; ` +
-    `${actionUses.length} dtolnay/rust-toolchain use(s) under ${GH_DIR}/ all declare ` +
-    `the same version${rustVersion ? `; MSRV ${rustVersion} is within it` : ''}.`
+    `${actionUses.length} dtolnay/rust-toolchain use(s) under ${GH_DIR}/ are SHA-pinned ` +
+    `and declare the same version${rustVersion ? `; MSRV ${rustVersion} is within it` : ''}.`
 );
