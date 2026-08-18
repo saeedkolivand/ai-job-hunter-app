@@ -18,7 +18,18 @@
 //! **Tier position: last.** It runs only once Adzuna, JSearch and Jooble have
 //! all failed to produce a decisive result — same rule that already governs
 //! Jooble, one step further down. A keyed provider's `Ok` (even empty) still
-//! short-circuits before this is reached.
+//! short-circuits before this is reached, so a user with a working Adzuna key
+//! and a genuinely empty search never contacts freehire at all.
+//!
+//! Two extra conditions, both added after a review reproduced the bugs their
+//! absence caused (see `primary_chain`):
+//!
+//! * it does NOT run when a configured provider actually FAILED — a revoked or
+//!   rate-limited key has to reach `BoardScrapeSummary.error`, and an always-on
+//!   tier answering in its place would hide that on every search;
+//! * when it does run after a distrusted guessed market, its results are
+//!   MERGED behind the sparse keyed hits rather than replacing them, because
+//!   on a guessed market this tier is location-blind and those hits are not.
 //!
 //! **Degradation:** any non-2xx, timeout, or schema drift resolves to `Ok(empty)`,
 //! NOT `Err`. Every other provider reports its failure because a configured key
@@ -39,7 +50,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::scraping::http::{fetch_json, FetchOptions};
+use crate::scraping::http::{fetch_json, html_to_markdown, FetchOptions};
 use crate::scraping::types::JobPosting;
 
 use super::JobProvider;
@@ -138,12 +149,19 @@ fn map_freehire_job(j: FreehireJob, now: i64) -> Option<JobPosting> {
             .filter(|s| !s.is_empty()),
         url,
         source: "aggregator".to_string(),
-        // Already markdown — `description_format=markdown` is requested below,
-        // so unlike Jooble's HTML snippet this needs no conversion. Asking for
-        // markdown up front is also what keeps scoring from needing a
-        // per-result detail fetch.
+        // `description_format=markdown` is requested below, so this SHOULD
+        // already be markdown — but it still goes through `html_to_markdown`,
+        // like every sibling provider. Two reasons the conversion is not
+        // redundant: it early-returns tag-free input verbatim (that is exactly
+        // why Adzuna's already-markdown text is not double-escaped), so it
+        // costs nothing when the parameter works; and freehire re-aggregates
+        // workable/ashby/arbeitnow, any of which can leave HTML in a field
+        // labelled markdown. Without it that HTML lands raw in SQLite, in
+        // prompts via `posting_text_blob`, and as literal `<p>` in the
+        // renderer's markdown view.
         description: j
             .description
+            .map(|s| html_to_markdown(&s))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty()),
         requirements: None,
@@ -199,8 +217,14 @@ pub(super) async fn fetch_freehire(
     // Only filter by country when the caller actually chose one. A GUESSED
     // country is `AggregatorScraper::search`'s "de" default, and pinning the
     // keyless tier to a guessed market is how the guessed-market bug this
-    // repo already fixed for Adzuna would reappear here: the free-text
-    // location still reaches `q`, so a real place name is not lost.
+    // repo already fixed for Adzuna would reappear here.
+    //
+    // The consequence is deliberate and worth stating plainly: on a guessed
+    // market this tier is location-blind, because `location` reaches it
+    // nowhere at all (see the note on this function's `location` omission).
+    // A globally-unfiltered result is therefore WEAKER than a keyed tier's
+    // sparse guessed-market hits, not a replacement for them — which is why
+    // `primary_chain` merges the two instead of letting this one win.
     if !country_guessed && !country.is_empty() {
         url.push_str(&format!("&countries={}", urlencoding::encode(country)));
     }

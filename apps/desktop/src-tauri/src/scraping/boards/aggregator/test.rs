@@ -4419,8 +4419,8 @@ async fn freehire_ok_response_maps_end_to_end() {
     assert_eq!(
         job.description.as_deref(),
         Some("Our mission at **Acme** is to ship."),
-        "markdown was requested, so the description must survive verbatim — an \
-         HTML-to-markdown pass here would escape or strip the emphasis"
+        "markdown was requested AND html_to_markdown early-returns tag-free input \
+         verbatim, so real markdown must survive the defensive pass unescaped"
     );
     assert!(job.posted_at.is_some(), "an RFC3339 posted_at must parse");
     assert_eq!(
@@ -4599,9 +4599,19 @@ async fn freehire_slugless_rows_key_off_their_url_not_each_other() {
         .expect("slugless rows must map");
 
     assert_eq!(items.len(), 2);
-    assert_ne!(
-        items[0].external_id, items[1].external_id,
-        "two slugless postings must not share one dedup key"
+    // Concrete values, not just pairwise inequality. A review mutated the
+    // fallback to a non-deterministic counter and this test STAYED GREEN:
+    // pairwise inequality holds for any per-row-unique id, including one that
+    // changes every run — which would break cross-run dedupe and resurface
+    // every slugless posting as "new" on each re-scrape.
+    assert_eq!(
+        items[0].external_id.as_deref(),
+        Some("freehire-https://example.com/j/1"),
+        "a slugless row must key off its own URL, deterministically"
+    );
+    assert_eq!(
+        items[1].external_id.as_deref(),
+        Some("freehire-https://example.com/j/2")
     );
 }
 
@@ -4682,5 +4692,139 @@ async fn freehire_is_not_consulted_when_a_keyed_tier_already_answered() {
         items.len(),
         1,
         "the keyed provider's result must be returned"
+    );
+}
+
+/// The keyless tier MERGES with the sparse guessed-market hits; it must never
+/// replace them.
+///
+/// Those hits are location-relevant. This tier on a guessed market is
+/// location-blind — it is handed no location at all and suppresses `countries`
+/// on a guess — so swapping them out trades a few right answers for many
+/// global ones. That is the guessed-market bug already fixed for Adzuna,
+/// re-entered through a new door; a review reproduced it on the first draft of
+/// this branch, in the commonest real configuration (Adzuna-only keys).
+///
+/// The sparse hits must come FIRST, because `dedupe` is first-seen-wins and
+/// the Jobs page renders in order.
+///
+/// Mutation check: restored the original `return Ok(dedupe(items))` (dropping
+/// the merge) — RAN, went red on the length assertion, restored.
+#[tokio::test]
+async fn freehire_merges_with_sparse_guessed_hits_rather_than_replacing_them() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![sample_posting("sparse-1", "adzuna")],
+        )),
+        Box::new(FakeProvider::ok(
+            "freehire",
+            vec![sample_posting("global-1", "freehire")],
+        )),
+    ];
+
+    // `country_guessed = true` + a real location is what makes Adzuna's single
+    // hit "sparse and distrusted" rather than authoritative.
+    let items = primary_chain(
+        &providers,
+        "rust",
+        "London",
+        "de",
+        true,
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a merged result must not be an error");
+
+    let ids: Vec<&str> = items
+        .iter()
+        .filter_map(|p| p.external_id.as_deref())
+        .collect();
+    assert_eq!(
+        items.len(),
+        2,
+        "both the sparse guessed hit and the keyless hit must survive; got {ids:?}"
+    );
+    assert!(
+        ids[0].contains("sparse-1"),
+        "the location-relevant sparse hit must come FIRST — dedupe is \
+         first-seen-wins and the Jobs page renders in order; got {ids:?}"
+    );
+}
+
+/// A CONFIGURED provider's failure must still reach `BoardScrapeSummary.error`
+/// even though the keyless tier could have answered.
+///
+/// This is the cost of an always-on tier: without the guard, a revoked or
+/// rate-limited key is masked on essentially every search, and since
+/// `needs_keys()` is now permanently false nothing else in the app reports it
+/// either — the user silently keeps paying for a key that stopped working.
+/// Reproduced by a review on the first draft: three failing keyed providers and
+/// `error` came back `None`.
+///
+/// Mutation check: dropped `&& !a_configured_provider_failed` — RAN, went red
+/// here (the call returned `Ok` with the freehire item), restored.
+#[tokio::test]
+async fn a_failed_key_still_reports_even_though_the_keyless_tier_could_answer() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err("adzuna", "adzuna: HTTP 401 key revoked")),
+        Box::new(FakeProvider::ok(
+            "freehire",
+            vec![sample_posting("global-1", "freehire")],
+        )),
+    ];
+
+    let result = primary_chain(
+        &providers,
+        "rust",
+        "Berlin",
+        "de",
+        false,
+        None,
+        None,
+        make_token(),
+    )
+    .await;
+
+    let msg = result
+        .expect_err("a revoked key must surface, not be masked by the keyless tier")
+        .to_string();
+    assert!(
+        msg.contains("401") && msg.contains("adzuna"),
+        "the diagnostic must name the failing provider and carry its status; got: {msg}"
+    );
+}
+
+/// The complement: with NO failure and NO sparse hits, the keyless tier's
+/// result is returned as-is. Without this, the guard above could be tightened
+/// into "never run at all" and the two failure-direction tests would both stay
+/// green.
+#[tokio::test]
+async fn the_keyless_tier_still_answers_when_nothing_failed() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![Box::new(FakeProvider::ok(
+        "freehire",
+        vec![sample_posting("global-1", "freehire")],
+    ))];
+
+    let items = primary_chain(
+        &providers,
+        "rust",
+        "Berlin",
+        "de",
+        false,
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a keyless-only search must succeed");
+
+    assert_eq!(
+        items.len(),
+        1,
+        "with no keys configured and nothing failing, the keyless tier is the \
+         whole result — this is the entire point of the feature"
     );
 }
