@@ -119,7 +119,13 @@ pub const FACTUAL_UNSOURCED_CERTIFICATION: &str = "factual.unsourced_certificati
 /// at all. A Warning, deliberately: this is the residue of a value comparison
 /// that MEASURED a false positive on truthful cross-language output (see
 /// `credentials::unsupported_institutions`), so the surviving check is scoped
-/// to a whole invented education section and stays advisory even there.
+/// to a whole invented education section.
+///
+/// Advisory at the RUN level too, not just in this table — which took a
+/// deliberate omission to make true. A Warning listed in
+/// `commands::resume_pipeline::report::FABRICATION_CODES` parks its run in
+/// `needsReview` until the user decides it, so this code is kept out of that
+/// list; "advisory" that blocks a run is not advisory.
 pub const FACTUAL_UNSOURCED_INSTITUTION: &str = "factual.unsourced_institution";
 pub const CONTENT_LANGUAGE_MISMATCH: &str = "content.language_mismatch";
 /// An unfilled template-placeholder slot (e.g. German "Ihr Name") survived

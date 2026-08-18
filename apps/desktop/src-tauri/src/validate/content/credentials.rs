@@ -12,10 +12,11 @@
 //! the whole design:
 //!
 //! * **Years of experience** compares a NUMBER against the source's own stated
-//!   years and against the span its employment dates cover. A number survives
-//!   translation and paraphrase intact, so this one is checkable in any
-//!   language pair — which matters now that a German résumé is routinely
-//!   generated from an English source.
+//!   years and against the span its dates reach back over. A number survives
+//!   translation and paraphrase intact — but only if the evidence that SPARES a
+//!   claim is read just as well, which is why the number words cover every
+//!   language this pipeline writes and why the span is computed from raw text
+//!   rather than from a section classifier.
 //! * **Certifications** are proper nouns and acronyms that survive translation
 //!   verbatim (`AWS Certified Solutions Architect`, `PMP`, `CISSP`). The
 //!   trigger set is CURATED — an explicit issuer list plus an explicit acronym
@@ -74,14 +75,23 @@ pub(super) const CLAIM_CONTEXT_CHARS: usize = 40;
 /// is reporting a parse failure as a fabrication.
 pub(super) const MAX_PLAUSIBLE_TENURE_YEARS: u32 = 60;
 
-/// Number words a tenure is spelled with, in the two languages this pipeline
-/// curates lexicons for.
+/// Number words a tenure is spelled with, in EVERY language `make_stemmer`
+/// supports — not just the two whose lexicons this module curates.
 ///
-/// Digits are handled by the regex; this table exists because the ONE truthful
-/// shape both clean fixtures use is spelled out ("eight years", "acht Jahre"),
-/// and a check that cannot read the truthful form would compare a generated
-/// claim against a source it thinks says nothing.
+/// Digits are handled by the regex; this table exists because a truthful résumé
+/// spells its tenure out ("eight years", "acht Jahre", "quinze ans"), and the
+/// side that reads the SOURCE is the side that SPARES a claim. An en/de-only
+/// table therefore did not merely miss French — it read `quinze années
+/// d'expérience` as a source that states nothing, and turned a faithful
+/// `15 années` output into a Critical. That is the whole "translation-safe by
+/// construction" argument failing at the one place it mattered: the comparison
+/// is on a number, but the EXTRACTION of the sparing evidence was not.
+///
+/// Duplicates across languages ("six" en/fr, "vier" de/nl, "acht" de/nl) are
+/// harmless and deliberate — every spelling maps to the same value, and the
+/// regex alternation is deduplicated where it is built.
 const SPELLED_NUMBERS: &[(&str, u32)] = &[
+    // English
     ("one", 1),
     ("two", 2),
     ("three", 3),
@@ -123,6 +133,108 @@ const SPELLED_NUMBERS: &[(&str, u32)] = &[
     ("achtzehn", 18),
     ("neunzehn", 19),
     ("zwanzig", 20),
+    // French
+    ("un", 1),
+    ("une", 1),
+    ("deux", 2),
+    ("trois", 3),
+    ("quatre", 4),
+    ("cinq", 5),
+    ("sept", 7),
+    ("huit", 8),
+    ("neuf", 9),
+    ("dix", 10),
+    ("onze", 11),
+    ("douze", 12),
+    ("treize", 13),
+    ("quatorze", 14),
+    ("quinze", 15),
+    ("seize", 16),
+    ("dix-sept", 17),
+    ("dix-huit", 18),
+    ("dix-neuf", 19),
+    ("vingt", 20),
+    // Spanish
+    ("uno", 1),
+    ("una", 1),
+    ("dos", 2),
+    ("tres", 3),
+    ("cuatro", 4),
+    ("cinco", 5),
+    ("seis", 6),
+    ("siete", 7),
+    ("ocho", 8),
+    ("nueve", 9),
+    ("diez", 10),
+    ("once", 11),
+    ("doce", 12),
+    ("trece", 13),
+    ("catorce", 14),
+    ("quince", 15),
+    ("dieciséis", 16),
+    ("dieciseis", 16),
+    ("diecisiete", 17),
+    ("dieciocho", 18),
+    ("diecinueve", 19),
+    ("veinte", 20),
+    // Italian
+    ("due", 2),
+    ("tre", 3),
+    ("quattro", 4),
+    ("cinque", 5),
+    ("sei", 6),
+    ("sette", 7),
+    ("otto", 8),
+    ("nove", 9),
+    ("dieci", 10),
+    ("undici", 11),
+    ("dodici", 12),
+    ("tredici", 13),
+    ("quattordici", 14),
+    ("quindici", 15),
+    ("sedici", 16),
+    ("diciassette", 17),
+    ("diciotto", 18),
+    ("diciannove", 19),
+    ("venti", 20),
+    // Dutch
+    ("een", 1),
+    ("één", 1),
+    ("twee", 2),
+    ("drie", 3),
+    ("vijf", 5),
+    ("zes", 6),
+    ("zeven", 7),
+    ("negen", 9),
+    ("tien", 10),
+    ("twaalf", 12),
+    ("dertien", 13),
+    ("veertien", 14),
+    ("vijftien", 15),
+    ("zestien", 16),
+    ("zeventien", 17),
+    ("achttien", 18),
+    ("negentien", 19),
+    ("twintig", 20),
+    // Portuguese
+    ("um", 1),
+    ("uma", 1),
+    ("dois", 2),
+    ("duas", 2),
+    ("três", 3),
+    ("tres", 3),
+    ("sete", 7),
+    ("oito", 8),
+    ("dez", 10),
+    ("doze", 12),
+    ("treze", 13),
+    ("catorze", 14),
+    ("quatorze", 14),
+    ("dezesseis", 16),
+    ("dezessete", 17),
+    ("dezoito", 18),
+    ("dezenove", 19),
+    ("vinte", 20),
 ];
 
 /// The word for "year" in the languages `make_stemmer` supports.
@@ -144,12 +256,22 @@ static YEARS_RE: LazyLock<Regex> = LazyLock::new(|| {
     // and `vier` would otherwise win against `vierzehn`.
     let mut words: Vec<&str> = SPELLED_NUMBERS.iter().map(|(w, _)| *w).collect();
     words.sort_by_key(|w| std::cmp::Reverse(w.len()));
+    words.dedup();
     Regex::new(&format!(
         r"(?i)\b(\d{{1,2}}|{})(?:\s*\+\s*|\s+)({})\b",
         words.join("|"),
         YEAR_WORDS
     ))
     .unwrap()
+});
+
+/// A year-word preceded by a WORD rather than a digit — the shape
+/// [`states_an_unreadable_tenure`] inspects.
+///
+/// Deliberately looser than [`YEARS_RE`]: this one has to see the quantifiers
+/// that table CANNOT read, which is the whole point of it.
+static UNREADABLE_TENURE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r"(?i)\b(\p{{L}}[\p{{L}}-]*)\s+({YEAR_WORDS})\b")).unwrap()
 });
 
 /// Words that make a nearby `<number> years` a claim about the CANDIDATE's own
@@ -266,24 +388,29 @@ pub(super) fn stated_years(source: &str) -> Option<u32> {
         .max()
 }
 
-/// Every tenure CLAIM the generated document makes.
+/// Every tenure CLAIM the generated document makes: a `<number> <year-word>`
+/// span with an [`EXPERIENCE_CONTEXT`] word within [`CLAIM_CONTEXT_CHARS`] of
+/// it.
 ///
-/// A span is a claim when an [`EXPERIENCE_CONTEXT`] word sits within
-/// [`CLAIM_CONTEXT_CHARS`] of it, or when it sits in the summary — the section
-/// whose entire job is to state what the candidate has done, and where this
-/// class of inflation actually lands.
+/// **The context word is the ONLY admission rule**, and an earlier version that
+/// also admitted anything in the SUMMARY — on the reasoning that a summary's
+/// whole job is to state what the candidate has done — was wrong in the way
+/// this family cannot afford. A summary is also where a candidate writes
+/// "replaced a 30 year old mainframe", "retired 12 years of accumulated schema
+/// drift", "cut a 40 year legacy batch": all three fired, all three are
+/// achievements, and the user was told to delete them. A genuine tenure claim
+/// carries `experience` / `Erfahrung` / `experiencia` anyway.
 pub(super) fn years_claims(sections: &[Section]) -> Vec<YearsClaim> {
     let mut out = Vec::new();
     for section in sections {
-        let is_summary = section.kind == SectionKind::Summary;
         for line in &section.lines {
             for (years, raw, start, end) in years_spans(&line.text) {
                 let window =
                     context_window(&line.text, start, end, CLAIM_CONTEXT_CHARS).to_lowercase();
-                let has_context = EXPERIENCE_CONTEXT
+                if EXPERIENCE_CONTEXT
                     .iter()
-                    .any(|word| contains_phrase(&window, word));
-                if has_context || is_summary {
+                    .any(|word| contains_phrase(&window, word))
+                {
                     out.push(YearsClaim {
                         years,
                         raw,
@@ -294,6 +421,23 @@ pub(super) fn years_claims(sections: &[Section]) -> Vec<YearsClaim> {
         }
     }
     out
+}
+
+/// A year-word in the SOURCE preceded by a quantifier [`SPELLED_NUMBERS`]
+/// cannot read — "several years", "over the years", or a number word in a
+/// language this table does not cover.
+///
+/// Such a source states a tenure of UNKNOWN size, and unknown is not zero. The
+/// whole check goes quiet rather than compare a claim against evidence it
+/// failed to read: the sparing side going blind is what manufactures an
+/// accusation, and a word list can always be missing a word.
+fn states_an_unreadable_tenure(source: &str) -> bool {
+    UNREADABLE_TENURE_RE.captures_iter(source).any(|c| {
+        c.get(1).is_some_and(|word| {
+            let lower = word.as_str().to_lowercase();
+            !SPELLED_NUMBERS.iter().any(|(w, _)| *w == lower)
+        })
+    })
 }
 
 /// The year an open-ended span in the source is measured against — `None` when
@@ -315,6 +459,13 @@ pub(super) fn years_claims(sections: &[Section]) -> Vec<YearsClaim> {
 /// documents and DISCARDED when it fails, taking the span evidence with it: the
 /// check then falls back on what the source states in words, or goes quiet.
 ///
+/// **What this costs in determinism, stated plainly.** Two runs a day apart
+/// across 31 December can disagree, so `validation_is_deterministic` is true
+/// WITHIN a calendar year rather than absolutely. The disagreement is
+/// monotone-loosening — a later reading only ever widens the allowance — so a
+/// report that passed cannot later fail on the clock alone; only the reverse,
+/// and only towards silence.
+///
 /// A clock that is AHEAD needs no guard — it only ever widens the allowance.
 /// The cost of the rule is a document carrying a future year (a typo, a
 /// start-date-in-advance entry), which reads as an untrustworthy clock and goes
@@ -329,51 +480,105 @@ pub(super) fn reference_year(source: &str, generated: &str) -> Option<u32> {
     (clock >= documented).then_some(clock)
 }
 
-/// The span the source's own employment dates cover, earliest start to latest
-/// end, with an open-ended entry ending at `reference`.
+/// How much text after a span separator is read looking for the span's END.
 ///
-/// The CAREER span, not the sum of the roles: a gap between two jobs is not
-/// something to accuse anybody over, and the career reading is the larger of
-/// the two. `None` when no source entry carries a year — nothing to compare
-/// against, so the check goes quiet — and equally `None` when an entry is
-/// open-ended and [`reference_year`] had no trustworthy today to close it with:
-/// one unbounded end makes the whole career span unknown, and "unknown" must
-/// never be read as "short".
-pub(super) fn career_span_years(
-    source_sections: &[Section],
-    reference: Option<u32>,
-) -> Option<u32> {
-    let mut earliest: Option<u32> = None;
-    let mut latest: Option<u32> = None;
-    for (_, dates) in super::factual::entries(source_sections) {
-        let years = years_in(&dates);
-        let Some(&start) = years.first() else {
-            continue;
-        };
-        let end = if is_open_ended(&dates) {
-            reference?
-        } else {
-            years.iter().copied().max().unwrap_or(start)
-        };
-        earliest = Some(earliest.map_or(start, |e| e.min(start)));
-        latest = Some(latest.map_or(end, |l| l.max(end)));
-    }
-    Some(latest?.saturating_sub(earliest?))
+/// Long enough for `Mar 2021` and `bis Dezember 2021`, short enough that the
+/// next sentence cannot supply a year and make an open span look closed.
+pub(super) const SPAN_TAIL_CHARS: usize = 16;
+
+/// `<year> <span separator> <tail>` — the shape a date column has, read off raw
+/// TEXT rather than off a parsed entry.
+static SPAN_TAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?i)\b(?:19|20)\d{{2}}\s*(?:[-–—]|\bto\b|\bbis\b|\buntil\b|\bhasta\b|\bau\b|\bà\b|\ba\b|\btot\b|\bfino\b|\baté\b)\s*([^\n]{{0,{SPAN_TAIL_CHARS}}})"
+    ))
+    .unwrap()
+});
+
+/// True when the source shows a role that has NOT ended.
+///
+/// Asked of raw text, and asked STRUCTURALLY: a date column whose separator is
+/// followed by something that is not another year is open, whatever word sits
+/// there. That is what makes it work for `2015 - Actualidad`, `2019 -
+/// Aujourd'hui` and `2020 - Today`, none of which `PRESENT_MARKERS` carries —
+/// and for the next spelling nobody has thought of either. The marker list is
+/// still consulted, because `seit 2021` is open with no separator at all.
+///
+/// Every direction of error here is generous: an unrelated "in 2019 - a big
+/// year" reads as an open span and WIDENS the allowance. A false "closed" is
+/// the only dangerous answer, and it needs every span in the document to have a
+/// year within [`SPAN_TAIL_CHARS`] of its separator — which is what a genuinely
+/// closed history looks like.
+fn source_is_ongoing(source: &str) -> bool {
+    source.lines().any(|line| {
+        if years_in(line).is_empty() {
+            return false;
+        }
+        is_open_ended(line)
+            || SPAN_TAIL_RE.captures_iter(line).any(|c| {
+                c.get(1)
+                    .is_none_or(|tail| years_in(tail.as_str()).is_empty())
+            })
+    })
+}
+
+/// The span between the earliest year the source names and its latest end.
+///
+/// ## Read from the TEXT, never from the parse
+///
+/// The lenient half of this comparison ([`stated_years`]) reads raw text, so
+/// the accusing half must too. Three separate false Criticals were measured
+/// when it did not:
+///
+/// * a history whose second block is headed `EARLIER ROLES` (`career` is in
+///   `classify_section`'s lexicon, `roles` is not) lost its 2010-2015 role, and
+///   a truthful "15 years" became a Critical;
+/// * a Spanish résumé whose current role ends in `Actualidad` — a spelling
+///   `PRESENT_MARKERS` does not carry — had its span closed at the role's own
+///   START year;
+/// * the same shape again wherever `EXPERIENCIA` or any other heading fails to
+///   classify, because then there are no entries to read an end from at all.
+///
+/// Every one of those is the same defect: an under-parse SHRANK the allowance,
+/// and a shrunk allowance is an accusation. So neither end is parsed now. The
+/// start is the earliest year anywhere in the source, and the end is today when
+/// [`source_is_ongoing`] sees a role that has not finished, otherwise the latest
+/// year the source names.
+///
+/// The price, stated rather than hidden: an education entry dated 2012-2016
+/// widens the allowance for a career that began in 2019, because this no longer
+/// measures "how long did you work" but "can your own document reach back that
+/// far at all". That is the strongest claim that can be made without trusting a
+/// section classifier in seven languages, and it still catches the class this
+/// check was built for — a source whose whole history spans four years against
+/// an output claiming eight.
+///
+/// `None` when the source names no year, or when a role is open and
+/// [`reference_year`] found no trustworthy today to close it with.
+pub(super) fn career_span_years(source: &str, reference: Option<u32>) -> Option<u32> {
+    let years = years_in(source);
+    let earliest = years.iter().copied().min()?;
+    let latest = if source_is_ongoing(source) {
+        reference?
+    } else {
+        years.iter().copied().max()?
+    };
+    Some(latest.saturating_sub(earliest))
 }
 
 /// The largest tenure the source supports: whatever it states, or the span its
 /// dates cover plus [`CAREER_SPAN_SLACK_YEARS`], whichever is larger.
 ///
-/// `None` when the source supports NO reading at all (states no tenure and
-/// carries no dated entry) — the comparison is then unmakeable and the check
-/// must stay silent rather than treat "unknown" as "zero".
-pub(super) fn supported_years(
-    source: &str,
-    source_sections: &[Section],
-    reference: Option<u32>,
-) -> Option<u32> {
+/// `None` when the source supports NO reading at all — it states no tenure and
+/// carries no dated entry, or it states one this file cannot READ
+/// ([`states_an_unreadable_tenure`]). The comparison is then unmakeable and the
+/// check must stay silent rather than treat "unknown" as "zero".
+pub(super) fn supported_years(source: &str, reference: Option<u32>) -> Option<u32> {
+    if states_an_unreadable_tenure(source) {
+        return None;
+    }
     let stated = stated_years(source);
-    let span = career_span_years(source_sections, reference).map(|s| s + CAREER_SPAN_SLACK_YEARS);
+    let span = career_span_years(source, reference).map(|s| s + CAREER_SPAN_SLACK_YEARS);
     match (stated, span) {
         (None, None) => None,
         (a, b) => Some(a.unwrap_or(0).max(b.unwrap_or(0))).filter(|n| *n > 0),
@@ -389,10 +594,9 @@ pub(super) fn supported_years(
 pub(super) fn inflated_years_claims(
     generated_sections: &[Section],
     source: &str,
-    source_sections: &[Section],
     reference: Option<u32>,
 ) -> Vec<(YearsClaim, u32)> {
-    let Some(supported) = supported_years(source, source_sections, reference) else {
+    let Some(supported) = supported_years(source, reference) else {
         return Vec::new();
     };
     let mut seen = HashSet::new();
@@ -404,11 +608,15 @@ pub(super) fn inflated_years_claims(
         .collect()
 }
 
-// ── A2b: certifications ─────────────────────────────────────────────────────
+// ── A2b: certifications ────────────────────────────────────────
 
-/// How far apart an issuer and a certification word may sit and still name one
-/// certification. A line is the outer bound either way — two adjacent entries
-/// in a Certifications section must not fuse into one claim.
+/// How far apart an issuer and a certification word may sit, on the SOURCE
+/// side, and still name one certification.
+///
+/// Source-side only — see [`Side`]. The claims side requires ADJACENCY, and the
+/// asymmetry is the point: a window this wide reads "certified the release on
+/// AWS each Thursday" as a credential, which is fine when it SPARES a claim and
+/// a false accusation when it makes one.
 pub(super) const CERT_ISSUER_WINDOW_CHARS: usize = 60;
 
 /// A line at or under this length is quoted WHOLE as the evidence for a
@@ -417,22 +625,98 @@ pub(super) const CERT_ISSUER_WINDOW_CHARS: usize = 60;
 /// of the name that says which certification.
 pub(super) const CERT_EVIDENCE_LINE_CHARS: usize = 120;
 
-/// Certification acronyms distinctive enough that their ABSENCE from the source
-/// is evidence.
+/// Which document a certification scan is reading. The two sides ask different
+/// questions of the same text and the difference is deliberate — see
+/// [`cert_claims_on_line`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    /// The generated document: a certification here is a CLAIM, so the shape
+    /// must be unambiguous.
+    Claims,
+    /// The candidate's own résumé: whatever it names may only ever spare a
+    /// claim, so the reading is as generous as it can be made.
+    Source,
+}
+
+/// Punctuation that may sit between an issuer and a certification word without
+/// breaking their adjacency: `AWS Certified …`, `Microsoft Certified: Azure
+/// …`, `Zertifizierter Kubernetes-Administrator`.
 ///
-/// Curated, and short on purpose. Every entry is a token that means one thing
-/// on a résumé in any language — which is exactly why it is checkable and why
-/// the list may not be grown by pattern-matching on capitalisation. Two
-/// deliberate exclusions worth naming: `CSM` (also "customer success manager")
-/// and `CPA` (also "cost per acquisition" on a marketing résumé). Both are real
-/// certifications; neither is UNAMBIGUOUS, and an ambiguous entry here is a
-/// false Critical waiting for the first marketing CV.
-const CERT_ACRONYMS: &[&str] = &[
-    "PMP", "CAPM", "PRINCE2", "TOGAF", "ITIL", "CISSP", "CISM", "CISA", "CCSP", "CEH", "OSCP",
-    "CCNA", "CCNP", "CCIE", "CKA", "CKAD", "CKS", "RHCE", "RHCSA", "CFA", "FRM", "PSM", "PSPO",
+/// Anything else between them is a WORD, and a word is what tells "AWS
+/// Certified Solutions Architect" (a credential) from "certified the release on
+/// AWS" (a Thursday).
+const CERT_ADJACENCY_PUNCTUATION: &[char] = &[
+    '-', '\u{2013}', '\u{2014}', ':', ',', '(', ')', '.', '\u{b7}', '|', '/', '\u{2019}', '\'',
 ];
 
-/// Certification issuers, each mapped to the KEY a claim is compared on.
+/// Certification acronyms, each mapped to the KEY its expansion resolves to and
+/// to the expansion itself.
+///
+/// **One namespace, three columns, and the middle one is load-bearing.** An
+/// earlier version emitted `cka` from the acronym pass and `kubernetes` from
+/// the issuer pass, and `unsupported_certs` compares keys: a source writing
+/// `Certified Kubernetes Administrator` therefore did not support a generated
+/// `CKA`, nor the reverse. Both directions were measured as false Criticals.
+/// The key is the issuer's, so a certification from an issuer the source
+/// already holds a certification from is spared — deliberately generous, and
+/// the alternative is exactly the two-namespace bug this column exists to kill.
+///
+/// The expansion is matched on the SOURCE side only, for the acronyms whose
+/// long form carries no issuer token of its own (`CISSP`, `PMP`, `CFA`): without
+/// it a source spelling the certification out in full would not support the
+/// output's abbreviation of it.
+///
+/// Curated, and short on purpose. Every entry is a token that means one thing
+/// on a résumé in any language — which is why it is checkable, and why the
+/// list may not be grown by pattern-matching on capitalisation. Two deliberate
+/// exclusions worth naming: `CSM` (also "customer success manager") and `CPA`
+/// (also "cost per acquisition" on a marketing résumé). Both are real
+/// certifications; neither is UNAMBIGUOUS, and an ambiguous entry here is a
+/// false Critical waiting for the first marketing CV.
+const CERT_ACRONYMS: &[(&str, &str, &str)] = &[
+    ("PMP", "pmi", "project management professional"),
+    ("CAPM", "pmi", "certified associate in project management"),
+    ("PRINCE2", "prince2", ""),
+    ("TOGAF", "togaf", ""),
+    ("ITIL", "itil", ""),
+    (
+        "CISSP",
+        "isc2",
+        "certified information systems security professional",
+    ),
+    ("CCSP", "isc2", "certified cloud security professional"),
+    ("CISM", "isaca", "certified information security manager"),
+    ("CISA", "isaca", "certified information systems auditor"),
+    ("CEH", "eccouncil", "certified ethical hacker"),
+    (
+        "OSCP",
+        "offsec",
+        "offensive security certified professional",
+    ),
+    ("CCNA", "cisco", "cisco certified network associate"),
+    ("CCNP", "cisco", "cisco certified network professional"),
+    ("CCIE", "cisco", "cisco certified internetwork expert"),
+    ("CKA", "kubernetes", "certified kubernetes administrator"),
+    (
+        "CKAD",
+        "kubernetes",
+        "certified kubernetes application developer",
+    ),
+    (
+        "CKS",
+        "kubernetes",
+        "certified kubernetes security specialist",
+    ),
+    ("RHCE", "redhat", "red hat certified engineer"),
+    ("RHCSA", "redhat", "red hat certified system administrator"),
+    ("CFA", "cfa", "chartered financial analyst"),
+    ("FRM", "frm", "financial risk manager"),
+    ("PSM", "scrum", "professional scrum master"),
+    ("PSPO", "scrum", "professional scrum product owner"),
+];
+
+/// Certification issuers, each mapped to the KEY a claim is compared on — the
+/// same namespace [`CERT_ACRONYMS`]' middle column uses.
 ///
 /// Two spellings of one issuer share a key, so a source writing "Amazon Web
 /// Services" supports a generated "AWS Certified …".
@@ -457,6 +741,9 @@ const CERT_ISSUERS: &[(&str, &str)] = &[
     ("scrum", "scrum"),
     ("pmi", "pmi"),
     ("isaca", "isaca"),
+    ("isc2", "isc2"),
+    ("ec-council", "eccouncil"),
+    ("offensive security", "offsec"),
     ("hashicorp", "hashicorp"),
     ("terraform", "hashicorp"),
     ("docker", "docker"),
@@ -493,9 +780,11 @@ static CERT_ISSUER_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// One certification a document names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CertClaim {
-    /// What the two sides are compared on: an issuer key or a lowercased
-    /// acronym. Translation-invariant by construction.
-    pub(super) key: String,
+    /// Every key this claim may be recognised by — an acronym contributes both
+    /// its own spelling and its issuer's key, so the two passes cannot end up
+    /// in different namespaces again. A claim is unsupported only when NONE of
+    /// them is in the source.
+    pub(super) keys: Vec<String>,
     /// The span the document wrote — the evidence a finding quotes.
     pub(super) raw: String,
     pub(super) section: Option<String>,
@@ -516,37 +805,74 @@ fn contains_upper_acronym(line: &str, acronym: &str) -> bool {
     })
 }
 
-/// The certifications one line names.
+/// True when nothing but whitespace and [`CERT_ADJACENCY_PUNCTUATION`] separates
+/// the two spans `[a_end, b_start)` — i.e. the issuer and the certification
+/// word are neighbouring TOKENS, in either order.
+fn spans_are_adjacent(line: &str, first_end: usize, second_start: usize) -> bool {
+    if first_end > second_start {
+        return true; // overlapping: "Zertifizierter" IS the certification word
+    }
+    line[first_end..second_start]
+        .chars()
+        .all(|c| c.is_whitespace() || CERT_ADJACENCY_PUNCTUATION.contains(&c))
+}
+
+/// The certifications one line names, as `(keys, evidence span)`.
 ///
 /// Two passes, because certifications are written two ways and only one of them
-/// carries a word: a bare acronym (`PMP`), and an issuer next to a
-/// certification word in either order (`AWS Certified …`, `Certified Kubernetes
-/// Administrator`, `Zertifizierter Scrum Master`). A certification word with NO
-/// issuer near it is skipped — "certified the release" is not a credential, and
-/// guessing at one is how this check would start accusing people.
-fn cert_claims_on_line(line: &str, upper_acronyms_only: bool) -> Vec<(String, String)> {
+/// carries a word: a bare acronym (`PMP`), and an issuer beside a certification
+/// word in either order (`AWS Certified …`, `Certified Kubernetes
+/// Administrator`, `Zertifizierter Scrum Master`).
+///
+/// ## The two sides read differently, and that is the fix
+///
+/// "Certified" is a PAST-TENSE VERB at least as often as it is an adjective on
+/// a résumé. Accepting any issuer token within [`CERT_ISSUER_WINDOW_CHARS`] of
+/// it turned "Certified the release on AWS each Thursday" and "Migrated 40
+/// services to Docker and certified each image against CIS" into invented
+/// credentials — four of four realistic bullets fired, and the user was told to
+/// delete a real achievement.
+///
+/// So [`Side::Claims`] requires the two to be ADJACENT tokens, which is what
+/// "AWS Certified" is and what "certified … on AWS" is not, while
+/// [`Side::Source`] keeps the wide window. `Source ⊇ Claims` holds by
+/// construction, and it holds in the direction that matters: a source whose
+/// prose merely mentions certifying something on AWS now SPARES a generated AWS
+/// certification, which is a missed check rather than a false accusation.
+fn cert_claims_on_line(line: &str, side: Side) -> Vec<(Vec<String>, String)> {
     let mut out = Vec::new();
-    for acronym in CERT_ACRONYMS {
-        let found = if upper_acronyms_only {
-            contains_upper_acronym(line, acronym)
-        } else {
-            contains_phrase(&line.to_lowercase(), &acronym.to_lowercase())
+    for (acronym, key, expansion) in CERT_ACRONYMS {
+        let found = match side {
+            Side::Claims => contains_upper_acronym(line, acronym),
+            // Any casing, plus the long form: a source writing "cissp" in a
+            // skills line, or spelling the certification out in full, still
+            // supports the claim.
+            Side::Source => {
+                let lower = line.to_lowercase();
+                contains_phrase(&lower, &acronym.to_lowercase())
+                    || (!expansion.is_empty() && contains_phrase(&lower, expansion))
+            }
         };
         if found {
-            out.push((acronym.to_lowercase(), (*acronym).to_string()));
+            out.push((
+                vec![acronym.to_lowercase(), (*key).to_string()],
+                (*acronym).to_string(),
+            ));
         }
     }
     for word in CERT_WORD_RE.find_iter(line) {
         for issuer in CERT_ISSUER_RE.captures_iter(line) {
             let Some(name) = issuer.get(1) else { continue };
-            let gap = if word.end() <= name.start() {
-                name.start() - word.end()
-            } else if name.end() <= word.start() {
-                word.start() - name.end()
+            let (first_end, second_start) = if word.end() <= name.start() {
+                (word.end(), name.start())
             } else {
-                0 // the two spans overlap — "Zertifizierter" IS the issuer word
+                (name.end(), word.start())
             };
-            if gap > CERT_ISSUER_WINDOW_CHARS {
+            let accepted = match side {
+                Side::Claims => spans_are_adjacent(line, first_end, second_start),
+                Side::Source => second_start.saturating_sub(first_end) <= CERT_ISSUER_WINDOW_CHARS,
+            };
+            if !accepted {
                 continue;
             }
             let key = CERT_ISSUERS
@@ -562,7 +888,7 @@ fn cert_claims_on_line(line: &str, upper_acronyms_only: bool) -> Vec<(String, St
                 let end = word.end().max(name.end());
                 line[start..end].trim().to_string()
             };
-            out.push((key, raw));
+            out.push((vec![key], raw));
         }
     }
     out
@@ -573,9 +899,9 @@ pub(super) fn cert_claims(sections: &[Section]) -> Vec<CertClaim> {
     let mut out = Vec::new();
     for section in sections {
         for line in &section.lines {
-            for (key, raw) in cert_claims_on_line(&line.text, true) {
+            for (keys, raw) in cert_claims_on_line(&line.text, Side::Claims) {
                 out.push(CertClaim {
-                    key,
+                    keys,
                     raw,
                     section: section.heading.clone(),
                 });
@@ -586,15 +912,11 @@ pub(super) fn cert_claims(sections: &[Section]) -> Vec<CertClaim> {
 }
 
 /// Every certification key the SOURCE names — the lenient side.
-///
-/// Acronyms are matched case-INSENSITIVELY here, unlike on the claims side: a
-/// source that writes "cissp" in a skills line still supports the claim, and a
-/// statement in the candidate's own document may only ever spare.
 pub(super) fn source_cert_keys(source: &str) -> HashSet<String> {
     source
         .lines()
-        .flat_map(|line| cert_claims_on_line(line, false))
-        .map(|(key, _)| key)
+        .flat_map(|line| cert_claims_on_line(line, Side::Source))
+        .flat_map(|(keys, _)| keys)
         .collect()
 }
 
@@ -604,8 +926,13 @@ pub(super) fn unsupported_certs(generated_sections: &[Section], source: &str) ->
     let mut seen = HashSet::new();
     cert_claims(generated_sections)
         .into_iter()
-        .filter(|claim| !known.contains(&claim.key))
-        .filter(|claim| seen.insert(claim.key.clone()))
+        .filter(|claim| !claim.keys.iter().any(|key| known.contains(key)))
+        .filter(|claim| {
+            claim
+                .keys
+                .first()
+                .is_some_and(|key| seen.insert(key.clone()))
+        })
         .collect()
 }
 
@@ -629,6 +956,63 @@ static INSTITUTION_MARKER_RE: LazyLock<Regex> = LazyLock::new(|| {
 const INSTITUTION_ABBREVIATIONS: &[&str] = &[
     "TU", "FH", "ETH", "EPFL", "KTH", "RWTH", "LMU", "HTW", "HSG",
 ];
+
+/// Degree names, matched word-bounded and case-insensitively.
+///
+/// The institution guard cannot be decided by [`INSTITUTION_MARKER_RE`] alone,
+/// because that asks whether this module's LEXICON knows the school rather than
+/// whether the document has an education history. `IIT Delhi`, `Caltech`,
+/// `INSEAD`, `Sciences Po`, `Bocconi`, `KIT` and `Technion` all miss it, and a
+/// source whose education sits under an unrecognised heading then looked like a
+/// source with no education at all — the Warning fired on a truthful résumé.
+///
+/// A degree is the other half of an education entry and is spelled far more
+/// uniformly than the institutions are.
+const DEGREE_TOKENS: &[&str] = &[
+    "bsc",
+    "b.sc",
+    "msc",
+    "m.sc",
+    "b.tech",
+    "btech",
+    "m.tech",
+    "mtech",
+    "b.eng",
+    "m.eng",
+    "beng",
+    "meng",
+    "mba",
+    "phd",
+    "ph.d",
+    "bachelor",
+    "bachelors",
+    "bachelier",
+    "baccalauréat",
+    "master",
+    "masters",
+    "maîtrise",
+    "magister",
+    "diplom",
+    "diploma",
+    "diplôme",
+    "doctorate",
+    "doctorat",
+    "doktor",
+    "licence",
+    "licenciatura",
+    "laurea",
+    "staatsexamen",
+    "abitur",
+    "vordiplom",
+    "ingénieur",
+    "ingenieur",
+];
+
+/// True when `text` names a degree anywhere.
+fn names_a_degree(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    DEGREE_TOKENS.iter().any(|d| contains_phrase(&lower, d))
+}
 
 /// True when `text` names an institution anywhere.
 pub(super) fn names_an_institution(text: &str) -> bool {
@@ -678,10 +1062,13 @@ pub(super) fn institutions(sections: &[Section]) -> Vec<(String, Option<String>)
 /// both sides are asked the same language-independent question, "does this
 /// document name a place of study at all".
 ///
-/// The double guard is deliberate. `classify_section` does not recognise every
-/// heading a real CV writes, so a source whose education sits under an
-/// unrecognised heading would look sectionless — the marker scan over the WHOLE
-/// source text is what stops that from becoming an accusation.
+/// The guard is threefold, and each layer covers a hole the one before it left.
+/// `classify_section` does not recognise every heading a real CV writes, so a
+/// source whose education sits under `QUALIFICATIONS` looks sectionless; the
+/// institution-marker scan over the whole source text covers that, until the
+/// school is `IIT Delhi` or `Caltech` and carries no marker word at all; so a
+/// DEGREE token counts too ([`names_a_degree`]). Measured: without the third
+/// layer this Warning fired on a truthful `B.Tech Computer Science, IIT Delhi`.
 ///
 /// ## What was measured, and why the VALUE comparison is not here
 ///
@@ -709,7 +1096,8 @@ pub(super) fn unsupported_institutions(
     let source_has_education = source_sections
         .iter()
         .any(|s| s.kind == SectionKind::Education)
-        || names_an_institution(source);
+        || names_an_institution(source)
+        || names_a_degree(source);
     if source_has_education {
         return Vec::new();
     }
@@ -732,27 +1120,23 @@ pub(super) fn unsupported_institutions(
 pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
     let source = ctx.input.source_resume;
     let reference = reference_year(source, ctx.input.generated);
-    let mut issues: Vec<ContentIssue> = inflated_years_claims(
-        &ctx.generated_sections,
-        source,
-        &ctx.source_sections,
-        reference,
-    )
-    .into_iter()
-    .map(|(claim, supported)| {
-        issue(
-            FACTUAL_INFLATED_EXPERIENCE,
-            claim.section.as_deref(),
-            format!(
-                "\"{}\" claims more experience than your source résumé supports — it states, \
-                 and its dates cover, at most {supported} years. Correct it to a figure your \
-                 own document backs.",
-                claim.raw
-            ),
-            Some(claim.raw),
-        )
-    })
-    .collect();
+    let mut issues: Vec<ContentIssue> =
+        inflated_years_claims(&ctx.generated_sections, source, reference)
+            .into_iter()
+            .map(|(claim, supported)| {
+                issue(
+                    FACTUAL_INFLATED_EXPERIENCE,
+                    claim.section.as_deref(),
+                    format!(
+                        "\"{}\" claims more experience than your source résumé supports: what it \
+                 states, and how far its own dates reach back, come to at most {supported} \
+                 years. Correct it to a figure your own document backs.",
+                        claim.raw
+                    ),
+                    Some(claim.raw),
+                )
+            })
+            .collect();
 
     issues.extend(
         unsupported_certs(&ctx.generated_sections, source)

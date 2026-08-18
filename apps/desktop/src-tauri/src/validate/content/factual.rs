@@ -732,7 +732,7 @@ fn company_survives(generated_lower: &str, company: &str) -> bool {
 /// Employment entries in a document, as `(company, dates)` pairs — split by
 /// the SAME heuristic `documents::evidence` uses, so both surfaces agree on
 /// which part of an entry line names the employer.
-pub(super) fn entries(sections: &[Section]) -> Vec<(String, String)> {
+fn entries(sections: &[Section]) -> Vec<(String, String)> {
     sections
         .iter()
         .filter(|s| s.kind == SectionKind::Experience)

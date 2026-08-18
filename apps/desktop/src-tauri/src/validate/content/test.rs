@@ -6194,12 +6194,121 @@ const DE_CERT_FROM_EN_SOURCE: &str = "Jane Doe\n\n\
      Zertifizierter AWS Solutions Architect\n\
      Zertifizierter Kubernetes-Administrator (CKA)\n";
 
+/// A Spanish résumé whose current role ends in `Actualidad` — the ordinary
+/// Spanish spelling of "Present", which `PRESENT_MARKERS` does not carry.
+const ES_SOURCE: &str = "Ana García\n\n\
+     EXPERIENCIA\n\n\
+     Ingeniera de Backend | Acme Pagos | 2015 - Actualidad\n\
+     - Construyó la plataforma de liquidación en Rust\n\n\
+     Desarrolladora | Globex | 2011 - 2015\n\
+     - Mantuvo la API de facturación en Python\n";
+
+/// Truthful against it: 2011 to today is fifteen years, and it claims fourteen.
+const ES_GENERATED: &str = "Ana García\n\n\
+     PERFIL\n\n\
+     Ingeniera de backend con 14 años de experiencia en pagos.\n\n\
+     EXPERIENCIA\n\n\
+     Ingeniera de Backend | Acme Pagos | 2015 - Actualidad\n\
+     - Construyó la plataforma de liquidación en Rust\n";
+
+/// A French source stating its tenure in a number word outside the en/de table.
+const FR_SOURCE: &str = "Camille Dubois\n\n\
+     PROFIL\n\n\
+     Ingénieure backend avec quinze années d'expérience dans les paiements.\n\n\
+     EXPÉRIENCE\n\n\
+     Ingénieure Backend | Acme Paiements | 2011 - 2021\n\
+     - A construit la plateforme de règlement\n";
+
+/// The same fifteen years, in digits. Truthful; the source says so in words.
+const FR_GENERATED: &str = "Camille Dubois\n\n\
+     PROFIL\n\n\
+     15 années d'expérience en backend, principalement dans les paiements.\n";
+
+/// A two-block employment history whose second heading is outside
+/// `classify_section`'s lexicon, so `factual::entries` cannot see its role.
+const TWO_BLOCK_SOURCE: &str = "Sam Reed\n\n\
+     EXPERIENCE\n\n\
+     Principal Engineer | Acme Payments | 2015 - Present\n\
+     - Owned the settlement platform end to end\n\n\
+     EARLIER ROLES\n\n\
+     Developer | Initrode | 2010 - 2015\n\
+     - Built the reporting stack in Python\n";
+
+/// Truthful against it: 2010 to today is sixteen years.
+const TWO_BLOCK_GENERATED: &str = "Sam Reed\n\n\
+     SUMMARY\n\n\
+     Principal engineer with 15 years of experience in payments.\n";
+
+/// Ordinary achievements whose verb is "certified" and whose object is an
+/// issuer token. Every one of these is a real thing a platform engineer did.
+const CERT_PROSE: &str = "Jane Doe\n\n\
+     EXPERIENCE\n\n\
+     Platform Engineer | Acme Payments | 2019 - Present\n\
+     - Certified the release on AWS each Thursday before the freeze\n\
+     - Migrated 40 services to Docker and certified each image against CIS\n\
+     - Ran the Terraform rollout and certified the result with the auditors\n\
+     - Coached the Scrum team and certified the runbook with operations\n";
+
+/// A certification named in only ONE of its two forms, in both directions.
+const CERT_SOURCE_EXPANSION: &str =
+    "Jane Doe\n\nCERTIFICATIONS\n\nCertified Kubernetes Administrator\n";
+const CERT_GENERATED_ACRONYM: &str = "Jane Doe\n\nCERTIFICATIONS\n\nCKA\n";
+const CERT_SOURCE_ACRONYM: &str = "Jane Doe\n\nCERTIFICATIONS\n\nCKA\nRHCE\nCISSP\n";
+const CERT_GENERATED_EXPANSION: &str = "Jane Doe\n\nCERTIFICATIONS\n\n\
+     Certified Kubernetes Administrator\n\
+     Red Hat Certified Engineer\n\
+     Certified Information Systems Security Professional\n";
+
+/// Legacy-system sentences in the SUMMARY, unhyphenated — the register the
+/// summary bypass turned into three Criticals.
+const LEGACY_IN_SUMMARY: &str = "Jane Doe\n\n\
+     SUMMARY\n\n\
+     Backend engineer who replaced a 30 year old mainframe, retired 12 years of \
+     accumulated schema drift, and cut a 40 year legacy batch to minutes.\n";
+
+/// An education history under a heading the classifier does not know, whose
+/// institution carries no marker word either.
+const DEGREE_ONLY_SOURCE: &str = "Ravi Menon\n\n\
+     EXPERIENCE\n\n\
+     Backend Engineer | Acme Payments | 2019 - Present\n\
+     - Built the settlement service in Go\n\n\
+     QUALIFICATIONS\n\n\
+     B.Tech Computer Science, IIT Delhi, 2012 - 2016\n";
+
+/// The same education, written out in full — truthful, and the shape that made
+/// the Warning fire.
+const DEGREE_ONLY_GENERATED: &str = "Ravi Menon\n\n\
+     EDUCATION\n\n\
+     B.Tech Computer Science, Indian Institute of Technology Delhi, 2012 - 2016\n";
+
 /// Every document in this repo that is KNOWN-TRUTHFUL, as
 /// `(label, generated, source)`. A corpus résumé is graded against itself: it
 /// is a real document, and every credential in it is by definition sourced.
 fn truthful_documents() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
         ("en_cert_reworded", EN_CERT_REWORDED, EN_SOURCE_CERTIFIED),
+        // The registers the first corpus was missing. Each one produced a
+        // reproduced false Critical before the fixes in this commit.
+        ("es_actualidad", ES_GENERATED, ES_SOURCE),
+        ("fr_quinze_ans", FR_GENERATED, FR_SOURCE),
+        ("two_block_history", TWO_BLOCK_GENERATED, TWO_BLOCK_SOURCE),
+        ("cert_prose_verb", CERT_PROSE, EN_SOURCE),
+        (
+            "cert_acronym_from_expansion",
+            CERT_GENERATED_ACRONYM,
+            CERT_SOURCE_EXPANSION,
+        ),
+        (
+            "cert_expansion_from_acronym",
+            CERT_GENERATED_EXPANSION,
+            CERT_SOURCE_ACRONYM,
+        ),
+        ("legacy_system_in_summary", LEGACY_IN_SUMMARY, EN_SOURCE),
+        (
+            "degree_without_marker",
+            DEGREE_ONLY_GENERATED,
+            DEGREE_ONLY_SOURCE,
+        ),
         (
             "de_cert_from_en_source",
             DE_CERT_FROM_EN_SOURCE,
@@ -6290,13 +6399,8 @@ fn credential_extractor_calibration() {
         let generated_sections = split_sections(generated, DocKind::Resume);
         let source_sections = split_sections(source, DocKind::Resume);
         let reference = credentials::reference_year(source, generated);
-        let supported = credentials::supported_years(source, &source_sections, reference);
-        let years = credentials::inflated_years_claims(
-            &generated_sections,
-            source,
-            &source_sections,
-            reference,
-        );
+        let supported = credentials::supported_years(source, reference);
+        let years = credentials::inflated_years_claims(&generated_sections, source, reference);
         let certs = credentials::unsupported_certs(&generated_sections, source);
         let by_value: Vec<(String, Option<String>)> =
             credentials::institutions(&generated_sections)
@@ -6318,7 +6422,7 @@ fn credential_extractor_calibration() {
                 .collect::<Vec<_>>(),
             credentials::cert_claims(&generated_sections)
                 .iter()
-                .map(|c| c.key.clone())
+                .map(|c| c.keys.join("/"))
                 .collect::<Vec<_>>(),
             credentials::institutions(&generated_sections)
                 .iter()
@@ -6415,6 +6519,7 @@ fn credential_thresholds_are_pinned() {
     assert_eq!(credentials::MAX_PLAUSIBLE_TENURE_YEARS, 60);
     assert_eq!(credentials::CERT_ISSUER_WINDOW_CHARS, 60);
     assert_eq!(credentials::CERT_EVIDENCE_LINE_CHARS, 120);
+    assert_eq!(credentials::SPAN_TAIL_CHARS, 16);
 }
 
 fn summary_claiming(text: &str) -> String {
@@ -6778,4 +6883,279 @@ fn the_paraphrased_fixtures_credentials_survive_being_reworded() {
             silent(report, code);
         }
     }
+}
+
+/// The allowance, anchored to an ABSOLUTE year rather than to today.
+///
+/// `career_span_years` takes its reference year as an argument precisely so
+/// this can be pinned: `EN_SOURCE_FOUR_YEARS` runs 2016-2020 and has no open
+/// role, so the span is 4 whatever the calendar says, and the allowance is 5.
+/// The end-to-end boundary test below then exercises the same numbers through
+/// `validate_content`, where a closed history makes the result
+/// calendar-independent too.
+#[test]
+fn a_closed_history_spans_from_its_earliest_year_to_its_latest() {
+    assert_eq!(
+        credentials::career_span_years(EN_SOURCE_FOUR_YEARS, Some(2026)),
+        Some(4),
+        "2016 to 2020, and no open role for today to close"
+    );
+    assert_eq!(
+        credentials::supported_years(EN_SOURCE_FOUR_YEARS, Some(2026)),
+        Some(5),
+        "4 dated years plus exactly one of slack"
+    );
+    // An OPEN history reaches today instead — same source, one role reopened.
+    let ongoing = EN_SOURCE_FOUR_YEARS.replace("2018 - 2020", "2018 - Present");
+    assert_eq!(
+        credentials::career_span_years(&ongoing, Some(2026)),
+        Some(10),
+        "2016 to the reference year"
+    );
+}
+
+/// A present-tense spelling `PRESENT_MARKERS` does not carry must still read as
+/// ONGOING, or the span closes at the role's own start year and a truthful
+/// résumé reports itself as an exaggeration.
+///
+/// Measured on a fully truthful Spanish document: `2015 - Actualidad` produced
+/// `factual.inflated_experience` as the only Critical. `Aujourd'hui` and
+/// `Today` behave identically, and none of the three is in the lexicon — which
+/// is why the test is structural (a separator followed by a non-year) rather
+/// than a fourth word added to a list.
+///
+/// Mutation check: make `source_is_ongoing` return `false` and every arm below
+/// goes red.
+#[test]
+fn an_unknown_present_marker_still_reads_as_an_open_span() {
+    for marker in ["Actualidad", "Aujourd'hui", "Today", "Heden", "Attualmente"] {
+        let source = format!(
+            "Ana García\n\nEXPERIENCIA\n\n\
+             Ingeniera de Backend | Acme Pagos | 2015 - {marker}\n\
+             - Construyó la plataforma de liquidación\n\n\
+             Desarrolladora | Globex | 2011 - 2015\n\
+             - Mantuvo la API de facturación\n"
+        );
+        assert_eq!(
+            credentials::career_span_years(&source, Some(2026)),
+            Some(15),
+            "{marker}: 2011 to the reference year, because the role has not ended"
+        );
+    }
+    // The negative half: a history that really is closed does NOT reach today.
+    let closed = "Ana García\n\nEXPERIENCIA\n\n\
+         Ingeniera de Backend | Acme Pagos | 2015 - 2019\n\
+         - Construyó la plataforma de liquidación\n";
+    assert_eq!(
+        credentials::career_span_years(closed, Some(2026)),
+        Some(4),
+        "every span in this document names its end year"
+    );
+}
+
+/// A certification named by its ACRONYM in one document and spelled out in the
+/// other is the SAME certification, in both directions.
+///
+/// This is the defect the sibling critic reproduced: the acronym pass emitted
+/// `cka` while the issuer pass emitted `kubernetes`, and the comparison is on
+/// keys — so a source holding `Certified Kubernetes Administrator` did not
+/// support a generated `CKA`, and a source holding `CKA` did not support the
+/// spelled-out form. Both directions produced false Criticals on truthful
+/// documents.
+///
+/// The earlier negative test passed only because its fixture wrote BOTH forms
+/// on one line (`Certified Kubernetes Administrator (CKA)`), which is the
+/// "passes for the wrong reason" shape — each fixture here names exactly one
+/// form.
+///
+/// Mutation check: drop the key column from `CERT_ACRONYMS` (emit only the
+/// acronym) and the first arm goes red.
+#[test]
+fn a_certification_is_the_same_credential_by_acronym_or_by_name() {
+    let expansion = "Jane Doe\n\nCERTIFICATIONS\n\nCertified Kubernetes Administrator\n";
+    let acronym = "Jane Doe\n\nCERTIFICATIONS\n\nCKA\n";
+    silent(
+        &report_for(acronym, expansion, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_CERTIFICATION,
+    );
+    silent(
+        &report_for(expansion, acronym, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_CERTIFICATION,
+    );
+    // …and an acronym whose long form carries no issuer token at all, which is
+    // why `CERT_ACRONYMS` carries the expansion as a third column.
+    let spelled_out =
+        "Jane Doe\n\nCERTIFICATIONS\n\nCertified Information Systems Security Professional\n";
+    silent(
+        &report_for(
+            "Jane Doe\n\nCERTIFICATIONS\n\nCISSP\n",
+            spelled_out,
+            EN_JOB_AD,
+            &[],
+        ),
+        FACTUAL_UNSOURCED_CERTIFICATION,
+    );
+    // The control: none of the above is silence-by-default.
+    assert!(
+        codes(&report_for(acronym, EN_SOURCE, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+        "a source holding no certification at all must still report one"
+    );
+}
+
+/// "Certified" is a past-tense VERB at least as often as it is an adjective,
+/// and every bullet here is a real thing a platform engineer did.
+///
+/// The issuer pass used to accept any issuer token within 60 characters of any
+/// certification word, so all four fired and the user was told to delete an
+/// achievement. The claims side now requires the two to be ADJACENT tokens —
+/// which is what "AWS Certified" is and what "certified … on AWS" is not.
+///
+/// Mutation check: give `Side::Claims` the same window `Side::Source` uses and
+/// this goes red.
+#[test]
+fn a_certification_word_used_as_a_verb_is_not_a_credential() {
+    let generated = "Jane Doe\n\nEXPERIENCE\n\n\
+         Platform Engineer | Acme Payments | 2019 - Present\n\
+         - Certified the release on AWS each Thursday before the freeze\n\
+         - Migrated 40 services to Docker and certified each image against CIS\n\
+         - Ran the Terraform rollout and certified the result with the auditors\n\
+         - Coached the Scrum team and certified the runbook with operations\n";
+    silent(
+        &report_for(generated, EN_SOURCE, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_CERTIFICATION,
+    );
+    // The control: the adjectival form on the same issuer IS reported.
+    let adjectival = "Jane Doe\n\nCERTIFICATIONS\n\nAWS Certified Solutions Architect\n";
+    assert!(
+        codes(&report_for(adjectival, EN_SOURCE, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_UNSOURCED_CERTIFICATION),
+        "adjacency is the discriminator, not silence"
+    );
+}
+
+/// A source that states a tenure this file cannot READ states an UNKNOWN
+/// tenure, and unknown is not zero.
+///
+/// The number words now cover every language the pipeline writes, but a word
+/// list can always be missing a word — "several years", "over a decade", a
+/// spelling nobody listed. When the quantifier cannot be read the whole check
+/// goes quiet, because the side that goes blind here is the side that SPARES.
+///
+/// Mutation check: delete the `states_an_unreadable_tenure` guard and the first
+/// arm goes red.
+#[test]
+fn a_source_tenure_this_file_cannot_read_silences_the_check() {
+    let unreadable = format!(
+        "Jane Doe\n\nSUMMARY\n\nBackend engineer with several years of experience.\n\
+         {EN_SOURCE_FOUR_YEARS}"
+    );
+    let claim = summary_claiming("Backend engineer with 12 years of experience in payments.");
+    silent(
+        &report_for(&claim, &unreadable, EN_JOB_AD, &[]),
+        FACTUAL_INFLATED_EXPERIENCE,
+    );
+    // The control: the same claim against the same dates, minus the unreadable
+    // sentence, is reported.
+    assert!(
+        codes(&report_for(&claim, EN_SOURCE_FOUR_YEARS, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_INFLATED_EXPERIENCE),
+        "without the unreadable sentence this source supports five years, not twelve"
+    );
+}
+
+/// A tenure spelled out in a language whose number words the table used to
+/// miss. The comparison is on a NUMBER, but only if the SPARING evidence can be
+/// read — an en/de-only table read `quinze années d'expérience` as a source
+/// that states nothing and turned a faithful `15 années` into a Critical.
+#[test]
+fn a_tenure_spelled_out_in_any_supported_language_spares_its_own_restatement() {
+    for (word, unit, digits) in [
+        ("quinze", "années", "15 années"),
+        ("quince", "años", "15 años"),
+        ("quindici", "anni", "15 anni"),
+        ("vijftien", "jaar", "15 jaar"),
+        ("quinze", "anos", "15 anos"),
+    ] {
+        let source =
+            format!("Jane Doe\n\nSUMMARY\n\n{word} {unit} d'experience.\n{EN_SOURCE_FOUR_YEARS}");
+        assert_eq!(
+            credentials::stated_years(&source),
+            Some(15),
+            "{word} {unit} states fifteen years"
+        );
+        let generated = summary_claiming(&format!("{digits} of experience in payments."));
+        silent(
+            &report_for(&generated, &source, EN_JOB_AD, &[]),
+            FACTUAL_INFLATED_EXPERIENCE,
+        );
+    }
+}
+
+/// The number-word table, checked against a HAND-WRITTEN list rather than
+/// against itself.
+///
+/// A test that loops over `SPELLED_NUMBERS` proves only that the table agrees
+/// with the table; it cannot catch an omission, which is the failure mode this
+/// class of table actually has. Spanish `quince`, Italian `sette` and
+/// Portuguese `sete` were all missing from the first cut and were found by
+/// exactly this shape.
+///
+/// Seven and fifteen, in all seven languages the pipeline writes: a tenure long
+/// enough to be worth claiming, and a single digit, in each.
+#[test]
+fn the_number_word_table_reads_every_language_the_pipeline_writes() {
+    let cases: &[(&str, u32)] = &[
+        ("seven years", 7),
+        ("fifteen years", 15),
+        ("sieben Jahre", 7),
+        ("fünfzehn Jahre", 15),
+        ("sept ans", 7),
+        ("quinze années", 15),
+        ("siete años", 7),
+        ("quince años", 15),
+        ("sette anni", 7),
+        ("quindici anni", 15),
+        ("zeven jaar", 7),
+        ("vijftien jaar", 15),
+        ("sete anos", 7),
+        ("quinze anos", 15),
+    ];
+    for (phrase, expected) in cases {
+        assert_eq!(
+            credentials::stated_years(&format!("A résumé line saying {phrase} of work.")),
+            Some(*expected),
+            "{phrase} must read as {expected}"
+        );
+    }
+}
+
+/// An education history the section classifier does not recognise, whose
+/// institution carries no marker word either, is still an education history.
+///
+/// `IIT Delhi` misses `INSTITUTION_MARKER_RE` and `QUALIFICATIONS` misses
+/// `classify_section`, so the guard saw a source with no education at all and
+/// warned about a truthful entry. The DEGREE token is the third layer.
+///
+/// Mutation check: drop `names_a_degree` from the guard and this goes red.
+#[test]
+fn a_degree_token_counts_as_education_when_the_institution_has_no_marker_word() {
+    let source = "Ravi Menon\n\nEXPERIENCE\n\n\
+         Backend Engineer | Acme Payments | 2019 - Present\n\
+         - Built the settlement service in Go\n\n\
+         QUALIFICATIONS\n\n\
+         B.Tech Computer Science, IIT Delhi, 2012 - 2016\n";
+    let generated = "Ravi Menon\n\nEDUCATION\n\n\
+         B.Tech Computer Science, Indian Institute of Technology Delhi, 2012 - 2016\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_INSTITUTION,
+    );
+    // The control: a source with neither a degree nor an institution still
+    // reports the invented one.
+    assert!(
+        codes(&report_for(generated, EN_SOURCE_FOUR_YEARS, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_UNSOURCED_INSTITUTION),
+        "the degree token is the discriminator, not silence"
+    );
 }

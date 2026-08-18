@@ -31,14 +31,25 @@ use crate::validate::Severity;
 /// ABSENCE — "keep" and "remove" are both meaningless for it, and listing it in
 /// a Remove/Keep panel would ask a question with no correct answer. It still
 /// appears in the report as a Critical.
-/// The three credential codes are here for the same reason and one more: a
-/// Critical that is NOT listed here keeps its run in `needsReview` forever
-/// ([`still_needs_review`]), and neither of the two credential Criticals has a
-/// section the repair loop could regenerate — `SectionKey` has no
-/// Certifications variant, and an inflated tenure lives in the summary the
-/// model just wrote. Both name a span the user can look at and decide about, so
-/// the review panel is their resolution path; omitting them would strand the
-/// run with a finding and no action.
+/// The two credential Criticals are here because a Critical that is NOT listed
+/// keeps its run in `needsReview` forever ([`still_needs_review`]), and both
+/// name a span the user can look at and decide about.
+///
+/// Their repair stories DIFFER, and the difference matters:
+/// `factual.unsourced_certification` has no section the loop could regenerate
+/// (`SectionKey` has no Certifications variant), so the panel is its only
+/// resolution path; `factual.inflated_experience` DOES route — its section is
+/// the summary — so a false one would spend real provider calls rewriting a
+/// correct summary against "offending text: 15 years", and could pressure the
+/// model into understating a true tenure. That is the sharper reason its
+/// false-positive rate had to be measured at zero before it shipped Critical,
+/// and it is why listing it here is a resolution path rather than a workaround.
+///
+/// `factual.unsourced_institution` is deliberately ABSENT. It is a Warning, and
+/// listing a Warning here would park the run until the user decided it — which
+/// is exactly the "advisory" claim its registration makes being false. The
+/// precedent that says otherwise (`factual.unsourced_term`, also a Warning) is
+/// left alone rather than copied.
 const FABRICATION_CODES: &[&str] = &[
     crate::validate::content::FACTUAL_UNSOURCED_METRIC,
     crate::validate::content::FACTUAL_UNSUPPORTED_DATE,
@@ -46,7 +57,6 @@ const FABRICATION_CODES: &[&str] = &[
     crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
     crate::validate::content::FACTUAL_INFLATED_EXPERIENCE,
     crate::validate::content::FACTUAL_UNSOURCED_CERTIFICATION,
-    crate::validate::content::FACTUAL_UNSOURCED_INSTITUTION,
 ];
 
 /// djb2, byte-for-byte the renderer's `hashText`.
