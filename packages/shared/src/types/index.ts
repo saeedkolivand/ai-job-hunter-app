@@ -175,11 +175,15 @@ export interface MatchScore {
    * Hard-constraint pass — reported as its own field so it can never contaminate
    * the score above.
    *
-   * Only `location` ships today, and only as `met` / `unknown` / `noPreference`:
-   * the candidate side is a search-personalization setting rather than a
-   * mobility statement, and a failed place-name match is absence of evidence
-   * rather than evidence of conflict. Work authorization, employment type and
-   * salary have no candidate-side data in this app at all. See
+   * Only `location` ships today, and only as `met` / `unknown` / `noPreference`.
+   * There is no `notMet`: the candidate side is a search-personalization
+   * setting rather than a mobility statement, and a failed place-name match is
+   * absence of evidence rather than evidence of conflict. `met` takes the
+   * strict reading in return — the posting is remote, or every place token the
+   * user typed appears as a whole token of the posting's location — so a
+   * partial overlap ("San Francisco" against a "San Diego" posting) reads
+   * `unknown`, not `met`. Work authorization, employment type and salary have
+   * no candidate-side data in this app at all. See
    * `commands/match_resume/constraints.rs` for the full reasoning.
    */
   constraints?: { checks: ConstraintCheck[] };

@@ -131,23 +131,72 @@ fn expand_exonyms(needles: &mut Vec<String>) {
     }
 }
 
+/// Split `text` into lowercase alphanumeric tokens. The one tokenizer both the
+/// requested side and the posting side go through, so "Berlin, Germany" cannot
+/// be cut two different ways depending on which end it came from.
+fn tokenize(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(|c: char| !c.is_alphanumeric())
+        .map(|t| t.trim().to_lowercase())
+        .filter(|t| !t.is_empty())
+}
+
+/// The requested location's own significant tokens, deduped, BEFORE any exonym
+/// expansion. Split out of [`requested_needles`] so the whole-token matcher can
+/// ask "did every token the user actually typed find a home?" — a question the
+/// expanded list cannot answer, since expansion adds words the user never wrote.
+fn significant_tokens(requested: &LocationSpec) -> Vec<String> {
+    let mut tokens: Vec<String> = Vec::new();
+    for field in [requested.city.as_deref(), requested.region.as_deref()] {
+        let Some(text) = field else { continue };
+        for tok in tokenize(text) {
+            if tok.chars().count() >= MIN_TOKEN_LEN && !tokens.contains(&tok) {
+                tokens.push(tok);
+            }
+        }
+    }
+    tokens
+}
+
 /// Significant lowercase place-name tokens from the requested location (its city
 /// and region text), expanded with any known exonym counterpart (see
 /// [`expand_exonyms`]). Empty when nothing usable was requested (e.g. only a
 /// country code), which makes the filter inert.
 fn requested_needles(requested: &LocationSpec) -> Vec<String> {
-    let mut needles: Vec<String> = Vec::new();
-    for field in [requested.city.as_deref(), requested.region.as_deref()] {
-        let Some(text) = field else { continue };
-        for tok in text.split(|c: char| !c.is_alphanumeric()) {
-            let tok = tok.trim().to_lowercase();
-            if tok.chars().count() >= MIN_TOKEN_LEN && !needles.contains(&tok) {
-                needles.push(tok);
-            }
-        }
-    }
+    let mut needles = significant_tokens(requested);
     expand_exonyms(&mut needles);
     needles
+}
+
+/// True when EVERY token the user typed appears as a WHOLE token of the
+/// posting's location (diaeresis/exonym-aware) — the strict half of the
+/// comparison.
+///
+/// The difference from the substring test [`requested_needles`] feeds is the
+/// whole point of having both. Substring, any-token: "San Francisco" matches a
+/// "San Diego" posting on the shared `san`, and one token of a two-token request
+/// finding a home is enough. That is the right call for a scrape filter, which
+/// is deciding whether to DISCARD a row and should err toward keeping. It is the
+/// wrong call for a claim published to the user, where "this posting matches
+/// where you are looking" would simply be false.
+///
+/// Exonyms are expanded PER TOKEN rather than over the whole list: expansion
+/// adds a word the user never wrote (a "Munich" request gains "münchen"), so
+/// requiring every needle in the EXPANDED list to match would fail the exact
+/// pair the table exists to bridge. Each requested token is satisfied by itself
+/// or by its own counterpart.
+fn every_requested_token_is_whole(loc: &str, requested: &LocationSpec) -> bool {
+    let posting_tokens: Vec<String> = tokenize(loc).collect();
+    let requested_tokens = significant_tokens(requested);
+    if requested_tokens.is_empty() || posting_tokens.is_empty() {
+        return false;
+    }
+    requested_tokens.iter().all(|tok| {
+        let mut accepted = vec![tok.clone()];
+        expand_exonyms(&mut accepted);
+        accepted
+            .iter()
+            .any(|a| posting_tokens.iter().any(|pt| folds_equal(pt, a)))
+    })
 }
 
 /// What comparing a posting's own location against a requested one actually
@@ -163,12 +212,22 @@ fn requested_needles(requested: &LocationSpec) -> Vec<String> {
 /// either direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LocationVerdict {
-    /// Positive evidence on both sides, and they agree: the posting is remote,
-    /// or it names a place the request asked for.
-    Match,
+    /// The posting is remote — by the board's flag or a marker in its location
+    /// text — so no place comparison applies at all.
+    Remote,
+    /// Every token the request actually named appears as a WHOLE token of the
+    /// posting's location: "Berlin" ↔ "Berlin, Germany", "Munich" ↔ "München"
+    /// via the curated table. Strong enough to state to a user.
+    PlaceMatch,
+    /// A requested token appears in the posting's location, but only as a
+    /// SUBSTRING or on part of a multi-token request: "San Francisco" ↔ "San
+    /// Diego" on the shared `san`. Enough to keep a row in a search — the
+    /// conservative call when the cost is discarding a job — and NOT enough to
+    /// tell a user the posting matches where they are looking.
+    PlaceOverlap,
     /// Positive evidence on both sides, and they conflict: the posting names a
     /// concrete place, is not remote, and NO requested place token appears in
-    /// it. The only answer that is ever a knock-out.
+    /// it anywhere.
     Mismatch,
     /// No comparison was possible — the posting states no location, or the
     /// request carries no usable place token (country-code-only, or a token
@@ -176,19 +235,26 @@ pub(crate) enum LocationVerdict {
     Undecided,
 }
 
-/// Compare one posting's location text against a requested [`LocationSpec`],
-/// three-valued. Conservative, in the same order [`location_mismatch`] has
-/// always evaluated:
+/// Compare one posting's location text against a requested [`LocationSpec`].
+/// Evaluated in the same order [`location_mismatch`] always has:
 /// - remote (via the board's `extra.remote` flag OR a remote marker in the
-///   location text) → [`LocationVerdict::Match`]
+///   location text) → [`LocationVerdict::Remote`]
 /// - empty / unknown posting location → [`LocationVerdict::Undecided`]
 /// - no usable requested place tokens (e.g. country-code-only) →
 ///   [`LocationVerdict::Undecided`]
-/// - a diaeresis-spelling variant of the same name, or a curated exonym (see
-///   [`EXONYM_PAIRS`]) → [`LocationVerdict::Match`] (never a false mismatch on
-///   München/Munich, Köln/Cologne)
-/// - otherwise [`LocationVerdict::Mismatch`], only when NO requested token
-///   (fold-aware) appears in the posting location.
+/// - no requested token anywhere in the posting location →
+///   [`LocationVerdict::Mismatch`]
+/// - otherwise something matched, and the last step grades it: every requested
+///   token present as a WHOLE token (diaeresis-spelling variants and curated
+///   exonyms included, so never a false miss on München/Munich, Köln/Cologne)
+///   → [`LocationVerdict::PlaceMatch`]; a mere substring or partial-request hit
+///   → [`LocationVerdict::PlaceOverlap`].
+///
+/// The last split is the only thing the grading adds, and it exists because the
+/// two callers are asking different questions. `location_mismatch` wants "may I
+/// discard this row?" and treats overlap as a keep, unchanged. The constraint
+/// pass wants "may I tell the user this posting matches where they are looking?"
+/// and treats overlap as unknown.
 ///
 /// Takes the two posting facts as plain data rather than a [`JobPosting`] so the
 /// L3 constraint pass — which reads a cached posting as `serde_json::Value`, not
@@ -203,7 +269,7 @@ pub(crate) fn location_verdict(
 ) -> LocationVerdict {
     // A posting a board flagged remote can never conflict with a place.
     if board_remote {
-        return LocationVerdict::Match;
+        return LocationVerdict::Remote;
     }
     // Empty / unknown location → the posting states nothing to compare against.
     let loc = match posting_location.map(str::trim) {
@@ -212,18 +278,22 @@ pub(crate) fn location_verdict(
     };
     // Remote marker in the location text.
     if REMOTE_MARKERS.iter().any(|m| loc.contains(m)) {
-        return LocationVerdict::Match;
+        return LocationVerdict::Remote;
     }
     let needles = requested_needles(requested);
     if needles.is_empty() {
         return LocationVerdict::Undecided; // nothing concrete to match
     }
-    // Match when any requested token (diaeresis/exonym-aware) appears in the
-    // posting location.
-    if needles.iter().any(|n| contains_folded(&loc, n)) {
-        LocationVerdict::Match
+    // Nothing in common at all.
+    if !needles.iter().any(|n| contains_folded(&loc, n)) {
+        return LocationVerdict::Mismatch;
+    }
+    // Something matched. HOW WELL is a separate question, and the two callers
+    // need different answers to it — see [`every_requested_token_is_whole`].
+    if every_requested_token_is_whole(&loc, requested) {
+        LocationVerdict::PlaceMatch
     } else {
-        LocationVerdict::Mismatch
+        LocationVerdict::PlaceOverlap
     }
 }
 
@@ -469,29 +539,56 @@ mod test {
         );
     }
 
-    // ── Three-valued verdict (the constraint pass's source) ────────────────────
+    // ── Graded verdict (the constraint pass's source) ─────────────────
 
     /// Every verdict this matcher can return, pinned to an ABSOLUTE expected
     /// value per input — not to whatever `location_mismatch` happens to say.
     #[test]
-    fn location_verdict_answers_match_mismatch_and_undecided() {
+    fn location_verdict_grades_every_outcome() {
         let berlin = requested("Berlin");
-        // Match: the posting names the requested city.
-        assert_eq!(
-            location_verdict(Some("Berlin, Germany"), false, &berlin),
-            LocationVerdict::Match
-        );
-        // Match: remote, by the board flag even with a far-away location text.
+        // Remote: by the board flag, even with a far-away location text.
         assert_eq!(
             location_verdict(Some("Austin, TX"), true, &berlin),
-            LocationVerdict::Match
+            LocationVerdict::Remote
         );
-        // Match: remote, by a marker in the location text.
+        // Remote: by a marker in the location text.
         assert_eq!(
             location_verdict(Some("Remote (US)"), false, &berlin),
-            LocationVerdict::Match
+            LocationVerdict::Remote
         );
-        // Mismatch: a concrete, non-remote, non-matching place.
+        // PlaceMatch: the posting names the requested city as a whole token.
+        assert_eq!(
+            location_verdict(Some("Berlin, Germany"), false, &berlin),
+            LocationVerdict::PlaceMatch
+        );
+        // PlaceMatch: a curated exonym, expanded per requested token.
+        assert_eq!(
+            location_verdict(Some("München, Bayern"), false, &requested("Munich")),
+            LocationVerdict::PlaceMatch
+        );
+        // PlaceMatch: a diaeresis spelling variant of the same single token.
+        assert_eq!(
+            location_verdict(Some("Koeln, Deutschland"), false, &requested("Köln")),
+            LocationVerdict::PlaceMatch
+        );
+        // PlaceOverlap: only PART of a two-token request found a home — the
+        // shared `san` of San Francisco / San Diego.
+        assert_eq!(
+            location_verdict(Some("San Diego, CA"), false, &requested("San Francisco")),
+            LocationVerdict::PlaceOverlap
+        );
+        // PlaceOverlap: a substring hit that is not a whole token.
+        assert_eq!(
+            location_verdict(Some("Newcastle"), false, &requested("Newcast")),
+            LocationVerdict::PlaceOverlap
+        );
+        // PlaceOverlap: the request is MORE specific than the posting, so a
+        // token the user typed has no home. Undecidable, not agreement.
+        assert_eq!(
+            location_verdict(Some("Berlin"), false, &requested("Berlin, Germany")),
+            LocationVerdict::PlaceOverlap
+        );
+        // Mismatch: a concrete, non-remote place with nothing in common.
         assert_eq!(
             location_verdict(Some("Austin, TX"), false, &berlin),
             LocationVerdict::Mismatch
@@ -517,9 +614,11 @@ mod test {
     }
 
     /// The scrape-time filter is EXACTLY the `Mismatch` projection — nothing
-    /// else drops. Anchored on both ends: a hand-written absolute expectation
-    /// per case, plus the equivalence, so a regression that broke both the
-    /// filter and the verdict the same way still fails on the absolutes.
+    /// else drops, and grading the old `Match` into `Remote`/`PlaceMatch`/
+    /// `PlaceOverlap` did not move that line. Anchored on both ends: a
+    /// hand-written absolute expectation per case, plus the equivalence, so a
+    /// regression that broke both the filter and the verdict the same way still
+    /// fails on the absolutes.
     #[test]
     fn location_mismatch_drops_exactly_the_mismatch_verdict() {
         let berlin = requested("Berlin");
@@ -528,11 +627,17 @@ mod test {
             (
                 Some("Berlin, Germany"),
                 false,
-                LocationVerdict::Match,
+                LocationVerdict::PlaceMatch,
                 false,
             ),
-            (Some("Austin, TX"), true, LocationVerdict::Match, false),
-            (Some("Anywhere"), false, LocationVerdict::Match, false),
+            (Some("Austin, TX"), true, LocationVerdict::Remote, false),
+            (Some("Anywhere"), false, LocationVerdict::Remote, false),
+            (
+                Some("Greater Berlin Area"),
+                false,
+                LocationVerdict::PlaceMatch,
+                false,
+            ),
             (Some("Austin, TX"), false, LocationVerdict::Mismatch, true),
             (Some("London, UK"), false, LocationVerdict::Mismatch, true),
             (None, false, LocationVerdict::Undecided, false),
@@ -549,6 +654,18 @@ mod test {
                 "the filter must be exactly the Mismatch projection ({loc:?}/{remote})"
             );
         }
+        // The San Diego overlap keeps too — pinned separately because it is the
+        // pairing the constraint pass now refuses to call a match, and the two
+        // callers disagreeing about it is the entire point of the grading.
+        let sf = requested("San Francisco");
+        assert_eq!(
+            location_verdict(Some("San Diego, CA"), false, &sf),
+            LocationVerdict::PlaceOverlap
+        );
+        assert!(!location_mismatch(
+            &posting(Some("San Diego, CA"), false),
+            &sf
+        ));
     }
 
     #[test]

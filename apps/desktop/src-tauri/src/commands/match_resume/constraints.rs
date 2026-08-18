@@ -77,13 +77,21 @@
 //!   matcher is reused and the epistemics are re-derived: `Mismatch` maps to
 //!   `Unknown` here.
 //!
-//! `Met` survives because it rests on positive evidence in both directions (a
-//! requested place name appears in the posting's location, or the posting is
-//! flagged/marked remote) and because it never accuses. Its known weakness is
-//! the shared matcher's deliberate token-substring conservatism — "San
-//! Francisco" matches a "San Diego" posting on `san` — which overstates
-//! agreement but costs the user nothing, and which the evidence fields make
-//! visible: both sides' own words ride in the payload.
+//! `Met` survives, but on the STRICT reading of the same matcher: the posting
+//! is flagged or marked remote, or every place token the user actually typed
+//! appears as a WHOLE token of the posting's location (diaeresis variants and
+//! curated exonyms included). The looser reading the scrape filter uses — any
+//! requested token, as a substring — would have "San Francisco" agreeing with a
+//! "San Diego" posting on the shared `san`. That errs toward agreement rather
+//! than accusation, which makes it cheap, not correct: `met` is a positive claim
+//! rendered to the user ("this posting matches where you're looking"), and a
+//! four-state contract whose one confident state is loose has moved the
+//! imprecision rather than removed it.
+//!
+//! The cost is deliberate and one-directional: a request MORE specific than the
+//! posting ("Berlin, Germany" against a bare "Berlin") reads `unknown` rather
+//! than `met`. That loses a true positive; it never states a false one, and
+//! `unknown` claims nothing.
 //!
 //! [`ConstraintStatus::NotMet`] therefore has no producer today. It stays in the
 //! contract because it is the slot a constraint with real two-sided evidence
@@ -297,10 +305,17 @@ fn evidence(s: &str) -> String {
 /// the user be told not to bother?", against a settings field and a posting that
 /// may have arrived from an entirely different search.
 ///
-/// So `Mismatch` — which is only ever the ABSENCE of a substring hit — maps to
-/// [`ConstraintStatus::Unknown`], not to a knock-out. See the module doc for the
-/// concrete pairs (`Germany`/`Berlin`, `Vienna`/`Wien`, `Berlin`/`EMEA`) that
-/// make it absence of evidence rather than evidence of conflict.
+/// Both directions are re-derived, not just the negative one:
+///
+/// - `Mismatch` — only ever the ABSENCE of a substring hit — maps to
+///   [`ConstraintStatus::Unknown`], not to a knock-out. See the module doc for
+///   the concrete pairs (`Germany`/`Berlin`, `Vienna`/`Wien`, `Berlin`/`EMEA`)
+///   that make it absence of evidence rather than evidence of conflict.
+/// - `PlaceOverlap` maps to `Unknown` too. `Met` is a positive claim rendered to
+///   the user, so it takes the strict whole-token reading: a four-state contract
+///   whose one confident state is loose has moved the imprecision rather than
+///   removed it. The looser reading stays where it belongs — in the scrape
+///   filter, which keeps the row.
 fn location_check(posting: &PostingFacts, candidate: &CandidateFacts) -> ConstraintCheck {
     let posting_evidence = stated(posting.location.as_deref()).map(evidence);
     // No stored preference → nothing to compare against. Not a pass.
@@ -323,11 +338,27 @@ fn location_check(posting: &PostingFacts, candidate: &CandidateFacts) -> Constra
         posting.board_remote,
         &requested,
     ) {
-        LocationVerdict::Match => ConstraintStatus::Met,
-        // Both of these are "we could not establish a conflict". Collapsing them
-        // is the whole correction: `Mismatch` is a failed substring search, not
-        // a contradiction the user should act on.
-        LocationVerdict::Mismatch | LocationVerdict::Undecided => ConstraintStatus::Unknown,
+        // The posting says it is remote, so where the user is looking cannot
+        // conflict with it. Positive evidence, no place comparison needed.
+        LocationVerdict::Remote => ConstraintStatus::Met,
+        // Every place token the user typed is present as a WHOLE token of the
+        // posting's location. The only place-based claim strong enough to state.
+        LocationVerdict::PlaceMatch => ConstraintStatus::Met,
+        // Everything else is "we could not establish it", in one direction or
+        // the other, and all three publish as Unknown:
+        //
+        // - `PlaceOverlap` — something matched, but only as a substring or on
+        //   part of the request ("San Francisco" against a "San Diego" posting,
+        //   on the shared `san`). Keeping that row in a search is the right
+        //   conservative call; telling the user the posting matches where they
+        //   are looking would simply be false.
+        // - `Mismatch` — a failed substring search, which is the ABSENCE of a
+        //   hit, not a contradiction. `Germany`/`Berlin`, `Vienna`/`Wien`,
+        //   `Berlin`/`EMEA` all land here.
+        // - `Undecided` — nothing comparable on one side or the other.
+        LocationVerdict::PlaceOverlap | LocationVerdict::Mismatch | LocationVerdict::Undecided => {
+            ConstraintStatus::Unknown
+        }
     };
     ConstraintCheck::new(
         LOCATION,
@@ -539,6 +570,42 @@ mod tests {
         );
     }
 
+    /// A partial place-name overlap is not agreement.
+    ///
+    /// The scrape filter deliberately keeps a "San Diego" row for a "San
+    /// Francisco" search — discarding a job is the expensive mistake there. This
+    /// pass must not turn that same conservatism into a claim, because here the
+    /// expensive mistake is telling the user something false. Same matcher,
+    /// opposite risk, so the epistemics differ.
+    #[test]
+    fn a_partial_place_name_overlap_is_unknown_not_met() {
+        // (preference, posting location, what is only partially shared)
+        let partial: &[(&str, &str, &str)] = &[
+            ("San Francisco", "San Diego, CA", "the `san` token only"),
+            ("San Francisco", "Santa Monica, CA", "`san` inside `santa`"),
+            (
+                "Berlin, Germany",
+                "Berlin",
+                "a requested token with no home",
+            ),
+            ("New York", "Newark, NJ", "`new` inside `newark`"),
+        ];
+        for (pref, loc, why) in partial {
+            assert_eq!(
+                status_of(pref, loc, false),
+                ConstraintStatus::Unknown,
+                "{pref:?} vs {loc:?} ({why}) must not read as a match"
+            );
+        }
+        // The control: the SAME preference against a posting that really does
+        // name it reads met, so this is a strictness rule and not a blanket
+        // refusal to ever match a two-token place.
+        assert_eq!(
+            status_of("San Francisco", "San Francisco, CA", false),
+            ConstraintStatus::Met
+        );
+    }
+
     #[test]
     fn location_is_unknown_when_the_posting_states_no_location() {
         for absent in [None, Some(""), Some("   ")] {
@@ -592,6 +659,10 @@ mod tests {
             Some("Multiple locations"),
             Some("EMEA"),
             Some("東京"),
+            // Carries the partial-overlap pairing (with the "San Francisco"
+            // preference below) so the strict-Met rule is exercised by the
+            // distribution, not only by the dedicated test.
+            Some("San Diego, CA"),
         ];
         let prefs = [
             None,
@@ -601,6 +672,7 @@ mod tests {
             Some("Munich"),
             Some("Vienna"),
             Some("Germany"),
+            Some("San Francisco"),
         ];
         let (mut total, mut met, mut unknown, mut no_pref) = (0, 0, 0, 0);
         for p in places {
@@ -623,19 +695,24 @@ mod tests {
             }
         }
         // The whole distribution, hand-derived, so this cannot pass by the
-        // corpus quietly collapsing to one answer. 10 places × 7 preferences
+        // corpus quietly collapsing to one answer. 11 places × 8 preferences
         // × 2 remote flags.
-        assert_eq!(total, 140);
-        // 2 blank preferences × 10 places × 2 flags — checked before anything
+        assert_eq!(total, 176);
+        // 2 blank preferences × 11 places × 2 flags — checked before anything
         // about the posting is read.
-        assert_eq!(no_pref, 40);
-        // 50 from board_remote=true with a stored preference (5 × 10), plus 8
-        // genuine text matches at remote=false: "Berlin, Germany" for both
-        // Berlin and Germany, "München" for Munich via the exonym table, and
-        // "Remote" for all 5 non-blank preferences via the marker list.
-        assert_eq!(met, 50 + 8);
+        assert_eq!(no_pref, 44);
+        // 66 from board_remote=true with a stored preference (6 × 11), plus 9
+        // at remote=false: "Berlin, Germany" for both Berlin and Germany,
+        // "München" for Munich via the exonym table, and "Remote" for all 6
+        // non-blank preferences via the marker list.
+        //
+        // NOT among them: "San Francisco" against "San Diego, CA". That pair
+        // shares the `san` token and was `met` under the loose reading — it is
+        // the cell that fails this assertion if the strict whole-token rule is
+        // ever relaxed.
+        assert_eq!(met, 66 + 9);
         // Everything left over — including every pair in the table above.
-        assert_eq!(unknown, 42);
+        assert_eq!(unknown, 57);
         assert_eq!(met + unknown + no_pref, total);
     }
 
