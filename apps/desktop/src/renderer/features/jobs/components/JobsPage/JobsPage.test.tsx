@@ -244,7 +244,7 @@ vi.mock('@ajh/ui', () => ({
 }));
 
 // Import AFTER mocks
-import { JOBS_DEFAULTS, useSessionStore } from '@/store/session-store';
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 
 import { JobsPage } from './index';
 
@@ -259,7 +259,7 @@ import { JobsPage } from './index';
  */
 function resetSessionJobs() {
   useSessionStore.setState({
-    jobs: { ...JOBS_DEFAULTS, viewMode: 'list', scrapeJobId: 'job-123' },
+    jobs: { ...makeJobsDefaults(), viewMode: 'list', scrapeJobId: 'job-123' },
   });
 }
 

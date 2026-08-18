@@ -9,11 +9,10 @@ import { sanitizeReason } from '@/components/scrape/BoardSummaryChips';
 import { JobsCommandBar } from '@/features/jobs/components/JobsCommandBar';
 import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
-import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import { MatchScoresProvider } from '@/features/jobs/providers';
-import type { JobEvent, Posting } from '@/features/jobs/types';
+import type { JobEvent, Posting, ScrapeFormState } from '@/features/jobs/types';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import {
@@ -38,11 +37,24 @@ export function JobsPage() {
   const clearPostings = useClearPostings();
   const invalidatePostings = useInvalidatePostings();
 
-  const { jobs, setJobs } = useSessionStore();
   // `scrapeForm` and the two diagnostics fields live in the session store, not
   // in this component: they describe a backend scrape that keeps running across
   // a route change (see `JobsSlice`).
-  const { filter, sortBy, hideAgency, scrapeForm, scrapeSummaries, scrapeFailureNote } = jobs;
+  //
+  // One selector PER FIELD, never `useSessionStore()` unselected: this page
+  // renders the virtualized posting list plus several sort/filter memo passes,
+  // so subscribing to the whole store would re-render all of it on every
+  // unrelated mutation (a background AI generation, an autopilot run, the job
+  // summary cache). Each selector returns a stored value, never a fresh object
+  // or array literal — that would defeat the default `Object.is` equality and
+  // re-render on every store change anyway.
+  const setJobs = useSessionStore((s) => s.setJobs);
+  const filter = useSessionStore((s) => s.jobs.filter);
+  const sortBy = useSessionStore((s) => s.jobs.sortBy);
+  const hideAgency = useSessionStore((s) => s.jobs.hideAgency);
+  const scrapeForm = useSessionStore((s) => s.jobs.scrapeForm);
+  const scrapeSummaries = useSessionStore((s) => s.jobs.scrapeSummaries);
+  const scrapeFailureNote = useSessionStore((s) => s.jobs.scrapeFailureNote);
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   // Always-mounted opener for the scrape drawer. The drawer normally returns
   // focus to whatever opened it, but the empty-state "Search jobs" CTA unmounts

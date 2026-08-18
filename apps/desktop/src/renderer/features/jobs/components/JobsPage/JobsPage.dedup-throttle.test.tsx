@@ -152,7 +152,7 @@ vi.mock('@ajh/ui', () => ({
 }));
 
 // Import AFTER mocks.
-import { JOBS_DEFAULTS, useSessionStore } from '@/store/session-store';
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 
 import { JobsPage } from './index';
 
@@ -160,7 +160,7 @@ import { JobsPage } from './index';
  *  page's active-job guard accepts the synthetic stream items. */
 function resetSessionJobs(replacePending = false) {
   useSessionStore.setState({
-    jobs: { ...JOBS_DEFAULTS, viewMode: 'list', scrapeJobId: 'job-abc', replacePending },
+    jobs: { ...makeJobsDefaults(), viewMode: 'list', scrapeJobId: 'job-abc', replacePending },
   });
 }
 

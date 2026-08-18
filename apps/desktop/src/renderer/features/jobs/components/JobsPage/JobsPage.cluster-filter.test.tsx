@@ -113,7 +113,7 @@ vi.mock('@ajh/ui', () => {
   };
 });
 
-import { JOBS_DEFAULTS, useSessionStore } from '@/store/session-store';
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 
 import { JobsPage } from './index';
 
@@ -143,7 +143,7 @@ function filteredIds(): string[] {
 }
 
 beforeEach(() => {
-  useSessionStore.setState({ jobs: { ...JOBS_DEFAULTS, viewMode: 'list' } });
+  useSessionStore.setState({ jobs: { ...makeJobsDefaults(), viewMode: 'list' } });
   resultsProps.filtered = undefined;
   postingsContainer.data = [
     post('canonical', { clusterId: 'canonical', clusterCanonical: true }),

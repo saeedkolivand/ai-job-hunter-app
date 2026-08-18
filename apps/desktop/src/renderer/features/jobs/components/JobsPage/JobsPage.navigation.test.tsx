@@ -50,6 +50,8 @@ const results = {
   failureNote: undefined as unknown,
   filtered: [] as Array<{ id: string }>,
   onShowMore: null as null | (() => void),
+  /** Bumped on every JobsPage render — the stub is not memoized. */
+  renderCount: 0,
 };
 
 /** ScrapeForm handlers — the drawer's Search button and field edits. */
@@ -120,6 +122,7 @@ vi.mock('@/features/jobs/components/JobsResults', () => ({
     results.failureNote = props.failureNote;
     results.filtered = props.filtered ?? [];
     results.onShowMore = props.onShowMore ?? null;
+    results.renderCount += 1;
     return <div data-testid={TEST_IDS.jobs.jobsResults} />;
   },
 }));
@@ -159,7 +162,7 @@ vi.mock('@ajh/ui', () => ({
 }));
 
 // Import AFTER mocks.
-import { JOBS_DEFAULTS, useSessionStore } from '@/store/session-store';
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 
 import { JobsPage } from './index';
 
@@ -210,7 +213,7 @@ function fireJobEvent(event: unknown) {
 }
 
 beforeEach(() => {
-  useSessionStore.setState({ jobs: { ...JOBS_DEFAULTS, viewMode: 'list' } });
+  useSessionStore.setState({ jobs: { ...makeJobsDefaults(), viewMode: 'list' } });
   scrapeSpy.mockReset().mockResolvedValue({ jobId: 'job-1' });
   cancelSpy.mockReset().mockResolvedValue(undefined);
   fetchJobSpy.mockReset().mockResolvedValue({ status: 'running' });
@@ -218,6 +221,35 @@ beforeEach(() => {
   commandBar.scraping = undefined;
   commandBar.boardSummaries = undefined;
   results.boardSummaries = undefined;
+  results.renderCount = 0;
+});
+
+// ---------------------------------------------------------------------------
+// 0 — store subscription shape (this page is render-expensive)
+// ---------------------------------------------------------------------------
+
+describe('JobsPage — session-store subscription shape', () => {
+  it('an unrelated slice changing does NOT re-render the page', async () => {
+    renderPage();
+    const before = results.renderCount;
+    expect(before).toBeGreaterThan(0);
+
+    // A background AI generation (or autopilot run, or job-summary cache write)
+    // touches its own slice. This page renders a virtualized posting list plus
+    // several sort/filter memo passes, so an unselected `useSessionStore()`
+    // would re-run all of that here for nothing.
+    await act(async () => {
+      useSessionStore.getState().setAIGenerate({ resume: 'a background generation' });
+    });
+    expect(results.renderCount).toBe(before);
+
+    // …while a jobs field the page actually reads must still drive exactly one
+    // render — otherwise the assertion above could pass on an inert page.
+    await act(async () => {
+      useSessionStore.getState().setJobs({ filter: 'rust' });
+    });
+    expect(results.renderCount).toBe(before + 1);
+  });
 });
 
 // ---------------------------------------------------------------------------

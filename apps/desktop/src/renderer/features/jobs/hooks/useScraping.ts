@@ -3,8 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BoardScrapeSummary } from '@ajh/shared';
 import type { useNotification } from '@ajh/ui';
 
-import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
-import type { Posting, ScrapeOutcome } from '@/features/jobs/types';
+import type { Posting, ScrapeFormState, ScrapeOutcome } from '@/features/jobs/types';
 import { fetchJob, useCancelJob, useScrapeBoards, useScrapeProgress } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 

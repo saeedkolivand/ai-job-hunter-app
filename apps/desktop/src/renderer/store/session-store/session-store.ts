@@ -6,10 +6,10 @@ import type { BoardScrapeSummary } from '@ajh/shared';
 import type { WizardState } from '@/features/autopilot/types';
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import {
-  SCRAPE_FORM_DEFAULTS,
+  makeScrapeFormDefaults,
   type ScrapeFormState,
-} from '@/features/jobs/components/ScrapeForm/constants';
-import type { ScrapeOutcome } from '@/features/jobs/types';
+  type ScrapeOutcome,
+} from '@/features/jobs/types';
 import type {
   EmphasisId,
   GenerationMeta,
@@ -300,25 +300,31 @@ const RESUME_BUILDER_DEFAULTS: ResumeBuilderSlice = {
 };
 
 /**
- * Exported so tests (and any future reset path) can restore the jobs slice to a
- * known baseline instead of hand-rolling a partial literal that silently drifts
- * from the interface.
+ * A FRESH jobs slice. Exported so tests (and any future reset path) can restore
+ * a known baseline instead of hand-rolling a partial literal that silently
+ * drifts from the interface.
+ *
+ * A factory rather than a shared constant: the slice holds arrays
+ * (`scrapeSummaries`, and `boards`/`companies` inside `scrapeForm`), and a
+ * single instance spread into every reset would alias them across resets.
  */
-export const JOBS_DEFAULTS: JobsSlice = {
-  filter: '',
-  sortBy: 'newest',
-  viewMode: 'split',
-  selectedId: null,
-  listScrollTop: 0,
-  hideAgency: false,
-  scrapeForm: { ...SCRAPE_FORM_DEFAULTS },
-  lastSearchSignature: '',
-  replacePending: false,
-  scrapeJobId: null,
-  scrapeOutcome: null,
-  scrapeSummaries: [],
-  scrapeFailureNote: null,
-};
+export function makeJobsDefaults(): JobsSlice {
+  return {
+    filter: '',
+    sortBy: 'newest',
+    viewMode: 'split',
+    selectedId: null,
+    listScrollTop: 0,
+    hideAgency: false,
+    scrapeForm: makeScrapeFormDefaults(),
+    lastSearchSignature: '',
+    replacePending: false,
+    scrapeJobId: null,
+    scrapeOutcome: null,
+    scrapeSummaries: [],
+    scrapeFailureNote: null,
+  };
+}
 
 // Store
 
@@ -362,7 +368,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   aiGenerate: { ...AI_GENERATE_DEFAULTS },
   analyze: { ...ANALYZE_DEFAULTS },
   resumeBuilder: { ...RESUME_BUILDER_DEFAULTS },
-  jobs: { ...JOBS_DEFAULTS },
+  jobs: makeJobsDefaults(),
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },
   autopilot: {

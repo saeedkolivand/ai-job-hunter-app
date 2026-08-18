@@ -1,33 +1,5 @@
-import { AGGREGATOR_BOARD_ID, type DATE_FILTER_OPTIONS } from '@ajh/shared';
-
-export interface ScrapeFormState {
-  boards: string[];
-  query: string;
-  location: string;
-  /** Structured location captured from a picked geocode suggestion (#49/#40). */
-  countryCode?: string;
-  latitude?: number;
-  longitude?: number;
-  /** Search radius in km; 0 = exact location (no radius). */
-  radiusKm: number;
-  /** Target number of jobs to fetch (#41); sent as the scrape `amount` (backend clamps to 100). */
-  amount: number;
-  dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
-  /**
-   * Company slugs for ATS boards (greenhouse, lever, ashby, etc.) whose APIs
-   * require a company identifier. Comma-separated in the UI, stored as an array.
-   * Empty array = no filter; backend skips ATS boards with `needs-company`.
-   */
-  companies: string[];
-}
-
-/** Initial scrape form — the session store seeds `jobs.scrapeForm` from this. */
-export const SCRAPE_FORM_DEFAULTS: ScrapeFormState = {
-  boards: [AGGREGATOR_BOARD_ID],
-  query: '',
-  location: '',
-  radiusKm: 0,
-  amount: 25,
-  dateFilter: '',
-  companies: [],
-};
+// The scrape form's shape and defaults live at the FEATURE level
+// (`features/jobs/types`) so the session store, which owns `jobs.scrapeForm`,
+// imports a feature module instead of reaching into this component's internals.
+// Re-exported here so the ScrapeForm subtree keeps its short relative import.
+export { makeScrapeFormDefaults, type ScrapeFormState } from '../../types';

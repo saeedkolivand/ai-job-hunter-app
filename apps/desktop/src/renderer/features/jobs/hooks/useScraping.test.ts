@@ -11,7 +11,7 @@ import { act } from '@testing-library/react';
 
 import type { useNotification } from '@ajh/ui';
 
-import { JOBS_DEFAULTS, useSessionStore } from '@/store/session-store';
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 import { renderHookWithClient } from '@/test-support';
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ vi.mock('@/services', async (importActual) => {
 });
 
 // Import under test AFTER mocks.
-import type { ScrapeFormState } from '../components/ScrapeForm/constants';
+import type { ScrapeFormState } from '../types';
 import { useScraping } from './useScraping';
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,14 @@ function sentReplace(callIndex: number): unknown {
 beforeEach(() => {
   // The session store now owns the scrape bookkeeping and is module-scoped, so
   // it leaks between tests unless reset.
-  useSessionStore.setState({ jobs: { ...JOBS_DEFAULTS } });
+  useSessionStore.setState({ jobs: makeJobsDefaults() });
+  // Reset the mutation spies HERE, not per test: `sentReplace(n)` indexes into
+  // `mutateAsync.mock.calls`, so a test added without a manual clear would
+  // silently read a previous test's calls — an order-dependent failure in the
+  // very assertions that prove the data-loss fix.
+  mutateAsync.mockClear().mockResolvedValue({ jobId: 'j1' });
+  cancelMutateAsync.mockClear().mockResolvedValue(undefined);
+  fetchJobMock.mockClear().mockResolvedValue({ status: 'running' });
 });
 
 // ---------------------------------------------------------------------------
@@ -86,7 +93,6 @@ beforeEach(() => {
 
 describe('useScraping — companies field in scrapeBoards payload', () => {
   it('omits companies from the payload when the array is empty', async () => {
-    mutateAsync.mockClear();
     const form = makeForm({ companies: [] });
 
     const { result } = renderHookWithClient(() => useScraping(noopNotify, form));
@@ -101,7 +107,6 @@ describe('useScraping — companies field in scrapeBoards payload', () => {
   });
 
   it('includes companies in the payload when the array is non-empty', async () => {
-    mutateAsync.mockClear();
     const form = makeForm({ companies: ['stripe', 'airbnb'] });
 
     const { result } = renderHookWithClient(() => useScraping(noopNotify, form));
@@ -118,7 +123,6 @@ describe('useScraping — companies field in scrapeBoards payload', () => {
 
 describe('useScraping — geo fields in the replace-vs-append signature', () => {
   it('replaces (not appends) when only the countryCode differs', async () => {
-    mutateAsync.mockClear();
     const { result, rerender } = renderHookWithClient(
       ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
       { initialProps: { form: makeForm({ countryCode: 'US' }) } }
@@ -140,7 +144,6 @@ describe('useScraping — geo fields in the replace-vs-append signature', () => 
   });
 
   it('replaces (not appends) when only the search radius differs', async () => {
-    mutateAsync.mockClear();
     const { result, rerender } = renderHookWithClient(
       ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
       { initialProps: { form: makeForm({ radiusKm: 0 }) } }
@@ -161,7 +164,6 @@ describe('useScraping — geo fields in the replace-vs-append signature', () => 
   });
 
   it('appends (does not replace) when the search is byte-for-byte identical', async () => {
-    mutateAsync.mockClear();
     const { result, rerender } = renderHookWithClient(
       ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
       { initialProps: { form: makeForm({ countryCode: 'US' }) } }
@@ -191,7 +193,6 @@ describe('useScraping — geo fields in the replace-vs-append signature', () => 
 
 describe('useScraping — the scrape survives a route change', () => {
   it('"Show more" after an unmount/remount APPENDS (no replace flag on the wire)', async () => {
-    mutateAsync.mockClear();
     const form = makeForm({ query: 'engineer', amount: 25 });
 
     // 1. The user runs a search on the jobs page.
@@ -219,8 +220,6 @@ describe('useScraping — the scrape survives a route change', () => {
   });
 
   it('a genuinely different search after a remount still REPLACES', async () => {
-    mutateAsync.mockClear();
-
     const first = renderHookWithClient(() => useScraping(noopNotify, makeForm({ query: 'rust' })));
     await act(async () => {
       await first.result.current.startScrape();
@@ -244,8 +243,6 @@ describe('useScraping — the scrape survives a route change', () => {
 
 describe('useScraping — the in-flight job survives a route change', () => {
   it('remounts into `scraping` and cancels the job the PREVIOUS mount started', async () => {
-    mutateAsync.mockClear();
-    cancelMutateAsync.mockClear();
     const form = makeForm();
 
     const first = renderHookWithClient(() => useScraping(noopNotify, form));
@@ -271,8 +268,6 @@ describe('useScraping — the in-flight job survives a route change', () => {
   });
 
   it('the next search after a remount cancels the orphaned scrape first', async () => {
-    mutateAsync.mockClear();
-    cancelMutateAsync.mockClear();
     const form = makeForm();
 
     const first = renderHookWithClient(() => useScraping(noopNotify, form));
@@ -295,7 +290,6 @@ describe('useScraping — the in-flight job survives a route change', () => {
   });
 
   it('a remount onto a job that already FINISHED settles to a finished state', async () => {
-    mutateAsync.mockClear();
     fetchJobMock.mockResolvedValue({ status: 'completed', result: { boards: [] } });
     vi.useFakeTimers();
     try {
@@ -320,7 +314,6 @@ describe('useScraping — the in-flight job survives a route change', () => {
       expect(second.result.current.scrapeOutcome).toEqual({ ok: true });
     } finally {
       vi.useRealTimers();
-      fetchJobMock.mockResolvedValue({ status: 'running' });
     }
   });
 });
@@ -333,7 +326,6 @@ describe('useScraping — the in-flight job survives a route change', () => {
 
 describe('useScraping — per-board diagnostics survive', () => {
   it('recovers the per-board summaries from the job tracker after finishing off-page', async () => {
-    mutateAsync.mockClear();
     const boards = [{ board: 'aggregator', count: 0, error: '429 rate limited' }];
     fetchJobMock.mockResolvedValue({ status: 'completed', result: { count: 0, boards } });
     vi.useFakeTimers();
@@ -353,7 +345,6 @@ describe('useScraping — per-board diagnostics survive', () => {
       expect(useSessionStore.getState().jobs.scrapeSummaries).toEqual(boards);
     } finally {
       vi.useRealTimers();
-      fetchJobMock.mockResolvedValue({ status: 'running' });
     }
   });
 });
