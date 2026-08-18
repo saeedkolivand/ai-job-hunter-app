@@ -102,13 +102,16 @@ const SUBSCRIBERS = {
   'hooks/use-resume-pipeline-session.ts': {
     mount: 'route-scoped',
     note:
-      'The largest instance. Mounts FOUR subscriptions (job events, notifications, ' +
-      'pipeline stages, draft stream) but is called from ' +
-      'features/documents/components/TailorFlow/GeneratingPanel.tsx — route-scoped AND ' +
-      'conditionally rendered. A résumé generation runs for minutes; leaving the tab drops ' +
-      'its stage events and its streamed draft. The session store keeps the stage but not ' +
-      'the run handle, so the remounted panel shows "generating" and can neither display ' +
-      'nor cancel it.',
+      'Mounts THREE subscriptions (job events, pipeline stages, draft stream) from ' +
+      'features/documents/components/TailorFlow/GeneratingPanel.tsx — ' +
+      'route-scoped AND conditionally rendered, so a generation that runs for minutes ' +
+      'drops every stage event emitted while the user is elsewhere. Reconnect covers most ' +
+      'of that: the session store keeps `applicationApply.applyRun`, TailorFlow hands it ' +
+      'back as initialRunId/initialJobId, and the hook re-reads the run record and replays ' +
+      'its persisted stage trail — so a remounted panel shows real progress and can still ' +
+      'cancel. What is NOT recoverable is the streamed draft/letter/thinking text: it is ' +
+      'useState with no durable transcript, so a reconnected run jumps to the finished ' +
+      'document instead of the live stream.',
   },
   'features/jobs/hooks/useScraping.ts': {
     mount: 'route-scoped',
