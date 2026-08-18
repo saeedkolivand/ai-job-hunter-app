@@ -109,74 +109,89 @@ const SUBSCRIBERS = {
   // a snapshot test. That is the correct trade — the alternative is a note that
   // silently outlives the code it describes, which is exactly how 8 of these 9
   // notes went stale with nobody noticing.
+  //
+  // KNOWN BLIND SPOT, measured the first time this fired for real: the hash
+  // covers the DECLARED file only, so a note also goes stale when the behaviour
+  // it describes changes in something that file merely CALLS. Both misses came
+  // from one batch — JobsPage's note was fixed inside `useScraping.ts`, and
+  // update-section's inside `services/use-updater/` plus the Rust updater —
+  // and neither declared file was touched, so neither tripped. Hashing the
+  // transitive import graph would fire on nearly every commit and be ignored
+  // within a week, so the trade stands; the entries that were fixed elsewhere
+  // say so in their own note instead. Re-read a note whenever you change what
+  // its file DEPENDS on, not only the file itself.
 
   'hooks/use-resume-pipeline-session.ts': {
     mount: 'route-scoped',
-    hash: 'b61aaf6bca1a',
+    hash: '10ff9d4443cb',
     note:
       'Mounted in TailorFlow/index.tsx (not GeneratingPanel, which takes only props) via ' +
       "useTailorPipeline → useResumePipelineSession. Reconnect (the session store's " +
       'applyRun → run-record re-read + stage-trail replay) restores progress, the step ' +
-      'checklist, and Cancel, so a remounted panel is not blank. NOT recovered: the ' +
-      'streamed draft/letter/thinking text (useState, no transcript — a reconnected run ' +
-      'jumps straight to the finished document), and a run that FAILS before the draft ' +
-      'stage completes returns to a bare "configuring" wizard with no error banner at all — ' +
-      '`error` is written only from the live event, never derived from the run record.',
+      'checklist, and Cancel, so a remounted panel is not blank. A run that FAILS while the ' +
+      "user is elsewhere now shows why: `error` falls back to the run record's " +
+      '`stoppedReason`, so returning no longer lands on a bare "configuring" wizard as if ' +
+      'Generate had never been pressed. NOT recovered: the streamed draft/letter/thinking ' +
+      'text (useState, no transcript — a reconnected run jumps straight to the finished ' +
+      "document), and the live message's exact stage/seconds detail, since the record " +
+      'persists only the wire token.',
   },
   'features/jobs/hooks/useScraping.ts': {
     mount: 'route-scoped',
-    hash: '81118657fcb5',
+    hash: 'b16ef7bcd515',
     note:
-      'Unmounting resets the live progress readout: the command-bar label drops back to ' +
-      'plain "Scanning" and the results bar shows a false 0% on remount. On the default ' +
-      'single-board search that reading never self-corrects — `scrape:progress` fires once, ' +
-      'at completion — even though the backend already knows the true fraction (the ' +
-      'watchdog fetches the job record but discards its progress field). NOT lost: the ' +
-      'cancel-across-remount / single-active-scrape exclusivity (the job id lives in the ' +
-      'Zustand store, not this component), and per-board diagnostics + postings, which the ' +
-      'watchdog and cache invalidation still recover.',
+      'Nothing user-visible is lost on a route change any more. The progress readout used to ' +
+      'show a false 0% for the rest of the run — on the default single-board search ' +
+      '`scrape:progress` fires once, at completion, so it never self-corrected — and now ' +
+      "falls back to the job record's persisted `progress`, which the watchdog was already " +
+      'fetching and discarding. The watchdog also has a leading tick, so recovery is ' +
+      'immediate rather than 2.5s late. A scrape that FAILS off-page now restores a ' +
+      'sanitized reason instead of an unexplained empty list, and the completed path ' +
+      'invalidates the postings cache the way the live event handler does. Still bounded by ' +
+      'the 2.5s poll: between ticks the fraction is as stale as the last poll.',
   },
   'features/jobs/components/JobsPage/index.tsx': {
     mount: 'route-scoped',
     hash: 'b2df3b57b2c8',
     note:
-      'A scrape that COMPLETES while the user is elsewhere recovers its per-board ' +
-      "diagnostics strip on remount (the watchdog re-reads the job record's `result.boards`). " +
-      'What does NOT recover: a scrape that FAILS or is CANCELLED off-page — the watchdog ' +
-      'passes no summaries on those branches and the fields were already cleared when the ' +
-      'scrape started, so the user returns to an empty list with zero explanation, exactly ' +
-      'when one matters most. The completed path also skips the postings-cache invalidation ' +
-      'the live event handler does, so inside the 30s query staleTime a remount can still ' +
-      'show 0 jobs for a scrape that actually found some.',
+      'A scrape that ends off-page — completed OR failed — now comes back explained. The ' +
+      "watchdog re-reads the job record's `result.boards` for the diagnostics strip, writes " +
+      'a sanitized failure note on the failed branch, and invalidates the postings cache so ' +
+      'a remount inside the 30s query staleTime cannot show 0 jobs for a scrape that found ' +
+      'some. Cancelled stays deliberately bare: the user initiated it, so there is nothing ' +
+      'to explain. NOTE this page composes the fix rather than containing it — all of it ' +
+      "lives in `useScraping.ts`, so this entry's own hash could not have detected the " +
+      'change (see the dependency caveat above).',
   },
   'features/autopilot/hooks/useAutopilotRun.ts': {
     mount: 'route-scoped',
-    hash: 'cd56e16f7173',
+    hash: 'bf031614c42a',
     note:
-      "The originally-reported bug. Partly mitigated: the card falls back to the backend's " +
-      'persisted `runStatus`, so a run navigated away from usually still reads as running on ' +
-      'return. Still lost: every step-log line (mount-local reducer — only per-board ' +
-      'summaries persist, not the rank/re-rank detail that explains a thin result) and the ' +
-      'inline error / "already running" banner (useState). The terminal-step invalidation ' +
-      'this relies on does NOT help while unmounted — the subscription itself is torn down — ' +
-      'so the actual recovery is the list query going stale on remount; inside its 30s ' +
-      'staleTime (e.g. right after create-then-auto-run) the fallback can read a pre-run ' +
-      'runStatus and show idle for a run that is still going.',
+      "The originally-reported bug, now closed on both halves. The card reads the backend's " +
+      'persisted `runStatus`, and `useAutopilots` sets `staleTime: 0` so every remount ' +
+      'refetches — previously it inherited the 30s default with nothing invalidating on run ' +
+      'START, so right after create-then-auto-run the card could show idle with an enabled ' +
+      'Run button for a live run. The inline error / "already running" banner now lives in ' +
+      'the session store and survives navigation. Still lost, accepted: every step-log line ' +
+      '(mount-local reducer — only per-board summaries persist, not the rank/re-rank detail ' +
+      'that explains a thin result). The terminal-step invalidation does NOT help while ' +
+      'unmounted — the subscription itself is torn down — so the remount refetch is the ' +
+      'recovery, not that call.',
   },
   'features/onboarding/steps/ollama/ModelSelectionPanel/useModelPull.ts': {
     mount: 'route-scoped',
-    hash: '1a35b07347dc',
+    hash: '66b7dd5ae605',
     note:
-      "Pull tracking (`pullJobId` and all progress/speed state) lives only in this hook's " +
-      'useState, so ANY unmount loses it — not just skipping the step or navigating away, but ' +
-      'switching to the Cloud/CLI tab and back, or Back/Forward through the wizard. On ' +
-      'remount `pullJobId` is null, so no event for the still-running pull can ever match ' +
-      'again: progress, the success toast, AND the `onDownloadComplete` health/models ' +
-      'recheck are all silently lost. The panel then re-shows the Download button, and ' +
-      'clicking it starts a genuine second concurrent pull (`ai_pull_model` uses plain ' +
-      '`job_start`, not the exclusive variant used elsewhere). Nothing else covers for it: ' +
-      'the wizard overlay sits over the always-mounted StatusBar, and the pull has no kind ' +
-      'label there anyway.',
+      'A multi-GB pull survives any unmount — and the trigger really is ANY unmount, not just ' +
+      'skipping the step: switching to the Cloud/CLI tab and back, or Back/Forward through ' +
+      'the wizard, both tear this hook down. On mount it now re-reads the job registry and ' +
+      "adopts a still-active `ai.pull_model` job, so progress resumes and the run's " +
+      'completion handling still fires. Clicking Download again cannot start a second ' +
+      'concurrent pull: `ai_pull_model` uses `job_start_exclusive` and hands back the ' +
+      'existing job id to re-attach to. NOT recovered, deliberately: a pull that reaches a ' +
+      'terminal state inside the unmount/remount gap — re-firing a success toast and the ' +
+      'health/models recheck for an already-finished job on every later mount would be worse ' +
+      'than missing them once.',
   },
   'features/settings/components/ai-settings/EmbeddingsSettings/index.tsx': {
     mount: 'route-scoped',
@@ -196,14 +211,16 @@ const SUBSCRIBERS = {
     mount: 'route-scoped',
     hash: '896ef1fd88e1',
     note:
-      "The THIRD independent `useUpdater` instance — its own `useState({ state: 'idle' })` " +
-      'and its own `updater:status` listener, both dropped on unmount, with no backend ' +
-      'status getter to re-sync from. On return mid-download this renders a LIVE "Check now" ' +
-      'button, not a neutral state. Clicking it re-triggers `updater_check`, which emits ' +
-      '`checking` — hiding the always-mounted banner, the one surface still telling the ' +
-      "truth — and clears Rust's `downloaded_bytes`, discarding an already-downloaded update " +
-      'and forcing a re-download, with no guard against a second concurrent one. The update ' +
-      'itself is never lost — only if the user acts on this misleading control.',
+      'The THIRD `useUpdater` instance, alongside the always-mounted banner and menu — but ' +
+      'the three no longer disagree. `useUpdater` keeps status in a module-level store all ' +
+      'instances share, so a remounted panel immediately shows a download another instance ' +
+      'already knew about instead of rendering a LIVE "Check now" over work in flight. Two ' +
+      'backend guards close the rest: `updater_check` returns the known state BEFORE emitting ' +
+      '`checking` when a download is running or done (so it neither blanks the banner nor ' +
+      "clears Rust's `downloaded_bytes` and forces a re-download), and `updater_download` is " +
+      'guarded against re-entry by a Drop-based guard that cannot latch. NOTE the fix lives ' +
+      "in `services/use-updater/` and the Rust updater, so this entry's own hash could not " +
+      'have detected it (see the dependency caveat above).',
   },
   'features/monitoring/hooks/useActivityFeed.ts': {
     mount: 'route-scoped',
