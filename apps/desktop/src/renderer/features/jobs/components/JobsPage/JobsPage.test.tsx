@@ -41,9 +41,6 @@ const notifyMock = {
   warning: vi.fn(),
 };
 
-// setJobs spy — lifted so SegmentedControl onChange tests can assert call args.
-const setJobsSpy = vi.fn();
-
 // BoardSummaryChips capture — records the `summaries` prop each time the strip
 // renders, so tests can assert the page retained + forwarded the per-board data
 // (the strip replaced the old transient skip-toasts).
@@ -109,8 +106,6 @@ vi.mock('@/features/jobs/hooks/useScraping', () => ({
     scrapeOutcome: null,
     livePostings: [],
     setLivePostings: vi.fn(),
-    scrapeJobRef: { current: 'job-123' },
-    replacePendingRef: { current: false },
     startScrape: vi.fn(),
     cancelScrape: vi.fn(),
     noteScrapeFinished: (...args: [string, { ok: boolean; note?: string }]) =>
@@ -133,13 +128,10 @@ vi.mock('@/hooks/useDefaultResumeId', () => ({
   useDefaultResumeId: () => null,
 }));
 
-vi.mock('@/store/session-store', () => ({
-  useSessionStore: () => ({
-    jobs: { filter: '', sortBy: 'newest', viewMode: 'list' },
-    setJobs: (...args: unknown[]) => setJobsSpy(...args),
-    setSettings: vi.fn(),
-  }),
-}));
+// The session store is NOT mocked: it now owns the scrape bookkeeping the page
+// reads back synchronously (`useSessionStore.getState()`), so a hand-rolled
+// object stub would have to re-implement zustand to stay honest. It is a plain
+// in-memory store — `resetSessionJobs()` below seeds it per test instead.
 
 vi.mock('@/hooks/use-format-relative-time', () => ({
   useFormatRelativeTime: () => (ts: number) => String(ts),
@@ -252,11 +244,26 @@ vi.mock('@ajh/ui', () => ({
 }));
 
 // Import AFTER mocks
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
+
 import { JobsPage } from './index';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Seed the (real, module-scoped) jobs slice. `scrapeJobId: 'job-123'` stands in
+ * for an in-flight scrape — the page's active-job guard compares event ids
+ * against it, which is what the old `scrapeJobRef` mock used to supply.
+ */
+function resetSessionJobs() {
+  useSessionStore.setState({
+    jobs: { ...makeJobsDefaults(), viewMode: 'list', scrapeJobId: 'job-123' },
+  });
+}
+
+beforeEach(resetSessionJobs);
 
 function renderJobsPage() {
   jobEvents.handler = null;
@@ -714,11 +721,10 @@ describe('JobsPage — header strip mutual exclusivity with the empty state', ()
 
 describe('JobsPage — SegmentedControl viewMode toggle', () => {
   beforeEach(() => {
-    setJobsSpy.mockClear();
     segmentedControlContainer.onChange = null;
   });
 
-  it('switching to "split" calls setJobs with viewMode:split', () => {
+  it('switching to "split" stores viewMode:split', () => {
     renderJobsPage();
     expect(segmentedControlContainer.onChange).toBeTypeOf('function');
 
@@ -726,10 +732,11 @@ describe('JobsPage — SegmentedControl viewMode toggle', () => {
       segmentedControlContainer.onChange?.('split');
     });
 
-    expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'split' });
+    expect(useSessionStore.getState().jobs.viewMode).toBe('split');
   });
 
-  it('switching to "list" calls setJobs with viewMode:list', () => {
+  it('switching to "list" stores viewMode:list', () => {
+    useSessionStore.setState((s) => ({ jobs: { ...s.jobs, viewMode: 'split' } }));
     renderJobsPage();
     expect(segmentedControlContainer.onChange).toBeTypeOf('function');
 
@@ -737,7 +744,7 @@ describe('JobsPage — SegmentedControl viewMode toggle', () => {
       segmentedControlContainer.onChange?.('list');
     });
 
-    expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'list' });
+    expect(useSessionStore.getState().jobs.viewMode).toBe('list');
   });
 });
 
