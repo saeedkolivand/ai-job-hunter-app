@@ -31,14 +31,35 @@
 //!   MERGED behind the sparse keyed hits rather than replacing them, because
 //!   on a guessed market this tier is location-blind and those hits are not.
 //!
-//! **Degradation:** any non-2xx, timeout, or schema drift resolves to `Ok(empty)`,
-//! NOT `Err`. Every other provider reports its failure because a configured key
-//! means the user asked for that provider specifically. freehire is configured
-//! by nobody — it is always on — so surfacing its outage as a board error would
-//! turn a third party's downtime into an error banner on a search the user never
-//! pointed at them. There is no SLA, no rate-limit header of any kind, and no
-//! documented limit (verified: no `X-RateLimit-*`, no `Retry-After`,
-//! Cloudflare-fronted), so it must be treated as always-possibly-absent.
+//! **Degradation:** any non-2xx, timeout, schema drift, or ignored request
+//! parameter (see `fetch_freehire`'s doc) resolves to `Ok(empty)`, NOT `Err`.
+//! Every other provider reports its failure because a configured key means the
+//! user asked for that provider specifically. freehire is configured by
+//! nobody — it is always on — so surfacing its outage as a board error would
+//! turn a third party's downtime into an error banner on a search the user
+//! never pointed at them.
+//!
+//! **Rate limits (as of the maintainer's issue #1026 disclosure, live-verified
+//! 2026-08-18):** 600 req/min for ordinary reads, 300 req/min for
+//! `/agent/jobs/search` specifically (the endpoint this module calls). Every
+//! response — success included — carries `X-RateLimit-Limit/Remaining/Reset`;
+//! going over budget answers `429` with `Retry-After`. The limiter is a leaky
+//! bucket, not a counter (`Remaining` can trail this module's own request
+//! count by one — pace against it, never reconcile it exactly). No new
+//! rate-limiting code lives here: `scraping::http::fetch_text` already backs
+//! off on `429`/`503` honoring `Retry-After` when present, for every board
+//! that goes through it. This tier's own traffic (one request per aggregator
+//! search, only reached after every keyed tier has failed or come back
+//! empty) sits nowhere near either ceiling.
+//!
+//! **User-Agent:** every request carries an identifying UA
+//! (`freehire_user_agent`) — app name, crate version, and this repo's public
+//! URL, nothing else (no user data, no machine id, no locale). The
+//! maintainer's issue #1026 requests but does not enforce or validate it;
+//! nothing behaves differently without it. It buys advance notice before a
+//! field or limit changes, instead of a `429` being the first sign. This is
+//! per-request (`FetchOptions::user_agent`), not the shared client's default
+//! UA — other boards keep looking like an ordinary browser.
 //!
 //! Data rights: freehire's backend is MIT, but MIT covers the CODE and not the
 //! postings — they disclaim ownership of the data and grant no redistribution
@@ -66,10 +87,69 @@ const MAX_LIMIT: u32 = 100;
 /// pulling a page nobody reads".
 const DEFAULT_LIMIT: u32 = 50;
 
+/// Map a UI date-filter token to freehire's `posted_within_days` (whole days,
+/// `minimum: 1` per the live `openapi.yaml`). `None` (no filter chosen) omits
+/// the parameter entirely — freehire's own semantics for "omit" is "no
+/// freshness restriction" (`PostedWithinDays`'s description), so unlike
+/// Adzuna/JSearch (which always send SOME day cap, even with no filter) this
+/// floor tier's no-filter search stays genuinely unfiltered.
+///
+/// Same 3-day floor as `adzuna::adzuna_max_days_old` / `providers::jsearch_date_posted`
+/// for the identical reason: `posted_within_days` has no sub-day granularity —
+/// a whole day is its smallest unit, and the spec forbids `0` outright — and a
+/// naive same-day floor zeroed out autopilot "recent" filters on quiet days
+/// (see those two functions' doc comments). Reusing the exact established
+/// floor rather than inventing a new number keeps all three tiers' recency
+/// skew for sub-day tokens identical.
+pub(super) fn freehire_posted_within_days(date_filter: Option<&str>) -> Option<u32> {
+    match date_filter {
+        None => None,
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => Some(3),
+        Some("week") => Some(7),
+        // "month" and any future/unrecognized token.
+        Some(_) => Some(30),
+    }
+}
+
+/// Identifying `User-Agent` the maintainer's issue #1026 now requests (never
+/// enforced, never validated, nothing behaves differently without it — see
+/// the module doc). Carries ONLY the app name, this crate's version, and the
+/// public repo URL — no user data, no machine id, no locale. Mirrors the
+/// existing `"ai-job-hunter/1.0"` convention `commands::geocoding` already
+/// uses for Photon, with a version that tracks releases instead of a
+/// hand-typed number that can rot.
+pub(super) fn freehire_user_agent() -> String {
+    format!(
+        "ai-job-hunter/{} (+https://github.com/saeedkolivand/ai-job-hunter-app)",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
 #[derive(Debug, Deserialize)]
 struct FreehireEnvelope {
     #[serde(default)]
     data: Vec<FreehireJob>,
+    #[serde(default)]
+    meta: FreehireMeta,
+}
+
+/// Only the field this mapping reads. `#[serde(default)]` + no
+/// `deny_unknown_fields`, matching [`FreehireJob`]'s contract — `meta` may
+/// carry `total`/`limit`/`offset` too, which nothing here needs.
+#[derive(Debug, Default, Deserialize)]
+struct FreehireMeta {
+    /// Present only when the request carried a parameter the search did not
+    /// read (`openapi.yaml`'s `PaginationMeta.ignored_params`) — see
+    /// `fetch_freehire`'s doc for what this module does about it.
+    #[serde(default)]
+    ignored_params: Vec<FreehireIgnoredParam>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FreehireIgnoredParam {
+    param: String,
+    #[serde(default)]
+    did_you_mean: Option<String>,
 }
 
 /// Only the fields this mapping consumes. `#[serde(default)]` throughout and no
@@ -193,18 +273,54 @@ fn map_freehire_job(j: FreehireJob, now: i64) -> Option<JobPosting> {
 /// including remote ones, which is worse than the country-level filter this
 /// tier already applies. City precision stays the keyed tiers' job; this one is
 /// a keyless floor, not a replacement for them.
+///
+/// Not adding `cities` either, though issue #1026 confirms it is real: geography
+/// is a single OR-group on this API (`countries=gb` → 89,211;
+/// `countries=gb&cities=London` → 89,617 — WIDER, not narrower, live-verified),
+/// so folding a city in would need a location-UI decision this change doesn't
+/// make. Left as a follow-up, not silently worked around here.
+///
+/// **`reality=fresh` is always sent, unconditionally.** freehire's `reality`
+/// facet (`fresh`/`stale`/`likely-evergreen`) is live-verified to cut the
+/// unfiltered catalogue roughly in half (1,477,440 → 662,112 in the same
+/// spot-check that verified `posted_within_days` below). No toggle for it:
+/// every other quality improvement this aggregator applies — `sort_by=date`
+/// (Adzuna/JSearch), `dedupe_by_url` (all tiers) — is likewise always-on and
+/// has no user-facing knob anywhere in this board, so a bespoke settings
+/// toggle for just this one facet, on just this one last-resort tier, would be
+/// the odd one out. This tier's own module doc already frames its purpose as
+/// "enough to be useful without pulling a page nobody reads" ([`DEFAULT_LIMIT`]);
+/// a `stale`/`likely-evergreen`-heavy result set (over half the unfiltered
+/// catalogue) undercuts exactly that, and the filter costs nothing extra to
+/// apply (already in the payload per the maintainer).
+///
+/// **`meta.ignored_params` is checked and treated as a failure, not a warning.**
+/// freehire ignores an unrecognized query key rather than rejecting it — a
+/// typo returns the WHOLE catalogue, indistinguishable from a legitimate broad
+/// result, unless the response is checked (issue #1026, live-verified: a
+/// `country=gb` typo comes back 200 with `meta.ignored_params:
+/// [{"param":"country","did_you_mean":"countries"}]` and the full unfiltered
+/// set in `data`). If any of THIS module's own params (`q`, `countries`,
+/// `posted_within_days`, `reality`, …) ever appear there — a future upstream
+/// rename would do it — this function returns `Err` instead of the response's
+/// `data`, so the silent-degradation boundary in `FreehireProvider::search`
+/// turns it into `Ok(empty)` for this tier, exactly like any other freehire
+/// failure. The one option NOT taken is returning `resp.data` anyway: that
+/// would silently hand back an unfiltered set dressed as a filtered one, which
+/// is the one thing issue #1026 calls out as unacceptable.
 pub(super) async fn fetch_freehire(
     base_url: &str,
     query: &str,
     country: &str,
     country_guessed: bool,
+    date_filter: Option<&str>,
     amount: Option<u32>,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
     let limit = amount.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
 
     let mut url = format!(
-        "{}/agent/jobs/search?limit={limit}&description_format=markdown",
+        "{}/agent/jobs/search?limit={limit}&description_format=markdown&reality=fresh",
         base_url.trim_end_matches('/')
     );
     // The spec's full-text parameter is `q`. (There is an undocumented
@@ -228,21 +344,50 @@ pub(super) async fn fetch_freehire(
     if !country_guessed && !country.is_empty() {
         url.push_str(&format!("&countries={}", urlencoding::encode(country)));
     }
+    if let Some(days) = freehire_posted_within_days(date_filter) {
+        url.push_str(&format!("&posted_within_days={days}"));
+    }
 
     let resp = fetch_json::<FreehireEnvelope>(
         &url,
         FetchOptions {
-            // One retry rather than the default two: no documented rate limit
-            // means no way to back off correctly, and this tier is optional by
-            // construction — being quiet is cheaper than being persistent.
+            // One retry rather than the default two: this tier is optional by
+            // construction (nobody configured it) and runs only after every
+            // keyed tier has already failed or come back empty, so being quiet
+            // is cheaper than being persistent — NOT because there is nowhere
+            // to learn how long to wait: `fetch_text` already backs off on
+            // 429/503 honoring `Retry-After` when the response carries one
+            // (see the module doc's rate-limit section).
             retries: 1,
             timeout: Some(std::time::Duration::from_secs(15)),
+            user_agent: Some(freehire_user_agent()),
             ..FetchOptions::default()
         },
         signal,
     )
     .await
     .map_err(|e| anyhow::anyhow!("freehire: {e}"))?;
+
+    if !resp.meta.ignored_params.is_empty() {
+        // See this function's doc for why this is `Err`, not a warning that
+        // still returns `resp.data`. Formatted by hand (not `{:?}`) so both
+        // `param` and `did_you_mean` are read directly — `#[derive(Debug)]`
+        // alone doesn't satisfy rustc's dead-code check on a struct's fields.
+        let detail = resp
+            .meta
+            .ignored_params
+            .iter()
+            .map(|p| match &p.did_you_mean {
+                Some(suggestion) => format!("{} (did you mean {suggestion}?)", p.param),
+                None => p.param.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(anyhow::anyhow!(
+            "freehire: upstream ignored request parameter(s), refusing to treat the response \
+             as filtered: {detail}"
+        ));
+    }
 
     let now = chrono::Utc::now().timestamp_millis();
     Ok(resp
@@ -298,7 +443,7 @@ impl JobProvider for FreehireProvider {
         _location: &str,
         country: &str,
         country_guessed: bool,
-        _date_filter: Option<&str>,
+        date_filter: Option<&str>,
         amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
@@ -309,6 +454,7 @@ impl JobProvider for FreehireProvider {
             query,
             country,
             country_guessed,
+            date_filter,
             amount,
             signal,
         )
