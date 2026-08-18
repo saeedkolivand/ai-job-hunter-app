@@ -43,23 +43,31 @@ export interface WorldConfig {
   connectorsMobile: string[];
 }
 
-// Where the /world clips are served from. They live as assets on a tagged
-// GitHub release rather than in the repo or in `public/`, for two reasons:
-// release assets carry no bandwidth limit, while a Pages site has a 100 GB per
-// month soft one that this route's 20 MB device-set cap would reach at roughly
-// 5,000 visits; and video does not delta-compress, so keeping them in git makes
-// every re-encode cost its full size in permanent history forever.
+// Where the /world clips are served from: an R2 bucket behind
+// cdn.aijobhunter.app, not the repo and not `public/`.
 //
-// Pinned to one release TAG on purpose. Publishing `world-assets-v2` with a new
-// set and bumping this line is atomic; mutating the assets on an existing
-// release is not, and would leave cached clients disagreeing with fresh ones.
+// Two reasons they are not in git. Video does not delta-compress, so every
+// re-encode writes every byte again as permanent history; one re-encode round
+// had already cost ~38 MB. And serving them from `public/` put them on the
+// Pages site, spending its 100 GB/month soft bandwidth limit — about 5,000
+// visits at this route's 20 MB device-set cap.
 //
-// Override to use local files: `NEXT_PUBLIC_WORLD_VIDEO_BASE=/world/vid` with
-// the clips in `apps/landing/public/world/vid/` (gitignored). Next inlines this
-// at build time, which is what the static export needs.
+// Why R2 specifically, and not the GitHub release they briefly lived on:
+// `scrub-engine.js` loads each clip with `fetch(url).then(r => r.blob())`, so
+// the response MUST carry `Access-Control-Allow-Origin`. GitHub release
+// downloads do not send it, and the route silently fell back to its poster
+// stills. R2 lets the bucket declare a CORS policy; this origin is on it.
+//
+// Egress from R2 is unmetered, so the bandwidth ceiling is gone rather than
+// moved. Objects are uploaded with `immutable` and a one-year max-age, which is
+// honest because a new clip set means a new key, never a mutated one.
+//
+// Override for offline work: `NEXT_PUBLIC_WORLD_VIDEO_BASE=/world/vid` with the
+// clips in `apps/landing/public/world/vid/` (gitignored). Next inlines this at
+// build time, which is what the static export needs. localhost:3000 is on the
+// bucket's CORS allowlist too, so plain `next dev` works without the override.
 const VIDEO_BASE =
-  process.env.NEXT_PUBLIC_WORLD_VIDEO_BASE ??
-  'https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/world-assets-v1';
+  process.env.NEXT_PUBLIC_WORLD_VIDEO_BASE ?? 'https://cdn.aijobhunter.app/world/vid';
 
 /** URL for one /world clip. `file` is the bare name, e.g. `slump.mp4`. */
 const vid = (file: string): string => `${VIDEO_BASE}/${file}`;
