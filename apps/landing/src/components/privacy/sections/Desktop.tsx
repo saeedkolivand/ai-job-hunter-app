@@ -76,9 +76,14 @@ export function Desktop() {
           directly to Adzuna's API. <b>JSearch</b> requests go through <b>RapidAPI</b> (the API
           gateway for JSearch) using your RapidAPI key. <b>Jooble</b> requests go directly to
           Jooble's API, using your own Jooble key, and are made only as a last-resort fallback after
-          Adzuna and JSearch. We run no proxy or intermediary; there is no AI Job Hunter server in
-          the path. Adzuna, JSearch, RapidAPI, and Jooble requests are subject to their respective
-          terms of service and privacy policies.
+          Adzuna and JSearch. <b>freehire</b> is the one aggregator tier that needs no API key, so
+          it is the only one that can run before you have configured anything. It is tried last, and
+          only when none of the keyed tiers above <em>failed</em> — if one of your own keys errors,
+          we show you that error rather than quietly answering from freehire instead. It receives
+          only your search keywords and (when you have picked one) a country code. We run no proxy
+          or intermediary; there is no AI Job Hunter server in the path. Adzuna, JSearch, RapidAPI,
+          Jooble, and freehire requests are subject to their respective terms of service and privacy
+          policies.
         </p>
         <p>
           <b>LinkedIn via Apify (opt-in, off by default).</b> Enabling the "Include LinkedIn
