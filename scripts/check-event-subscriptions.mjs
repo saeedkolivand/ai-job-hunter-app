@@ -102,8 +102,8 @@ const SUBSCRIBERS = {
   'hooks/use-resume-pipeline-session.ts': {
     mount: 'route-scoped',
     note:
-      'Mounts FOUR subscriptions (job events, notifications, pipeline stages, draft ' +
-      'stream) from features/documents/components/TailorFlow/GeneratingPanel.tsx — ' +
+      'Mounts THREE subscriptions (job events, pipeline stages, draft stream) from ' +
+      'features/documents/components/TailorFlow/GeneratingPanel.tsx — ' +
       'route-scoped AND conditionally rendered, so a generation that runs for minutes ' +
       'drops every stage event emitted while the user is elsewhere. Reconnect covers most ' +
       'of that: the session store keeps `applicationApply.applyRun`, TailorFlow hands it ' +

@@ -52,8 +52,13 @@ re-attach with.** In order of preference:
    the autopilot card falls back to the persisted `runStatus` when this mount has
    no local state.
 2. **Keep only the handle in the app-lifetime session store**
-   (`renderer/store/session-store/`, in memory for the life of the process — see
-   ADR-006) and re-derive the rest from the backend on mount. The jobs scrape keeps
+   (`renderer/store/session-store/`, in memory for the life of the process) and
+   re-derive the rest from the backend on mount. **ADR-006 records the decision to
+   have one app-wide session store, but do not read it for the rule — it is stale
+   on both path and mechanism, and on this point it says the OPPOSITE**: that the
+   store holds each session's streamed text and that surfaces "never duplicate
+   session state locally". This section is the current rule; ADR-006 needs an
+   amendment or a superseding record. The jobs scrape keeps
    `scrapeJobId` and lets a watchdog poll the authoritative terminal state;
    TailorFlow keeps `applicationApply.applyRun` and hands it back as
    `initialRunId`/`initialJobId`, after which the run's persisted event trail
@@ -275,7 +280,10 @@ See **ADR-009**: Resettable registry for the full design (or query the current r
 ## Related
 
 - **ADR-022**: Atomic store transactions — full rationale.
-- **ADR-006**: Single app-wide session store — the renderer-side owner that outlives a mount.
+- **ADR-006**: Single app-wide session store — the renderer-side owner that outlives a
+  mount. **Stale**: its path (`renderer/store/generation-store/`) no longer exists, and its
+  "the store owns the streamed text" mechanism is superseded by the ladder above. Cited for
+  the decision, not for the mechanism.
 - **AGENTS.md rule 16** + `scripts/check-event-subscriptions.mjs`: the renderer half of state ownership, and its enforcement.
 - **`docs/knowledge/event-system.md`**: the event channels themselves — registry, codegen, emission, cold-start buffering.
 - **PATTERNS.md § 14**: Database transactions & atomicity — code examples.
