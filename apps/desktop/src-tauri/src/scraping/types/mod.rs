@@ -247,11 +247,18 @@ pub trait Scraper: Send + Sync {
 
     /// Whether this board needs API keys/credentials that are currently absent.
     ///
-    /// Some boards (the aggregator, backed by Adzuna/JSearch/Apify) return
-    /// nothing without configured API keys. Rather than run and yield a silent
-    /// empty result, the engine skips such a board with reason `"needs-keys"`
-    /// when this returns `true`, so the UI/diagnostics can prompt the user to
-    /// configure their keys instead of showing an unexplained zero.
+    /// A board that returns nothing without configured API keys is skipped with
+    /// reason `"needs-keys"` when this returns `true`, so the UI/diagnostics can
+    /// prompt the user to configure their keys instead of showing an
+    /// unexplained zero, rather than running and yielding a silent empty result.
+    ///
+    /// **No board currently returns `true` in production.** The aggregator was
+    /// the only one, and its keyless freehire tier can now answer a search on
+    /// its own, so it reports `false` unconditionally — skipping it would skip
+    /// the one provider a fresh install actually has. The mechanism is kept
+    /// because it is the right shape for the next key-backed board; see
+    /// `aggregator::keyless_aggregator_still_runs_because_freehire_needs_no_key`
+    /// for the reasoning and the accepted cost.
     ///
     /// This is evaluated per scrape (it may read the credential store), so a key
     /// added in Settings clears the skip on the next run without a restart.
