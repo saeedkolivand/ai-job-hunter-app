@@ -1,9 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 
-import type { BoardCatalogEntry, CookieImportResult } from '@ajh/shared';
+import type { BoardCatalogEntry, BoardHealthEntry, CookieImportResult } from '@ajh/shared';
 
 export const boards = {
   catalog: () => invoke<BoardCatalogEntry[]>('boards_catalog'),
+  health: () => invoke<BoardHealthEntry[]>('boards_health'),
   connect: ({ boardId }: { boardId: string }) => invoke('boards_login_with_browser', { boardId }),
   disconnect: ({ boardId }: { boardId: string }) => invoke('boards_logout', { boardId }),
   getStatus: ({ boardId }: { boardId: string }) => invoke('boards_get_status', { boardId }),

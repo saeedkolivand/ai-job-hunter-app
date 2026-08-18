@@ -176,6 +176,9 @@ export {
 export {
   type BoardAuthRequirement,
   type BoardCatalogEntry,
+  type BoardHealth,
+  type BoardHealthEntry,
+  type BoardHealthStatus,
   BOARDS_CHANNELS,
   type BoardsContract,
   type BoardScrapeSummary,

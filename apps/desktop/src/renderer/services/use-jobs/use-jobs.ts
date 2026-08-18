@@ -132,6 +132,16 @@ export const useJobEvents = (onEvent?: (event: JobEvent) => void) => {
   useEffect(() => {
     const offRaw = api.jobs.onEvent((event: unknown) => {
       void qc.invalidateQueries({ queryKey: keys.jobs.all });
+      // Board reliability (Track B1) is derived from a scrape/autopilot job's
+      // summaries but lives in its own query key, and nothing else refreshes
+      // it when a run finishes — with `staleTime: 10s` and no
+      // `refetchInterval`, a mounted AutopilotCard would otherwise keep
+      // showing the PREVIOUS verdict right after a run completes on-screen,
+      // updating only on window focus/remount. `useJobEvents` fires for every
+      // job kind, not just scrape/autopilot ones, but the health query is
+      // bounded by the board registry (cheap either way), so filtering by
+      // kind here isn't worth the complexity.
+      void qc.invalidateQueries({ queryKey: keys.boards.health });
       handlerRef.current?.(event as JobEvent);
     });
     const off = offRaw as unknown as (() => void) | undefined;

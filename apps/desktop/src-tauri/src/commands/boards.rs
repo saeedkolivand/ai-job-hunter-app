@@ -82,6 +82,24 @@ pub fn boards_catalog(app: AppHandle) -> Value {
     json!(engine.catalog())
 }
 
+/// Per-board reliability across runs (Track B1) — the LIVE verdict, re-derived
+/// on every call.
+///
+/// Deliberately a query rather than a field on a persisted run record: the
+/// verdict is cross-run state, so freezing it into an immutable run snapshot
+/// would go stale (an autopilot paused after a bad run would keep reporting a
+/// streak the store has since cleared) and would carry this machine's history
+/// into a backup bundle. Entries match `BoardHealthEntry` in the shared IPC
+/// contract; the array is bounded by the scraper registry. Absent store (open
+/// failed at setup) → empty array, never an error: this is diagnostics.
+#[tauri::command]
+pub fn boards_health(app: AppHandle) -> Value {
+    match app.try_state::<std::sync::Arc<crate::scraping::BoardHealthStore>>() {
+        Some(store) => json!(store.all()),
+        None => json!([]),
+    }
+}
+
 /// Boards that support in-app login/connect (auth-capable). Add a board id here
 /// when its login flow is wired; the scrapeable-board catalog is separate (registry-derived).
 const LOGIN_BOARDS: &[&str] = &["linkedin"];

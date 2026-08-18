@@ -8,7 +8,7 @@ use super::types::{
 };
 use arc_swap::ArcSwap;
 use futures::StreamExt as _;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -110,6 +110,18 @@ pub struct BoardScrapeSummary {
     /// (free-text PII). Serde-optional so pre-existing records deserialize as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Cross-run reliability for this board, folded from every previous run by
+    /// [`super::board_health`] and attached here so a chip can distinguish "this
+    /// board found nothing today" from "this board has been broken since
+    /// Tuesday". `None` when the engine has no health store wired (tests, and
+    /// any run whose diagnostics write failed — a broken diagnostic must never
+    /// break the scrape).
+    ///
+    /// `#[serde(default)]` is load-bearing: `lastRunSummaries` records persisted
+    /// before this field existed (and every backup bundle containing them) must
+    /// still deserialize.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health: Option<super::board_health::BoardHealth>,
 }
 
 /// Maximum number of distinct boards processed per `scrape_boards` call —
@@ -145,6 +157,13 @@ pub struct ScraperEngine {
     /// Shared across concurrent `scrape_boards` calls so two jobs that each
     /// include a browser board cannot spin up two headless instances at once.
     browser_sem: Arc<Semaphore>,
+    /// Per-board reliability history (Track B1). `None` until `lib.rs::setup`
+    /// hands the opened store in — the engine is constructed before the L1
+    /// stores are, and tests construct it with no store at all, so every use is
+    /// optional and a missing store simply means "no health on the summaries".
+    /// `ArcSwapOption` (not a constructor arg) so the already-`Arc`ed, already-
+    /// managed engine can be given the store after the fact.
+    health: arc_swap::ArcSwapOption<super::board_health::BoardHealthStore>,
 }
 
 impl ScraperEngine {
@@ -153,7 +172,16 @@ impl ScraperEngine {
             semaphore: ArcSwap::from_pointee(Semaphore::new(2)),
             jobs: Arc::new(CancelRegistry::new()),
             browser_sem: Arc::new(Semaphore::new(1)),
+            health: arc_swap::ArcSwapOption::empty(),
         }
+    }
+
+    /// Attach the per-board reliability store, after which every multi-board
+    /// scrape folds its summaries into it and attaches the resulting health to
+    /// each [`BoardScrapeSummary`]. Called once from `lib.rs::setup`; idempotent
+    /// (a second call replaces the handle).
+    pub fn set_health_store(&self, store: Arc<super::board_health::BoardHealthStore>) {
+        self.health.store(Some(store));
     }
 
     pub fn catalog(&self) -> Vec<ScraperCatalogEntry> {
@@ -623,6 +651,24 @@ impl ScraperEngine {
             })
             .collect();
 
+        // The ONLY ids the board-health store may key a row on (Track B1).
+        //
+        // An unknown id deliberately passes through to an ordinary error summary
+        // below rather than being dropped — but `board` is that store's PRIMARY
+        // KEY and this string is renderer-supplied verbatim (`commands::scrape`
+        // clones `req.boards` in; the generated `ScrapeBoardsRequest.boards` is
+        // an unvalidated `Vec<String>`). Recording it would give a looping or
+        // XSS'd renderer unbounded on-disk row creation — the same threat the
+        // scrape limiter in `commands::scrape` already exists to stop, and the
+        // reason this store can honestly claim to be bounded by the scraper
+        // registry. Keyed off the RESOLVER (not `boards::get`) so the engine's
+        // fake-resolver tests keep their synthetic ids.
+        let resolvable_boards: HashSet<String> = resolved
+            .iter()
+            .filter(|(_, scraper)| scraper.is_ok())
+            .map(|(id, _)| id.clone())
+            .collect();
+
         // Short-circuit: skip Required boards that have no usable session.
         // Skipped boards never enter run_boards (no fetch, no browser_sem acquire).
         // Use a position-indexed Option<BoardScrapeSummary> so skips are slotted
@@ -725,6 +771,7 @@ impl ScraperEngine {
                     skipped: Some(reason.into()),
                     truncated: None,
                     note: None,
+                    health: None,
                 });
             } else {
                 name_to_idx.insert(id.clone(), idx);
@@ -914,6 +961,7 @@ impl ScraperEngine {
                         skipped: None,
                         truncated,
                         note,
+                        health: None,
                     });
                     all_postings.extend(postings);
                 }
@@ -925,6 +973,7 @@ impl ScraperEngine {
                         skipped: None,
                         truncated: None,
                         note: None,
+                        health: None,
                     });
                 }
             }
@@ -939,6 +988,20 @@ impl ScraperEngine {
         if parent.is_cancelled() && !any_recovered_items {
             return Err(anyhow::anyhow!("scrape cancelled"));
         }
+
+        // Track B1 — fold this run into the per-board reliability history and
+        // attach the result, so a chip can tell "found nothing today" apart from
+        // "broken since Tuesday". Deliberately AFTER the cancellation check: a
+        // cancelled run's per-board errors are the user's own cancel, not the
+        // board's fault, and recording them would manufacture failure streaks.
+        // Never suppresses a board (owner decision: record and display, never
+        // skip) — a failing board still runs on the next search.
+        let summaries = if parent.is_cancelled() {
+            summaries
+        } else {
+            self.record_health(&job_id, summaries, &resolvable_boards)
+                .await
+        };
 
         // Cross-source dedup (trust PR E, stage 1): the same job surfaced by two
         // boards was concatenated above as separate rows — collapse to one, upgrading
@@ -956,6 +1019,75 @@ impl ScraperEngine {
         }
 
         Ok((all_postings, summaries))
+    }
+
+    /// Fold `summaries` into the per-board reliability history and stamp the
+    /// UNHEALTHY ones with the result (Track B1).
+    ///
+    /// Only a noteworthy health (failing / stale) is attached: a healthy board
+    /// adds nothing to its chip, and leaving it off keeps the persisted
+    /// `lastRunSummaries` records — and the "N boards · all ok" collapse — as
+    /// small and quiet as they are today.
+    ///
+    /// A missing store or a storage error degrades to "no health this run" and
+    /// returns the summaries untouched: the diagnostic must never break the
+    /// scrape it describes. The SQLite work runs on the blocking pool.
+    async fn record_health(
+        &self,
+        run_id: &str,
+        mut summaries: Vec<BoardScrapeSummary>,
+        resolvable_boards: &HashSet<String>,
+    ) -> Vec<BoardScrapeSummary> {
+        let Some(store) = self.health.load_full() else {
+            return summaries;
+        };
+        // Only ids the resolver recognised may key a row — see
+        // `resolvable_boards`. Positions are kept so each health lands back on
+        // the summary it came from; an unresolvable board simply never enters
+        // the store and never gets a badge.
+        let recorded: Vec<usize> = summaries
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| resolvable_boards.contains(&s.board))
+            .map(|(idx, _)| idx)
+            .collect();
+        if recorded.is_empty() {
+            return summaries;
+        }
+        // The blocking task gets a CLONE (a handful of small structs) rather than
+        // the summaries themselves, so a panicked or aborted task costs the
+        // health badge, never the diagnostics the renderer actually needs.
+        let run_id = run_id.to_string();
+        let to_record: Vec<BoardScrapeSummary> =
+            recorded.iter().map(|&idx| summaries[idx].clone()).collect();
+        let health = match tokio::task::spawn_blocking(move || {
+            store.record_run(&run_id, &to_record)
+        })
+        .await
+        {
+            Ok(Ok(health)) => health,
+            Ok(Err(e)) => {
+                // Path-free category code, not the raw `AppError` — the same
+                // rule as the store's own `open()` failure in `lib.rs`'s setup
+                // path: a storage error can embed the db path.
+                log::warn!(
+                    "[scrape] board-health history unavailable this run ({}); chips lose \
+                     their reliability badge but the scrape stands",
+                    e.code()
+                );
+                return summaries;
+            }
+            Err(e) => {
+                log::warn!("[scrape] board-health record task failed: {e}");
+                return summaries;
+            }
+        };
+        for (&idx, h) in recorded.iter().zip(health) {
+            if h.is_noteworthy() {
+                summaries[idx].health = Some(h);
+            }
+        }
+        summaries
     }
 
     /// Signal cancellation to a running job by id. No-op if the id is unknown.
