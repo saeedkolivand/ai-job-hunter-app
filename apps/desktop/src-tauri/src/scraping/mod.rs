@@ -1,4 +1,5 @@
 pub mod ats_ref;
+pub mod board_health;
 pub mod board_login;
 pub mod boards;
 pub mod cluster;
@@ -10,5 +11,6 @@ pub mod scrape_url;
 pub mod trust;
 pub mod types;
 
+pub use board_health::{BoardHealth, BoardHealthEntry, BoardHealthStatus, BoardHealthStore};
 pub use engine::{BoardScrapeSummary, ScraperEngine};
 pub use types::{BoardSearchInput, JobPosting, LocationSpec};

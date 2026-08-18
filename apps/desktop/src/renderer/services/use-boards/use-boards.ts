@@ -159,3 +159,26 @@ export const useBoardsCatalog = () => {
     refetchOnReconnect: false,
   });
 };
+
+// ─── Reliability history (Track B1) ──────────────────────────────────────────
+
+/**
+ * Live per-board reliability, keyed by board id.
+ *
+ * Read as a QUERY rather than off a stored run record on purpose: the verdict is
+ * cross-run state, so a persisted snapshot would keep asserting a streak the
+ * store has since cleared (an autopilot paused after a bad run, then a manual
+ * scrape that succeeds) and would carry this machine's history into a backup.
+ * The table is bounded by the scraper registry, so fetching all of it is cheap.
+ */
+export const useBoardsHealth = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.boards.health,
+    queryFn: async () => {
+      const entries = await api.boards.health();
+      return new Map(entries.map((e) => [e.board, e.health]));
+    },
+    staleTime: QUERY_TIMES.SHORT,
+  });
+};

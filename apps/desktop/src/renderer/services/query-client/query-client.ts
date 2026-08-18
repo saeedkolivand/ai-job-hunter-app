@@ -117,7 +117,10 @@ export const keys = {
     status: ['emailWatch', 'status'] as const,
   },
   notifications: { all: ['notifications'] as const },
-  boards: { catalog: ['boards', 'catalog'] as const },
+  boards: {
+    catalog: ['boards', 'catalog'] as const,
+    health: ['boards', 'health'] as const,
+  },
   scrapingSettings: { all: ['scrapingSettings'] as const },
   discovery: {
     all: ['discovery'] as const,

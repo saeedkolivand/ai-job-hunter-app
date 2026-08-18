@@ -2365,6 +2365,16 @@
         "rowsDropped_other": "{{count}} rows unreadable — board format may have changed",
         "companiesFailed_one": "{{count}} company could not be fetched",
         "companiesFailed_other": "{{count}} companies could not be fetched"
+      },
+      "health": {
+        "failingSince_one": "down for {{count}} run · last worked {{since}}",
+        "failingSince_other": "down for {{count}} runs · last worked {{since}}",
+        "neverWorkedSince": "has never worked here · first failed {{since}}",
+        "neverWorked_one": "has never worked here · {{count}} failed run",
+        "neverWorked_other": "has never worked here · {{count}} failed runs",
+        "stale": "not checked since it last worked, {{since}}",
+        "staleUnknown": "not checked in a long time",
+        "flaky": "unreliable · failed {{count}} of {{total}} runs"
       }
     },
     "viewList": "List",

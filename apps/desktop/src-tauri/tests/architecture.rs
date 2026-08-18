@@ -439,6 +439,13 @@ const R3_ALLOW: &[&str] = &[
     // separate module — is what separates a résumé run from an agent run, so a
     // sibling store would have been a second copy of the same two tables.
     "pipeline/runs/mod.rs",
+    // Per-board reliability history (Track B1): one row per board, folded from
+    // every scrape run's `BoardScrapeSummary`. Same ADR-022 shape as the stores
+    // above (`db::open` + position-indexed migrations, `Resettable`); it sits
+    // under `scraping/` rather than at the top level because the thing it
+    // remembers IS a scraping concern and the engine that writes it is its only
+    // producer.
+    "scraping/board_health/mod.rs",
     // Reads the installed browser's EXTERNAL Cookies SQLite (read-only, copied to
     // temp) for session import — not our app DB, so it has no domain store. R3
     // confines OUR persistence; reading a foreign SQLite legitimately needs
