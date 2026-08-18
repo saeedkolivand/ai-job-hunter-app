@@ -11,6 +11,6 @@ pub mod scrape_url;
 pub mod trust;
 pub mod types;
 
-pub use board_health::{BoardHealth, BoardHealthStatus, BoardHealthStore};
+pub use board_health::{BoardHealth, BoardHealthEntry, BoardHealthStatus, BoardHealthStore};
 pub use engine::{BoardScrapeSummary, ScraperEngine};
 pub use types::{BoardSearchInput, JobPosting, LocationSpec};
