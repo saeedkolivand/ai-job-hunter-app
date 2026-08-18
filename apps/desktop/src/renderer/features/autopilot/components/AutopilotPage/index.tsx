@@ -169,17 +169,33 @@ function AutopilotPage() {
           ) : (
             <div className="space-y-3">
               {autopilots.map((ap) => {
-                // `runStates` is this mount's live event state and starts EMPTY:
-                // navigating to Settings unmounts this page, so a run still in
-                // flight comes back with no local state at all. The backend's
-                // persisted `runStatus` is the durable truth, so fall back to it
-                // — otherwise the card renders 'idle' (no badge exists for
-                // `inProgress`, by design), the Run button re-enables, and the
-                // click is refused by the backend's concurrent-run guard with
-                // "a run is already in progress" for a run the UI just claimed
-                // was finished.
+                // Two authorities, in this order:
+                //
+                //  1. THIS MOUNT'S MACHINE, once it has actually observed the
+                //     run. Anything other than 'idle' means a step event (or
+                //     the click itself) moved it, and it knows the finer phase
+                //     — 'ranking' vs 'scraping', 'done' before the list query
+                //     has caught up.
+                //  2. THE BACKEND'S PERSISTED `runStatus`, otherwise. This
+                //     mount's state starts EMPTY, so a route change to Settings
+                //     and back leaves nothing behind for a run that is still
+                //     executing. Without this the card renders 'idle' (there is
+                //     deliberately no badge for `inProgress`), the Run button
+                //     re-enables, and the click is refused by the backend's
+                //     concurrent-run guard — "a run is already in progress" for
+                //     a run the UI just showed as finished.
+                //
+                // Order matters in both directions: reading the backend first
+                // would flicker a locally-'done' card back to 'scraping' until
+                // the invalidation lands, and reading only the local state is
+                // the bug above.
+                const local = runStates[ap._id];
                 const runState =
-                  runStates[ap._id] ?? (ap.runStatus === 'inProgress' ? 'scraping' : 'idle');
+                  local && local !== 'idle'
+                    ? local
+                    : ap.runStatus === 'inProgress'
+                      ? 'scraping'
+                      : 'idle';
                 return (
                   <AutopilotCard
                     key={ap._id}

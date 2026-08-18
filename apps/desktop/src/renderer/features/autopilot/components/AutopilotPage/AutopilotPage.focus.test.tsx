@@ -93,9 +93,13 @@ vi.mock('@/features/autopilot/components/EmptyState', () => ({
   EmptyState: () => <div data-testid={TEST_IDS.autopilot.emptyState} />,
 }));
 
+// Mutable so a test can put the hook in the state a real mount would be in
+// (empty after a navigation; a terminal state once a step event was observed).
+let mockRunStates: Record<string, string> = {};
+
 vi.mock('@/features/autopilot/hooks/useAutopilotRun', () => ({
   useAutopilotRun: () => ({
-    runStates: {},
+    runStates: mockRunStates,
     stepLogs: {},
     error: null,
     setError: vi.fn(),
@@ -131,6 +135,7 @@ beforeEach(() => {
   capturedOnApply = null;
   capturedFocusedJobUrl = null;
   capturedRunState = undefined;
+  mockRunStates = {};
   currentSearch = {};
 });
 
@@ -342,6 +347,35 @@ describe('AutopilotPage — a run still in flight survives the remount', () => {
     });
 
     expect(capturedRunState).toBe('idle');
+  });
+
+  it('does not strand the card when the concurrent run FAILS', async () => {
+    // The path with no terminal step event at all: the Rust failure arm calls
+    // `job_fail` and returns early, so nothing ever announces the end. A card
+    // pinned to a busy state by inference would sit there forever; only
+    // `runStatus` records the outcome, so 'idle' has to hand control back to it.
+    mockRunStates = { 'ap-1': 'idle' }; // what `already-running` leaves behind
+    mockAutopilotList = [withRunStatus('failed')];
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    expect(capturedRunState).toBe('idle');
+  });
+
+  it('keeps a locally-observed terminal state while the list query is still stale', async () => {
+    // The opposite direction: this mount SAW the `complete` step, so it knows
+    // the run is over before the invalidation lands. Reading the backend first
+    // would flip a finished card back to 'scraping' for one render.
+    mockRunStates = { 'ap-1': 'done' };
+    mockAutopilotList = [withRunStatus('inProgress')]; // stale
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    expect(capturedRunState).toBe('done');
   });
 });
 

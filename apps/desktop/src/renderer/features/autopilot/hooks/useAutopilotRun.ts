@@ -106,15 +106,19 @@ export function useAutopilotRun() {
       // resolves with `{ skipped: "already-running" }` instead of running.
       // Nothing happened from THIS call, so it's neither a failure (no red
       // 'error' state) nor a success ('done' would misreport a run that never
-      // occurred) — surface a distinct, honest message via the same banner
-      // `error` uses.
+      // occurred) — revert the optimistic 'scraping' and surface a distinct,
+      // honest message via the same banner `error` uses.
       //
-      // The optimistic 'scraping' state is KEPT, not reverted. This refusal is
-      // proof that a run IS in flight, so reverting to idle re-armed the Run
-      // button for a run the backend would refuse again — the loop the user hit
-      // after navigating away mid-run. Holding 'scraping' also puts the card
-      // back on the live step stream, which carries it to 'done'.
+      // Reverting to 'idle' is safe HERE only because 'idle' is what hands the
+      // card back to the backend's `runStatus` (see AutopilotPage). The refusal
+      // proves a run is in flight, so the card still shows one — but it now
+      // does so on evidence that keeps being re-read, rather than on a local
+      // guess. Pinning 'scraping' here instead would strand the card forever
+      // when that concurrent run FAILS: the Rust failure path returns early
+      // without emitting any step, so no terminal event ever arrives to clear
+      // it. Only `runStatus` records that outcome.
       if (result.skipped === 'already-running') {
+        setRunStates({ [id]: 'idle' });
         setError(t('autopilot.wizard.alreadyRunning'));
         return;
       }

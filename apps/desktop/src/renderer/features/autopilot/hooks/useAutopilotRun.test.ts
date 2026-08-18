@@ -140,7 +140,7 @@ describe('useAutopilotRun — handleRun error-payload handling', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('holds a { skipped: "already-running" } payload at scraping (not done, not error, NOT idle) with a distinct message', async () => {
+  it('routes a resolved { skipped: "already-running" } payload to idle (not done, not error) with a distinct message', async () => {
     runMutateAsync.mockResolvedValueOnce({ skipped: 'already-running' });
     const { result } = renderHookWithClient(() => useAutopilotRun());
 
@@ -148,11 +148,16 @@ describe('useAutopilotRun — handleRun error-payload handling', () => {
       await result.current.handleRun('ap-concurrent');
     });
 
-    // The refusal PROVES a run is in flight, so the card must keep showing one.
-    // 'idle' here is what re-armed the Run button for a run the backend refuses
-    // again — the loop the user hit after navigating away mid-run. Neither the
-    // silent-success 'done' (no run happened from this call) nor 'error'.
-    expect(result.current.runStates['ap-concurrent']).toBe('scraping');
+    // Not the silent-success 'done' state — no run actually happened.
+    //
+    // 'idle' specifically, and not the 'scraping' the refusal would seem to
+    // justify: 'idle' is the value that hands the card back to the backend's
+    // persisted `runStatus` (see AutopilotPage), so it still displays as
+    // running while the concurrent run lasts AND clears when that run ends.
+    // Pinning 'scraping' here would strand the card forever whenever the
+    // concurrent run FAILS, because the Rust failure path emits no terminal
+    // step for anything to observe.
+    expect(result.current.runStates['ap-concurrent']).toBe('idle');
     // Not the red 'error' banner either — a distinct, honest message.
     expect(result.current.error).toBe('autopilot.wizard.alreadyRunning');
   });
@@ -242,5 +247,23 @@ describe('useAutopilotRun — steps for a run this mount did not start', () => {
       deliver?.({ jobId: 'j10', autopilotId: 'ap-inv', step: 'complete', detail: 'Found 8' });
     });
     expect(invalidateAutopilots).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the list on a cancelled run too, not only a completed one', () => {
+    // `cancelled` is the OTHER terminal step, and it changes the record just as
+    // much: `finish_cancelled` clears the live status and wipes the previous
+    // run's summaries, so a card left on pre-cancel data is showing a run that
+    // was abandoned.
+    invalidateAutopilots.mockClear();
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+    const deliver = stepEvents.handler;
+    expect(result.current, 'the hook must render').toBeTruthy();
+
+    act(() => {
+      deliver?.({ jobId: 'j11', autopilotId: 'ap-cancel', step: 'cancelled', detail: 'stopped' });
+    });
+
+    expect(invalidateAutopilots).toHaveBeenCalledTimes(1);
+    expect(result.current.runStates['ap-cancel']).toBe('cancelled');
   });
 });
