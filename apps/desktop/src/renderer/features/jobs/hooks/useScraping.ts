@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { BoardScrapeSummary } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import type { useNotification } from '@ajh/ui';
 
+import { sanitizeReason } from '@/components/scrape/BoardSummaryChips';
 import type { Posting, ScrapeFormState, ScrapeOutcome } from '@/features/jobs/types';
-import { fetchJob, useCancelJob, useScrapeBoards, useScrapeProgress } from '@/services';
+import {
+  fetchJob,
+  useCancelJob,
+  useInvalidatePostings,
+  useScrapeBoards,
+  useScrapeProgress,
+} from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 export function useScraping(
@@ -36,8 +44,10 @@ export function useScraping(
   // so it stays local.
   const pendingFinishRef = useRef<Map<string, ScrapeOutcome>>(new Map());
 
+  const { t } = useTranslation();
   const scrapeBoards = useScrapeBoards();
   const cancelJob = useCancelJob();
+  const invalidatePostings = useInvalidatePostings();
   // Live boards-done/total fraction (0..1) for the in-flight scrape; null until
   // the first board completes and after the scrape ends (scrapeJobId → null).
   // On the default single-board config the only event fires as the run ends,
@@ -166,15 +176,25 @@ export function useScraping(
    *
    * `summaries` is written under the SAME identity guard (the watchdog recovery
    * path); the event path leaves it undefined because JobsPage owns the
-   * translated per-board strip.
+   * translated per-board strip. `failureNote` rides alongside it so the
+   * watchdog's own failure recovery (below) can restore an explanation the same
+   * way the event path does — omitted (`undefined`), it defaults to clearing
+   * the note, matching the prior always-null behavior for the success case.
    */
   const finishScrape = useCallback(
-    (jobId: string, outcome: ScrapeOutcome, summaries?: BoardScrapeSummary[]) => {
+    (
+      jobId: string,
+      outcome: ScrapeOutcome,
+      summaries?: BoardScrapeSummary[],
+      failureNote?: string | null
+    ) => {
       if (!jobId || jobId !== useSessionStore.getState().jobs.scrapeJobId) return;
       setJobs({
         scrapeJobId: null,
         scrapeOutcome: outcome,
-        ...(summaries ? { scrapeSummaries: summaries, scrapeFailureNote: null } : {}),
+        ...(summaries
+          ? { scrapeSummaries: summaries, scrapeFailureNote: failureNote ?? null }
+          : {}),
       });
       setScraping(false);
     },
@@ -222,9 +242,25 @@ export function useScraping(
           // per-board diagnostics back instead of an unexplained empty result.
           const boards = job.result?.boards;
           finishScrape(scrapeJobId, { ok: true }, Array.isArray(boards) ? boards : undefined);
-        } else if (job.status === 'failed')
-          finishScrape(scrapeJobId, { ok: false, note: job.error ?? undefined });
-        else if (job.status === 'cancelled') finishScrape(scrapeJobId, { ok: false });
+          // The live `job.completed` handler in JobsPage invalidates the
+          // postings cache unconditionally; this recovery path is the only
+          // other place a scrape settles, so it needs the same call — a 30s
+          // `staleTime` otherwise leaves the pre-scrape (possibly empty) list
+          // on screen after navigating back.
+          void invalidatePostings();
+        } else if (job.status === 'failed') {
+          // Sanitize here — this is the ONLY path that writes a raw backend
+          // error into `scrapeOutcome`/`scrapeFailureNote`; the live event
+          // path (JobsPage) already runs `ev.data` through `sanitizeReason`
+          // before it reaches the store, and a raw Rust error can carry a
+          // filesystem path or hostname (AGENTS.md path-privacy rule).
+          const sanitized = sanitizeReason(job.error ?? t('jobs.scrapeFailed'));
+          // Restore the chip strip's explanation the same way the live path
+          // does (`scrapeSummaries: [], scrapeFailureNote: sanitized`) — a
+          // scrape that fails while the user is elsewhere otherwise comes back
+          // to an empty strip with no note at all.
+          finishScrape(scrapeJobId, { ok: false, note: sanitized }, [], sanitized);
+        } else if (job.status === 'cancelled') finishScrape(scrapeJobId, { ok: false });
       } catch {
         // Transient — retry on the next tick.
       }
@@ -238,7 +274,7 @@ export function useScraping(
       cancelled = true;
       clearInterval(id);
     };
-  }, [scrapeJobId, finishScrape]);
+  }, [scrapeJobId, finishScrape, invalidatePostings, t]);
 
   return {
     noteScrapeFinished,
