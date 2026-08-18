@@ -389,8 +389,11 @@ function renderNamespace(namespace, ctx) {
       out.push(...channels.map(([k, v]) => `| \`${k}\` | \`${v}\` |`));
       out.push('');
       // A partial registry is a real, checkable fact — state the arithmetic
-      // rather than inferring what the unregistered methods do instead.
-      if (channels.length !== members.length) {
+      // rather than inferring what the unregistered methods do instead. In this
+      // direction only: a `*_CHANNELS` const may also carry event channel names,
+      // and the sentence below then claims a count larger than the total. A
+      // surplus is not a fact about the methods, so it goes unstated.
+      if (channels.length < members.length) {
         out.push(
           `\`${constName}\` registers ${channels.length} of this namespace's ` +
             `${members.length} methods; the rest have no entry in it.`,
