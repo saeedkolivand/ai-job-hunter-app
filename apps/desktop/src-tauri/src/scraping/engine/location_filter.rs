@@ -34,6 +34,19 @@ const REMOTE_MARKERS: &[&str] = &[
 /// Minimum length of a requested place-name token used for matching. Two-letter
 /// tokens (a bare country code, "UK") are too noisy to match on, so the filter
 /// stays inert unless a real place name is present.
+///
+/// **This constant now has a SECOND consumer with a different risk posture.**
+/// Its original job was noise control for the scrape filter, where being wrong
+/// costs one dropped row. The hard-constraint pass
+/// (`commands::match_resume::constraints`) publishes a `met` verdict to the user
+/// off the same tokens, and the shipped UI location defaults all end in a
+/// two-letter qualifier — "San Francisco, CA", "New York, NY", "London, UK".
+/// They read [`LocationVerdict::PlaceMatch`] against realistic postings ("San
+/// Francisco, California", "New York, United States", "London, United Kingdom")
+/// ONLY because 3 drops that qualifier; at 2 each would carry a token the
+/// posting does not name and would silently degrade to `unknown`. Lowering this
+/// for a scrape-side reason is therefore a user-visible change, and
+/// `the_shipped_ui_location_defaults_read_as_a_match` fails if it happens.
 const MIN_TOKEN_LEN: usize = 3;
 
 /// A tiny, curated table of English⇄German exonym pairs for the handful of
@@ -219,12 +232,24 @@ pub(crate) enum LocationVerdict {
     /// posting's location: "Berlin" ↔ "Berlin, Germany", "Munich" ↔ "München"
     /// via the curated table. Strong enough to state to a user.
     PlaceMatch,
-    /// A requested token appears in the posting's location, but only as a
-    /// SUBSTRING or on part of a multi-token request: "San Francisco" ↔ "San
-    /// Diego" on the shared `san`. Enough to keep a row in a search — the
-    /// conservative call when the cost is discarding a job — and NOT enough to
-    /// tell a user the posting matches where they are looking.
-    PlaceOverlap,
+    /// Something matched, but the request is NOT fully accounted for. Named for
+    /// the incompleteness rather than for a strength, because it covers two
+    /// situations of quite different evidential weight and a consumer must not
+    /// assume either one:
+    ///
+    /// - a coincidental SUBSTRING with no whole-token hit at all — "San
+    ///   Francisco" against a "San Diego" posting, sharing only `san`. Weak.
+    /// - a genuine whole-token hit on PART of a multi-token request — "Berlin,
+    ///   Germany" against a bare "Berlin" posting, where `berlin` matches
+    ///   exactly and only the country qualifier is unaccounted for. Strong in
+    ///   substance, and still not a completed comparison.
+    ///
+    /// Both are enough to keep a row in a search — the conservative call when
+    /// the cost is discarding a job — and neither is enough to tell a user the
+    /// posting matches their stated location. They share one variant because
+    /// nothing today needs to tell them apart; split it rather than guess if a
+    /// consumer ever does.
+    PlaceIncomplete,
     /// Positive evidence on both sides, and they conflict: the posting names a
     /// concrete place, is not remote, and NO requested place token appears in
     /// it anywhere.
@@ -248,7 +273,7 @@ pub(crate) enum LocationVerdict {
 ///   token present as a WHOLE token (diaeresis-spelling variants and curated
 ///   exonyms included, so never a false miss on München/Munich, Köln/Cologne)
 ///   → [`LocationVerdict::PlaceMatch`]; a mere substring or partial-request hit
-///   → [`LocationVerdict::PlaceOverlap`].
+///   → [`LocationVerdict::PlaceIncomplete`].
 ///
 /// The last split is the only thing the grading adds, and it exists because the
 /// two callers are asking different questions. `location_mismatch` wants "may I
@@ -293,7 +318,7 @@ pub(crate) fn location_verdict(
     if every_requested_token_is_whole(&loc, requested) {
         LocationVerdict::PlaceMatch
     } else {
-        LocationVerdict::PlaceOverlap
+        LocationVerdict::PlaceIncomplete
     }
 }
 
@@ -571,22 +596,22 @@ mod test {
             location_verdict(Some("Koeln, Deutschland"), false, &requested("Köln")),
             LocationVerdict::PlaceMatch
         );
-        // PlaceOverlap: only PART of a two-token request found a home — the
+        // PlaceIncomplete: only PART of a two-token request found a home — the
         // shared `san` of San Francisco / San Diego.
         assert_eq!(
             location_verdict(Some("San Diego, CA"), false, &requested("San Francisco")),
-            LocationVerdict::PlaceOverlap
+            LocationVerdict::PlaceIncomplete
         );
-        // PlaceOverlap: a substring hit that is not a whole token.
+        // PlaceIncomplete: a substring hit that is not a whole token.
         assert_eq!(
             location_verdict(Some("Newcastle"), false, &requested("Newcast")),
-            LocationVerdict::PlaceOverlap
+            LocationVerdict::PlaceIncomplete
         );
-        // PlaceOverlap: the request is MORE specific than the posting, so a
+        // PlaceIncomplete: the request is MORE specific than the posting, so a
         // token the user typed has no home. Undecidable, not agreement.
         assert_eq!(
             location_verdict(Some("Berlin"), false, &requested("Berlin, Germany")),
-            LocationVerdict::PlaceOverlap
+            LocationVerdict::PlaceIncomplete
         );
         // Mismatch: a concrete, non-remote place with nothing in common.
         assert_eq!(
@@ -615,7 +640,7 @@ mod test {
 
     /// The scrape-time filter is EXACTLY the `Mismatch` projection — nothing
     /// else drops, and grading the old `Match` into `Remote`/`PlaceMatch`/
-    /// `PlaceOverlap` did not move that line. Anchored on both ends: a
+    /// `PlaceIncomplete` did not move that line. Anchored on both ends: a
     /// hand-written absolute expectation per case, plus the equivalence, so a
     /// regression that broke both the filter and the verdict the same way still
     /// fails on the absolutes.
@@ -660,7 +685,7 @@ mod test {
         let sf = requested("San Francisco");
         assert_eq!(
             location_verdict(Some("San Diego, CA"), false, &sf),
-            LocationVerdict::PlaceOverlap
+            LocationVerdict::PlaceIncomplete
         );
         assert!(!location_mismatch(
             &posting(Some("San Diego, CA"), false),

@@ -116,7 +116,14 @@ export interface JobInteraction {
  * relevance score and never folded into it. Four values, because "we cannot
  * tell" is never a pass:
  *
- * - `met` — positive evidence on BOTH sides, and they agree.
+ * - `met` — positive evidence on BOTH sides, and they agree. Read it strictly:
+ *   it is a claim about the **stored setting** named by `id`, and nothing more.
+ *   For `preferredLocation` the true sentence is "your preferred location
+ *   matches this posting" — correct for any posting, whichever search produced
+ *   it. "Matches where you're looking" is NOT supported: postings persist from
+ *   every past search and the app keeps no record of which search returned
+ *   which row, so a stale setting would make that sentence false. Nor does it
+ *   mean the candidate can legally or practically work there.
  * - `notMet` — positive evidence on BOTH sides, and they conflict. The only
  *   knock-out. **No shipped constraint produces it today** (see `constraints`
  *   on {@link MatchScore}); it is the slot a constraint with real two-sided
@@ -134,15 +141,23 @@ export type ConstraintStatus = 'met' | 'notMet' | 'unknown' | 'noPreference';
 
 /** One constraint's verdict plus the evidence on each side that produced it. */
 export interface ConstraintCheck {
-  /** Stable machine id (e.g. `'location'`) — the renderer localizes the label. */
+  /**
+   * Stable machine id — the renderer localizes the label off this. Today the
+   * only value is `'preferredLocation'`, named for the setting it reads rather
+   * than for the subject it is about: it is deliberately NOT `'location'`,
+   * which would license a sentence about where the candidate can work.
+   */
   id: string;
   status: ConstraintStatus;
   /** What the posting states about this constraint, verbatim. Absent when it states nothing. */
   posting?: string;
   /**
    * What the candidate has stored about it, verbatim. Absent when they set
-   * nothing. For `location` this is their stated **preference** (the
-   * "Preferred Location" setting), not an address and not a mobility limit.
+   * nothing. For `preferredLocation` this is their stated **preference** (the
+   * free-text "Preferred Location" setting, which personalizes search), not an
+   * address, not a mobility limit, and not the location of whatever search
+   * returned this posting. Render it as the setting it is — showing it beside
+   * `posting` is what lets a user notice their own setting is stale.
    */
   candidate?: string;
 }
@@ -175,16 +190,24 @@ export interface MatchScore {
    * Hard-constraint pass — reported as its own field so it can never contaminate
    * the score above.
    *
-   * Only `location` ships today, and only as `met` / `unknown` / `noPreference`.
-   * There is no `notMet`: the candidate side is a search-personalization
-   * setting rather than a mobility statement, and a failed place-name match is
-   * absence of evidence rather than evidence of conflict. `met` takes the
-   * strict reading in return — the posting is remote, or every place token the
-   * user typed appears as a whole token of the posting's location — so a
-   * partial overlap ("San Francisco" against a "San Diego" posting) reads
-   * `unknown`, not `met`. Work authorization, employment type and salary have
-   * no candidate-side data in this app at all. See
-   * `commands/match_resume/constraints.rs` for the full reasoning.
+   * Only `preferredLocation` ships today, and only as `met` / `unknown` /
+   * `noPreference`.
+   *
+   * There is no `notMet` anywhere in the app: the candidate side is a
+   * search-personalization setting rather than a mobility statement, and a
+   * failed place-name match is absence of evidence rather than evidence of
+   * conflict. `met` survives the same facts only because of what it asserts — a
+   * match against the stored SETTING, which stays true whichever search
+   * produced the row — so render it as that and never as "matches your search".
+   *
+   * `met` takes the strict reading in return: the posting is remote, or every
+   * place token the user typed appears as a whole token of the posting's
+   * location. A partial overlap ("San Francisco" against a "San Diego" posting)
+   * reads `unknown`.
+   *
+   * Work authorization, employment type and salary have no candidate-side data
+   * in this app at all. See `commands/match_resume/constraints.rs` for the full
+   * reasoning.
    */
   constraints?: { checks: ConstraintCheck[] };
 }

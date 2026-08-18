@@ -77,16 +77,40 @@
 //!   matcher is reused and the epistemics are re-derived: `Mismatch` maps to
 //!   `Unknown` here.
 //!
-//! `Met` survives, but on the STRICT reading of the same matcher: the posting
-//! is flagged or marked remote, or every place token the user actually typed
+//! ### Why `Met` survives facts that killed `NotMet`
+//!
+//! Every fact above is direction-neutral, so the mirror case has to be answered
+//! rather than assumed: the same stale `Berlin` setting, against the `Berlin`
+//! rows still sitting in `PostingsCache` from an earlier search, would report
+//! `met`. If that read as "this posting matches where you're looking" it would
+//! be exactly as false as the knock-out was, from exactly the same field.
+//!
+//! The asymmetry is in what each status ASSERTS, not in how confident we feel:
+//!
+//! - `NotMet` asserted a CONFLICT — that the posting is somewhere the candidate
+//!   will not go. Nothing in this app establishes that relation. A failed
+//!   substring search is not a proof of non-membership, and no phrasing repairs
+//!   it, because the underlying fact was never in hand.
+//! - `Met` asserts a MATCH between two strings we hold in full. The relation —
+//!   every token of the stored preference is present in the posting's location —
+//!   is established deterministically from data we have, and stays true no
+//!   matter which search produced the row.
+//!
+//! So `Met` is repaired by making the claim say what it is a claim ABOUT, not by
+//! deleting it (which would leave a contract with no positive state and make the
+//! whole pass vacuous). The claim is **"your stored Preferred Location matches
+//! this posting"** — literally correct for any cached posting — and never "this
+//! posting matches where you're looking", which imports a search intent this
+//! pass cannot see. That is why the check's wire id is `preferredLocation`.
+//!
+//! On top of that, `Met` takes the STRICT reading of the matcher: the posting is
+//! flagged or marked remote, or every place token the user actually typed
 //! appears as a WHOLE token of the posting's location (diaeresis variants and
 //! curated exonyms included). The looser reading the scrape filter uses — any
 //! requested token, as a substring — would have "San Francisco" agreeing with a
-//! "San Diego" posting on the shared `san`. That errs toward agreement rather
-//! than accusation, which makes it cheap, not correct: `met` is a positive claim
-//! rendered to the user ("this posting matches where you're looking"), and a
-//! four-state contract whose one confident state is loose has moved the
-//! imprecision rather than removed it.
+//! "San Diego" posting on the shared `san`. Erring toward agreement rather than
+//! accusation makes that cheap, not correct: a four-state contract whose one
+//! confident state is loose has moved the imprecision rather than removed it.
 //!
 //! The cost is deliberate and one-directional: a request MORE specific than the
 //! posting ("Berlin, Germany" against a bare "Berlin") reads `unknown` rather
@@ -116,8 +140,16 @@ use crate::scraping::types::LocationSpec;
 
 pub(crate) use check::{ConstraintCheck, ConstraintStatus};
 
-/// Stable id of the location constraint, on the wire and in the tests.
-const LOCATION: &str = "location";
+/// Stable id of the shipped constraint, on the wire and in the tests.
+///
+/// `preferredLocation`, not `location`, and the precision is the point: what
+/// this check compares is the user's stored **Preferred Location setting**
+/// against the posting's location text. It is not a statement about where they
+/// live or where they can work. The id is what a renderer keys its i18n off, so
+/// naming it this way is what stops the localized sentence from being written as
+/// a claim the data cannot support — and it leaves `location` free for a real
+/// mobility constraint if candidate-side data for one ever exists.
+const PREFERRED_LOCATION: &str = "preferredLocation";
 
 /// Byte cap on each piece of evidence echoed into the payload. The posting's
 /// location text is scraped and `job_preferences.location` is renderer-supplied
@@ -181,8 +213,9 @@ mod check {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub(crate) struct ConstraintCheck {
-        /// Stable machine id (`"location"`), not a label — the renderer
-        /// localizes.
+        /// Stable machine id (`"preferredLocation"`), not a label — the
+        /// renderer localizes. Named for what is actually compared; see the
+        /// constant's doc.
         id: &'static str,
         status: ConstraintStatus,
         /// What the POSTING states about this constraint, verbatim. `None` when
@@ -311,17 +344,28 @@ fn evidence(s: &str) -> String {
 ///   [`ConstraintStatus::Unknown`], not to a knock-out. See the module doc for
 ///   the concrete pairs (`Germany`/`Berlin`, `Vienna`/`Wien`, `Berlin`/`EMEA`)
 ///   that make it absence of evidence rather than evidence of conflict.
-/// - `PlaceOverlap` maps to `Unknown` too. `Met` is a positive claim rendered to
-///   the user, so it takes the strict whole-token reading: a four-state contract
-///   whose one confident state is loose has moved the imprecision rather than
-///   removed it. The looser reading stays where it belongs — in the scrape
-///   filter, which keeps the row.
+/// - `PlaceIncomplete` maps to `Unknown` too. `Met` is a positive claim
+///   rendered to the user, so it takes the strict whole-token reading: a
+///   four-state contract whose one confident state is loose has moved the
+///   imprecision rather than removed it. The looser reading stays where it
+///   belongs — in the scrape filter, which keeps the row.
+///
+/// What `Met` claims is bounded to match what is knowable: the stored PREFERENCE
+/// matches this posting. Not that the user can work there, and not that it
+/// matches the search they are running — see the module doc for why that
+/// distinction is what makes `Met` survive the facts that killed `NotMet`.
 fn location_check(posting: &PostingFacts, candidate: &CandidateFacts) -> ConstraintCheck {
+    // Clamp BEFORE comparing, on both sides, so the verdict and the evidence are
+    // derived from the same bytes. Deriving them from different bytes lets a
+    // >200-byte location match on a token that then falls outside the reported
+    // evidence — a `met` sitting beside a string that no longer contains the
+    // place that produced it, which is precisely the two-sided-evidence property
+    // the sealed constructor exists to keep checkable.
     let posting_evidence = stated(posting.location.as_deref()).map(evidence);
     // No stored preference → nothing to compare against. Not a pass.
-    let Some(candidate_location) = stated(candidate.location.as_deref()) else {
+    let Some(candidate_location) = stated(candidate.location.as_deref()).map(evidence) else {
         return ConstraintCheck::new(
-            LOCATION,
+            PREFERRED_LOCATION,
             ConstraintStatus::NoPreference,
             posting_evidence,
             None,
@@ -330,11 +374,11 @@ fn location_check(posting: &PostingFacts, candidate: &CandidateFacts) -> Constra
     // `region`/`country_code` stay empty: `job_preferences` has no region, and a
     // country code yields no matchable token (see `CandidateFacts::location`).
     let requested = LocationSpec {
-        city: Some(candidate_location.to_string()),
+        city: Some(candidate_location.clone()),
         ..Default::default()
     };
     let status = match location_verdict(
-        stated(posting.location.as_deref()),
+        posting_evidence.as_deref(),
         posting.board_remote,
         &requested,
     ) {
@@ -347,24 +391,24 @@ fn location_check(posting: &PostingFacts, candidate: &CandidateFacts) -> Constra
         // Everything else is "we could not establish it", in one direction or
         // the other, and all three publish as Unknown:
         //
-        // - `PlaceOverlap` — something matched, but only as a substring or on
-        //   part of the request ("San Francisco" against a "San Diego" posting,
-        //   on the shared `san`). Keeping that row in a search is the right
-        //   conservative call; telling the user the posting matches where they
-        //   are looking would simply be false.
+        // - `PlaceIncomplete` — something matched, but the request is not
+        //   fully accounted for ("San Francisco" against a "San Diego" posting,
+        //   on the shared `san`; or "Berlin, Germany" against a bare "Berlin").
+        //   Keeping that row in a search is the right conservative call;
+        //   claiming the stored preference matches would overstate it.
         // - `Mismatch` — a failed substring search, which is the ABSENCE of a
         //   hit, not a contradiction. `Germany`/`Berlin`, `Vienna`/`Wien`,
         //   `Berlin`/`EMEA` all land here.
         // - `Undecided` — nothing comparable on one side or the other.
-        LocationVerdict::PlaceOverlap | LocationVerdict::Mismatch | LocationVerdict::Undecided => {
-            ConstraintStatus::Unknown
-        }
+        LocationVerdict::PlaceIncomplete
+        | LocationVerdict::Mismatch
+        | LocationVerdict::Undecided => ConstraintStatus::Unknown,
     };
     ConstraintCheck::new(
-        LOCATION,
+        PREFERRED_LOCATION,
         status,
         posting_evidence,
-        Some(evidence(candidate_location)),
+        Some(candidate_location),
     )
 }
 
@@ -378,7 +422,14 @@ pub(crate) fn evaluate(posting: &PostingFacts, candidate: &CandidateFacts) -> Ve
 ///
 /// `remote` is read from the TOP level (not under `extra`) because
 /// `JobPosting::extra` is `#[serde(flatten)]`.
-fn posting_facts_from_value(posting: &Value) -> PostingFacts {
+///
+/// `pub(super)` so [`super::match_resume`] calls this inside the ONE
+/// `PostingsCache` lock it already takes to resolve the JD text, instead of this
+/// module taking the lock a second time and re-running the same linear scan. The
+/// duplicate mattered because the verdict is deliberately recomputed on a
+/// `match_scores` cache HIT — the Jobs-page path where the score itself costs
+/// nothing — so the second scan would have run on literally every call.
+pub(super) fn posting_facts_from_value(posting: &Value) -> PostingFacts {
     PostingFacts {
         location: posting
             .get("location")
@@ -391,28 +442,18 @@ fn posting_facts_from_value(posting: &Value) -> PostingFacts {
     }
 }
 
-/// Resolve both sides from app state and evaluate. Every lookup is a
-/// `try_state` — the job-preferences store's `open` is non-fatal at setup, and a
-/// missing store must read as "no preference expressed", never as a pass.
-fn checks_for_job(app: &AppHandle, job_id: &str) -> Vec<ConstraintCheck> {
-    let posting = app
-        .try_state::<parking_lot::Mutex<crate::postings::PostingsCache>>()
-        .and_then(|cache| {
-            let guard = cache.lock();
-            guard
-                .get_all()
-                .iter()
-                .find(|p| p.get("id").and_then(Value::as_str) == Some(job_id))
-                .map(posting_facts_from_value)
-        })
-        .unwrap_or_default();
-    let candidate = app
-        .try_state::<crate::job_preferences::JobPreferencesStore>()
+/// The candidate side, read from app state. A `try_state` — the job-preferences
+/// store's `open` is non-fatal at setup, and a missing store must read as "no
+/// preference expressed", never as a pass. A single-row `SELECT`, not a scan.
+///
+/// The posting side is NOT read here: the caller already holds it (see
+/// [`posting_facts_from_value`]).
+fn candidate_facts(app: &AppHandle) -> CandidateFacts {
+    app.try_state::<crate::job_preferences::JobPreferencesStore>()
         .map(|store| CandidateFacts {
             location: store.get().location,
         })
-        .unwrap_or_default();
-    evaluate(&posting, &candidate)
+        .unwrap_or_default()
 }
 
 /// Merge a constraint report into a `MatchScore` value as its own `constraints`
@@ -434,10 +475,14 @@ fn merge(mut score: Value, checks: impl FnOnce() -> Vec<ConstraintCheck>) -> Val
     score
 }
 
-/// Evaluate the hard constraints for `job_id` and merge the report into `score`.
-/// The command layer's single entry point — see [`merge`] for the shape.
-pub(crate) fn attach(app: &AppHandle, job_id: &str, score: Value) -> Value {
-    merge(score, || checks_for_job(app, job_id))
+/// Evaluate the hard constraints and merge the report into `score`. The command
+/// layer's single entry point — see [`merge`] for the shape.
+///
+/// `posting` is resolved by the caller, which already has the cached posting in
+/// hand under its own lock. The only state this reaches for is the candidate
+/// side, and only when there is something to report about.
+pub(crate) fn attach(app: &AppHandle, posting: &PostingFacts, score: Value) -> Value {
+    merge(score, || evaluate(posting, &candidate_facts(app)))
 }
 
 #[cfg(test)]
@@ -460,7 +505,7 @@ mod tests {
     /// The one shipped check, by id.
     fn only(checks: &[ConstraintCheck]) -> &ConstraintCheck {
         assert_eq!(checks.len(), 1, "exactly one constraint ships today");
-        assert_eq!(checks[0].id(), "location");
+        assert_eq!(checks[0].id(), "preferredLocation");
         &checks[0]
     }
 
@@ -635,6 +680,140 @@ mod tests {
         }
     }
 
+    /// The wire id names what is actually compared.
+    ///
+    /// `preferredLocation`, not `location`: this check reads the user's stored
+    /// Preferred Location SETTING, and the id is what a renderer keys its i18n
+    /// off. Renaming it to `location` would license "you can't work there" /
+    /// "this posting matches where you're looking" — sentences the data does not
+    /// support — so the id is pinned rather than left to drift.
+    #[test]
+    fn the_check_is_named_for_the_setting_it_reads() {
+        let checks = evaluate(
+            &posting(Some("Berlin, Germany"), false),
+            &candidate(Some("Berlin")),
+        );
+        assert_eq!(checks[0].id(), "preferredLocation");
+        assert_ne!(
+            checks[0].id(),
+            "location",
+            "`location` would read as a claim about where the user can work"
+        );
+    }
+
+    /// The shipped UI location defaults must produce `met`.
+    ///
+    /// Every one of them ends in a two-letter qualifier, and every one reads as
+    /// a match ONLY because `MIN_TOKEN_LEN` (3) drops that qualifier before
+    /// comparison. That constant's own doc justifies 3 as scrape-filter noise
+    /// control and says nothing about a published verdict depending on it, so
+    /// lowering it to 2 for a scrape-side reason would flip all three of these
+    /// to `unknown` with nothing else failing. This is the test that fails.
+    #[test]
+    fn the_shipped_ui_location_defaults_read_as_a_match() {
+        // (JobLocationPreferences' COMMON_LOCATIONS entry, a realistic posting)
+        let defaults: &[(&str, &str)] = &[
+            ("San Francisco, CA", "San Francisco, California"),
+            ("New York, NY", "New York, United States"),
+            ("London, UK", "London, United Kingdom"),
+            // No two-letter qualifier, included so the case is covered either way.
+            ("Berlin, Germany", "Berlin, Germany"),
+        ];
+        for (pref, posting_location) in defaults {
+            assert_eq!(
+                status_of(pref, posting_location, false),
+                ConstraintStatus::Met,
+                "the shipped default {pref:?} must still match {posting_location:?}"
+            );
+        }
+    }
+
+    /// The verdict and the evidence are derived from the SAME bytes.
+    ///
+    /// Re-running the evaluation on exactly what the check REPORTS must
+    /// reproduce exactly what it decided. When the two came from different bytes
+    /// — an unclamped location compared, a clamped one reported — a location
+    /// longer than the cap could match on a token that then fell outside the
+    /// evidence, leaving `met` beside a string not containing the place that
+    /// produced it. The board flag is passed through since it is not evidence
+    /// text.
+    #[test]
+    fn a_verdict_is_reproducible_from_the_evidence_it_reports() {
+        let long_tail = format!("{} Berlin", "x".repeat(300));
+        let long_head = format!("Berlin {}", "x".repeat(300));
+        let places = [
+            None,
+            Some("Berlin, Germany"),
+            Some("Austin, TX"),
+            Some("Remote"),
+            Some(long_tail.as_str()),
+            Some(long_head.as_str()),
+        ];
+        // A preference LONGER than the cap belongs here too: the candidate side
+        // is clamped for the payload exactly like the posting side, so comparing
+        // the unclamped preference would break the same property in the mirror
+        // direction. This one puts the meaningful token past the cut.
+        let long_pref_tail = format!("{} Berlin", "x".repeat(300));
+        let prefs = [
+            None,
+            Some("Berlin"),
+            Some("San Francisco"),
+            Some(long_pref_tail.as_str()),
+        ];
+        let mut checked = 0;
+        for p in places {
+            for c in prefs {
+                for remote in [false, true] {
+                    let facts = posting(p, remote);
+                    let cand = candidate(c);
+                    let check = &evaluate(&facts, &cand)[0];
+                    // Rebuild both sides from what was REPORTED and re-decide.
+                    let replayed = &evaluate(
+                        &PostingFacts {
+                            location: check.posting().map(str::to_string),
+                            board_remote: facts.board_remote,
+                        },
+                        &CandidateFacts {
+                            location: check.candidate().map(str::to_string),
+                        },
+                    )[0];
+                    assert_eq!(
+                        check.status(),
+                        replayed.status(),
+                        "status must be reproducible from the reported evidence: {check:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 48); // 6 places × 4 preferences × 2 flags
+                                 // The case that used to disagree, pinned concretely: the matching token
+                                 // sits past the byte cap, so it is NOT in the evidence and must NOT
+                                 // produce a match.
+        let past_the_cap = &evaluate(
+            &posting(Some(&long_tail), false),
+            &candidate(Some("Berlin")),
+        )[0];
+        assert_eq!(past_the_cap.status(), ConstraintStatus::Unknown);
+        assert!(!past_the_cap.posting().unwrap().contains("Berlin"));
+        // …while the same token INSIDE the cap still matches.
+        let inside_the_cap = &evaluate(
+            &posting(Some(&long_head), false),
+            &candidate(Some("Berlin")),
+        )[0];
+        assert_eq!(inside_the_cap.status(), ConstraintStatus::Met);
+        assert!(inside_the_cap.posting().unwrap().contains("Berlin"));
+        // The mirror: an over-long PREFERENCE is clamped before comparison too,
+        // so a token of it past the cut cannot produce a match it does not
+        // report. Without this the candidate-side half of the fix is untested.
+        let long_pref = &evaluate(
+            &posting(Some("Berlin, Germany"), false),
+            &candidate(Some(&long_pref_tail)),
+        )[0];
+        assert_eq!(long_pref.status(), ConstraintStatus::Unknown);
+        assert!(!long_pref.candidate().unwrap().contains("Berlin"));
+    }
+
     // ── the invariant that replaces the old knock-out count ───────────────────
 
     /// No input reaches `NotMet` through the shipped checks.
@@ -730,8 +909,12 @@ mod tests {
             (some(), Some("   ".to_string())),
         ];
         for (posting, candidate) in one_sided {
-            let check =
-                ConstraintCheck::new(LOCATION, ConstraintStatus::NotMet, posting, candidate);
+            let check = ConstraintCheck::new(
+                PREFERRED_LOCATION,
+                ConstraintStatus::NotMet,
+                posting,
+                candidate,
+            );
             assert_eq!(
                 check.status(),
                 ConstraintStatus::Unknown,
@@ -742,7 +925,7 @@ mod tests {
         // evidence, and judging whether that evidence is a CONFLICT is each
         // check's own job (which is why `location_check` never asks for one).
         let real = ConstraintCheck::new(
-            LOCATION,
+            PREFERRED_LOCATION,
             ConstraintStatus::NotMet,
             some(),
             Some("Berlin".to_string()),
@@ -755,7 +938,7 @@ mod tests {
             ConstraintStatus::Unknown,
             ConstraintStatus::NoPreference,
         ] {
-            let check = ConstraintCheck::new(LOCATION, status, None, None);
+            let check = ConstraintCheck::new(PREFERRED_LOCATION, status, None, None);
             assert_eq!(check.status(), status);
         }
     }
@@ -784,7 +967,7 @@ mod tests {
         // Matched as a WHOLE LINE, which is what makes the weak forms fail: a
         // commented-out call carries a `//` prefix, and the discard form starts
         // `let _ =`, so neither is equal to this.
-        const CALL: &str = "    constraints::attach(&app, &req.job_id, scored)";
+        const CALL: &str = "    constraints::attach(&app, &posting_facts, scored)";
         assert!(
             COMMAND_SRC.lines().any(|line| line == CALL),
             "commands::match_resume must RETURN score_one's result through \
@@ -827,7 +1010,7 @@ mod tests {
         assert_eq!(
             merged["constraints"],
             json!({ "checks": [{
-                "id": "location",
+                "id": "preferredLocation",
                 "status": "unknown",
                 "posting": "Austin, TX",
                 "candidate": "Berlin",
@@ -871,7 +1054,7 @@ mod tests {
         let checks = evaluate(&posting(None, false), &candidate(Some("Berlin")));
         assert_eq!(
             serde_json::to_value(&checks).unwrap(),
-            json!([{ "id": "location", "status": "unknown", "candidate": "Berlin" }])
+            json!([{ "id": "preferredLocation", "status": "unknown", "candidate": "Berlin" }])
         );
         let met = evaluate(
             &posting(Some("Berlin, Germany"), false),
@@ -880,7 +1063,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&met).unwrap(),
             json!([{
-                "id": "location",
+                "id": "preferredLocation",
                 "status": "met",
                 "posting": "Berlin, Germany",
                 "candidate": "Berlin",
