@@ -8,7 +8,7 @@ use super::types::{
 };
 use arc_swap::ArcSwap;
 use futures::StreamExt as _;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -647,6 +647,24 @@ impl ScraperEngine {
             })
             .collect();
 
+        // The ONLY ids the board-health store may key a row on (Track B1).
+        //
+        // An unknown id deliberately passes through to an ordinary error summary
+        // below rather than being dropped — but `board` is that store's PRIMARY
+        // KEY and this string is renderer-supplied verbatim (`commands::scrape`
+        // clones `req.boards` in; the generated `ScrapeBoardsRequest.boards` is
+        // an unvalidated `Vec<String>`). Recording it would give a looping or
+        // XSS'd renderer unbounded on-disk row creation — the same threat the
+        // scrape limiter in `commands::scrape` already exists to stop, and the
+        // reason this store can honestly claim to be bounded by the scraper
+        // registry. Keyed off the RESOLVER (not `boards::get`) so the engine's
+        // fake-resolver tests keep their synthetic ids.
+        let resolvable_boards: HashSet<String> = resolved
+            .iter()
+            .filter(|(_, scraper)| scraper.is_ok())
+            .map(|(id, _)| id.clone())
+            .collect();
+
         // Short-circuit: skip Required boards that have no usable session.
         // Skipped boards never enter run_boards (no fetch, no browser_sem acquire).
         // Use a position-indexed Option<BoardScrapeSummary> so skips are slotted
@@ -977,7 +995,8 @@ impl ScraperEngine {
         let summaries = if parent.is_cancelled() {
             summaries
         } else {
-            self.record_health(&job_id, summaries).await
+            self.record_health(&job_id, summaries, &resolvable_boards)
+                .await
         };
 
         // Cross-source dedup (trust PR E, stage 1): the same job surfaced by two
@@ -1013,15 +1032,30 @@ impl ScraperEngine {
         &self,
         run_id: &str,
         mut summaries: Vec<BoardScrapeSummary>,
+        resolvable_boards: &HashSet<String>,
     ) -> Vec<BoardScrapeSummary> {
         let Some(store) = self.health.load_full() else {
             return summaries;
         };
+        // Only ids the resolver recognised may key a row — see
+        // `resolvable_boards`. Positions are kept so each health lands back on
+        // the summary it came from; an unresolvable board simply never enters
+        // the store and never gets a badge.
+        let recorded: Vec<usize> = summaries
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| resolvable_boards.contains(&s.board))
+            .map(|(idx, _)| idx)
+            .collect();
+        if recorded.is_empty() {
+            return summaries;
+        }
         // The blocking task gets a CLONE (a handful of small structs) rather than
         // the summaries themselves, so a panicked or aborted task costs the
         // health badge, never the diagnostics the renderer actually needs.
         let run_id = run_id.to_string();
-        let to_record = summaries.clone();
+        let to_record: Vec<BoardScrapeSummary> =
+            recorded.iter().map(|&idx| summaries[idx].clone()).collect();
         let health = match tokio::task::spawn_blocking(move || {
             store.record_run(&run_id, &to_record)
         })
@@ -1040,9 +1074,9 @@ impl ScraperEngine {
                 return summaries;
             }
         };
-        for (summary, h) in summaries.iter_mut().zip(health) {
+        for (&idx, h) in recorded.iter().zip(health) {
             if h.is_noteworthy() {
-                summary.health = Some(h);
+                summaries[idx].health = Some(h);
             }
         }
         summaries

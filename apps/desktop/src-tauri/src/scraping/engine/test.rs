@@ -4467,6 +4467,12 @@ async fn scrape_boards_attaches_a_growing_failure_streak_to_the_failing_board() 
         .clone()
         .expect("the streak must still be reported on the second run");
     assert_eq!(second.consecutive_failures, 2, "the streak must GROW");
+    // Anchor the FIRST run's window before comparing the two — `None == None`
+    // would otherwise satisfy "keeps its original start" vacuously.
+    assert!(
+        first.failing_since.is_some(),
+        "the first failure must open a streak window"
+    );
     assert_eq!(
         second.failing_since, first.failing_since,
         "the streak keeps its original start"
@@ -4576,5 +4582,73 @@ async fn a_skipped_board_gets_no_failure_history_from_the_engine() {
         .expect("the skip is still recorded as 'seen, not verified'");
     assert_eq!(stored.consecutive_failures, 0, "a skip is not a failure");
     assert_eq!(stored.last_verified_at, None, "a skip verifies nothing");
-    assert_eq!(stored.last_run_id.as_deref(), Some("job-skip"));
+    assert_eq!(stored.verified_runs, 0, "a skip is not a verified run");
+    assert_eq!(stored.failed_runs, 0);
+    // `last_run_id` names the run that PRODUCED the state. This run never
+    // fetched the board, so it must not claim authorship — grepping the logs for
+    // `job-skip` would find no `skipme` fetch at all.
+    assert_eq!(
+        stored.last_run_id, None,
+        "a run that never contacted the board must not be stamped as its source"
+    );
+}
+
+/// A board id the resolver does not recognise must NEVER create a row.
+///
+/// The engine deliberately lets an unknown id through to an ordinary error
+/// summary (rather than a skip) so a typo doesn't silently vanish — but `board`
+/// is the health table's PRIMARY KEY and that string comes straight from the
+/// renderer (`commands::scrape` clones `req.boards` into the engine, and the
+/// generated `ScrapeBoardsRequest.boards` is an unvalidated `Vec<String>`).
+/// Without a filter, a looping or XSS'd renderer writes unbounded rows into a
+/// new on-disk store — the same threat the scrape limiter already exists to stop.
+///
+/// The row COUNT is what is asserted: "the id I thought of is absent" cannot
+/// see a row created under some other arbitrary key.
+#[tokio::test]
+async fn an_unresolvable_board_id_never_creates_a_health_row() {
+    static FAKE_OK: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(2));
+
+    let (_dir, engine, store) = engine_with_health();
+
+    let (_, summaries) = engine
+        .scrape_boards_with_resolver(
+            &[
+                "ok-board".to_string(),
+                "attacker-supplied-\u{1f480}".to_string(),
+                "another-bogus-id".to_string(),
+            ],
+            fake_input(5),
+            "job-unknown".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "ok-board" => Ok(&*FAKE_OK as &'static dyn super::super::types::Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("unknown ids must not fail the run");
+
+    // The unknown ids still surface to the user as ordinary error chips — the
+    // engine's existing behaviour is unchanged.
+    assert_eq!(summaries.len(), 3);
+    assert!(
+        summaries[1].error.is_some() && summaries[2].error.is_some(),
+        "unknown ids must still produce a visible error summary; got {summaries:?}"
+    );
+    assert!(
+        summaries.iter().all(|s| s.health.is_none()),
+        "an unresolvable board has no history to badge"
+    );
+
+    // …but only the ONE resolvable board may own a row.
+    assert_eq!(
+        store.tracked_boards(),
+        1,
+        "only resolver-known boards may create rows; renderer strings must not"
+    );
+    assert!(store.health_for("ok-board").is_some());
 }
