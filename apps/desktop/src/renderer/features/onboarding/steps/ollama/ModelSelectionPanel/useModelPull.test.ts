@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { createMockClient, withProviders } from '@/test-support';
+import { createMockClient, makeQueryClient, withProviders } from '@/test-support';
 
 import { useModelPull } from './useModelPull';
 
@@ -186,5 +186,47 @@ describe('useModelPull — reconciles a stale adoption', () => {
     expect(client.jobs.get).toHaveBeenCalledTimes(1);
     expect(client.jobs.get).toHaveBeenCalledWith(jobId);
     expect(notifyApi.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── mountedRef must survive React.StrictMode's setup→cleanup→setup ──────────
+//
+// PR #1036 review finding (MINOR): the production app renders inside
+// React.StrictMode (main.tsx). StrictMode double-invokes an effect in
+// development — setup, cleanup, setup — while preserving hook state between
+// the two setups. `mountedRef` used to be set `true` only by the initial
+// `useRef(true)` and back to `false` by the cleanup, with nothing restoring
+// it on the SECOND setup — so after StrictMode's dance it is permanently
+// `false`, and the reconcile read's `if (!mountedRef.current …) return;`
+// guard drops every settle for the rest of this hook instance's life.
+describe('useModelPull — survives React.StrictMode remount', () => {
+  it('still settles a job that completed, after StrictMode setup→cleanup→setup', async () => {
+    const jobId = 'job-strictmode';
+    const client = createMockClient({
+      'jobs.list': vi.fn().mockResolvedValue([makeJob({ id: jobId })]),
+      'jobs.get': vi.fn().mockResolvedValue(makeJob({ id: jobId, status: 'completed' })),
+      'jobs.onEvent': vi.fn(() => () => {}),
+    });
+    const queryClient = makeQueryClient();
+
+    // `reactStrictMode: true` is testing-library's OWN option for this —
+    // NOT rendering a `<React.StrictMode>` element through a custom
+    // `wrapper` component, which looks equivalent but is NOT: testing-library
+    // wraps StrictMode around `wrapper` only when told to via this option
+    // (`strictModeIfNeeded` in its source), so a `<StrictMode>` nested a
+    // level deeper inside a hand-rolled wrapper never gets the double
+    // setup→cleanup→setup pass — confirmed empirically (a throwaway probe
+    // effect counted setups=1/cleanups=0 with the manual-wrapper form and
+    // setups=2/cleanups=1 with this option) before trusting this test to
+    // pin the fix. Wrap ONLY this test — adding it to `withProviders`
+    // itself would skew every other suite's call counts.
+    const { result } = renderHook(() => useModelPull({ selectedModel: 'llama3' }), {
+      wrapper: withProviders(client, queryClient),
+      reactStrictMode: true,
+    });
+
+    // An unfixed hook gets stuck on 'pulling' forever here instead — the
+    // reconcile read's own guard silently drops the settle.
+    await waitFor(() => expect(result.current.pullState).toBe('done'));
   });
 });

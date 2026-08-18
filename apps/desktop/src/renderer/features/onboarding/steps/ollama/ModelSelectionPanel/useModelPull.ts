@@ -44,18 +44,22 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
   // `useResumePipelineSession`'s `jobIdRef`).
   const pullJobIdRef = useRef(pullJobId);
   pullJobIdRef.current = pullJobId;
-  // True until this hook instance unmounts. Deliberately its OWN effect with
-  // an empty dep array — tying it to the reattach effect below would flip it
-  // false the instant that effect adopts a job (its deps include `pullJobId`,
-  // which the adoption itself changes), cancelling that effect's own
-  // reconcile read before it can resolve.
+  // True while this hook instance is mounted. Deliberately its OWN effect
+  // with an empty dep array — tying it to the reattach effect below would
+  // flip it false the instant that effect adopts a job (its deps include
+  // `pullJobId`, which the adoption itself changes), cancelling that
+  // effect's own reconcile read before it can resolve. Set in the SETUP
+  // half too, not just left `true` from the initial ref value: StrictMode
+  // runs setup → cleanup → setup again while preserving state, so without
+  // this the second setup leaves it `false` from the first cleanup and every
+  // later reconcile read exits early, permanently stuck reporting `pulling`.
   const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    []
-  );
+    };
+  }, []);
   // Job ids this hook instance has already settled (via the reconcile read
   // below or a live terminal event) — see the reattach effect for why this
   // is needed to stop it re-adopting the same job forever.

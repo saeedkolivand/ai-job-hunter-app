@@ -180,7 +180,7 @@ const SUBSCRIBERS = {
   },
   'features/onboarding/steps/ollama/ModelSelectionPanel/useModelPull.ts': {
     mount: 'route-scoped',
-    hash: '0d51bf7ef0d3',
+    hash: 'a9e9d139751f',
     note:
       'A multi-GB pull survives any unmount — and the trigger really is ANY unmount, not just ' +
       'skipping the step: switching to the Cloud/CLI tab and back, or Back/Forward through ' +
@@ -197,8 +197,11 @@ const SUBSCRIBERS = {
       "re-adopting the SAME job forever off a jobs-list cache that hasn't refetched yet " +
       '(review found the settle would otherwise loop, double-firing the toast, at the rate ' +
       'of one redundant IPC round trip per cycle, until an unrelated job event happened to ' +
-      'invalidate the cache). NOT recovered, still deliberately: a pull that reaches a ' +
-      'terminal state entirely BEFORE the registry snapshot is taken — finished during the ' +
+      'invalidate the cache). `mountedRef` is restored on effect SETUP, not just cleared on ' +
+      'cleanup — the production app renders inside StrictMode, whose dev-only extra ' +
+      'setup→cleanup→setup pass otherwise leaves it permanently false and every later ' +
+      'reconcile read silently drops. NOT recovered, still deliberately: a pull that reaches ' +
+      'a terminal state entirely BEFORE the registry snapshot is taken — finished during the ' +
       'unmount gap, never observed as still running/queued — is never adopted at all, so its ' +
       'success toast and the health/models recheck are not retroactively fired; doing that ' +
       'on every later mount would be worse than missing them once.',
