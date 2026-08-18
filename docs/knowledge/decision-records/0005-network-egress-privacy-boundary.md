@@ -62,4 +62,7 @@ No runtime behavior changes: every current call already complies. The fix is to 
   - Profile import: `apps/desktop/src-tauri/src/profile_import/github.rs` (GitHub).
 - Opt-in setting: `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (company-logo preference, default OFF).
 - Machine-readable inventory: `apps/desktop/src-tauri/tests/egress.rs` (EGRESS const).
-- Audit finding: `p2-contra-cross-001` (AUDIT_REPORT.md §4).
+- Audit finding: `p2-contra-cross-001`, §4 of the 2026-08-16 full-history audit.
+  That report was a 1.5 MB one-off snapshot scoped to `v0.123.0` and is no longer in
+  the tree; read it with `git show 65ea4188c:AUDIT_REPORT.md`. Its `path:line` citations
+  point at that commit's HEAD, not this one.
