@@ -159,18 +159,12 @@ const SUBSCRIBERS = {
       'per-run state to preserve and nothing is lost by only listening while the monitoring ' +
       'page is open.',
   },
-  'features/monitoring/components/MonitoringPage/index.tsx': {
-    mount: 'route-scoped',
-    note:
-      'ACCEPTED, not debt. Subscribes via useWorkerActivity to render what is running RIGHT ' +
-      'NOW; the reading is re-derived from the job registry on mount, so there is no history ' +
-      'a missed event could have cost it.',
-  },
   'features/dashboard/components/AISystemStatus/index.tsx': {
     mount: 'route-scoped',
     note:
-      'ACCEPTED, not debt. Same shape as the monitoring page — useWorkerActivity feeding a ' +
-      'live "what is busy" readout, re-derived from the job registry on mount.',
+      'ACCEPTED, not debt. useWorkerActivity feeding a live "what is busy right now" readout; ' +
+      'the reading is re-derived from the job registry on mount, so there is no history a ' +
+      'missed event could have cost it.',
   },
 };
 
@@ -197,6 +191,63 @@ function sourceFiles(dir) {
 const toPosix = (rel) => rel.split(sep).join('/');
 
 /**
+ * Blank out comments and string/template literals, preserving offsets.
+ *
+ * Discovery matches identifiers against source text, and prose that MENTIONS a
+ * hook is not a call to it. This is not hypothetical: `services/use-jobs` has a
+ * doc comment on `useJob` reading "a `useJobEvents()` subscription MUST be
+ * mounted somewhere in the tree". Because a declaration slice runs to the next
+ * `export`, that comment sits inside the PRECEDING hook's slice — so the plain
+ * query hook `useJobQueue` was promoted to a subscription hook by a sentence,
+ * and every file calling it was pulled into the inventory. The same structural
+ * fact — a doc comment sits above its item, so a naive slice attributes it to
+ * the item before — has bitten this repo from the other direction too.
+ *
+ * Characters are replaced one-for-one with spaces rather than deleted, so every
+ * `match.index` still points at the right place in the original text.
+ *
+ * String literals are blanked alongside comments for the same reason: a hook
+ * name inside a string is a mention, not a call. Doing it with a scanner rather
+ * than a regex is what keeps a `//` inside a URL from eating the rest of a line
+ * — which would silently DROP real code, the one failure direction a guard
+ * must not have.
+ */
+export function stripCommentsAndStrings(src) {
+  let out = '';
+  let i = 0;
+  const blank = (text) => text.replace(/[^\n]/g, ' ');
+
+  while (i < src.length) {
+    const two = src.slice(i, i + 2);
+    if (two === '//') {
+      const end = src.indexOf('\n', i);
+      const stop = end === -1 ? src.length : end;
+      out += blank(src.slice(i, stop));
+      i = stop;
+    } else if (two === '/*') {
+      const end = src.indexOf('*/', i + 2);
+      const stop = end === -1 ? src.length : end + 2;
+      out += blank(src.slice(i, stop));
+      i = stop;
+    } else if (src[i] === '"' || src[i] === "'" || src[i] === '`') {
+      const quote = src[i];
+      let j = i + 1;
+      while (j < src.length && src[j] !== quote) {
+        if (src[j] === '\\') j++; // escaped char — skip the pair
+        j++;
+      }
+      const stop = Math.min(j + 1, src.length);
+      out += blank(src.slice(i, stop));
+      i = stop;
+    } else {
+      out += src[i];
+      i++;
+    }
+  }
+  return out;
+}
+
+/**
  * The subscription hooks, discovered from `services/` rather than listed.
  *
  * A subscription hook is an exported function whose body registers a listener on
@@ -210,7 +261,10 @@ export function discoverSubscriptionHooks(servicesDir = SERVICES) {
   // resolve import aliases, which are a per-file fact.
   const hooks = new Map();
   for (const file of sourceFiles(servicesDir)) {
-    const src = readFileSync(file, 'utf8');
+    // Comments and strings blanked FIRST: prose that names a hook is not a call to
+    // it, and a declaration slice runs to the next `export`, so the next hook's
+    // doc comment lands inside this one's body.
+    const src = stripCommentsAndStrings(readFileSync(file, 'utf8'));
     const decls = [...src.matchAll(/export\s+(?:const|function)\s+(use[A-Z]\w*)/g)];
     for (const [index, match] of decls.entries()) {
       const start = match.index ?? 0;
@@ -305,7 +359,7 @@ export function discoverSubscribers(hooks, rendererDir = RENDERER) {
   return sourceFiles(rendererDir)
     .filter((f) => !toPosix(relative(rendererDir, f)).startsWith('services/'))
     .filter((f) => {
-      const src = readFileSync(f, 'utf8');
+      const src = stripCommentsAndStrings(readFileSync(f, 'utf8'));
       const bindings = [...importedBindings(src, hooks)];
       if (bindings.length === 0) return false;
       return new RegExp(`\\b(?:${bindings.join('|')})\\s*\\(`).test(src);
