@@ -209,6 +209,25 @@ const SPELLED_NUMBERS: &[(&str, u32)] = &[
 /// not worth that.
 const YEAR_WORDS: &str = "years|year|yrs|yr|jahren|jahre|jahr|années|année|annees|annee|ans|años|año|anos|ano|anni|anno|jaren|jaar";
 
+/// The distinct spellings [`YEARS_RE`] alternates on, longest first — `\b`
+/// alone does not decide an alternation, and `vier` would otherwise win
+/// against `vierzehn`.
+///
+/// Deduplicated by VALUE first, not by adjacency after the length sort:
+/// `Vec::dedup` removes only CONSECUTIVE equal elements, and sorting by
+/// LENGTH groups equal lengths, not equal strings — a few spellings repeat
+/// across language blocks at a different position in the table (`quatorze` is
+/// French 14 and repeats in the Portuguese block; `tres` is Spanish 3 and
+/// repeats in the Portuguese block), and other same-length words sit between
+/// the two copies, so a length-only sort never makes them adjacent.
+pub fn spelled_number_words() -> Vec<&'static str> {
+    let mut words: Vec<&str> = SPELLED_NUMBERS.iter().map(|(w, _)| *w).collect();
+    words.sort_unstable();
+    words.dedup();
+    words.sort_by_key(|w| std::cmp::Reverse(w.len()));
+    words
+}
+
 /// `<number> <year-word>`, where the separator is whitespace or a `+`.
 ///
 /// The separator rule is what keeps the hyphenated ADJECTIVE out: "a 20-year-old
@@ -217,11 +236,7 @@ const YEAR_WORDS: &str = "years|year|yrs|yr|jahren|jahre|jahr|années|année|ann
 /// number keeps the check out of a four-digit date ("2014 - 2018" offers no
 /// position where one or two digits end on a word boundary).
 static YEARS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    // Longest spelled form first: `\b` alone does not decide an alternation,
-    // and `vier` would otherwise win against `vierzehn`.
-    let mut words: Vec<&str> = SPELLED_NUMBERS.iter().map(|(w, _)| *w).collect();
-    words.sort_by_key(|w| std::cmp::Reverse(w.len()));
-    words.dedup();
+    let words = spelled_number_words();
     Regex::new(&format!(
         r"(?i)\b(\d{{1,2}}|{})(?:\s*\+\s*|\s+)({})\b",
         words.join("|"),
