@@ -48,6 +48,7 @@ use uuid::Uuid;
 use crate::data_store::DataStore;
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
+use crate::observability::sanitize_reason;
 
 /// One persisted call's real usage + estimated cost (the `DataStore::export`
 /// shape).
@@ -223,7 +224,10 @@ impl SpendStore {
                 rec.run_id,
             ],
         ) {
-            log::warn!("spend: failed to record row: {e}");
+            log::warn!(
+                "spend: failed to record row: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
     }
 

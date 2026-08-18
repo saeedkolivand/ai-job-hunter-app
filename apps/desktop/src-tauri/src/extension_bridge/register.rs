@@ -74,12 +74,18 @@ fn manifest_json(exe: &Path, firefox: bool) -> Vec<u8> {
 fn write_manifest(label: &str, path: &Path, bytes: &[u8]) {
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            log::warn!("[native_host] mkdir for {label} manifest failed (non-fatal): {e}");
+            log::warn!(
+                "[native_host] mkdir for {label} manifest failed (non-fatal): {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
             return;
         }
     }
     if let Err(e) = std::fs::write(path, bytes) {
-        log::warn!("[native_host] write {label} manifest failed (non-fatal): {e}");
+        log::warn!(
+            "[native_host] write {label} manifest failed (non-fatal): {}",
+            crate::observability::sanitize_reason(&e.to_string())
+        );
     }
 }
 
@@ -126,10 +132,16 @@ pub fn register_native_host(data_dir: &Path) {
         let chrome_key =
             format!("Software\\Google\\Chrome\\NativeMessagingHosts\\{NATIVE_HOST_NAME}");
         if let Err(e) = set_hkcu_default(&firefox_key, &firefox_path.to_string_lossy()) {
-            log::warn!("[native_host] HKCU firefox key failed (non-fatal): {e}");
+            log::warn!(
+                "[native_host] HKCU firefox key failed (non-fatal): {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
         }
         if let Err(e) = set_hkcu_default(&chrome_key, &chrome_path.to_string_lossy()) {
-            log::warn!("[native_host] HKCU chrome key failed (non-fatal): {e}");
+            log::warn!(
+                "[native_host] HKCU chrome key failed (non-fatal): {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
         }
     }
 

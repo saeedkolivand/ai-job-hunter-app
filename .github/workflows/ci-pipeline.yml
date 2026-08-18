@@ -339,10 +339,22 @@ jobs:
           pnpm check:adr-citations
           echo "::endgroup::"
 
-      - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure' || steps.adr_citations.outcome == 'failure'
+      # A bare `{e}` inside a log::{warn,error,info,debug}! call can leak an
+      # absolute path (rusqlite::Error::InvalidPath, a filesystem
+      # std::io::Error), a credential-bearing URL (reqwest::Error), or a
+      # host:port into the log — see scripts/check-log-error-leaks.mjs.
+      - name: 🔒 Check log error-message leaks
+        id: log_error_leaks
+        continue-on-error: true
         run: |
-          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, event-subscription, or ADR-citation drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', 'pnpm check:event-subscriptions', and 'pnpm check:adr-citations' locally to fix."
+          echo "::group::Checking for path/URL/credential leaks in log:: error interpolation"
+          pnpm check:log-error-leaks
+          echo "::endgroup::"
+
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure' || steps.adr_citations.outcome == 'failure' || steps.log_error_leaks.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, event-subscription, ADR-citation, or log-error-leak drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', 'pnpm check:event-subscriptions', 'pnpm check:adr-citations', and 'pnpm check:log-error-leaks' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 

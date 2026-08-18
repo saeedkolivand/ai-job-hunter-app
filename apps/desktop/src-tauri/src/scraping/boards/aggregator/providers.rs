@@ -12,6 +12,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
+use crate::observability::sanitize_reason;
 use crate::scraping::http::{fetch_json, html_to_markdown, FetchOptions};
 use crate::scraping::types::JobPosting;
 
@@ -168,7 +169,10 @@ impl JSearchProvider {
         Self {
             api_key: crate::credentials::read_credential(&format!("ai:{JSEARCH_KEY}"))
                 .unwrap_or_else(|e| {
-                    log::warn!("[aggregator] {JSEARCH_KEY} keyring error: {e}");
+                    log::warn!(
+                        "[aggregator] {JSEARCH_KEY} keyring error: {}",
+                        sanitize_reason(&e.to_string())
+                    );
                     None
                 }),
         }
@@ -427,7 +431,10 @@ impl JoobleProvider {
         Self {
             api_key: crate::credentials::read_credential(&format!("ai:{JOOBLE_KEY}"))
                 .unwrap_or_else(|e| {
-                    log::warn!("[aggregator] {JOOBLE_KEY} keyring error: {e}");
+                    log::warn!(
+                        "[aggregator] {JOOBLE_KEY} keyring error: {}",
+                        sanitize_reason(&e.to_string())
+                    );
                     None
                 }),
         }
@@ -774,7 +781,10 @@ impl ApifyLinkedInProvider {
         use crate::ipc_contracts::provider_slots::APIFY_TOKEN;
         let token = crate::credentials::read_credential(&format!("ai:{APIFY_TOKEN}"))
             .unwrap_or_else(|e| {
-                log::warn!("[aggregator] {APIFY_TOKEN} keyring error: {e}");
+                log::warn!(
+                    "[aggregator] {APIFY_TOKEN} keyring error: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 None
             });
         let settings = read_aggregator_settings();

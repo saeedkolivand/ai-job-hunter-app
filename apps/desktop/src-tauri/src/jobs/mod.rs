@@ -18,6 +18,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::observability::sanitize_reason;
 
 /// Cancellation tokens for in-flight jobs/runs, keyed by id — the tracker's
 /// sibling: this module records what a job DID, `cancel` records how to STOP it.
@@ -85,6 +86,24 @@ pub struct JobRecord {
     pub finished_at: Option<u64>,
 }
 
+/// Outcome of [`JobTracker::start_exclusive_keyed`].
+///
+/// A plain three-way result, not `Result<Option<String>, String>`: `Busy`
+/// carries the OTHER job's key (e.g. "llama3" when the caller asked for
+/// "qwen2.5") — that is data the caller routes on, not a diagnostic, so
+/// forcing it through `Err` would just make the call site decode a
+/// convention instead of reading a name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyedExclusiveStart {
+    /// Nothing of `kind` was running; this job started.
+    Started,
+    /// A job of `kind` with the SAME key is already active — join it (its id).
+    Joined(String),
+    /// A job of `kind` with a DIFFERENT key is active — refused. Carries
+    /// that job's key so the caller can say what's already running.
+    Busy(String),
+}
+
 #[derive(Default)]
 pub struct JobTracker {
     jobs: HashMap<String, JobRecord>,
@@ -135,12 +154,18 @@ impl JobTracker {
         let mut conn = match crate::db::open(&db_path) {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("[jobs] failed to open jobs.db, running in-memory only: {e}");
+                log::warn!(
+                    "[jobs] failed to open jobs.db, running in-memory only: {}",
+                    e.code()
+                );
                 return Self::default();
             }
         };
         if let Err(e) = run_migrations(&mut conn, Self::MIGRATIONS) {
-            log::warn!("[jobs] migration failed, running in-memory only: {e}");
+            log::warn!(
+                "[jobs] migration failed, running in-memory only: {}",
+                sanitize_reason(&e.to_string())
+            );
             return Self::default();
         }
 
@@ -204,13 +229,21 @@ impl JobTracker {
 
     /// Register a new job as running.
     pub fn start(&mut self, id: &str, kind: &str) {
+        self.start_with_payload(id, kind, Value::Null);
+    }
+
+    /// [`Self::start`], recording `payload` instead of `Value::Null` — the
+    /// shared body [`Self::start_exclusive_keyed`] uses to stamp the
+    /// distinguishing key (e.g. the model being pulled) onto the record it
+    /// creates, so a later caller can read it back off `job.payload`.
+    fn start_with_payload(&mut self, id: &str, kind: &str, payload: Value) {
         let now = now_ms();
         let record = JobRecord {
             id: id.to_string(),
             kind: kind.to_string(),
             status: JobStatus::Running,
             progress: 0.0,
-            payload: Value::Null,
+            payload,
             result: None,
             error: None,
             retries: 0,
@@ -252,6 +285,46 @@ impl JobTracker {
         }
         self.start(id, kind);
         None
+    }
+
+    /// Like [`Self::start_exclusive`], but the exclusion group is `kind` PLUS
+    /// a caller-supplied `key` (e.g. the model being pulled) rather than
+    /// `kind` alone.
+    ///
+    /// `kind`-only exclusivity is wrong here: a returning caller must join a
+    /// pull of the SAME model already in flight, but a request for a
+    /// DIFFERENT model must not silently adopt that unrelated job — the
+    /// caller would watch (and eventually believe it received) a download it
+    /// never asked for, while its own request never ran at all. Reusing
+    /// `start_exclusive`'s kind-only match here would do exactly that.
+    ///
+    /// Three-way outcome, not a `Result` — [`KeyedExclusiveStart::Busy`] is an
+    /// expected routing outcome (which other key is active), not a
+    /// diagnostic, so wrapping it in `Err` would be a stringly-typed
+    /// `Result<_, String>` for something that never fails.
+    pub fn start_exclusive_keyed(
+        &mut self,
+        id: &str,
+        kind: &str,
+        key_field: &str,
+        key: &str,
+    ) -> KeyedExclusiveStart {
+        if let Some(existing) = self.jobs.values().find(|j| {
+            j.kind == kind
+                && matches!(
+                    j.status,
+                    JobStatus::Running | JobStatus::Queued | JobStatus::Streaming
+                )
+        }) {
+            let existing_key = existing.payload.get(key_field).and_then(Value::as_str);
+            return if existing_key == Some(key) {
+                KeyedExclusiveStart::Joined(existing.id.clone())
+            } else {
+                KeyedExclusiveStart::Busy(existing_key.unwrap_or("unknown").to_string())
+            };
+        }
+        self.start_with_payload(id, kind, serde_json::json!({ key_field: key }));
+        KeyedExclusiveStart::Started
     }
 
     /// Wipe the job-execution log — in-memory records and the `jobs` table.

@@ -6,9 +6,10 @@
  * real hook to verify that such a resolution routes to the error state — the
  * SAME state the reject path uses — rather than being treated as 'done'.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from '@testing-library/react';
 
+import { useSessionStore } from '@/store/session-store';
 import { renderHookWithClient } from '@/test-support';
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,13 @@ import { useAutopilotRun } from './useAutopilotRun';
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+// The error banner now lives in the (real, unmocked) session store instead of
+// a local `useState`, so it survives across a test unless reset — mirrors
+// `AutopilotPage.focus.test.tsx`'s own store reset.
+beforeEach(() => {
+  useSessionStore.setState((s) => ({ autopilot: { ...s.autopilot, error: null } }));
+});
 
 describe('useAutopilotRun — handleRun error-payload handling', () => {
   it('routes a resolved { error } payload to the error state, not done', async () => {
@@ -265,5 +273,31 @@ describe('useAutopilotRun — steps for a run this mount did not start', () => {
 
     expect(invalidateAutopilots).toHaveBeenCalledTimes(1);
     expect(result.current.runStates['ap-cancel']).toBe('cancelled');
+  });
+});
+
+/**
+ * The refusal case has no OTHER trace at all: unlike a genuine failure (which
+ * at least leaves `runStatus: 'failed'` on the persisted record), "a run is
+ * already in progress" is never written anywhere backend-side — the banner
+ * IS the only record of it, so it must outlive an unmount on its own.
+ */
+describe('useAutopilotRun — the error banner survives navigation', () => {
+  it('keeps the "already running" refusal visible after this mount is discarded and a fresh one takes its place', async () => {
+    runMutateAsync.mockResolvedValueOnce({ skipped: 'already-running' });
+    const { result, unmount } = renderHookWithClient(() => useAutopilotRun());
+
+    await act(async () => {
+      await result.current.handleRun('ap-nav');
+    });
+    expect(result.current.error).toBe('autopilot.wizard.alreadyRunning');
+
+    // Simulates navigating away from AutopilotPage (this hook — reducers
+    // included — is discarded) and back (a brand-new call, exactly like a
+    // fresh route mount).
+    unmount();
+    const remounted = renderHookWithClient(() => useAutopilotRun());
+
+    expect(remounted.result.current.error).toBe('autopilot.wizard.alreadyRunning');
   });
 });

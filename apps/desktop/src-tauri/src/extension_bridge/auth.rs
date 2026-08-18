@@ -177,21 +177,67 @@ pub(super) fn warn_rejected_origin_once(origin: &str) {
         Ok(g) => g,
         Err(poisoned) => poisoned.into_inner(),
     };
+    // Shape-constrain once, up front — every branch below logs this same
+    // value. `sanitize_reason` (credential-token redaction) is the wrong tool
+    // here: the origin is the ONE piece of diagnostic information a developer
+    // needs, verbatim, to add to `extensionDevOrigins`, so the value itself
+    // must survive; only its *shape* (length, control chars) is constrained.
+    let logged = sanitize_log_origin(origin);
     if seen.len() >= MAX_REMEMBERED && !seen.contains(origin) {
-        log::debug!("[extension_bridge] rejected handshake from origin: {origin:?} (cap reached)");
+        log::debug!("[extension_bridge] rejected handshake from origin: {logged:?} (cap reached)");
         return;
     }
     if seen.insert(origin.to_string()) {
         // First time only, and deliberately actionable: an unpaired extension is
         // otherwise indistinguishable from a desktop that simply isn't running.
         log::warn!(
-            "[extension_bridge] rejected handshake from origin: {origin:?} — not an allowed \
+            "[extension_bridge] rejected handshake from origin: {logged:?} — not an allowed \
              extension origin. A development build needs its origin in the \
              `extensionDevOrigins` config; a store build should already match. \
              Further rejections from this origin are logged at debug."
         );
     } else {
-        log::debug!("[extension_bridge] rejected handshake from origin: {origin:?}");
+        log::debug!("[extension_bridge] rejected handshake from origin: {logged:?}");
+    }
+}
+
+/// Ceiling on a logged origin's length, after control-character stripping. The
+/// `Origin` header is attacker-supplied and unbounded (HTTP puts no length
+/// cap on a header value beyond the server's own buffer size); every
+/// legitimate origin this bridge ever compares against
+/// (`chrome-extension://<32-char id>`, `moz-extension://<36-char uuid>`,
+/// `null`, the native-host sentinel) is well under this, so nothing genuine is
+/// ever truncated.
+const MAX_LOGGED_ORIGIN_LEN: usize = 128;
+
+/// Shape-constrain an attacker-supplied `Origin` before it enters a log line
+/// support bundles ship verbatim: strip control characters (newline, CR, tab,
+/// ESC/ANSI, NUL, …) so the origin cannot forge a second log line or an
+/// escape-sequence trick, then cap the length so it cannot flood the log.
+///
+/// `sanitize_reason` (this module's sibling in [`crate::observability`]) is
+/// deliberately NOT reused here: it redacts credential-*shaped* tokens, which
+/// would risk mangling a legitimate-looking origin the developer needs to
+/// read back exactly. Only the log-injection SHAPE is the concern for an
+/// origin, not its content, so a narrower, dedicated filter is the correct
+/// tool — see the review note this fixes.
+///
+/// Note: the current call site's `origin` already passed through
+/// `http::HeaderValue::to_str()` (visible-ASCII only; the underlying HTTP
+/// header parser also can never carry a raw CR/LF inside a header value —
+/// that byte pair is what terminates the header line), so a raw newline
+/// cannot reach here via that path today. This filter is kept anyway as a
+/// caller-independent safety net — cheap, and correct even if a future
+/// call site feeds it an origin from a different transport — while the
+/// length cap is the concern that IS live today: nothing bounds how long an
+/// `Origin` header itself can be.
+fn sanitize_log_origin(origin: &str) -> String {
+    let stripped: String = origin.chars().filter(|c| !c.is_control()).collect();
+    if stripped.chars().count() > MAX_LOGGED_ORIGIN_LEN {
+        let truncated: String = stripped.chars().take(MAX_LOGGED_ORIGIN_LEN).collect();
+        format!("{truncated}…")
+    } else {
+        stripped
     }
 }
 
@@ -208,10 +254,11 @@ pub(super) fn log_handshake_failure(e: &tokio_tungstenite::tungstenite::Error) {
     use tokio_tungstenite::tungstenite::Error;
 
     let forbidden = matches!(e, Error::Http(r) if r.status() == StatusCode::FORBIDDEN);
+    let reason = crate::observability::sanitize_reason(&e.to_string());
     if forbidden {
-        log::debug!("[extension_bridge] handshake refused (forbidden origin): {e}");
+        log::debug!("[extension_bridge] handshake refused (forbidden origin): {reason}");
     } else {
-        log::warn!("[extension_bridge] handshake rejected/failed: {e}");
+        log::warn!("[extension_bridge] handshake rejected/failed: {reason}");
     }
 }
 
@@ -376,5 +423,52 @@ mod tests {
             "https://boards.greenhouse.io/acme/jobs/1"
         ));
         assert!(is_safe_import_url("http://jobs.example.com/posting/42"));
+    }
+
+    // ── Rejected-origin log sanitization ───────────────────────────────────
+
+    #[test]
+    fn sanitize_log_origin_strips_control_chars_but_keeps_the_rest() {
+        // Newline/CR/ESC are exactly the shapes that forge a second log line
+        // (CR/LF) or an ANSI escape-sequence trick in a log file support
+        // bundles ship verbatim — this is what a hostile `Origin` header can
+        // never smuggle through.
+        let hostile = "chrome-extension://evil\nWARN fake line\r\x1b[31mred\x1b[0m\0end";
+        let cleaned = sanitize_log_origin(hostile);
+        assert!(
+            cleaned.chars().all(|c| !c.is_control()),
+            "control character survived: {cleaned:?}"
+        );
+        assert!(!cleaned.contains('\n'));
+        assert!(!cleaned.contains('\r'));
+        assert!(!cleaned.contains('\x1b'));
+        assert!(!cleaned.contains('\0'));
+        // The diagnostic value must survive: the developer still needs to
+        // read the real origin back to add it to `extensionDevOrigins`.
+        assert!(cleaned.contains("chrome-extension://evil"));
+        assert!(cleaned.contains("WARN fake line"));
+        assert!(cleaned.contains("red"));
+        assert!(cleaned.contains("end"));
+    }
+
+    #[test]
+    fn sanitize_log_origin_caps_length() {
+        // The `Origin` header is attacker-supplied and unbounded — this is
+        // the live protection (see the doc comment: a raw newline can't reach
+        // this call site through the current HTTP-header path, but nothing
+        // bounds the header's length).
+        let huge = "a".repeat(MAX_LOGGED_ORIGIN_LEN + 500);
+        let cleaned = sanitize_log_origin(&huge);
+        assert_eq!(cleaned.chars().count(), MAX_LOGGED_ORIGIN_LEN + 1); // + truncation marker
+        assert!(cleaned.ends_with('…'));
+    }
+
+    #[test]
+    fn sanitize_log_origin_leaves_a_short_clean_origin_untouched() {
+        // A real Origin never gets mangled — length-cap and control-char
+        // stripping are both no-ops on the legitimate shapes this bridge
+        // actually sees.
+        let origin = "chrome-extension://oaoekkgkhmgdfnpmfkpphgiikliaicll";
+        assert_eq!(sanitize_log_origin(origin), origin);
     }
 }

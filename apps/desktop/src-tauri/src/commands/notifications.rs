@@ -26,6 +26,7 @@ use crate::events::{emit_event, NOTIFICATIONS_CHANGED, NOTIFICATIONS_OPEN, NOTIF
 use crate::notifications::{
     AppNotification, NewNotification, NotificationOpen, NotificationRoute, NotificationStore,
 };
+use crate::observability::sanitize_reason;
 
 fn store(app: &AppHandle) -> tauri::State<'_, NotificationStore> {
     app.state::<NotificationStore>()
@@ -134,7 +135,10 @@ fn show_clickable_banner(
                 Ok(())
             });
         if let Err(e) = toast.show() {
-            log::warn!("[notifications] windows toast failed: {e}");
+            log::warn!(
+                "[notifications] windows toast failed: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
     }
 
@@ -171,7 +175,10 @@ fn show_clickable_banner(
                          showing this one without a click handler"
                     ),
                 },
-                Err(e) => log::warn!("[notifications] os banner failed: {e}"),
+                Err(e) => log::warn!(
+                    "[notifications] os banner failed: {}",
+                    sanitize_reason(&e.to_string())
+                ),
             }
         });
     }

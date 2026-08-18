@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useState } from 'react';
+import { useCallback, useReducer } from 'react';
 
 import type { Autopilot, AutopilotStepEvent } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -14,6 +14,7 @@ import {
   useResumeAutopilot,
   useRunAutopilot,
 } from '@/services';
+import { useSessionStore } from '@/store/session-store';
 
 /**
  * A reducer patch: the fields to merge, or a function of the CURRENT state that
@@ -38,7 +39,18 @@ export function useAutopilotRun() {
       ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }) as StepLogMap,
     {} as StepLogMap
   );
-  const [error, setError] = useState<string | null>(null);
+  // The Run/Apply banner survives navigation via the session store rather than
+  // a local `useState` — this hook (and its subscription) is re-created from
+  // scratch on every `AutopilotPage` mount, so a local `useState` discarded
+  // the banner on any navigate-away-and-back. See `AutopilotSlice.error`'s
+  // doc comment for why that matters most for the concurrent-run refusal,
+  // which leaves no OTHER trace at all.
+  const error = useSessionStore((s) => s.autopilot.error);
+  const setAutopilot = useSessionStore((s) => s.setAutopilot);
+  const setError = useCallback(
+    (message: string | null) => setAutopilot({ error: message }),
+    [setAutopilot]
+  );
 
   const runAutopilot = useRunAutopilot();
   const pauseAutopilot = usePauseAutopilot();
@@ -74,11 +86,18 @@ export function useAutopilotRun() {
         ],
       }));
       // A run that ENDS is the only moment the persisted record changes, and the
-      // `runAutopilot` mutation's own invalidation only fires for a run this mount
-      // started and stayed mounted for. Refresh here so a run that finished while
-      // the user was on another page — and a scheduled run nobody clicked — lands
-      // its found jobs and its `runStatus` on the card instead of waiting for the
-      // next navigation.
+      // `runAutopilot` mutation's own invalidation only fires for a run this
+      // mount started and stayed mounted for. Refresh here so a SCHEDULED run
+      // nobody clicked — the other case with no mutation watching it — lands
+      // its found jobs and its `runStatus` on the card right away instead of
+      // waiting for something unrelated to refetch.
+      //
+      // Does NOT cover a run that finished while the user was on another
+      // page: `useAutopilotStepEvents` unsubscribes in this hook's own effect
+      // cleanup, so no step event reaches this handler while unmounted,
+      // scheduled run or not. What actually recovers THAT case is
+      // `useAutopilots`'s own staleness-triggered refetch on the next
+      // `AutopilotPage` mount (see its doc comment).
       if (event.step === 'complete' || event.step === 'cancelled') invalidateAutopilots();
     },
     [invalidateAutopilots]

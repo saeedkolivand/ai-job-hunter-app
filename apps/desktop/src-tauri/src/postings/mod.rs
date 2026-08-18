@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::commands::ai_provider::EmbeddingVector;
+use crate::observability::sanitize_reason;
 
 // ── PostingsCache ─────────────────────────────────────────────────────────────
 
@@ -435,18 +436,20 @@ impl InteractionStore {
         let tmp = self.data_file.with_extension("json.tmp");
         if let Err(e) = std::fs::write(&tmp, &json) {
             log::error!(
-                "[postings] failed to write {}: {e} — interaction NOT persisted",
-                file_name_label(&tmp)
+                "[postings] failed to write {}: {} — interaction NOT persisted",
+                file_name_label(&tmp),
+                sanitize_reason(&e.to_string())
             );
             std::fs::remove_file(&tmp).ok();
             return;
         }
         if let Err(e) = std::fs::rename(&tmp, &self.data_file) {
             log::error!(
-                "[postings] failed to move {} onto {}: {e} — interaction NOT persisted \
+                "[postings] failed to move {} onto {}: {} — interaction NOT persisted \
                  (the previous file is intact)",
                 file_name_label(&tmp),
-                file_name_label(&self.data_file)
+                file_name_label(&self.data_file),
+                sanitize_reason(&e.to_string())
             );
             std::fs::remove_file(&tmp).ok();
         }

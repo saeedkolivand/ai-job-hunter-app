@@ -64,6 +64,7 @@ use serde::{Deserialize, Serialize};
 use crate::data_store::DataStore;
 use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 /// Byte cap on ONE event's `artifact_json`, MARKER INCLUDED.
 ///
@@ -431,7 +432,10 @@ fn normalize_existing_job_urls(conn: &Connection) {
             "UPDATE pipeline_runs SET job_url = ?1 WHERE id = ?2",
             params![normalized, id],
         ) {
-            log::warn!("[pipeline] could not normalize a legacy run's job_url: {e}");
+            log::warn!(
+                "[pipeline] could not normalize a legacy run's job_url: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
     }
 }
@@ -599,7 +603,10 @@ impl PipelineRunStore {
         let tx = match guard.transaction() {
             Ok(tx) => tx,
             Err(e) => {
-                log::warn!("[pipeline] run-store prune could not open a transaction: {e}");
+                log::warn!(
+                    "[pipeline] run-store prune could not open a transaction: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 span.end(false);
                 return;
             }
@@ -623,7 +630,10 @@ impl PipelineRunStore {
             Ok(runs) => runs,
             Err(e) => {
                 // Return WITHOUT committing: dropping `tx` rolls back.
-                log::warn!("[pipeline] run-store prune failed, leaving history intact: {e}");
+                log::warn!(
+                    "[pipeline] run-store prune failed, leaving history intact: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 span.end(false);
                 return;
             }
@@ -644,7 +654,10 @@ impl PipelineRunStore {
         ) {
             Ok(events) => events,
             Err(e) => {
-                log::warn!("[pipeline] run-store orphan sweep failed, leaving history intact: {e}");
+                log::warn!(
+                    "[pipeline] run-store orphan sweep failed, leaving history intact: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 span.end(false);
                 return;
             }
@@ -652,7 +665,10 @@ impl PipelineRunStore {
         match tx.commit() {
             Ok(()) => span.end_with(&format!("runs={evicted} events={orphans}"), true),
             Err(e) => {
-                log::warn!("[pipeline] run-store prune could not commit: {e}");
+                log::warn!(
+                    "[pipeline] run-store prune could not commit: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 span.end(false);
             }
         }
@@ -674,10 +690,16 @@ impl PipelineRunStore {
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
         if let Err(e) = conn.execute("DELETE FROM pipeline_run_events", []) {
-            log::warn!("[pipeline] factory reset failed to clear pipeline_run_events: {e}");
+            log::warn!(
+                "[pipeline] factory reset failed to clear pipeline_run_events: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
         if let Err(e) = conn.execute("DELETE FROM pipeline_runs", []) {
-            log::warn!("[pipeline] factory reset failed to clear pipeline_runs: {e}");
+            log::warn!(
+                "[pipeline] factory reset failed to clear pipeline_runs: {}",
+                sanitize_reason(&e.to_string())
+            );
         }
     }
 
@@ -736,7 +758,10 @@ impl PipelineRunStore {
         let tx = match guard.transaction() {
             Ok(tx) => tx,
             Err(e) => {
-                log::warn!("[pipeline] could not open a transaction to delete a job's runs: {e}");
+                log::warn!(
+                    "[pipeline] could not open a transaction to delete a job's runs: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 span.end(false);
                 return 0;
             }
@@ -758,7 +783,10 @@ impl PipelineRunStore {
                 ),
                 rusqlite::params_from_iter(chunk.iter()),
             ) {
-                log::warn!("[pipeline] could not delete a job's run events: {e}");
+                log::warn!(
+                    "[pipeline] could not delete a job's run events: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 span.end(false);
                 return 0; // dropping `tx` rolls the whole thing back
             }
@@ -768,7 +796,10 @@ impl PipelineRunStore {
             ) {
                 Ok(rows) => removed += rows,
                 Err(e) => {
-                    log::warn!("[pipeline] could not delete a job's run rows: {e}");
+                    log::warn!(
+                        "[pipeline] could not delete a job's run rows: {}",
+                        sanitize_reason(&e.to_string())
+                    );
                     span.end(false);
                     return 0;
                 }
@@ -780,7 +811,10 @@ impl PipelineRunStore {
                 removed
             }
             Err(e) => {
-                log::warn!("[pipeline] could not commit a job's run deletion: {e}");
+                log::warn!(
+                    "[pipeline] could not commit a job's run deletion: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 span.end(false);
                 0
             }
@@ -803,7 +837,10 @@ impl PipelineRunStore {
         ) {
             Ok(rows) => rows,
             Err(e) => {
-                log::warn!("[pipeline] could not sweep an abandoned run's events: {e}");
+                log::warn!(
+                    "[pipeline] could not sweep an abandoned run's events: {}",
+                    sanitize_reason(&e.to_string())
+                );
                 0
             }
         }
@@ -973,7 +1010,10 @@ fn query_runs(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Vec<
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            log::warn!("[pipeline] run-store read failed, reporting no runs: {e}");
+            log::warn!(
+                "[pipeline] run-store read failed, reporting no runs: {}",
+                sanitize_reason(&e.to_string())
+            );
             Vec::new()
         }
     }
@@ -986,7 +1026,10 @@ fn query_events(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Ve
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            log::warn!("[pipeline] run-store event read failed, reporting none: {e}");
+            log::warn!(
+                "[pipeline] run-store event read failed, reporting none: {}",
+                sanitize_reason(&e.to_string())
+            );
             Vec::new()
         }
     }

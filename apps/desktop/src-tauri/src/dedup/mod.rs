@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::data_store::DataStore;
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 /// One persisted "not a duplicate" verdict. `key_a < key_b` by construction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,8 +113,9 @@ impl DedupStore {
             Ok(stmt) => stmt,
             Err(e) => {
                 log::warn!(
-                    "[dedup] failed to prepare tombstone read ({e}); degrading to no \
-                     splits — previously-split clusters may re-merge this ingest"
+                    "[dedup] failed to prepare tombstone read ({}); degrading to no \
+                     splits — previously-split clusters may re-merge this ingest",
+                    sanitize_reason(&e.to_string())
                 );
                 return HashSet::new();
             }
@@ -124,8 +126,9 @@ impl DedupStore {
             Ok(rows) => rows,
             Err(e) => {
                 log::warn!(
-                    "[dedup] failed to query tombstones ({e}); degrading to no splits \
-                     — previously-split clusters may re-merge this ingest"
+                    "[dedup] failed to query tombstones ({}); degrading to no splits \
+                     — previously-split clusters may re-merge this ingest",
+                    sanitize_reason(&e.to_string())
                 );
                 return HashSet::new();
             }

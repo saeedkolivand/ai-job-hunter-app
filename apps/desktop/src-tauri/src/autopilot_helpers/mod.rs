@@ -148,7 +148,11 @@ pub async fn autopilot_scrape(
                     );
                 }
                 if let Some(ref err) = s.error {
-                    log::warn!("[autopilot] board '{}' failed (error='{}')", s.board, err);
+                    log::warn!(
+                        "[autopilot] board '{}' failed (error='{}')",
+                        s.board,
+                        sanitize_reason(err)
+                    );
                 }
             }
             (postings, summaries)
@@ -419,7 +423,10 @@ async fn run_notes_loop(
                 }
             }
             // Best-effort: one job's failure never aborts the rest or the run.
-            Err(e) => log::warn!("[autopilot] AI note generation failed: {e}"),
+            Err(e) => log::warn!(
+                "[autopilot] AI note generation failed: {}",
+                sanitize_reason(&e.to_string())
+            ),
         }
     }
     log::info!(

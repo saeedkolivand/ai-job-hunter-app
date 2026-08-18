@@ -89,6 +89,7 @@ use tauri::{AppHandle, Manager};
 use autopilot::AutopilotStore;
 use credentials::CredentialStore;
 use jobs::JobTracker;
+use observability::sanitize_reason;
 use postings::{InteractionStore, PostingsCache};
 use scraping::ScraperEngine;
 use updater::UpdaterState;
@@ -466,7 +467,10 @@ pub fn run() {
     // still boots, and credential operations (AI provider keys, factory reset)
     // surface the error later through `AppError` rather than aborting startup.
     if let Err(e) = credentials::init_keyring() {
-        log::warn!("[startup] OS keyring unavailable (credential features degraded): {e}");
+        log::warn!(
+            "[startup] OS keyring unavailable (credential features degraded): {}",
+            sanitize_reason(&e.to_string())
+        );
     }
 
     let mut builder = tauri::Builder::default();
@@ -610,7 +614,10 @@ pub fn run() {
                 .handle()
                 .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             {
-                log::warn!("[setup] global-shortcut plugin init failed (non-fatal): {e}");
+                log::warn!(
+                    "[setup] global-shortcut plugin init failed (non-fatal): {}",
+                    sanitize_reason(&e.to_string())
+                );
             }
 
             let handle = app.handle();
@@ -701,12 +708,18 @@ pub fn run() {
             );
             match documents::DocumentStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "documents", store),
-                Err(e) => log::warn!("[setup] document store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!(
+                    "[setup] document store failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
             match ai_generations::AiGenerationStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "ai_generations", store),
                 Err(e) => {
-                    log::warn!("[setup] ai generations store failed to open (non-fatal): {e}")
+                    log::warn!(
+                        "[setup] ai generations store failed to open (non-fatal): {}",
+                        e.code()
+                    )
                 }
             }
             // Applications: the status-bearing aggregate root (ADR 0001). Opening it
@@ -716,19 +729,28 @@ pub fn run() {
             match applications::ApplicationStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "applications", store),
                 Err(e) => {
-                    log::warn!("[setup] applications store failed to open (non-fatal): {e}")
+                    log::warn!(
+                        "[setup] applications store failed to open (non-fatal): {}",
+                        e.code()
+                    )
                 }
             }
             match job_preferences::JobPreferencesStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "job_preferences", store),
                 Err(e) => {
-                    log::warn!("[setup] job preferences store failed to open (non-fatal): {e}")
+                    log::warn!(
+                        "[setup] job preferences store failed to open (non-fatal): {}",
+                        e.code()
+                    )
                 }
             }
             match contact_profile::ContactProfileStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "contact_profile", store),
                 Err(e) => {
-                    log::warn!("[setup] contact profile store failed to open (non-fatal): {e}")
+                    log::warn!(
+                        "[setup] contact profile store failed to open (non-fatal): {}",
+                        e.code()
+                    )
                 }
             }
             // Backend-owned active AI provider store (task #16): the single source of
@@ -739,13 +761,19 @@ pub fn run() {
                     manage_resettable(app, &mut reset_registry, "ai_provider_config", store)
                 }
                 Err(e) => {
-                    log::warn!("[setup] ai provider config store failed to open (non-fatal): {e}")
+                    log::warn!(
+                        "[setup] ai provider config store failed to open (non-fatal): {}",
+                        e.code()
+                    )
                 }
             }
             match referrals::ReferralStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "referrals", store),
                 Err(e) => {
-                    log::warn!("[setup] referrals store failed to open (non-fatal): {e}")
+                    log::warn!(
+                        "[setup] referrals store failed to open (non-fatal): {}",
+                        e.code()
+                    )
                 }
             }
             manage_resettable(
@@ -771,7 +799,10 @@ pub fn run() {
             // `commands::ai_provider::stream` / `pipeline::Completer::complete`.
             match spend::SpendStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "spend", store),
-                Err(e) => log::warn!("[setup] spend store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!(
+                    "[setup] spend store failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
             // Email-confirmation watching (task #23, auto-track Layer C). Holds
             // no secrets (the app password lives in the OS keychain via
@@ -780,7 +811,10 @@ pub fn run() {
             // The poller itself is started separately, below (`email_watch_scheduler::start`).
             match email_watch::EmailWatchStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "email_watch", store),
-                Err(e) => log::warn!("[setup] email watch store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!(
+                    "[setup] email watch store failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
             app.manage(Mutex::new(UpdaterState::default()));
             // ONE cancel registry for every job kind (`jobs::cancel`). The
@@ -821,7 +855,10 @@ pub fn run() {
             }
             match pipeline::cache::KvCache::open(&data_dir) {
                 Ok(cache) => manage_resettable(app, &mut reset_registry, "cache", cache),
-                Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!(
+                    "[setup] pipeline cache failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
             // Cross-board dedup verdict store (ADR-029): the durable "not a
             // duplicate" pair tombstones. Registered LAST so its label sits at the
@@ -829,7 +866,10 @@ pub fn run() {
             // assertion below pins. Holds only opaque canonical-key pairs.
             match dedup::DedupStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "dedup_tombstones", store),
-                Err(e) => log::warn!("[setup] dedup store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!(
+                    "[setup] dedup store failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
             // Passively-harvested ATS company slugs (ADR-030): the slug typeahead +
             // watched-company autopilot targets. Holds only public ATS slugs +
@@ -839,7 +879,10 @@ pub fn run() {
                 Ok(store) => {
                     manage_resettable(app, &mut reset_registry, "discovered_companies", store)
                 }
-                Err(e) => log::warn!("[setup] discovered store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!(
+                    "[setup] discovered store failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
             // Pipeline/agent run history + per-stage event trail. Its own DB
             // (`pipeline_runs.db`); retention is newest-3-per-job, pruned on the
@@ -847,7 +890,10 @@ pub fn run() {
             // last, so its label sits at the tail of `MANAGE_RESETTABLE_LABELS`.
             match pipeline::runs::PipelineRunStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "pipeline_runs", store),
-                Err(e) => log::warn!("[setup] pipeline run store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!(
+                    "[setup] pipeline run store failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
             // Per-board reliability history (Track B1): ONE row per board, folded
             // from every run's `BoardScrapeSummary`, so a chip can tell "found
@@ -919,7 +965,10 @@ pub fn run() {
 
             // Build system tray.
             if let Err(e) = tray::build(handle) {
-                log::warn!("[setup] tray build error (non-fatal): {e}");
+                log::warn!(
+                    "[setup] tray build error (non-fatal): {}",
+                    sanitize_reason(&e.to_string())
+                );
             }
 
             // Schedule background update checks (10 s after launch, then every 4 h).

@@ -24,6 +24,7 @@ use crate::db::now_ms;
 use crate::email_watch::imap_client::{validate_connection, DEFAULT_IMAP_HOST, DEFAULT_IMAP_PORT};
 use crate::email_watch::{EmailWatchStatus, EmailWatchStore, CREDENTIAL_SLOT};
 use crate::error::{AppError, AppResult};
+use crate::observability::sanitize_reason;
 
 /// Resolve the managed `EmailWatchStore`, or a typed error when it isn't
 /// managed (the boot-time `EmailWatchStore::open` failed — a non-fatal,
@@ -68,7 +69,10 @@ async fn validate_connection_blocking(
     {
         Ok(result) => result,
         Err(e) => {
-            log::warn!("[email_watch] connection check task against {host_for_log} panicked: {e}");
+            log::warn!(
+                "[email_watch] connection check task against {host_for_log} panicked: {}",
+                sanitize_reason(&e.to_string())
+            );
             Err(AppError::Message(
                 "connection check failed unexpectedly".to_string(),
             ))

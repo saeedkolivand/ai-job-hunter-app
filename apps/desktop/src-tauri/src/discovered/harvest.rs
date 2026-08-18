@@ -7,6 +7,7 @@
 //! harness.
 
 use super::DiscoveredCompanyStore;
+use crate::observability::sanitize_reason;
 
 /// Passively harvest ATS company slugs from a batch of `(url, company)` posting
 /// pairs (parse-only, zero network) into `store` under `source`. Each posting's
@@ -32,7 +33,10 @@ where
         return;
     }
     if let Err(e) = store.upsert_batch(&refs) {
-        log::warn!("[discovered] harvest upsert failed ({e}); slugs not recorded this ingest");
+        log::warn!(
+            "[discovered] harvest upsert failed ({}); slugs not recorded this ingest",
+            sanitize_reason(&e.to_string())
+        );
     }
 }
 
