@@ -104,6 +104,25 @@ fn this_module_path() -> &'static str {
 /// dump — keep them short and bounded.
 pub const MAX_REASON_LEN: usize = 200;
 
+/// Known credential-token PREFIXES: structural, not contextual — a token
+/// carrying one of these needs no `=`/`":` neighbour to be unambiguously a
+/// secret (OpenAI/Anthropic `sk-`, GitHub `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`/
+/// `github_pat_`, AWS `AKIA`). Deliberately a short, well-known allowlist
+/// rather than an entropy heuristic: entropy scoring would flag ordinary
+/// hex/base64-shaped ids (job ids, run ids) just as readily as a real secret,
+/// which is exactly the over-redaction the rest of this module's comments
+/// warn against.
+const CREDENTIAL_PREFIXES: &[&str] = &[
+    "sk-",
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "akia",
+];
+
 /// Redact a raw error/skip reason before it is logged, persisted, or shown.
 ///
 /// The text can originate from an upstream `e.to_string()` and may carry
@@ -115,18 +134,77 @@ pub const MAX_REASON_LEN: usize = 200;
 /// always safe) and keeps the high-level message (e.g. `"429 Too Many Requests"`,
 /// `"needs-login"`, `"network timeout"`) intact. Pure + unit-testable.
 pub fn sanitize_reason(reason: &str) -> String {
-    let mut out = String::with_capacity(reason.len());
-
-    for token in reason.split_whitespace() {
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(&redact_token(token));
-    }
+    let mut out = redact_tokens(reason);
 
     if out.chars().count() > MAX_REASON_LEN {
         let truncated: String = out.chars().take(MAX_REASON_LEN).collect();
         out = format!("{truncated}…");
+    }
+    out
+}
+
+/// Redact every whitespace-delimited token of `text` — including the two
+/// multi-token credential SHAPES a single token can't see on its own:
+/// `Authorization: Bearer <token>` / `Authorization: Basic <token>`, and a
+/// spaced `key = <value>` assignment (`redact_token` alone only catches the
+/// glued `key=value` form). No length cap — that is [`sanitize_reason`]'s
+/// concern, applied on top of this.
+///
+/// Shared by [`sanitize_reason`] (one reason string) and
+/// `commands::support::redact_lines` (one log line at a time) so the two
+/// "text about to leave the machine" consumers never drift into redactors of
+/// differing strength (ADR-027) — see that function's doc.
+pub fn redact_tokens(text: &str) -> String {
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < tokens.len() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        let token = tokens[i];
+        let marker = token
+            .trim_matches(|c: char| matches!(c, ':' | ',' | ';'))
+            .to_ascii_lowercase();
+
+        // `Authorization: Bearer <token>` / `Authorization: Basic <token>` —
+        // gated on the `Authorization:` marker directly preceding the scheme
+        // word (never on `Bearer`/`Basic` alone), so an unrelated "Basic auth
+        // failed" survives untouched — see
+        // `authorization_scheme_word_alone_is_not_a_marker`.
+        if marker == "authorization" && i + 2 < tokens.len() {
+            let scheme = tokens[i + 1]
+                .trim_matches(|c: char| matches!(c, ':' | ',' | ';'))
+                .to_ascii_lowercase();
+            if matches!(scheme.as_str(), "bearer" | "basic") {
+                out.push_str(&redact_token(token));
+                out.push(' ');
+                out.push_str(&redact_token(tokens[i + 1]));
+                out.push_str(" <credential-redacted>");
+                i += 3;
+                continue;
+            }
+        }
+
+        // A SPACED assignment (`token = value`, `secret = value`) — the
+        // marker word alone is ordinary vocabulary ("no auth token found"),
+        // so only trip on the marker word immediately followed by a literal
+        // `=` token; that exact pair does not occur in prose. Mirrors the
+        // single-token marker set inside [`redact_token`] (`key=`/`app_id=`/…).
+        if matches!(
+            marker.as_str(),
+            "key" | "app_id" | "secret" | "token" | "password" | "pwd" | "auth"
+        ) && tokens.get(i + 1) == Some(&"=")
+            && i + 2 < tokens.len()
+        {
+            out.push_str(&redact_token(token));
+            out.push_str(" = <credential-redacted>");
+            i += 3;
+            continue;
+        }
+
+        out.push_str(&redact_token(token));
+        i += 1;
     }
     out
 }
@@ -184,6 +262,13 @@ pub fn redact_token(token: &str) -> String {
     // The JSON-field shape (`"api_key":"value"` → brace/quote-trimmed to
     // `api_key":"value`) is also matched via the `key":` / `token":` sub-strings
     // so structured log lines (e.g. `{"api_key":"sk-…"}`) don't bypass redaction.
+    //
+    // A THIRD shape has no marker at all: a bare, unprefixed secret (a leaked
+    // `Authorization: Bearer <token>` value, or a raw key pasted into an error
+    // message with nothing around it). `CREDENTIAL_PREFIXES` catches those
+    // structurally, by the token's own shape — this check runs per-token, so
+    // unlike the `Authorization`/spaced-assignment marker chains in
+    // [`redact_tokens`] it needs no neighbouring token to fire.
     let is_credential = [
         // `key=` (substring match) subsumes the `*key=` variants — `app_key=`,
         // `apikey=`, `api_key=` all CONTAIN it — so don't re-add those here.
@@ -205,7 +290,10 @@ pub fn redact_token(token: &str) -> String {
         "auth\":",
     ]
     .iter()
-    .any(|marker| lower.contains(marker));
+    .any(|marker| lower.contains(marker))
+        || CREDENTIAL_PREFIXES
+            .iter()
+            .any(|prefix| lower.starts_with(prefix));
 
     // Bare IPv4 / host:port — leaks the user's network surroundings. Require an
     // embedded `.` AND either a trailing `:<digits>` port or an all-numeric dotted

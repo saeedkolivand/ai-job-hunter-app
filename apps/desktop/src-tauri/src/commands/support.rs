@@ -7,24 +7,22 @@ use zip::write::{ExtendedFileOptions, FileOptions};
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::error::{AppError, AppResult};
-use crate::observability::redact_token;
+use crate::observability::redact_tokens;
 
 /// Redact every whitespace-delimited token in every line, preserving line
 /// structure. Blank / whitespace-only lines become empty strings.
 ///
 /// Shared with [`crate::crash_reporting`], which runs it over every outgoing
 /// Sentry event. Both consumers are "text about to leave the machine", so they
-/// must not drift apart into two redactors of differing strength (ADR-027).
+/// must not drift apart into two redactors of differing strength (ADR-027) —
+/// [`redact_tokens`] is the single implementation both funnel through.
 pub(crate) fn redact_lines(text: &str) -> String {
     text.lines()
         .map(|line| {
             if line.trim().is_empty() {
                 String::new()
             } else {
-                line.split_whitespace()
-                    .map(redact_token)
-                    .collect::<Vec<_>>()
-                    .join(" ")
+                redact_tokens(line)
             }
         })
         .collect::<Vec<_>>()
@@ -36,7 +34,7 @@ pub(crate) fn redact_lines(text: &str) -> String {
 /// Strict allowlist — only `crashes.log`, `logs/<name>`, and a generated
 /// `system-info.txt` are written. All other data-dir content is excluded by
 /// construction (no wholesale dir walk). Text files are run through
-/// [`redact_token`] per whitespace-delimited token before being zipped.
+/// [`redact_tokens`] before being zipped.
 /// Missing inputs (no `crashes.log`, no `log_dir`) are non-fatal; the zip will
 /// still be valid and contain at minimum `system-info.txt`.
 ///
@@ -382,6 +380,26 @@ mod tests {
         assert!(
             !content.contains("supersecret"),
             "credential value must not leak; got: {content}"
+        );
+    }
+
+    /// The support bundle is a SEPARATE redaction path from `sanitize_reason`
+    /// (board_health/autopilot) — ADR-027 requires the two never drift in
+    /// strength. A crash log echoing back an `Authorization: Bearer <token>`
+    /// header, or a bare GitHub/AWS-shaped key with no marker at all, must be
+    /// caught here too, not just in the other path.
+    #[test]
+    fn redact_lines_catches_bearer_tokens_and_bare_prefixed_secrets() {
+        let redacted = redact_lines(
+            "panic: Authorization: Bearer ghp_deadbeef12345 rejected\nleaked AKIAIOSFODNN7EXAMPLE in body",
+        );
+        assert!(
+            !redacted.contains("ghp_deadbeef12345") && !redacted.contains("AKIAIOSFODNN7EXAMPLE"),
+            "credential leaked through the support-bundle path; got: {redacted}"
+        );
+        assert!(
+            redacted.matches("<credential-redacted>").count() >= 2,
+            "both secrets must be redacted; got: {redacted}"
         );
     }
 
