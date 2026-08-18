@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787008629945,
+  "lastUpdate": 1787016118485,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7679,6 +7679,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289217,
             "range": "± 3427",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8733d4ca3662687fc2e614ba48ffd76afdeac76c",
+          "message": "feat(scraping): add freehire as the aggregator's keyless tier (#1008)\n\n* feat(scraping): add freehire as the aggregator's keyless tier\n\nIssue #1002, opened by freehire's maintainer, who disclosed the interest. We\npublicly committed to shipping it in the next release.\n\nImplemented from their published openapi.yaml rather than from the PR they\noffered. The reason is rights, not code quality: this repo has no CLA, so a\ncontribution stays under its author's copyright and cannot be relicensed, and\nADR-023 names commercial licensing as a rationale. Reading their PR and\nrewriting it would be derivative — the worst of both worlds — so the spec is\nthe only source used.\n\nWhat it buys: every other provider needs an API key, so a fresh install gets a\nneeds-keys skip and zero jobs. freehire answers unauthenticated, so the\naggregator board can return results before the user has configured anything.\nIt is not a better source than the keyed tiers and is never preferred over\none — it runs LAST, after Adzuna, JSearch and Jooble have each failed to\nproduce a decisive result, and only a non-empty answer from it short-circuits.\nAn empty answer from a provider nobody chose is not evidence about the search,\nso it must not swallow a configured provider's failure diagnostic.\n\nTwo consequences worth calling out rather than burying:\n\n`needs_keys()` is now always false, because a keyless tier is always\n\"configured\". That is the point — the skip existed because a keyless search\ncould only ever return nothing. The cost, accepted and tested: a keyless user\nwhose freehire search finds nothing reads \"no jobs found\" rather than a prompt\nto add keys. A keyring READ FAULT is still classified separately, so the one\ncase the old `false` protected is unaffected.\n\nFailures degrade to Ok(empty), never Err — the only provider with that rule.\nEvery other one reports its failure because a stored key means the user asked\nfor it specifically. Nobody opted into this one, so surfacing its outage would\nturn a third party's downtime into an error banner on a search the user never\naimed at them. There is no SLA and no rate-limit header of any kind (verified:\nno X-RateLimit-*, no Retry-After), so it is treated as always-possibly-absent.\n\nUses the documented /agent/jobs/search with `q` and\n`description_format=markdown` — NOT the undocumented /jobs/search taking\n`query`, which is what the issue described and what a first pass reached for;\nbuilding from the published spec is the whole basis for implementing this\nourselves. Markdown up front is also what keeps scoring from needing a\nper-result detail fetch.\n\nA guessed country is deliberately not sent as a filter: the aggregator defaults\n`country` to \"de\" when the caller supplied none, and pinning a keyless tier to\nthat guess would reproduce the guessed-market bug already fixed for Adzuna.\n`location` is unused because the documented search has no city parameter at\nall, and folding a city into the full-text `q` would drop every posting that\ndoes not spell its city out, remote ones included.\n\nEgress: freehire.me is in the inventory with a public_name, which made the\nlanding drift guard fail until the privacy page, README and SECURITY named it.\nThat guard shipped two PRs ago for exactly this, and this is the first new\negress since — it worked.\n\nEvery behaviour above is pinned by a test that was mutation-checked: green at\nbaseline, red with the feature deleted, restored. The one claim that did not\nsurvive checking is recorded in the test rather than quietly dropped — the\nordering guard catches \"moved ahead of the keyed tiers\" but would NOT catch\n\"moved one rung up past Jooble\", because the fixture short-circuits at Adzuna.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(scraping): stop the keyless tier from masking what it must not mask\n\nPre-PR review reproduced two regressions of existing guards. Both are mine and\nboth came from the same mistake: treating an always-on provider as if it were\njust one more tier, when \"always on\" is exactly what makes it able to hide\nthings.\n\n**It replaced the sparse guessed-market hits instead of merging with them.**\nReproduced in the commonest real configuration — Adzuna-only keys, no country\nsupplied, a real location: two London-relevant Adzuna hits were discarded for\nup to fifty globally-unfiltered freehire ones. That is the guessed-market bug\nthis repo already fixed for Adzuna, re-entered through a new door. It now\nmerges, sparse hits first so dedupe's first-seen-wins order preserves them.\n\nThe comment justifying the original behaviour claimed \"the free-text location\nstill reaches `q`, so a real place name is not lost\". That was false, and I\nmade it false myself: the sentence was written before I removed `location`\nfrom the function on discovering the API has no city parameter at all. On a\nguessed market this tier is location-blind, which is precisely why it must not\nreplace hits that are not.\n\n**It swallowed every configured provider's failure diagnostic.** Reproduced:\nthree revoked keys, and `BoardScrapeSummary.error` came back `None`. Since\n`needs_keys()` is now permanently false, no surface anywhere in the app would\nhave told the user their key was broken — indefinitely. It is now skipped\nwhenever a configured provider actually failed.\n\nThat guard was wrong on its first attempt too, and the test caught it: the\nguessed-market branch records its fall-through in `adzuna_configured_failed`,\nso a naive `is_some()` check read a routing decision as a key failure and\nswitched the tier off in the one case it is most useful. Split into a distinct\n`adzuna_distrusted_a_guessed_market` flag.\n\nAlso from the review:\n\n- The privacy page said freehire runs after every keyed tier \"has come back\n  empty or failed\". A keyed tier's `Ok(empty)` is decisive and returns\n  immediately, so that was a false statement on a public disclosure page. Now\n  \"is unconfigured or has failed\". The drift guard could not catch this — it\n  checks that a named host appears, not that the claim around it is true.\n- `freehire_slugless_rows_key_off_their_url_not_each_other` asserted only\n  pairwise inequality and stayed GREEN when the reviewer mutated the fallback\n  id to a non-deterministic counter — a change that would break cross-run\n  dedupe and resurface every slugless posting as new on each re-scrape. It now\n  asserts the concrete value. This is the repo's recorded pass-for-the-wrong-\n  reason shape and I reproduced it in my own new test.\n- `description` now goes through `html_to_markdown` like every sibling\n  provider. The \"already markdown, no conversion needed\" rationale was wrong\n  in both directions: the call is free (it early-returns tag-free input\n  verbatim) and it is the only defence when freehire's upstreams leave HTML in\n  a field labelled markdown.\n- Stale contract docs the change invalidated: the aggregator module header\n  still described a three-provider chain and claimed \"none configured →\n  keyless-empty\"; `Scraper::needs_keys` and the `boards.ts` skip contract still\n  described needs-keys as live; `scraping-domain.md` omitted the tier entirely.\n\nThree new chain tests, all mutation-checked green-at-baseline / red-with-the-\nfeature-deleted, including one asserting the tier still answers when nothing\nfailed — without it, tightening the guard to \"never run\" would leave both\nfailure-direction tests green.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(scraping): dedupe the cross-provider merge by url, and correct two docs\n\nAll three from CodeRabbit on #1008; all three verified against the code before\nacting rather than applied on sight.\n\n**Dedupe by URL after the merge.** `dedupe` keys on `external_id`, which is\nprovider-prefixed, so the same job surfaced by both the sparse Adzuna tier and\nfreehire was two distinct keys and rendered twice. `dedupe_by_url` already\nexists for exactly this and is already used on the additive Apify merge — the\nfreehire merge is the only OTHER cross-provider merge in `primary_chain`, so it\nneeded the same second pass. The single-provider path keeps `dedupe` alone,\nsince `canonical_url` collapsing is not wanted there. New test, mutation-checked.\n\n**The privacy page was still wrong, in a second way.** The previous commit fixed\n\"empty or failed\" → \"unconfigured or has failed\", but the same commit had also\nmade freehire SKIP on a configured provider's failure, so \"has failed\" was now\nfalse too. It now says freehire runs only when none of the keyed tiers failed,\nand says why: an erroring key shows you the error rather than being quietly\nanswered around. Two passes to get one sentence true is the cost of changing\nbehaviour and copy in the same change.\n\n**`scraping-domain.md` is a shape-only page** — it says so in its own header —\nand the freehire section had grown into a copy of the runtime contract, which is\nhow docs go stale. Reduced to pointers at the module doc, `primary_chain` and\nADR-0005, keeping only the one consequence that is invisible from those files:\n`needs_keys()` never returns true in production any more.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T02:56:38+02:00",
+          "tree_id": "66d439807e80e5ae249bb2c721281726141e7559",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/8733d4ca3662687fc2e614ba48ffd76afdeac76c"
+        },
+        "date": 1787016116817,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2332721,
+            "range": "± 73686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2827840,
+            "range": "± 101533",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 251862,
+            "range": "± 3469",
             "unit": "ns/iter"
           }
         ]
