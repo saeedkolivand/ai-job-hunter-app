@@ -143,10 +143,15 @@ describe('useModelPull — reconciles a stale adoption', () => {
 
     // No second job.completed is ever coming for this job — only the
     // reconcile read (`jobs.get`, right after adoption) can notice it
-    // already finished.
+    // already finished. Exact counts (not just "was called"): `jobQueue`'s
+    // cached snapshot never refetches inside this test, so an unfixed hook
+    // (PR #1036 review finding) re-adopts the same stale 'running' entry the
+    // instant `resetTracking` clears `pullJobId`, calling `jobs.get` and the
+    // success toast a SECOND time — these pin that regression shut.
     await waitFor(() => expect(result.current.pullState).toBe('done'));
+    expect(client.jobs.get).toHaveBeenCalledTimes(1);
     expect(client.jobs.get).toHaveBeenCalledWith(jobId);
-    expect(notifyApi.success).toHaveBeenCalled();
+    expect(notifyApi.success).toHaveBeenCalledTimes(1);
   });
 
   it('settles a job that already failed before the registry read resolved', async () => {
@@ -178,7 +183,8 @@ describe('useModelPull — reconciles a stale adoption', () => {
     });
 
     await waitFor(() => expect(result.current.pullState).toBe('error'));
+    expect(client.jobs.get).toHaveBeenCalledTimes(1);
     expect(client.jobs.get).toHaveBeenCalledWith(jobId);
-    expect(notifyApi.error).toHaveBeenCalled();
+    expect(notifyApi.error).toHaveBeenCalledTimes(1);
   });
 });

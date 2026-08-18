@@ -56,6 +56,10 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     },
     []
   );
+  // Job ids this hook instance has already settled (via the reconcile read
+  // below or a live terminal event) — see the reattach effect for why this
+  // is needed to stop it re-adopting the same job forever.
+  const settledJobIdsRef = useRef<Set<string>>(new Set());
 
   /** Clear the transient per-download tracking (job id, speed, ETA, byte counters). */
   const resetTracking = useCallback(() => {
@@ -74,13 +78,29 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     lastTimeUpdateRef.current = 0;
   }, []);
 
-  const finishOk = useCallback(() => {
-    setPullProgress(100);
-    setPullState('done');
-    resetTracking();
-    notify.success({ message: t('onboarding.ai.downloaded', { model: selectedModel }) });
-    onDownloadComplete?.();
-  }, [resetTracking, notify, t, selectedModel, onDownloadComplete]);
+  // Both take the settling job's id so they can record it as settled — see
+  // `settledJobIdsRef` above.
+  const finishOk = useCallback(
+    (jobId: string) => {
+      settledJobIdsRef.current.add(jobId);
+      setPullProgress(100);
+      setPullState('done');
+      resetTracking();
+      notify.success({ message: t('onboarding.ai.downloaded', { model: selectedModel }) });
+      onDownloadComplete?.();
+    },
+    [resetTracking, notify, t, selectedModel, onDownloadComplete]
+  );
+
+  const finishFailed = useCallback(
+    (jobId: string) => {
+      settledJobIdsRef.current.add(jobId);
+      setPullState('error');
+      resetTracking();
+      notify.error({ message: t('onboarding.ai.downloadFailed') });
+    },
+    [resetTracking, notify, t]
+  );
 
   const handlePull = async () => {
     setPullState('pulling');
@@ -107,6 +127,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     const active = jobQueue.data?.find(
       (job) =>
         job.kind === 'ai.pull_model' &&
+        !settledJobIdsRef.current.has(job.id) &&
         (job.status === 'running' || job.status === 'streaming' || job.status === 'queued')
     );
     if (!active) return;
@@ -135,17 +156,15 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
       .then((job) => {
         if (!mountedRef.current || pullJobIdRef.current !== active.id) return;
         if (job?.status === 'completed') {
-          finishOk();
+          finishOk(active.id);
         } else if (job?.status === 'failed') {
-          setPullState('error');
-          resetTracking();
-          notify.error({ message: t('onboarding.ai.downloadFailed') });
+          finishFailed(active.id);
         }
       })
       .catch((err) => {
         console.error('[modelPull] reconcile read failed', { jobId: active.id, err });
       });
-  }, [jobQueue.data, pullJobId, finishOk, resetTracking, notify, t]);
+  }, [jobQueue.data, pullJobId, finishOk, finishFailed]);
 
   useJobEvents((event) => {
     if (event.type === 'job.stream' && event.jobId === pullJobIdRef.current) {
@@ -200,14 +219,12 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
       }
 
       if (data?.status === 'success') {
-        finishOk();
+        finishOk(event.jobId);
       }
     } else if (event.type === 'job.completed' && event.jobId === pullJobIdRef.current) {
-      finishOk();
+      finishOk(event.jobId);
     } else if (event.type === 'job.failed' && event.jobId === pullJobIdRef.current) {
-      setPullState('error');
-      resetTracking();
-      notify.error({ message: t('onboarding.ai.downloadFailed') });
+      finishFailed(event.jobId);
     }
   });
 
