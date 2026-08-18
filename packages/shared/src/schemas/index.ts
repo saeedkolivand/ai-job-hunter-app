@@ -154,6 +154,17 @@ export const DocumentImportRequestSchema = z.object({
   locale: LocaleSchema.optional(),
 });
 
+/**
+ * Every board id the app knows, in catalog display order.
+ *
+ * This list MIRRORS the Rust registry (`scraping/boards/mod.rs::SCRAPERS`) —
+ * which is the real catalog the UI renders from — so the two can drift, and did:
+ * `jobicy` shipped as a registered, listed board with en/de labels and was
+ * missing here entirely. `pnpm gen:ipc` now emits this list to
+ * `ipc_contracts/board_ids.rs` and a Rust test compares it against `SCRAPERS`
+ * in BOTH directions, so a board added on either side fails the build until it
+ * is added on the other.
+ */
 export const BOARD_IDS = [
   // Major
   'linkedin',
@@ -179,6 +190,7 @@ export const BOARD_IDS = [
   'remoteok',
   'remotive',
   'arbeitnow',
+  'jobicy',
   'themuse',
   'wwr',
   'ycombinator',
@@ -203,10 +215,15 @@ export type DateFilterOption = (typeof DATE_FILTER_OPTIONS)[number];
 
 export const ScrapeBoardsRequestSchema = z.object({
   // Bounded by the catalog size (not a fixed number) so selecting every listed
-  // board always validates and adding a board needs no schema edit. Each entry
-  // is already constrained to a known `BoardId`, so the real dedup+truncate
-  // defense against a request-amplification payload lives server-side in the
-  // Rust engine (registry-size cap over the deduped set).
+  // board always validates and adding a board needs no schema edit.
+  //
+  // The `z.enum` constrains the TypeScript type and this schema's own `parse`.
+  // It does NOT reach the wire: `pnpm gen:ipc` emits `boards` as `Vec<String>`,
+  // because the codegen lowers enums to strings — so the id an IPC call
+  // actually sends is checked by the Rust registry lookup (`boards::get`), not
+  // here. The real dedup+truncate defense against a request-amplification
+  // payload likewise lives server-side in the Rust engine (registry-size cap
+  // over the deduped set).
   boards: z.array(z.enum(BOARD_IDS)).min(1).max(BOARD_IDS.length),
   query: z.string().min(1),
   location: z.string().optional(),
