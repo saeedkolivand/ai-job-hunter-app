@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787032582707,
+  "lastUpdate": 1787036898344,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -7931,6 +7931,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 319848,
             "range": "± 4763",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "160d4a83b7d316ddc0c40b6270729cf6f9fa05a9",
+          "message": "fix(autopilot): jitter scheduled runs so default installs stop herding (#1018)\n\nTrack B3 of the architecture audit.\n\nSchedules are clock-anchored, the tick is 60 s wide, and every record created\nbefore the run-time picker defaults to 09:00. So every default-schedule install\nin a time zone hits the same third-party APIs inside the same minute. This is\nnot theoretical here: the desktop log already shows scheduled runs failing with\n`adzuna: HTTP 503`.\n\nThe offset is DETERMINISTIC per autopilot, derived from its id, not random —\nthat is the whole design. A random delay would have meant sleeping inside the\ntick, which breaks the two properties everything else is built on: catch-up\nafter a missed occurrence, and no-double-run once `lastRunAt` is stamped at or\nafter the occurrence. Shifting the OCCURRENCE instead keeps it a single\nwell-defined instant, so both still hold, and tests stay reproducible.\n\nFNV-1a rather than `DefaultHasher`: the standard hasher is explicitly not stable\nacross Rust releases, and an offset that moved on a toolchain bump would\nsilently shift every user's schedule. Ids are UUIDs, so the low bits are already\nwell distributed.\n\nTen minutes: wide enough to spread a herd across ten tick windows, far enough\nunder the shortest interval (hourly) that a shifted occurrence can never\novertake the next one, small enough not to surprise someone who picked 09:00.\nThat upper bound is a `const _: () = assert!(...)` beside the constant rather\nthan a test — a test comparing two constants is a tautology clippy rejects, and\nthis makes a bad value unbuildable instead of merely reported.\n\nTests cover the offset being stable for an id and inside the window, the\noccurrence moving by exactly the offset, and the behaviour a user would notice:\nbetween the nominal time and the offset, today's occurrence has NOT been reached,\nso the latest is still yesterday's. Plus a full-day minute-by-minute sweep\nasserting exactly one transition — one run per day, no double-run, no skip.\n\nMutation-checked: making the offset always zero fails\n`jitter_actually_spreads_a_herd` with \"200 autopilots landed in only 1 distinct\nminutes\".\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-18T08:44:43+02:00",
+          "tree_id": "d37f24986f9533fb8e08787f7a5e85b852205b53",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/160d4a83b7d316ddc0c40b6270729cf6f9fa05a9"
+        },
+        "date": 1787036896953,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2188492,
+            "range": "± 57068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2606885,
+            "range": "± 48483",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 300123,
+            "range": "± 2128",
             "unit": "ns/iter"
           }
         ]
