@@ -37,19 +37,41 @@ describe('world-config data integrity', () => {
     expect(sections.at(-1)?.cta).toBeDefined();
   });
 
-  it('roots every section asset path under /world/ (media lands later, not checked on disk)', () => {
+  // Posters and clips are hosted differently on purpose: the stills are ~2 MB
+  // total and ship in `public/` so the route paints before anything is fetched,
+  // while the 62 MB of clips live on a tagged GitHub release. Both halves are
+  // asserted against LITERALS rather than against the config's own base, so a
+  // regression that breaks the URL cannot move the expectation with it.
+  const CLIP_URL =
+    /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/releases\/download\/world-assets-v\d+\/[\w.-]+\.mp4$/;
+
+  it('serves every poster still from /world/ in the deployed site', () => {
     for (const section of sections) {
       expect(section.still.startsWith('/world/')).toBe(true);
       expect(section.stillMobile.startsWith('/world/')).toBe(true);
-      expect(section.clip.startsWith('/world/')).toBe(true);
-      expect(section.clipMobile.startsWith('/world/')).toBe(true);
     }
   });
 
-  it('roots every connector asset path under /world/', () => {
-    for (const path of [...connectors, ...connectorsMobile]) {
-      expect(path.startsWith('/world/')).toBe(true);
+  it('serves every clip from a pinned release tag, never from the site itself', () => {
+    for (const section of sections) {
+      expect(section.clip).toMatch(CLIP_URL);
+      expect(section.clipMobile).toMatch(CLIP_URL);
     }
+  });
+
+  it('serves every connector from the same pinned release tag', () => {
+    for (const path of [...connectors, ...connectorsMobile]) {
+      expect(path).toMatch(CLIP_URL);
+    }
+  });
+
+  it('pins every clip to ONE release tag, so a partial bump cannot ship', () => {
+    const tags = new Set(
+      [...sections.flatMap((s) => [s.clip, s.clipMobile]), ...connectors, ...connectorsMobile].map(
+        (url) => url.split('/download/')[1]?.split('/')[0]
+      )
+    );
+    expect(tags.size).toBe(1);
   });
 });
 
