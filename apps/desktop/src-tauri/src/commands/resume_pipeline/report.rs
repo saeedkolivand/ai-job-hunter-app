@@ -31,11 +31,27 @@ use crate::validate::Severity;
 /// ABSENCE — "keep" and "remove" are both meaningless for it, and listing it in
 /// a Remove/Keep panel would ask a question with no correct answer. It still
 /// appears in the report as a Critical.
+/// `factual.unsourced_certification` is here because a Critical that is NOT
+/// listed keeps its run in `needsReview` forever ([`still_needs_review`]), and
+/// it names a span the user can look at and decide about. It is also the one
+/// Critical the repair loop cannot regenerate a section for — `SectionKey` has
+/// no Certifications variant — so this panel is its only resolution path.
+///
+/// The three credential WARNINGS (`factual.inflated_experience`,
+/// `factual.unsourced_credential`, `factual.unsourced_institution`) are
+/// deliberately absent. The middle one is the PROSE arm of the same check the
+/// entry above is the acronym arm of: same family, different evidence,
+/// different tier, and only the bounded one may park a run. Listing a Warning
+/// here parks the run until the user decides it, which would make the
+/// "advisory" claim their registration makes false. The precedent that says
+/// otherwise (`factual.unsourced_term`, also a Warning) is left alone rather
+/// than copied.
 const FABRICATION_CODES: &[&str] = &[
     crate::validate::content::FACTUAL_UNSOURCED_METRIC,
     crate::validate::content::FACTUAL_UNSUPPORTED_DATE,
     crate::validate::content::FACTUAL_UNSOURCED_TERM,
     crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
+    crate::validate::content::FACTUAL_UNSOURCED_CERTIFICATION,
 ];
 
 /// djb2, byte-for-byte the renderer's `hashText`.
@@ -254,6 +270,18 @@ pub fn record_decision(wrapper: &str, issue_key: &str, decision: &str) -> Option
 /// which applies exactly this rule — still showed the same entry as pending:
 /// the two sides of one run disagreeing about whether it was finished.
 ///
+/// **Reads the anchored `line` when the entry carries one, never `evidence`
+/// alone.** `evidence` is routinely a bare token — a certification acronym, a
+/// bare year, a bare figure — and a bare token can legitimately recur on a
+/// DIFFERENT line the user never touched (a different bullet, a project name
+/// naming the same acronym). Searching for it anywhere in the document asks
+/// "does this substring still exist", not "is the flagged bullet gone", and
+/// strands a genuinely-applied Remove in `needsReview` forever. `line` is the
+/// exact anchor a Remove is applied against ([`containing_line`]), so checking
+/// it here asks the SAME question the removal answered. Only falls back to
+/// `evidence` when the entry carries no `line` — a report persisted before the
+/// field existed, or one whose span had no honest anchor to begin with.
+///
 /// An unrecognized decision token reads as undecided (the renderer's
 /// `parseDecision` rule), never as a verdict the user never gave. An entry
 /// with a blank span reads as absent rather than as a match against
@@ -262,6 +290,10 @@ fn entry_resolved(entry: &Value, document_text: &str) -> bool {
     match entry.get("decision").and_then(Value::as_str) {
         Some("keep") => true,
         Some("remove") => {
+            if let Some(line) = entry.get("line").and_then(Value::as_str) {
+                let line = line.trim();
+                return line.is_empty() || !document_text.contains(line);
+            }
             let span = entry
                 .get("evidence")
                 .and_then(Value::as_str)
