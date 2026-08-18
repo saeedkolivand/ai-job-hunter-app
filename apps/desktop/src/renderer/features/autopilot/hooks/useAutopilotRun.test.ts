@@ -21,6 +21,10 @@ vi.mock('@ajh/translations', () => ({
 
 const runMutateAsync = vi.fn();
 
+/** Stable across renders — the hook lists it in `handleStep`'s dep array, so an
+ *  identity that changed every render would silently re-subscribe each time. */
+const invalidateAutopilots = vi.hoisted(() => vi.fn());
+
 /** Captures the step handler the hook registers, so a test can deliver step
  *  events the way the Tauri event bridge does. */
 const stepEvents = vi.hoisted(() => ({
@@ -36,6 +40,7 @@ vi.mock('@/services', async (importActual) => {
     usePauseAutopilot: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
     useResumeAutopilot: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
     useRemoveAutopilot: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+    useInvalidateAutopilots: () => invalidateAutopilots,
     useAutopilotStepEvents: (cb: (event: never) => void) => {
       stepEvents.handler = cb as unknown as typeof stepEvents.handler;
     },
@@ -144,6 +149,14 @@ describe('useAutopilotRun — handleRun error-payload handling', () => {
     });
 
     // Not the silent-success 'done' state — no run actually happened.
+    //
+    // 'idle' specifically, and not the 'scraping' the refusal would seem to
+    // justify: 'idle' is the value that hands the card back to the backend's
+    // persisted `runStatus` (see AutopilotPage), so it still displays as
+    // running while the concurrent run lasts AND clears when that run ends.
+    // Pinning 'scraping' here would strand the card forever whenever the
+    // concurrent run FAILS, because the Rust failure path emits no terminal
+    // step for anything to observe.
     expect(result.current.runStates['ap-concurrent']).toBe('idle');
     // Not the red 'error' banner either — a distinct, honest message.
     expect(result.current.error).toBe('autopilot.wizard.alreadyRunning');
@@ -187,5 +200,70 @@ describe('useAutopilotRun — batched step events', () => {
     expect(steps).toEqual(['scrape_start', 'scrape_done']);
     // The machine also advanced through BOTH transitions, not just the last.
     expect(result.current.runStates['ap-batch']).toBe('ranking');
+  });
+});
+
+/**
+ * A run the CURRENT mount never started. `runStates` is component-local, so
+ * navigating away and back — or a scheduled run nobody clicked — delivers steps
+ * with no local state and no preceding `scrape_start`.
+ */
+describe('useAutopilotRun — steps for a run this mount did not start', () => {
+  it('advances an unknown autopilot straight from the mid-run step it first sees', () => {
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+    const deliver = stepEvents.handler;
+
+    // No handleRun, no scrape_start — the first thing this mount ever hears
+    // about `ap-remount` is that scraping already finished.
+    act(() => {
+      deliver?.({ jobId: 'j9', autopilotId: 'ap-remount', step: 'scrape_done', detail: '8 jobs' });
+    });
+    expect(result.current.runStates['ap-remount']).toBe('ranking');
+
+    act(() => {
+      deliver?.({ jobId: 'j9', autopilotId: 'ap-remount', step: 'complete', detail: 'Found 8' });
+    });
+    expect(result.current.runStates['ap-remount']).toBe('done');
+  });
+
+  it('refreshes the autopilot list when a run ends, but not on every step', () => {
+    invalidateAutopilots.mockClear();
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+    const deliver = stepEvents.handler;
+    expect(result.current, 'the hook must render').toBeTruthy();
+
+    // Mid-run chatter must not invalidate — the record has not changed yet, and
+    // a refetch per step would refetch several times a run for nothing.
+    act(() => {
+      deliver?.({ jobId: 'j10', autopilotId: 'ap-inv', step: 'scrape_start', detail: 'boards' });
+      deliver?.({ jobId: 'j10', autopilotId: 'ap-inv', step: 'rank_done', detail: 'ranked' });
+    });
+    expect(invalidateAutopilots).not.toHaveBeenCalled();
+
+    // `complete` is the moment the persisted record gains this run's found jobs
+    // and `runStatus`. Without this the card keeps the pre-run data until the
+    // next navigation — the whole reason a finished run looked unfinished.
+    act(() => {
+      deliver?.({ jobId: 'j10', autopilotId: 'ap-inv', step: 'complete', detail: 'Found 8' });
+    });
+    expect(invalidateAutopilots).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the list on a cancelled run too, not only a completed one', () => {
+    // `cancelled` is the OTHER terminal step, and it changes the record just as
+    // much: `finish_cancelled` clears the live status and wipes the previous
+    // run's summaries, so a card left on pre-cancel data is showing a run that
+    // was abandoned.
+    invalidateAutopilots.mockClear();
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+    const deliver = stepEvents.handler;
+    expect(result.current, 'the hook must render').toBeTruthy();
+
+    act(() => {
+      deliver?.({ jobId: 'j11', autopilotId: 'ap-cancel', step: 'cancelled', detail: 'stopped' });
+    });
+
+    expect(invalidateAutopilots).toHaveBeenCalledTimes(1);
+    expect(result.current.runStates['ap-cancel']).toBe('cancelled');
   });
 });
