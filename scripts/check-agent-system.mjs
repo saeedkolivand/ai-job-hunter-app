@@ -157,8 +157,13 @@ function checkStaleTokens() {
 // ── Check 2: ADR index ↔ files ───────────────────────────────────────────────
 function checkAdrIndex() {
   if (!exists(ADR_DIR) || !exists(KNOWLEDGE_README)) return;
+  // Two filename series live here: the open `adr-NNN-` one and the closed
+  // `NNNN-` one folded in from the retired second ADR tree (#1000). Both are
+  // indexed in the README, so both must be guarded — matching only `adr-` let
+  // a closed-series ADR be dropped from the index, or linked after deletion,
+  // without this check noticing.
   const onDisk = readdirSync(join(ROOT, ADR_DIR))
-    .filter((f) => /^adr-\d+.*\.md$/.test(f))
+    .filter((f) => /^(?:adr-)?\d+.*\.md$/.test(f))
     .map((f) => f.replace(/\.md$/, ''));
   const readme = read(KNOWLEDGE_README);
   for (const adr of onDisk) {
@@ -166,8 +171,8 @@ function checkAdrIndex() {
       fail('ADR index drift', KNOWLEDGE_README, `missing index entry for ${adr} (present on disk)`);
     }
   }
-  // Linked-but-absent: any decision-records/adr-* link whose file is gone.
-  for (const [, name] of readme.matchAll(/decision-records\/(adr-[\w-]+)\.md/g)) {
+  // Linked-but-absent: any decision-records ADR link whose file is gone.
+  for (const [, name] of readme.matchAll(/decision-records\/((?:adr-)?\d[\w-]*)\.md/g)) {
     if (!onDisk.includes(name)) {
       fail('ADR index drift', KNOWLEDGE_README, `links ${name} — no such file in ${ADR_DIR}/`);
     }
