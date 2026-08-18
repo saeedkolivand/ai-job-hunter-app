@@ -54,6 +54,15 @@ pub(crate) use crate::documents::evidence::contains_word as contains_phrase;
 mod alignment;
 mod ats;
 mod consistency;
+/// Years of experience, certifications and education — the invention classes
+/// the metric family cannot see.
+///
+/// **`cfg(test)` for now, on purpose.** These extractors have not been wired
+/// into [`validate_content`] and emit no issue: a check that has not been
+/// measured on documents that are FINE has not earned a severity yet. The
+/// measurement is `credential_extractor_calibration` in `test.rs`.
+#[cfg(test)]
+mod credentials;
 mod duplicates;
 mod factual;
 mod language;

@@ -6130,3 +6130,206 @@ fn an_unrecognised_experience_heading_is_not_read_as_deleted_jobs() {
         );
     }
 }
+
+// ── Track A2: credential extractors, CALIBRATED before they earn a severity ──
+
+/// The corpus `tests/eval.rs` grades its extraction shape over. Read here too,
+/// because "which documents are known-truthful" is the question this
+/// calibration is asking, and those two are the only full résumés in the repo
+/// that were never written as validator input.
+const CORPUS_SWE: &str = include_str!("../../../tests/corpus/synthetic_swe.txt");
+const CORPUS_DESIGNER: &str = include_str!("../../../tests/corpus/synthetic_designer.txt");
+
+/// A German résumé generated from `en_source_resume.txt` — same employers,
+/// same dates, same institution, same eight years, written in the other
+/// language. This is the document every value-comparing check has to stay
+/// silent on, and the one the repo did not previously own.
+const DE_FROM_EN_SOURCE: &str = "Jane Doe\n\
+     jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+     PROFIL\n\n\
+     Acht Jahre Erfahrung als Backend-Entwicklerin, überwiegend im Zahlungsverkehr.\n\n\
+     BERUFSERFAHRUNG\n\n\
+     Senior Backend Engineer | Acme Payments | 2021 - Heute\n\
+     - Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt\n\n\
+     Backend Developer | Globex Logistics | 2018 - 2021\n\
+     - Die Abrechnungsschnittstelle in Python und PostgreSQL gebaut\n\n\
+     AUSBILDUNG\n\n\
+     BSc Informatik, TU Berlin, 2014 - 2018\n";
+
+/// The same document, except the institution is rendered with its GERMAN city
+/// name — the correct translation of an English source's "Technical University
+/// of Munich", and the case that decides whether A2c can compare values.
+const DE_TRANSLATED_INSTITUTION: &str = "Jana Mustermann\n\n\
+     AUSBILDUNG\n\n\
+     BSc Informatik, Technische Universität München, 2014 - 2018\n";
+
+const EN_SOURCE_MUNICH: &str = "Jane Doe\n\n\
+     EXPERIENCE\n\n\
+     Backend Developer | Globex Logistics | 2018 - 2021\n\
+     - Built the billing API in Python\n\n\
+     EDUCATION\n\n\
+     BSc Computer Science, Technical University of Munich, 2014 - 2018\n";
+
+/// A source that actually HOLDS certifications. Without one, a certification
+/// false-positive rate of zero would only mean the corpus never mentions a
+/// certification — a number that measures the fixtures, not the check.
+const EN_SOURCE_CERTIFIED: &str = "Jane Doe\n\n\
+     EXPERIENCE\n\n\
+     Senior Backend Engineer | Acme Payments | 2021 - Present\n\
+     - Ran the settlement platform on Kubernetes\n\n\
+     CERTIFICATIONS\n\n\
+     AWS Certified Solutions Architect – Associate\n\
+     Certified Kubernetes Administrator (CKA)\n";
+
+/// The same certifications, re-worded the way a tailored English résumé would.
+const EN_CERT_REWORDED: &str = "Jane Doe\n\n\
+     CERTIFICATIONS\n\n\
+     AWS Certified Solutions Architect\n\
+     CKA\n";
+
+/// …and translated into German, which is the shape that decides whether a
+/// certification check can compare values at all.
+const DE_CERT_FROM_EN_SOURCE: &str = "Jane Doe\n\n\
+     ZERTIFIZIERUNGEN\n\n\
+     Zertifizierter AWS Solutions Architect\n\
+     Zertifizierter Kubernetes-Administrator (CKA)\n";
+
+/// Every document in this repo that is KNOWN-TRUTHFUL, as
+/// `(label, generated, source)`. A corpus résumé is graded against itself: it
+/// is a real document, and every credential in it is by definition sourced.
+fn truthful_documents() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        ("en_cert_reworded", EN_CERT_REWORDED, EN_SOURCE_CERTIFIED),
+        (
+            "de_cert_from_en_source",
+            DE_CERT_FROM_EN_SOURCE,
+            EN_SOURCE_CERTIFIED,
+        ),
+        ("en_generated_clean", EN_CLEAN, EN_SOURCE),
+        ("en_generated_paraphrased", EN_PARAPHRASED, EN_SOURCE),
+        ("de_generated_clean", DE_CLEAN, DE_SOURCE),
+        ("de_generated_paraphrased", DE_PARAPHRASED, DE_SOURCE),
+        ("en_generated_projects_tier2", EN_PROJECTS_TIER2, EN_SOURCE),
+        ("en_generated_projects_tier3", EN_PROJECTS_TIER3, EN_SOURCE),
+        ("en_letter_grounded", EN_LETTER_GROUNDED, EN_SOURCE),
+        ("corpus_synthetic_swe", CORPUS_SWE, CORPUS_SWE),
+        (
+            "corpus_synthetic_designer",
+            CORPUS_DESIGNER,
+            CORPUS_DESIGNER,
+        ),
+        ("de_generated_from_en_source", DE_FROM_EN_SOURCE, EN_SOURCE),
+        (
+            "de_translated_institution",
+            DE_TRANSLATED_INSTITUTION,
+            EN_SOURCE_MUNICH,
+        ),
+    ]
+}
+
+/// Documents carrying a KNOWN invention, so the calibration reports recall next
+/// to the false-positive rate. A check that is silent on everything is not a
+/// check.
+fn invented_documents() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        (
+            "inflated_years",
+            "Jane Doe\n\nSUMMARY\n\nBackend engineer with 15+ years of experience in payments.\n",
+            EN_SOURCE,
+        ),
+        (
+            "invented_certification",
+            "Jane Doe\n\nCERTIFICATIONS\n\nAWS Certified Solutions Architect – Professional\nPMP\n",
+            EN_SOURCE,
+        ),
+        (
+            "invented_education",
+            "Jane Doe\n\nEDUCATION\n\nMSc Computer Science, Stanford University, 2012 - 2014\n",
+            "Jane Doe\n\nEXPERIENCE\n\nBackend Developer | Globex | 2018 - 2021\n- Built the billing API\n",
+        ),
+    ]
+}
+
+/// **The measurement that has to happen before a severity is chosen.**
+///
+/// This repo has already shipped one false Critical on a truthful résumé, and a
+/// false Critical here is not a cosmetic miss: it blanks `keywordCoverage` and
+/// suppresses every alignment finding on a document that is fine. So each new
+/// extractor is run over every truthful document the repo owns FIRST, and the
+/// severities are picked from what this prints — not from what the checks are
+/// called.
+///
+/// Run with `cargo test --all-features credential_extractor_calibration -- --nocapture`.
+#[test]
+fn credential_extractor_calibration() {
+    let probe = |label: &str, generated: &str, source: &str| {
+        let generated_sections = split_sections(generated, DocKind::Resume);
+        let source_sections = split_sections(source, DocKind::Resume);
+        let reference = credentials::reference_year(source, generated);
+        let supported = credentials::supported_years(source, &source_sections, reference);
+        let years = credentials::inflated_years_claims(
+            &generated_sections,
+            source,
+            &source_sections,
+            reference,
+        );
+        let certs = credentials::unsupported_certs(&generated_sections, source);
+        let by_value = credentials::institutions_absent_by_value(&generated_sections, source);
+        let by_absence =
+            credentials::unsupported_institutions(&generated_sections, source, &source_sections);
+        // The EXTRACTED spans are printed next to the FLAGGED ones on purpose.
+        // "zero false positives" is worthless if the extractor saw nothing at
+        // all: `en_generated_clean` has to show its "Eight years" claim being
+        // read and then cleared, or the zero is a tautology.
+        println!(
+            "{label:<28} supported={supported:?} seen: yrs={:?} cert={:?} edu={:?}\n\
+             {:28} FLAGGED: years={:?} certs={:?} edu_by_value={:?} edu_by_absence={:?}",
+            credentials::years_claims(&generated_sections)
+                .iter()
+                .map(|c| c.years)
+                .collect::<Vec<_>>(),
+            credentials::cert_claims(&generated_sections)
+                .iter()
+                .map(|c| c.key.clone())
+                .collect::<Vec<_>>(),
+            credentials::institutions(&generated_sections)
+                .iter()
+                .map(|(n, _)| n.clone())
+                .collect::<Vec<_>>(),
+            "",
+            years
+                .iter()
+                .map(|(c, _)| format!("{}({})", c.raw, c.years))
+                .collect::<Vec<_>>(),
+            certs.iter().map(|c| c.raw.as_str()).collect::<Vec<_>>(),
+            by_value.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            by_absence
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>(),
+        );
+        (years.len(), certs.len(), by_value.len(), by_absence.len())
+    };
+
+    println!("\n── truthful documents (every finding here is a FALSE POSITIVE) ──");
+    let mut fp = (0, 0, 0, 0);
+    for (label, generated, source) in truthful_documents() {
+        let n = probe(label, generated, source);
+        fp = (fp.0 + n.0, fp.1 + n.1, fp.2 + n.2, fp.3 + n.3);
+    }
+
+    println!("\n── documents carrying a known invention (recall) ──");
+    for (label, generated, source) in invented_documents() {
+        probe(label, generated, source);
+    }
+
+    println!(
+        "\nFALSE POSITIVES over {} truthful documents: years={} certs={} \
+         edu_by_value={} edu_by_absence={}\n",
+        truthful_documents().len(),
+        fp.0,
+        fp.1,
+        fp.2,
+        fp.3
+    );
+}
