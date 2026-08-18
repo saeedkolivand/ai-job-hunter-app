@@ -1,8 +1,12 @@
 // Config for the /world scroll-scrubbed camera-flight route. Kept as plain,
 // unit-testable data (world-config.test.ts) separate from the client component
-// that mounts the vendored engine (WorldClient.tsx). Asset paths are absolute
-// from the site root; the media files themselves land in public/world/ later
-// (rendered separately) — the paths are wired now per the approved plan.
+// that mounts the vendored engine (WorldClient.tsx).
+//
+// Poster stills are absolute from the site root and ship in public/world/ —
+// they are ~2 MB total and must paint before anything is fetched. The VIDEO
+// clips do not ship in the repo: 33 files, 62 MB, and re-encoding them rewrites
+// every byte, so a single re-encode round already cost ~38 MB of permanent
+// history. They live in object storage and are addressed through `vid()`.
 
 export interface WorldSectionCta {
   primary: { label: string; href: string };
@@ -39,6 +43,27 @@ export interface WorldConfig {
   connectorsMobile: string[];
 }
 
+// Where the /world clips are served from. They live as assets on a tagged
+// GitHub release rather than in the repo or in `public/`, for two reasons:
+// release assets carry no bandwidth limit, while a Pages site has a 100 GB per
+// month soft one that this route's 20 MB device-set cap would reach at roughly
+// 5,000 visits; and video does not delta-compress, so keeping them in git makes
+// every re-encode cost its full size in permanent history forever.
+//
+// Pinned to one release TAG on purpose. Publishing `world-assets-v2` with a new
+// set and bumping this line is atomic; mutating the assets on an existing
+// release is not, and would leave cached clients disagreeing with fresh ones.
+//
+// Override to use local files: `NEXT_PUBLIC_WORLD_VIDEO_BASE=/world/vid` with
+// the clips in `apps/landing/public/world/vid/` (gitignored). Next inlines this
+// at build time, which is what the static export needs.
+const VIDEO_BASE =
+  process.env.NEXT_PUBLIC_WORLD_VIDEO_BASE ??
+  'https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/world-assets-v1';
+
+/** URL for one /world clip. `file` is the bare name, e.g. `slump.mp4`. */
+const vid = (file: string): string => `${VIDEO_BASE}/${file}`;
+
 // Same GitHub repo URL used on the home page finale (src/content/home/body.html).
 const GITHUB_URL = 'https://github.com/saeedkolivand/ai-job-hunter-app';
 
@@ -53,8 +78,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Slump',
       still: '/world/slump.webp',
       stillMobile: '/world/slump-m.webp',
-      clip: '/world/vid/slump.mp4',
-      clipMobile: '/world/vid/slump-m.mp4',
+      clip: vid('slump.mp4'),
+      clipMobile: vid('slump-m.mp4'),
       accent: '#e24b4a',
       scroll: 1.6,
       linger: 0.45,
@@ -68,8 +93,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Doomscroll',
       still: '/world/descent.webp',
       stillMobile: '/world/descent-m.webp',
-      clip: '/world/vid/descent.mp4',
-      clipMobile: '/world/vid/descent-m.mp4',
+      clip: vid('descent.mp4'),
+      clipMobile: vid('descent-m.mp4'),
       accent: '#6cc6ff',
       eyebrow: 'THE DOOMSCROLL',
       title: 'Every board. Every day. Nothing.',
@@ -81,8 +106,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Turn',
       still: '/world/workshop.webp',
       stillMobile: '/world/workshop-m.webp',
-      clip: '/world/vid/workshop.mp4',
-      clipMobile: '/world/vid/workshop-m.mp4',
+      clip: vid('workshop.mp4'),
+      clipMobile: vid('workshop-m.mp4'),
       accent: '#e24b4a',
       eyebrow: 'THE TURN',
       title: 'So I built a robot to do it.',
@@ -94,8 +119,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Robot',
       still: '/world/engine.webp',
       stillMobile: '/world/engine-m.webp',
-      clip: '/world/vid/engine.mp4',
-      clipMobile: '/world/vid/engine-m.mp4',
+      clip: vid('engine.mp4'),
+      clipMobile: vid('engine-m.mp4'),
       accent: '#6cc6ff',
       eyebrow: 'THE ROBOT',
       title: 'It does everything else.',
@@ -107,8 +132,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'Godmode',
       still: '/world/godmode.webp',
       stillMobile: '/world/godmode-m.webp',
-      clip: '/world/vid/godmode.mp4',
-      clipMobile: '/world/vid/godmode-m.mp4',
+      clip: vid('godmode.mp4'),
+      clipMobile: vid('godmode-m.mp4'),
       accent: '#e24b4a',
       eyebrow: 'GODMODE',
       title: 'It hunts while you sleep.',
@@ -120,8 +145,8 @@ export const WORLD_CONFIG: WorldConfig = {
       label: 'The Offer',
       still: '/world/offer.webp',
       stillMobile: '/world/offer-m.webp',
-      clip: '/world/vid/offer.mp4',
-      clipMobile: '/world/vid/offer-m.mp4',
+      clip: vid('offer.mp4'),
+      clipMobile: vid('offer-m.mp4'),
       accent: '#e24b4a',
       scroll: 1.7,
       linger: 0.5,
@@ -136,18 +161,18 @@ export const WORLD_CONFIG: WorldConfig = {
     },
   ],
   connectors: [
-    '/world/vid/conn1.mp4',
-    '/world/vid/conn2.mp4',
-    '/world/vid/conn3.mp4',
-    '/world/vid/conn4.mp4',
-    '/world/vid/conn5.mp4',
+    vid('conn1.mp4'),
+    vid('conn2.mp4'),
+    vid('conn3.mp4'),
+    vid('conn4.mp4'),
+    vid('conn5.mp4'),
   ],
   connectorsMobile: [
-    '/world/vid/conn1-m.mp4',
-    '/world/vid/conn2-m.mp4',
-    '/world/vid/conn3-m.mp4',
-    '/world/vid/conn4-m.mp4',
-    '/world/vid/conn5-m.mp4',
+    vid('conn1-m.mp4'),
+    vid('conn2-m.mp4'),
+    vid('conn3-m.mp4'),
+    vid('conn4-m.mp4'),
+    vid('conn5-m.mp4'),
   ],
 };
 
