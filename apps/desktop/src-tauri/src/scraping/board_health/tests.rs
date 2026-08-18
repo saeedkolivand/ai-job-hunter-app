@@ -611,6 +611,37 @@ fn record_run_returns_health_positionally_and_keeps_boards_independent() {
 }
 
 #[test]
+fn the_same_board_twice_in_one_run_double_counts_it_todays_contract() {
+    // `record_run` reads-folds-writes INSIDE the loop (one row per summary in
+    // ONE transaction), so a duplicated board id in `summaries` folds the
+    // second occurrence on top of the write the first one just made — one
+    // run counts as two verified runs and the streak advances by two. The
+    // engine's caller (`scrape_boards_with_resolver_and_overrides`) dedupes
+    // `boards` before resolving, so this path is unreachable from the engine
+    // today — but nothing in `record_run` itself enforces that, and the
+    // module doc only obligates the caller to pre-filter to resolvable ids,
+    // not to deduplicate them. Pinned here so a future direct caller (or an
+    // engine change that drops the pre-dedupe) double-counts LOUDLY, in a
+    // failing test, rather than silently.
+    let (_dir, store) = open_store();
+    let out = store
+        .record_run("job-1", &[failed("wwr", "boom"), failed("wwr", "boom")])
+        .unwrap();
+
+    assert_eq!(
+        out.len(),
+        2,
+        "one health per input summary, even duplicated"
+    );
+    assert_eq!(
+        store.health_for("wwr").unwrap().consecutive_failures,
+        2,
+        "today's contract: an in-run duplicate is NOT deduped by record_run"
+    );
+    assert_eq!(store.health_for("wwr").unwrap().verified_runs, 2);
+}
+
+#[test]
 fn the_table_holds_exactly_one_row_per_board_however_many_runs() {
     // The retention bound: rows are bounded by the board registry, not by time.
     let (_dir, store) = open_store();

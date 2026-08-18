@@ -541,12 +541,29 @@ impl BoardHealthStore {
             log::warn!("[board-health] failed to query health; reporting none");
             return Vec::new();
         };
-        rows.filter_map(Result::ok)
+        // A row whose columns fail to decode is dropped rather than failing the
+        // whole read (one corrupt row must not blank every OTHER board's
+        // badge) — but silently dropping it is indistinguishable from "this
+        // board is healthy" (no badge either way), so count and warn once
+        // instead of losing the signal entirely.
+        let mut dropped = 0usize;
+        let out: Vec<BoardHealthEntry> = rows
+            .filter_map(|row| match row {
+                Ok(row) => Some(row),
+                Err(_) => {
+                    dropped += 1;
+                    None
+                }
+            })
             .map(|(board, mut health)| {
                 health.status = derive_status(&health, now);
                 BoardHealthEntry { board, health }
             })
-            .collect()
+            .collect();
+        if dropped > 0 {
+            log::warn!("[board-health] dropped {dropped} row(s) that failed to decode");
+        }
+        out
     }
 
     /// Current health of one board, with the verdict re-derived against *now*.
@@ -563,9 +580,19 @@ impl BoardHealthStore {
     }
 
     /// Wipe every board's history (factory reset).
+    ///
+    /// `Resettable::reset` is infallible (returns `()`), so a `DELETE` that
+    /// fails has nowhere to surface but a log line — matching
+    /// `PipelineRunStore::clear_all`'s pattern (see that fn and
+    /// `commands::privacy`'s `impl Resettable for PipelineRunStore` doc):
+    /// that is the trait's contract for every store here, not a shortcut
+    /// unique to one of them. Silently swallowing it (as this used to) would
+    /// let `board_health.db` survive a reset the UI reports as successful.
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM board_health", []).ok();
+        if let Err(e) = conn.execute("DELETE FROM board_health", []) {
+            log::warn!("[board-health] factory reset failed to clear board_health: {e}");
+        }
     }
 
     /// How many boards have stored history — i.e. the row count.
