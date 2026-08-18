@@ -319,10 +319,18 @@ jobs:
           pnpm check:toolchain-pin
           echo "::endgroup::"
 
-      - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure'
+      - name: 🔌 Check event-subscription inventory
+        id: event_subscriptions
+        continue-on-error: true
         run: |
-          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, tech-radar, or toolchain-pin drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', and 'pnpm check:toolchain-pin' locally to fix."
+          echo "::group::Checking backend event-subscription inventory"
+          pnpm check:event-subscriptions
+          echo "::endgroup::"
+
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, or event-subscription drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', and 'pnpm check:event-subscriptions' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 

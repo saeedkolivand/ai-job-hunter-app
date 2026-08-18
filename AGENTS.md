@@ -46,6 +46,7 @@ Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/de
 13. **Stale-branch check before work:** `git fetch origin && git branch -r | rg $(git branch --show-current)`.
 14. **New IPC capability** (5 steps): `ipc/contracts/` → `commands/` → `tauri-client/` → a `services/` hook → query key in `services/query-client/`.
 15. **Never bypass ESLint**: no `// eslint-disable`, no `@ts-ignore`. Scoped override in `eslint.config.mjs` with a reason. CI runs `lint:strict --max-warnings 0`.
+16. **Backend work must survive navigation.** A subscription only receives events while its component is mounted; the Rust work it describes does not unmount. Progress state kept in a route component is discarded on navigation, and the terminal event is dropped — so the UI shows idle for work still running. Mount subscriptions from `routes/__root.tsx` or a provider, and read in-flight truth from the backend (persisted status / the job registry), not from local state. Enforced: `pnpm check:event-subscriptions` fails until every subscribing file is declared with its mount lifetime.
 
 ---
 
