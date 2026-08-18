@@ -174,6 +174,17 @@ interface AutopilotSlice {
   /** The found job's url the user applied from — promoted to `focusedJobUrl`
    *  alongside `lastAppliedId` so Back scrolls to that specific row. */
   lastAppliedJobUrl: string | null;
+  /**
+   * The Run/Apply banner `useAutopilotRun` shows on `AutopilotPage` — a start
+   * failure, "all boards failed", or the backend's "already running" refusal.
+   * Lives here (not a `useState` local to that hook) for the same reason
+   * `JobsSlice.scrapeJobId` does: the hook is re-created from scratch on every
+   * `AutopilotPage` mount, so a local `useState` discarded the banner on any
+   * navigate-away-and-back, including the ONE case with no other trace at
+   * all — the concurrent-run refusal, which (unlike a genuine failure) never
+   * touches the persisted `runStatus` badge either.
+   */
+  error: string | null;
 }
 
 /**
@@ -380,6 +391,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     focusedJobUrl: null,
     lastAppliedId: null,
     lastAppliedJobUrl: null,
+    error: null,
   },
   applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
   applications: { collapsedSections: [], filter: '', stageGroup: null, sort: 'updated' },
