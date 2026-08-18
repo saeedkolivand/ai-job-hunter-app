@@ -82,6 +82,21 @@ const FLAKY_MIN_RUNS: u32 = 8;
 /// report [`BoardHealthStatus::Flaky`].
 const FLAKY_FAIL_PERCENT: u32 = 25;
 
+/// Cap on `verified_runs` before [`decay_tallies`] halves both tallies.
+///
+/// Without a cap, `verified_runs`/`failed_runs` are LIFETIME counts, which
+/// gives [`is_flaky`] unbounded inertia in both directions: a board that had a
+/// 10-run outage and has since worked flawlessly stays badged `unreliable` for
+/// dozens more clean runs (the old failures are diluted, not forgotten), while
+/// a board with a long clean history that starts genuinely flapping needs just
+/// as many runs before the rate crosses the threshold — precisely the
+/// alternating-failure pattern [`BoardHealthStatus::Flaky`] exists to catch,
+/// which `consecutive_failures` structurally cannot see.
+///
+/// Twice [`FLAKY_MIN_RUNS`] so a decay can never drop `verified_runs` below the
+/// minimum sample [`is_flaky`] itself requires.
+const FLAKY_WINDOW_CAP: u32 = FLAKY_MIN_RUNS * 2;
+
 /// Max stored length of the remembered failure reason.
 ///
 /// The reason is REDACTED (`observability::sanitize_reason`) before it is stored,
@@ -115,8 +130,10 @@ pub enum BoardHealthStatus {
     /// A consecutive-failure counter alone cannot see this: a board that
     /// alternates ok/fail every run reads `Healthy` on every other run and
     /// "down for 1 run" in between, so it never badges — indistinguishable from
-    /// a board that failed exactly once. The lifetime counters close that gap
-    /// without reintroducing a growth axis (two more columns in the same row).
+    /// a board that failed exactly once. The tallies close that gap without
+    /// reintroducing a growth axis (two more columns in the same row) — and
+    /// [`decay_tallies`] bounds them to a rolling window so the verdict tracks
+    /// RECENT reliability, not the board's entire history.
     Flaky,
 }
 
@@ -154,12 +171,15 @@ pub struct BoardHealth {
     /// Only ever set by a run that actually CONTACTED the board (see [`fold`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run_id: Option<String>,
-    /// Lifetime count of runs that actually contacted the board (ok + error).
-    /// Skips are excluded — they verify nothing.
+    /// Count of runs that actually contacted the board (ok + error) within the
+    /// decayed rolling window [`decay_tallies`] maintains (bounded by
+    /// [`FLAKY_WINDOW_CAP`], not the board's entire history). Skips are
+    /// excluded — they verify nothing.
     #[serde(default)]
     pub verified_runs: u32,
-    /// Lifetime count of those runs that failed. `failed_runs / verified_runs` is
-    /// the flapping signal a consecutive-failure counter structurally cannot see.
+    /// Count of those windowed runs that failed. `failed_runs / verified_runs`
+    /// is the flapping signal a consecutive-failure counter structurally
+    /// cannot see.
     #[serde(default)]
     pub failed_runs: u32,
 }
@@ -252,6 +272,8 @@ pub fn fold(
             next.last_success_at = Some(now);
             next.last_verified_at = Some(now);
             next.verified_runs = next.verified_runs.saturating_add(1);
+            (next.verified_runs, next.failed_runs) =
+                decay_tallies(next.verified_runs, next.failed_runs);
             next.last_run_id = Some(run_id.to_string());
         }
         RunOutcome::Error => {
@@ -265,6 +287,8 @@ pub fn fold(
             next.last_verified_at = Some(now);
             next.verified_runs = next.verified_runs.saturating_add(1);
             next.failed_runs = next.failed_runs.saturating_add(1);
+            (next.verified_runs, next.failed_runs) =
+                decay_tallies(next.verified_runs, next.failed_runs);
             next.last_run_id = Some(run_id.to_string());
         }
         // A skip advances NOTHING — not even `last_run_id`. That field names the
@@ -325,6 +349,30 @@ fn derive_status(h: &BoardHealth, now: u64) -> BoardHealthStatus {
 fn is_flaky(h: &BoardHealth) -> bool {
     h.verified_runs >= FLAKY_MIN_RUNS
         && h.failed_runs.saturating_mul(100) >= h.verified_runs.saturating_mul(FLAKY_FAIL_PERCENT)
+}
+
+/// Bound `verified`/`failed` to a rolling window of at most [`FLAKY_WINDOW_CAP`]
+/// runs, called from [`fold`] every time a run actually contacts the board.
+/// `while` (not `if`) so a row written before this fix — whose `verified_runs`
+/// may already be arbitrarily large — collapses into the window in ONE fold
+/// call instead of trickling down one halving per run.
+///
+/// `failed` is rescaled BY THE SAME RATIO the halving applies to `verified`
+/// (`failed * new_verified / verified`), not halved independently
+/// (`failed / 2`). Independent halving rounds `failed` down LESS than
+/// `verified` whenever `verified` is odd, which can *inflate* the ratio and
+/// manufacture a Flaky verdict out of nothing but rounding — measured:
+/// `verified=17, failed=4` (23.5%, correctly not flaky) independently halves to
+/// `8, 2` (25.0%, now flaky) on a run that was a plain success. Proportional
+/// scaling can only round the ratio DOWN (floor), so a decay step alone can
+/// never flip a board from not-flaky to flaky.
+fn decay_tallies(mut verified: u32, mut failed: u32) -> (u32, u32) {
+    while verified > FLAKY_WINDOW_CAP {
+        let next_verified = verified / 2;
+        failed = failed.saturating_mul(next_verified) / verified;
+        verified = next_verified;
+    }
+    (verified, failed)
 }
 
 /// Per-board reliability store (`<dataDir>/board_health.db`).
@@ -388,7 +436,13 @@ impl BoardHealthStore {
     /// boards advanced. A storage failure is reported to the caller, which
     /// degrades to "no health badges this run" rather than failing the scrape —
     /// diagnostics must never break the thing they diagnose.
-    pub fn record_run(
+    ///
+    /// `pub(crate)`, not `pub`: the "bounded by the registry" invariant (see the
+    /// module doc) depends on every caller pre-filtering to
+    /// `resolvable_boards` — `ScraperEngine::record_health` is the only one
+    /// that does, and narrowing visibility keeps it that way rather than
+    /// leaving it a convention an out-of-crate caller could skip.
+    pub(crate) fn record_run(
         &self,
         run_id: &str,
         summaries: &[BoardScrapeSummary],

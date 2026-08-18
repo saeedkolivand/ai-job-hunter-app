@@ -252,15 +252,18 @@ fn a_flapping_board_is_reported_even_though_its_streak_keeps_resetting() {
 
 #[test]
 fn a_board_with_one_bad_run_in_a_long_healthy_life_is_not_called_flaky() {
-    // 1 failure in 20 verified runs = 5%, under FLAKY_FAIL_PERCENT.
+    // 1 failure in 15 verified runs = 6.7%, under FLAKY_FAIL_PERCENT, and
+    // under FLAKY_WINDOW_CAP so decay_tallies never touches it — this test is
+    // about the RATE gate, not the decay window (see the `decay_tallies`
+    // section below for that).
     let mut h = Some(fold_at(None, &failed("wwr", "HTTP 502"), T0));
     let mut at = T0 + DAY;
-    for _ in 0..19 {
+    for _ in 0..14 {
         h = Some(fold_at(h, &ok("wwr", 3), at));
         at += DAY;
     }
     let h = h.unwrap();
-    assert_eq!(h.verified_runs, 20);
+    assert_eq!(h.verified_runs, 15);
     assert_eq!(h.failed_runs, 1);
     assert_eq!(h.status, BoardHealthStatus::Healthy);
 }
@@ -302,6 +305,118 @@ fn a_failure_rate_below_the_minimum_sample_is_not_yet_a_verdict() {
     assert_eq!(h.verified_runs, 14);
     assert_eq!(h.failed_runs, 7);
     assert_eq!(h.status, BoardHealthStatus::Flaky);
+}
+
+// ── decay_tallies (MEDIUM 1: bounded rolling window, not lifetime totals) ───
+
+#[test]
+fn a_recovered_board_stops_reading_flaky_within_the_decay_window() {
+    // A 10-run outage…
+    let mut h = None;
+    let mut at = T0;
+    for _ in 0..10 {
+        h = Some(fold_at(h, &failed("wwr", "HTTP 500"), at));
+        at += DAY;
+    }
+    // …then the board is fixed and works PERFECTLY every run afterwards.
+    // Before this fix the LIFETIME ratio (10 failed / N verified) kept the
+    // board reading `unreliable · failed 10 of N runs` for 31 consecutive
+    // flawless runs, clearing only once `verified_runs` reached 41. The
+    // decayed window bounds that to FLAKY_WINDOW_CAP.
+    for _ in 0..15 {
+        h = Some(fold_at(h, &ok("wwr", 3), at));
+        at += DAY;
+    }
+    assert_eq!(
+        h.clone().unwrap().status,
+        BoardHealthStatus::Flaky,
+        "15 flawless runs after a 10-run outage: still inside the window"
+    );
+
+    // The 16th flawless run must clear it — pin both sides of the boundary so
+    // a regression back to unbounded tallies (or a wrong cap) is caught.
+    let recovered = fold_at(h, &ok("wwr", 3), at);
+    assert_eq!(recovered.status, BoardHealthStatus::Healthy);
+    assert_eq!(recovered.verified_runs, 8);
+    assert_eq!(recovered.failed_runs, 1);
+}
+
+#[test]
+fn an_alternating_failure_pattern_is_flagged_within_the_decay_window() {
+    // 100 clean runs establish the "long, boring history" precondition.
+    let mut h = None;
+    let mut at = T0;
+    for _ in 0..100 {
+        h = Some(fold_at(h, &ok("wwr", 3), at));
+        at += DAY;
+    }
+
+    // Then the board starts failing every OTHER run. Every FAIL run correctly
+    // reads `Failing` on its own (that part was never broken) — the gap is
+    // that every OK run in between resets `consecutive_failures` to 0, so only
+    // the RATE can catch the alternation on a run that itself succeeded, and
+    // `derive_status` only consults the rate once the streak is empty. Before
+    // this fix that rate took 100 more runs / 50 more failures (measured
+    // against the undecayed `is_flaky` before this fix) to cross
+    // FLAKY_FAIL_PERCENT on a recovered run at all. The decayed window
+    // catches it in 14 more runs / 7 more failures.
+    for _ in 0..6 {
+        h = Some(fold_at(h, &failed("wwr", "HTTP 502"), at));
+        at += DAY;
+        h = Some(fold_at(h, &ok("wwr", 3), at));
+        at += DAY;
+        assert_ne!(
+            h.clone().unwrap().status,
+            BoardHealthStatus::Flaky,
+            "not yet — still inside the tolerance"
+        );
+    }
+    // The 7th failure (14th run of the alternation, itself an OK run) crosses
+    // the threshold.
+    h = Some(fold_at(h, &failed("wwr", "HTTP 502"), at));
+    at += DAY;
+    let flagged = fold_at(h, &ok("wwr", 3), at);
+    assert_eq!(flagged.status, BoardHealthStatus::Flaky);
+    assert_eq!(flagged.verified_runs, 15);
+    assert_eq!(flagged.failed_runs, 4);
+}
+
+#[test]
+fn decay_never_manufactures_a_flaky_verdict_out_of_pure_rounding() {
+    // v=17, f=4 is 23.5% — correctly NOT flaky. Naive INDEPENDENT halving
+    // (`f / 2`) rounds `f` down less than `v` (odd) rounds down, inflating the
+    // ratio to exactly 25% and flipping the verdict on what was, from the
+    // board's point of view, a plain success. Proportional rescaling can only
+    // round the ratio DOWN, never up.
+    let (v, f) = decay_tallies(17, 4);
+    let h = BoardHealth {
+        verified_runs: v,
+        failed_runs: f,
+        ..BoardHealth::empty()
+    };
+    assert!(
+        !is_flaky(&h),
+        "decay alone must never manufacture a Flaky verdict; got v={v} f={f}"
+    );
+}
+
+#[test]
+fn decay_collapses_an_oversized_legacy_tally_in_one_fold_call() {
+    // A row written before this fix could carry an arbitrarily large lifetime
+    // `verified_runs`. `decay_tallies` must not need dozens of future runs to
+    // bring it back under the cap — one fold call must do it (hence `while`,
+    // not `if`, inside `decay_tallies`).
+    let legacy = BoardHealth {
+        verified_runs: 1000,
+        failed_runs: 500,
+        ..BoardHealth::empty()
+    };
+    let h = fold_at(Some(legacy), &ok("wwr", 1), T0);
+    assert!(
+        h.verified_runs <= FLAKY_WINDOW_CAP,
+        "one fold call must collapse an oversized legacy tally; got {}",
+        h.verified_runs
+    );
 }
 
 #[test]

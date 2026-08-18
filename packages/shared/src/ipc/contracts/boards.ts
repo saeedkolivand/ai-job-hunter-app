@@ -112,6 +112,9 @@ export interface BoardsContract {
  *   - `failing` — it is in a failure streak.
  *   - `stale`   — not failing, but its last confirmed success is over a
  *     fortnight old (in practice: skipped ever since).
+ *   - `flaky`   — working right now, but failing a meaningful share of its
+ *     recent verified runs (`failedRuns` / `verifiedRuns`) — the alternating
+ *     ok/fail pattern a consecutive-failure streak can't see.
  */
 export type BoardHealthStatus = 'unknown' | 'healthy' | 'failing' | 'stale' | 'flaky';
 
@@ -144,11 +147,12 @@ export interface BoardHealth {
    *  correlation id for the logs. Only ever set by a run that actually
    *  contacted the board, so a skipped run never claims authorship. */
   lastRunId?: string;
-  /** Lifetime runs that actually contacted the board (ok + error); skips are
-   *  excluded because they verify nothing. */
+  /** Runs that actually contacted the board (ok + error) within a decayed
+   *  rolling window (Rust bounds it, not the board's entire history); skips
+   *  are excluded because they verify nothing. */
   verifiedRuns: number;
-  /** Lifetime failures among those. `failedRuns / verifiedRuns` is the flapping
-   *  signal a consecutive-failure counter structurally cannot express. */
+  /** Failures among those windowed runs. `failedRuns / verifiedRuns` is the
+   *  flapping signal a consecutive-failure counter structurally cannot express. */
   failedRuns: number;
 }
 
