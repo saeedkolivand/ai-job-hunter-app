@@ -2865,7 +2865,7 @@ Import an existing LinkedIn session from the installed browser's cookie store.
 
 ### Referenced types — `linkedin`
 
-- `packages/shared/src/ipc/contracts/boards` — `CookieImportResult`
+- `packages/shared/src/ipc/contracts/boards.ts` — `CookieImportResult`
 
 ---
 

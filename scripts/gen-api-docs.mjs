@@ -18,7 +18,7 @@
 // Run with `pnpm gen:api`; CI enforces freshness via `pnpm gen:api:check`
 // (regenerate + `git diff --exit-code`).
 
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -232,17 +232,42 @@ function readChannels(entry) {
   return channels;
 }
 
+/**
+ * The file a relative import specifier points at, repo-relative.
+ *
+ * Contract sources spell a `.ts` file with the ESM `.js` specifier, and at
+ * least one omits the extension altogether — rewriting the specifier's spelling
+ * published `…/contracts/boards`, a path that does not exist, as a link.
+ * Resolve against the files on disk instead, and fail rather than emit a link
+ * that resolves to nothing.
+ */
+function resolveSpecifier(sf, spec) {
+  const base = resolve(dirname(sf.fileName), spec).replace(/\.js$/, '.ts');
+  const target = [base, `${base}.ts`, join(base, 'index.ts')].find((candidate) =>
+    statSync(candidate, { throwIfNoEntry: false })?.isFile()
+  );
+  if (!target) {
+    fail(`${repoPath(sf.fileName)} imports '${spec}', which resolves to no file`);
+  }
+  return repoPath(target);
+}
+
 /** Type names imported into a contract file, grouped by their source module. */
 function importedTypes(sf) {
   const groups = new Map();
   for (const stmt of sf.statements) {
     if (!ts.isImportDeclaration(stmt) || !stmt.importClause) continue;
-    const bindings = stmt.importClause.namedBindings;
-    if (!bindings || !ts.isNamedImports(bindings)) continue;
     const spec = stmt.moduleSpecifier.text;
-    const target = spec.startsWith('.')
-      ? repoPath(resolve(dirname(sf.fileName), spec)).replace(/\.js$/, '.ts')
-      : spec;
+    const where = `${repoPath(sf.fileName)} imports '${spec}'`;
+    // Anything but a named import is skipped silently by a plain `continue`,
+    // and its types then go undocumented with no sign anything was dropped.
+    if (stmt.importClause.name) fail(`${where} as a default import — use a named import`);
+    const bindings = stmt.importClause.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) {
+      fail(`${where} as a namespace import — name the types instead`);
+    }
+    if (!bindings) continue;
+    const target = spec.startsWith('.') ? resolveSpecifier(sf, spec) : spec;
     const names = bindings.elements.map((e) => e.name.text);
     groups.set(target, [...(groups.get(target) ?? []), ...names]);
   }
