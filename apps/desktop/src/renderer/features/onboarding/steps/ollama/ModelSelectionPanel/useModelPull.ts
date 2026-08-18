@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   calculateDownloadSpeed,
@@ -9,7 +9,7 @@ import {
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
-import { useJobEvents, usePullModel } from '@/services';
+import { useJobEvents, useJobQueue, usePullModel } from '@/services';
 
 type PullState = 'idle' | 'pulling' | 'done' | 'error';
 
@@ -23,6 +23,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
   const pullModel = usePullModel();
+  const jobQueue = useJobQueue();
 
   const [pullState, setPullState] = useState<PullState>('idle');
   const [pullProgress, setPullProgress] = useState(0);
@@ -68,6 +69,26 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
       notify.error({ message: err instanceof Error ? err.message : 'Download failed.' });
     }
   };
+
+  // Re-attach to a pull already running in the backend job registry — `pullJobId`
+  // lives only in this hook's own state, so ANY unmount of this panel (not just
+  // navigating away: switching to the Cloud/CLI tab and back, or Back/Forward
+  // through the wizard) loses it forever and no later job.stream/job.completed
+  // can match again. `ai_pull_model` is exclusive, so at most one can be running
+  // app-wide — reattaching to whichever the registry still reports means this
+  // panel resumes tracking the SAME job instead of quietly going deaf.
+  useEffect(() => {
+    if (pullJobId) return;
+    const active = jobQueue.data?.find(
+      (job) =>
+        job.kind === 'ai.pull_model' &&
+        (job.status === 'running' || job.status === 'streaming' || job.status === 'queued')
+    );
+    if (active) {
+      setPullJobId(active.id);
+      setPullState('pulling');
+    }
+  }, [jobQueue.data, pullJobId]);
 
   useJobEvents((event) => {
     if (event.type === 'job.stream' && event.jobId === pullJobId) {

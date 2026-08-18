@@ -16,6 +16,7 @@ export type JobStatus =
 export type JobKind =
   | 'ai.generate'
   | 'ai.embed'
+  | 'ai.pull_model'
   | 'document.import'
   | 'document.ocr'
   | 'document.chunk'
