@@ -41,7 +41,18 @@ export interface BoardCatalogEntry {
 }
 
 export interface BoardsContract {
-  /** Full scraper catalog (id, label, mode, auth tier, listed) from the registry. */
+  /**
+   * Full scraper catalog (id, label, mode, auth tier, listed) from the
+   * registry — `SCRAPERS` in
+   * `apps/desktop/src-tauri/src/scraping/boards/mod.rs`, whose per-scraper
+   * `Scraper` impl owns the auth tier and the listed flag.
+   *
+   * The canonical id list is `BOARD_IDS` in
+   * `packages/shared/src/schemas/index.ts`; it is not restated here, because
+   * every copy of it has gone stale. `indeed`, `stepstone`, `xing`, `workday`
+   * and `glassdoor` are no longer direct scrapers (ADR-026) — their postings
+   * now arrive through the `aggregator` board.
+   */
   catalog(): Promise<BoardCatalogEntry[]>;
 
   /** Live per-board reliability across runs (Track B1). Boards with no recorded
@@ -59,7 +70,17 @@ export interface BoardsContract {
     boardId: string;
   }): Promise<{ connected: boolean; accountEmail?: string; lastConnected?: number }>;
 
-  /** Try to import session cookies from the user's installed Chromium browsers. */
+  /**
+   * Try to import session cookies from the user's installed Chromium browsers
+   * (Chrome, Edge, Brave), so the user can skip the in-app re-login.
+   *
+   * Writes the SAME artifacts the in-app browser login produces, so nothing
+   * downstream changes. Best-effort by design and never a regression: a missing
+   * browser, a locked profile or a store this cannot decrypt all resolve as
+   * non-error outcomes (see `CookieImportOutcome`), not as failures. Which
+   * cookie encryption versions are covered, and why, is documented at the
+   * implementation: `apps/desktop/src-tauri/src/scraping/board_login/import.rs`.
+   */
   importCookies(req: { boardId: string }): Promise<CookieImportResult>;
 }
 

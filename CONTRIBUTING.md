@@ -254,7 +254,10 @@ Follow the 5-step checklist in [docs/PATTERNS.md](docs/PATTERNS.md#1-ipc-pattern
 4. Service hook in `apps/desktop/src/renderer/services/`
 5. Query keys in `services/query-client.ts`
 
-Then document the new namespace in [docs/API.md](docs/API.md).
+Then document it **in the contract**: TSDoc on the interface and on each method,
+next to the signature. [docs/API.md](docs/API.md) is generated from those
+contracts — run `pnpm gen:api` and commit the result. Never hand-edit that file;
+CI fails on a stale copy (`pnpm gen:api:check`).
 
 ---
 

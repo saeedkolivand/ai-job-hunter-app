@@ -28,6 +28,29 @@ export interface ProviderModelInfo {
 }
 
 export interface AiContract {
+  /**
+   * Start a generation. Returns as soon as the job is queued; the content
+   * arrives on `onStream`, keyed by the returned `jobId`.
+   *
+   * The request shape is `AiGenerateRequestSchema` in
+   * `packages/shared/src/schemas/index.ts` (code-generated into
+   * `apps/desktop/src-tauri/src/ipc_contracts/ai.rs` by `pnpm gen:ipc`). Read
+   * the schema for the field list — it is the source of truth and this doc
+   * deliberately does not restate it.
+   *
+   * Two fields whose behaviour does not follow from their types:
+   *
+   * - **`intent`** — the caller declares what the generation is _for_; each
+   *   provider adapter then picks its own sampling numbers
+   *   (`AiProvider::sampling_profile` in
+   *   `apps/desktop/src-tauri/src/commands/ai_provider/mod.rs`). The accepted
+   *   values are generated from the schema into `ipc_contracts/ai_intents.rs`,
+   *   so they cannot drift from a list nobody wrote down here.
+   * - **`temperature`** (and the other numeric sampling fields) — an explicit
+   *   **override** that beats `intent` on every adapter. In practice it is only
+   *   ever set by the per-model "Custom temperature" control in Settings; it is
+   *   not a default the app applies.
+   */
   generate(req: AiGenerateRequest): Promise<{ jobId: string }>;
 
   /**
@@ -138,8 +161,8 @@ export interface AiContract {
    * answers. Reuses the shared enricher: the active provider's own web search
    * (native tool, or the Ollama Web Search API for Ollama), cached. Degrades
    * gracefully — an empty brief, never an error, when the provider can't search
-   * or the search fails. The brief is reference context only; the prompt treats
-   * it as untrusted.
+   * or the search fails. The brief is reference context only; every prompt that
+   * consumes it fences it as untrusted input (ADR-010).
    */
   researchCompany(req: {
     jobAd: string;
@@ -199,8 +222,21 @@ export interface AiContract {
 
   unloadModel(model: string): Promise<void>;
 
-  /** Synchronous embedding — returns the vector, or `{ error }` on any provider/config
-   *  failure (a context-length overflow, a missing key, an unreachable host, …). */
+  /**
+   * Synchronous embedding — returns the vector, or `{ error }` on any
+   * provider/config failure (a context-length overflow, a missing key, an
+   * unreachable host, …).
+   *
+   * `model` is part of the wire shape but the handler does not read it: the
+   * active embedding config persisted in the document store always wins
+   * (`ai_embed` → `documents::embed`).
+   *
+   * Input longer than the provider's per-chunk limit is split, embedded per
+   * chunk, mean-pooled and L2-normalized into one vector. A context-length
+   * overflow is retried adaptively INSIDE this same call (the chunk is halved
+   * down to a floor, and the working cap is learned once per document) — never
+   * a follow-up request the caller has to issue.
+   */
   embed(req: {
     text: string;
     model?: string;
@@ -229,6 +265,11 @@ export interface AiContract {
   /**
    * Fetch available models from a cloud provider using its stored API key.
    * `baseUrl` is forwarded for OpenAI-compatible servers.
+   *
+   * Rejects — never resolves with a partial list — when the stored key is
+   * missing or refused, the provider is unreachable, or the catalogue response
+   * cannot be parsed. There is no cached-list fallback, so verifying a
+   * freshly-entered key in onboarding cannot pass on stale data.
    */
   listProviderModels(req: { provider: string; baseUrl?: string }): Promise<ProviderModelInfo[]>;
 

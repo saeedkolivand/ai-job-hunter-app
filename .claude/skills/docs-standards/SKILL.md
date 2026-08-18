@@ -7,7 +7,7 @@ description: Documentation maintenance rules — which docs map to which code ar
 
 ## Code → docs map
 
-- IPC contract change (`packages/shared/src/ipc/contracts/`) → `docs/API.md`.
+- IPC contract change (`packages/shared/src/ipc/contracts/`) → write the prose as **TSDoc on the contract member**, then `pnpm gen:api`. `docs/API.md` is generated (`scripts/gen-api-docs.mjs`) and must never be hand-edited; CI enforces freshness via `pnpm gen:api:check`.
 - New domain/module or boundary change → `docs/knowledge/` + `docs/ARCHITECTURE.md`.
 - Export/template change → `docs/EXPORT_TEMPLATES.md` + `docs/knowledge/resume-domain.md`.
 - Scraping/provider change → `docs/knowledge/automation-domain.md`.
