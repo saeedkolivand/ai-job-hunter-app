@@ -863,7 +863,15 @@ pub fn run() {
                     scraper_engine.set_health_store(store.clone());
                     manage_resettable(app, &mut reset_registry, "board_health", store);
                 }
-                Err(e) => log::warn!("[setup] board health store failed to open (non-fatal): {e}"),
+                // `e` is an `AppError::Storage`, and `BoardHealthStore::open`'s
+                // underlying `rusqlite`/`std::fs` error can embed the full
+                // data-dir path (e.g. `rusqlite::Error::InvalidPath`) — log
+                // the path-free category code instead of the raw error (the
+                // repo path-privacy rule extends to logs).
+                Err(e) => log::warn!(
+                    "[setup] board health store failed to open (non-fatal): {}",
+                    e.code()
+                ),
             }
 
             // Guard: the registry must contain exactly the labels the
