@@ -1411,3 +1411,41 @@ async fn the_jobs_page_is_not_metered_by_the_unattended_daily_ceiling() {
         "the Jobs page still embeds both sides — it is simply not metered"
     );
 }
+
+// ── the posting hand-off: one lock, one scan, real facts ─────────────
+
+/// The single cache read must hand BOTH consumers the real posting.
+///
+/// `match_resume` resolves the live posting once and passes the facts to the
+/// hard-constraint pass, instead of that pass taking the `PostingsCache` lock and
+/// re-scanning for the same id — a duplicate that would run on every Jobs-page
+/// call, including the `match_scores` cache hits where the score itself costs
+/// nothing. Anchored on absolute values: substituting a default here is
+/// invisible to every other test in the crate.
+#[test]
+fn posting_facts_hand_off_carries_the_real_posting() {
+    let posting = serde_json::json!({
+        "id": "j1",
+        "title": "Rust Engineer",
+        "description": "Build things.",
+        "location": "Berlin, Germany",
+        "remote": true,
+    });
+    let (text, facts) = resolve_posting(Some(&posting));
+    let text = text.expect("a posting with a title and description has scorable text");
+    assert!(text.contains("Rust Engineer"), "got: {text}");
+    // The constraint side gets the posting's OWN fields, not a placeholder.
+    assert_eq!(facts.location.as_deref(), Some("Berlin, Germany"));
+    assert!(facts.board_remote);
+}
+
+/// A cache miss yields nothing for either consumer — and that is safe because
+/// `score_one` returns its job-not-found error first, which `attach` passes
+/// through without ever reading these facts.
+#[test]
+fn posting_facts_hand_off_is_empty_when_the_posting_is_not_cached() {
+    let (text, facts) = resolve_posting(None);
+    assert_eq!(text, None);
+    assert_eq!(facts.location, None);
+    assert!(!facts.board_remote);
+}
