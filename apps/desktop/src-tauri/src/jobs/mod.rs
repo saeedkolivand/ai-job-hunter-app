@@ -86,6 +86,24 @@ pub struct JobRecord {
     pub finished_at: Option<u64>,
 }
 
+/// Outcome of [`JobTracker::start_exclusive_keyed`].
+///
+/// A plain three-way result, not `Result<Option<String>, String>`: `Busy`
+/// carries the OTHER job's key (e.g. "llama3" when the caller asked for
+/// "qwen2.5") — that is data the caller routes on, not a diagnostic, so
+/// forcing it through `Err` would just make the call site decode a
+/// convention instead of reading a name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyedExclusiveStart {
+    /// Nothing of `kind` was running; this job started.
+    Started,
+    /// A job of `kind` with the SAME key is already active — join it (its id).
+    Joined(String),
+    /// A job of `kind` with a DIFFERENT key is active — refused. Carries
+    /// that job's key so the caller can say what's already running.
+    Busy(String),
+}
+
 #[derive(Default)]
 pub struct JobTracker {
     jobs: HashMap<String, JobRecord>,
@@ -280,20 +298,17 @@ impl JobTracker {
     /// never asked for, while its own request never ran at all. Reusing
     /// `start_exclusive`'s kind-only match here would do exactly that.
     ///
-    /// Returns `Ok(None)` when this job was started (the key is stamped onto
-    /// its `payload` under `key_field`, readable back via [`Self::get`]);
-    /// `Ok(Some(existing_id))` when a job of `kind` with the SAME key is
-    /// already active (join it, same as `start_exclusive`); `Err(other_key)`
-    /// when a job of `kind` with a DIFFERENT key is active — the caller
-    /// decides how to report that conflict (this tracker has no i18n/error
-    /// layer of its own).
+    /// Three-way outcome, not a `Result` — [`KeyedExclusiveStart::Busy`] is an
+    /// expected routing outcome (which other key is active), not a
+    /// diagnostic, so wrapping it in `Err` would be a stringly-typed
+    /// `Result<_, String>` for something that never fails.
     pub fn start_exclusive_keyed(
         &mut self,
         id: &str,
         kind: &str,
         key_field: &str,
         key: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> KeyedExclusiveStart {
         if let Some(existing) = self.jobs.values().find(|j| {
             j.kind == kind
                 && matches!(
@@ -303,13 +318,13 @@ impl JobTracker {
         }) {
             let existing_key = existing.payload.get(key_field).and_then(Value::as_str);
             return if existing_key == Some(key) {
-                Ok(Some(existing.id.clone()))
+                KeyedExclusiveStart::Joined(existing.id.clone())
             } else {
-                Err(existing_key.unwrap_or("unknown").to_string())
+                KeyedExclusiveStart::Busy(existing_key.unwrap_or("unknown").to_string())
             };
         }
         self.start_with_payload(id, kind, serde_json::json!({ key_field: key }));
-        Ok(None)
+        KeyedExclusiveStart::Started
     }
 
     /// Wipe the job-execution log — in-memory records and the `jobs` table.

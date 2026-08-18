@@ -208,10 +208,10 @@ fn test_start_exclusive_ignores_unrelated_groups() {
 fn test_start_exclusive_keyed_same_key_joins_the_running_job() {
     let mut tracker = JobTracker::default();
     let first = tracker.start_exclusive_keyed("job-1", "ai.pull_model", "model", "llama3");
-    assert_eq!(first, Ok(None));
+    assert_eq!(first, KeyedExclusiveStart::Started);
 
     let second = tracker.start_exclusive_keyed("job-2", "ai.pull_model", "model", "llama3");
-    assert_eq!(second, Ok(Some("job-1".to_string())));
+    assert_eq!(second, KeyedExclusiveStart::Joined("job-1".to_string()));
     // The second call must not have registered "job-2" at all.
     assert!(tracker.get("job-2").is_none());
 }
@@ -222,12 +222,12 @@ fn test_start_exclusive_keyed_same_key_joins_the_running_job() {
 fn test_start_exclusive_keyed_different_key_is_refused_not_joined() {
     let mut tracker = JobTracker::default();
     let first = tracker.start_exclusive_keyed("job-1", "ai.pull_model", "model", "llama3");
-    assert_eq!(first, Ok(None));
+    assert_eq!(first, KeyedExclusiveStart::Started);
 
     let second = tracker.start_exclusive_keyed("job-2", "ai.pull_model", "model", "qwen2.5");
     assert_eq!(
         second,
-        Err("llama3".to_string()),
+        KeyedExclusiveStart::Busy("llama3".to_string()),
         "a different model must be refused, never silently joined to job-1"
     );
     assert!(

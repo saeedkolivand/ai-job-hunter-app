@@ -1,5 +1,5 @@
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
-use crate::jobs::JobTracker;
+use crate::jobs::{JobTracker, KeyedExclusiveStart};
 use crate::observability::sanitize_reason;
 use crate::scraping::ScraperEngine;
 use parking_lot::Mutex;
@@ -61,23 +61,20 @@ pub fn job_start_exclusive(
 /// caller-supplied `key` (e.g. the model being pulled) rather than `kind`
 /// alone — see [`JobTracker::start_exclusive_keyed`] for why kind-only
 /// exclusivity is wrong for a command whose kind never varies but whose
-/// target (the model) does.
-///
-/// `Ok(None)`: started, event emitted. `Ok(Some(id))`: a job of `kind` for
-/// the SAME key is already active — join it. `Err(other_key)`: a job of
-/// `kind` for a DIFFERENT key is active — the caller decides how to refuse.
+/// target (the model) does, and for what each [`KeyedExclusiveStart`]
+/// variant means to the caller.
 pub fn job_start_exclusive_keyed(
     app: &AppHandle,
     id: &str,
     kind: &str,
     key_field: &str,
     key: &str,
-) -> Result<Option<String>, String> {
+) -> KeyedExclusiveStart {
     let outcome = app
         .state::<Mutex<JobTracker>>()
         .lock()
         .start_exclusive_keyed(id, kind, key_field, key);
-    if matches!(outcome, Ok(None)) {
+    if matches!(outcome, KeyedExclusiveStart::Started) {
         emit_job_event(app, "job.started", id, None);
     }
     outcome

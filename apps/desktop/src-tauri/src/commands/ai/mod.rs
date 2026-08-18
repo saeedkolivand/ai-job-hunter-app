@@ -8,7 +8,7 @@ use crate::documents::{embedding_space_changed, DocumentStore, EmbeddingConfig};
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
-use crate::jobs::{JobStatus, JobTracker};
+use crate::jobs::{JobStatus, JobTracker, KeyedExclusiveStart};
 use crate::observability::sanitize_reason;
 use crate::postings::PostingsCache;
 
@@ -609,9 +609,11 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> AppResult<Value> {
         "model",
         &model,
     ) {
-        Ok(Some(existing)) => return Ok(json!({ "jobId": existing })),
-        Ok(None) => {}
-        Err(active_model) => {
+        KeyedExclusiveStart::Joined(existing) => {
+            return Ok(json!({ "jobId": existing }));
+        }
+        KeyedExclusiveStart::Started => {}
+        KeyedExclusiveStart::Busy(active_model) => {
             return Err(AppError::Validation(format!(
                 "Already downloading \"{active_model}\" — wait for it to finish before starting another model."
             )));
