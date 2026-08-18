@@ -25,6 +25,15 @@
 //! all. See `the_orphaned_running_row_outranks_the_last_good_run` for the
 //! user-visible consequence.
 //!
+//! **These tests are designed to go RED when the gap is closed.** A failure on
+//! a `GAP:` assertion means reconciliation now exists — update the test, do not
+//! restore the old behaviour. **PR #1020** is the record: it documents the
+//! permanent `regenerateSection`/`resolveFabrication` lockout, why the two
+//! stores cannot simply be joined (no run↔job link on disk), and the finding
+//! that `ensure_latest_run` keys on RECENCY rather than status — so a startup
+//! sweep that only rewrites the status makes the chip honest and leaves the
+//! lockout in place. Read it before deciding what a red assertion here means.
+//!
 //! # What is REAL here and what is simulated
 //!
 //! **Real: the kill.** This test binary re-executes ITSELF as a child process
@@ -78,9 +87,11 @@ const CHILD_SELF_EXIT: i32 = 97;
 
 const JOB_URL: &str = "https://boards.example/jobs/pipeline-kill";
 /// Mirrors `commands::resume_pipeline::RUN_KIND` / `RUN_DEPTH`, which are
-/// private. `a_crashed_running_run_locks_out_the_last_good_runs_report` in
-/// `src/commands/resume_pipeline/test.rs` uses the real consts, so drift is
-/// caught there rather than silently making this fixture unrealistic.
+/// private. `the_run_kind_the_budget_floor_and_the_run_depth_are_pinned` in
+/// `src/commands/resume_pipeline/test.rs` asserts those consts against these
+/// same two LITERALS, so a changed production value fails there rather than
+/// silently making this fixture unrealistic. (A test that reads the consts
+/// through `super::` cannot catch that — it moves with them.)
 const RUN_KIND: &str = "resume";
 const RUN_DEPTH: &str = "quality";
 
@@ -388,22 +399,60 @@ fn the_orphaned_running_row_outranks_the_last_good_run() {
     assert_eq!(survivor.finished_at, Some(COMPLETED_FINISHED_AT));
 }
 
-/// The fixture's stage names are the real pipeline's. A hand-written trail is
-/// only worth asserting against while it still describes runs this app can
-/// produce — and `QUALITY_STAGES` is `pub` precisely so it can be pinned.
+/// **[`KILLED_TRAIL`] is the exact PREFIX of a real run's event stream.**
+///
+/// Everything else in this file rests on the fixture being a faithful stand-in
+/// for a run this app can actually produce; a stale trail turns "what a killed
+/// run leaves on disk" into fiction while every assertion stays green. So the
+/// guard is prefix equality against `QUALITY_STAGES` expanded into its
+/// `start`/`finish` pairs — not membership, which a REORDER or a stage inserted
+/// before `draft` both satisfy while leaving the fixture describing a run
+/// nothing can write.
+///
+/// The EXPECTED value stays hand-written (`KILLED_TRAIL`); only the ASSERTION
+/// is derived. Deriving the fixture from `QUALITY_STAGES` would make this
+/// vacuous — the trail would follow any change to the pipeline and never
+/// disagree with it.
 #[test]
-fn stage_fixture_matches_the_real_pipeline() {
-    for &(_, stage, phase) in KILLED_TRAIL {
-        assert!(
-            QUALITY_STAGES.contains(&stage),
-            "{stage} is no longer a stage of the résumé pipeline — re-derive KILLED_TRAIL"
-        );
-        assert!(
-            phase == "start" || phase == "finish",
-            "{phase} is not a stage phase"
+fn the_killed_trail_is_the_exact_prefix_of_a_real_run() {
+    // Every stage opens and closes, in pipeline order: the event stream
+    // `RunHooks` writes for a run that completes. (`error` is the third phase,
+    // but an errored stage is a different fixture — this one models a kill.)
+    let full_run: Vec<(&str, &str)> = QUALITY_STAGES
+        .iter()
+        .flat_map(|&stage| [(stage, "start"), (stage, "finish")])
+        .collect();
+    let trail: Vec<(&str, &str)> = KILLED_TRAIL
+        .iter()
+        .map(|&(_, stage, phase)| (stage, phase))
+        .collect();
+
+    assert!(
+        trail.len() < full_run.len(),
+        "a trail covering every stage is a FINISHED run, not an interrupted one"
+    );
+    assert_eq!(
+        trail.as_slice(),
+        &full_run[..trail.len()],
+        "KILLED_TRAIL is no longer the opening of a real résumé run — a stage \
+         was renamed, reordered, or inserted ahead of `draft`. Re-derive it: \
+         the whole test file claims to describe on-disk state a real run leaves"
+    );
+    assert_eq!(
+        trail.last(),
+        Some(&("draft", "start")),
+        "the fixture must end on an OPENED stage with no `finish` — a closed \
+         pair is a run between stages, not one killed mid-flight"
+    );
+
+    // `seq` is the store's per-run ordinal and half of `pipeline_run_events`'
+    // primary key. A gap or a repeat would be a trail no run can write (and a
+    // repeat would silently REPLACE a row rather than append one).
+    for (index, &(seq, _, _)) in KILLED_TRAIL.iter().enumerate() {
+        assert_eq!(
+            seq,
+            u32::try_from(index).expect("the fixture is a handful of events"),
+            "`seq` must run contiguously from 0"
         );
     }
-    // The trail must stop partway: a fixture covering every stage would be a
-    // finished run, not an interrupted one.
-    assert!(KILLED_TRAIL.len() < QUALITY_STAGES.len() * 2);
 }

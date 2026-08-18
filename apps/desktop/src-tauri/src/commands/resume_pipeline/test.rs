@@ -2084,6 +2084,14 @@ fn a_write_against_an_older_run_of_the_same_posting_is_refused() {
 /// Mutation check: this fails the moment interrupted-run reconciliation is
 /// added at startup and applied before the refusal — which is the fix, not a
 /// regression. Read a failure here as "the gap was closed; update this test".
+///
+/// **PR #1020** is the record behind that instruction: it documents the
+/// lockout, why the two stores cannot simply be joined (nothing on disk links
+/// a `pipeline_runs` row to its `jobs.db` row — the ids are generated
+/// independently and `job_start` records a null payload), and the finding that
+/// [`super::ensure_latest_run`] keys on RECENCY, not status — so a sweep that
+/// only rewrites `status` fixes the run badge and leaves THIS refusal exactly
+/// as it is. Read it before deciding what a red assertion here means.
 #[test]
 fn a_crashed_running_run_locks_out_the_last_good_runs_report() {
     let dir = tempfile::tempdir().expect("temp dir");
