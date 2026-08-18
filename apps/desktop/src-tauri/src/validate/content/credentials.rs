@@ -63,10 +63,11 @@ use super::{
 ///   with N years", and the truthful ones "…engineer | developer | designer
 ///   with N years", or opened the line.
 ///
-/// Matched as SUBSTRINGS, which is what makes it work across languages without
-/// a second list: `Ingenieurin`, `Entwicklerin` and `Netzwerkadministrator`
-/// all resolve free. Every entry is long enough that a substring match is not
-/// a coincidence.
+/// Matched as a TAIL-BOUNDED substring ([`role_noun_matches`]), which is what
+/// makes it work across languages without a second list: `Ingenieurin`,
+/// `Entwicklerin` and `Netzwerkadministrator` all resolve free. The bound is
+/// what keeps `architecture`, `engineering` and `expertise` — none of which
+/// name a person — from resolving free too.
 pub(super) const ROLE_NOUNS: &[&str] = &[
     "architect",
     "administrator",
@@ -94,11 +95,31 @@ pub(super) const ROLE_NOUNS: &[&str] = &[
     "manager",
 ];
 
+/// Endings [`role_noun_matches`] tolerates after a [`ROLE_NOUNS`] hit: an
+/// empty tail (the compound case — a role noun ending the token, as in
+/// `Netzwerkadministrator`, `Netzwerkexperte`) or one of the German/French
+/// inflections the curated list actually needs (`Ingenieurin`, `Ingénieure`).
+/// Anything else after the match is a DIFFERENT word built on the same root —
+/// `architecture`, `engineering`, `expertise` are qualities, not people, and
+/// admitting them is exactly the false positive the subject-position check
+/// was built to reject. Nothing is required BEFORE the match: a compound's
+/// modifier sits there unrestricted.
+const ROLE_NOUN_TAILS: &[&str] = &["", "in", "innen", "en", "e", "es", "s"];
+
+/// True when `role` occurs in `token` and whatever follows it is one of
+/// [`ROLE_NOUN_TAILS`] — a word boundary or a tolerated inflection, never a
+/// suffix that changes the part of speech.
+fn role_noun_matches(token: &str, role: &str) -> bool {
+    token
+        .match_indices(role)
+        .any(|(i, _)| ROLE_NOUN_TAILS.contains(&&token[i + role.len()..]))
+}
+
 /// True when any of `tokens` names a person by what they do.
 pub(super) fn names_a_role(tokens: &[String]) -> bool {
     tokens
         .iter()
-        .any(|t| ROLE_NOUNS.iter().any(|role| t.contains(role)))
+        .any(|t| ROLE_NOUNS.iter().any(|role| role_noun_matches(t, role)))
 }
 
 /// The lowercased words of `text`.
@@ -130,8 +151,9 @@ pub(super) use self::certifications::{
 pub(super) use self::education::{institutions, names_an_institution};
 #[cfg(test)]
 pub(super) use self::tenure::{
-    career_span_years, stated_years, supported_years, years_claims, CAREER_SPAN_SLACK_YEARS,
-    CLAIM_CONTEXT_CHARS, MAX_PLAUSIBLE_TENURE_YEARS, SPAN_TAIL_CHARS, TENURE_SUBJECT_TOKENS,
+    career_span_years, spelled_number_words, stated_years, supported_years, years_claims,
+    CAREER_SPAN_SLACK_YEARS, CLAIM_CONTEXT_CHARS, MAX_PLAUSIBLE_TENURE_YEARS, SPAN_TAIL_CHARS,
+    TENURE_SUBJECT_TOKENS,
 };
 
 /// True when `acronym` appears in `line` as an UPPERCASE, word-bounded token.
