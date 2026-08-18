@@ -1814,7 +1814,7 @@ fn no_localized_heading_lands_in_another_sections_bucket() {
 /// `section_order_for` emits and asserts every curated locale has a real
 /// entry for each.
 ///
-/// Mutation check: added `SectionId::Volunteer` to `IT_ORDER` — RAN, went red
+/// Mutation check: added `SectionId::Volunteer` to `EUROPASS_ORDER` (then `IT_ORDER`) — RAN, went red
 /// (`cargo test` and `pnpm gen:prompts:check` both stayed green, which is the
 /// whole point), reverted.
 #[test]

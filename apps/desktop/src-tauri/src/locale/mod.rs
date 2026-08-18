@@ -234,7 +234,7 @@ impl LocaleProfile {
     ///
     /// Every field here numerically matches [`Self::eu()`] — Italy has no
     /// distinct paper size or photo convention beyond the generic-EU/Europass
-    /// baseline, and `locale::resume::IT_ORDER`'s doc comment independently
+    /// baseline, and `locale::resume::EUROPASS_ORDER`'s doc comment independently
     /// grounds the Italian CV in the same Europass reference format that
     /// justifies `eu()`'s 3-page tolerance (German-style itemised history
     /// rather than a US-style 2-page summary).
@@ -243,14 +243,25 @@ impl LocaleProfile {
     /// because the **id** must stay distinct: `recommend::pick_locale`
     /// forwards this id verbatim as the export `market` string, and
     /// `locale::resume::section_order_for` matches the literal `"it"` to
-    /// select `IT_ORDER`. Aliasing to `eu()` (id `"eu"`) would resolve the
+    /// select `EUROPASS_ORDER`. Aliasing to `eu()` (id `"eu"`) would resolve the
     /// page/photo conventions correctly but silently hand an Italian user the
     /// DEFAULT section order again — the exact bug this profile exists to fix.
+    pub fn it() -> LocaleProfile {
+        LocaleProfile {
+            id: "it",
+            page_size: PageSize::A4,
+            photo: PhotoPolicy::Optional,
+            max_pages: 3,
+        }
+    }
+
     /// Spain. A4 + photo, like the other southern-European markets, but capped
     /// at **2 pages**, not Italy's 3 — Spanish CV guidance is consistently
-    /// "máximo dos páginas", and the app's page cap is advice the export
-    /// actually enforces, so inheriting Italy's 3 would quietly license a
-    /// longer document than the market expects.
+    /// "máximo dos páginas". [`Self::max_pages`] is advisory (it decides when
+    /// the trim panel OFFERS suggestions; nothing blocks a longer export), so
+    /// inheriting Italy's 3 would not break anything — it would simply stop
+    /// the app from ever suggesting a trim to a Spanish user whose CV has run
+    /// a page past what the market expects.
     ///
     /// Its own constructor rather than an alias, for the reason Italy's is:
     /// `recommend::pick_locale` forwards this `id` verbatim and
@@ -293,15 +304,6 @@ impl LocaleProfile {
             page_size: PageSize::A4,
             photo: PhotoPolicy::Never,
             max_pages: 2,
-        }
-    }
-
-    pub fn it() -> LocaleProfile {
-        LocaleProfile {
-            id: "it",
-            page_size: PageSize::A4,
-            photo: PhotoPolicy::Optional,
-            max_pages: 3,
         }
     }
 }
@@ -449,7 +451,7 @@ mod tests {
     /// fell through to `intl()` (id "en", photo Never, 2 pages), which made
     /// `recommend::pick_locale` forward "en" downstream — the id
     /// `locale::resume::section_order_for` reads to select a market's section
-    /// order — so an Italian user's already-committed `IT_ORDER` was
+    /// order — so an Italian user's already-committed `EUROPASS_ORDER` was
     /// unreachable on the auto-recommendation path.
     #[test]
     fn italy_resolves_to_a_dedicated_profile_not_the_english_default() {
