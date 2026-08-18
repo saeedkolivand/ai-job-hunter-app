@@ -4652,3 +4652,68 @@ async fn an_unresolvable_board_id_never_creates_a_health_row() {
     );
     assert!(store.health_for("ok-board").is_some());
 }
+
+/// `record_health` re-attaches `health` by ZIPPING `recorded` (the positions
+/// of the resolvable boards within `summaries`) against the store's returned
+/// results — NOT by the results' own position. A mutant that swaps the zip for
+/// `health.into_iter().enumerate()` reads `health[i]` as belonging to
+/// `summaries[i]`, which is only wrong when an unresolvable id sits AHEAD of a
+/// resolvable one in `summaries` — the earlier
+/// `an_unresolvable_board_id_never_creates_a_health_row` test puts its only
+/// valid board at index 0, so both forms agree and the mutant survives it.
+///
+/// Discriminating shape: a rejected id at index 0, then TWO resolvable boards
+/// that both FAIL (two noteworthy verdicts, so a misattribution is visible on
+/// either summary, not silently dropped like a healthy board would be).
+#[tokio::test]
+async fn a_rejected_board_ahead_of_two_failing_ones_never_wears_their_history() {
+    static FAIL_A: std::sync::LazyLock<FailingScraper> =
+        std::sync::LazyLock::new(|| FailingScraper);
+    static FAIL_B: std::sync::LazyLock<FailingScraper> =
+        std::sync::LazyLock::new(|| FailingScraper);
+
+    let (_dir, engine, store) = engine_with_health();
+
+    let (_, summaries) = engine
+        .scrape_boards_with_resolver(
+            &[
+                "bogus-id".to_string(),
+                "fail-a".to_string(),
+                "fail-b".to_string(),
+            ],
+            fake_input(5),
+            "job-mixed".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "fail-a" => Ok(&*FAIL_A as &'static dyn super::super::types::Scraper),
+                "fail-b" => Ok(&*FAIL_B as &'static dyn super::super::types::Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("failures must not fail the run");
+
+    assert_eq!(summaries.len(), 3);
+    assert!(
+        summaries[0].health.is_none(),
+        "the unresolvable id has no history row to wear a verdict from; got {:?}",
+        summaries[0].health
+    );
+    let a = summaries[1]
+        .health
+        .clone()
+        .expect("fail-a must carry its own history");
+    let b = summaries[2]
+        .health
+        .clone()
+        .expect("fail-b must carry its own history");
+    assert_eq!(a.consecutive_failures, 1);
+    assert_eq!(b.consecutive_failures, 1);
+    assert_eq!(
+        store.tracked_boards(),
+        2,
+        "only the two resolvable boards may own rows"
+    );
+}
