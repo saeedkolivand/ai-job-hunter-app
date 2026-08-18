@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -22,9 +22,40 @@ export type UpdateStatus =
   | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string };
 
+// `status` is shared module state, not local `useState`. There are three
+// independent useUpdater() call sites (this settings panel, the always-mounted
+// banner, and the menu), each with its OWN `updater:status` subscription; the
+// banner/menu never unmount, so they never lose it, but the settings panel
+// mounts/unmounts with route navigation. There is no backend command to ask
+// "what's the status right now" — only this push event — so a fresh instance
+// previously had no way to learn the truth and rendered a stale 'idle',
+// including a live "Check now" button for an update that was already
+// downloading or done. Not React Query: there is nothing to FETCH, only a
+// pushed value to remember, so a plain synchronous external store (every
+// mounted instance reads the SAME value, updated the instant any one of them
+// receives an event) is the whole fix — no extra `check()` call, no re-fetch.
+let sharedUpdateStatus: UpdateStatus = { state: 'idle' };
+const updateStatusListeners = new Set<() => void>();
+function setSharedUpdateStatus(next: UpdateStatus) {
+  sharedUpdateStatus = next;
+  updateStatusListeners.forEach((listener) => listener());
+}
+function subscribeToUpdateStatus(listener: () => void) {
+  updateStatusListeners.add(listener);
+  return () => updateStatusListeners.delete(listener);
+}
+function getSharedUpdateStatus() {
+  return sharedUpdateStatus;
+}
+
+/** Test-only: reset the shared status between tests (module state persists across `it()`s). */
+export function resetUpdaterStatusForTests() {
+  sharedUpdateStatus = { state: 'idle' };
+}
+
 export function useUpdater() {
   const api = useAppClient();
-  const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' });
+  const status = useSyncExternalStore(subscribeToUpdateStatus, getSharedUpdateStatus);
   const [downloadSpeed, setDownloadSpeed] = useState<string>('');
   const [downloadedBytes, setDownloadedBytes] = useState<number>(0);
   const [totalBytes, setTotalBytes] = useState<number>(0);
@@ -38,7 +69,7 @@ export function useUpdater() {
   useEffect(() => {
     const off = api.updater.onStatus((s: unknown) => {
       const newStatus = s as UpdateStatus;
-      setStatus(newStatus);
+      setSharedUpdateStatus(newStatus);
 
       // Track download metrics
       if (newStatus.state === 'downloading') {

@@ -3,9 +3,15 @@ import { act, renderHook } from '@testing-library/react';
 
 import { createMockClient, withProviders } from '@/test-support';
 
-import { useUpdater } from './use-updater';
+import { resetUpdaterStatusForTests, useUpdater } from './use-updater';
 
-afterEach(() => vi.restoreAllMocks());
+// `status` is shared MODULE state (see use-updater.ts) so it survives a
+// remount by design — which also means it survives across `it()`s in this
+// file unless reset.
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetUpdaterStatusForTests();
+});
 
 function setup() {
   let handler: ((s: unknown) => void) | null = null;
@@ -66,5 +72,29 @@ describe('useUpdater', () => {
     expect(check).toHaveBeenCalled();
     expect(download).toHaveBeenCalled();
     expect(install).toHaveBeenCalled();
+  });
+
+  it('a remounted instance reads the status an already-mounted instance recorded, not idle', () => {
+    // Simulates the real defect: the settings panel's useUpdater() unmounts on
+    // route navigation and remounts later, while the always-mounted banner's
+    // OWN instance kept receiving `updater:status` the whole time. This pins
+    // that the SECOND (remounted) instance sees the download already in
+    // progress immediately, with no event of its own and no re-fetch.
+    const banner = setup();
+    banner.emit({ state: 'downloading', percent: 42, downloaded: 4, total: 10 });
+    expect(banner.hook.result.current.status).toEqual({
+      state: 'downloading',
+      percent: 42,
+      downloaded: 4,
+      total: 10,
+    });
+
+    const settingsPanel = setup();
+    expect(settingsPanel.hook.result.current.status).toEqual({
+      state: 'downloading',
+      percent: 42,
+      downloaded: 4,
+      total: 10,
+    });
   });
 });
