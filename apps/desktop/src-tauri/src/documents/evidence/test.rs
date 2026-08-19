@@ -1057,27 +1057,33 @@ fn a_date_column_needs_more_than_a_year_in_it() {
     }
 }
 
-/// The "today"/"currently"-family spellings in [`DATE_ONLY_MARKERS`] — English
-/// `Today`/`Currently`, Spanish `Actualidad`/`Hoy`, Portuguese `Hoje`/
-/// `Atualmente`, French `Aujourd'hui`/`Actuellement`, Italian `Oggi`, and the
-/// `Present`-adjacent `Presente`/`Attualmente`/`Derzeit`/`Vandaag` — both
-/// directions: the date column each spelling appears in IS recognised, and an
-/// ordinary sentence carrying the same word (with other, non-date words
-/// around it) is NOT. [`is_date_only`] requires EVERY token on the line to be
-/// a digit, a month or a marker, so a multi-word sentence can never qualify no
-/// matter what the marker list holds — that structural gate, not curation, is
-/// what keeps the prose cases safe.
+/// Every "today"/"currently"-family spelling in [`DATE_ONLY_MARKERS`] — English
+/// `Today`/`Currently`, Spanish `Actualidad`/`Actualmente`/`Hoy`, Portuguese
+/// `Hoje`/`Atualmente`, French `Aujourd'hui`/`Actuellement`, Italian `Oggi`,
+/// and the `Present`-adjacent `Presente`/`Attualmente`/`Derzeit`/`Vandaag` —
+/// opens the date column it appears in.
 ///
-/// Mutation check (reported verbatim in the handoff): with `DATE_ONLY_MARKERS`
-/// emptied, every `column` case here goes red; every `prose` case stays green
-/// regardless, because the gate does that work, not the list — which is the
-/// point of pairing every marker with a prose sentence that survives its
-/// removal unchanged.
+/// Collects every failure instead of asserting inside the loop: a bare
+/// `assert!` per iteration reports only the FIRST broken spelling and hides
+/// every other one behind it, so a future regression that drops or typos a
+/// second marker would read identically to "everything fine" for this test.
+/// This one call names every spelling that stopped working.
+///
+/// This test is deliberately NOT paired with a prose loop the way an earlier
+/// version was — every one of those "prose" rows only passed because
+/// `word_tokens` splits the sentence into words the `date_words.all()` gate
+/// (a digit, a month or a marker) already rejects before any marker is even
+/// consulted, so the row proved the tokenizer works on ordinary sentences,
+/// not that [`DATE_ONLY_MARKERS`] is safe. [`a_date_column_needs_more_than_a_year_in_it`]
+/// already covers that mechanism; duplicating it here under a name that
+/// implies it guards this list would be misleading about what failed if it
+/// ever went red.
 #[test]
-fn today_family_markers_open_a_date_column_but_never_leak_into_prose() {
-    for column in [
+fn date_only_markers_open_every_added_spelling() {
+    let columns = [
         "2020 - Today",
         "2015 - Actualidad",
+        "2020 - Actualmente",
         "2019 - Aujourd'hui",
         "2021 - Oggi",
         "2020 - Presente",
@@ -1089,29 +1095,36 @@ fn today_family_markers_open_a_date_column_but_never_leak_into_prose() {
         "2020 - Attualmente",
         "2020 - Derzeit",
         "2020 - Vandaag",
-    ] {
-        assert!(is_date_only(column), "{column:?} is a date column");
-    }
-    for prose in [
-        "Shipped the migration today",
-        "En la actualidad trabajo en remoto",
-        "Nous avons livré le projet aujourd'hui",
-        "Il progetto oggi è completo",
-        "El equipo estuvo presente en la reunión",
-        "We are currently migrating the platform",
-        "Terminamos o projeto hoje mesmo",
-        "Atualmente trabalhamos em home office",
-        "Entregamos el proyecto hoy mismo",
-        "Nous travaillons actuellement à distance",
-        "Il team lavora attualmente da remoto",
-        "Das Team arbeitet derzeit remote",
-        "Het team werkt vandaag vanuit huis",
-    ] {
-        assert!(
-            !is_date_only(prose),
-            "{prose:?} is ordinary prose, not a date column"
-        );
-    }
+    ];
+    let not_recognised: Vec<&str> = columns
+        .into_iter()
+        .filter(|column| !is_date_only(column))
+        .collect();
+    assert!(
+        not_recognised.is_empty(),
+        "not read as date columns: {not_recognised:?}"
+    );
+}
+
+/// The safety argument for [`DATE_ONLY_MARKERS`] depends entirely on it never
+/// sharing a spelling with [`PRESENT_MARKERS`] — [`is_open_ended`] and
+/// `validate::content::factual::unsupported_date_issues` both match
+/// [`PRESENT_MARKERS`] against arbitrary free text, so a spelling living in
+/// both lists would turn ordinary prose carrying that word into a false date
+/// context. That invariant lived only in the const's doc comment; this makes
+/// keeping it cost one assertion instead of a careful re-read before the next
+/// spelling is added.
+#[test]
+fn date_only_markers_never_overlap_present_markers() {
+    let overlap: Vec<&str> = DATE_ONLY_MARKERS
+        .iter()
+        .filter(|m| PRESENT_MARKERS.contains(m))
+        .copied()
+        .collect();
+    assert!(
+        overlap.is_empty(),
+        "spellings in both lists — is_open_ended would fire on them as bare prose: {overlap:?}"
+    );
 }
 
 /// R7-F1(b) — the salvage contradicted its own contract. A label with no comma

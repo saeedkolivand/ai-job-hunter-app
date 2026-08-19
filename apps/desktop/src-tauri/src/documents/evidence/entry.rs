@@ -559,12 +559,37 @@ const MONTH_TOKENS: &[&str] = &[
 /// serves does not justify that exposure; `heden` (Dutch "today", already in
 /// [`PRESENT_MARKERS`]) covers the same case at four letters with none of the
 /// risk.
-const DATE_ONLY_MARKERS: &[&str] = &[
+///
+/// **Known boundary, not an oversight: single tokens only.** A multi-word
+/// present-tense column — Spanish `en la actualidad`, French `en cours` /
+/// `à ce jour`, Italian `ad oggi` / `in corso`, Portuguese `até hoje`,
+/// Spanish `o presente`, Dutch `tot heden`, German `bis heute` (the last
+/// already failing today, since `heute` is a [`PRESENT_MARKERS`] single
+/// token) — is not recognised, because [`is_date_only`]'s `date_words` gate
+/// asks whether EVERY token resolves on its own; a phrase needs the SEPARATOR
+/// between its words to also be accounted for, which is a different
+/// mechanism (multi-token phrase matching) and a wider change than this list.
+///
+/// **A second safety property, beyond "prose fails the token gate."** No
+/// entry here is ever added to [`PRESENT_MARKERS`], so [`is_open_ended`]
+/// never fires on any of these words — which means even a line built
+/// ENTIRELY from digits/months/[`DATE_ONLY_MARKERS`] tokens still can't pass
+/// [`is_date_only`] unless it also carries a real year or a genuine
+/// [`PRESENT_MARKERS`] open-ended marker: [`looks_like_date_span`] gates on
+/// exactly those two things and never consults this list.
+/// `"Today Today"`, `"Hoy Hoy"`, `"Today 5"` and `"Currently 100"` all fail
+/// [`is_date_only`] for this reason, not because any token is unrecognised —
+/// every token in each of them resolves fine, but none of the four ever
+/// reaches a year or a [`PRESENT_MARKERS`] marker. The disjointness this
+/// relies on — no spelling lives in both lists — is asserted in the test
+/// suite, not just documented here.
+pub(super) const DATE_ONLY_MARKERS: &[&str] = &[
     "today",
     "aujourd",
     "hui",
     "oggi",
     "actualidad",
+    "actualmente",
     "presente",
     "currently",
     "hoje",
