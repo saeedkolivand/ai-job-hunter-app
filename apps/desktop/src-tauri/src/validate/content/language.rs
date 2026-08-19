@@ -258,6 +258,7 @@ const MIN_DISTINCTIVE_TOKEN_CHARS: usize = 2;
 /// | quiet | same list + ci/cd, .io, vi, HA, or per (the short-token leaks) | 0 |
 /// | quiet | German institution name, terse "Degree, Institution, Dates" | 1 |
 /// | quiet | German institution name, EDUCATION section (2 entries) | 3 |
+/// | quiet | genuinely German résumé, terse participle/connector-sparse register, whole document (not an English document naming an institution) | 3 |
 /// | quiet | German institution names, CERTIFICATIONS (3 entries) | 4 |
 /// | fire | short genuine Spanish paragraph (2 sentences) | 6 |
 /// | fire | Italian VOLUNTEER section (PR #1003's own fixture) | 6 |
@@ -276,6 +277,33 @@ const MIN_DISTINCTIVE_TOKEN_CHARS: usize = 2;
 /// corpus with a full unit of margin on both sides, matching (independently,
 /// not by construction) the separation an earlier review measured on a
 /// different fixture set.
+///
+/// **The quiet class is not one thing, and reading it as only "an English
+/// document naming a foreign institution" understates what the floor
+/// accepts.** Every OTHER row above IS that shape — a document that SHOULD
+/// stay quiet, correctly does. The new row is not: a genuinely GERMAN
+/// résumé, written in the terse participle/connector-sparse register real
+/// German CVs favor ("Zahlungsplattform aufgebaut", not "Ich habe die
+/// Zahlungsplattform aufgebaut" — the article and the finite-verb clause
+/// both dropped), lands in the SAME 0-4 band for the same underlying reason
+/// the correctly-quiet rows do: too few of `text`'s words are the
+/// closed-class connectors this design counts, at all. A pure evidence
+/// COUNT cannot tell "an English document that happens to name a German
+/// institution" apart from "a genuinely German document that happens to
+/// write in a connector-light register" — both present as a small number of
+/// hits. Confirmed, not just argued: 3, the measured evidence for this
+/// connector-sparse German row, is the EXACT value the EDUCATION-section row
+/// above it already relies on staying quiet for — a floor low enough to
+/// catch one reopens the other. This is a THIRD accepted miss (after the
+/// uncurated `tr`/`vi` miss — [`LATIN_SCRIPT_LANGUAGES`]'s doc — and the
+/// close-relative-target Romance-language miss —
+/// `test::a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss`),
+/// pinned in `test::a_terse_participle_register_german_resume_is_an_accepted_miss`.
+/// It is a DESIGN limit, not a calibration error: recovering it needs a
+/// signal this module does not have (participle/compound morphology, or a
+/// second corroborating witness), not a threshold change, and is
+/// deliberately left to a future change rather than folded into whichever
+/// fix happens to be touching this file.
 ///
 /// **Residual risk, measured across all four Latin languages this crate
 /// curates rather than on one, and accepted rather than hidden.** An

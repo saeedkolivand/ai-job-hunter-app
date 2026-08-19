@@ -2552,6 +2552,103 @@ fn a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss() {
     );
 }
 
+// ── connector-sparse German register: a THIRD accepted miss ────────────────
+
+/// **Advisory MEDIUM (confirmation review), the connector-sparse-register
+/// accepted miss.** [`MIN_DISTINCTIVE_HITS`] cannot separate "an English
+/// document that merely names a foreign institution" (correctly quiet) from
+/// "a genuinely foreign document written in a register too sparse in
+/// closed-class connectors to evidence itself" (incorrectly quiet) — both
+/// land in the SAME 0-4 evidence band, because a pure count has no way to
+/// tell them apart. Standard German CV register drops the article and the
+/// finite-verb clause a sentence would otherwise need ("Zahlungsplattform
+/// aufgebaut", not "Ich habe die Zahlungsplattform aufgebaut"), so even a
+/// WHOLE, genuinely German résumé written this way carries almost no
+/// evidence: measured here at 3, on 695 significant characters — two hits
+/// short of the floor of 5.
+///
+/// **Not recoverable by lowering the floor.** 3 is the exact value
+/// [`MIN_DISTINCTIVE_HITS`]'s own corpus table already relies on staying
+/// quiet for a genuine false positive one row up (a German institution name
+/// inside an EDUCATION section of an otherwise-English document) — a floor
+/// of 3 would reopen that false positive at the same moment it closes this
+/// false negative. This is the THIRD accepted miss this module documents,
+/// after the uncurated `tr`/`vi` miss
+/// (`turkish_text_needs_evidence_too_and_goes_quiet_without_a_curated_list`)
+/// and the close-relative-target Romance-language miss
+/// (`a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss`
+/// above) — and, same as those two, a DESIGN limit, not a calibration
+/// error: recovering it needs a signal this module does not have
+/// (participle/compound morphology, or a second corroborating witness), not
+/// a threshold change. Left to a future change rather than folded into
+/// whichever fix happens to be touching this file; pinned here so that
+/// future change has something concrete to turn green — the fixture below,
+/// currently silent, firing `content.language_mismatch`.
+///
+/// Both `is_language_mismatch` AND [`document_language_mismatch`] — the
+/// SAME function `pipeline::resume::stages::draft` gates its
+/// draft-language retry on — are asserted quiet, so this pins that
+/// regeneration does not fire for this shape either, not just that the
+/// validator does not.
+#[test]
+fn a_terse_participle_register_german_resume_is_an_accepted_miss() {
+    use super::language::pairwise_evidence_count;
+
+    let de_terse = "Jane Doe\n\
+        jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+        ZUSAMMENFASSUNG\n\n\
+        Acht Jahre Zahlungsverkehr, Aufbau Container-Plattformen, Senior Backend Engineering.\n\n\
+        BERUFSERFAHRUNG\n\n\
+        Senior Backend Engineer, Acme Payments, 2021 - heute\n\
+        - Zahlungsplattform aufgebaut, Wartezeit gesenkt: 480ms auf 90ms\n\
+        - Migration Kubernetes-Cluster geleitet, zwölftausend Anfragen pro Sekunde\n\
+        - Wiederholungsplaner neu entwickelt in Rust, fehlgeschlagene Zahlungen reduziert\n\n\
+        Backend Developer, Globex Logistics, 2018 - 2021\n\
+        - Abrechnungsschnittstelle entwickelt in Python, PostgreSQL, vierzig Lagerstandorte\n\
+        - Flotte migriert zu AWS, Terraform als Bereitstellungswerkzeug\n\n\
+        KENNTNISSE\n\n\
+        Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis\n\n\
+        AUSBILDUNG\n\n\
+        BSc Informatik, TU Berlin, 2014 - 2018\n";
+
+    assert!(
+        significant_chars(de_terse) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor, or the silence below proves nothing \
+         about the evidence gate specifically"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(de_terse),
+        Some("de"),
+        "premise: must confidently read as German, or this is not the shape this test claims"
+    );
+    let evidence = pairwise_evidence_count(de_terse, "de", "en");
+    assert_eq!(
+        evidence, 3,
+        "pinned measurement: a genuinely German résumé in the connector-sparse participle \
+         register carries almost no closed-class evidence even at whole-résumé length"
+    );
+    assert!(
+        evidence < 5,
+        "premise: the miss below only proves what this test claims if evidence is genuinely \
+         under MIN_DISTINCTIVE_HITS's shipped floor (5), not accidentally at or over it"
+    );
+    assert!(
+        !is_language_mismatch(de_terse, "en"),
+        "accepted miss: a genuinely German whole résumé, in the connector-sparse register \
+         real German CVs use, stays quiet — this is the gap a future recall improvement \
+         needs to close (participle/compound morphology, or a second witness), and it must \
+         do so WITHOUT reopening the EDUCATION-section false positive that sits at the same \
+         evidence count"
+    );
+    assert!(
+        !document_language_mismatch(de_terse, EN_SOURCE, EN_JOB_AD, "en"),
+        "the same accepted miss through the public entry point pipeline::resume::stages::draft \
+         gates its language-retry on — regeneration does not fire for this shape either"
+    );
+    let report = en_resume(de_terse, &en_requirements());
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
 // ── direct unit tests for the evidence primitives (BLOCKING 3's other ask) ──
 
 /// `pairwise_evidence_count`'s exclusion rules, isolated from any whole-
