@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::documents::evidence::{
-    identity_tokens, split_entry, years_in, SectionKind, LEGAL_FORMS, PRESENT_MARKERS,
+    identity_tokens, split_entry, trailing_date_column, years_in, SectionKind, LEGAL_FORMS,
 };
 use crate::documents::keywords::{keywords_normalized, SHORT_TECH_TERMS, SYNONYMS};
 use crate::export::types::{LineKind, ParsedLine};
@@ -829,8 +829,7 @@ fn dropped_role_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 ///
 /// ## Heuristic
 ///
-/// Only years found inside a date-shaped context (a `JobEntry` line, or a line
-/// carrying a present-tense marker at a WORD BOUNDARY) are considered, and only
+/// Only years found inside a date-shaped context are considered, and only
 /// years the source never states. Even then it fires only when the year is
 /// EARLIER than the latest year the source knows about: an invented earlier date
 /// can never be a legitimate resolution of anything.
@@ -844,10 +843,16 @@ fn dropped_role_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// `documents::evidence::is_open_ended`'s job, and this check no longer needs to
 /// ask: a later year is never reported either way.
 ///
-/// The word-boundary rule on the markers matters just as much: `present` lives
-/// inside "presented" and `now` inside "knowledge", so a substring test turned
-/// ordinary bullets into date contexts and every year in them into a candidate
-/// Critical.
+/// **What counts as a date-shaped context.** A parsed `JobEntry` line, or a
+/// line whose text ends in a [`trailing_date_column`] — the same structural
+/// predicate `validate::content::labels_the_entry_below` uses, so the two
+/// surfaces cannot drift about what "opens an entry" means. This used to be a
+/// raw `PRESENT_MARKERS` word-boundary scan over the WHOLE line, which read
+/// any ordinary bullet carrying one of those words (`current`, `ongoing`,
+/// `now`, `actual`…) — anywhere in the sentence, regardless of a year's
+/// position — as a date context: "Reduced actual costs by 20% in 2023" turned
+/// its own truthful year into a false Critical. A present-tense word inside a
+/// bullet no longer decides this; only actual date structure does.
 ///
 /// Deterministic on purpose: the check never reads the system clock.
 fn unsupported_date_issues(ctx: &Analysis) -> Vec<ContentIssue> {
@@ -860,9 +865,8 @@ fn unsupported_date_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let mut issues = Vec::new();
     for section in &ctx.generated_sections {
         for line in &section.lines {
-            let lower = line.text.to_lowercase();
             let date_context = matches!(line.kind, LineKind::JobEntry)
-                || PRESENT_MARKERS.iter().any(|m| contains_phrase(&lower, m));
+                || trailing_date_column(&line.text).is_some();
             if !date_context {
                 continue;
             }

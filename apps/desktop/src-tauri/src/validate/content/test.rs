@@ -2873,7 +2873,14 @@ fn present_markers_only_match_whole_words() {
         );
     }
     assert!(looks_like_date_span("2021 - Present"));
-    assert!(looks_like_date_span("Heute"));
+    assert!(looks_like_date_span("2021 - Heute"));
+    // A bare marker with no year anywhere to anchor it is NOT a date span —
+    // the same non-answer DATE_ONLY_MARKERS already gives for a bare "Today"
+    // (see `documents::evidence::is_open_ended`'s doc comment). Requiring a
+    // year is exactly what stops an unrelated present-tense word from turning
+    // an ordinary sentence into a date context, so this is an intentional
+    // behavior change, not a silently accepted regression.
+    assert!(!looks_like_date_span("Heute"));
 
     // End to end: a truthful bullet with a year the source does not carry, in a
     // line whose only "date marker" is the word "Presented".
@@ -2883,6 +2890,52 @@ fn present_markers_only_match_whole_words() {
                      - Presented the 2019 roadmap review to the board\n";
     silent(
         &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+}
+
+/// H5b — a present-tense word standing on its own, many words from an
+/// unrelated year, is not a date context either — reproduces the reported
+/// defect end to end. `unsupported_date_issues` used to decide a line was a
+/// "date context" the moment it carried a bare `PRESENT_MARKERS` word
+/// ANYWHERE, so an ordinary truthful bullet naming its own year (not one
+/// buried inside another word, unlike H5's "Presented") still tripped a false
+/// Critical. Each pair below is the SAME document, one word apart: the
+/// marker-word version and a control with just that word removed must both
+/// resolve silently, and both marker positions (before the year, after it)
+/// are covered because the old bug fired on either.
+#[test]
+fn present_tense_prose_far_from_a_year_is_not_a_date_context() {
+    let source = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                  - Ran the settlement platform on Kubernetes\n";
+
+    // Marker BEFORE the year — the task's own reproduction.
+    let with_marker = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                       - Reduced actual costs by 20% in 2023\n";
+    silent(
+        &report_for(with_marker, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+    let control = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                   - Reduced costs by 20% in 2023\n";
+    silent(
+        &report_for(control, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+
+    // Marker AFTER the year, several words away.
+    let ongoing = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                   - Cut spend 30% below the 2023 baseline while keeping the \
+                     ongoing migration on schedule\n";
+    silent(
+        &report_for(ongoing, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+    let ongoing_control = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                           - Cut spend 30% below the 2023 baseline while \
+                             keeping the migration on schedule\n";
+    silent(
+        &report_for(ongoing_control, source, EN_JOB_AD, &[]),
         FACTUAL_UNSUPPORTED_DATE,
     );
 }
@@ -7944,6 +7997,37 @@ EXPERIENCE
     silent(
         &report_for(&generated, &with_future_year, EN_JOB_AD, &[]),
         FACTUAL_INFLATED_EXPERIENCE,
+    );
+}
+
+/// A2a — the separator-free date column (`2016 Present`, no dash at all).
+/// `export::parser::DATE_RE` itself accepts this shape as a job entry's date
+/// range with no separator required between the year and the marker, so a
+/// résumé written this way is not a contrived fixture. Before
+/// `credentials::tenure::SPAN_MARKER_NO_SEP_RE` existed, `source_is_ongoing`
+/// missed it entirely: the span closed at the role's own single stated year
+/// (2016-2016), and a truthful "8 years of experience" against a role that
+/// started in 2016 read as inflated. The control proves the widened
+/// allowance is not just "nothing ever fires": an implausible claim still
+/// does.
+#[test]
+fn a_separator_free_ongoing_date_column_widens_the_allowance() {
+    let source = "Jane Doe\n\n\
+         EXPERIENCE\n\n\
+         Backend Developer | Globex Logistics | 2016 Present\n\
+         - Built the billing API in Python and PostgreSQL\n";
+
+    let truthful = summary_claiming("Backend engineer with 8 years of experience in payments.");
+    silent(
+        &report_for(&truthful, source, EN_JOB_AD, &[]),
+        FACTUAL_INFLATED_EXPERIENCE,
+    );
+
+    let implausible = summary_claiming("Backend engineer with 45 years of experience in payments.");
+    assert!(
+        codes(&report_for(&implausible, source, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_INFLATED_EXPERIENCE),
+        "control: an implausible claim must still fire even with the widened allowance"
     );
 }
 

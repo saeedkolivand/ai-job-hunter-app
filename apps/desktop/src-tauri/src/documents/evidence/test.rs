@@ -387,6 +387,40 @@ fn open_ended_spans_are_recognised_in_every_spelling() {
     }
 }
 
+/// Every [`PRESENT_MARKERS`] spelling — driven off the list itself, so a
+/// future addition to the list is covered automatically without anyone
+/// remembering to extend this test by hand. This is the complement to
+/// [`open_ended_spans_are_recognised_in_every_spelling`]'s hardcoded literals
+/// above: a list-driven loop alone would not catch a marker silently dropped
+/// FROM the regex construction while staying in the list (both would drift
+/// together), so the hardcoded spellings stay as the independent check for
+/// that.
+#[test]
+fn every_present_marker_opens_a_span_adjacent_to_a_year() {
+    let broken: Vec<&str> = PRESENT_MARKERS
+        .iter()
+        .filter(|m| !is_open_ended(&format!("2021 - {m}")))
+        .copied()
+        .collect();
+    assert!(
+        broken.is_empty(),
+        "not recognised adjacent to a year: {broken:?}"
+    );
+
+    // And the mirror: none of them alone, with no year anywhere, is a span —
+    // the accepted-loss case this fix trades for correctness (see
+    // `is_open_ended`'s doc comment).
+    let bare_still_open: Vec<&str> = PRESENT_MARKERS
+        .iter()
+        .filter(|m| is_open_ended(m))
+        .copied()
+        .collect();
+    assert!(
+        bare_still_open.is_empty(),
+        "bare marker with no year must not be open-ended: {bare_still_open:?}"
+    );
+}
+
 #[test]
 fn contains_word_respects_boundaries() {
     assert!(contains_word("this is vital work", "vital"));
