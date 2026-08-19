@@ -56,7 +56,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`jobPreferences`](#jobpreferences)   | 5       |                                                                                                                                        |
 | [`jobs`](#jobs)                       | 5       |                                                                                                                                        |
 | [`linkedin`](#linkedin)               | 5       |                                                                                                                                        |
-| [`match`](#match)                     | 2       |                                                                                                                                        |
+| [`match`](#match)                     | 3       |                                                                                                                                        |
 | [`menu`](#menu)                       | 3       |                                                                                                                                        |
 | [`notifications`](#notifications)     | 9       | Notification Center capability (Phase 2).                                                                                              |
 | [`privacy`](#privacy)                 | 5       |                                                                                                                                        |
@@ -2876,6 +2876,7 @@ Contract: `MatchContract` in `packages/shared/src/ipc/contracts/match.ts`
 ### Methods — `match`
 
 - [`match.resume`](#matchresume)
+- [`match.text`](#matchtext)
 - [`match.trimSuggestions`](#matchtrimsuggestions)
 
 #### `match.resume`
@@ -2893,6 +2894,24 @@ Keyword-only by default. Semantic (embedding) scoring is opt-in per
 request via `semanticScoringEnabled`; omitting it means keyword-only, not
 "provider decides".
 
+#### `match.text`
+
+```ts
+text(req: MatchTextRequest): Promise<MatchScore>;
+```
+
+Score one résumé against arbitrary job-ad TEXT — for a caller with a
+`jobDesc: string` in hand but no `PostingsCache` id (e.g. the Score tab in
+`JobAdView`, whose `TailorFlow` parent receives an `Application` /
+`AutopilotFoundJob`, neither of which carries one). Routes through the
+SAME shared kernel `resume()` does — not a second scorer — with two
+deliberate, fixed differences: it is content-addressed on the job text
+itself (repeated opens of the same posting are free), and semantic
+(embedding) scoring is always OFF here, never caller-configurable —
+mirrors `resume()`'s "omitting means keyword-only" default, made
+unconditional for this ad-hoc surface. `scoreSource` is therefore always
+`'keyword'` on the result.
+
 #### `match.trimSuggestions`
 
 ```ts
@@ -2906,11 +2925,12 @@ trimSuggestions(req: ResumeTrimSuggestionsRequest): Promise<TrimSuggestions>;
 | Key               | Channel                 |
 | ----------------- | ----------------------- |
 | `resume`          | `match:resume`          |
+| `text`            | `match:text`            |
 | `trimSuggestions` | `match:trimSuggestions` |
 
 ### Referenced types — `match`
 
-- `packages/shared/src/schemas/index.ts` — `MatchResumeRequest`, `ResumeTrimSuggestionsRequest`
+- `packages/shared/src/schemas/index.ts` — `MatchResumeRequest`, `MatchTextRequest`, `ResumeTrimSuggestionsRequest`
 - `packages/shared/src/types/index.ts` — `MatchScore`, `TrimSuggestions`
 
 ---

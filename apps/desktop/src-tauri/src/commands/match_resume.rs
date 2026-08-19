@@ -16,7 +16,9 @@ use crate::documents::{
     embed_charged, posting_vector_or_embed, sha256_hex, AppEmbedder, DocumentRecord, DocumentStore,
     EmbedBudget, Embedder, EmbeddingConfig, MatchScoreKey,
 };
-use crate::ipc_contracts::matching::{MatchResumeRequest, ResumeTrimSuggestionsRequest};
+use crate::ipc_contracts::matching::{
+    MatchResumeRequest, MatchTextRequest, ResumeTrimSuggestionsRequest,
+};
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::locale::LocaleProfile;
 use crate::postings::PostingsCache;
@@ -78,6 +80,12 @@ fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
 /// [`MatchSurface::Extension`] is the ONE deliberate exception: it never shows
 /// a combined number, and its zero-egress guarantee has to be structural (no
 /// flag to flip) — see [`score_adhoc_keyword_only`].
+///
+/// [`MatchSurface::JobAdText`] is NOT the same exception, deliberately: it runs
+/// INSIDE the app against a user-owned résumé (not the untrusted browser
+/// bridge), so it has no zero-egress obligation and DOES translate — the same
+/// "Match %" pipeline the Jobs page runs, so identical job text scores
+/// identically on both surfaces. See [`score_resume_against_text`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MatchSurface {
     /// The in-app [`match_resume`] command (the Jobs page and everything routed
@@ -87,6 +95,9 @@ pub(crate) enum MatchSurface {
     Autopilot,
     /// The browser extension's ad-hoc, keyword-only "Check fit".
     Extension,
+    /// The in-app Score tab's ad-hoc scoring of arbitrary job-ad TEXT (no
+    /// `PostingsCache` id in hand) — see [`score_resume_against_text`].
+    JobAdText,
 }
 
 /// Where [`score_one`] reads/writes the RÉSUMÉ-side embedding.
@@ -120,7 +131,8 @@ impl MatchSurface {
     pub(crate) fn resume_vector_home(self) -> ResumeVectorHome {
         match self {
             Self::Autopilot => ResumeVectorHome::EphemeralCache,
-            Self::JobsPage | Self::Extension => ResumeVectorHome::DocumentIndex,
+            // All three score a REAL stored `documents` row, never a snapshot.
+            Self::JobsPage | Self::Extension | Self::JobAdText => ResumeVectorHome::DocumentIndex,
         }
     }
 }
@@ -500,6 +512,66 @@ pub(crate) async fn score_adhoc_keyword_only(
     .await
 }
 
+/// Content-addressed cache identity for the Score tab's ad-hoc job-ad TEXT
+/// (`JobAdView`'s "Score" sub-tab — see [`score_resume_against_text`]). Hashing
+/// the text mirrors [`autopilot_resume_id`]'s discipline: repeated opens of the
+/// SAME posting hit the SAME self-invalidating `match_scores` row (free), and a
+/// different posting can never collide. Prefixed so it can never collide with a
+/// real `PostingsCache` id (which never carries a `:`), matching the
+/// `adhoc:`/`autopilot:`/`autopilot-resume:` namespace convention.
+pub(crate) fn job_ad_text_id(job_text: &str) -> String {
+    format!("job-ad-text:{}", sha256_hex(job_text))
+}
+
+/// Score a stored résumé against arbitrary job-ad TEXT — the Score tab's entry
+/// point (`JobAdView`'s "Score" sub-tab). `TailorFlow` receives an
+/// `Application` / `AutopilotFoundJob`, neither of which carries a
+/// `PostingsCache` id [`match_resume`] needs, and that cache is RAM-only and
+/// deliberately transient (discovery is transient by design), so a saved
+/// application could never have had an entry anyway — the JD text `JobAdView`
+/// already holds (`jobDesc: string`) is the honest input.
+///
+/// A thin forwarding wrapper around [`score_one`], NOT a new scoring path — no
+/// new branch is added to the kernel and every existing caller is untouched.
+/// Keyword-only, deliberately (`semantic_enabled` hardcoded `0`, not
+/// caller-configurable): semantic scoring stays an explicit opt-in read from
+/// the renderer's preferences store, this ad-hoc surface has no channel to
+/// that setting (mirrors [`score_adhoc_keyword_only`]'s reasoning), and
+/// embeddings are currently broken for cloud-only users — this surface must
+/// not add a second embedding round-trip regardless.
+///
+/// UNLIKE [`score_adhoc_keyword_only`] ([`MatchSurface::Extension`], whose
+/// zero-egress guarantee is structural because the caller is an untrusted
+/// browser bridge), this surface runs inside the app against a user-owned,
+/// already-stored résumé — there is no zero-egress obligation to uphold, so it
+/// deliberately DOES translate ([`MatchSurface::JobAdText`], not `Extension`):
+/// the SAME "Match %" pre-processing pipeline [`match_resume`] runs, so
+/// identical job text scores identically on both surfaces (`languages_align`
+/// included) — see `the_score_tab_surface_runs_the_same_pipeline_as_the_jobs_page_for_identical_text`.
+pub(crate) async fn score_resume_against_text(
+    app: &AppHandle,
+    store: &DocumentStore,
+    resume: &DocumentRecord,
+    resume_raw_keywords: Option<&[String]>,
+    active: &EmbeddingConfig,
+    job_text: String,
+) -> Value {
+    let job_id = job_ad_text_id(&job_text);
+    score_one(
+        &AppScoreIo(app),
+        store,
+        resume,
+        resume_raw_keywords,
+        active,
+        &job_id,
+        Some(job_text),
+        0, // semantic_enabled hardcoded OFF — deliberate, not caller-configurable (see doc)
+        MatchSurface::JobAdText,
+        None, // user-initiated: not charged against the unattended daily ceiling
+    )
+    .await
+}
+
 /// The `scoreSource` value [`score_one`] emits when a real embedding pair backed
 /// the `combined` number. Anything else — a keyword-only run, a failed embed, an
 /// error object, a field-less legacy cache row — is a degrade. One constant so
@@ -674,6 +746,51 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     // Autopilot and extension entry points — which share the kernel but not this
     // command — byte-identical.
     constraints::attach(&app, &posting_facts, scored)
+}
+
+/// [`match_resume_text`]'s two structural preconditions, in the SAME order the
+/// errors-never-cached invariant requires: resolve the résumé (a fixed error
+/// object, mirroring [`match_resume`]'s own resume-not-found shape) BEFORE any
+/// cache access, then clamp the job text to [`MAX_JOB_DESCRIPTION_BYTES`] — the
+/// SAME cap [`resume_trim_suggestions`] already enforces on the identical kind
+/// of text. The renderer's zod `.max()` is client-side only (serde enforces
+/// nothing), and this is a new IPC surface a non-UI caller can reach directly
+/// with unbounded scraper/user input, so the backend must cap it itself. Pure —
+/// no `AppHandle` — so it is directly unit-testable against a real
+/// `DocumentStore` without a Tauri runtime.
+fn resolve_resume_and_text(
+    store: &DocumentStore,
+    resume_id: &str,
+    job_text: String,
+) -> Result<(DocumentRecord, String), Value> {
+    let Some(resume) = store.get(resume_id) else {
+        return Err(json!({ "error": format!("resume not found: {}", resume_id) }));
+    };
+    Ok((resume, clamp_to_bytes(job_text, MAX_JOB_DESCRIPTION_BYTES)))
+}
+
+/// Score a stored résumé against arbitrary job-ad TEXT — the Score tab's IPC
+/// entry point. See [`score_resume_against_text`] for why this exists (no
+/// `PostingsCache` id reaches `JobAdView`) and why it is keyword-only
+/// (semantic scoring is not caller-configurable here).
+#[tauri::command]
+pub async fn match_resume_text(app: AppHandle, req: MatchTextRequest) -> Value {
+    let store = app.state::<DocumentStore>();
+    let (resume, job_text) = match resolve_resume_and_text(&store, &req.resume_id, req.job_text) {
+        Ok(pair) => pair,
+        Err(err) => return err,
+    };
+    let resume_raw_keywords = parse_resume_keywords(&resume);
+    let active = store.embedding_config();
+    score_resume_against_text(
+        &app,
+        &store,
+        &resume,
+        resume_raw_keywords.as_deref(),
+        &active,
+        job_text,
+    )
+    .await
 }
 
 /// Build a searchable text blob for a single cached posting JSON value (title +

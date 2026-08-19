@@ -1121,6 +1121,7 @@ pub fn run() {
             commands::discovery::discovery_watched,
             // match
             commands::match_resume::match_resume,
+            commands::match_resume::match_resume_text,
             commands::match_resume::resume_extract_text,
             commands::match_resume::resume_trim_suggestions,
             // credentials (board-login CRUD removed — sessions auth via boards.*)

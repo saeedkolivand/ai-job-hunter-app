@@ -238,6 +238,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     match: {
       resume: noop,
+      text: noop,
       trimSuggestions: async () => ({ maxPages: 2, lines: [] }),
     },
 
