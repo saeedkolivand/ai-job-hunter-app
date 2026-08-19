@@ -1900,16 +1900,15 @@ fn either_witness_alone_is_enough_to_corroborate_the_target() {
 // A fourth, harder shape was also measured and is NOT a numeric-threshold
 // problem: an otherwise-English document that merely NAMES a German or French
 // institution can carry a few real foreign function words purely from that
-// proper noun. The title-case-sandwich exclusion in `pairwise_evidence_count`
-// closes every REALISTIC instance measured (a terse "Degree, Institution,
-// Dates" entry, or a longer multi-sentence label) by recognising that a
-// connector wedged between two Capitalised neighbours is almost always part
-// of the proper noun's own official name, not free-standing prose. A second,
-// COMPARATIVE bar (found's evidence must EXCEED target's, not merely clear a
-// floor) was tried on top of the title-case exclusion and REMOVED: disabling
-// it left every behavioural test in this file green, so it was carrying no
-// load the title-case exclusion did not already carry — see
-// `distinctive_evidence_confirms_requires_the_absolute_floor` and the module
+// proper noun. A title-case-sandwich exclusion in `pairwise_evidence_count`
+// was tried for this shape and REMOVED (it deleted nominal-register German's
+// evidence wholesale); what closes it now is MIN_DISTINCTIVE_HITS alone —
+// see its doc for the corpus and the accepted French/Italian residual risk.
+// A second, COMPARATIVE bar (found's evidence must EXCEED target's, not
+// merely clear a floor) was tried on top of the title-case exclusion and
+// REMOVED: disabling it left every behavioural test in this file green, so
+// it was carrying no load the floor does not already carry — see
+// `distinctive_evidence_confirms_requires_the_shipped_floor` and the module
 // doc for the measurement.
 
 /// The exact reported false positive, reproduced directly. An honest ENGLISH
@@ -2368,6 +2367,11 @@ fn a_german_institution_name_inside_an_english_education_section_never_fires() {
          Certificate in Software Architecture, Technische Universitat Munchen der \
          Angewandten Wissenschaften",
     );
+    assert!(
+        generated != EN_CLEAN,
+        "premise: the education entry must actually be replaced — EN_CLEAN's wording drifted, \
+         so this test is now asserting silence on an unmodified English fixture"
+    );
     let report = en_resume(&generated, &en_requirements());
     silent(&report, CONTENT_LANGUAGE_MISMATCH);
 }
@@ -2406,16 +2410,21 @@ fn a_german_institution_name_inside_an_english_certifications_section_never_fire
 /// "und" (Fachhochschule für Technik und Wirtschaft Berlin is a real Berlin
 /// university of applied sciences). A short institution name contributes at
 /// most one or two hits, and real terse entries do not accumulate enough
-/// evidence to clear `MIN_DISTINCTIVE_HITS` in the first place — the
-/// title-case-sandwich exclusion is belt and braces here, not load-bearing,
-/// which is worth pinning separately from the denser, multi-sentence-labelled
-/// fixture above.
+/// evidence to clear `MIN_DISTINCTIVE_HITS` in the first place — `MIN_DISTINCTIVE_HITS`
+/// is now the only thing keeping this fixture quiet, which makes it a direct
+/// floor-calibration pin, worth keeping separate from the denser,
+/// multi-sentence-labelled fixture above.
 #[test]
 fn a_terse_real_german_institution_name_never_fires() {
     let generated = EN_CLEAN.replace(
         "BSc Computer Science, TU Berlin, 2014 - 2018",
         "MSc Computer Science, Fachhochschule fur Technik und Wirtschaft Berlin, 2018 - 2020\n\
          BSc Computer Science, Technische Universitat Munchen, 2014 - 2018",
+    );
+    assert!(
+        generated != EN_CLEAN,
+        "premise: the terse institution entry must actually be replaced — EN_CLEAN's wording \
+         drifted, so this test is now asserting silence on an unmodified English fixture"
     );
     let report = en_resume(&generated, &en_requirements());
     silent(&report, CONTENT_LANGUAGE_MISMATCH);
