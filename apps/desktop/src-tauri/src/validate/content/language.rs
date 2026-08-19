@@ -103,10 +103,10 @@ const FUNCTION_WORDS_NL: &[&str] = &[
 ];
 const FUNCTION_WORDS_PT: &[&str] = &[
     "o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou", "mas", "porque", "que", "se",
-    "embora", "nem", "de", "em", "a", "com", "por", "para", "sem", "sobre", "entre", "até",
-    "desde", "eu", "tu", "ele", "ela", "nós", "vós", "eles", "elas", "me", "te", "se", "nos",
-    "meu", "teu", "seu", "nosso", "vosso", "é", "são", "era", "eram", "sou", "és", "somos",
-    "estar", "está", "estão", "ser", "foi", "foram", "tem", "têm", "há",
+    "embora", "nem", "de", "em", "com", "por", "para", "sem", "sobre", "entre", "até", "desde",
+    "eu", "tu", "ele", "ela", "nós", "vós", "eles", "elas", "me", "te", "nos", "meu", "teu", "seu",
+    "nosso", "vosso", "é", "são", "era", "eram", "sou", "és", "somos", "estar", "está", "estão",
+    "ser", "foi", "foram", "tem", "têm", "há",
 ];
 
 /// The seven languages [`function_words_for`] curates a real vocabulary for —

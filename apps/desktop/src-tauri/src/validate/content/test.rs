@@ -2404,9 +2404,9 @@ fn needs_distinctive_evidence_is_the_nine_language_latin_script_set() {
 /// minimum, so a future edit that silently thins a list back down (the exact
 /// way the Spanish regression shipped unnoticed) fails loudly here instead of
 /// only showing up as a missed Critical three layers away. Chosen well below
-/// every language's current count (`de` 88, `en` 67, `fr` 60, `es` 60, `it`
-/// 62, `nl` 61, `pt` 61) so ordinary curation additions/removals do not make
-/// this brittle.
+/// every language's current raw list size (`en` 70, `de` 83, `fr` 68, `es`
+/// 61, `it` 65, `nl` 58, `pt` 58) so ordinary curation additions/removals do
+/// not make this brittle.
 #[test]
 fn every_curated_language_has_a_healthy_pairwise_floor_against_english() {
     const FLOOR: usize = 40;
@@ -2422,6 +2422,29 @@ fn every_curated_language_has_a_healthy_pairwise_floor_against_english() {
              entries, under the {FLOOR} floor — this is exactly how the Spanish regression \
              (30 survivors after global pruning) shipped unnoticed; investigate before \
              lowering this floor"
+        );
+    }
+}
+
+/// Hygiene guard for the class of bug a review found by inspection: `"zijn"`
+/// listed TWICE in `FUNCTION_WORDS_NL` (possessive and copula) — harmless
+/// under the current HashSet-based [`pairwise_evidence_count`] (a duplicate
+/// collapses on `.collect()`), but a silent authoring mistake nonetheless,
+/// and the SAME sweep found a second instance (`"a"` and `"se"`, each twice,
+/// in `FUNCTION_WORDS_PT`) the review did not catch by inspection. Both are
+/// fixed; this test is what keeps a third one from shipping the same way.
+#[test]
+fn no_curated_language_list_has_an_internal_duplicate() {
+    for lang in ["en", "de", "fr", "es", "it", "nl", "pt"] {
+        let words = super::language::function_words_for(lang);
+        let unique: std::collections::HashSet<&&str> = words.iter().collect();
+        assert_eq!(
+            unique.len(),
+            words.len(),
+            "{lang}'s function-word list has an internal duplicate — {} entries, {} unique; \
+             {words:?}",
+            words.len(),
+            unique.len()
         );
     }
 }
