@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.138.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.137.1...v0.138.0) (2026-08-19)
+
+### ✨ Features
+
+* make the egress inventory testable, and close two holes found doing it ([#1005](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1005)) ([6e238c2](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6e238c2d4dbfa970227dc3ad0fc69b56cf932fed)), closes [#1000](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1000)
+* **match:** report hard constraints beside the score instead of blending them into it ([#1023](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1023)) ([65aec88](https://github.com/saeedkolivand/ai-job-hunter-app/commit/65aec8802e02047a55f3d1b0ab39890fa7d39db4))
+* **scraping:** add freehire as the aggregator's keyless tier ([#1008](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1008)) ([caacf50](https://github.com/saeedkolivand/ai-job-hunter-app/commit/caacf506c1791a958dec0924107c61e9a4560f50))
+* **scraping:** remember which boards actually work between runs ([#1027](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1027)) ([98131a9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/98131a97eba622777167ffd64265a0330a4ee53a))
+* **validate:** catch invented tenure, certifications and education ([#1024](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1024)) ([26bf195](https://github.com/saeedkolivand/ai-job-hunter-app/commit/26bf195ef28953147e8fdb18f487298141b22478)), closes [#1004](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1004)
+
+### 🐛 Bug Fixes
+
+* **autopilot:** jitter scheduled runs so default installs stop herding ([#1018](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1018)) ([23ceaac](https://github.com/saeedkolivand/ai-job-hunter-app/commit/23ceaac7cc7a1976bcdc29d3fd0895e2c06bf831))
+* **autopilot:** keep a run in flight visible after navigating away ([#1013](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1013)) ([2e7e08a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/2e7e08aef931fd0496107d2063059d1037c54e66))
+* **evidence:** stop filing academic records as work experience ([#1011](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1011)) ([8f5b2ee](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8f5b2eeb38b80da1fa6151b1faccfa9e66fb0375))
+* **jobs:** keep the scrape state alive across a route change ([#1019](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1019)) ([2abe078](https://github.com/saeedkolivand/ai-job-hunter-app/commit/2abe078551c815b45f1a8c7daaea9c9357405fc8))
+* **landing:** serve the /world clips from r2, which can send cors headers ([#1032](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1032)) ([8ca6fed](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8ca6feda562527edeca11b34aa37023122023ea1)), closes [#1031](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1031)
+* **locale:** give Spain, Portugal and Brazil the profiles they were already promised ([#1009](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1009)) ([d964aa4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d964aa4036d6f38cdf8905591265325225e1747f))
+* make in-flight backend work survive navigation, and stop logs leaking paths ([#1036](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1036)) ([f28b23d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f28b23d5410cefbaac99d95631b8810c9be2a5db)), closes [#1019](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1019) [#1025](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1025) [#125](https://github.com/saeedkolivand/ai-job-hunter-app/issues/125)
+* **resume-pipeline:** resolve a fabrication remove by its anchored line ([#1029](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1029)) ([aacd29a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/aacd29a5353ec17b6ebdef483366dfe3b716bda5))
+* **resume:** localize every section heading, not the first four ([#1007](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1007)) ([7bf193d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7bf193d21456c57a4f583ee4c8f4529e972c0103)), closes [#1003](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1003) [#1003](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1003)
+* **scraping:** register jobicy in the shared board list and make the drift impossible ([#1014](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1014)) ([6e2ad81](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6e2ad814e28d0e6a5d07c7bef4f9624bdb55e116))
+* **scraping:** wire the freehire params their spec never documented ([#1035](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1035)) ([36ddb9e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/36ddb9e28aaa4d233f1a9ebceb0cb6cd53c3ab8f)), closes [#1026](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1026) [#1008](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1008) [#1026](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1026)
+* **scripts:** stop a doc comment from promoting a hook to a subscriber ([#1016](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1016)) ([287bdbb](https://github.com/saeedkolivand/ai-job-hunter-app/commit/287bdbb18ec4a3a25d65d0b287dd85c12952378f))
+* stop a false language critical and read today as a date column ([#1038](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1038)) ([b10b045](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b10b045222a0eef53ed290bc494dae57464b9807)), closes [#1009](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1009)
+
+### ♻️ Refactors
+
+* **landing:** serve the /world clips from a release, not from the repo ([#1031](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1031)) ([af3d955](https://github.com/saeedkolivand/ai-job-hunter-app/commit/af3d955d5f3c1e7820661c39ab6e924fdf825527))
+* **platform:** own the test data-dir override where the rule says it belongs ([#1006](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1006)) ([1cff9de](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1cff9de4cfc6894a900dcceead7658b523a74648))
+
+### 📚 Documentation
+
+* generate the ipc api reference from the contracts ([#1037](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1037)) ([02c2120](https://github.com/saeedkolivand/ai-job-hunter-app/commit/02c212071f3d466c597035fe415346dcb5f99f20))
+* **persistence:** state that the persisted record is authoritative and events only notify ([#1025](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1025)) ([dcf40cd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/dcf40cd35fdd47678fb4fa59a7440ff4331165a1)), closes [#992](https://github.com/saeedkolivand/ai-job-hunter-app/issues/992)
+* repoint the audit-report sha after the history rewrite ([#1034](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1034)) ([53f5c13](https://github.com/saeedkolivand/ai-job-hunter-app/commit/53f5c13baf674510e00c6c49cdfaadd066582c26)), closes [#1000](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1000)
+
 ## [0.137.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.137.0...v0.137.1) (2026-08-17)
 
 ### 🐛 Bug Fixes
