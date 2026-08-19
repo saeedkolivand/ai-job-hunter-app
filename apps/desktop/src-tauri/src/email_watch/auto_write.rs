@@ -437,6 +437,83 @@ mod tests {
     }
 
     #[test]
+    fn a_matched_unconfirmed_terminal_is_a_candidate_and_a_later_email_supersedes_it_end_to_end() {
+        // The fix-forward task's required check: NOT just that `next_status`
+        // allows the override (already pinned above) -- that the MATCHER
+        // ALSO still treats an unconfirmed-email-derived terminal as a
+        // candidate, so a later correcting email actually reaches
+        // `next_status` at all. Chains matcher -> ladder -> write by hand
+        // (the same three steps `email_watch_scheduler::run_check_inner`
+        // performs across a real tick, which needs live IMAP I/O and can't
+        // be unit-tested directly).
+        let (_d1, applications, _d2, email_watch) = stores();
+        let id = saved_app(&applications);
+        applications
+            .set_status(&id, ApplicationStatus::Interviewing, "")
+            .unwrap();
+
+        // Email 1: rejection auto-writes an unconfirmed terminal Rejected.
+        let wrote_first = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Interviewing,
+            Some(EmailIntent::Rejection),
+            true,
+        )
+        .unwrap();
+        assert!(wrote_first);
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Rejected
+        );
+
+        // MATCHER step: with the app now Rejected-but-unconfirmed, it must
+        // still be found as a candidate -- exactly what the caller
+        // (`email_watch_scheduler`) computes via
+        // `current_status_is_unconfirmed_email_write` and threads through
+        // `poller::run_tick` into `matcher::best_match`.
+        let app_row = applications.get(&id).unwrap();
+        let mut unconfirmed_ids = std::collections::HashSet::new();
+        if applications.current_status_is_unconfirmed_email_write(&id) {
+            unconfirmed_ids.insert(id.clone());
+        }
+        let candidates = crate::email_watch::parser::Candidates {
+            company: Some(app_row.company.clone()),
+            title: None,
+        };
+        let matched = crate::email_watch::matcher::best_match(
+            &candidates,
+            std::slice::from_ref(&app_row),
+            false,
+            &unconfirmed_ids,
+        );
+        assert_eq!(
+            matched.map(|s| s.application_id),
+            Some(id.clone()),
+            "an unconfirmed email-derived terminal must still be a matcher candidate, or \
+             the next_status terminal-override fix is dead code one layer up"
+        );
+
+        // LADDER + WRITE step: email 2, a genuinely different intent, must
+        // supersede the still-unconfirmed terminal end to end.
+        let wrote_second = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Rejected,
+            Some(EmailIntent::Interview),
+            true,
+        )
+        .unwrap();
+        assert!(wrote_second, "the later email must supersede end to end");
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Interviewing
+        );
+    }
+
+    #[test]
     fn a_user_set_terminal_status_absorbs_even_with_a_recognized_sender() {
         let (_d1, applications, _d2, email_watch) = stores();
         let id = saved_app(&applications);

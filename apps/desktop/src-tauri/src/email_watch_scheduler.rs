@@ -43,7 +43,7 @@ use chrono::Local;
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 
-use crate::applications::{Application, ApplicationStatus, ApplicationStore};
+use crate::applications::{Application, ApplicationStore};
 use crate::credentials::CredentialStore;
 use crate::db::now_ms;
 use crate::email_watch::imap_client::{self, DEFAULT_IMAP_HOST, DEFAULT_IMAP_PORT};
@@ -269,17 +269,36 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
             AppError::Config("no app password is stored for this account".to_string())
         })?;
 
-    // Kept (not just consumed into `saved`/`saved_for_notify`) — the
-    // post-tick loop below needs the live store for the auto-write call.
+    // Kept (not just consumed into `candidates`/`candidates_for_notify`) —
+    // the post-tick loop below needs the live store for the auto-write call
+    // AND for the eligibility set below.
+    //
+    // Candidacy is no longer "status == Saved" — see
+    // `email_watch::matcher`'s module doc. The candidate list is every
+    // application (live statuses are unconditionally eligible), plus
+    // `unconfirmed_email_write_ids` telling `poller::run_tick` (which
+    // threads it straight through to `matcher::best_match`) which of the
+    // TERMINAL ones are themselves still-unconfirmed email-derived writes
+    // — the one case a terminal status stays a candidate. This is the only
+    // place with the `ApplicationStore` handle needed to compute that set,
+    // which is why it's computed here rather than inside the pure L1
+    // matcher/poller.
     let applications = app.try_state::<ApplicationStore>();
-    let saved: Vec<Application> = applications
+    let candidates: Vec<Application> = applications
         .as_deref()
         .map(|s| s.list())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|a| a.status == ApplicationStatus::Saved)
-        .collect();
-    let saved_for_notify = saved.clone();
+        .unwrap_or_default();
+    let unconfirmed_email_write_ids: std::collections::HashSet<String> = applications
+        .as_deref()
+        .map(|s| {
+            candidates
+                .iter()
+                .filter(|a| s.current_status_is_unconfirmed_email_write(&a.id))
+                .map(|a| a.id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let candidates_for_notify = candidates.clone();
 
     let since = Local::now().date_naive() - chrono::Duration::days(LOOKBACK_DAYS);
     let stored_uidvalidity = account.uidvalidity;
@@ -294,7 +313,8 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
             since,
             stored_uidvalidity,
             stored_last_uid,
-            &saved,
+            &candidates,
+            &unconfirmed_email_write_ids,
         )
     })
     .await
@@ -352,16 +372,17 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
             now_ms(),
         )?;
         if let Some(app_id) = &outcome.matched_application_id {
-            if let Some(matched) = saved_for_notify.iter().find(|a| &a.id == app_id) {
+            if let Some(matched) = candidates_for_notify.iter().find(|a| &a.id == app_id) {
                 notify_match(app, matched);
                 // v2 slice 3: the actual auto-write. `matched.status` is the
-                // PRE-TICK snapshot `matcher::best_match` matched against
-                // (always `Saved` — that fn's own scope) — safe to pass as
-                // `current_status` even though it may be stale by now: the
-                // underlying compare-and-set re-validates the LIVE status at
-                // write time and simply no-ops on a lost race, the same
-                // tolerance every other `transition_status_if`-family caller
-                // already has. Best-effort: a write failure here (e.g. a
+                // PRE-TICK snapshot `matcher::best_match` matched against —
+                // any candidate status now, not just `Saved` (see that fn's
+                // module doc) — safe to pass as `current_status` even though
+                // it may be stale by now: the underlying compare-and-set
+                // re-validates the LIVE status at write time and simply
+                // no-ops on a lost race, the same tolerance every other
+                // `transition_status_if`-family caller already has.
+                // Best-effort: a write failure here (e.g. a
                 // transient SQLite contention) must not block `mark_seen`/
                 // `advance_last_uid` for the REST of this tick's outcomes —
                 // `.code()` only (never `.to_string()`/`{e}`), so a

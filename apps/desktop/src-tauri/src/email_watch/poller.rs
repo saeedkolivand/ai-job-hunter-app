@@ -1,7 +1,10 @@
 //! Tauri-free IMAP tick orchestration: search, then header fetch, then
 //! fingerprint filter, then body fetch (matched candidates only), then
 //! company/title extraction plus intent classification, then match against
-//! a caller-supplied `saved` application snapshot.
+//! a caller-supplied application snapshot. Candidacy is decided entirely by
+//! [`matcher::best_match`] (live statuses, plus terminal ones the caller
+//! marks via `unconfirmed_email_write_ids`) — this file does not filter by
+//! status itself, it only threads that set through.
 //!
 //! No `AppHandle`/notification/write concern here — that is
 //! `email_watch_scheduler`'s job (L2), the ONE place in this module family
@@ -16,7 +19,7 @@
 //! subject/sender/body text is parsed and discarded here, never surfaced in
 //! [`TickResult`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 
@@ -113,10 +116,14 @@ fn cap_oldest_first(
 /// the watermark (recomputed against the LIVE `UIDVALIDITY`, since a stale
 /// `stored_last_uid` is meaningless after a mailbox renumbering), fingerprint
 /// each remaining header, fetch the body ONLY for a fingerprint hit, then
-/// match against `saved_applications` AND classify the 4-way intent from the
-/// SAME decoded subject/body — see [`MessageOutcome::intent`].
+/// match against `candidate_applications` AND classify the 4-way intent from
+/// the SAME decoded subject/body — see [`MessageOutcome::intent`].
+/// `unconfirmed_email_write_ids` is passed straight through to
+/// [`matcher::best_match`] — see that fn's doc for why a terminal status can
+/// still be a candidate.
 ///
 /// Blocking (real network I/O) — call only from `spawn_blocking`.
+#[allow(clippy::too_many_arguments)] // house convention (see clippy.toml threshold=8) — every param is a distinct required IMAP/watermark/candidacy input, not a bundling smell
 pub fn run_tick(
     host: &str,
     port: u16,
@@ -125,7 +132,8 @@ pub fn run_tick(
     since: NaiveDate,
     stored_uidvalidity: Option<u32>,
     stored_last_uid: Option<u32>,
-    saved_applications: &[Application],
+    candidate_applications: &[Application],
+    unconfirmed_email_write_ids: &HashSet<String>,
 ) -> AppResult<TickResult> {
     let header_fetch = imap_client::fetch_headers_since(
         host,
@@ -196,8 +204,13 @@ pub fn run_tick(
                     body_text.as_deref(),
                     header.from_name.as_deref(),
                 );
-                matcher::best_match(&candidates, saved_applications, domain_hint)
-                    .map(|scored| scored.application_id)
+                matcher::best_match(
+                    &candidates,
+                    candidate_applications,
+                    domain_hint,
+                    unconfirmed_email_write_ids,
+                )
+                .map(|scored| scored.application_id)
             });
             let intent = header
                 .as_ref()
@@ -312,7 +325,8 @@ mod tests {
             title: None,
         };
         assert_eq!(
-            matcher::best_match(&candidates, &apps, false).map(|s| s.application_id),
+            matcher::best_match(&candidates, &apps, false, &HashSet::new())
+                .map(|s| s.application_id),
             Some("a1".to_string())
         );
     }

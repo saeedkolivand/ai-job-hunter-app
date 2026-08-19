@@ -61,6 +61,7 @@ pub mod intent;
 pub mod matcher;
 pub mod parser;
 pub mod poller;
+pub mod status_ladder;
 
 /// OS-keychain slot for the IMAP app password (never persisted in SQLite,
 /// never logged, never returned over IPC). Read/written via

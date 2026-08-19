@@ -1,17 +1,37 @@
 //! Pure company/title matching — normalized token-Jaccard scoring of an
 //! email's extracted [`crate::email_watch::parser::Candidates`] against the
-//! user's `saved` applications. No IMAP/parser/Tauri coupling: everything
+//! user's ELIGIBLE applications. No IMAP/parser/Tauri coupling: everything
 //! here is deterministic and network-free, so it is fixture-tested directly.
 //!
 //! Fuzzy matching can't hit Layer A's exact-URL bar, so this is deliberately
 //! conservative: the company overlap must clear [`COMPANY_THRESHOLD`] on its
 //! own (the domain hint and title overlap only ever nudge a borderline score,
-//! never substitute for one), and a genuine tie between two different saved
+//! never substitute for one), and a genuine tie between two eligible
 //! applications is treated as ambiguous (`None`) rather than guessed.
+//!
+//! **Candidacy is NOT "status == Saved" any more.** It is
+//! [`crate::email_watch::intent::is_actionable`] — live, OR terminal but
+//! itself an unconfirmed email-derived write — the SAME predicate
+//! `intent::next_status` uses to decide whether a status may move at all.
+//! Narrowing candidacy back to `Saved`-only silently made the whole rest of
+//! the status ladder unreachable (a rejection/interview/offer for an
+//! `Applied` application could never match), and excluding an
+//! unconfirmed-terminal application from candidacy would make `next_status`'s
+//! own terminal-override fix dead code one layer up — see `is_actionable`'s
+//! doc and this module's `matcher_and_next_status_eligibility_never_disagree`
+//! property test, which pins that the two can never drift apart.
+//!
+//! This module still decides ONLY **which application** — never **what
+//! happened**. It takes no [`crate::email_watch::intent::EmailIntent`] and
+//! never will; `unconfirmed_email_write_ids` is provenance about the
+//! application's OWN current status, computed by the caller (which has the
+//! DB access this pure module deliberately does not), not about any
+//! particular email.
 
 use std::collections::HashSet;
 
-use crate::applications::{Application, ApplicationStatus};
+use crate::applications::Application;
+use crate::email_watch::intent::is_actionable;
 use crate::email_watch::parser::Candidates;
 
 /// Company-token Jaccard must clear this to be considered at all. Chosen so
@@ -78,15 +98,22 @@ pub struct Scored {
     pub score: f64,
 }
 
-/// Best-or-none match: the single `saved` application whose company clears
-/// [`COMPANY_THRESHOLD`] (after the hint/title nudges) with the strictly
-/// HIGHEST score, or `None` if nothing clears the bar, or if the top two
-/// scores are exactly tied (ambiguous — never guess between two equally
-/// likely saves).
+/// Best-or-none match: the single ELIGIBLE application (see this module's
+/// own doc on candidacy) whose company clears [`COMPANY_THRESHOLD`] (after
+/// the hint/title nudges) with the strictly HIGHEST score, or `None` if
+/// nothing clears the bar, or if the top two scores are exactly tied
+/// (ambiguous — never guess between two equally likely candidates).
+///
+/// `unconfirmed_email_write_ids` — ids for which [`crate::applications::
+/// ApplicationStore::current_status_is_unconfirmed_email_write`] is `true`,
+/// computed by the caller. Only matters for a TERMINAL application (a live
+/// one is always eligible regardless); harmless to include a live
+/// application's id too; see [`is_actionable`].
 pub fn best_match(
     candidates: &Candidates,
     applications: &[Application],
     domain_hint: bool,
+    unconfirmed_email_write_ids: &HashSet<String>,
 ) -> Option<Scored> {
     let company = candidates.company.as_deref()?;
     let company_tokens = normalize_tokens(company);
@@ -97,7 +124,7 @@ pub fn best_match(
 
     let mut ranked: Vec<Scored> = applications
         .iter()
-        .filter(|app| app.status == ApplicationStatus::Saved)
+        .filter(|app| is_actionable(app.status, unconfirmed_email_write_ids.contains(&app.id)))
         .filter_map(|app| {
             let app_company_tokens = normalize_tokens(&app.company);
             if app_company_tokens.is_empty() {
@@ -140,6 +167,7 @@ pub fn best_match(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::applications::ApplicationStatus;
 
     fn app(id: &str, company: &str, title: &str, status: ApplicationStatus) -> Application {
         Application {
@@ -186,7 +214,12 @@ mod tests {
             "Software Engineer",
             ApplicationStatus::Saved,
         )];
-        let result = best_match(&candidates(Some("Acme Corp"), None), &apps, false);
+        let result = best_match(
+            &candidates(Some("Acme Corp"), None),
+            &apps,
+            false,
+            &HashSet::new(),
+        );
         assert_eq!(result.map(|s| s.application_id), Some("a1".to_string()));
     }
 
@@ -199,7 +232,12 @@ mod tests {
             ApplicationStatus::Saved,
         )];
         // "Acme Corp" vs "Beta Widgets" — zero token overlap.
-        let result = best_match(&candidates(Some("Beta Widgets"), None), &apps, false);
+        let result = best_match(
+            &candidates(Some("Beta Widgets"), None),
+            &apps,
+            false,
+            &HashSet::new(),
+        );
         assert_eq!(result, None);
     }
 
@@ -211,21 +249,213 @@ mod tests {
             "Software Engineer",
             ApplicationStatus::Saved,
         )];
-        assert_eq!(best_match(&candidates(None, None), &apps, false), None);
+        assert_eq!(
+            best_match(&candidates(None, None), &apps, false, &HashSet::new()),
+            None
+        );
     }
 
     #[test]
-    fn ignores_applications_not_in_the_saved_stage() {
+    fn a_live_non_saved_status_is_still_a_candidate() {
+        // The old premise ("only Saved is a candidate") was the bug this
+        // module's fix addresses: a rejection/interview/offer for an
+        // `Applied` (or Screening/Interviewing/Offer/Accepted) application
+        // could never match before. Any LIVE status is eligible regardless
+        // of `unconfirmed_email_write_ids`.
         let apps = vec![app(
             "a1",
             "Acme Corp",
             "Software Engineer",
             ApplicationStatus::Applied,
         )];
-        // Already applied → out of the candidate pool entirely (silent, per design).
         assert_eq!(
-            best_match(&candidates(Some("Acme Corp"), None), &apps, false),
+            best_match(
+                &candidates(Some("Acme Corp"), None),
+                &apps,
+                false,
+                &HashSet::new()
+            )
+            .map(|s| s.application_id),
+            Some("a1".to_string())
+        );
+    }
+
+    #[test]
+    fn a_user_set_terminal_status_is_not_a_candidate() {
+        // Rejected and NOT in unconfirmed_email_write_ids — i.e. the user
+        // (or a prior CONFIRMED email write) set this, not an unconfirmed
+        // email-derived write. Must stay out of the candidate pool, or a
+        // later email could silently reopen a status the user already
+        // settled.
+        let apps = vec![app(
+            "a1",
+            "Acme Corp",
+            "Software Engineer",
+            ApplicationStatus::Rejected,
+        )];
+        assert_eq!(
+            best_match(
+                &candidates(Some("Acme Corp"), None),
+                &apps,
+                false,
+                &HashSet::new()
+            ),
             None
+        );
+    }
+
+    #[test]
+    fn an_unconfirmed_email_derived_terminal_status_is_still_a_candidate() {
+        // Same as above but `a1` IS in unconfirmed_email_write_ids — the
+        // exact case the terminal-override half of `next_status` exists for.
+        // If the matcher excluded it, that fix would be dead code one layer
+        // up (see this module's doc + `next_status`'s doc).
+        let apps = vec![app(
+            "a1",
+            "Acme Corp",
+            "Software Engineer",
+            ApplicationStatus::Rejected,
+        )];
+        let mut unconfirmed = HashSet::new();
+        unconfirmed.insert("a1".to_string());
+        assert_eq!(
+            best_match(
+                &candidates(Some("Acme Corp"), None),
+                &apps,
+                false,
+                &unconfirmed
+            )
+            .map(|s| s.application_id),
+            Some("a1".to_string())
+        );
+    }
+
+    #[test]
+    fn matcher_and_next_status_eligibility_never_disagree() {
+        // The real invariant the fix-forward task asked for: matcher
+        // candidacy and `next_status`'s own actionability gate must NEVER
+        // independently disagree. Both already call the SAME
+        // `is_actionable` function, so this is guaranteed by construction —
+        // but a future edit could reintroduce a hand-rolled condition in
+        // either place, so this proves agreement empirically rather than
+        // trusting the shared call site to stay that way. A same-company,
+        // no-title-nudge-needed candidate is used so the ONLY thing that can
+        // exclude it is the eligibility filter, never the score threshold.
+        for &status in crate::applications::ApplicationStatus::ALL {
+            for unconfirmed in [false, true] {
+                let expected = is_actionable(status, unconfirmed);
+                let apps = vec![app("a1", "Acme Corp", "Engineer", status)];
+                let mut ids = HashSet::new();
+                if unconfirmed {
+                    ids.insert("a1".to_string());
+                }
+                let matched =
+                    best_match(&candidates(Some("Acme Corp"), None), &apps, false, &ids).is_some();
+                assert_eq!(
+                    matched, expected,
+                    "matcher candidacy for {status:?} (unconfirmed_email_write={unconfirmed}) \
+                     must equal is_actionable"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_rejection_email_matches_an_application_at_applied() {
+        // The concrete case that was impossible before this fix: previously
+        // only Saved could ever be reached, so a rejection for an `Applied`
+        // application could never match at the matcher layer at all.
+        let apps = vec![app(
+            "a1",
+            "Acme Corp",
+            "Software Engineer",
+            ApplicationStatus::Applied,
+        )];
+        let matched = best_match(
+            &candidates(Some("Acme Corp"), None),
+            &apps,
+            false,
+            &HashSet::new(),
+        )
+        .map(|s| s.application_id);
+        assert_eq!(matched, Some("a1".to_string()));
+        assert_eq!(
+            crate::email_watch::intent::next_status(
+                crate::email_watch::intent::EmailIntent::Rejection,
+                ApplicationStatus::Applied,
+                false,
+            ),
+            Some(ApplicationStatus::Rejected)
+        );
+    }
+
+    #[test]
+    fn two_same_company_applications_at_different_eligible_statuses_the_higher_title_overlap_wins()
+    {
+        // The coordinator's specific risk: widening candidacy means a
+        // company can now have MULTIPLE simultaneously-eligible applications
+        // across different lifecycle stages (not just multiple Saved rows).
+        // When the email carries a title that clearly favors one of them,
+        // that one wins — anchored to an absolute id, not just "the two
+        // differ".
+        let apps = vec![
+            app(
+                "saved-app",
+                "Acme Corp",
+                "Software Engineer",
+                ApplicationStatus::Saved,
+            ),
+            app(
+                "interviewing-app",
+                "Acme Corp",
+                "Product Manager",
+                ApplicationStatus::Interviewing,
+            ),
+        ];
+        let result = best_match(
+            &candidates(Some("Acme Corp"), Some("Software Engineer")),
+            &apps,
+            false,
+            &HashSet::new(),
+        );
+        assert_eq!(
+            result.map(|s| s.application_id),
+            Some("saved-app".to_string()),
+            "the title-overlap nudge decides which of the two eligible same-company \
+             applications wins — never a coin-flip"
+        );
+    }
+
+    #[test]
+    fn two_same_company_applications_at_different_eligible_statuses_with_no_title_is_ambiguous() {
+        // Companion to the above: when the email carries NO extractable
+        // title, both same-company candidates score identically on company
+        // overlap alone (no title to differentiate) — an EXACT tie, still
+        // correctly caught by the existing tie-rejection rule even though
+        // the two are at different lifecycle stages, not both Saved.
+        let apps = vec![
+            app(
+                "saved-app",
+                "Acme Corp",
+                "Software Engineer",
+                ApplicationStatus::Saved,
+            ),
+            app(
+                "interviewing-app",
+                "Acme Corp",
+                "Product Manager",
+                ApplicationStatus::Interviewing,
+            ),
+        ];
+        let result = best_match(
+            &candidates(Some("Acme Corp"), None),
+            &apps,
+            false,
+            &HashSet::new(),
+        );
+        assert_eq!(
+            result, None,
+            "no title to disambiguate → exact tie → ambiguous, not guessed"
         );
     }
 
@@ -244,12 +474,12 @@ mod tests {
         let candidate = candidates(Some("a b c d e"), None);
 
         assert_eq!(
-            best_match(&candidate, &borderline, false),
+            best_match(&candidate, &borderline, false, &HashSet::new()),
             None,
             "0.4545 alone must not clear the 0.5 bar"
         );
         assert_eq!(
-            best_match(&candidate, &borderline, true).map(|s| s.application_id),
+            best_match(&candidate, &borderline, true, &HashSet::new()).map(|s| s.application_id),
             Some("a1".to_string()),
             "+0.05 domain-hint boost (→ 0.5045) should tip a genuinely borderline score over"
         );
@@ -258,7 +488,12 @@ mod tests {
         // the boost can never manufacture a match out of a real mismatch.
         let weak = vec![app("a2", "x y z", "", ApplicationStatus::Saved)];
         assert_eq!(
-            best_match(&candidates(Some("a b c"), None), &weak, true),
+            best_match(
+                &candidates(Some("a b c"), None),
+                &weak,
+                true,
+                &HashSet::new()
+            ),
             None
         );
     }
@@ -282,7 +517,12 @@ mod tests {
         // Identical company tokens on both, no title candidate to disambiguate
         // → exactly tied scores → treated as ambiguous, not guessed.
         assert_eq!(
-            best_match(&candidates(Some("Acme Corp"), None), &apps, false),
+            best_match(
+                &candidates(Some("Acme Corp"), None),
+                &apps,
+                false,
+                &HashSet::new()
+            ),
             None
         );
     }
@@ -307,6 +547,7 @@ mod tests {
             &candidates(Some("Acme Corp"), Some("Software Engineer")),
             &apps,
             false,
+            &HashSet::new(),
         );
         assert_eq!(result.map(|s| s.application_id), Some("a1".to_string()));
     }
@@ -341,6 +582,7 @@ mod tests {
             &candidates(Some("Acme Corp"), Some("Engineer")),
             &apps,
             false,
+            &HashSet::new(),
         );
         assert_eq!(
             result.map(|s| s.application_id),
@@ -361,7 +603,12 @@ mod tests {
         // correctly a non-match rather than a coin-flip between two
         // unrelated companies that happen to share one word.
         assert_eq!(
-            best_match(&candidates(Some("Acme"), None), &apps, false),
+            best_match(
+                &candidates(Some("Acme"), None),
+                &apps,
+                false,
+                &HashSet::new()
+            ),
             None
         );
     }
