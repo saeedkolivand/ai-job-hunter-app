@@ -22,13 +22,19 @@
 //! line, a terse CV — starves it of them. Measured: a truthful ENGLISH
 //! noun-phrase block reads as French at `confidence() == 1.0`,
 //! `is_reliable() == true`. `is_language_mismatch` now also requires
-//! [`distinctive_language_evidence`] — real, collision-pruned function-word
-//! evidence of some OTHER curated language — before a confident Latin-script
-//! read becomes an accusation. See that function's doc for why it is a
-//! POSITIVE check, never an absence test, and why it is scoped to Latin
-//! scripts only.
+//! [`distinctive_evidence_confirms`] — real, PAIRWISE function-word evidence
+//! that the whatlang-named language is better supported in the text than the
+//! target itself is — before a confident Latin-script read becomes an
+//! accusation. See that function's doc for why the check is comparative
+//! (found vs. target in the SAME text) rather than a single global pool: a
+//! global pool was measured to leave Spanish/Portuguese too thin to evidence
+//! themselves (a true-positive regression), and neither a pairwise-only nor a
+//! higher-threshold-only fix survives a genuinely English document that
+//! merely NAMES a German institution or French award. See
+//! [`pairwise_evidence_count`] and [`distinctive_evidence_confirms`] for the
+//! measurements behind both halves.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use super::{
     issue, significant_chars, Analysis, ContentIssue, Section, SectionKind, Severity,
@@ -41,55 +47,20 @@ use crate::documents::keywords::detected_language;
 /// check goes quiet instead.
 pub(super) const MIN_CHARS_FOR_LANGUAGE_CHECK: usize = 120;
 
-/// Function words distinctive to ONE Latin-script curated language — the
-/// discriminator [`is_language_mismatch`] needs on top of whatlang's raw
-/// guess.
-///
-/// `whatlang`'s `confidence()` is a top-1-vs-top-2 MARGIN over n-gram
-/// statistics, not a correctness probability. A block of ordinary noun
-/// phrases ("Administration / Supervision / Coordination / Optimisation /
-/// Certification…") starves the n-gram model of the function words it needs
-/// to read a language from at all, and it lands on some OTHER language with
-/// MAXIMUM margin — `is_reliable() == true` and all (measured: a terse
-/// English noun-phrase block reads as confident French). No signal derived
-/// from how the OUTPUT relates to the SOURCE can rule this out — a genuine
-/// translation and a false misread of a truthful document read identically on
-/// that axis, because the two differ only in what the TARGET actually is. The
-/// fix has to be a better language-identity read for exactly the register
-/// whatlang is weak on: real prose is dense with closed-class function words
-/// (articles, prepositions, pronouns, copulas); a noun-phrase list is not.
-///
-/// **Deliberately SEPARATE from `documents::evidence::function_words` /
-/// `has_curated_function_words`.** That pair feeds the ATS keyword-density
-/// and skill-not-demonstrated checks, where the failure mode is a MISSING
-/// filler word (an unremoved German "Kenntnisse" reads as a fake keyword) —
-/// so every curated language there needs an exhaustive list, and an
-/// under-curated one is unsafe. Here the failure mode runs the OTHER way: an
-/// under-curated list just produces LESS evidence and this check goes quiet
-/// (safe); an OVER-eager one — a word claimed distinctive when another
-/// language uses it too — manufactures a false accusation (unsafe). So the
-/// bar here is "correct after pruning collisions", not "exhaustive", and the
-/// two lists must never be conflated or reused for each other's purpose —
-/// reusing this list for the ATS checks would under-cover them (they need
-/// every filler, not just the collision-pruned remainder), and reusing theirs
-/// here would double-count words this module never authored against a
-/// pruning invariant.
-///
-/// Collisions are real and common across these seven languages: "de" is a
-/// Dutch article and a French/Spanish/Portuguese preposition; "a"/"in" are
-/// English and Italian/Spanish; "la" is French, Spanish and Italian. Rather
-/// than hand-picking around each one, every list below is written honestly
-/// (the words a fluent speaker would actually list), and
-/// [`distinctive_pool`] pools all seven and drops anything that lands in more
-/// than one — so a genuine collision safely removes itself from evidence
-/// instead of being guessed at.
+/// Function words per Latin-script curated language — the raw vocabulary
+/// [`pairwise_evidence_count`] draws on. Kept honest per language (the words
+/// a fluent speaker would actually list) rather than hand-pruned for
+/// collisions; pruning is a PAIRWISE, per-comparison decision now (see
+/// [`pairwise_evidence_count`]'s doc for why a single global pool — pruning a
+/// word the moment it appears in ANY two of the seven lists — was measured to
+/// leave Spanish and Portuguese too thin to evidence themselves at all).
 const FUNCTION_WORDS_EN: &[&str] = &[
     "the", "a", "an", "and", "or", "but", "if", "so", "as", "of", "in", "on", "at", "to", "by",
     "for", "with", "from", "into", "onto", "about", "over", "under", "between", "through",
     "during", "before", "after", "this", "that", "these", "those", "it", "he", "she", "him", "her",
     "his", "they", "them", "their", "we", "us", "our", "you", "your", "i", "my", "is", "are",
     "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will",
-    "would", "can", "could", "should", "must", "not", "no",
+    "would", "can", "could", "should", "must", "not", "no", "per",
 ];
 const FUNCTION_WORDS_DE: &[&str] = &[
     "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "eines",
@@ -127,8 +98,8 @@ const FUNCTION_WORDS_NL: &[&str] = &[
     "de", "het", "een", "en", "of", "maar", "want", "dus", "omdat", "als", "dat", "terwijl", "in",
     "op", "aan", "bij", "met", "naar", "van", "voor", "door", "over", "onder", "tussen", "zonder",
     "na", "ik", "jij", "je", "hij", "zij", "wij", "jullie", "ze", "mij", "jou", "hem", "haar",
-    "ons", "mijn", "jouw", "zijn", "hun", "is", "zijn", "was", "waren", "ben", "bent", "heb",
-    "hebt", "heeft", "hebben", "had", "hadden", "wordt", "worden", "kan", "moet",
+    "ons", "mijn", "jouw", "zijn", "hun", "is", "was", "waren", "ben", "bent", "heb", "hebt",
+    "heeft", "hebben", "had", "hadden", "wordt", "worden", "kan", "moet",
 ];
 const FUNCTION_WORDS_PT: &[&str] = &[
     "o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou", "mas", "porque", "que", "se",
@@ -138,14 +109,10 @@ const FUNCTION_WORDS_PT: &[&str] = &[
     "estar", "está", "estão", "ser", "foi", "foram", "tem", "têm", "há",
 ];
 
-/// The seven languages [`is_language_mismatch`]'s corroboration check
-/// curates — English plus the SAME six Snowball languages
-/// `documents::keywords::make_stemmer` stems for, not the full nineteen
-/// [`crate::documents::keywords::locale_tag_of`] recognises. This is the
-/// whole Latin-script ambiguity zone the module doc above describes; every
-/// other curated language reads a distinct SCRIPT, which whatlang already
-/// gets right at near-1.0 confidence regardless of function-word density
-/// (see [`is_latin_curated`]).
+/// The seven languages [`function_words_for`] curates a real vocabulary for —
+/// English plus the SAME six Snowball languages `documents::keywords::make_stemmer`
+/// stems for, not the full nineteen [`crate::documents::keywords::locale_tag_of`]
+/// recognises.
 const CURATED_FUNCTION_WORDS: &[(&str, &[&str])] = &[
     ("en", FUNCTION_WORDS_EN),
     ("de", FUNCTION_WORDS_DE),
@@ -156,86 +123,207 @@ const CURATED_FUNCTION_WORDS: &[(&str, &[&str])] = &[
     ("pt", FUNCTION_WORDS_PT),
 ];
 
-/// Below this many hits, a match is noise rather than evidence — a single
-/// surviving token could be an incidental loanword or a name. Two rather than
-/// one, and no higher: the tightest genuine case measured (see
-/// `every_curated_language_is_silent_for_itself_and_fires_for_every_other`'s
-/// Spanish fixture — after pruning, only "tiene" survives, three times over)
-/// clears two with a full unit of margin; three would leave that fixture
-/// exactly on the boundary.
+/// The Latin-script languages `documents::keywords::locale_tag_of` recognises
+/// — nine of its nineteen tags, not just the seven [`CURATED_FUNCTION_WORDS`]
+/// has a real vocabulary for. Turkish (`tr`) and Vietnamese (`vi`) are Latin
+/// script too and share the SAME whatlang blind spot (a confident wrong read
+/// on function-word-sparse text) as the curated seven; every other tag reads
+/// a genuinely distinct SCRIPT, which whatlang already tells apart from Latin
+/// at near-1.0 confidence regardless of function-word density.
+///
+/// This is [`needs_distinctive_evidence`]'s gate, and it must be the SCRIPT
+/// boundary, not [`CURATED_FUNCTION_WORDS`] membership: gating on curation
+/// instead of script let a confident `tr`/`vi` whatlang guess skip
+/// corroboration entirely and raise a Critical with zero evidence — the
+/// opposite of what "uncurated" is supposed to mean everywhere else in this
+/// crate. [`function_words_for`] still returns `&[]` for `tr`/`vi` (nobody
+/// has written those lists), so a genuine `tr`/`vi` mismatch now goes quiet
+/// instead — an accepted miss, same shape as every other uncurated-language
+/// miss this module already documents, not a new kind of gap.
+const LATIN_SCRIPT_LANGUAGES: &[&str] = &["en", "de", "fr", "es", "it", "pt", "nl", "tr", "vi"];
+
+/// `lang`'s curated function-word vocabulary, or `&[]` when this crate has
+/// not written one (every language outside [`CURATED_FUNCTION_WORDS`],
+/// including the two extra Latin-script tags [`LATIN_SCRIPT_LANGUAGES`]
+/// tracks for the corroboration GATE but not for evidence).
+pub(super) fn function_words_for(lang: &str) -> &'static [&'static str] {
+    CURATED_FUNCTION_WORDS
+        .iter()
+        .find(|(l, _)| *l == lang)
+        .map(|(_, words)| *words)
+        .unwrap_or(&[])
+}
+
+/// Below this many characters, a token is dropped outright — a bare
+/// single-letter survivor ("a", "i", "e", "o", "y" — real one-letter words in
+/// several of these languages) is too little to ever be evidence on its own
+/// and is noise in every language at once. Deliberately NOT the boundary that
+/// excludes `ci`/`vi`/`io`/`ha`/`da`/`ti` — see [`AMBIGUOUS_SHORT_TOKENS`] for
+/// why those are a CURATED denylist, not a length rule: a blanket floor of 3
+/// was tried first and measured to ALSO exclude Italian's own core vocabulary
+/// (`il`, `la`, `di`, all 2 characters), which is exactly how short a real
+/// Romance-language sentence's articles and prepositions are — a genuinely
+/// Italian AWARDS section (`a_drifted_awards_section_warns_rather_than_blocks`)
+/// dropped from 3+ distinctive hits to 1 under that rule and stopped firing.
+const MIN_DISTINCTIVE_TOKEN_CHARS: usize = 2;
+
+/// Tokens excluded from evidence in EVERY language, by name rather than by
+/// length: each one is a genuine short function word in ONE curated language
+/// (`ha`/`di`/`ci`/`io`/`vi`/`da`/`ti` → Italian; `os`/`em` → Portuguese;
+/// `am`/`im`/`zu` → German; `el` → Spanish; `na` → Dutch; `ai`/`et`/`au` →
+/// French) that is ALSO a common English abbreviation, initial, editor name
+/// or URL/TLD fragment — `ci/cd`, the `vi` editor, `.io` domains, an "HA
+/// cluster", the letters "AM"/"IM". Matching free text (unlike a whole-line
+/// structural gate — `documents::evidence::entry`'s `DATE_ONLY_MARKERS`
+/// excludes Dutch `nu` for the identical reason) has no other way to exclude
+/// them, so they are named individually rather than caught by a length rule
+/// that would also catch every OTHER 2-character word in these languages —
+/// most of which (`il`, `la`, `de`, `un`, `le`) carry no comparable collision
+/// risk and are exactly the evidence [`MIN_DISTINCTIVE_TOKEN_CHARS`]'s doc
+/// explains a blanket floor cannot afford to lose. "per" (a genuine
+/// 3-character English preposition ALSO used by Italian) is the one
+/// short-token false positive measured with a length other than 2 — it is
+/// closed instead by curating "per" into [`FUNCTION_WORDS_EN`], so it
+/// collides out at the ordinary pairwise step rather than needing a name
+/// here.
+const AMBIGUOUS_SHORT_TOKENS: &[&str] = &[
+    "ha", "di", "ci", "io", "vi", "da", "ti", "os", "em", "am", "im", "zu", "el", "na", "ai", "et",
+    "au",
+];
+
+/// Below this many pairwise hits, a match is noise rather than evidence — a
+/// single surviving token could be an incidental collision or a name.
 const MIN_DISTINCTIVE_HITS: usize = 2;
 
-/// Every token that appears in exactly one of [`CURATED_FUNCTION_WORDS`]'s
-/// seven lists, mapped to that one language — collisions (appearing in two or
-/// more) are dropped entirely rather than guessed at. Rebuilt on every call:
-/// ~300 short strings, and this runs at most a handful of times per
-/// `validate()` call (once for the document, once per prose section), not
-/// worth caching.
-fn distinctive_pool() -> HashMap<&'static str, &'static str> {
-    let mut seen: HashMap<&str, usize> = HashMap::new();
-    for (_, words) in CURATED_FUNCTION_WORDS {
-        for w in *words {
-            *seen.entry(w).or_default() += 1;
-        }
+/// How many times `text` uses a function word that belongs to `lang`'s
+/// curated vocabulary but NOT to `other`'s — PAIRWISE against the specific
+/// language being compared, not a single pool pruned across all seven at
+/// once.
+///
+/// **Why pairwise, not a global pool (measured regression, not a hypothetical
+/// one).** A prior version of this function pooled all seven languages'
+/// vocabulary together and dropped any word appearing in two or more lists
+/// before counting anything. Spanish and Portuguese are close enough to
+/// French/Italian/Dutch that this pruned them down to 30 and 33 survivors
+/// respectively — missing `de`, `la`, `un`, `en`, `a`, `con`, `por`, `para`,
+/// `que`, `se`, the highest-frequency words in the language — and genuinely
+/// Spanish/Portuguese text against a non-Spanish/Portuguese target regressed
+/// to under-count or zero evidence, silently un-firing a real mismatch (see
+/// `spanish_and_portuguese_regression` in the test module for the measured
+/// numbers in both a flowing-prose and a bullets-plus-date-column register).
+/// Pairwise pruning only removes a word from `lang`'s evidence when `other`
+/// —the language ACTUALLY being compared against, i.e. normally the
+/// document's real target — shares it; a word `lang` shares with some THIRD
+/// curated language `other` has never heard of is not ambiguous for this
+/// specific comparison and stays.
+///
+/// **A hit sandwiched between two Title-Case neighbours is excluded** — a
+/// connector word ("der", "und", "für") glued between two capitalised words
+/// is almost always sitting INSIDE a proper noun (an institution's own
+/// official compound name — "Fachhochschule für Technik und Wirtschaft
+/// Berlin" genuinely contains "für" and "und"), not free-standing prose
+/// usage. Measured: an otherwise-English EDUCATION entry that spells out
+/// such a name — the realistic shape, matching this crate's own fixture
+/// convention of a terse "Degree, Institution, Dates" line — cleared the
+/// evidence floor without this exclusion; genuinely wrong-language PROSE
+/// (the Spanish/Portuguese regression fixtures, the existing wrong-language
+/// résumé fixtures) is unaffected, because a real sentence surrounds its
+/// function words with ordinary lowercase words, not two proper-noun
+/// neighbours in a row. Costs the SAME direction every other guard in this
+/// module costs: a genuinely wrong-language document whose every function
+/// word happens to fall between two capitalised neighbours would lose that
+/// evidence too — accepted, because the alternative (counting it) is the
+/// false accusation this whole mechanism exists to prevent, and a document
+/// that short and that proper-noun-dense was already a poor candidate for a
+/// confident read (see [`MIN_CHARS_FOR_LANGUAGE_CHECK`]).
+pub(super) fn pairwise_evidence_count(text: &str, lang: &str, other: &str) -> usize {
+    let lang_words: HashSet<&str> = function_words_for(lang).iter().copied().collect();
+    if lang_words.is_empty() {
+        return 0;
     }
-    let mut pool = HashMap::new();
-    for (lang, words) in CURATED_FUNCTION_WORDS {
-        for w in *words {
-            if seen[w] == 1 {
-                pool.insert(*w, *lang);
-            }
-        }
-    }
-    pool
+    let other_words: HashSet<&str> = function_words_for(other).iter().copied().collect();
+    let tokens: Vec<&str> = text
+        .split(|c: char| !c.is_alphabetic())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let is_title_case = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
+    tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| w.chars().count() >= MIN_DISTINCTIVE_TOKEN_CHARS)
+        .filter(|(_, w)| {
+            let lower = w.to_lowercase();
+            lang_words.contains(lower.as_str())
+                && !other_words.contains(lower.as_str())
+                && !AMBIGUOUS_SHORT_TOKENS.contains(&lower.as_str())
+        })
+        .filter(|(i, _)| {
+            let prev_titlecase = *i > 0 && is_title_case(tokens[i - 1]);
+            let next_titlecase = i + 1 < tokens.len() && is_title_case(tokens[i + 1]);
+            !(prev_titlecase && next_titlecase)
+        })
+        .count()
 }
 
-/// Whether `lang` is one of the seven languages whose confident-but-wrong
-/// reads need [`distinctive_language_evidence`]'s corroboration before they
-/// count as a mismatch — see [`CURATED_FUNCTION_WORDS`]'s doc. A non-Latin
-/// SCRIPT never needs it: `whatlang` reads script alone at near-1.0
-/// confidence regardless of function-word density (see
-/// `documents::keywords::test`'s twelve-language non-Latin sweep), so
-/// requiring evidence there would only make a genuine mismatch — a résumé
-/// section that drifted to Arabic, say — go quiet for no reason.
-fn is_latin_curated(lang: &str) -> bool {
-    CURATED_FUNCTION_WORDS.iter().any(|(l, _)| *l == lang)
+/// Whether `lang` is one of the nine languages whose confident whatlang read
+/// needs [`distinctive_evidence_confirms`]'s corroboration before it counts
+/// as a mismatch — see [`LATIN_SCRIPT_LANGUAGES`]'s doc for why this is a
+/// SCRIPT gate, not a curation gate.
+pub(super) fn needs_distinctive_evidence(lang: &str) -> bool {
+    LATIN_SCRIPT_LANGUAGES.contains(&lang)
 }
 
-/// Whether `text` carries [`MIN_DISTINCTIVE_HITS`] or more occurrences of
-/// function words distinctive to some ONE curated language other than
-/// `target` — POSITIVE evidence that the text really is written in a
-/// different language.
+/// Whether `found` — the language `detected_language(text)` actually named —
+/// is corroborated well enough by `text` itself to accuse it of NOT being
+/// `target`.
 ///
-/// Never the other direction — this does not ask whether `target`'s own
-/// words are ABSENT. That would reopen the exact false Critical this exists
-/// to close by a different route: a terse but genuine target-language
-/// document (few function words, by construction) would fail an absence
-/// test the same way it confuses whatlang. Positive evidence only degrades
-/// safely: an under-curated or genuinely short text just produces less of
-/// it, and the guard stays quiet rather than guessing.
+/// Two bars, both required:
 ///
-/// Answers only "is SOME other language evidenced", not "which one whatlang
-/// guessed" — `is_language_mismatch` does not require this to name the same
-/// language `detected_language` did; either language is real, unwanted
-/// evidence.
-fn distinctive_language_evidence(text: &str, target: &str) -> Option<&'static str> {
-    let pool = distinctive_pool();
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-    for word in text.split(|c: char| !c.is_alphabetic()) {
-        if word.is_empty() {
-            continue;
-        }
-        let lower = word.to_lowercase();
-        if let Some(&lang) = pool.get(lower.as_str()) {
-            if lang != target {
-                *counts.entry(lang).or_default() += 1;
-            }
-        }
+/// 1. **Absolute floor** — [`pairwise_evidence_count`] for `found` against
+///    `target` must clear [`MIN_DISTINCTIVE_HITS`]. Positive evidence only:
+///    this never asks whether `target`'s own words are ABSENT, which would
+///    reopen the original false Critical (a sparse-function-word document
+///    genuinely written in `target`) by a different route.
+/// 2. **Comparative margin** — `found`'s evidence must exceed `target`'s OWN
+///    pairwise evidence in the SAME text, not just clear the floor in
+///    isolation. Mechanically verified directly
+///    (`distinctive_evidence_confirms_requires_a_real_margin_not_a_tie` in the
+///    test module: a real 2-vs-2 tie does not confirm, a 3-vs-2 margin does).
+///    The reasoning it exists for: a single, bigger absolute floor cannot
+///    separate "an otherwise-English document that happens to name a foreign
+///    institution" (a few incidental hits) from "genuinely sparse
+///    Spanish/Portuguese text" (see [`pairwise_evidence_count`]'s doc) —
+///    raising the floor to survive the first deepens the second. A
+///    comparison against `target`'s OWN evidence in the SAME text separates
+///    them instead: in the proper-noun case `target`'s evidence is abundant;
+///    in the genuine-foreign-language case it is near zero, so even thin
+///    `found` evidence clears it. **Measured limit, reported rather than
+///    concealed:** the title-case-sandwich exclusion in
+///    [`pairwise_evidence_count`] independently silences every REALISTIC
+///    proper-noun fixture this module's test suite constructs (a terse
+///    "Degree, Institution, Dates" line, or a longer multi-sentence label), so
+///    this bar currently has no end-to-end regression that isolates it from
+///    that exclusion — a deliberately German-/French-institution-dense search
+///    for one either stayed confidently English overall (never reaching this
+///    branch) or produced enough real foreign-language evidence to be a
+///    defensible true positive, not a tie. Kept as a principled second layer
+///    (a bare floor is measurably weaker in the abstract) with direct,
+///    mechanical coverage rather than removed for lack of a natural trigger.
+///
+/// A non-Latin-script `found` (gated by [`needs_distinctive_evidence`]) skips
+/// both bars — whatlang's script read is already reliable there regardless of
+/// function-word density, and requiring evidence this crate has no
+/// vocabulary for would only turn a genuine mismatch quiet.
+pub(super) fn distinctive_evidence_confirms(text: &str, found: &str, target: &str) -> bool {
+    if !needs_distinctive_evidence(found) {
+        return true;
     }
-    counts
-        .into_iter()
-        .find(|(_, n)| *n >= MIN_DISTINCTIVE_HITS)
-        .map(|(lang, _)| lang)
+    let found_evidence = pairwise_evidence_count(text, found, target);
+    if found_evidence < MIN_DISTINCTIVE_HITS {
+        return false;
+    }
+    let target_evidence = pairwise_evidence_count(text, target, found);
+    found_evidence > target_evidence
 }
 
 /// Whether `text` is confidently written in something other than `lang`.
@@ -244,16 +332,16 @@ fn distinctive_language_evidence(text: &str, target: &str) -> Option<&'static st
 /// posture: too SHORT to read a language from at all
 /// ([`MIN_CHARS_FOR_LANGUAGE_CHECK`]); [`detected_language`] itself is not
 /// confident (below `documents::keywords::MIN_DETECTION_CONFIDENCE`) or reads
-/// a language this crate does not curate; or — new — `whatlang` confidently
-/// names one of the seven Latin-script languages ([`is_latin_curated`])
-/// without [`distinctive_language_evidence`] backing it up. That third gate
-/// is what closes the confident-but-wrong noun-phrase misread the module doc
-/// above measures: a whatlang guess in the Latin ambiguity zone is corroborated
-/// by actual function-word evidence before it becomes an accusation, exactly
-/// the way `target_is_corroborated` already corroborates the TARGET side.
-/// Every other reason to go quiet is unchanged. `None`/`false` never counts as
-/// a mismatch — an unreliable or uncorroborated read cannot manufacture an
-/// accusation, it can only fail to make one.
+/// a language this crate does not curate; or `whatlang` confidently names a
+/// Latin-script language ([`needs_distinctive_evidence`]) without
+/// [`distinctive_evidence_confirms`] backing it up. That third gate is what
+/// closes the confident-but-wrong noun-phrase misread the module doc above
+/// measures: a whatlang guess in the Latin ambiguity zone is corroborated by
+/// actual, comparative function-word evidence before it becomes an
+/// accusation, exactly the way `target_is_corroborated` already corroborates
+/// the TARGET side. Every other reason to go quiet is unchanged. `None`/
+/// `false` never counts as a mismatch — an unreliable or uncorroborated read
+/// cannot manufacture an accusation, it can only fail to make one.
 pub(super) fn is_language_mismatch(text: &str, lang: &str) -> bool {
     if significant_chars(text) < MIN_CHARS_FOR_LANGUAGE_CHECK {
         return false;
@@ -261,8 +349,7 @@ pub(super) fn is_language_mismatch(text: &str, lang: &str) -> bool {
     let Some(found) = detected_language(text) else {
         return false;
     };
-    found != lang
-        && (!is_latin_curated(found) || distinctive_language_evidence(text, lang).is_some())
+    found != lang && distinctive_evidence_confirms(text, found, lang)
 }
 
 /// Whether an independent witness — the job ad, or the candidate's own source
