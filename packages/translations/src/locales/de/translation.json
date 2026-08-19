@@ -659,6 +659,11 @@
       "reasoningEffort": "Denkaufwand",
       "effortDefault": "Standard"
     },
+    "promptQuality": {
+      "title": "Prompt-Qualität",
+      "description": "Wie viel Detailtiefe die KI in Überarbeitungen und Vorschläge steckt. Gilt nur für lokale Ollama-Modelle — Cloud- und CLI-Anbieter nutzen immer die volle Qualität.",
+      "ollamaOnlyNote": "Ihr aktiver Anbieter ist {{provider}} — er nutzt unabhängig von dieser Einstellung immer die volle Qualität."
+    },
     "aiModel": {
       "title": "KI-Modell",
       "refresh": "Aktualisieren",

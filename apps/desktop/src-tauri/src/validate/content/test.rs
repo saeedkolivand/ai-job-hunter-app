@@ -1181,6 +1181,89 @@ fn stack_line_library_names_are_never_read_as_project_links() {
     );
 }
 
+/// An `urls_in` widening tried once to add a fifth "bare domain, no path,
+/// lowercase" arm so the validator would see every domain the renderer's
+/// `model::rich::split_urls` turns into a real hyperlink. It was reverted
+/// (see `factual.rs`'s `URL_RE` doc) because, with no email-aware arm and no
+/// lookaround in the `regex` crate, it matched the DOMAIN HALF of an email
+/// address as a bare "URL" — `urls_in("jane.doe@gmail.com")` returned
+/// `["gmail.com"]` — even though the renderer correctly treats the whole
+/// address as one `mailto:` link and never exposes the domain separately.
+/// This pins BOTH surfaces so a future widening cannot reopen the gap on
+/// just one side: the validator must find no bare-URL match inside an email
+/// address, and the renderer's only match for that text is the one `mailto:`
+/// link — never an extra bare-domain link fragment.
+#[test]
+fn an_email_address_never_yields_a_phantom_domain_url() {
+    for email in [
+        "Jane Doe · jane.doe@gmail.com · Berlin, Germany",
+        "team@openai.com",
+        "jane@proton.me",
+    ] {
+        assert!(
+            factual::urls_in(email).is_empty(),
+            "an email address is not a project URL; got {:?} for {email:?}",
+            factual::urls_in(email)
+        );
+
+        let spans = crate::model::rich::split_urls(email);
+        let links: Vec<&crate::model::rich::Span> = spans
+            .iter()
+            .filter(|s| matches!(s, crate::model::rich::Span::Link { .. }))
+            .collect();
+        assert_eq!(
+            links.len(),
+            1,
+            "the renderer must produce exactly one link (the mailto:) for \
+             {email:?}, not a second bare-domain fragment; got {spans:?}"
+        );
+        assert!(
+            matches!(links[0], crate::model::rich::Span::Link { url, .. } if url.starts_with("mailto:")),
+            "the one link for {email:?} must be a mailto:, got {:?}",
+            links[0]
+        );
+    }
+}
+
+/// Renderer/validator parity on a shared corpus. `model::rich::split_urls`
+/// (what actually becomes a clickable link in the exported PDF/DOCX) and
+/// `validate::content::factual::urls_in` (what the Critical-severity
+/// `factual.altered_project_link` guard treats as a claimed link) must agree
+/// on whether ordinary, non-email text is link-shaped — this is the
+/// invariant the reverted fifth `URL_RE` arm broke (see the test above).
+///
+/// Email text is deliberately excluded from this table: the renderer legally
+/// links it (as `mailto:`), a link type `urls_in` was never meant to model at
+/// all (project links, not contact emails) — covered on its own above.
+#[test]
+fn renderer_and_validator_agree_on_a_shared_url_corpus() {
+    let corpus: &[(&str, bool)] = &[
+        ("https://github.com/janedoe/ledger", true),
+        ("www.example.com/path", true),
+        ("github.com/janedoe/ledger", true),
+        ("just plain prose with no links at all", false),
+        ("Bun.sh", false),
+        ("bun.sh", false),
+        ("Socket.IO", false),
+        ("socket.io", false),
+        ("Agile, CI/CD, TDD", false),
+    ];
+    for (text, expect_link) in corpus {
+        let rendered_has_link = crate::model::rich::split_urls(text)
+            .iter()
+            .any(|s| matches!(s, crate::model::rich::Span::Link { .. }));
+        let validator_has_url = !factual::urls_in(text).is_empty();
+        assert_eq!(
+            rendered_has_link, *expect_link,
+            "renderer disagreed with the expected shape for {text:?}"
+        );
+        assert_eq!(
+            validator_has_url, *expect_link,
+            "validator disagreed with the expected shape for {text:?}"
+        );
+    }
+}
+
 /// H1b — the same link written a different way is the same link. Compared on a
 /// canonical key (scheme dropped, host lowercased, trailing `/` removed,
 /// markdown href unwrapped); still REPORTED verbatim when it genuinely differs.
@@ -2873,7 +2956,14 @@ fn present_markers_only_match_whole_words() {
         );
     }
     assert!(looks_like_date_span("2021 - Present"));
-    assert!(looks_like_date_span("Heute"));
+    assert!(looks_like_date_span("2021 - Heute"));
+    // A bare marker with no year anywhere to anchor it is NOT a date span —
+    // the same non-answer DATE_ONLY_MARKERS already gives for a bare "Today"
+    // (see `documents::evidence::is_open_ended`'s doc comment). Requiring a
+    // year is exactly what stops an unrelated present-tense word from turning
+    // an ordinary sentence into a date context, so this is an intentional
+    // behavior change, not a silently accepted regression.
+    assert!(!looks_like_date_span("Heute"));
 
     // End to end: a truthful bullet with a year the source does not carry, in a
     // line whose only "date marker" is the word "Presented".
@@ -2883,6 +2973,52 @@ fn present_markers_only_match_whole_words() {
                      - Presented the 2019 roadmap review to the board\n";
     silent(
         &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+}
+
+/// H5b — a present-tense word standing on its own, many words from an
+/// unrelated year, is not a date context either — reproduces the reported
+/// defect end to end. `unsupported_date_issues` used to decide a line was a
+/// "date context" the moment it carried a bare `PRESENT_MARKERS` word
+/// ANYWHERE, so an ordinary truthful bullet naming its own year (not one
+/// buried inside another word, unlike H5's "Presented") still tripped a false
+/// Critical. Each pair below is the SAME document, one word apart: the
+/// marker-word version and a control with just that word removed must both
+/// resolve silently, and both marker positions (before the year, after it)
+/// are covered because the old bug fired on either.
+#[test]
+fn present_tense_prose_far_from_a_year_is_not_a_date_context() {
+    let source = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                  - Ran the settlement platform on Kubernetes\n";
+
+    // Marker BEFORE the year — the task's own reproduction.
+    let with_marker = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                       - Reduced actual costs by 20% in 2023\n";
+    silent(
+        &report_for(with_marker, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+    let control = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                   - Reduced costs by 20% in 2023\n";
+    silent(
+        &report_for(control, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+
+    // Marker AFTER the year, several words away.
+    let ongoing = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                   - Cut spend 30% below the 2023 baseline while keeping the \
+                     ongoing migration on schedule\n";
+    silent(
+        &report_for(ongoing, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+    let ongoing_control = "EXPERIENCE\n\nAcme Payments | 2020 - 2024\n\
+                           - Cut spend 30% below the 2023 baseline while \
+                             keeping the migration on schedule\n";
+    silent(
+        &report_for(ongoing_control, source, EN_JOB_AD, &[]),
         FACTUAL_UNSUPPORTED_DATE,
     );
 }
@@ -7944,6 +8080,94 @@ EXPERIENCE
     silent(
         &report_for(&generated, &with_future_year, EN_JOB_AD, &[]),
         FACTUAL_INFLATED_EXPERIENCE,
+    );
+}
+
+/// A2a — the separator-free date column (`2016 Present`, no dash at all).
+/// `export::parser::DATE_RE` itself accepts this shape as a job entry's date
+/// range with no separator required between the year and the marker, so a
+/// résumé written this way is not a contrived fixture. Before
+/// `credentials::tenure::names_a_present_marker` existed, `source_is_ongoing`
+/// missed it entirely: the span closed at the role's own single stated year
+/// (2016-2016), and a truthful "8 years of experience" against a role that
+/// started in 2016 read as inflated. The control proves the widened
+/// allowance is not just "nothing ever fires": an implausible claim still
+/// does.
+#[test]
+fn a_separator_free_ongoing_date_column_widens_the_allowance() {
+    let source = "Jane Doe\n\n\
+         EXPERIENCE\n\n\
+         Backend Developer | Globex Logistics | 2016 Present\n\
+         - Built the billing API in Python and PostgreSQL\n";
+
+    let truthful = summary_claiming("Backend engineer with 8 years of experience in payments.");
+    silent(
+        &report_for(&truthful, source, EN_JOB_AD, &[]),
+        FACTUAL_INFLATED_EXPERIENCE,
+    );
+
+    let implausible = summary_claiming("Backend engineer with 45 years of experience in payments.");
+    assert!(
+        codes(&report_for(&implausible, source, EN_JOB_AD, &[]))
+            .contains(&FACTUAL_INFLATED_EXPERIENCE),
+        "control: an implausible claim must still fire even with the widened allowance"
+    );
+}
+
+/// A2a separator sweep — the shape of the SEPARATOR between a role's start
+/// year and its present-tense marker must not decide whether the role is
+/// still open.
+///
+/// `source_is_ongoing` is read here through the value it exists to produce,
+/// `career_span_years`: an open role's span runs to the reference year, a
+/// closed one stops at the last year the source names. Measured regression:
+/// when the marker branch required an explicit span separator
+/// (`-`, `to`, `bis`, …), every pipe/middot/comma/parenthesised spelling
+/// below collapsed from an eleven-year span to a zero-year one, and a
+/// truthful "11 years of experience" became a false
+/// `factual.inflated_experience` Critical.
+///
+/// Not a contrived set: `export::parser::DATE_RE`, this codebase's own
+/// definition of a job entry's date range, allows up to 30 ARBITRARY
+/// characters between the year and the marker, so every spelling here is one
+/// the parser itself already reads as a date range.
+///
+/// The closed-history control is what stops this passing for the wrong
+/// reason. Without it, an implementation that simply called every line
+/// ongoing would satisfy every other row.
+#[test]
+fn any_separator_between_a_year_and_a_present_marker_keeps_the_role_open() {
+    let source_with = |dates: &str| {
+        format!(
+            "Jane Doe\n\nEXPERIENCE\n\n\
+             Senior Engineer | Globex Logistics | {dates}\n\
+             - Built the billing API in Python and PostgreSQL\n"
+        )
+    };
+
+    for dates in [
+        "2015 - Present", // dash — never broke
+        "2015 | Present", // pipe
+        "2015 | Aktuell", // pipe, German marker
+        "2015 · Present", // middot
+        "2015, Present",  // comma
+        "2015 (ongoing)", // parenthesised, no separator at all
+        "2015 Present",   // whitespace only, no separator at all
+    ] {
+        assert_eq!(
+            credentials::career_span_years(&source_with(dates), Some(2026)),
+            Some(11),
+            "{dates:?}: an open role must run to the reference year"
+        );
+    }
+
+    // Negative control: a genuinely CLOSED history still closes at its own
+    // last year. A test without this row passes for an implementation that
+    // answers "ongoing" unconditionally.
+    assert_eq!(
+        credentials::career_span_years(&source_with("2005 - 2015"), Some(2026)),
+        Some(10),
+        "a closed history must stop at the last year the source names"
     );
 }
 

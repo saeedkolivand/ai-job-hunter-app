@@ -4990,3 +4990,37 @@ async fn humanize_one_runs_normalize_before_grading_so_an_accepted_candidate_is_
         "the accepted text is byte-identical to the source's own link line"
     );
 }
+
+/// `seed_one_project`'s stack-line filter used to drop an item whenever
+/// `urls_in` found ANY match, with no `names_a_resource` guard — unlike its
+/// two siblings in the same function (the labeled-span and bare-URL link
+/// capture), which both skip a stack-line match that doesn't name a
+/// resource. `crates.io` written bare in a stack line matches `URL_RE`'s
+/// code-host arm (it is a known registry host) but names no resource (no
+/// scheme, `www.`, or path), so it used to be silently deleted from the
+/// candidate's own stack line instead of kept as the technology it is.
+///
+/// Mutation check: reverting the filter to
+/// `!item.is_empty() && urls_in(item).is_empty()` drops `crates.io` from
+/// `stack` and this assertion goes red — verified — then restoring the
+/// `names_a_resource` guard makes it green again.
+#[test]
+fn a_bare_code_host_stack_token_survives_as_a_technology_not_a_link() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://ledger.example.dev\n\
+                  Rust · crates.io · Tokio\n\
+                  A command-line ledger tool.\n";
+    let projects = crate::pipeline::resume::source::seed_projects(source);
+    assert_eq!(projects.len(), 1, "exactly one project must be seeded");
+    assert_eq!(
+        projects[0].stack,
+        vec![
+            "Rust".to_string(),
+            "crates.io".to_string(),
+            "Tokio".to_string()
+        ],
+        "a bare code-host token in the stack line is a technology, not a \
+         claimed link; got {:?}",
+        projects[0].stack
+    );
+}

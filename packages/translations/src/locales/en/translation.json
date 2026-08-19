@@ -659,6 +659,11 @@
       "reasoningEffort": "Reasoning Effort",
       "effortDefault": "Default"
     },
+    "promptQuality": {
+      "title": "Prompt Quality",
+      "description": "How much detail the AI puts into rewrites and suggestions. Applies to local Ollama models only — cloud and CLI providers always use full quality.",
+      "ollamaOnlyNote": "Your active provider is {{provider}} — it always uses full quality, regardless of this setting."
+    },
     "aiModel": {
       "title": "AI Model",
       "refresh": "Refresh",

@@ -1096,24 +1096,6 @@ pub fn resolve_by_name(name: &str, base_url: Option<String>) -> AppResult<Box<dy
     Ok(resolve(provider_id, base_url))
 }
 
-/// Discover a reachable local chat model for `provider_id`.
-///
-/// Returns `Some(model_name)` only when the provider is reachable and has an
-/// available chat model. CLI agents and cloud providers always return `None`.
-pub async fn reachable_chat_model(provider_id: ProviderId) -> Option<String> {
-    match provider_id {
-        ProviderId::Ollama => {
-            let (reachable, model) = ollama::reachable_model().await;
-            if reachable {
-                model
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
 // ── Embeddings ────────────────────────────────────────────────────────────────
 
 /// Vector-FORMAT version — bumped whenever the ALGORITHM that produces a
@@ -1313,10 +1295,19 @@ pub fn friendly_api_error(
     }
 }
 
-/// Map a *transport* failure (the `send()` that raced a completion HTTP call
-/// never got a response at all) to `AppError::Timeout` or `AppError::Network`.
-/// Distinct from [`friendly_api_error`], which maps a response the server DID
-/// send back.
+/// Map a *transport* failure (the `send()` that raced an HTTP call never got a
+/// response at all) to `AppError::Timeout` or `AppError::Network`. Distinct
+/// from [`friendly_api_error`], which maps a response the server DID send
+/// back.
+///
+/// Named for its original completion call sites but equally correct for any
+/// other request against the same pooled client (list-models, model-pull,
+/// embeddings, tool-calling): the classification below depends only on
+/// `is_timeout()`, never on what the request was *for*. Ollama's embed path
+/// (`ollama::embed_with`) once mapped every transport failure — including a
+/// real embed-timeout while the daemon was up and busy — to "unreachable",
+/// which sent two separate investigations to the wrong root cause; it now
+/// routes through here too.
 ///
 /// `is_timeout()` walks `e`'s WHOLE source chain, not just this crate's own
 /// `.timeout()` call: it also matches an inner `hyper::Error::is_timeout()`
