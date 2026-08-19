@@ -1057,8 +1057,10 @@ fn a_date_column_needs_more_than_a_year_in_it() {
     }
 }
 
-/// The "today"-family spellings added to [`DATE_ONLY_MARKERS`] — English
-/// `Today`, Spanish `Actualidad`, French `Aujourd'hui`, Italian `Oggi` — both
+/// The "today"/"currently"-family spellings in [`DATE_ONLY_MARKERS`] — English
+/// `Today`/`Currently`, Spanish `Actualidad`/`Hoy`, Portuguese `Hoje`/
+/// `Atualmente`, French `Aujourd'hui`/`Actuellement`, Italian `Oggi`, and the
+/// `Present`-adjacent `Presente`/`Attualmente`/`Derzeit`/`Vandaag` — both
 /// directions: the date column each spelling appears in IS recognised, and an
 /// ordinary sentence carrying the same word (with other, non-date words
 /// around it) is NOT. [`is_date_only`] requires EVERY token on the line to be
@@ -1068,7 +1070,9 @@ fn a_date_column_needs_more_than_a_year_in_it() {
 ///
 /// Mutation check (reported verbatim in the handoff): with `DATE_ONLY_MARKERS`
 /// emptied, every `column` case here goes red; every `prose` case stays green
-/// regardless, because the gate does that work.
+/// regardless, because the gate does that work, not the list — which is the
+/// point of pairing every marker with a prose sentence that survives its
+/// removal unchanged.
 #[test]
 fn today_family_markers_open_a_date_column_but_never_leak_into_prose() {
     for column in [
@@ -1076,6 +1080,15 @@ fn today_family_markers_open_a_date_column_but_never_leak_into_prose() {
         "2015 - Actualidad",
         "2019 - Aujourd'hui",
         "2021 - Oggi",
+        "2020 - Presente",
+        "2020 - Currently",
+        "2020 - Hoje",
+        "2020 - Atualmente",
+        "2020 - Hoy",
+        "2020 - Actuellement",
+        "2020 - Attualmente",
+        "2020 - Derzeit",
+        "2020 - Vandaag",
     ] {
         assert!(is_date_only(column), "{column:?} is a date column");
     }
@@ -1084,6 +1097,15 @@ fn today_family_markers_open_a_date_column_but_never_leak_into_prose() {
         "En la actualidad trabajo en remoto",
         "Nous avons livré le projet aujourd'hui",
         "Il progetto oggi è completo",
+        "El equipo estuvo presente en la reunión",
+        "We are currently migrating the platform",
+        "Terminamos o projeto hoje mesmo",
+        "Atualmente trabalhamos em home office",
+        "Entregamos el proyecto hoy mismo",
+        "Nous travaillons actuellement à distance",
+        "Il team lavora attualmente da remoto",
+        "Das Team arbeitet derzeit remote",
+        "Het team werkt vandaag vanuit huis",
     ] {
         assert!(
             !is_date_only(prose),

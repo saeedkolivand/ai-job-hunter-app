@@ -511,33 +511,70 @@ const MONTH_TOKENS: &[&str] = &[
     "dezember",
 ];
 
-/// "Today"-family present-tense markers recognised **only** by [`is_date_only`]
-/// — deliberately never added to [`PRESENT_MARKERS`], which [`is_open_ended`]
-/// and `validate::content::factual::unsupported_date_issues` both also consult.
+/// "Today"/"currently"-family present-tense markers recognised **only** by
+/// [`is_date_only`] — deliberately never added to [`PRESENT_MARKERS`], which
+/// [`is_open_ended`] and `validate::content::factual::unsupported_date_issues`
+/// both also consult, and never merged with either by stem/prefix matching.
 ///
-/// Measured, not just cautious: those two consumers match a SINGLE WORD
-/// anywhere in arbitrary text via [`contains_word`]/`contains_phrase` — no
-/// year, no separator, no other date structure required, because
-/// `is_open_ended`'s first branch returns as soon as the word is found.
-/// "today" is ordinary English vocabulary ("the system still runs today",
-/// "shipped the migration today"); putting it in [`PRESENT_MARKERS`] would
-/// turn any such bullet into a date context, and in
-/// `unsupported_date_issues` specifically, a false `factual.unsupported_date`
-/// Critical the moment that bullet also names a year the source résumé
-/// doesn't. (Confirmed the same failure mode is already live for `actual`,
-/// which is in [`PRESENT_MARKERS`] for Spanish `actual` — `is_open_ended`
-/// returns true for "Reduced actual costs by 20% in 2023" on the word alone.)
-///
+/// **Why a separate list at all — measured, not just cautious.** Those two
+/// consumers match a SINGLE WORD anywhere in arbitrary text via
+/// [`contains_word`]/`contains_phrase` — no year, no separator, no other date
+/// structure required, because `is_open_ended`'s first branch returns as soon
+/// as the word is found. Every spelling here is ordinary prose in its
+/// language, not just "today": "currently" ("we are currently migrating"),
+/// "derzeit", "actuellement", "presente" (also an ordinary Spanish/Portuguese/
+/// Italian adjective — "el problema presente"). Putting any of them in
+/// [`PRESENT_MARKERS`] would turn a matching bullet into a date context and,
+/// in `unsupported_date_issues` specifically, risk a false
+/// `factual.unsupported_date` Critical the moment that bullet also names a
+/// year the source résumé doesn't. (Confirmed the same failure mode is
+/// already live for `actual`, which IS in [`PRESENT_MARKERS`] for Spanish
+/// `actual` — `is_open_ended` returns true for "Reduced actual costs by 20%
+/// in 2023" on the word alone; see the handoff for the measurement.)
 /// [`is_date_only`] cannot make that mistake: it already requires EVERY token
 /// on the line to be a digit, a month or a marker, so a prose sentence
 /// carrying any other word is rejected before this list is ever consulted —
 /// exact-token equality against a whole date column is structurally safe in a
 /// way word-bounded matching against free text is not.
 ///
-/// `aujourd'hui` is split by [`word_tokens`] into `aujourd` and `hui` — the
-/// apostrophe is not alphanumeric — so both halves are listed; `is_date_only`
-/// requires every token to resolve, not the phrase as a whole.
-const DATE_ONLY_MARKERS: &[&str] = &["today", "aujourd", "hui", "oggi", "actualidad"];
+/// **Why literal spellings, never a shared stem.** `actual`/`actuel`/
+/// `actualidad`/`atualmente`/`attualmente` all share a Latin root and a
+/// prefix rule would collapse them into one entry, but this const is already
+/// read by a whole-line gate today and nothing stops a future caller reading
+/// it against free text the way [`PRESENT_MARKERS`] is — the exact hazard the
+/// paragraph above documents. A literal list stays safe under a change of
+/// consumer; a prefix rule would not, so every spelling is listed in full
+/// even where it costs a near-duplicate entry.
+///
+/// **`aujourd'hui`** is split by [`word_tokens`] into `aujourd` and `hui` —
+/// the apostrophe is not alphanumeric — so both halves are listed;
+/// `is_date_only` requires every token to resolve, not the phrase as a whole.
+///
+/// **`nu`** (Dutch/Swedish "now") is deliberately left OUT, not an oversight.
+/// Every other entry here is 4+ letters; `nu` is two, which collides with
+/// initials, unit abbreviations and stray two-letter tokens far more readily
+/// than the rest of this list — and unlike those, a false hit doesn't need a
+/// second unrelated word nearby, just one line where every OTHER token also
+/// happens to be date-shaped. The Dutch/Swedish market share this pipeline
+/// serves does not justify that exposure; `heden` (Dutch "today", already in
+/// [`PRESENT_MARKERS`]) covers the same case at four letters with none of the
+/// risk.
+const DATE_ONLY_MARKERS: &[&str] = &[
+    "today",
+    "aujourd",
+    "hui",
+    "oggi",
+    "actualidad",
+    "presente",
+    "currently",
+    "hoje",
+    "atualmente",
+    "hoy",
+    "actuellement",
+    "attualmente",
+    "derzeit",
+    "vandaag",
+];
 
 /// True when `s` is a date COLUMN and nothing else: every word in it is a
 /// number, a month, a present-tense marker or a [`DATE_ONLY_MARKERS`] entry,
