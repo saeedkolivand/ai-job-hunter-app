@@ -84,6 +84,8 @@ const mockUseJobAdTextMatchScore = vi.fn(
   (_resumeId: string | null, _jobText: string, _enabled?: boolean) => ({
     data: undefined,
     isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
   })
 );
 
@@ -514,8 +516,18 @@ describe('JobAdView — Score tab query gating (no per-keystroke storm)', () => 
     mockUseJobAdTextMatchScore.mockClear();
   });
 
-  function enabledCallCount() {
-    return mockUseJobAdTextMatchScore.mock.calls.filter((call) => call[2] === true).length;
+  // The real property under test is DISTINCT query keys fired, not raw call
+  // count — the mock is invoked on every render (Rules of Hooks) regardless
+  // of `enabled`, so an incidental extra re-render with the SAME (already-
+  // enabled) key would fail a plain length check while behaviour never
+  // actually changed. Counting `enabled` calls by their distinct `jobText`
+  // argument survives that.
+  function distinctEnabledKeyCount() {
+    return new Set(
+      mockUseJobAdTextMatchScore.mock.calls
+        .filter((call) => call[2] === true)
+        .map((call) => call[1])
+    ).size;
   }
 
   it('typing on the source tab never enables the query; opening Score enables it exactly once', async () => {
@@ -530,10 +542,10 @@ describe('JobAdView — Score tab query gating (no per-keystroke storm)', () => 
     const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
 
     await userEvent.type(textarea, 'more');
-    expect(enabledCallCount()).toBe(0);
+    expect(distinctEnabledKeyCount()).toBe(0);
 
     await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(enabledCallCount()).toBe(1);
+    expect(distinctEnabledKeyCount()).toBe(1);
   });
 
   it('re-opening the Score tab re-scores, but editing while it stays open does not', async () => {
@@ -544,19 +556,23 @@ describe('JobAdView — Score tab query gating (no per-keystroke storm)', () => 
         hasDesc
       />
     );
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
 
     await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(enabledCallCount()).toBe(1);
+    expect(distinctEnabledKeyCount()).toBe(1);
 
     // Back to source, edit, and stay there — the (now closed) Score tab's
-    // query must not flip enabled again from a live jobDesc change.
+    // query must not flip enabled again from a live jobDesc change. The
+    // textarea is RE-QUERIED here (not the reference from before the tab
+    // switch) — the source tab's whole subtree, textarea included, unmounts
+    // while the Score tab is showing, so a stale node would silently no-op.
     await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
+    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
     await userEvent.type(textarea, ' plus some edits');
-    expect(enabledCallCount()).toBe(1);
+    expect(distinctEnabledKeyCount()).toBe(1);
 
-    // Re-opening IS the explicit action that re-scores the edited text.
+    // Re-opening IS the explicit action that re-scores the edited (DIFFERENT)
+    // text — a genuinely new key, not just another render.
     await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(enabledCallCount()).toBe(2);
+    expect(distinctEnabledKeyCount()).toBe(2);
   });
 });

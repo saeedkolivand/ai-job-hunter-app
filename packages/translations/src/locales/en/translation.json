@@ -1947,10 +1947,11 @@
         "score": {
           "noPosting": "Add the job ad text to score against.",
           "noKeywords": "This posting has no extractable keywords — coverage isn't available.",
-          "matchLabel": "Match",
-          "coverageLabel": "Keyword coverage",
           "semanticLabel": "Semantic similarity",
-          "loading": "Scoring against the posting…"
+          "loading": "Scoring against the posting…",
+          "resumeNote": "Scored against your saved résumé, not the tailored version shown here.",
+          "errorTitle": "Couldn't score this posting",
+          "errorDescription": "Something went wrong scoring against your résumé. Try again."
         }
       },
       "tryAgain": "Try again",

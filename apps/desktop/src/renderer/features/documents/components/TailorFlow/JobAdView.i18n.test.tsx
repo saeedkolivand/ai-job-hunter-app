@@ -1,8 +1,8 @@
 /**
  * JobAdView — Score tab: real-i18n label guard + null-vs-zero rendering guard.
  *
- * Two absolute checks a raw-key-echo i18n mock (see JobAdView.test.tsx) can
- * never catch:
+ * Absolute checks a raw-key-echo i18n mock (see JobAdView.test.tsx) can never
+ * catch:
  *
  *  1. The tab never labels a number "ATS score". `MatchScore.ats` (deterministic
  *     keyword coverage) and the analyzer's `atsScore` (an LLM judgement) are two
@@ -11,6 +11,13 @@
  *     posting with no extractable keywords) renders the real translated
  *     "not scored" copy, never a bare "0%" — a `0` there would be a placeholder
  *     dressed as a result.
+ *  3. A failed request renders a distinct, translated error — never the same
+ *     "not scored" copy a legitimate empty state uses.
+ *  4. A malformed (but resolved) IPC response never renders `NaN%` under a
+ *     red "Low" badge.
+ *  5. `scoreSource: 'keyword'` (the only value this endpoint ever returns)
+ *     never renders the Match row alongside Coverage — same number, two
+ *     contradictory badge cut points.
  *
  * Deliberately does NOT mock `@ajh/translations` (same rationale as
  * match-band.i18n.test.tsx / trust-badge.test.tsx) — it resolves to the real
@@ -20,10 +27,10 @@
  *
  * `@/services`' `useJobAdTextMatchScore` IS stubbed — same pattern as
  * MatchScoresProvider.test.tsx — so no QueryClient/AppClient/IPC is needed.
- * The keystroke-storm guard (editing the posting text must not re-fire the
- * query) is covered separately, against the REAL hook + a mocked IPC client,
- * in JobAdView.score-request.test.tsx — a stub that ignores its arguments
- * (this file's `stubbedScore`) can't observe call counts.
+ * It's a tracked `vi.fn` (not a plain arrow) so the resumeId-threading test
+ * below can assert on its call arguments. The keystroke-storm guard (editing
+ * the posting text must not re-fire the query) is covered separately, against
+ * the same tracked-mock pattern, in JobAdView.test.tsx §10.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -35,10 +42,20 @@ import i18n from '@ajh/translations';
 
 // ── useJobAdTextMatchScore stub ───────────────────────────────────────────────
 
-let stubbedScore: { data?: MatchScore; isLoading?: boolean } = {};
+let stubbedScore: {
+  data?: MatchScore;
+  isLoading?: boolean;
+  isError?: boolean;
+  refetch?: () => void;
+} = {};
+
+const mockUseJobAdTextMatchScore = vi.fn(
+  (_resumeId: string | null, _jobText: string, _enabled?: boolean) => stubbedScore
+);
 
 vi.mock('@/services', () => ({
-  useJobAdTextMatchScore: () => stubbedScore,
+  useJobAdTextMatchScore: (...args: Parameters<typeof mockUseJobAdTextMatchScore>) =>
+    mockUseJobAdTextMatchScore(...args),
 }));
 
 // ── self-contained store-driven pickers — never mounted on the Score tab
@@ -62,13 +79,18 @@ import { JobAdView } from './JobAdView';
 const RESUME_ID = 'resume-1';
 const JOB_ID = 'job-1';
 
+/** `combined === ats` whenever `scoreSource: 'keyword'` — the kernel's own
+ *  invariant (`match_resume.rs`: `combined` only diverges from `ats` when a
+ *  semantic comparison actually ran, which sets `scoreSource: 'combined'`).
+ *  A fixture that violates this (e.g. `ats: 60, combined: 55` under
+ *  `'keyword'`) is one `match:text` can never actually produce. */
 function baseScore(overrides: Partial<MatchScore> = {}): MatchScore {
   return {
     resumeId: RESUME_ID,
     jobId: JOB_ID,
     ats: 60,
     semantic: 0,
-    combined: 55,
+    combined: 60,
     gaps: ['docker'],
     recommendations: [],
     scoreSource: 'keyword',
@@ -106,18 +128,20 @@ async function openScoreTab() {
 
 describe('JobAdView — Score tab labels never read "ATS score"', () => {
   it('the real translated coverage/match labels are not "ATS score"', () => {
-    const matchLabel = i18n.t('autopilot.apply.jobAdView.score.matchLabel');
-    const coverageLabel = i18n.t('autopilot.apply.jobAdView.score.coverageLabel');
+    // Reused from the Autopilot list's own field labels — see the "one
+    // engine, one label" test below for why these are NOT re-forked here.
+    const matchLabel = i18n.t('autopilot.scoreAbbr.combined');
+    const coverageLabel = i18n.t('autopilot.scoreAbbr.coverage');
     // Anchored to the actual bundled copy, not a derived comparison.
     expect(matchLabel.toLowerCase()).not.toContain('ats score');
     expect(coverageLabel.toLowerCase()).not.toContain('ats score');
     // A missing/mistyped key would echo the raw key back — rule that out too.
-    expect(matchLabel).not.toBe('autopilot.apply.jobAdView.score.matchLabel');
-    expect(coverageLabel).not.toBe('autopilot.apply.jobAdView.score.coverageLabel');
+    expect(matchLabel).not.toBe('autopilot.scoreAbbr.combined');
+    expect(coverageLabel).not.toBe('autopilot.scoreAbbr.coverage');
   });
 
   it('no rendered string on the Score tab reads "ATS score"', async () => {
-    stubbedScore = { data: baseScore(), isLoading: false };
+    stubbedScore = { data: baseScore({ scoreSource: 'combined' }), isLoading: false };
     const { container } = render(<JobAdView {...makeProps()} />);
     await openScoreTab();
     expect(container.textContent?.toLowerCase()).not.toContain('ats score');
@@ -153,9 +177,8 @@ describe('JobAdView — Score tab never renders a 0 for something that was not m
     expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreCoverage)).toHaveTextContent(
       noKeywords
     );
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreMatch)).toHaveTextContent(
-      noKeywords
-    );
+    // Match is dropped entirely for a keyword-only score — see block 5 below.
+    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewScoreMatch)).not.toBeInTheDocument();
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
   });
 
@@ -197,5 +220,177 @@ describe('JobAdView — Score tab never renders a 0 for something that was not m
       screen.getByText(i18n.t('autopilot.apply.jobAdView.score.noPosting'))
     ).toBeInTheDocument();
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. A failed request is never laundered into "not scored"
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: a failed request renders a distinct error', () => {
+  it('isError renders the translated error copy, never the not-scored placeholder', async () => {
+    stubbedScore = { data: undefined, isLoading: false, isError: true, refetch: vi.fn() };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.errorTitle'))
+    ).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('analyze.notScored'))).not.toBeInTheDocument();
+  });
+
+  it("retrying calls the query's own refetch — not a page reload or a re-derived request", async () => {
+    const refetch = vi.fn();
+    stubbedScore = { data: undefined, isLoading: false, isError: true, refetch };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    // `ErrorState`'s retry button label ("Try again") is a fixed string in the
+    // shared primitive itself, not a translation key of this component's.
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a malformed-but-resolved response (ats/combined not numbers) renders the SAME error state, never NaN% or a red Low badge', async () => {
+    // `match_resume_text` can resolve `{ error: "resume not found: …" }`
+    // instead of a MatchScore — `invoke()` does not validate the resolved
+    // shape, so a deleted résumé (the wizard's `resumeDocId` can outlive the
+    // document it points at — the in-wizard delete path clears it, the
+    // out-of-wizard one does not) reaches this component typed as MatchScore
+    // while actually missing `ats`/`combined`. The cast mirrors that real
+    // gap: TypeScript can't catch it, only a runtime guard can.
+    stubbedScore = {
+      data: { resumeId: RESUME_ID, jobId: JOB_ID } as unknown as MatchScore,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.queryByText(/NaN%/)).not.toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('jobs.matchBand.Low'))).not.toBeInTheDocument();
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.errorTitle'))
+    ).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. Loading is announced to screen readers
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: loading is a live region', () => {
+  it('has role=status + aria-live=polite — the one state most needing it (a translating call can take ~117s)', async () => {
+    stubbedScore = { data: undefined, isLoading: true, isError: false, refetch: vi.fn() };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(status).toHaveTextContent(i18n.t('autopilot.apply.jobAdView.score.loading'));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. Match never rides alongside Coverage on an identical, keyword-only number
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: the Match row is dropped for a keyword-only score', () => {
+  it('renders ONLY Coverage when scoreSource is keyword — never two bands on one number', async () => {
+    // `combined === ats` here (the kernel invariant) — the fixture the OLD
+    // test used (`ats: 60, combined: 55`) was one `match:text` can never
+    // produce; this one is, and it's exactly the case that used to print
+    // "Match 60% MEDIUM" directly above "Keyword coverage 60% HIGH".
+    stubbedScore = {
+      data: baseScore({ ats: 60, combined: 60, scoreSource: 'keyword' }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewScoreMatch)).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreCoverage)).toHaveTextContent('60%');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. resumeId reaches the leaf hook call (the exact defect shape that left
+//    `jobId` dead at every call site since the commit that introduced it)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: resumeId threading', () => {
+  it('the resumeId prop is the argument the scoring hook is actually called with', async () => {
+    // Earlier tests in this file also open the Score tab (with the default
+    // RESUME_ID) — clear so `.find` below can't pick up a stale call.
+    mockUseJobAdTextMatchScore.mockClear();
+    stubbedScore = { data: baseScore(), isLoading: false };
+    render(<JobAdView {...makeProps({ resumeId: 'resume-xyz' })} />);
+    await openScoreTab();
+
+    const enabledCall = mockUseJobAdTextMatchScore.mock.calls.find((call) => call[2] === true);
+    expect(enabledCall?.[0]).toBe('resume-xyz');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. Additional context the panel now surfaces: which résumé, the keyword
+//    count behind coverage, and the top missing keywords
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: additional context lines', () => {
+  it('states which résumé the score is against, so it is never read as the tailored doc shown one view over', async () => {
+    stubbedScore = { data: baseScore(), isLoading: false };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.resumeNote'))
+    ).toBeInTheDocument();
+  });
+
+  it('renders the kernel explanation with the echoed guidance sentence trimmed (never duplicated)', async () => {
+    // The real Rust GUIDANCE constant (match_resume.rs) — deliberately the
+    // exact string `jobs.scoreGuidance` already renders at the top of this
+    // panel, so a failed trim would make it appear twice.
+    const guidance =
+      "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
+    stubbedScore = {
+      data: baseScore({
+        ats: 47,
+        combined: 47,
+        scoreSource: 'keyword',
+        explanation: `Keyword coverage 47% across 312 job keywords (semantic scoring disabled). ${guidance}`,
+        guidance,
+      }),
+      isLoading: false,
+    };
+    const { container } = render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.getByText(/312 job keywords/)).toBeInTheDocument();
+    const occurrences = (
+      container.textContent?.match(/employer's decision or any ATS system's score/g) ?? []
+    ).length;
+    expect(occurrences).toBe(1);
+  });
+
+  it('renders up to 3 missing keywords as chips, capped even when more are present', async () => {
+    stubbedScore = {
+      data: baseScore({
+        ats: 40,
+        combined: 40,
+        scoreSource: 'keyword',
+        gaps: ['docker', 'kubernetes', 'terraform', 'aws'],
+      }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.getByText(i18n.t('analyze.gaps'))).toBeInTheDocument();
+    expect(screen.getByText('docker')).toBeInTheDocument();
+    expect(screen.getByText('kubernetes')).toBeInTheDocument();
+    expect(screen.getByText('terraform')).toBeInTheDocument();
+    expect(screen.queryByText('aws')).not.toBeInTheDocument();
   });
 });
