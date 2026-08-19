@@ -11,6 +11,12 @@
 //! `autopilot_scheduler` split, so this store never needs an upward reach
 //! into `commands::notifications` itself.
 //!
+//! **v2 slice 1** adds [`intent`]: a pure 4-way (confirmation/rejection/
+//! interview/offer) classifier over subject+body, plus the pure
+//! `intent::next_status` status-ladder rule. Neither is wired into
+//! [`poller`] yet — no schema change, no auto-write, no IPC in this slice;
+//! that wiring is a later slice.
+//!
 //! **Backup/reset posture**: unlike most per-domain SQLite stores in this
 //! crate, `EmailWatchStore` is **NOT** a [`crate::data_store::DataStore`] (not
 //! included in the backup/export bundle) — like `CredentialStore`, its
@@ -42,6 +48,7 @@ use crate::db::{open, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
 pub mod imap_client;
+pub mod intent;
 pub mod matcher;
 pub mod parser;
 pub mod poller;

@@ -1,0 +1,1213 @@
+[
+  {
+    "lang": "en",
+    "intent": "confirmation",
+    "phrase": "we received your application",
+    "location": "both",
+    "discriminating": false
+  },
+  {
+    "lang": "en",
+    "intent": "confirmation",
+    "phrase": "if you are among qualified candidates",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "confirmation",
+    "phrase": "you will hear from us",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "en",
+    "intent": "interview",
+    "phrase": "invite you for a job interview",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "interview",
+    "phrase": "phone discussion about your application",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "interview",
+    "phrase": "thank you for scheduling your interview",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "interview",
+    "phrase": "have been shortlisted",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "interview",
+    "phrase": "your availability",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "en",
+    "intent": "offer",
+    "phrase": "having you on our team",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "move forward with other candidates",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "with a different candidate",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "proceed with another candidate",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "not be moving forward with your application",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "decided not to move forward",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "not able to advance you",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "did not select you for further consideration",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "not selected for further consideration",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "no longer under consideration",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "you were not selected",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "unsuccessful on this occasion",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "application has been unsuccessful",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "not be progressing",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "pursue other candidates",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "did not meet the minimum qualifications",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "not one of our short-listed applicants",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "not to proceed any further",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "move forward on this occasion",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "keep your resume on file",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "keep your cv on file",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "en",
+    "intent": "rejection",
+    "phrase": "unfortunately",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "de",
+    "intent": "confirmation",
+    "phrase": "wir haben ihre bewerbung",
+    "location": "both",
+    "discriminating": false
+  },
+  {
+    "lang": "de",
+    "intent": "interview",
+    "phrase": "virtuellen vorstellungsgespräch",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "interview",
+    "phrase": "per video-call statt",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "interview",
+    "phrase": "kennenlerngespräch",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "interview",
+    "phrase": "terminvorschläge",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "interview",
+    "phrase": "laden wir dich zu einem",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "interview",
+    "phrase": "gegenseitigen kennenlernen",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "zusage zu ihrer bewerbung",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "zusage zu deiner bewerbung",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "die stelle annehmen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "in unserem team begrüßen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "an bord zu haben",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "wunsch-kandidat",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "anbieten zu können",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "de",
+    "intent": "offer",
+    "phrase": "mitteilen zu dürfen",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "andere besetzung",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "absage erteilen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "keinen positiven bescheid",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "keinen günstigeren bescheid",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "für deine berufliche zukunft",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "weiteren beruflichen weg",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "besser auf das anforderungsprofil",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "werturteil",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "keine wertung ihrer qualifikation",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "müssen dir mitteilen",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "nicht zum zuge gekommen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "de",
+    "intent": "rejection",
+    "phrase": "eine andere entscheidung getroffen",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "fr",
+    "intent": "confirmation",
+    "phrase": "bonne réception de ta candidature",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "confirmation",
+    "phrase": "votre candidature a bien été enregistrée",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "confirmation",
+    "phrase": "de soumettre votre candidature",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "fr",
+    "intent": "interview",
+    "phrase": "convocation à un entretien",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "interview",
+    "phrase": "souhaiterions vous rencontrer",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "interview",
+    "phrase": "nous vous proposons un entretien",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "interview",
+    "phrase": "proposition d'entretien",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "interview",
+    "phrase": "planifier une entrevue",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "offer",
+    "phrase": "acceptation de candidature",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "offer",
+    "phrase": "vous offrir le poste",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "offer",
+    "phrase": "date d'embauche prévue",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "offer",
+    "phrase": "offre est conditionnelle",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "ne donnerons pas suite",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "ne pas donner suite à votre candidature",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "n'a pas été retenue",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "ne retenons pas votre candidature",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "ne retiendrons pas votre candidature",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "regret de vous annoncer",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "regrettons de vous informer",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "correspond plus étroitement",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "candidature non retenue",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "fr",
+    "intent": "rejection",
+    "phrase": "poste a été comblé",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "confirmation",
+    "phrase": "currículum recibido",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "confirmation",
+    "phrase": "gracias por aplicar",
+    "location": "both",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "confirmation",
+    "phrase": "hemos recibido tu postulación",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "interview",
+    "phrase": "invitación para una entrevista",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "interview",
+    "phrase": "invitarte a una entrevista",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "interview",
+    "phrase": "te proponemos una entrevista",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "interview",
+    "phrase": "confírmame que puedes asistir",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "interview",
+    "phrase": "dinámica de grupo",
+    "location": "both",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "interview",
+    "phrase": "tu disponibilidad",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "offer",
+    "phrase": "entusiasmados de ofrecerte",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "offer",
+    "phrase": "extenderle una oferta formal",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "offer",
+    "phrase": "carta oferta",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "offer",
+    "phrase": "has sido seleccionado",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "offer",
+    "phrase": "bienvenido a",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "offer",
+    "phrase": "fecha de incorporación",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "no proceder con tu candidatura",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "no continuaremos con tu candidatura",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "no seguiremos adelante con tu",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "no seguir adelante con su candidatura",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "seguir adelante con otros candidatos",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "avanzar con otro candidato",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "avanzar con otro perfil",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "continuar con otros candidatos",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "avanzar con otras personas",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "otras personas postulantes",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "no vemos el encaje",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "otro perfil que encaja",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "lo mejor en tu carrera",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "lamentamos informarte",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "es",
+    "intent": "rejection",
+    "phrase": "para futuras vacantes",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "it",
+    "intent": "confirmation",
+    "phrase": "la sua candidatura è arrivata",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "confirmation",
+    "phrase": "abbiamo ricevuto la tua candidatura",
+    "location": "both",
+    "discriminating": false
+  },
+  {
+    "lang": "it",
+    "intent": "confirmation",
+    "phrase": "sarà archiviato nei nostri database",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "it",
+    "intent": "interview",
+    "phrase": "convocazione a colloquio",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "interview",
+    "phrase": "il colloquio avrà inizio alle ore",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "interview",
+    "phrase": "confermare la sua presenza al colloquio",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "interview",
+    "phrase": "colloquio telefonico conoscitivo",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "offer",
+    "phrase": "lettera di impegno all'assunzione",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "offer",
+    "phrase": "siamo lieti di offrirle la posizione",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "offer",
+    "phrase": "qualifica di",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "non è risultata prescelta",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "abbiamo preferito procedere con un altro profilo",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "non procederemo con la tua candidatura",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "non procedere ulteriormente con la tua candidatura",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "non selezionato dal datore di lavoro",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "la tua candidatura non è stata scelta",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "non abbiamo offerte di lavoro che corrispondano",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "non abbiamo nessuna posizione aperta",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "it",
+    "intent": "rejection",
+    "phrase": "la selezione si è conclusa",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "nl",
+    "intent": "confirmation",
+    "phrase": "sollicitatie is binnen",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "confirmation",
+    "phrase": "bedankt voor het solliciteren",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "nl",
+    "intent": "confirmation",
+    "phrase": "hartelijk dank voor uw sollicitatie",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "nl",
+    "intent": "interview",
+    "phrase": "telefonisch gesprek van 30 minuten",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "interview",
+    "phrase": "het gesprek zal ongeveer",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "interview",
+    "phrase": "drie opties sturen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "offer",
+    "phrase": "bieden je graag de functie",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "offer",
+    "phrase": "bieden je graag de rol",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "offer",
+    "phrase": "de positie van",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "nl",
+    "intent": "offer",
+    "phrase": "salaris aanbieden van",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "rejection",
+    "phrase": "niet verder mee te nemen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "rejection",
+    "phrase": "met een andere kandidaat",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "rejection",
+    "phrase": "niet uit te nodigen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "rejection",
+    "phrase": "niet tot de kandidaten behoort",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "rejection",
+    "phrase": "de afwijzing",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "rejection",
+    "phrase": "niet voor u gekozen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "nl",
+    "intent": "rejection",
+    "phrase": "keuze niet op jou gevallen",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "confirmation",
+    "phrase": "confirmação de candidatura",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "confirmation",
+    "phrase": "felizes em ver sua candidatura",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "confirmation",
+    "phrase": "obrigado por se candidatar",
+    "location": "both",
+    "discriminating": false
+  },
+  {
+    "lang": "pt",
+    "intent": "confirmation",
+    "phrase": "candidatura submetida com sucesso",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "interview",
+    "phrase": "queremos marcar uma entrevista",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "interview",
+    "phrase": "agendamento de uma entrevista",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "interview",
+    "phrase": "convidamos você para uma entrevista",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "interview",
+    "phrase": "horário da sua disponibilidade",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "interview",
+    "phrase": "convite para entrevista",
+    "location": "subject",
+    "discriminating": false
+  },
+  {
+    "lang": "pt",
+    "intent": "interview",
+    "phrase": "gostaríamos de agendar uma entrevista",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "offer",
+    "phrase": "parabéns pela proposta",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "offer",
+    "phrase": "boas-vindas ao time",
+    "location": "subject",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "offer",
+    "phrase": "bem-vindo ao time",
+    "location": "both",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "offer",
+    "phrase": "oferecemos o cargo",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "offer",
+    "phrase": "proposta de emprego",
+    "location": "both",
+    "discriminating": false
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não seguiremos o processo com você",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não seguiremos para a próxima etapa",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não vamos seguir com sua participação",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "decidimos seguir por outro caminho",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "optamos por seguir com outro perfil",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não podemos avançar com sua inscrição",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não foi o candidato escolhido",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não passou à fase",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "infelizmente",
+    "location": "body",
+    "discriminating": false
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "atualização sobre sua candidatura",
+    "location": "subject",
+    "discriminating": false
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "retorno processo seletivo",
+    "location": "subject",
+    "discriminating": false
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não vamos dar seguimento à tua candidatura",
+    "location": "body",
+    "discriminating": true
+  },
+  {
+    "lang": "pt",
+    "intent": "rejection",
+    "phrase": "não daremos seguimento",
+    "location": "body",
+    "discriminating": true
+  }
+]

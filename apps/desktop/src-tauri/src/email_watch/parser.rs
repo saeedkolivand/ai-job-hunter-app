@@ -31,7 +31,7 @@ pub struct EmailHeader {
 /// (no backtracking), so this isn't a catastrophic-backtracking concern —
 /// it's the same "bound unbounded input" discipline as [`BODY_SNIPPET_BYTES`]
 /// below, applied to a pathological/hostile subject header.
-const SUBJECT_MAX_BYTES: usize = 500;
+pub(super) const SUBJECT_MAX_BYTES: usize = 500;
 
 /// Parse a raw header-only byte block (as returned by
 /// `imap_client::fetch_headers_since`) into [`EmailHeader`]. `None` only if
@@ -266,8 +266,11 @@ fn company_from_sender_name(name: Option<&str>) -> Option<String> {
 }
 
 /// Byte-boundary-safe prefix (never splits a multi-byte UTF-8 char) — mirrors
-/// `applications::clamp_job_description`'s truncation approach.
-fn safe_prefix(s: &str, max_bytes: usize) -> &str {
+/// `applications::clamp_job_description`'s truncation approach. `pub(super)`
+/// so [`crate::email_watch::intent`] can reuse it to bound its own
+/// subject/body scan by the SAME caps this module already established,
+/// rather than inventing new ones.
+pub(super) fn safe_prefix(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
         return s;
     }
@@ -281,7 +284,7 @@ fn safe_prefix(s: &str, max_bytes: usize) -> &str {
 /// How much of a body snippet is scanned for a phrase-pattern match (the
 /// subject is tried first and is usually enough — this is a bounded
 /// fallback, not a full-body scan).
-const BODY_SNIPPET_BYTES: usize = 500;
+pub(super) const BODY_SNIPPET_BYTES: usize = 500;
 
 /// Extract company/title candidates: try the subject, then (only if the
 /// subject yielded no company) a bounded body snippet, then fall back to a
@@ -414,35 +417,64 @@ mod tests {
         assert!(!fingerprint(&header("Tips for applying to jobs this year", None)).is_candidate());
     }
 
-    // ── known accepted false-positive shapes (job-match-expert item 11) ─────
+    // ── formerly-accepted false-positive shapes (job-match-expert item 11) ──
     //
-    // The fingerprint gate is a SUBJECT phrase match — it has no way to tell
-    // a genuine confirmation from a rejection, an interview invite, or a
-    // draft-completion nudge that happens to reuse the same wording. This is
-    // an ACCEPTED risk under v1's notify+confirm model (never auto-write): a
-    // false-positive match still only produces a Notification Center card
-    // pointing at the RIGHT saved application (the company/title still has to
-    // clear the matcher's threshold) — the user reads the actual email and
-    // decides. A body negative-signal check ("unfortunately", "not moving
-    // forward", "other candidates", "regret to inform", …) MUST be added
-    // before any future ratchet toward an automatic write, to avoid
-    // auto-marking a REJECTED application as if it were merely confirmed.
+    // The fingerprint gate is a SUBJECT phrase match — on its own it has no
+    // way to tell a genuine confirmation from a rejection, an interview
+    // invite, or a draft-completion nudge that happens to reuse the same
+    // wording. That was an ACCEPTED risk under v1's notify+confirm model
+    // (never auto-write). The v2-slice-1 body negative-signal check now
+    // exists ([`crate::email_watch::intent::classify_intent`]) — these three
+    // tests now assert the CORRECT intent instead of just documenting the
+    // risk. It is still not wired into the poller (no auto-write yet; that's
+    // a later slice), but the pure classification itself is proven here.
 
     #[test]
     fn known_false_positive_a_rejection_email_still_fingerprints() {
         // A real ATS rejection often reuses the exact confirmation subject
-        // line from earlier in the thread.
-        assert!(fingerprint(&header("Your application to Acme Corp", None)).is_candidate());
+        // line from earlier in the thread — and a real rejection reply
+        // commonly still carries the original confirmation's body wording
+        // too (quoted thread history, or a template that opens with a
+        // receipt line before the bad news). `fingerprint` (subject-only)
+        // still can't tell them apart, but `intent::classify_intent` reads
+        // the body and correctly picks Rejection even with a confirmation
+        // phrase also present in the same message.
+        let subject = "Your application to Acme Corp";
+        assert!(fingerprint(&header(subject, None)).is_candidate());
+        let body = "If you are among qualified candidates for other roles we will be in touch. \
+                     Unfortunately, after careful review we have decided not be moving forward \
+                     with your application at this time.";
+        assert_eq!(
+            crate::email_watch::intent::classify_intent(subject, Some(body)),
+            Some(crate::email_watch::intent::EmailIntent::Rejection)
+        );
     }
 
     #[test]
     fn known_false_positive_b_an_interview_invite_still_fingerprints() {
-        assert!(fingerprint(&header("Your application to Acme — Next Steps", None)).is_candidate());
+        let subject = "Your application to Acme — Next Steps";
+        assert!(fingerprint(&header(subject, None)).is_candidate());
+        let body = "We would like to invite you for a job interview next week.";
+        assert_eq!(
+            crate::email_watch::intent::classify_intent(subject, Some(body)),
+            Some(crate::email_watch::intent::EmailIntent::Interview)
+        );
     }
 
     #[test]
     fn known_false_positive_d_a_draft_completion_nudge_still_fingerprints() {
-        assert!(fingerprint(&header("Complete your application to Acme", None)).is_candidate());
+        let subject = "Complete your application to Acme";
+        assert!(fingerprint(&header(subject, None)).is_candidate());
+        // None of the 4 intents apply to a draft-completion nudge — this is
+        // the actual improvement: the classifier correctly stays silent (no
+        // intent, so no future write) instead of treating the fingerprint
+        // match as any kind of confirmation.
+        let body = "You started an application to Acme Corp but haven't submitted it yet. \
+                     Click here to finish and submit your application.";
+        assert_eq!(
+            crate::email_watch::intent::classify_intent(subject, Some(body)),
+            None
+        );
     }
 
     // ── and/und no longer truncates a company name (item 10 regression) ─────
