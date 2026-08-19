@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.138.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.138.0...v0.138.1) (2026-08-19)
+
+### 🐛 Bug Fixes
+
+* **ats:** stop false date-context criticals, and route translation through the active provider ([#1051](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1051)) ([e76a8b3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e76a8b33031a63c4cd65dc145daaa2436693c2c9))
+
 ## [0.138.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.137.1...v0.138.0) (2026-08-19)
 
 ### ✨ Features
