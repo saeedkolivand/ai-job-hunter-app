@@ -20,10 +20,37 @@ static FULL_URL_RE: LazyLock<Regex> =
 /// A scheme-less URL written out in body text: a domain WITH a path
 /// (`github.com/user/repo`). Linked verbatim — the full text stays visible and an
 /// `https://` scheme is added only for the hyperlink target — so résumé project
-/// links render the same in the export as in the WYSIWYG editor. A bare domain
-/// with no path, or a short-TLD token like `CI/CD`, is intentionally not matched.
+/// links render the same in the export as in the WYSIWYG editor. Case-insensitive
+/// (`GitHub.com/user/repo` still links) — unlike [`BARE_DOMAIN_NO_PATH_RE`] below,
+/// a path already disambiguates this from a capitalised library name.
 static BARE_DOMAIN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}/[^\s|·•,<>"']+"#).unwrap());
+
+/// TLDs a bare domain with NO path may end in to be linked. Mirrors the
+/// allowlist `validate/content/factual.rs`'s `URL_RE` already curates for the
+/// identical collision on its own bare-host arm (`com|org|net|io|dev|app|de|co|ai|sh|me`) —
+/// kept as a sibling literal rather than a cross-module import, since this
+/// module has no other dependency on `validate`. Deliberately NOT an
+/// open-ended `[a-z]{2,}` class: applied to a path-less bare domain that would
+/// link `node.js` (an invalid `https://` host) and the `e.g`/`i.e`/`vs.`
+/// family right along with it.
+const BARE_DOMAIN_TLDS: &str = "com|org|net|io|dev|app|de|co|ai|sh|me";
+
+/// A bare domain with NO path (`aijobhunter.app`, `iamsaeed.dev`) — a real
+/// portfolio/product domain written without `https://` or a trailing path.
+/// Case-SENSITIVE (the only arm in this file that is) and restricted to
+/// [`BARE_DOMAIN_TLDS`]: without both gates this would also link every
+/// capitalised library/product name that happens to be spelled with a dot —
+/// `Socket.IO`, `Bun.sh`, `Nuxt.dev` — the exact collision
+/// `validate/content/factual.rs` already documents for the identical
+/// path-less-bare-host shape. Every real collision on record is a capitalised
+/// proper noun; every real bare portfolio domain in the wild is lowercase, so
+/// the case gate alone confines this arm to the domains it should link — a
+/// capitalised real domain simply stays unlinked (no worse than before this
+/// arm existed), and a lowercase library name links to its genuine official
+/// homepage, which is the correct destination anyway.
+static BARE_DOMAIN_NO_PATH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"\b(?:[a-z0-9-]+\.)+(?:{BARE_DOMAIN_TLDS})\b")).unwrap());
 
 static EMAIL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap());
@@ -218,6 +245,28 @@ pub fn split_urls(text: &str) -> Vec<Span> {
                 end: m.end(),
                 label: email.to_string(),
                 url: format!("mailto:{email}"),
+            });
+        }
+    }
+
+    // A bare domain with NO path (`aijobhunter.app`) — lowercase + allowlisted
+    // TLD only, see BARE_DOMAIN_NO_PATH_RE's doc. Runs LAST — after
+    // BARE_DOMAIN_RE so a domain that DOES have a path is never re-matched as
+    // just its host, and after EMAIL_RE so `jane@example.com`'s host half
+    // isn't sliced off as its own bare-domain link before the email arm ever
+    // sees the whole address (`example.com` alone is a lowercase,
+    // allowlisted-TLD match too).
+    for m in BARE_DOMAIN_NO_PATH_RE.find_iter(text) {
+        let url = m.as_str();
+        let overlaps = matches
+            .iter()
+            .any(|u| m.start() < u.end && m.end() > u.start);
+        if !overlaps {
+            matches.push(Match {
+                start: m.start(),
+                end: m.end(),
+                label: url.to_string(),
+                url: format!("https://{url}"),
             });
         }
     }
@@ -539,17 +588,111 @@ mod tests {
         }
     }
 
+    /// INTENTIONAL BEHAVIOUR CHANGE, stated explicitly per the author-contract
+    /// rule that editing a test to make a change pass must be justified in
+    /// writing, not silently done. This test used to assert `split_urls("github.com")`
+    /// stayed plain text — that was the reported bug: a bare portfolio domain
+    /// with no path (`aijobhunter.app`, `iamsaeed.dev`) rendered as plain text
+    /// while a GitHub URL one line below, which happened to carry a `/path`,
+    /// rendered as a clickable link. `github.com` alone is lowercase on an
+    /// allowlisted TLD ([`BARE_DOMAIN_NO_PATH_RE`]), so it is now linked too —
+    /// a bare `github.com` written in a résumé is a real site, not a stray
+    /// token. The other half of the original test — no-domain-dot tokens like
+    /// `CI/CD`/`Agile`/`TDD` never becoming links — is unaffected by this arm
+    /// and stays covered here for the same reason it always was.
     #[test]
-    fn split_urls_ignores_bare_domain_without_path_and_short_tld_tokens() {
-        // No path → not a project link; "CI/CD" has no domain dot → not a URL.
-        assert!(matches!(
-            split_urls("github.com").as_slice(),
-            [Span::Text(_)]
-        ));
+    fn split_urls_links_a_bare_domain_without_path_on_an_allowlisted_tld() {
+        match split_urls("github.com").as_slice() {
+            [Span::Link { label, url }] => {
+                assert_eq!(label, "github.com");
+                assert_eq!(url, "https://github.com");
+            }
+            other => panic!("expected a single link span, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn split_urls_ignores_short_tld_tokens_with_no_domain_dot() {
+        // "CI/CD" has no domain dot at all → never read as a URL, allowlist or not.
         assert!(matches!(
             split_urls("Agile, CI/CD, TDD").as_slice(),
             [Span::Text(_)]
         ));
+    }
+
+    /// The reported bug, verbatim: portfolio domains with no path must link
+    /// exactly like GitHub project URLs with a path already do.
+    #[test]
+    fn split_urls_links_lowercase_bare_domains_on_allowlisted_tlds() {
+        for (text, href) in [
+            ("aijobhunter.app", "https://aijobhunter.app"),
+            ("crosskit.iamsaeed.dev", "https://crosskit.iamsaeed.dev"),
+            ("iamsaeed.dev", "https://iamsaeed.dev"),
+        ] {
+            match split_urls(text).as_slice() {
+                [Span::Link { label, url }] => {
+                    assert_eq!(label, text, "label for {text}");
+                    assert_eq!(url, href, "href for {text}");
+                }
+                other => panic!("expected a single link span for {text}, got {other:?}"),
+            }
+        }
+    }
+
+    /// Every documented collision this arm has to avoid is a capitalised
+    /// proper noun spelled with a dot — a tech-stack line's library names,
+    /// never a portfolio domain. The case gate is what tells them apart.
+    #[test]
+    fn split_urls_leaves_capitalized_library_names_as_plain_text() {
+        for text in ["Socket.IO", "Bun.sh", "Nuxt.dev", "Node.js"] {
+            assert!(
+                matches!(split_urls(text).as_slice(), [Span::Text(_)]),
+                "{text} must stay plain text"
+            );
+        }
+    }
+
+    /// Isolates the TLD-allowlist gate from the case gate: these are already
+    /// all-lowercase (so they'd clear a case check), but `.js` is not on
+    /// [`BARE_DOMAIN_TLDS`]. Without an explicit allowlist, the old
+    /// open-ended `[a-z]{2,}` class would treat any two-letter-plus suffix as
+    /// a real TLD and link these to an invalid `https://node.js` host.
+    #[test]
+    fn split_urls_leaves_lowercase_names_with_unlisted_tlds_as_plain_text() {
+        for text in ["node.js", "vue.js", "next.js"] {
+            assert!(
+                matches!(split_urls(text).as_slice(), [Span::Text(_)]),
+                "{text} must stay plain text (unlisted TLD)"
+            );
+        }
+    }
+
+    /// The new no-path arm is case-SENSITIVE, but the pre-existing arms must
+    /// behave exactly as they did before this change — this only gates the
+    /// NEW arm. `BARE_DOMAIN_RE` (domain+path) is genuinely `(?i)`, so an
+    /// uppercase-prefixed scheme-less URL with a path must still link;
+    /// `FULL_URL_RE` (scheme-prefixed) was never case-insensitive on the
+    /// scheme itself even before this change (no `(?i)` flag on that regex),
+    /// so a lowercase `https://` URL is the fair regression check for it.
+    #[test]
+    fn split_urls_keeps_pre_existing_arms_unaffected() {
+        match split_urls("GitHub.com/me/repo").as_slice() {
+            [Span::Link { label, url }] => {
+                assert_eq!(label, "GitHub.com/me/repo");
+                assert_eq!(url, "https://GitHub.com/me/repo");
+            }
+            other => {
+                panic!("an uppercase path-carrying scheme-less URL must still link, got {other:?}")
+            }
+        }
+
+        let scheme = split_urls("see https://github.com/x today");
+        assert!(
+            scheme
+                .iter()
+                .any(|s| matches!(s, Span::Link { url, .. } if url == "https://github.com/x")),
+            "a scheme-prefixed URL must still be linked verbatim"
+        );
     }
 
     // ── Link helpers (moved here with their implementation from export::links) ──
