@@ -8,6 +8,8 @@ interface StepJobAdProps {
   hasDesc: boolean;
   fetchingDesc: boolean;
   jobUrl?: string;
+  /** Saved résumé backing this generation — see {@link JobAdView}'s `resumeId`. */
+  resumeId?: string;
   jobAdSummary: {
     summary: string;
     generating: boolean;
@@ -30,6 +32,7 @@ export function StepJobAd({
   hasDesc,
   fetchingDesc,
   jobUrl,
+  resumeId,
   jobAdSummary,
 }: StepJobAdProps) {
   const { t } = useTranslation();
@@ -56,6 +59,7 @@ export function StepJobAd({
         hasDesc={hasDesc}
         fetchingDesc={fetchingDesc}
         jobUrl={jobUrl}
+        resumeId={resumeId}
       />
     </div>
   );

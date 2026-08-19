@@ -1946,7 +1946,15 @@
         "editHelper": "Änderungen hier werden für die Generierung verwendet — korrigiere einen fehlerhaften Scrape vor dem Anpassen.",
         "summaryLanguage": "Zusammenfassungssprache",
         "pasteHint": "Vollständige Stellenanzeige hier einfügen…",
-        "truncatedHint": "Dies sieht wie ein unvollständiges Inserat aus — füge die vollständige Anzeige ein, um das beste Ergebnis zu erzielen."
+        "truncatedHint": "Dies sieht wie ein unvollständiges Inserat aus — füge die vollständige Anzeige ein, um das beste Ergebnis zu erzielen.",
+        "scoreTab": "Bewertung",
+        "score": {
+          "noJob": "Kein Job zum Bewerten ausgewählt.",
+          "noKeywords": "Diese Anzeige enthält keine extrahierbaren Schlüsselwörter — die Abdeckung ist nicht verfügbar.",
+          "matchLabel": "Übereinstimmung",
+          "coverageLabel": "Schlüsselwort-Abdeckung",
+          "semanticLabel": "Semantische Ähnlichkeit"
+        }
       },
       "tryAgain": "Erneut versuchen",
       "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",

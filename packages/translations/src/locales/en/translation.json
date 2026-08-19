@@ -1942,7 +1942,15 @@
         "editHelper": "Edits here are used for generation — fix a bad scrape before tailoring.",
         "summaryLanguage": "Summary language",
         "pasteHint": "Paste the full job ad here…",
-        "truncatedHint": "This looks like a partial listing — paste the full ad for the best result."
+        "truncatedHint": "This looks like a partial listing — paste the full ad for the best result.",
+        "scoreTab": "Score",
+        "score": {
+          "noJob": "No job selected to score against.",
+          "noKeywords": "This posting has no extractable keywords — coverage isn't available.",
+          "matchLabel": "Match",
+          "coverageLabel": "Keyword coverage",
+          "semanticLabel": "Semantic similarity"
+        }
       },
       "tryAgain": "Try again",
       "hintNoResume": "Add your resume to generate",

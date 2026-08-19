@@ -64,6 +64,18 @@ vi.mock('@/lib/generate', () => ({
   OUTPUT_LANGUAGES: [{ code: 'en', endonym: 'English' }],
 }));
 
+// ── useJobMatchScore — the Score tab's only data source. Stubbed so no
+// QueryClient/AppClient/IPC is needed here; the Score tab's own render logic
+// (real vs. "not scored") is covered separately in JobAdView.i18n.test.tsx
+// against REAL translated copy. None of the tests below ever open the Score
+// tab, so this stub is never exercised — it exists only because the hook is
+// now called unconditionally on every render (see JobAdView's `useJobMatchScore`
+// call), which needs SOME `@/services` binding present.
+
+vi.mock('@/services', () => ({
+  useJobMatchScore: () => ({ data: undefined, isLoading: false }),
+}));
+
 // ── Import component AFTER all mocks ─────────────────────────────────────────
 
 import { JobAdView } from './JobAdView';
@@ -431,5 +443,29 @@ describe('JobAdView — tab resync on posting change', () => {
 
     // Tab should re-derive to source (no desc).
     expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+  });
+});
+
+// ── 9. Score tab — presence + empty-state wiring ─────────────────────────────
+// The "never a 0" / "never reads ATS score" guarantees are covered against REAL
+// translated copy in JobAdView.i18n.test.tsx (this file's `t` is a raw-key echo,
+// which can't catch either regression). This block only covers structural wiring.
+
+describe('JobAdView — Score tab presence and empty states', () => {
+  it('renders a third "score" tab option alongside summary/source', () => {
+    render(<JobAdView {...makeProps()} />);
+    expect(screen.getByText('autopilot.apply.jobAdView.scoreTab')).toBeInTheDocument();
+  });
+
+  it('shows the no-resume reason when resumeId is absent (never a score)', async () => {
+    render(<JobAdView {...makeProps({ resumeId: undefined, jobId: undefined })} />);
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(screen.getByText('jobs.scoreNoResume')).toBeInTheDocument();
+  });
+
+  it('shows the no-job reason when resumeId is present but jobId is absent', async () => {
+    render(<JobAdView {...makeProps({ resumeId: 'resume-1', jobId: undefined })} />);
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(screen.getByText('autopilot.apply.jobAdView.score.noJob')).toBeInTheDocument();
   });
 });

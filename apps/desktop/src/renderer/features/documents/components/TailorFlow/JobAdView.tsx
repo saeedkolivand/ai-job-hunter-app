@@ -16,6 +16,8 @@ import {
 import { ExternalLink } from '@/components/ui/ExternalLink';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { OUTPUT_LANGUAGES } from '@/lib/generate';
+import { MatchBand } from '@/lib/match-band';
+import { useJobMatchScore } from '@/services';
 
 interface Props {
   jobDesc: string;
@@ -29,6 +31,15 @@ interface Props {
   hasDesc: boolean;
   fetchingDesc?: boolean;
   jobUrl?: string;
+  /** Saved résumé backing this generation (the ORIGINAL, unedited résumé — not
+   *  the wizard's live/tailored text). Undefined where no saved résumé is
+   *  threaded yet — the Score tab then shows a stated reason, never a `0`. */
+  resumeId?: string;
+  /** Local postings-cache id for this job — the SAME id `useJobMatchScore`
+   *  reads on the Jobs page, so this tab can never compute its own, drifting
+   *  number. Undefined where no such id is threaded yet (see the Score tab's
+   *  empty state). */
+  jobId?: string;
 }
 
 /** Returns true when the text ends with the ellipsis character or three dots. */
@@ -37,14 +48,51 @@ function looksPartial(text: string) {
   return t.endsWith('…') || t.endsWith('...');
 }
 
+interface ScoreMetricProps {
+  label: string;
+  /** `null` for "not actually measured" — renders `notScoredLabel` instead of
+   *  a fabricated `0`. Never pass a real `0` measurement as `null`. */
+  value: number | null;
+  variant?: 'combined' | 'coverage';
+  notScoredLabel: string;
+  testId: string;
+}
+
+/** One Score-tab row: a real percentage + tier badge, or an honest
+ *  "not scored" placeholder — see the tab's callers for what makes a value
+ *  real vs. a placeholder. */
+function ScoreMetric({ label, value, variant, notScoredLabel, testId }: ScoreMetricProps) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-2">
+      <span className="text-[11px] text-foreground/60">{label}</span>
+      <span data-testid={testId} className="flex items-center gap-1.5">
+        {value === null ? (
+          <span className="text-[11px] font-medium text-foreground/40">{notScoredLabel}</span>
+        ) : (
+          <>
+            <span className="text-[11px] font-semibold tabular-nums text-foreground/80">
+              {Math.round(value)}%
+            </span>
+            {variant && <MatchBand value={value} variant={variant} />}
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
 /**
- * Shared two-tab job-ad surface (Summary | Job Ad) used by both the wizard's
+ * Shared job-ad surface (Summary | Job Ad | Score) used by both the wizard's
  * first step and the results panel's job-ad tab. The Summary sub-tab lazily
  * streams an AI summary on an explicit click; the Job Ad sub-tab shows the raw
- * posting as an EDITABLE textarea so a bad scrape can be fixed before tailoring.
+ * posting as an EDITABLE textarea so a bad scrape can be fixed before tailoring;
+ * the Score sub-tab reads the stored résumé's cached `MatchScore` against this
+ * posting — the "before" half of a comparison in the results panel, a plain
+ * readout in the wizard.
  *
  * Default tab is `source` when the description is missing or looks truncated so
- * paste is immediately discoverable; otherwise `summary`.
+ * paste is immediately discoverable; otherwise `summary`. `score` is never the
+ * default — it's opt-in.
  */
 export function JobAdView({
   jobDesc,
@@ -58,15 +106,40 @@ export function JobAdView({
   hasDesc,
   fetchingDesc,
   jobUrl,
+  resumeId,
+  jobId,
 }: Props) {
   const { t } = useTranslation();
 
   // Start on `source` when there's nothing to show or the snippet is truncated —
   // that's when paste is the most useful action. `summary` otherwise (normal case).
+  // Never defaults to `score` — that tab is opt-in via an explicit click.
   const truncated = looksPartial(jobDesc);
-  const [tab, setTab] = useState<'summary' | 'source'>(
+  const [tab, setTab] = useState<'summary' | 'source' | 'score'>(
     !hasDesc || truncated ? 'source' : 'summary'
   );
+
+  // Same cached query the Jobs page reads (`['match', resumeId, jobId, …]`,
+  // 10-min staleTime) — this tab can only ever show that number, never a
+  // second, possibly-drifted computation. Lazy: only fires once the Score tab
+  // is actually opened, and only when both ids are known.
+  const scoreEnabled = tab === 'score' && !!resumeId && !!jobId;
+  const { data: score, isLoading: scoreLoading } = useJobMatchScore(
+    resumeId ?? null,
+    jobId ?? '',
+    scoreEnabled
+  );
+  // `keyword_coverage` (match_resume.rs) returns `ats: 0, gaps: []` for BOTH
+  // "no extractable keywords" AND would for a genuine 0% match — except a
+  // genuine 0% still lists every job keyword as a gap, so `gaps.length === 0`
+  // only co-occurs with `ats === 0` in the former case. `combined` inherits
+  // the same placeholder (its formula always needs a real `ats` input), so
+  // this gates the Match row too — never a fake `0`.
+  const hasCoverage = !!score && !(score.ats === 0 && score.gaps.length === 0);
+  // Semantic scoring is opt-in and off by default — `semantic` is a real
+  // number either way, but only a genuine measurement when the backend says
+  // the combined kernel actually ran (see `MatchScore.scoreSource`'s doc).
+  const hasSemantic = score?.scoreSource === 'combined';
 
   // Re-pick the default sub-tab only when the POSTING changes (new jobUrl), not on
   // every jobDesc edit — pasting into the source textarea changes `truncated`, and
@@ -87,10 +160,11 @@ export function JobAdView({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="shrink-0 flex items-center justify-between gap-2">
-        <SegmentedControl<'summary' | 'source'>
+        <SegmentedControl<'summary' | 'source' | 'score'>
           options={[
             { value: 'summary', label: t('autopilot.apply.jobAdView.summaryTab') },
             { value: 'source', label: t('autopilot.apply.tabs.jobAd') },
+            { value: 'score', label: t('autopilot.apply.jobAdView.scoreTab') },
           ]}
           value={tab}
           onChange={setTab}
@@ -158,6 +232,56 @@ export function JobAdView({
                   <Sparkles size={13} /> {t('autopilot.apply.jobAdView.generateSummary')}
                 </Button>
               </div>
+            )}
+          </div>
+        ) : tab === 'score' ? (
+          // Score tab — the "before" half of a comparison in the results panel,
+          // a plain readout in the wizard. Every number here traces back to the
+          // one cached `MatchScore`; an absent input is a stated reason, never
+          // a `0`. Estimate framing matches the Jobs page (`jobs.scoreGuidance`).
+          <div
+            data-testid={TEST_IDS.documents.jobAdViewScorePanel}
+            className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-3"
+          >
+            <p className="shrink-0 text-[10px] leading-relaxed text-foreground/40">
+              {t('jobs.scoreGuidance')}
+            </p>
+            {!resumeId ? (
+              <p className="text-[11px] text-foreground/50">{t('jobs.scoreNoResume')}</p>
+            ) : !jobId ? (
+              <p className="text-[11px] text-foreground/50">
+                {t('autopilot.apply.jobAdView.score.noJob')}
+              </p>
+            ) : scoreLoading ? (
+              <div className="flex items-center gap-2 text-[11px] text-foreground/40">
+                <Loader2 size={12} className="animate-spin" />
+                {t('autopilot.loading')}
+              </div>
+            ) : score ? (
+              <div className="flex flex-col gap-1.5">
+                <ScoreMetric
+                  label={t('autopilot.apply.jobAdView.score.matchLabel')}
+                  value={hasCoverage ? score.combined : null}
+                  variant="combined"
+                  notScoredLabel={t('autopilot.apply.jobAdView.score.noKeywords')}
+                  testId={TEST_IDS.documents.jobAdViewScoreMatch}
+                />
+                <ScoreMetric
+                  label={t('autopilot.apply.jobAdView.score.coverageLabel')}
+                  value={hasCoverage ? score.ats : null}
+                  variant="coverage"
+                  notScoredLabel={t('autopilot.apply.jobAdView.score.noKeywords')}
+                  testId={TEST_IDS.documents.jobAdViewScoreCoverage}
+                />
+                <ScoreMetric
+                  label={t('autopilot.apply.jobAdView.score.semanticLabel')}
+                  value={hasSemantic ? score.semantic : null}
+                  notScoredLabel={t('analyze.notScored')}
+                  testId={TEST_IDS.documents.jobAdViewScoreSemantic}
+                />
+              </div>
+            ) : (
+              <p className="text-[11px] text-foreground/50">{t('analyze.notScored')}</p>
             )}
           </div>
         ) : fetchingDesc ? (

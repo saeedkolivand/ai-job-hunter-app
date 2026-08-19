@@ -37,6 +37,14 @@ vi.mock('@/components/ui/ExternalLink', () => ({
   ),
 }));
 
+// useJobMatchScore (JobAdView's Score tab, via useAppClient/QueryClient) — stub
+// so tests that reach the Job-ad tab don't need a provider tree. None of the
+// tests in this file exercise the Score tab's own render logic (that's
+// JobAdView.test.tsx / JobAdView.i18n.test.tsx's job).
+vi.mock('@/services', () => ({
+  useJobMatchScore: () => ({ data: undefined, isLoading: false }),
+}));
+
 // EditableOutput mock — exposes onChange/onBlur/isPending + renders previewSlot.
 // Uses divs (not raw <textarea>/<button>) to stay clear of the @ajh/ui ESLint rule.
 // The mock is intentionally richer than the original so edit/debounce/preview tests

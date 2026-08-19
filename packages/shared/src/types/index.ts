@@ -211,6 +211,16 @@ export interface MatchScore {
    * reasoning.
    */
   constraints?: { checks: ConstraintCheck[] };
+  /** Which kernel actually produced `combined`: `'combined'` only when a real
+   *  embedding comparison ran (semantic scoring on AND an embedding pair was
+   *  available); `'keyword'` for every degrade case (scoring disabled, an
+   *  embed that failed, a provider offline, or the daily ceiling refusing the
+   *  round-trip) — `combined` then equals `ats`, and `semantic` is a `0.0`
+   *  placeholder, not a measurement. Purely additive on the wire (see
+   *  `match_resume.rs`'s `SCORE_SOURCE_COMBINED`/`SCORE_SOURCE_KEYWORD`), so
+   *  undefined on a result cached before this field existed — treat that the
+   *  same as `'keyword'`, never as `'combined'`. */
+  scoreSource?: 'keyword' | 'combined';
 }
 
 /** One résumé bullet, ranked by the job vocabulary it carries. */
