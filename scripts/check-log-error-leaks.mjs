@@ -549,23 +549,49 @@ export function violations(inventory = ALLOWLIST, leaks) {
   // message (two distinct call sites, identical text) falls back to the
   // ordinary line-exact rules below, so each site still needs its own
   // declaration rather than one `sig` silently covering both.
+  //
+  // Unambiguous means unambiguous on BOTH sides, and only against a leak no
+  // other entry has already claimed:
+  //
+  //   - Entry side: two entries sharing one (file, sig) were each satisfied
+  //     by the SAME single leak, so the stale duplicate was never reported.
+  //   - Already-claimed leak: an entry's sig can match the leak a DIFFERENT
+  //     entry declares line-exactly; that entry then has no site of its own
+  //     and IS stale. A sig pairing therefore only counts for a leak no entry
+  //     declares by line — when the leak sits on the entry's own line,
+  //     line-exact matching already covers it and `sig` is not needed.
+  //
+  // Both holes could only ever suppress a STALE-entry error, never an
+  // undeclared-leak one: a second site with the same message makes the LEAK
+  // bucket length 2, which disables sig matching for that bucket outright.
   const fileOf = (key) => key.slice(0, key.lastIndexOf(':'));
-  const leaksBySig = new Map(); // `${file} ${sig}` -> leak[]
-  for (const l of leaks) {
-    const bucketKey = `${l.file} ${l.sig}`;
-    const bucket = leaksBySig.get(bucketKey);
-    if (bucket) bucket.push(l);
-    else leaksBySig.set(bucketKey, [l]);
-  }
+  /** Group `items` into a Map keyed by `keyOf(item)`. */
+  const bucketBy = (items, keyOf) => {
+    const buckets = new Map();
+    for (const item of items) {
+      const k = keyOf(item);
+      const bucket = buckets.get(k);
+      if (bucket) bucket.push(item);
+      else buckets.set(k, [item]);
+    }
+    return buckets;
+  };
+  // NUL separator: it occurs in neither a path nor a Rust string literal, so
+  // two different (file, sig) pairs can never collide on one bucket key.
+  const leaksBySig = bucketBy(leaks, (l) => `${l.file} ${l.sig}`);
+  const entriesBySig = bucketBy(
+    Object.entries(inventory).filter(([, entry]) => entry.sig),
+    ([entryKey, entry]) => `${fileOf(entryKey)} ${entry.sig}`
+  );
   const sigSatisfiedLeakKeys = new Set();
   const sigSatisfiedEntryKeys = new Set();
-  for (const [entryKey, entry] of Object.entries(inventory)) {
-    if (!entry.sig) continue;
-    const bucket = leaksBySig.get(`${fileOf(entryKey)} ${entry.sig}`);
-    if (bucket && bucket.length === 1) {
-      sigSatisfiedLeakKeys.add(bucket[0].key);
-      sigSatisfiedEntryKeys.add(entryKey);
-    }
+  for (const [bucketKey, entries] of entriesBySig) {
+    if (entries.length !== 1) continue;
+    const bucket = leaksBySig.get(bucketKey);
+    if (!bucket || bucket.length !== 1) continue;
+    if (declaredKeys.has(bucket[0].key)) continue;
+    sigSatisfiedLeakKeys.add(bucket[0].key);
+    sigSatisfiedEntryKeys.add(entries[0][0]);
   }
 
   const undeclared = leaks.filter(

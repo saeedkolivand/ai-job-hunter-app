@@ -300,6 +300,53 @@ describe('violations', () => {
     expect(problems.join('\n')).toContain('foo.rs:10');
     expect(problems.join('\n')).toContain('Declared in ALLOWLIST but no `{e}` site found');
   });
+
+  // The mirror-image hole the ambiguity check above missed: uniqueness was
+  // required on the LEAK side only, so N declared entries sharing one
+  // (file, sig) were each satisfied by the SAME single leak and none of the
+  // N-1 stale ones was ever reported. Latent while exactly one entry uses
+  // `sig`; live the moment the header's planned mass-`sig` migration lands,
+  // since a duplicated message text is exactly what produces duplicate sigs.
+
+  it('two entries sharing one (file, sig) are not both satisfied by a single leak', () => {
+    const inv = {
+      'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' },
+      'foo.rs:20': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' },
+    };
+    const problems = violations(inv, [leak('foo.rs:10', 'boom: {e}')]);
+    expect(problems.join('\n')).toContain('foo.rs:20');
+    expect(problems.join('\n')).toContain('Declared in ALLOWLIST but no `{e}` site found');
+    // …and the entry that DOES still have its site is untouched.
+    expect(problems.join('\n')).not.toContain('foo.rs:10');
+  });
+
+  it('five entries sharing one (file, sig) leave four stale, not zero', () => {
+    const inv = Object.fromEntries(
+      [10, 20, 30, 40, 50].map((line) => [
+        `foo.rs:${line}`,
+        { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' },
+      ])
+    );
+    const problems = violations(inv, [leak('foo.rs:30', 'boom: {e}')]);
+    const text = problems.join('\n');
+    for (const line of [10, 20, 40, 50]) expect(text).toContain(`foo.rs:${line}`);
+    expect(text).toContain('Declared in ALLOWLIST but no `{e}` site found');
+    expect(text).not.toContain('foo.rs:30');
+  });
+
+  it('a stale sig entry is still reported when its sig matches a leak another entry declares', () => {
+    // Uniqueness on both sides is not enough on its own: one sig entry, one
+    // leak with that sig — but the leak is already claimed line-exactly by a
+    // DIFFERENT entry, so the sig entry has no site of its own and is stale.
+    const inv = {
+      'foo.rs:20': { status: 'safe', reason: 'a'.repeat(30) },
+      'foo.rs:99': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' },
+    };
+    const problems = violations(inv, [leak('foo.rs:20', 'boom: {e}')]);
+    expect(problems.join('\n')).toContain('foo.rs:99');
+    expect(problems.join('\n')).toContain('Declared in ALLOWLIST but no `{e}` site found');
+    expect(problems.join('\n')).not.toContain('foo.rs:20');
+  });
 });
 
 describe('MIN_SITES (the CLI-level absolute floor, not folded into violations())', () => {
