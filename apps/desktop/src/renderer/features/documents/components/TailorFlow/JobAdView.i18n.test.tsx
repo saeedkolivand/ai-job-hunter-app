@@ -18,8 +18,12 @@
  * accidental "ATS score" label, surfaces here instead of being hidden behind
  * `t: (k) => k`.
  *
- * `@/services`' `useJobMatchScore` IS stubbed — same pattern as
+ * `@/services`' `useJobAdTextMatchScore` IS stubbed — same pattern as
  * MatchScoresProvider.test.tsx — so no QueryClient/AppClient/IPC is needed.
+ * The keystroke-storm guard (editing the posting text must not re-fire the
+ * query) is covered separately, against the REAL hook + a mocked IPC client,
+ * in JobAdView.score-request.test.tsx — a stub that ignores its arguments
+ * (this file's `stubbedScore`) can't observe call counts.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -29,12 +33,12 @@ import type { MatchScore } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import i18n from '@ajh/translations';
 
-// ── useJobMatchScore stub ─────────────────────────────────────────────────────
+// ── useJobAdTextMatchScore stub ───────────────────────────────────────────────
 
 let stubbedScore: { data?: MatchScore; isLoading?: boolean } = {};
 
 vi.mock('@/services', () => ({
-  useJobMatchScore: () => stubbedScore,
+  useJobAdTextMatchScore: () => stubbedScore,
 }));
 
 // ── self-contained store-driven pickers — never mounted on the Score tab
@@ -74,7 +78,11 @@ function baseScore(overrides: Partial<MatchScore> = {}): MatchScore {
 
 function makeProps(overrides: Partial<Parameters<typeof JobAdView>[0]> = {}) {
   return {
-    jobDesc: '',
+    // Non-empty by default — the Score tab snapshots this text the instant it
+    // opens, and an empty snapshot renders the "no posting" reason instead of
+    // the stubbed score (see the "posting text is empty" test below, which
+    // overrides this back to '').
+    jobDesc: 'A job posting with enough text to score against.',
     onJobDescChange: vi.fn(),
     summary: '',
     generating: false,
@@ -84,7 +92,6 @@ function makeProps(overrides: Partial<Parameters<typeof JobAdView>[0]> = {}) {
     onLanguageChange: vi.fn(),
     hasDesc: false, // defaults to the `source` tab — no summary toolbar to stub
     resumeId: RESUME_ID,
-    jobId: JOB_ID,
     ...overrides,
   };
 }
@@ -172,11 +179,23 @@ describe('JobAdView — Score tab never renders a 0 for something that was not m
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
   });
 
-  it('no job to score against (jobId undefined) shows the real reason, never a score', async () => {
-    render(<JobAdView {...makeProps({ jobId: undefined })} />);
+  it('an empty posting (blank snapshot) shows the real reason, never a score', async () => {
+    render(<JobAdView {...makeProps({ jobDesc: '' })} />);
     await openScoreTab();
 
-    expect(screen.getByText(i18n.t('autopilot.apply.jobAdView.score.noJob'))).toBeInTheDocument();
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.noPosting'))
+    ).toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it('a whitespace-only posting is treated as empty, never a score', async () => {
+    render(<JobAdView {...makeProps({ jobDesc: '   ' })} />);
+    await openScoreTab();
+
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.noPosting'))
+    ).toBeInTheDocument();
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
   });
 });

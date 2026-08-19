@@ -1945,11 +1945,12 @@
         "truncatedHint": "This looks like a partial listing — paste the full ad for the best result.",
         "scoreTab": "Score",
         "score": {
-          "noJob": "No job selected to score against.",
+          "noPosting": "Add the job ad text to score against.",
           "noKeywords": "This posting has no extractable keywords — coverage isn't available.",
           "matchLabel": "Match",
           "coverageLabel": "Keyword coverage",
-          "semanticLabel": "Semantic similarity"
+          "semanticLabel": "Semantic similarity",
+          "loading": "Scoring against the posting…"
         }
       },
       "tryAgain": "Try again",

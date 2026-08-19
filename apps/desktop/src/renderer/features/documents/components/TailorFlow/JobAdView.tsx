@@ -17,7 +17,7 @@ import { ExternalLink } from '@/components/ui/ExternalLink';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { OUTPUT_LANGUAGES } from '@/lib/generate';
 import { MatchBand } from '@/lib/match-band';
-import { useJobMatchScore } from '@/services';
+import { useJobAdTextMatchScore } from '@/services';
 
 interface Props {
   jobDesc: string;
@@ -35,11 +35,6 @@ interface Props {
    *  the wizard's live/tailored text). Undefined where no saved résumé is
    *  threaded yet — the Score tab then shows a stated reason, never a `0`. */
   resumeId?: string;
-  /** Local postings-cache id for this job — the SAME id `useJobMatchScore`
-   *  reads on the Jobs page, so this tab can never compute its own, drifting
-   *  number. Undefined where no such id is threaded yet (see the Score tab's
-   *  empty state). */
-  jobId?: string;
 }
 
 /** Returns true when the text ends with the ellipsis character or three dots. */
@@ -86,9 +81,10 @@ function ScoreMetric({ label, value, variant, notScoredLabel, testId }: ScoreMet
  * first step and the results panel's job-ad tab. The Summary sub-tab lazily
  * streams an AI summary on an explicit click; the Job Ad sub-tab shows the raw
  * posting as an EDITABLE textarea so a bad scrape can be fixed before tailoring;
- * the Score sub-tab reads the stored résumé's cached `MatchScore` against this
- * posting — the "before" half of a comparison in the results panel, a plain
- * readout in the wizard.
+ * the Score sub-tab scores the stored résumé against a SNAPSHOT of this posting's
+ * text, taken the instant the tab is opened (never the live, still-editable
+ * text — see `handleTabChange`) — the "before" half of a comparison in the
+ * results panel, a plain readout in the wizard.
  *
  * Default tab is `source` when the description is missing or looks truncated so
  * paste is immediately discoverable; otherwise `summary`. `score` is never the
@@ -107,7 +103,6 @@ export function JobAdView({
   fetchingDesc,
   jobUrl,
   resumeId,
-  jobId,
 }: Props) {
   const { t } = useTranslation();
 
@@ -119,14 +114,30 @@ export function JobAdView({
     !hasDesc || truncated ? 'source' : 'summary'
   );
 
-  // Same cached query the Jobs page reads (`['match', resumeId, jobId, …]`,
-  // 10-min staleTime) — this tab can only ever show that number, never a
-  // second, possibly-drifted computation. Lazy: only fires once the Score tab
-  // is actually opened, and only when both ids are known.
-  const scoreEnabled = tab === 'score' && !!resumeId && !!jobId;
-  const { data: score, isLoading: scoreLoading } = useJobMatchScore(
+  // A SNAPSHOT of the posting text, taken the instant the Score tab is
+  // opened — never `jobDesc` live. `useJobAdTextMatchScore`'s query key is
+  // content-addressed on the text itself, and the Job Ad sub-tab right next
+  // to this one is an editable textarea; wiring the query straight to
+  // `jobDesc` would mint (and fire) a fresh query key on every keystroke.
+  // Worse, this surface TRANSLATES (`MatchSurface::JobAdText`), so a
+  // foreign-language posting can reach a local model — a slow one measured at
+  // 117s for a single call. Snapshotting on open (an event, not an effect —
+  // there's no external system to sync with) means typing never re-scores;
+  // re-opening the tab does.
+  const [scoreSnapshot, setScoreSnapshot] = useState<string | null>(null);
+  const handleTabChange = (next: 'summary' | 'source' | 'score') => {
+    if (next === 'score') setScoreSnapshot(jobDesc);
+    setTab(next);
+  };
+
+  // Lazy: only fires once the Score tab is open, a résumé is stored, AND the
+  // snapshot has real text — a whitespace-only paste is still "empty" (the
+  // IPC schema only requires length >= 1, so this guard is the real check).
+  const scoreText = scoreSnapshot?.trim() ?? '';
+  const scoreEnabled = tab === 'score' && !!resumeId && !!scoreText;
+  const { data: score, isLoading: scoreLoading } = useJobAdTextMatchScore(
     resumeId ?? null,
-    jobId ?? '',
+    scoreText,
     scoreEnabled
   );
   // `keyword_coverage` (match_resume.rs) returns `ats: 0, gaps: []` for BOTH
@@ -136,9 +147,10 @@ export function JobAdView({
   // the same placeholder (its formula always needs a real `ats` input), so
   // this gates the Match row too — never a fake `0`.
   const hasCoverage = !!score && !(score.ats === 0 && score.gaps.length === 0);
-  // Semantic scoring is opt-in and off by default — `semantic` is a real
-  // number either way, but only a genuine measurement when the backend says
-  // the combined kernel actually ran (see `MatchScore.scoreSource`'s doc).
+  // `match:text` (the IPC command behind `useJobAdTextMatchScore`) always
+  // scores keyword-only — `scoreSource` on its result is always `'keyword'`,
+  // never `'combined'` (see the contract's doc). So this row honestly reads
+  // "not scored" on every score here, not a bug specific to one posting.
   const hasSemantic = score?.scoreSource === 'combined';
 
   // Re-pick the default sub-tab only when the POSTING changes (new jobUrl), not on
@@ -167,7 +179,7 @@ export function JobAdView({
             { value: 'score', label: t('autopilot.apply.jobAdView.scoreTab') },
           ]}
           value={tab}
-          onChange={setTab}
+          onChange={handleTabChange}
           size="sm"
           ariaLabel={t('autopilot.apply.jobAdView.label')}
         />
@@ -236,9 +248,10 @@ export function JobAdView({
           </div>
         ) : tab === 'score' ? (
           // Score tab — the "before" half of a comparison in the results panel,
-          // a plain readout in the wizard. Every number here traces back to the
-          // one cached `MatchScore`; an absent input is a stated reason, never
-          // a `0`. Estimate framing matches the Jobs page (`jobs.scoreGuidance`).
+          // a plain readout in the wizard. Every number here traces back to
+          // ONE `MatchScore`, for the snapshot taken when this tab opened; an
+          // absent input is a stated reason, never a `0`. Estimate framing
+          // matches the Jobs page (`jobs.scoreGuidance`).
           <div
             data-testid={TEST_IDS.documents.jobAdViewScorePanel}
             className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-3"
@@ -248,14 +261,14 @@ export function JobAdView({
             </p>
             {!resumeId ? (
               <p className="text-[11px] text-foreground/50">{t('jobs.scoreNoResume')}</p>
-            ) : !jobId ? (
+            ) : !scoreText ? (
               <p className="text-[11px] text-foreground/50">
-                {t('autopilot.apply.jobAdView.score.noJob')}
+                {t('autopilot.apply.jobAdView.score.noPosting')}
               </p>
             ) : scoreLoading ? (
               <div className="flex items-center gap-2 text-[11px] text-foreground/40">
                 <Loader2 size={12} className="animate-spin" />
-                {t('autopilot.loading')}
+                {t('autopilot.apply.jobAdView.score.loading')}
               </div>
             ) : score ? (
               <div className="flex flex-col gap-1.5">

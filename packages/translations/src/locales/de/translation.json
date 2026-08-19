@@ -1949,11 +1949,12 @@
         "truncatedHint": "Dies sieht wie ein unvollständiges Inserat aus — füge die vollständige Anzeige ein, um das beste Ergebnis zu erzielen.",
         "scoreTab": "Bewertung",
         "score": {
-          "noJob": "Kein Job zum Bewerten ausgewählt.",
+          "noPosting": "Füge den Text der Stellenanzeige hinzu, um sie zu bewerten.",
           "noKeywords": "Diese Anzeige enthält keine extrahierbaren Schlüsselwörter — die Abdeckung ist nicht verfügbar.",
           "matchLabel": "Übereinstimmung",
           "coverageLabel": "Schlüsselwort-Abdeckung",
-          "semanticLabel": "Semantische Ähnlichkeit"
+          "semanticLabel": "Semantische Ähnlichkeit",
+          "loading": "Bewertung der Anzeige läuft…"
         }
       },
       "tryAgain": "Erneut versuchen",
