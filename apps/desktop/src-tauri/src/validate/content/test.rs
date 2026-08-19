@@ -1837,10 +1837,16 @@ fn either_witness_alone_is_enough_to_corroborate_the_target() {
 //    length-≥3 floor was tried FIRST and measured to also exclude Italian's
 //    OWN core vocabulary (`il`, `la`, `di`, all 2 characters — see
 //    `a_drifted_awards_section_warns_rather_than_blocks`, which briefly
-//    regressed under that rule), so the fix is a named denylist
-//    (`AMBIGUOUS_SHORT_TOKENS`) plus a length-≥2 floor that only drops bare
-//    single letters, plus curating "per" (a genuine 3-letter English
-//    preposition) into `FUNCTION_WORDS_EN` for the one 3-character case.
+//    regressed under that rule). A curated denylist was tried NEXT and also
+//    REMOVED: the found-SPECIFIC pairwise match already closes every one of
+//    the five reported cases on its own (none of those tokens is a word in
+//    the language whatlang actually named), the denylist's only measured
+//    trigger was an adversarial string of disconnected foreign idioms no
+//    realistic document produces, and it cost real evidence from exactly the
+//    languages fix 1 was written to protect (`el` is one of Spanish's
+//    commonest words). What shipped is just a length-≥2 floor (drops bare
+//    single letters only) plus curating "per" (a genuine English preposition)
+//    into `FUNCTION_WORDS_EN` for the one 3-character false positive measured.
 // 3. The section-scoped pass had its own, separate `detected_language`
 //    comparison that never routed through the new evidence check at all —
 //    fixed by having `section_language_issues` call the SAME
@@ -1856,15 +1862,13 @@ fn either_witness_alone_is_enough_to_corroborate_the_target() {
 // closes every REALISTIC instance measured (a terse "Degree, Institution,
 // Dates" entry, or a longer multi-sentence label) by recognising that a
 // connector wedged between two Capitalised neighbours is almost always part
-// of the proper noun's own official name, not free-standing prose.
-// `distinctive_evidence_confirms`'s comparative margin (found's evidence must
-// EXCEED target's, not merely clear a floor) is a second, principled layer
-// for the same shape — mechanically verified directly by
-// `distinctive_evidence_confirms_requires_a_real_margin_not_a_tie` below, but
-// a deliberate search did not turn up an end-to-end fixture dense enough to
-// need it WITHOUT the title-case exclusion already handling it; see the "NOTE
-// ON THE COMPARATIVE MARGIN'S END-TO-END COVERAGE" comment further down for
-// that measured limit, reported rather than concealed.
+// of the proper noun's own official name, not free-standing prose. A second,
+// COMPARATIVE bar (found's evidence must EXCEED target's, not merely clear a
+// floor) was tried on top of the title-case exclusion and REMOVED: disabling
+// it left every behavioural test in this file green, so it was carrying no
+// load the title-case exclusion did not already carry — see
+// `distinctive_evidence_confirms_requires_the_absolute_floor` and the module
+// doc for the measurement.
 
 /// The exact reported false positive, reproduced directly. An honest ENGLISH
 /// noun-phrase block — the shape an ordinary skills line or a terse CV takes
@@ -2059,26 +2063,17 @@ fn spanish_and_portuguese_regression_is_fixed_in_both_registers() {
 /// tool-list fixture this file already establishes reads as confident French:
 /// `ci/cd` (Italian "ci"), `.io` domains (Italian "io"), the `vi` editor
 /// (Italian "vi"), an "HA cluster" (Italian "ha"), and "cost per transaction"
-/// (Italian "per" — the one genuinely 3-character case, closed by curating
-/// "per" into `FUNCTION_WORDS_EN`). None of these five tokens is actually a
-/// FRENCH word — whatlang's guess never changes (`det=fr` throughout) — so
-/// `pairwise_evidence_count(text, "fr", "en")` finds nothing regardless of
-/// what the OLD "any curated language" pool found for a DIFFERENT language
-/// (Italian) whatlang never named.
-///
-/// **What actually closes this, measured rather than assumed:** the
-/// found-SPECIFIC pairwise match is the PRIMARY, demonstrated defense here —
-/// mutation-removing `AMBIGUOUS_SHORT_TOKENS` entirely left this test GREEN
-/// (verified: `ci`/`vi`/`io`/`ha`/`da`/`ti` are Italian, not French, so they
-/// were never counted as `fr` evidence regardless of the denylist). The
-/// denylist is defense-in-depth for the scenario the review actually warned
-/// about — `found` itself becoming one of these languages via abbreviation
-/// density — and a deliberate search for a fixture that flips whatlang's
-/// OVERALL read to `it` using only these tokens did not find one (saturated
-/// repetition read as unreliable/`None`; embedded in ordinary English prose
-/// it stayed confidently `en`). Kept anyway: it can only REMOVE evidence,
-/// never manufacture it, so it costs nothing even without a live trigger —
-/// reported as a measured limit, not concealed.
+/// (Italian "per" — closed by curating "per" into `FUNCTION_WORDS_EN`, a
+/// genuine English preposition, so it collides out at the ordinary pairwise
+/// step). None of these five tokens is actually a FRENCH word — whatlang's
+/// guess never changes (`det=fr` throughout) — so `pairwise_evidence_count(text,
+/// "fr", "en")` finds nothing regardless of what the OLD "any curated
+/// language" pool found for a DIFFERENT language (Italian) whatlang never
+/// named. This is the found-SPECIFIC pairwise match closing the leak entirely
+/// on its own — no length floor or curated denylist for `ci`/`vi`/`io`/`ha`
+/// was needed here or shipped: a denylist was tried and, after failing to find
+/// a realistic document that needed it, removed (see the module doc for the
+/// measurement).
 #[test]
 fn short_ambiguous_tokens_never_manufacture_evidence() {
     let base = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
@@ -2223,13 +2218,12 @@ fn a_german_institution_name_inside_an_english_certifications_section_never_fire
 /// Computer Science, TU Berlin, 2014 - 2018") — with a REAL, not fabricated,
 /// German institution name whose OFFICIAL name genuinely contains "für" and
 /// "und" (Fachhochschule für Technik und Wirtschaft Berlin is a real Berlin
-/// university of applied sciences). This shape never even reaches the
-/// comparative margin: a short institution name contributes at most one or
-/// two hits, and real terse entries do not accumulate enough evidence to
-/// clear `MIN_DISTINCTIVE_HITS` in the first place — the title-case-sandwich
-/// exclusion and the comparative margin are both belt-and-braces here, not
-/// load-bearing, which is worth pinning separately from the denser,
-/// multi-sentence-labelled fixture above.
+/// university of applied sciences). A short institution name contributes at
+/// most one or two hits, and real terse entries do not accumulate enough
+/// evidence to clear `MIN_DISTINCTIVE_HITS` in the first place — the
+/// title-case-sandwich exclusion is belt and braces here, not load-bearing,
+/// which is worth pinning separately from the denser, multi-sentence-labelled
+/// fixture above.
 #[test]
 fn a_terse_real_german_institution_name_never_fires() {
     let generated = EN_CLEAN.replace(
@@ -2240,24 +2234,6 @@ fn a_terse_real_german_institution_name_never_fires() {
     let report = en_resume(&generated, &en_requirements());
     silent(&report, CONTENT_LANGUAGE_MISMATCH);
 }
-
-// NOTE ON THE COMPARATIVE MARGIN'S END-TO-END COVERAGE: `distinctive_evidence_confirms`'s
-// comparative half (`found_evidence > target_evidence`, not just clearing the
-// absolute floor) is directly, mechanically pinned by
-// `distinctive_evidence_confirms_requires_a_real_margin_not_a_tie` below. A
-// deliberate search for a REALISTIC end-to-end fixture that needs the
-// comparative margin specifically — as opposed to the title-case-sandwich
-// exclusion, which already silences every proper-noun fixture in this file —
-// did not find one: a French institution name dense enough to produce a
-// genuine EVIDENCE TIE (a first attempt, "Institut Francais des Technologies
-// de l'Information et de la Communication" + "Ministere de l'Economie et des
-// Finances", measured 5 French hits against 0 English once "de"/"des" were
-// allowed back in as non-ambiguous 2-character tokens) reads as GENUINELY
-// French-dense enough that treating it as a real mismatch is defensible, not
-// a false positive; shorter, single-institution variants stayed confidently
-// English overall and never reached the evidence branch at all. This is
-// reported as a measured gap in end-to-end coverage, not concealed by forcing
-// a fixture to fit — see the PR report for the numbers.
 
 // ── tr/vi: the script gate must not raise a Critical with zero evidence ──
 
@@ -2299,23 +2275,32 @@ fn turkish_text_needs_evidence_too_and_goes_quiet_without_a_curated_list() {
 
 // ── direct unit tests for the evidence primitives (BLOCKING 3's other ask) ──
 
-/// `pairwise_evidence_count`'s three exclusion rules, isolated from any whole-
-/// document fixture: a shared word (in BOTH lists) never counts; a token
-/// under `MIN_DISTINCTIVE_TOKEN_CHARS` never counts even when it IS a genuine
-/// word in `lang`'s list; a word `lang` shares with some THIRD language
-/// `other` has never heard of still counts (this is the whole point of
-/// pairwise over a global pool).
+/// `pairwise_evidence_count`'s exclusion rules, isolated from any whole-
+/// document fixture: a shared word (in BOTH lists) never counts; a bare
+/// single-letter token never counts even when it IS a genuine word in
+/// `lang`'s list; a word `lang` shares with some THIRD language `other` has
+/// never heard of still counts (this is the whole point of pairwise over a
+/// global pool); "zu" (a genuine German preposition, 2 characters, absent
+/// from `FUNCTION_WORDS_EN`) DOES count — 2-character tokens are not
+/// universally excluded, only the single-letter floor and a genuine target
+/// collision remove a word.
 #[test]
-fn pairwise_evidence_count_excludes_shared_and_short_tokens() {
+fn pairwise_evidence_count_excludes_shared_and_single_letter_tokens() {
     use super::language::pairwise_evidence_count;
 
     // "und" is German-only (not in FUNCTION_WORDS_EN) and 3 characters — counts.
     assert_eq!(pairwise_evidence_count("und und und", "de", "en"), 3);
     // "in" is shared by German AND English — never counts either way.
     assert_eq!(pairwise_evidence_count("in in in", "de", "en"), 0);
-    // "zu" is a genuine German preposition but only 2 characters — excluded by
-    // the length floor even though it appears nowhere in FUNCTION_WORDS_EN.
-    assert_eq!(pairwise_evidence_count("zu zu zu", "de", "en"), 0);
+    // "zu" is a genuine German preposition, only 2 characters, and NOT shared
+    // with English — counts. (Confirms the length floor is 2, not 3: a
+    // blanket 3-character floor was tried and measured to also exclude
+    // Italian's own "il"/"la"/"di" — see MIN_DISTINCTIVE_TOKEN_CHARS's doc.)
+    assert_eq!(pairwise_evidence_count("zu zu zu", "de", "en"), 3);
+    // "y" ("and", Spanish) is a genuine word but only ONE character — excluded
+    // by the single-letter floor even though it appears nowhere in
+    // FUNCTION_WORDS_EN.
+    assert_eq!(pairwise_evidence_count("y y y", "es", "en"), 0);
     // Pairwise, not global: "con" collides between Spanish and Italian, but
     // that collision is irrelevant when comparing Spanish against ENGLISH,
     // which has never heard of "con" at all.
@@ -2355,28 +2340,34 @@ fn a_connector_between_two_title_case_words_is_excluded_as_a_proper_noun() {
     );
 }
 
-/// `distinctive_evidence_confirms`'s comparative margin, isolated: `found`'s
-/// evidence must not just clear the absolute floor, it must exceed `target`'s
-/// own evidence in the same text — a tie is NOT enough.
+/// `distinctive_evidence_confirms`'s absolute floor, isolated: `found`'s
+/// pairwise evidence must clear `MIN_DISTINCTIVE_HITS` (a single hit is
+/// noise, not evidence); a non-Latin-script `found` skips the requirement
+/// entirely regardless of evidence, since `needs_distinctive_evidence` never
+/// asks a script whatlang already reads reliably to corroborate itself.
+///
+/// A second, COMPARATIVE bar (`found`'s evidence must EXCEED `target`'s own
+/// in the same text, not just clear the floor) was tried here and removed:
+/// disabling it left every `validate::content` behavioural test green and
+/// only a test asserting the comparative predicate directly red, so the
+/// title-case-sandwich exclusion in `pairwise_evidence_count` was already
+/// doing the real work — see the module doc for the full measurement.
 #[test]
-fn distinctive_evidence_confirms_requires_a_real_margin_not_a_tie() {
+fn distinctive_evidence_confirms_requires_the_absolute_floor() {
     use super::language::distinctive_evidence_confirms;
 
-    // Two "und" (German) and two "and" (English) in the same text: a tie.
-    let tied = "und and und and";
-    assert!(
-        !distinctive_evidence_confirms(tied, "de", "en"),
-        "a tie must not confirm — found does not EXCEED target"
-    );
-    // Three German hits against the same two English ones: a real margin.
-    let margin = "und und und and and";
-    assert!(
-        distinctive_evidence_confirms(margin, "de", "en"),
-        "found's evidence now exceeds target's"
-    );
-    // Below the absolute floor even with zero target evidence: one hit alone
-    // is still noise, not evidence.
+    // Two hits clears the floor.
+    assert!(distinctive_evidence_confirms("und und", "de", "en"));
+    // One hit alone is still noise, not evidence — even with zero target
+    // evidence to compare against.
     assert!(!distinctive_evidence_confirms("und", "de", "en"));
+    // A non-Latin script skips the requirement outright: zero evidence, but
+    // whatlang's script read is already reliable there.
+    assert!(distinctive_evidence_confirms(
+        "zero evidence text here",
+        "zh",
+        "en"
+    ));
 }
 
 /// `needs_distinctive_evidence` gates on the nine-language Latin-SCRIPT set,

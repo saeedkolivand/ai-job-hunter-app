@@ -23,16 +23,26 @@
 //! noun-phrase block reads as French at `confidence() == 1.0`,
 //! `is_reliable() == true`. `is_language_mismatch` now also requires
 //! [`distinctive_evidence_confirms`] — real, PAIRWISE function-word evidence
-//! that the whatlang-named language is better supported in the text than the
-//! target itself is — before a confident Latin-script read becomes an
-//! accusation. See that function's doc for why the check is comparative
-//! (found vs. target in the SAME text) rather than a single global pool: a
-//! global pool was measured to leave Spanish/Portuguese too thin to evidence
-//! themselves (a true-positive regression), and neither a pairwise-only nor a
-//! higher-threshold-only fix survives a genuinely English document that
-//! merely NAMES a German institution or French award. See
-//! [`pairwise_evidence_count`] and [`distinctive_evidence_confirms`] for the
-//! measurements behind both halves.
+//! that the whatlang-named language is present in the text at all — before a
+//! confident Latin-script read becomes an accusation. See
+//! [`pairwise_evidence_count`] for why the check is pairwise (found vs.
+//! target only, not a single global pool pruned across all seven languages at
+//! once): a global pool was measured to leave Spanish/Portuguese too thin to
+//! evidence themselves — a true-positive regression, not a hypothetical one.
+//!
+//! Two OTHER suppressors were tried on top of the pairwise floor — a curated
+//! denylist for short tokens that double as English abbreviations
+//! (`ci`/`vi`/`io`/`ha`…), and a comparative margin requiring `found`'s
+//! evidence to EXCEED `target`'s own — and both were REMOVED after
+//! measurement found no realistic document that needed either: every
+//! behavioural test through `validate_content` passed with each one disabled,
+//! only its own manufactured unit test failed, and the denylist's one
+//! measured trigger (French idiom words stuffed together with no connecting
+//! English grammar) was adversarial, not a shape this validator's real input
+//! — generated or user-uploaded résumé/letter prose — ever produces. Removed
+//! rather than kept on the strength of the argument for them, per this
+//! module's own history: the original global pool was equally defensible on
+//! paper and silently killed the Spanish Critical anyway.
 
 use std::collections::HashSet;
 
@@ -157,39 +167,33 @@ pub(super) fn function_words_for(lang: &str) -> &'static [&'static str] {
 /// Below this many characters, a token is dropped outright — a bare
 /// single-letter survivor ("a", "i", "e", "o", "y" — real one-letter words in
 /// several of these languages) is too little to ever be evidence on its own
-/// and is noise in every language at once. Deliberately NOT the boundary that
-/// excludes `ci`/`vi`/`io`/`ha`/`da`/`ti` — see [`AMBIGUOUS_SHORT_TOKENS`] for
-/// why those are a CURATED denylist, not a length rule: a blanket floor of 3
-/// was tried first and measured to ALSO exclude Italian's own core vocabulary
-/// (`il`, `la`, `di`, all 2 characters), which is exactly how short a real
-/// Romance-language sentence's articles and prepositions are — a genuinely
-/// Italian AWARDS section (`a_drifted_awards_section_warns_rather_than_blocks`)
-/// dropped from 3+ distinctive hits to 1 under that rule and stopped firing.
+/// and is noise in every language at once. Deliberately not higher: a blanket
+/// floor of 3 was tried and measured to ALSO exclude Italian's own core
+/// vocabulary (`il`, `la`, `di`, all 2 characters), which is exactly how short
+/// a real Romance-language sentence's articles and prepositions are — a
+/// genuinely Italian AWARDS section
+/// (`a_drifted_awards_section_warns_rather_than_blocks`) dropped from 3+
+/// distinctive hits to 1 under that rule and stopped firing.
+///
+/// **A curated denylist for the residual short-token ambiguity
+/// (`ci`/`vi`/`io`/`ha`/`da`/`ti`/… — genuine short function words in one
+/// curated language that are ALSO common English abbreviations, editor names
+/// or TLD fragments: `ci/cd`, the `vi` editor, `.io`, an "HA cluster") was
+/// tried on top of this floor and REMOVED after measurement.** The
+/// found-SPECIFIC pairwise match already closes every one of those cases on
+/// its own — none of `ci`/`vi`/`io`/`ha`/`da`/`ti` is a word in French, and
+/// whatlang's guess on the tool-list fixture those tokens were measured
+/// against never changed to Italian — so the denylist's only demonstrated
+/// trigger was an adversarial string of disconnected French idioms
+/// ("au naturel au revoir au contraire …", no connecting English grammar at
+/// all) that does not resemble anything this validator's real input
+/// (generated or user-uploaded résumé/letter prose) produces; the same
+/// phrases used as genuine English loanwords in an ordinary sentence never
+/// reached the vulnerable state. Kept out rather than kept anyway: it would
+/// have permanently denied `el`/`zu`/`na`/`et`/`di`/`ci` — high-frequency
+/// function words of Spanish, German, Dutch, French and Italian — sitting one
+/// hit from the margin the Spanish/Portuguese fix above needed.
 const MIN_DISTINCTIVE_TOKEN_CHARS: usize = 2;
-
-/// Tokens excluded from evidence in EVERY language, by name rather than by
-/// length: each one is a genuine short function word in ONE curated language
-/// (`ha`/`di`/`ci`/`io`/`vi`/`da`/`ti` → Italian; `os`/`em` → Portuguese;
-/// `am`/`im`/`zu` → German; `el` → Spanish; `na` → Dutch; `ai`/`et`/`au` →
-/// French) that is ALSO a common English abbreviation, initial, editor name
-/// or URL/TLD fragment — `ci/cd`, the `vi` editor, `.io` domains, an "HA
-/// cluster", the letters "AM"/"IM". Matching free text (unlike a whole-line
-/// structural gate — `documents::evidence::entry`'s `DATE_ONLY_MARKERS`
-/// excludes Dutch `nu` for the identical reason) has no other way to exclude
-/// them, so they are named individually rather than caught by a length rule
-/// that would also catch every OTHER 2-character word in these languages —
-/// most of which (`il`, `la`, `de`, `un`, `le`) carry no comparable collision
-/// risk and are exactly the evidence [`MIN_DISTINCTIVE_TOKEN_CHARS`]'s doc
-/// explains a blanket floor cannot afford to lose. "per" (a genuine
-/// 3-character English preposition ALSO used by Italian) is the one
-/// short-token false positive measured with a length other than 2 — it is
-/// closed instead by curating "per" into [`FUNCTION_WORDS_EN`], so it
-/// collides out at the ordinary pairwise step rather than needing a name
-/// here.
-const AMBIGUOUS_SHORT_TOKENS: &[&str] = &[
-    "ha", "di", "ci", "io", "vi", "da", "ti", "os", "em", "am", "im", "zu", "el", "na", "ai", "et",
-    "au",
-];
 
 /// Below this many pairwise hits, a match is noise rather than evidence — a
 /// single surviving token could be an incidental collision or a name.
@@ -253,9 +257,7 @@ pub(super) fn pairwise_evidence_count(text: &str, lang: &str, other: &str) -> us
         .filter(|(_, w)| w.chars().count() >= MIN_DISTINCTIVE_TOKEN_CHARS)
         .filter(|(_, w)| {
             let lower = w.to_lowercase();
-            lang_words.contains(lower.as_str())
-                && !other_words.contains(lower.as_str())
-                && !AMBIGUOUS_SHORT_TOKENS.contains(&lower.as_str())
+            lang_words.contains(lower.as_str()) && !other_words.contains(lower.as_str())
         })
         .filter(|(i, _)| {
             let prev_titlecase = *i > 0 && is_title_case(tokens[i - 1]);
@@ -275,55 +277,33 @@ pub(super) fn needs_distinctive_evidence(lang: &str) -> bool {
 
 /// Whether `found` — the language `detected_language(text)` actually named —
 /// is corroborated well enough by `text` itself to accuse it of NOT being
-/// `target`.
+/// `target`: [`pairwise_evidence_count`] for `found` against `target` must
+/// clear [`MIN_DISTINCTIVE_HITS`]. Positive evidence only: this never asks
+/// whether `target`'s own words are ABSENT, which would reopen the original
+/// false Critical (a sparse-function-word document genuinely written in
+/// `target`) by a different route.
 ///
-/// Two bars, both required:
-///
-/// 1. **Absolute floor** — [`pairwise_evidence_count`] for `found` against
-///    `target` must clear [`MIN_DISTINCTIVE_HITS`]. Positive evidence only:
-///    this never asks whether `target`'s own words are ABSENT, which would
-///    reopen the original false Critical (a sparse-function-word document
-///    genuinely written in `target`) by a different route.
-/// 2. **Comparative margin** — `found`'s evidence must exceed `target`'s OWN
-///    pairwise evidence in the SAME text, not just clear the floor in
-///    isolation. Mechanically verified directly
-///    (`distinctive_evidence_confirms_requires_a_real_margin_not_a_tie` in the
-///    test module: a real 2-vs-2 tie does not confirm, a 3-vs-2 margin does).
-///    The reasoning it exists for: a single, bigger absolute floor cannot
-///    separate "an otherwise-English document that happens to name a foreign
-///    institution" (a few incidental hits) from "genuinely sparse
-///    Spanish/Portuguese text" (see [`pairwise_evidence_count`]'s doc) —
-///    raising the floor to survive the first deepens the second. A
-///    comparison against `target`'s OWN evidence in the SAME text separates
-///    them instead: in the proper-noun case `target`'s evidence is abundant;
-///    in the genuine-foreign-language case it is near zero, so even thin
-///    `found` evidence clears it. **Measured limit, reported rather than
-///    concealed:** the title-case-sandwich exclusion in
-///    [`pairwise_evidence_count`] independently silences every REALISTIC
-///    proper-noun fixture this module's test suite constructs (a terse
-///    "Degree, Institution, Dates" line, or a longer multi-sentence label), so
-///    this bar currently has no end-to-end regression that isolates it from
-///    that exclusion — a deliberately German-/French-institution-dense search
-///    for one either stayed confidently English overall (never reaching this
-///    branch) or produced enough real foreign-language evidence to be a
-///    defensible true positive, not a tie. Kept as a principled second layer
-///    (a bare floor is measurably weaker in the abstract) with direct,
-///    mechanical coverage rather than removed for lack of a natural trigger.
+/// **A second bar — requiring `found`'s evidence to EXCEED `target`'s own
+/// pairwise evidence in the same text, not just clear the floor — was tried
+/// and REMOVED after measurement.** It was built to separate "an otherwise-
+/// English document that merely names a foreign institution" from "genuinely
+/// sparse Spanish/Portuguese text", but that separation turned out to already
+/// be the title-case-sandwich exclusion's job (see
+/// [`pairwise_evidence_count`]'s doc): disabling the comparative bar alone
+/// left every `validate::content` behavioural test green, and left only its
+/// own manufactured unit test red. Removed rather than kept on the strength
+/// of the argument for it — the argument was real, the measurement said it
+/// carried no load.
 ///
 /// A non-Latin-script `found` (gated by [`needs_distinctive_evidence`]) skips
-/// both bars — whatlang's script read is already reliable there regardless of
-/// function-word density, and requiring evidence this crate has no
-/// vocabulary for would only turn a genuine mismatch quiet.
+/// this floor entirely — whatlang's script read is already reliable there
+/// regardless of function-word density, and requiring evidence this crate has
+/// no vocabulary for would only turn a genuine mismatch quiet.
 pub(super) fn distinctive_evidence_confirms(text: &str, found: &str, target: &str) -> bool {
     if !needs_distinctive_evidence(found) {
         return true;
     }
-    let found_evidence = pairwise_evidence_count(text, found, target);
-    if found_evidence < MIN_DISTINCTIVE_HITS {
-        return false;
-    }
-    let target_evidence = pairwise_evidence_count(text, target, found);
-    found_evidence > target_evidence
+    pairwise_evidence_count(text, found, target) >= MIN_DISTINCTIVE_HITS
 }
 
 /// Whether `text` is confidently written in something other than `lang`.
@@ -337,9 +317,9 @@ pub(super) fn distinctive_evidence_confirms(text: &str, found: &str, target: &st
 /// [`distinctive_evidence_confirms`] backing it up. That third gate is what
 /// closes the confident-but-wrong noun-phrase misread the module doc above
 /// measures: a whatlang guess in the Latin ambiguity zone is corroborated by
-/// actual, comparative function-word evidence before it becomes an
-/// accusation, exactly the way `target_is_corroborated` already corroborates
-/// the TARGET side. Every other reason to go quiet is unchanged. `None`/
+/// actual function-word evidence before it becomes an accusation, exactly the
+/// way `target_is_corroborated` already corroborates the TARGET side. Every
+/// other reason to go quiet is unchanged. `None`/
 /// `false` never counts as a mismatch — an unreliable or uncorroborated read
 /// cannot manufacture an accusation, it can only fail to make one.
 pub(super) fn is_language_mismatch(text: &str, lang: &str) -> bool {
