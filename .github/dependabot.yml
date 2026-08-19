@@ -19,8 +19,12 @@ updates:
       default-days: 2
 
     # One combined PR for routine minor+patch bumps; majors stay separate.
+    # Named for the area so the PR title reads "bump the javascript group" —
+    # this one entry is the whole JS side (renderer, extension, landing,
+    # packages/*, build tooling), because they share the root lockfile and
+    # cannot be split per-directory (see the note at the top of this entry).
     groups:
-      minor-and-patch:
+      javascript:
         patterns:
           - '*'
         update-types:
@@ -66,6 +70,21 @@ updates:
           - typst
           - typst-*
 
+      # Everything else on the Rust side in ONE PR. `exclude-patterns` (which
+      # beats `patterns`) keeps typst out regardless of group order. Without it
+      # a typst bump would land inside this PR, where a partial bump is
+      # invisible — the typst group above is only observable as a lockstep
+      # unit while it still opens its own PR.
+      desktop-rust:
+        patterns:
+          - '*'
+        exclude-patterns:
+          - typst
+          - typst-*
+        update-types:
+          - minor
+          - patch
+
     commit-message:
       prefix: chore
 
@@ -84,3 +103,16 @@ updates:
         patterns:
           - github/codeql-action
           - github/codeql-action/*
+
+      # Every other workflow action in ONE PR. Excluded from the codeql pair for
+      # the same reason as typst above: a lockstep group that can be silently
+      # absorbed by a catch-all stops being a lockstep group.
+      ci-actions:
+        patterns:
+          - '*'
+        exclude-patterns:
+          - github/codeql-action
+          - github/codeql-action/*
+        update-types:
+          - minor
+          - patch

@@ -23,6 +23,14 @@ export default defineConfig({
       headless: true,
       provider: playwright(),
       instances: [{ browser: 'chromium' }],
+      // Vitest defaults this server to 63315 and allocates upward from there
+      // for extra instances. Windows hands out Hyper-V/WSL port reservations in
+      // that neighbourhood (a 63285-63384 block is typical), and a reserved
+      // port is offered by the resolver but refused by bind — so the run dies
+      // with `listen EACCES ::1:63315` while every test passes. Both the
+      // default and this are fixed ports, so pinning low costs nothing and
+      // sidesteps the whole dynamic-range exclusion class.
+      api: { port: 6317 },
     },
   },
 });
