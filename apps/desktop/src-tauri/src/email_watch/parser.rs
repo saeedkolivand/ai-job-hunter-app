@@ -267,9 +267,12 @@ fn company_from_sender_name(name: Option<&str>) -> Option<String> {
 
 /// Byte-boundary-safe prefix (never splits a multi-byte UTF-8 char) — mirrors
 /// `applications::clamp_job_description`'s truncation approach. `pub(super)`
-/// so [`crate::email_watch::intent`] can reuse it to bound its own
-/// subject/body scan by the SAME caps this module already established,
-/// rather than inventing new ones.
+/// so [`crate::email_watch::intent`] can reuse the SAME byte-safe truncation
+/// helper for its own subject bound (`SUBJECT_MAX_BYTES` above) — that
+/// module has its own, deliberately much larger, body-scan cap instead of
+/// [`BODY_SNIPPET_BYTES`] below: that constant sizes a cheap first-pass
+/// fingerprint/extraction snippet, a different job with a different cost of
+/// being wrong than intent classification. See `intent`'s module doc.
 pub(super) fn safe_prefix(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
         return s;
@@ -283,8 +286,9 @@ pub(super) fn safe_prefix(s: &str, max_bytes: usize) -> &str {
 
 /// How much of a body snippet is scanned for a phrase-pattern match (the
 /// subject is tried first and is usually enough — this is a bounded
-/// fallback, not a full-body scan).
-pub(super) const BODY_SNIPPET_BYTES: usize = 500;
+/// fallback, not a full-body scan). Private to this module — `intent`
+/// intentionally does NOT reuse this constant (see [`safe_prefix`]'s doc).
+const BODY_SNIPPET_BYTES: usize = 500;
 
 /// Extract company/title candidates: try the subject, then (only if the
 /// subject yielded no company) a bounded body snippet, then fall back to a

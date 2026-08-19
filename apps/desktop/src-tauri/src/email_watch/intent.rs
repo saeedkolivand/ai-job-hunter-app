@@ -36,6 +36,27 @@
 //! subject/body content, and the only thing a caller ever gets back is an
 //! [`EmailIntent`] variant — never the matched text.
 //!
+//! **Body scan bound: [`INTENT_SCAN_BYTES`], deliberately its own constant —
+//! not [`super::parser::BODY_SNIPPET_BYTES`].** That 500-byte constant sizes
+//! a cheap first-pass FINGERPRINT snippet ("does this look like an
+//! application email at all") — a different job with a different cost of
+//! being wrong. A real ATS rejection routinely opens with a greeting and
+//! "thank you for applying" boilerplate before its discriminating phrase, so
+//! that phrase commonly sits well past 500 bytes; missing it is the single
+//! failure this whole slice exists to prevent (auto-marking a REJECTED
+//! application as merely confirmed — see
+//! `known_false_positive_a_rejection_email_still_fingerprints` in
+//! [`super::parser`], and this module's own
+//! `a_realistic_rejection_body_past_the_old_500_byte_mark_classifies_as_rejection`
+//! test). `INTENT_SCAN_BYTES` is NOT a reuse of an upstream fetch bound
+//! either — [`crate::email_watch::imap_client::MAX_BODY_BYTES`] (200,000
+//! bytes) already caps the raw fetch at the IMAP protocol level, and
+//! `poller::run_tick` re-applies that same cap defensively post-fetch, but a
+//! byte cap is not a memory cap if anything decompresses before it reaches
+//! here — so this module keeps its own independent, generous-but-real bound
+//! rather than trusting an upstream cap it cannot see or verify at this call
+//! site.
+//!
 //! Both functions in this module are pure and total (never panic on
 //! malformed/hostile input) and have no IMAP/Tauri/network coupling.
 //! Neither one writes anything: [`classify_intent`] only decides an intent,
@@ -52,7 +73,7 @@ use std::sync::LazyLock;
 use serde::Deserialize;
 
 use crate::applications::ApplicationStatus;
-use crate::email_watch::parser::{safe_prefix, BODY_SNIPPET_BYTES, SUBJECT_MAX_BYTES};
+use crate::email_watch::parser::{safe_prefix, SUBJECT_MAX_BYTES};
 
 /// The 4-way intent this classifier decides between.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -127,15 +148,46 @@ fn discriminating_hit(intent: EmailIntent, subject: &str, body: &str) -> bool {
         .any(|p| p.intent == intent && p.discriminating && phrase_matches(p, subject, body))
 }
 
+/// Bound on how many bytes of the body [`classify_intent`] scans for a
+/// discriminating phrase — see the module doc's "Body scan bound" section
+/// for why this is a deliberately separate, much larger constant than
+/// [`super::parser::BODY_SNIPPET_BYTES`], not a reuse of it.
+///
+/// Sized to comfortably cover a realistic FULL ATS email — greeting,
+/// "thank you for applying"/volume-of-applicants boilerplate, the actual
+/// decision paragraph, a signature, and a legal/EEO footer — not a marginal
+/// bump over the fingerprint snippet. `str::contains` (like `regex`) is a
+/// linear, non-backtracking scan, so a generous bound here is nearly free —
+/// but this is still a REAL bound, not `usize::MAX`: it guards against a
+/// hostile/pathological multi-megabyte body reaching this module directly
+/// (a byte cap is not a memory cap if anything decompresses before it).
+const INTENT_SCAN_BYTES: usize = 20_000;
+
 /// Decide the 4-way intent of one email from its subject and (optional)
 /// body. `None` means no discriminating phrase matched anything — genuinely
 /// ambiguous, e.g. a "finish your draft application" nudge that fingerprints
 /// on subject alone (see [`super::parser::fingerprint`]) but carries none of
 /// the 4 intents' body language.
 ///
-/// Both fields are bounded the same way [`super::parser`] already bounds
-/// them (`SUBJECT_MAX_BYTES`/`BODY_SNIPPET_BYTES`) rather than inventing a
-/// new cap — see this module's doc for the known limitation that implies.
+/// The subject is bounded by [`SUBJECT_MAX_BYTES`] (reused from
+/// [`super::parser`] — subject lines are always short, so this cap is not
+/// the concern the body one is). The body is bounded by
+/// [`INTENT_SCAN_BYTES`] — see this fn's doc above and the module doc's
+/// "Body scan bound" section for why that is its own constant.
+///
+/// **A wider body window than the old 500-byte cap also means more of a
+/// QUOTED, earlier thread message enters the scan** (an old confirmation
+/// line further down in a rejection reply, or vice versa). Rejection-wins
+/// (below) makes the confirmation/rejection version of that safe by
+/// construction — see
+/// `rejection_still_wins_when_a_stale_quoted_confirmation_phrase_sits_past_the_old_cap`.
+/// It does NOT fully cover the non-rejection three: a stale quoted
+/// higher-priority phrase (e.g. an old "having you on our team" offer line
+/// quoted beneath a new, unrelated interview-scheduling email) can now be
+/// seen where the 500-byte cap would previously have hidden it, and the
+/// ladder tie-break below would pick the (stale) `Offer` over the (current)
+/// `Interview` — see `known_precision_limit_a_stale_quoted_offer_phrase_can_beat_a_current_interview_phrase`,
+/// which documents this as an accepted, unfixed limitation, not a bug.
 ///
 /// **Rejection wins whenever it fires alongside any other intent** — a
 /// deliberate asymmetry (missing a rejection costs far more than missing a
@@ -152,7 +204,7 @@ fn discriminating_hit(intent: EmailIntent, subject: &str, body: &str) -> bool {
 /// defensible default, flagged for review rather than silently assumed.
 pub fn classify_intent(subject: &str, body: Option<&str>) -> Option<EmailIntent> {
     let subject = safe_prefix(subject, SUBJECT_MAX_BYTES).to_lowercase();
-    let body = safe_prefix(body.unwrap_or_default(), BODY_SNIPPET_BYTES).to_lowercase();
+    let body = safe_prefix(body.unwrap_or_default(), INTENT_SCAN_BYTES).to_lowercase();
 
     if discriminating_hit(EmailIntent::Rejection, &subject, &body) {
         return Some(EmailIntent::Rejection);
@@ -622,14 +674,45 @@ mod tests {
     }
 
     #[test]
-    fn a_discriminating_phrase_past_the_body_snippet_cap_is_not_matched() {
-        // Documents the real, current limitation: `classify_intent` bounds
-        // its body scan to `BODY_SNIPPET_BYTES` (matching `super::parser`'s
-        // existing cap rather than inventing a new one) — a discriminating
-        // phrase that starts past that cutoff is invisible to it.
-        let padding = "x".repeat(BODY_SNIPPET_BYTES);
+    fn a_discriminating_phrase_past_intent_scan_bytes_is_still_not_matched() {
+        // A cap still exists — just a far more generous one than the
+        // fingerprint snippet. Anchored at `INTENT_SCAN_BYTES`, not the
+        // retired 500-byte mark, so this proves the CURRENT bound.
+        let padding = "x".repeat(INTENT_SCAN_BYTES);
         let body = format!("{padding} move forward with other candidates");
         assert_eq!(classify_intent("Update", Some(&body)), None);
+    }
+
+    #[test]
+    fn a_realistic_rejection_body_past_the_old_500_byte_mark_classifies_as_rejection() {
+        // A realistic full ATS rejection: a greeting plus "thank you for
+        // applying"/volume-of-applicants boilerplate pushes the actual
+        // discriminating phrase well past the OLD 500-byte
+        // `BODY_SNIPPET_BYTES` mark — exactly the shape that was silently
+        // missed before `INTENT_SCAN_BYTES` replaced it as this module's
+        // body-scan bound.
+        let body = "Dear Applicant,\n\n\
+            Thank you so much for taking the time to apply for the Senior Backend Engineer \
+            position at Acme Corp, and for your patience throughout our review process. We \
+            received a very large number of applications for this role, and our hiring team \
+            carefully reviewed every candidate's background, skills, and experience against \
+            what the position required. This was one of the most competitive searches we have \
+            run this year, and choosing among so many strong candidates was genuinely difficult \
+            for the whole panel.\n\n\
+            After careful consideration, we have decided not be moving forward with your \
+            application at this time.\n\n\
+            We will keep your resume on file for six months in case a better-matching role \
+            opens up, and we wish you the very best in your job search. Thank you again for \
+            your interest in Acme Corp.\n\n\
+            Best regards,\nThe Acme Corp Talent Acquisition Team";
+        assert!(
+            body.len() > 500,
+            "test fixture must actually exceed the old 500-byte cap to be meaningful"
+        );
+        assert_eq!(
+            classify_intent("Your application to Acme Corp", Some(body)),
+            Some(EmailIntent::Rejection)
+        );
     }
 
     #[test]
@@ -640,6 +723,54 @@ mod tests {
                 Some("Enjoy this week's roundup of articles.")
             ),
             None
+        );
+    }
+
+    // ── wider body window: reasoning about what a bigger scan lets in ───────
+
+    #[test]
+    fn rejection_still_wins_when_a_stale_quoted_confirmation_phrase_sits_past_the_old_cap() {
+        // The exact concern a wider window raises: MORE quoted, earlier
+        // thread content is now visible. Here a confirmation phrase from an
+        // earlier message in the thread sits well past the OLD 500-byte cap
+        // (which would previously have hidden it entirely). Rejection still
+        // wins: the priority check has no positional/order dependence — it
+        // just asks "does ANY rejection phrase match anywhere" — independent
+        // of where in the (now wider) window a competing intent's phrase
+        // also happens to sit.
+        let padding = "quoted earlier thread content ".repeat(20);
+        assert!(padding.len() > 500);
+        let body = format!(
+            "we have decided not be moving forward with your application. {padding} \
+             if you are among qualified candidates we will be in touch."
+        );
+        assert_eq!(
+            classify_intent("Update", Some(&body)),
+            Some(EmailIntent::Rejection)
+        );
+    }
+
+    #[test]
+    fn known_precision_limit_a_stale_quoted_offer_phrase_can_beat_a_current_interview_phrase() {
+        // Documents a REAL, accepted-not-fixed limitation the wider window
+        // introduces — unlike rejection (which always wins regardless of
+        // position), the ladder tie-break among the non-rejection three
+        // (`Offer` > `Interview` > `Confirmation`) has no positional
+        // awareness either. A stale "having you on our team" offer line
+        // quoted from an OLDER message in the thread — now visible because
+        // the window is wider — outranks a genuinely CURRENT
+        // interview-scheduling phrase, even though the offer phrase isn't
+        // about the current email at all. Flagged for the coordinator, not
+        // silently accepted or fixed in this slice.
+        let padding = "quoted earlier thread content ".repeat(20);
+        assert!(padding.len() > 500);
+        let body = format!(
+            "invite you for a job interview next Tuesday. {padding} having you on our team \
+             would have been great."
+        );
+        assert_eq!(
+            classify_intent("Update", Some(&body)),
+            Some(EmailIntent::Offer)
         );
     }
 
