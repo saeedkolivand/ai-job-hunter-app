@@ -1805,6 +1805,110 @@ fn either_witness_alone_is_enough_to_corroborate_the_target() {
     ));
 }
 
+// ── Latin-script noun-phrase false positive (whatlang's confidence-margin blind spot) ──
+
+/// The exact reported false positive, reproduced directly. An honest ENGLISH
+/// noun-phrase block — the shape an ordinary skills line or a terse CV takes
+/// (measured: this exact list reads at `confidence() == 1.0`,
+/// `is_reliable() == true`, `lang == Fra`) — starves `whatlang`'s n-gram
+/// model of the function words it needs to read English from at all, and it
+/// lands on some OTHER language with MAXIMUM confidence margin.
+/// `is_language_mismatch` must not raise the deterministic Critical on it:
+/// doing so blanks `keywordCoverage` and suppresses every alignment finding
+/// on a document the user did nothing wrong with.
+///
+/// Mutation check (performed, not hypothetical): removed the
+/// `distinctive_language_evidence` half of `is_language_mismatch`'s third
+/// condition, restoring the old two-condition body — RAN, went red (this
+/// fixture raised `content.language_mismatch` as a Critical), reverted.
+#[test]
+fn an_english_noun_phrase_block_never_earns_a_false_language_critical() {
+    // The same lowercase tool/skill list `regime_5_neither_witness_...` and
+    // the Skills-exclusion tests above already establish reads as SOME other
+    // covered language — an ordinary skills line, no different in shape from
+    // the reported bug's "Administration / Supervision / Coordination / …".
+    let noun_phrases = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
+        docker kubernetes terraform ansible jenkins grafana prometheus redis postgresql \
+        elasticsearch java spring hibernate maven gradle jira confluence";
+    assert!(
+        significant_chars(noun_phrases) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor, or this test proves nothing about \
+         the confidence-margin gate specifically"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(noun_phrases),
+        Some("fr"),
+        "premise: whatlang must confidently (and wrongly) read this honest English \
+         skills/tool list as French — measured directly at confidence 1.0, reliable — \
+         or this test proves nothing about the OLD two-condition check firing here"
+    );
+    assert!(
+        !is_language_mismatch(noun_phrases, "en"),
+        "the distinctive-function-word gate must keep this quiet: a noun-phrase block \
+         carries none of the real function words a genuine drift into another language \
+         would leave behind"
+    );
+
+    // End-to-end via the public entry point, with real English witnesses on
+    // both sides so the target is trivially corroborated — this is the shape
+    // that used to blank keywordCoverage and every alignment finding.
+    assert!(
+        !document_language_mismatch(noun_phrases, EN_SOURCE, EN_JOB_AD, "en"),
+        "a genuinely English noun-phrase document must not raise the deterministic \
+         Critical just because whatlang misreads it"
+    );
+    let report = validate_content(&ContentInput {
+        generated: noun_phrases,
+        source_resume: EN_SOURCE,
+        job_ad: EN_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// The THIRD-language case, answered directly rather than left implicit:
+/// target `"de"`, an untranslated English source, a German job ad (so the
+/// target IS corroborated) — but the model returns neither German nor
+/// English, it returns genuine ITALIAN prose.
+///
+/// **The rule catches it.** [`distinctive_language_evidence`] never needs to
+/// name the SAME language `detected_language` guessed — it only asks whether
+/// SOME curated language other than the target is evidenced, and real Italian
+/// prose is exactly as function-word-dense as real English or German prose:
+/// it carries its OWN distinctive evidence ("ha", "di", "che", "sono", …),
+/// which is enough on its own to corroborate that the output is NOT German,
+/// independent of whatever specific language whatlang itself named.
+#[test]
+fn a_genuine_third_language_output_still_fires_against_the_real_target() {
+    let italian_output = "Ho lavorato come ingegnere backend senior presso una azienda di \
+        pagamenti, dove ho ridotto la latenza del servizio di cassa da 480 millisecondi a \
+        90 millisecondi grazie a una cache Redis posizionata davanti al servizio di \
+        contabilità. Ho eseguito i carichi di lavoro Docker su un cluster Kubernetes che \
+        risponde a dodicimila richieste ogni secondo, e ho riscritto lo scheduler dei \
+        tentativi in Rust, riducendo i pagamenti falliti del trentacinque per cento.";
+    assert!(
+        significant_chars(italian_output) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert!(
+        matches!(
+            crate::documents::keywords::detected_language(italian_output),
+            Some("it")
+        ),
+        "premise: this must genuinely and confidently read as Italian, or the test \
+         proves nothing about the third-language case specifically"
+    );
+    assert!(
+        document_language_mismatch(italian_output, EN_SOURCE, DE_JOB_AD, "de"),
+        "answer: a genuine third-language output DOES still fire — real Italian prose \
+         carries its own distinctive function-word evidence, which is all \
+         distinctive_language_evidence requires (some curated language other than the \
+         target), not specifically whatever whatlang itself guessed"
+    );
+}
+
 /// H4 — "still there" is spelled in more than one way. A source that writes
 /// `seit 2021`, `since 2021` or a bare `2021 –` carries no `Present` marker, and
 /// the old `|| !source_open_ended` arm turned every one of those into a Critical
