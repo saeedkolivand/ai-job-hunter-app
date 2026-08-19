@@ -277,18 +277,44 @@ const MIN_DISTINCTIVE_TOKEN_CHARS: usize = 2;
 /// not by construction) the separation an earlier review measured on a
 /// different fixture set.
 ///
-/// **Residual risk, measured and accepted rather than hidden:** an
-/// adversarially INSTITUTION-DENSE English CERTIFICATIONS section — five
-/// DIFFERENT German institutions in one list, a shape rarer than the
-/// 3-institution case above — reaches evidence 8, ABOVE both the floor and
-/// the thinnest genuine positive (6). A pure count cannot separate "an
-/// unusually credentialed English document" from "a short genuine foreign
-/// paragraph" in every case, because evidence scales with how much text
-/// there is, not with whether that text is target-language prose or
-/// accumulated foreign proper nouns. Raising the floor to close this would
-/// silence the genuinely thin true positives it sits right next to (6);
-/// this module already treats a false negative as the worse failure three
-/// times over, so the floor stays at 5 and this gap is accepted rather than
+/// **Residual risk, measured across all four Latin languages this crate
+/// curates rather than on one, and accepted rather than hidden.** An
+/// EDUCATION section (a real `SectionKey`, so a false positive here is a
+/// Critical, not a Warning) listing nothing but the candidate's own foreign
+/// institution names, in an otherwise-English document, accumulates
+/// evidence purely from proper-noun connectors ("de", "en", "des", "und",
+/// "van"…). How fast is NOT the same number for every language — an earlier
+/// draft of this doc swept German only and called it the worst case; a
+/// fresh sweep of French, Italian, Dutch and German (same shape, real
+/// institution names, stacked one per line) shows German is in fact the
+/// BEST case:
+///
+/// | language | institutions stacked to cross (or not) | chars | evidence |
+/// |---|---|---|---|
+/// | French | 2 (INRIA, CNAM — their own official names) | 144 | 6 — fires |
+/// | Italian | 5 (Milano, Torino, Pisa, Bologna, Politecnico di Milano) | 187 | 5 — fires, exactly on the floor |
+/// | Dutch | 6 (Delft, UvA, Groningen, Tilburg, VU, Utrecht) | 237 | 4 — quiet |
+/// | German | 6 (LMU, TUM, HTW Berlin, HWR Berlin, FU Berlin, Saarland) | 278 | 3 — quiet |
+///
+/// French is the genuinely thin case: just TWO real institution names, at
+/// 144 characters (barely above [`MIN_CHARS_FOR_LANGUAGE_CHECK`]'s 120),
+/// TIES the thinnest genuine positive in the table above (6) — not "close
+/// to it", the same number. Italian needs five institutions to cross the
+/// floor at all, and lands exactly ON it (5), one unit BELOW that same
+/// genuine-positive value. Dutch and German, stacked to the same
+/// six-institution shape, do not cross the floor even once — their real
+/// institution names simply do not carry as many curated function words per
+/// name as French's or Italian's do. A pure count cannot separate "an
+/// unusually credentialed English document, listing its author's French or
+/// Italian alma maters" from "a short genuine French or Italian paragraph"
+/// for these two languages specifically, because evidence scales with how
+/// much foreign proper-noun text there is, not with whether that text is
+/// target-language prose. Raising the floor to close the French case would
+/// silence Italian's own thinnest genuine positive, which sits at the same
+/// value (5) — one language's residual risk is the next language's real
+/// bug; this module already treats a false negative as the worse failure
+/// three times over, so the floor stays at 5 and this gap — real for French
+/// and Italian, absent for Dutch and German — is accepted rather than
 /// closed by a shape rule that would just be the next one this crate
 /// discovers is wrong for some language.
 const MIN_DISTINCTIVE_HITS: usize = 5;

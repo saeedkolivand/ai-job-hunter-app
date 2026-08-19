@@ -1636,16 +1636,31 @@ fn regime_5_neither_witness_corroborating_the_target_stays_quiet() {
 /// `documents::keywords::test::detected_language_identifies_*` pins at the
 /// primitive level, so a regression in either place is visible in both.
 ///
-/// The seven Latin-curated languages repeat 7×, not 3× — measured: at a
-/// single instance, the worst pairwise-evidence case across all 42
+/// Six of the seven Latin-curated languages repeat 7×, not 3× — measured: at
+/// a single instance, the worst pairwise-evidence case across all 42
 /// cross-language pairs is Spanish against a French target (Spanish and
 /// French share most of their short function words, so only "tiene" survives
-/// pairwise pruning), at 1 hit. 3 repeats would give that pair 3 hits, under
-/// [`MIN_DISTINCTIVE_HITS`]'s floor of 5; 7 repeats gives it 7, two clear of
-/// the floor. The SAME reasoning [`MIN_CHARS_FOR_LANGUAGE_CHECK`] already
-/// applies to length: a document too short is a poor candidate for a
-/// confident read, and a real wrong-language document is never this
-/// artificially terse.
+/// pairwise pruning), at 1 hit. 7 repeats gives that pair 7 hits, two clear
+/// of [`MIN_DISTINCTIVE_HITS`]'s floor. The SAME reasoning
+/// [`MIN_CHARS_FOR_LANGUAGE_CHECK`] already applies to length: a document too
+/// short is a poor candidate for a confident read, and a real wrong-language
+/// document is never this artificially terse.
+///
+/// **Spanish itself stays at 3×, not 7×, and that is deliberate, not an
+/// oversight.** Uniformly inflating every language to clear the WORST pair
+/// left this the only test exercising non-English targets, and it exercised
+/// them exclusively at 441 characters — never in the 120–315 character band
+/// where [`MIN_DISTINCTIVE_HITS`] actually decides anything, which is
+/// exactly the coverage gap that let the close-relative-target silent band
+/// (see `a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss`)
+/// go unexercised here. At 3× (189 characters, squarely in that band),
+/// Spanish's evidence against French is 3 — still under the floor, still
+/// silent, the SAME accepted miss that test pins directly — while every
+/// OTHER target (`en` 18, `de` 18, `it` 15, `pt` 9, `nl` 6) clears the floor
+/// at this length; 3× was chosen, not assumed, by sweeping reps 1–7 against
+/// all six other curated targets and picking the shortest length where only
+/// the ONE known accepted-miss pair stays quiet. The cross-product test
+/// below excludes exactly that one cell, not the whole language.
 fn per_language_samples() -> Vec<(&'static str, String)> {
     let sentences: &[(&str, &str, usize)] = &[
         (
@@ -1666,7 +1681,7 @@ fn per_language_samples() -> Vec<(&'static str, String)> {
         (
             "es",
             "La candidata tiene ocho años de experiencia en sistemas de pago de backend.",
-            7,
+            3,
         ),
         (
             "it",
@@ -1770,6 +1785,17 @@ fn per_language_samples() -> Vec<(&'static str, String)> {
 /// curated-vocabulary membership, which used to let tr/vi skip corroboration
 /// entirely and fire on nothing).
 ///
+/// ONE more cell is excluded for the same reason, at the length this sample
+/// set actually uses rather than in the abstract: Spanish's sample is 189
+/// characters (3×, see [`per_language_samples`]'s doc), and at that length
+/// its evidence against a French target is 3 — under the floor, the exact
+/// close-relative-target accepted miss
+/// `a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss`
+/// pins directly. Excluded here, not silenced by lengthening the sample to
+/// clear it, so this loop stays honest about what actually holds at a
+/// realistic length instead of only at the 441-character length that used to
+/// hide this cell entirely.
+///
 /// Mutation check: hardcode `is_language_mismatch` to always return `false`
 /// and every `_fires` assertion in this test goes red; hardcode it to always
 /// return `true` and every `_stays_silent` assertion goes red — the table
@@ -1786,6 +1812,11 @@ fn every_curated_language_is_silent_for_itself_and_fires_for_every_other() {
     for (lang, _) in &samples {
         for (other_lang, other_text) in &samples {
             if lang == other_lang || other_lang == &"tr" || other_lang == &"vi" {
+                continue;
+            }
+            if other_lang == &"es" && lang == &"fr" {
+                // Accepted miss at this sample's realistic 189-character length —
+                // see the doc comment above.
                 continue;
             }
             assert!(
@@ -2425,6 +2456,90 @@ fn turkish_text_needs_evidence_too_and_goes_quiet_without_a_curated_list() {
         !is_language_mismatch(tr_text, "en"),
         "an accepted miss: no curated tr vocabulary means no evidence, so this stays \
          quiet rather than firing on zero corroboration"
+    );
+}
+
+// ── es/pt/fr/it/nl: the close-relative-target silent band (accepted miss) ──
+
+/// **Advisory MEDIUM (confirmation review), the close-relative-target
+/// silent band.** [`MIN_DISTINCTIVE_HITS`] is one absolute floor for every
+/// language pair, but a genuine short paragraph in one Romance language
+/// carries far fewer PAIRWISE-distinctive words against a close relative
+/// than against a distant one — es/pt/fr/it/nl share most short function
+/// words with each other and only diverge on the handful pairwise pruning
+/// keeps. Measured: the SAME 120-150 character genuine two-sentence
+/// paragraph that clears the floor and fires cleanly against `"en"`
+/// (evidence 6) sits at evidence 1-4 — under the floor, silent — against a
+/// linguistically close target. This repo ships es/pt/it/nl locale profiles
+/// (see [`crate::locale`]), so a genuinely wrong-language document
+/// targeting one of THESE instead of English is a real, supported scenario,
+/// not a hypothetical one — the same accepted-cost shape as the DACH miss
+/// and the tr/vi miss above, pinned here so a future change to
+/// [`MIN_DISTINCTIVE_HITS`] cannot quietly start believing the floor has no
+/// blind spot among the languages this crate actually curates. Not closed
+/// here: lowering the floor to catch these would reopen the false positives
+/// [`distinctive_evidence_confirms_requires_the_shipped_floor`]'s mutation
+/// check already found at floor 4 — the same "closing one language's miss
+/// reopens another's bug" trade every other suppressor in this module hit.
+#[test]
+fn a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss() {
+    use super::language::pairwise_evidence_count;
+
+    let es_two_sentences = "Trabaje como ingeniero de software durante dos anos en Madrid, \
+        con experiencia solida en Python y en sistemas distribuidos de gran escala y alta \
+        disponibilidad.";
+    assert!(
+        significant_chars(es_two_sentences) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor, or the silence below proves nothing \
+         about the evidence gate specifically"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(es_two_sentences),
+        Some("es"),
+        "premise: must confidently read as Spanish"
+    );
+    assert_eq!(
+        pairwise_evidence_count(es_two_sentences, "es", "fr"),
+        1,
+        "pinned measurement: a genuine Spanish paragraph carries almost no \
+         French-exclusive-looking evidence against French specifically"
+    );
+    assert!(
+        !is_language_mismatch(es_two_sentences, "fr"),
+        "accepted miss: Spanish text targeting French stays quiet — evidence 1 is well \
+         under the floor"
+    );
+    assert!(
+        is_language_mismatch(es_two_sentences, "en"),
+        "premise: the SAME text fires against a distant target, proving the silence above \
+         is about the LANGUAGE PAIR, not a defect in the fixture"
+    );
+
+    let pt_two_sentences = "Trabalhei como engenheiro de software em Lisboa durante dois \
+        anos, com experiência sólida em Python e em sistemas distribuídos de grande escala.";
+    assert!(
+        significant_chars(pt_two_sentences) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(pt_two_sentences),
+        Some("pt"),
+        "premise: must confidently read as Portuguese"
+    );
+    for other in ["es", "fr", "nl"] {
+        assert_eq!(
+            pairwise_evidence_count(pt_two_sentences, "pt", other),
+            4,
+            "[pt vs {other}] pinned measurement: one hit short of the floor"
+        );
+        assert!(
+            !is_language_mismatch(pt_two_sentences, other),
+            "[pt vs {other}] accepted miss: evidence 4 is one hit under the floor"
+        );
+    }
+    assert!(
+        is_language_mismatch(pt_two_sentences, "en"),
+        "premise: the SAME Portuguese text fires against a distant target"
     );
 }
 
