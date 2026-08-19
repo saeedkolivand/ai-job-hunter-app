@@ -993,7 +993,7 @@ impl DocumentStore {
 
     pub fn embedding_config(&self) -> EmbeddingConfig {
         let conn = self.conn.lock();
-        conn.query_row(
+        let result = conn.query_row(
             "SELECT provider, model, base_url FROM embedding_config WHERE id = 1",
             [],
             |row| {
@@ -1003,11 +1003,25 @@ impl DocumentStore {
                     base_url: row.get::<_, Option<String>>(2)?,
                 })
             },
-        )
-        .unwrap_or_else(|_| EmbeddingConfig {
-            provider: "ollama".to_string(),
-            model: "nomic-embed-text".to_string(),
-            base_url: None,
+        );
+        result.unwrap_or_else(|e| {
+            // A missing row is the ordinary unseeded default; anything else is
+            // a real fault silently substituting a different embedding model
+            // — this used to swallow both cases identically, with no log line.
+            if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                tracing::debug!(
+                    "embedding_config: unseeded, defaulting to ollama/nomic-embed-text"
+                );
+            } else {
+                tracing::warn!(
+                    "embedding_config: read failed ({e}), defaulting to ollama/nomic-embed-text"
+                );
+            }
+            EmbeddingConfig {
+                provider: "ollama".to_string(),
+                model: "nomic-embed-text".to_string(),
+                base_url: None,
+            }
         })
     }
 
@@ -1042,12 +1056,21 @@ pub async fn embed(app: &AppHandle, text: &str) -> AppResult<EmbeddingVector> {
         );
         e
     })?;
-    crate::commands::ai_provider::embed_text(app, provider, &cfg.model, cfg.base_url.clone(), text)
-        .await
-        .map_err(|e| {
-            tracing::warn!("embed failed ({}): {e}", cfg.provider);
-            e
-        })
+    let result = crate::commands::ai_provider::embed_text(
+        app,
+        provider,
+        &cfg.model,
+        cfg.base_url.clone(),
+        text,
+    )
+    .await;
+    // The model, not just the provider — answering "which embedding model
+    // actually ran?" used to require watching Ollama's API from outside.
+    match &result {
+        Ok(_) => tracing::debug!(provider = %cfg.provider, model = %cfg.model, "embed ok"),
+        Err(e) => tracing::warn!(provider = %cfg.provider, model = %cfg.model, "embed failed: {e}"),
+    }
+    result
 }
 
 /// Lowercase-hex SHA-256 of `text`. Deterministic and stable across process
