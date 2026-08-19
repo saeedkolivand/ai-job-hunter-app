@@ -1181,71 +1181,87 @@ fn stack_line_library_names_are_never_read_as_project_links() {
     );
 }
 
-/// The renderer (`model::rich`'s `BARE_DOMAIN_NO_PATH_RE`) turns a bare,
-/// path-less, lowercase, allowlisted-TLD domain into a real hyperlink. Before
-/// `URL_RE` grew its matching fifth arm, such a domain matched neither the
-/// code-host arm (not a known host) nor the domain+path arm (no path), so a
-/// hallucinated project domain like `innovatehub.app` contributed to neither
-/// `source_urls` nor `generated_urls` here and this guard never fired — even
-/// though the export rendered it as a real, clickable, seemingly-verified
-/// link. A title line carries no `names_a_resource` filter (only index 1
-/// does), so the fabricated domain on the title line must be caught.
-///
-/// Mutation check: dropping arm 5 from `URL_RE` (reverting to the four-arm
-/// pattern) makes this go red (`hits.len() == 0`, `assert_eq!` panics with
-/// "1", "0") — verified — then restoring arm 5 makes it green again.
+/// An `urls_in` widening tried once to add a fifth "bare domain, no path,
+/// lowercase" arm so the validator would see every domain the renderer's
+/// `model::rich::split_urls` turns into a real hyperlink. It was reverted
+/// (see `factual.rs`'s `URL_RE` doc) because, with no email-aware arm and no
+/// lookaround in the `regex` crate, it matched the DOMAIN HALF of an email
+/// address as a bare "URL" — `urls_in("jane.doe@gmail.com")` returned
+/// `["gmail.com"]` — even though the renderer correctly treats the whole
+/// address as one `mailto:` link and never exposes the domain separately.
+/// This pins BOTH surfaces so a future widening cannot reopen the gap on
+/// just one side: the validator must find no bare-URL match inside an email
+/// address, and the renderer's only match for that text is the one `mailto:`
+/// link — never an extra bare-domain link fragment.
 #[test]
-fn a_fabricated_bare_domain_in_a_project_title_is_an_altered_link() {
-    let source = "PROJECTS\n\n\
-                  **Ledger CLI** · https://ledger.example.dev/docs\n\
-                  Rust · PostgreSQL\n\
-                  A command-line ledger tool.\n";
-    let generated = "PROJECTS\n\n\
-                     **InnovateHub** · innovatehub.app\n\
-                     Rust · PostgreSQL\n\
-                     A fabricated project.\n";
-    let report = report_for(generated, source, EN_JOB_AD, &[]);
-    let hits = fired(&report, FACTUAL_ALTERED_PROJECT_LINK);
-    assert_eq!(
-        hits.len(),
-        1,
-        "the bare fabricated domain must be caught as invented; got {hits:#?}"
-    );
-    assert_eq!(
-        hits[0].evidence.as_deref(),
-        Some("innovatehub.app"),
-        "evidence should name the fabricated domain; got {:?}",
-        hits[0].evidence
-    );
+fn an_email_address_never_yields_a_phantom_domain_url() {
+    for email in [
+        "Jane Doe · jane.doe@gmail.com · Berlin, Germany",
+        "team@openai.com",
+        "jane@proton.me",
+    ] {
+        assert!(
+            factual::urls_in(email).is_empty(),
+            "an email address is not a project URL; got {:?} for {email:?}",
+            factual::urls_in(email)
+        );
+
+        let spans = crate::model::rich::split_urls(email);
+        let links: Vec<&crate::model::rich::Span> = spans
+            .iter()
+            .filter(|s| matches!(s, crate::model::rich::Span::Link { .. }))
+            .collect();
+        assert_eq!(
+            links.len(),
+            1,
+            "the renderer must produce exactly one link (the mailto:) for \
+             {email:?}, not a second bare-domain fragment; got {spans:?}"
+        );
+        assert!(
+            matches!(links[0], crate::model::rich::Span::Link { url, .. } if url.starts_with("mailto:")),
+            "the one link for {email:?} must be a mailto:, got {:?}",
+            links[0]
+        );
+    }
 }
 
-/// The negative direction of the test above: `URL_RE`'s new fifth arm is
-/// scoped `(?-i:...)` against the rest of the pattern's `(?i)` specifically so
-/// it does NOT relink the exact stack-line collision arm 3 already guards
-/// against — a capitalised library name whose lowercase tail happens to sit on
-/// an allowlisted TLD (`Socket.IO`, `Bun.sh`, `Nuxt.dev`) must stay unmatched,
-/// on both the bare-string check and the full project-entry comparison.
+/// Renderer/validator parity on a shared corpus. `model::rich::split_urls`
+/// (what actually becomes a clickable link in the exported PDF/DOCX) and
+/// `validate::content::factual::urls_in` (what the Critical-severity
+/// `factual.altered_project_link` guard treats as a claimed link) must agree
+/// on whether ordinary, non-email text is link-shaped — this is the
+/// invariant the reverted fifth `URL_RE` arm broke (see the test above).
 ///
-/// Mutation check: removing the `(?-i:...)` scope (letting arm 5 inherit the
-/// pattern's case-insensitivity) makes `urls_in` return the three names and
-/// the `is_empty()` assertion go red — verified — then restoring the scoped
-/// negation makes it green again.
+/// Email text is deliberately excluded from this table: the renderer legally
+/// links it (as `mailto:`), a link type `urls_in` was never meant to model at
+/// all (project links, not contact emails) — covered on its own above.
 #[test]
-fn bare_domain_arm_stays_silent_on_capitalised_stack_names() {
-    assert!(
-        factual::urls_in("Socket.IO · Bun.sh · Nuxt.dev").is_empty(),
-        "capitalised library names must not be read as links; got {:?}",
-        factual::urls_in("Socket.IO · Bun.sh · Nuxt.dev")
-    );
-
-    let source = "PROJECTS\n\n\
-                  **Chat Relay** · https://relay.example.dev/docs\n\
-                  Socket.IO · Bun.sh · Nuxt.dev\n\
-                  A tiny websocket relay.\n";
-    silent(
-        &report_for(source, source, EN_JOB_AD, &[]),
-        FACTUAL_ALTERED_PROJECT_LINK,
-    );
+fn renderer_and_validator_agree_on_a_shared_url_corpus() {
+    let corpus: &[(&str, bool)] = &[
+        ("https://github.com/janedoe/ledger", true),
+        ("www.example.com/path", true),
+        ("github.com/janedoe/ledger", true),
+        ("just plain prose with no links at all", false),
+        ("Bun.sh", false),
+        ("bun.sh", false),
+        ("Socket.IO", false),
+        ("socket.io", false),
+        ("Agile, CI/CD, TDD", false),
+    ];
+    for (text, expect_link) in corpus {
+        let rendered_has_link = crate::model::rich::split_urls(text)
+            .iter()
+            .any(|s| matches!(s, crate::model::rich::Span::Link { .. }));
+        let validator_has_url = !factual::urls_in(text).is_empty();
+        assert_eq!(
+            rendered_has_link, *expect_link,
+            "renderer disagreed with the expected shape for {text:?}"
+        );
+        assert_eq!(
+            validator_has_url, *expect_link,
+            "validator disagreed with the expected shape for {text:?}"
+        );
+    }
 }
 
 /// H1b — the same link written a different way is the same link. Compared on a

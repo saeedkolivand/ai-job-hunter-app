@@ -896,30 +896,23 @@ fn unsupported_date_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// library name. Everything else needs a scheme, a `www.`, or a `/path`.
 const CODE_HOSTS: &str = "github|gitlab|bitbucket|codeberg|sourcehut|sourceforge|npmjs|crates|pypi|huggingface|gitea|launchpad";
 
-/// TLDs a bare domain with NO path may end in to be linked, as arm 5 of
-/// [`URL_RE`] below. This is the exact allowlist `model::rich`'s
-/// `BARE_DOMAIN_NO_PATH_TLDS` applies before the renderer turns a bare domain
-/// into a real, clickable hyperlink in the exported PDF/DOCX — the two MUST
-/// stay in lockstep (cross-referenced in that module's doc comment too). If
-/// they drift, a domain the renderer links stops being visible to this
-/// file's Critical-severity `factual.altered_project_link` guard, and a
-/// hallucinated project domain renders as a seemingly-verified link.
-const BARE_DOMAIN_NO_PATH_TLDS: &str = "com|org|net|io|dev|app|de|co|ai|sh|me";
-
 /// A URL in résumé prose.
 ///
-/// Five arms. Arms 3 and 5 are why this regex is not simply "host dot TLD": a
-/// scheme-less bare host reads a stack line's library names as links.
-/// `Socket.IO` is `.io`, `Bun.sh` is `.sh`, `Nuxt.dev` is `.dev` — and a
+/// Four arms, and the fourth one is the whole reason this regex is not simply
+/// "host dot TLD": a scheme-less bare host reads a stack line's library names as
+/// links. `Socket.IO` is `.io`, `Bun.sh` is `.sh`, `Nuxt.dev` is `.dev` — and a
 /// stack line listing three of them produced three Critical
-/// `factual.altered_project_link` findings on a truthful résumé. So a bare
-/// host must either be a known code host (arm 3, [`CODE_HOSTS`]), carry a
-/// `/path` (arm 4), or be lowercase on [`BARE_DOMAIN_NO_PATH_TLDS`] with NO
-/// path (arm 5 — scoped `(?-i:...)` against the rest of the pattern's
-/// `(?i)`, since a capitalised library name must stay unmatched). Arm 5
-/// mirrors, on purpose, the exact shape `model::rich`'s
-/// `BARE_DOMAIN_NO_PATH_RE` renders as a real link — this guard has to see
-/// what a reader can click.
+/// `factual.altered_project_link` findings on a truthful résumé. So a bare host
+/// must either be a known code host or carry a `/path`.
+///
+/// **No fifth "bare domain, no path, lowercase" arm.** That was tried (to mirror
+/// `model::rich`'s bare-domain-without-path renderer arm) and reverted: with no
+/// email-aware arm and no lookaround in the `regex` crate, it matched the
+/// DOMAIN HALF of an email address as a bare "URL" (`urls_in("jane@gmail.com")`
+/// → `["gmail.com"]`), and on a title/description line — which carries no
+/// `names_a_resource` filter — a lowercase library mention in ordinary prose
+/// reopened the exact false-Critical shape this file exists to prevent. See
+/// `model::rich`'s doc for why the renderer's mirror arm was reverted too.
 static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     // Assembled from parts, never a `\`-continued raw string: a raw string does
     // not process escapes, so a trailing backslash would leave a literal
@@ -928,8 +921,7 @@ static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
         r"(?i)(?:https?://[^\s)\]<>]+",
         r"|www\.[^\s)\]<>]+",
         &format!(r"|(?:{CODE_HOSTS})\.(?:com|org|io|dev|net|rs)(?:/[^\s)\]<>]*)?"),
-        r"|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|dev|app|de|co|ai|sh|me)/[^\s)\]<>]*",
-        &format!(r"|(?-i:\b(?:[a-z0-9-]+\.)+(?:{BARE_DOMAIN_NO_PATH_TLDS})\b))"),
+        r"|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|dev|app|de|co|ai|sh|me)/[^\s)\]<>]*)",
     ]
     .concat();
     Regex::new(&pattern).unwrap()
