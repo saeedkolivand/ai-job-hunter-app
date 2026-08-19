@@ -1550,6 +1550,8 @@ describe('ApplicationDetailPage — timeline notes', () => {
         toStatus: 'interviewing',
         at: 1_700_000_000_000,
         note: 'Recruiter call booked',
+        source: 'user',
+        confirmed: true,
       },
     ]);
 
@@ -1568,6 +1570,8 @@ describe('ApplicationDetailPage — timeline notes', () => {
         toStatus: 'interviewing',
         at: 1_700_000_000_000,
         note: '',
+        source: 'user',
+        confirmed: true,
       },
     ]);
 

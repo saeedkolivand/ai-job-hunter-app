@@ -7,6 +7,16 @@
 //! `commands::autopilot::autopilot_run`, via its own `R7_ALLOW` entry rather
 //! than growing one on the L1 store.
 //!
+//! **v2 slice 3**: [`run_check_inner`]'s per-outcome loop is also where
+//! [`crate::email_watch::auto_write::apply_matched_intent`] gets its ONE
+//! runtime caller (ADR-0013's own text names this module, not `poller`, as
+//! the wiring site — `poller::run_tick` stays pure matching/classification;
+//! this file is the only place with both the `ApplicationStore` handle and
+//! the license to write). Same ordering the store's own doc requires: after
+//! `mark_seen` (dedupe always lands first) and right alongside
+//! `notify_match` (both read the same matched application).
+//!
+
 //! Spawns a single Tokio task on app startup (`start`), after a short
 //! [`STARTUP_GRACE`] so the rest of boot settles first. Every
 //! [`TICK_INTERVAL`] it checks whether a REAL IMAP check is due — gated by
@@ -259,8 +269,11 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
             AppError::Config("no app password is stored for this account".to_string())
         })?;
 
-    let saved: Vec<Application> = app
-        .try_state::<ApplicationStore>()
+    // Kept (not just consumed into `saved`/`saved_for_notify`) — the
+    // post-tick loop below needs the live store for the auto-write call.
+    let applications = app.try_state::<ApplicationStore>();
+    let saved: Vec<Application> = applications
+        .as_deref()
         .map(|s| s.list())
         .unwrap_or_default()
         .into_iter()
@@ -341,6 +354,35 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
         if let Some(app_id) = &outcome.matched_application_id {
             if let Some(matched) = saved_for_notify.iter().find(|a| &a.id == app_id) {
                 notify_match(app, matched);
+                // v2 slice 3: the actual auto-write. `matched.status` is the
+                // PRE-TICK snapshot `matcher::best_match` matched against
+                // (always `Saved` — that fn's own scope) — safe to pass as
+                // `current_status` even though it may be stale by now: the
+                // underlying compare-and-set re-validates the LIVE status at
+                // write time and simply no-ops on a lost race, the same
+                // tolerance every other `transition_status_if`-family caller
+                // already has. Best-effort: a write failure here (e.g. a
+                // transient SQLite contention) must not block `mark_seen`/
+                // `advance_last_uid` for the REST of this tick's outcomes —
+                // `.code()` only (never `.to_string()`/`{e}`), so a
+                // "application not found: <id>"-shaped message can't leak
+                // through this log line.
+                if let Some(applications) = applications.as_deref() {
+                    if let Err(e) = crate::email_watch::auto_write::apply_matched_intent(
+                        applications,
+                        store,
+                        app_id,
+                        matched.status,
+                        outcome.intent,
+                        outcome.domain_hint,
+                    ) {
+                        log::warn!(
+                            "[email_watch] auto-write failed for a matched application \
+                             (non-fatal): {}",
+                            e.code()
+                        );
+                    }
+                }
             }
         }
     }
@@ -529,5 +571,35 @@ mod tests {
         }
         drop(guard);
         assert!(RunGuard::try_acquire().is_some());
+    }
+
+    // ── apply_matched_intent reachability (v2 slice 3) ──────────────────────
+    //
+    // Mirrors `rate_limited_message_matches_the_renderer_sentinel`'s own
+    // technique above: read this file's OWN source as text and assert a
+    // substring, since `apply_matched_intent`'s runtime call site cannot be
+    // exercised from a unit test (it is buried inside `run_check_inner`,
+    // which needs a real IMAP round trip — see this module's "No automated
+    // test for the network-round-trip functions" precedent in
+    // `email_watch::imap_client`).
+
+    #[test]
+    fn apply_matched_intent_has_a_non_test_caller() {
+        // The whole point of this slice: `email_watch::auto_write::
+        // apply_matched_intent` must be called from PRODUCTION code, not
+        // only from its OWN unit tests (`auto_write::tests`) — a test-only
+        // caller would mean the infrastructure exists but never actually
+        // runs, exactly the gap v2 slice 2 shipped and this slice closes.
+        let source = include_str!("email_watch_scheduler.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("this file always has content before its first #[cfg(test)]");
+        assert!(
+            production.contains("apply_matched_intent("),
+            "apply_matched_intent must be called from this file's production \
+             code — the auto-write path exists to actually run, not just to \
+             be unit-tested"
+        );
     }
 }

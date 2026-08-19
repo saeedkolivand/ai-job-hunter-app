@@ -74,6 +74,27 @@ export interface ApplicationChangedEvent {
  * deliberately has no field for it. There is **no** counts command:
  * overdue/upcoming badges are derived client-side from the `nextActionAt` values
  * already carried by `list()` (see `features/applications/lib/pipeline.ts`).
+ *
+ * ## Email-derived status adjudication (v2)
+ *
+ * `get()`'s `events` now also carry {@link StatusEvent.source}/
+ * {@link StatusEvent.confirmed}. A `source: 'email'` row with `confirmed: false`
+ * is a provisional, auto-written transition (see the `email.match` notification)
+ * that the timeline must render distinctly, with Accept/Reject affordances:
+ * - `acceptStatusEvent` clears `confirmed` in place — the status itself is
+ *   untouched (the auto-write already applied it).
+ * - `rejectStatusEvent` reverts the status BY COMPARE-AND-SET (a status the user
+ *   changed by hand in the meantime is never clobbered — the row is simply
+ *   marked reviewed instead) and APPENDS a reversal event
+ *   (`source: 'email_reject'`); `status_events` stays append-only, so the
+ *   original row is never edited or deleted.
+ *
+ * Both are idempotent no-ops (`{ success: true }`, nothing changed) when there
+ * is no pending unconfirmed row — never an error a UI needs to branch on.
+ * **Nothing in this app ever writes `confirmed: true` except these two calls
+ * clearing it on review** — adjudication is the entire safety model for a
+ * classifier with a recorded precision limit (see `docs/knowledge/
+ * decision-records/0013-email-confirmation-watching.md`).
  */
 export interface ApplicationsContract {
   list(): Promise<Application[]>;
@@ -86,6 +107,16 @@ export interface ApplicationsContract {
     status: string;
     note?: string;
   }): Promise<ApplicationMutationResult>;
+  /** Accept the most recent email-derived, unconfirmed status transition for
+   *  `id` — clears its {@link StatusEvent.confirmed} flag; the status itself is
+   *  untouched. A no-op when there is nothing pending (still `{ success: true
+   *  }`, not an error). */
+  acceptStatusEvent(args: { id: string }): Promise<ApplicationMutationResult>;
+  /** Reject the most recent email-derived, unconfirmed status transition for
+   *  `id` — reverts the status by compare-and-set (never clobbers a status the
+   *  user changed by hand in the meantime) and appends a reversal event. A
+   *  no-op when there is nothing pending. */
+  rejectStatusEvent(args: { id: string }): Promise<ApplicationMutationResult>;
   update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
   remove(args: { id: string; keepDocuments: boolean }): Promise<ApplicationMutationResult>;
   track(req: ApplicationTrackRequest): Promise<ApplicationCreateResult>;
@@ -99,6 +130,8 @@ export const APPLICATIONS_CHANNELS = {
   list: 'applications:list',
   get: 'applications:get',
   setStatus: 'applications:setStatus',
+  acceptStatusEvent: 'applications:acceptStatusEvent',
+  rejectStatusEvent: 'applications:rejectStatusEvent',
   update: 'applications:update',
   remove: 'applications:remove',
   track: 'applications:track',

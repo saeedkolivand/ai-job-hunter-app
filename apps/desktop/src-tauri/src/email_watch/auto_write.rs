@@ -1,14 +1,15 @@
-//! v2 slice 2: turn one classified [`EmailIntent`] into a real, but always
+//! v2 slice 2/3: turn one classified [`EmailIntent`] into a real, but always
 //! **UNCONFIRMED**, [`Application`](crate::applications::Application) status
 //! write. Nothing here writes `confirmed: true` — ever (see
 //! [`apply_matched_intent`]'s doc, and [`crate::email_watch::intent`]'s
 //! module doc on the classifier's recorded precision limit, which is why
 //! adjudication — not withholding the write — is the safety model).
 //!
-//! Not yet wired into [`super::poller`]'s tick itself: `run_tick` stays pure
-//! matching (see its own module doc), and the SCHEDULER (L2, the one place
-//! in this module family with `AppHandle` reach) is the natural future
-//! caller once it exists; that wiring is a later slice.
+//! Wired into the runtime path from [`super::super::email_watch_scheduler`]
+//! (L2, the one place in this module family with `AppHandle` reach) — NOT
+//! from [`super::poller`]'s tick itself, which stays pure matching (see its
+//! own module doc). See `email_watch_scheduler::run_check_inner`'s own doc
+//! for exactly where in the tick this is called.
 
 use crate::applications::{ApplicationStatus, ApplicationStore};
 use crate::email_watch::intent::{next_status, EmailIntent};
@@ -30,33 +31,31 @@ use crate::error::AppResult;
 /// automation is concerned, silently — not data loss, a silent STOP to
 /// tracking. `domain_hint` (already computed by `fingerprint`, a KNOWN
 /// ATS/board sender domain) is the cheapest sufficient signal that already
-/// exists; `false` is a no-op here, same as every other gate below. Two
-/// WIDER signals were considered and deliberately NOT implemented in this
-/// slice: the sender domain matching the application's own company domain
-/// (no existing field derives a company's expected email domain — a real
-/// new piece of logic, not a seam) and in-thread linkage via `References`/
-/// `In-Reply-To` (would need widening the IMAP `HEADER.FIELDS` fetch — a
-/// cost to approve, not to spend silently).
+/// exists. Two WIDER signals were considered and deliberately NOT
+/// implemented in this slice: the sender domain matching the application's
+/// own company domain (no existing field derives a company's expected email
+/// domain — a real new piece of logic, not a seam) and in-thread linkage via
+/// `References`/`In-Reply-To` (would need widening the IMAP `HEADER.FIELDS`
+/// fetch — a cost to approve, not to spend silently).
 ///
-/// Every one of the following is a legitimate no-op (`Ok(false)`), never an
-/// error:
-/// - `domain_hint` is `false` — an unrecognised sender, checked FIRST;
-/// - [`EmailWatchStore::auto_write_enabled`] is off;
-/// - [`next_status`] itself says no-op — a terminal, still-CONFIRMED-or-
-///   user-set `current_status` (absorbing by design), or the intent doesn't
-///   advance the ladder. (A `None` *intent* is not this function's concern
-///   at all: it takes a concrete [`EmailIntent`], never an `Option` — the
-///   caller simply never calls this for a message `crate::email_watch::
-///   intent::classify_intent` returned `None` for, so "a `None` intent must
-///   not write anything" holds by construction, not by a runtime check
-///   here);
-/// - this exact `(current_status, target)` transition was already rejected
-///   by the user for this application
-///   ([`ApplicationStore::was_transition_rejected`]) — a later email must
-///   not re-apply a status the user has already told us was wrong;
-/// - the compare-and-set itself loses (the application's status changed
-///   since the caller last read it — the same race every other
-///   `transition_status_if`-family caller already tolerates).
+/// **Gated in this exact order** (each a legitimate no-op — `Ok(false)`,
+/// never an error):
+/// 1. [`EmailWatchStore::auto_write_enabled`] is off;
+/// 2. `domain_hint` is `false` — an unrecognised sender;
+/// 3. `intent` is `None` — [`crate::email_watch::intent::classify_intent`]
+///    decided nothing (a real, testable no-op here, not merely "the caller
+///    happened not to call this" — the caller passes `MessageOutcome::
+///    intent` straight through);
+/// 4. [`next_status`] itself says no-op — a terminal, still-CONFIRMED-or-
+///    user-set `current_status` (absorbing by design), or the intent
+///    doesn't advance the ladder;
+/// 5. this exact `(current_status, target)` transition was already rejected
+///    by the user for this application
+///    ([`ApplicationStore::was_transition_rejected`]) — a later email must
+///    not re-apply a status the user has already told us was wrong;
+/// 6. the compare-and-set itself loses (the application's status changed
+///    since the caller last read it — the same race every other
+///    `transition_status_if`-family caller already tolerates).
 ///
 /// **Hard constraint: always writes `confirmed = false`.** Nothing in this
 /// function, or reachable from it, may ever pass `true` for the write this
@@ -66,15 +65,18 @@ pub fn apply_matched_intent(
     email_watch: &EmailWatchStore,
     application_id: &str,
     current_status: ApplicationStatus,
-    intent: EmailIntent,
+    intent: Option<EmailIntent>,
     domain_hint: bool,
 ) -> AppResult<bool> {
-    if !domain_hint {
-        return Ok(false);
-    }
     if !email_watch.auto_write_enabled() {
         return Ok(false);
     }
+    if !domain_hint {
+        return Ok(false);
+    }
+    let Some(intent) = intent else {
+        return Ok(false);
+    };
     let current_is_unconfirmed_email_write =
         applications.current_status_is_unconfirmed_email_write(application_id);
     let Some(target) = next_status(intent, current_status, current_is_unconfirmed_email_write)
@@ -150,7 +152,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Saved,
-            EmailIntent::Confirmation,
+            Some(EmailIntent::Confirmation),
             true,
         )
         .unwrap();
@@ -181,11 +183,36 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Saved,
-            EmailIntent::Confirmation,
+            Some(EmailIntent::Confirmation),
             false,
         )
         .unwrap();
         assert!(!wrote, "a cold sender (no domain_hint) must never write");
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Saved
+        );
+    }
+
+    #[test]
+    fn a_none_intent_never_writes_even_with_a_recognized_sender() {
+        // German confirmations (zero discriminating phrases) and any other
+        // genuinely-undecided message classify as `None` — this must be a
+        // real, directly-testable no-op, not just "the caller happened not
+        // to call this function".
+        let (_d1, applications, _d2, email_watch) = stores();
+        let id = saved_app(&applications);
+
+        let wrote = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Saved,
+            None,
+            true,
+        )
+        .unwrap();
+        assert!(!wrote, "a None intent must never write");
         assert_eq!(
             applications.get(&id).unwrap().status,
             ApplicationStatus::Saved
@@ -211,7 +238,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Saved,
-            EmailIntent::Confirmation,
+            Some(EmailIntent::Confirmation),
             true,
         )
         .unwrap();
@@ -239,7 +266,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Offer,
-            EmailIntent::Confirmation,
+            Some(EmailIntent::Confirmation),
             true,
         )
         .unwrap();
@@ -266,7 +293,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Interviewing,
-            EmailIntent::Rejection,
+            Some(EmailIntent::Rejection),
             true,
         )
         .unwrap();
@@ -292,7 +319,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Interviewing,
-            EmailIntent::Rejection,
+            Some(EmailIntent::Rejection),
             true,
         )
         .unwrap();
@@ -333,7 +360,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Interviewing,
-            EmailIntent::Rejection,
+            Some(EmailIntent::Rejection),
             true,
         )
         .unwrap();
@@ -349,7 +376,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Rejected,
-            EmailIntent::Interview,
+            Some(EmailIntent::Interview),
             true,
         )
         .unwrap();
@@ -383,7 +410,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Interviewing,
-            EmailIntent::Rejection,
+            Some(EmailIntent::Rejection),
             true,
         )
         .unwrap();
@@ -395,7 +422,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Rejected,
-            EmailIntent::Interview,
+            Some(EmailIntent::Interview),
             true,
         )
         .unwrap();
@@ -422,7 +449,7 @@ mod tests {
             &email_watch,
             &id,
             ApplicationStatus::Withdrawn,
-            EmailIntent::Interview,
+            Some(EmailIntent::Interview),
             true,
         )
         .unwrap();

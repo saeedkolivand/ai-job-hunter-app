@@ -12,12 +12,17 @@ import { createMockClient, makeQueryClient } from '@/test-support';
 
 import { EmailWatchSection } from './index';
 
-const DISCONNECTED: EmailWatchStatus = { connected: false, enabled: false };
+const DISCONNECTED: EmailWatchStatus = {
+  connected: false,
+  enabled: false,
+  autoWriteEnabled: true,
+};
 const CONNECTED: EmailWatchStatus = {
   connected: true,
   address: 'me@gmail.com',
   enabled: true,
   lastCheckAt: 1_700_000_000_000,
+  autoWriteEnabled: true,
 };
 
 function renderSection(overrides: Record<string, (...args: never[]) => unknown> = {}) {

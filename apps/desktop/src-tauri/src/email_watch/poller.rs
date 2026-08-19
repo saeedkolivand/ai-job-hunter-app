@@ -1,15 +1,18 @@
-//! Tauri-free IMAP tick orchestration: search → header fetch → fingerprint
-//! filter → body fetch (matched candidates only) → company/title extraction
-//! → match against a caller-supplied `saved` application snapshot.
+//! Tauri-free IMAP tick orchestration: search, then header fetch, then
+//! fingerprint filter, then body fetch (matched candidates only), then
+//! company/title extraction plus intent classification, then match against
+//! a caller-supplied `saved` application snapshot.
 //!
-//! No `AppHandle`/notification concern here — that is
+//! No `AppHandle`/notification/write concern here — that is
 //! `email_watch_scheduler`'s job (L2), the ONE place in this module family
-//! with the upward reach into `commands::notifications`. Everything in this
+//! with the upward reach into `commands::notifications` AND the one that
+//! calls `email_watch::auto_write::apply_matched_intent`. Everything in this
 //! file is either a synchronous IMAP round trip or cheap in-process regex
 //! work, so [`run_tick`] is safe to call from inside a `spawn_blocking`
 //! closure.
 //!
-//! **Privacy**: returns only uids and application ids/scores — the raw
+//! **Privacy**: returns only uids, application ids/scores, and a classified
+//! [`crate::email_watch::intent::EmailIntent`] variant — the raw
 //! subject/sender/body text is parsed and discarded here, never surfaced in
 //! [`TickResult`].
 
@@ -19,6 +22,7 @@ use chrono::NaiveDate;
 
 use crate::applications::Application;
 use crate::email_watch::imap_client;
+use crate::email_watch::intent::{self, EmailIntent};
 use crate::email_watch::matcher;
 use crate::email_watch::parser;
 use crate::error::AppResult;
@@ -31,6 +35,18 @@ use crate::error::AppResult;
 pub struct MessageOutcome {
     pub uid: u32,
     pub matched_application_id: Option<String>,
+    /// The classified intent for this message — `None` covers "did not
+    /// fingerprint", "no body/header could be parsed", and "classified but
+    /// no discriminating phrase decided anything" uniformly. The caller
+    /// (`email_watch_scheduler`) only ever acts on `Some`, and
+    /// [`crate::email_watch::auto_write::apply_matched_intent`] treats
+    /// `None` as its own no-op — see that fn's doc.
+    pub intent: Option<EmailIntent>,
+    /// Whether the sender's domain was a known-ATS hint — see
+    /// [`parser::Fingerprint::domain_hint`]'s doc. Carried through
+    /// (independent of `matched_application_id`) so the auto-write path's
+    /// sender-provenance gate has it without re-parsing the header.
+    pub domain_hint: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -96,8 +112,9 @@ fn cap_oldest_first(
 /// Run one IMAP tick: fetch headers since `since`, drop anything at or below
 /// the watermark (recomputed against the LIVE `UIDVALIDITY`, since a stale
 /// `stored_last_uid` is meaningless after a mailbox renumbering), fingerprint
-/// each remaining header, fetch the body ONLY for a fingerprint hit, and
-/// match against `saved_applications`.
+/// each remaining header, fetch the body ONLY for a fingerprint hit, then
+/// match against `saved_applications` AND classify the 4-way intent from the
+/// SAME decoded subject/body — see [`MessageOutcome::intent`].
 ///
 /// Blocking (real network I/O) — call only from `spawn_blocking`.
 pub fn run_tick(
@@ -158,17 +175,22 @@ pub fn run_tick(
     let outcomes = parsed
         .into_iter()
         .map(|(uid, header, is_candidate, domain_hint)| {
-            let matched_application_id = header.filter(|_| is_candidate).and_then(|header| {
-                // The fetch itself is already bounded at the protocol level
-                // to `imap_client::MAX_BODY_BYTES` (a partial-octet FETCH,
-                // see `imap_client::body_fetch_item_spec`) — this second cap
-                // is defense-in-depth only, for a non-compliant server that
-                // ignores the partial-fetch hint and returns the whole
-                // message anyway.
-                let body_text = bodies.get(&uid).and_then(|raw| {
+            let header = header.filter(|_| is_candidate);
+            // The fetch itself is already bounded at the protocol level to
+            // `imap_client::MAX_BODY_BYTES` (a partial-octet FETCH, see
+            // `imap_client::body_fetch_item_spec`) — this second cap is
+            // defense-in-depth only, for a non-compliant server that ignores
+            // the partial-fetch hint and returns the whole message anyway.
+            // Computed ONCE and reused for both matching and intent
+            // classification below, so a fingerprint hit never fetches or
+            // decodes the body twice.
+            let body_text = header.as_ref().and_then(|_| {
+                bodies.get(&uid).and_then(|raw| {
                     let capped = &raw[..raw.len().min(imap_client::MAX_BODY_BYTES)];
                     parser::parse_body_text(capped)
-                });
+                })
+            });
+            let matched_application_id = header.as_ref().and_then(|header| {
                 let candidates = parser::extract_candidates(
                     &header.subject,
                     body_text.as_deref(),
@@ -177,9 +199,14 @@ pub fn run_tick(
                 matcher::best_match(&candidates, saved_applications, domain_hint)
                     .map(|scored| scored.application_id)
             });
+            let intent = header
+                .as_ref()
+                .and_then(|header| intent::classify_intent(&header.subject, body_text.as_deref()));
             MessageOutcome {
                 uid,
                 matched_application_id,
+                intent,
+                domain_hint,
             }
         })
         .collect();

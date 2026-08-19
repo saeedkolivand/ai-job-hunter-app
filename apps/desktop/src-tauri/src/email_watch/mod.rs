@@ -98,6 +98,10 @@ pub struct EmailWatchStatus {
     pub last_check_at: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_match_at: Option<u64>,
+    /// The v2 auto-write opt-in — see [`EmailWatchStore::auto_write_enabled`].
+    /// Surfaced here (not a second IPC round trip) so the settings UI reads
+    /// it from the SAME `email_watch_status()` call it already makes.
+    pub auto_write_enabled: bool,
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -179,12 +183,14 @@ impl EmailWatchStore {
         let conn = self.conn.lock();
         let account = Self::account_conn(&conn);
         let last_match_at = Self::last_match_at_conn(&conn);
+        let auto_write_enabled = Self::auto_write_enabled_conn(&conn);
         EmailWatchStatus {
             connected: account.address.is_some(),
             address: account.address,
             enabled: account.enabled,
             last_check_at: account.last_check_ms,
             last_match_at,
+            auto_write_enabled,
         }
     }
 
@@ -270,19 +276,10 @@ impl EmailWatchStore {
     /// The v2 auto-write opt-in — default ON (unlike [`Self::set_enabled`]'s
     /// poller opt-in, which defaults OFF). [`crate::email_watch::auto_write::
     /// apply_matched_intent`] checks this FIRST, before ever computing a
-    /// status transition. A read failure (should not happen — migration
-    /// `add_auto_write_enabled` seeds every row with this column) fails
-    /// toward the documented default rather than silently disabling the
-    /// feature.
+    /// status transition.
     pub fn auto_write_enabled(&self) -> bool {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT auto_write_enabled FROM account WHERE id = 1",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map(|v| v != 0)
-        .unwrap_or(true)
+        Self::auto_write_enabled_conn(&conn)
     }
 
     /// Set the auto-write opt-in. Same concurrent-clear guard as
@@ -470,6 +467,22 @@ impl EmailWatchStore {
         .ok()
         .flatten()
         .map(ts_from_db)
+    }
+
+    /// Connection-scoped read behind [`Self::auto_write_enabled`] and
+    /// [`Self::status`] (which already holds `self.conn.lock()` and would
+    /// deadlock calling the self-locking public method). A read failure
+    /// (should not happen — migration `add_auto_write_enabled` seeds every
+    /// row with this column) fails toward the documented default (ON)
+    /// rather than silently disabling the feature.
+    fn auto_write_enabled_conn(conn: &Connection) -> bool {
+        conn.query_row(
+            "SELECT auto_write_enabled FROM account WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .unwrap_or(true)
     }
 }
 

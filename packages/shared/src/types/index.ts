@@ -596,6 +596,16 @@ export interface StatusEvent {
   toStatus: string;
   at: number;
   note: string;
+  /** Who/what asserted this transition: `'user'` (every pre-v2 row, and every
+   *  user-driven write today) or `'email'`/`'email_reject'` (v2 auto-write and
+   *  its reversal — see {@link StatusEvent.confirmed}). A free-form string, not
+   *  a closed union, so a future source needs no client-side change. */
+  source: string;
+  /** Whether a human has reviewed this transition. Every pre-v2 row (and every
+   *  `'user'`-sourced write) is `true`. An email-derived write ALWAYS lands
+   *  `false` — the timeline renders it as PROVISIONAL with Accept/Reject
+   *  affordances; nothing in this app ever auto-writes `true`. */
+  confirmed: boolean;
 }
 
 /**

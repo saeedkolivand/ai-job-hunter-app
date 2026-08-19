@@ -12,5 +12,7 @@ export const emailWatch = {
   disconnect: () => invoke<EmailWatchStatus>('email_watch_disconnect'),
   setEnabled: (enabled: boolean) =>
     invoke<EmailWatchStatus>('email_watch_set_enabled', { enabled }),
+  setAutoWriteEnabled: (enabled: boolean) =>
+    invoke<EmailWatchStatus>('email_watch_set_auto_write_enabled', { enabled }),
   checkNow: () => invoke<EmailWatchStatus>('email_watch_check_now'),
 };

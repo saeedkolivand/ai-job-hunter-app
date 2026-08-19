@@ -18,6 +18,10 @@ export const applications = {
   get: (id: string) => invoke('applications_get', { id }),
   setStatus: ({ id, status, note }: { id: string; status: string; note?: string }) =>
     invoke('applications_set_status', { id, status, note }),
+  acceptStatusEvent: ({ id }: { id: string }) =>
+    invoke<ApplicationMutationResult>('applications_accept_status_event', { id }),
+  rejectStatusEvent: ({ id }: { id: string }) =>
+    invoke<ApplicationMutationResult>('applications_reject_status_event', { id }),
   update: (req: ApplicationUpdateRequest) =>
     invoke<ApplicationMutationResult>('applications_update', { req }),
   // `keepDocuments` reaches the Rust command as the snake_case `keep_documents` arg.

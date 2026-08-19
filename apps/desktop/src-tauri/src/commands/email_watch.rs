@@ -152,6 +152,19 @@ pub async fn email_watch_set_enabled(app: AppHandle, enabled: bool) -> AppResult
     Ok(store.status())
 }
 
+/// v2 slice 3: the auto-write opt-in (default ON) — an escape hatch, not the
+/// primary safeguard (adjudication is). Mirrors [`email_watch_set_enabled`]'s
+/// shape exactly.
+#[tauri::command]
+pub async fn email_watch_set_auto_write_enabled(
+    app: AppHandle,
+    enabled: bool,
+) -> AppResult<EmailWatchStatus> {
+    let store = store_or_err(&app)?;
+    store.set_auto_write_enabled(enabled)?;
+    Ok(store.status())
+}
+
 /// Minimum gap between two `email_watch_check_now` invocations — measured
 /// against `last_check_ms` (stamped by ANY check, manual or scheduled), so a
 /// renderer bug/loop can't spam Gmail logins. Refuses with

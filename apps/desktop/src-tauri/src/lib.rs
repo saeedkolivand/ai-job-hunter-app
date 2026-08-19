@@ -1168,6 +1168,8 @@ pub fn run() {
             commands::applications::applications_list,
             commands::applications::applications_get,
             commands::applications::applications_set_status,
+            commands::applications::applications_accept_status_event,
+            commands::applications::applications_reject_status_event,
             commands::applications::applications_update,
             commands::applications::applications_delete,
             commands::applications::applications_track,
@@ -1201,6 +1203,7 @@ pub fn run() {
             commands::email_watch::email_watch_connect,
             commands::email_watch::email_watch_disconnect,
             commands::email_watch::email_watch_set_enabled,
+            commands::email_watch::email_watch_set_auto_write_enabled,
             commands::email_watch::email_watch_check_now,
             // export
             export::commands::documents_export_document,

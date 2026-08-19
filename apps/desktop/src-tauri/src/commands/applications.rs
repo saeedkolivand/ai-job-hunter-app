@@ -263,6 +263,86 @@ pub async fn applications_set_status(
     }
 }
 
+/// An `id` from the renderer is untrusted IPC input — trim and reject empty
+/// before any store work, for BOTH accept/reject commands below. Neither
+/// store method can panic on a garbage id (a no-op `Ok(false)`, matched-zero
+/// rows), but a rejected-up-front empty id is a clearer signal than a silent
+/// "nothing happened" success.
+fn require_non_empty_id(id: &str) -> AppResult<()> {
+    if id.trim().is_empty() {
+        return Err(AppError::Validation(
+            "application id is required".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Pure core shared by both accept/reject commands below — testable without
+/// a live `AppHandle` (mirrors `extension_bridge::status_update::
+/// resolve_status_update`'s factoring). Validates `id`, then delegates to
+/// WHICHEVER store method the caller passes as `action` — so the id
+/// validation gate is written exactly once, and a test can assert the
+/// command-layer path (this fn) produces the SAME store state as calling
+/// `action` directly.
+fn resolve_status_event_action(
+    store: &ApplicationStore,
+    id: &str,
+    action: impl FnOnce(&ApplicationStore, &str) -> AppResult<bool>,
+) -> AppResult<bool> {
+    require_non_empty_id(id)?;
+    action(store, id)
+}
+
+/// v2 slice 3: accept the most recent email-derived, unconfirmed status
+/// transition for `id` — clears its `confirmed` flag in place, never
+/// touching `applications.status` itself (the auto-write already applied
+/// it). A no-op (`{ "success": true }`, nothing to accept) is NOT an error —
+/// mirrors [`crate::applications::ApplicationStore::accept_latest_status_event`]'s
+/// own contract.
+#[tauri::command]
+pub async fn applications_accept_status_event(app: AppHandle, id: String) -> Value {
+    let span = Span::begin("applications", format!("accept_status_event id={id}"));
+    match resolve_status_event_action(
+        &store(&app),
+        &id,
+        ApplicationStore::accept_latest_status_event,
+    ) {
+        Ok(_) => {
+            span.end(true);
+            json!({ "success": true })
+        }
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            json!({ "error": e })
+        }
+    }
+}
+
+/// v2 slice 3: reject the most recent email-derived, unconfirmed status
+/// transition for `id` — reverts the status BY COMPARE-AND-SET (a status the
+/// user changed by hand in the meantime is never clobbered; the provisional
+/// row is simply dismissed instead) and appends a reversal event.
+/// Append-only: the original transition row is never edited or deleted. See
+/// [`crate::applications::ApplicationStore::reject_latest_status_event`].
+#[tauri::command]
+pub async fn applications_reject_status_event(app: AppHandle, id: String) -> Value {
+    let span = Span::begin("applications", format!("reject_status_event id={id}"));
+    match resolve_status_event_action(
+        &store(&app),
+        &id,
+        ApplicationStore::reject_latest_status_event,
+    ) {
+        Ok(_) => {
+            span.end(true);
+            json!({ "success": true })
+        }
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            json!({ "error": e })
+        }
+    }
+}
+
 /// Patch the user-editable tracking fields of one Application.
 ///
 /// **Contact fields converge:** `contactName`/`contactEmail` are canonical and
@@ -841,5 +921,119 @@ mod tests {
         let err = validate_recipient_email(Some(long))
             .expect_err("over-254-byte address must be rejected");
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    // ── v2 slice 3: accept/reject over the command layer ────────────────────
+
+    fn meta_for_status_events() -> ApplicationMeta {
+        ApplicationMeta {
+            company: "Acme".into(),
+            title: "Engineer".into(),
+            candidate: "Jane".into(),
+            brief: String::new(),
+            job_description: String::new(),
+            answers: vec![],
+            job_summary: String::new(),
+            salary_min: None,
+            salary_max: None,
+            salary_currency: None,
+        }
+    }
+
+    /// A fresh store seeded with one `Interviewing` application carrying an
+    /// unconfirmed, email-derived `Rejected` write — the exact shape
+    /// accept/reject act on.
+    fn seeded_store() -> (tempfile::TempDir, ApplicationStore, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = ApplicationStore::open(dir.path()).unwrap();
+        let id = store
+            .track_manual("", "", &meta_for_status_events())
+            .unwrap();
+        store
+            .set_status(&id, ApplicationStatus::Interviewing, "")
+            .unwrap();
+        store
+            .transition_status_if_sourced(
+                &id,
+                ApplicationStatus::Interviewing,
+                ApplicationStatus::Rejected,
+                Some("email-derived (unconfirmed)"),
+                crate::applications::EVENT_SOURCE_EMAIL,
+                false,
+            )
+            .unwrap();
+        (dir, store, id)
+    }
+
+    #[test]
+    fn require_non_empty_id_rejects_empty_and_whitespace_only() {
+        assert!(require_non_empty_id("").is_err());
+        assert!(require_non_empty_id("   ").is_err());
+        assert!(require_non_empty_id("abc123").is_ok());
+    }
+
+    #[test]
+    fn accept_over_the_command_layer_matches_the_direct_store_call() {
+        // Two IDENTICALLY-seeded stores: one mutated through the command-layer
+        // pure core, the other through the store method directly. Both must
+        // end up in the SAME observable state.
+        let (_dir_a, store_a, id_a) = seeded_store();
+        let (_dir_b, store_b, id_b) = seeded_store();
+
+        let via_command = resolve_status_event_action(
+            &store_a,
+            &id_a,
+            ApplicationStore::accept_latest_status_event,
+        );
+        let via_direct = store_b.accept_latest_status_event(&id_b);
+        assert!(via_command.unwrap(), "command-layer path must succeed");
+        assert!(via_direct.unwrap(), "direct store call must succeed");
+
+        assert_eq!(
+            store_a.get(&id_a).unwrap().status,
+            store_b.get(&id_b).unwrap().status
+        );
+        let last_a = store_a.events(&id_a).into_iter().last().unwrap();
+        let last_b = store_b.events(&id_b).into_iter().last().unwrap();
+        assert_eq!(last_a.source, last_b.source);
+        assert_eq!(last_a.confirmed, last_b.confirmed);
+        assert!(last_a.confirmed, "accept must clear the confirmed flag");
+    }
+
+    #[test]
+    fn reject_over_the_command_layer_matches_the_direct_store_call() {
+        let (_dir_a, store_a, id_a) = seeded_store();
+        let (_dir_b, store_b, id_b) = seeded_store();
+
+        let via_command = resolve_status_event_action(
+            &store_a,
+            &id_a,
+            ApplicationStore::reject_latest_status_event,
+        );
+        let via_direct = store_b.reject_latest_status_event(&id_b);
+        assert!(via_command.unwrap(), "command-layer path must succeed");
+        assert!(via_direct.unwrap(), "direct store call must succeed");
+
+        assert_eq!(
+            store_a.get(&id_a).unwrap().status,
+            store_b.get(&id_b).unwrap().status
+        );
+        assert_eq!(
+            store_a.get(&id_a).unwrap().status,
+            ApplicationStatus::Interviewing,
+            "reject must revert to the pre-email status"
+        );
+        assert_eq!(store_a.events(&id_a).len(), store_b.events(&id_b).len());
+    }
+
+    #[test]
+    fn accept_over_the_command_layer_rejects_an_empty_id_without_touching_the_store() {
+        let (_dir, store, id) = seeded_store();
+        let result =
+            resolve_status_event_action(&store, "", ApplicationStore::accept_latest_status_event);
+        assert!(matches!(result, Err(AppError::Validation(_))));
+        // The real (non-empty) application's pending row must be untouched.
+        let last = store.events(&id).into_iter().last().unwrap();
+        assert!(!last.confirmed);
     }
 }

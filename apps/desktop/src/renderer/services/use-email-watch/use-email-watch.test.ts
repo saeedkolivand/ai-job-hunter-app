@@ -10,6 +10,7 @@ import {
   useDisconnectEmailWatch,
   useEmailWatchCheckNow,
   useEmailWatchStatus,
+  useSetAutoWriteEnabled,
   useSetEmailWatchEnabled,
 } from './use-email-watch';
 
@@ -116,6 +117,30 @@ describe('useSetEmailWatchEnabled', () => {
       expect(queryClient.getQueryData(keys.emailWatch.status)).toEqual({
         ...CONNECTED,
         enabled: true,
+      });
+    });
+  });
+});
+
+describe('useSetAutoWriteEnabled', () => {
+  it('forwards the enabled flag and seeds the returned status', async () => {
+    const setAutoWriteEnabled = vi
+      .fn()
+      .mockResolvedValue({ ...CONNECTED, autoWriteEnabled: false });
+    const client = createMockClient({ 'emailWatch.setAutoWriteEnabled': setAutoWriteEnabled });
+    const { result, queryClient } = renderHookWithClient(() => useSetAutoWriteEnabled(), {
+      client,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(false);
+    });
+
+    expect(setAutoWriteEnabled).toHaveBeenCalledWith(false);
+    await waitFor(() => {
+      expect(queryClient.getQueryData(keys.emailWatch.status)).toEqual({
+        ...CONNECTED,
+        autoWriteEnabled: false,
       });
     });
   });

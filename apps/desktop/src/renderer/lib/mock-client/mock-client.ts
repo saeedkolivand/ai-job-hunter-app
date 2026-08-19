@@ -139,6 +139,8 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       list: emptyList,
       get: async () => ({ application: null, events: [] }),
       setStatus: async () => ({ success: true }),
+      acceptStatusEvent: async () => ({ success: true }),
+      rejectStatusEvent: async () => ({ success: true }),
       update: async () => ({ success: true }),
       remove: async () => ({ success: true }),
       track: async () => ({ success: true }),
@@ -204,15 +206,25 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     },
 
     emailWatch: {
-      status: async () => ({ connected: false, enabled: false }),
+      status: async () => ({ connected: false, enabled: false, autoWriteEnabled: true }),
       connect: async ({ address }: EmailWatchConnectRequest) => ({
         connected: true,
         address,
         enabled: false,
+        autoWriteEnabled: true,
       }),
-      disconnect: async () => ({ connected: false, enabled: false }),
-      setEnabled: async (enabled: boolean) => ({ connected: false, enabled }),
-      checkNow: async () => ({ connected: false, enabled: false }),
+      disconnect: async () => ({ connected: false, enabled: false, autoWriteEnabled: true }),
+      setEnabled: async (enabled: boolean) => ({
+        connected: false,
+        enabled,
+        autoWriteEnabled: true,
+      }),
+      setAutoWriteEnabled: async (autoWriteEnabled: boolean) => ({
+        connected: false,
+        enabled: false,
+        autoWriteEnabled,
+      }),
+      checkNow: async () => ({ connected: false, enabled: false, autoWriteEnabled: true }),
     },
 
     scrape: {

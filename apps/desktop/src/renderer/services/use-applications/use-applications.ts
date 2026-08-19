@@ -42,6 +42,36 @@ export const useSetApplicationStatus = () => {
   });
 };
 
+/** Accept the most recent email-derived, unconfirmed status transition for an
+ *  application — clears its `confirmed` flag; the status itself is untouched.
+ *  See `ApplicationsContract.acceptStatusEvent`. */
+export const useAcceptStatusEvent = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => api.applications.acceptStatusEvent({ id }),
+    onSuccess: (_data, { id }) => {
+      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      void qc.invalidateQueries({ queryKey: keys.applications.detail(id) });
+    },
+  });
+};
+
+/** Reject the most recent email-derived, unconfirmed status transition for an
+ *  application — reverts the status by compare-and-set and appends a
+ *  reversal event. See `ApplicationsContract.rejectStatusEvent`. */
+export const useRejectStatusEvent = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => api.applications.rejectStatusEvent({ id }),
+    onSuccess: (_data, { id }) => {
+      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      void qc.invalidateQueries({ queryKey: keys.applications.detail(id) });
+    },
+  });
+};
+
 export const useUpdateApplication = () => {
   const api = useAppClient();
   const qc = useQueryClient();
