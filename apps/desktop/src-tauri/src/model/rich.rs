@@ -26,14 +26,21 @@ static FULL_URL_RE: LazyLock<Regex> =
 static BARE_DOMAIN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}/[^\s|·•,<>"']+"#).unwrap());
 
-/// TLDs a bare domain with NO path may end in to be linked. Mirrors the
-/// allowlist `validate/content/factual.rs`'s `URL_RE` already curates for the
-/// identical collision on its own bare-host arm (`com|org|net|io|dev|app|de|co|ai|sh|me`) —
-/// kept as a sibling literal rather than a cross-module import, since this
-/// module has no other dependency on `validate`. Deliberately NOT an
-/// open-ended `[a-z]{2,}` class: applied to a path-less bare domain that would
-/// link `node.js` (an invalid `https://` host) and the `e.g`/`i.e`/`vs.`
-/// family right along with it.
+/// TLDs a bare domain with NO path may end in to be linked. Mirrors
+/// `validate/content/factual.rs`'s `URL_RE` arm 5,
+/// `BARE_DOMAIN_NO_PATH_TLDS` (`com|org|net|io|dev|app|de|co|ai|sh|me`) —
+/// added there specifically so that guard can see the identical shape this
+/// arm renders as a real link; the two MUST stay in lockstep or a domain this
+/// arm links slips past that file's Critical-severity
+/// `factual.altered_project_link` check. This is NOT the same list as that
+/// file's OTHER bare-host arm (arm 3), which is gated by the narrower
+/// `CODE_HOSTS` name allowlist plus a different TLD set
+/// (`com|org|io|dev|net|rs`) rather than by TLD alone — kept as a sibling
+/// literal rather than a cross-module import, since this module has no other
+/// dependency on `validate`. Deliberately NOT an open-ended `[a-z]{2,}`
+/// class: applied to a path-less bare domain that would link `node.js` (an
+/// invalid `https://` host) and the `e.g`/`i.e`/`vs.` family right along with
+/// it.
 const BARE_DOMAIN_TLDS: &str = "com|org|net|io|dev|app|de|co|ai|sh|me";
 
 /// A bare domain with NO path (`aijobhunter.app`, `iamsaeed.dev`) — a real

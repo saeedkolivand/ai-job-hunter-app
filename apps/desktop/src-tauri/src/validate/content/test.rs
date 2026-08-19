@@ -1181,6 +1181,73 @@ fn stack_line_library_names_are_never_read_as_project_links() {
     );
 }
 
+/// The renderer (`model::rich`'s `BARE_DOMAIN_NO_PATH_RE`) turns a bare,
+/// path-less, lowercase, allowlisted-TLD domain into a real hyperlink. Before
+/// `URL_RE` grew its matching fifth arm, such a domain matched neither the
+/// code-host arm (not a known host) nor the domain+path arm (no path), so a
+/// hallucinated project domain like `innovatehub.app` contributed to neither
+/// `source_urls` nor `generated_urls` here and this guard never fired — even
+/// though the export rendered it as a real, clickable, seemingly-verified
+/// link. A title line carries no `names_a_resource` filter (only index 1
+/// does), so the fabricated domain on the title line must be caught.
+///
+/// Mutation check: dropping arm 5 from `URL_RE` (reverting to the four-arm
+/// pattern) makes this go red (`hits.len() == 0`, `assert_eq!` panics with
+/// "1", "0") — verified — then restoring arm 5 makes it green again.
+#[test]
+fn a_fabricated_bare_domain_in_a_project_title_is_an_altered_link() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://ledger.example.dev/docs\n\
+                  Rust · PostgreSQL\n\
+                  A command-line ledger tool.\n";
+    let generated = "PROJECTS\n\n\
+                     **InnovateHub** · innovatehub.app\n\
+                     Rust · PostgreSQL\n\
+                     A fabricated project.\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_ALTERED_PROJECT_LINK);
+    assert_eq!(
+        hits.len(),
+        1,
+        "the bare fabricated domain must be caught as invented; got {hits:#?}"
+    );
+    assert_eq!(
+        hits[0].evidence.as_deref(),
+        Some("innovatehub.app"),
+        "evidence should name the fabricated domain; got {:?}",
+        hits[0].evidence
+    );
+}
+
+/// The negative direction of the test above: `URL_RE`'s new fifth arm is
+/// scoped `(?-i:...)` against the rest of the pattern's `(?i)` specifically so
+/// it does NOT relink the exact stack-line collision arm 3 already guards
+/// against — a capitalised library name whose lowercase tail happens to sit on
+/// an allowlisted TLD (`Socket.IO`, `Bun.sh`, `Nuxt.dev`) must stay unmatched,
+/// on both the bare-string check and the full project-entry comparison.
+///
+/// Mutation check: removing the `(?-i:...)` scope (letting arm 5 inherit the
+/// pattern's case-insensitivity) makes `urls_in` return the three names and
+/// the `is_empty()` assertion go red — verified — then restoring the scoped
+/// negation makes it green again.
+#[test]
+fn bare_domain_arm_stays_silent_on_capitalised_stack_names() {
+    assert!(
+        factual::urls_in("Socket.IO · Bun.sh · Nuxt.dev").is_empty(),
+        "capitalised library names must not be read as links; got {:?}",
+        factual::urls_in("Socket.IO · Bun.sh · Nuxt.dev")
+    );
+
+    let source = "PROJECTS\n\n\
+                  **Chat Relay** · https://relay.example.dev/docs\n\
+                  Socket.IO · Bun.sh · Nuxt.dev\n\
+                  A tiny websocket relay.\n";
+    silent(
+        &report_for(source, source, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+}
+
 /// H1b — the same link written a different way is the same link. Compared on a
 /// canonical key (scheme dropped, host lowercased, trailing `/` removed,
 /// markdown href unwrapped); still REPORTED verbatim when it genuinely differs.
