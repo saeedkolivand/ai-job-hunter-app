@@ -1635,22 +1635,48 @@ fn regime_5_neither_witness_corroborating_the_target_stays_quiet() {
 /// same way it would read a longer original. The SAME sentences
 /// `documents::keywords::test::detected_language_identifies_*` pins at the
 /// primitive level, so a regression in either place is visible in both.
+///
+/// Six of the seven Latin-curated languages repeat 7×, not 3× — measured: at
+/// a single instance, the worst pairwise-evidence case across all 42
+/// cross-language pairs is Spanish against a French target (Spanish and
+/// French share most of their short function words, so only "tiene" survives
+/// pairwise pruning), at 1 hit. 7 repeats gives that pair 7 hits, two clear
+/// of [`MIN_DISTINCTIVE_HITS`]'s floor. The SAME reasoning
+/// [`MIN_CHARS_FOR_LANGUAGE_CHECK`] already applies to length: a document too
+/// short is a poor candidate for a confident read, and a real wrong-language
+/// document is never this artificially terse.
+///
+/// **Spanish itself stays at 3×, not 7×, and that is deliberate, not an
+/// oversight.** Uniformly inflating every language to clear the WORST pair
+/// left this the only test exercising non-English targets, and it exercised
+/// them exclusively at 441 characters — never in the 120–315 character band
+/// where [`MIN_DISTINCTIVE_HITS`] actually decides anything, which is
+/// exactly the coverage gap that let the close-relative-target silent band
+/// (see `a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss`)
+/// go unexercised here. At 3× (189 characters, squarely in that band),
+/// Spanish's evidence against French is 3 — still under the floor, still
+/// silent, the SAME accepted miss that test pins directly — while every
+/// OTHER target (`en` 18, `de` 18, `it` 15, `pt` 9, `nl` 6) clears the floor
+/// at this length; 3× was chosen, not assumed, by sweeping reps 1–7 against
+/// all six other curated targets and picking the shortest length where only
+/// the ONE known accepted-miss pair stays quiet. The cross-product test
+/// below excludes exactly that one cell, not the whole language.
 fn per_language_samples() -> Vec<(&'static str, String)> {
     let sentences: &[(&str, &str, usize)] = &[
         (
             "en",
             "The candidate has eight years of backend experience with payment systems.",
-            3,
+            7,
         ),
         (
             "de",
             "Die Kandidatin hat acht Jahre Erfahrung im Backend-Bereich mit Zahlungssystemen.",
-            3,
+            7,
         ),
         (
             "fr",
             "La candidate a huit ans d'expérience dans les systèmes de paiement back-end.",
-            3,
+            7,
         ),
         (
             "es",
@@ -1660,17 +1686,17 @@ fn per_language_samples() -> Vec<(&'static str, String)> {
         (
             "it",
             "La candidata ha otto anni di esperienza nei sistemi di pagamento backend.",
-            3,
+            7,
         ),
         (
             "pt",
             "A candidata tem oito anos de experiência em sistemas de pagamento de backend.",
-            3,
+            7,
         ),
         (
             "nl",
             "De kandidaat heeft acht jaar ervaring met backend-betalingssystemen.",
-            3,
+            7,
         ),
         ("zh", "我是一名后端工程师，在支付系统和容器平台方面工作了八年。", 5),
         (
@@ -1747,6 +1773,29 @@ fn per_language_samples() -> Vec<(&'static str, String)> {
 /// target, and its text must fire against every OTHER language's target — the
 /// exact per-language sweep this fix's owner asked for explicitly.
 ///
+/// Turkish and Vietnamese are excluded from the "fires against every other
+/// target" half (not from the "silent for itself" half, which holds trivially
+/// for them too): they are Latin-script and so now correctly NEED
+/// corroboration (`needs_distinctive_evidence`), but this crate curates no
+/// `tr`/`vi` function-word vocabulary, so — same as every other
+/// uncurated-language miss this module documents — a genuine `tr`/`vi`
+/// mismatch goes quiet rather than firing on zero evidence. See
+/// `turkish_text_needs_evidence_too_and_goes_quiet_without_a_curated_list` for
+/// the fix this replaces (gating the requirement on script rather than on
+/// curated-vocabulary membership, which used to let tr/vi skip corroboration
+/// entirely and fire on nothing).
+///
+/// ONE more cell is excluded for the same reason, at the length this sample
+/// set actually uses rather than in the abstract: Spanish's sample is 189
+/// characters (3×, see [`per_language_samples`]'s doc), and at that length
+/// its evidence against a French target is 3 — under the floor, the exact
+/// close-relative-target accepted miss
+/// `a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss`
+/// pins directly. Excluded here, not silenced by lengthening the sample to
+/// clear it, so this loop stays honest about what actually holds at a
+/// realistic length instead of only at the 441-character length that used to
+/// hide this cell entirely.
+///
 /// Mutation check: hardcode `is_language_mismatch` to always return `false`
 /// and every `_fires` assertion in this test goes red; hardcode it to always
 /// return `true` and every `_stays_silent` assertion goes red — the table
@@ -1762,7 +1811,12 @@ fn every_curated_language_is_silent_for_itself_and_fires_for_every_other() {
     }
     for (lang, _) in &samples {
         for (other_lang, other_text) in &samples {
-            if lang == other_lang {
+            if lang == other_lang || other_lang == &"tr" || other_lang == &"vi" {
+                continue;
+            }
+            if other_lang == &"es" && lang == &"fr" {
+                // Accepted miss at this sample's realistic 189-character length —
+                // see the doc comment above.
                 continue;
             }
             assert!(
@@ -1803,6 +1857,965 @@ fn either_witness_alone_is_enough_to_corroborate_the_target() {
         misread_as_french,
         "de"
     ));
+}
+
+// ── Latin-script noun-phrase false positive (whatlang's confidence-margin blind spot) ──
+//
+// This evidence mechanism was substantially REDESIGNED after an independent
+// review measured three real defects in the first pass:
+//
+// 1. A single function-word pool pruned across all seven curated languages
+//    dropped any word appearing in two or more lists — which left Spanish
+//    (30 survivors) and Portuguese (33) too thin to evidence THEMSELVES, so a
+//    genuinely Spanish/Portuguese document against a non-Spanish/Portuguese
+//    target silently stopped raising a real Critical (a true-positive
+//    regression). Fixed by making evidence PAIRWISE (`pairwise_evidence_count`):
+//    a word is only pruned when the language it is being compared AGAINST
+//    shares it, not when some unrelated third language does.
+// 2. `ci`, `vi`, `io`, `ha`, `da`, `ti`, `os`, `em`, `am`, `im`, `zu`, `el`,
+//    `na`, `ai`, `et`, `au` are genuine short function words in one curated
+//    language AND common abbreviations/TLD fragments/editor names in free
+//    text (`ci/cd`, the `vi` editor, `.io`, an HA cluster). A blanket
+//    length-≥3 floor was tried FIRST and measured to also exclude Italian's
+//    OWN core vocabulary (`il`, `la`, `di`, all 2 characters — see
+//    `a_drifted_awards_section_warns_rather_than_blocks`, which briefly
+//    regressed under that rule). A curated denylist was tried NEXT and also
+//    REMOVED: the found-SPECIFIC pairwise match already closes every one of
+//    the five reported cases on its own (none of those tokens is a word in
+//    the language whatlang actually named), the denylist's only measured
+//    trigger was an adversarial string of disconnected foreign idioms no
+//    realistic document produces, and it cost real evidence from exactly the
+//    languages fix 1 was written to protect (`el` is one of Spanish's
+//    commonest words). What shipped is just a length-≥2 floor (drops bare
+//    single letters only) plus curating "per" (a genuine English preposition)
+//    into `FUNCTION_WORDS_EN` for the one 3-character false positive measured.
+// 3. The section-scoped pass had its own, separate `detected_language`
+//    comparison that never routed through the new evidence check at all —
+//    fixed by having `section_language_issues` call the SAME
+//    `is_language_mismatch` the document pass uses; see
+//    `a_german_institution_name_inside_an_english_education_section_never_fires`
+//    below for the regression pin that only a SECTION-scoped fixture can
+//    exercise.
+//
+// A fourth, harder shape was also measured and is NOT a numeric-threshold
+// problem: an otherwise-English document that merely NAMES a German or French
+// institution can carry a few real foreign function words purely from that
+// proper noun. A title-case-sandwich exclusion in `pairwise_evidence_count`
+// was tried for this shape and REMOVED (it deleted nominal-register German's
+// evidence wholesale); what closes it now is MIN_DISTINCTIVE_HITS alone —
+// see its doc for the corpus and the accepted French/Italian residual risk.
+// A second, COMPARATIVE bar (found's evidence must EXCEED target's, not
+// merely clear a floor) was tried on top of the title-case exclusion and
+// REMOVED: disabling it left every behavioural test in this file green, so
+// it was carrying no load the floor does not already carry — see
+// `distinctive_evidence_confirms_requires_the_shipped_floor` and the module
+// doc for the measurement.
+
+/// The exact reported false positive, reproduced directly. An honest ENGLISH
+/// noun-phrase block — the shape an ordinary skills line or a terse CV takes
+/// (measured: this exact list reads at `confidence() == 1.0`,
+/// `is_reliable() == true`, `lang == Fra`) — starves `whatlang`'s n-gram
+/// model of the function words it needs to read English from at all, and it
+/// lands on some OTHER language with MAXIMUM confidence margin.
+/// `is_language_mismatch` must not raise the deterministic Critical on it:
+/// doing so blanks `keywordCoverage` and suppresses every alignment finding
+/// on a document the user did nothing wrong with.
+///
+/// Mutation check (performed, not hypothetical): replaced
+/// `distinctive_evidence_confirms(text, found, lang)` in `is_language_mismatch`
+/// with a bare `true` (i.e. any confident Latin-script read counts, the
+/// original two-condition body) — RAN, went red (this fixture raised
+/// `content.language_mismatch` as a Critical), reverted.
+#[test]
+fn an_english_noun_phrase_block_never_earns_a_false_language_critical() {
+    // The same lowercase tool/skill list `regime_5_neither_witness_...` and
+    // the Skills-exclusion tests above already establish reads as SOME other
+    // covered language — an ordinary skills line, no different in shape from
+    // the reported bug's "Administration / Supervision / Coordination / …".
+    let noun_phrases = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
+        docker kubernetes terraform ansible jenkins grafana prometheus redis postgresql \
+        elasticsearch java spring hibernate maven gradle jira confluence";
+    assert!(
+        significant_chars(noun_phrases) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor, or this test proves nothing about \
+         the confidence-margin gate specifically"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(noun_phrases),
+        Some("fr"),
+        "premise: whatlang must confidently (and wrongly) read this honest English \
+         skills/tool list as French — measured directly at confidence 1.0, reliable — \
+         or this test proves nothing about the OLD two-condition check firing here"
+    );
+    assert!(
+        !is_language_mismatch(noun_phrases, "en"),
+        "the distinctive-function-word gate must keep this quiet: a noun-phrase block \
+         carries none of the real function words a genuine drift into another language \
+         would leave behind"
+    );
+
+    // End-to-end via the public entry point, with real English witnesses on
+    // both sides so the target is trivially corroborated — this is the shape
+    // that used to blank keywordCoverage and every alignment finding.
+    assert!(
+        !document_language_mismatch(noun_phrases, EN_SOURCE, EN_JOB_AD, "en"),
+        "a genuinely English noun-phrase document must not raise the deterministic \
+         Critical just because whatlang misreads it"
+    );
+    let report = validate_content(&ContentInput {
+        generated: noun_phrases,
+        source_resume: EN_SOURCE,
+        job_ad: EN_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// The THIRD-language case, answered directly rather than left implicit:
+/// target `"de"`, an untranslated English source, a German job ad (so the
+/// target IS corroborated) — but the model returns neither German nor
+/// English, it returns genuine ITALIAN prose.
+///
+/// **The rule catches it.** `distinctive_evidence_confirms` never needs
+/// `found`'s evidence to be evaluated against a specific OTHER curated
+/// language chosen in advance — it pairwise-compares `found` (whatever
+/// `detected_language` actually named) against `target` in the SAME text, and
+/// real Italian prose is exactly as function-word-dense as real English or
+/// German prose: it carries its own distinctive evidence ("ha", "di", "che",
+/// "sono", …), comfortably exceeding German's (zero, since the text is not
+/// German at all), independent of whatever the SOURCE or job ad happened to
+/// be written in.
+#[test]
+fn a_genuine_third_language_output_still_fires_against_the_real_target() {
+    let italian_output = "Ho lavorato come ingegnere backend senior presso una azienda di \
+        pagamenti, dove ho ridotto la latenza del servizio di cassa da 480 millisecondi a \
+        90 millisecondi grazie a una cache Redis posizionata davanti al servizio di \
+        contabilità. Ho eseguito i carichi di lavoro Docker su un cluster Kubernetes che \
+        risponde a dodicimila richieste ogni secondo, e ho riscritto lo scheduler dei \
+        tentativi in Rust, riducendo i pagamenti falliti del trentacinque per cento.";
+    assert!(
+        significant_chars(italian_output) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert!(
+        matches!(
+            crate::documents::keywords::detected_language(italian_output),
+            Some("it")
+        ),
+        "premise: this must genuinely and confidently read as Italian, or the test \
+         proves nothing about the third-language case specifically"
+    );
+    assert!(
+        document_language_mismatch(italian_output, EN_SOURCE, DE_JOB_AD, "de"),
+        "answer: a genuine third-language output DOES still fire — real Italian prose \
+         carries plenty of its own distinctive function-word evidence, which comfortably \
+         exceeds German's (zero, since the text is not German), regardless of what the \
+         source or job ad were written in"
+    );
+}
+
+// ── BLOCKING 1 (measured true-positive regression): Spanish and Portuguese ──
+
+/// The measured regression a review caught: genuine Spanish/Portuguese text
+/// against a non-Spanish/Portuguese target used to go SILENT under the first
+/// pass's global function-word pool, in BOTH the flowing-prose register and
+/// the bullets-plus-date-column register a real résumé's EXPERIENCE section
+/// actually uses. Both registers, both languages, pinned end-to-end through
+/// `validate_content` so a real `ContentIssue` at `Severity::Critical` is what
+/// is asserted — not just the internal predicate.
+///
+/// Mutation check (performed, not hypothetical): reverted
+/// `pairwise_evidence_count` to prune a word the moment it appeared in ANY
+/// two of the seven curated lists (the original global-pool design) — RAN,
+/// went red on all four cases below (evidence dropped to 0-1, under
+/// `MIN_DISTINCTIVE_HITS`), reverted.
+#[test]
+fn spanish_and_portuguese_regression_is_fixed_in_both_registers() {
+    let es_prose = "Ingeniero de software con ocho años de experiencia en sistemas de pago y \
+        plataformas de contenedores. He liderado la migración de nuestros servicios hacia \
+        Kubernetes y he reducido la latencia del servicio de pagos en un cuarenta por ciento. \
+        Trabajo con Rust, Python y PostgreSQL en un entorno de alta disponibilidad.";
+    let es_column = "EXPERIENCIA\n\n\
+        Ingeniero Backend Senior | Acme Payments | 2021 - Presente\n\
+        - Reduje la latencia del checkout de 480ms a 90ms con una cache Redis\n\
+        - Desplegué contenedores Docker en un clúster de Kubernetes\n\
+        - Reescribí el planificador de reintentos en Rust\n\n\
+        Desarrollador Backend | Globex Logistics | 2018 - 2021\n\
+        - Construí una interfaz de facturación en Python y PostgreSQL para 40 almacenes\n\
+        - Migré la flota a AWS con Terraform";
+    let pt_prose = "Engenheiro de software com oito anos de experiência em sistemas de \
+        pagamento e plataformas de contêineres. Liderei a migração dos nossos serviços para \
+        Kubernetes e reduzi a latência do serviço de pagamentos em quarenta por cento. \
+        Trabalho com Rust, Python e PostgreSQL em um ambiente de alta disponibilidade.";
+    let pt_column = "EXPERIÊNCIA\n\n\
+        Engenheiro Backend Sênior | Acme Payments | 2021 - Presente\n\
+        - Reduzi a latência do checkout de 480ms para 90ms com um cache Redis\n\
+        - Implantei contêineres Docker em um cluster Kubernetes\n\
+        - Reescrevi o agendador de tentativas em Rust\n\n\
+        Desenvolvedor Backend | Globex Logistics | 2018 - 2021\n\
+        - Construí uma interface de faturamento em Python e PostgreSQL para 40 armazéns\n\
+        - Migrei a frota para AWS com Terraform";
+
+    for (name, text, lang) in [
+        ("es_prose", es_prose, "es"),
+        ("es_column", es_column, "es"),
+        ("pt_prose", pt_prose, "pt"),
+        ("pt_column", pt_column, "pt"),
+    ] {
+        assert!(
+            significant_chars(text) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+            "premise[{name}]: fixture must clear the char floor"
+        );
+        assert_eq!(
+            crate::documents::keywords::detected_language(text),
+            Some(lang),
+            "premise[{name}]: must confidently read as {lang}, or this proves nothing \
+             about the regression"
+        );
+        assert!(
+            document_language_mismatch(text, EN_SOURCE, EN_JOB_AD, "en"),
+            "[{name}] a genuinely {lang} document against an English target must still \
+             raise the mismatch — this is the measured true-positive regression"
+        );
+        let report = validate_content(&ContentInput {
+            generated: text,
+            source_resume: EN_SOURCE,
+            job_ad: EN_JOB_AD,
+            top_requirements: &[],
+            target_language: "en",
+            doc_kind: DocKind::Resume,
+        });
+        let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+        assert_eq!(
+            hits[0].severity,
+            Severity::Critical,
+            "[{name}] the document-level mismatch must be a real Critical, not merely a \
+             true predicate"
+        );
+        assert!(!report.ok, "[{name}] a Critical must block the report");
+    }
+}
+
+// ── BLOCKING 2 (measured false positive): short ambiguous tokens in free text ──
+
+/// Five tokens a review measured as false positives on the SAME lowercase
+/// tool-list fixture this file already establishes reads as confident French:
+/// `ci/cd` (Italian "ci"), `.io` domains (Italian "io"), the `vi` editor
+/// (Italian "vi"), an "HA cluster" (Italian "ha"), and "cost per transaction"
+/// (Italian "per" — closed by curating "per" into `FUNCTION_WORDS_EN`, a
+/// genuine English preposition, so it collides out at the ordinary pairwise
+/// step). None of these five tokens is actually a FRENCH word — whatlang's
+/// guess never changes (`det=fr` throughout) — so `pairwise_evidence_count(text,
+/// "fr", "en")` finds nothing regardless of what the OLD "any curated
+/// language" pool found for a DIFFERENT language (Italian) whatlang never
+/// named. This is the found-SPECIFIC pairwise match closing the leak entirely
+/// on its own — no length floor or curated denylist for `ci`/`vi`/`io`/`ha`
+/// was needed here or shipped: a denylist was tried and, after failing to find
+/// a realistic document that needed it, removed (see the module doc for the
+/// measurement).
+#[test]
+fn short_ambiguous_tokens_never_manufacture_evidence() {
+    let base = "pandas numpy scikit-learn pytest git bash npm nginx dbt kubectl \
+        docker kubernetes terraform ansible jenkins grafana prometheus redis postgresql \
+        elasticsearch java spring hibernate maven gradle jira confluence";
+    let cases: &[(&str, String)] = &[
+        (
+            "+ci/cd",
+            format!("{base} ci/cd pipelines and ci/cd automation"),
+        ),
+        ("+.io", format!("{base} grafana.io and prometheus.io")),
+        ("+vi", format!("{base} vi and emacs and vi macros")),
+        ("+HA", format!("{base} HA cluster HA proxy")),
+        (
+            "+per",
+            format!("{base} cost per transaction requests per second"),
+        ),
+    ];
+    assert!(
+        matches!(
+            crate::documents::keywords::detected_language(base),
+            Some(found) if found != "en"
+        ),
+        "premise: the base tool list must confidently misread as some OTHER covered \
+         language, or the additions below prove nothing"
+    );
+    for (name, text) in cases {
+        assert!(
+            !document_language_mismatch(text, EN_SOURCE, EN_JOB_AD, "en"),
+            "[{name}] must not manufacture a mismatch — none of these tokens are actually \
+             a word in the language whatlang named"
+        );
+        let report = validate_content(&ContentInput {
+            generated: text,
+            source_resume: EN_SOURCE,
+            job_ad: EN_JOB_AD,
+            top_requirements: &[],
+            target_language: "en",
+            doc_kind: DocKind::Resume,
+        });
+        silent(&report, CONTENT_LANGUAGE_MISMATCH);
+    }
+}
+
+// ── CRITICAL (pre-PR gate): nominal-register German had NO fixture ──────────
+
+/// A pre-PR gate found that the title-case-sandwich exclusion (since
+/// removed — see the module doc) deleted German's evidence wholesale,
+/// because standard German CV register is NOMINAL ("Aufbau und Betrieb der
+/// Zahlungsplattform"), not the finite-verb register
+/// ([`EN_WRONG_LANGUAGE`]'s "Die Wartezeit wurde gesenkt…") every existing
+/// wrong-language German fixture in this file happened to use. German
+/// capitalises every noun, so in nominal register EVERY connector sits
+/// between two capitalised words — the exclusion could not tell that apart
+/// from a connector inside a proper noun, and this exact register never had
+/// a regression pin. Document scope: the whole résumé is nominal.
+#[test]
+fn nominal_register_german_document_is_critical() {
+    let de_nominal = "Jane Doe\n\
+        jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+        ZUSAMMENFASSUNG\n\n\
+        Acht Jahre Erfahrung im Zahlungsverkehr und im Aufbau von Container-Plattformen.\n\n\
+        BERUFSERFAHRUNG\n\n\
+        Senior Backend Engineer | Acme Payments | 2021 - Present\n\
+        - Aufbau und Betrieb der Zahlungsplattform mit Reduzierung der Wartezeit von 480ms \
+        auf 90ms\n\
+        - Leitung der Migration der Dienste auf einen Kubernetes-Cluster mit zwölftausend \
+        Anfragen pro Sekunde\n\
+        - Neuentwicklung des Wiederholungsplaners in Rust zur Reduzierung fehlgeschlagener \
+        Zahlungen\n\n\
+        Backend Developer | Globex Logistics | 2018 - 2021\n\
+        - Entwicklung der Abrechnungsschnittstelle in Python und PostgreSQL für vierzig \
+        Lagerstandorte\n\
+        - Migration der Flotte zu AWS mit Terraform als Bereitstellungswerkzeug\n\n\
+        KENNTNISSE\n\n\
+        Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis\n\n\
+        AUSBILDUNG\n\n\
+        BSc Informatik, TU Berlin, 2014 - 2018\n";
+    assert!(
+        significant_chars(de_nominal) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(de_nominal),
+        Some("de"),
+        "premise: must confidently read as German"
+    );
+    assert!(
+        is_language_mismatch(de_nominal, "en"),
+        "nominal-register German must still be caught — this is the exact register the \
+         title-case-sandwich exclusion silenced"
+    );
+    let report = en_resume(de_nominal, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+}
+
+/// The SAME nominal register, drifted into only the EXPERIENCE section of an
+/// otherwise-English résumé — the shape the reported defect actually takes,
+/// and the shape [`a_single_drifted_section_is_caught_even_though_the_document_reads_clean`]
+/// already pins for Italian. German had no equivalent: the document-level
+/// vote must stay clean (an English majority hides one drifted section) and
+/// the section-level pass must catch it — this is the ONE fixture that
+/// exercises nominal-register German through the SECTION-scoped half of
+/// `is_language_mismatch`, not just the whole-document half above.
+#[test]
+fn nominal_register_german_section_is_critical() {
+    let generated = EN_CLEAN.replace(
+        "Senior Backend Engineer | Acme Payments | 2021 - Present\n\
+        - Checkout latency fell from 480ms to 90ms once a Redis cache sat in front of the \
+        ledger service\n\
+        - Ran the Docker workloads on a Kubernetes cluster that answers 12000 requests \
+        every second\n\
+        - Rewrote the retry scheduler in Rust, and failed settlements fell by 35%\n\n\
+        Backend Developer | Globex Logistics | 2018 - 2021\n\
+        - 40 warehouse sites bill through an API I wrote in Python, backed by PostgreSQL\n\
+        - Took the fleet to AWS, with the whole deployment pipeline written as Terraform",
+        "Senior Backend Engineer | Acme Payments | 2021 - Present\n\
+        - Aufbau und Betrieb der Zahlungsplattform mit Reduzierung der Wartezeit von 480ms \
+        auf 90ms\n\
+        - Leitung der Migration der Dienste auf einen Kubernetes-Cluster mit zwölftausend \
+        Anfragen pro Sekunde\n\
+        - Neuentwicklung des Wiederholungsplaners in Rust zur Reduzierung fehlgeschlagener \
+        Zahlungen\n\n\
+        Backend Developer | Globex Logistics | 2018 - 2021\n\
+        - Entwicklung der Abrechnungsschnittstelle in Python und PostgreSQL für vierzig \
+        Lagerstandorte\n\
+        - Migration der Flotte zu AWS mit Terraform als Bereitstellungswerkzeug",
+    );
+    assert!(
+        !is_language_mismatch(&generated, "en"),
+        "premise: the document-level majority vote must NOT fire — one drifted nominal- \
+         register German EXPERIENCE section inside an otherwise-English résumé is exactly \
+         the case that hides from a whole-document read"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+    assert_eq!(
+        hits[0].section.as_deref(),
+        Some("EXPERIENCE"),
+        "the finding must name the drifted section, not just the document"
+    );
+}
+
+// ── Title-Case rendering also reaches the evidence branch (fr, in addition to German) ──
+
+/// The title-case-sandwich exclusion silenced more than German: ANY document
+/// rendered in Title Case (a real résumé-theme style, not a synthetic
+/// construction) put every function word between two capitalised
+/// neighbours, in every curated language. Pinned here for French — German
+/// already has nominal-register coverage above, and this proves the fix is
+/// not German-specific.
+#[test]
+fn title_case_rendered_french_document_is_critical() {
+    let fr_title_case = "La Candidate A Huit Ans D'Expérience Dans Les Systèmes De Paiement \
+        Back-End Et A Dirigé La Migration De Nos Services Vers Kubernetes En Réduisant La \
+        Latence Du Service De Paiement De Quarante Pour Cent Cette Année Dans L'Entreprise.";
+    assert!(
+        significant_chars(fr_title_case) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(fr_title_case),
+        Some("fr"),
+        "premise: must confidently read as French"
+    );
+    assert!(
+        document_language_mismatch(fr_title_case, EN_SOURCE, EN_JOB_AD, "en"),
+        "a Title-Case-rendered French document must still fire — every function word \
+         sitting between two capitalised neighbours is a rendering choice, not evidence \
+         the text is a proper noun"
+    );
+    let report = validate_content(&ContentInput {
+        generated: fr_title_case,
+        source_resume: EN_SOURCE,
+        job_ad: EN_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+}
+
+// ── BLOCKING 3 (untested section-scoped half) + design question (proper nouns) ──
+
+/// The differentiator BLOCKING 3 asked for: a fixture where reverting ONLY
+/// `section_language_issues`'s call to `is_language_mismatch` back to its
+/// pre-fix raw `detected_language(&body) != ctx.lang` comparison turns this
+/// test red while every OTHER section-level guard (`SectionKind::Skills`
+/// exclusion, `looks_like_prose`, the confidence floor) stays satisfied — so
+/// this is the ONE fixture in the suite that actually exercises the
+/// section-scoped evidence branch, not just the document-scoped one.
+///
+/// The shape is realistic, not adversarial: an EDUCATION entry (a real
+/// `SectionKey`, unlike Certifications/Awards, so a false positive here is
+/// NOT downgraded to a Warning) that spells out a German institution's own,
+/// untranslated name alongside genuine English degree labels — exactly what
+/// a truthful English résumé for a candidate who studied in Germany looks
+/// like. Measured: `detected_language` reads the section body as confident
+/// German (`Some("de")`, conf 1.0) purely from the institution's own
+/// connector words ("der", "und") — the OLD raw check fires on this alone.
+///
+/// Mutation check (performed, not hypothetical): reverted the
+/// `section_language_issues` hunk in `language.rs` to
+/// `if !matches!(detected_language(&body), Some(found) if found != ctx.lang) { return None; }`
+/// (dropping the route through `is_language_mismatch`), leaving the
+/// document-level pass untouched — RAN, went red (`content.language_mismatch`
+/// fired on the EDUCATION section), reverted. All 211
+/// `validate::content` tests that existed before this fix stayed green
+/// through that same reversion, which is exactly the coverage gap BLOCKING 3
+/// named.
+#[test]
+fn a_german_institution_name_inside_an_english_education_section_never_fires() {
+    let section_body = "EDUCATION\n\
+        Diploma in Business Administration, Ludwig-Maximilians-Universitat Munchen der \
+        Isotopenforschung und Angewandten Wissenschaften\n\
+        Certificate in Software Architecture, Technische Universitat Munchen der \
+        Angewandten Wissenschaften\n";
+    assert!(
+        significant_chars(section_body) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: the section body must clear the per-section char floor"
+    );
+    assert!(
+        looks_like_prose(section_body),
+        "premise: this section must clear the prose-ratio filter, or the Skills/prose \
+         guards alone would explain the silence and this test would prove nothing about \
+         the evidence branch specifically"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(section_body),
+        Some("de"),
+        "premise: whatlang must confidently (and wrongly) read this section as German — \
+         the exact read the OLD raw section-level check trusted unconditionally"
+    );
+    assert!(
+        !is_language_mismatch(section_body, "en"),
+        "the SAME evidence gate the document pass uses must also keep the section pass \
+         quiet here"
+    );
+
+    let generated = EN_CLEAN.replace(
+        "BSc Computer Science, TU Berlin, 2014 - 2018",
+        "Diploma in Business Administration, Ludwig-Maximilians-Universitat Munchen der \
+         Isotopenforschung und Angewandten Wissenschaften\n\
+         Certificate in Software Architecture, Technische Universitat Munchen der \
+         Angewandten Wissenschaften",
+    );
+    assert!(
+        generated != EN_CLEAN,
+        "premise: the education entry must actually be replaced — EN_CLEAN's wording drifted, \
+         so this test is now asserting silence on an unmodified English fixture"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// The narrower cousin of the test above: the SAME shape under a heading
+/// `classify_section` files as `Other` (Certifications has no `SectionKey`),
+/// so even where the evidence gate did NOT exist this would only ever
+/// downgrade to a Warning, never block. Pinned separately so a future reader
+/// can see the severity difference is real, not asserted from the EDUCATION
+/// case alone.
+#[test]
+fn a_german_institution_name_inside_an_english_certifications_section_never_fires() {
+    assert_eq!(
+        crate::documents::evidence::classify_section("CERTIFICATIONS"),
+        crate::documents::evidence::SectionKind::Other,
+        "premise: Certifications must classify as Other, or the severity-downgrade half \
+         of this test's premise does not hold"
+    );
+    let certs = "\n\nCERTIFICATIONS\n\n\
+        Diploma in Business Administration, Ludwig-Maximilians-Universitat Munchen der \
+        Isotopenforschung und Angewandten Wissenschaften\n\
+        Certificate in Software Architecture, Technische Universitat Munchen der \
+        Angewandten Wissenschaften\n\
+        Award for Outstanding Academic Performance, Deutsche Gesellschaft fur Informatik \
+        und Datenverarbeitung\n";
+    let generated = format!("{EN_CLEAN}{certs}");
+    let report = en_resume(&generated, &en_requirements());
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+/// The design question's OTHER measured shape: the REALISTIC one, matching
+/// this crate's own fixture convention for an education entry — a terse
+/// "Degree, Institution, Dates" one-liner (see `EN_SOURCE`/`DE_SOURCE`'s "BSc
+/// Computer Science, TU Berlin, 2014 - 2018") — with a REAL, not fabricated,
+/// German institution name whose OFFICIAL name genuinely contains "für" and
+/// "und" (Fachhochschule für Technik und Wirtschaft Berlin is a real Berlin
+/// university of applied sciences). A short institution name contributes at
+/// most one or two hits, and real terse entries do not accumulate enough
+/// evidence to clear `MIN_DISTINCTIVE_HITS` in the first place — `MIN_DISTINCTIVE_HITS`
+/// is now the only thing keeping this fixture quiet, which makes it a direct
+/// floor-calibration pin, worth keeping separate from the denser,
+/// multi-sentence-labelled fixture above.
+#[test]
+fn a_terse_real_german_institution_name_never_fires() {
+    let generated = EN_CLEAN.replace(
+        "BSc Computer Science, TU Berlin, 2014 - 2018",
+        "MSc Computer Science, Fachhochschule fur Technik und Wirtschaft Berlin, 2018 - 2020\n\
+         BSc Computer Science, Technische Universitat Munchen, 2014 - 2018",
+    );
+    assert!(
+        generated != EN_CLEAN,
+        "premise: the terse institution entry must actually be replaced — EN_CLEAN's wording \
+         drifted, so this test is now asserting silence on an unmodified English fixture"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+// ── tr/vi: the script gate must not raise a Critical with zero evidence ──
+
+/// A review found that gating the evidence requirement on
+/// `CURATED_FUNCTION_WORDS` membership (seven languages) instead of the
+/// actual Latin SCRIPT (nine — Turkish and Vietnamese are Latin-script too)
+/// let a confident `tr`/`vi` whatlang guess skip corroboration entirely and
+/// raise a Critical with ZERO evidence. `needs_distinctive_evidence` now
+/// gates on the nine-language script set; since this crate curates no
+/// `tr`/`vi` vocabulary, a genuine `tr`/`vi` mismatch now goes quiet instead —
+/// an ACCEPTED miss, the same shape as every other uncurated-language miss
+/// this module already documents (see `regime_4`), not a new kind of gap.
+#[test]
+fn turkish_text_needs_evidence_too_and_goes_quiet_without_a_curated_list() {
+    let tr_text = "Ödeme sistemleri ve konteyner platformlarında sekiz yıllık deneyime sahip \
+        bir backend mühendisiyim. Ödeme sistemleri ve konteyner platformlarında sekiz yıllık \
+        deneyime sahip bir backend mühendisiyim.";
+    assert!(
+        significant_chars(tr_text) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(tr_text),
+        Some("tr"),
+        "premise: must confidently read as Turkish, or this test proves nothing about \
+         the script gate specifically"
+    );
+    assert!(
+        super::language::needs_distinctive_evidence("tr"),
+        "Turkish is Latin-script and must still need corroboration — it is the exact \
+         language this fix closes a zero-evidence hole for"
+    );
+    assert!(
+        !is_language_mismatch(tr_text, "en"),
+        "an accepted miss: no curated tr vocabulary means no evidence, so this stays \
+         quiet rather than firing on zero corroboration"
+    );
+}
+
+// ── es/pt/fr/it/nl: the close-relative-target silent band (accepted miss) ──
+
+/// **Advisory MEDIUM (confirmation review), the close-relative-target
+/// silent band.** [`MIN_DISTINCTIVE_HITS`] is one absolute floor for every
+/// language pair, but a genuine short paragraph in one Romance language
+/// carries far fewer PAIRWISE-distinctive words against a close relative
+/// than against a distant one — es/pt/fr/it/nl share most short function
+/// words with each other and only diverge on the handful pairwise pruning
+/// keeps. Measured: the SAME 120-150 character genuine two-sentence
+/// paragraph that clears the floor and fires cleanly against `"en"`
+/// (evidence 6) sits at evidence 1-4 — under the floor, silent — against a
+/// linguistically close target. This repo ships es/pt/it/nl locale profiles
+/// (see [`crate::locale`]), so a genuinely wrong-language document
+/// targeting one of THESE instead of English is a real, supported scenario,
+/// not a hypothetical one — the same accepted-cost shape as the DACH miss
+/// and the tr/vi miss above, pinned here so a future change to
+/// [`MIN_DISTINCTIVE_HITS`] cannot quietly start believing the floor has no
+/// blind spot among the languages this crate actually curates. Not closed
+/// here: lowering the floor to catch these would reopen the false positives
+/// [`distinctive_evidence_confirms_requires_the_shipped_floor`]'s mutation
+/// check already found at floor 4 — the same "closing one language's miss
+/// reopens another's bug" trade every other suppressor in this module hit.
+#[test]
+fn a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss() {
+    use super::language::pairwise_evidence_count;
+
+    let es_two_sentences = "Trabaje como ingeniero de software durante dos anos en Madrid, \
+        con experiencia solida en Python y en sistemas distribuidos de gran escala y alta \
+        disponibilidad.";
+    assert!(
+        significant_chars(es_two_sentences) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor, or the silence below proves nothing \
+         about the evidence gate specifically"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(es_two_sentences),
+        Some("es"),
+        "premise: must confidently read as Spanish"
+    );
+    assert_eq!(
+        pairwise_evidence_count(es_two_sentences, "es", "fr"),
+        1,
+        "pinned measurement: a genuine Spanish paragraph carries almost no \
+         French-exclusive-looking evidence against French specifically"
+    );
+    assert!(
+        !is_language_mismatch(es_two_sentences, "fr"),
+        "accepted miss: Spanish text targeting French stays quiet — evidence 1 is well \
+         under the floor"
+    );
+    assert!(
+        is_language_mismatch(es_two_sentences, "en"),
+        "premise: the SAME text fires against a distant target, proving the silence above \
+         is about the LANGUAGE PAIR, not a defect in the fixture"
+    );
+
+    let pt_two_sentences = "Trabalhei como engenheiro de software em Lisboa durante dois \
+        anos, com experiência sólida em Python e em sistemas distribuídos de grande escala.";
+    assert!(
+        significant_chars(pt_two_sentences) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(pt_two_sentences),
+        Some("pt"),
+        "premise: must confidently read as Portuguese"
+    );
+    for other in ["es", "fr", "nl"] {
+        assert_eq!(
+            pairwise_evidence_count(pt_two_sentences, "pt", other),
+            4,
+            "[pt vs {other}] pinned measurement: one hit short of the floor"
+        );
+        assert!(
+            !is_language_mismatch(pt_two_sentences, other),
+            "[pt vs {other}] accepted miss: evidence 4 is one hit under the floor"
+        );
+    }
+    assert!(
+        is_language_mismatch(pt_two_sentences, "en"),
+        "premise: the SAME Portuguese text fires against a distant target"
+    );
+}
+
+// ── connector-sparse German register: a THIRD accepted miss ────────────────
+
+/// **Advisory MEDIUM (confirmation review), the connector-sparse-register
+/// accepted miss.** [`MIN_DISTINCTIVE_HITS`] cannot separate "an English
+/// document that merely names a foreign institution" (correctly quiet) from
+/// "a genuinely foreign document written in a register too sparse in
+/// closed-class connectors to evidence itself" (incorrectly quiet) — both
+/// land in the SAME 0-4 evidence band, because a pure count has no way to
+/// tell them apart. Standard German CV register drops the article and the
+/// finite-verb clause a sentence would otherwise need ("Zahlungsplattform
+/// aufgebaut", not "Ich habe die Zahlungsplattform aufgebaut"), so even a
+/// WHOLE, genuinely German résumé written this way carries almost no
+/// evidence: measured here at 3, on 695 significant characters — two hits
+/// short of the floor of 5.
+///
+/// **Not recoverable by lowering the floor.** 3 is the exact value
+/// [`MIN_DISTINCTIVE_HITS`]'s own corpus table already relies on staying
+/// quiet for a genuine false positive one row up (a German institution name
+/// inside an EDUCATION section of an otherwise-English document) — a floor
+/// of 3 would reopen that false positive at the same moment it closes this
+/// false negative. This is the THIRD accepted miss this module documents,
+/// after the uncurated `tr`/`vi` miss
+/// (`turkish_text_needs_evidence_too_and_goes_quiet_without_a_curated_list`)
+/// and the close-relative-target Romance-language miss
+/// (`a_short_paragraph_against_a_close_relative_target_is_an_accepted_miss`
+/// above) — and, same as those two, a DESIGN limit, not a calibration
+/// error: recovering it needs a signal this module does not have
+/// (participle/compound morphology, or a second corroborating witness), not
+/// a threshold change. Left to a future change rather than folded into
+/// whichever fix happens to be touching this file; pinned here so that
+/// future change has something concrete to turn green — the fixture below,
+/// currently silent, firing `content.language_mismatch`.
+///
+/// Both `is_language_mismatch` AND [`document_language_mismatch`] — the
+/// SAME function `pipeline::resume::stages::draft` gates its
+/// draft-language retry on — are asserted quiet, so this pins that
+/// regeneration does not fire for this shape either, not just that the
+/// validator does not.
+#[test]
+fn a_terse_participle_register_german_resume_is_an_accepted_miss() {
+    use super::language::pairwise_evidence_count;
+
+    let de_terse = "Jane Doe\n\
+        jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+        ZUSAMMENFASSUNG\n\n\
+        Acht Jahre Zahlungsverkehr, Aufbau Container-Plattformen, Senior Backend Engineering.\n\n\
+        BERUFSERFAHRUNG\n\n\
+        Senior Backend Engineer, Acme Payments, 2021 - heute\n\
+        - Zahlungsplattform aufgebaut, Wartezeit gesenkt: 480ms auf 90ms\n\
+        - Migration Kubernetes-Cluster geleitet, zwölftausend Anfragen pro Sekunde\n\
+        - Wiederholungsplaner neu entwickelt in Rust, fehlgeschlagene Zahlungen reduziert\n\n\
+        Backend Developer, Globex Logistics, 2018 - 2021\n\
+        - Abrechnungsschnittstelle entwickelt in Python, PostgreSQL, vierzig Lagerstandorte\n\
+        - Flotte migriert zu AWS, Terraform als Bereitstellungswerkzeug\n\n\
+        KENNTNISSE\n\n\
+        Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis\n\n\
+        AUSBILDUNG\n\n\
+        BSc Informatik, TU Berlin, 2014 - 2018\n";
+
+    assert!(
+        significant_chars(de_terse) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor, or the silence below proves nothing \
+         about the evidence gate specifically"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(de_terse),
+        Some("de"),
+        "premise: must confidently read as German, or this is not the shape this test claims"
+    );
+    let evidence = pairwise_evidence_count(de_terse, "de", "en");
+    assert_eq!(
+        evidence, 3,
+        "pinned measurement: a genuinely German résumé in the connector-sparse participle \
+         register carries almost no closed-class evidence even at whole-résumé length"
+    );
+    assert!(
+        evidence < 5,
+        "premise: the miss below only proves what this test claims if evidence is genuinely \
+         under MIN_DISTINCTIVE_HITS's shipped floor (5), not accidentally at or over it"
+    );
+    assert!(
+        !is_language_mismatch(de_terse, "en"),
+        "accepted miss: a genuinely German whole résumé, in the connector-sparse register \
+         real German CVs use, stays quiet — this is the gap a future recall improvement \
+         needs to close (participle/compound morphology, or a second witness), and it must \
+         do so WITHOUT reopening the EDUCATION-section false positive that sits at the same \
+         evidence count"
+    );
+    assert!(
+        !document_language_mismatch(de_terse, EN_SOURCE, EN_JOB_AD, "en"),
+        "the same accepted miss through the public entry point pipeline::resume::stages::draft \
+         gates its language-retry on — regeneration does not fire for this shape either"
+    );
+    let report = en_resume(de_terse, &en_requirements());
+    silent(&report, CONTENT_LANGUAGE_MISMATCH);
+}
+
+// ── direct unit tests for the evidence primitives (BLOCKING 3's other ask) ──
+
+/// `pairwise_evidence_count`'s exclusion rules, isolated from any whole-
+/// document fixture: a shared word (in BOTH lists) never counts; a bare
+/// single-letter token never counts even when it IS a genuine word in
+/// `lang`'s list; a word `lang` shares with some THIRD language `other` has
+/// never heard of still counts (this is the whole point of pairwise over a
+/// global pool); "zu" (a genuine German preposition, 2 characters, absent
+/// from `FUNCTION_WORDS_EN`) DOES count — 2-character tokens are not
+/// universally excluded, only the single-letter floor and a genuine target
+/// collision remove a word.
+#[test]
+fn pairwise_evidence_count_excludes_shared_and_single_letter_tokens() {
+    use super::language::pairwise_evidence_count;
+
+    // "und" is German-only (not in FUNCTION_WORDS_EN) and 3 characters — counts.
+    assert_eq!(pairwise_evidence_count("und und und", "de", "en"), 3);
+    // "in" is shared by German AND English — never counts either way.
+    assert_eq!(pairwise_evidence_count("in in in", "de", "en"), 0);
+    // "zu" is a genuine German preposition, only 2 characters, and NOT shared
+    // with English — counts. (Confirms the length floor is 2, not 3: a
+    // blanket 3-character floor was tried and measured to also exclude
+    // Italian's own "il"/"la"/"di" — see MIN_DISTINCTIVE_TOKEN_CHARS's doc.)
+    assert_eq!(pairwise_evidence_count("zu zu zu", "de", "en"), 3);
+    // "y" ("and", Spanish) is a genuine word but only ONE character — excluded
+    // by the single-letter floor even though it appears nowhere in
+    // FUNCTION_WORDS_EN.
+    assert_eq!(pairwise_evidence_count("y y y", "es", "en"), 0);
+    // Pairwise, not global: "con" collides between Spanish and Italian, but
+    // that collision is irrelevant when comparing Spanish against ENGLISH,
+    // which has never heard of "con" at all.
+    assert!(pairwise_evidence_count("con con con", "es", "en") > 0);
+    // An uncurated language (no list at all) always returns zero.
+    assert_eq!(pairwise_evidence_count("und und und", "tr", "en"), 0);
+}
+
+/// German capitalises every noun, so a nominal-register connector
+/// ("Aufbau und Betrieb der Zahlungsplattform") sits between two capitalised
+/// words exactly as often as a proper noun's own connector does — a
+/// title-case-sandwich exclusion tried in `pairwise_evidence_count` could not
+/// tell the two apart and deleted German's evidence wholesale (see the
+/// module doc's `MIN_DISTINCTIVE_HITS` history). Pinned here directly: this
+/// exact shape must still count.
+#[test]
+fn a_connector_between_two_title_case_words_still_counts() {
+    use super::language::pairwise_evidence_count;
+
+    assert_eq!(
+        pairwise_evidence_count("Technik und Wirtschaft", "de", "en"),
+        1,
+        "\"und\" between two Capitalised words is ordinary German nominal register, \
+         not a signal to exclude it"
+    );
+}
+
+/// `distinctive_evidence_confirms`'s absolute floor, isolated: `found`'s
+/// pairwise evidence must clear [`MIN_DISTINCTIVE_HITS`] (below it, a match
+/// is noise); a non-Latin-script `found` skips the requirement entirely
+/// regardless of evidence, since `needs_distinctive_evidence` never asks a
+/// script whatlang already reads reliably to corroborate itself.
+///
+/// Mutation check (performed at the WHOLE-SUITE level, not just this
+/// isolated pair — both classes really do respond to the one constant):
+///
+/// - Floor moved to 4 (one under the shipped 5) — RAN the full
+///   `validate::content` suite: `a_german_institution_name_inside_an_english_certifications_section_never_fires`
+///   (a QUIET fixture, evidence 4) went red — a false positive reopened.
+/// - Floor moved to 7 (one over) — RAN the full suite again:
+///   `a_drifted_volunteer_section_warns_rather_than_blocks` (a FIRE fixture,
+///   evidence 6) went red — a false negative reopened.
+/// - Restored to 5; full suite green again.
+///
+/// This IS the property a shape-based exclusion cannot offer: one number,
+/// and both failure directions are visibly, mechanically tied to it.
+#[test]
+fn distinctive_evidence_confirms_requires_the_shipped_floor() {
+    use super::language::distinctive_evidence_confirms;
+
+    // Below the floor (4 hits): must not confirm.
+    assert!(!distinctive_evidence_confirms(
+        "und und und und",
+        "de",
+        "en"
+    ));
+    // At the floor (5 hits): confirms.
+    assert!(distinctive_evidence_confirms(
+        "und und und und und",
+        "de",
+        "en"
+    ));
+    // A non-Latin script skips the requirement outright: zero evidence, but
+    // whatlang's script read is already reliable there.
+    assert!(distinctive_evidence_confirms(
+        "zero evidence text here",
+        "zh",
+        "en"
+    ));
+}
+
+/// `needs_distinctive_evidence` gates on the nine-language Latin-SCRIPT set,
+/// not on which seven have a curated vocabulary — the distinction BLOCKING 2
+/// (tr/vi) hinges on.
+#[test]
+fn needs_distinctive_evidence_is_the_nine_language_latin_script_set() {
+    for lang in ["en", "de", "fr", "es", "it", "nl", "pt", "tr", "vi"] {
+        assert!(
+            super::language::needs_distinctive_evidence(lang),
+            "{lang} is Latin-script and must need corroboration"
+        );
+    }
+    for lang in ["zh", "ja", "ko", "ar", "he", "hi", "bn", "th", "uk", "ru"] {
+        assert!(
+            !super::language::needs_distinctive_evidence(lang),
+            "{lang} reads a non-Latin script; whatlang's script read is already reliable \
+             there without corroboration"
+        );
+    }
+}
+
+/// The floor BLOCKING 3 asked for in place of an exact-count assertion — a
+/// language's own pairwise vocabulary against English must clear a healthy
+/// minimum, so a future edit that silently thins a list back down (the exact
+/// way the Spanish regression shipped unnoticed) fails loudly here instead of
+/// only showing up as a missed Critical three layers away. Chosen well below
+/// every language's current raw list size (`en` 70, `de` 83, `fr` 68, `es`
+/// 61, `it` 65, `nl` 58, `pt` 58) so ordinary curation additions/removals do
+/// not make this brittle.
+#[test]
+fn every_curated_language_has_a_healthy_pairwise_floor_against_english() {
+    const FLOOR: usize = 40;
+    for lang in ["de", "fr", "es", "it", "nl", "pt"] {
+        let words = super::language::function_words_for(lang);
+        let against_en: usize = words
+            .iter()
+            .filter(|w| !super::language::function_words_for("en").contains(w))
+            .count();
+        assert!(
+            against_en >= FLOOR,
+            "{lang}'s vocabulary against English has only {against_en} pairwise-distinct \
+             entries, under the {FLOOR} floor — this is exactly how the Spanish regression \
+             (30 survivors after global pruning) shipped unnoticed; investigate before \
+             lowering this floor"
+        );
+    }
+}
+
+/// Hygiene guard for the class of bug a review found by inspection: `"zijn"`
+/// listed TWICE in `FUNCTION_WORDS_NL` (possessive and copula) — harmless
+/// under the current HashSet-based [`pairwise_evidence_count`] (a duplicate
+/// collapses on `.collect()`), but a silent authoring mistake nonetheless,
+/// and the SAME sweep found a second instance (`"a"` and `"se"`, each twice,
+/// in `FUNCTION_WORDS_PT`) the review did not catch by inspection. Both are
+/// fixed; this test is what keeps a third one from shipping the same way.
+#[test]
+fn no_curated_language_list_has_an_internal_duplicate() {
+    for lang in ["en", "de", "fr", "es", "it", "nl", "pt"] {
+        let words = super::language::function_words_for(lang);
+        let unique: std::collections::HashSet<&&str> = words.iter().collect();
+        assert_eq!(
+            unique.len(),
+            words.len(),
+            "{lang}'s function-word list has an internal duplicate — {} entries, {} unique; \
+             {words:?}",
+            words.len(),
+            unique.len()
+        );
+    }
 }
 
 /// H4 — "still there" is spelled in more than one way. A source that writes

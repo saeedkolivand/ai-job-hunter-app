@@ -545,6 +545,20 @@ pub fn classify_section(heading: &str) -> SectionKind {
 /// gap list with "unsere", "hinter" and "bereits" instead of skills. Entries are
 /// the *unstemmed, normalized* forms (what [`display_forms`] yields), because
 /// the split happens on stems when the languages align.
+///
+/// **Not the same primitive as `validate::content::language`'s
+/// `FUNCTION_WORDS_DE`/`function_words_for`, despite the identical name and
+/// overlapping content — do not "unify" them.** That module asks a language-
+/// IDENTITY question (does this text carry positive evidence of being
+/// written in a specific OTHER language, so a confident-but-wrong `whatlang`
+/// read is not this crate's only witness) and answers it for seven curated
+/// languages; this one asks a SKILL-CLAIM question (which tokens on a skills
+/// line are filler rather than a claimed skill) and, as the doc above
+/// explains, is deliberately curated for German only. A word missing here is
+/// safe (a display-only gap list stays merely noisy); a word wrongly
+/// PRESENT there is not (it manufactures a language accusation) — the two
+/// lists answer to different correctness bars for that reason, and merging
+/// them would let a change tuned for one silently regress the other.
 const FUNCTION_WORDS_DE: &[&str] = &[
     // Determiners, pronouns and prepositions that survive the ≥4-char filter.
     "aber",
@@ -667,6 +681,12 @@ pub(crate) fn function_words(lang: &str) -> &'static [&'static str] {
 /// removed must go quiet here rather than report a number it cannot stand
 /// behind. Adding a language to [`function_words`] is what re-enables it —
 /// deliberately one edit, in one place.
+///
+/// `false` for `"es"` here does NOT mean this crate has no Spanish function
+/// words anywhere — `validate::content::language::function_words_for("es")`
+/// returns 61 of them, curated for a DIFFERENT question (see
+/// [`FUNCTION_WORDS_DE`]'s doc for why the two are deliberately separate
+/// primitives, not the same list read from two places).
 pub(crate) fn has_curated_function_words(lang: &str) -> bool {
     matches!(lang, "en" | "de")
 }
