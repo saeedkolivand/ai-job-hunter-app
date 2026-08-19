@@ -26,6 +26,8 @@ import {
   type Application,
   APPLICATION_STAGES,
   type AutopilotFoundJob,
+  EVENT_SOURCE_EMAIL,
+  EVENT_SOURCE_EMAIL_REJECT,
   type StatusEvent,
 } from '@ajh/shared';
 import { type TFunction, useTranslation } from '@ajh/translations';
@@ -120,12 +122,6 @@ function statusColor(status: string): 'red' | 'green' | 'blue' | 'brand' {
   if (/interview|screen/.test(s)) return 'blue';
   return 'brand';
 }
-
-// Email tracking v2 — mirrors the Rust `EVENT_SOURCE_*` constants
-// (`applications/status_events.rs`), which are `pub(crate)` and so have no
-// shared TS export; these string literals are the wire contract.
-const EVENT_SOURCE_EMAIL = 'email';
-const EVENT_SOURCE_EMAIL_REJECT = 'email_reject';
 
 /** An unconfirmed email-derived write — the only kind the timeline renders as
  *  provisional (Accept/Reject affordances, never presented as settled history). */

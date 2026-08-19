@@ -588,6 +588,27 @@ export interface Application {
   salaryCurrency?: string;
 }
 
+/**
+ * Known {@link StatusEvent.source} values — a COMPARISON SET for consumers to
+ * check against, not a closed union (`source` stays a free-form `string` on
+ * purpose; see its doc). An unrecognised value must fall through to normal
+ * rendering, never crash or be mistaken for one of these.
+ *
+ * The Rust mirror is `EVENT_SOURCE_USER`/`EVENT_SOURCE_EMAIL`/
+ * `EVENT_SOURCE_EMAIL_REJECT` in
+ * `apps/desktop/src-tauri/src/applications/status_events.rs` — `pub(crate)`,
+ * so it has no shared export and duplicates these literals by hand. That Rust
+ * file pins its own constants against these same strings in a test, so a
+ * rename on either side fails loudly instead of silently disabling the
+ * auto-write adjudication step (an unconfirmed row is the whole safety model
+ * for a classifier with a recorded precision limit — losing the Accept/Reject
+ * affordance without a test failure would be the worst available outcome).
+ * `status-event.test.ts` pins the TS side the same way.
+ */
+export const EVENT_SOURCE_USER = 'user';
+export const EVENT_SOURCE_EMAIL = 'email';
+export const EVENT_SOURCE_EMAIL_REJECT = 'email_reject';
+
 /** One append-only status-history row. */
 export interface StatusEvent {
   applicationId: string;
@@ -596,10 +617,13 @@ export interface StatusEvent {
   toStatus: string;
   at: number;
   note: string;
-  /** Who/what asserted this transition: `'user'` (every pre-v2 row, and every
-   *  user-driven write today) or `'email'`/`'email_reject'` (v2 auto-write and
-   *  its reversal — see {@link StatusEvent.confirmed}). A free-form string, not
-   *  a closed union, so a future source needs no client-side change. */
+  /** Who/what asserted this transition: {@link EVENT_SOURCE_USER} (every
+   *  pre-v2 row, and every user-driven write today) or
+   *  {@link EVENT_SOURCE_EMAIL}/{@link EVENT_SOURCE_EMAIL_REJECT} (v2
+   *  auto-write and its reversal — see {@link StatusEvent.confirmed}). A
+   *  free-form string, not a closed union, so a future source needs no
+   *  client-side change — the exported constants above are a comparison set,
+   *  not an exhaustive type. */
   source: string;
   /** Whether a human has reviewed this transition. Every pre-v2 row (and every
    *  `'user'`-sourced write) is `true`. An email-derived write ALWAYS lands
