@@ -279,3 +279,53 @@ describe('EmailWatchSection — connected', () => {
     });
   });
 });
+
+describe('EmailWatchSection — auto-write toggle', () => {
+  it('reflects autoWriteEnabled: true from the status payload', async () => {
+    renderSection({ 'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED) });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('reflects autoWriteEnabled: false from the status payload', async () => {
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue({ ...CONNECTED, autoWriteEnabled: false }),
+    });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('calls the auto-write setter with the new value when toggled', async () => {
+    const setAutoWriteEnabled = vi
+      .fn()
+      .mockResolvedValue({ ...CONNECTED, autoWriteEnabled: false });
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.setAutoWriteEnabled': setAutoWriteEnabled,
+    });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    await userEvent.click(sw);
+
+    await waitFor(() => {
+      expect(setAutoWriteEnabled).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('shows a fixed-copy notification when toggling auto-write fails', async () => {
+    const setAutoWriteEnabled = vi.fn().mockRejectedValue(new Error('store write failed'));
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.setAutoWriteEnabled': setAutoWriteEnabled,
+    });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    await userEvent.click(sw);
+
+    await waitFor(() => {
+      expect(screen.getByText('Could not update the email-tracking setting.')).toBeInTheDocument();
+    });
+  });
+});

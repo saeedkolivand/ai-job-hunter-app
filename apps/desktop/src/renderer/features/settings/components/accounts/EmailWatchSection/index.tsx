@@ -10,6 +10,7 @@ import {
   useEmailWatchCheckNow,
   useEmailWatchStatus,
   useOpenExternal,
+  useSetAutoWriteEnabled,
   useSetEmailWatchEnabled,
 } from '@/services';
 
@@ -51,6 +52,7 @@ export function EmailWatchSection() {
   const connect = useConnectEmailWatch();
   const disconnect = useDisconnectEmailWatch();
   const setEnabled = useSetEmailWatchEnabled();
+  const setAutoWrite = useSetAutoWriteEnabled();
   const checkNow = useEmailWatchCheckNow();
   const openExternal = useOpenExternal();
 
@@ -59,6 +61,7 @@ export function EmailWatchSection() {
 
   const connected = status?.connected ?? false;
   const enabled = status?.enabled ?? false;
+  const autoWriteEnabled = status?.autoWriteEnabled ?? false;
 
   const handleConnect = async () => {
     try {
@@ -84,6 +87,14 @@ export function EmailWatchSection() {
   const handleToggleEnabled = async (next: boolean) => {
     try {
       await setEnabled.mutateAsync(next);
+    } catch {
+      notify.error({ message: t('settings.accounts.emailWatch.toggleFailed') });
+    }
+  };
+
+  const handleToggleAutoWrite = async (next: boolean) => {
+    try {
+      await setAutoWrite.mutateAsync(next);
     } catch {
       notify.error({ message: t('settings.accounts.emailWatch.toggleFailed') });
     }
@@ -138,6 +149,20 @@ export function EmailWatchSection() {
                 disabled={setEnabled.isPending}
                 label={t('settings.accounts.emailWatch.watch.label')}
                 description={t('settings.accounts.emailWatch.watch.description')}
+              />
+            </div>
+
+            {/* v2 auto-write opt-in — default ON; the copy states the trade-off
+                (immediate, unconfirmed status writes) since defaulting ON carries
+                real weight. Independent of the watch toggle above: this only
+                gates whether a match WRITES a status, never whether it's checked. */}
+            <div className="space-y-2 border-t border-foreground/10 pt-3">
+              <Switch
+                checked={autoWriteEnabled}
+                onCheckedChange={(next) => void handleToggleAutoWrite(next)}
+                disabled={setAutoWrite.isPending}
+                label={t('settings.accounts.emailWatch.autoWrite.label')}
+                description={t('settings.accounts.emailWatch.autoWrite.description')}
               />
             </div>
 

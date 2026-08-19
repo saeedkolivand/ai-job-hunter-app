@@ -31,6 +31,7 @@ import userEvent from '@testing-library/user-event';
 import type { Application, StatusEvent } from '@ajh/shared';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { TEST_IDS } from '@ajh/test-ids';
+import type * as AjhUi from '@ajh/ui';
 
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import type { TemplateId } from '@/lib/generate';
@@ -40,6 +41,22 @@ import type { TemplateId } from '@/lib/generate';
 vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+// ── @ajh/ui — keep everything real except useNotification (no provider in this
+//    tree; the timeline's accept/reject toasts need a controllable spy) ───────
+
+const mockNotify = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
+vi.mock('@ajh/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof AjhUi>();
+  return { ...actual, useNotification: () => mockNotify };
+});
 
 // ── Router — render standalone (no RouterProvider) ────────────────────────────
 
@@ -167,6 +184,16 @@ let mockImportJobUrlIsError = false;
 // JD-resolve (useResolveJobUrl) — controllable so BriefTab loading-state tests
 // can simulate the in-flight window before the auto-resolve settles.
 let mockResolveJobUrlIsFetching = false;
+/** `acceptStatusEvent.mutate`/`rejectStatusEvent.mutate` — resolve successfully
+ *  by default (mirrors `mockSetStatusMutate` above). */
+const mockAcceptStatusEventMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
+  options?.onSuccess?.();
+});
+const mockRejectStatusEventMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
+  options?.onSuccess?.();
+});
+let mockAcceptStatusEventPending = false;
+let mockRejectStatusEventPending = false;
 
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
@@ -184,6 +211,14 @@ vi.mock('@/services', () => ({
   useRemoveApplication: () => ({
     mutateAsync: mockRemoveMutateAsync,
     isPending: false,
+  }),
+  useAcceptStatusEvent: () => ({
+    mutate: mockAcceptStatusEventMutate,
+    isPending: mockAcceptStatusEventPending,
+  }),
+  useRejectStatusEvent: () => ({
+    mutate: mockRejectStatusEventMutate,
+    isPending: mockRejectStatusEventPending,
   }),
   useDocuments: () => ({ data: [], isLoading: false }),
   useDocumentText: () => ({ data: undefined, isLoading: false }),
@@ -264,6 +299,20 @@ function makeGen(overrides: {
   };
 }
 
+/** Status-event fixture — defaults to an ordinary settled user transition. */
+function makeEvent(overrides: Partial<StatusEvent> = {}): StatusEvent {
+  return {
+    applicationId: 'app-1',
+    fromStatus: 'applied',
+    toStatus: 'interviewing',
+    at: 1000,
+    note: '',
+    source: 'user',
+    confirmed: true,
+    ...overrides,
+  };
+}
+
 // ── Import component under test (after all mocks) ─────────────────────────────
 
 import { ApplicationDetailPage } from './index';
@@ -290,6 +339,22 @@ beforeEach(() => {
   mockImportJobUrlIsError = false;
   mockResolveJobUrlIsFetching = false;
   capturedOnJobDescChange = undefined;
+  mockAcceptStatusEventMutate.mockClear();
+  mockAcceptStatusEventMutate.mockImplementation(
+    (_vars: unknown, options?: StatusMutateOptions) => {
+      options?.onSuccess?.();
+    }
+  );
+  mockRejectStatusEventMutate.mockClear();
+  mockRejectStatusEventMutate.mockImplementation(
+    (_vars: unknown, options?: StatusMutateOptions) => {
+      options?.onSuccess?.();
+    }
+  );
+  mockAcceptStatusEventPending = false;
+  mockRejectStatusEventPending = false;
+  mockNotify.success.mockClear();
+  mockNotify.error.mockClear();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1771,5 +1836,187 @@ describe('ApplicationDetailPage — contact write rejection', () => {
     fireEvent.blur(field);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationDetailPage — Timeline: email tracking v2 (provisional rows +
+// Accept/Reject + the correction row)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
+  const renderTimeline = (events: StatusEvent[], appOverrides: Partial<Application> = {}) => {
+    mockTab = 'timeline';
+    mockUseApplication.mockReturnValue({
+      data: { application: makeApp(appOverrides), events },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    return render(<ApplicationDetailPage />);
+  };
+
+  it('renders Accept/Reject on the unconfirmed email row but not on a confirmed or user-sourced row', () => {
+    renderTimeline([
+      makeEvent({ at: 1000, fromStatus: 'saved', toStatus: 'applied', source: 'user' }),
+      makeEvent({
+        at: 1500,
+        fromStatus: 'applied',
+        toStatus: 'screening',
+        source: 'email',
+        confirmed: true, // an already-accepted email write — settled, no actions
+      }),
+      makeEvent({
+        at: 2000,
+        fromStatus: 'screening',
+        toStatus: 'interviewing',
+        source: 'email',
+        confirmed: false, // the ONE provisional row
+      }),
+    ]);
+
+    // Exactly one row is provisional → exactly one Accept/Reject pair, not one
+    // per row (a bare "Accept"/"Reject" repeated down the list would be the
+    // accessibility failure this guards against).
+    expect(
+      screen.getAllByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    ).toHaveLength(1);
+    expect(screen.getByText('applications.detail.timeline.provisionalBadge')).toBeInTheDocument();
+  });
+
+  it('does not render Accept/Reject when there is no unconfirmed email row at all', () => {
+    renderTimeline([
+      makeEvent({ at: 1000, source: 'user' }),
+      makeEvent({ at: 2000, source: 'email', confirmed: true }),
+    ]);
+
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('applications.detail.timeline.provisionalBadge')
+    ).not.toBeInTheDocument();
+  });
+
+  it('clicking Accept calls acceptStatusEvent.mutate with the application id', async () => {
+    const user = userEvent.setup();
+    renderTimeline([makeEvent({ source: 'email', confirmed: false })], { id: 'app-accept-1' });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    );
+
+    expect(mockAcceptStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-accept-1' },
+      expect.any(Object)
+    );
+    expect(mockNotify.success).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.acceptSuccess',
+    });
+  });
+
+  it('clicking Reject calls rejectStatusEvent.mutate with the application id', async () => {
+    const user = userEvent.setup();
+    renderTimeline([makeEvent({ source: 'email', confirmed: false })], { id: 'app-reject-1' });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    );
+
+    expect(mockRejectStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-reject-1' },
+      expect.any(Object)
+    );
+  });
+
+  // The mutation result carries no `reverted` flag (`ApplicationMutationResult`
+  // is just `{ error?: string }`), so the UI cannot know from the response
+  // alone whether the compare-and-set actually reverted the status — only the
+  // refetched events can say that. This pins BOTH halves: the toast copy used
+  // is the honest one (never a "reverted" claim), and when the CAS lost (the
+  // user changed the status by hand meanwhile) nothing rendered claims a
+  // revert happened either.
+  it('reject when the CAS loses does not claim the status was reverted — asserts only what renders', async () => {
+    const user = userEvent.setup();
+    const provisional = makeEvent({
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'interviewing',
+      source: 'email',
+      confirmed: false,
+    });
+    const { rerender } = renderTimeline([provisional], { id: 'app-reject-cas-lost' });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    );
+
+    // The success copy never asserts a revert — it's deliberately neutral
+    // ("reviewed"), because the mutation response can't say what happened.
+    expect(mockNotify.success).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.rejectSuccess',
+    });
+    expect(mockNotify.success).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/revert/i) })
+    );
+
+    // Simulate the CAS-lost outcome: the backend marks the original row
+    // reviewed (`confirmed: true`) but appends NO reversal row — the status
+    // the user set by hand in the meantime is left untouched.
+    mockUseApplication.mockReturnValue({
+      data: {
+        application: makeApp({ id: 'app-reject-cas-lost' }),
+        events: [{ ...provisional, confirmed: true }],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ApplicationDetailPage />);
+
+    // The row is settled — no more provisional actions …
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    ).not.toBeInTheDocument();
+    // … and nothing on the page claims a revert happened.
+    expect(screen.queryByText(/revert/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('applications.detail.timeline.correctionBadge')
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders a reversal row (source: email_reject) as a correction, never the raw backend note', () => {
+    renderTimeline([
+      makeEvent({
+        at: 1000,
+        fromStatus: 'applied',
+        toStatus: 'interviewing',
+        source: 'email',
+        confirmed: true,
+      }),
+      makeEvent({
+        at: 2000,
+        fromStatus: 'interviewing',
+        toStatus: 'applied',
+        source: 'email_reject',
+        confirmed: true,
+        note: 'reverted: email-derived status change rejected by the user',
+      }),
+    ]);
+
+    expect(screen.getByText('applications.detail.timeline.correctionBadge')).toBeInTheDocument();
+    // The Rust reversal note is a fixed, non-localized English string — it
+    // must never leak into the UI verbatim.
+    expect(
+      screen.queryByText('reverted: email-derived status change rejected by the user')
+    ).not.toBeInTheDocument();
   });
 });

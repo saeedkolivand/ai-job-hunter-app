@@ -855,6 +855,10 @@
           "label": "Auf Bestätigungs-E-Mails achten",
           "description": "Führt etwa alle 15 Minuten eine automatische Posteingangsprüfung durch. Ein Treffer erzeugt eine Benachrichtigung, die Sie bestätigen — es wird nie von selbst etwas als beworben markiert."
         },
+        "autoWrite": {
+          "label": "Status automatisch aktualisieren",
+          "description": "Bei einem Treffer wird der Status dieser Bewerbung sofort geändert, bevor Sie etwas bestätigen. Jede automatische Änderung erscheint im Tab „Verlauf“ als unbestätigt, wo Sie sie annehmen oder ablehnen können. Standardmäßig aktiviert — schalten Sie dies aus, um vor jeder Statusänderung Ihre Bestätigung zu verlangen."
+        },
         "toggleFailed": "Die Einstellung für die E-Mail-Verfolgung konnte nicht aktualisiert werden.",
         "lastCheck": "Zuletzt geprüft: {{value}}",
         "neverChecked": "Noch nicht geprüft",
@@ -3076,6 +3080,21 @@
       "tabsLabel": "Bewerbungsdetail-Tabs",
       "timelineTitle": "Verlauf",
       "timelineEmpty": "Noch kein Statusverlauf.",
+      "timeline": {
+        "provisionalBadge": "Unbestätigt",
+        "provisionalHint": "Das haben wir aus einer E-Mail geschlossen — stimmt das?",
+        "accept": "Bestätigen",
+        "reject": "Ablehnen",
+        "acceptAria": "Die aus einer E-Mail erkannte Änderung bestätigen: {{transition}}",
+        "rejectAria": "Die aus einer E-Mail erkannte Änderung ablehnen: {{transition}}",
+        "transitionDesc": "{{from}} → {{to}}",
+        "acceptSuccess": "Bestätigt — dieser Status bleibt wie erfasst.",
+        "acceptError": "Diese Änderung konnte nicht bestätigt werden. Bitte erneut versuchen.",
+        "rejectSuccess": "Überprüft — im Verlauf unten sehen Sie, was sich geändert hat.",
+        "rejectError": "Diese Änderung konnte nicht verworfen werden. Bitte erneut versuchen.",
+        "correctionBadge": "Korrektur",
+        "correctionHint": "Eine aus einer E-Mail erkannte Statusänderung wurde nach Prüfung rückgängig gemacht."
+      },
       "briefEmpty": "Noch kein Briefing oder Antworten.",
       "created": "Erstellt",
       "fieldsTitle": "Details",

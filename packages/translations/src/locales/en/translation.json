@@ -855,6 +855,10 @@
           "label": "Watch for confirmation emails",
           "description": "Runs an automatic inbox check about every 15 minutes. A match creates a notification for you to confirm — nothing is ever marked applied on its own."
         },
+        "autoWrite": {
+          "label": "Update status automatically",
+          "description": "A matched email changes this application's status right away, before you confirm anything. Every automatic change lands in the Timeline tab as unconfirmed, where you can accept or reject it. On by default — turn off to require your review before any status changes."
+        },
         "toggleFailed": "Could not update the email-tracking setting.",
         "lastCheck": "Last checked {{value}}",
         "neverChecked": "Not checked yet",
@@ -3072,6 +3076,21 @@
       "tabsLabel": "Application detail tabs",
       "timelineTitle": "Timeline",
       "timelineEmpty": "No status history yet.",
+      "timeline": {
+        "provisionalBadge": "Unconfirmed",
+        "provisionalHint": "We think this happened, based on an email — is that right?",
+        "accept": "Confirm",
+        "reject": "Reject",
+        "acceptAria": "Confirm the email-detected change: {{transition}}",
+        "rejectAria": "Reject the email-detected change: {{transition}}",
+        "transitionDesc": "{{from}} → {{to}}",
+        "acceptSuccess": "Confirmed — this status stays as recorded.",
+        "acceptError": "Couldn't confirm this update. Try again.",
+        "rejectSuccess": "Reviewed — check the timeline below for what changed.",
+        "rejectError": "Couldn't dismiss this update. Try again.",
+        "correctionBadge": "Correction",
+        "correctionHint": "An email-detected status change was reverted after review."
+      },
       "briefEmpty": "No brief or answers yet.",
       "created": "Created",
       "fieldsTitle": "Details",
