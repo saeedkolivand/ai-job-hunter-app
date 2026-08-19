@@ -24,7 +24,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 use whatlang::Lang;
 
-use super::ai_provider::{resolve, ProviderId};
+use super::ai_provider::{ollama, resolve, ProviderId};
 use crate::documents::sha256_hex;
 
 /// Process-scoped translation cache, keyed by job id AND source text. Managed
@@ -127,14 +127,32 @@ pub async fn translate_if_needed(
     //    `SEMANTIC_RERANK_MAX` (20) postings per scheduled run, indefinitely.
     //    Always the user's OWN active model — never an arbitrary pick (see
     //    `resolve_translation_target`'s doc comment for why that matters).
-    let cfg = app
-        .state::<crate::ai_config::AiConfigStore>()
-        .active_config();
+    let Some(ai_config) = app.try_state::<crate::ai_config::AiConfigStore>() else {
+        return text.to_string();
+    };
+    let cfg = ai_config.active_config();
     let Some((provider_id, model)) =
         resolve_translation_target(cfg.active_provider.as_deref(), cfg.model.as_deref())
     else {
         return text.to_string();
     };
+
+    // Ollama specifically: a fast reachability probe before the completion
+    // call — the same HEALTH-timeout (3s) check the now-deleted
+    // `reachable_chat_model` used to gate on before this function switched
+    // from the embedding config to the active-provider config. Without it, an
+    // unreachable OR merely slow/busy local daemon eats the full completion
+    // deadline (minutes, scaled by effort — see `timeouts::OLLAMA_COMPLETION_BASELINE`)
+    // per translation attempt instead of a fast skip, which is exactly the
+    // run-starving shape this file's own module doc + this fix's own commit
+    // message describe. A CLI agent has no analogous cheap health check and
+    // is not gated here — its own `.complete()` call fails fast when the
+    // binary is missing or unauthenticated.
+    if provider_id == ProviderId::Ollama
+        && !should_attempt_translation(provider_id, ollama::reachable_model().await.0)
+    {
+        return text.to_string();
+    }
 
     // 5. Translate through the centralized provider layer.
     let target_display = lang_display(target_lang);
@@ -195,6 +213,17 @@ fn resolve_translation_target(
     let model = model.unwrap_or_default().to_string();
     provider_id.validate_model(&model).ok()?;
     Some((provider_id, model))
+}
+
+/// Whether `translate_if_needed` should proceed to the completion call, given
+/// whether Ollama's fast reachability probe (if it ran) reported the daemon
+/// reachable. Only [`ProviderId::Ollama`] is gated by `ollama_reachable` — a
+/// CLI agent has no analogous cheap health check, so it always proceeds and
+/// relies on its own `.complete()` call failing fast when the binary is
+/// missing or unauthenticated. Pure, so the gate is unit-testable without a
+/// live Ollama daemon.
+fn should_attempt_translation(provider_id: ProviderId, ollama_reachable: bool) -> bool {
+    provider_id != ProviderId::Ollama || ollama_reachable
 }
 
 /// Map a `whatlang::Lang` to a BCP-47 tag for the languages we translate
@@ -490,5 +519,31 @@ mod tests {
             resolve_translation_target(Some("unknown-provider"), Some("x")),
             None
         );
+    }
+
+    // ── should_attempt_translation (Ollama reachability gate) ──────────────
+
+    #[test]
+    fn an_unreachable_ollama_daemon_is_gated_before_the_completion_call() {
+        assert!(!should_attempt_translation(ProviderId::Ollama, false));
+        assert!(should_attempt_translation(ProviderId::Ollama, true));
+    }
+
+    #[test]
+    fn a_cli_agent_has_no_reachability_gate() {
+        // CLI agents have no cheap health check, so `ollama_reachable` (always
+        // `false` here — the caller never runs the probe for a non-Ollama
+        // provider) must not skip them.
+        for provider in [
+            ProviderId::ClaudeCode,
+            ProviderId::Codex,
+            ProviderId::GeminiCli,
+            ProviderId::Antigravity,
+        ] {
+            assert!(
+                should_attempt_translation(provider, false),
+                "{provider:?} must proceed regardless of the (irrelevant) Ollama probe"
+            );
+        }
     }
 }
