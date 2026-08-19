@@ -55,7 +55,12 @@ describe('PromptQualitySettings — scope honesty (Ollama-only)', () => {
     mockUsePromptQuality.mockReturnValue('auto');
     render(<PromptQualitySettings activeProvider="openai" />);
 
-    expect(screen.getByText(/settings\.promptQuality\.ollamaOnlyNote/)).toBeInTheDocument();
+    // Exact text, not a prefix regex: `/…ollamaOnlyNote/` also matched a
+    // typo'd `ollamaOnlyNoteX` key AND a component that dropped the
+    // `{ provider }` interpolation, so it survived both mutants. The trailing
+    // ` OpenAI` comes from the `t` mock above appending the param values —
+    // asserting it pins BOTH the key and the interpolation.
+    expect(screen.getByText('settings.promptQuality.ollamaOnlyNote OpenAI')).toBeInTheDocument();
   });
 
   it('stays silent about scope when the active provider IS Ollama', () => {
