@@ -448,11 +448,19 @@ pub fn is_open_ended(s: &str) -> bool {
         || s.trim_end().ends_with(['-', '–', '—'])
 }
 
-/// True when `s` carries a year (1900–2099) or reads as an open-ended span —
-/// the shape a date span has. Shared with the content validators so "what
-/// counts as a date" is decided in one place.
+/// True when `s` carries a year (1900–2099) — the shape a date span has.
+/// Shared with the content validators so "what counts as a date" is decided
+/// in one place.
+///
+/// **Not `|| is_open_ended(s)` — that disjunct is dead.** [`is_open_ended`]
+/// requires a year in `s` before any of its own branches run (see its doc),
+/// so it can never be true while `years_in(s)` is empty, and `years_in(s)`
+/// being non-empty already makes this function true on its own. ORing it in
+/// therefore can never change the result; it used to, back when
+/// `is_open_ended`'s first branch matched a bare present-tense marker with no
+/// year anywhere.
 pub fn looks_like_date_span(s: &str) -> bool {
-    !years_in(s).is_empty() || is_open_ended(s)
+    !years_in(s).is_empty()
 }
 
 /// A CLOSED span: two years with nothing between them but a span separator and
@@ -667,30 +675,35 @@ pub(super) fn is_date_only(s: &str) -> bool {
 /// True when one pipe/middot SEGMENT is the entry's date column: it carries a
 /// YEAR.
 ///
-/// Stricter than [`looks_like_date_span`] in exactly one dimension, and that is
-/// the point. `looks_like_date_span` is also satisfied by a bare present-tense
-/// marker with no year anywhere ([`is_open_ended`] fires on the word alone), and
-/// [`PRESENT_MARKERS`] is a list of ordinary words that real employers are named
-/// after — Current (current.com) and Current Health are both real, and "Aktuell"
-/// opens plenty of German company names. Such a segment was selected as the date
-/// column AND filtered out of the label segments, so the job TITLE was recorded
-/// as the employer and the employer as the date span.
+/// Same test as [`looks_like_date_span`] today, kept as its own named
+/// function so this call site reads as "is this segment a date column" —
+/// [`is_open_ended`] no longer independently supplies a positive here without
+/// a year (see its doc), which is what used to make the two diverge: a bare
+/// present-tense marker with no year anywhere used to satisfy
+/// `looks_like_date_span` on its own, and [`PRESENT_MARKERS`] is a list of
+/// ordinary words that real employers are named after — Current
+/// (current.com) and Current Health are both real, and "Aktuell" opens
+/// plenty of German company names. Such a segment used to get selected as
+/// the date column AND filtered out of the label segments, so the job TITLE
+/// was recorded as the employer and the employer as the date span.
 ///
-/// Deliberately NOT [`is_date_only`], which the review suggested: it is both too
-/// loose and too tight here. Too loose because a bare "Current" satisfies it
-/// (every word is a present marker, and `is_open_ended` supplies the structure),
-/// which is the failing case itself; too tight because it rejects a lone year,
-/// and this arm has always read `Senior Engineer | Acme Corp | 2022` as an entry
-/// with a one-year column. Its word test would additionally reject spellings the
-/// PARSER accepts and hands us — "2018 to 2021", "2021 bis Heute",
-/// "Jan 2018 through Mar 2021" all carry a word that is neither month, number
-/// nor marker — turning a fixed false employer into a lost date column.
+/// Deliberately NOT [`is_date_only`], which the review suggested: it is too
+/// tight here, rejecting a lone year — this arm has always read
+/// `Senior Engineer | Acme Corp | 2022` as an entry with a one-year column.
+/// Its word test would additionally reject spellings the PARSER accepts and
+/// hands us — "2018 to 2021", "2021 bis Heute", "Jan 2018 through Mar 2021"
+/// all carry a word that is neither month, number nor marker — turning a
+/// fixed false employer into a lost date column. (It is no longer "too
+/// loose" the way it once was: `is_date_only("Current")` is false today too,
+/// for the same year-required reason `is_open_ended` no longer fires on the
+/// word alone — but the lone-year rejection above still makes it the wrong
+/// test for this call site.)
 ///
 /// The residual is the pre-existing one, unchanged: a label that happens to
 /// carry a year ("2020 Ventures") still reads as the date column. Telling that
 /// apart needs the word test this rejects.
 pub(super) fn is_date_column_segment(s: &str) -> bool {
-    !years_in(s).is_empty()
+    looks_like_date_span(s)
 }
 
 /// Split `text` into `(label, dates)` when it ends in a `, <dates>` column —
