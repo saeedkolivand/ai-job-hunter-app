@@ -884,6 +884,57 @@ Acme Payments, Berlin, 2018 - 2021
     assert_eq!(acme.bullets.len(), 2, "got {:?}", acme.bullets);
 }
 
+/// Same shape as [`an_unparsed_entry_line_opens_its_own_role_instead_of_joining_the_last`],
+/// with the date column spelled `2020 - Today` instead of `2018 - 2021` —
+/// the user-visible consequence of the `is_date_only` gap: before the fix,
+/// `Today` was not recognised as a present-tense marker, so `is_date_only`
+/// rejected the column, `trailing_date_column` returned `None`, and this
+/// arm fell through to `attach_to_role`, which appended Acme's header line
+/// AND both of its bullets onto Globex's role.
+#[test]
+fn an_english_today_date_column_opens_its_own_role() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Senior Engineer | Globex Logistics | 2015 - 2018
+- Built the billing API in Python and PostgreSQL
+
+Acme Payments, Berlin, 2020 - Today
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Redis Python backend engineer");
+    assert_eq!(set.roles.len(), 2, "two employers; got {:?}", set.roles);
+
+    let globex = &set.roles[0];
+    assert_eq!(globex.company, "Globex Logistics");
+    assert_eq!(
+        globex.bullets.len(),
+        1,
+        "Globex's role must not absorb Acme's header line or its work; got {:?}",
+        globex.bullets
+    );
+    assert!(
+        !globex
+            .bullets
+            .iter()
+            .any(|b| b.text.contains("Docker") || b.text.contains("Acme")),
+        "Acme's work must not be credited to Globex; got {:?}",
+        globex.bullets
+    );
+
+    let acme = &set.roles[1];
+    assert_eq!(
+        acme.company, "Acme Payments",
+        "the employer is salvaged from the unparsed line, never guessed"
+    );
+    assert_eq!(acme.dates, "2020 - Today");
+    assert_eq!(acme.bullets.len(), 2, "got {:?}", acme.bullets);
+}
+
 /// The other half of the same rule: a line that is NOT entry-shaped must keep
 /// continuing the entry above it. "2021 to Present" on its own line is the
 /// second half of the round-4 fixture's header, not a new employer.
@@ -1003,6 +1054,41 @@ fn a_date_column_needs_more_than_a_year_in_it() {
     }
     for prose in ["2022", "delivered in 2019", "40 warehouse sites", ""] {
         assert!(!is_date_only(prose), "{prose:?} is not a date column");
+    }
+}
+
+/// The "today"-family spellings added to [`DATE_ONLY_MARKERS`] — English
+/// `Today`, Spanish `Actualidad`, French `Aujourd'hui`, Italian `Oggi` — both
+/// directions: the date column each spelling appears in IS recognised, and an
+/// ordinary sentence carrying the same word (with other, non-date words
+/// around it) is NOT. [`is_date_only`] requires EVERY token on the line to be
+/// a digit, a month or a marker, so a multi-word sentence can never qualify no
+/// matter what the marker list holds — that structural gate, not curation, is
+/// what keeps the prose cases safe.
+///
+/// Mutation check (reported verbatim in the handoff): with `DATE_ONLY_MARKERS`
+/// emptied, every `column` case here goes red; every `prose` case stays green
+/// regardless, because the gate does that work.
+#[test]
+fn today_family_markers_open_a_date_column_but_never_leak_into_prose() {
+    for column in [
+        "2020 - Today",
+        "2015 - Actualidad",
+        "2019 - Aujourd'hui",
+        "2021 - Oggi",
+    ] {
+        assert!(is_date_only(column), "{column:?} is a date column");
+    }
+    for prose in [
+        "Shipped the migration today",
+        "En la actualidad trabajo en remoto",
+        "Nous avons livré le projet aujourd'hui",
+        "Il progetto oggi è completo",
+    ] {
+        assert!(
+            !is_date_only(prose),
+            "{prose:?} is ordinary prose, not a date column"
+        );
     }
 }
 

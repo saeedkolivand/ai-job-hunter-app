@@ -511,10 +511,39 @@ const MONTH_TOKENS: &[&str] = &[
     "dezember",
 ];
 
+/// "Today"-family present-tense markers recognised **only** by [`is_date_only`]
+/// — deliberately never added to [`PRESENT_MARKERS`], which [`is_open_ended`]
+/// and `validate::content::factual::unsupported_date_issues` both also consult.
+///
+/// Measured, not just cautious: those two consumers match a SINGLE WORD
+/// anywhere in arbitrary text via [`contains_word`]/`contains_phrase` — no
+/// year, no separator, no other date structure required, because
+/// `is_open_ended`'s first branch returns as soon as the word is found.
+/// "today" is ordinary English vocabulary ("the system still runs today",
+/// "shipped the migration today"); putting it in [`PRESENT_MARKERS`] would
+/// turn any such bullet into a date context, and in
+/// `unsupported_date_issues` specifically, a false `factual.unsupported_date`
+/// Critical the moment that bullet also names a year the source résumé
+/// doesn't. (Confirmed the same failure mode is already live for `actual`,
+/// which is in [`PRESENT_MARKERS`] for Spanish `actual` — `is_open_ended`
+/// returns true for "Reduced actual costs by 20% in 2023" on the word alone.)
+///
+/// [`is_date_only`] cannot make that mistake: it already requires EVERY token
+/// on the line to be a digit, a month or a marker, so a prose sentence
+/// carrying any other word is rejected before this list is ever consulted —
+/// exact-token equality against a whole date column is structurally safe in a
+/// way word-bounded matching against free text is not.
+///
+/// `aujourd'hui` is split by [`word_tokens`] into `aujourd` and `hui` — the
+/// apostrophe is not alphanumeric — so both halves are listed; `is_date_only`
+/// requires every token to resolve, not the phrase as a whole.
+const DATE_ONLY_MARKERS: &[&str] = &["today", "aujourd", "hui", "oggi", "actualidad"];
+
 /// True when `s` is a date COLUMN and nothing else: every word in it is a
-/// number, a month or a present-tense marker, **and** it carries more date
-/// structure than a lone year — a span separator (`2018 – 2021`), an open end
-/// (`2021 – Present`, `2021 –`) or a month (`Jan 2022`).
+/// number, a month, a present-tense marker or a [`DATE_ONLY_MARKERS`] entry,
+/// **and** it carries more date structure than a lone year — a span separator
+/// (`2018 – 2021`), an open end (`2021 – Present`, `2021 – Today`) or a month
+/// (`Jan 2022`).
 ///
 /// Both halves are load-bearing, and [`looks_like_date_span`] alone is neither.
 /// It is satisfied by any text carrying a year, so the word test was doing all
@@ -534,6 +563,7 @@ pub(super) fn is_date_only(s: &str) -> bool {
         t.chars().all(|c| c.is_ascii_digit())
             || MONTH_TOKENS.contains(&t.as_str())
             || PRESENT_MARKERS.contains(&t.as_str())
+            || DATE_ONLY_MARKERS.contains(&t.as_str())
     });
     if !date_words || !looks_like_date_span(s) {
         return false;
@@ -541,6 +571,9 @@ pub(super) fn is_date_only(s: &str) -> bool {
     !date_spans(s).is_empty()
         || is_open_ended(s)
         || tokens.iter().any(|t| MONTH_TOKENS.contains(&t.as_str()))
+        || tokens
+            .iter()
+            .any(|t| DATE_ONLY_MARKERS.contains(&t.as_str()))
 }
 
 /// True when one pipe/middot SEGMENT is the entry's date column: it carries a
