@@ -884,6 +884,57 @@ Acme Payments, Berlin, 2018 - 2021
     assert_eq!(acme.bullets.len(), 2, "got {:?}", acme.bullets);
 }
 
+/// Same shape as [`an_unparsed_entry_line_opens_its_own_role_instead_of_joining_the_last`],
+/// with the date column spelled `2020 - Today` instead of `2018 - 2021` —
+/// the user-visible consequence of the `is_date_only` gap: before the fix,
+/// `Today` was not recognised as a present-tense marker, so `is_date_only`
+/// rejected the column, `trailing_date_column` returned `None`, and this
+/// arm fell through to `attach_to_role`, which appended Acme's header line
+/// AND both of its bullets onto Globex's role.
+#[test]
+fn an_english_today_date_column_opens_its_own_role() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Senior Engineer | Globex Logistics | 2015 - 2018
+- Built the billing API in Python and PostgreSQL
+
+Acme Payments, Berlin, 2020 - Today
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Redis Python backend engineer");
+    assert_eq!(set.roles.len(), 2, "two employers; got {:?}", set.roles);
+
+    let globex = &set.roles[0];
+    assert_eq!(globex.company, "Globex Logistics");
+    assert_eq!(
+        globex.bullets.len(),
+        1,
+        "Globex's role must not absorb Acme's header line or its work; got {:?}",
+        globex.bullets
+    );
+    assert!(
+        !globex
+            .bullets
+            .iter()
+            .any(|b| b.text.contains("Docker") || b.text.contains("Acme")),
+        "Acme's work must not be credited to Globex; got {:?}",
+        globex.bullets
+    );
+
+    let acme = &set.roles[1];
+    assert_eq!(
+        acme.company, "Acme Payments",
+        "the employer is salvaged from the unparsed line, never guessed"
+    );
+    assert_eq!(acme.dates, "2020 - Today");
+    assert_eq!(acme.bullets.len(), 2, "got {:?}", acme.bullets);
+}
+
 /// The other half of the same rule: a line that is NOT entry-shaped must keep
 /// continuing the entry above it. "2021 to Present" on its own line is the
 /// second half of the round-4 fixture's header, not a new employer.
@@ -1004,6 +1055,76 @@ fn a_date_column_needs_more_than_a_year_in_it() {
     for prose in ["2022", "delivered in 2019", "40 warehouse sites", ""] {
         assert!(!is_date_only(prose), "{prose:?} is not a date column");
     }
+}
+
+/// Every "today"/"currently"-family spelling in [`DATE_ONLY_MARKERS`] — English
+/// `Today`/`Currently`, Spanish `Actualidad`/`Actualmente`/`Hoy`, Portuguese
+/// `Hoje`/`Atualmente`, French `Aujourd'hui`/`Actuellement`, Italian `Oggi`,
+/// and the `Present`-adjacent `Presente`/`Attualmente`/`Derzeit`/`Vandaag` —
+/// opens the date column it appears in.
+///
+/// Collects every failure instead of asserting inside the loop: a bare
+/// `assert!` per iteration reports only the FIRST broken spelling and hides
+/// every other one behind it, so a future regression that drops or typos a
+/// second marker would read identically to "everything fine" for this test.
+/// This one call names every spelling that stopped working.
+///
+/// This test is deliberately NOT paired with a prose loop the way an earlier
+/// version was — every one of those "prose" rows only passed because
+/// `word_tokens` splits the sentence into words the `date_words.all()` gate
+/// (a digit, a month or a marker) already rejects before any marker is even
+/// consulted, so the row proved the tokenizer works on ordinary sentences,
+/// not that [`DATE_ONLY_MARKERS`] is safe. [`a_date_column_needs_more_than_a_year_in_it`]
+/// already covers that mechanism; duplicating it here under a name that
+/// implies it guards this list would be misleading about what failed if it
+/// ever went red.
+#[test]
+fn date_only_markers_open_every_added_spelling() {
+    let columns = [
+        "2020 - Today",
+        "2015 - Actualidad",
+        "2020 - Actualmente",
+        "2019 - Aujourd'hui",
+        "2021 - Oggi",
+        "2020 - Presente",
+        "2020 - Currently",
+        "2020 - Hoje",
+        "2020 - Atualmente",
+        "2020 - Hoy",
+        "2020 - Actuellement",
+        "2020 - Attualmente",
+        "2020 - Derzeit",
+        "2020 - Vandaag",
+    ];
+    let not_recognised: Vec<&str> = columns
+        .into_iter()
+        .filter(|column| !is_date_only(column))
+        .collect();
+    assert!(
+        not_recognised.is_empty(),
+        "not read as date columns: {not_recognised:?}"
+    );
+}
+
+/// The safety argument for [`DATE_ONLY_MARKERS`] depends entirely on it never
+/// sharing a spelling with [`PRESENT_MARKERS`] — [`is_open_ended`] and
+/// `validate::content::factual::unsupported_date_issues` both match
+/// [`PRESENT_MARKERS`] against arbitrary free text, so a spelling living in
+/// both lists would turn ordinary prose carrying that word into a false date
+/// context. That invariant lived only in the const's doc comment; this makes
+/// keeping it cost one assertion instead of a careful re-read before the next
+/// spelling is added.
+#[test]
+fn date_only_markers_never_overlap_present_markers() {
+    let overlap: Vec<&str> = DATE_ONLY_MARKERS
+        .iter()
+        .filter(|m| PRESENT_MARKERS.contains(m))
+        .copied()
+        .collect();
+    assert!(
+        overlap.is_empty(),
+        "spellings in both lists — is_open_ended would fire on them as bare prose: {overlap:?}"
+    );
 }
 
 /// R7-F1(b) — the salvage contradicted its own contract. A label with no comma
