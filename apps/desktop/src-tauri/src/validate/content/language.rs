@@ -43,6 +43,17 @@
 //! rather than kept on the strength of the argument for them, per this
 //! module's own history: the original global pool was equally defensible on
 //! paper and silently killed the Spanish Critical anyway.
+//!
+//! A THIRD suppressor — a title-case-sandwich exclusion in
+//! [`pairwise_evidence_count`], dropping a hit whose immediate neighbours
+//! were both capitalised — was tried, shipped, and then REMOVED after a
+//! pre-PR gate found it deleted German's evidence wholesale: standard German
+//! CV register is nominal ("Aufbau und Betrieb der Zahlungsplattform"), and
+//! German capitalises every noun, so in that register every connector sits
+//! between two capitalised nouns whether or not it is inside a proper noun.
+//! [`MIN_DISTINCTIVE_HITS`] is what replaced it — a threshold, not a shape
+//! rule, chosen from a corpus swept fresh for this removal; see its own doc
+//! for the full table and the residual risk it accepts instead of hiding.
 
 use std::collections::HashSet;
 
@@ -64,6 +75,20 @@ pub(super) const MIN_CHARS_FOR_LANGUAGE_CHECK: usize = 120;
 /// [`pairwise_evidence_count`]'s doc for why a single global pool — pruning a
 /// word the moment it appears in ANY two of the seven lists — was measured to
 /// leave Spanish and Portuguese too thin to evidence themselves at all).
+///
+/// **Not the same primitive as `documents::evidence`'s `FUNCTION_WORDS_DE` /
+/// `has_curated_function_words`, despite the identical const name (for
+/// German) and overlapping content — do not "unify" them.** That module asks
+/// a SKILL-CLAIM question (which tokens on a skills line are filler, not a
+/// claimed skill) and is deliberately curated for German only, since an
+/// under-curated list there is safe (a noisier display-only gap list) but an
+/// over-eager one is not. This module asks a language-IDENTITY question
+/// (does `text` carry positive evidence of some OTHER specific curated
+/// language) across all seven languages `documents::keywords::make_stemmer`
+/// stems for — a missing word here only makes the guard quieter, never
+/// louder, so exhaustiveness matters less than not accusing wrongly. Same
+/// shape of list, different correctness bar; merging them would let a change
+/// tuned for one silently regress the other.
 const FUNCTION_WORDS_EN: &[&str] = &[
     "the", "a", "an", "and", "or", "but", "if", "so", "as", "of", "in", "on", "at", "to", "by",
     "for", "with", "from", "into", "onto", "about", "over", "under", "between", "through",
@@ -156,6 +181,13 @@ const LATIN_SCRIPT_LANGUAGES: &[&str] = &["en", "de", "fr", "es", "it", "pt", "n
 /// not written one (every language outside [`CURATED_FUNCTION_WORDS`],
 /// including the two extra Latin-script tags [`LATIN_SCRIPT_LANGUAGES`]
 /// tracks for the corroboration GATE but not for evidence).
+///
+/// A DIFFERENT question from `documents::evidence::has_curated_function_words` —
+/// that one answers `false` for `"es"`/`"fr"`/`"it"`/`"nl"`/`"pt"` (no skill-
+/// filler list written for them) while this function returns 61/68/65/58/58
+/// real words for the same five tags; see [`FUNCTION_WORDS_EN`]'s doc for why
+/// the two primitives are deliberately separate rather than one the other
+/// could read from.
 pub(super) fn function_words_for(lang: &str) -> &'static [&'static str] {
     CURATED_FUNCTION_WORDS
         .iter()
@@ -197,7 +229,69 @@ const MIN_DISTINCTIVE_TOKEN_CHARS: usize = 2;
 
 /// Below this many pairwise hits, a match is noise rather than evidence — a
 /// single surviving token could be an incidental collision or a name.
-const MIN_DISTINCTIVE_HITS: usize = 2;
+///
+/// **This is the ONLY discriminator left; a shape-based heuristic (a
+/// title-case-sandwich exclusion) was tried here and REMOVED after it
+/// deleted German's evidence wholesale.** Standard German CV register is
+/// nominal ("Aufbau und Betrieb der Zahlungsplattform", not "Ich habe die
+/// Zahlungsplattform aufgebaut und betrieben"): German capitalises every
+/// noun, so in this register EVERY connector sits between two capitalised
+/// nouns by construction, not because it is inside a proper noun — the
+/// exclusion could not tell those apart and fired on nothing for a whole
+/// nominal-register German résumé. This module's own history is now three
+/// suppressors in a row, each a shape assumption that held for some
+/// languages and broke for one it had not been checked against (a globally
+/// pruned pool assumed collisions "remove themselves" — wrong for Spanish; a
+/// short-token denylist assumed length implies ambiguity — unfalsifiable; a
+/// title-case exclusion assumed a function word between capitals is inside a
+/// proper noun — wrong for German). A threshold makes no shape assumption,
+/// only a quantity one, so it is what remains.
+///
+/// **5, chosen from a corpus swept fresh for this change (not carried over
+/// from an earlier round's number), reported in full because the failure
+/// mode this crate has now hit three times is calibrating a threshold
+/// against the fixture that tests it:**
+///
+/// | class | fixture | evidence |
+/// |---|---|---|
+/// | quiet | English noun-phrase tool list (the original bug) | 0 |
+/// | quiet | same list + ci/cd, .io, vi, HA, or per (the short-token leaks) | 0 |
+/// | quiet | German institution name, terse "Degree, Institution, Dates" | 1 |
+/// | quiet | German institution name, EDUCATION section (2 entries) | 3 |
+/// | quiet | German institution names, CERTIFICATIONS (3 entries) | 4 |
+/// | fire | short genuine Spanish paragraph (2 sentences) | 6 |
+/// | fire | Italian VOLUNTEER section (PR #1003's own fixture) | 6 |
+/// | fire | Italian AWARDS section (PR #1003's own fixture) | 8 |
+/// | fire | short genuine nominal-register German bullet (1 line) | 9 |
+/// | fire | Portuguese EXPERIENCE, prose or bullets+date-column | 14 |
+/// | fire | French, Title-Case rendered | 15 |
+/// | fire | Spanish EXPERIENCE, prose or bullets+date-column | 16–18 |
+/// | fire | Dutch, Title-Case rendered | 16 |
+/// | fire | genuine third-language Italian output | 17 |
+/// | fire | Italian EXPERIENCE section (drifted-section fixture) | 19 |
+/// | fire | nominal-register German, whole résumé or one section | 20–24 |
+/// | fire | German verb-register résumé (the original reported bug) | 24 |
+///
+/// Quiet tops out at 4, fire starts at 6 — a floor of 5 separates this
+/// corpus with a full unit of margin on both sides, matching (independently,
+/// not by construction) the separation an earlier review measured on a
+/// different fixture set.
+///
+/// **Residual risk, measured and accepted rather than hidden:** an
+/// adversarially INSTITUTION-DENSE English CERTIFICATIONS section — five
+/// DIFFERENT German institutions in one list, a shape rarer than the
+/// 3-institution case above — reaches evidence 8, ABOVE both the floor and
+/// the thinnest genuine positive (6). A pure count cannot separate "an
+/// unusually credentialed English document" from "a short genuine foreign
+/// paragraph" in every case, because evidence scales with how much text
+/// there is, not with whether that text is target-language prose or
+/// accumulated foreign proper nouns. Raising the floor to close this would
+/// silence the genuinely thin true positives it sits right next to (6);
+/// this module already treats a false negative as the worse failure three
+/// times over, so the floor stays at 5 and this gap is accepted rather than
+/// closed by a shape rule that would just be the next one this crate
+/// discovers is wrong for some language.
+const MIN_DISTINCTIVE_HITS: usize = 5;
 
 /// How many times `text` uses a function word that belongs to `lang`'s
 /// curated vocabulary but NOT to `other`'s — PAIRWISE against the specific
@@ -221,48 +315,31 @@ const MIN_DISTINCTIVE_HITS: usize = 2;
 /// curated language `other` has never heard of is not ambiguous for this
 /// specific comparison and stays.
 ///
-/// **A hit sandwiched between two Title-Case neighbours is excluded** — a
-/// connector word ("der", "und", "für") glued between two capitalised words
-/// is almost always sitting INSIDE a proper noun (an institution's own
-/// official compound name — "Fachhochschule für Technik und Wirtschaft
-/// Berlin" genuinely contains "für" and "und"), not free-standing prose
-/// usage. Measured: an otherwise-English EDUCATION entry that spells out
-/// such a name — the realistic shape, matching this crate's own fixture
-/// convention of a terse "Degree, Institution, Dates" line — cleared the
-/// evidence floor without this exclusion; genuinely wrong-language PROSE
-/// (the Spanish/Portuguese regression fixtures, the existing wrong-language
-/// résumé fixtures) is unaffected, because a real sentence surrounds its
-/// function words with ordinary lowercase words, not two proper-noun
-/// neighbours in a row. Costs the SAME direction every other guard in this
-/// module costs: a genuinely wrong-language document whose every function
-/// word happens to fall between two capitalised neighbours would lose that
-/// evidence too — accepted, because the alternative (counting it) is the
-/// false accusation this whole mechanism exists to prevent, and a document
-/// that short and that proper-noun-dense was already a poor candidate for a
-/// confident read (see [`MIN_CHARS_FOR_LANGUAGE_CHECK`]).
+/// **A title-case-sandwich exclusion (dropping a hit whose immediate
+/// neighbours were BOTH capitalised, on the theory that it sits inside a
+/// proper noun) was tried here and REMOVED — it was a false generalisation
+/// from Latin languages to German.** Standard German CV register is nominal
+/// ("Aufbau und Betrieb der Zahlungsplattform", "Leitung der Migration der
+/// Dienste"): German capitalises every noun, so in this register EVERY
+/// connector sits between two capitalised nouns by construction, not
+/// because it is part of a proper noun. The exclusion deleted German's
+/// evidence wholesale — measured: a whole nominal-register German résumé
+/// against an English target dropped to 1 pairwise hit and stopped firing,
+/// with no second line of defence, because both the document and section
+/// passes route through this same function. See [`MIN_DISTINCTIVE_HITS`]'s
+/// doc for the threshold-only replacement and the corpus it was chosen
+/// from.
 pub(super) fn pairwise_evidence_count(text: &str, lang: &str, other: &str) -> usize {
     let lang_words: HashSet<&str> = function_words_for(lang).iter().copied().collect();
     if lang_words.is_empty() {
         return 0;
     }
     let other_words: HashSet<&str> = function_words_for(other).iter().copied().collect();
-    let tokens: Vec<&str> = text
-        .split(|c: char| !c.is_alphabetic())
-        .filter(|w| !w.is_empty())
-        .collect();
-    let is_title_case = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
-    tokens
-        .iter()
-        .enumerate()
-        .filter(|(_, w)| w.chars().count() >= MIN_DISTINCTIVE_TOKEN_CHARS)
-        .filter(|(_, w)| {
+    text.split(|c: char| !c.is_alphabetic())
+        .filter(|w| w.chars().count() >= MIN_DISTINCTIVE_TOKEN_CHARS)
+        .filter(|w| {
             let lower = w.to_lowercase();
             lang_words.contains(lower.as_str()) && !other_words.contains(lower.as_str())
-        })
-        .filter(|(i, _)| {
-            let prev_titlecase = *i > 0 && is_title_case(tokens[i - 1]);
-            let next_titlecase = i + 1 < tokens.len() && is_title_case(tokens[i + 1]);
-            !(prev_titlecase && next_titlecase)
         })
         .count()
 }
@@ -287,13 +364,15 @@ pub(super) fn needs_distinctive_evidence(lang: &str) -> bool {
 /// pairwise evidence in the same text, not just clear the floor — was tried
 /// and REMOVED after measurement.** It was built to separate "an otherwise-
 /// English document that merely names a foreign institution" from "genuinely
-/// sparse Spanish/Portuguese text", but that separation turned out to already
-/// be the title-case-sandwich exclusion's job (see
-/// [`pairwise_evidence_count`]'s doc): disabling the comparative bar alone
-/// left every `validate::content` behavioural test green, and left only its
-/// own manufactured unit test red. Removed rather than kept on the strength
-/// of the argument for it — the argument was real, the measurement said it
-/// carried no load.
+/// sparse Spanish/Portuguese text", but at the time that separation turned
+/// out to already be a title-case-sandwich exclusion's job: disabling the
+/// comparative bar alone left every `validate::content` behavioural test
+/// green, and left only its own manufactured unit test red. Removed rather
+/// than kept on the strength of the argument for it — the argument was real,
+/// the measurement said it carried no load. (The title-case exclusion it
+/// deferred to was ITSELF removed one round later, for breaking German —
+/// see [`MIN_DISTINCTIVE_HITS`]'s doc; nothing has replaced either bar
+/// except the single floor below.)
 ///
 /// A non-Latin-script `found` (gated by [`needs_distinctive_evidence`]) skips
 /// this floor entirely — whatlang's script read is already reliable there

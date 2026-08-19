@@ -1635,42 +1635,53 @@ fn regime_5_neither_witness_corroborating_the_target_stays_quiet() {
 /// same way it would read a longer original. The SAME sentences
 /// `documents::keywords::test::detected_language_identifies_*` pins at the
 /// primitive level, so a regression in either place is visible in both.
+///
+/// The seven Latin-curated languages repeat 7×, not 3× — measured: at a
+/// single instance, the worst pairwise-evidence case across all 42
+/// cross-language pairs is Spanish against a French target (Spanish and
+/// French share most of their short function words, so only "tiene" survives
+/// pairwise pruning), at 1 hit. 3 repeats would give that pair 3 hits, under
+/// [`MIN_DISTINCTIVE_HITS`]'s floor of 5; 7 repeats gives it 7, two clear of
+/// the floor. The SAME reasoning [`MIN_CHARS_FOR_LANGUAGE_CHECK`] already
+/// applies to length: a document too short is a poor candidate for a
+/// confident read, and a real wrong-language document is never this
+/// artificially terse.
 fn per_language_samples() -> Vec<(&'static str, String)> {
     let sentences: &[(&str, &str, usize)] = &[
         (
             "en",
             "The candidate has eight years of backend experience with payment systems.",
-            3,
+            7,
         ),
         (
             "de",
             "Die Kandidatin hat acht Jahre Erfahrung im Backend-Bereich mit Zahlungssystemen.",
-            3,
+            7,
         ),
         (
             "fr",
             "La candidate a huit ans d'expérience dans les systèmes de paiement back-end.",
-            3,
+            7,
         ),
         (
             "es",
             "La candidata tiene ocho años de experiencia en sistemas de pago de backend.",
-            3,
+            7,
         ),
         (
             "it",
             "La candidata ha otto anni di esperienza nei sistemi di pagamento backend.",
-            3,
+            7,
         ),
         (
             "pt",
             "A candidata tem oito anos de experiência em sistemas de pagamento de backend.",
-            3,
+            7,
         ),
         (
             "nl",
             "De kandidaat heeft acht jaar ervaring met backend-betalingssystemen.",
-            3,
+            7,
         ),
         ("zh", "我是一名后端工程师，在支付系统和容器平台方面工作了八年。", 5),
         (
@@ -2118,6 +2129,150 @@ fn short_ambiguous_tokens_never_manufacture_evidence() {
     }
 }
 
+// ── CRITICAL (pre-PR gate): nominal-register German had NO fixture ──────────
+
+/// A pre-PR gate found that the title-case-sandwich exclusion (since
+/// removed — see the module doc) deleted German's evidence wholesale,
+/// because standard German CV register is NOMINAL ("Aufbau und Betrieb der
+/// Zahlungsplattform"), not the finite-verb register
+/// ([`EN_WRONG_LANGUAGE`]'s "Die Wartezeit wurde gesenkt…") every existing
+/// wrong-language German fixture in this file happened to use. German
+/// capitalises every noun, so in nominal register EVERY connector sits
+/// between two capitalised words — the exclusion could not tell that apart
+/// from a connector inside a proper noun, and this exact register never had
+/// a regression pin. Document scope: the whole résumé is nominal.
+#[test]
+fn nominal_register_german_document_is_critical() {
+    let de_nominal = "Jane Doe\n\
+        jane.doe@example.com | +49 30 1234567 | github.com/janedoe\n\n\
+        ZUSAMMENFASSUNG\n\n\
+        Acht Jahre Erfahrung im Zahlungsverkehr und im Aufbau von Container-Plattformen.\n\n\
+        BERUFSERFAHRUNG\n\n\
+        Senior Backend Engineer | Acme Payments | 2021 - Present\n\
+        - Aufbau und Betrieb der Zahlungsplattform mit Reduzierung der Wartezeit von 480ms \
+        auf 90ms\n\
+        - Leitung der Migration der Dienste auf einen Kubernetes-Cluster mit zwölftausend \
+        Anfragen pro Sekunde\n\
+        - Neuentwicklung des Wiederholungsplaners in Rust zur Reduzierung fehlgeschlagener \
+        Zahlungen\n\n\
+        Backend Developer | Globex Logistics | 2018 - 2021\n\
+        - Entwicklung der Abrechnungsschnittstelle in Python und PostgreSQL für vierzig \
+        Lagerstandorte\n\
+        - Migration der Flotte zu AWS mit Terraform als Bereitstellungswerkzeug\n\n\
+        KENNTNISSE\n\n\
+        Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis\n\n\
+        AUSBILDUNG\n\n\
+        BSc Informatik, TU Berlin, 2014 - 2018\n";
+    assert!(
+        significant_chars(de_nominal) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(de_nominal),
+        Some("de"),
+        "premise: must confidently read as German"
+    );
+    assert!(
+        is_language_mismatch(de_nominal, "en"),
+        "nominal-register German must still be caught — this is the exact register the \
+         title-case-sandwich exclusion silenced"
+    );
+    let report = en_resume(de_nominal, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+}
+
+/// The SAME nominal register, drifted into only the EXPERIENCE section of an
+/// otherwise-English résumé — the shape the reported defect actually takes,
+/// and the shape [`a_single_drifted_section_is_caught_even_though_the_document_reads_clean`]
+/// already pins for Italian. German had no equivalent: the document-level
+/// vote must stay clean (an English majority hides one drifted section) and
+/// the section-level pass must catch it — this is the ONE fixture that
+/// exercises nominal-register German through the SECTION-scoped half of
+/// `is_language_mismatch`, not just the whole-document half above.
+#[test]
+fn nominal_register_german_section_is_critical() {
+    let generated = EN_CLEAN.replace(
+        "Senior Backend Engineer | Acme Payments | 2021 - Present\n\
+        - Checkout latency fell from 480ms to 90ms once a Redis cache sat in front of the \
+        ledger service\n\
+        - Ran the Docker workloads on a Kubernetes cluster that answers 12000 requests \
+        every second\n\
+        - Rewrote the retry scheduler in Rust, and failed settlements fell by 35%\n\n\
+        Backend Developer | Globex Logistics | 2018 - 2021\n\
+        - 40 warehouse sites bill through an API I wrote in Python, backed by PostgreSQL\n\
+        - Took the fleet to AWS, with the whole deployment pipeline written as Terraform",
+        "Senior Backend Engineer | Acme Payments | 2021 - Present\n\
+        - Aufbau und Betrieb der Zahlungsplattform mit Reduzierung der Wartezeit von 480ms \
+        auf 90ms\n\
+        - Leitung der Migration der Dienste auf einen Kubernetes-Cluster mit zwölftausend \
+        Anfragen pro Sekunde\n\
+        - Neuentwicklung des Wiederholungsplaners in Rust zur Reduzierung fehlgeschlagener \
+        Zahlungen\n\n\
+        Backend Developer | Globex Logistics | 2018 - 2021\n\
+        - Entwicklung der Abrechnungsschnittstelle in Python und PostgreSQL für vierzig \
+        Lagerstandorte\n\
+        - Migration der Flotte zu AWS mit Terraform als Bereitstellungswerkzeug",
+    );
+    assert!(
+        !is_language_mismatch(&generated, "en"),
+        "premise: the document-level majority vote must NOT fire — one drifted nominal- \
+         register German EXPERIENCE section inside an otherwise-English résumé is exactly \
+         the case that hides from a whole-document read"
+    );
+    let report = en_resume(&generated, &en_requirements());
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+    assert_eq!(
+        hits[0].section.as_deref(),
+        Some("EXPERIENCE"),
+        "the finding must name the drifted section, not just the document"
+    );
+}
+
+// ── Title-Case rendering also reaches the evidence branch (fr, in addition to German) ──
+
+/// The title-case-sandwich exclusion silenced more than German: ANY document
+/// rendered in Title Case (a real résumé-theme style, not a synthetic
+/// construction) put every function word between two capitalised
+/// neighbours, in every curated language. Pinned here for French — German
+/// already has nominal-register coverage above, and this proves the fix is
+/// not German-specific.
+#[test]
+fn title_case_rendered_french_document_is_critical() {
+    let fr_title_case = "La Candidate A Huit Ans D'Expérience Dans Les Systèmes De Paiement \
+        Back-End Et A Dirigé La Migration De Nos Services Vers Kubernetes En Réduisant La \
+        Latence Du Service De Paiement De Quarante Pour Cent Cette Année Dans L'Entreprise.";
+    assert!(
+        significant_chars(fr_title_case) >= MIN_CHARS_FOR_LANGUAGE_CHECK,
+        "premise: fixture must clear the char floor"
+    );
+    assert_eq!(
+        crate::documents::keywords::detected_language(fr_title_case),
+        Some("fr"),
+        "premise: must confidently read as French"
+    );
+    assert!(
+        document_language_mismatch(fr_title_case, EN_SOURCE, EN_JOB_AD, "en"),
+        "a Title-Case-rendered French document must still fire — every function word \
+         sitting between two capitalised neighbours is a rendering choice, not evidence \
+         the text is a proper noun"
+    );
+    let report = validate_content(&ContentInput {
+        generated: fr_title_case,
+        source_resume: EN_SOURCE,
+        job_ad: EN_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    let hits = fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+    assert!(!report.ok);
+}
+
 // ── BLOCKING 3 (untested section-scoped half) + design question (proper nouns) ──
 
 /// The differentiator BLOCKING 3 asked for: a fixture where reverting ONLY
@@ -2309,58 +2464,60 @@ fn pairwise_evidence_count_excludes_shared_and_single_letter_tokens() {
     assert_eq!(pairwise_evidence_count("und und und", "tr", "en"), 0);
 }
 
-/// A word sandwiched between two Title-Case neighbours is excluded — the
-/// heuristic `a_german_institution_name_inside_an_english_education_section_never_fires`
-/// relies on, isolated here on a minimal pair so the mechanism itself is
-/// pinned independent of that larger fixture.
+/// German capitalises every noun, so a nominal-register connector
+/// ("Aufbau und Betrieb der Zahlungsplattform") sits between two capitalised
+/// words exactly as often as a proper noun's own connector does — a
+/// title-case-sandwich exclusion tried in `pairwise_evidence_count` could not
+/// tell the two apart and deleted German's evidence wholesale (see the
+/// module doc's `MIN_DISTINCTIVE_HITS` history). Pinned here directly: this
+/// exact shape must still count.
 #[test]
-fn a_connector_between_two_title_case_words_is_excluded_as_a_proper_noun() {
+fn a_connector_between_two_title_case_words_still_counts() {
     use super::language::pairwise_evidence_count;
 
-    // "und" between two Capitalised words reads as part of a compound proper
-    // noun ("Technik und Wirtschaft") and is excluded; "Technik"/"Wirtschaft"
-    // themselves are not German function words, so this is the whole count.
     assert_eq!(
         pairwise_evidence_count("Technik und Wirtschaft", "de", "en"),
-        0
-    );
-    // The SAME word in ordinary sentence position (lowercase neighbours) is
-    // not excluded — this is what keeps genuine German prose evidenced. "die"
-    // (article) also survives, so this fixture counts both.
-    assert_eq!(
-        pairwise_evidence_count("die technik und wirtschaft wuchsen", "de", "en"),
-        2
-    );
-    // A sentence-initial capital on ONE side only is not a proper-noun
-    // sandwich — only BOTH neighbours capitalised excludes a hit. "Und" and
-    // "die" both survive here for the same reason.
-    assert_eq!(
-        pairwise_evidence_count("Und die technik wuchs", "de", "en"),
-        2
+        1,
+        "\"und\" between two Capitalised words is ordinary German nominal register, \
+         not a signal to exclude it"
     );
 }
 
 /// `distinctive_evidence_confirms`'s absolute floor, isolated: `found`'s
-/// pairwise evidence must clear `MIN_DISTINCTIVE_HITS` (a single hit is
-/// noise, not evidence); a non-Latin-script `found` skips the requirement
-/// entirely regardless of evidence, since `needs_distinctive_evidence` never
-/// asks a script whatlang already reads reliably to corroborate itself.
+/// pairwise evidence must clear [`MIN_DISTINCTIVE_HITS`] (below it, a match
+/// is noise); a non-Latin-script `found` skips the requirement entirely
+/// regardless of evidence, since `needs_distinctive_evidence` never asks a
+/// script whatlang already reads reliably to corroborate itself.
 ///
-/// A second, COMPARATIVE bar (`found`'s evidence must EXCEED `target`'s own
-/// in the same text, not just clear the floor) was tried here and removed:
-/// disabling it left every `validate::content` behavioural test green and
-/// only a test asserting the comparative predicate directly red, so the
-/// title-case-sandwich exclusion in `pairwise_evidence_count` was already
-/// doing the real work — see the module doc for the full measurement.
+/// Mutation check (performed at the WHOLE-SUITE level, not just this
+/// isolated pair — both classes really do respond to the one constant):
+///
+/// - Floor moved to 4 (one under the shipped 5) — RAN the full
+///   `validate::content` suite: `a_german_institution_name_inside_an_english_certifications_section_never_fires`
+///   (a QUIET fixture, evidence 4) went red — a false positive reopened.
+/// - Floor moved to 7 (one over) — RAN the full suite again:
+///   `a_drifted_volunteer_section_warns_rather_than_blocks` (a FIRE fixture,
+///   evidence 6) went red — a false negative reopened.
+/// - Restored to 5; full suite green again.
+///
+/// This IS the property a shape-based exclusion cannot offer: one number,
+/// and both failure directions are visibly, mechanically tied to it.
 #[test]
-fn distinctive_evidence_confirms_requires_the_absolute_floor() {
+fn distinctive_evidence_confirms_requires_the_shipped_floor() {
     use super::language::distinctive_evidence_confirms;
 
-    // Two hits clears the floor.
-    assert!(distinctive_evidence_confirms("und und", "de", "en"));
-    // One hit alone is still noise, not evidence — even with zero target
-    // evidence to compare against.
-    assert!(!distinctive_evidence_confirms("und", "de", "en"));
+    // Below the floor (4 hits): must not confirm.
+    assert!(!distinctive_evidence_confirms(
+        "und und und und",
+        "de",
+        "en"
+    ));
+    // At the floor (5 hits): confirms.
+    assert!(distinctive_evidence_confirms(
+        "und und und und und",
+        "de",
+        "en"
+    ));
     // A non-Latin script skips the requirement outright: zero evidence, but
     // whatlang's script read is already reliable there.
     assert!(distinctive_evidence_confirms(
