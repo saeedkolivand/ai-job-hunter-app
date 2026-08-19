@@ -30,9 +30,31 @@ The critical decision is how to access Gmail: OAuth or an app password. This ADR
 - **IMAP read-only use** — the app only issues IMAP SELECT and UID SEARCH commands; it never issues APPEND, COPY, or any write. Read-only is an application-behavior guarantee (enforced by code review and auditable), not an API-enforced restriction — the password itself grants full mailbox access, as disclosed above.
 - **Instant revocability** — the user can revoke the password at myaccount.google.com/apppasswords with one click, immediately invalidating the app's future IMAP logins; the now-inert keychain entry remains local until Disconnect or factory reset removes it.
 
-**Version 1 = notify + confirm, no auto-write.** Matching company and title from email subjects/bodies is inherently fuzzy (no URL exists in an email) and cannot meet Layer A's exact-URL deduplication bar. The only new power Layer C grants is local mailbox reading. Auto-writing matched applications is deferred behind a separate opt-in under ADR-0009's "observe X, auto-act Y" consequence.
+**Version 1 = notify + confirm, no auto-write; Version 2 slice 1 & 2 adds adjudicable auto-write.** Matching company and title from email subjects/bodies is inherently fuzzy (no URL exists in an email) and cannot meet Layer A's exact-URL deduplication bar. Auto-writing matched applications is deferred behind a separate opt-in under ADR-0009's "observe X, auto-act Y" consequence (v2 realizes this).
 
-**Zero email-content egress to external processing — local heuristics only.** The app retrieves email content from the user's own IMAP server (ingress from the user's own mail host), but parsing and matching happen locally on the device. Email content never reaches an AI provider or any external processing endpoint. The TLS connection to imap.gmail.com:993 (or the user's mail host if custom hosts are ever supported) is backend-owned, fixed in configuration, and never user-supplied (per ADR-0012 discipline).
+## Version 2: Auto-write with adjudication
+
+**v2 slice 1 (shipped):** 4-way email-intent classifier (confirmation | rejection | interview | offer) over a 173-phrase, 7-language corpus that survived a 57% adversarial kill rate. Subject-only fingerprinting cannot separate rejections (which reuse confirmation subject lines from earlier in the thread); the body classifier is the discriminating signal.
+
+**v2 slice 2 (shipped, infrastructure only — not yet wired to runtime):** Auto-write infrastructure. **A matched intent writes a status change immediately, but always UNCONFIRMED.** The application's timeline renders it as provisional with Accept / Reject buttons. Accept sets `confirmed = 1` on that row (it is written as `0`); Reject appends a reversal event (table stays append-only; the trail shows the email was wrong). If the user changed the status by hand in the meantime, Reject marks the row reviewed (never clobbered). A separate toggle (`auto_write_enabled`, default ON) gates the write; toggling OFF is an escape hatch, not the primary safeguard — the unconfirmed row and adjudication are.
+
+**Auto-write wired status:** `apply_matched_intent` in `email_watch/auto_write.rs` is NOT called from the poller's runtime tick yet. It exists and is fully tested; the scheduler's future runner (L2, the one place in this module family with `AppHandle` reach) will wire it. Until then, auto-write is infrastructure-only; shipped behavior remains v1 (notify-only).
+
+**Interview intent advances by one step:** `Interview` intent (e.g., "we'd like to interview you") advances `Saved` → `Interviewing` directly, skipping intermediate stages.
+
+**Terminal-status absorption with email-write exception:** A `Rejected` or `Accepted` status normally absorbs all further status changes — once terminal, always terminal. Exception: if the current status is itself an unconfirmed email-derived write, a later email-derived intent may supersede it. This exists because attribution is attacker-supplied: a single cold email from an unrecognised sender could otherwise freeze an application `Rejected` forever and silently stop tracking it. A user-set or user-accepted terminal status still absorbs (no exception).
+
+**Sender provenance gate:** An auto-write requires a recognized sender (`domain_hint` hit on the email's envelope From domain). A cold email from an unrecognised sender never writes, even if it fingerprints and classifies. This is the cheapest sufficient signal that already exists; two wider signals were considered (sender domain matching the company's expected domain, thread linkage via `References`/`In-Reply-To`) and deferred as future work.
+
+**Recall gaps, honestly stated:**
+
+- English has exactly ONE discriminating confirmation phrase and ONE discriminating offer phrase (vs. 23 rejection phrases). German has ZERO discriminating confirmation phrases. Across 7 languages, 138 discriminating phrases remain, split 9 confirmation / 76 rejection / 30 interview / 23 offer.
+- `classify_intent` returning `None` is the safe direction (no write) for unrecognized patterns. Recall on confirmation/offer is thinner than the phrase count alone suggests.
+- A stale offer phrase quoted from an older thread message can outrank a current interview phrase, because the tie-break has no positional awareness. Rejection is unaffected (it wins first, position-independently). Adjudication is the mitigation.
+
+**Matching normalization:** Phrase matching normalizes whitespace (strips quote markers, joins wrapped lines, collapses whitespace), folds typographic apostrophes (U+2019 → U+0027), and composes NFC (handles NFD accents). Both the haystack (email body) and needles (corpus phrases, compiled at build time) are normalized identically. Every defect (wrapped-line failures, NBSP, curly apostrophes, accented characters) was reproduced as a failing test before the fix.
+
+**Zero email-content egress to external processing — local heuristics only.** The app retrieves email content from the user's own IMAP server (ingress from the user's own mail host), but parsing, matching, and intent classification happen locally on the device. Email content never reaches an AI provider or any external processing endpoint. The TLS connection to imap.gmail.com:993 (or the user's mail host if custom hosts are ever supported) is backend-owned, fixed in configuration, and never user-supplied (per ADR-0012 discipline).
 
 **Storage posture:** The credential lives in the OS keychain (slot `email-imap`). The `EmailWatchStore` (SQLite, `email_watch.db`) is machine-local and deliberately **NOT** a `DataStore` — it holds only watermark/dedupe state (last UID, last check time, seen emails) that should never reach backups or be shared across devices. The store is `Resettable` (cleared on factory reset alongside the keychain credential).
 
@@ -58,12 +80,17 @@ The critical decision is how to access Gmail: OAuth or an app password. This ADR
 ## References
 
 - ADR-0005 (egress classes, class 7 lists the new IMAP class).
-- ADR-0009 (observe X, auto-act Y consequence; v1 does not auto-write).
+- ADR-0009 (observe X, auto-act Y consequence; v2 realizes auto-write).
 - ADR-0012 (backend-owned config, no renderer-supplied endpoints).
 - ADR-016 (Notification Center; email.match is the kind, no NC changes needed).
 - ADR-027 (diagnostics redaction; email content never logged).
 - Store: `apps/desktop/src-tauri/src/email_watch/mod.rs` (`EmailWatchStore`, `Resettable` trait).
 - Connector: `apps/desktop/src-tauri/src/email_watch/imap_client.rs` (`validate_connection`).
+- Parser: `apps/desktop/src-tauri/src/email_watch/parser.rs` (RFC2047/MIME decode, fingerprint).
+- Intent classifier: `apps/desktop/src-tauri/src/email_watch/intent.rs` (4-way classifier, normalization, status ladder).
+- Phrase corpus: `apps/desktop/src-tauri/src/email_watch/intent_phrases.json` (173-phrase, 7-language compiled asset).
+- Auto-write: `apps/desktop/src-tauri/src/email_watch/auto_write.rs` (`apply_matched_intent`, provenance gate, not yet scheduled).
+- Status events: `apps/desktop/src-tauri/src/applications/status_events.rs` (append-only audit trail with `source` and `confirmed` columns).
 - IPC: `apps/desktop/src-tauri/src/commands/email_watch.rs` (5 commands).
 - IPC contracts: `packages/shared/src/ipc/contracts/emailWatch.ts`.
 - Service hooks: `apps/desktop/src/renderer/services/use-email-watch/`.
