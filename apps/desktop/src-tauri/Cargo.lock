@@ -312,6 +312,7 @@ dependencies = [
  "typst-pdf",
  "typst-render",
  "typst-svg",
+ "unicode-normalization",
  "urlencoding",
  "uuid",
  "wait-timeout",

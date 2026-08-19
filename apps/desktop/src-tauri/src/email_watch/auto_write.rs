@@ -21,17 +21,35 @@ use crate::error::AppResult;
 /// atomic compare-and-set every other caller in this crate uses) performs
 /// the write.
 ///
+/// **`domain_hint` gates the write on sender provenance — a cold email must
+/// never write.** [`crate::email_watch::parser::fingerprint`]'s subject
+/// match is a REGEX over attacker-controlled text; anyone who knows a user
+/// applied to a company can send a subject/body that fingerprints AND
+/// classifies. Without a provenance gate, that one email would freeze the
+/// application (see [`next_status`]'s terminal-absorption doc) as far as
+/// automation is concerned, silently — not data loss, a silent STOP to
+/// tracking. `domain_hint` (already computed by `fingerprint`, a KNOWN
+/// ATS/board sender domain) is the cheapest sufficient signal that already
+/// exists; `false` is a no-op here, same as every other gate below. Two
+/// WIDER signals were considered and deliberately NOT implemented in this
+/// slice: the sender domain matching the application's own company domain
+/// (no existing field derives a company's expected email domain — a real
+/// new piece of logic, not a seam) and in-thread linkage via `References`/
+/// `In-Reply-To` (would need widening the IMAP `HEADER.FIELDS` fetch — a
+/// cost to approve, not to spend silently).
+///
 /// Every one of the following is a legitimate no-op (`Ok(false)`), never an
 /// error:
-/// - [`EmailWatchStore::auto_write_enabled`] is off (checked FIRST, before
-///   computing anything);
-/// - [`next_status`] itself says no-op — a terminal `current_status`, or the
-///   intent doesn't advance the ladder. (A `None` *intent* is not this
-///   function's concern at all: it takes a concrete [`EmailIntent`], never
-///   an `Option` — the caller simply never calls this for a message
-///   `crate::email_watch::intent::classify_intent` returned `None` for, so
-///   "a `None` intent must not write anything" holds by construction, not
-///   by a runtime check here);
+/// - `domain_hint` is `false` — an unrecognised sender, checked FIRST;
+/// - [`EmailWatchStore::auto_write_enabled`] is off;
+/// - [`next_status`] itself says no-op — a terminal, still-CONFIRMED-or-
+///   user-set `current_status` (absorbing by design), or the intent doesn't
+///   advance the ladder. (A `None` *intent* is not this function's concern
+///   at all: it takes a concrete [`EmailIntent`], never an `Option` — the
+///   caller simply never calls this for a message `crate::email_watch::
+///   intent::classify_intent` returned `None` for, so "a `None` intent must
+///   not write anything" holds by construction, not by a runtime check
+///   here);
 /// - this exact `(current_status, target)` transition was already rejected
 ///   by the user for this application
 ///   ([`ApplicationStore::was_transition_rejected`]) — a later email must
@@ -49,11 +67,18 @@ pub fn apply_matched_intent(
     application_id: &str,
     current_status: ApplicationStatus,
     intent: EmailIntent,
+    domain_hint: bool,
 ) -> AppResult<bool> {
+    if !domain_hint {
+        return Ok(false);
+    }
     if !email_watch.auto_write_enabled() {
         return Ok(false);
     }
-    let Some(target) = next_status(intent, current_status) else {
+    let current_is_unconfirmed_email_write =
+        applications.current_status_is_unconfirmed_email_write(application_id);
+    let Some(target) = next_status(intent, current_status, current_is_unconfirmed_email_write)
+    else {
         return Ok(false);
     };
     if applications.was_transition_rejected(application_id, current_status, target) {
@@ -126,6 +151,7 @@ mod tests {
             &id,
             ApplicationStatus::Saved,
             EmailIntent::Confirmation,
+            true,
         )
         .unwrap();
         assert!(wrote);
@@ -138,6 +164,31 @@ mod tests {
         assert!(
             !last.confirmed,
             "an email-derived write must NEVER land confirmed"
+        );
+    }
+
+    #[test]
+    fn a_cold_unrecognized_sender_never_writes_even_with_a_decided_intent() {
+        // The security-review finding: attribution is entirely
+        // attacker-supplied (fingerprint is subject-regex-only), so a
+        // single cold email must never move a status regardless of how
+        // confidently the intent classified.
+        let (_d1, applications, _d2, email_watch) = stores();
+        let id = saved_app(&applications);
+
+        let wrote = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Saved,
+            EmailIntent::Confirmation,
+            false,
+        )
+        .unwrap();
+        assert!(!wrote, "a cold sender (no domain_hint) must never write");
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Saved
         );
     }
 
@@ -161,6 +212,7 @@ mod tests {
             &id,
             ApplicationStatus::Saved,
             EmailIntent::Confirmation,
+            true,
         )
         .unwrap();
         assert!(!wrote, "the toggle off must block the write");
@@ -188,6 +240,7 @@ mod tests {
             &id,
             ApplicationStatus::Offer,
             EmailIntent::Confirmation,
+            true,
         )
         .unwrap();
         assert!(!wrote);
@@ -214,6 +267,7 @@ mod tests {
             &id,
             ApplicationStatus::Interviewing,
             EmailIntent::Rejection,
+            true,
         )
         .unwrap();
         assert!(wrote_first);
@@ -239,6 +293,7 @@ mod tests {
             &id,
             ApplicationStatus::Interviewing,
             EmailIntent::Rejection,
+            true,
         )
         .unwrap();
         assert!(
@@ -254,6 +309,127 @@ mod tests {
             applications.events(&id).len(),
             events_after_reject,
             "the blocked second write must append nothing"
+        );
+    }
+
+    // -- terminal-override: an unconfirmed email-derived terminal is NOT
+    // absorbing forever; a user-set or confirmed one still is -------------
+
+    #[test]
+    fn a_later_email_supersedes_its_own_unconfirmed_terminal_write() {
+        // The exact "one cold email freezes the application" shape, minus
+        // the cold part: a legitimate (domain_hint = true) rejection email
+        // auto-writes Rejected (unconfirmed). Nobody has reviewed it yet.
+        // A later, genuinely different email must be able to supersede the
+        // still-unconfirmed Rejected, not be silently dropped.
+        let (_d1, applications, _d2, email_watch) = stores();
+        let id = saved_app(&applications);
+        applications
+            .set_status(&id, ApplicationStatus::Interviewing, "")
+            .unwrap();
+
+        let wrote_first = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Interviewing,
+            EmailIntent::Rejection,
+            true,
+        )
+        .unwrap();
+        assert!(wrote_first);
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Rejected
+        );
+        assert!(applications.current_status_is_unconfirmed_email_write(&id));
+
+        let wrote_second = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Rejected,
+            EmailIntent::Interview,
+            true,
+        )
+        .unwrap();
+        assert!(
+            wrote_second,
+            "a later email must be able to supersede its OWN still-unconfirmed \
+             terminal write -- an application must not freeze forever"
+        );
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Interviewing
+        );
+        let last = applications.events(&id).into_iter().last().unwrap();
+        assert_eq!(last.source, crate::applications::EVENT_SOURCE_EMAIL);
+        assert!(!last.confirmed);
+    }
+
+    #[test]
+    fn a_confirmed_terminal_status_still_absorbs_every_later_email() {
+        // Once the user (or an Accept) confirms the terminal status, it is
+        // no longer speculation -- it goes back to absorbing, exactly like
+        // a user-set terminal always has.
+        let (_d1, applications, _d2, email_watch) = stores();
+        let id = saved_app(&applications);
+        applications
+            .set_status(&id, ApplicationStatus::Interviewing, "")
+            .unwrap();
+
+        apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Interviewing,
+            EmailIntent::Rejection,
+            true,
+        )
+        .unwrap();
+        assert!(applications.accept_latest_status_event(&id).unwrap());
+        assert!(!applications.current_status_is_unconfirmed_email_write(&id));
+
+        let wrote = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Rejected,
+            EmailIntent::Interview,
+            true,
+        )
+        .unwrap();
+        assert!(
+            !wrote,
+            "a CONFIRMED terminal status must still absorb, same as a user-set one"
+        );
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Rejected
+        );
+    }
+
+    #[test]
+    fn a_user_set_terminal_status_absorbs_even_with_a_recognized_sender() {
+        let (_d1, applications, _d2, email_watch) = stores();
+        let id = saved_app(&applications);
+        applications
+            .set_status(&id, ApplicationStatus::Withdrawn, "user withdrew")
+            .unwrap();
+
+        let wrote = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            ApplicationStatus::Withdrawn,
+            EmailIntent::Interview,
+            true,
+        )
+        .unwrap();
+        assert!(!wrote, "a user-set terminal status must stay absorbing");
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Withdrawn
         );
     }
 }

@@ -26,6 +26,22 @@
 //! (`tests/architecture.rs`). A data file sidesteps that entirely and keeps
 //! the corpus a one-line-per-entry diff.
 //!
+//! **Recall gap, by intent, not just by language.** The 138 discriminating
+//! phrases split 9 confirmation / 76 rejection / 30 interview / 23 offer
+//! (pinned by `corpus_shape_pins_discriminating_counts_per_intent`) — the
+//! adversarial pass killed far more confirmation/offer wording than
+//! rejection wording (a rejection has many stock templates; a confirmation
+//! is often one bland sentence). This is NOT only a non-English problem:
+//! **English itself has exactly ONE discriminating confirmation phrase and
+//! ONE discriminating offer phrase**, against 23 English rejection
+//! phrases — the primary language's confirmation/offer recall is nearly as
+//! thin as German's (which has ZERO discriminating confirmation phrases at
+//! all — see `de_confirmation_phrase_alone_is_not_enough_to_decide` below).
+//! `classify_intent` returning `None` for a genuine confirmation/offer
+//! email is the SAFE direction (no write), not a crash or a wrong write —
+//! but it means recall on those two intents is real-world thinner than the
+//! phrase count alone suggests.
+//!
 //! **Language is not used to decide intent.** Cross-language phrase
 //! collisions don't matter — the classifier only needs the intent, not the
 //! language — so `lang` is kept on each entry for human auditability only;
@@ -71,9 +87,92 @@
 use std::sync::LazyLock;
 
 use serde::Deserialize;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::applications::ApplicationStatus;
 use crate::email_watch::parser::{safe_prefix, SUBJECT_MAX_BYTES};
+
+/// Fold real-mail text shape into the SAME normal form the corpus phrases
+/// are already written in, so a substring match survives what a plain
+/// `.to_lowercase()` alone does not (measured, independently, by two
+/// review passes — see this module's `wrapped_quoted_nbsp_body_at_*` and
+/// `a_curly_apostrophe_*` tests, each proven to fail before this fn existed):
+///
+/// - **Line-wrap + quote-prefix.** Real mail hard-wraps at ~72-80 columns,
+///   and a quoted-reply region prefixes every wrapped line with `"> "` (or
+///   `">> "` nested). A phrase split across a wrap boundary needs the
+///   newline treated as a plain word-separating space — but naively doing
+///   that alone glues a NEXT line's `"> "` marker into the middle of the
+///   reconstructed phrase, so each line's leading quote markers are
+///   stripped FIRST, before line joining.
+/// - **Any Unicode whitespace, not just ASCII.** `char::is_whitespace()`
+///   already covers U+00A0 NBSP (`mail-parser`'s `html_to_text` emits
+///   `&nbsp;` verbatim), so no special-casing is needed for it once every
+///   whitespace char (and every line-join point) folds to one space and
+///   runs collapse.
+/// - **Curly/modifier apostrophes.** `\u{2019}`/`\u{02BC}` fold to the
+///   ASCII `'` the corpus phrases are written with (e.g. the French
+///   rejection phrase `"n'a pas été retenue"`).
+/// - **NFC composition.** A decomposed accented body (base char + combining
+///   mark, e.g. from some mail clients / OS text layers) is composed back
+///   to the single precomposed codepoint the corpus phrases use, via
+///   `unicode-normalization` — already resolved transitively (typst/
+///   pdf-extract/stringprep all pull it in), so this adds no new supply-
+///   chain surface.
+///
+/// Applied identically to the haystack (subject/body, AFTER [`safe_prefix`]
+/// so the byte bound still applies first) and to every [`PhraseEntry::
+/// phrase`] needle (once, at [`PHRASES`] build time — they're static, so
+/// folding them costs nothing per email).
+fn fold(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut pending_space = false;
+    let mut started = false;
+    for raw_line in s.split('\n') {
+        for ch in strip_quote_prefix(raw_line).chars() {
+            if ch.is_whitespace() {
+                if started {
+                    pending_space = true;
+                }
+                continue;
+            }
+            if pending_space {
+                out.push(' ');
+                pending_space = false;
+            }
+            out.push(match ch {
+                '\u{2019}' | '\u{02BC}' => '\'',
+                other => other,
+            });
+            started = true;
+        }
+        // A line boundary is itself always at least one word-separating
+        // space, exactly like any other whitespace run this fn collapses.
+        if started {
+            pending_space = true;
+        }
+    }
+    out.nfc().collect::<String>().to_lowercase()
+}
+
+/// Strip a leading reply-quote marker (`"> "`, `">> "`, `"> > "`, …) from
+/// one line, so joining wrapped-and-quoted lines back together in [`fold`]
+/// doesn't glue a quote marker into the middle of a phrase that wrapped
+/// across the line. A line with no leading `>` at all is returned
+/// unchanged. (A body paragraph that happens to start a line with a bare
+/// `>` for some OTHER reason loses that character — accepted: no corpus
+/// phrase starts with or depends on a literal `>`.)
+fn strip_quote_prefix(line: &str) -> &str {
+    let mut rest = line;
+    loop {
+        let trimmed = rest.trim_start_matches([' ', '\t']);
+        match trimmed.strip_prefix('>') {
+            Some(after) => rest = after,
+            None => break,
+        }
+    }
+    rest.trim_start_matches([' ', '\t'])
+}
 
 /// The 4-way intent this classifier decides between.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -124,9 +223,26 @@ struct PhraseEntry {
 /// [`classify_intent`] never reads a non-discriminating entry when deciding
 /// an intent — see `discriminating_hit` below, which filters to
 /// `discriminating: true` before matching anything.
+///
+/// **Fails CLOSED, never aborts.** `.unwrap_or_default()`, not `.expect(…)`:
+/// the release profile sets `panic = "abort"`, so a corrupted
+/// `intent_phrases.json` must not take down the whole desktop process. An
+/// empty `Vec` here makes [`discriminating_hit`] vacuously `false` for
+/// every intent, so [`classify_intent`] always returns `None` — nothing
+/// ever writes (`crate::email_watch::auto_write` only calls `next_status`
+/// on a `Some` intent), which is exactly the safe direction for a corpus
+/// that failed to parse. CI still catches real corruption: `corpus_shape`
+/// below asserts the exact non-empty counts.
+///
+/// Each phrase is [`fold`]ed once here (not per email) — see `fold`'s own
+/// doc for what that normalizes and why.
 static PHRASES: LazyLock<Vec<PhraseEntry>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("intent_phrases.json"))
-        .expect("intent_phrases.json is a compiled-in asset, valid at build time")
+    let mut entries: Vec<PhraseEntry> =
+        serde_json::from_str(include_str!("intent_phrases.json")).unwrap_or_default();
+    for entry in &mut entries {
+        entry.phrase = fold(&entry.phrase);
+    }
+    entries
 });
 
 fn phrase_matches(entry: &PhraseEntry, subject: &str, body: &str) -> bool {
@@ -203,8 +319,8 @@ const INTENT_SCAN_BYTES: usize = 20_000;
 /// dual-intent example among these three to measure this against — a
 /// defensible default, flagged for review rather than silently assumed.
 pub fn classify_intent(subject: &str, body: Option<&str>) -> Option<EmailIntent> {
-    let subject = safe_prefix(subject, SUBJECT_MAX_BYTES).to_lowercase();
-    let body = safe_prefix(body.unwrap_or_default(), INTENT_SCAN_BYTES).to_lowercase();
+    let subject = fold(safe_prefix(subject, SUBJECT_MAX_BYTES));
+    let body = fold(safe_prefix(body.unwrap_or_default(), INTENT_SCAN_BYTES));
 
     if discriminating_hit(EmailIntent::Rejection, &subject, &body) {
         return Some(EmailIntent::Rejection);
@@ -259,42 +375,210 @@ fn advance_to(target: ApplicationStatus, current: ApplicationStatus) -> Option<A
     (ladder_rank(target) > ladder_rank(current)).then_some(target)
 }
 
+/// The status one classified [`EmailIntent`] maps to, independent of
+/// `current` — the raw target `next_status` then either advances to,
+/// applies unconditionally (`Rejection`), or overrides a stale terminal
+/// with.
+fn intent_target(intent: EmailIntent) -> ApplicationStatus {
+    match intent {
+        EmailIntent::Rejection => ApplicationStatus::Rejected,
+        EmailIntent::Confirmation => ApplicationStatus::Applied,
+        EmailIntent::Interview => ApplicationStatus::Interviewing,
+        EmailIntent::Offer => ApplicationStatus::Offer,
+    }
+}
+
 /// What one classified [`EmailIntent`] should do to `current`'s status.
 /// `None` means no-op — don't write anything — never a downgrade.
 ///
-/// - **Terminal statuses never move.** `Accepted`/`Rejected`/`Ghosted`/
-///   `Withdrawn` are final outcomes. A later email (a resend, a
-///   stale/reordered notification, or a genuinely new event this 4-way
-///   classifier has no intent for, like a rescinded offer) is out of scope:
-///   silently overwriting a final — usually user-confirmed — outcome would
-///   be worse than requiring a human to handle that rare edge case.
-/// - **Rejection wins from any LIVE status** (`Saved` through `Offer`),
-///   including from `Offer` itself — an offer can be rescinded by the
-///   employer before the candidate accepts it.
-/// - **Everything else only ever advances, never regresses or repeats.** A
-///   late confirmation arriving once the application is already at `Offer`
-///   is a no-op, not a downgrade to `Applied`; an intent that maps to the
-///   CURRENT status (e.g. a second interview-round email while already
-///   `Interviewing`) is also a no-op — nothing changed, so nothing writes.
-///   `Screening` is deliberately reachable only by direct status edits, not
-///   by any of these 4 intents — an `Interview` intent jumps straight to
-///   `Interviewing` even from `Saved`/`Applied`, which is a forward skip,
-///   not a regression, and is allowed.
-pub fn next_status(intent: EmailIntent, current: ApplicationStatus) -> Option<ApplicationStatus> {
-    if !is_live(current) {
-        return None;
+/// `current_is_unconfirmed_email_write` is the provenance the security
+/// review's "one cold email freezes an application forever" finding forced:
+/// whether `current` was ITSELF set by a still-unconfirmed, email-derived
+/// write (see [`crate::applications::StatusEvent::source`]/[`crate::
+/// applications::StatusEvent::confirmed`] — the caller determines this via
+/// [`crate::applications::ApplicationStore::current_status_is_unconfirmed_email_write`],
+/// this fn stays pure/store-free). It changes exactly one thing:
+///
+/// - **A LIVE `current` behaves exactly as before**, regardless of this
+///   flag — never regress the ladder; `Rejection` wins unconditionally from
+///   any live status (`Saved` through `Offer`, including `Offer` itself —
+///   an offer can be rescinded before the candidate accepts it); everything
+///   else only ever advances (`advance_to`), never repeats a no-op write.
+/// - **A TERMINAL `current`** (`Accepted`/`Rejected`/`Ghosted`/`Withdrawn`)
+///   **absorbs by default** — a later email (a resend, a stale/reordered
+///   notification, or a genuinely new event this 4-way classifier has no
+///   intent for, like a rescinded offer) is out of scope: silently
+///   overwriting a final — usually user-set or user-accepted — outcome
+///   would be worse than requiring a human to handle that rare edge case.
+///   **UNLESS `current_is_unconfirmed_email_write` is `true`**: the
+///   terminal status is itself unreviewed speculation from a classifier
+///   with a recorded precision limit (a cold/attacker-supplied email can
+///   set it — see `crate::email_watch::auto_write`'s own sender-provenance
+///   gate, the OTHER half of this fix), so a LATER email's intent may
+///   supersede it outright — any DIFFERENT target, not bound by the ladder
+///   ordering at all (the value being "regressed from" was never
+///   trustworthy to begin with). The degenerate case (the new target
+///   equals the current, already-unconfirmed terminal) is still a no-op —
+///   nothing actually changed.
+pub fn next_status(
+    intent: EmailIntent,
+    current: ApplicationStatus,
+    current_is_unconfirmed_email_write: bool,
+) -> Option<ApplicationStatus> {
+    let target = intent_target(intent);
+    if is_live(current) {
+        return if intent == EmailIntent::Rejection {
+            Some(target)
+        } else {
+            advance_to(target, current)
+        };
     }
-    match intent {
-        EmailIntent::Rejection => Some(ApplicationStatus::Rejected),
-        EmailIntent::Confirmation => advance_to(ApplicationStatus::Applied, current),
-        EmailIntent::Interview => advance_to(ApplicationStatus::Interviewing, current),
-        EmailIntent::Offer => advance_to(ApplicationStatus::Offer, current),
+    if current_is_unconfirmed_email_write {
+        return (target != current).then_some(target);
     }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- real-world text shape: line-wrap + quote-prefix + NBSP -----------
+    //
+    // Every OTHER fixture in this file is artificially newline-free (a Rust
+    // `\`-continuation strips both the newline AND the leading indent into
+    // one long line) -- realistic in length while dodging the only property
+    // that actually matters for a substring match: whether the phrase stays
+    // CONTIGUOUS. Real mail hard-wraps at ~72-80 columns, and a quoted reply
+    // region prefixes each wrapped line with "> ". These tests build a
+    // genuinely wrapped, genuinely quoted body (real `\n`, not a literal) at
+    // several measured widths, so a wrap boundary landing inside the
+    // discriminating phrase is reproduced, not assumed.
+
+    /// Word-wrap `text` to at most `width` columns, breaking only at
+    /// existing spaces (never mid-word) -- mirrors how a real mail client
+    /// hard-wraps a plain-text body -- then prefixes every line with "> "
+    /// (one level of reply-quoting). A tiny test-only generator so the SAME
+    /// source paragraph is rendered at several realistic widths instead of
+    /// hand-typing wrapped text, which would silently depend on exactly the
+    /// column boundary a bug depends on.
+    fn wrap_quoted(text: &str, width: usize) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        let mut line = String::new();
+        for word in text.split_whitespace() {
+            let candidate_len = if line.is_empty() {
+                word.chars().count()
+            } else {
+                line.chars().count() + 1 + word.chars().count()
+            };
+            if !line.is_empty() && candidate_len > width {
+                lines.push(std::mem::take(&mut line));
+            }
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+        lines
+            .into_iter()
+            .map(|l| format!("> {l}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The source paragraph every wrap-width test below renders -- a
+    /// realistic rejection body carrying the discriminating phrase, with
+    /// ONE regular space swapped for U+00A0 (NBSP) between "we" and "have"
+    /// (`mail-parser`'s `html_to_text` emits `&nbsp;` verbatim).
+    fn nbsp_rejection_paragraph() -> String {
+        "Thank you for your interest in our team here at Acme Corp. After \
+         further discussion among the panel, we\u{00A0}have decided not be \
+         moving forward with your application at this time, though we were \
+         impressed by your background. We wish you the very best in your \
+         ongoing search."
+            .to_string()
+    }
+
+    #[test]
+    fn wrapped_quoted_nbsp_body_at_72_cols_classifies_as_rejection() {
+        let body = wrap_quoted(&nbsp_rejection_paragraph(), 72);
+        assert!(body.contains('\n'), "fixture must be genuinely multi-line");
+        assert_eq!(
+            classify_intent("Update", Some(&body)),
+            Some(EmailIntent::Rejection)
+        );
+    }
+
+    #[test]
+    fn wrapped_quoted_nbsp_body_at_76_cols_classifies_as_rejection() {
+        let body = wrap_quoted(&nbsp_rejection_paragraph(), 76);
+        assert!(body.contains('\n'));
+        assert_eq!(
+            classify_intent("Update", Some(&body)),
+            Some(EmailIntent::Rejection)
+        );
+    }
+
+    #[test]
+    fn wrapped_quoted_nbsp_body_at_78_cols_classifies_as_rejection() {
+        let body = wrap_quoted(&nbsp_rejection_paragraph(), 78);
+        assert!(body.contains('\n'));
+        assert_eq!(
+            classify_intent("Update", Some(&body)),
+            Some(EmailIntent::Rejection)
+        );
+    }
+
+    #[test]
+    fn wrapped_quoted_nbsp_body_at_80_cols_classifies_as_rejection() {
+        let body = wrap_quoted(&nbsp_rejection_paragraph(), 80);
+        assert!(body.contains('\n'));
+        assert_eq!(
+            classify_intent("Update", Some(&body)),
+            Some(EmailIntent::Rejection)
+        );
+    }
+
+    #[test]
+    fn a_curly_apostrophe_still_matches_the_ascii_apostrophe_phrase() {
+        // The corpus stores a straight apostrophe (') in e.g. the French
+        // rejection phrase "n'a pas ete retenue"; real mail commonly sends
+        // U+2019 (') instead. Body only (that phrase is Location::Body).
+        //
+        // Deliberately isolated to ONLY this phrase (no surrounding
+        // boilerplate like "regrettons de vous informer", itself a
+        // discriminating rejection phrase) -- an earlier version of this
+        // test accidentally also matched that OTHER phrase and stayed green
+        // with no apostrophe folding at all, proving nothing about the
+        // apostrophe itself.
+        let body = "Votre candidature n\u{2019}a pas \u{e9}t\u{e9} retenue.";
+        assert_eq!(
+            classify_intent("Update", Some(body)),
+            Some(EmailIntent::Rejection)
+        );
+    }
+
+    #[test]
+    fn nfd_decomposed_accents_still_match_the_nfc_written_phrase() {
+        // The corpus phrase is written NFC (precomposed "é" = U+00E9). Some
+        // mail clients / OS text layers instead emit NFD (decomposed: "e"
+        // U+0065 + COMBINING ACUTE ACCENT U+0301) — a naive substring match
+        // against a decomposed body misses every accented phrase (measured:
+        // 16 of 16 accented discriminating rejection phrases). Spelled out
+        // with explicit `\u{}` escapes for "été" (not a literal decomposed
+        // character pasted into the source) so the decomposition is
+        // unambiguous and can't silently re-compose under an editor's own
+        // normalization. Same isolation lesson as the apostrophe test above
+        // — no other discriminating phrase nearby.
+        let body = "Votre candidature n'a pas e\u{0301}te\u{0301} retenue.";
+        assert_eq!(
+            classify_intent("Update", Some(body)),
+            Some(EmailIntent::Rejection)
+        );
+    }
 
     // ── per-language, per-intent: one discriminating phrase each, isolated
     // into its own test so a mutation that only breaks ONE case can never
@@ -336,7 +620,10 @@ mod tests {
     // corpus (`"wir haben ihre bewerbung"` is the only `de` confirmation
     // entry and it is `discriminating: false`) — a real, documented gap, not
     // an oversight. See `de_confirmation_phrase_alone_is_not_enough_to_decide`
-    // below, which pins exactly this.
+    // below, which pins exactly this. NOT a German-only gap, either — see
+    // the module doc's "Recall gap, by intent, not just by language"
+    // section: English itself has only ONE discriminating confirmation
+    // phrase and ONE discriminating offer phrase.
 
     #[test]
     fn classifies_de_interview() {
@@ -676,9 +963,19 @@ mod tests {
     #[test]
     fn a_discriminating_phrase_past_intent_scan_bytes_is_still_not_matched() {
         // A cap still exists — just a far more generous one than the
-        // fingerprint snippet. Anchored at `INTENT_SCAN_BYTES`, not the
-        // retired 500-byte mark, so this proves the CURRENT bound.
-        let padding = "x".repeat(INTENT_SCAN_BYTES);
+        // fingerprint snippet. The padding length is a PINNED LITERAL, not
+        // `INTENT_SCAN_BYTES` itself: deriving the padding from the same
+        // constant it is meant to test makes the test self-referential — a
+        // regression that bumps the constant to (say) 10 MB would bump this
+        // padding to match and stay green, proving the cap exists while the
+        // cap itself silently grew unbounded. A fixed 20_000 catches that: if
+        // `INTENT_SCAN_BYTES` is ever raised, this phrase (just past the
+        // OLD, pinned bound) becomes visible again and the assertion fails.
+        //
+        // This literal must be updated by hand if `INTENT_SCAN_BYTES` is
+        // ever deliberately raised — that friction is the point.
+        const PINNED_SCAN_BOUND_BYTES: usize = 20_000;
+        let padding = "x".repeat(PINNED_SCAN_BOUND_BYTES);
         let body = format!("{padding} move forward with other candidates");
         assert_eq!(classify_intent("Update", Some(&body)), None);
     }
@@ -790,7 +1087,7 @@ mod tests {
     #[test]
     fn confirmation_from_saved_advances_to_applied() {
         assert_eq!(
-            next_status(EmailIntent::Confirmation, ApplicationStatus::Saved),
+            next_status(EmailIntent::Confirmation, ApplicationStatus::Saved, false),
             Some(ApplicationStatus::Applied)
         );
     }
@@ -798,7 +1095,7 @@ mod tests {
     #[test]
     fn confirmation_from_offer_is_a_noop_not_a_downgrade() {
         assert_eq!(
-            next_status(EmailIntent::Confirmation, ApplicationStatus::Offer),
+            next_status(EmailIntent::Confirmation, ApplicationStatus::Offer, false),
             None
         );
     }
@@ -806,7 +1103,7 @@ mod tests {
     #[test]
     fn confirmation_from_applied_is_a_noop_same_stage() {
         assert_eq!(
-            next_status(EmailIntent::Confirmation, ApplicationStatus::Applied),
+            next_status(EmailIntent::Confirmation, ApplicationStatus::Applied, false),
             None
         );
     }
@@ -814,7 +1111,7 @@ mod tests {
     #[test]
     fn interview_from_saved_skips_forward_to_interviewing() {
         assert_eq!(
-            next_status(EmailIntent::Interview, ApplicationStatus::Saved),
+            next_status(EmailIntent::Interview, ApplicationStatus::Saved, false),
             Some(ApplicationStatus::Interviewing)
         );
     }
@@ -822,7 +1119,11 @@ mod tests {
     #[test]
     fn interview_from_interviewing_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Interview, ApplicationStatus::Interviewing),
+            next_status(
+                EmailIntent::Interview,
+                ApplicationStatus::Interviewing,
+                false
+            ),
             None
         );
     }
@@ -830,7 +1131,7 @@ mod tests {
     #[test]
     fn interview_from_offer_is_a_noop_not_a_downgrade() {
         assert_eq!(
-            next_status(EmailIntent::Interview, ApplicationStatus::Offer),
+            next_status(EmailIntent::Interview, ApplicationStatus::Offer, false),
             None
         );
     }
@@ -838,7 +1139,7 @@ mod tests {
     #[test]
     fn offer_intent_from_saved_skips_forward_to_offer() {
         assert_eq!(
-            next_status(EmailIntent::Offer, ApplicationStatus::Saved),
+            next_status(EmailIntent::Offer, ApplicationStatus::Saved, false),
             Some(ApplicationStatus::Offer)
         );
     }
@@ -846,7 +1147,7 @@ mod tests {
     #[test]
     fn offer_intent_from_offer_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Offer, ApplicationStatus::Offer),
+            next_status(EmailIntent::Offer, ApplicationStatus::Offer, false),
             None
         );
     }
@@ -854,7 +1155,7 @@ mod tests {
     #[test]
     fn rejection_from_saved_advances_to_rejected() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Saved),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Saved, false),
             Some(ApplicationStatus::Rejected)
         );
     }
@@ -862,7 +1163,7 @@ mod tests {
     #[test]
     fn rejection_from_applied_advances_to_rejected() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Applied),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Applied, false),
             Some(ApplicationStatus::Rejected)
         );
     }
@@ -870,7 +1171,7 @@ mod tests {
     #[test]
     fn rejection_from_screening_advances_to_rejected() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Screening),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Screening, false),
             Some(ApplicationStatus::Rejected)
         );
     }
@@ -878,7 +1179,11 @@ mod tests {
     #[test]
     fn rejection_from_interviewing_advances_to_rejected() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Interviewing),
+            next_status(
+                EmailIntent::Rejection,
+                ApplicationStatus::Interviewing,
+                false
+            ),
             Some(ApplicationStatus::Rejected)
         );
     }
@@ -888,7 +1193,7 @@ mod tests {
         // An offer can be rescinded by the employer before the candidate
         // accepts it — rejection is allowed from `Offer` too.
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Offer),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Offer, false),
             Some(ApplicationStatus::Rejected)
         );
     }
@@ -898,7 +1203,7 @@ mod tests {
     #[test]
     fn rejection_from_accepted_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Accepted),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Accepted, false),
             None
         );
     }
@@ -906,7 +1211,7 @@ mod tests {
     #[test]
     fn rejection_from_already_rejected_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Rejected),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Rejected, false),
             None
         );
     }
@@ -914,7 +1219,7 @@ mod tests {
     #[test]
     fn rejection_from_ghosted_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Ghosted),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Ghosted, false),
             None
         );
     }
@@ -922,7 +1227,7 @@ mod tests {
     #[test]
     fn rejection_from_withdrawn_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Rejection, ApplicationStatus::Withdrawn),
+            next_status(EmailIntent::Rejection, ApplicationStatus::Withdrawn, false),
             None
         );
     }
@@ -930,7 +1235,11 @@ mod tests {
     #[test]
     fn confirmation_from_accepted_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Confirmation, ApplicationStatus::Accepted),
+            next_status(
+                EmailIntent::Confirmation,
+                ApplicationStatus::Accepted,
+                false
+            ),
             None
         );
     }
@@ -938,7 +1247,7 @@ mod tests {
     #[test]
     fn interview_from_already_rejected_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Interview, ApplicationStatus::Rejected),
+            next_status(EmailIntent::Interview, ApplicationStatus::Rejected, false),
             None
         );
     }
@@ -946,7 +1255,7 @@ mod tests {
     #[test]
     fn offer_intent_from_withdrawn_is_a_noop() {
         assert_eq!(
-            next_status(EmailIntent::Offer, ApplicationStatus::Withdrawn),
+            next_status(EmailIntent::Offer, ApplicationStatus::Withdrawn, false),
             None
         );
     }
@@ -971,5 +1280,65 @@ mod tests {
         assert_eq!(per_lang("it"), 19);
         assert_eq!(per_lang("nl"), 17);
         assert_eq!(per_lang("pt"), 28);
+    }
+
+    #[test]
+    fn corpus_shape_pins_discriminating_counts_per_intent() {
+        // `discriminating` is the SINGLE field gating whether a phrase can
+        // decide an intent alone (see `PhraseEntry::discriminating`'s doc)
+        // — flipping it on any one of ~114 non-discriminating entries would
+        // silently change classifier behavior without touching a phrase's
+        // text, its location, or any per-language total the previous test
+        // already pins. Counted from `PHRASES` (post-parse, post-`fold`),
+        // so this also exercises that the field actually deserializes.
+        let count = |intent: EmailIntent| {
+            PHRASES
+                .iter()
+                .filter(|p| p.intent == intent && p.discriminating)
+                .count()
+        };
+        assert_eq!(count(EmailIntent::Confirmation), 9);
+        assert_eq!(count(EmailIntent::Rejection), 76);
+        assert_eq!(count(EmailIntent::Interview), 30);
+        assert_eq!(count(EmailIntent::Offer), 23);
+        assert_eq!(
+            PHRASES.iter().filter(|p| p.discriminating).count(),
+            9 + 76 + 30 + 23,
+            "must equal the 138 total discriminating entries"
+        );
+    }
+
+    #[test]
+    fn corpus_content_every_phrase_is_non_empty_and_already_lowercase() {
+        for entry in PHRASES.iter() {
+            assert!(
+                !entry.phrase.trim().is_empty(),
+                "an empty phrase can never usefully match anything — must be a data bug"
+            );
+            assert_eq!(
+                entry.phrase,
+                entry.phrase.to_lowercase(),
+                "phrase {:?} is not already lower-cased — matching relies on this",
+                entry.phrase
+            );
+        }
+    }
+
+    #[test]
+    fn corpus_content_every_discriminating_phrase_is_at_least_10_bytes() {
+        // A short discriminating phrase can fire on ordinary, unrelated
+        // mail — and per the write-path gating this classifier feeds, a
+        // false rejection auto-writes an absorbing `Rejected`. 10 bytes is
+        // the shortest phrase that survived the corpus's own adversarial
+        // pass ("werturteil") — this pins that floor so a future addition
+        // can't slip under it unnoticed.
+        for entry in PHRASES.iter().filter(|p| p.discriminating) {
+            assert!(
+                entry.phrase.len() >= 10,
+                "discriminating phrase {:?} is under 10 bytes — too short to \
+                 safely decide an intent alone",
+                entry.phrase
+            );
+        }
     }
 }

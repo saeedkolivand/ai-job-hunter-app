@@ -108,6 +108,35 @@ impl ApplicationStore {
         .unwrap_or_default()
     }
 
+    /// Whether the MOST RECENT status_events row for `id` is itself
+    /// [`EVENT_SOURCE_EMAIL`] and unconfirmed — i.e. whether `id`'s CURRENT
+    /// status (this store's own invariant: the row's `status` always equals
+    /// the last event's `to_status`, since every write path appends the
+    /// event in the SAME transaction as the row UPDATE) was set by a
+    /// still-unreviewed, email-derived write. `crate::email_watch::intent::
+    /// next_status` uses this to decide whether a terminal status may be
+    /// superseded by a later email — see that fn's doc — instead of
+    /// absorbing forever, which is what let one attacker-supplied email
+    /// permanently freeze an application's tracking.
+    ///
+    /// `false` for an application with no history at all (should not
+    /// happen — every creation path seeds one event — but this reads total
+    /// rather than assume it).
+    pub(crate) fn current_status_is_unconfirmed_email_write(&self, id: &str) -> bool {
+        use rusqlite::OptionalExtension;
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT source, confirmed FROM status_events
+             WHERE application_id = ?1 ORDER BY at DESC LIMIT 1",
+            params![id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .is_some_and(|(source, confirmed)| source == EVENT_SOURCE_EMAIL && confirmed == 0)
+    }
+
     /// Atomic compare-and-set: transition an Application's status ONLY if its
     /// CURRENT status is exactly `from` — the read-check-write happens under
     /// ONE lock/transaction (`UPDATE ... WHERE id=? AND status=?`), unlike a
