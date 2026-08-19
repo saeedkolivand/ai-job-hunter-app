@@ -10,6 +10,7 @@ import { useDebugMode } from '@/store/preferences-store';
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
 import { CompanyResearchSettings } from '../CompanyResearchSettings';
 import { EmbeddingsSettings } from '../EmbeddingsSettings';
+import { PromptQualitySettings } from '../PromptQualitySettings';
 import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
 import { SpendSettings } from '../SpendSettings';
@@ -132,6 +133,12 @@ export function AISettingsTab() {
           })}
         </div>
       </GlassCard>
+
+      {/* Prompt quality — global preference, canonical home (also settable from
+          the AI Generate wizard and Analyze, which read/write the same store field). */}
+      <div data-settings-anchor="ai-prompt-quality">
+        <PromptQualitySettings activeProvider={activeProvider} />
+      </div>
 
       {/* Per-stage models — which model runs each step of a staged run. Fed the
           SAME key/health status the provider rows above use, so "is this

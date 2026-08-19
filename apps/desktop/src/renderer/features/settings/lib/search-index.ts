@@ -179,6 +179,13 @@ export const SEARCH_INDEX: SearchEntry[] = [
     anchor: 'ai-tone',
   },
   {
+    id: 'ai-prompt-quality',
+    section: 'ai',
+    titleKey: 'settings.promptQuality.title',
+    keywords: ['prompt', 'quality', 'full', 'auto', 'compact', 'fast', 'verbosity', 'detail'],
+    anchor: 'ai-prompt-quality',
+  },
+  {
     id: 'ai-stages',
     section: 'ai',
     titleKey: 'settings.ai.stages.title',
