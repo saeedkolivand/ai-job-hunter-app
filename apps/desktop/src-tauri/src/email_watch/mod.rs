@@ -13,9 +13,15 @@
 //!
 //! **v2 slice 1** adds [`intent`]: a pure 4-way (confirmation/rejection/
 //! interview/offer) classifier over subject+body, plus the pure
-//! `intent::next_status` status-ladder rule. Neither is wired into
-//! [`poller`] yet — no schema change, no auto-write, no IPC in this slice;
-//! that wiring is a later slice.
+//! `intent::next_status` status-ladder rule.
+//!
+//! **v2 slice 2** adds [`auto_write`]: the actual `ApplicationStore` write —
+//! [`auto_write::apply_matched_intent`] turns one classified `EmailIntent`
+//! into a real, but always UNCONFIRMED, status transition (gated first by
+//! [`Self::auto_write_enabled`], default ON). Still not wired into
+//! [`poller`]'s tick itself — `run_tick` stays pure matching, and the
+//! scheduler (L2, the one place in this module family with `AppHandle`
+//! reach) is the natural future caller; no IPC in this slice either.
 //!
 //! **Backup/reset posture**: unlike most per-domain SQLite stores in this
 //! crate, `EmailWatchStore` is **NOT** a [`crate::data_store::DataStore`] (not
@@ -32,8 +38,10 @@
 //!   pattern): `address`/`host`/`port` (the configured mailbox; host/port
 //!   default to Gmail's IMAP endpoint — v1 is Gmail-branded, but the value is
 //!   DATA, not hardcoded, so a future non-Gmail provider needs no code change),
-//!   `enabled` (the poller opt-in PR B will gate on — default OFF), and the
-//!   poller's own watermark: `last_uid`/`uidvalidity`/`last_check_ms`.
+//!   `enabled` (the poller opt-in PR B will gate on — default OFF),
+//!   `auto_write_enabled` (v2 slice 2's auto-write opt-in — default ON, see
+//!   [`Self::auto_write_enabled`]), and the poller's own watermark:
+//!   `last_uid`/`uidvalidity`/`last_check_ms`.
 //! - `seen` — `uid` (PK) → `matched_app_id` (nullable) + `ts`. Dedupes which
 //!   messages have already been considered so the (future) poller never
 //!   double-notifies for the same UID.
@@ -47,6 +55,7 @@ use serde::Serialize;
 use crate::db::{open, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
+pub mod auto_write;
 pub mod imap_client;
 pub mod intent;
 pub mod matcher;
@@ -101,29 +110,51 @@ pub struct EmailWatchStore {
 }
 
 impl EmailWatchStore {
-    const MIGRATIONS: &'static [Migration] = &[Migration {
-        name: "create_email_watch",
-        up: |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS account (
-                    id            INTEGER PRIMARY KEY CHECK (id = 1),
-                    address       TEXT,
-                    host          TEXT,
-                    port          INTEGER,
-                    enabled       INTEGER NOT NULL DEFAULT 0,
-                    last_uid      INTEGER,
-                    uidvalidity   INTEGER,
-                    last_check_ms INTEGER
-                );
-                INSERT OR IGNORE INTO account (id, enabled) VALUES (1, 0);
-                CREATE TABLE IF NOT EXISTS seen (
-                    uid            TEXT PRIMARY KEY,
-                    matched_app_id TEXT,
-                    ts             INTEGER NOT NULL
-                );",
-            )
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_email_watch",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS account (
+                        id            INTEGER PRIMARY KEY CHECK (id = 1),
+                        address       TEXT,
+                        host          TEXT,
+                        port          INTEGER,
+                        enabled       INTEGER NOT NULL DEFAULT 0,
+                        last_uid      INTEGER,
+                        uidvalidity   INTEGER,
+                        last_check_ms INTEGER
+                    );
+                    INSERT OR IGNORE INTO account (id, enabled) VALUES (1, 0);
+                    CREATE TABLE IF NOT EXISTS seen (
+                        uid            TEXT PRIMARY KEY,
+                        matched_app_id TEXT,
+                        ts             INTEGER NOT NULL
+                    );",
+                )
+            },
         },
-    }];
+        Migration {
+            name: "add_auto_write_enabled",
+            up: |conn| {
+                // v2 slice 2: the auto-write opt-in — default ON, unlike
+                // `enabled` (the poller opt-in) above, which defaults OFF per
+                // ADR-0005. The owner's explicit v2 decision is that an
+                // email-derived write always lands UNCONFIRMED (see
+                // `applications::StatusEvent::confirmed`), so the safety
+                // model is adjudication, not withholding the write — this
+                // toggle is an escape hatch, not the primary safeguard.
+                // Precedent for an auto-act opt-in's shape (own persisted
+                // boolean, own default): `extension_bridge_auto_track_
+                // enabled`. `DEFAULT 1` alone is the whole migration — SQLite
+                // applies it retroactively to the row the FIRST migration
+                // already seeded, so no separate backfill UPDATE is needed.
+                conn.execute_batch(
+                    "ALTER TABLE account ADD COLUMN auto_write_enabled INTEGER NOT NULL DEFAULT 1;",
+                )
+            },
+        },
+    ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
@@ -231,6 +262,38 @@ impl EmailWatchStore {
         let conn = self.conn.lock();
         let affected = conn.execute(
             "UPDATE account SET enabled = ?1 WHERE id = 1 AND address IS NOT NULL",
+            params![i64::from(enabled)],
+        )?;
+        Ok(affected > 0)
+    }
+
+    /// The v2 auto-write opt-in — default ON (unlike [`Self::set_enabled`]'s
+    /// poller opt-in, which defaults OFF). [`crate::email_watch::auto_write::
+    /// apply_matched_intent`] checks this FIRST, before ever computing a
+    /// status transition. A read failure (should not happen — migration
+    /// `add_auto_write_enabled` seeds every row with this column) fails
+    /// toward the documented default rather than silently disabling the
+    /// feature.
+    pub fn auto_write_enabled(&self) -> bool {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT auto_write_enabled FROM account WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .unwrap_or(true)
+    }
+
+    /// Set the auto-write opt-in. Same concurrent-clear guard as
+    /// [`Self::set_enabled`] — an in-flight auto-write racing a
+    /// `disconnect`/factory reset must not resurrect this on an
+    /// already-wiped account. Returns whether the row was actually updated
+    /// (`false` = lost the race to a clear — a no-op, not an error).
+    pub fn set_auto_write_enabled(&self, enabled: bool) -> AppResult<bool> {
+        let conn = self.conn.lock();
+        let affected = conn.execute(
+            "UPDATE account SET auto_write_enabled = ?1 WHERE id = 1 AND address IS NOT NULL",
             params![i64::from(enabled)],
         )?;
         Ok(affected > 0)

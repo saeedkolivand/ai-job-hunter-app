@@ -29,12 +29,25 @@ mod contact;
 mod job_url;
 mod migrations;
 mod reminders;
+mod status_events;
 
 // Re-exported so `crate::applications::normalize_job_url` keeps resolving after
 // the split (see `job_url` — a verbatim move, no behaviour change).
 pub use job_url::normalize_job_url;
 // Same for the reminder projection the scheduler imports (see `reminders`).
 pub use reminders::FollowUpCandidate;
+// `status_events` split out purely for R8 LOC (own doc there). `StatusEvent`
+// and the two source constants an OUTSIDE caller actually needs today are
+// re-exported here so `crate::applications::StatusEvent`/`EVENT_SOURCE_USER`/
+// `EVENT_SOURCE_EMAIL` keep resolving exactly as before the split (this
+// file's own `set_status`/`upsert_internal`/`import` need `EVENT_SOURCE_USER`
+// too; `crate::email_watch::auto_write` needs `EVENT_SOURCE_EMAIL`).
+// `EVENT_SOURCE_EMAIL_REJECT` has no consumer outside `applications` yet — see
+// `status_events::EVENT_SOURCE_EMAIL_REJECT` directly (reachable from any
+// descendant module, e.g. `applications::test`) rather than re-exporting an
+// unused-in-production name here.
+pub use status_events::StatusEvent;
+pub(crate) use status_events::{EVENT_SOURCE_EMAIL, EVENT_SOURCE_USER};
 
 /// The user-mutable lifecycle of an [`Application`].
 ///
@@ -289,19 +302,6 @@ pub struct Application {
     pub salary_currency: Option<String>,
 }
 
-/// One append-only status-history row.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StatusEvent {
-    pub application_id: String,
-    /// Empty for the seed event of a freshly-created Application.
-    pub from_status: String,
-    pub to_status: String,
-    pub at: u64,
-    #[serde(default)]
-    pub note: String,
-}
-
 /// 2026-06-11T00:00:00Z ms: a day before PR #359 (Applications) merged, so
 /// `created_at` earlier is provably LEGACY (create-on-miss is correct); at/
 /// after it, TREATED as modern — misclassifying legacy only strands it from
@@ -473,30 +473,6 @@ impl ApplicationStore {
             .and_then(|mut stmt| stmt.query_row(params![id], row_to_application).ok())
     }
 
-    /// History for one Application, oldest-first.
-    pub fn events(&self, id: &str) -> Vec<StatusEvent> {
-        let conn = self.conn.lock();
-        conn.prepare(
-            "SELECT application_id, from_status, to_status, at, note
-             FROM status_events WHERE application_id = ?1 ORDER BY at ASC",
-        )
-        .ok()
-        .and_then(|mut stmt| {
-            stmt.query_map(params![id], |row| {
-                Ok(StatusEvent {
-                    application_id: row.get(0)?,
-                    from_status: row.get(1)?,
-                    to_status: row.get(2)?,
-                    at: ts_from_db(row.get::<_, i64>(3)?),
-                    note: row.get(4)?,
-                })
-            })
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        })
-        .unwrap_or_default()
-    }
-
     /// Most-recent Application for a normalized url, if any — the row a per-job
     /// upsert merges into so one job keeps a single aggregate. `pub(crate)` so
     /// `extension_bridge`'s `applied.check` handler can run the same read-only
@@ -652,6 +628,8 @@ impl ApplicationStore {
                     existing.status.as_id(),
                     status.as_id(),
                     "",
+                    EVENT_SOURCE_USER,
+                    true,
                     now,
                 )?;
             }
@@ -699,7 +677,16 @@ impl ApplicationStore {
         };
         // New row: its seed status event shares the same transaction.
         Self::write_row_conn(&tx, &app)?;
-        Self::append_event_conn(&tx, &app.id, "", status.as_id(), "", now)?;
+        Self::append_event_conn(
+            &tx,
+            &app.id,
+            "",
+            status.as_id(),
+            "",
+            EVENT_SOURCE_USER,
+            true,
+            now,
+        )?;
         tx.commit()?;
         Ok(app.id)
     }
@@ -738,66 +725,18 @@ impl ApplicationStore {
             "UPDATE applications SET status = ?2, applied_at = ?3, updated_at = ?4 WHERE id = ?1",
             params![id, to.as_id(), applied_at.map(ts_to_db), ts_to_db(now)],
         )?;
-        tx.execute(
-            "INSERT INTO status_events (application_id, from_status, to_status, at, note)
-             VALUES (?1,?2,?3,?4,?5)",
-            params![id, existing.status.as_id(), to.as_id(), ts_to_db(now), note],
+        Self::append_event_conn(
+            &tx,
+            id,
+            existing.status.as_id(),
+            to.as_id(),
+            note,
+            EVENT_SOURCE_USER,
+            true,
+            now,
         )?;
         tx.commit()?;
         Ok(())
-    }
-
-    /// Atomic compare-and-set: transition an Application's status ONLY if its
-    /// CURRENT status is exactly `from` — the read-check-write happens under
-    /// ONE lock/transaction (`UPDATE ... WHERE id=? AND status=?`), unlike a
-    /// caller doing its own `.get()` status check and then calling
-    /// [`Self::set_status`] (which re-locks separately and writes
-    /// unconditionally) — that pattern can lose a race between the check and
-    /// the write. `pub(crate)`: the extension bridge's `status.update` guard is
-    /// the first caller (`extension_bridge::status_update::resolve_status_update`).
-    ///
-    /// Returns `Ok(true)` iff exactly one row matched `from` and was
-    /// transitioned (with its status event appended, same transaction — an
-    /// event-insert failure propagates and rolls the whole transaction back,
-    /// so the status flip and its history row always commit or roll back
-    /// together); `Ok(false)` when zero rows matched (no such id, or its
-    /// status had already moved off `from` since the caller last checked —
-    /// never a partial write). Mirrors `set_status`'s field semantics for the
-    /// matched row: `updated_at` always bumps; `applied_at` is
-    /// first-applied-wins (only set when currently `NULL`) whenever `to` is
-    /// not pre-apply — a `saved` row CAN already carry a prior `applied_at`
-    /// from an earlier applied -> saved demotion via the stage picker, and
-    /// that timestamp must survive a re-transition back to `applied`; the
-    /// event's `note` defaults to `""` when `None`.
-    pub(crate) fn transition_status_if(
-        &self,
-        id: &str,
-        from: ApplicationStatus,
-        to: ApplicationStatus,
-        note: Option<&str>,
-    ) -> AppResult<bool> {
-        let now = now_ms();
-        let mut guard = self.conn.lock();
-        let tx = guard.transaction()?;
-        let rows = if !to.is_pre_apply() {
-            tx.execute(
-                "UPDATE applications SET status = ?2, applied_at = COALESCE(applied_at, ?3), updated_at = ?4
-                 WHERE id = ?1 AND status = ?5",
-                params![id, to.as_id(), ts_to_db(now), ts_to_db(now), from.as_id()],
-            )?
-        } else {
-            tx.execute(
-                "UPDATE applications SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4",
-                params![id, to.as_id(), ts_to_db(now), from.as_id()],
-            )?
-        };
-        if rows == 0 {
-            tx.commit()?;
-            return Ok(false);
-        }
-        Self::append_event_conn(&tx, id, from.as_id(), to.as_id(), note.unwrap_or(""), now)?;
-        tx.commit()?;
-        Ok(true)
     }
 
     /// Append newly-captured extension answers onto Application `id`'s answer
@@ -1138,27 +1077,6 @@ impl ApplicationStore {
             .query_row(params![normalized], row_to_application)
             .optional()?)
     }
-
-    /// Connection-scoped status-event append, callable inside a transaction.
-    /// Propagates an insert failure (`?`) rather than swallowing it — every
-    /// caller runs this inside the SAME transaction as its row write, so an
-    /// event-insert error rolls the whole transaction back on drop instead of
-    /// leaving a status flip with no history row.
-    fn append_event_conn(
-        conn: &Connection,
-        id: &str,
-        from: &str,
-        to: &str,
-        note: &str,
-        at: u64,
-    ) -> AppResult<()> {
-        conn.execute(
-            "INSERT INTO status_events (application_id, from_status, to_status, at, note)
-             VALUES (?1,?2,?3,?4,?5)",
-            params![id, from, to, ts_to_db(at), note],
-        )?;
-        Ok(())
-    }
 }
 
 /// Server-side hard cap on a persisted job summary. The Zod `.max(50_000)` on the
@@ -1289,13 +1207,17 @@ impl DataStore for ApplicationStore {
         tx.execute("DELETE FROM status_events", [])?;
         for app in &apps {
             Self::write_row_conn(&tx, app)?;
-            // Seed one event so an imported Application still carries a history row.
+            // Seed one event so an imported Application still carries a history
+            // row — user-sourced, already-confirmed (a restored backup is
+            // settled history, never a pending email-derived write).
             Self::append_event_conn(
                 &tx,
                 &app.id,
                 "",
                 app.status.as_id(),
                 "imported",
+                EVENT_SOURCE_USER,
+                true,
                 app.updated_at,
             )?;
         }

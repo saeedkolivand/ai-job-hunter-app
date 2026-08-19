@@ -4831,3 +4831,249 @@ fn the_notified_marker_survives_an_export_import_round_trip() {
         "a pre-marker bundle deserializes and starts un-notified"
     );
 }
+
+// ── v2 slice 2: status_events source/confirmed, accept/reject ───────────────
+
+/// Position-indexed migrations: MUST always append, never insert — an
+/// insertion would shift every later index and silently re-run (or skip)
+/// migrations on an already-migrated database. Pins both the total count AND
+/// the exact name at the new index, plus the immediately-preceding entry, so
+/// an insertion anywhere in the list (not just at the very end) fails this.
+#[test]
+fn status_events_source_confirmed_migration_is_appended_not_inserted() {
+    assert_eq!(
+        migrations::MIGRATIONS.len(),
+        10,
+        "a new migration must be APPENDED — this pins the total count"
+    );
+    assert_eq!(
+        migrations::MIGRATIONS[9].name,
+        "add_status_events_source_confirmed"
+    );
+    assert_eq!(
+        migrations::MIGRATIONS[8].name,
+        "add_backfill_state",
+        "the entry immediately before the new one must be unchanged — proves \
+         nothing was inserted ahead of it"
+    );
+}
+
+#[test]
+fn accept_latest_status_event_clears_confirmed_without_touching_status() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
+
+    let wrote = store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Applied,
+            ApplicationStatus::Interviewing,
+            Some("email-derived (unconfirmed)"),
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    assert!(wrote);
+    assert!(!store.events(&id).into_iter().last().unwrap().confirmed);
+
+    let accepted = store.accept_latest_status_event(&id).unwrap();
+    assert!(accepted);
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.status,
+        ApplicationStatus::Interviewing,
+        "accept must never change the status itself"
+    );
+    let last = store.events(&id).into_iter().last().unwrap();
+    assert!(last.confirmed, "accept must clear the confirmed flag");
+    assert_eq!(
+        last.source, EVENT_SOURCE_EMAIL,
+        "accept must not touch the source"
+    );
+}
+
+#[test]
+fn accept_latest_status_event_is_a_noop_when_nothing_is_unconfirmed() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap();
+    assert!(!store.accept_latest_status_event(&id).unwrap());
+}
+
+/// The reversal event must be APPENDED, with the trail still showing the
+/// original email-derived transition. Asserts the row COUNT and the
+/// SEQUENCE, not just the final status.
+#[test]
+fn reject_latest_status_event_reverts_status_and_appends_a_reversal_event_keeping_the_original() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
+    store
+        .set_status(&id, ApplicationStatus::Interviewing, "")
+        .unwrap();
+    let events_before = store.events(&id).len();
+
+    let wrote = store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Interviewing,
+            ApplicationStatus::Rejected,
+            Some("email-derived (unconfirmed)"),
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    assert!(wrote);
+    assert_eq!(store.events(&id).len(), events_before + 1);
+
+    let reverted = store.reject_latest_status_event(&id).unwrap();
+    assert!(reverted);
+
+    let events_after = store.events(&id);
+    assert_eq!(
+        events_after.len(),
+        events_before + 2,
+        "reject must APPEND a reversal event, never replace the original"
+    );
+
+    // Second-to-last event: the ORIGINAL email-derived transition, unedited
+    // (from/to/source unchanged) — only its `confirmed` flag moved.
+    let original = &events_after[events_after.len() - 2];
+    assert_eq!(original.from_status, "interviewing");
+    assert_eq!(original.to_status, "rejected");
+    assert_eq!(original.source, EVENT_SOURCE_EMAIL);
+    assert!(
+        original.confirmed,
+        "the original row must be marked reviewed, not deleted or hidden"
+    );
+
+    // The reversal is the NEW last event.
+    let reversal = events_after.last().unwrap();
+    assert_eq!(reversal.from_status, "rejected");
+    assert_eq!(reversal.to_status, "interviewing");
+    assert_eq!(reversal.source, status_events::EVENT_SOURCE_EMAIL_REJECT);
+    assert!(reversal.confirmed);
+
+    assert_eq!(
+        store.get(&id).unwrap().status,
+        ApplicationStatus::Interviewing,
+        "status must be reverted to the value BEFORE the email-derived write"
+    );
+}
+
+/// A reject on an application whose status the user changed by hand in the
+/// meantime must NOT clobber it — anchored to the absolute expected final
+/// status.
+#[test]
+fn reject_latest_status_event_does_not_clobber_a_status_the_user_changed_by_hand() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
+    store
+        .set_status(&id, ApplicationStatus::Interviewing, "")
+        .unwrap();
+
+    store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Interviewing,
+            ApplicationStatus::Rejected,
+            Some("email-derived (unconfirmed)"),
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+
+    // The user changes the status BY HAND in the meantime. `set_status`
+    // accepts any transition (including out of a terminal status — a
+    // separate, known, pre-existing defect this test does not fix), which
+    // is exactly what makes it the right tool to simulate an out-of-band
+    // manual change here.
+    store
+        .set_status(&id, ApplicationStatus::Accepted, "user accepted the offer")
+        .unwrap();
+
+    let reverted = store.reject_latest_status_event(&id).unwrap();
+    assert!(
+        !reverted,
+        "the CAS must lose — the status is no longer what the email set it to"
+    );
+
+    assert_eq!(
+        store.get(&id).unwrap().status,
+        ApplicationStatus::Accepted,
+        "a reject must NEVER clobber a status the user changed by hand"
+    );
+
+    // The provisional row is dismissed (marked reviewed), not reverted.
+    let email_events: Vec<_> = store
+        .events(&id)
+        .into_iter()
+        .filter(|e| e.source == EVENT_SOURCE_EMAIL)
+        .collect();
+    assert_eq!(email_events.len(), 1);
+    assert!(
+        email_events[0].confirmed,
+        "the dismissed provisional row must still be marked reviewed"
+    );
+}
+
+#[test]
+fn reject_latest_status_event_is_a_noop_when_nothing_is_unconfirmed() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap();
+    assert!(!store.reject_latest_status_event(&id).unwrap());
+}
+
+/// A second, later email must not re-apply a status the user already
+/// rejected — the store-level half of that guarantee:
+/// `was_transition_rejected` must be true for the EXACT pair rejected, and
+/// false for anything else (including before any reject happens at all).
+#[test]
+fn was_transition_rejected_is_true_only_after_a_reject_of_that_exact_pair() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
+
+    assert!(!store.was_transition_rejected(
+        &id,
+        ApplicationStatus::Applied,
+        ApplicationStatus::Interviewing
+    ));
+
+    store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Applied,
+            ApplicationStatus::Interviewing,
+            None,
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    assert!(
+        !store.was_transition_rejected(
+            &id,
+            ApplicationStatus::Applied,
+            ApplicationStatus::Interviewing
+        ),
+        "not rejected yet — only written"
+    );
+
+    store.reject_latest_status_event(&id).unwrap();
+    assert!(
+        store.was_transition_rejected(
+            &id,
+            ApplicationStatus::Applied,
+            ApplicationStatus::Interviewing
+        ),
+        "must be true for the EXACT pair that was rejected"
+    );
+    assert!(
+        !store.was_transition_rejected(&id, ApplicationStatus::Applied, ApplicationStatus::Offer),
+        "a different pair must not be flagged"
+    );
+}

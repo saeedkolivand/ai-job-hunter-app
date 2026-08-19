@@ -410,6 +410,14 @@ const R3_ALLOW: &[&str] = &[
     // domain store's persistence, just spanning the two connections that
     // store's own job requires.
     "applications/migrations.rs",
+    // Same store, split only to stay under R8's LOC cap (v2 slice 2 pushed
+    // `applications/mod.rs` over the hard cap): the `status_events`
+    // read/write slice (`events`, `transition_status_if[_sourced]`,
+    // `accept_latest_status_event`, `reject_latest_status_event`,
+    // `append_event_conn`). Persistence still lives entirely inside the
+    // `applications` domain store, on the SAME connection — see
+    // applications::status_events.
+    "applications/status_events.rs",
     "documents/mod.rs",
     // Same store, split only to stay under R8's LOC cap: the
     // `repair_pre_pdf_text_string_mojibake` migration body. Persistence
