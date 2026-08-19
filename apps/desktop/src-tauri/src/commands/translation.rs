@@ -1,19 +1,22 @@
 //! Optional, local-only job-ad translation.
 //!
-//! When a job ad's detected language differs from the resume locale and a
-//! local provider (Ollama) is configured, the JD is translated before keyword
-//! extraction so ATS matching happens in the resume language. Shared platform
-//! infrastructure on top of the centralized provider layer: it routes through
-//! the same resolve() + AiProvider::complete() path as every other completion,
-//! so no provider-specific assumption leaks here.
+//! When a job ad's detected language differs from the resume locale and the
+//! user's ACTIVE AI provider (`ai_config::AiConfigStore::active_config` — the
+//! SAME provider chat/document generation reads, never a stand-in) is local,
+//! the JD is translated before keyword extraction so ATS matching happens in
+//! the resume language. Shared platform infrastructure on top of the
+//! centralized provider layer: it routes through the same resolve() +
+//! AiProvider::complete() path as every other completion, so no
+//! provider-specific assumption leaks here. Always the user's own active
+//! model — never an arbitrary pick (see [`resolve_translation_target`]).
 //!
 //! Guardrails, all of which fall back to the original text (never an error):
 //! cloud providers are excluded (ProviderId::is_local() gate) so translation
 //! never incurs an unexpected API cost; uncertain detection, an unmapped
-//! language, same-language, no reachable local model, or any LLM failure all
-//! return the original text. Results are cached in-memory for the process,
-//! keyed by job id AND a hash of the source text (see [`TranslationCache`]),
-//! under a size cap.
+//! language, same-language, no active provider, no model configured for a
+//! non-CLI-agent provider, or any LLM failure all return the original text.
+//! Results are cached in-memory for the process, keyed by job id AND a hash
+//! of the source text (see [`TranslationCache`]), under a size cap.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -21,8 +24,8 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 use whatlang::Lang;
 
-use super::ai_provider::{resolve, ProviderId};
-use crate::documents::{sha256_hex, DocumentStore};
+use super::ai_provider::{ollama, resolve, ProviderId};
+use crate::documents::sha256_hex;
 
 /// Process-scoped translation cache, keyed by job id AND source text. Managed
 /// Tauri state.
@@ -116,27 +119,40 @@ pub async fn translate_if_needed(
         return text.to_string();
     }
 
-    // 3. Active provider must be LOCAL. Cloud providers are excluded so
-    //    translation can never incur an unexpected API cost. The server-side
-    //    active provider is the persisted embedding config (defaults to
-    //    Ollama): the only provider/model selection available without a
-    //    request-supplied provider.
-    let Some(store) = app.try_state::<DocumentStore>() else {
+    // 3-4. Resolve the provider + model from the user's ACTIVE AI config —
+    //    the SAME store chat/document generation reads
+    //    (`ai_config::AiConfigStore::active_config`), never a stand-in. Cloud
+    //    providers are excluded so translation can never incur an unexpected
+    //    API cost, even though autopilot can call this on up to
+    //    `SEMANTIC_RERANK_MAX` (20) postings per scheduled run, indefinitely.
+    //    Always the user's OWN active model — never an arbitrary pick (see
+    //    `resolve_translation_target`'s doc comment for why that matters).
+    let Some(ai_config) = app.try_state::<crate::ai_config::AiConfigStore>() else {
         return text.to_string();
     };
-    let cfg = store.embedding_config();
-    if !provider_allows_translation(&cfg.provider) {
+    let cfg = ai_config.active_config();
+    let Some((provider_id, model)) =
+        resolve_translation_target(cfg.active_provider.as_deref(), cfg.model.as_deref())
+    else {
+        return text.to_string();
+    };
+
+    // Ollama specifically: a fast reachability probe before the completion
+    // call — the same HEALTH-timeout (3s) check the now-deleted
+    // `reachable_chat_model` used to gate on before this function switched
+    // from the embedding config to the active-provider config. Without it, an
+    // unreachable OR merely slow/busy local daemon eats the full completion
+    // deadline (minutes, scaled by effort — see `timeouts::OLLAMA_COMPLETION_BASELINE`)
+    // per translation attempt instead of a fast skip, which is exactly the
+    // run-starving shape this file's own module doc + this fix's own commit
+    // message describe. A CLI agent has no analogous cheap health check and
+    // is not gated here — its own `.complete()` call fails fast when the
+    // binary is missing or unauthenticated.
+    if provider_id == ProviderId::Ollama
+        && !should_attempt_translation(provider_id, ollama::reachable_model().await.0)
+    {
         return text.to_string();
     }
-
-    // 4. Resolve a reachable local chat model via the provider layer.
-    //    Re-parse is infallible: provider_allows_translation confirmed it parses.
-    let Ok(provider_id) = ProviderId::parse(&cfg.provider) else {
-        return text.to_string();
-    };
-    let Some(model) = super::ai_provider::reachable_chat_model(provider_id).await else {
-        return text.to_string();
-    };
 
     // 5. Translate through the centralized provider layer.
     let target_display = lang_display(target_lang);
@@ -145,7 +161,7 @@ pub async fn translate_if_needed(
          programming languages, framework names, and proper nouns exactly as written. \
          Return only the translated text, no explanations."
     );
-    let provider = resolve(provider_id, cfg.base_url.clone());
+    let provider = resolve(provider_id, cfg.base_url);
     match provider
         .complete(app, &model, &system, text, Some(0.1))
         .await
@@ -170,6 +186,44 @@ pub async fn translate_if_needed(
             text.to_string()
         }
     }
+}
+
+/// Resolve `(provider_id, model)` for a translation request from the active
+/// AI config — `None` means skip translation and fall back to the original
+/// text: no active provider, a metered (non-local) provider, or a model
+/// [`ProviderId::validate_model`] rejects (empty on anything but a CLI
+/// agent, which validly falls back to the tool's own default). Pure, so it
+/// is directly unit-testable without an `AppHandle` — extracted for the same
+/// reason `pipeline::Completer::resolve_parts` is.
+///
+/// Always the user's OWN active model — never an arbitrary pick. A previous
+/// version of this path picked whatever chat model Ollama's `/api/tags`
+/// happened to list first, which once sent a 27B model to translate one job
+/// ad: 117 seconds, starving the concurrent embedding calls' 15s timeout for
+/// the whole run.
+fn resolve_translation_target(
+    active_provider: Option<&str>,
+    model: Option<&str>,
+) -> Option<(ProviderId, String)> {
+    let active_provider = active_provider?;
+    if !provider_allows_translation(active_provider) {
+        return None;
+    }
+    let provider_id = ProviderId::parse(active_provider).ok()?;
+    let model = model.unwrap_or_default().to_string();
+    provider_id.validate_model(&model).ok()?;
+    Some((provider_id, model))
+}
+
+/// Whether `translate_if_needed` should proceed to the completion call, given
+/// whether Ollama's fast reachability probe (if it ran) reported the daemon
+/// reachable. Only [`ProviderId::Ollama`] is gated by `ollama_reachable` — a
+/// CLI agent has no analogous cheap health check, so it always proceeds and
+/// relies on its own `.complete()` call failing fast when the binary is
+/// missing or unauthenticated. Pure, so the gate is unit-testable without a
+/// live Ollama daemon.
+fn should_attempt_translation(provider_id: ProviderId, ollama_reachable: bool) -> bool {
+    provider_id != ProviderId::Ollama || ollama_reachable
 }
 
 /// Map a `whatlang::Lang` to a BCP-47 tag for the languages we translate
@@ -392,5 +446,104 @@ mod tests {
             lang_display(lang_to_bcp47(Lang::Kor).unwrap()),
             "Japanese and Korean BCP-47 tags must not be swapped"
         );
+    }
+
+    // ── resolve_translation_target (item 1+2: active provider, own model) ──────
+
+    #[test]
+    fn claude_code_active_provider_uses_its_own_active_model() {
+        assert_eq!(
+            resolve_translation_target(Some("claude-code"), Some("opus")),
+            Some((ProviderId::ClaudeCode, "opus".to_string()))
+        );
+    }
+
+    #[test]
+    fn claude_code_with_no_configured_model_falls_back_to_the_tools_own_default() {
+        // CLI agents validly run with an empty model (the tool's own default) —
+        // `validate_model` allows it, so translation must still proceed rather
+        // than skip.
+        assert_eq!(
+            resolve_translation_target(Some("claude-code"), None),
+            Some((ProviderId::ClaudeCode, String::new()))
+        );
+    }
+
+    #[test]
+    fn ollama_uses_the_configured_model_never_an_arbitrary_one() {
+        // Two distinct configured models must echo back UNCHANGED — proof this
+        // is never a hardcoded or "first installed" pick, only ever what the
+        // caller passed in as the active model.
+        assert_eq!(
+            resolve_translation_target(Some("ollama"), Some("qwen3.6:27b-q4_K_M")),
+            Some((ProviderId::Ollama, "qwen3.6:27b-q4_K_M".to_string()))
+        );
+        assert_eq!(
+            resolve_translation_target(Some("ollama"), Some("gemma4:9b")),
+            Some((ProviderId::Ollama, "gemma4:9b".to_string()))
+        );
+    }
+
+    #[test]
+    fn ollama_with_no_configured_model_skips_translation() {
+        // Unlike a CLI agent, Ollama has no "tool's own default" to fall back
+        // to — an unconfigured model must skip, never silently pick one.
+        assert_eq!(resolve_translation_target(Some("ollama"), None), None);
+    }
+
+    #[test]
+    fn metered_providers_skip_translation_regardless_of_model() {
+        for provider in [
+            "openai",
+            "anthropic",
+            "gemini",
+            "ollama-cloud",
+            "openai-compatible",
+        ] {
+            assert_eq!(
+                resolve_translation_target(Some(provider), Some("some-model")),
+                None,
+                "{provider} must never receive a translation call"
+            );
+        }
+    }
+
+    #[test]
+    fn no_active_provider_skips_translation() {
+        assert_eq!(resolve_translation_target(None, Some("opus")), None);
+    }
+
+    #[test]
+    fn unknown_provider_string_skips_translation() {
+        assert_eq!(
+            resolve_translation_target(Some("unknown-provider"), Some("x")),
+            None
+        );
+    }
+
+    // ── should_attempt_translation (Ollama reachability gate) ──────────────
+
+    #[test]
+    fn an_unreachable_ollama_daemon_is_gated_before_the_completion_call() {
+        assert!(!should_attempt_translation(ProviderId::Ollama, false));
+        assert!(should_attempt_translation(ProviderId::Ollama, true));
+    }
+
+    #[test]
+    fn a_cli_agent_has_no_reachability_gate() {
+        // CLI agents have no cheap health check, so `ollama_reachable` (always
+        // `false` here — the caller never runs the probe for a non-Ollama
+        // provider) must not skip them.
+        for provider in [
+            ProviderId::ClaudeCode,
+            ProviderId::Codex,
+            ProviderId::GeminiCli,
+            ProviderId::Antigravity,
+        ] {
+            assert!(
+                should_attempt_translation(provider, false),
+                "{provider:?} must proceed regardless of the (irrelevant) Ollama probe"
+            );
+        }
     }
 }

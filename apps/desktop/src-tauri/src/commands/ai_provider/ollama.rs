@@ -392,7 +392,11 @@ impl AiProvider for OllamaClient {
                 "Ollama returned status: {}",
                 r.status()
             ))),
-            Err(e) => Err(AppError::Network(format!("Ollama unreachable: {e}"))),
+            Err(e) => Err(map_completion_transport_error(
+                e,
+                "Ollama",
+                timeouts::LIST_MODELS,
+            )),
         }
     }
 
@@ -451,7 +455,11 @@ impl AiProvider for OllamaClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(AppError::Network(format!("Ollama unreachable: {e}")));
+                return Err(map_completion_transport_error(
+                    e,
+                    "Ollama",
+                    timeouts::OLLAMA_COMPLETION_BASELINE,
+                ));
             }
         };
         let status = resp.status();
@@ -510,7 +518,7 @@ async fn fetch_tag_models() -> AppResult<Vec<Value>> {
         .timeout(timeouts::LIST_MODELS)
         .send()
         .await
-        .map_err(|e| AppError::Network(format!("Ollama unreachable: {e}")))?;
+        .map_err(|e| map_completion_transport_error(e, "Ollama", timeouts::LIST_MODELS))?;
     if !resp.status().is_success() {
         return Err(AppError::Provider(format!(
             "Ollama returned status: {}",
@@ -552,9 +560,11 @@ pub(super) fn is_embedding_only_model(name: &str) -> bool {
 }
 
 /// The first model in an `/api/tags` body that can actually hold a chat turn.
-/// `None` when the user has ONLY embedding models installed — which is the
-/// honest answer: the caller then skips translation rather than burning a
-/// guaranteed 400 on every job ad. Pure + unit-tested.
+/// `None` when the user has ONLY embedding models installed. Used only for the
+/// system-health panel's "detected local chat model" display
+/// (`commands::system::system_health`) — job-ad translation reads the user's
+/// own ACTIVE model instead (`commands::translation::resolve_translation_target`),
+/// never this first-installed guess. Pure + unit-tested.
 pub(super) fn first_chat_model(body: &Value) -> Option<String> {
     body.get("models")
         .and_then(|m| m.as_array())
@@ -565,14 +575,13 @@ pub(super) fn first_chat_model(body: &Value) -> Option<String> {
         .map(String::from)
 }
 
-/// `(reachable, first_CHAT_model_name)` — the local health probe, and the source
-/// of the model the translation path uses.
+/// `(reachable, first_CHAT_model_name)` — the local health probe behind
+/// `system_health`'s "ai.ready"/"ai.model" fields.
 ///
-/// The chat filter is not cosmetic: this returned `arr.first()` unconditionally,
-/// so a user whose first `/api/tags` entry was `qwen3-embedding:8b` had every
-/// job-ad translation POST that model to `/api/chat` and take a 400. Eight of
-/// them in one reported session, silently — `translate_text` falls back to the
-/// untranslated original on any error, so the only trace was an `ok=false` span.
+/// The chat filter is not cosmetic: this once returned `arr.first()`
+/// unconditionally, so a user whose first `/api/tags` entry was
+/// `qwen3-embedding:8b` saw that reported as the "detected" chat model. Job-ad
+/// translation no longer calls this at all — see `first_chat_model`'s doc.
 pub async fn reachable_model() -> (bool, Option<String>) {
     match crate::net::http::shared()
         .get(format!("{}/api/tags", host()))
@@ -633,7 +642,11 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
         timeouts::OLLAMA_EMBED,
     )
     .await
-    .map_err(|e| format!("Ollama unreachable: {e}"))?;
+    // A real `OLLAMA_EMBED` timeout (Ollama up but busy — a cold model load is
+    // the ordinary case) used to be reported identically to a genuine
+    // connection failure ("Ollama unreachable"), which sent two separate
+    // investigations to the wrong root cause. Distinguish them.
+    .map_err(|e| map_completion_transport_error(e, "Ollama", timeouts::OLLAMA_EMBED))?;
     let status = resp.status();
     if !status.is_success() {
         let body_text =
@@ -866,7 +879,7 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
         .json(&json!({ "model": model, "stream": true }))
         .send()
         .await
-        .map_err(|e| format!("Ollama unreachable: {e}"))?;
+        .map_err(|e| map_completion_transport_error(e, "Ollama", timeouts::MODEL_PULL))?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -1056,9 +1069,10 @@ async fn stream_chat(
     // Retried on a transient 429/5xx: this is only the handshake, so a retry
     // re-sends a request that emitted no deltas. Treating it as terminal is what
     // turned a provider rate-limit into a lost multi-minute generation.
+    let deadline = timeouts::stream_deadline(req.effort.as_deref());
     let response = super::retry::send_stream_with_retry(
         || crate::net::http::shared().post(&endpoint).json(&body),
-        timeouts::stream_deadline(req.effort.as_deref()),
+        deadline,
     )
     .await;
 
@@ -1066,7 +1080,7 @@ async fn stream_chat(
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            return Err(AppError::Network(format!("Ollama unreachable: {e}")));
+            return Err(map_completion_transport_error(e, "Ollama", deadline));
         }
     };
 

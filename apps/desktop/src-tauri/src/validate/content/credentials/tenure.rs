@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use chrono::Datelike;
 use regex::Regex;
 
-use crate::documents::evidence::{is_open_ended, years_in, SectionKind};
+use crate::documents::evidence::{is_open_ended, years_in, SectionKind, PRESENT_MARKERS};
 
 use super::super::{contains_phrase, Section};
 use super::{names_a_role, word_tokens};
@@ -653,6 +653,38 @@ static SPAN_OPENER_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(since|seit|from|ab|depuis|desde|dal|dalla|vanaf|sinds)\b").unwrap()
 });
 
+/// A [`PRESENT_MARKERS`] word anywhere on a line that ALREADY CARRIES A YEAR —
+/// `2021 Present`, `2021 | Heute`, `2015 · Aktuell`, `2016 (ongoing)`.
+///
+/// `documents::evidence::is_open_ended` used to answer this and deliberately
+/// no longer does: it now demands an explicit span separator (`-`, `to`,
+/// `bis`, …) between the year and the marker, because that predicate also
+/// runs against whole prose sentences, where "a year, and a marker word a few
+/// words later" is indistinguishable from ordinary text ("Reduced actual
+/// costs by 20% in 2023"). Here it IS distinguishable, and that is why this
+/// arm is local to this file: [`source_is_ongoing`] has already established
+/// the line carries a year, and every direction of error it can make is the
+/// generous one.
+///
+/// **Why no separator list of its own.** The first attempt at this arm allowed
+/// only WHITESPACE between the year and the marker, which left a pipe, a
+/// middot, a comma and a parenthesis reading as CLOSED — the one dangerous
+/// answer [`source_is_ongoing`] documents. Measured: a truthful
+/// `… | 2015 | Present` history collapsed from an eleven-year span to a
+/// zero-year one and raised a false `factual.inflated_experience` Critical.
+/// Any enumeration of separators fails the same way one spelling further out,
+/// and `export::parser::DATE_RE` — this codebase's own definition of a job
+/// entry's date range — already allows 30 ARBITRARY characters there. So this
+/// asks only for the marker and lets the caller's year requirement carry the
+/// structure.
+///
+/// Same vocabulary as [`is_open_ended`], deliberately, so the two can never
+/// disagree about which words these are; only the adjacency rule differs.
+fn names_a_present_marker(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    PRESENT_MARKERS.iter().any(|m| contains_phrase(&lower, m))
+}
+
 /// True when the source shows a role that has NOT ended.
 ///
 /// Asked of raw text, and asked STRUCTURALLY: a date column whose separator is
@@ -660,7 +692,9 @@ static SPAN_OPENER_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// there. That is what makes it work for `2015 - Actualidad`, `2019 -
 /// Aujourd'hui` and `2020 - Today`, none of which `PRESENT_MARKERS` carries —
 /// and for the next spelling nobody has thought of either. The marker list is
-/// still consulted, because `seit 2021` is open with no separator at all.
+/// still consulted, because `seit 2021` is open with no separator at all, and
+/// so is [`names_a_present_marker`], because a marker can sit next to a year
+/// behind any separator at all — or none.
 ///
 /// Every direction of error here is generous: an unrelated "in 2019 - a big
 /// year" reads as an open span and WIDENS the allowance. A false "closed" is
@@ -674,6 +708,7 @@ fn source_is_ongoing(source: &str) -> bool {
         }
         is_open_ended(line)
             || SPAN_OPENER_RE.is_match(line)
+            || names_a_present_marker(line)
             || SPAN_TAIL_RE.captures_iter(line).any(|c| {
                 c.get(1)
                     .is_none_or(|tail| years_in(tail.as_str()).is_empty())

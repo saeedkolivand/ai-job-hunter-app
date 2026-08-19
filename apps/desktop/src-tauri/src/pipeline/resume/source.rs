@@ -309,7 +309,16 @@ pub(crate) fn seed_one_project(entry: &[&SourceLine]) -> Option<ProjectOut> {
                 .text
                 .split(PROJECT_SEPARATORS)
                 .map(|item| item.trim().to_string())
-                .filter(|item| !item.is_empty() && urls_in(item).is_empty())
+                .filter(|item| {
+                    // A stack item is dropped only when it IS a claimed link — the
+                    // same `names_a_resource` test its two siblings above (`:253`,
+                    // `:288`) apply. Without this guard, any technology token that
+                    // merely LOOKS host-shaped (a bare `urls_in` match with no
+                    // scheme/www/path — e.g. a stack line spelling a library by its
+                    // own domain name) is silently deleted from the candidate's own
+                    // stack line instead of kept as the technology it is.
+                    !item.is_empty() && !urls_in(item).iter().any(|u| names_a_resource(u))
+                })
                 .collect()
         })
         .unwrap_or_default();

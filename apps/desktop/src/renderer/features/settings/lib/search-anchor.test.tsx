@@ -17,7 +17,7 @@
  *      general   → GeneralSection (6 anchors inside the component)
  *      appearance → AppearanceCard (5 anchors inside the component)
  *      contact   → ContactProfileTab (2 anchors inside the component)
- *      ai        → SettingsContent wrapper (2) + AISettingsTab interior (4)
+ *      ai        → SettingsContent wrapper (2) + AISettingsTab interior (5)
  *      job       → SettingsContent wrappers (3)
  *      resume    → SettingsContent wrapper (1)
  *      accounts  → AccountsSettingsTab (3 anchors inside)
@@ -248,6 +248,9 @@ vi.mock('@/features/settings/components/ai-settings/SpendSettings', () => ({
 vi.mock('@/features/settings/components/ai-settings/StageOverridesSettings', () => ({
   StageOverridesSettings: () => null,
 }));
+vi.mock('@/features/settings/components/ai-settings/PromptQualitySettings', () => ({
+  PromptQualitySettings: () => null,
+}));
 
 // AccountsSettingsTab children
 vi.mock('@/features/settings/components/accounts/BoardSessionRow', () => ({
@@ -340,8 +343,8 @@ function assertAnchor(container: HTMLElement, anchor: string) {
 // ── manifest integrity ────────────────────────────────────────────────────────
 
 describe('SEARCH_INDEX — manifest integrity', () => {
-  it('has exactly 32 entries', () => {
-    expect(SEARCH_INDEX).toHaveLength(32);
+  it('has exactly 33 entries', () => {
+    expect(SEARCH_INDEX).toHaveLength(33);
   });
 
   // A bare count survives the wrong deletion (or a duplicate masking a real
