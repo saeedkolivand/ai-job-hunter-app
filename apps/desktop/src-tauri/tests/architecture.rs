@@ -339,6 +339,9 @@ const R2_ALLOW: &[&str] = &[
     "reminder_scheduler.rs",
     "cover_letter/research/mod.rs",
     "documents/mod.rs",
+    // Split out of documents/mod.rs (R8 LOC cap) — same AppHandle-for-the-
+    // provider-layer shape as the parent store, not a new exception.
+    "documents/embedding.rs",
     "pipeline/mod.rs",
     "platform/config.rs", // sole owner: resolves the data dir from the AppHandle at bootstrap
     "platform/accent_watcher.rs", // Windows live-accent watcher: holds the AppHandle + emits SYSTEM_ACCENT_CHANGED from the WinRT ColorValuesChanged callback (bootstrap shell-reach, like platform/config.rs). TODO(arch): inject an emitter port.
