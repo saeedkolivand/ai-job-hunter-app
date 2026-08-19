@@ -2904,13 +2904,16 @@ Score one résumé against arbitrary job-ad TEXT — for a caller with a
 `jobDesc: string` in hand but no `PostingsCache` id (e.g. the Score tab in
 `JobAdView`, whose `TailorFlow` parent receives an `Application` /
 `AutopilotFoundJob`, neither of which carries one). Routes through the
-SAME shared kernel `resume()` does — not a second scorer — with two
-deliberate, fixed differences: it is content-addressed on the job text
-itself (repeated opens of the same posting are free), and semantic
-(embedding) scoring is always OFF here, never caller-configurable —
-mirrors `resume()`'s "omitting means keyword-only" default, made
-unconditional for this ad-hoc surface. `scoreSource` is therefore always
-`'keyword'` on the result.
+SAME shared kernel `resume()` does, over the SAME pre-processed text (the
+Rust command strips markdown before scoring, exactly as `resume()` does
+for a cached posting) — not a second scorer — but two axes still
+legitimately diverge from `resume()`: this call never has a title or
+requirements to compose in (only the description `JobAdView` holds), and
+semantic (embedding) scoring is always OFF here, never
+caller-configurable, so its number only matches `resume()`'s when
+semantic scoring is off there too. Content-addressed on the pre-processed
+job text, so repeated opens of the same posting reuse that cached score.
+`scoreSource` is therefore always `'keyword'` on the result.
 
 #### `match.trimSuggestions`
 

@@ -963,10 +963,10 @@ async fn a_jd_with_no_extractable_keywords_reports_an_unavailable_score() {
 
 // ── the Score tab's ad-hoc text surface (job_ad_text_id / MatchSurface::JobAdText) ──
 
-/// [`job_ad_text_id`] must be stable (repeated opens of the same posting hit
-/// the same self-invalidating `match_scores` row — free) and prefixed so it
-/// can never collide with a real `PostingsCache` id. Mirrors
-/// `extension_bridge::match_live`'s `adhoc_job_id_is_stable_and_prefixed`.
+/// [`job_ad_text_id`] must be stable (repeated opens of the SAME hashed text
+/// reuse the SAME `match_scores` row) and prefixed so it can never collide
+/// with a real `PostingsCache` id. Mirrors `extension_bridge::match_live`'s
+/// `adhoc_job_id_is_stable_and_prefixed`.
 #[test]
 fn job_ad_text_id_is_stable_and_prefixed() {
     let a = job_ad_text_id("Senior Rust engineer, Kubernetes, Postgres.");
@@ -974,7 +974,7 @@ fn job_ad_text_id_is_stable_and_prefixed() {
     assert_eq!(
         a, b,
         "the same job text must yield the same cache key — a repeated open of the same \
-         posting must be free"
+         posting must reuse the same row"
     );
     assert!(
         a.starts_with("job-ad-text:"),
@@ -987,6 +987,44 @@ fn job_ad_text_id_differs_per_text() {
     let a = job_ad_text_id("posting one");
     let b = job_ad_text_id("posting two");
     assert_ne!(a, b, "different postings must never share a cache key");
+}
+
+/// BLOCKING regression pin: the Score tab's ad-hoc pre-processing
+/// ([`job_ad_text_blob`]) must strip markdown IDENTICALLY to the Jobs-page
+/// path ([`posting_to_text`]) for the SAME description. Before this fix,
+/// `score_resume_against_text` hashed and scored `job_text` raw — a markdown
+/// anchor like `[Apply now](https://acme.example.com/jobs)` collapsed to
+/// `Apply now` on the Jobs page (the bare url deleted) but leaked the JD
+/// keywords `https`/`acme`/`example`/`com` here, inflating the coverage
+/// denominator with tokens no résumé can ever contain while diverging from
+/// the SAME posting's Jobs-page percentage. `posting_to_text` is driven with
+/// an empty title and no requirements — the ONE axis that legitimately still
+/// differs between the two surfaces (composition, not markdown-handling) —
+/// so this test isolates the description-only transformation both surfaces
+/// must share.
+#[test]
+fn job_ad_text_blob_matches_posting_to_text_for_the_same_markdown_description() {
+    let description = "[Apply now](https://acme.example.com/jobs) to help us build reliable \
+                        systems with Rust and Kubernetes. See more at \
+                        https://acme.example.com/careers.";
+    let posting = json!({ "title": "", "description": description });
+
+    let via_jobs_page = posting_to_text(&posting);
+    let via_score_tab = job_ad_text_blob(description);
+
+    assert_eq!(
+        via_jobs_page, via_score_tab,
+        "identical description must pre-process IDENTICALLY on both surfaces"
+    );
+    let blob = via_score_tab.expect("a real description must yield a scorable blob");
+    assert!(
+        !blob.contains("https") && !blob.contains("acme") && !blob.contains("example"),
+        "markdown links and bare URLs must be stripped, never tokenized into the keyword set: {blob}"
+    );
+    assert!(
+        blob.contains("Apply now") && blob.contains("reliable systems") && blob.contains("Rust"),
+        "the anchor TEXT and the rest of the JD vocabulary must survive: {blob}"
+    );
 }
 
 /// The mandated absolute-expectation check: an empty/keyword-less posting
@@ -1110,6 +1148,26 @@ async fn the_score_tab_surface_runs_the_same_pipeline_as_the_jobs_page_for_ident
         None,
     )
     .await;
+
+    // Absolute anchor, not just cross-equality: every assertion below compares
+    // the two surfaces to EACH OTHER, so a degraded/stubbed shared kernel
+    // (translation silently no-op on both sides, the tokenizer returning
+    // empty) would let both move together and stay green — the exact shape
+    // this repo has shipped before. This fixture pair overlaps heavily on
+    // real vocabulary (Rust/Kubernetes/distributed systems on both sides), so
+    // a genuinely working pipeline must clear a real floor, not just agree
+    // with itself.
+    assert!(
+        jobs_page["combined"].as_f64().unwrap_or(0.0) > 40.0,
+        "absolute floor: got {jobs_page:?} — a dead/stubbed pipeline returning 0 on both sides \
+         would still pass every equality assertion below"
+    );
+    assert_eq!(
+        jobs_page["scoreSource"].as_str(),
+        Some(SCORE_SOURCE_KEYWORD),
+        "both calls pass semantic_enabled = 0 — the parity claim only holds keyword-only, per \
+         MatchSurface's doc"
+    );
 
     assert_eq!(
         jobs_page["ats"], score_tab["ats"],
