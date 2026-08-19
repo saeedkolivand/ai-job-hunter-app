@@ -421,6 +421,73 @@ fn every_present_marker_opens_a_span_adjacent_to_a_year() {
     );
 }
 
+/// A separator-free date column still opens a role — and the three prose
+/// controls the whole `is_open_ended` tightening exists for stay closed.
+///
+/// `trailing_date_column` is the "does this line open a role?" predicate five
+/// callers share (`documents::evidence`, `validate::content::{ats, factual,
+/// split_sections}` and `credentials::education`). It answers through
+/// [`is_date_only`], which used to reach a separator-free column
+/// (`…, 2015 Present`) only via [`is_open_ended`]. When that function started
+/// requiring an explicit span separator, the column stopped being a column:
+/// the bullets under it silently joined the entry above, employer salvage
+/// never ran, and `unsupported_date_issues` went quiet on those lines.
+///
+/// [`is_date_only`] can read a bare marker safely where [`is_open_ended`]
+/// cannot, and the difference is structural rather than a judgement call:
+/// every token on the line must already be a digit, a month or a marker, so
+/// prose is rejected before any marker list is consulted. The three prose
+/// controls at the bottom assert exactly that — they are the defect this PR
+/// was opened for, and they must stay false however loose the column reading
+/// gets.
+#[test]
+fn a_separator_free_date_column_opens_a_role_without_reopening_the_prose_leak() {
+    for column in [
+        "2015 Present",     // no separator at all — the regression
+        "2015 Heute",       // …in German
+        "2015 - Present",   // dash
+        "2015 – Present",   // en dash
+        "(2015 - Present)", // parenthesised
+        "2015 - 2018",      // closed span
+        "Jan 2022",         // month + year
+    ] {
+        let line = format!("Acme Payments, Berlin, {column}");
+        assert_eq!(
+            trailing_date_column(&line),
+            Some(("Acme Payments, Berlin", column)),
+            "{column:?} must read as a date column"
+        );
+    }
+
+    // Negative controls — a line that merely MENTIONS a year is not a column,
+    // and a lone year is the documented, deliberate non-answer. Without these
+    // the loop above passes for a `trailing_date_column` that accepts any
+    // comma tail carrying a digit.
+    assert_eq!(
+        trailing_date_column("Owned the ledger rewrite, delivered in 2019"),
+        None,
+        "prose ending in a year is not a date column"
+    );
+    assert_eq!(
+        trailing_date_column("Acme Payments, Berlin, 2022"),
+        None,
+        "a lone year is a date the line MENTIONS, not one it is structured by"
+    );
+
+    // The prose leak this PR fixed, re-asserted at its own function: none of
+    // these is an open-ended span, however many markers or years they carry.
+    for prose in [
+        "Reduced actual costs by 20% in 2023",
+        "Led the current platform migration",
+        "Shipped the ongoing rewrite",
+    ] {
+        assert!(
+            !is_open_ended(prose),
+            "{prose:?} is ordinary prose, not a date span"
+        );
+    }
+}
+
 #[test]
 fn contains_word_respects_boundaries() {
     assert!(contains_word("this is vital work", "vital"));

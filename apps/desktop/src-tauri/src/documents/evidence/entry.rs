@@ -653,6 +653,21 @@ pub(super) const DATE_ONLY_MARKERS: &[&str] = &[
 /// year ("Acme Corp, 2022") no longer opens a role, so its bullets continue the
 /// entry above it. That is the pre-existing behaviour for every unrecognised
 /// line, and it invents nothing.
+///
+/// The open end is read from the marker TOKEN, not from [`is_open_ended`],
+/// and [`PRESENT_MARKERS`] is checked here exactly the way [`DATE_ONLY_MARKERS`]
+/// beside it always was. [`is_open_ended`] requires an explicit span separator
+/// (`-`, `to`, `bis`, …) because it also runs against prose; this function
+/// never sees prose, because the `date_words` gate above has already rejected
+/// any line carrying a word that is not a digit, a month or a marker. Routing
+/// the separator-free column (`2015 Present`, `2015 Heute` — a shape
+/// `export::parser::DATE_RE` accepts) through `is_open_ended` therefore
+/// borrowed a restriction that protects a different caller: the column stopped
+/// opening a role, its bullets rejoined the entry above, employer salvage
+/// never ran, and `factual::unsupported_date_issues` — which reads date
+/// context through [`trailing_date_column`] — went silent on those lines.
+/// The two lists stay disjoint (asserted in the test suite); this reads both,
+/// it does not merge them.
 pub(super) fn is_date_only(s: &str) -> bool {
     let tokens = word_tokens(s);
     let date_words = tokens.iter().all(|t| {
@@ -667,9 +682,9 @@ pub(super) fn is_date_only(s: &str) -> bool {
     !date_spans(s).is_empty()
         || is_open_ended(s)
         || tokens.iter().any(|t| MONTH_TOKENS.contains(&t.as_str()))
-        || tokens
-            .iter()
-            .any(|t| DATE_ONLY_MARKERS.contains(&t.as_str()))
+        || tokens.iter().any(|t| {
+            DATE_ONLY_MARKERS.contains(&t.as_str()) || PRESENT_MARKERS.contains(&t.as_str())
+        })
 }
 
 /// True when one pipe/middot SEGMENT is the entry's date column: it carries a

@@ -8087,7 +8087,7 @@ EXPERIENCE
 /// `export::parser::DATE_RE` itself accepts this shape as a job entry's date
 /// range with no separator required between the year and the marker, so a
 /// résumé written this way is not a contrived fixture. Before
-/// `credentials::tenure::SPAN_MARKER_NO_SEP_RE` existed, `source_is_ongoing`
+/// `credentials::tenure::names_a_present_marker` existed, `source_is_ongoing`
 /// missed it entirely: the span closed at the role's own single stated year
 /// (2016-2016), and a truthful "8 years of experience" against a role that
 /// started in 2016 read as inflated. The control proves the widened
@@ -8111,6 +8111,63 @@ fn a_separator_free_ongoing_date_column_widens_the_allowance() {
         codes(&report_for(&implausible, source, EN_JOB_AD, &[]))
             .contains(&FACTUAL_INFLATED_EXPERIENCE),
         "control: an implausible claim must still fire even with the widened allowance"
+    );
+}
+
+/// A2a separator sweep — the shape of the SEPARATOR between a role's start
+/// year and its present-tense marker must not decide whether the role is
+/// still open.
+///
+/// `source_is_ongoing` is read here through the value it exists to produce,
+/// `career_span_years`: an open role's span runs to the reference year, a
+/// closed one stops at the last year the source names. Measured regression:
+/// when the marker branch required an explicit span separator
+/// (`-`, `to`, `bis`, …), every pipe/middot/comma/parenthesised spelling
+/// below collapsed from an eleven-year span to a zero-year one, and a
+/// truthful "11 years of experience" became a false
+/// `factual.inflated_experience` Critical.
+///
+/// Not a contrived set: `export::parser::DATE_RE`, this codebase's own
+/// definition of a job entry's date range, allows up to 30 ARBITRARY
+/// characters between the year and the marker, so every spelling here is one
+/// the parser itself already reads as a date range.
+///
+/// The closed-history control is what stops this passing for the wrong
+/// reason. Without it, an implementation that simply called every line
+/// ongoing would satisfy every other row.
+#[test]
+fn any_separator_between_a_year_and_a_present_marker_keeps_the_role_open() {
+    let source_with = |dates: &str| {
+        format!(
+            "Jane Doe\n\nEXPERIENCE\n\n\
+             Senior Engineer | Globex Logistics | {dates}\n\
+             - Built the billing API in Python and PostgreSQL\n"
+        )
+    };
+
+    for dates in [
+        "2015 - Present", // dash — never broke
+        "2015 | Present", // pipe
+        "2015 | Aktuell", // pipe, German marker
+        "2015 · Present", // middot
+        "2015, Present",  // comma
+        "2015 (ongoing)", // parenthesised, no separator at all
+        "2015 Present",   // whitespace only, no separator at all
+    ] {
+        assert_eq!(
+            credentials::career_span_years(&source_with(dates), Some(2026)),
+            Some(11),
+            "{dates:?}: an open role must run to the reference year"
+        );
+    }
+
+    // Negative control: a genuinely CLOSED history still closes at its own
+    // last year. A test without this row passes for an implementation that
+    // answers "ongoing" unconditionally.
+    assert_eq!(
+        credentials::career_span_years(&source_with("2005 - 2015"), Some(2026)),
+        Some(10),
+        "a closed history must stop at the last year the source names"
     );
 }
 
