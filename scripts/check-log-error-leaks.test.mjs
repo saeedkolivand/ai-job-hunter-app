@@ -39,7 +39,9 @@ function writeSrc(files) {
 describe('findLeaks', () => {
   it('flags a single-line captured `{e}` interpolation', () => {
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {e}");\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'foo.rs:1', file: 'foo.rs', line: 1, sig: '[foo] failed: {e}' },
+    ]);
   });
 
   it('finds the site on the LINE the literal `{e}` sits on, not the macro line', () => {
@@ -55,7 +57,16 @@ describe('findLeaks', () => {
         '',
       ].join('\n'),
     });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:2', file: 'foo.rs', line: 2 }]);
+    expect(findLeaks(root)).toEqual([
+      {
+        key: 'foo.rs:2',
+        file: 'foo.rs',
+        line: 2,
+        // The whitespace-collapsed literal, so a re-wrap of the same message
+        // onto different line lengths still reads as the same signature.
+        sig: '[foo] failed ({e}); degrading — \\ more text on a continuation line',
+      },
+    ]);
   });
 
   it('does not flag `.code()`', () => {
@@ -79,17 +90,23 @@ describe('findLeaks', () => {
     // The finding: the bare-identifier check missed `e.to_string()`, one
     // method call away from the exact same leak as a bare `e`.
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", e.to_string());\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'foo.rs:1', file: 'foo.rs', line: 1, sig: '[foo] failed: {}' },
+    ]);
   });
 
   it('flags a positional `err.to_owned()`, `&`-prefixed, same shape as `.to_string()`', () => {
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", &err.to_owned());\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'foo.rs:1', file: 'foo.rs', line: 1, sig: '[foo] failed: {}' },
+    ]);
   });
 
   it('flags `error.to_string()` too, for the same reason as `e`/`err`', () => {
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", error.to_string());\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'foo.rs:1', file: 'foo.rs', line: 1, sig: '[foo] failed: {}' },
+    ]);
   });
 
   it('still does not flag sanitize_reason(&e.to_string()) once .to_string() is matched', () => {
@@ -111,7 +128,9 @@ describe('findLeaks', () => {
 
   it('flags a positional bare `e` argument — the vacuity hole review found live', () => {
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {}", e);\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'foo.rs:1', file: 'foo.rs', line: 1, sig: '[foo] failed: {}' },
+    ]);
   });
 
   it('flags a positional bare `err` argument, `&`-prefixed', () => {
@@ -119,7 +138,14 @@ describe('findLeaks', () => {
     const root = writeSrc({
       'foo.rs': "log::warn!(\"[foo] board '{}' failed (error='{}')\", board, &err);\n",
     });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      {
+        key: 'foo.rs:1',
+        file: 'foo.rs',
+        line: 1,
+        sig: "[foo] board '{}' failed (error='{}')",
+      },
+    ]);
   });
 
   it('does not flag a positional argument named something other than e/err/error', () => {
@@ -131,12 +157,16 @@ describe('findLeaks', () => {
     // Live (before this fix) at postings/mod.rs:382 and
     // platform/linux_appimage.rs:170.
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {err}");\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'foo.rs:1', file: 'foo.rs', line: 1, sig: '[foo] failed: {err}' },
+    ]);
   });
 
   it('flags `{error}` too, for the same reason as `{err}`', () => {
     const root = writeSrc({ 'foo.rs': 'log::warn!("[foo] failed: {error}");\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'foo.rs:1', file: 'foo.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'foo.rs:1', file: 'foo.rs', line: 1, sig: '[foo] failed: {error}' },
+    ]);
   });
 
   it('does not flag a captured identifier that is not an error-binding name', () => {
@@ -167,14 +197,16 @@ describe('findLeaks', () => {
 
   it('scans nested directories and produces POSIX-separated keys', () => {
     const root = writeSrc({ 'a/b/c.rs': 'log::warn!("nested: {e}");\n' });
-    expect(findLeaks(root)).toEqual([{ key: 'a/b/c.rs:1', file: 'a/b/c.rs', line: 1 }]);
+    expect(findLeaks(root)).toEqual([
+      { key: 'a/b/c.rs:1', file: 'a/b/c.rs', line: 1, sig: 'nested: {e}' },
+    ]);
   });
 });
 
 describe('violations', () => {
-  const leak = (key) => {
+  const leak = (key, sig) => {
     const [file, line] = [key.slice(0, key.lastIndexOf(':')), Number(key.split(':').pop())];
-    return { key, file, line };
+    return { key, file, line, sig };
   };
 
   it('passes when every finding is declared and every entry still has a finding', () => {
@@ -222,6 +254,51 @@ describe('violations', () => {
     const problems = violations(inv, leaks);
     expect(problems.join('\n')).toContain('foo.rs:56');
     expect(problems.join('\n')).not.toContain('detection looks');
+  });
+
+  // ── `sig`: content-anchored matching survives a line-number shift ───────
+  //
+  // The defect a 2026-08-19 review found: the ALLOWLIST's only identity is
+  // `"<path>:<line>"`, so an unrelated edit that inserts a line above a
+  // declared site breaks the guard BOTH ways at once (undeclared at the new
+  // line, stale at the old one).
+
+  it('an entry with a sig survives its site moving to a new line', () => {
+    const inv = { 'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' } };
+    // The site is now at line 33 (an unrelated insertion above it), same text.
+    expect(violations(inv, [leak('foo.rs:33', 'boom: {e}')])).toEqual([]);
+  });
+
+  it("without a sig, the same line shift still breaks both ways (today's bar)", () => {
+    const inv = { 'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30) } };
+    const problems = violations(inv, [leak('foo.rs:33', 'boom: {e}')]);
+    expect(problems.join('\n')).toContain('foo.rs:33');
+    expect(problems.join('\n')).toContain('not declared in ALLOWLIST');
+    expect(problems.join('\n')).toContain('foo.rs:10');
+    expect(problems.join('\n')).toContain('Declared in ALLOWLIST but no `{e}` site found');
+  });
+
+  it('a sig match is scoped to the same file — a same-text site in another file is still undeclared', () => {
+    const inv = { 'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' } };
+    const problems = violations(inv, [leak('bar.rs:10', 'boom: {e}')]);
+    expect(problems.join('\n')).toContain('bar.rs:10');
+    expect(problems.join('\n')).toContain('not declared in ALLOWLIST');
+  });
+
+  it('an AMBIGUOUS sig (two real sites, one text) falls back to line-exact rules for both', () => {
+    // Deliberately conservative: a `sig` only covers an UNAMBIGUOUS pairing.
+    // Two genuinely distinct call sites sharing the same message text must
+    // not let one declaration silently cover both.
+    const inv = { 'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' } };
+    const problems = violations(inv, [
+      leak('foo.rs:20', 'boom: {e}'),
+      leak('foo.rs:40', 'boom: {e}'),
+    ]);
+    expect(problems.join('\n')).toContain('foo.rs:20');
+    expect(problems.join('\n')).toContain('foo.rs:40');
+    expect(problems.join('\n')).toContain('not declared in ALLOWLIST');
+    expect(problems.join('\n')).toContain('foo.rs:10');
+    expect(problems.join('\n')).toContain('Declared in ALLOWLIST but no `{e}` site found');
   });
 });
 

@@ -93,6 +93,20 @@
 // already the sanctioned `sanitize_reason(&e.to_string())` wrapper, which
 // still does not match — see the comment on `positionalErrorRe`), so this
 // arm is a tripwire, not a fix for a live leak.
+//
+// A pre-PR review (2026-08-19) found the ALLOWLIST's `"<path>:<line>"` key is
+// its only identity, so ANY unrelated edit that inserts a line above a
+// declared site breaks the guard both ways at once (undeclared at the new
+// line, stale at the old one) — it happened to `documents/mod.rs`'s
+// `charge_provider_daily` site the same day it was written. An entry can now
+// opt into content-anchored matching by adding `sig` (copied from the `sig`
+// `findLeaks` reports for that site — its own format-string literal,
+// whitespace-collapsed), which survives a line shift as long as it stays the
+// ONLY declared entry with that (file, sig) pair — see `violations`. Kept
+// opt-in rather than migrating all existing entries at once: `sig` is a
+// verbatim copy of live source text, so a mechanical mass-migration script
+// would need to run and be verified against every entry, a bigger and
+// separately-reviewable change from fixing the one break in hand.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -126,9 +140,18 @@ const ALLOWLIST = {
       'fixed, author-written template naming only the provider id and a static ' +
       'daily-ceiling number — see limits/mod.rs.',
   },
-  'documents/mod.rs:1153': {
+  'documents/embedding.rs:153': {
     status: 'safe',
     reason: 'Same charge_provider_daily fixed-template message as autopilot_helpers/mod.rs:395.',
+    // `sig` opts this entry into content-anchored matching (see `violations`)
+    // so the NEXT unrelated edit that shifts this line doesn't repeat the
+    // 2026-08-19 break (a 23-line insertion above it moved 1153 -> 1176 and
+    // failed both directions: undeclared-at-1176, stale-at-1153). Note `sig`
+    // only survives a LINE shift within the same file, not a file move — this
+    // entry's key itself moved to documents/embedding.rs the same day, when
+    // the site was extracted out of documents/mod.rs for R8's LOC cap.
+    // Copied verbatim from the call site's own format-string literal.
+    sig: '[embed] round-trip refused by the daily ceiling: {e}',
   },
   'validate/mod.rs:401': {
     status: 'safe',
@@ -448,16 +471,32 @@ function findPositionalErrorArg(argsText) {
 }
 
 /**
+ * A stable content signature for a log call's format-string literal —
+ * whitespace-collapsed so a `\`-continued literal (see the multi-line test
+ * case) reads the same regardless of exact line wrapping. This is what makes
+ * `sig`-based matching (see `violations`) survive a line-number shift: an
+ * unrelated edit above a declared site changes its LINE but never its own
+ * message text, so the signature is unchanged. Purely a display/matching
+ * convenience — not a security boundary, so a naive whitespace collapse
+ * (rather than actually decoding Rust escapes) is precise enough.
+ */
+function normalizeSig(literal) {
+  return literal.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Every `log::{warn,error,info,debug}!(...)` call site, under `srcDir`, that
  * interpolates a bound error identifier — captured in the format string
  * (`{e}`, `{err}`, `{error}`) or passed as a bare positional argument
  * (`"...{}...", e`). See `ERROR_BINDING_NAMES` for why detection is bounded
  * to those three names rather than every identifier.
  *
- * Returns `{ key, file, line }[]`, `key` being `"<path relative to src/>:<line>"`
- * — the ALLOWLIST's own key shape. `line` is the line the identifier itself
- * sits on (for a multi-line format string, or an argument list wrapped onto
- * its own line, that is not necessarily the `log::` call's own line).
+ * Returns `{ key, file, line, sig }[]`, `key` being
+ * `"<path relative to src/>:<line>"` — the ALLOWLIST's own key shape. `line`
+ * is the line the identifier itself sits on (for a multi-line format string,
+ * or an argument list wrapped onto its own line, that is not necessarily the
+ * `log::` call's own line). `sig` is the call's own format-string literal,
+ * normalized — see `normalizeSig` and, for how it's used, `violations`.
  */
 export function findLeaks(srcDir = join(REPO_ROOT, SRC_REL)) {
   const found = [];
@@ -468,10 +507,11 @@ export function findLeaks(srcDir = join(REPO_ROOT, SRC_REL)) {
     callRe.lastIndex = 0;
     let m;
     while ((m = callRe.exec(text))) {
+      const sig = normalizeSig(m[1]);
       const captured = capturedErrorRe.exec(m[0]);
       if (captured) {
         const line = lineOf(text, m.index + captured.index);
-        found.push({ key: `${rel}:${line}`, file: rel, line });
+        found.push({ key: `${rel}:${line}`, file: rel, line, sig });
         continue;
       }
 
@@ -480,7 +520,7 @@ export function findLeaks(srcDir = join(REPO_ROOT, SRC_REL)) {
       const argOffset = findPositionalErrorArg(rest);
       if (argOffset === null) continue;
       const line = lineOf(text, m.index + m[0].length + argOffset);
-      found.push({ key: `${rel}:${line}`, file: rel, line });
+      found.push({ key: `${rel}:${line}`, file: rel, line, sig });
     }
   }
   return found;
@@ -498,7 +538,39 @@ export function violations(inventory = ALLOWLIST, leaks) {
   const foundKeys = new Set(leaks.map((l) => l.key));
   const declaredKeys = new Set(Object.keys(inventory));
 
-  const undeclared = leaks.filter((l) => !declaredKeys.has(l.key));
+  // Content-anchored matching (opt-in — an ALLOWLIST entry declares its own
+  // `sig`, copied from the `sig` `findLeaks` reports for it): a line-keyed
+  // entry breaks the moment an unrelated edit inserts a line above it (its
+  // key no longer matches anything — the defect a 2026-08-19 review found).
+  // An entry's OWN message text almost never changes at the same time, so
+  // matching on (file, sig) survives that shift. Deliberately conservative:
+  // only an UNAMBIGUOUS pairing counts — exactly one declared entry and
+  // exactly one found leak sharing a (file, sig) pair. A genuinely repeated
+  // message (two distinct call sites, identical text) falls back to the
+  // ordinary line-exact rules below, so each site still needs its own
+  // declaration rather than one `sig` silently covering both.
+  const fileOf = (key) => key.slice(0, key.lastIndexOf(':'));
+  const leaksBySig = new Map(); // `${file} ${sig}` -> leak[]
+  for (const l of leaks) {
+    const bucketKey = `${l.file} ${l.sig}`;
+    const bucket = leaksBySig.get(bucketKey);
+    if (bucket) bucket.push(l);
+    else leaksBySig.set(bucketKey, [l]);
+  }
+  const sigSatisfiedLeakKeys = new Set();
+  const sigSatisfiedEntryKeys = new Set();
+  for (const [entryKey, entry] of Object.entries(inventory)) {
+    if (!entry.sig) continue;
+    const bucket = leaksBySig.get(`${fileOf(entryKey)} ${entry.sig}`);
+    if (bucket && bucket.length === 1) {
+      sigSatisfiedLeakKeys.add(bucket[0].key);
+      sigSatisfiedEntryKeys.add(entryKey);
+    }
+  }
+
+  const undeclared = leaks.filter(
+    (l) => !declaredKeys.has(l.key) && !sigSatisfiedLeakKeys.has(l.key)
+  );
   if (undeclared.length > 0) {
     problems.push(
       'These log call sites interpolate a caught error, captured or positional, which can ' +
@@ -515,7 +587,7 @@ export function violations(inventory = ALLOWLIST, leaks) {
     );
   }
 
-  const stale = [...declaredKeys].filter((k) => !foundKeys.has(k));
+  const stale = [...declaredKeys].filter((k) => !foundKeys.has(k) && !sigSatisfiedEntryKeys.has(k));
   if (stale.length > 0) {
     problems.push(
       'Declared in ALLOWLIST but no `{e}` site found there anymore (fixed, moved, or ' +
