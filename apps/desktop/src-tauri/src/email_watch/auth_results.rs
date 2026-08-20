@@ -21,6 +21,28 @@
 //! (never panics) and fails closed (`None`) on anything not confidently
 //! read — malformed input is exactly as safe as absent input.
 //!
+//! **That "fails closed" claim was FALSE for one release**, and it is the
+//! kind of sentence a reviewer trusts instead of re-deriving, so the
+//! defect it hid is worth naming here rather than only in a commit
+//! message: the main loop used to `break` (returning whatever `dmarc`
+//! verdict had ALREADY been found) whenever the next token read empty —
+//! which happens not only at genuine end-of-input but also right after
+//! ANY stray top-level `;`, `.`, `=`, `)`, `"`, or `/` immediately
+//! following a `;`. A single genuine header with a real `dmarc=fail`
+//! section could still be made to authorise: an attacker-controlled
+//! envelope local part containing an unescaped `)` legitimately closes an
+//! EARLIER section's comment early (RFC 5322 `ccontent` gives `"` no
+//! special meaning inside a comment, so a quoted-string cannot hide a `)`
+//! there the way it can hide one from itself), landing a stray `;;` right
+//! after a FORGED `dmarc=pass` clause the attacker placed inside that same
+//! comment — the loop then stopped BEFORE ever reaching the real,
+//! genuine, later `dmarc=fail` section, and returned the forged one
+//! instead. Fixed by requiring genuine end-of-input (`peek()` is `None`)
+//! before an empty token may `break`; anything else with input remaining
+//! `return`s `None`. In a fail-closed parser, `break` is the dangerous
+//! keyword, not `unwrap` — every loop exit in this module is checked
+//! against this same shape, not just the one that was wrong.
+//!
 //! No slicing an offset found in one string against a different one (the
 //! CRITICAL byte-boundary panic class fixed earlier this branch, in the
 //! substring scanner this module replaces) — every token here is built by
@@ -82,10 +104,26 @@ pub(super) fn dmarc_verdict(header: &str) -> Option<(String, String)> {
             sc.skip_cfws().ok()?;
             let method = sc.read_narrow_token();
             if method.is_empty() {
-                // Either the `no-result` form's bare "none" (no methodspec
-                // follows a no-result ";"), or malformed. Either way
-                // nothing after it is safely interpretable as a fresh
-                // resinfo without risking an infinite loop — stop.
+                // CRITICAL fix: an empty token here means the char right
+                // after `skip_cfws` was one of `; . = ) " /` -- i.e.
+                // `read_narrow_token` stopped on its VERY FIRST char. If
+                // that char is real content (peek is `Some`, not `None`),
+                // this is NOT a legitimate end of input -- it is a stray
+                // top-level delimiter (`;;`, `; "`, `; =`, `; .`, `; /`,
+                // `; )`), and falling through to `break` would silently
+                // truncate the parse and return whatever `found` ALREADY
+                // held -- a stale, possibly-genuine-looking verdict from
+                // an EARLIER section, while the REAL section after the
+                // stray delimiter (which could disagree, e.g. a genuine
+                // `dmarc=fail`) is never read at all. Only a TRUE
+                // end-of-input (`peek()` is `None`) may `break` — that is
+                // the sole case where "nothing more to parse" is actually
+                // true, matching the `no-result` form's bare "none" (which
+                // itself reads as a non-empty token and never reaches this
+                // branch) and a cleanly-terminated header.
+                if sc.peek().is_some() {
+                    return None;
+                }
                 break;
             }
             method
@@ -183,7 +221,20 @@ fn process_section(sc: &mut Scanner, method: String) -> Result<SectionOutcome, (
                 .is_some_and(|p| p.eq_ignore_ascii_case("header"))
             && property.eq_ignore_ascii_case("from")
         {
-            section_header_from = Some(pvalue);
+            // MEDIUM fix: a SECOND `header.from=` within this ONE section
+            // used to be last-wins, which the cross-section disagreement
+            // rule below did not mirror — that asymmetry was not
+            // exploitable today only because of `dmarc_pass_aligned`'s own
+            // gate and how four surveyed providers happen to order their
+            // properties, i.e. borrowed safety, not structural safety.
+            // Fail closed on disagreement here too, exactly like two
+            // disagreeing `dmarc` SECTIONS — never silently pick a winner
+            // at any level.
+            match &section_header_from {
+                None => section_header_from = Some(pvalue),
+                Some(existing) if existing.eq_ignore_ascii_case(&pvalue) => {}
+                Some(_) => return Err(()),
+            }
         }
     }
 
@@ -254,7 +305,18 @@ impl<'a> Scanner<'a> {
                         return Err(()); // trailing backslash, no escaped char
                     }
                 }
-                Some('(') => depth += 1,
+                // `saturating_add`: LOW fix -- `depth` is otherwise
+                // unchecked `u32` arithmetic (out of model at realistic
+                // header sizes -- would need ~4 GiB of nested `(` to
+                // overflow -- but removing the last unchecked arithmetic
+                // in this module costs nothing). Saturating rather than a
+                // hard depth cap: an attacker forcing saturation just
+                // means every subsequent `)` decrements one step closer to
+                // 0 instead of truly balancing, which only makes the
+                // comment MORE likely to (correctly) run off the end of
+                // input and fail closed via `None => return Err(())`
+                // below -- never a way to escape the comment early.
+                Some('(') => depth = depth.saturating_add(1),
                 Some(')') => depth -= 1,
                 Some(_) => {}
                 None => return Err(()),
@@ -366,6 +428,219 @@ impl<'a> Scanner<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ── CRITICAL fix: truncation-on-empty-token must never return a ────
+    // ── STALE earlier verdict instead of failing closed ─────────────────
+
+    #[test]
+    fn truncation_attack_double_semicolon_does_not_return_a_stale_earlier_verdict() {
+        // The exact shape from the finding: a genuine `dmarc=pass` section
+        // for one domain, then a stray `;;` BEFORE the real, later,
+        // disagreeing `dmarc=fail` section. The old `break`-on-empty-token
+        // would stop here and return the FIRST (stale) verdict; must now
+        // fail closed instead.
+        let header = "mx.google.com; dmarc=pass header.from=victim.io;; \
+                       dmarc=fail header.from=attacker.example";
+        assert_eq!(
+            dmarc_verdict(header),
+            None,
+            "a stray `;;` must fail closed, never return the verdict seen before it"
+        );
+    }
+
+    #[test]
+    fn truncation_attack_stray_quote_after_semicolon() {
+        let header = "mx.google.com; dmarc=pass header.from=victim.io; \" \
+                       dmarc=fail header.from=attacker.example";
+        assert_eq!(dmarc_verdict(header), None);
+    }
+
+    #[test]
+    fn truncation_attack_stray_equals_after_semicolon() {
+        let header = "mx.google.com; dmarc=pass header.from=victim.io; = \
+                       dmarc=fail header.from=attacker.example";
+        assert_eq!(dmarc_verdict(header), None);
+    }
+
+    #[test]
+    fn truncation_attack_stray_dot_after_semicolon() {
+        let header = "mx.google.com; dmarc=pass header.from=victim.io; . \
+                       dmarc=fail header.from=attacker.example";
+        assert_eq!(dmarc_verdict(header), None);
+    }
+
+    #[test]
+    fn truncation_attack_stray_slash_after_semicolon() {
+        let header = "mx.google.com; dmarc=pass header.from=victim.io; / \
+                       dmarc=fail header.from=attacker.example";
+        assert_eq!(dmarc_verdict(header), None);
+    }
+
+    #[test]
+    fn truncation_attack_stray_close_paren_after_semicolon() {
+        let header = "mx.google.com; dmarc=pass header.from=victim.io; ) \
+                       dmarc=fail header.from=attacker.example";
+        assert_eq!(dmarc_verdict(header), None);
+    }
+
+    #[test]
+    fn truncation_attack_real_delivery_primitive_unescaped_close_paren_in_a_quoted_local_part() {
+        // The reviewer's actual delivery mechanism, not just the abstract
+        // `;;` shape above: RFC 5321 permits `)` unescaped inside a
+        // QUOTED local-part (it only needs escaping inside a COMMENT, a
+        // completely different context) -- so an attacker's envelope
+        // local part `"a) ; dmarc=pass header.from=greenhouse.io ;;"`
+        // genuinely, correctly closes the EARLIER SPF section's comment
+        // early the moment `skip_comment` reaches that unescaped `)`
+        // (comments give `"` no special meaning at all, per RFC 5322
+        // `ccontent` -- so the fact this text was "inside quotes" from an
+        // addr-spec point of view means nothing to a comment scanner).
+        // Everything after that point parses as GENUINE grammar: a forged
+        // `dmarc=pass header.from=greenhouse.io` section, then a stray
+        // `;;` landing right before the REAL, later, genuine
+        // `dmarc=fail header.from=attacker.example` section that Gmail
+        // actually stamped. Must fail closed, not authorise the forgery.
+        let header = concat!(
+            "mx.google.com; ",
+            "dkim=pass header.i=@attacker.example header.s=selector header.b=xyz789; ",
+            "spf=pass (google.com: domain of \"a) ; dmarc=pass header.from=greenhouse.io ;;\"@attacker.example designates 5.6.7.8 as permitted sender) smtp.mailfrom=\"a) ; dmarc=pass header.from=greenhouse.io ;;\"@attacker.example; ",
+            "dmarc=fail header.from=attacker.example"
+        );
+        assert_eq!(
+            dmarc_verdict(header),
+            None,
+            "the forged dmarc=pass section (reachable only via the comment closing early) \
+             must never authorise -- fail closed, do not fall back to it"
+        );
+    }
+
+    // ── legitimate shapes the truncation fix must NOT break ─────────────
+    // ── (a gate that refuses every legitimate email is as broken as one──
+    // ── that lets attackers through) ─────────────────────────────────────
+
+    #[test]
+    fn legitimate_trailing_semicolon_with_nothing_after_still_authorises() {
+        let header = "mx.google.com; dmarc=pass header.from=greenhouse.io;";
+        assert_eq!(
+            dmarc_verdict(header),
+            Some(("pass".to_string(), "greenhouse.io".to_string()))
+        );
+    }
+
+    #[test]
+    fn legitimate_trailing_semicolon_with_whitespace_still_authorises() {
+        let header = "mx.google.com; dmarc=pass header.from=greenhouse.io; ";
+        assert_eq!(
+            dmarc_verdict(header),
+            Some(("pass".to_string(), "greenhouse.io".to_string()))
+        );
+    }
+
+    #[test]
+    fn legitimate_trailing_semicolon_then_a_comment_still_authorises() {
+        let header =
+            "mx.google.com; dmarc=pass header.from=greenhouse.io; (trailing note, no more sections)";
+        assert_eq!(
+            dmarc_verdict(header),
+            Some(("pass".to_string(), "greenhouse.io".to_string()))
+        );
+    }
+
+    #[test]
+    fn legitimate_yahoo_no_space_before_the_comment_still_authorises() {
+        // Yahoo's documented shape: `dmarc=pass(p=REJECT)`, no space
+        // between the result and the parenthesized comment.
+        let header = "mtaX.mail.gq1.yahoo.com; dmarc=pass(p=REJECT) header.from=greenhouse.io";
+        assert_eq!(
+            dmarc_verdict(header),
+            Some(("pass".to_string(), "greenhouse.io".to_string()))
+        );
+    }
+
+    #[test]
+    fn legitimate_fastmail_shaped_tail_with_arc_and_policy_and_x_prefixed_properties() {
+        // Fastmail-style tail: an `arc=none` section (no properties at
+        // all), and a dmarc section carrying non-standard `policy.*`/
+        // `x-*`-prefixed properties alongside the real `header.from=`.
+        // None of these must interfere with finding the real verdict.
+        let header = "in1-smtp.messagingengine.com; \
+                       arc=none; \
+                       dmarc=pass policy.published-domain=greenhouse.io policy.applied-disposition=none \
+                       header.from=greenhouse.io x-spam-score=0.0";
+        assert_eq!(
+            dmarc_verdict(header),
+            Some(("pass".to_string(), "greenhouse.io".to_string()))
+        );
+    }
+
+    // ── MEDIUM fix: a duplicate header.from WITHIN one section must be ──
+    // ── symmetric with the cross-section disagreement rule ──────────────
+
+    #[test]
+    fn duplicate_header_from_within_one_section_agreeing_is_fine() {
+        let header =
+            "mx.google.com; dmarc=pass header.from=greenhouse.io header.from=greenhouse.io";
+        assert_eq!(
+            dmarc_verdict(header),
+            Some(("pass".to_string(), "greenhouse.io".to_string()))
+        );
+    }
+
+    #[test]
+    fn duplicate_header_from_within_one_section_disagreeing_fails_closed() {
+        let header =
+            "mx.google.com; dmarc=pass header.from=greenhouse.io header.from=attacker.example";
+        assert_eq!(
+            dmarc_verdict(header),
+            None,
+            "two disagreeing header.from properties in ONE section must never silently pick one \
+             — mirrors the cross-section disagreement rule"
+        );
+    }
+
+    // ── reviewer's own most-plausible-miss: a top-level ';' produced by ──
+    // ── DECODING an already-received property value, not by any comment ──
+    // ── or quoted-string escape this module's own grammar handles ────────
+
+    #[test]
+    fn a_decoded_semicolon_inside_an_unquoted_property_value_still_fails_closed() {
+        // The candidate raised: a DKIM `i=` tag is dkim-quoted-printable
+        // encoded (RFC 6376 §2.11) in the DKIM-Signature header itself
+        // (so a literal `;` there is always written `=3B`, never raw) —
+        // but IF a verifying server decoded it back to a literal `;`
+        // before echoing it, UNQUOTED, into this header's own
+        // `header.i=` property, that would hand an attacker a top-level
+        // `;` this module's grammar never sees coming from a comment or a
+        // quoted-string. THIS CODEBASE never reaches that decode itself:
+        // the IMAP fetch this module's caller performs
+        // (`imap_client::fetch_headers_since`) requests exactly
+        // `FROM SUBJECT DATE MESSAGE-ID AUTHENTICATION-RESULTS` — the
+        // DKIM-Signature header is never fetched, let alone decoded, by
+        // this crate. Whether some real mail provider's OWN
+        // Authentication-Results-stamping code does this decode-then-embed
+        // internally is a question about infrastructure this crate cannot
+        // observe or verify.
+        //
+        // Untestable-as-a-real-exploit does not mean untested: this proves
+        // the SHAPE (an unquoted, unescaped top-level `;` appearing
+        // anywhere, not just inside `smtp.mailfrom=`) is still safe
+        // REGARDLESS of provenance, via the SAME two defenses already in
+        // place for a different delivery mechanism — the truncation fix
+        // (if the injected `;` is immediately followed by another
+        // stop-char) and, independently, the cross-section disagreement
+        // check (if it instead forms a COMPLETE forged `dmarc=pass`
+        // section ahead of the real, later, disagreeing one — exercised
+        // here, since a fully-formed fake section is the stronger of the
+        // two attacks).
+        let header = "mx.google.com; \
+                       dkim=pass header.i=attacker; dmarc=pass header.from=victim.io; \
+                       dmarc=fail header.from=attacker.example";
+        assert_eq!(
+            dmarc_verdict(header),
+            None,
+            "an unescaped top-level ';' from ANY source (decoded property content included) \
+             must never let a forged section win over a later, genuine, disagreeing one"
+        );
+    }
 
     // ── the exact exploit this module exists to close ──────────────────
 
