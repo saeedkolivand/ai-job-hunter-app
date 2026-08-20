@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.139.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.0...v0.139.1) (2026-08-20)
+
+### 🐛 Bug Fixes
+
+* make the v0.139.0 score tab actually score, and stop embeds timing out under load ([#1057](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1057)) ([0c5d4c0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0c5d4c00c1e3da030e20e8c817f69eaa37a086ca)), closes [#950](https://github.com/saeedkolivand/ai-job-hunter-app/issues/950)
+
 ## [0.139.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.138.1...v0.139.0) (2026-08-20)
 
 ### ✨ Features
