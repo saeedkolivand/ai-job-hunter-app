@@ -164,9 +164,17 @@ pub fn is_private_use(c: char) -> bool {
     )
 }
 
-// Lazy-initialized regexes for performance
+// Lazy-initialized regexes for performance. The `[\s\S]{0,30}` middle span is
+// GREEDY (not `{0,30}?`), so a `.find()` on a "Mon YYYY – Mon YYYY" RANGE
+// captures through the second (end) date, not the first one — the year
+// immediately after the opening month is itself a valid END alternative
+// (`20\d{2}`), so a lazy quantifier would stop there and truncate the match to
+// just "Mon YYYY". Greedy vs. lazy only changes which SPAN is reported when
+// several are possible; it recognizes the identical set of strings, so this
+// is a no-op for every existing `.is_match()` call site (there is no other
+// `.find()`/span-based use of this regex) — verified, not merely asserted.
 static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}?(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\b").unwrap()
+    Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\b").unwrap()
 });
 
 // A pipe/middot segment that IS a standalone single date — a bare year or
@@ -539,6 +547,32 @@ pub(crate) fn strip_atx_heading(line: &str) -> Option<&str> {
     }
 }
 
+/// A short, non-prose "title" line — 1–12 words, ≤100 chars, no terminal
+/// sentence punctuation, and NOT itself heading-shaped (a known section name
+/// or an ALL-CAPS heading) — the shape of a job/entry title or "Title ·
+/// Company" line, never a prose paragraph or a section heading. Backs the
+/// paired next-line-date [`LineKind::JobEntry`] branches in [`parse_line`]:
+/// the two-space/paren/pipe job-entry patterns above all require the date on
+/// the SAME line as the title; this covers the shape they don't — "Title ·
+/// Company" \n "Mon YYYY – Mon YYYY[, Location]" on its own following line
+/// (common LinkedIn-export / AI-generated résumé layout). The heading
+/// exclusion matters for the BACKWARD half of that pair (checked against the
+/// PREVIOUS line's re-derived shape, not its already-decided `LineKind`): a
+/// bare section heading ("Certifications") is itself short and
+/// unpunctuated, and without this guard a heading immediately followed by a
+/// leading-date entry line ("2023 AWS Certified …") would wrongly treat the
+/// heading as an opened entry and silently drop the date. Mirrors (loosely)
+/// `model::adapter::is_title_like`, which lives one layer up and this module
+/// cannot depend on.
+fn is_entry_title_shaped(clean: &str) -> bool {
+    let words = clean.split_whitespace().count();
+    (1..=12).contains(&words)
+        && clean.chars().count() <= 100
+        && !clean.ends_with(['.', '!', '?'])
+        && !is_known_section_name(clean)
+        && !is_all_caps_section_heading(clean)
+}
+
 /// Parse a single line
 fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     let trimmed = raw.trim();
@@ -765,6 +799,63 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
                 segments: parse_inline_md(trimmed),
                 right_text: None,
             };
+        }
+    }
+
+    // Job entry: a title-shaped line immediately followed, on its OWN line, by
+    // a bare leading date range — "Title · Company" \n "Mon YYYY – Mon
+    // YYYY[, Location]" — the shape none of the same-line patterns above
+    // cover (see `is_entry_title_shaped`'s doc comment). The date is read off
+    // the next line and carried as `right_text`; the paired branch below
+    // (checked on the date line itself) consumes it so it never ALSO renders
+    // as a second, unrelated body line.
+    if is_entry_title_shaped(&clean) {
+        if let Some(next_line) = all_lines.get(idx + 1) {
+            if let Some(m) = DATE_RE.find(next_line.trim()) {
+                if m.start() == 0 {
+                    return ParsedLine {
+                        kind: LineKind::JobEntry,
+                        raw: trimmed.to_string(),
+                        text: clean.clone(),
+                        segments: parse_inline_md(trimmed),
+                        right_text: Some(m.as_str().to_string()),
+                    };
+                }
+            }
+        }
+    }
+
+    // The other half of the pair above: THIS line is a leading date range and
+    // the PREVIOUS line was just claimed as that entry's title. Drop the
+    // matched date; whatever remains (a comma- or dash-led location /
+    // description) becomes the entry's subtitle. Nothing remaining collapses
+    // to Blank — the date has already been attached to the entry above.
+    if idx > 0 {
+        if let Some(m) = DATE_RE.find(trimmed) {
+            if m.start() == 0 {
+                let prev_clean = strip_md(all_lines.get(idx - 1).unwrap_or(&"").trim());
+                if is_entry_title_shaped(&prev_clean) {
+                    let remainder = trimmed[m.end()..]
+                        .trim_start_matches([',', '-', '\u{2013}', '\u{2014}', ' '])
+                        .trim();
+                    if remainder.is_empty() {
+                        return ParsedLine {
+                            kind: LineKind::Blank,
+                            raw: String::new(),
+                            text: String::new(),
+                            segments: Vec::new(),
+                            right_text: None,
+                        };
+                    }
+                    return ParsedLine {
+                        kind: LineKind::JobTitle,
+                        raw: remainder.to_string(),
+                        text: strip_md(remainder),
+                        segments: parse_inline_md(remainder),
+                        right_text: None,
+                    };
+                }
+            }
         }
     }
 
