@@ -339,9 +339,12 @@ describe('EmailWatchSection — auto-write toggle', () => {
   // rounds). Before the status query resolves, the component must never
   // commit the switch to ON — that is the unsafe direction now: it would
   // suggest auto-write is already protecting/active before that is known.
-  // The gate itself isn't direction-specific (it never commits to EITHER
-  // value while `status` is unresolved), so resolving to `true` here proves
-  // the switch never flashed `true` — or any value — before this point.
+  // There is exactly ONE gate that gives the switch a value at all —
+  // `{status?.connected ? … }` in the component, which is what narrows
+  // `status` for the `<Switch checked={status.autoWriteEnabled}>` a few
+  // lines below it. So exercising that gate's pending window (this test)
+  // is the whole guarantee: resolving to `true` here proves the switch
+  // never flashed `true` — or any value — before this point.
   it('never renders the auto-write switch as ON before the status is known — no premature commit', async () => {
     let resolveStatus!: (value: EmailWatchStatus) => void;
     const statusFn = vi.fn(

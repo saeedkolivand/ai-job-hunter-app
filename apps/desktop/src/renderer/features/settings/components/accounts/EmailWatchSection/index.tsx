@@ -2,7 +2,7 @@ import { Check, Mail, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, SettingsSection, Skeleton, Switch, useNotification } from '@ajh/ui';
+import { Button, Input, SettingsSection, Switch, useNotification } from '@ajh/ui';
 
 import {
   useConnectEmailWatch,
@@ -41,8 +41,10 @@ function Spinner() {
  * connection on demand. Once connected, `enabled` governs a backend-owned
  * ~15-minute background poller (PR B); "Check now" runs that SAME
  * fetch+parse+match+notify pass immediately, rate-limited server-side to one
- * per 60s. A match never auto-writes — it only produces a Notification
- * Center card the user confirms themselves.
+ * per 60s. A match always produces a Notification Center card; the SEPARATE
+ * auto-write opt-in below (off by default) additionally writes an
+ * unconfirmed status the application's Timeline tab surfaces with
+ * Accept/Reject when the user has turned it on.
  */
 export function EmailWatchSection() {
   const { t } = useTranslation();
@@ -59,7 +61,6 @@ export function EmailWatchSection() {
   const [address, setAddress] = useState('');
   const [appPassword, setAppPassword] = useState('');
 
-  const connected = status?.connected ?? false;
   const enabled = status?.enabled ?? false;
 
   const handleConnect = async () => {
@@ -119,7 +120,7 @@ export function EmailWatchSection() {
   return (
     <SettingsSection icon={Mail} label={t('settings.accounts.emailWatch.title')}>
       <div className="space-y-4">
-        {connected ? (
+        {status?.connected ? (
           <>
             {/* Connection status */}
             <div className="flex items-center justify-between gap-3">
@@ -156,37 +157,20 @@ export function EmailWatchSection() {
                 sender can fool it, so nobody gets this silently). The copy
                 states that trade-off in plain language. Independent of the
                 watch toggle above: this only gates whether a match WRITES a
-                status, never whether it's checked. */}
+                status, never whether it's checked.
+                `status` is narrowed to defined here — this whole block sits
+                inside `{status?.connected ? … }` above, which TS's control
+                flow analysis treats as proof `status` exists. No loading
+                placeholder is needed: by the time this renders, the value is
+                already known. */}
             <div className="space-y-2 border-t border-foreground/10 pt-3">
-              {status ? (
-                <Switch
-                  checked={status.autoWriteEnabled}
-                  onCheckedChange={(next) => void handleToggleAutoWrite(next)}
-                  disabled={setAutoWrite.isPending}
-                  label={t('settings.accounts.emailWatch.autoWrite.label')}
-                  description={t('settings.accounts.emailWatch.autoWrite.description')}
-                />
-              ) : (
-                // The real default is OFF, but this gate isn't direction-
-                // specific: it never commits to EITHER value before `status`
-                // resolves, so it holds regardless of which way the default
-                // points. Defaulting a not-yet-loaded value to ON would
-                // wrongly suggest auto-write is already active; defaulting to
-                // OFF would wrongly suggest it's safe. Render a loading
-                // placeholder instead of guessing either way.
-                <div
-                  role="status"
-                  aria-busy="true"
-                  aria-label={t('settings.accounts.emailWatch.autoWrite.label')}
-                  className="flex items-center justify-between gap-4"
-                >
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Skeleton className="h-3 w-40" />
-                    <Skeleton className="h-2.5 w-56" />
-                  </div>
-                  <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
-                </div>
-              )}
+              <Switch
+                checked={status.autoWriteEnabled}
+                onCheckedChange={(next) => void handleToggleAutoWrite(next)}
+                disabled={setAutoWrite.isPending}
+                label={t('settings.accounts.emailWatch.autoWrite.label')}
+                description={t('settings.accounts.emailWatch.autoWrite.description')}
+              />
             </div>
 
             {/* Last check + manual re-check */}

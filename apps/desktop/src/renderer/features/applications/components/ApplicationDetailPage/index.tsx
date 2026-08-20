@@ -961,7 +961,16 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
     acceptStatusEvent.mutate(
       { id: application.id, eventId },
       {
-        onSuccess: () => {
+        // `applications_accept_status_event` returns `Value`, not `Result` —
+        // a backend failure resolves as `{ error }` and `invoke` FULFILS, so
+        // `onError` never fires for it. Check `data.error` here, same as the
+        // contact-write handlers above, or a transient DB failure would
+        // still show the success toast while the row stays provisional.
+        onSuccess: (data) => {
+          if (data.error) {
+            notify.error({ message: t('applications.detail.timeline.acceptError') });
+            return;
+          }
           timelineHeadingRef.current?.focus();
           notify.success({ message: t('applications.detail.timeline.acceptSuccess') });
         },
@@ -973,7 +982,13 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
     rejectStatusEvent.mutate(
       { id: application.id, eventId },
       {
-        onSuccess: () => {
+        // Same `{ error }`-on-resolve shape as accept above — check it before
+        // ever showing the success toast.
+        onSuccess: (data) => {
+          if (data.error) {
+            notify.error({ message: t('applications.detail.timeline.rejectError') });
+            return;
+          }
           timelineHeadingRef.current?.focus();
           // Deliberately NOT "reverted" — the compare-and-set may have lost
           // (the user changed the status by hand meanwhile), in which case
@@ -1027,8 +1042,17 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
                 // `handleAcceptEvent`/`handleRejectEvent` above.
                 onAccept={() => handleAcceptEvent(e.eventId)}
                 onReject={() => handleRejectEvent(e.eventId)}
-                acceptPending={acceptStatusEvent.isPending}
-                rejectPending={rejectStatusEvent.isPending}
+                // `useMutation`'s `isPending` is per-HOOK, not per-variables —
+                // with two coexisting provisional rows, a bare `.isPending`
+                // here would put row A's spinner on row B too. `.variables`
+                // is the last `mutate()` payload, so gating on BOTH pins the
+                // pending state to the row it actually targets.
+                acceptPending={
+                  acceptStatusEvent.isPending && acceptStatusEvent.variables?.eventId === e.eventId
+                }
+                rejectPending={
+                  rejectStatusEvent.isPending && rejectStatusEvent.variables?.eventId === e.eventId
+                }
               />
             ),
           }))}

@@ -185,15 +185,26 @@ let mockImportJobUrlIsError = false;
 // can simulate the in-flight window before the auto-resolve settles.
 let mockResolveJobUrlIsFetching = false;
 /** `acceptStatusEvent.mutate`/`rejectStatusEvent.mutate` — resolve successfully
- *  by default (mirrors `mockSetStatusMutate` above). */
-const mockAcceptStatusEventMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
-  options?.onSuccess?.();
+ *  (an empty, error-free result) by default. `onSuccess` takes the real
+ *  `{ error? }` payload — the production handler branches on `data.error`,
+ *  so a no-arg call here would throw instead of testing anything. */
+type StatusEventMutateOptions = {
+  onSuccess?: (data: { error?: string }) => void;
+  onError?: () => void;
+};
+const mockAcceptStatusEventMutate = vi.fn((_vars: unknown, options?: StatusEventMutateOptions) => {
+  options?.onSuccess?.({});
 });
-const mockRejectStatusEventMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
-  options?.onSuccess?.();
+const mockRejectStatusEventMutate = vi.fn((_vars: unknown, options?: StatusEventMutateOptions) => {
+  options?.onSuccess?.({});
 });
 let mockAcceptStatusEventPending = false;
 let mockRejectStatusEventPending = false;
+/** The `.variables` of the last `mutate()` call — mirrors real `useMutation`
+ *  (`isPending` is per-HOOK, `.variables` is what makes a specific row's
+ *  pending state identifiable). `undefined` until a test sets it. */
+let mockAcceptStatusEventVariables: { id: string; eventId: number } | undefined;
+let mockRejectStatusEventVariables: { id: string; eventId: number } | undefined;
 
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
@@ -215,10 +226,12 @@ vi.mock('@/services', () => ({
   useAcceptStatusEvent: () => ({
     mutate: mockAcceptStatusEventMutate,
     isPending: mockAcceptStatusEventPending,
+    variables: mockAcceptStatusEventVariables,
   }),
   useRejectStatusEvent: () => ({
     mutate: mockRejectStatusEventMutate,
     isPending: mockRejectStatusEventPending,
+    variables: mockRejectStatusEventVariables,
   }),
   useDocuments: () => ({ data: [], isLoading: false }),
   useDocumentText: () => ({ data: undefined, isLoading: false }),
@@ -345,18 +358,20 @@ beforeEach(() => {
   capturedOnJobDescChange = undefined;
   mockAcceptStatusEventMutate.mockClear();
   mockAcceptStatusEventMutate.mockImplementation(
-    (_vars: unknown, options?: StatusMutateOptions) => {
-      options?.onSuccess?.();
+    (_vars: unknown, options?: StatusEventMutateOptions) => {
+      options?.onSuccess?.({});
     }
   );
   mockRejectStatusEventMutate.mockClear();
   mockRejectStatusEventMutate.mockImplementation(
-    (_vars: unknown, options?: StatusMutateOptions) => {
-      options?.onSuccess?.();
+    (_vars: unknown, options?: StatusEventMutateOptions) => {
+      options?.onSuccess?.({});
     }
   );
   mockAcceptStatusEventPending = false;
   mockRejectStatusEventPending = false;
+  mockAcceptStatusEventVariables = undefined;
+  mockRejectStatusEventVariables = undefined;
   mockNotify.success.mockClear();
   mockNotify.error.mockClear();
 });
@@ -2136,5 +2151,104 @@ describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
     expect(screen.getByText('applications.detail.timeline.provisionalHint')).toBeInTheDocument();
     // Never the raw backend literal, verbatim.
     expect(screen.queryByText('email-derived (unconfirmed)')).not.toBeInTheDocument();
+  });
+
+  // `useMutation`'s `isPending` is per-HOOK, not per-`mutate()` call — with
+  // two coexisting provisional rows sharing ONE `useAcceptStatusEvent()`
+  // instance, a bare `.isPending` would put row A's spinner/disabled state
+  // on row B too. Gating on `.variables?.eventId` (the last `mutate()`
+  // payload) is what pins it back to the row actually in flight.
+  it('gates the pending/loading state to the SPECIFIC row whose eventId is in flight, not every provisional row', () => {
+    const older = makeEvent({
+      eventId: 501,
+      at: 1000,
+      fromStatus: 'saved',
+      toStatus: 'applied',
+      source: 'email',
+      confirmed: false,
+    });
+    const newer = makeEvent({
+      eventId: 502,
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'rejected',
+      source: 'email',
+      confirmed: false,
+    });
+
+    // Simulate the OLDER row's Accept mutation still in flight.
+    mockAcceptStatusEventPending = true;
+    mockAcceptStatusEventVariables = { id: 'app-two-provisional-pending', eventId: 501 };
+
+    renderTimeline([older, newer], { id: 'app-two-provisional-pending' });
+
+    // orderedEvents sorts newest-first, so the DOM order is [newer, older].
+    const acceptButtons = screen.getAllByRole('button', {
+      name: 'applications.detail.timeline.acceptAria',
+    });
+    const rejectButtons = screen.getAllByRole('button', {
+      name: 'applications.detail.timeline.rejectAria',
+    });
+    expect(acceptButtons).toHaveLength(2);
+    expect(rejectButtons).toHaveLength(2);
+    const [newerAccept, olderAccept] = acceptButtons;
+    const [newerReject, olderReject] = rejectButtons;
+    if (!newerAccept || !olderAccept || !newerReject || !olderReject) {
+      throw new Error('expected two Accept and two Reject buttons');
+    }
+
+    // The row actually in flight shows the pending state on both its own
+    // buttons (accept pending disables reject too, same row) …
+    expect(olderAccept).toBeDisabled();
+    expect(olderReject).toBeDisabled();
+    // … but the OTHER row — unrelated to this mutation — must not be
+    // disabled just because SOME accept mutation is pending somewhere. Before
+    // the per-row `.variables` gate, this assertion is what would fail: both
+    // rows read the same shared `acceptStatusEvent.isPending`.
+    expect(newerAccept).not.toBeDisabled();
+    expect(newerReject).not.toBeDisabled();
+  });
+
+  // `applications_accept_status_event`/`applications_reject_status_event`
+  // return `Value`, not `Result` — a backend failure resolves as `{ error }`
+  // and `invoke` FULFILS, so `onError` never fires for it. The handler must
+  // check `data.error` before showing the success toast, same as the
+  // contact-write handlers elsewhere in this component.
+  it('accept does NOT show the success toast when the backend resolves with an error', async () => {
+    const user = userEvent.setup();
+    mockAcceptStatusEventMutate.mockImplementationOnce((_vars: unknown, options) => {
+      options?.onSuccess?.({ error: 'db busy' });
+    });
+    renderTimeline([makeEvent({ source: 'email', confirmed: false })], {
+      id: 'app-accept-backend-error',
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    );
+
+    expect(mockNotify.success).not.toHaveBeenCalled();
+    expect(mockNotify.error).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.acceptError',
+    });
+  });
+
+  it('reject does NOT show the success toast when the backend resolves with an error', async () => {
+    const user = userEvent.setup();
+    mockRejectStatusEventMutate.mockImplementationOnce((_vars: unknown, options) => {
+      options?.onSuccess?.({ error: 'db busy' });
+    });
+    renderTimeline([makeEvent({ source: 'email', confirmed: false })], {
+      id: 'app-reject-backend-error',
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    );
+
+    expect(mockNotify.success).not.toHaveBeenCalled();
+    expect(mockNotify.error).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.rejectError',
+    });
   });
 });
