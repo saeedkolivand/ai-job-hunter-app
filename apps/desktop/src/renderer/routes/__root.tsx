@@ -2,6 +2,7 @@ import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import {
   createRootRoute,
+  type ErrorComponentProps,
   type NavigateOptions,
   Outlet,
   useNavigate,
@@ -10,7 +11,7 @@ import {
 
 import type { NotificationToast } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, NotificationProvider, transition, useNotification } from '@ajh/ui';
+import { Button, ErrorState, NotificationProvider, transition, useNotification } from '@ajh/ui';
 
 import { CinematicBackground } from '@/components/background/CinematicBackground';
 import { ProtocolVersionGate } from '@/components/layout/ProtocolVersionGate';
@@ -134,6 +135,32 @@ function NotificationToastBridge() {
   }, [api]);
 
   return null;
+}
+
+/**
+ * Root-level error boundary — TanStack Router walks up to this when a route
+ * component throws and neither it nor any ancestor route defines its own
+ * `errorComponent` (e.g. the Rules-of-Hooks crash logged 2026-08-18, which
+ * white-screened the whole app because no boundary existed at all). Rendered
+ * in place of the failed route's `<Outlet />` content — the shell (Sidebar/
+ * Titlebar) stays mounted, so "pick another page" is a real escape hatch, not
+ * just decoration. `reset` is the router's own recovery: it re-attempts
+ * rendering the route that threw (a per-render bug, not a data bug, so this
+ * does not fix the root cause — the underlying crash is tracked separately).
+ *
+ * Exported (not just used inline) so it can be unit-tested standalone,
+ * without mounting the rest of the root layout's provider tree.
+ */
+export function RootErrorBoundary({ reset }: ErrorComponentProps) {
+  const { t } = useTranslation();
+  return (
+    <ErrorState
+      title={t('errorBoundary.title')}
+      description={t('errorBoundary.description')}
+      onRetry={reset}
+      className="h-full"
+    />
+  );
 }
 
 function RootLayout() {
@@ -279,6 +306,7 @@ function RootLayout() {
 
 export const Route = createRootRoute({
   component: RootLayout,
+  errorComponent: RootErrorBoundary,
   notFoundComponent: () => (
     <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
       <p className="text-base font-semibold text-foreground/50">Page not found</p>
