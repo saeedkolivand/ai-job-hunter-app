@@ -126,7 +126,10 @@ reviews:
     - path: 'docs/**'
       instructions: >
         Docs/knowledge base must be thin pointers into the owning source/symbol —
-        no copied literals; keep them from drifting.
+        no copied literals; keep them from drifting. If the page opens with a
+        `GENERATED FILE` banner it is rendered by a script and cannot be hand-edited:
+        raise the finding on the source it renders from (the TSDoc on the contract
+        member), never as an edit to the page itself.
 
   # Area labels — mirrors the retired .github/labeler.yml path→label map. CodeRabbit
   # applies labels by name from these instructions.
