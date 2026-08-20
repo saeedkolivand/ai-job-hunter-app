@@ -160,8 +160,21 @@ pub fn ollama_completion_deadline(effort: Option<&str>) -> Duration {
 pub const EMBED: Duration = Duration::from_secs(30);
 
 /// Local Ollama embeddings (`/api/embeddings`): the local daemon's embeddings
-/// endpoint, bounded tighter than cloud embeddings.
-pub const OLLAMA_EMBED: Duration = Duration::from_secs(15);
+/// endpoint, bounded LOOSER than cloud embeddings — the opposite of the usual
+/// local-is-faster assumption, and deliberately so.
+///
+/// A local daemon shares one GPU with whatever chat model is loaded, and Ollama
+/// serialises by default: an embed request queues behind an in-flight generation
+/// rather than running beside it. Measured in the field at the previous 15s
+/// bound — embed cycles failing in exactly 45s (3 x 15s) while a 27B chat
+/// completion held the GPU for 213s. That is a queue wait, not an unreachable
+/// daemon, and failing it produced a silent keyword-only degrade.
+///
+/// A cold load of a large embedding model (e.g. a 4B / 2560-dim one) can also
+/// exceed 15s unaided. The cost of the wider bound is that a genuinely dead
+/// daemon now takes 3 x 60s to give up instead of 3 x 15s; a refused connection
+/// still fails fast, because that is a transport error rather than a timeout.
+pub const OLLAMA_EMBED: Duration = Duration::from_secs(60);
 
 // ── Company research (provider-native web search) ───────────────────────────────
 
