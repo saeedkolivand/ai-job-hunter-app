@@ -19,6 +19,8 @@ pub struct MatchResumeRequest {
 pub struct MatchTextRequest {
     pub resume_id: String,
     pub job_text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_scoring_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

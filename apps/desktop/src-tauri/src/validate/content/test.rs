@@ -4564,11 +4564,19 @@ fn pathological_bullet_count_returns_quickly_and_still_flags_a_duplicate_within_
     assert!(ratio > 0.0, "duplicateRatio must reflect the flagged pair");
 }
 
+/// `MIN_TOKENS_FOR_DENSITY` moved 50 -> 75 when the keyword kernel became
+/// language-aware. Recorded here rather than silently re-pinned: filtering a
+/// posting's own function words makes documents ~18% shorter in CONTENT tokens
+/// (a real German fixture, 89 -> 73 raw), which tipped an honest `backend` x3
+/// from 3.66% to 4.17% and read as keyword stuffing. 75 is derived — `3/total >
+/// 0.04` holds for every `total < 75` — not fitted to that one fixture. The
+/// `eval` corpus is what catches the regression; this pin is what makes moving
+/// the number deliberate.
 #[test]
 fn ats_thresholds_are_pinned() {
     assert_eq!(ats::MAX_KEYWORD_DENSITY_RATIO, 0.04);
     assert_eq!(ats::MAX_KEYWORD_OCCURRENCES, 6);
-    assert_eq!(ats::MIN_TOKENS_FOR_DENSITY, 50);
+    assert_eq!(ats::MIN_TOKENS_FOR_DENSITY, 75);
     assert_eq!(ats::MAX_BULLET_CHARS, 200);
     assert_eq!(ats::MIN_BULLETS_PER_ROLE, 1);
     assert_eq!(ats::MAX_BULLETS_PER_ROLE, 6);

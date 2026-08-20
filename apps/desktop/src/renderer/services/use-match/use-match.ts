@@ -50,10 +50,12 @@ export const useJobMatchScore = (resumeId: string | null, jobId: string, enabled
  * have had an entry anyway).
  *
  * Routes through the SAME shared kernel as the Jobs page (`match:text` →
- * `score_one`, keyword-only — see the Rust command's doc for why semantic
- * scoring is not caller-configurable here), never a second scorer. Content-
- * addressed on the job text itself, so repeated opens of the same posting are
- * free (10-minute staleTime, mirrors `useJobMatchScore`).
+ * `score_one`), never a second scorer. Gated on the SAME `semanticScoring`
+ * app preference `useJobMatchScore` reads — an explicit opt-in, never a
+ * second setting — so `scoreSource` can be `'combined'` here too. Content-
+ * addressed on the job text AND that preference (see `keys.match.textScore`),
+ * so repeated opens of the same posting under the same preference are free
+ * (10-minute staleTime, mirrors `useJobMatchScore`).
  */
 export const useJobAdTextMatchScore = (
   resumeId: string | null,
@@ -61,9 +63,15 @@ export const useJobAdTextMatchScore = (
   enabled = true
 ) => {
   const api = useAppClient();
+  const semanticScoring = useSemanticScoring();
   return useQuery({
-    queryKey: keys.match.textScore(resumeId, jobText),
-    queryFn: (): Promise<MatchScore> => api.match.text({ resumeId: resumeId as string, jobText }),
+    queryKey: keys.match.textScore(resumeId, jobText, semanticScoring),
+    queryFn: (): Promise<MatchScore> =>
+      api.match.text({
+        resumeId: resumeId as string,
+        jobText,
+        semanticScoringEnabled: semanticScoring,
+      }),
     // Truthy checks only — never call methods on an argument here (the
     // `exerciseServiceHooks` smoke test renders every exported hook with a
     // single junk argument).

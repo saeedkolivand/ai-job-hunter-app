@@ -290,11 +290,14 @@ export const MatchResumeRequestSchema = z.object({
  * 200_000-byte cap as `ResumeTrimSuggestionsRequestSchema.jobText` below (this
  * reads the same kind of text and mirrors the server's
  * `MAX_JOB_DESCRIPTION_BYTES`); the Rust command clamps too, since this is an
- * IPC boundary a non-UI caller can reach directly.
+ * IPC boundary a non-UI caller can reach directly. `semanticScoringEnabled`
+ * mirrors `MatchResumeRequestSchema`'s field of the same name — an omitted
+ * flag defaults to keyword-only on the Rust side, never "provider decides".
  */
 export const MatchTextRequestSchema = z.object({
   resumeId: z.string().min(1),
   jobText: z.string().min(1).max(200_000),
+  semanticScoringEnabled: z.boolean().optional(),
 });
 
 /**

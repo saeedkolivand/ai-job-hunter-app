@@ -47,7 +47,18 @@ mod constraints;
 /// on its own (a cached score computed against an OLD-format vector is a miss
 /// once the vector itself can be a new-format one under the identical space
 /// tag) — this constant is now purely about the scoring FORMULA.
-const MATCH_FORMULA_VERSION: i64 = 2;
+///
+/// Bumped 2 -> 3: `documents::keywords::keywords_normalized_list` gained
+/// language-aware stopwords (German/French/Spanish/Italian/Portuguese/Dutch,
+/// selected the same way `make_stemmer` picks its algorithm) plus a
+/// pure-numeric-token filter. Both change which tokens survive into a job's
+/// or résumé's keyword set, so every previously-cached score is stale. A
+/// stale row is never read again once this constant differs (`formula_version`
+/// is part of the `match_scores` table's PRIMARY KEY, so a bumped-version
+/// lookup is a structural miss, not a stale hit) — old rows are simply
+/// orphaned until the existing TTL/max-rows prune sweep (`prune_caches`) or a
+/// resume-scoped delete reclaims them. No migration needed.
+const MATCH_FORMULA_VERSION: i64 = 3;
 
 /// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
 /// cache-key column: only an explicit `Some(true)` enables semantic scoring
@@ -94,13 +105,15 @@ fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
 ///    alone carries a keyword the description never repeats scores lower here
 ///    than on the Jobs page — an accepted cost of this surface having
 ///    strictly less structured input, not a bug.
-/// 2. **`semantic_enabled`.** Hardcoded `0` on the Score tab (never
-///    caller-configurable — see [`score_resume_against_text`]), but reads the
-///    user's own preference on the Jobs page. With semantic scoring ON, the
-///    Jobs page's `combined` is a 0.6/0.4 weighted blend of embedding
-///    similarity and keyword coverage; the Score tab's is pure keyword
-///    coverage — the SAME field name, two different formulas. Parity only
-///    holds when both sides are keyword-only.
+/// 2. **`semantic_enabled`.** Both surfaces now read the SAME renderer
+///    preference (`useSemanticScoring()`), threaded through as an explicit,
+///    optional request flag (`MatchResumeRequest.semanticScoringEnabled` /
+///    `MatchTextRequest.semanticScoringEnabled` — see [`semantic_enabled_bit`]
+///    for the shared default-to-keyword-only rule). With the preference ON,
+///    BOTH surfaces run the SAME 0.6/0.4 weighted blend of embedding
+///    similarity and keyword coverage over their own composed blob — this
+///    axis no longer diverges between them. Only axis 1 (composition) still
+///    legitimately does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MatchSurface {
     /// The in-app [`match_resume`] command (the Jobs page and everything routed
@@ -579,12 +592,11 @@ fn job_ad_text_blob(description: &str) -> Option<String> {
 ///
 /// A thin forwarding wrapper around [`score_one`], NOT a new scoring path — no
 /// new branch is added to the kernel and every existing caller is untouched.
-/// Keyword-only, deliberately (`semantic_enabled` hardcoded `0`, not
-/// caller-configurable): semantic scoring stays an explicit opt-in read from
-/// the renderer's preferences store, this ad-hoc surface has no channel to
-/// that setting (mirrors [`score_adhoc_keyword_only`]'s reasoning), and
-/// embeddings are currently broken for cloud-only users — this surface must
-/// not add a second embedding round-trip regardless.
+/// `semantic_enabled` is the caller-supplied cache-key bit
+/// ([`semantic_enabled_bit`] of `MatchTextRequest.semanticScoringEnabled`) —
+/// the renderer reads the SAME `useSemanticScoring()` preference the Jobs
+/// page does and threads it through, so this surface is no longer hardcoded
+/// keyword-only.
 ///
 /// `job_text` is run through [`job_ad_text_blob`] BEFORE it is hashed for
 /// [`job_ad_text_id`] and before scoring — see that function's doc for why.
@@ -593,11 +605,12 @@ fn job_ad_text_blob(description: &str) -> Option<String> {
 /// zero-egress guarantee is structural because the caller is an untrusted
 /// browser bridge), this surface runs inside the app against a user-owned,
 /// already-stored résumé — there is no zero-egress obligation to uphold, so it
-/// deliberately DOES translate ([`MatchSurface::JobAdText`], not `Extension`).
-/// See [`MatchSurface`]'s own doc for the honest parity claim (identical
-/// PRE-PROCESSED text at `semantic_enabled = 0`) and the two axes —
-/// composition (no title/requirements here) and `semantic_enabled` — that
-/// still legitimately diverge from the Jobs page.
+/// deliberately DOES translate ([`MatchSurface::JobAdText`], not `Extension`),
+/// and opting it into the SAME semantic-scoring preference the Jobs page
+/// reads carries no extra egress risk either. See [`MatchSurface`]'s own doc
+/// for the honest parity claim (identical PRE-PROCESSED text, same
+/// `semantic_enabled` bit) and the one axis — composition (no title/
+/// requirements here) — that still legitimately diverges from the Jobs page.
 pub(crate) async fn score_resume_against_text(
     app: &AppHandle,
     store: &DocumentStore,
@@ -605,6 +618,7 @@ pub(crate) async fn score_resume_against_text(
     resume_raw_keywords: Option<&[String]>,
     active: &EmbeddingConfig,
     job_text: String,
+    semantic_enabled: i64,
 ) -> Value {
     let job_text = job_ad_text_blob(&job_text);
     let job_id = job_ad_text_id(job_text.as_deref().unwrap_or(""));
@@ -616,7 +630,7 @@ pub(crate) async fn score_resume_against_text(
         active,
         &job_id,
         job_text,
-        0, // semantic_enabled hardcoded OFF — deliberate, not caller-configurable (see doc)
+        semantic_enabled,
         MatchSurface::JobAdText,
         None, // user-initiated: not charged against the unattended daily ceiling
     )
@@ -822,11 +836,14 @@ fn resolve_resume_and_text(
 
 /// Score a stored résumé against arbitrary job-ad TEXT — the Score tab's IPC
 /// entry point. See [`score_resume_against_text`] for why this exists (no
-/// `PostingsCache` id reaches `JobAdView`) and why it is keyword-only
-/// (semantic scoring is not caller-configurable here).
+/// `PostingsCache` id reaches `JobAdView`). Semantic scoring is gated on the
+/// SAME request flag [`match_resume`] uses (`semanticScoringEnabled`,
+/// defaulting to keyword-only when omitted — see [`semantic_enabled_bit`]),
+/// not hardcoded off.
 #[tauri::command]
 pub async fn match_resume_text(app: AppHandle, req: MatchTextRequest) -> Value {
     let store = app.state::<DocumentStore>();
+    let semantic_enabled = semantic_enabled_bit(req.semantic_scoring_enabled);
     let (resume, job_text) = match resolve_resume_and_text(&store, &req.resume_id, req.job_text) {
         Ok(pair) => pair,
         Err(err) => return err,
@@ -840,6 +857,7 @@ pub async fn match_resume_text(app: AppHandle, req: MatchTextRequest) -> Value {
         resume_raw_keywords.as_deref(),
         &active,
         job_text,
+        semantic_enabled,
     )
     .await
 }

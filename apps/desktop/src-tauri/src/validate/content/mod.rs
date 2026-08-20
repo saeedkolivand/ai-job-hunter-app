@@ -38,7 +38,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::documents::evidence::{classify_section, date_spans, trailing_date_column, SectionKind};
 use crate::documents::keywords::{
-    display_forms, keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
+    display_forms_for_lang, keyword_coverage, keywords_for_lang, keywords_normalized_for_lang,
+    languages_align, make_stemmer,
 };
 use crate::export::parser::parse_resume;
 use crate::export::types::{LineKind, ParsedLine};
@@ -504,6 +505,16 @@ impl Section {
 pub(crate) struct DocumentTokens {
     stemmer: Stemmer,
     aligned: bool,
+    /// The resolved target language, pinned at construction from a
+    /// document-level decision — NOT re-detected per call. [`Self::tokens`]
+    /// and [`Self::display`] are called on short per-line/per-title/per-bullet
+    /// fragments throughout `consistency`/`duplicates`, and `whatlang` reading
+    /// an isolated short fragment is unreliable (a stray line can read as an
+    /// entirely different language at low confidence). Pinning the stopword
+    /// language here keeps every fragment's tokenization — and its display
+    /// map — under the SAME decision this document resolved to, the same
+    /// reason `stemmer`/`aligned` are frozen once rather than redetected.
+    lang: String,
 }
 
 impl DocumentTokens {
@@ -511,6 +522,7 @@ impl DocumentTokens {
         Self {
             aligned: languages_align(text, lang),
             stemmer: make_stemmer(text),
+            lang: lang.to_string(),
         }
     }
 
@@ -519,9 +531,9 @@ impl DocumentTokens {
     /// backing, a drifted title) can only ever go quieter, never louder.
     pub fn tokens(&self, text: &str) -> HashSet<String> {
         if self.aligned {
-            keywords(text, &self.stemmer)
+            keywords_for_lang(text, &self.lang, &self.stemmer)
         } else {
-            keywords_normalized(text)
+            keywords_normalized_for_lang(text, &self.lang)
         }
     }
 
@@ -531,7 +543,7 @@ impl DocumentTokens {
     /// different stemmers is how a display form comes back as a stem.
     pub fn display(&self, text: &str) -> HashMap<String, String> {
         if self.aligned {
-            display_forms(text, &self.stemmer)
+            display_forms_for_lang(text, &self.lang, &self.stemmer)
         } else {
             HashMap::new()
         }
@@ -581,9 +593,9 @@ impl<'a> Analysis<'a> {
         let stemmer = make_stemmer(input.job_ad);
         let tokens = |text: &str| {
             if aligned {
-                keywords(text, &stemmer)
+                keywords_for_lang(text, &lang, &stemmer)
             } else {
-                keywords_normalized(text)
+                keywords_normalized_for_lang(text, &lang)
             }
         };
         Self {
@@ -626,9 +638,9 @@ impl<'a> Analysis<'a> {
     /// decision it tokenized under.
     pub fn tokens(&self, text: &str) -> HashSet<String> {
         if self.aligned {
-            keywords(text, &self.stemmer)
+            keywords_for_lang(text, &self.lang, &self.stemmer)
         } else {
-            keywords_normalized(text)
+            keywords_normalized_for_lang(text, &self.lang)
         }
     }
 
