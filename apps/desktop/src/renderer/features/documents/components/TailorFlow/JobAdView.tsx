@@ -182,11 +182,15 @@ export function JobAdView({
   // the same placeholder (its formula always needs a real `ats` input), so
   // this gates the Match row too — never a fake `0`.
   const hasCoverage = isMeasured(score) && !(score.ats === 0 && score.gaps.length === 0);
-  // `match:text` (the IPC command behind `useJobAdTextMatchScore`) always
-  // scores keyword-only — `scoreSource` on its result is always `'keyword'`,
-  // never `'combined'` (see the contract's doc). So this row is dropped
-  // entirely below (never rendered alongside Coverage under a contradictory
-  // badge) on every score here, not a bug specific to one posting.
+  // `match:text` (the IPC command behind `useJobAdTextMatchScore`) is gated on
+  // the SAME `semanticScoring` app preference the Jobs page reads — the hook
+  // threads it through automatically. `scoreSource` is `'combined'` only when
+  // that preference is ON *and* a real embedding pair backed the comparison;
+  // it stays `'keyword'` both when the preference is off and when it's on but
+  // the embed degraded (offline provider, failed round-trip — see
+  // `score_one`'s doc). Either `'keyword'` case renders the honest
+  // "not scored" state below rather than the Match row riding alongside
+  // Coverage under a contradictory badge.
   const hasSemantic =
     isMeasured(score) && score.scoreSource === 'combined' && Number.isFinite(score.semantic);
   // The kernel's own detail sentence — the one place the job's keyword COUNT
@@ -420,10 +424,17 @@ export function JobAdView({
                       testId={TEST_IDS.documents.jobAdViewScoreSemantic}
                     />
                   ) : (
-                    // Never true through this endpoint today (see `hasSemantic`'s
-                    // doc) — a disclosure footnote, not a metric row: reserving a
-                    // full row with badge chrome for a value that can never have
-                    // content is its own small dishonesty.
+                    // Reached whenever semantic scoring is off by preference OR
+                    // was requested but degraded (see `hasSemantic`'s doc) — a
+                    // disclosure footnote, not a metric row: reserving a full row
+                    // with badge chrome for a value that has no content would be
+                    // its own small dishonesty. Either way `explanationText`
+                    // below (echoing the kernel's own `explanation` sentence)
+                    // states the reason — "semantic scoring disabled" or
+                    // "semantic similarity could not be computed — no embedding
+                    // was available for this pair" — so the degrade reason is
+                    // never silently dropped, just not duplicated into this
+                    // footnote's own label.
                     <p
                       data-testid={TEST_IDS.documents.jobAdViewScoreSemantic}
                       className="text-[10px] text-foreground/50"
