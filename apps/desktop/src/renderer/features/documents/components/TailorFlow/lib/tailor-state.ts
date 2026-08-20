@@ -19,10 +19,15 @@ export interface TailorWizardState {
  * `supportsWebSearch` so the "search company" toggle defaults ON for a model
  * that can web-search and OFF otherwise. Defaults to `false` (the safe fallback
  * used while the capability is still resolving, or when it can't).
+ *
+ * `resumeDocId` seeds `resumeDocId` (see `TailorWizardState`'s doc) — the
+ * caller's job to pass only when `resumeText` genuinely IS that document's
+ * text, never a guess.
  */
 export function buildTailorDefaults(
   resumeText?: string,
-  researchCompany = false
+  researchCompany = false,
+  resumeDocId?: string
 ): TailorWizardState {
-  return { resume: resumeText ?? '', outputType: 'both', researchCompany };
+  return { resume: resumeText ?? '', outputType: 'both', researchCompany, resumeDocId };
 }

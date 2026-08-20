@@ -110,6 +110,10 @@ export interface TailorFlowPersistence {
 export interface TailorFlowProps {
   job: AutopilotFoundJob;
   resumeText?: string;
+  /** The saved résumé backing `resumeText`, unedited — see `tailor-state.ts`'s
+   *  doc on `resumeDocId`. Undefined when the caller can't vouch that
+   *  `resumeText` IS that document's text (a generated/one-shot seed). */
+  resumeDocId?: string;
   board: string;
   /** Session key for the host's own bookkeeping (e.g. `autopilot:<jobUrl>`) —
    *  TailorFlow itself no longer keys any session state on it (the staged
@@ -156,6 +160,7 @@ export interface TailorFlowProps {
 export function TailorFlow({
   job,
   resumeText,
+  resumeDocId,
   board,
   jobUrl,
   seedGeneration,
@@ -191,7 +196,7 @@ export function TailorFlow({
   // `buildTailorDefaults` runs once, not on every render.
   const startedFresh = useRef(persistence.wizardForm == null);
   const [initialForm] = useState<TailorWizardState>(
-    () => persistence.wizardForm ?? buildTailorDefaults(resumeText, supportsWebSearch)
+    () => persistence.wizardForm ?? buildTailorDefaults(resumeText, supportsWebSearch, resumeDocId)
   );
   const methods = useForm<TailorWizardState>({
     defaultValues: initialForm,

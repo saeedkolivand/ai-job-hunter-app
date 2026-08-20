@@ -1352,6 +1352,15 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     (resumeQuery.data ?? '') ||
     (matchingGenerations[0]?.resumeText ?? '');
 
+  // Seed the id ONLY when the seeded text IS the default résumé's text — the
+  // autopilot one-shot and a previous generation's output have no saved-document
+  // backing, and an id that doesn't match the visible text is the exact drift
+  // `useResumeInput`'s `selectDoc` contract exists to prevent.
+  const seedResumeDocId =
+    seedResumeText && seedResumeText === resumeQuery.data
+      ? (defaultResumeId ?? undefined)
+      : undefined;
+
   // Generation-store session key. Empty job URLs (`z.string().default('')`) would
   // collide for every URL-less application, bleeding one application's live
   // tailoring session into another — so key those by the stable application id.
@@ -1447,6 +1456,7 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
         <TailorFlow
           job={job}
           resumeText={seedResumeText}
+          resumeDocId={seedResumeDocId}
           board={application.board ?? ''}
           contextId={contextId}
           jobUrl={application.jobUrl}

@@ -34,4 +34,10 @@ describe('buildTailorDefaults', () => {
   it('seeds resume as empty string when resumeText is empty string', () => {
     expect(buildTailorDefaults('').resume).toBe('');
   });
+
+  it('seeds resumeDocId when the caller vouches for it, undefined otherwise', () => {
+    expect(buildTailorDefaults('text', false, 'doc-1').resumeDocId).toBe('doc-1');
+    expect(buildTailorDefaults('text', false).resumeDocId).toBeUndefined();
+    expect(buildTailorDefaults().resumeDocId).toBeUndefined();
+  });
 });
