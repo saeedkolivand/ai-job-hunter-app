@@ -11,6 +11,20 @@
 //! `autopilot_scheduler` split, so this store never needs an upward reach
 //! into `commands::notifications` itself.
 //!
+//! **v2 slice 1** adds [`intent`]: a pure 4-way (confirmation/rejection/
+//! interview/offer) classifier over subject+body, plus the pure
+//! `intent::next_status` status-ladder rule.
+//!
+//! **v2 slice 2** adds [`auto_write`]: the actual `ApplicationStore` write —
+//! [`auto_write::apply_matched_intent`] turns one classified `EmailIntent`
+//! into a real, but always UNCONFIRMED, status transition (gated first by
+//! [`EmailWatchStore::auto_write_enabled`] — originally default ON, flipped to
+//! default OFF once a residual the parser cannot close by content
+//! inspection alone was found; see that fn's own doc). Still not wired into
+//! [`poller`]'s tick itself — `run_tick` stays pure matching, and the
+//! scheduler (L2, the one place in this module family with `AppHandle`
+//! reach) is the natural future caller; no IPC in this slice either.
+//!
 //! **Backup/reset posture**: unlike most per-domain SQLite stores in this
 //! crate, `EmailWatchStore` is **NOT** a [`crate::data_store::DataStore`] (not
 //! included in the backup/export bundle) — like `CredentialStore`, its
@@ -26,8 +40,10 @@
 //!   pattern): `address`/`host`/`port` (the configured mailbox; host/port
 //!   default to Gmail's IMAP endpoint — v1 is Gmail-branded, but the value is
 //!   DATA, not hardcoded, so a future non-Gmail provider needs no code change),
-//!   `enabled` (the poller opt-in PR B will gate on — default OFF), and the
-//!   poller's own watermark: `last_uid`/`uidvalidity`/`last_check_ms`.
+//!   `enabled` (the poller opt-in PR B will gate on — default OFF),
+//!   `auto_write_enabled` (v2 slice 2's auto-write opt-in — default OFF, see
+//!   [`EmailWatchStore::auto_write_enabled`]), and the poller's own watermark:
+//!   `last_uid`/`uidvalidity`/`last_check_ms`.
 //! - `seen` — `uid` (PK) → `matched_app_id` (nullable) + `ts`. Dedupes which
 //!   messages have already been considered so the (future) poller never
 //!   double-notifies for the same UID.
@@ -41,10 +57,14 @@ use serde::Serialize;
 use crate::db::{open, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
+mod auth_results;
+pub mod auto_write;
 pub mod imap_client;
+pub mod intent;
 pub mod matcher;
 pub mod parser;
 pub mod poller;
+pub mod status_ladder;
 
 /// OS-keychain slot for the IMAP app password (never persisted in SQLite,
 /// never logged, never returned over IPC). Read/written via
@@ -82,6 +102,10 @@ pub struct EmailWatchStatus {
     pub last_check_at: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_match_at: Option<u64>,
+    /// The v2 auto-write opt-in — see [`EmailWatchStore::auto_write_enabled`].
+    /// Surfaced here (not a second IPC round trip) so the settings UI reads
+    /// it from the SAME `email_watch_status()` call it already makes.
+    pub auto_write_enabled: bool,
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -94,29 +118,60 @@ pub struct EmailWatchStore {
 }
 
 impl EmailWatchStore {
-    const MIGRATIONS: &'static [Migration] = &[Migration {
-        name: "create_email_watch",
-        up: |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS account (
-                    id            INTEGER PRIMARY KEY CHECK (id = 1),
-                    address       TEXT,
-                    host          TEXT,
-                    port          INTEGER,
-                    enabled       INTEGER NOT NULL DEFAULT 0,
-                    last_uid      INTEGER,
-                    uidvalidity   INTEGER,
-                    last_check_ms INTEGER
-                );
-                INSERT OR IGNORE INTO account (id, enabled) VALUES (1, 0);
-                CREATE TABLE IF NOT EXISTS seen (
-                    uid            TEXT PRIMARY KEY,
-                    matched_app_id TEXT,
-                    ts             INTEGER NOT NULL
-                );",
-            )
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_email_watch",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS account (
+                        id            INTEGER PRIMARY KEY CHECK (id = 1),
+                        address       TEXT,
+                        host          TEXT,
+                        port          INTEGER,
+                        enabled       INTEGER NOT NULL DEFAULT 0,
+                        last_uid      INTEGER,
+                        uidvalidity   INTEGER,
+                        last_check_ms INTEGER
+                    );
+                    INSERT OR IGNORE INTO account (id, enabled) VALUES (1, 0);
+                    CREATE TABLE IF NOT EXISTS seen (
+                        uid            TEXT PRIMARY KEY,
+                        matched_app_id TEXT,
+                        ts             INTEGER NOT NULL
+                    );",
+                )
+            },
         },
-    }];
+        Migration {
+            name: "add_auto_write_enabled",
+            up: |conn| {
+                // v2 slice 2 ORIGINALLY shipped this as `DEFAULT 1` (auto-write
+                // ON by default); a later fix-forward round found a residual
+                // the parser cannot close by content inspection alone (a
+                // GENUINE `Authentication-Results` stamp from a known-stamping
+                // host that simply carries no `dmarc=` clause for the attacker's
+                // chosen `From:` domain -- indistinguishable from real grammar,
+                // because it IS real grammar) and the owner decided auto-write
+                // ships OFF by default instead: adjudication (every write lands
+                // UNCONFIRMED, see `applications::StatusEvent::confirmed`)
+                // remains the backstop, but the gate stops being load-bearing
+                // for anyone who never explicitly opts in. `DEFAULT 0` is
+                // edited HERE, in place, rather than shipped as a second
+                // migration flipping the value with an `UPDATE` — this
+                // migration is new on this branch and has never shipped (not
+                // an ancestor of `origin/main`), so there is no released
+                // schema, and no deliberately-set dev-build value, to
+                // preserve; a second migration would be the wrong tool for a
+                // value nobody has ever depended on. `DEFAULT 0` alone is the
+                // whole migration — SQLite applies it retroactively to the row
+                // the FIRST migration already seeded, so no separate backfill
+                // UPDATE is needed either way.
+                conn.execute_batch(
+                    "ALTER TABLE account ADD COLUMN auto_write_enabled INTEGER NOT NULL DEFAULT 0;",
+                )
+            },
+        },
+    ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
@@ -141,12 +196,14 @@ impl EmailWatchStore {
         let conn = self.conn.lock();
         let account = Self::account_conn(&conn);
         let last_match_at = Self::last_match_at_conn(&conn);
+        let auto_write_enabled = Self::auto_write_enabled_conn(&conn);
         EmailWatchStatus {
             connected: account.address.is_some(),
             address: account.address,
             enabled: account.enabled,
             last_check_at: account.last_check_ms,
             last_match_at,
+            auto_write_enabled,
         }
     }
 
@@ -167,15 +224,32 @@ impl EmailWatchStore {
 
     /// Upsert the configured mailbox. Never touches `enabled`/`last_check_ms`
     /// — a reconnect (even to a different address/host) always preserves the
-    /// current opt-in; only [`Self::clear`] resets that.
+    /// poller opt-in; only [`Self::clear`] resets that.
     ///
-    /// The UID watermark (`last_uid`/`uidvalidity`) and the `seen` dedupe
-    /// table are preserved ONLY when `address` is unchanged from what's
-    /// already stored (a same-mailbox reconnect, e.g. re-entering a rotated
-    /// app password). Connecting to a genuinely DIFFERENT address clears both
-    /// — numeric IMAP UIDs are per-mailbox, so carrying a UID/seen row over
-    /// from a different account could collide with the new mailbox's own
-    /// numbering and silently suppress a real future match.
+    /// The UID watermark (`last_uid`/`uidvalidity`), the `seen` dedupe
+    /// table, AND `auto_write_enabled` are preserved ONLY when `address` is
+    /// unchanged from what's already stored (a same-mailbox reconnect, e.g.
+    /// re-entering a rotated app password). Connecting to a genuinely
+    /// DIFFERENT address clears all three:
+    /// - the watermark/`seen` reset is the pre-existing reason — numeric
+    ///   IMAP UIDs are per-mailbox, so carrying a UID/seen row over from a
+    ///   different account could collide with the new mailbox's own
+    ///   numbering and silently suppress a real future match;
+    /// - `auto_write_enabled` resetting on address change is what makes the
+    ///   opt-in a per-account consent rather than a per-store one: without
+    ///   it, `connect("b@example.com", …)` right after mailbox A opted in
+    ///   (with no intervening `clear()` — e.g. a future in-place "switch
+    ///   mailbox" affordance, not just today's disconnect-then-connect)
+    ///   would carry A's consent onto B, which never gave it. Currently
+    ///   unreachable through `EmailWatchSection` (it renders the connect
+    ///   form only when disconnected) — deliberately enforced HERE anyway,
+    ///   in the store's own state transition, rather than left to depend on
+    ///   which form a renderer happens to show; a UI conditional and a
+    ///   prose comment are not a consent invariant. Scoped to
+    ///   `auto_write_enabled` alone: `enabled` (the poller opt-in) keeps
+    ///   its existing preserve-always behavior — pinned by
+    ///   `connect_to_a_different_address_clears_uid_watermark_and_seen_but_not_enabled`
+    ///   — and `enabled` alone can never write anything to `applications`.
     pub fn connect(&self, address: &str, host: &str, port: u16) -> AppResult<()> {
         let mut conn = self.conn.lock();
         let previous_address: Option<String> =
@@ -199,7 +273,8 @@ impl EmailWatchStore {
         )?;
         if address_changed {
             tx.execute(
-                "UPDATE account SET last_uid = NULL, uidvalidity = NULL WHERE id = 1",
+                "UPDATE account SET last_uid = NULL, uidvalidity = NULL,
+                 auto_write_enabled = 0 WHERE id = 1",
                 [],
             )?;
             tx.execute("DELETE FROM seen", [])?;
@@ -224,6 +299,33 @@ impl EmailWatchStore {
         let conn = self.conn.lock();
         let affected = conn.execute(
             "UPDATE account SET enabled = ?1 WHERE id = 1 AND address IS NOT NULL",
+            params![i64::from(enabled)],
+        )?;
+        Ok(affected > 0)
+    }
+
+    /// The v2 auto-write opt-in — defaults OFF (same direction as
+    /// [`Self::set_enabled`]'s poller opt-in now, though for a different
+    /// reason: v2 originally shipped this ON, and it was flipped OFF once a
+    /// residual the parser cannot close by content inspection alone was
+    /// found — see the `add_auto_write_enabled` migration's own doc for the
+    /// full reasoning). [`crate::email_watch::auto_write::
+    /// apply_matched_intent`] checks this FIRST, before ever computing a
+    /// status transition.
+    pub fn auto_write_enabled(&self) -> bool {
+        let conn = self.conn.lock();
+        Self::auto_write_enabled_conn(&conn)
+    }
+
+    /// Set the auto-write opt-in. Same concurrent-clear guard as
+    /// [`Self::set_enabled`] — an in-flight auto-write racing a
+    /// `disconnect`/factory reset must not resurrect this on an
+    /// already-wiped account. Returns whether the row was actually updated
+    /// (`false` = lost the race to a clear — a no-op, not an error).
+    pub fn set_auto_write_enabled(&self, enabled: bool) -> AppResult<bool> {
+        let conn = self.conn.lock();
+        let affected = conn.execute(
+            "UPDATE account SET auto_write_enabled = ?1 WHERE id = 1 AND address IS NOT NULL",
             params![i64::from(enabled)],
         )?;
         Ok(affected > 0)
@@ -343,9 +445,34 @@ impl EmailWatchStore {
 
     /// Full wipe: the account row back to its just-migrated defaults, and
     /// every `seen` row gone. Used by BOTH `email_watch_disconnect` (the
-    /// keychain credential itself is removed separately by the command layer
-    /// via `CredentialStore`) and the factory reset (`Resettable::reset` in
-    /// `commands/privacy.rs`).
+    /// keychain credential itself is removed separately by the command
+    /// layer via `CredentialStore`) and the privacy factory reset
+    /// (`Resettable::reset` for [`EmailWatchStore`] in `commands/privacy.rs`)
+    /// — the SAME operation for both callers, deliberately, after this
+    /// store's own earlier mistake of splitting it in two.
+    ///
+    /// **`auto_write_enabled` IS reset here, unconditionally, to `0`** —
+    /// this was not always true. An earlier round of this file preserved it
+    /// through disconnect on the reasoning that a disconnect/reconnect is
+    /// "the user re-authenticating the SAME mailbox address they already
+    /// made this choice about," and split a separate `factory_reset` that
+    /// reset it only for the privacy-reset path. **That premise was
+    /// unverifiable by construction**: the SAME `UPDATE` that would
+    /// preserve the flag also sets `address = NULL` — nothing survives
+    /// this statement that records WHICH account made the choice, so a
+    /// later `connect()` (which writes only `address`/`host`/`port`, never
+    /// `auto_write_enabled`) cannot tell "the same mailbox came back" from
+    /// "a different mailbox connected for the first time." `EmailWatchSection`
+    /// only ever offers Disconnect, never an in-place re-auth, so every
+    /// reconnect — same address or not — is a fresh `connect()` after this
+    /// wipe. A preservation justified by an identity must not destroy that
+    /// identity in the same breath; splitting `clear`/`factory_reset` didn't
+    /// fix that, it just hid the unverifiable case behind whichever call
+    /// site happened to run. Reset unconditionally instead: a genuine
+    /// same-mailbox reconnect now costs one extra opt-in click, which is
+    /// the safe direction and makes the invariant checkable rather than
+    /// asserted. See `git blame` / this file's own history for the two
+    /// rounds that got this wrong before landing here.
     pub fn clear(&self) -> AppResult<()> {
         let mut conn = self.conn.lock();
         // Same atomicity requirement as `connect`'s address-changed branch —
@@ -355,7 +482,8 @@ impl EmailWatchStore {
         let tx = conn.transaction()?;
         tx.execute(
             "UPDATE account SET address = NULL, host = NULL, port = NULL, enabled = 0,
-             last_uid = NULL, uidvalidity = NULL, last_check_ms = NULL WHERE id = 1",
+             last_uid = NULL, uidvalidity = NULL, last_check_ms = NULL,
+             auto_write_enabled = 0 WHERE id = 1",
             [],
         )?;
         tx.execute("DELETE FROM seen", [])?;
@@ -400,6 +528,34 @@ impl EmailWatchStore {
         .ok()
         .flatten()
         .map(ts_from_db)
+    }
+
+    /// Connection-scoped read behind [`Self::auto_write_enabled`] and
+    /// [`Self::status`] (which already holds `self.conn.lock()` and would
+    /// deadlock calling the self-locking public method). A read failure
+    /// (should not happen — migration `add_auto_write_enabled` seeds every
+    /// row with this column) fails CLOSED (`false`), not toward whichever
+    /// default the migration happens to seed. This is the FIRST gate in
+    /// [`crate::email_watch::auto_write::apply_matched_intent`]; `true`
+    /// here on a read error would run auto-write for a user this store
+    /// cannot even confirm opted in — the exact outcome the opt-in exists
+    /// to prevent, and worse now than it would have been when this line
+    /// was `unwrap_or(true)`: that was written while the shipped default
+    /// was ON, so failing toward it matched "assume nothing changed
+    /// unexpectedly". The default flip (see the `add_auto_write_enabled`
+    /// migration's own doc) inverted which direction is safe on error, and
+    /// this fallback was not updated along with it — do not trust a
+    /// comment's claim about which way a fallback fails; re-derive it from
+    /// the CURRENT default and CURRENT gate order, the way the fix here
+    /// had to be re-derived.
+    fn auto_write_enabled_conn(conn: &Connection) -> bool {
+        conn.query_row(
+            "SELECT auto_write_enabled FROM account WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .unwrap_or(false)
     }
 }
 

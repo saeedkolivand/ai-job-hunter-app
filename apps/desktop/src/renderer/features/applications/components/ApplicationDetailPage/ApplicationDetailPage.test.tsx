@@ -31,6 +31,7 @@ import userEvent from '@testing-library/user-event';
 import type { Application, StatusEvent } from '@ajh/shared';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { TEST_IDS } from '@ajh/test-ids';
+import type * as AjhUi from '@ajh/ui';
 
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import type { TemplateId } from '@/lib/generate';
@@ -40,6 +41,22 @@ import type { TemplateId } from '@/lib/generate';
 vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+// ── @ajh/ui — keep everything real except useNotification (no provider in this
+//    tree; the timeline's accept/reject toasts need a controllable spy) ───────
+
+const mockNotify = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
+vi.mock('@ajh/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof AjhUi>();
+  return { ...actual, useNotification: () => mockNotify };
+});
 
 // ── Router — render standalone (no RouterProvider) ────────────────────────────
 
@@ -167,6 +184,29 @@ let mockImportJobUrlIsError = false;
 // JD-resolve (useResolveJobUrl) — controllable so BriefTab loading-state tests
 // can simulate the in-flight window before the auto-resolve settles.
 let mockResolveJobUrlIsFetching = false;
+/** `acceptStatusEvent.mutate`/`rejectStatusEvent.mutate` — resolve successfully
+ *  (an empty, error-free result) by default. `onSuccess` takes the real
+ *  `{ error? }` payload — the production handler branches on `data.error`,
+ *  so a no-arg call here would throw instead of testing anything.
+ *  `onSettled` is included because the production code uses it to clear its
+ *  OWN per-eventId in-flight tracking (component state, not the mutation
+ *  hook's `.isPending`/`.variables` — a single shared observer can't
+ *  represent two concurrently-pending rows; see the overlapping-mutation
+ *  test below). Only `mutate` is exposed on the mocked hook return value —
+ *  the component no longer reads `.isPending`/`.variables` at all. */
+type StatusEventMutateOptions = {
+  onSuccess?: (data: { error?: string }) => void;
+  onError?: () => void;
+  onSettled?: () => void;
+};
+const mockAcceptStatusEventMutate = vi.fn((_vars: unknown, options?: StatusEventMutateOptions) => {
+  options?.onSuccess?.({});
+  options?.onSettled?.();
+});
+const mockRejectStatusEventMutate = vi.fn((_vars: unknown, options?: StatusEventMutateOptions) => {
+  options?.onSuccess?.({});
+  options?.onSettled?.();
+});
 
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
@@ -185,6 +225,8 @@ vi.mock('@/services', () => ({
     mutateAsync: mockRemoveMutateAsync,
     isPending: false,
   }),
+  useAcceptStatusEvent: () => ({ mutate: mockAcceptStatusEventMutate }),
+  useRejectStatusEvent: () => ({ mutate: mockRejectStatusEventMutate }),
   useDocuments: () => ({ data: [], isLoading: false }),
   useDocumentText: () => ({ data: undefined, isLoading: false }),
   useImportJobUrl: () => ({
@@ -264,6 +306,24 @@ function makeGen(overrides: {
   };
 }
 
+/** Status-event fixture — defaults to an ordinary settled user transition.
+ *  `eventId` defaults to 1; tests exercising TWO provisional rows at once
+ *  (the class of bug that shipped) must override it per row so each fixture
+ *  has a distinct, assertable identity. */
+function makeEvent(overrides: Partial<StatusEvent> = {}): StatusEvent {
+  return {
+    eventId: 1,
+    applicationId: 'app-1',
+    fromStatus: 'applied',
+    toStatus: 'interviewing',
+    at: 1000,
+    note: '',
+    source: 'user',
+    confirmed: true,
+    ...overrides,
+  };
+}
+
 // ── Import component under test (after all mocks) ─────────────────────────────
 
 import { ApplicationDetailPage } from './index';
@@ -290,6 +350,22 @@ beforeEach(() => {
   mockImportJobUrlIsError = false;
   mockResolveJobUrlIsFetching = false;
   capturedOnJobDescChange = undefined;
+  mockAcceptStatusEventMutate.mockClear();
+  mockAcceptStatusEventMutate.mockImplementation(
+    (_vars: unknown, options?: StatusEventMutateOptions) => {
+      options?.onSuccess?.({});
+      options?.onSettled?.();
+    }
+  );
+  mockRejectStatusEventMutate.mockClear();
+  mockRejectStatusEventMutate.mockImplementation(
+    (_vars: unknown, options?: StatusEventMutateOptions) => {
+      options?.onSuccess?.({});
+      options?.onSettled?.();
+    }
+  );
+  mockNotify.success.mockClear();
+  mockNotify.error.mockClear();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1545,11 +1621,14 @@ describe('ApplicationDetailPage — timeline notes', () => {
   it('renders a same-status note event as ONE stage (never "X → X") with its note', () => {
     renderTimeline([
       {
+        eventId: 1,
         applicationId: 'app-1',
         fromStatus: 'interviewing',
         toStatus: 'interviewing',
         at: 1_700_000_000_000,
         note: 'Recruiter call booked',
+        source: 'user',
+        confirmed: true,
       },
     ]);
 
@@ -1563,11 +1642,14 @@ describe('ApplicationDetailPage — timeline notes', () => {
   it('still renders a real transition as from → to', () => {
     renderTimeline([
       {
+        eventId: 1,
         applicationId: 'app-1',
         fromStatus: 'applied',
         toStatus: 'interviewing',
         at: 1_700_000_000_000,
         note: '',
+        source: 'user',
+        confirmed: true,
       },
     ]);
 
@@ -1767,5 +1849,468 @@ describe('ApplicationDetailPage — contact write rejection', () => {
     fireEvent.blur(field);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationDetailPage — Timeline: email tracking v2 (provisional rows +
+// Accept/Reject + the correction row)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
+  const renderTimeline = (events: StatusEvent[], appOverrides: Partial<Application> = {}) => {
+    mockTab = 'timeline';
+    mockUseApplication.mockReturnValue({
+      data: { application: makeApp(appOverrides), events },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    return render(<ApplicationDetailPage />);
+  };
+
+  it('renders Accept/Reject on the unconfirmed email row but not on a confirmed or user-sourced row', () => {
+    renderTimeline([
+      makeEvent({ at: 1000, fromStatus: 'saved', toStatus: 'applied', source: 'user' }),
+      makeEvent({
+        at: 1500,
+        fromStatus: 'applied',
+        toStatus: 'screening',
+        source: 'email',
+        confirmed: true, // an already-accepted email write — settled, no actions
+      }),
+      makeEvent({
+        at: 2000,
+        fromStatus: 'screening',
+        toStatus: 'interviewing',
+        source: 'email',
+        confirmed: false, // the ONE provisional row
+      }),
+    ]);
+
+    // Exactly one row is provisional → exactly one Accept/Reject pair, not one
+    // per row (a bare "Accept"/"Reject" repeated down the list would be the
+    // accessibility failure this guards against).
+    expect(
+      screen.getAllByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    ).toHaveLength(1);
+    expect(screen.getByText('applications.detail.timeline.provisionalBadge')).toBeInTheDocument();
+  });
+
+  it('does not render Accept/Reject when there is no unconfirmed email row at all', () => {
+    renderTimeline([
+      makeEvent({ at: 1000, source: 'user' }),
+      makeEvent({ at: 2000, source: 'email', confirmed: true }),
+    ]);
+
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('applications.detail.timeline.provisionalBadge')
+    ).not.toBeInTheDocument();
+  });
+
+  it('clicking Accept calls acceptStatusEvent.mutate with the application id and the row eventId', async () => {
+    const user = userEvent.setup();
+    renderTimeline([makeEvent({ eventId: 42, source: 'email', confirmed: false })], {
+      id: 'app-accept-1',
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    );
+
+    expect(mockAcceptStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-accept-1', eventId: 42 },
+      expect.any(Object)
+    );
+    expect(mockNotify.success).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.acceptSuccess',
+    });
+  });
+
+  it('clicking Reject calls rejectStatusEvent.mutate with the application id and the row eventId', async () => {
+    const user = userEvent.setup();
+    renderTimeline([makeEvent({ eventId: 77, source: 'email', confirmed: false })], {
+      id: 'app-reject-1',
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    );
+
+    expect(mockRejectStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-reject-1', eventId: 77 },
+      expect.any(Object)
+    );
+  });
+
+  // ── Regression: two provisional rows can coexist on the ordinary happy path
+  // (a confirmation email, then a later rejection email, both still
+  // unreviewed) — the shipped bug resolved Accept/Reject to whichever row the
+  // BACKEND considered "most recent", regardless of which row's button was
+  // actually clicked, because every row shared ONE closure with no per-row
+  // identity. A single-row fixture can never catch this class — these two
+  // tests must stay permanently, with two DISTINCT eventIds asserted.
+  it('clicking Accept on the OLDER of two provisional rows targets that eventId, not the newer eventId', async () => {
+    const user = userEvent.setup();
+    const older = makeEvent({
+      eventId: 101,
+      at: 1000,
+      fromStatus: 'saved',
+      toStatus: 'applied',
+      source: 'email',
+      confirmed: false,
+    });
+    const newer = makeEvent({
+      eventId: 202,
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'rejected',
+      source: 'email',
+      confirmed: false,
+    });
+    // orderedEvents sorts newest-first, so the DOM order is [newer, older].
+    renderTimeline([older, newer], { id: 'app-two-provisional-accept' });
+
+    const acceptButtons = screen.getAllByRole('button', {
+      name: 'applications.detail.timeline.acceptAria',
+    });
+    expect(acceptButtons).toHaveLength(2);
+
+    // Click the OLDER row's button — the second one in DOM order.
+    const olderAcceptButton = acceptButtons[1];
+    if (!olderAcceptButton) throw new Error('expected two Accept buttons');
+    await user.click(olderAcceptButton);
+
+    expect(mockAcceptStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-two-provisional-accept', eventId: 101 },
+      expect.any(Object)
+    );
+    expect(mockAcceptStatusEventMutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: 202 }),
+      expect.any(Object)
+    );
+  });
+
+  it('clicking Reject on the NEWER of two provisional rows targets that eventId, not the older eventId', async () => {
+    const user = userEvent.setup();
+    const older = makeEvent({
+      eventId: 303,
+      at: 1000,
+      fromStatus: 'saved',
+      toStatus: 'applied',
+      source: 'email',
+      confirmed: false,
+    });
+    const newer = makeEvent({
+      eventId: 404,
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'rejected',
+      source: 'email',
+      confirmed: false,
+    });
+    // orderedEvents sorts newest-first, so the DOM order is [newer, older].
+    renderTimeline([older, newer], { id: 'app-two-provisional-reject' });
+
+    const rejectButtons = screen.getAllByRole('button', {
+      name: 'applications.detail.timeline.rejectAria',
+    });
+    expect(rejectButtons).toHaveLength(2);
+
+    // Click the NEWER row's button — the first one in DOM order.
+    const newerRejectButton = rejectButtons[0];
+    if (!newerRejectButton) throw new Error('expected two Reject buttons');
+    await user.click(newerRejectButton);
+
+    expect(mockRejectStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-two-provisional-reject', eventId: 404 },
+      expect.any(Object)
+    );
+    expect(mockRejectStatusEventMutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: 303 }),
+      expect.any(Object)
+    );
+  });
+
+  // The mutation result carries no `reverted` flag (`ApplicationMutationResult`
+  // is just `{ error?: string }`), so the UI cannot know from the response
+  // alone whether the compare-and-set actually reverted the status — only the
+  // refetched events can say that. This pins BOTH halves: the toast copy used
+  // is the honest one (never a "reverted" claim), and when the CAS lost (the
+  // user changed the status by hand meanwhile) nothing rendered claims a
+  // revert happened either.
+  it('reject when the CAS loses does not claim the status was reverted — asserts only what renders', async () => {
+    const user = userEvent.setup();
+    const provisional = makeEvent({
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'interviewing',
+      source: 'email',
+      confirmed: false,
+    });
+    const { rerender } = renderTimeline([provisional], { id: 'app-reject-cas-lost' });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    );
+
+    // The success copy never asserts a revert — it's deliberately neutral
+    // ("reviewed"), because the mutation response can't say what happened.
+    expect(mockNotify.success).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.rejectSuccess',
+    });
+    expect(mockNotify.success).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/revert/i) })
+    );
+
+    // Simulate the CAS-lost outcome: the backend marks the original row
+    // reviewed (`confirmed: true`) but appends NO reversal row — the status
+    // the user set by hand in the meantime is left untouched.
+    mockUseApplication.mockReturnValue({
+      data: {
+        application: makeApp({ id: 'app-reject-cas-lost' }),
+        events: [{ ...provisional, confirmed: true }],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ApplicationDetailPage />);
+
+    // The row is settled — no more provisional actions …
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    ).not.toBeInTheDocument();
+    // … and nothing on the page claims a revert happened.
+    expect(screen.queryByText(/revert/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('applications.detail.timeline.correctionBadge')
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders a reversal row (source: email_reject) as a correction, never the raw backend note', () => {
+    renderTimeline([
+      makeEvent({
+        at: 1000,
+        fromStatus: 'applied',
+        toStatus: 'interviewing',
+        source: 'email',
+        confirmed: true,
+      }),
+      makeEvent({
+        at: 2000,
+        fromStatus: 'interviewing',
+        toStatus: 'applied',
+        source: 'email_reject',
+        confirmed: true,
+        note: 'reverted: email-derived status change rejected by the user',
+      }),
+    ]);
+
+    expect(screen.getByText('applications.detail.timeline.correctionBadge')).toBeInTheDocument();
+    // The Rust reversal note is a fixed, non-localized English string — it
+    // must never leak into the UI verbatim.
+    expect(
+      screen.queryByText('reverted: email-derived status change rejected by the user')
+    ).not.toBeInTheDocument();
+  });
+
+  // `status_events.events()` orders by `at ASC, rowid ASC`; `eventId` IS the
+  // rowid. `Array#sort` is STABLE, so a bare `b.at - a.at` keeps ascending
+  // (input) order for any pair sharing one `at`, while every surrounding
+  // pair sorts descending — reachable here because a reject appends its
+  // reversal row immediately after its compare-and-set wins, so the
+  // correction and the provisional row it resolves can share a millisecond.
+  it('breaks a same-`at` tie using eventId, matching the backend’s at-ASC-rowid-ASC order', () => {
+    renderTimeline([
+      // Passed in backend order (oldest-inserted first), exactly like
+      // `data.events` arrives from `applications_get`.
+      makeEvent({
+        eventId: 10,
+        at: 1000,
+        fromStatus: 'saved',
+        toStatus: 'applied',
+        source: 'user',
+      }),
+      makeEvent({
+        eventId: 20,
+        at: 2000,
+        fromStatus: 'applied',
+        toStatus: 'screening',
+        source: 'email',
+        confirmed: true,
+      }),
+      // The reversal row — same `at` as the row above, but a HIGHER
+      // eventId/rowid, since it was inserted immediately after.
+      makeEvent({
+        eventId: 21,
+        at: 2000,
+        fromStatus: 'screening',
+        toStatus: 'applied',
+        source: 'email_reject',
+        confirmed: true,
+      }),
+    ]);
+
+    const list = screen.getByRole('list');
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+
+    // Newest-first display: the correction (eventId 21, the LATER of the two
+    // same-`at` rows per the backend order) must render FIRST — ahead of the
+    // row it resolves (eventId 20). A stable `b.at - a.at`-only sort keeps
+    // the tie in ascending (input) order instead, rendering the correction
+    // BELOW the very row it corrects.
+    expect(items[0]?.textContent).toContain('applications.detail.timeline.correctionBadge');
+    expect(items[1]?.textContent).not.toContain('applications.detail.timeline.correctionBadge');
+    expect(items[2]?.textContent).toContain('applications.status.saved');
+  });
+
+  it('renders a provisional row without leaking the raw backend note, showing the localized hint instead', () => {
+    renderTimeline([
+      makeEvent({
+        at: 1000,
+        fromStatus: 'applied',
+        toStatus: 'interviewing',
+        source: 'email',
+        confirmed: false,
+        // The Rust auto-write's fixed, non-localized English literal.
+        note: 'email-derived (unconfirmed)',
+      }),
+    ]);
+
+    expect(screen.getByText('applications.detail.timeline.provisionalBadge')).toBeInTheDocument();
+    expect(screen.getByText('applications.detail.timeline.provisionalHint')).toBeInTheDocument();
+    // Never the raw backend literal, verbatim.
+    expect(screen.queryByText('email-derived (unconfirmed)')).not.toBeInTheDocument();
+  });
+
+  // `acceptStatusEvent` is ONE `useMutation()` instance shared by every row,
+  // so `.variables`/`.isPending` reflect only the MOST RECENT `mutate()`
+  // call — no expression over them can represent two rows genuinely
+  // overlapping. This drives the actual overlap (start A, start B WHILE A is
+  // still open, neither auto-resolving) rather than presetting a static
+  // mock flag — a static fixture can't catch a timeline defect: the bug was
+  // that starting B silently un-pends A, which only shows up if A is
+  // demonstrably still in flight when B starts.
+  it('keeps row A pending while row B starts a separate accept mid-flight — a shared mutation observer cannot represent two concurrent rows', async () => {
+    const user = userEvent.setup();
+    const rowA = makeEvent({
+      eventId: 601,
+      at: 1000,
+      fromStatus: 'saved',
+      toStatus: 'applied',
+      source: 'email',
+      confirmed: false,
+    });
+    const rowB = makeEvent({
+      eventId: 602,
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'rejected',
+      source: 'email',
+      confirmed: false,
+    });
+
+    // Neither call resolves on its own — the test decides exactly when EACH
+    // one settles, independently, so the two mutations genuinely overlap
+    // instead of one finishing before the other starts.
+    const settleCallbacks: Array<() => void> = [];
+    mockAcceptStatusEventMutate.mockImplementation(
+      (_vars: unknown, options?: StatusEventMutateOptions) => {
+        settleCallbacks.push(() => options?.onSettled?.());
+      }
+    );
+
+    renderTimeline([rowA, rowB], { id: 'app-overlapping-accept' });
+
+    // orderedEvents sorts newest-first, so the DOM order is [rowB, rowA].
+    const acceptButtons = screen.getAllByRole('button', {
+      name: 'applications.detail.timeline.acceptAria',
+    });
+    expect(acceptButtons).toHaveLength(2);
+    const [bAccept, aAccept] = acceptButtons;
+    if (!aAccept || !bAccept) throw new Error('expected two Accept buttons');
+
+    // Start row A's accept — still in flight (the mock never auto-resolves).
+    await user.click(aAccept);
+    expect(aAccept).toBeDisabled();
+
+    // Start row B's accept WHILE row A is still open.
+    await user.click(bAccept);
+    expect(settleCallbacks).toHaveLength(2);
+
+    // Row A must STILL read pending — its own request hasn't settled, even
+    // though B is now the most recent call on the SAME shared
+    // `acceptStatusEvent` observer. Before the fix (gating on
+    // `.variables?.eventId`, the last `mutate()` payload), starting B here
+    // flips `.variables.eventId` to B's id and this assertion fails — A's
+    // spinner disappears and both its buttons re-enable mid-write.
+    expect(aAccept).toBeDisabled();
+    expect(bAccept).toBeDisabled();
+
+    // Settle ONLY row B's request.
+    act(() => settleCallbacks[1]?.());
+    expect(bAccept).not.toBeDisabled();
+    // Row A is untouched by B settling — still its own in-flight request.
+    expect(aAccept).toBeDisabled();
+
+    // Settle row A's request too.
+    act(() => settleCallbacks[0]?.());
+    expect(aAccept).not.toBeDisabled();
+  });
+
+  // `applications_accept_status_event`/`applications_reject_status_event`
+  // return `Value`, not `Result` — a backend failure resolves as `{ error }`
+  // and `invoke` FULFILS, so `onError` never fires for it. The handler must
+  // check `data.error` before showing the success toast, same as the
+  // contact-write handlers elsewhere in this component.
+  it('accept does NOT show the success toast when the backend resolves with an error', async () => {
+    const user = userEvent.setup();
+    mockAcceptStatusEventMutate.mockImplementationOnce((_vars: unknown, options) => {
+      options?.onSuccess?.({ error: 'db busy' });
+    });
+    renderTimeline([makeEvent({ source: 'email', confirmed: false })], {
+      id: 'app-accept-backend-error',
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.acceptAria' })
+    );
+
+    expect(mockNotify.success).not.toHaveBeenCalled();
+    expect(mockNotify.error).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.acceptError',
+    });
+  });
+
+  it('reject does NOT show the success toast when the backend resolves with an error', async () => {
+    const user = userEvent.setup();
+    mockRejectStatusEventMutate.mockImplementationOnce((_vars: unknown, options) => {
+      options?.onSuccess?.({ error: 'db busy' });
+    });
+    renderTimeline([makeEvent({ source: 'email', confirmed: false })], {
+      id: 'app-reject-backend-error',
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'applications.detail.timeline.rejectAria' })
+    );
+
+    expect(mockNotify.success).not.toHaveBeenCalled();
+    expect(mockNotify.error).toHaveBeenCalledWith({
+      message: 'applications.detail.timeline.rejectError',
+    });
   });
 });

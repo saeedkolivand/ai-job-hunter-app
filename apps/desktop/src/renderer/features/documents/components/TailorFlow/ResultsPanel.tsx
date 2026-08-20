@@ -55,6 +55,9 @@ interface Props {
   hasDesc: boolean;
   fetchingDesc: boolean;
   jobUrl?: string;
+  /** Saved résumé backing this generation — threaded to `GenerationOutput`'s
+   *  job-ad tab Score view. */
+  resumeId?: string;
   jobAdSummary: {
     summary: string;
     generating: boolean;
@@ -133,6 +136,7 @@ export function ResultsPanel({
   hasDesc,
   fetchingDesc,
   jobUrl,
+  resumeId,
   jobAdSummary,
   activeOut,
   setActiveOut,
@@ -309,6 +313,7 @@ export function ResultsPanel({
           hasDesc={hasDesc}
           fetchingDesc={fetchingDesc}
           jobUrl={jobUrl}
+          resumeId={resumeId}
           jobAdSummary={jobAdSummary}
         />
       </div>

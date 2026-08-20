@@ -263,6 +263,112 @@ pub async fn applications_set_status(
     }
 }
 
+/// An `id` from the renderer is untrusted IPC input — trim and reject empty
+/// before any store work, for BOTH accept/reject commands below. Neither
+/// store method can panic on a garbage id (a no-op `Ok(false)`, matched-zero
+/// rows), but a rejected-up-front empty id is a clearer signal than a silent
+/// "nothing happened" success.
+///
+/// **MINOR fix: returns the TRIMMED `&str`, not `()`.** This used to
+/// validate on `id.trim()` but then discard the trimmed value, so the
+/// caller forwarded the ORIGINAL, untrimmed `id` — `" app-1-abcd1234 "`
+/// passed this gate (non-empty after trimming) but then matched ZERO rows
+/// in both store methods (neither trims), returning `{ "success": true }`
+/// — the exact silent "nothing happened" this gate's own doc says it
+/// exists to prevent. Forcing the caller to use the RETURNED value (not
+/// the original `id` still in scope) makes that class of bug a borrow-
+/// checker-shaped mistake to reintroduce, not just a documented intent.
+fn require_non_empty_id(id: &str) -> AppResult<&str> {
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation(
+            "application id is required".to_string(),
+        ));
+    }
+    Ok(trimmed)
+}
+
+/// Pure core shared by both accept/reject commands below — testable without
+/// a live `AppHandle` (mirrors `extension_bridge::status_update::
+/// resolve_status_update`'s factoring). Validates `id`, then delegates to
+/// WHICHEVER store method the caller passes as `action` — so the id
+/// validation gate is written exactly once, and a test can assert the
+/// command-layer path (this fn) produces the SAME store state as calling
+/// `action` directly. `event_id` is threaded straight through, unvalidated
+/// here (a bogus/foreign id is already a safe no-op at the store layer — see
+/// [`crate::applications::ApplicationStore::accept_status_event`]'s doc).
+fn resolve_status_event_action(
+    store: &ApplicationStore,
+    id: &str,
+    event_id: i64,
+    action: impl FnOnce(&ApplicationStore, &str, i64) -> AppResult<bool>,
+) -> AppResult<bool> {
+    let id = require_non_empty_id(id)?;
+    action(store, id, event_id)
+}
+
+/// v2 slice 3 (HIGH-1 fix): accept the SPECIFIC email-derived, unconfirmed
+/// status-event row `event_id` names — sets its `confirmed` flag to `true` in
+/// place, never touching `applications.status` itself (the auto-write
+/// already applied it). `event_id` is the [`crate::applications::
+/// StatusEvent::event_id`] of the exact row the renderer's Accept button
+/// was clicked on — NOT "whichever unconfirmed row is newest": with two
+/// provisional rows on the same application (an ordinary sequence — a
+/// confirmation email followed by a later rejection email, both still
+/// unreviewed), resolving by recency let a click on the OLDER row silently
+/// confirm the NEWER, unrelated one instead. A no-op (`{ "success": true }`,
+/// nothing to accept — including `event_id` not matching a pending
+/// email-derived row for `id` at all) is NOT an error — mirrors
+/// [`crate::applications::ApplicationStore::accept_status_event`]'s own
+/// contract.
+#[tauri::command]
+pub async fn applications_accept_status_event(app: AppHandle, id: String, event_id: i64) -> Value {
+    let span = Span::begin("applications", format!("accept_status_event id={id}"));
+    match resolve_status_event_action(
+        &store(&app),
+        &id,
+        event_id,
+        ApplicationStore::accept_status_event,
+    ) {
+        Ok(_) => {
+            span.end(true);
+            json!({ "success": true })
+        }
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            json!({ "error": e })
+        }
+    }
+}
+
+/// v2 slice 3 (HIGH-1 fix): reject the SPECIFIC email-derived, unconfirmed
+/// status-event row `event_id` names — reverts the status BY
+/// COMPARE-AND-SET (a status the user changed by hand in the meantime is
+/// never clobbered; the provisional row is simply dismissed instead) and
+/// appends a reversal event. Append-only: the original transition row is
+/// never edited or deleted. Same `event_id`-targeting rationale as
+/// [`applications_accept_status_event`] above — see
+/// [`crate::applications::ApplicationStore::reject_status_event`].
+#[tauri::command]
+pub async fn applications_reject_status_event(app: AppHandle, id: String, event_id: i64) -> Value {
+    let span = Span::begin("applications", format!("reject_status_event id={id}"));
+    match resolve_status_event_action(
+        &store(&app),
+        &id,
+        event_id,
+        ApplicationStore::reject_status_event,
+    ) {
+        Ok(_) => {
+            span.end(true);
+            json!({ "success": true })
+        }
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            json!({ "error": e })
+        }
+    }
+}
+
 /// Patch the user-editable tracking fields of one Application.
 ///
 /// **Contact fields converge:** `contactName`/`contactEmail` are canonical and
@@ -841,5 +947,170 @@ mod tests {
         let err = validate_recipient_email(Some(long))
             .expect_err("over-254-byte address must be rejected");
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    // ── v2 slice 3: accept/reject over the command layer ────────────────────
+
+    fn meta_for_status_events() -> ApplicationMeta {
+        ApplicationMeta {
+            company: "Acme".into(),
+            title: "Engineer".into(),
+            candidate: "Jane".into(),
+            brief: String::new(),
+            job_description: String::new(),
+            answers: vec![],
+            job_summary: String::new(),
+            salary_min: None,
+            salary_max: None,
+            salary_currency: None,
+        }
+    }
+
+    /// A fresh store seeded with one `Interviewing` application carrying an
+    /// unconfirmed, email-derived `Rejected` write — the exact shape
+    /// accept/reject act on.
+    fn seeded_store() -> (tempfile::TempDir, ApplicationStore, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = ApplicationStore::open(dir.path()).unwrap();
+        let id = store
+            .track_manual("", "", &meta_for_status_events())
+            .unwrap();
+        store
+            .set_status(&id, ApplicationStatus::Interviewing, "")
+            .unwrap();
+        store
+            .transition_status_if_sourced(
+                &id,
+                ApplicationStatus::Interviewing,
+                ApplicationStatus::Rejected,
+                Some("email-derived (unconfirmed)"),
+                crate::applications::EVENT_SOURCE_EMAIL,
+                false,
+            )
+            .unwrap();
+        (dir, store, id)
+    }
+
+    #[test]
+    fn require_non_empty_id_rejects_empty_and_whitespace_only() {
+        assert!(require_non_empty_id("").is_err());
+        assert!(require_non_empty_id("   ").is_err());
+        assert!(require_non_empty_id("abc123").is_ok());
+    }
+
+    /// MINOR fix: the RETURNED value must be trimmed, not just checked for
+    /// emptiness after trimming — a caller using the original `id` instead
+    /// of this fn's return value would forward `" app-1-abcd1234 "`
+    /// untrimmed, matching zero rows in the store and silently reporting
+    /// success. Pins the exact reproduction from the fix-forward task.
+    #[test]
+    fn require_non_empty_id_returns_the_trimmed_value() {
+        assert_eq!(require_non_empty_id(" abc ").unwrap(), "abc");
+        assert_eq!(
+            require_non_empty_id(" app-1-abcd1234 ").unwrap(),
+            "app-1-abcd1234"
+        );
+    }
+
+    #[test]
+    fn accept_over_the_command_layer_matches_the_direct_store_call() {
+        // Two IDENTICALLY-seeded stores: one mutated through the command-layer
+        // pure core, the other through the store method directly. Both must
+        // end up in the SAME observable state.
+        let (_dir_a, store_a, id_a) = seeded_store();
+        let (_dir_b, store_b, id_b) = seeded_store();
+        let event_a = store_a.events(&id_a).into_iter().last().unwrap().event_id;
+        let event_b = store_b.events(&id_b).into_iter().last().unwrap().event_id;
+
+        let via_command = resolve_status_event_action(
+            &store_a,
+            &id_a,
+            event_a,
+            ApplicationStore::accept_status_event,
+        );
+        let via_direct = store_b.accept_status_event(&id_b, event_b);
+        assert!(via_command.unwrap(), "command-layer path must succeed");
+        assert!(via_direct.unwrap(), "direct store call must succeed");
+
+        assert_eq!(
+            store_a.get(&id_a).unwrap().status,
+            store_b.get(&id_b).unwrap().status
+        );
+        let last_a = store_a.events(&id_a).into_iter().last().unwrap();
+        let last_b = store_b.events(&id_b).into_iter().last().unwrap();
+        assert_eq!(last_a.source, last_b.source);
+        assert_eq!(last_a.confirmed, last_b.confirmed);
+        assert!(last_a.confirmed, "accept must set the confirmed flag");
+    }
+
+    #[test]
+    fn reject_over_the_command_layer_matches_the_direct_store_call() {
+        let (_dir_a, store_a, id_a) = seeded_store();
+        let (_dir_b, store_b, id_b) = seeded_store();
+        let event_a = store_a.events(&id_a).into_iter().last().unwrap().event_id;
+        let event_b = store_b.events(&id_b).into_iter().last().unwrap().event_id;
+
+        let via_command = resolve_status_event_action(
+            &store_a,
+            &id_a,
+            event_a,
+            ApplicationStore::reject_status_event,
+        );
+        let via_direct = store_b.reject_status_event(&id_b, event_b);
+        assert!(via_command.unwrap(), "command-layer path must succeed");
+        assert!(via_direct.unwrap(), "direct store call must succeed");
+
+        assert_eq!(
+            store_a.get(&id_a).unwrap().status,
+            store_b.get(&id_b).unwrap().status
+        );
+        assert_eq!(
+            store_a.get(&id_a).unwrap().status,
+            ApplicationStatus::Interviewing,
+            "reject must revert to the pre-email status"
+        );
+        assert_eq!(store_a.events(&id_a).len(), store_b.events(&id_b).len());
+    }
+
+    #[test]
+    fn accept_over_the_command_layer_rejects_an_empty_id_without_touching_the_store() {
+        let (_dir, store, id) = seeded_store();
+        let event_id = store.events(&id).into_iter().last().unwrap().event_id;
+        let result = resolve_status_event_action(
+            &store,
+            "",
+            event_id,
+            ApplicationStore::accept_status_event,
+        );
+        assert!(matches!(result, Err(AppError::Validation(_))));
+        // The real (non-empty) application's pending row must be untouched.
+        let last = store.events(&id).into_iter().last().unwrap();
+        assert!(!last.confirmed);
+    }
+
+    /// MINOR fix, end to end: a whitespace-padded id (renderer input with
+    /// stray leading/trailing whitespace) must still resolve — before the
+    /// fix, this cleared `require_non_empty_id`'s check (non-empty after
+    /// trimming) but then forwarded the UNTRIMMED id to the store, which
+    /// matches zero rows and silently returns `Ok(false)` — the exact
+    /// "nothing happened" success this test would NOT have caught if it
+    /// only checked `require_non_empty_id` in isolation.
+    #[test]
+    fn accept_over_the_command_layer_trims_a_whitespace_padded_id() {
+        let (_dir, store, id) = seeded_store();
+        let event_id = store.events(&id).into_iter().last().unwrap().event_id;
+        let padded = format!(" {id} ");
+        let result = resolve_status_event_action(
+            &store,
+            &padded,
+            event_id,
+            ApplicationStore::accept_status_event,
+        );
+        assert!(
+            result.unwrap(),
+            "a whitespace-padded id must still match the real row"
+        );
+        let last = store.events(&id).into_iter().last().unwrap();
+        assert!(last.confirmed, "the real row must have been accepted");
     }
 }

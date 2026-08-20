@@ -80,6 +80,8 @@ interface Props {
   hasDesc: boolean;
   fetchingDesc: boolean;
   jobUrl?: string;
+  /** Saved résumé backing this generation — threaded to the job-ad tab's Score view. */
+  resumeId?: string;
   jobAdSummary: {
     summary: string;
     generating: boolean;
@@ -121,6 +123,7 @@ export function GenerationOutput({
   hasDesc,
   fetchingDesc,
   jobUrl,
+  resumeId,
   jobAdSummary,
 }: Props) {
   const { t } = useTranslation();
@@ -449,6 +452,7 @@ export function GenerationOutput({
               hasDesc={hasDesc}
               fetchingDesc={fetchingDesc}
               jobUrl={jobUrl}
+              resumeId={resumeId}
             />
           ) : (
             <EditableOutput

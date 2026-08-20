@@ -211,6 +211,16 @@ export interface MatchScore {
    * reasoning.
    */
   constraints?: { checks: ConstraintCheck[] };
+  /** Which kernel actually produced `combined`: `'combined'` only when a real
+   *  embedding comparison ran (semantic scoring on AND an embedding pair was
+   *  available); `'keyword'` for every degrade case (scoring disabled, an
+   *  embed that failed, a provider offline, or the daily ceiling refusing the
+   *  round-trip) — `combined` then equals `ats`, and `semantic` is a `0.0`
+   *  placeholder, not a measurement. Purely additive on the wire (see
+   *  `match_resume.rs`'s `SCORE_SOURCE_COMBINED`/`SCORE_SOURCE_KEYWORD`), so
+   *  undefined on a result cached before this field existed — treat that the
+   *  same as `'keyword'`, never as `'combined'`. */
+  scoreSource?: 'keyword' | 'combined';
 }
 
 /** One résumé bullet, ranked by the job vocabulary it carries. */
@@ -578,14 +588,60 @@ export interface Application {
   salaryCurrency?: string;
 }
 
+/**
+ * Known {@link StatusEvent.source} values — a COMPARISON SET for consumers to
+ * check against, not a closed union (`source` stays a free-form `string` on
+ * purpose; see its doc). An unrecognised value must fall through to normal
+ * rendering, never crash or be mistaken for one of these.
+ *
+ * The Rust mirror is `EVENT_SOURCE_USER`/`EVENT_SOURCE_EMAIL`/
+ * `EVENT_SOURCE_EMAIL_REJECT` in
+ * `apps/desktop/src-tauri/src/applications/status_events.rs` — `pub(crate)`,
+ * so it has no shared export and duplicates these literals by hand. That Rust
+ * file pins its own constants against these same strings in a test, so a
+ * rename on either side fails loudly instead of silently disabling the
+ * auto-write adjudication step (an unconfirmed row is the whole safety model
+ * for a classifier with a recorded precision limit — losing the Accept/Reject
+ * affordance without a test failure would be the worst available outcome).
+ * `status-event.test.ts` pins the TS side the same way.
+ */
+export const EVENT_SOURCE_USER = 'user';
+export const EVENT_SOURCE_EMAIL = 'email';
+export const EVENT_SOURCE_EMAIL_REJECT = 'email_reject';
+
 /** One append-only status-history row. */
 export interface StatusEvent {
+  /** SQLite's implicit `rowid` for this row — the only stable per-row
+   *  identity `status_events` has (no declared primary key). Required by
+   *  {@link ApplicationsContract.acceptStatusEvent}/
+   *  {@link ApplicationsContract.rejectStatusEvent} to target the EXACT row
+   *  being actioned: two provisional rows can coexist on the ordinary happy
+   *  path (a confirmation email, then a later rejection email, both still
+   *  unreviewed), and resolving "the pending row" by recency alone let a
+   *  click on the OLDER row's Accept/Reject button silently act on the
+   *  NEWER, unrelated one instead. Always pass the `eventId` of the SPECIFIC
+   *  row the button was rendered on, never a cached/stale value from a
+   *  different row. */
+  eventId: number;
   applicationId: string;
   /** Empty for the seed event of a freshly-created Application. */
   fromStatus: string;
   toStatus: string;
   at: number;
   note: string;
+  /** Who/what asserted this transition: {@link EVENT_SOURCE_USER} (every
+   *  pre-v2 row, and every user-driven write today) or
+   *  {@link EVENT_SOURCE_EMAIL}/{@link EVENT_SOURCE_EMAIL_REJECT} (v2
+   *  auto-write and its reversal — see {@link StatusEvent.confirmed}). A
+   *  free-form string, not a closed union, so a future source needs no
+   *  client-side change — the exported constants above are a comparison set,
+   *  not an exhaustive type. */
+  source: string;
+  /** Whether a human has reviewed this transition. Every pre-v2 row (and every
+   *  `'user'`-sourced write) is `true`. An email-derived write ALWAYS lands
+   *  `false` — the timeline renders it as PROVISIONAL with Accept/Reject
+   *  affordances; nothing in this app ever auto-writes `true`. */
+  confirmed: boolean;
 }
 
 /**

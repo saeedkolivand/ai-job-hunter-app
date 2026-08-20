@@ -853,7 +853,11 @@
         "disconnectFailed": "Could not disconnect.",
         "watch": {
           "label": "Watch for confirmation emails",
-          "description": "Runs an automatic inbox check about every 15 minutes. A match creates a notification for you to confirm — nothing is ever marked applied on its own."
+          "description": "Runs an automatic inbox check about every 15 minutes. A match always creates a notification for you to confirm; it only updates the application's status directly if you've also turned on “Update status automatically” below."
+        },
+        "autoWrite": {
+          "label": "Update status automatically",
+          "description": "Off by default. Turn it on and a matched email updates this application's status right away, before you've reviewed it — every change lands in the Timeline as unconfirmed, so you can accept or reject it there. We check that the email really came from where it claims, but that check isn't perfect, so a convincing fake could move a status this way too."
         },
         "toggleFailed": "Could not update the email-tracking setting.",
         "lastCheck": "Last checked {{value}}",
@@ -862,7 +866,7 @@
         "checking": "Checking…",
         "checkNowFailed": "Could not reach the mailbox. Check your app password and try again.",
         "checkNowRateLimited": "Checked moments ago — try again in a minute.",
-        "disclosure": "An app password grants full access to your Gmail account — not just read-only — so it's stored only in your OS keychain, never in this app's database. Every check, automatic or via Check now, happens locally: it scans your inbox for likely application-confirmation emails, and the email content never leaves this device or reaches any AI provider. A match only ever creates a notification for you to confirm — nothing is ever marked applied automatically."
+        "disclosure": "An app password grants full access to your Gmail account — not just read-only — so it's stored only in your OS keychain, never in this app's database. Every check, automatic or via Check now, happens locally: it scans your inbox for likely application-confirmation emails, and the email content never leaves this device or reaches any AI provider. A match always creates a notification for you to confirm; whether it also updates the application's status depends on the “Update status automatically” setting above — off by default, and even when it's on, every change lands in the Timeline as unconfirmed until you accept or reject it."
       },
       "connectedViaBrowser": "{{board}} connected via browser extension",
       "boards": {
@@ -1942,7 +1946,18 @@
         "editHelper": "Edits here are used for generation — fix a bad scrape before tailoring.",
         "summaryLanguage": "Summary language",
         "pasteHint": "Paste the full job ad here…",
-        "truncatedHint": "This looks like a partial listing — paste the full ad for the best result."
+        "truncatedHint": "This looks like a partial listing — paste the full ad for the best result.",
+        "scoreTab": "Score",
+        "score": {
+          "noPosting": "Add the job ad text to score against.",
+          "noKeywords": "This posting has no extractable keywords — coverage isn't available.",
+          "semanticLabel": "Semantic similarity",
+          "loading": "Scoring against the posting…",
+          "resumeNote": "Scored against your saved résumé, not the tailored version shown here.",
+          "cliAgentEgress": "If this posting needs translation, its text is sent to {{provider}} — not processed locally.",
+          "errorTitle": "Couldn't score this posting",
+          "errorDescription": "Something went wrong scoring against your résumé. Try again."
+        }
       },
       "tryAgain": "Try again",
       "hintNoResume": "Add your resume to generate",
@@ -3062,6 +3077,21 @@
       "tabsLabel": "Application detail tabs",
       "timelineTitle": "Timeline",
       "timelineEmpty": "No status history yet.",
+      "timeline": {
+        "provisionalBadge": "Unconfirmed",
+        "provisionalHint": "We think this happened, based on an email — is that right?",
+        "accept": "Confirm",
+        "reject": "Reject",
+        "acceptAria": "Confirm the email-detected change: {{transition}}",
+        "rejectAria": "Reject the email-detected change: {{transition}}",
+        "transitionDesc": "{{from}} → {{to}}",
+        "acceptSuccess": "Confirmed — this status stays as recorded.",
+        "acceptError": "Couldn't confirm this update. Try again.",
+        "rejectSuccess": "Reviewed — check the timeline below for what changed.",
+        "rejectError": "Couldn't dismiss this update. Try again.",
+        "correctionBadge": "Correction",
+        "correctionHint": "An email-detected status change was reverted after review."
+      },
       "briefEmpty": "No brief or answers yet.",
       "created": "Created",
       "fieldsTitle": "Details",

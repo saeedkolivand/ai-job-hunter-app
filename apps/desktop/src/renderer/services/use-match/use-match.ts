@@ -5,7 +5,7 @@ import type { MatchResumeRequest, MatchScore, TrimSuggestions } from '@ajh/share
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useSemanticScoring } from '@/store/preferences-store';
 
-import { QUERY_TIMES } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 
 /**
  * Score a resume against a job posting on demand. The result is expensive to
@@ -37,6 +37,37 @@ export const useJobMatchScore = (resumeId: string | null, jobId: string, enabled
         semanticScoringEnabled: semanticScoring,
       }),
     enabled: enabled && !!resumeId && !!jobId,
+    staleTime: QUERY_TIMES.TEN_MIN,
+  });
+};
+
+/**
+ * Reactive score hook for arbitrary job-ad TEXT — for a caller with a
+ * `jobDesc: string` in hand but no `PostingsCache` id (the Score tab in
+ * `JobAdView`: `TailorFlow` receives an `Application`/`AutopilotFoundJob`,
+ * neither of which carries the id `useJobMatchScore` needs, and that cache is
+ * RAM-only and deliberately transient, so a saved application could never
+ * have had an entry anyway).
+ *
+ * Routes through the SAME shared kernel as the Jobs page (`match:text` →
+ * `score_one`, keyword-only — see the Rust command's doc for why semantic
+ * scoring is not caller-configurable here), never a second scorer. Content-
+ * addressed on the job text itself, so repeated opens of the same posting are
+ * free (10-minute staleTime, mirrors `useJobMatchScore`).
+ */
+export const useJobAdTextMatchScore = (
+  resumeId: string | null,
+  jobText: string,
+  enabled = true
+) => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.match.textScore(resumeId, jobText),
+    queryFn: (): Promise<MatchScore> => api.match.text({ resumeId: resumeId as string, jobText }),
+    // Truthy checks only — never call methods on an argument here (the
+    // `exerciseServiceHooks` smoke test renders every exported hook with a
+    // single junk argument).
+    enabled: enabled && !!resumeId && !!jobText,
     staleTime: QUERY_TIMES.TEN_MIN,
   });
 };

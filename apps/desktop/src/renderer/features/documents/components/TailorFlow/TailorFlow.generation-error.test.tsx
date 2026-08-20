@@ -69,6 +69,7 @@ vi.mock('motion/react', () => ({
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'test-model',
   useCanUseAI: () => ({ canUse: true, reason: undefined }),
+  useSelectedProvider: () => 'ollama',
 }));
 
 vi.mock('@/services', () => ({

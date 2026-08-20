@@ -50,6 +50,7 @@ vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => null,
   useCanUseAI: () => ({ canUse: true, reason: null }),
   useSelectedModel: () => 'llama3',
+  useSelectedProvider: () => 'ollama',
 }));
 
 // ── useReferralDraft — stub to control `draft` and `generate` deterministically

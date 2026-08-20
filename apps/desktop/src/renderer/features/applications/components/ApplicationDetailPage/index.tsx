@@ -2,16 +2,20 @@ import {
   ArrowLeft,
   Banknote,
   CalendarClock,
+  Check,
   ExternalLink,
   FileText,
   HelpCircle,
   type LucideIcon,
+  Mail,
   MessageSquarePlus,
   MessagesSquare,
   StickyNote,
   Trash2,
+  Undo2,
   UserPlus,
   UserRound,
+  X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
@@ -22,9 +26,11 @@ import {
   type Application,
   APPLICATION_STAGES,
   type AutopilotFoundJob,
+  EVENT_SOURCE_EMAIL,
+  EVENT_SOURCE_EMAIL_REJECT,
   type StatusEvent,
 } from '@ajh/shared';
-import { useTranslation } from '@ajh/translations';
+import { type TFunction, useTranslation } from '@ajh/translations';
 import {
   ActionMenu,
   Button,
@@ -43,6 +49,7 @@ import {
   TextArea,
   Timeline,
   transition,
+  useNotification,
 } from '@ajh/ui';
 
 import { StatusNoteModal } from '@/features/applications/components/StatusNoteModal';
@@ -57,11 +64,13 @@ import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { DETAIL_TABS, type DetailTab, Route } from '@/routes/applications.$id';
 import {
+  useAcceptStatusEvent,
   useApplication,
   useDocuments,
   useDocumentText,
   useImportJobUrl,
   useOpenExternal,
+  useRejectStatusEvent,
   useRemoveApplication,
   useResolveJobUrl,
   useSetApplicationStatus,
@@ -112,6 +121,26 @@ function statusColor(status: string): 'red' | 'green' | 'blue' | 'brand' {
   if (/offer|accept|hire/.test(s)) return 'green';
   if (/interview|screen/.test(s)) return 'blue';
   return 'brand';
+}
+
+/** An unconfirmed email-derived write — the only kind the timeline renders as
+ *  provisional (Accept/Reject affordances, never presented as settled history). */
+function isProvisionalEvent(e: StatusEvent): boolean {
+  return e.source === EVENT_SOURCE_EMAIL && !e.confirmed;
+}
+
+/** The reversal row `rejectStatusEvent` appends when its compare-and-set wins —
+ *  a correction in the trail, distinct from both a normal user transition and
+ *  the provisional row it resolves. */
+function isCorrectionEvent(e: StatusEvent): boolean {
+  return e.source === EVENT_SOURCE_EMAIL_REJECT;
+}
+
+/** Provisional/correction rows read as unsettled — same muted grey as the
+ *  Timeline's own pending-ghost node — rather than claiming a status colour. */
+function timelineEventColor(e: StatusEvent): 'red' | 'green' | 'blue' | 'brand' | 'gray' {
+  if (isProvisionalEvent(e) || isCorrectionEvent(e)) return 'gray';
+  return statusColor(e.toStatus);
 }
 
 const BACK_TO = { jobs: '/jobs', autopilot: '/autopilot', applications: '/applications' } as const;
@@ -311,7 +340,6 @@ function ApplicationDetailLoaded({
 }: LoadedProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
   const applicationApply = useSessionStore((s) => s.applicationApply);
   const setApplicationApply = useSessionStore((s) => s.setApplicationApply);
 
@@ -417,11 +445,6 @@ function ApplicationDetailLoaded({
   const matchingGenerations = (aiGenerations.data ?? []).filter(
     (g) => g.applicationId === application.id
   );
-
-  const orderedEvents = [...events].sort((a, b) => b.at - a.at);
-
-  const statusLabel = (status: string) =>
-    status ? t(`applications.status.${status}` as const) : t('applications.detail.created');
 
   return (
     <div className="flex h-full flex-col">
@@ -728,63 +751,11 @@ function ApplicationDetailLoaded({
                 )}
 
                 {tab === 'timeline' && (
-                  <TabScroll>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-                        {t('applications.detail.timelineTitle')}
-                      </span>
-                      <Button
-                        variant="glass"
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => onNotePrompt(application.status, false)}
-                      >
-                        <MessageSquarePlus size={12} />
-                        {t('applications.note.add')}
-                      </Button>
-                    </div>
-                    {orderedEvents.length === 0 ? (
-                      <p className="text-xs text-foreground/45">
-                        {t('applications.detail.timelineEmpty')}
-                      </p>
-                    ) : (
-                      <Timeline
-                        items={orderedEvents.map((e) => ({
-                          color: statusColor(e.toStatus),
-                          label: <span title={formatRelative(e.at)}>{formatEventDate(e.at)}</span>,
-                          children: (
-                            <>
-                              <span className="flex items-center gap-1.5">
-                                {/* `from === to` is a NOTE event (an "Add note" /
-                                    post-change note writes a same-status event) —
-                                    render it as one stage, never "X → X". */}
-                                {e.fromStatus && e.fromStatus !== e.toStatus ? (
-                                  <>
-                                    <span className="text-foreground/55">
-                                      {statusLabel(e.fromStatus)}
-                                    </span>
-                                    <span className="text-foreground/30">→</span>
-                                    <span className="font-medium text-foreground/85">
-                                      {statusLabel(e.toStatus)}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <span className="font-medium text-foreground/85">
-                                    {statusLabel(e.toStatus)}
-                                  </span>
-                                )}
-                              </span>
-                              {e.note && (
-                                <span className="mt-0.5 block text-[11px] text-foreground/55">
-                                  {e.note}
-                                </span>
-                              )}
-                            </>
-                          ),
-                        }))}
-                      />
-                    )}
-                  </TabScroll>
+                  <TimelineTab
+                    application={application}
+                    events={events}
+                    onNotePrompt={onNotePrompt}
+                  />
                 )}
 
                 {tab === 'brief' && <BriefTab application={application} />}
@@ -834,6 +805,291 @@ function ApplicationDetailLoaded({
 /** Scroll + padding wrapper for the prose tabs (Timeline / Brief). */
 function TabScroll({ children }: { children: React.ReactNode }) {
   return <div className="h-full space-y-4 overflow-y-auto px-6 py-5">{children}</div>;
+}
+
+interface TimelineEventBodyProps {
+  event: StatusEvent;
+  t: TFunction;
+  statusLabel: (status: string) => string;
+  onAccept: () => void;
+  onReject: () => void;
+  acceptPending: boolean;
+  rejectPending: boolean;
+}
+
+/**
+ * One Timeline row's content. Three renderings, driven entirely by
+ * `event.source`/`event.confirmed` (never a fabricated confidence number —
+ * nothing in the payload carries one):
+ *  - provisional (unconfirmed email write): reads as a guess awaiting review
+ *    ("we think this happened — is that right?"), with Accept/Reject.
+ *  - correction (`email_reject`'s reversal row): reads as a correction in the
+ *    trail, not a normal user transition.
+ *  - everything else (user-sourced, or an accepted email write): today's
+ *    plain transition row.
+ */
+function TimelineEventBody({
+  event,
+  t,
+  statusLabel,
+  onAccept,
+  onReject,
+  acceptPending,
+  rejectPending,
+}: TimelineEventBodyProps) {
+  const provisional = isProvisionalEvent(event);
+  const correction = isCorrectionEvent(event);
+
+  const transitionText =
+    event.fromStatus && event.fromStatus !== event.toStatus ? (
+      <>
+        <span className="text-foreground/55">{statusLabel(event.fromStatus)}</span>
+        <span className="text-foreground/30">→</span>
+        <span className="font-medium text-foreground/85">{statusLabel(event.toStatus)}</span>
+      </>
+    ) : (
+      <span className="font-medium text-foreground/85">{statusLabel(event.toStatus)}</span>
+    );
+
+  // Descriptive, not a bare "Accept"/"Reject" repeated down the list — names
+  // WHICH transition the action resolves, for the accessible name below.
+  const transitionDesc =
+    event.fromStatus && event.fromStatus !== event.toStatus
+      ? t('applications.detail.timeline.transitionDesc', {
+          from: statusLabel(event.fromStatus),
+          to: statusLabel(event.toStatus),
+        })
+      : statusLabel(event.toStatus);
+
+  return (
+    <>
+      {provisional && (
+        <Tag color="warning" icon={<Mail size={9} />} className="mb-1 text-[9px]">
+          {t('applications.detail.timeline.provisionalBadge')}
+        </Tag>
+      )}
+      {correction && (
+        <Tag color="default" icon={<Undo2 size={9} />} className="mb-1 text-[9px]">
+          {t('applications.detail.timeline.correctionBadge')}
+        </Tag>
+      )}
+      <span className="flex items-center gap-1.5">{transitionText}</span>
+      {/* The backend writes a fixed, non-localized English literal into
+          `note` for BOTH the auto-write itself ("email-derived
+          (unconfirmed)") and its reversal ("reverted: email-derived status
+          change rejected by the user") — never render either verbatim; the
+          badge + localized hint below say the same thing translated. */}
+      {event.note && !provisional && !correction && (
+        <span className="mt-0.5 block text-[11px] text-foreground/55">{event.note}</span>
+      )}
+      {provisional && (
+        <p className="mt-0.5 text-[11px] text-foreground/50">
+          {t('applications.detail.timeline.provisionalHint')}
+        </p>
+      )}
+      {correction && (
+        <p className="mt-0.5 text-[11px] text-foreground/50">
+          {t('applications.detail.timeline.correctionHint')}
+        </p>
+      )}
+      {provisional && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <Button
+            variant="success"
+            size="sm"
+            loading={acceptPending}
+            disabled={acceptPending || rejectPending}
+            onClick={onAccept}
+            aria-label={t('applications.detail.timeline.acceptAria', {
+              transition: transitionDesc,
+            })}
+          >
+            <Check size={11} />
+            {t('applications.detail.timeline.accept')}
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            loading={rejectPending}
+            disabled={acceptPending || rejectPending}
+            onClick={onReject}
+            aria-label={t('applications.detail.timeline.rejectAria', {
+              transition: transitionDesc,
+            })}
+          >
+            <X size={11} />
+            {t('applications.detail.timeline.reject')}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+interface TimelineTabProps {
+  application: Application;
+  events: StatusEvent[];
+  /** Ask the page (which outlives a refetch) to open the optional-note prompt. */
+  onNotePrompt: (status: string, changed: boolean) => void;
+}
+
+/**
+ * Timeline tab — its own component (like {@link BriefTab}/{@link DocumentsTab},
+ * not inlined in `ApplicationDetailLoaded`) so `useNotification()` and the
+ * accept/reject mutations are only reached once this tab actually mounts.
+ * Every other tab — and every test that never visits Timeline — stays clear
+ * of the "must be used within NotificationProvider" requirement those calls
+ * carry.
+ */
+function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
+  const { t } = useTranslation();
+  const notify = useNotification();
+  const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
+  const acceptStatusEvent = useAcceptStatusEvent();
+  const rejectStatusEvent = useRejectStatusEvent();
+
+  // A provisional row's Accept/Reject buttons vanish once the mutation
+  // resolves (the row re-renders as settled). Move focus to the stable
+  // Timeline heading beforehand so it never falls back to `document.body`.
+  const timelineHeadingRef = useRef<HTMLSpanElement>(null);
+
+  // `acceptStatusEvent`/`rejectStatusEvent` are each ONE `useMutation()`
+  // instance shared by every row, so `.variables`/`.isPending` reflect only
+  // the MOST RECENT `mutate()` call — they cannot represent two concurrent
+  // in-flight rows. Track in-flight eventIds ourselves instead: added here
+  // (before the mutate call, so the pending row never has a gap), cleared in
+  // `onSettled` (fires on success OR error, unlike `onSuccess`/`onError`
+  // alone). Accept/reject get separate sets so the correct button shows its
+  // own spinner even if a row somehow has both in flight.
+  const [acceptingEventIds, setAcceptingEventIds] = useState<Set<number>>(() => new Set());
+  const [rejectingEventIds, setRejectingEventIds] = useState<Set<number>>(() => new Set());
+
+  // Both take the SPECIFIC row's `eventId` as a param — never a shared,
+  // zero-arg closure. Two provisional rows can coexist (a confirmation email,
+  // then a later rejection email, both still unreviewed); resolving "the
+  // pending row" any other way let a click on one row's button act on a
+  // DIFFERENT row entirely. See `StatusEvent.eventId`'s doc.
+  const handleAcceptEvent = (eventId: number) => {
+    setAcceptingEventIds((prev) => new Set(prev).add(eventId));
+    acceptStatusEvent.mutate(
+      { id: application.id, eventId },
+      {
+        // `applications_accept_status_event` returns `Value`, not `Result` —
+        // a backend failure resolves as `{ error }` and `invoke` FULFILS, so
+        // `onError` never fires for it. Check `data.error` here, same as the
+        // contact-write handlers above, or a transient DB failure would
+        // still show the success toast while the row stays provisional.
+        onSuccess: (data) => {
+          if (data.error) {
+            notify.error({ message: t('applications.detail.timeline.acceptError') });
+            return;
+          }
+          timelineHeadingRef.current?.focus();
+          notify.success({ message: t('applications.detail.timeline.acceptSuccess') });
+        },
+        onError: () => notify.error({ message: t('applications.detail.timeline.acceptError') }),
+        onSettled: () => {
+          setAcceptingEventIds((prev) => {
+            const next = new Set(prev);
+            next.delete(eventId);
+            return next;
+          });
+        },
+      }
+    );
+  };
+  const handleRejectEvent = (eventId: number) => {
+    setRejectingEventIds((prev) => new Set(prev).add(eventId));
+    rejectStatusEvent.mutate(
+      { id: application.id, eventId },
+      {
+        // Same `{ error }`-on-resolve shape as accept above — check it before
+        // ever showing the success toast.
+        onSuccess: (data) => {
+          if (data.error) {
+            notify.error({ message: t('applications.detail.timeline.rejectError') });
+            return;
+          }
+          timelineHeadingRef.current?.focus();
+          // Deliberately NOT "reverted" — the compare-and-set may have lost
+          // (the user changed the status by hand meanwhile), in which case
+          // this only dismissed the provisional row. The rendered timeline
+          // (a correction row iff the CAS won) is the source of truth.
+          notify.success({ message: t('applications.detail.timeline.rejectSuccess') });
+        },
+        onError: () => notify.error({ message: t('applications.detail.timeline.rejectError') }),
+        onSettled: () => {
+          setRejectingEventIds((prev) => {
+            const next = new Set(prev);
+            next.delete(eventId);
+            return next;
+          });
+        },
+      }
+    );
+  };
+
+  // `events()` orders by `at ASC, rowid ASC`; `Array#sort` is stable, so a
+  // bare `b.at - a.at` keeps ASCENDING insertion order for any pair sharing
+  // one `at` while every surrounding pair is descending. That's reachable
+  // here: a reject appends its reversal row immediately after its
+  // compare-and-set wins, so a correction and the provisional row it
+  // resolves can share a millisecond. `eventId` IS the rowid — the same
+  // descending direction as `at` keeps the backend's tie order intact.
+  const orderedEvents = [...events].sort((a, b) => b.at - a.at || b.eventId - a.eventId);
+  const statusLabel = (status: string) =>
+    status ? t(`applications.status.${status}` as const) : t('applications.detail.created');
+
+  return (
+    <TabScroll>
+      <div className="flex items-center justify-between gap-2">
+        <span
+          ref={timelineHeadingRef}
+          tabIndex={-1}
+          className="block rounded text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45 focus-visible:ring-2 focus-visible:ring-brand/50"
+        >
+          {t('applications.detail.timelineTitle')}
+        </span>
+        <Button
+          variant="glass"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => onNotePrompt(application.status, false)}
+        >
+          <MessageSquarePlus size={12} />
+          {t('applications.note.add')}
+        </Button>
+      </div>
+      {orderedEvents.length === 0 ? (
+        <p className="text-xs text-foreground/45">{t('applications.detail.timelineEmpty')}</p>
+      ) : (
+        <Timeline
+          items={orderedEvents.map((e) => ({
+            color: timelineEventColor(e),
+            label: <span title={formatRelative(e.at)}>{formatEventDate(e.at)}</span>,
+            children: (
+              <TimelineEventBody
+                event={e}
+                t={t}
+                statusLabel={statusLabel}
+                // Per-row closures — each captures THIS row's `eventId`,
+                // never a shared handler. See the comment on
+                // `handleAcceptEvent`/`handleRejectEvent` above.
+                onAccept={() => handleAcceptEvent(e.eventId)}
+                onReject={() => handleRejectEvent(e.eventId)}
+                // Own in-flight tracking, not `.isPending`/`.variables` on
+                // the shared mutation hook — see the comment above
+                // `acceptingEventIds`/`rejectingEventIds` for why a shared
+                // observer can't represent two concurrent rows.
+                acceptPending={acceptingEventIds.has(e.eventId)}
+                rejectPending={rejectingEventIds.has(e.eventId)}
+              />
+            ),
+          }))}
+        />
+      )}
+    </TabScroll>
+  );
 }
 
 /**

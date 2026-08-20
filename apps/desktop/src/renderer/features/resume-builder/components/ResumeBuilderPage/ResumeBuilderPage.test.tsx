@@ -14,6 +14,7 @@ vi.mock('@ajh/translations', () => ({
 
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector-stub" />,
+  useSelectedProvider: () => 'ollama',
 }));
 
 vi.mock('@/components/ui/AiSetupHint', () => ({

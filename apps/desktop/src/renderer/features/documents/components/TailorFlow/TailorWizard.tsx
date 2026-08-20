@@ -30,6 +30,8 @@ interface Props {
   hasDesc: boolean;
   fetchingDesc: boolean;
   jobUrl: string;
+  /** Saved résumé backing this generation — threaded to `StepJobAd`'s Score tab. */
+  resumeId?: string;
   jobAdSummary: {
     summary: string;
     generating: boolean;
@@ -61,6 +63,7 @@ export function TailorWizard({
   hasDesc,
   fetchingDesc,
   jobUrl,
+  resumeId,
   jobAdSummary,
   canUse,
   reason,
@@ -135,6 +138,7 @@ export function TailorWizard({
                   hasDesc={hasDesc}
                   fetchingDesc={fetchingDesc}
                   jobUrl={jobUrl}
+                  resumeId={resumeId}
                   jobAdSummary={jobAdSummary}
                 />
               )}

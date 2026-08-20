@@ -51,6 +51,7 @@ vi.mock('@/services/use-contact-profile', () => ({
 // query (task #16) which reaches for AppClientProvider — stub it to a plain model.
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'llama3',
+  useSelectedProvider: () => 'ollama',
 }));
 
 // Stub useDebouncedCommit so tests don't depend on fake timers.

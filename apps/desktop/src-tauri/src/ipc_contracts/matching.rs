@@ -16,6 +16,14 @@ pub struct MatchResumeRequest {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
+pub struct MatchTextRequest {
+    pub resume_id: String,
+    pub job_text: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ResumeTrimSuggestionsRequest {
     pub resume_text: String,
     pub job_text: String,

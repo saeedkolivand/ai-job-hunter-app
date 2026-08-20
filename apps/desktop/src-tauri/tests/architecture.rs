@@ -410,6 +410,14 @@ const R3_ALLOW: &[&str] = &[
     // domain store's persistence, just spanning the two connections that
     // store's own job requires.
     "applications/migrations.rs",
+    // Same store, split only to stay under R8's LOC cap (v2 slice 2 pushed
+    // `applications/mod.rs` over the hard cap): the `status_events`
+    // read/write slice (`events`, `transition_status_if[_sourced]`,
+    // `accept_status_event`, `reject_status_event`,
+    // `append_event_conn`). Persistence still lives entirely inside the
+    // `applications` domain store, on the SAME connection — see
+    // applications::status_events.
+    "applications/status_events.rs",
     "documents/mod.rs",
     // Same store, split only to stay under R8's LOC cap: the
     // `repair_pre_pdf_text_string_mojibake` migration body. Persistence
@@ -593,6 +601,12 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // payload types `push_and_notify` takes — both live in the L3
     // `notifications` module (the persisted Notification Center store).
     ("email_watch_scheduler", "notifications"),
+    // A successful (Ok(true)) `apply_matched_intent` write emits
+    // `APPLICATIONS_CHANGED` via the L3 `events` helper — same shell-reach
+    // as `autopilot_helpers -> events` above, so an already-open
+    // `/applications/$id` page refreshes instead of showing a stale
+    // pre-write status until the user navigates away and back.
+    ("email_watch_scheduler", "events"),
     // Follow-up reminder sweep (L2): identical shell-reach to the email-watch
     // scheduler above — `commands::notifications::push_and_notify` plus the
     // `NewNotification`/`NotificationRoute` payload types — deliberately kept

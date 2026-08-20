@@ -77,6 +77,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 // Stub the model selector — the component calls this on every render.
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'test-model',
+  useSelectedProvider: () => 'ollama',
 }));
 
 vi.mock('@ajh/translations', () => ({

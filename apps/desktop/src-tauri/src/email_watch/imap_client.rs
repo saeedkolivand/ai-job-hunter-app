@@ -145,8 +145,13 @@ pub fn validate_connection(
 #[derive(Debug)]
 pub struct HeaderCandidate {
     pub uid: u32,
-    /// Raw `HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)` bytes for this
-    /// message (still RFC2047-encoded where applicable).
+    /// Raw `HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID
+    /// AUTHENTICATION-RESULTS)` bytes for this message (still RFC2047-encoded
+    /// where applicable). `Authentication-Results` is what
+    /// [`crate::email_watch::parser::parse_header`] reads to require a DMARC
+    /// `pass` (with From-domain alignment) before the auto-write path may
+    /// EVER write — see that fn's doc; the fingerprint/matcher stay
+    /// unaffected by its presence or absence.
     pub raw_header: Vec<u8>,
 }
 
@@ -195,11 +200,12 @@ fn build_search_query(
 
 /// `UID SEARCH` (watermark-bounded when trustworthy — see
 /// [`build_search_query`]) on `INBOX`, then `UID FETCH` ONLY the header
-/// fields the parser/matcher need (From/Subject/Date/Message-ID) — never the
-/// body (see [`fetch_bodies`], called only for fingerprint-matched
-/// candidates). Every fetch uses `BODY.PEEK[...]`, which never sets `\Seen`
-/// (ADR-0013's read-only guarantee — no `APPEND`/`COPY`/`STORE` anywhere in
-/// this module).
+/// fields the parser/matcher/auto-write-gate need (From/Subject/Date/
+/// Message-ID/Authentication-Results) — never the body (see
+/// [`fetch_bodies`], called only for fingerprint-matched candidates). Every
+/// fetch uses `BODY.PEEK[...]`, which never sets `\Seen` (ADR-0013's
+/// read-only guarantee — no `APPEND`/`COPY`/`STORE` anywhere in this
+/// module).
 ///
 /// `stored_uidvalidity`/`stored_last_uid` are the caller's persisted values —
 /// passed through so the bound can be built from a comparison against THIS
@@ -268,7 +274,7 @@ fn fetch_headers_inner(
     let fetches = session
         .uid_fetch(
             &seq,
-            "(UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
+            "(UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID AUTHENTICATION-RESULTS)])",
         )
         .map_err(|e| {
             log::warn!(

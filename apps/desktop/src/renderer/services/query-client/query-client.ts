@@ -101,6 +101,12 @@ export const keys = {
   },
   match: {
     score: (resumeId: string | null, jobId: string) => ['match', resumeId, jobId] as const,
+    /** Content-addressed on the job-ad TEXT itself (not an id) — the Score
+     *  tab's ad-hoc `match:text` path, for a caller with no `PostingsCache`
+     *  id. Repeated opens of the SAME posting text share this key, mirroring
+     *  `score`'s per-job reuse. */
+    textScore: (resumeId: string | null, jobText: string) =>
+      ['match', 'text', resumeId, jobText] as const,
   },
   updater: { changelog: ['updater', 'changelog'] as const },
   applications: {

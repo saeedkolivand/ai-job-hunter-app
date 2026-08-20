@@ -29,6 +29,7 @@ let mockSelectedModel = '';
 vi.mock('@/components/ui/ModelSelector', () => ({
   useCanUseAI: () => mockCanUseAI,
   useSelectedModel: () => mockSelectedModel,
+  useSelectedProvider: () => 'ollama',
 }));
 
 // Deliberately always "Ollama unreachable" — the local-only probe this row

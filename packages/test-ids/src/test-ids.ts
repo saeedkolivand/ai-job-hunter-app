@@ -137,6 +137,11 @@ export const TEST_IDS = {
     jobAdViewTextarea: 'job-ad-view-textarea',
     /** GenerationOutput's scrolling document region — carries the min-height floor. */
     documentRegion: 'document-region',
+    /** JobAdView's Score tab — root panel + each metric's value cell. */
+    jobAdViewScorePanel: 'job-ad-view-score-panel',
+    jobAdViewScoreMatch: 'job-ad-view-score-match',
+    jobAdViewScoreCoverage: 'job-ad-view-score-coverage',
+    jobAdViewScoreSemantic: 'job-ad-view-score-semantic',
   },
 
   /** Resume shared components (ResumeInputCard) */
