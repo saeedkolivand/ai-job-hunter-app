@@ -18,7 +18,9 @@
 //! **v2 slice 2** adds [`auto_write`]: the actual `ApplicationStore` write —
 //! [`auto_write::apply_matched_intent`] turns one classified `EmailIntent`
 //! into a real, but always UNCONFIRMED, status transition (gated first by
-//! [`Self::auto_write_enabled`], default ON). Still not wired into
+//! [`Self::auto_write_enabled`] — originally default ON, flipped to
+//! default OFF once a residual the parser cannot close by content
+//! inspection alone was found; see that fn's own doc). Still not wired into
 //! [`poller`]'s tick itself — `run_tick` stays pure matching, and the
 //! scheduler (L2, the one place in this module family with `AppHandle`
 //! reach) is the natural future caller; no IPC in this slice either.
@@ -39,7 +41,7 @@
 //!   default to Gmail's IMAP endpoint — v1 is Gmail-branded, but the value is
 //!   DATA, not hardcoded, so a future non-Gmail provider needs no code change),
 //!   `enabled` (the poller opt-in PR B will gate on — default OFF),
-//!   `auto_write_enabled` (v2 slice 2's auto-write opt-in — default ON, see
+//!   `auto_write_enabled` (v2 slice 2's auto-write opt-in — default OFF, see
 //!   [`Self::auto_write_enabled`]), and the poller's own watermark:
 //!   `last_uid`/`uidvalidity`/`last_check_ms`.
 //! - `seen` — `uid` (PK) → `matched_app_id` (nullable) + `ts`. Dedupes which
@@ -143,20 +145,29 @@ impl EmailWatchStore {
         Migration {
             name: "add_auto_write_enabled",
             up: |conn| {
-                // v2 slice 2: the auto-write opt-in — default ON, unlike
-                // `enabled` (the poller opt-in) above, which defaults OFF per
-                // ADR-0005. The owner's explicit v2 decision is that an
-                // email-derived write always lands UNCONFIRMED (see
-                // `applications::StatusEvent::confirmed`), so the safety
-                // model is adjudication, not withholding the write — this
-                // toggle is an escape hatch, not the primary safeguard.
-                // Precedent for an auto-act opt-in's shape (own persisted
-                // boolean, own default): `extension_bridge_auto_track_
-                // enabled`. `DEFAULT 1` alone is the whole migration — SQLite
-                // applies it retroactively to the row the FIRST migration
-                // already seeded, so no separate backfill UPDATE is needed.
+                // v2 slice 2 ORIGINALLY shipped this as `DEFAULT 1` (auto-write
+                // ON by default); a later fix-forward round found a residual
+                // the parser cannot close by content inspection alone (a
+                // GENUINE `Authentication-Results` stamp from a known-stamping
+                // host that simply carries no `dmarc=` clause for the attacker's
+                // chosen `From:` domain -- indistinguishable from real grammar,
+                // because it IS real grammar) and the owner decided auto-write
+                // ships OFF by default instead: adjudication (every write lands
+                // UNCONFIRMED, see `applications::StatusEvent::confirmed`)
+                // remains the backstop, but the gate stops being load-bearing
+                // for anyone who never explicitly opts in. `DEFAULT 0` is
+                // edited HERE, in place, rather than shipped as a second
+                // migration flipping the value with an `UPDATE` — this
+                // migration is new on this branch and has never shipped (not
+                // an ancestor of `origin/main`), so there is no released
+                // schema, and no deliberately-set dev-build value, to
+                // preserve; a second migration would be the wrong tool for a
+                // value nobody has ever depended on. `DEFAULT 0` alone is the
+                // whole migration — SQLite applies it retroactively to the row
+                // the FIRST migration already seeded, so no separate backfill
+                // UPDATE is needed either way.
                 conn.execute_batch(
-                    "ALTER TABLE account ADD COLUMN auto_write_enabled INTEGER NOT NULL DEFAULT 1;",
+                    "ALTER TABLE account ADD COLUMN auto_write_enabled INTEGER NOT NULL DEFAULT 0;",
                 )
             },
         },
@@ -275,8 +286,12 @@ impl EmailWatchStore {
         Ok(affected > 0)
     }
 
-    /// The v2 auto-write opt-in — default ON (unlike [`Self::set_enabled`]'s
-    /// poller opt-in, which defaults OFF). [`crate::email_watch::auto_write::
+    /// The v2 auto-write opt-in — defaults OFF (same direction as
+    /// [`Self::set_enabled`]'s poller opt-in now, though for a different
+    /// reason: v2 originally shipped this ON, and it was flipped OFF once a
+    /// residual the parser cannot close by content inspection alone was
+    /// found — see the `add_auto_write_enabled` migration's own doc for the
+    /// full reasoning). [`crate::email_watch::auto_write::
     /// apply_matched_intent`] checks this FIRST, before ever computing a
     /// status transition.
     pub fn auto_write_enabled(&self) -> bool {
@@ -418,11 +433,17 @@ impl EmailWatchStore {
     ///
     /// **`auto_write_enabled` is DELIBERATELY not reset here** — every other
     /// account column goes back to its migrated default, but this one
-    /// survives the wipe as-is. Kept this way on purpose: if the user
-    /// turned auto-write OFF, a disconnect/reconnect (or a factory reset
-    /// that reconnects the SAME account) must not silently turn it back ON
-    /// behind them — the safe direction is to preserve an explicit opt-out,
-    /// not to reset it toward the (default-ON) migrated value.
+    /// survives the wipe as-is. Kept this way on purpose: WHATEVER the user
+    /// explicitly chose — opted out when the shipped default was ON, or
+    /// (the current shipped default) opted IN against a default-OFF value —
+    /// a disconnect/reconnect (or a factory reset that reconnects the SAME
+    /// account) must not silently reset it back toward whichever default
+    /// happens to be migrated at the time. Deliberately phrased direction-
+    /// agnostically: this column's default has already flipped once (v2
+    /// shipped it ON; a residual the parser cannot close by content
+    /// inspection alone — see `auto_write_enabled`'s own doc — moved it to
+    /// OFF), and the safety property this guards is "preserve the user's
+    /// own choice," not "preserve `false`" specifically.
     pub fn clear(&self) -> AppResult<()> {
         let mut conn = self.conn.lock();
         // Same atomicity requirement as `connect`'s address-changed branch —

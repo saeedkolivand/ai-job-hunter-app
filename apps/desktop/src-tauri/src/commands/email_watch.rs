@@ -152,9 +152,12 @@ pub async fn email_watch_set_enabled(app: AppHandle, enabled: bool) -> AppResult
     Ok(store.status())
 }
 
-/// v2 slice 3: the auto-write opt-in (default ON) — an escape hatch, not the
-/// primary safeguard (adjudication is). Mirrors [`email_watch_set_enabled`]'s
-/// shape exactly.
+/// v2 slice 3: the auto-write opt-in — defaults OFF (flipped from its
+/// original default-ON after a residual the parser cannot close by content
+/// inspection alone was found; see `EmailWatchStore::auto_write_enabled`'s
+/// own doc). Adjudication (every write lands unconfirmed) remains the
+/// backstop regardless of this toggle's value. Mirrors
+/// [`email_watch_set_enabled`]'s shape exactly.
 #[tauri::command]
 pub async fn email_watch_set_auto_write_enabled(
     app: AppHandle,

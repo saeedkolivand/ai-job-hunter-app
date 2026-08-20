@@ -857,7 +857,7 @@
         },
         "autoWrite": {
           "label": "Status automatisch aktualisieren",
-          "description": "Bei einem Treffer wird der Status dieser Bewerbung sofort geändert, bevor Sie etwas bestätigen. Jede automatische Änderung erscheint im Tab „Verlauf“ als unbestätigt, wo Sie sie annehmen oder ablehnen können. Standardmäßig aktiviert — schalten Sie dies aus, um vor jeder Statusänderung Ihre Bestätigung zu verlangen."
+          "description": "Standardmäßig deaktiviert. Wird diese Option aktiviert, ändert eine passende E-Mail den Status dieser Bewerbung sofort, bevor Sie sie geprüft haben — jede automatische Änderung erscheint im Verlauf als unbestätigt, sodass Sie sie dort annehmen oder ablehnen können. Wir prüfen, ob die E-Mail wirklich von der angegebenen Adresse stammt, aber diese Prüfung ist nicht perfekt: Eine überzeugende Fälschung könnte auf diesem Weg ebenfalls einen Status ändern."
         },
         "toggleFailed": "Die Einstellung für die E-Mail-Verfolgung konnte nicht aktualisiert werden.",
         "lastCheck": "Zuletzt geprüft: {{value}}",

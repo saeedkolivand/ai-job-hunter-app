@@ -166,7 +166,16 @@ fn process_section(sc: &mut Scanner, method: String) -> Result<SectionOutcome, (
     if sc.peek() == Some('/') {
         sc.next();
         sc.skip_cfws()?;
-        sc.read_narrow_token(); // method-version, discarded
+        // LOW fix: the version token was read but never checked for
+        // emptiness, so `dmarc/=pass` (nothing between '/' and '=') or
+        // `dmarc/(c)=pass` (a comment where a version should be) would
+        // silently accept a missing version rather than reject malformed
+        // input — not exploitable (no way to use this to smuggle a
+        // competing verdict past the checks below), but a version slot
+        // that accepts "no version" is not doing its job.
+        if sc.read_narrow_token().is_empty() {
+            return Err(());
+        }
         sc.skip_cfws()?;
     }
     if sc.peek() != Some('=') {
@@ -175,7 +184,23 @@ fn process_section(sc: &mut Scanner, method: String) -> Result<SectionOutcome, (
     sc.next();
     sc.skip_cfws()?;
     let result = sc.read_value()?;
-
+    // `result` CAN be `""` (`read_value`'s own loop-exit audit covers why
+    // that's a safe stopping point, not a desync): the char right after
+    // `=` is a stop char before any content is read, e.g. `dmarc=;`. Do
+    // NOT assume that reaches the `result.eq_ignore_ascii_case("pass")`
+    // check downstream and safely fails it — an EMPTY pvalue does reach
+    // that shape (a blank `header.from=` value still gets captured into
+    // `section_header_from` below and is compared against a real domain
+    // later), but an empty RESULT never gets the chance: hitting `;`
+    // immediately after `=` ALSO means the propspec loop below breaks on
+    // its very first iteration, so `section_header_from` stays `None` and
+    // this section returns `SectionOutcome::DmarcNoHeaderFrom` a few lines
+    // down — silently dropped by `dmarc_verdict` before `result` is ever
+    // compared to anything. The safety property still holds (an attacker
+    // supplying `dmarc=;` cannot corrupt a genuine LATER section, because
+    // this section never touches `found`), but by "vanishes unread", not
+    // "read and safely fails an equality check" — those are different
+    // mechanisms and only the former applies here.
     let is_dmarc = method.eq_ignore_ascii_case("dmarc");
     let mut section_header_from: Option<String> = None;
 
@@ -374,6 +399,25 @@ impl<'a> Scanner<'a> {
     /// own doc). Not used anywhere else: an authserv-id containing a
     /// literal, unquoted `=` is not valid per grammar either way, so
     /// stopping there is safe for BOTH interpretations.
+    ///
+    /// KNOWN GAP, documented rather than fixed: this does not stop at
+    /// `/`, so a header with BOTH no leading authserv-id AND a
+    /// method-version on that first section (`dmarc/1=pass
+    /// header.from=…`) reads `dmarc/1` as one token instead of `dmarc`
+    /// then a version. `dmarc_verdict` then finds `peek() == Some('=')`
+    /// (unchanged by this bug) and treats the whole `"dmarc/1"` string as
+    /// the method name, which fails `method.eq_ignore_ascii_case("dmarc")`
+    /// in `process_section` — the section is misclassified as
+    /// `NotDmarc`, and with nothing else in the header `dmarc_verdict`
+    /// returns `None`. Fail-closed, not a security gap: the worst outcome
+    /// is a legitimate pass going unrecognised, never a forged one
+    /// accepted. Not fixed here because doing so properly needs a real
+    /// branch below for `peek() == Some('/')` mirroring
+    /// [`process_section`]'s own version handling (including this
+    /// branch's own emptiness check) — genuine new logic in the same
+    /// fail-closed loop that took three review rounds to harden, not a
+    /// two-line change, for a shape (no authserv-id AND a version on the
+    /// very first section) no surveyed real provider produces.
     fn read_first_token(&mut self) -> String {
         self.read_token_until(|c| c.is_whitespace() || matches!(c, ';' | '(' | ')' | '"' | '='))
     }
@@ -876,6 +920,22 @@ mod tests {
         assert_eq!(dmarc_verdict("mx.google.com; dmarc=pass"), None);
     }
 
+    // LOW fix (comment correction, not behaviour): pins that an empty
+    // RESULT (`dmarc=;`) vanishes unread rather than being captured and
+    // failing an equality check — see the comment on `process_section`'s
+    // `let result = sc.read_value()?;` line for the full mechanism. This
+    // is documented, intended behaviour, not a bug: the empty-result
+    // section never reaches `found`, so it cannot corrupt the genuine
+    // section that follows it.
+    #[test]
+    fn an_empty_dmarc_result_vanishes_unread_and_does_not_block_a_later_genuine_pass() {
+        let header = "mx.google.com; dmarc=; dmarc=pass header.from=greenhouse.io";
+        assert_eq!(
+            dmarc_verdict(header),
+            Some(("pass".to_string(), "greenhouse.io".to_string()))
+        );
+    }
+
     #[test]
     fn two_agreeing_dmarc_sections_authorise() {
         let header = "mx.google.com; \
@@ -908,6 +968,29 @@ mod tests {
         );
     }
 
+    // LOW fix: an empty method-version token (`dmarc/=pass`, or a comment
+    // standing in for the version like `dmarc/(c)=pass`) must fail closed
+    // rather than silently parse as "no version".
+    #[test]
+    fn an_empty_method_version_token_fails_the_section_closed() {
+        let header = "mx.google.com; dmarc/=pass header.from=greenhouse.io";
+        assert_eq!(
+            dmarc_verdict(header),
+            None,
+            "a version slot with nothing in it is malformed, not absent"
+        );
+    }
+
+    #[test]
+    fn a_comment_in_place_of_the_method_version_fails_the_section_closed() {
+        let header = "mx.google.com; dmarc/(c)=pass header.from=greenhouse.io";
+        assert_eq!(
+            dmarc_verdict(header),
+            None,
+            "a comment is not a version token"
+        );
+    }
+
     #[test]
     fn microsoft_shaped_header_with_no_leading_authserv_id_parses() {
         let header = "spf=pass (sender IP is 40.107.1.1) smtp.mailfrom=greenhouse.io; \
@@ -918,6 +1001,21 @@ mod tests {
             dmarc_verdict(header),
             Some(("pass".to_string(), "greenhouse.io".to_string())),
             "a leading authserv-id must not be REQUIRED to find the dmarc section"
+        );
+    }
+
+    // LOW, documented not fixed (see `Scanner::read_first_token`'s own
+    // doc): no authserv-id AND a method-version on the first section is
+    // fail-closed, not a false pass — pinned here so a future change to
+    // this area has to notice the behaviour, not just the doc.
+    #[test]
+    fn no_authserv_id_plus_a_method_version_on_the_first_section_fails_closed_not_open() {
+        let header = "dmarc/1=pass header.from=greenhouse.io";
+        assert_eq!(
+            dmarc_verdict(header),
+            None,
+            "documents the known gap — a legitimate pass goes unrecognised, \
+             never a forged one accepted"
         );
     }
 

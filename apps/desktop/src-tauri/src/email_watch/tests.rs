@@ -28,6 +28,25 @@ fn unconfigured_store_has_no_account() {
     assert_eq!(store.account(), EmailWatchAccount::default());
 }
 
+/// Pins `auto_write_enabled`'s default explicitly. Originally shipped
+/// default ON; the owner's decision after a residual the parser cannot
+/// close by content inspection alone was found (a GENUINE
+/// `Authentication-Results` stamp from a known-stamping host that simply
+/// carries no `dmarc=` clause for the attacker's chosen `From:` domain —
+/// indistinguishable from real grammar, because it IS real grammar) is that
+/// auto-write ships OFF, opt-in only, adjudication remaining the backstop.
+/// A future change to the migration's `DEFAULT` must be a deliberate,
+/// reviewed decision — this test fails loudly if it silently reverts.
+/// True even before any account is ever connected (the account row always
+/// exists post-migration — see `create_email_watch`'s own `INSERT OR
+/// IGNORE`).
+#[test]
+fn auto_write_enabled_defaults_off() {
+    let (_dir, store) = new_store();
+    assert!(!store.auto_write_enabled());
+    assert!(!store.status().auto_write_enabled);
+}
+
 // ── Connect / disconnect roundtrip (mock keyring for the credential half) ────
 
 #[test]
@@ -414,28 +433,37 @@ fn clear_wipes_account_and_seen_rows() {
 /// pins the behavior the fix-forward task's doc-vs-behavior review confirmed
 /// is the safe direction (see `clear()`'s own doc for why), so a future
 /// change to the `UPDATE` column list that accidentally starts resetting it
-/// fails this test rather than silently flip a user's opt-out back to the
-/// default-ON value on their next disconnect/reconnect.
+/// fails this test rather than silently flip a user's DELIBERATE choice back
+/// to the default on their next disconnect/reconnect.
+///
+/// **Tests the OPT-IN direction, not opt-out** — `auto_write_enabled` now
+/// defaults OFF (flipped from its original default-ON; see the
+/// `add_auto_write_enabled` migration's own doc). Opting OUT (`false`) is
+/// now the SAME value as the default, so a test that set `false` and
+/// asserted it stayed `false` after `clear()` would pass even if a future
+/// regression made `clear()` reset the column to its default — a test that
+/// passes for the wrong reason, catching nothing. Setting the NON-default
+/// value (`true`, an explicit opt-IN) is what makes this test actually
+/// exercise "`clear()` does not touch this column at all", regardless of
+/// which direction is the default.
 #[test]
-fn clear_does_not_reset_the_auto_write_opt_out() {
+fn clear_does_not_reset_the_auto_write_opt_in() {
     let (_dir, store) = new_store();
     store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
     assert!(
-        store.set_auto_write_enabled(false).unwrap(),
+        store.set_auto_write_enabled(true).unwrap(),
         "precondition: the toggle write must succeed while connected"
     );
-    assert!(
-        !store.status().auto_write_enabled,
-        "precondition: opted out"
-    );
+    assert!(store.status().auto_write_enabled, "precondition: opted in");
 
     store.clear().expect("clear");
 
     // `auto_write_enabled` has no `address IS NOT NULL` guard on its OWN
     // read path, so it is readable even post-clear — reconnecting the same
-    // account afterward must not find it silently reset to default-ON.
+    // account afterward must not find it silently reset to the (now OFF)
+    // default.
     assert!(
-        !store.status().auto_write_enabled,
-        "a user's auto-write opt-out must survive a disconnect/factory-reset wipe"
+        store.status().auto_write_enabled,
+        "a user's DELIBERATE auto-write opt-in must survive a disconnect/factory-reset wipe"
     );
 }

@@ -857,7 +857,7 @@
         },
         "autoWrite": {
           "label": "Update status automatically",
-          "description": "A matched email changes this application's status right away, before you confirm anything. Every automatic change lands in the Timeline tab as unconfirmed, where you can accept or reject it. On by default — turn off to require your review before any status changes."
+          "description": "Off by default. Turn it on and a matched email updates this application's status right away, before you've reviewed it — every change lands in the Timeline as unconfirmed, so you can accept or reject it there. We check that the email really came from where it claims, but that check isn't perfect, so a convincing fake could move a status this way too."
         },
         "toggleFailed": "Could not update the email-tracking setting.",
         "lastCheck": "Last checked {{value}}",

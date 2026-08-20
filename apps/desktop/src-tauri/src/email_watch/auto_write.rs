@@ -31,45 +31,50 @@ use crate::error::AppResult;
 /// (see [`next_status`]'s terminal-absorption doc) as far as automation is
 /// concerned, silently — not data loss, a silent STOP to tracking.
 ///
-/// A bare sender-domain string match is NOT sufficient authentication —
-/// three ways it fails: (1) `linkedin.com`/`indeed.com` are messaging
-/// relays that routinely carry attacker-authored subject/body from their
-/// own genuinely-authentic infrastructure; (2) a free ATS-tenant signup can
-/// send from a listed vendor domain with attacker-controlled content; (3)
-/// plain `From:` header spoofing wherever a listed domain lacks `p=reject`,
-/// OR the user's IMAP host does not stamp `Authentication-Results` at all
-/// (see below — this last one is now CLOSED for a known host population,
-/// not merely accepted). `write_authorized` (the caller's — the ONLY
-/// caller is `email_watch_scheduler`, NOT `MessageOutcome::write_authorized`
-/// alone; that field is [`crate::email_watch::parser::Fingerprint::
+/// A bare sender-domain string match is NOT sufficient authentication.
+/// `write_authorized` (the caller's — the ONLY caller is
+/// `email_watch_scheduler`, NOT `MessageOutcome::write_authorized` alone;
+/// that field is [`crate::email_watch::parser::Fingerprint::
 /// write_gate_domain`] AND [`crate::email_watch::parser::EmailHeader::
 /// dmarc_pass`], and the scheduler ADDITIONALLY ANDs in
 /// [`crate::email_watch::parser::host_is_known_to_stamp`] before it ever
-/// reaches this function — see that fn's doc for exactly what it closes
-/// and how) closes (1) and (3): DMARC `pass` cannot be produced by an
-/// attacker who does not control DKIM signing or an SPF-authorized sender
-/// for the aligned domain, the narrower write-gate domain list drops the
-/// two open relays entirely regardless of their own DMARC posture, and
-/// `host_is_known_to_stamp` closes the "lone forged header, host never
-/// stamped a genuine one" gap for accounts on a KNOWN-stamping host by
-/// consulting the account's own LOCALLY-STORED IMAP host — data an
-/// attacker cannot influence, unlike anything inside the message — rather
-/// than trusting message content. (2) is NOT fully closed — a malicious
-/// tenant on a legitimate ATS vendor's own infrastructure would still pass
-/// DMARC for that vendor's domain; documented here as a residual, accepted
-/// risk rather than assumed away. For an account on an UNKNOWN host (not
-/// on [`crate::email_watch::parser::host_is_known_to_stamp`]'s list —
-/// self-hosted or otherwise unverified, since the app's host/port are
-/// deliberately data, not Gmail-only), the "lone forged header" gap
-/// remains genuinely open and auto-write correctly never fires at all for
-/// that account — this app would rather auto-write LESS often than write
-/// on unauthenticated content. See [`crate::email_watch::parser::
-/// EmailHeader::dmarc_pass`]'s doc for exactly what message-content-only
-/// parsing can and cannot prove, and its own doc for why only the TOPMOST
-/// `Authentication-Results` header may ever be trusted (`.any()` over
-/// every occurrence was a real, shipped, since-fixed vulnerability — an
-/// attacker's own forged header, included anywhere in the message,
-/// satisfied the old gate outright).
+/// reaches this function) is BEST-EFFORT, not a closed gate — three prior
+/// review rounds each found a NEW way a confident sentence here was wrong,
+/// so state the mechanism plainly rather than asserting a conclusion:
+///
+/// - `linkedin.com`/`indeed.com` (messaging relays that routinely carry
+///   attacker-authored content from their own genuinely-authentic
+///   infrastructure) ARE closed — dropped from the write-gate domain list
+///   entirely, regardless of their own DMARC posture.
+/// - A free ATS-tenant signup sending attacker-controlled content from a
+///   still-listed vendor domain is NOT closed — accepted, documented
+///   residual, not assumed away.
+/// - `host_is_known_to_stamp` closes exactly ONE narrow case: a message
+///   whose ONLY `Authentication-Results` header is forged, because the
+///   host never stamps anything at all. It does NOT prove the host stamps
+///   a `dmarc=` clause for every sender the message's `From:` domain might
+///   name — DMARC evaluation can legitimately produce no `dmarc=` section
+///   for a given domain. A determined sender picks a `From:` domain for
+///   exactly that reason, then supplies the header's ONLY `dmarc=` text
+///   themselves via the same envelope-echo mechanism
+///   [`crate::email_watch::auth_results`]'s own doc describes. One clause,
+///   one section, indistinguishable from real grammar by content alone —
+///   because it genuinely IS real grammar by the time anything here reads
+///   it. Two candidate fixes for this were measured and both failed; see
+///   [`crate::email_watch::parser::dmarc_pass_aligned`]'s doc for the full
+///   accounting, including why an authserv-id check does not help either.
+///
+/// What actually mitigates the open residual: (1)
+/// [`EmailWatchStore::auto_write_enabled`] defaults OFF, so the gate is
+/// opt-in and nobody is exposed without deliberately turning it on; (2)
+/// every write this function can ever produce lands UNCONFIRMED (see this
+/// fn's own "Hard constraint" note below) and needs the user's own
+/// adjudication before it is trusted — a backstop that does not depend on
+/// this gate, or anything upstream of it, being correct. Closing it
+/// properly needs verification that does not trust the header at all
+/// (independent DKIM/SPF/DMARC re-verification against DNS); that is a
+/// larger, deliberately NOT-built feature (new dependency, new network
+/// egress this feature's design avoids), not a fifth parser round.
 ///
 /// Two WIDER signals were considered and deliberately NOT implemented: the
 /// sender domain matching the application's own company domain (no existing
@@ -147,12 +152,23 @@ mod tests {
 
     /// Fresh `ApplicationStore` + `EmailWatchStore`, each in its own temp
     /// dir (they are separate `.db` files in the real app too — no shared
-    /// state to seed beyond each store's own migrations).
+    /// state to seed beyond each store's own migrations). `auto_write_enabled`
+    /// now DEFAULTS OFF (see the `add_auto_write_enabled` migration's own
+    /// doc), so this helper connects and explicitly opts IN — every test in
+    /// this file below is testing WRITE GATES other than the opt-in toggle
+    /// itself, and needs auto-write actually reachable to exercise them; the
+    /// one test that IS about the toggle
+    /// (`the_auto_write_toggle_off_blocks_the_write_entirely`) explicitly
+    /// opts back OUT.
     fn stores() -> (TempDir, ApplicationStore, TempDir, EmailWatchStore) {
         let apps_dir = TempDir::new().unwrap();
         let applications = ApplicationStore::open(apps_dir.path()).unwrap();
         let email_dir = TempDir::new().unwrap();
         let email_watch = EmailWatchStore::open(&email_dir.path().to_path_buf()).unwrap();
+        email_watch
+            .connect("jane@example.com", "imap.example.com", 993)
+            .unwrap();
+        assert!(email_watch.set_auto_write_enabled(true).unwrap());
         (apps_dir, applications, email_dir, email_watch)
     }
 
@@ -268,13 +284,9 @@ mod tests {
     fn the_auto_write_toggle_off_blocks_the_write_entirely() {
         let (_d1, applications, _d2, email_watch) = stores();
         let id = saved_app(&applications);
-        // `set_auto_write_enabled` guards on `address IS NOT NULL` (same
-        // concurrent-clear discipline as `set_enabled`) — connect first, as
-        // a real caller (IPC, a later slice) always would before this
-        // toggle is reachable at all.
-        email_watch
-            .connect("jane@example.com", "imap.example.com", 993)
-            .unwrap();
+        // `stores()` already connected (and opted IN) — `set_auto_write_enabled`
+        // guards on `address IS NOT NULL` (same concurrent-clear discipline
+        // as `set_enabled`), which that connect already satisfies.
         let toggled = email_watch.set_auto_write_enabled(false).unwrap();
         assert!(toggled, "the toggle write must succeed once connected");
 

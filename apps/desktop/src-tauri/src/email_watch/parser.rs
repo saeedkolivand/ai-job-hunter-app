@@ -119,42 +119,56 @@ pub fn parse_header(raw: &[u8]) -> Option<EmailHeader> {
 /// test suite (including a permanent regression pinning this exact
 /// exploit) for the structural fix.
 ///
-/// **What CONTENT alone still cannot close, and why an authserv-id check
-/// would not help either** (documented, not silently assumed safe): a
-/// message where the ONLY `Authentication-Results` header present is a
-/// forged one -- no genuine stamp was ever added, above or otherwise (a
-/// provider that does not enforce/stamp DMARC at all). Nothing
-/// distinguishes that from a genuine single header by MESSAGE CONTENT
-/// alone -- an attacker composing a forged header simply writes the SAME
-/// public, well-known `authserv-id` string a genuine stamp would contain,
-/// so checking the topmost header's claimed `authserv-id` against a
-/// known-good value (e.g. requiring it say `mx.google.com`) would look
-/// like it closes this gap while doing nothing against the attacker who
-/// gets the string right. That specific mechanism was considered and
-/// rejected for exactly that reason.
+/// **This gate is BEST-EFFORT, not a closed one — read this before trusting
+/// the summary below it; re-derive it, do not just believe it.** This
+/// file's own history is that a confident sentence here hid a live defect
+/// through three prior review rounds. State the mechanism, not the
+/// conclusion:
 ///
-/// **This is CLOSED, not merely documented, for a known population** — not
-/// by trusting anything inside the message, but by consulting something an
-/// attacker genuinely cannot influence: the account's own IMAP `host`,
-/// which is LOCALLY-STORED configuration, not message content. See
-/// [`host_is_known_to_stamp`] — this function itself only ever sees
-/// `auth_results` (message content) and correctly cannot close this alone;
-/// the caller is REQUIRED to additionally gate on `host_is_known_to_stamp`
-/// before treating a `true` result here as write-authorizing (see
-/// `crate::email_watch::auto_write::apply_matched_intent`'s doc for the
-/// full, combined gate). For a host NOT on that list (a self-hosted or
-/// otherwise unverified IMAP provider — the account's IMAP host is
-/// user-configured data, not Gmail-only, see `imap_client`'s own module
-/// doc), this residual remains open and auto-write is correctly refused
-/// entirely rather than trusted on a guess; the only way to CODE-LEVEL
-/// provably close it for an ARBITRARY host is independent DKIM/SPF
-/// re-verification performed by this crate itself (a new dependency, DNS
-/// resolution, cryptographic signature checking) — a substantial feature,
-/// not built here.
+/// [`host_is_known_to_stamp`] proves exactly one thing: the account's
+/// configured IMAP host is known to emit AT LEAST ONE
+/// `Authentication-Results` header on every message it delivers. That is
+/// ALL it proves. It does NOT prove the host emits a `dmarc=` clause on
+/// every message, for every `From:` domain a sender might choose — DMARC
+/// evaluation can legitimately produce a header with no `dmarc=` section
+/// at all (a domain outside what the receiving server evaluates, an
+/// alignment edge case, or simply a provider whose stamping does not cover
+/// every method for every sender). A determined sender picks the `From:`
+/// domain specifically so the GENUINE stamp the known-stamping host adds
+/// carries no `dmarc=` clause of its own for it, then supplies the ONLY
+/// `dmarc=` text the header ends up containing themselves — via the SAME
+/// echo mechanism [`super::auth_results::dmarc_verdict`]'s own doc
+/// describes (an envelope local part echoed verbatim into another
+/// section's comment or property value). One clause, one section, the
+/// counts this fn and [`super::auth_results`] both check agree — because
+/// by the time it reaches either of them, it genuinely IS one well-formed
+/// `dmarc=` section. There is no forged second header, no truncation, no
+/// grammar violation to detect: `host_is_known_to_stamp` answered a
+/// different, narrower question than "did THIS message get a genuine
+/// DMARC evaluation," and content inspection has no way to ask the real
+/// one. Two candidate fixes were measured against this and both failed —
+/// see the fix-forward history for what was tried.
+///
+/// What actually mitigates this, in order: (1) [`crate::email_watch::
+/// EmailWatchStore::auto_write_enabled`] defaults OFF — the gate is opt-in,
+/// so nobody is exposed to it without deliberately turning it on; (2) every
+/// write this whole pipeline can ever produce lands UNCONFIRMED (see
+/// [`crate::applications::StatusEvent::confirmed`]) and requires the user's
+/// own adjudication before it's trusted — that backstop does not depend on
+/// this fn, `host_is_known_to_stamp`, or anything upstream of it being
+/// correct. Closing this PROPERLY needs verification that does not trust
+/// the header at all — independent DKIM/SPF/DMARC re-verification against
+/// DNS, performed by this crate itself — which was investigated (a
+/// `mail-auth`-based design) and explicitly NOT built: it is a new
+/// dependency and a new network-egress class this feature's design
+/// deliberately avoids, a decision for the product owner, not something to
+/// default into by writing a fourth parser round.
 ///
 /// `false` (fail closed) if `from_domain` is `None`, if `auth_results` is
 /// empty, or if the topmost entry does not parse to a `pass` aligned with
-/// `from_domain`.
+/// `from_domain` — but a `true` here is a best-effort signal, not a proof,
+/// and the caller's OWN combination with `host_is_known_to_stamp` narrows
+/// the exposed population without eliminating it.
 fn dmarc_pass_aligned(auth_results: &[String], from_domain: Option<&str>) -> bool {
     let Some(from_domain) = from_domain else {
         return false;
@@ -816,6 +830,67 @@ mod tests {
             &["mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io".to_string()],
             None
         ));
+    }
+
+    // -- LIVE, ACCEPTED RESIDUAL (not closed -- do not "fix" this test by --
+    // -- flipping its assertion; see parser.rs's own doc on dmarc_pass_aligned
+    // -- for the full reasoning, and auto_write.rs's doc for the mitigations)
+
+    #[test]
+    fn known_residual_a_genuine_stamp_with_no_dmarc_clause_of_its_own_can_still_be_forged() {
+        // The gap `host_is_known_to_stamp` does NOT close, found by the
+        // re-gate after the envelope-injection/truncation fixes: a GENUINE
+        // stamp from a known-stamping host that simply carries no `dmarc=`
+        // clause AT ALL for the message (a real, unremarkable outcome --
+        // DMARC evaluation can legitimately produce a header with no dmarc
+        // section for a given sender). The attacker picks their
+        // `From:`/envelope domain specifically so the real stamp has this
+        // shape, then supplies the header's ONLY `dmarc=` text themselves.
+        //
+        // What this test does NOT claim: a specific real-world delivery
+        // mechanism. The comment/quoted-string escape this branch's OWN
+        // truncation fix already closes (an unescaped `)` inside a quoted
+        // local part) does NOT reach this outcome -- it was tried while
+        // building this reproduction, and it leaves an orphaned quote
+        // character that the truncation fix's "only genuine end-of-input
+        // may stop the parse" rule correctly turns into `None`. What DOES
+        // reach it, verified here, is an unquoted, unescaped `;` inside a
+        // property value that RFC 8601 permits to be an addr-spec
+        // (`smtp.mailfrom=`/`smtp.rcptto=`) rather than a strictly-quoted
+        // token -- e.g. a verifying server that echoes an envelope
+        // local-part into that property without re-quoting a character
+        // its OWN grammar treats as structural. Whether any real,
+        // deployed provider's stamping code has that specific gap is
+        // exactly as unverifiable as the DKIM `i=`-decode question
+        // recorded elsewhere in this file: this crate never constructs or
+        // decodes that content itself, only reads whatever text a real
+        // server already wrote. The STRUCTURAL point survives regardless
+        // of which concrete mechanism a real attacker would reach for: an
+        // unquoted top-level `;` with no genuine dmarc section to disagree
+        // with cannot be told apart from real grammar, because it IS real
+        // grammar by the time `dmarc_verdict` reads it -- there is nothing
+        // malformed for a parser to reject.
+        //
+        // This assertion is `true` -- the vulnerable, unfortunate, but
+        // CORRECT-for-what-this-function-can-know outcome -- on purpose,
+        // matching how the (since-fixed) envelope-injection defect was
+        // originally recorded: prove the exploit is real rather than
+        // assert it away. Unlike that one, THIS residual is not expected
+        // to close via a parser change (two candidate fixes were measured
+        // and both failed) -- what changed instead is the write path's OWN
+        // default: `EmailWatchStore::auto_write_enabled` now defaults OFF,
+        // and every write this whole pipeline can ever produce still lands
+        // UNCONFIRMED, requiring the user's own adjudication. Those are
+        // the real mitigations; this function's `true` here is not one of
+        // them.
+        let header = "mx.google.com; \
+                       dkim=pass header.i=attacker;dmarc=pass header.from=victim.io"
+            .to_string();
+        assert!(
+            dmarc_pass_aligned(&[header], Some("victim.io")),
+            "documents the live residual — see this test's own doc before treating a change \
+             here as a fix"
+        );
     }
 
     // -- HIGH fix: only the TOPMOST Authentication-Results is trustworthy ----

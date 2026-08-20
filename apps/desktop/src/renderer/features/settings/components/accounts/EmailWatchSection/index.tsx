@@ -151,10 +151,12 @@ export function EmailWatchSection() {
               />
             </div>
 
-            {/* v2 auto-write opt-in — default ON; the copy states the trade-off
-                (immediate, unconfirmed status writes) since defaulting ON carries
-                real weight. Independent of the watch toggle above: this only
-                gates whether a match WRITES a status, never whether it's checked. */}
+            {/* v2 auto-write opt-in — OFF by default (five security rounds:
+                the sender-authentication gate is best-effort and a determined
+                sender can fool it, so nobody gets this silently). The copy
+                states that trade-off in plain language. Independent of the
+                watch toggle above: this only gates whether a match WRITES a
+                status, never whether it's checked. */}
             <div className="space-y-2 border-t border-foreground/10 pt-3">
               {status ? (
                 <Switch
@@ -165,11 +167,13 @@ export function EmailWatchSection() {
                   description={t('settings.accounts.emailWatch.autoWrite.description')}
                 />
               ) : (
-                // The real default is ON. Defaulting a not-yet-loaded value to
-                // OFF would tell the user auto-write is off while it may
-                // already be on — the unsafe direction. Never render a
-                // committed `checked` value for a status we don't have yet;
-                // show a loading placeholder instead.
+                // The real default is OFF, but this gate isn't direction-
+                // specific: it never commits to EITHER value before `status`
+                // resolves, so it holds regardless of which way the default
+                // points. Defaulting a not-yet-loaded value to ON would
+                // wrongly suggest auto-write is already active; defaulting to
+                // OFF would wrongly suggest it's safe. Render a loading
+                // placeholder instead of guessing either way.
                 <div
                   role="status"
                   aria-busy="true"
