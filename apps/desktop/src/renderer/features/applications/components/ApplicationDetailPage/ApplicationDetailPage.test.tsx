@@ -187,24 +187,26 @@ let mockResolveJobUrlIsFetching = false;
 /** `acceptStatusEvent.mutate`/`rejectStatusEvent.mutate` — resolve successfully
  *  (an empty, error-free result) by default. `onSuccess` takes the real
  *  `{ error? }` payload — the production handler branches on `data.error`,
- *  so a no-arg call here would throw instead of testing anything. */
+ *  so a no-arg call here would throw instead of testing anything.
+ *  `onSettled` is included because the production code uses it to clear its
+ *  OWN per-eventId in-flight tracking (component state, not the mutation
+ *  hook's `.isPending`/`.variables` — a single shared observer can't
+ *  represent two concurrently-pending rows; see the overlapping-mutation
+ *  test below). Only `mutate` is exposed on the mocked hook return value —
+ *  the component no longer reads `.isPending`/`.variables` at all. */
 type StatusEventMutateOptions = {
   onSuccess?: (data: { error?: string }) => void;
   onError?: () => void;
+  onSettled?: () => void;
 };
 const mockAcceptStatusEventMutate = vi.fn((_vars: unknown, options?: StatusEventMutateOptions) => {
   options?.onSuccess?.({});
+  options?.onSettled?.();
 });
 const mockRejectStatusEventMutate = vi.fn((_vars: unknown, options?: StatusEventMutateOptions) => {
   options?.onSuccess?.({});
+  options?.onSettled?.();
 });
-let mockAcceptStatusEventPending = false;
-let mockRejectStatusEventPending = false;
-/** The `.variables` of the last `mutate()` call — mirrors real `useMutation`
- *  (`isPending` is per-HOOK, `.variables` is what makes a specific row's
- *  pending state identifiable). `undefined` until a test sets it. */
-let mockAcceptStatusEventVariables: { id: string; eventId: number } | undefined;
-let mockRejectStatusEventVariables: { id: string; eventId: number } | undefined;
 
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
@@ -223,16 +225,8 @@ vi.mock('@/services', () => ({
     mutateAsync: mockRemoveMutateAsync,
     isPending: false,
   }),
-  useAcceptStatusEvent: () => ({
-    mutate: mockAcceptStatusEventMutate,
-    isPending: mockAcceptStatusEventPending,
-    variables: mockAcceptStatusEventVariables,
-  }),
-  useRejectStatusEvent: () => ({
-    mutate: mockRejectStatusEventMutate,
-    isPending: mockRejectStatusEventPending,
-    variables: mockRejectStatusEventVariables,
-  }),
+  useAcceptStatusEvent: () => ({ mutate: mockAcceptStatusEventMutate }),
+  useRejectStatusEvent: () => ({ mutate: mockRejectStatusEventMutate }),
   useDocuments: () => ({ data: [], isLoading: false }),
   useDocumentText: () => ({ data: undefined, isLoading: false }),
   useImportJobUrl: () => ({
@@ -360,18 +354,16 @@ beforeEach(() => {
   mockAcceptStatusEventMutate.mockImplementation(
     (_vars: unknown, options?: StatusEventMutateOptions) => {
       options?.onSuccess?.({});
+      options?.onSettled?.();
     }
   );
   mockRejectStatusEventMutate.mockClear();
   mockRejectStatusEventMutate.mockImplementation(
     (_vars: unknown, options?: StatusEventMutateOptions) => {
       options?.onSuccess?.({});
+      options?.onSettled?.();
     }
   );
-  mockAcceptStatusEventPending = false;
-  mockRejectStatusEventPending = false;
-  mockAcceptStatusEventVariables = undefined;
-  mockRejectStatusEventVariables = undefined;
   mockNotify.success.mockClear();
   mockNotify.error.mockClear();
 });
@@ -2153,22 +2145,26 @@ describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
     expect(screen.queryByText('email-derived (unconfirmed)')).not.toBeInTheDocument();
   });
 
-  // `useMutation`'s `isPending` is per-HOOK, not per-`mutate()` call — with
-  // two coexisting provisional rows sharing ONE `useAcceptStatusEvent()`
-  // instance, a bare `.isPending` would put row A's spinner/disabled state
-  // on row B too. Gating on `.variables?.eventId` (the last `mutate()`
-  // payload) is what pins it back to the row actually in flight.
-  it('gates the pending/loading state to the SPECIFIC row whose eventId is in flight, not every provisional row', () => {
-    const older = makeEvent({
-      eventId: 501,
+  // `acceptStatusEvent` is ONE `useMutation()` instance shared by every row,
+  // so `.variables`/`.isPending` reflect only the MOST RECENT `mutate()`
+  // call — no expression over them can represent two rows genuinely
+  // overlapping. This drives the actual overlap (start A, start B WHILE A is
+  // still open, neither auto-resolving) rather than presetting a static
+  // mock flag — a static fixture can't catch a timeline defect: the bug was
+  // that starting B silently un-pends A, which only shows up if A is
+  // demonstrably still in flight when B starts.
+  it('keeps row A pending while row B starts a separate accept mid-flight — a shared mutation observer cannot represent two concurrent rows', async () => {
+    const user = userEvent.setup();
+    const rowA = makeEvent({
+      eventId: 601,
       at: 1000,
       fromStatus: 'saved',
       toStatus: 'applied',
       source: 'email',
       confirmed: false,
     });
-    const newer = makeEvent({
-      eventId: 502,
+    const rowB = makeEvent({
+      eventId: 602,
       at: 2000,
       fromStatus: 'applied',
       toStatus: 'rejected',
@@ -2176,37 +2172,52 @@ describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
       confirmed: false,
     });
 
-    // Simulate the OLDER row's Accept mutation still in flight.
-    mockAcceptStatusEventPending = true;
-    mockAcceptStatusEventVariables = { id: 'app-two-provisional-pending', eventId: 501 };
+    // Neither call resolves on its own — the test decides exactly when EACH
+    // one settles, independently, so the two mutations genuinely overlap
+    // instead of one finishing before the other starts.
+    const settleCallbacks: Array<() => void> = [];
+    mockAcceptStatusEventMutate.mockImplementation(
+      (_vars: unknown, options?: StatusEventMutateOptions) => {
+        settleCallbacks.push(() => options?.onSettled?.());
+      }
+    );
 
-    renderTimeline([older, newer], { id: 'app-two-provisional-pending' });
+    renderTimeline([rowA, rowB], { id: 'app-overlapping-accept' });
 
-    // orderedEvents sorts newest-first, so the DOM order is [newer, older].
+    // orderedEvents sorts newest-first, so the DOM order is [rowB, rowA].
     const acceptButtons = screen.getAllByRole('button', {
       name: 'applications.detail.timeline.acceptAria',
     });
-    const rejectButtons = screen.getAllByRole('button', {
-      name: 'applications.detail.timeline.rejectAria',
-    });
     expect(acceptButtons).toHaveLength(2);
-    expect(rejectButtons).toHaveLength(2);
-    const [newerAccept, olderAccept] = acceptButtons;
-    const [newerReject, olderReject] = rejectButtons;
-    if (!newerAccept || !olderAccept || !newerReject || !olderReject) {
-      throw new Error('expected two Accept and two Reject buttons');
-    }
+    const [bAccept, aAccept] = acceptButtons;
+    if (!aAccept || !bAccept) throw new Error('expected two Accept buttons');
 
-    // The row actually in flight shows the pending state on both its own
-    // buttons (accept pending disables reject too, same row) …
-    expect(olderAccept).toBeDisabled();
-    expect(olderReject).toBeDisabled();
-    // … but the OTHER row — unrelated to this mutation — must not be
-    // disabled just because SOME accept mutation is pending somewhere. Before
-    // the per-row `.variables` gate, this assertion is what would fail: both
-    // rows read the same shared `acceptStatusEvent.isPending`.
-    expect(newerAccept).not.toBeDisabled();
-    expect(newerReject).not.toBeDisabled();
+    // Start row A's accept — still in flight (the mock never auto-resolves).
+    await user.click(aAccept);
+    expect(aAccept).toBeDisabled();
+
+    // Start row B's accept WHILE row A is still open.
+    await user.click(bAccept);
+    expect(settleCallbacks).toHaveLength(2);
+
+    // Row A must STILL read pending — its own request hasn't settled, even
+    // though B is now the most recent call on the SAME shared
+    // `acceptStatusEvent` observer. Before the fix (gating on
+    // `.variables?.eventId`, the last `mutate()` payload), starting B here
+    // flips `.variables.eventId` to B's id and this assertion fails — A's
+    // spinner disappears and both its buttons re-enable mid-write.
+    expect(aAccept).toBeDisabled();
+    expect(bAccept).toBeDisabled();
+
+    // Settle ONLY row B's request.
+    act(() => settleCallbacks[1]?.());
+    expect(bAccept).not.toBeDisabled();
+    // Row A is untouched by B settling — still its own in-flight request.
+    expect(aAccept).toBeDisabled();
+
+    // Settle row A's request too.
+    act(() => settleCallbacks[0]?.());
+    expect(aAccept).not.toBeDisabled();
   });
 
   // `applications_accept_status_event`/`applications_reject_status_event`

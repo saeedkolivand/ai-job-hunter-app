@@ -952,12 +952,25 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
   // resolves (the row re-renders as settled). Move focus to the stable
   // Timeline heading beforehand so it never falls back to `document.body`.
   const timelineHeadingRef = useRef<HTMLSpanElement>(null);
+
+  // `acceptStatusEvent`/`rejectStatusEvent` are each ONE `useMutation()`
+  // instance shared by every row, so `.variables`/`.isPending` reflect only
+  // the MOST RECENT `mutate()` call — they cannot represent two concurrent
+  // in-flight rows. Track in-flight eventIds ourselves instead: added here
+  // (before the mutate call, so the pending row never has a gap), cleared in
+  // `onSettled` (fires on success OR error, unlike `onSuccess`/`onError`
+  // alone). Accept/reject get separate sets so the correct button shows its
+  // own spinner even if a row somehow has both in flight.
+  const [acceptingEventIds, setAcceptingEventIds] = useState<Set<number>>(() => new Set());
+  const [rejectingEventIds, setRejectingEventIds] = useState<Set<number>>(() => new Set());
+
   // Both take the SPECIFIC row's `eventId` as a param — never a shared,
   // zero-arg closure. Two provisional rows can coexist (a confirmation email,
   // then a later rejection email, both still unreviewed); resolving "the
   // pending row" any other way let a click on one row's button act on a
   // DIFFERENT row entirely. See `StatusEvent.eventId`'s doc.
   const handleAcceptEvent = (eventId: number) => {
+    setAcceptingEventIds((prev) => new Set(prev).add(eventId));
     acceptStatusEvent.mutate(
       { id: application.id, eventId },
       {
@@ -975,10 +988,18 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
           notify.success({ message: t('applications.detail.timeline.acceptSuccess') });
         },
         onError: () => notify.error({ message: t('applications.detail.timeline.acceptError') }),
+        onSettled: () => {
+          setAcceptingEventIds((prev) => {
+            const next = new Set(prev);
+            next.delete(eventId);
+            return next;
+          });
+        },
       }
     );
   };
   const handleRejectEvent = (eventId: number) => {
+    setRejectingEventIds((prev) => new Set(prev).add(eventId));
     rejectStatusEvent.mutate(
       { id: application.id, eventId },
       {
@@ -997,6 +1018,13 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
           notify.success({ message: t('applications.detail.timeline.rejectSuccess') });
         },
         onError: () => notify.error({ message: t('applications.detail.timeline.rejectError') }),
+        onSettled: () => {
+          setRejectingEventIds((prev) => {
+            const next = new Set(prev);
+            next.delete(eventId);
+            return next;
+          });
+        },
       }
     );
   };
@@ -1042,17 +1070,12 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
                 // `handleAcceptEvent`/`handleRejectEvent` above.
                 onAccept={() => handleAcceptEvent(e.eventId)}
                 onReject={() => handleRejectEvent(e.eventId)}
-                // `useMutation`'s `isPending` is per-HOOK, not per-variables —
-                // with two coexisting provisional rows, a bare `.isPending`
-                // here would put row A's spinner on row B too. `.variables`
-                // is the last `mutate()` payload, so gating on BOTH pins the
-                // pending state to the row it actually targets.
-                acceptPending={
-                  acceptStatusEvent.isPending && acceptStatusEvent.variables?.eventId === e.eventId
-                }
-                rejectPending={
-                  rejectStatusEvent.isPending && rejectStatusEvent.variables?.eventId === e.eventId
-                }
+                // Own in-flight tracking, not `.isPending`/`.variables` on
+                // the shared mutation hook — see the comment above
+                // `acceptingEventIds`/`rejectingEventIds` for why a shared
+                // observer can't represent two concurrent rows.
+                acceptPending={acceptingEventIds.has(e.eventId)}
+                rejectPending={rejectingEventIds.has(e.eventId)}
               />
             ),
           }))}

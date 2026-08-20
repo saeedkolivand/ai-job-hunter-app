@@ -43,11 +43,12 @@ export const useSetApplicationStatus = () => {
 };
 
 /** Accept the SPECIFIC email-derived, unconfirmed status-event row `eventId`
- *  names — clears its `confirmed` flag; the status itself is untouched.
- *  `eventId` MUST be the {@link StatusEvent.eventId} of the exact row the
- *  Accept affordance was rendered on — two provisional rows can coexist on
- *  an application, and resolving "the pending row" any other way can act on
- *  the wrong one. See `ApplicationsContract.acceptStatusEvent`. */
+ *  names — marks it reviewed (sets `confirmed = 1`, the same as reject
+ *  below); the status itself is untouched. `eventId` MUST be the
+ *  {@link StatusEvent.eventId} of the exact row the Accept affordance was
+ *  rendered on — two provisional rows can coexist on an application, and
+ *  resolving "the pending row" any other way can act on the wrong one.
+ *  See `ApplicationsContract.acceptStatusEvent`. */
 export const useAcceptStatusEvent = () => {
   const api = useAppClient();
   const qc = useQueryClient();
