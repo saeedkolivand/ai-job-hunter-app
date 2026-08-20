@@ -1148,3 +1148,47 @@ fn other_snowball_languages_have_curated_stopwords_wired() {
         );
     }
 }
+
+/// The hazard that forces every fragment-tokenizing caller onto the `_for_lang`
+/// variant — `validate::content::ats::keyword_density_issues` is one, and reading
+/// its `ctx.lang` is what keeps it honest.
+///
+/// A skills-and-tooling résumé body is mostly language-neutral tokens, so
+/// `whatlang`'s n-gram model has little to work with and misreads it. Here it
+/// says **Dutch**, and `wurde` — German-only, Dutch is `werd` — survives that
+/// profile while `STOPWORDS_DE` drops it. A caller that re-detects therefore gets
+/// a different token set, a different denominator, and can flip a finding on or
+/// off purely on a misdetection.
+///
+/// Deliberately tested HERE rather than end-to-end through the validator: to trip
+/// the density ceiling a fixture needs the German-only word 7+ times, and that
+/// many repeats add enough German signal to make detection CORRECT again, so the
+/// end-to-end version can only ever pass for the wrong reason. Measured, after
+/// writing that vacuous test three times.
+#[test]
+fn auto_detection_and_explicit_lang_disagree_on_a_tech_dense_body() {
+    let body = "Rust Python Kubernetes Terraform Redis PostgreSQL Docker AWS Kafka Grafana
+                Vite Turborepo pnpm Playwright Vitest ESLint Prettier Husky
+                Die Plattform wurde migriert, die Pipeline wurde neu gebaut, das                 Monitoring wurde ergänzt";
+
+    let detected = whatlang::detect(body).map(|i| i.lang());
+    assert_ne!(
+        detected,
+        Some(whatlang::Lang::Deu),
+        "fixture must MISdetect for this test to mean anything; got {detected:?}"
+    );
+
+    let auto = keywords_normalized_list(body);
+    let explicit = keywords_normalized_list_for_lang(body, "de");
+    let n_auto = auto.iter().filter(|t| t.as_str() == "wurde").count();
+    let n_explicit = explicit.iter().filter(|t| t.as_str() == "wurde").count();
+
+    assert!(
+        n_auto > 0,
+        "under the misdetected profile the German-only word must SURVIVE — that is          the hazard; got {n_auto}"
+    );
+    assert_eq!(
+        n_explicit, 0,
+        "under the resolved language it must be filtered; got {n_explicit}"
+    );
+}

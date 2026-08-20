@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::documents::evidence::{has_curated_function_words, trailing_date_column, SectionKind};
-use crate::documents::keywords::keywords_normalized_list;
+use crate::documents::keywords::keywords_normalized_list_for_lang;
 use crate::export::parser::is_contact_shaped;
 use crate::export::types::{LineKind, ParsedLine};
 use crate::validate::EMAIL_RE;
@@ -65,8 +65,8 @@ const REQUIRED_SECTIONS: &[(SectionKind, &str)] = &[
 
 /// `ats.keyword_density` — one keyword repeated past the stuffing threshold.
 ///
-/// The counted tokens come straight from [`keywords_normalized_list`], which
-/// now removes function words in the POSTING'S OWN language — so the density
+/// The counted tokens come straight from [`keywords_normalized_list_for_lang`],
+/// which removes function words in the document's OWN language — so the density
 /// denominator is content words only, as it has to be.
 ///
 /// This used to filter a second time through
@@ -115,7 +115,15 @@ fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     if ctx.language_mismatch || !has_curated_function_words(&ctx.lang) {
         return Vec::new();
     }
-    let tokens: Vec<String> = keywords_normalized_list(ctx.input.generated);
+    // `ctx.lang` — the language resolved ONCE for the whole document — not a
+    // fresh per-call detection. `keywords_normalized_list` would re-detect on
+    // `generated` alone, and a short or tech-heavy résumé body is not reliably
+    // identifiable in isolation (a German skills line reads as Estonian at
+    // confidence 0.23). A disagreement there silently picks a different stopword
+    // profile, which moves the denominator and can flip whether this issue is
+    // emitted at all. The gate one line up already commits to `ctx.lang`; the
+    // tokenizer has to agree with it.
+    let tokens: Vec<String> = keywords_normalized_list_for_lang(ctx.input.generated, &ctx.lang);
     if tokens.is_empty() {
         return Vec::new();
     }
