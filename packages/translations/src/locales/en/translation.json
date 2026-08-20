@@ -5,6 +5,11 @@
     "close": "Close",
     "exportFailed": "Export failed. Please try again."
   },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "This page hit an unexpected error. Try again, or go back to the dashboard.",
+    "goHome": "Go to dashboard"
+  },
   "app": {
     "title": "AI Job Hunter",
     "tagline": "Calm. Local. AI-native."

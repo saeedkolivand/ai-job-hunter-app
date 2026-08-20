@@ -316,6 +316,27 @@ impl RerankEnv for LiveRerankEnv<'_> {
 pub(super) const RERANK_STEP_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(SEMANTIC_RERANK_MAX as u64 * 15);
 
+/// The per-job allowance above (the bare `15`) started life as
+/// `timeouts::OLLAMA_EMBED`, and the two have to stay compatible even though the
+/// literal no longer says so: [`RERANK_DEGRADE_BREAKER`] consecutive degraded
+/// jobs must FIT inside [`RERANK_STEP_TIMEOUT`], or the wall clock kills the
+/// phase mid-job first and the breaker can never reach its threshold — which is
+/// precisely the "full phase burned hourly to produce nothing" that breaker
+/// exists to prevent.
+///
+/// One degraded job costs a whole embed budget: `OLLAMA_EMBED` ×
+/// `EMBED_BUDGET_ATTEMPTS` (see `send_embed_with_retry`). Asserted here rather
+/// than commented, because the coupling is invisible from `timeouts.rs` — a
+/// well-meaning widening of `OLLAMA_EMBED` now fails the BUILD instead of
+/// silently disabling the breaker.
+const _: () = assert!(
+    (crate::commands::ai_provider::timeouts::OLLAMA_EMBED.as_secs()
+        * (crate::commands::ai_provider::EMBED_BUDGET_ATTEMPTS as u64)
+        * (RERANK_DEGRADE_BREAKER as u64))
+        < RERANK_STEP_TIMEOUT.as_secs(),
+    "RERANK_DEGRADE_BREAKER embed budgets must fit inside RERANK_STEP_TIMEOUT —      lower OLLAMA_EMBED, lower RERANK_DEGRADE_BREAKER, or raise RERANK_STEP_TIMEOUT"
+);
+
 /// Phase 2 of the two-phase rank, exactly as the command runs it: the GATE,
 /// then the wall-clock-bounded re-rank.
 ///

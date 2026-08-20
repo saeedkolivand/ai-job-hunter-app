@@ -18,13 +18,19 @@ import {
   useSemanticScoring,
 } from '@/store/preferences-store';
 
-// Providers that expose an embeddings API. Anthropic is intentionally excluded —
-// it has no embeddings endpoint.
+// Providers that expose an embeddings API — NOT exhaustive of every AI
+// provider in the app (e.g. Anthropic and the CLI-agent providers have no
+// embeddings endpoint and are intentionally excluded).
 const EMBED_PROVIDERS = [
   { value: 'ollama', label: 'Ollama (Local)', defaultModel: 'nomic-embed-text' },
   { value: 'openai', label: 'OpenAI', defaultModel: 'text-embedding-3-small' },
   { value: 'gemini', label: 'Gemini', defaultModel: 'gemini-embedding-2' },
   { value: 'openai-compatible', label: 'OpenAI-compatible', defaultModel: '' },
+  // No default model — `default_embedding_model()` returns `None` for this
+  // client (openai.rs), a deliberate consequence of not presuming an
+  // embedding model ollama.com serves; the user types it, exactly as for
+  // openai-compatible above.
+  { value: 'ollama-cloud', label: 'Ollama Cloud', defaultModel: '' },
 ] as const;
 
 export function EmbeddingsSettings() {

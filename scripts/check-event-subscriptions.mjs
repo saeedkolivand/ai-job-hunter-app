@@ -211,7 +211,7 @@ const SUBSCRIBERS = {
   },
   'features/settings/components/ai-settings/EmbeddingsSettings/index.tsx': {
     mount: 'route-scoped',
-    hash: '0de0f20640fd',
+    hash: '71b93c0d2da4',
     note:
       'Completion is reported only by the panel that started the run: its `useJobEvents` ' +
       'handler unsubscribes on unmount, so the complete / partial-failure / failure toast is ' +

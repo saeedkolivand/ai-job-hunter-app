@@ -159,9 +159,29 @@ pub fn ollama_completion_deadline(effort: Option<&str>) -> Duration {
 /// Gemini.
 pub const EMBED: Duration = Duration::from_secs(30);
 
-/// Local Ollama embeddings (`/api/embeddings`): the local daemon's embeddings
-/// endpoint, bounded tighter than cloud embeddings.
-pub const OLLAMA_EMBED: Duration = Duration::from_secs(15);
+/// Local Ollama embeddings (`/api/embeddings`): the same bound as cloud
+/// [`EMBED`], not a tighter one — local is not reliably faster here.
+///
+/// A local daemon shares one GPU with whatever chat model is loaded, and Ollama
+/// serialises by default: an embed request queues behind an in-flight
+/// generation rather than running beside it. Measured in the field at the
+/// previous 15s bound — embed cycles failing in exactly 45s (3 x 15s) while a
+/// 27B chat completion held the GPU for 213s. That is a queue wait, not an
+/// unreachable daemon, and failing it produced a silent keyword-only degrade.
+/// A cold load of a large embedding model (e.g. a 4B / 2560-dim one) can exceed
+/// 15s unaided too.
+///
+/// 30s is a CEILING, not a preference: this constant is coupled to the
+/// autopilot re-rank phase, where
+/// `OLLAMA_EMBED * EMBED_BUDGET_ATTEMPTS * RERANK_DEGRADE_BREAKER` must stay
+/// under `RERANK_STEP_TIMEOUT` or the breaker can never fire and the phase
+/// burns its full wall clock hourly instead of giving up. That invariant is
+/// asserted at compile time in `commands/autopilot/rerank.rs` — raising this
+/// past ~33s fails the build rather than silently re-opening that defect.
+///
+/// A refused connection still fails fast either way: that is a transport
+/// error, not a timeout.
+pub const OLLAMA_EMBED: Duration = Duration::from_secs(30);
 
 // ── Company research (provider-native web search) ───────────────────────────────
 
@@ -438,6 +458,24 @@ mod tests {
     // bounds ends in a model call. A flat 25s here meant every research call in
     // a reported reasoning-model session timed out, and each cover letter was
     // written with no company knowledge and no visible failure.
+
+    /// The rerank const assertion bounds `OLLAMA_EMBED` from ABOVE only, so a
+    /// revert to the old 15s would satisfy it and silently restore the budget the
+    /// field measurement showed was too small. Pin the value here, and pin the
+    /// doc's own claim ("the same bound as cloud EMBED, not a tighter one") next
+    /// to it so the two cannot drift apart silently.
+    #[test]
+    fn ollama_embed_is_pinned_at_thirty_seconds_and_matches_the_cloud_bound() {
+        assert_eq!(
+            OLLAMA_EMBED,
+            Duration::from_secs(30),
+            "15s could not survive a local chat model holding the GPU; 30s is also the              ceiling that keeps RERANK_DEGRADE_BREAKER able to fire"
+        );
+        assert_eq!(
+            OLLAMA_EMBED, EMBED,
+            "OLLAMA_EMBED's doc claims local is not bounded tighter than cloud — keep              these equal or reword it"
+        );
+    }
 
     #[test]
     fn research_deadline_exceeds_the_inner_search_bounds_it_wraps() {
