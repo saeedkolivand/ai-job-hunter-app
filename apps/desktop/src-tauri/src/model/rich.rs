@@ -92,6 +92,15 @@ fn host_matches_domain(host: &str, domain: &str) -> bool {
 
 /// Map a URL to a friendly display label.
 /// Known domains get a brand name; everything else gets the bare domain (stripped of www.).
+///
+/// EXCEPTION: a `github.com`/`gitlab.com` URL with a REPO path (`user/repo`,
+/// 2+ path segments) keeps the informative `domain/path` instead of collapsing
+/// to "GitHub"/"GitLab" — the path IS the point of a project link (which repo),
+/// unlike a bare `/user` PROFILE link (still 1 segment, still shortened below).
+/// Mirrors the same profile-vs-deep-link distinction `is_profile_shaped` in
+/// `contact_profile::mod` already draws for the SAME two hosts (this module
+/// sits below `contact_profile` in the dependency graph, so the check is
+/// re-derived here rather than shared).
 pub fn url_label(url: &str) -> String {
     let lower = url.to_lowercase();
     // Strip protocol for matching, then isolate the host from any path so a
@@ -102,6 +111,19 @@ pub fn url_label(url: &str) -> String {
         .trim_start_matches("http://")
         .trim_start_matches("www.");
     let domain = host.split('/').next().unwrap_or(host);
+
+    if matches!(domain, "github.com" | "gitlab.com") {
+        let path = host.strip_prefix(domain).unwrap_or("");
+        // Query and fragment are not part of the repository's identity, and this
+        // label is printed verbatim on the résumé — without this,
+        // `github.com/user/repo?tab=readme` and `…/repo#install` end up on the
+        // page, and the query text also inflates the last path segment.
+        let path = path.split(['?', '#']).next().unwrap_or(path);
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if segments.len() >= 2 {
+            return format!("{domain}/{}", segments.join("/"));
+        }
+    }
 
     for (known, label) in KNOWN_DOMAINS {
         if host_matches_domain(domain, known) {
@@ -572,6 +594,57 @@ mod tests {
             "example.com"
         );
         assert_eq!(url_label("http://my-portfolio.dev"), "my-portfolio.dev");
+    }
+
+    /// Owner-reported: a GitHub/GitLab PROJECT link (a specific repo, not the
+    /// candidate's profile) must keep the full `domain/user/repo` text — the
+    /// reference résumé style ("github.com/saeedkolivand/ai-job-hunter-app")
+    /// — rather than collapsing to the generic "GitHub"/"GitLab" brand label,
+    /// which loses exactly the information a repo link exists to carry.
+    #[test]
+    fn url_label_keeps_the_full_path_for_a_github_repo_link() {
+        assert_eq!(
+            url_label("https://github.com/saeedkolivand/ai-job-hunter-app"),
+            "github.com/saeedkolivand/ai-job-hunter-app"
+        );
+        assert_eq!(
+            url_label("https://gitlab.com/janedoe/my-project"),
+            "gitlab.com/janedoe/my-project"
+        );
+        // www./scheme are still stripped the same way as every other case.
+        assert_eq!(
+            url_label("https://www.github.com/janedoe/my-project"),
+            "github.com/janedoe/my-project"
+        );
+        // A query or fragment is not part of the repository's identity, and this
+        // label is printed verbatim on the résumé — neither may leak into it.
+        assert_eq!(
+            url_label("https://github.com/user/repo?tab=readme"),
+            "github.com/user/repo"
+        );
+        assert_eq!(
+            url_label("https://github.com/user/repo#installation"),
+            "github.com/user/repo"
+        );
+        assert_eq!(
+            url_label("https://gitlab.com/user/repo/?ref=nav#top"),
+            "gitlab.com/user/repo"
+        );
+        // A query on a PROFILE link must not manufacture a second segment and
+        // promote it to a repo-shaped label.
+        assert_eq!(
+            url_label("https://github.com/janedoe?tab=repositories"),
+            "GitHub"
+        );
+    }
+
+    /// A bare GitHub/GitLab PROFILE link (one path segment: `/user`, no repo)
+    /// is unaffected — still the short brand label, exactly as before.
+    #[test]
+    fn url_label_still_shortens_a_github_profile_link() {
+        assert_eq!(url_label("https://github.com/jane"), "GitHub");
+        assert_eq!(url_label("https://gitlab.com/jane"), "GitLab");
+        assert_eq!(url_label("https://github.com/jane/"), "GitHub");
     }
 
     /// Security regression: a lookalike host that merely STARTS WITH a known

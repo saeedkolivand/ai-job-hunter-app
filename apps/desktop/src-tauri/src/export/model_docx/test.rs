@@ -34,6 +34,34 @@ fn build(template_id: TemplateId, ats_mode: bool) -> Vec<u8> {
     buffer.into_inner()
 }
 
+/// The entry date run is italic (not bold) — matches the PDF path
+/// (`single_column.typ`'s date-str run) so the duration reads as a
+/// consistently distinguishable, fast-to-scan element across both export
+/// formats, not just in the PDF.
+#[test]
+fn entry_date_run_is_italic_matching_pdf() {
+    let bytes = build(TemplateId::Classic, false);
+    let xml = part(&bytes, "word/document.xml");
+    // "2020 - Present" is the right-aligned date run for the Acme Corp entry
+    // (RESUME's legacy two-space format: `right_align_date` is true for
+    // Classic's wide-flow layout). Find the run containing that text and
+    // confirm it carries `<w:i/>`.
+    let idx = xml
+        .find("2020 - Present")
+        .expect("date text must appear in document.xml");
+    let run_start = xml[..idx].rfind("<w:r>").expect("enclosing run start");
+    let run_end = idx + xml[idx..].find("</w:r>").expect("enclosing run end");
+    let run_xml = &xml[run_start..run_end];
+    assert!(
+        run_xml.contains("<w:i "),
+        "expected the date run to carry <w:i /> (italic); run xml: {run_xml:?}"
+    );
+    assert!(
+        !run_xml.contains("<w:b "),
+        "date run must stay non-bold; run xml: {run_xml:?}"
+    );
+}
+
 /// Read a named part out of the DOCX zip.
 fn part(bytes: &[u8], name: &str) -> String {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).expect("docx zip");
