@@ -94,6 +94,8 @@ const mockSessionState: {
     applyAtsMode: boolean;
     applyForId: string | null;
     applyRun: { forId: string; runId: string; jobId: string } | null;
+    /** The autopilot one-shot seed — text only, never a saved-doc id. */
+    applySeedResume: string | null;
   };
   setApplicationApply: typeof mockSetApplicationApply;
   // Only `lastAppliedId` is read by the component (the resetScroll gate); kept
@@ -107,6 +109,7 @@ const mockSessionState: {
     applyAtsMode: false,
     applyForId: null,
     applyRun: null,
+    applySeedResume: null,
   },
   setApplicationApply: mockSetApplicationApply,
   autopilot: { lastAppliedId: null },
@@ -139,10 +142,16 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
     seedGeneration,
     onJobDescChange,
     persistence,
+    resumeDocId,
   }: {
     seedGeneration?: { id: string };
     onJobDescChange?: (text: string) => void;
-    persistence?: { runId: string | null; runJobId: string | null };
+    persistence?: {
+      runId: string | null;
+      runJobId: string | null;
+      wizardForm?: { resumeDocId?: string } | null;
+    };
+    resumeDocId?: string;
   }) => {
     capturedOnJobDescChange = onJobDescChange;
     return (
@@ -151,6 +160,10 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
         data-seedgenid={seedGeneration?.id ?? ''}
         data-runid={persistence?.runId ?? ''}
         data-runjobid={persistence?.runJobId ?? ''}
+        data-resumedocid={resumeDocId ?? ''}
+        // The PERSISTED form's id, distinct from the freshly-seeded prop above —
+        // this is the one a deleted résumé can leave dangling.
+        data-formdocid={persistence?.wizardForm?.resumeDocId ?? ''}
       />
     );
   },
@@ -184,6 +197,11 @@ let mockImportJobUrlIsError = false;
 // JD-resolve (useResolveJobUrl) — controllable so BriefTab loading-state tests
 // can simulate the in-flight window before the auto-resolve settles.
 let mockResolveJobUrlIsFetching = false;
+// Saved-documents list + the default résumé's text — controllable so the
+// seedResumeDocId tests below can drive the "matched" vs. "no saved doc"
+// shapes `useDefaultResumeId`/`useDocumentText` resolve to.
+let mockDocsData: { _id: string; name?: string; isDefault?: boolean }[] = [];
+let mockDocumentTextData: string | undefined = undefined;
 /** `acceptStatusEvent.mutate`/`rejectStatusEvent.mutate` — resolve successfully
  *  (an empty, error-free result) by default. `onSuccess` takes the real
  *  `{ error? }` payload — the production handler branches on `data.error`,
@@ -227,8 +245,8 @@ vi.mock('@/services', () => ({
   }),
   useAcceptStatusEvent: () => ({ mutate: mockAcceptStatusEventMutate }),
   useRejectStatusEvent: () => ({ mutate: mockRejectStatusEventMutate }),
-  useDocuments: () => ({ data: [], isLoading: false }),
-  useDocumentText: () => ({ data: undefined, isLoading: false }),
+  useDocuments: () => ({ data: mockDocsData, isLoading: false }),
+  useDocumentText: () => ({ data: mockDocumentTextData, isLoading: false }),
   useImportJobUrl: () => ({
     mutate: mockImportJobUrlMutate,
     isPending: false,
@@ -349,6 +367,9 @@ beforeEach(() => {
   mockImportJobUrlMutate.mockReset();
   mockImportJobUrlIsError = false;
   mockResolveJobUrlIsFetching = false;
+  mockDocsData = [];
+  mockDocumentTextData = undefined;
+  mockSessionState.applicationApply.applySeedResume = null;
   capturedOnJobDescChange = undefined;
   mockAcceptStatusEventMutate.mockClear();
   mockAcceptStatusEventMutate.mockImplementation(
@@ -1272,6 +1293,129 @@ describe('ApplicationDetailPage — Documents tab toolbar', () => {
     ).not.toBeInTheDocument();
     // Referral button always present.
     expect(screen.getByRole('button', { name: /autopilot\.referral\.open/i })).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationDetailPage — seedResumeDocId (Score tab résumé identity)
+//
+// `seedResumeText` has THREE fallbacks (autopilot one-shot → default résumé
+// text → previous generation's output); only the middle one has a saved-
+// document backing. The id must be seeded ONLY when the visible text IS that
+// document's text — an id that doesn't match the seeded text is the exact
+// drift `useResumeInput`'s `selectDoc` contract exists to prevent (see
+// index.tsx's `seedResumeDocId` comment).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ApplicationDetailPage — seedResumeDocId (Score tab résumé identity)', () => {
+  it("seeds the default résumé id when the seeded text IS that résumé's text (matched branch)", () => {
+    mockTab = 'documents';
+    mockDocsData = [{ _id: 'doc-1', name: 'Resume.pdf', isDefault: true }];
+    mockDocumentTextData = 'Default resume text';
+    mockSessionState.applicationApply.applySeedResume = null; // no autopilot one-shot
+    mockUseAiGenerations.mockReturnValue({ data: [] }); // no generation fallback needed
+
+    renderLoaded({ id: 'app-1' });
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute(
+      'data-resumedocid',
+      'doc-1'
+    );
+  });
+
+  it('does NOT seed a résumé id when the text came from the autopilot one-shot seed', () => {
+    mockTab = 'documents';
+    mockDocsData = [{ _id: 'doc-1', name: 'Resume.pdf', isDefault: true }];
+    // Even though a default résumé (with its OWN text) exists, the one-shot
+    // seed wins priority — an id backing DIFFERENT text must never be seeded.
+    mockDocumentTextData = 'Default resume text';
+    mockSessionState.applicationApply.applySeedResume = 'Autopilot one-shot resume text';
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    renderLoaded({ id: 'app-1' });
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute(
+      'data-resumedocid',
+      ''
+    );
+  });
+
+  it('strips a persisted résumé id whose document no longer exists', () => {
+    // `resume_source` is ID-WINS with NO fallback: a stale id fails the whole
+    // run with "resume not found" while the résumé text sits visible on screen.
+    mockTab = 'documents';
+    mockDocsData = [{ _id: 'doc-alive', name: 'Resume.pdf', isDefault: true }];
+    mockDocumentTextData = 'Default resume text';
+    mockSessionState.applicationApply.applySeedResume = null;
+    mockSessionState.applicationApply.applyWizardForm = {
+      resume: 'Some resume text',
+      outputType: 'both',
+      researchCompany: false,
+      resumeDocId: 'doc-deleted',
+    };
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    renderLoaded({ id: 'app-1' });
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute('data-formdocid', '');
+  });
+
+  it('keeps a persisted résumé id whose document still exists', () => {
+    mockTab = 'documents';
+    mockDocsData = [{ _id: 'doc-alive', name: 'Resume.pdf', isDefault: true }];
+    mockDocumentTextData = 'Default resume text';
+    mockSessionState.applicationApply.applySeedResume = null;
+    mockSessionState.applicationApply.applyWizardForm = {
+      resume: 'Some resume text',
+      outputType: 'both',
+      researchCompany: false,
+      resumeDocId: 'doc-alive',
+    };
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    renderLoaded({ id: 'app-1' });
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute(
+      'data-formdocid',
+      'doc-alive'
+    );
+  });
+
+  it("does NOT seed a résumé id when the text came from a previous generation's output", () => {
+    mockTab = 'documents';
+    // A default résumé DOES exist, so `defaultResumeId` is a real id and the
+    // `?? undefined` fallback cannot carry this test on its own — the equality
+    // guard is the only thing preventing the seed. Its text is EMPTY, which is
+    // what lets the `||` chain fall through to the generation's text: a
+    // non-empty default text would win the chain and legitimately seed the id.
+    mockDocsData = [{ _id: 'doc-1', name: 'Resume.pdf', isDefault: true }];
+    mockDocumentTextData = '';
+    mockSessionState.applicationApply.applySeedResume = null;
+    // `renderLoaded` always overwrites the generations mock to `{ data: [] }`
+    // (it's the "no matching generation" default for every OTHER test in this
+    // file) — call the two mocks + render directly instead, mirroring the
+    // "generation matching" describe block above.
+    const app = makeApp({ id: 'app-1', jobUrl: 'https://acme.com/job/1' });
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({
+      data: [
+        {
+          ...makeGen({ id: 'gen-1', jobUrl: 'https://acme.com/job/1', applicationId: 'app-1' }),
+          resumeText: 'Previous generation resume text',
+        },
+      ],
+    });
+
+    render(<ApplicationDetailPage />);
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute(
+      'data-resumedocid',
+      ''
+    );
   });
 });
 

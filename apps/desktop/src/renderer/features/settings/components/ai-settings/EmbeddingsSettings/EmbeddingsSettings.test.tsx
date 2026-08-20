@@ -165,6 +165,29 @@ describe('EmbeddingsSettings — cloud provider selected', () => {
     await switchProvider(user, 'OpenAI', 'Ollama (Local)');
     expect(screen.queryByText(ADVISORY_FRAGMENT)).not.toBeInTheDocument();
   });
+
+  // Ollama Cloud: users on it previously had no non-local embeddings option
+  // and kept hitting a local Ollama that wasn't running.
+  it('offers Ollama Cloud as a selectable provider and shows the cost advisory for it', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await switchProvider(user, 'Ollama (Local)', 'Ollama Cloud');
+    expect(screen.getByText(ADVISORY_FRAGMENT)).toBeInTheDocument();
+  });
+
+  it('does NOT presume a model for Ollama Cloud — the model field falls back to the generic placeholder', async () => {
+    // `default_embedding_model()` returns `None` for this client — inventing a
+    // model name here would silently disagree with what ollama.com actually
+    // serves. Mirrors the existing openai-compatible behaviour (empty
+    // `defaultModel`), asserted the same way `onProviderChange` verifies it:
+    // via the Input's placeholder, since the field itself stays empty.
+    const user = userEvent.setup();
+    renderPanel();
+
+    await switchProvider(user, 'Ollama (Local)', 'Ollama Cloud');
+    expect(screen.getByPlaceholderText('settings.embeddings.modelPlaceholder')).toBeInTheDocument();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

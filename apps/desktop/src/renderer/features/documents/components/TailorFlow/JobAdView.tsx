@@ -1,4 +1,10 @@
-import { ExternalLink as ExternalLinkIcon, Loader2, Sparkles } from 'lucide-react';
+import {
+  ExternalLink as ExternalLinkIcon,
+  FileSearch,
+  FileText,
+  Loader2,
+  Sparkles,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { MatchScore } from '@ajh/shared';
@@ -8,6 +14,7 @@ import {
   Alert,
   Button,
   Dropdown,
+  EmptyState,
   ErrorState,
   MarkdownMessage,
   SegmentedControl,
@@ -214,6 +221,24 @@ export function JobAdView({
   // language shown in its own script.
   const languageOptions = OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.endonym }));
 
+  // A CLI-agent provider (Claude Code, Codex, Gemini CLI) egresses despite
+  // reading as "local" elsewhere in this app — scoring a foreign-language
+  // posting routes through translation, which sends the job ad text to it.
+  // Rendered on every branch that can only be reached AFTER a request went out
+  // — loading, measured, and error. The error branch counts: its second
+  // disjunct (`score && !isMeasured(score)`) requires the query to have
+  // RESOLVED, so the round trip provably completed and the posting text was
+  // already sent. Only the no-résumé/no-posting branches are silent, because
+  // those short-circuit before `scoreEnabled` ever turns on. Computed once here
+  // so all three call sites stay in sync.
+  const egressNotice = isCliAgentProvider ? (
+    <p className="shrink-0 text-[10px] leading-relaxed text-foreground/70">
+      {t('autopilot.apply.jobAdView.score.cliAgentEgress', {
+        provider: activeProviderMeta?.label ?? activeProvider,
+      })}
+    </p>
+  ) : null;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="shrink-0 flex items-center justify-between gap-2">
@@ -313,37 +338,30 @@ export function JobAdView({
                 {t('autopilot.apply.jobAdView.score.resumeNote')}
               </p>
             )}
-            {/* A CLI-agent provider (Claude Code, Codex, Gemini CLI) egresses
-                despite reading as "local" elsewhere in this app — scoring a
-                foreign-language posting routes through translation, which
-                sends the job ad text to it. Disclosed here rather than
-                silently. */}
-            {isCliAgentProvider && (
-              <p className="shrink-0 text-[10px] leading-relaxed text-foreground/70">
-                {t('autopilot.apply.jobAdView.score.cliAgentEgress', {
-                  provider: activeProviderMeta?.label ?? activeProvider,
-                })}
-              </p>
-            )}
             {!resumeId ? (
-              <p className="text-[11px] text-foreground/50">{t('jobs.scoreNoResume')}</p>
+              <EmptyState icon={FileText} title={t('jobs.scoreNoResume')} className="flex-1 py-6" />
             ) : !scoreText ? (
-              <p className="text-[11px] text-foreground/50">
-                {t('autopilot.apply.jobAdView.score.noPosting')}
-              </p>
+              <EmptyState
+                icon={FileSearch}
+                title={t('autopilot.apply.jobAdView.score.noPosting')}
+                className="flex-1 py-6"
+              />
             ) : scoreLoading ? (
               // A translating scoring call can take up to ~117s (see
               // `handleTabChange`'s doc) — the one state on this tab most in
               // need of a live-region announcement, unlike the Summary tab's
               // `generating` block five lines up which it mirrors.
-              <div
-                role="status"
-                aria-live="polite"
-                className="flex items-center gap-2 text-[11px] text-foreground/40"
-              >
-                <Loader2 size={12} className="animate-spin" />
-                {t('autopilot.apply.jobAdView.score.loading')}
-              </div>
+              <>
+                {egressNotice}
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="flex items-center gap-2 text-[11px] text-foreground/40"
+                >
+                  <Loader2 size={12} className="animate-spin" />
+                  {t('autopilot.apply.jobAdView.score.loading')}
+                </div>
+              </>
             ) : scoreError || (score && !isMeasured(score)) ? (
               // Two distinct failure shapes routed to the SAME honest state: a
               // rejected query (offline, provider outage, the 200_000-byte zod
@@ -351,90 +369,114 @@ export function JobAdView({
               // `isMeasured`'s doc). Neither is "not scored" — that copy would
               // tell a user who waited up to two minutes for a failure exactly
               // what they'd be told about a posting with nothing in it.
-              <ErrorState
-                title={t('autopilot.apply.jobAdView.score.errorTitle')}
-                description={t('autopilot.apply.jobAdView.score.errorDescription')}
-                onRetry={() => {
-                  void refetchScore();
-                }}
-                className="rounded-lg border border-red-400/20 bg-red-400/5 py-6"
-              />
+              <>
+                {egressNotice}
+                <ErrorState
+                  title={t('autopilot.apply.jobAdView.score.errorTitle')}
+                  description={t('autopilot.apply.jobAdView.score.errorDescription')}
+                  onRetry={() => {
+                    void refetchScore();
+                  }}
+                  className="rounded-lg border border-red-400/20 bg-red-400/5 py-6"
+                />
+              </>
             ) : score ? (
-              <div className="flex flex-col gap-1.5">
-                {/* `semantic_enabled` is hardcoded off for this endpoint (see
+              <>
+                {egressNotice}
+                <div className="flex flex-col gap-1.5">
+                  {/* `semantic_enabled` is hardcoded off for this endpoint (see
                     `hasSemantic`'s doc), so `combined === ats` always — Match and
                     Coverage would print the identical number under DIFFERENT
                     badge cut points (combined 75/50 vs coverage 55/30),
                     contradicting each other on every render. Drop Match; it
                     carries no information Coverage doesn't, and "Keyword
                     coverage" is the honest label for a keyword-only number. */}
-                {hasSemantic && (
+                  {hasSemantic && (
+                    <ScoreMetric
+                      label={t('autopilot.scoreAbbr.combined')}
+                      value={hasCoverage ? score.combined : null}
+                      variant="combined"
+                      notScoredLabel={t('autopilot.apply.jobAdView.score.noKeywords')}
+                      testId={TEST_IDS.documents.jobAdViewScoreMatch}
+                    />
+                  )}
                   <ScoreMetric
-                    label={t('autopilot.scoreAbbr.combined')}
-                    value={hasCoverage ? score.combined : null}
-                    variant="combined"
+                    // Reuses the Autopilot list's own field labels (`autopilot.scoreAbbr.*`)
+                    // rather than forking a second translation for the identical
+                    // `MatchScore.combined`/`.ats` values — the naming rule this
+                    // surface already follows for "never ATS score", applied to
+                    // German too.
+                    label={t('autopilot.scoreAbbr.coverage')}
+                    value={hasCoverage ? score.ats : null}
+                    variant="coverage"
                     notScoredLabel={t('autopilot.apply.jobAdView.score.noKeywords')}
-                    testId={TEST_IDS.documents.jobAdViewScoreMatch}
+                    testId={TEST_IDS.documents.jobAdViewScoreCoverage}
                   />
-                )}
-                <ScoreMetric
-                  // Reuses the Autopilot list's own field labels (`autopilot.scoreAbbr.*`)
-                  // rather than forking a second translation for the identical
-                  // `MatchScore.combined`/`.ats` values — the naming rule this
-                  // surface already follows for "never ATS score", applied to
-                  // German too.
-                  label={t('autopilot.scoreAbbr.coverage')}
-                  value={hasCoverage ? score.ats : null}
-                  variant="coverage"
-                  notScoredLabel={t('autopilot.apply.jobAdView.score.noKeywords')}
-                  testId={TEST_IDS.documents.jobAdViewScoreCoverage}
-                />
-                {hasSemantic ? (
-                  <ScoreMetric
-                    label={t('autopilot.apply.jobAdView.score.semanticLabel')}
-                    value={score.semantic}
-                    notScoredLabel={t('analyze.notScored')}
-                    testId={TEST_IDS.documents.jobAdViewScoreSemantic}
-                  />
-                ) : (
-                  // Never true through this endpoint today (see `hasSemantic`'s
-                  // doc) — a disclosure footnote, not a metric row: reserving a
-                  // full row with badge chrome for a value that can never have
-                  // content is its own small dishonesty.
-                  <p
-                    data-testid={TEST_IDS.documents.jobAdViewScoreSemantic}
-                    className="text-[10px] text-foreground/50"
-                  >
-                    {t('autopilot.apply.jobAdView.score.semanticLabel')}: {t('analyze.notScored')}
-                  </p>
-                )}
-                {/* The kernel's own detail sentence — the keyword COUNT the
+                  {hasSemantic ? (
+                    <ScoreMetric
+                      label={t('autopilot.apply.jobAdView.score.semanticLabel')}
+                      value={score.semantic}
+                      notScoredLabel={t('analyze.notScored')}
+                      testId={TEST_IDS.documents.jobAdViewScoreSemantic}
+                    />
+                  ) : (
+                    // Never true through this endpoint today (see `hasSemantic`'s
+                    // doc) — a disclosure footnote, not a metric row: reserving a
+                    // full row with badge chrome for a value that can never have
+                    // content is its own small dishonesty.
+                    <p
+                      data-testid={TEST_IDS.documents.jobAdViewScoreSemantic}
+                      className="text-[10px] text-foreground/50"
+                    >
+                      {t('autopilot.apply.jobAdView.score.semanticLabel')}: {t('analyze.notScored')}
+                    </p>
+                  )}
+                  {/* The kernel's own detail sentence — the keyword COUNT the
                     coverage fraction is out of, the one signal that lets a user
                     notice a boilerplate-inflated denominator. Backend-authored
                     prose (like `error` above), deliberately not run through
                     `t()` — there is nothing to translate a runtime-interpolated
                     English sentence INTO. */}
-                {explanationText && (
-                  <p className="text-[10px] leading-relaxed text-foreground/50">
-                    {explanationText}
-                  </p>
-                )}
-                {hasCoverage && score.gaps.length > 0 && (
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] text-foreground/50">{t('analyze.gaps')}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {score.gaps.slice(0, 3).map((gap) => (
-                        <span
-                          key={gap}
-                          className="rounded-full border border-amber-400/20 bg-amber-400/5 px-2 py-0.5 text-[10px] text-amber-300/90"
-                        >
-                          {gap}
-                        </span>
+                  {explanationText && (
+                    <p className="text-[10px] leading-relaxed text-foreground/50">
+                      {explanationText}
+                    </p>
+                  )}
+                  {hasCoverage && score.gaps.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] text-foreground/50">{t('analyze.gaps')}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {score.gaps.slice(0, 3).map((gap) => (
+                          <span
+                            key={gap}
+                            className="rounded-full border border-amber-400/20 bg-amber-400/5 px-2 py-0.5 text-[10px] text-amber-300/90"
+                          >
+                            {gap}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Backend-authored English prose (like `explanationText`
+                    above), deliberately not run through `t()`. Gated on
+                    `hasCoverage` — the placeholder "no extractable keywords"
+                    result (`ats: 0, gaps: []`) still produces a "Strong
+                    keyword coverage" recommendation from the same `gaps`
+                    input, which would be a false positive here. */}
+                  {hasCoverage && score.recommendations.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] text-foreground/50">
+                        {t('analyze.recommendations')}
+                      </span>
+                      {score.recommendations.map((rec) => (
+                        <p key={rec} className="text-[10px] leading-relaxed text-foreground/50">
+                          {rec}
+                        </p>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </>
             ) : (
               <p className="text-[11px] text-foreground/50">{t('analyze.notScored')}</p>
             )}

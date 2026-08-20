@@ -466,4 +466,146 @@ describe('JobAdView — Score tab: CLI-agent egress disclosure', () => {
     });
     expect(screen.queryByText(egress)).not.toBeInTheDocument();
   });
+
+  // Regression: the disclosure used to render unconditionally above the
+  // five-way body branch, so it warned about egress on states that will
+  // NEVER send anything (nothing is scored yet). It must render ONLY where a
+  // score is actually loading or shown.
+  it('does NOT disclose egress on the no-résumé reason — nothing will ever be sent from that state', async () => {
+    mockActiveProvider = 'claude-code';
+    render(<JobAdView {...makeProps({ resumeId: undefined })} />);
+    await openScoreTab();
+
+    expect(screen.getByText(i18n.t('jobs.scoreNoResume'))).toBeInTheDocument();
+    const egress = i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', {
+      provider: 'Claude Code',
+    });
+    expect(screen.queryByText(egress)).not.toBeInTheDocument();
+  });
+
+  it('does NOT disclose egress on the no-posting reason — nothing will ever be sent from that state', async () => {
+    mockActiveProvider = 'claude-code';
+    render(<JobAdView {...makeProps({ jobDesc: '' })} />);
+    await openScoreTab();
+
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.noPosting'))
+    ).toBeInTheDocument();
+    const egress = i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', {
+      provider: 'Claude Code',
+    });
+    expect(screen.queryByText(egress)).not.toBeInTheDocument();
+  });
+
+  it('DOES disclose egress while the score is loading — a call is genuinely in flight', async () => {
+    mockActiveProvider = 'claude-code';
+    stubbedScore = { data: undefined, isLoading: true, isError: false, refetch: vi.fn() };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.getByText(i18n.t('autopilot.apply.jobAdView.score.loading'))).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', { provider: 'Claude Code' })
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('DOES disclose egress on the error state — a resolved-but-unusable response already egressed', async () => {
+    // The error branch is `scoreError || (score && !isMeasured(score))`. Reaching
+    // it at all means the request went out; the second disjunct means it came
+    // BACK. Either way the posting text was already sent, so this is the one
+    // failure state that still owes the user a disclosure.
+    mockActiveProvider = 'claude-code';
+    stubbedScore = { data: undefined, isLoading: false, isError: true, refetch: vi.fn() };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.errorTitle'))
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', { provider: 'Claude Code' })
+      )
+    ).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. Recommendations — `MatchScore.recommendations` (backend-authored prose,
+// like `explanationText`) surfaced below the gaps chips. Gated on
+// `hasCoverage`: the "no extractable keywords" placeholder result still runs
+// the same `recommendations(&gaps)` fn over its empty `gaps`, which would
+// otherwise print a false "Strong keyword coverage" for a posting that was
+// never actually scored.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: recommendations', () => {
+  it('renders the backend-authored recommendation prose under the Recommendations heading', async () => {
+    stubbedScore = {
+      data: baseScore({
+        ats: 40,
+        combined: 40,
+        scoreSource: 'keyword',
+        gaps: ['docker'],
+        recommendations: ['Consider adding evidence of: docker.'],
+      }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.getByText(i18n.t('analyze.recommendations'))).toBeInTheDocument();
+    expect(screen.getByText('Consider adding evidence of: docker.')).toBeInTheDocument();
+  });
+
+  it('renders a positive recommendation for a strong-coverage score with no gaps', async () => {
+    stubbedScore = {
+      data: baseScore({
+        ats: 95,
+        combined: 95,
+        scoreSource: 'keyword',
+        gaps: [],
+        recommendations: ['Strong keyword coverage — no obvious gaps.'],
+      }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.getByText('Strong keyword coverage — no obvious gaps.')).toBeInTheDocument();
+  });
+
+  it('does NOT render recommendations for the "no extractable keywords" placeholder, even if the field is non-empty', async () => {
+    // `ats: 0, gaps: []` is the placeholder shape (see `hasCoverage`'s doc) —
+    // the Rust `recommendations()` fn still runs over the empty `gaps` and
+    // would produce "Strong keyword coverage — no obvious gaps.", which
+    // would be a lie about a posting that was never actually scored.
+    stubbedScore = {
+      data: baseScore({
+        ats: 0,
+        combined: 0,
+        gaps: [],
+        scoreSource: 'keyword',
+        recommendations: ['Strong keyword coverage — no obvious gaps.'],
+      }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.queryByText(i18n.t('analyze.recommendations'))).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Strong keyword coverage — no obvious gaps.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders nothing under the heading when recommendations is empty', async () => {
+    stubbedScore = { data: baseScore({ recommendations: [] }), isLoading: false };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.queryByText(i18n.t('analyze.recommendations'))).not.toBeInTheDocument();
+  });
 });

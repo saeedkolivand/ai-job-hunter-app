@@ -2,6 +2,7 @@ import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import {
   createRootRoute,
+  type ErrorComponentProps,
   type NavigateOptions,
   Outlet,
   useNavigate,
@@ -10,7 +11,7 @@ import {
 
 import type { NotificationToast } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, NotificationProvider, transition, useNotification } from '@ajh/ui';
+import { Button, ErrorState, NotificationProvider, transition, useNotification } from '@ajh/ui';
 
 import { CinematicBackground } from '@/components/background/CinematicBackground';
 import { ProtocolVersionGate } from '@/components/layout/ProtocolVersionGate';
@@ -134,6 +135,53 @@ function NotificationToastBridge() {
   }, [api]);
 
   return null;
+}
+
+/**
+ * Root-level error boundary — TanStack Router walks up to this when a route
+ * component throws and neither it nor any ancestor route defines its own
+ * `errorComponent` (e.g. the Rules-of-Hooks crash logged 2026-08-18, which
+ * white-screened the whole app because no boundary existed at all).
+ *
+ * This replaces the WHOLE shell, not just the failed route's content: the
+ * router wraps a match's own component in the catch boundary, and the root
+ * match's component IS `RootLayout` — Titlebar, Sidebar, StatusBar and every
+ * always-mounted bridge go with it. So there is no sidebar left to send the
+ * user to, and the copy must not promise one.
+ *
+ * That is also why `reset` alone is not an escape hatch. It re-attempts
+ * rendering the route that threw, which recovers a transient failure but loops
+ * straight back for a deterministic render bug — exactly the case this was
+ * built for. The dashboard button is the real way out: `useNavigate` resolves
+ * fine inside the boundary, and landing on `/` remounts the shell.
+ *
+ * Neither action fixes the root cause; the underlying crash is tracked
+ * separately.
+ *
+ * Exported (not just used inline) so it can be unit-tested standalone,
+ * without mounting the rest of the root layout's provider tree.
+ */
+export function RootErrorBoundary({ reset }: ErrorComponentProps) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  return (
+    <ErrorState
+      title={t('errorBoundary.title')}
+      description={t('errorBoundary.description')}
+      onRetry={reset}
+      action={
+        <Button
+          variant="default"
+          onClick={() => {
+            void navigate({ to: '/' });
+          }}
+        >
+          {t('errorBoundary.goHome')}
+        </Button>
+      }
+      className="h-full"
+    />
+  );
 }
 
 function RootLayout() {
@@ -279,6 +327,7 @@ function RootLayout() {
 
 export const Route = createRootRoute({
   component: RootLayout,
+  errorComponent: RootErrorBoundary,
   notFoundComponent: () => (
     <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
       <p className="text-base font-semibold text-foreground/50">Page not found</p>

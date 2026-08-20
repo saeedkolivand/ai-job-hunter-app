@@ -27,6 +27,9 @@ mod ollama_cloud;
 mod openai;
 mod research; // shared company-research prompt spec + helpers used by every `research()`
 mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
+/// Re-exported for `autopilot::rerank`'s compile-time budget assertion — the
+/// re-rank breaker's arithmetic depends on how many attempts one embed spends.
+pub(crate) use retry::EMBED_BUDGET_ATTEMPTS;
 pub mod search; // web-search backends (the retrieval half of research) — NOT AI providers
 mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
 mod structured; // `complete_structured`'s prompt-discipline default + the per-provider JSON wire shapes
