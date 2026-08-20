@@ -11,6 +11,7 @@ import { ErrorState, transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
+import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import type { LetterLayoutId, TemplateId } from '@/lib/generate';
 import { shouldSeedResearchDefault } from '@/lib/research-company-default';
 import { useActiveModelCapabilities, useResolveJobUrl } from '@/services';
@@ -208,12 +209,26 @@ export function TailorFlow({
   // below need its live value (the staged run itself takes no such field —
   // see the shared schema's doc comment on `ResumePipelineRunRequest`).
   const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
-  // The SAVED résumé backing this generation, unedited (see `tailor-state.ts`'s
-  // doc on `resumeDocId`) — distinct from `resumeText`/`methods.getValues('resume')`,
-  // which is the wizard's live, possibly-tailored text. Threaded to JobAdView's
-  // Score tab so it reads the same résumé the Jobs page would score. Undefined
-  // until the user picks a saved résumé on the Resume step (or none is seeded).
-  const resumeId = useWatch({ control: methods.control, name: 'resumeDocId' });
+  // The form field: which saved document backs the text about to be GENERATED.
+  // It must keep matching the visible text, because `useTailorPipeline` sends
+  // `resumeText: ''` whenever it is set — a mismatched id would silently generate
+  // from a different résumé than the one on screen.
+  const pickedResumeDocId = useWatch({ control: methods.control, name: 'resumeDocId' });
+
+  // The Score tab asks a DIFFERENT question, and the two answers are not always
+  // the same document. Its own copy says "Scored against your saved résumé, not
+  // the tailored version shown here", so it wants the saved document even when
+  // the editor holds something else — and the autopilot apply path seeds
+  // `ap.resumeText` (see `AutopilotPage`), a snapshot that can differ from the
+  // document it was taken from, which is exactly when the strict field above must
+  // stay unset. Reading that field alone left this tab permanently on "Save a
+  // résumé to score" for every autopilot-originated application.
+  //
+  // Prefer an explicitly-picked document, fall back to the default — which is what
+  // the Jobs page has always scored (`useDefaultResumeId`), and what this line's
+  // previous comment already claimed to do.
+  const defaultResumeId = useDefaultResumeId();
+  const resumeId = pickedResumeDocId ?? defaultResumeId ?? undefined;
 
   // Keep the "search company" default in sync with the active model's capability:
   // seed it when the capability resolves after a cold-cache seed, and RE-seed it

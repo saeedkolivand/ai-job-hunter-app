@@ -73,6 +73,10 @@ vi.mock('@/components/ui/ModelSelector', () => ({
 }));
 
 vi.mock('@/services', () => ({
+  // `TailorFlow` resolves the DEFAULT résumé for the Score tab's fallback id
+  // (`useDefaultResumeId` reads this) — empty list = no default, which keeps
+  // these tests on the pre-existing 'no résumé' behaviour.
+  useDocuments: () => ({ data: [], isLoading: false }),
   useResolveJobUrl: () => ({ data: undefined, isLoading: false }),
   useExtractText: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useActiveModelCapabilities: () => ({ data: { supportsWebSearch: false }, isSuccess: true }),
