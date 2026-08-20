@@ -289,7 +289,7 @@ fn vector_version_bump_invalidates_cached_score() {
 #[test]
 fn formula_version_constant_is_pinned() {
     assert_eq!(
-        MATCH_FORMULA_VERSION, 2,
+        MATCH_FORMULA_VERSION, 3,
         "MATCH_FORMULA_VERSION changed — update this assert AND invalidate \
          cached match scores (clear match_scores table or bump the stored version)"
     );
@@ -565,6 +565,10 @@ struct FakeScoreIo {
     /// Every text an ACTUAL round-trip was made for, in order.
     embedded: Mutex<Vec<String>>,
     space: crate::commands::ai_provider::EmbeddingSpace,
+    /// Models an offline provider / a failed round-trip: every `embed_one`
+    /// call is still recorded (a real attempt was made) but returns `None` —
+    /// the same signal a genuine provider failure gives `score_one`.
+    embed_fails: bool,
 }
 
 impl FakeScoreIo {
@@ -582,7 +586,15 @@ impl FakeScoreIo {
                 dim: 3,
                 version: EMBEDDING_VECTOR_VERSION,
             },
+            embed_fails: false,
         }
+    }
+    /// Every embed round-trip this fake is asked for fails (`None`) — the
+    /// degrade path: semantic scoring was requested but no embedding was
+    /// available for the pair.
+    fn failing(mut self) -> Self {
+        self.embed_fails = true;
+        self
     }
     fn embedded(&self) -> Vec<String> {
         self.embedded.lock().clone()
@@ -599,6 +611,9 @@ impl FakeScoreIo {
 impl Embedder for FakeScoreIo {
     async fn embed_one(&self, text: &str) -> Option<EmbeddingVector> {
         self.embedded.lock().push(text.to_string());
+        if self.embed_fails {
+            return None;
+        }
         Some(self.vector())
     }
 }
@@ -1090,6 +1105,137 @@ async fn job_ad_text_surface_reports_the_honest_degrade_for_a_keyword_less_posti
     assert!(
         !explanation.contains("0%"),
         "…and must never be reported as a 0% match, which is a real measurement: {explanation}"
+    );
+}
+
+/// The Score tab's `semantic_enabled` bit now reaches [`score_one`] and flips
+/// it exactly like the Jobs page's does — [`MatchSurface::JobAdText`] is no
+/// longer wired to a hardcoded `0`. Driven directly against the kernel, the
+/// SAME convention `the_score_tab_surface_runs_the_same_pipeline_as_the_jobs_page_for_identical_text`
+/// below uses: `score_resume_against_text`/`match_resume_text` are thin
+/// `AppHandle` wrappers with no test harness in this crate, so the flag's
+/// effect is pinned where it actually branches.
+#[tokio::test]
+async fn the_score_tab_semantic_flag_flips_score_source_when_a_real_embedding_pair_exists() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[]);
+    let resume = DocumentRecord {
+        id: "doc-en".into(),
+        title: String::new(),
+        name: String::new(),
+        locale: None,
+        text: RESUME_TEXT.into(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    let active = store.embedding_config();
+    let job_text =
+        "Senior Rust engineer with Kubernetes and distributed systems experience.".to_string();
+    let job_id = job_ad_text_id(&job_text);
+
+    let result = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        &job_id,
+        Some(job_text),
+        1, // semantic_enabled — the flag this surface used to hardcode to 0
+        MatchSurface::JobAdText,
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_COMBINED),
+        "a caller-supplied semantic_enabled=1 with a real embedding pair must produce a \
+         combined score on THIS surface too: {result:?}"
+    );
+}
+
+/// Mutation-pin for the `cacheable = skip_semantic || semantic_available`
+/// invariant [`score_one`]'s own doc states, exercised on the newly-reachable
+/// JobAdText + semantic path: a degraded embed (offline provider / failed
+/// round-trip) must still report `scoreSource: "keyword"`, named as a
+/// degrade, never a fabricated `combined` — AND it must NOT be cached under
+/// the `semantic_enabled = 1` key. A second call once the provider recovers
+/// re-attempts the embed and gets the real answer; if the degrade had been
+/// wrongly cached, this would instead read back the frozen `keyword` result
+/// forever (the exact bug `score_one`'s `cacheable` comment names).
+#[tokio::test]
+async fn the_score_tab_degraded_embed_is_keyword_only_and_not_cached_under_the_semantic_key() {
+    let (_dir, store) = scoring_store();
+    let resume = DocumentRecord {
+        id: "doc-en".into(),
+        title: String::new(),
+        name: String::new(),
+        locale: None,
+        text: RESUME_TEXT.into(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    let active = store.embedding_config();
+    let job_text =
+        "Senior Rust engineer with Kubernetes and distributed systems experience.".to_string();
+    let job_id = job_ad_text_id(&job_text);
+
+    // First call: the provider is offline — every embed attempt fails.
+    let offline = FakeScoreIo::new(&store, &[]).failing();
+    let degraded = score_one(
+        &offline,
+        &store,
+        &resume,
+        None,
+        &active,
+        &job_id,
+        Some(job_text.clone()),
+        1,
+        MatchSurface::JobAdText,
+        None,
+    )
+    .await;
+    assert_eq!(
+        degraded.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_KEYWORD),
+        "no embedding was available — this must degrade, never fabricate combined: {degraded:?}"
+    );
+    let explanation = degraded["explanation"].as_str().unwrap_or_default();
+    assert!(
+        explanation.contains("could not be computed"),
+        "the degrade must be named, not silently swapped for the disabled-scoring copy: \
+         {explanation}"
+    );
+
+    // Second call, SAME job/résumé identity, provider now back online. If the
+    // degraded result above had been wrongly cached under the
+    // semantic_enabled=1 key, this would read it back and stay 'keyword' forever.
+    let online = FakeScoreIo::new(&store, &[]);
+    let recovered = score_one(
+        &online,
+        &store,
+        &resume,
+        None,
+        &active,
+        &job_id,
+        Some(job_text),
+        1,
+        MatchSurface::JobAdText,
+        None,
+    )
+    .await;
+    assert_eq!(
+        recovered.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_COMBINED),
+        "a degraded run must not poison the semantic cache row — the next run must retry and \
+         get the real answer: {recovered:?}"
     );
 }
 

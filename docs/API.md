@@ -2987,14 +2987,15 @@ Score one résumé against arbitrary job-ad TEXT — for a caller with a
 `AutopilotFoundJob`, neither of which carries one). Routes through the
 SAME shared kernel `resume()` does, over the SAME pre-processed text (the
 Rust command strips markdown before scoring, exactly as `resume()` does
-for a cached posting) — not a second scorer — but two axes still
-legitimately diverge from `resume()`: this call never has a title or
-requirements to compose in (only the description `JobAdView` holds), and
-semantic (embedding) scoring is always OFF here, never
-caller-configurable, so its number only matches `resume()`'s when
-semantic scoring is off there too. Content-addressed on the pre-processed
-job text, so repeated opens of the same posting reuse that cached score.
-`scoreSource` is therefore always `'keyword'` on the result.
+for a cached posting) — not a second scorer. `semanticScoringEnabled`
+mirrors `resume()`'s field of the same name (an omitted flag defaults to
+keyword-only, matching the app-wide `semanticScoring` preference), so
+`scoreSource` can be `'combined'` here too once the caller opts in. One
+axis still legitimately diverges from `resume()`: this call never has a
+title or requirements to compose in, only the description `JobAdView`
+holds. Content-addressed on the pre-processed job text (plus the semantic
+flag), so repeated opens of the same posting under the same preference
+reuse that cached score.
 
 #### `match.trimSuggestions`
 

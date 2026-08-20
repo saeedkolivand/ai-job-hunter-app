@@ -609,3 +609,84 @@ describe('JobAdView — Score tab: recommendations', () => {
     expect(screen.queryByText(i18n.t('analyze.recommendations'))).not.toBeInTheDocument();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. `hasSemantic`'s three reachable states, now that `match:text` is gated on
+// the `semanticScoring` preference instead of hardcoded off. `scoreSource` is
+// the ONLY signal the panel has (the hook itself decides what to request, per
+// use-match.test.ts) — `'combined'` means it ran, `'keyword'` covers BOTH "off
+// by preference" and "requested but degraded", distinguished only by the
+// kernel's own `explanation` sentence.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: the three semantic-scoring states', () => {
+  it('semantic ran (scoreSource: combined) renders BOTH the Match row and a real Semantic percentage', async () => {
+    stubbedScore = {
+      data: baseScore({ ats: 60, semantic: 80, combined: 74, scoreSource: 'combined' }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreMatch)).toHaveTextContent('74%');
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreSemantic)).toHaveTextContent('80%');
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreSemantic)).not.toHaveTextContent(
+      i18n.t('analyze.notScored')
+    );
+  });
+
+  it('semantic off by preference (scoreSource: keyword, "disabled" explanation) shows the honest not-scored footnote', async () => {
+    const guidance =
+      "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
+    stubbedScore = {
+      data: baseScore({
+        ats: 60,
+        combined: 60,
+        scoreSource: 'keyword',
+        explanation: `Keyword coverage 60% across 40 job keywords (semantic scoring disabled). ${guidance}`,
+        guidance,
+      }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewScoreMatch)).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreSemantic)).toHaveTextContent(
+      i18n.t('analyze.notScored')
+    );
+    expect(screen.getByText(/semantic scoring disabled/)).toBeInTheDocument();
+  });
+
+  it('semantic requested but degraded (scoreSource: keyword, "could not be computed" explanation) still surfaces the real reason — never silently dropped', async () => {
+    // The kernel's own degrade sentence (`score_one`'s explanation branch for
+    // semantic_enabled=1 with no usable embedding pair) — not a fixture
+    // invented for this test.
+    const guidance =
+      "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
+    stubbedScore = {
+      data: baseScore({
+        ats: 60,
+        combined: 60,
+        scoreSource: 'keyword',
+        explanation: `Keyword coverage 60% across 40 job keywords (semantic similarity could not be computed — no embedding was available for this pair). ${guidance}`,
+        guidance,
+      }),
+      isLoading: false,
+    };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    // Same honest footnote as the "off by preference" case — the panel never
+    // fabricates a distinction it can't back with a number.
+    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewScoreMatch)).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewScoreSemantic)).toHaveTextContent(
+      i18n.t('analyze.notScored')
+    );
+    // …but the reason IS surfaced, not silently dropped: the kernel's own
+    // sentence names exactly why, right below the footnote.
+    expect(
+      screen.getByText(/semantic similarity could not be computed — no embedding was available/)
+    ).toBeInTheDocument();
+  });
+});

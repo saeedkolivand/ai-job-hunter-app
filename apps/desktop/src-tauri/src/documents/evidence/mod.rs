@@ -27,8 +27,8 @@ use rust_stemmers::Stemmer;
 use serde::Serialize;
 
 use crate::documents::keywords::{
-    apply_stemmer, detect_locale_tag, display_forms, keywords, keywords_normalized,
-    keywords_normalized_list, languages_align, make_stemmer,
+    apply_stemmer, detect_locale_tag, display_forms_for_lang, keywords_for_lang,
+    keywords_normalized_for_lang, keywords_normalized_list_for_lang, languages_align, make_stemmer,
 };
 use crate::export::parser::parse_resume;
 use crate::export::types::LineKind;
@@ -128,9 +128,14 @@ struct JobVocabulary {
 /// `apply_stemmer`, so the `SHORT_TECH_TERMS` bypass that keeps "aws" from
 /// stemming to "aw" is applied once, where it is defined. Stemming runs per
 /// DISTINCT token, the same order of work `display_forms` already does.
-fn posting_weights(job_text: &str, stemmer: &Stemmer, aligned: bool) -> HashMap<String, usize> {
+fn posting_weights(
+    job_text: &str,
+    lang: &str,
+    stemmer: &Stemmer,
+    aligned: bool,
+) -> HashMap<String, usize> {
     let mut normalized: HashMap<String, usize> = HashMap::new();
-    for token in keywords_normalized_list(job_text) {
+    for token in keywords_normalized_list_for_lang(job_text, lang) {
         *normalized.entry(token).or_default() += 1;
     }
     if !aligned {
@@ -153,21 +158,21 @@ impl JobVocabulary {
         let stemmer = make_stemmer(job_text);
         let lang = detect_locale_tag(job_text);
         let keywords = if aligned {
-            keywords(job_text, &stemmer)
+            keywords_for_lang(job_text, lang, &stemmer)
         } else {
-            keywords_normalized(job_text)
+            keywords_normalized_for_lang(job_text, lang)
         };
         // Display forms are keyed on whatever the JD side produced, so they must
         // be built the same way — a stemmed map would miss every unstemmed hit.
         let display = if aligned {
-            display_forms(job_text, &stemmer)
+            display_forms_for_lang(job_text, lang, &stemmer)
         } else {
-            keywords_normalized(job_text)
+            keywords_normalized_for_lang(job_text, lang)
                 .into_iter()
                 .map(|t| (t.clone(), t))
                 .collect()
         };
-        let weights = posting_weights(job_text, &stemmer, aligned);
+        let weights = posting_weights(job_text, lang, &stemmer, aligned);
         Self {
             aligned,
             stemmer,
@@ -193,11 +198,16 @@ impl JobVocabulary {
     }
 
     /// This side's tokens, normalized the same way the posting's were.
+    ///
+    /// Pinned to `self.lang` rather than re-detected from `text` — `text` here
+    /// is a single résumé bullet, and `whatlang` reading a short line in
+    /// isolation is unreliable (it can name a different language than the
+    /// whole posting did). See `documents::keywords::keywords_normalized_list_for_lang`.
     fn tokens(&self, text: &str) -> HashSet<String> {
         if self.aligned {
-            keywords(text, &self.stemmer)
+            keywords_for_lang(text, self.lang, &self.stemmer)
         } else {
-            keywords_normalized(text)
+            keywords_normalized_for_lang(text, self.lang)
         }
     }
 

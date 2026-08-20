@@ -324,17 +324,21 @@ pub(super) const RERANK_STEP_TIMEOUT: std::time::Duration =
 /// precisely the "full phase burned hourly to produce nothing" that breaker
 /// exists to prevent.
 ///
-/// One degraded job costs a whole embed budget: `OLLAMA_EMBED` ×
-/// `EMBED_BUDGET_ATTEMPTS` (see `send_embed_with_retry`). Asserted here rather
-/// than commented, because the coupling is invisible from `timeouts.rs` — a
-/// well-meaning widening of `OLLAMA_EMBED` now fails the BUILD instead of
+/// One degraded job now costs a whole embed budget plus one bounded queue
+/// wait: `OLLAMA_EMBED` × `EMBED_BUDGET_ATTEMPTS` (see `send_embed_with_retry`)
+/// summed with `OLLAMA_EMBED_QUIET_WAIT` (see its own doc — the bounded,
+/// one-time wait `embed_with` spends letting an in-flight local chat clear
+/// before it dispatches its own request). Asserted here rather than
+/// commented, because the coupling is invisible from `timeouts.rs` — a
+/// well-meaning widening of either constant now fails the BUILD instead of
 /// silently disabling the breaker.
 const _: () = assert!(
-    (crate::commands::ai_provider::timeouts::OLLAMA_EMBED.as_secs()
-        * (crate::commands::ai_provider::EMBED_BUDGET_ATTEMPTS as u64)
-        * (RERANK_DEGRADE_BREAKER as u64))
+    ((crate::commands::ai_provider::timeouts::OLLAMA_EMBED.as_secs()
+        * (crate::commands::ai_provider::EMBED_BUDGET_ATTEMPTS as u64))
+        + crate::commands::ai_provider::timeouts::OLLAMA_EMBED_QUIET_WAIT.as_secs())
+        * (RERANK_DEGRADE_BREAKER as u64)
         < RERANK_STEP_TIMEOUT.as_secs(),
-    "RERANK_DEGRADE_BREAKER embed budgets must fit inside RERANK_STEP_TIMEOUT —      lower OLLAMA_EMBED, lower RERANK_DEGRADE_BREAKER, or raise RERANK_STEP_TIMEOUT"
+    "RERANK_DEGRADE_BREAKER embed budgets (now including OLLAMA_EMBED_QUIET_WAIT)      must fit inside RERANK_STEP_TIMEOUT — lower one of them, or raise RERANK_STEP_TIMEOUT"
 );
 
 /// Phase 2 of the two-phase rank, exactly as the command runs it: the GATE,

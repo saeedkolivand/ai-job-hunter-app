@@ -127,6 +127,19 @@ reviews:
       instructions: >
         Docs/knowledge base must be thin pointers into the owning source/symbol —
         no copied literals; keep them from drifting.
+    # Scoped EXCEPTION to the rule above. Without this, every PR that touches an IPC
+    # contract regenerates this file and draws the same unactionable "make it a thin
+    # pointer" finding — asking for an edit that AGENTS.md rule 14 forbids and that
+    # `pnpm gen:api:check` would fail CI for.
+    - path: 'docs/API.md'
+      instructions: >
+        GENERATED FILE — never hand-edited. `scripts/gen-api-docs.mjs` renders it from
+        the TSDoc on `packages/shared/src/ipc/contracts/*.ts`, and `pnpm gen:api:check`
+        fails CI on a stale copy. The thin-pointer rule above does NOT apply: this file
+        IS the rendered contract, so restating the contract is its purpose, not
+        drift. Never request a change to this file. If the prose is wrong, unclear or
+        bloated, raise it on the TSDoc member in the contract source instead — that is
+        the only place it can be fixed.
 
   # Area labels — mirrors the retired .github/labeler.yml path→label map. CodeRabbit
   # applies labels by name from these instructions.

@@ -103,10 +103,14 @@ export const keys = {
     score: (resumeId: string | null, jobId: string) => ['match', resumeId, jobId] as const,
     /** Content-addressed on the job-ad TEXT itself (not an id) — the Score
      *  tab's ad-hoc `match:text` path, for a caller with no `PostingsCache`
-     *  id. Repeated opens of the SAME posting text share this key, mirroring
-     *  `score`'s per-job reuse. */
-    textScore: (resumeId: string | null, jobText: string) =>
-      ['match', 'text', resumeId, jobText] as const,
+     *  id. Repeated opens of the SAME posting text under the SAME semantic
+     *  preference share this key, mirroring `score`'s per-job reuse. The
+     *  `semanticScoring` flag is part of the key (mirrors `useJobMatchScore`'s
+     *  inline `['match', resumeId, jobId, semanticScoring]`) — without it a
+     *  keyword-only result cached under one preference would be served back
+     *  under the other. */
+    textScore: (resumeId: string | null, jobText: string, semanticScoring: boolean) =>
+      ['match', 'text', resumeId, jobText, semanticScoring] as const,
   },
   updater: { changelog: ['updater', 'changelog'] as const },
   applications: {
