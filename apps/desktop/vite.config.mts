@@ -38,6 +38,12 @@ export default defineConfig({
     TanStackRouterVite({
       routesDirectory: path.resolve(import.meta.dirname, 'src/renderer/routes'),
       generatedRouteTree: path.resolve(import.meta.dirname, 'src/renderer/routeTree.gen.ts'),
+      // A co-located test for a route module (e.g. `__root`'s error boundary) is
+      // not a route: without this the generator warns on every run that the file
+      // "does not export a Route". Matched against the BASENAME, and the
+      // alternative the warning suggests — a `-` filename prefix — would hide the
+      // test from the `*.test.tsx` convention every other suite follows.
+      routeFileIgnorePattern: '\\.(test|spec)\\.tsx?$',
     }),
     react(),
     tailwindcss(),
