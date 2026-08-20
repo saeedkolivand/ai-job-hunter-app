@@ -414,6 +414,14 @@ impl EmailWatchStore {
     /// keychain credential itself is removed separately by the command layer
     /// via `CredentialStore`) and the factory reset (`Resettable::reset` in
     /// `commands/privacy.rs`).
+    ///
+    /// **`auto_write_enabled` is DELIBERATELY not reset here** — every other
+    /// account column goes back to its migrated default, but this one
+    /// survives the wipe as-is. Kept this way on purpose: if the user
+    /// turned auto-write OFF, a disconnect/reconnect (or a factory reset
+    /// that reconnects the SAME account) must not silently turn it back ON
+    /// behind them — the safe direction is to preserve an explicit opt-out,
+    /// not to reset it toward the (default-ON) migrated value.
     pub fn clear(&self) -> AppResult<()> {
         let mut conn = self.conn.lock();
         // Same atomicity requirement as `connect`'s address-changed branch —

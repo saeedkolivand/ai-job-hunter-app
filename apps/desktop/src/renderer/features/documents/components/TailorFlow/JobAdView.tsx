@@ -16,10 +16,12 @@ import {
 } from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
-import { ModelSelector } from '@/components/ui/ModelSelector';
+import { ModelSelector, useSelectedProvider } from '@/components/ui/ModelSelector';
+import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { OUTPUT_LANGUAGES } from '@/lib/generate';
 import { MatchBand } from '@/lib/match-band';
 import { useJobAdTextMatchScore } from '@/services';
+import type { AiProvider } from '@/store/preferences-schema';
 
 interface Props {
   jobDesc: string;
@@ -122,6 +124,14 @@ export function JobAdView({
   resumeId,
 }: Props) {
   const { t } = useTranslation();
+
+  // Score-tab egress disclosure: scoring a foreign-language posting routes
+  // through translation, and the CLI-agent providers (Claude Code, Codex,
+  // Gemini CLI) egress despite reading as "local" elsewhere in this app —
+  // see the Score tab's guidance paragraph below.
+  const activeProvider = useSelectedProvider();
+  const activeProviderMeta = PROVIDERS[activeProvider as AiProvider];
+  const isCliAgentProvider = activeProviderMeta?.kind === 'cli-agent';
 
   // Start on `source` when there's nothing to show or the snippet is truncated —
   // that's when paste is the most useful action. `summary` otherwise (normal case).
@@ -301,6 +311,18 @@ export function JobAdView({
             {!!resumeId && (
               <p className="shrink-0 text-[10px] leading-relaxed text-foreground/70">
                 {t('autopilot.apply.jobAdView.score.resumeNote')}
+              </p>
+            )}
+            {/* A CLI-agent provider (Claude Code, Codex, Gemini CLI) egresses
+                despite reading as "local" elsewhere in this app — scoring a
+                foreign-language posting routes through translation, which
+                sends the job ad text to it. Disclosed here rather than
+                silently. */}
+            {isCliAgentProvider && (
+              <p className="shrink-0 text-[10px] leading-relaxed text-foreground/70">
+                {t('autopilot.apply.jobAdView.score.cliAgentEgress', {
+                  provider: activeProviderMeta?.label ?? activeProvider,
+                })}
               </p>
             )}
             {!resumeId ? (

@@ -46,6 +46,11 @@ vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: ({ className }: { className?: string }) => (
     <div data-testid="model-selector-stub" className={className} />
   ),
+  // Score-tab CLI-agent egress disclosure reads this — 'ollama' (kind:
+  // local-server) keeps every existing test in this file's assertions
+  // unaffected; the real-copy assertion for the disclosure itself lives in
+  // JobAdView.i18n.test.tsx.
+  useSelectedProvider: () => 'ollama',
 }));
 
 // ── ExternalLink — thin anchor wrapper, no special provider needed ─────────────

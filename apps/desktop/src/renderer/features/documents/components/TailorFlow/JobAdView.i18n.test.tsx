@@ -32,7 +32,7 @@
  * the posting text must not re-fire the query) is covered separately, against
  * the same tracked-mock pattern, in JobAdView.test.tsx §10.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -62,8 +62,14 @@ vi.mock('@/services', () => ({
 // (every test here starts on `source`, see makeProps), stubbed only so the
 // module import itself stays cheap and hermetic ─────────────────────────────
 
+// Mutable so the CLI-agent egress-disclosure tests below can select a
+// CLI-agent provider; every other test in this file never touches it, so it
+// stays at the default ('ollama', kind: local-server — no disclosure).
+let mockActiveProvider = 'ollama';
+
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => null,
+  useSelectedProvider: () => mockActiveProvider,
 }));
 
 vi.mock('@/lib/generate', () => ({
@@ -392,5 +398,61 @@ describe('JobAdView — Score tab: additional context lines', () => {
     expect(screen.getByText('kubernetes')).toBeInTheDocument();
     expect(screen.getByText('terraform')).toBeInTheDocument();
     expect(screen.queryByText('aws')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. CLI-agent egress disclosure — a CLI-agent provider (Claude Code, Codex,
+// Gemini CLI) egresses despite reading as "local" elsewhere in this app; the
+// translation path a foreign-language posting routes through can send it the
+// job ad text. Undisclosed, this surface would say nothing about it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobAdView — Score tab: CLI-agent egress disclosure', () => {
+  afterEach(() => {
+    mockActiveProvider = 'ollama';
+  });
+
+  it('discloses egress, with the provider named, when the active provider is a CLI agent', async () => {
+    mockActiveProvider = 'claude-code';
+    stubbedScore = { data: baseScore(), isLoading: false };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(
+      screen.getByText(
+        i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', { provider: 'Claude Code' })
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT disclose egress for a local provider (ollama)', async () => {
+    mockActiveProvider = 'ollama';
+    stubbedScore = { data: baseScore(), isLoading: false };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    // Anchored on the untranslated key resolving to an actual sentence, so a
+    // false negative here can't hide behind a missing-key echo.
+    const egress = i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', {
+      provider: 'Ollama (Local)',
+    });
+    expect(egress).not.toBe('autopilot.apply.jobAdView.score.cliAgentEgress');
+    expect(screen.queryByText(egress)).not.toBeInTheDocument();
+  });
+
+  it('does NOT disclose egress for a cloud API provider (openai) — only CLI agents egress unexpectedly', async () => {
+    // Cloud providers already read as external everywhere else in the app;
+    // this disclosure exists specifically because CLI agents are the ones
+    // that WRONGLY read as local (`is_local()`) despite egressing.
+    mockActiveProvider = 'openai';
+    stubbedScore = { data: baseScore(), isLoading: false };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    const egress = i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', {
+      provider: 'OpenAI',
+    });
+    expect(screen.queryByText(egress)).not.toBeInTheDocument();
   });
 });

@@ -874,10 +874,12 @@ function TimelineEventBody({
         </Tag>
       )}
       <span className="flex items-center gap-1.5">{transitionText}</span>
-      {/* The backend's own reversal note is a fixed, non-localized English
-          string (`applications/status_events.rs`) — never render it; the
+      {/* The backend writes a fixed, non-localized English literal into
+          `note` for BOTH the auto-write itself ("email-derived
+          (unconfirmed)") and its reversal ("reverted: email-derived status
+          change rejected by the user") — never render either verbatim; the
           badge + localized hint below say the same thing translated. */}
-      {event.note && !correction && (
+      {event.note && !provisional && !correction && (
         <span className="mt-0.5 block text-[11px] text-foreground/55">{event.note}</span>
       )}
       {provisional && (
@@ -950,9 +952,14 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
   // resolves (the row re-renders as settled). Move focus to the stable
   // Timeline heading beforehand so it never falls back to `document.body`.
   const timelineHeadingRef = useRef<HTMLSpanElement>(null);
-  const handleAcceptEvent = () => {
+  // Both take the SPECIFIC row's `eventId` as a param — never a shared,
+  // zero-arg closure. Two provisional rows can coexist (a confirmation email,
+  // then a later rejection email, both still unreviewed); resolving "the
+  // pending row" any other way let a click on one row's button act on a
+  // DIFFERENT row entirely. See `StatusEvent.eventId`'s doc.
+  const handleAcceptEvent = (eventId: number) => {
     acceptStatusEvent.mutate(
-      { id: application.id },
+      { id: application.id, eventId },
       {
         onSuccess: () => {
           timelineHeadingRef.current?.focus();
@@ -962,9 +969,9 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
       }
     );
   };
-  const handleRejectEvent = () => {
+  const handleRejectEvent = (eventId: number) => {
     rejectStatusEvent.mutate(
-      { id: application.id },
+      { id: application.id, eventId },
       {
         onSuccess: () => {
           timelineHeadingRef.current?.focus();
@@ -1015,8 +1022,11 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
                 event={e}
                 t={t}
                 statusLabel={statusLabel}
-                onAccept={handleAcceptEvent}
-                onReject={handleRejectEvent}
+                // Per-row closures — each captures THIS row's `eventId`,
+                // never a shared handler. See the comment on
+                // `handleAcceptEvent`/`handleRejectEvent` above.
+                onAccept={() => handleAcceptEvent(e.eventId)}
+                onReject={() => handleRejectEvent(e.eventId)}
                 acceptPending={acceptStatusEvent.isPending}
                 rejectPending={rejectStatusEvent.isPending}
               />

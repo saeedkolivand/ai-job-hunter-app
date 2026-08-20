@@ -299,9 +299,13 @@ function makeGen(overrides: {
   };
 }
 
-/** Status-event fixture — defaults to an ordinary settled user transition. */
+/** Status-event fixture — defaults to an ordinary settled user transition.
+ *  `eventId` defaults to 1; tests exercising TWO provisional rows at once
+ *  (the class of bug that shipped) must override it per row so each fixture
+ *  has a distinct, assertable identity. */
 function makeEvent(overrides: Partial<StatusEvent> = {}): StatusEvent {
   return {
+    eventId: 1,
     applicationId: 'app-1',
     fromStatus: 'applied',
     toStatus: 'interviewing',
@@ -1610,6 +1614,7 @@ describe('ApplicationDetailPage — timeline notes', () => {
   it('renders a same-status note event as ONE stage (never "X → X") with its note', () => {
     renderTimeline([
       {
+        eventId: 1,
         applicationId: 'app-1',
         fromStatus: 'interviewing',
         toStatus: 'interviewing',
@@ -1630,6 +1635,7 @@ describe('ApplicationDetailPage — timeline notes', () => {
   it('still renders a real transition as from → to', () => {
     renderTimeline([
       {
+        eventId: 1,
         applicationId: 'app-1',
         fromStatus: 'applied',
         toStatus: 'interviewing',
@@ -1904,16 +1910,18 @@ describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('clicking Accept calls acceptStatusEvent.mutate with the application id', async () => {
+  it('clicking Accept calls acceptStatusEvent.mutate with the application id and the row eventId', async () => {
     const user = userEvent.setup();
-    renderTimeline([makeEvent({ source: 'email', confirmed: false })], { id: 'app-accept-1' });
+    renderTimeline([makeEvent({ eventId: 42, source: 'email', confirmed: false })], {
+      id: 'app-accept-1',
+    });
 
     await user.click(
       screen.getByRole('button', { name: 'applications.detail.timeline.acceptAria' })
     );
 
     expect(mockAcceptStatusEventMutate).toHaveBeenCalledWith(
-      { id: 'app-accept-1' },
+      { id: 'app-accept-1', eventId: 42 },
       expect.any(Object)
     );
     expect(mockNotify.success).toHaveBeenCalledWith({
@@ -1921,16 +1929,107 @@ describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
     });
   });
 
-  it('clicking Reject calls rejectStatusEvent.mutate with the application id', async () => {
+  it('clicking Reject calls rejectStatusEvent.mutate with the application id and the row eventId', async () => {
     const user = userEvent.setup();
-    renderTimeline([makeEvent({ source: 'email', confirmed: false })], { id: 'app-reject-1' });
+    renderTimeline([makeEvent({ eventId: 77, source: 'email', confirmed: false })], {
+      id: 'app-reject-1',
+    });
 
     await user.click(
       screen.getByRole('button', { name: 'applications.detail.timeline.rejectAria' })
     );
 
     expect(mockRejectStatusEventMutate).toHaveBeenCalledWith(
-      { id: 'app-reject-1' },
+      { id: 'app-reject-1', eventId: 77 },
+      expect.any(Object)
+    );
+  });
+
+  // ── Regression: two provisional rows can coexist on the ordinary happy path
+  // (a confirmation email, then a later rejection email, both still
+  // unreviewed) — the shipped bug resolved Accept/Reject to whichever row the
+  // BACKEND considered "most recent", regardless of which row's button was
+  // actually clicked, because every row shared ONE closure with no per-row
+  // identity. A single-row fixture can never catch this class — these two
+  // tests must stay permanently, with two DISTINCT eventIds asserted.
+  it('clicking Accept on the OLDER of two provisional rows targets that eventId, not the newer eventId', async () => {
+    const user = userEvent.setup();
+    const older = makeEvent({
+      eventId: 101,
+      at: 1000,
+      fromStatus: 'saved',
+      toStatus: 'applied',
+      source: 'email',
+      confirmed: false,
+    });
+    const newer = makeEvent({
+      eventId: 202,
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'rejected',
+      source: 'email',
+      confirmed: false,
+    });
+    // orderedEvents sorts newest-first, so the DOM order is [newer, older].
+    renderTimeline([older, newer], { id: 'app-two-provisional-accept' });
+
+    const acceptButtons = screen.getAllByRole('button', {
+      name: 'applications.detail.timeline.acceptAria',
+    });
+    expect(acceptButtons).toHaveLength(2);
+
+    // Click the OLDER row's button — the second one in DOM order.
+    const olderAcceptButton = acceptButtons[1];
+    if (!olderAcceptButton) throw new Error('expected two Accept buttons');
+    await user.click(olderAcceptButton);
+
+    expect(mockAcceptStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-two-provisional-accept', eventId: 101 },
+      expect.any(Object)
+    );
+    expect(mockAcceptStatusEventMutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: 202 }),
+      expect.any(Object)
+    );
+  });
+
+  it('clicking Reject on the NEWER of two provisional rows targets that eventId, not the older eventId', async () => {
+    const user = userEvent.setup();
+    const older = makeEvent({
+      eventId: 303,
+      at: 1000,
+      fromStatus: 'saved',
+      toStatus: 'applied',
+      source: 'email',
+      confirmed: false,
+    });
+    const newer = makeEvent({
+      eventId: 404,
+      at: 2000,
+      fromStatus: 'applied',
+      toStatus: 'rejected',
+      source: 'email',
+      confirmed: false,
+    });
+    // orderedEvents sorts newest-first, so the DOM order is [newer, older].
+    renderTimeline([older, newer], { id: 'app-two-provisional-reject' });
+
+    const rejectButtons = screen.getAllByRole('button', {
+      name: 'applications.detail.timeline.rejectAria',
+    });
+    expect(rejectButtons).toHaveLength(2);
+
+    // Click the NEWER row's button — the first one in DOM order.
+    const newerRejectButton = rejectButtons[0];
+    if (!newerRejectButton) throw new Error('expected two Reject buttons');
+    await user.click(newerRejectButton);
+
+    expect(mockRejectStatusEventMutate).toHaveBeenCalledWith(
+      { id: 'app-two-provisional-reject', eventId: 404 },
+      expect.any(Object)
+    );
+    expect(mockRejectStatusEventMutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: 303 }),
       expect.any(Object)
     );
   });
@@ -2018,5 +2117,24 @@ describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
     expect(
       screen.queryByText('reverted: email-derived status change rejected by the user')
     ).not.toBeInTheDocument();
+  });
+
+  it('renders a provisional row without leaking the raw backend note, showing the localized hint instead', () => {
+    renderTimeline([
+      makeEvent({
+        at: 1000,
+        fromStatus: 'applied',
+        toStatus: 'interviewing',
+        source: 'email',
+        confirmed: false,
+        // The Rust auto-write's fixed, non-localized English literal.
+        note: 'email-derived (unconfirmed)',
+      }),
+    ]);
+
+    expect(screen.getByText('applications.detail.timeline.provisionalBadge')).toBeInTheDocument();
+    expect(screen.getByText('applications.detail.timeline.provisionalHint')).toBeInTheDocument();
+    // Never the raw backend literal, verbatim.
+    expect(screen.queryByText('email-derived (unconfirmed)')).not.toBeInTheDocument();
   });
 });

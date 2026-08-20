@@ -22,26 +22,50 @@ use crate::error::AppResult;
 /// atomic compare-and-set every other caller in this crate uses) performs
 /// the write.
 ///
-/// **`domain_hint` gates the write on sender provenance — a cold email must
-/// never write.** [`crate::email_watch::parser::fingerprint`]'s subject
-/// match is a REGEX over attacker-controlled text; anyone who knows a user
-/// applied to a company can send a subject/body that fingerprints AND
-/// classifies. Without a provenance gate, that one email would freeze the
-/// application (see [`next_status`]'s terminal-absorption doc) as far as
-/// automation is concerned, silently — not data loss, a silent STOP to
-/// tracking. `domain_hint` (already computed by `fingerprint`, a KNOWN
-/// ATS/board sender domain) is the cheapest sufficient signal that already
-/// exists. Two WIDER signals were considered and deliberately NOT
-/// implemented in this slice: the sender domain matching the application's
-/// own company domain (no existing field derives a company's expected email
-/// domain — a real new piece of logic, not a seam) and in-thread linkage via
-/// `References`/`In-Reply-To` (would need widening the IMAP `HEADER.FIELDS`
-/// fetch — a cost to approve, not to spend silently).
+/// **`write_authorized` gates the write on AUTHENTICATED sender provenance —
+/// a cold or spoofed email must never write.**
+/// [`crate::email_watch::parser::fingerprint`]'s subject match is a REGEX
+/// over attacker-controlled text; anyone who knows a user applied to a
+/// company can send a subject/body that fingerprints AND classifies.
+/// Without a provenance gate, that one email would freeze the application
+/// (see [`next_status`]'s terminal-absorption doc) as far as automation is
+/// concerned, silently — not data loss, a silent STOP to tracking.
+///
+/// A bare sender-domain string match is NOT sufficient authentication —
+/// three ways it fails: (1) `linkedin.com`/`indeed.com` are messaging
+/// relays that routinely carry attacker-authored subject/body from their
+/// own genuinely-authentic infrastructure; (2) a free ATS-tenant signup can
+/// send from a listed vendor domain with attacker-controlled content; (3)
+/// plain `From:` header spoofing wherever a listed domain lacks `p=reject`
+/// or the user's IMAP host does not enforce DMARC. `write_authorized` (the
+/// caller's [`crate::email_watch::poller::MessageOutcome::write_authorized`],
+/// computed as [`crate::email_watch::parser::Fingerprint::write_gate_domain`]
+/// AND [`crate::email_watch::parser::EmailHeader::dmarc_pass`] — a DMARC
+/// `pass` result aligned to the visible `From:` domain, BOTH required) closes
+/// (1) and (3): DMARC `pass` cannot be produced by an attacker who does not
+/// control DKIM signing or an SPF-authorized sender for the aligned domain,
+/// and the narrower write-gate domain list drops the two open relays
+/// entirely regardless of their own DMARC posture. (2) is NOT fully closed —
+/// a malicious tenant on a legitimate ATS vendor's own infrastructure would
+/// still pass DMARC for that vendor's domain; documented here as a residual,
+/// accepted risk rather than assumed away. This app would rather auto-write
+/// LESS often (including "never, on an IMAP host that doesn't stamp
+/// `Authentication-Results` at all") than write on unauthenticated content —
+/// see [`crate::email_watch::parser::EmailHeader::dmarc_pass`]'s doc for
+/// exactly what is and is not proven.
+///
+/// Two WIDER signals were considered and deliberately NOT implemented: the
+/// sender domain matching the application's own company domain (no existing
+/// field derives a company's expected email domain — a real new piece of
+/// logic, not a seam) and in-thread linkage via `References`/`In-Reply-To`
+/// (would need a further IMAP `HEADER.FIELDS` widening — a cost to approve,
+/// not to spend silently).
 ///
 /// **Gated in this exact order** (each a legitimate no-op — `Ok(false)`,
 /// never an error):
 /// 1. [`EmailWatchStore::auto_write_enabled`] is off;
-/// 2. `domain_hint` is `false` — an unrecognised sender;
+/// 2. `write_authorized` is `false` — an unrecognised sender, OR a
+///    recognised one without an aligned DMARC `pass`;
 /// 3. `intent` is `None` — [`crate::email_watch::intent::classify_intent`]
 ///    decided nothing (a real, testable no-op here, not merely "the caller
 ///    happened not to call this" — the caller passes `MessageOutcome::
@@ -49,10 +73,11 @@ use crate::error::AppResult;
 /// 4. [`next_status`] itself says no-op — a terminal, still-CONFIRMED-or-
 ///    user-set `current_status` (absorbing by design), or the intent
 ///    doesn't advance the ladder;
-/// 5. this exact `(current_status, target)` transition was already rejected
-///    by the user for this application
-///    ([`ApplicationStore::was_transition_rejected`]) — a later email must
-///    not re-apply a status the user has already told us was wrong;
+/// 5. the user already rejected a write LANDING AT `target` for this
+///    application — keyed on `target` alone, not the `(current_status,
+///    target)` pair, so a detour through a different live status can't
+///    re-apply a target the user has already told us was wrong (see
+///    [`ApplicationStore::was_transition_rejected`]'s doc);
 /// 6. the compare-and-set itself loses (the application's status changed
 ///    since the caller last read it — the same race every other
 ///    `transition_status_if`-family caller already tolerates).
@@ -66,12 +91,12 @@ pub fn apply_matched_intent(
     application_id: &str,
     current_status: ApplicationStatus,
     intent: Option<EmailIntent>,
-    domain_hint: bool,
+    write_authorized: bool,
 ) -> AppResult<bool> {
     if !email_watch.auto_write_enabled() {
         return Ok(false);
     }
-    if !domain_hint {
+    if !write_authorized {
         return Ok(false);
     }
     let Some(intent) = intent else {
@@ -83,7 +108,7 @@ pub fn apply_matched_intent(
     else {
         return Ok(false);
     };
-    if applications.was_transition_rejected(application_id, current_status, target) {
+    if applications.was_transition_rejected(application_id, target) {
         return Ok(false);
     }
     applications.transition_status_if_sourced(
@@ -187,7 +212,10 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(!wrote, "a cold sender (no domain_hint) must never write");
+        assert!(
+            !wrote,
+            "a cold/unauthorized sender (write_authorized=false) must never write"
+        );
         assert_eq!(
             applications.get(&id).unwrap().status,
             ApplicationStatus::Saved
@@ -304,7 +332,15 @@ mod tests {
         );
 
         // The user rejects it — status reverts to Interviewing.
-        let reverted = applications.reject_latest_status_event(&id).unwrap();
+        let pending_event_id = applications
+            .events(&id)
+            .into_iter()
+            .last()
+            .unwrap()
+            .event_id;
+        let reverted = applications
+            .reject_status_event(&id, pending_event_id)
+            .unwrap();
         assert!(reverted);
         assert_eq!(
             applications.get(&id).unwrap().status,
@@ -345,7 +381,7 @@ mod tests {
     #[test]
     fn a_later_email_supersedes_its_own_unconfirmed_terminal_write() {
         // The exact "one cold email freezes the application" shape, minus
-        // the cold part: a legitimate (domain_hint = true) rejection email
+        // the cold part: a legitimate (write_authorized = true) rejection email
         // auto-writes Rejected (unconfirmed). Nobody has reviewed it yet.
         // A later, genuinely different email must be able to supersede the
         // still-unconfirmed Rejected, not be silently dropped.
@@ -414,7 +450,15 @@ mod tests {
             true,
         )
         .unwrap();
-        assert!(applications.accept_latest_status_event(&id).unwrap());
+        let pending_event_id = applications
+            .events(&id)
+            .into_iter()
+            .last()
+            .unwrap()
+            .event_id;
+        assert!(applications
+            .accept_status_event(&id, pending_event_id)
+            .unwrap());
         assert!(!applications.current_status_is_unconfirmed_email_write(&id));
 
         let wrote = apply_matched_intent(

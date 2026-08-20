@@ -409,3 +409,33 @@ fn clear_wipes_account_and_seen_rows() {
     assert!(status.last_match_at.is_none());
     assert!(!store.has_seen("uid-1"), "seen rows must be wiped too");
 }
+
+/// MEDIUM fix: `clear()` deliberately does NOT reset `auto_write_enabled` —
+/// pins the behavior the fix-forward task's doc-vs-behavior review confirmed
+/// is the safe direction (see `clear()`'s own doc for why), so a future
+/// change to the `UPDATE` column list that accidentally starts resetting it
+/// fails this test rather than silently flip a user's opt-out back to the
+/// default-ON value on their next disconnect/reconnect.
+#[test]
+fn clear_does_not_reset_the_auto_write_opt_out() {
+    let (_dir, store) = new_store();
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+    assert!(
+        store.set_auto_write_enabled(false).unwrap(),
+        "precondition: the toggle write must succeed while connected"
+    );
+    assert!(
+        !store.status().auto_write_enabled,
+        "precondition: opted out"
+    );
+
+    store.clear().expect("clear");
+
+    // `auto_write_enabled` has no `address IS NOT NULL` guard on its OWN
+    // read path, so it is readable even post-clear — reconnecting the same
+    // account afterward must not find it silently reset to default-ON.
+    assert!(
+        !store.status().auto_write_enabled,
+        "a user's auto-write opt-out must survive a disconnect/factory-reset wipe"
+    );
+}

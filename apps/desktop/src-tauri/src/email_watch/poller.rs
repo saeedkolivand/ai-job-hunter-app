@@ -45,11 +45,18 @@ pub struct MessageOutcome {
     /// [`crate::email_watch::auto_write::apply_matched_intent`] treats
     /// `None` as its own no-op — see that fn's doc.
     pub intent: Option<EmailIntent>,
-    /// Whether the sender's domain was a known-ATS hint — see
-    /// [`parser::Fingerprint::domain_hint`]'s doc. Carried through
-    /// (independent of `matched_application_id`) so the auto-write path's
-    /// sender-provenance gate has it without re-parsing the header.
-    pub domain_hint: bool,
+    /// **HIGH-2 fix**: whether this message clears the auto-write gate —
+    /// [`parser::Fingerprint::write_gate_domain`] (the narrower ATS-tenant
+    /// domain list) AND [`parser::EmailHeader::dmarc_pass`] (DMARC `pass`,
+    /// aligned to the visible `From:` domain), BOTH required. Deliberately a
+    /// SEPARATE signal from the score-boost `domain_hint` fed to
+    /// [`matcher::best_match`] below (the wider, UNauthenticated sender-domain
+    /// list — a boost only, never gates anything) — the two used to be the
+    /// SAME boolean, which meant an unauthenticated sender-domain string
+    /// match alone authorized a write. Carried through (independent of
+    /// `matched_application_id`) so the auto-write path's gate has it
+    /// without re-parsing the header.
+    pub write_authorized: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +119,17 @@ fn cap_oldest_first(
     headers
 }
 
+/// HIGH-2 fix: whether one message clears the auto-write gate —
+/// [`parser::Fingerprint::write_gate_domain`] (the narrower ATS-tenant
+/// domain list) AND [`parser::EmailHeader::dmarc_pass`] (DMARC `pass`,
+/// aligned to the visible `From:` domain), BOTH required. Pure/factored out
+/// of [`run_tick`] so the AND-combination itself — not just its two inputs
+/// in isolation — is directly unit-testable across all four truth-table
+/// cases, rather than only reachable through a live IMAP round trip.
+fn compute_write_authorized(fp: &parser::Fingerprint, header: &parser::EmailHeader) -> bool {
+    fp.write_gate_domain && header.dmarc_pass
+}
+
 /// Run one IMAP tick: fetch headers since `since`, drop anything at or below
 /// the watermark (recomputed against the LIVE `UIDVALIDITY`, since a stale
 /// `stored_last_uid` is meaningless after a mailbox renumbering), fingerprint
@@ -156,8 +174,17 @@ pub fn run_tick(
 
     // Parse + fingerprint every relevant header up front (cheap, in-process,
     // no network) so we know exactly which uids need a body fetch.
-    let mut parsed: Vec<(u32, Option<parser::EmailHeader>, bool, bool)> =
-        Vec::with_capacity(relevant.len());
+    // `domain_hint` (score boost, unauthenticated) and `write_authorized`
+    // (HIGH-2: the authenticated write gate) are deliberately two SEPARATE
+    // fields — see [`MessageOutcome::write_authorized`]'s doc.
+    struct ParsedHeader {
+        uid: u32,
+        header: Option<parser::EmailHeader>,
+        is_candidate: bool,
+        domain_hint: bool,
+        write_authorized: bool,
+    }
+    let mut parsed: Vec<ParsedHeader> = Vec::with_capacity(relevant.len());
     let mut candidate_uids = Vec::new();
     for h in &relevant {
         match parser::parse_header(&h.raw_header) {
@@ -166,9 +193,22 @@ pub fn run_tick(
                 if fp.is_candidate() {
                     candidate_uids.push(h.uid);
                 }
-                parsed.push((h.uid, Some(header), fp.is_candidate(), fp.domain_hint));
+                let write_authorized = compute_write_authorized(&fp, &header);
+                parsed.push(ParsedHeader {
+                    uid: h.uid,
+                    header: Some(header),
+                    is_candidate: fp.is_candidate(),
+                    domain_hint: fp.domain_hint,
+                    write_authorized,
+                });
             }
-            None => parsed.push((h.uid, None, false, false)),
+            None => parsed.push(ParsedHeader {
+                uid: h.uid,
+                header: None,
+                is_candidate: false,
+                domain_hint: false,
+                write_authorized: false,
+            }),
         }
     }
 
@@ -182,46 +222,54 @@ pub fn run_tick(
 
     let outcomes = parsed
         .into_iter()
-        .map(|(uid, header, is_candidate, domain_hint)| {
-            let header = header.filter(|_| is_candidate);
-            // The fetch itself is already bounded at the protocol level to
-            // `imap_client::MAX_BODY_BYTES` (a partial-octet FETCH, see
-            // `imap_client::body_fetch_item_spec`) — this second cap is
-            // defense-in-depth only, for a non-compliant server that ignores
-            // the partial-fetch hint and returns the whole message anyway.
-            // Computed ONCE and reused for both matching and intent
-            // classification below, so a fingerprint hit never fetches or
-            // decodes the body twice.
-            let body_text = header.as_ref().and_then(|_| {
-                bodies.get(&uid).and_then(|raw| {
-                    let capped = &raw[..raw.len().min(imap_client::MAX_BODY_BYTES)];
-                    parser::parse_body_text(capped)
-                })
-            });
-            let matched_application_id = header.as_ref().and_then(|header| {
-                let candidates = parser::extract_candidates(
-                    &header.subject,
-                    body_text.as_deref(),
-                    header.from_name.as_deref(),
-                );
-                matcher::best_match(
-                    &candidates,
-                    candidate_applications,
-                    domain_hint,
-                    unconfirmed_email_write_ids,
-                )
-                .map(|scored| scored.application_id)
-            });
-            let intent = header
-                .as_ref()
-                .and_then(|header| intent::classify_intent(&header.subject, body_text.as_deref()));
-            MessageOutcome {
-                uid,
-                matched_application_id,
-                intent,
-                domain_hint,
-            }
-        })
+        .map(
+            |ParsedHeader {
+                 uid,
+                 header,
+                 is_candidate,
+                 domain_hint,
+                 write_authorized,
+             }| {
+                let header = header.filter(|_| is_candidate);
+                // The fetch itself is already bounded at the protocol level to
+                // `imap_client::MAX_BODY_BYTES` (a partial-octet FETCH, see
+                // `imap_client::body_fetch_item_spec`) — this second cap is
+                // defense-in-depth only, for a non-compliant server that ignores
+                // the partial-fetch hint and returns the whole message anyway.
+                // Computed ONCE and reused for both matching and intent
+                // classification below, so a fingerprint hit never fetches or
+                // decodes the body twice.
+                let body_text = header.as_ref().and_then(|_| {
+                    bodies.get(&uid).and_then(|raw| {
+                        let capped = &raw[..raw.len().min(imap_client::MAX_BODY_BYTES)];
+                        parser::parse_body_text(capped)
+                    })
+                });
+                let matched_application_id = header.as_ref().and_then(|header| {
+                    let candidates = parser::extract_candidates(
+                        &header.subject,
+                        body_text.as_deref(),
+                        header.from_name.as_deref(),
+                    );
+                    matcher::best_match(
+                        &candidates,
+                        candidate_applications,
+                        domain_hint,
+                        unconfirmed_email_write_ids,
+                    )
+                    .map(|scored| scored.application_id)
+                });
+                let intent = header.as_ref().and_then(|header| {
+                    intent::classify_intent(&header.subject, body_text.as_deref())
+                });
+                MessageOutcome {
+                    uid,
+                    matched_application_id,
+                    intent,
+                    write_authorized,
+                }
+            },
+        )
         .collect();
 
     Ok(TickResult {
@@ -312,6 +360,60 @@ mod tests {
         let capped = cap_oldest_first(vec![&h2, &h1], 200);
         let uids: Vec<u32> = capped.iter().map(|h| h.uid).collect();
         assert_eq!(uids, vec![1, 2]);
+    }
+
+    // A write-gate-eligible domain (`greenhouse.io`) vs one that is not
+    // (`example.com`) — going through the real `parser::fingerprint` (its
+    // `subject_matched`/`domain_hint` fields are private, so a direct
+    // struct literal isn't constructible from here; a subject that never
+    // matches a fingerprint phrase is irrelevant to what this test checks).
+    fn fp(write_gate_eligible_domain: bool) -> parser::Fingerprint {
+        let domain = if write_gate_eligible_domain {
+            "greenhouse.io"
+        } else {
+            "example.com"
+        };
+        parser::fingerprint(&email_header("irrelevant subject", Some(domain), false))
+    }
+
+    fn header_with_dmarc(dmarc_pass: bool) -> parser::EmailHeader {
+        email_header("irrelevant subject", None, dmarc_pass)
+    }
+
+    fn email_header(
+        subject: &str,
+        from_domain: Option<&str>,
+        dmarc_pass: bool,
+    ) -> parser::EmailHeader {
+        parser::EmailHeader {
+            subject: subject.to_string(),
+            from_name: None,
+            from_domain: from_domain.map(str::to_string),
+            message_id: None,
+            dmarc_pass,
+        }
+    }
+
+    #[test]
+    fn compute_write_authorized_requires_both_the_write_gate_domain_and_dmarc_pass() {
+        // HIGH-2: the full truth table — neither signal alone is
+        // sufficient, matching `apply_matched_intent`'s doc.
+        assert!(
+            compute_write_authorized(&fp(true), &header_with_dmarc(true)),
+            "both true -> authorized"
+        );
+        assert!(
+            !compute_write_authorized(&fp(true), &header_with_dmarc(false)),
+            "write-gate domain alone (no DMARC) must not authorize"
+        );
+        assert!(
+            !compute_write_authorized(&fp(false), &header_with_dmarc(true)),
+            "DMARC pass alone (not a write-gate domain, e.g. linkedin.com) must not authorize"
+        );
+        assert!(!compute_write_authorized(
+            &fp(false),
+            &header_with_dmarc(false)
+        ));
     }
 
     #[test]

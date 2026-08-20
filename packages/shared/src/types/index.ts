@@ -611,6 +611,18 @@ export const EVENT_SOURCE_EMAIL_REJECT = 'email_reject';
 
 /** One append-only status-history row. */
 export interface StatusEvent {
+  /** SQLite's implicit `rowid` for this row — the only stable per-row
+   *  identity `status_events` has (no declared primary key). Required by
+   *  {@link ApplicationsContract.acceptStatusEvent}/
+   *  {@link ApplicationsContract.rejectStatusEvent} to target the EXACT row
+   *  being actioned: two provisional rows can coexist on the ordinary happy
+   *  path (a confirmation email, then a later rejection email, both still
+   *  unreviewed), and resolving "the pending row" by recency alone let a
+   *  click on the OLDER row's Accept/Reject button silently act on the
+   *  NEWER, unrelated one instead. Always pass the `eventId` of the SPECIFIC
+   *  row the button was rendered on, never a cached/stale value from a
+   *  different row. */
+  eventId: number;
   applicationId: string;
   /** Empty for the seed event of a freshly-created Application. */
   fromStatus: string;

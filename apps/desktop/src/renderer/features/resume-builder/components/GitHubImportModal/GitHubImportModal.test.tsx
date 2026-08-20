@@ -57,6 +57,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'openai/gpt-4o',
+  useSelectedProvider: () => 'ollama',
 }));
 
 vi.mock('@/services/use-contact-profile', () => ({

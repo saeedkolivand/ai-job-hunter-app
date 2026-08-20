@@ -973,8 +973,13 @@ that the timeline must render distinctly, with Accept/Reject affordances:
   (`source: 'email_reject'`); `status_events` stays append-only, so the
   original row is never edited or deleted.
 
-Both are idempotent no-ops (`{ success: true }`, nothing changed) when there
-is no pending unconfirmed row — never an error a UI needs to branch on.
+**Both require `StatusEvent.eventId` — the id of the SPECIFIC row
+being actioned, not just the application id.** Two provisional rows can
+coexist (a confirmation email, then a later rejection email, both still
+unreviewed); always pass the `eventId` of the exact row the Accept/Reject
+affordance was rendered on. Both are idempotent no-ops (`{ success: true
+}`, nothing changed) when `eventId` does not resolve to a pending
+unconfirmed row for `id` — never an error a UI needs to branch on.
 **Nothing in this app ever writes `confirmed: true` except these two calls
 clearing it on review** — adjudication is the entire safety model for a
 classifier with a recorded precision limit (see `docs/knowledge/
@@ -1024,24 +1029,30 @@ on the appended `status_events` row and returned as `StatusEvent.note` by
 #### `applications.acceptStatusEvent`
 
 ```ts
-acceptStatusEvent(args: { id: string }): Promise<ApplicationMutationResult>;
+acceptStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
 ```
 
-Accept the most recent email-derived, unconfirmed status transition for
-`id` — clears its `StatusEvent.confirmed` flag; the status itself is
-untouched. A no-op when there is nothing pending (still `{ success: true
- }`, not an error).
+Accept the SPECIFIC email-derived, unconfirmed status-event row
+`eventId` names — clears its `StatusEvent.confirmed` flag; the
+status itself is untouched. `eventId` must be the
+`StatusEvent.eventId` of the exact row the Accept affordance was
+rendered on — see `StatusEvent.eventId`'s doc for why "the most
+recent pending row" is not a safe substitute. A no-op when `eventId`
+does not resolve to a pending row for `id` (still `{ success: true }`,
+not an error).
 
 #### `applications.rejectStatusEvent`
 
 ```ts
-rejectStatusEvent(args: { id: string }): Promise<ApplicationMutationResult>;
+rejectStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
 ```
 
-Reject the most recent email-derived, unconfirmed status transition for
-`id` — reverts the status by compare-and-set (never clobbers a status the
-user changed by hand in the meantime) and appends a reversal event. A
-no-op when there is nothing pending.
+Reject the SPECIFIC email-derived, unconfirmed status-event row
+`eventId` names — reverts the status by compare-and-set (never clobbers
+a status that moved on, whether by the user's own hand or a later
+email, in the meantime) and appends a reversal event. Same
+`eventId`-targeting requirement as `acceptStatusEvent`. A no-op
+when `eventId` does not resolve to a pending row.
 
 #### `applications.update`
 

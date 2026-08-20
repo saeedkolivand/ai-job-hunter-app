@@ -283,29 +283,41 @@ fn require_non_empty_id(id: &str) -> AppResult<()> {
 /// WHICHEVER store method the caller passes as `action` — so the id
 /// validation gate is written exactly once, and a test can assert the
 /// command-layer path (this fn) produces the SAME store state as calling
-/// `action` directly.
+/// `action` directly. `event_id` is threaded straight through, unvalidated
+/// here (a bogus/foreign id is already a safe no-op at the store layer — see
+/// [`crate::applications::ApplicationStore::accept_status_event`]'s doc).
 fn resolve_status_event_action(
     store: &ApplicationStore,
     id: &str,
-    action: impl FnOnce(&ApplicationStore, &str) -> AppResult<bool>,
+    event_id: i64,
+    action: impl FnOnce(&ApplicationStore, &str, i64) -> AppResult<bool>,
 ) -> AppResult<bool> {
     require_non_empty_id(id)?;
-    action(store, id)
+    action(store, id, event_id)
 }
 
-/// v2 slice 3: accept the most recent email-derived, unconfirmed status
-/// transition for `id` — clears its `confirmed` flag in place, never
-/// touching `applications.status` itself (the auto-write already applied
-/// it). A no-op (`{ "success": true }`, nothing to accept) is NOT an error —
-/// mirrors [`crate::applications::ApplicationStore::accept_latest_status_event`]'s
-/// own contract.
+/// v2 slice 3 (HIGH-1 fix): accept the SPECIFIC email-derived, unconfirmed
+/// status-event row `event_id` names — clears its `confirmed` flag in
+/// place, never touching `applications.status` itself (the auto-write
+/// already applied it). `event_id` is the [`crate::applications::
+/// StatusEvent::event_id`] of the exact row the renderer's Accept button
+/// was clicked on — NOT "whichever unconfirmed row is newest": with two
+/// provisional rows on the same application (an ordinary sequence — a
+/// confirmation email followed by a later rejection email, both still
+/// unreviewed), resolving by recency let a click on the OLDER row silently
+/// confirm the NEWER, unrelated one instead. A no-op (`{ "success": true }`,
+/// nothing to accept — including `event_id` not matching a pending
+/// email-derived row for `id` at all) is NOT an error — mirrors
+/// [`crate::applications::ApplicationStore::accept_status_event`]'s own
+/// contract.
 #[tauri::command]
-pub async fn applications_accept_status_event(app: AppHandle, id: String) -> Value {
+pub async fn applications_accept_status_event(app: AppHandle, id: String, event_id: i64) -> Value {
     let span = Span::begin("applications", format!("accept_status_event id={id}"));
     match resolve_status_event_action(
         &store(&app),
         &id,
-        ApplicationStore::accept_latest_status_event,
+        event_id,
+        ApplicationStore::accept_status_event,
     ) {
         Ok(_) => {
             span.end(true);
@@ -318,19 +330,22 @@ pub async fn applications_accept_status_event(app: AppHandle, id: String) -> Val
     }
 }
 
-/// v2 slice 3: reject the most recent email-derived, unconfirmed status
-/// transition for `id` — reverts the status BY COMPARE-AND-SET (a status the
-/// user changed by hand in the meantime is never clobbered; the provisional
-/// row is simply dismissed instead) and appends a reversal event.
-/// Append-only: the original transition row is never edited or deleted. See
-/// [`crate::applications::ApplicationStore::reject_latest_status_event`].
+/// v2 slice 3 (HIGH-1 fix): reject the SPECIFIC email-derived, unconfirmed
+/// status-event row `event_id` names — reverts the status BY
+/// COMPARE-AND-SET (a status the user changed by hand in the meantime is
+/// never clobbered; the provisional row is simply dismissed instead) and
+/// appends a reversal event. Append-only: the original transition row is
+/// never edited or deleted. Same `event_id`-targeting rationale as
+/// [`applications_accept_status_event`] above — see
+/// [`crate::applications::ApplicationStore::reject_status_event`].
 #[tauri::command]
-pub async fn applications_reject_status_event(app: AppHandle, id: String) -> Value {
+pub async fn applications_reject_status_event(app: AppHandle, id: String, event_id: i64) -> Value {
     let span = Span::begin("applications", format!("reject_status_event id={id}"));
     match resolve_status_event_action(
         &store(&app),
         &id,
-        ApplicationStore::reject_latest_status_event,
+        event_id,
+        ApplicationStore::reject_status_event,
     ) {
         Ok(_) => {
             span.end(true);
@@ -979,13 +994,16 @@ mod tests {
         // end up in the SAME observable state.
         let (_dir_a, store_a, id_a) = seeded_store();
         let (_dir_b, store_b, id_b) = seeded_store();
+        let event_a = store_a.events(&id_a).into_iter().last().unwrap().event_id;
+        let event_b = store_b.events(&id_b).into_iter().last().unwrap().event_id;
 
         let via_command = resolve_status_event_action(
             &store_a,
             &id_a,
-            ApplicationStore::accept_latest_status_event,
+            event_a,
+            ApplicationStore::accept_status_event,
         );
-        let via_direct = store_b.accept_latest_status_event(&id_b);
+        let via_direct = store_b.accept_status_event(&id_b, event_b);
         assert!(via_command.unwrap(), "command-layer path must succeed");
         assert!(via_direct.unwrap(), "direct store call must succeed");
 
@@ -1004,13 +1022,16 @@ mod tests {
     fn reject_over_the_command_layer_matches_the_direct_store_call() {
         let (_dir_a, store_a, id_a) = seeded_store();
         let (_dir_b, store_b, id_b) = seeded_store();
+        let event_a = store_a.events(&id_a).into_iter().last().unwrap().event_id;
+        let event_b = store_b.events(&id_b).into_iter().last().unwrap().event_id;
 
         let via_command = resolve_status_event_action(
             &store_a,
             &id_a,
-            ApplicationStore::reject_latest_status_event,
+            event_a,
+            ApplicationStore::reject_status_event,
         );
-        let via_direct = store_b.reject_latest_status_event(&id_b);
+        let via_direct = store_b.reject_status_event(&id_b, event_b);
         assert!(via_command.unwrap(), "command-layer path must succeed");
         assert!(via_direct.unwrap(), "direct store call must succeed");
 
@@ -1029,8 +1050,13 @@ mod tests {
     #[test]
     fn accept_over_the_command_layer_rejects_an_empty_id_without_touching_the_store() {
         let (_dir, store, id) = seeded_store();
-        let result =
-            resolve_status_event_action(&store, "", ApplicationStore::accept_latest_status_event);
+        let event_id = store.events(&id).into_iter().last().unwrap().event_id;
+        let result = resolve_status_event_action(
+            &store,
+            "",
+            event_id,
+            ApplicationStore::accept_status_event,
+        );
         assert!(matches!(result, Err(AppError::Validation(_))));
         // The real (non-empty) application's pending row must be untouched.
         let last = store.events(&id).into_iter().last().unwrap();

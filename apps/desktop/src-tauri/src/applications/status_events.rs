@@ -36,6 +36,16 @@ pub(crate) const EVENT_SOURCE_EMAIL_REJECT: &str = "email_reject";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusEvent {
+    /// SQLite's implicit `rowid` for this row — `status_events` has no
+    /// declared primary key, so `rowid` is the only stable per-row identity
+    /// available. Stable for the row's lifetime (this table is append-only,
+    /// never `VACUUM`ed by any code path in this crate — a `VACUUM` is the
+    /// one operation that can renumber rowids). Exists on the wire SPECIFICALLY
+    /// so [`ApplicationStore::accept_status_event`]/[`ApplicationStore::
+    /// reject_status_event`] can target the EXACT row the user clicked,
+    /// never "whichever unconfirmed row happens to be newest" — see those
+    /// fns' docs for the bug this closes.
+    pub event_id: i64,
     pub application_id: String,
     /// Empty for the seed event of a freshly-created Application.
     pub from_status: String,
@@ -82,24 +92,28 @@ fn default_event_confirmed() -> bool {
 }
 
 impl ApplicationStore {
-    /// History for one Application, oldest-first.
+    /// History for one Application, oldest-first. `rowid` is a tie-break
+    /// ONLY (two events landing in the same millisecond still order
+    /// deterministically) — `at` remains the primary sort key so the
+    /// timeline reads chronologically.
     pub fn events(&self, id: &str) -> Vec<StatusEvent> {
         let conn = self.conn.lock();
         conn.prepare(
-            "SELECT application_id, from_status, to_status, at, note, source, confirmed
-             FROM status_events WHERE application_id = ?1 ORDER BY at ASC",
+            "SELECT rowid, application_id, from_status, to_status, at, note, source, confirmed
+             FROM status_events WHERE application_id = ?1 ORDER BY at ASC, rowid ASC",
         )
         .ok()
         .and_then(|mut stmt| {
             stmt.query_map(params![id], |row| {
                 Ok(StatusEvent {
-                    application_id: row.get(0)?,
-                    from_status: row.get(1)?,
-                    to_status: row.get(2)?,
-                    at: ts_from_db(row.get::<_, i64>(3)?),
-                    note: row.get(4)?,
-                    source: row.get(5)?,
-                    confirmed: row.get::<_, i64>(6)? != 0,
+                    event_id: row.get(0)?,
+                    application_id: row.get(1)?,
+                    from_status: row.get(2)?,
+                    to_status: row.get(3)?,
+                    at: ts_from_db(row.get::<_, i64>(4)?),
+                    note: row.get(5)?,
+                    source: row.get(6)?,
+                    confirmed: row.get::<_, i64>(7)? != 0,
                 })
             })
             .ok()
@@ -122,12 +136,19 @@ impl ApplicationStore {
     /// `false` for an application with no history at all (should not
     /// happen — every creation path seeds one event — but this reads total
     /// rather than assume it).
+    ///
+    /// `ORDER BY at DESC, rowid DESC`: two events landing in the same
+    /// millisecond (a fast auto-write immediately followed by another) would
+    /// otherwise give SQLite an ARBITRARY winner for the bare `at DESC`
+    /// ordering, which could flip whether this reads as "still speculation"
+    /// or "settled" — `rowid DESC` breaks the tie deterministically toward
+    /// whichever row was actually inserted last.
     pub(crate) fn current_status_is_unconfirmed_email_write(&self, id: &str) -> bool {
         use rusqlite::OptionalExtension;
         let conn = self.conn.lock();
         conn.query_row(
             "SELECT source, confirmed FROM status_events
-             WHERE application_id = ?1 ORDER BY at DESC LIMIT 1",
+             WHERE application_id = ?1 ORDER BY at DESC, rowid DESC LIMIT 1",
             params![id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
         )
@@ -223,35 +244,42 @@ impl ApplicationStore {
         Ok(true)
     }
 
-    /// Whether an email-derived `from -> to` transition for `id` was already
-    /// rejected by the user — i.e. `status_events` already contains the
-    /// reversal row [`Self::reject_latest_status_event`] appends for this
-    /// EXACT pair (source [`EVENT_SOURCE_EMAIL_REJECT`], `from_status = to`,
-    /// `to_status = from` — the reversed shape, since a reversal event walks
-    /// back the ORIGINAL transition). `crate::email_watch::auto_write`
-    /// consults this before every write so a later email carrying the SAME
-    /// misfired signal (the classifier's own recorded precision limit — see
-    /// `crate::email_watch::intent`'s module doc) can't re-apply a
-    /// transition the user has already told us was wrong.
+    /// Whether the user has already rejected an email-derived write LANDING
+    /// AT `to`, for `id` — i.e. `status_events` already contains a
+    /// [`Self::reject_status_event`] reversal row (source
+    /// [`EVENT_SOURCE_EMAIL_REJECT`]) whose `from_status` is `to` (a
+    /// reversal event's `from_status` always records the ORIGINAL target
+    /// being walked back — see [`Self::reject_status_event`]'s doc).
+    /// `crate::email_watch::auto_write` consults this before every write so
+    /// a later email can't re-apply a target the user has already told us
+    /// was wrong for this application.
+    ///
+    /// **Keyed on `to` ALONE, not the `(from, to)` pair** — deliberately, to
+    /// close a detour: keying on the pair let the user reject exactly
+    /// `Applied -> Rejected`, and a later `Interview` email (unblocked,
+    /// different pair: `Applied -> Interviewing`) followed by a second
+    /// `Rejection` email (unblocked, different pair again:
+    /// `Interviewing -> Rejected`) land the SAME disputed `Rejected` target
+    /// right back, through a path the pair-keyed guard never saw. Once the
+    /// user rejects a write landing at `to`, no FUTURE email-derived write —
+    /// from any live status — may land there again for this application;
+    /// they can always re-set it by hand if a later rejection is genuinely
+    /// real. This app would rather auto-write less than silently re-apply a
+    /// verdict the user already disputed.
     ///
     /// Matching on [`EVENT_SOURCE_EMAIL_REJECT`] specifically (not a bare
-    /// reversed-pair scan) means an ordinary, UNRELATED manual status change
-    /// that happens to walk the same two statuses backward can never
-    /// false-positive this gate — only [`Self::reject_latest_status_event`]
-    /// ever writes that source value.
-    pub(crate) fn was_transition_rejected(
-        &self,
-        id: &str,
-        from: ApplicationStatus,
-        to: ApplicationStatus,
-    ) -> bool {
+    /// `from_status` scan) means an ordinary, UNRELATED manual status change
+    /// that happens to walk back through the same status can never
+    /// false-positive this gate — only [`Self::reject_status_event`] ever
+    /// writes that source value.
+    pub(crate) fn was_transition_rejected(&self, id: &str, to: ApplicationStatus) -> bool {
         use rusqlite::OptionalExtension;
         let conn = self.conn.lock();
         conn.query_row(
             "SELECT 1 FROM status_events
-             WHERE application_id = ?1 AND source = ?2 AND from_status = ?3 AND to_status = ?4
+             WHERE application_id = ?1 AND source = ?2 AND from_status = ?3
              LIMIT 1",
-            params![id, EVENT_SOURCE_EMAIL_REJECT, to.as_id(), from.as_id()],
+            params![id, EVENT_SOURCE_EMAIL_REJECT, to.as_id()],
             |_| Ok(()),
         )
         .optional()
@@ -259,46 +287,57 @@ impl ApplicationStore {
         .is_some()
     }
 
-    /// Accept the most recent email-derived, unconfirmed transition for
-    /// `id`: clears its `confirmed` flag IN PLACE. Never touches
-    /// `applications.status` (the auto-write already applied it — accepting
-    /// only marks it reviewed) and never edits `from_status`/`to_status`/
-    /// `at`/`note`, so the append-only trail is unchanged; only the
-    /// confirmation bit flips. One lock held for the whole read-then-write
-    /// (no separate transaction needed — nothing here can partially apply).
+    /// Accept the SPECIFIC email-derived, unconfirmed status-event row
+    /// `event_id` names — clears its `confirmed` flag IN PLACE. Never
+    /// touches `applications.status` (the auto-write already applied it —
+    /// accepting only marks it reviewed) and never edits `from_status`/
+    /// `to_status`/`at`/`note`, so the append-only trail is unchanged; only
+    /// the confirmation bit flips.
     ///
-    /// `Ok(false)`: no unconfirmed email-derived row to accept for `id` — a
-    /// no-op, not an error (a caller need not check first).
-    pub fn accept_latest_status_event(&self, id: &str) -> AppResult<bool> {
-        use rusqlite::OptionalExtension;
+    /// **HIGH-1 fix**: `event_id` (the row's [`StatusEvent::event_id`], i.e.
+    /// `rowid`) is matched EXACTLY in the `WHERE` clause — this used to
+    /// resolve "the newest unconfirmed row for `id`" with no way to name
+    /// which one, so two coexisting provisional rows (an ordinary sequence:
+    /// a confirmation email, then a later rejection email, both still
+    /// unreviewed) meant a click on the OLDER row's Accept button silently
+    /// confirmed the NEWER, unrelated one instead — see
+    /// `applications::test::accept_targets_the_specific_row_requested_never_whichever_landed_most_recently`.
+    /// A single `UPDATE ... WHERE` is now sufficient (no read-then-write): a
+    /// wrong/foreign/already-reviewed `event_id` (a different application's
+    /// row, a `user`-sourced row, an already-`confirmed` row) matches zero
+    /// rows and is a safe no-op, never a cross-application write.
+    ///
+    /// `Ok(false)`: `event_id` did not resolve to a pending email-derived
+    /// row for `id` — a no-op, not an error (a caller need not check first).
+    pub fn accept_status_event(&self, id: &str, event_id: i64) -> AppResult<bool> {
         let conn = self.conn.lock();
-        let rowid: Option<i64> = conn
-            .query_row(
-                "SELECT rowid FROM status_events
-                 WHERE application_id = ?1 AND source = ?2 AND confirmed = 0
-                 ORDER BY at DESC LIMIT 1",
-                params![id, EVENT_SOURCE_EMAIL],
-                |row| row.get(0),
-            )
-            .optional()?;
-        let Some(rowid) = rowid else {
-            return Ok(false);
-        };
-        conn.execute(
-            "UPDATE status_events SET confirmed = 1 WHERE rowid = ?1",
-            params![rowid],
+        let affected = conn.execute(
+            "UPDATE status_events SET confirmed = 1
+             WHERE rowid = ?1 AND application_id = ?2 AND source = ?3 AND confirmed = 0",
+            params![event_id, id, EVENT_SOURCE_EMAIL],
         )?;
-        Ok(true)
+        Ok(affected > 0)
     }
 
-    /// Reject the most recent email-derived, unconfirmed transition for
-    /// `id`: reverts `applications.status` back to that event's
+    /// Reject the SPECIFIC email-derived, unconfirmed status-event row
+    /// `event_id` names: reverts `applications.status` back to THAT event's
     /// `from_status`, but ONLY by compare-and-set — [`Self::
     /// transition_status_if_sourced`] (reused, not reimplemented) only
     /// succeeds if the CURRENT status still equals the event's `to_status`.
-    /// **A status the user changed by hand in the meantime is never
-    /// clobbered**: when the CAS loses, the provisional row is simply
-    /// DISMISSED (its `confirmed` flag cleared below) rather than reverted.
+    /// **A status that has since moved on — by the user's own hand, or by a
+    /// LATER email write — is never clobbered**: when the CAS loses, the
+    /// row is simply DISMISSED (its `confirmed` flag cleared below) rather
+    /// than reverted.
+    ///
+    /// **HIGH-1 fix**: `event_id` (the row's [`StatusEvent::event_id`], i.e.
+    /// `rowid`) is matched EXACTLY in the initial `SELECT` — this used to
+    /// resolve "the newest unconfirmed row for `id`" with no way to name
+    /// which one, so two coexisting provisional rows meant a click on the
+    /// OLDER row's Reject button silently dismissed-or-reverted the NEWER,
+    /// unrelated one instead — see `applications::test::
+    /// reject_targets_the_specific_row_requested_never_whichever_landed_most_recently`.
+    /// A wrong/foreign/already-reviewed `event_id` matches zero rows in that
+    /// initial `SELECT` and is a safe no-op.
     ///
     /// On a successful revert this APPENDS a reversal event (source
     /// [`EVENT_SOURCE_EMAIL_REJECT`]) recording that an email got it wrong —
@@ -319,22 +358,22 @@ impl ApplicationStore {
     /// over-engineering for a race that does not materialize here.
     ///
     /// Returns whether the status was actually reverted (`false` on a lost
-    /// CAS/dismissal, or when there was no unconfirmed email-derived row to
-    /// act on at all — both are legitimate no-ops, not errors).
-    pub fn reject_latest_status_event(&self, id: &str) -> AppResult<bool> {
+    /// CAS/dismissal, or when `event_id` did not resolve to a pending
+    /// email-derived row for `id` at all — both are legitimate no-ops, not
+    /// errors).
+    pub fn reject_status_event(&self, id: &str, event_id: i64) -> AppResult<bool> {
         use rusqlite::OptionalExtension;
-        let pending: Option<(i64, String, String)> = {
+        let pending: Option<(String, String)> = {
             let conn = self.conn.lock();
             conn.query_row(
-                "SELECT rowid, from_status, to_status FROM status_events
-                 WHERE application_id = ?1 AND source = ?2 AND confirmed = 0
-                 ORDER BY at DESC LIMIT 1",
-                params![id, EVENT_SOURCE_EMAIL],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                "SELECT from_status, to_status FROM status_events
+                 WHERE rowid = ?1 AND application_id = ?2 AND source = ?3 AND confirmed = 0",
+                params![event_id, id, EVENT_SOURCE_EMAIL],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?
         };
-        let Some((rowid, from_status, to_status)) = pending else {
+        let Some((from_status, to_status)) = pending else {
             return Ok(false);
         };
         let from = ApplicationStatus::from_id(&from_status);
@@ -352,7 +391,7 @@ impl ApplicationStore {
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE status_events SET confirmed = 1 WHERE rowid = ?1",
-            params![rowid],
+            params![event_id],
         )?;
         Ok(reverted)
     }

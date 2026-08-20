@@ -11,12 +11,13 @@
 
 use std::sync::LazyLock;
 
-use mail_parser::MessageParser;
+use mail_parser::{HeaderForm, MessageParser};
 use regex::Regex;
 
 /// Decoded fields from a fetched `HEADER.FIELDS (FROM SUBJECT DATE
-/// MESSAGE-ID)` block. `subject` is already RFC2047-decoded (mail-parser
-/// handles encoded-word decoding as part of parsing).
+/// MESSAGE-ID AUTHENTICATION-RESULTS)` block. `subject` is already
+/// RFC2047-decoded (mail-parser handles encoded-word decoding as part of
+/// parsing).
 #[derive(Debug, Clone, Default)]
 pub struct EmailHeader {
     pub subject: String,
@@ -24,6 +25,16 @@ pub struct EmailHeader {
     /// Lowercased domain part of the `From` address (e.g. `"greenhouse.io"`).
     pub from_domain: Option<String>,
     pub message_id: Option<String>,
+    /// Whether AT LEAST ONE `Authentication-Results` header on this message
+    /// reports a DMARC `pass` result whose `header.from=` domain matches
+    /// `from_domain` — see [`dmarc_pass_aligned`]'s doc for exactly what
+    /// this does and does not prove, and
+    /// [`crate::email_watch::auto_write::apply_matched_intent`]'s doc for
+    /// why this (never `Fingerprint::domain_hint`) is the write gate.
+    /// `false` when the header is absent, present but unparseable, or
+    /// present without a `pass` — fails closed by construction (there is no
+    /// "unknown" state; anything other than a confirmed pass is `false`).
+    pub dmarc_pass: bool,
 }
 
 /// Cap on how many bytes of a decoded subject are kept before fingerprinting
@@ -51,12 +62,94 @@ pub fn parse_header(raw: &[u8]) -> Option<EmailHeader> {
         .and_then(|addr| addr.rsplit_once('@'))
         .map(|(_, domain)| domain.to_lowercase());
     let message_id = message.message_id().map(str::to_string);
+    let auth_results: Vec<String> = message
+        .header_as("Authentication-Results", HeaderForm::Raw)
+        .into_iter()
+        .filter_map(|hv| hv.as_text().map(str::to_string))
+        .collect();
+    let dmarc_pass = dmarc_pass_aligned(&auth_results, from_domain.as_deref());
     Some(EmailHeader {
         subject,
         from_name,
         from_domain,
         message_id,
+        dmarc_pass,
     })
+}
+
+// ── DMARC authentication (the write-gate half — see `Fingerprint::write_gate_domain`) ──
+
+/// Whether ANY of `auth_results` (the raw `Authentication-Results` header
+/// value(s) on one message — there can be more than one hop) reports a
+/// DMARC `pass` result ALIGNED to `from_domain` (the visible `From:`
+/// domain, already lowercased by [`parse_header`]).
+///
+/// **What this closes**: plain `From:` spoofing (RFC 8601 §2.7.3's
+/// `dmarc=pass` already encodes SPF-or-DKIM alignment as evaluated by
+/// WHICHEVER server stamped this header — an attacker who does not control
+/// DKIM signing or an SPF-authorized sender for the claimed domain cannot
+/// produce a `pass`).
+///
+/// **What this does NOT close** (documented, not silently assumed safe):
+/// this is a best-effort per-message-text parse, not a trust-chain
+/// validator — it does not verify WHICH hop stamped the header, so a
+/// message that reaches the user's mailbox with a forged
+/// `Authentication-Results` header inserted BEFORE the real receiving MTA's
+/// own (and not stripped by it) could still read as `pass` here. Most
+/// major providers strip inbound `Authentication-Results` before adding
+/// their own specifically to prevent this, but this fn has no way to
+/// confirm that for an arbitrary user-configured IMAP host — the residual
+/// risk the fix-forward task's bullet 3 named ("or where the user's IMAP
+/// host does not enforce DMARC"). A full authserv-id trust chain is a
+/// separate, larger change, not built here.
+///
+/// `false` (fail closed) if `from_domain` is `None`, if `auth_results` is
+/// empty, or if nothing in it parses to a `pass` aligned with it.
+fn dmarc_pass_aligned(auth_results: &[String], from_domain: Option<&str>) -> bool {
+    let Some(from_domain) = from_domain else {
+        return false;
+    };
+    auth_results.iter().any(|header| {
+        dmarc_result(header).is_some_and(|(result, header_from)| {
+            result.eq_ignore_ascii_case("pass") && header_from.eq_ignore_ascii_case(from_domain)
+        })
+    })
+}
+
+/// Extract `(dmarc result, header.from domain)` from one raw
+/// `Authentication-Results` header value — RFC 8601 `resinfo` shape:
+/// `<authserv-id>; ...; dmarc=<result> (...) header.from=<domain>; ...`.
+/// Deliberately a small, auditable string scan (no new regex/parser
+/// dependency) rather than a full RFC 8601 grammar — good enough to require
+/// an exact `pass` and an exact `header.from=` domain read from the SAME
+/// `;`-delimited clause as the `dmarc=` token, never to invent one from
+/// malformed or absent text. `None` on anything it can't confidently read;
+/// the caller ([`dmarc_pass_aligned`]) treats that as "not authenticated".
+fn dmarc_result(header: &str) -> Option<(String, String)> {
+    let lower = header.to_lowercase();
+    let clause_start = header
+        .split(';')
+        .zip(lower.split(';'))
+        .find(|(_, lower_clause)| lower_clause.contains("dmarc="))?
+        .0;
+    let clause_lower = clause_start.to_lowercase();
+
+    let result_start = clause_lower.find("dmarc=")? + "dmarc=".len();
+    let result = clause_start[result_start..]
+        .split(|c: char| c.is_whitespace() || c == '(')
+        .next()
+        .filter(|s| !s.is_empty())?
+        .to_string();
+
+    let from_start = clause_lower.find("header.from=")? + "header.from=".len();
+    let header_from = clause_start[from_start..]
+        .split(|c: char| c.is_whitespace() || c == '(' || c == ';')
+        .next()
+        .filter(|s| !s.is_empty())?
+        .trim_end_matches('.')
+        .to_string();
+
+    Some((result, header_from))
 }
 
 /// Parse a raw FULL message (`BODY.PEEK[]`, as returned by
@@ -68,7 +161,7 @@ pub fn parse_body_text(raw: &[u8]) -> Option<String> {
     message.body_text(0).map(|cow| cow.into_owned())
 }
 
-// ── Fingerprint (the subject-regex gate; domain is a boost, never a gate) ──
+// ── Fingerprint (the subject-regex gate; SCORE_HINTS is a boost, never a gate) ──
 
 /// Subject substrings/phrases (EN + DE) that mark a message as a plausible
 /// application-confirmation email. Case-insensitive, Unicode-aware (so
@@ -103,13 +196,15 @@ static SUBJECT_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     .collect()
 });
 
-/// Sender domains known to be ATS/job-board confirmation senders. Only
-/// `greenhouse.io`/`greenhouse-mail.io` are independently verified (real
-/// Greenhouse confirmation emails); the rest are commonly-cited folklore for
-/// other ATS/board vendors — kept anyway since a hint only ever BOOSTS score,
-/// never gates a match, so an unverified/wrong entry here can't create a
-/// false positive on its own.
-const DOMAIN_HINTS: &[&str] = &[
+/// Sender domains known to be ATS/job-board confirmation senders — used
+/// ONLY to nudge the MATCH score (see [`Fingerprint::domain_hint`]'s doc).
+/// Only `greenhouse.io`/`greenhouse-mail.io` are independently verified
+/// (real Greenhouse confirmation emails); the rest are commonly-cited
+/// folklore for other ATS/board vendors — kept anyway since a hint here only
+/// ever BOOSTS score, truly never gates anything (see [`WRITE_GATE_DOMAINS`]
+/// below for the SEPARATE, narrower list that gates the write), so an
+/// unverified/wrong entry here can't create a false positive on its own.
+const SCORE_HINTS: &[&str] = &[
     "greenhouse.io",
     "greenhouse-mail.io",
     "lever.co",
@@ -118,21 +213,61 @@ const DOMAIN_HINTS: &[&str] = &[
     "indeed.com",
 ];
 
+/// Sender domains eligible to AUTHORIZE an auto-write (alongside a required
+/// DMARC `pass` — see [`EmailHeader::dmarc_pass`]; neither alone is
+/// sufficient, see [`crate::email_watch::auto_write::apply_matched_intent`]'s
+/// doc). Deliberately NARROWER than [`SCORE_HINTS`]: `linkedin.com` and
+/// `indeed.com` are dropped — both are messaging/relay platforms that
+/// routinely carry ATTACKER-AUTHORED subject/body text from their own
+/// genuinely DMARC-valid infrastructure (anyone who can message the victim
+/// through either platform satisfies a DMARC check on ITS domain, which
+/// proves nothing about the CONTENT). A domain that forwards third-party
+/// text is not evidence of anything, so it stays a score boost only, never
+/// a write authority. `greenhouse.io`/`greenhouse-mail.io`/`lever.co`/
+/// `myworkday.com` remain: unlike an open messaging relay, sending through
+/// them requires a registered employer/recruiter tenant — a meaningfully
+/// higher bar, though ALSO not independently verified against real
+/// multi-tenant-signup abuse (documented, not assumed safe — the DMARC
+/// requirement narrows this further but does not fully close a fake-tenant
+/// scenario).
+const WRITE_GATE_DOMAINS: &[&str] = &[
+    "greenhouse.io",
+    "greenhouse-mail.io",
+    "lever.co",
+    "myworkday.com",
+];
+
+fn domain_matches_any(domain: &str, hints: &[&str]) -> bool {
+    hints
+        .iter()
+        .any(|hint| domain == *hint || domain.ends_with(&format!(".{hint}")))
+}
+
 /// The result of fingerprinting one [`EmailHeader`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Fingerprint {
     subject_matched: bool,
-    /// Sender domain is a known ATS hint. Informational/boost-only — see
-    /// [`crate::email_watch::matcher::best_match`], which adds a small,
-    /// capped nudge to the company score when this is `true` and NEVER lets
-    /// it substitute for a real company-token overlap.
+    /// Sender domain is a known ATS hint from [`SCORE_HINTS`] — purely a
+    /// MATCH-score signal. See [`crate::email_watch::matcher::best_match`],
+    /// which adds a small, capped nudge to the company score when this is
+    /// `true` and NEVER lets it substitute for a real company-token
+    /// overlap. **Never a write authority** — see [`Self::write_gate_domain`]
+    /// for that, an intentionally separate/narrower signal so the two
+    /// roles cannot drift back together.
     pub domain_hint: bool,
+    /// Sender domain is on the narrower [`WRITE_GATE_DOMAINS`] list — ONE of
+    /// the two conditions [`crate::email_watch::auto_write::
+    /// apply_matched_intent`] requires before writing (the other is
+    /// [`EmailHeader::dmarc_pass`]; both are required, neither alone is
+    /// sufficient).
+    pub write_gate_domain: bool,
 }
 
 impl Fingerprint {
     /// Whether this message clears the fingerprint gate at all — the ONLY
     /// signal that decides whether a body fetch + match attempt happens.
-    /// `domain_hint` never contributes to this — a hint alone is not enough.
+    /// Neither `domain_hint` nor `write_gate_domain` contributes to this — a
+    /// hint alone is not enough.
     pub fn is_candidate(&self) -> bool {
         self.subject_matched
     }
@@ -142,14 +277,17 @@ pub fn fingerprint(header: &EmailHeader) -> Fingerprint {
     let subject_matched = SUBJECT_PATTERNS
         .iter()
         .any(|re| re.is_match(&header.subject));
-    let domain_hint = header.from_domain.as_deref().is_some_and(|d| {
-        DOMAIN_HINTS
-            .iter()
-            .any(|hint| d == *hint || d.ends_with(&format!(".{hint}")))
-    });
+    let (domain_hint, write_gate_domain) =
+        header.from_domain.as_deref().map_or((false, false), |d| {
+            (
+                domain_matches_any(d, SCORE_HINTS),
+                domain_matches_any(d, WRITE_GATE_DOMAINS),
+            )
+        });
     Fingerprint {
         subject_matched,
         domain_hint,
+        write_gate_domain,
     }
 }
 
@@ -328,6 +466,7 @@ mod tests {
             from_name: None,
             from_domain: from_domain.map(str::to_string),
             message_id: None,
+            dmarc_pass: false,
         }
     }
 
@@ -520,6 +659,84 @@ mod tests {
         assert!(!fingerprint(&header("x", Some("example.com"))).domain_hint);
     }
 
+    #[test]
+    fn write_gate_domain_excludes_the_open_relays_linkedin_and_indeed() {
+        // HIGH-2 fix: linkedin.com/indeed.com stay SCORE-only (domain_hint
+        // true, matches boost the score) but must NEVER authorize a write —
+        // both routinely relay attacker-authored subject/body from their own
+        // genuinely DMARC-valid infrastructure, so their domain being
+        // authentic proves nothing about the CONTENT.
+        let linkedin = fingerprint(&header("x", Some("linkedin.com")));
+        assert!(linkedin.domain_hint, "linkedin.com still boosts the score");
+        assert!(
+            !linkedin.write_gate_domain,
+            "linkedin.com must never authorize a write"
+        );
+
+        let indeed = fingerprint(&header("x", Some("indeed.com")));
+        assert!(indeed.domain_hint);
+        assert!(!indeed.write_gate_domain);
+    }
+
+    #[test]
+    fn write_gate_domain_true_for_the_narrower_ats_list() {
+        assert!(fingerprint(&header("x", Some("greenhouse.io"))).write_gate_domain);
+        assert!(fingerprint(&header("x", Some("mail.greenhouse-mail.io"))).write_gate_domain);
+        assert!(fingerprint(&header("x", Some("lever.co"))).write_gate_domain);
+        assert!(fingerprint(&header("x", Some("myworkday.com"))).write_gate_domain);
+        assert!(!fingerprint(&header("x", Some("example.com"))).write_gate_domain);
+    }
+
+    // ── DMARC authentication (HIGH-2 fix) ────────────────────────────────────
+
+    #[test]
+    fn dmarc_pass_aligned_true_for_a_realistic_pass_header() {
+        let ar = "mx.google.com; \
+                   dkim=pass header.i=@greenhouse.io header.s=selector header.b=abc123; \
+                   spf=pass smtp.mailfrom=bounce@greenhouse.io; \
+                   dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=greenhouse.io"
+            .to_string();
+        assert!(dmarc_pass_aligned(&[ar], Some("greenhouse.io")));
+    }
+
+    #[test]
+    fn dmarc_pass_aligned_false_when_result_is_not_pass() {
+        let ar = "mx.google.com; dmarc=fail (p=REJECT) header.from=greenhouse.io".to_string();
+        assert!(!dmarc_pass_aligned(&[ar], Some("greenhouse.io")));
+    }
+
+    #[test]
+    fn dmarc_pass_aligned_false_when_header_from_does_not_match_the_visible_from_domain() {
+        // A `pass` for a DIFFERENT domain than the visible `From:` does not
+        // authenticate THIS sender — e.g. an attacker who controls DKIM for
+        // some other domain but is spoofing the visible From: address of
+        // a write-gate-eligible one.
+        let ar = "mx.google.com; dmarc=pass (p=REJECT) header.from=attacker.example".to_string();
+        assert!(!dmarc_pass_aligned(&[ar], Some("greenhouse.io")));
+    }
+
+    #[test]
+    fn dmarc_pass_aligned_fails_closed_on_a_missing_or_unparseable_header() {
+        assert!(!dmarc_pass_aligned(&[], Some("greenhouse.io")));
+        assert!(!dmarc_pass_aligned(
+            &["not a valid authentication-results header at all".to_string()],
+            Some("greenhouse.io")
+        ));
+        assert!(!dmarc_pass_aligned(
+            &["mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io".to_string()],
+            None
+        ));
+    }
+
+    #[test]
+    fn dmarc_pass_aligned_checks_every_hop_not_just_the_first() {
+        // Multiple `Authentication-Results` headers (one per hop) — the
+        // authenticating one need not be first.
+        let hop1 = "relay.example; dmarc=none".to_string();
+        let hop2 = "mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io".to_string();
+        assert!(dmarc_pass_aligned(&[hop1, hop2], Some("greenhouse.io")));
+    }
+
     // ── extract_candidates ───────────────────────────────────────────────────
 
     #[test]
@@ -598,6 +815,39 @@ Message-ID: <abc123@example.com>\r\n\
         assert_eq!(header.from_name.as_deref(), Some("Acme Careers"));
         assert_eq!(header.from_domain.as_deref(), Some("acme.example.com"));
         assert_eq!(header.message_id.as_deref(), Some("abc123@example.com"));
+    }
+
+    #[test]
+    fn parse_header_wires_a_real_authentication_results_header_through_to_dmarc_pass() {
+        // End-to-end: the raw fetched bytes -> mail-parser -> dmarc_pass_aligned
+        // path, not just the pure helper tested above in isolation.
+        // Deliberately unfolded (one physical line for the whole header
+        // value) — a `\`-continued Rust byte-string literal strips leading
+        // whitespace from the next line, so a folded/indented continuation
+        // written the "natural" way here would silently NOT reproduce RFC
+        // 5322 folding and would parse as a malformed header instead.
+        let raw = b"From: Careers <careers@greenhouse.io>\r\n\
+Subject: Thank you for applying!\r\n\
+Authentication-Results: mx.google.com; dkim=pass header.i=@greenhouse.io header.s=selector header.b=abc; dmarc=pass (p=REJECT) header.from=greenhouse.io\r\n\
+\r\n";
+        let header = parse_header(raw).expect("should parse a minimal header block");
+        assert_eq!(header.from_domain.as_deref(), Some("greenhouse.io"));
+        assert!(
+            header.dmarc_pass,
+            "a real, aligned dmarc=pass header must wire through"
+        );
+    }
+
+    #[test]
+    fn parse_header_dmarc_pass_is_false_with_no_authentication_results_header_at_all() {
+        // The absent-header half of "fail closed" — a host that never
+        // stamps this header (a plain forward, a non-Gmail-shaped IMAP
+        // provider) must never accidentally read as authenticated.
+        let raw = b"From: Careers <careers@greenhouse.io>\r\n\
+Subject: Thank you for applying!\r\n\
+\r\n";
+        let header = parse_header(raw).expect("should parse a minimal header block");
+        assert!(!header.dmarc_pass);
     }
 
     #[test]

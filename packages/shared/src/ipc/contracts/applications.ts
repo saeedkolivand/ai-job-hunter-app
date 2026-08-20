@@ -89,8 +89,13 @@ export interface ApplicationChangedEvent {
  *   (`source: 'email_reject'`); `status_events` stays append-only, so the
  *   original row is never edited or deleted.
  *
- * Both are idempotent no-ops (`{ success: true }`, nothing changed) when there
- * is no pending unconfirmed row — never an error a UI needs to branch on.
+ * **Both require {@link StatusEvent.eventId} — the id of the SPECIFIC row
+ * being actioned, not just the application id.** Two provisional rows can
+ * coexist (a confirmation email, then a later rejection email, both still
+ * unreviewed); always pass the `eventId` of the exact row the Accept/Reject
+ * affordance was rendered on. Both are idempotent no-ops (`{ success: true
+ * }`, nothing changed) when `eventId` does not resolve to a pending
+ * unconfirmed row for `id` — never an error a UI needs to branch on.
  * **Nothing in this app ever writes `confirmed: true` except these two calls
  * clearing it on review** — adjudication is the entire safety model for a
  * classifier with a recorded precision limit (see `docs/knowledge/
@@ -107,16 +112,22 @@ export interface ApplicationsContract {
     status: string;
     note?: string;
   }): Promise<ApplicationMutationResult>;
-  /** Accept the most recent email-derived, unconfirmed status transition for
-   *  `id` — clears its {@link StatusEvent.confirmed} flag; the status itself is
-   *  untouched. A no-op when there is nothing pending (still `{ success: true
-   *  }`, not an error). */
-  acceptStatusEvent(args: { id: string }): Promise<ApplicationMutationResult>;
-  /** Reject the most recent email-derived, unconfirmed status transition for
-   *  `id` — reverts the status by compare-and-set (never clobbers a status the
-   *  user changed by hand in the meantime) and appends a reversal event. A
-   *  no-op when there is nothing pending. */
-  rejectStatusEvent(args: { id: string }): Promise<ApplicationMutationResult>;
+  /** Accept the SPECIFIC email-derived, unconfirmed status-event row
+   *  `eventId` names — clears its {@link StatusEvent.confirmed} flag; the
+   *  status itself is untouched. `eventId` must be the
+   *  {@link StatusEvent.eventId} of the exact row the Accept affordance was
+   *  rendered on — see {@link StatusEvent.eventId}'s doc for why "the most
+   *  recent pending row" is not a safe substitute. A no-op when `eventId`
+   *  does not resolve to a pending row for `id` (still `{ success: true }`,
+   *  not an error). */
+  acceptStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
+  /** Reject the SPECIFIC email-derived, unconfirmed status-event row
+   *  `eventId` names — reverts the status by compare-and-set (never clobbers
+   *  a status that moved on, whether by the user's own hand or a later
+   *  email, in the meantime) and appends a reversal event. Same
+   *  `eventId`-targeting requirement as {@link acceptStatusEvent}. A no-op
+   *  when `eventId` does not resolve to a pending row. */
+  rejectStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
   update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
   remove(args: { id: string; keepDocuments: boolean }): Promise<ApplicationMutationResult>;
   track(req: ApplicationTrackRequest): Promise<ApplicationCreateResult>;

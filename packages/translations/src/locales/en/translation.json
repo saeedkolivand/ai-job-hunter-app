@@ -1954,6 +1954,7 @@
           "semanticLabel": "Semantic similarity",
           "loading": "Scoring against the posting…",
           "resumeNote": "Scored against your saved résumé, not the tailored version shown here.",
+          "cliAgentEgress": "If this posting needs translation, its text is sent to {{provider}} — not processed locally.",
           "errorTitle": "Couldn't score this posting",
           "errorDescription": "Something went wrong scoring against your résumé. Try again."
         }

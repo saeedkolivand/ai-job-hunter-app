@@ -1958,6 +1958,7 @@
           "semanticLabel": "Semantische Ähnlichkeit",
           "loading": "Bewertung der Anzeige läuft…",
           "resumeNote": "Bewertet anhand deines gespeicherten Lebenslaufs, nicht der hier gezeigten angepassten Version.",
+          "cliAgentEgress": "Falls diese Anzeige übersetzt werden muss, wird ihr Text an {{provider}} gesendet — nicht lokal verarbeitet.",
           "errorTitle": "Bewertung dieser Anzeige nicht möglich",
           "errorDescription": "Bei der Bewertung gegen deinen Lebenslauf ist etwas schiefgelaufen. Versuche es erneut."
         }

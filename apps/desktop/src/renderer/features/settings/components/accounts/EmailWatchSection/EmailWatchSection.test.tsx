@@ -328,4 +328,31 @@ describe('EmailWatchSection — auto-write toggle', () => {
       expect(screen.getByText('Could not update the email-tracking setting.')).toBeInTheDocument();
     });
   });
+
+  // The real backend default is ON. Before the status query resolves, the
+  // component must never commit the switch to OFF (the unsafe direction — it
+  // would tell the user auto-write is off while it may already be on).
+  it('never renders the auto-write switch as OFF before the status is known — no premature commit', async () => {
+    let resolveStatus!: (value: EmailWatchStatus) => void;
+    const statusFn = vi.fn(
+      () => new Promise<EmailWatchStatus>((resolve) => (resolveStatus = resolve))
+    );
+    renderSection({ 'emailWatch.status': statusFn });
+
+    // While the query is in flight there is no `connected` value yet either,
+    // so the switch (like the rest of the connected view) is simply absent —
+    // never present with a committed `aria-checked="false"`.
+    expect(
+      screen.queryByRole('switch', { name: 'Update status automatically' })
+    ).not.toBeInTheDocument();
+
+    resolveStatus(CONNECTED);
+
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Update status automatically' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
+    });
+  });
 });

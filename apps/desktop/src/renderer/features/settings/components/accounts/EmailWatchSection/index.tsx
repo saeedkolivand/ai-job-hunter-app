@@ -2,7 +2,7 @@ import { Check, Mail, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, SettingsSection, Switch, useNotification } from '@ajh/ui';
+import { Button, Input, SettingsSection, Skeleton, Switch, useNotification } from '@ajh/ui';
 
 import {
   useConnectEmailWatch,
@@ -61,7 +61,6 @@ export function EmailWatchSection() {
 
   const connected = status?.connected ?? false;
   const enabled = status?.enabled ?? false;
-  const autoWriteEnabled = status?.autoWriteEnabled ?? false;
 
   const handleConnect = async () => {
     try {
@@ -157,13 +156,33 @@ export function EmailWatchSection() {
                 real weight. Independent of the watch toggle above: this only
                 gates whether a match WRITES a status, never whether it's checked. */}
             <div className="space-y-2 border-t border-foreground/10 pt-3">
-              <Switch
-                checked={autoWriteEnabled}
-                onCheckedChange={(next) => void handleToggleAutoWrite(next)}
-                disabled={setAutoWrite.isPending}
-                label={t('settings.accounts.emailWatch.autoWrite.label')}
-                description={t('settings.accounts.emailWatch.autoWrite.description')}
-              />
+              {status ? (
+                <Switch
+                  checked={status.autoWriteEnabled}
+                  onCheckedChange={(next) => void handleToggleAutoWrite(next)}
+                  disabled={setAutoWrite.isPending}
+                  label={t('settings.accounts.emailWatch.autoWrite.label')}
+                  description={t('settings.accounts.emailWatch.autoWrite.description')}
+                />
+              ) : (
+                // The real default is ON. Defaulting a not-yet-loaded value to
+                // OFF would tell the user auto-write is off while it may
+                // already be on — the unsafe direction. Never render a
+                // committed `checked` value for a status we don't have yet;
+                // show a loading placeholder instead.
+                <div
+                  role="status"
+                  aria-busy="true"
+                  aria-label={t('settings.accounts.emailWatch.autoWrite.label')}
+                  className="flex items-center justify-between gap-4"
+                >
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Skeleton className="h-3 w-40" />
+                    <Skeleton className="h-2.5 w-56" />
+                  </div>
+                  <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
+                </div>
+              )}
             </div>
 
             {/* Last check + manual re-check */}

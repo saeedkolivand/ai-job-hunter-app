@@ -33,6 +33,7 @@ vi.mock('@ajh/translations', () => ({
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'test-model',
   useCanUseAI: () => ({ canUse: true }),
+  useSelectedProvider: () => 'ollama',
 }));
 
 // ── Service hooks ─────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ vi.mock('@ajh/translations', () => ({
 // that reach the summary tab don't need a full provider tree.
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector-stub" />,
+  useSelectedProvider: () => 'ollama',
 }));
 
 // ExternalLink uses useAppClient (requires AppClientProvider) — stub it with a

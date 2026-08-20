@@ -4859,7 +4859,7 @@ fn status_events_source_confirmed_migration_is_appended_not_inserted() {
 }
 
 #[test]
-fn accept_latest_status_event_clears_confirmed_without_touching_status() {
+fn accept_status_event_clears_confirmed_without_touching_status() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
     let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
@@ -4875,9 +4875,10 @@ fn accept_latest_status_event_clears_confirmed_without_touching_status() {
         )
         .unwrap();
     assert!(wrote);
-    assert!(!store.events(&id).into_iter().last().unwrap().confirmed);
+    let pending = store.events(&id).into_iter().last().unwrap();
+    assert!(!pending.confirmed);
 
-    let accepted = store.accept_latest_status_event(&id).unwrap();
+    let accepted = store.accept_status_event(&id, pending.event_id).unwrap();
     assert!(accepted);
 
     let app = store.get(&id).unwrap();
@@ -4894,19 +4895,152 @@ fn accept_latest_status_event_clears_confirmed_without_touching_status() {
     );
 }
 
+/// HIGH-1 deciding experiment: two provisional rows coexist on the ordinary
+/// happy path — a confirmation email writes `Saved -> Applied` (T1,
+/// unconfirmed), then a LATER rejection email sees the still-live `Applied`
+/// and writes `Applied -> Rejected` (T2, unconfirmed). `next_status` never
+/// consults `confirmed` for a live current status, and nothing settles the
+/// older row when a newer one lands — this is not a contrived setup, it is
+/// what two ordinary ticks produce. A user clicking Accept on the OLDER
+/// (T1, "yes, I applied") row must confirm EXACTLY that row — never
+/// whichever row happens to be newest.
 #[test]
-fn accept_latest_status_event_is_a_noop_when_nothing_is_unconfirmed() {
+fn accept_targets_the_specific_row_requested_never_whichever_landed_most_recently() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
+                                                                   // Start from `saved` so T1 is a real forward advance, matching the
+                                                                   // shape a live confirmation-then-rejection pair actually produces.
+    store.set_status(&id, ApplicationStatus::Saved, "").unwrap();
+
+    // T1: Saved -> Applied, unconfirmed.
+    store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            None,
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    let t1_event_id = store.events(&id).into_iter().last().unwrap().event_id;
+
+    // T2 (a later tick): Applied -> Rejected, unconfirmed. Both rows are now
+    // pending — neither has been reviewed.
+    store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Applied,
+            ApplicationStatus::Rejected,
+            None,
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    let t2_event_id = store.events(&id).into_iter().last().unwrap().event_id;
+    assert_ne!(
+        t1_event_id, t2_event_id,
+        "fixture requires two distinct rows"
+    );
+
+    // The user clicks Accept on the OLDER (T1) row specifically.
+    let accepted = store.accept_status_event(&id, t1_event_id).unwrap();
+    assert!(
+        accepted,
+        "the specifically-requested T1 row must be acceptable"
+    );
+
+    let events = store.events(&id);
+    let t1 = events.iter().find(|e| e.event_id == t1_event_id).unwrap();
+    let t2 = events.iter().find(|e| e.event_id == t2_event_id).unwrap();
+    assert!(
+        t1.confirmed,
+        "T1 — the row the user actually clicked — must be confirmed"
+    );
+    assert!(
+        !t2.confirmed,
+        "T2 must be UNTOUCHED — the user never reviewed it. A pre-fix \
+         recency-based resolution would confirm T2 (the newest pending row) \
+         here instead, silently ratifying a rejection the user never saw"
+    );
+}
+
+/// Mirror of the accept test above for reject — "recoverable only by
+/// clicking again" per the fix-forward task, but still a real
+/// wrong-row-touched bug until fixed: rejecting the OLDER row must not
+/// revert/dismiss the NEWER one.
+#[test]
+fn reject_targets_the_specific_row_requested_never_whichever_landed_most_recently() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
+    store.set_status(&id, ApplicationStatus::Saved, "").unwrap();
+
+    store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            None,
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    let t1_event_id = store.events(&id).into_iter().last().unwrap().event_id;
+
+    store
+        .transition_status_if_sourced(
+            &id,
+            ApplicationStatus::Applied,
+            ApplicationStatus::Rejected,
+            None,
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    let t2_event_id = store.events(&id).into_iter().last().unwrap().event_id;
+
+    // The user rejects the OLDER (T1) row specifically — "no, I never
+    // actually applied". The CAS itself loses (the live status has already
+    // moved on to `rejected` via T2, no longer `applied` — T1's own
+    // `from`/`to` snapshot is stale, so nothing is reverted); T1 is still
+    // marked reviewed/dismissed regardless — same "does not clobber"
+    // contract as a status the user changed by hand.
+    let reverted = store.reject_status_event(&id, t1_event_id).unwrap();
+    assert!(
+        !reverted,
+        "the CAS must lose — the live status moved past `applied` via T2"
+    );
+
+    let events = store.events(&id);
+    let t1 = events.iter().find(|e| e.event_id == t1_event_id).unwrap();
+    let t2 = events.iter().find(|e| e.event_id == t2_event_id).unwrap();
+    assert!(t1.confirmed, "T1 must be marked reviewed (dismissed)");
+    assert!(
+        !t2.confirmed,
+        "T2 must be UNTOUCHED — a wrong-row resolution would instead revert/dismiss \
+         T2 (the newest pending row) when the user meant to act on T1"
+    );
+}
+
+#[test]
+fn accept_status_event_is_a_noop_when_nothing_is_unconfirmed() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
     let id = store.track_manual("", "", &meta("C", "T")).unwrap();
-    assert!(!store.accept_latest_status_event(&id).unwrap());
+    // A REAL row id (the user-sourced seed event) that is simply not an
+    // unconfirmed email row -- proves the `source`/`confirmed` guard, not
+    // just "an unknown id is ignored".
+    let seed_event_id = store.events(&id).into_iter().last().unwrap().event_id;
+    assert!(!store.accept_status_event(&id, seed_event_id).unwrap());
 }
 
 /// The reversal event must be APPENDED, with the trail still showing the
 /// original email-derived transition. Asserts the row COUNT and the
 /// SEQUENCE, not just the final status.
 #[test]
-fn reject_latest_status_event_reverts_status_and_appends_a_reversal_event_keeping_the_original() {
+fn reject_status_event_reverts_status_and_appends_a_reversal_event_keeping_the_original() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
     let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
@@ -4927,8 +5061,9 @@ fn reject_latest_status_event_reverts_status_and_appends_a_reversal_event_keepin
         .unwrap();
     assert!(wrote);
     assert_eq!(store.events(&id).len(), events_before + 1);
+    let pending_event_id = store.events(&id).into_iter().last().unwrap().event_id;
 
-    let reverted = store.reject_latest_status_event(&id).unwrap();
+    let reverted = store.reject_status_event(&id, pending_event_id).unwrap();
     assert!(reverted);
 
     let events_after = store.events(&id);
@@ -4967,7 +5102,7 @@ fn reject_latest_status_event_reverts_status_and_appends_a_reversal_event_keepin
 /// meantime must NOT clobber it — anchored to the absolute expected final
 /// status.
 #[test]
-fn reject_latest_status_event_does_not_clobber_a_status_the_user_changed_by_hand() {
+fn reject_status_event_does_not_clobber_a_status_the_user_changed_by_hand() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
     let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
@@ -4985,6 +5120,7 @@ fn reject_latest_status_event_does_not_clobber_a_status_the_user_changed_by_hand
             false,
         )
         .unwrap();
+    let pending_event_id = store.events(&id).into_iter().last().unwrap().event_id;
 
     // The user changes the status BY HAND in the meantime. `set_status`
     // accepts any transition (including out of a terminal status — a
@@ -4995,7 +5131,7 @@ fn reject_latest_status_event_does_not_clobber_a_status_the_user_changed_by_hand
         .set_status(&id, ApplicationStatus::Accepted, "user accepted the offer")
         .unwrap();
 
-    let reverted = store.reject_latest_status_event(&id).unwrap();
+    let reverted = store.reject_status_event(&id, pending_event_id).unwrap();
     assert!(
         !reverted,
         "the CAS must lose — the status is no longer what the email set it to"
@@ -5021,28 +5157,27 @@ fn reject_latest_status_event_does_not_clobber_a_status_the_user_changed_by_hand
 }
 
 #[test]
-fn reject_latest_status_event_is_a_noop_when_nothing_is_unconfirmed() {
+fn reject_status_event_is_a_noop_when_nothing_is_unconfirmed() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
     let id = store.track_manual("", "", &meta("C", "T")).unwrap();
-    assert!(!store.reject_latest_status_event(&id).unwrap());
+    let seed_event_id = store.events(&id).into_iter().last().unwrap().event_id;
+    assert!(!store.reject_status_event(&id, seed_event_id).unwrap());
 }
 
-/// A second, later email must not re-apply a status the user already
-/// rejected — the store-level half of that guarantee:
-/// `was_transition_rejected` must be true for the EXACT pair rejected, and
-/// false for anything else (including before any reject happens at all).
+/// A second, later email must not re-apply a target status the user already
+/// rejected — the store-level half of that guarantee. `was_transition_rejected`
+/// is keyed on the TARGET alone (not the `(from, to)` pair — see its doc),
+/// so this also proves the detour a pair-keyed guard would have missed: a
+/// completely different `from` status reaching the SAME disputed target is
+/// still blocked.
 #[test]
-fn was_transition_rejected_is_true_only_after_a_reject_of_that_exact_pair() {
+fn was_transition_rejected_blocks_any_future_write_landing_at_the_rejected_target_via_any_path() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
     let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
 
-    assert!(!store.was_transition_rejected(
-        &id,
-        ApplicationStatus::Applied,
-        ApplicationStatus::Interviewing
-    ));
+    assert!(!store.was_transition_rejected(&id, ApplicationStatus::Interviewing));
 
     store
         .transition_status_if_sourced(
@@ -5055,25 +5190,31 @@ fn was_transition_rejected_is_true_only_after_a_reject_of_that_exact_pair() {
         )
         .unwrap();
     assert!(
-        !store.was_transition_rejected(
-            &id,
-            ApplicationStatus::Applied,
-            ApplicationStatus::Interviewing
-        ),
+        !store.was_transition_rejected(&id, ApplicationStatus::Interviewing),
         "not rejected yet — only written"
     );
 
-    store.reject_latest_status_event(&id).unwrap();
+    let event_id = store.events(&id).into_iter().last().unwrap().event_id;
+    store.reject_status_event(&id, event_id).unwrap();
     assert!(
-        store.was_transition_rejected(
-            &id,
-            ApplicationStatus::Applied,
-            ApplicationStatus::Interviewing
-        ),
-        "must be true for the EXACT pair that was rejected"
+        store.was_transition_rejected(&id, ApplicationStatus::Interviewing),
+        "must be true for the target that was rejected"
     );
     assert!(
-        !store.was_transition_rejected(&id, ApplicationStatus::Applied, ApplicationStatus::Offer),
-        "a different pair must not be flagged"
+        !store.was_transition_rejected(&id, ApplicationStatus::Offer),
+        "a different target must not be flagged"
+    );
+
+    // The detour: the reject reverted status back to `Applied`. Move it BY
+    // HAND to a different live status (simulating an intervening real
+    // Screening stage), then confirm the SAME disputed target is still
+    // blocked even via a pair (`Screening -> Interviewing`) that was never
+    // itself rejected — the exact detour a pair-keyed guard let through.
+    store
+        .set_status(&id, ApplicationStatus::Screening, "")
+        .unwrap();
+    assert!(
+        store.was_transition_rejected(&id, ApplicationStatus::Interviewing),
+        "the guard must still block `Interviewing` as a target reached via a          completely different pair — this is the detour the fix closes"
     );
 }

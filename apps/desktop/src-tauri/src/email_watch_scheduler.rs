@@ -395,7 +395,7 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
                         app_id,
                         matched.status,
                         outcome.intent,
-                        outcome.domain_hint,
+                        outcome.write_authorized,
                     ) {
                         log::warn!(
                             "[email_watch] auto-write failed for a matched application \
