@@ -297,7 +297,7 @@ fn resolve_status_event_action(
 }
 
 /// v2 slice 3 (HIGH-1 fix): accept the SPECIFIC email-derived, unconfirmed
-/// status-event row `event_id` names — clears its `confirmed` flag in
+/// status-event row `event_id` names — sets its `confirmed` flag to `true` in
 /// place, never touching `applications.status` itself (the auto-write
 /// already applied it). `event_id` is the [`crate::applications::
 /// StatusEvent::event_id`] of the exact row the renderer's Accept button
@@ -1015,7 +1015,7 @@ mod tests {
         let last_b = store_b.events(&id_b).into_iter().last().unwrap();
         assert_eq!(last_a.source, last_b.source);
         assert_eq!(last_a.confirmed, last_b.confirmed);
-        assert!(last_a.confirmed, "accept must clear the confirmed flag");
+        assert!(last_a.confirmed, "accept must set the confirmed flag");
     }
 
     #[test]

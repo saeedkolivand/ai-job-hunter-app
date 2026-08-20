@@ -425,72 +425,42 @@ impl EmailWatchStore {
         Ok(affected > 0)
     }
 
-    /// Disconnect wipe: the account row back to its just-migrated defaults,
-    /// and every `seen` row gone. Used ONLY by `email_watch_disconnect` (the
-    /// keychain credential itself is removed separately by the command layer
-    /// via `CredentialStore`) — see [`Self::factory_reset`] for the
-    /// privacy-reset path, which is a DIFFERENT operation, not a caller of
-    /// this one.
+    /// Full wipe: the account row back to its just-migrated defaults, and
+    /// every `seen` row gone. Used by BOTH `email_watch_disconnect` (the
+    /// keychain credential itself is removed separately by the command
+    /// layer via `CredentialStore`) and the privacy factory reset
+    /// (`Resettable::reset` for [`EmailWatchStore`] in `commands/privacy.rs`)
+    /// — the SAME operation for both callers, deliberately, after this
+    /// store's own earlier mistake of splitting it in two.
     ///
-    /// **`auto_write_enabled` is DELIBERATELY not reset here** — every other
-    /// account column goes back to its migrated default, but this one
-    /// survives the wipe as-is. Sound for disconnect specifically because a
-    /// disconnect/reconnect through `email_watch_disconnect` is the user
-    /// re-authenticating the SAME mailbox address they already made this
-    /// choice about — not a new account inheriting someone else's opt-in.
-    /// WHATEVER they explicitly chose — opted out when the shipped default
-    /// was ON, or (the current shipped default) opted IN against a
-    /// default-OFF value — a disconnect/reconnect of that same address must
-    /// not silently reset it back toward whichever default happens to be
-    /// migrated at the time. Deliberately phrased direction-agnostically:
-    /// this column's default has already flipped once (v2 shipped it ON; a
-    /// residual the parser cannot close by content inspection alone — see
-    /// `auto_write_enabled`'s own doc — moved it to OFF), and the safety
-    /// property this guards is "preserve the user's own choice for the
-    /// account that made it," not "preserve `false`" specifically. That
-    /// reasoning stops applying the moment the NEXT connected mailbox might
-    /// be a different account — which is exactly what a factory reset
-    /// permits and disconnect does not, and is why the two paths are split.
+    /// **`auto_write_enabled` IS reset here, unconditionally, to `0`** —
+    /// this was not always true. An earlier round of this file preserved it
+    /// through disconnect on the reasoning that a disconnect/reconnect is
+    /// "the user re-authenticating the SAME mailbox address they already
+    /// made this choice about," and split a separate `factory_reset` that
+    /// reset it only for the privacy-reset path. **That premise was
+    /// unverifiable by construction**: the SAME `UPDATE` that would
+    /// preserve the flag also sets `address = NULL` — nothing survives
+    /// this statement that records WHICH account made the choice, so a
+    /// later `connect()` (which writes only `address`/`host`/`port`, never
+    /// `auto_write_enabled`) cannot tell "the same mailbox came back" from
+    /// "a different mailbox connected for the first time." `EmailWatchSection`
+    /// only ever offers Disconnect, never an in-place re-auth, so every
+    /// reconnect — same address or not — is a fresh `connect()` after this
+    /// wipe. A preservation justified by an identity must not destroy that
+    /// identity in the same breath; splitting `clear`/`factory_reset` didn't
+    /// fix that, it just hid the unverifiable case behind whichever call
+    /// site happened to run. Reset unconditionally instead: a genuine
+    /// same-mailbox reconnect now costs one extra opt-in click, which is
+    /// the safe direction and makes the invariant checkable rather than
+    /// asserted. See `git blame` / this file's own history for the two
+    /// rounds that got this wrong before landing here.
     pub fn clear(&self) -> AppResult<()> {
         let mut conn = self.conn.lock();
         // Same atomicity requirement as `connect`'s address-changed branch —
         // the account wipe and the `seen` wipe must land together, or a
         // failure between them could leave stale `seen` rows attributed to an
         // address that no longer exists.
-        let tx = conn.transaction()?;
-        tx.execute(
-            "UPDATE account SET address = NULL, host = NULL, port = NULL, enabled = 0,
-             last_uid = NULL, uidvalidity = NULL, last_check_ms = NULL WHERE id = 1",
-            [],
-        )?;
-        tx.execute("DELETE FROM seen", [])?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    /// Privacy factory reset ([`crate::data_store::Resettable::reset`] in
-    /// `commands/privacy.rs`)
-    /// — wipes everything [`Self::clear`] wipes, PLUS `auto_write_enabled`,
-    /// explicitly set to `0` (not "whatever the migration's current DEFAULT
-    /// happens to be" — an explicit value, so this stays correct even if a
-    /// future migration changes that DEFAULT again).
-    ///
-    /// NOT the same operation as [`Self::clear`] despite overlapping with
-    /// it, and not a caller of it either (own transaction, same SQL
-    /// inlined) — a factory reset's whole point is that whatever mailbox
-    /// gets connected next may be a DIFFERENT account than whichever one
-    /// made this opt-in choice, and that account never agreed to auto-write.
-    /// `clear()`'s "preserve the user's own choice" reasoning is sound only
-    /// because a disconnect/reconnect re-authenticates the SAME address; it
-    /// does not transfer to a factory reset, and treating the two as one
-    /// operation was this store's own earlier mistake (an approved fix that
-    /// covered only the same-account case). ADR-0013 lists "opt-in default,
-    /// nobody exposed without asking" as mitigation #1 for the
-    /// `dmarc_pass_aligned` residual — inheriting a stranger account's
-    /// opt-in through a factory reset would silently break that mitigation
-    /// for the very account that never asked.
-    pub fn factory_reset(&self) -> AppResult<()> {
-        let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
         tx.execute(
             "UPDATE account SET address = NULL, host = NULL, port = NULL, enabled = 0,

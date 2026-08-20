@@ -455,28 +455,34 @@ fn clear_wipes_account_and_seen_rows() {
     assert!(!store.has_seen("uid-1"), "seen rows must be wiped too");
 }
 
-/// MEDIUM fix: `clear()` (disconnect/reconnect of the SAME mailbox address)
-/// deliberately does NOT reset `auto_write_enabled` — pins the behavior
-/// (see `clear()`'s own doc for why). This is now DELIBERATELY narrower
-/// than an earlier version of this test claimed: `clear()` is disconnect
-/// ONLY — a privacy factory reset goes through [`super::EmailWatchStore::
-/// factory_reset`] instead (see `factory_reset_does_reset_the_auto_write_opt_in`
-/// right below), which DOES reset this column, because the next-connected
-/// mailbox after a factory reset may be a different account than whichever
-/// one made this opt-in choice.
+/// HIGH fix: `clear()` used to preserve `auto_write_enabled` across a
+/// disconnect, reasoning that a disconnect/reconnect is "the user
+/// re-authenticating the SAME mailbox address they already made this
+/// choice about" — the premise was unverifiable BY CONSTRUCTION: the SAME
+/// `UPDATE` that would preserve the flag also sets `address = NULL`, so
+/// nothing survives to tell a later `connect()` whether the reconnecting
+/// mailbox is the same one or a stranger. `EmailWatchSection` only ever
+/// offers Disconnect (no in-place re-auth), so this was reachable for
+/// real, not hypothetical: connect A, opt in, disconnect, connect B — B's
+/// switch would render ON. `clear()` now resets `auto_write_enabled`
+/// unconditionally (see `clear()`'s own doc for the fuller account,
+/// including why a prior attempt to split this into `clear`/
+/// `factory_reset` — preserve on disconnect, reset on privacy reset — was
+/// itself wrong: it just hid the unverifiable premise behind whichever
+/// call site happened to run, rather than removing it). This test is
+/// INVERTED from an earlier version that asserted the opposite (opt-in
+/// survives `clear()`) — see git history for that version, which pinned
+/// exactly the behavior this fix removes.
 ///
-/// **Tests the OPT-IN direction, not opt-out** — `auto_write_enabled` now
-/// defaults OFF (flipped from its original default-ON; see the
-/// `add_auto_write_enabled` migration's own doc). Opting OUT (`false`) is
-/// now the SAME value as the default, so a test that set `false` and
-/// asserted it stayed `false` after `clear()` would pass even if a future
-/// regression made `clear()` reset the column to its default — a test that
-/// passes for the wrong reason, catching nothing. Setting the NON-default
-/// value (`true`, an explicit opt-IN) is what makes this test actually
-/// exercise "`clear()` does not touch this column at all", regardless of
-/// which direction is the default.
+/// **Tests the OPT-IN direction, not opt-out** — `auto_write_enabled`
+/// defaults OFF, so opting OUT (`false`) is the SAME value the column
+/// would read as even if `clear()` did nothing to it at all; a test that
+/// set `false` and asserted `false` after `clear()` would pass whether or
+/// not the reset actually ran, catching nothing. Setting the NON-default
+/// value (`true`) first is what makes "still `false` after `clear()`"
+/// mean the reset genuinely happened.
 #[test]
-fn clear_does_not_reset_the_auto_write_opt_in() {
+fn clear_resets_the_auto_write_opt_in() {
     let (_dir, store) = new_store();
     store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
     assert!(
@@ -487,39 +493,11 @@ fn clear_does_not_reset_the_auto_write_opt_in() {
 
     store.clear().expect("clear");
 
-    // `auto_write_enabled` has no `address IS NOT NULL` guard on its OWN
-    // read path, so it is readable even post-clear — reconnecting the SAME
-    // account afterward must not find it silently reset to the (now OFF)
-    // default.
-    assert!(
-        store.status().auto_write_enabled,
-        "a user's DELIBERATE auto-write opt-in must survive a disconnect (clear())"
-    );
-}
-
-/// MEDIUM fix, the other half: unlike `clear()`, a privacy factory reset
-/// MUST zero `auto_write_enabled` — the account connected next may not be
-/// the one that made this choice, and ADR-0013 lists "opt-in default,
-/// nobody exposed without asking" as mitigation #1 for the
-/// `dmarc_pass_aligned` residual. `Resettable::reset` in `commands/privacy.rs`
-/// calls `factory_reset`, not `clear` — this pins that `factory_reset`
-/// itself has the right behavior independent of that wiring (which is its
-/// own, separate concern).
-#[test]
-fn factory_reset_does_reset_the_auto_write_opt_in() {
-    let (_dir, store) = new_store();
-    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
-    assert!(
-        store.set_auto_write_enabled(true).unwrap(),
-        "precondition: the toggle write must succeed while connected"
-    );
-    assert!(store.status().auto_write_enabled, "precondition: opted in");
-
-    store.factory_reset().expect("factory_reset");
-
     assert!(
         !store.status().auto_write_enabled,
-        "a factory reset must clear the opt-in — the next connected mailbox \
-         may be a different account than whichever one chose it"
+        "clear() must reset the auto-write opt-in unconditionally — a \
+         disconnect/reconnect cannot verify it is the same mailbox that \
+         made this choice, since clear() itself destroys the only thing \
+         (the address) that could have proven it"
     );
 }

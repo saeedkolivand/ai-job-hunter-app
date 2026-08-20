@@ -134,9 +134,13 @@ pub async fn email_watch_connect(
     Ok(store.status())
 }
 
-/// Remove the stored app password and clear the account row (does NOT touch
-/// `seen` dedupe rows semantically differently than a factory reset — both go
-/// through the same [`crate::email_watch::EmailWatchStore::clear`]).
+/// Remove the stored app password and clear the account row (`seen` dedupe
+/// rows are wiped too — `clear()` treats disconnect and a privacy factory
+/// reset as the SAME operation, deliberately: see
+/// [`crate::email_watch::EmailWatchStore::clear`]'s own doc for why an
+/// earlier attempt to split the two, preserving `auto_write_enabled`
+/// across disconnect specifically, turned out to rest on an unverifiable
+/// premise).
 #[tauri::command]
 pub async fn email_watch_disconnect(app: AppHandle) -> AppResult<EmailWatchStatus> {
     credentials(&app).lock().remove(CREDENTIAL_SLOT)?;

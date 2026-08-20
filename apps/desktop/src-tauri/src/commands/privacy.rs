@@ -146,16 +146,19 @@ impl Resettable for SpendStore {
 }
 impl Resettable for EmailWatchStore {
     fn reset(&self) {
-        // Account row back to defaults + every `seen` row gone — via
-        // `factory_reset`, NOT `clear` (see both fns' own docs): a factory
-        // reset's next-connected mailbox may be a DIFFERENT account than
-        // whichever one opted into auto-write, so this MUST also zero
-        // `auto_write_enabled` rather than carry it forward the way a same-
-        // account disconnect/reconnect (`clear`) correctly does. The keychain
-        // app password is cleared separately by `Mutex<CredentialStore>`'s own
-        // `reset` (registered under the "credentials" label), which wipes
-        // every stored secret including this store's `email-imap` slot.
-        let _ = self.factory_reset();
+        // Account row back to defaults (including `auto_write_enabled`,
+        // unconditionally — see `EmailWatchStore::clear`'s own doc for why
+        // this store no longer has a separate `factory_reset`: an earlier
+        // round split the two on the reasoning that disconnect/reconnect
+        // of the SAME mailbox should preserve the opt-in, but `clear()`
+        // NULLs the address in the same statement that would preserve it,
+        // so nothing survives to verify "same mailbox" by the time a later
+        // `connect()` runs — the split hid an unverifiable premise instead
+        // of fixing it) + every `seen` row gone. The keychain app password
+        // is cleared separately by `Mutex<CredentialStore>`'s own `reset`
+        // (registered under the "credentials" label), which wipes every
+        // stored secret including this store's `email-imap` slot.
+        let _ = self.clear();
     }
 }
 
@@ -432,13 +435,13 @@ mod tests {
         assert!(cache.get("ns", "k", 3600).is_none(), "cache wiped on reset");
     }
 
-    // MEDIUM fix: guards the WIRING specifically, not just `factory_reset`'s
-    // own body (that's `email_watch::tests::factory_reset_does_reset_the_
-    // auto_write_opt_in`) — a regression back to `let _ = self.clear();`
-    // here would pass every other test in this file (labels, other stores'
-    // resets) while silently letting a factory reset carry a stranger
-    // account's auto-write opt-in forward to whichever mailbox connects
-    // next.
+    // HIGH fix: guards the WIRING specifically, not just `clear()`'s own
+    // body (that's `email_watch::tests::clear_resets_the_auto_write_opt_in`)
+    // — a regression back to a no-op `reset` (or a call to some OTHER
+    // wipe that forgets `auto_write_enabled`) here would pass every other
+    // test in this file (labels, other stores' resets) while silently
+    // letting a factory reset carry a stranger account's auto-write
+    // opt-in forward to whichever mailbox connects next.
     #[test]
     fn email_watch_store_reset_clears_the_auto_write_opt_in() {
         let dir = TempDir::new().unwrap();

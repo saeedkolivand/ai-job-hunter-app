@@ -333,8 +333,8 @@ impl ApplicationStore {
     /// succeeds if the CURRENT status still equals the event's `to_status`.
     /// **A status that has since moved on — by the user's own hand, or by a
     /// LATER email write — is never clobbered**: when the CAS loses, the
-    /// row is simply DISMISSED (its `confirmed` flag cleared below) rather
-    /// than reverted.
+    /// row is simply DISMISSED (its `confirmed` flag SET to `true` below,
+    /// marking it reviewed) rather than reverted.
     ///
     /// **HIGH-1 fix**: `event_id` (the row's [`StatusEvent::event_id`], i.e.
     /// `rowid`) is matched EXACTLY in the initial `SELECT` — this used to

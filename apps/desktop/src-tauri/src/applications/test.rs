@@ -4859,7 +4859,7 @@ fn status_events_source_confirmed_migration_is_appended_not_inserted() {
 }
 
 #[test]
-fn accept_status_event_clears_confirmed_without_touching_status() {
+fn accept_status_event_sets_confirmed_without_touching_status() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
     let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
@@ -4888,7 +4888,7 @@ fn accept_status_event_clears_confirmed_without_touching_status() {
         "accept must never change the status itself"
     );
     let last = store.events(&id).into_iter().last().unwrap();
-    assert!(last.confirmed, "accept must clear the confirmed flag");
+    assert!(last.confirmed, "accept must set the confirmed flag");
     assert_eq!(
         last.source, EVENT_SOURCE_EMAIL,
         "accept must not touch the source"

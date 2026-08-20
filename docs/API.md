@@ -965,7 +965,7 @@ already carried by `list()` (see `features/applications/lib/pipeline.ts`).
 is a provisional, auto-written transition (see the `email.match` notification)
 that the timeline must render distinctly, with Accept/Reject affordances:
 
-- `acceptStatusEvent` clears `confirmed` in place — the status itself is
+- `acceptStatusEvent` sets `confirmed` to `true` in place — the status itself is
   untouched (the auto-write already applied it).
 - `rejectStatusEvent` reverts the status BY COMPARE-AND-SET (a status the user
   changed by hand in the meantime is never clobbered — the row is simply
@@ -980,8 +980,8 @@ unreviewed); always pass the `eventId` of the exact row the Accept/Reject
 affordance was rendered on. Both are idempotent no-ops (`{ success: true
 }`, nothing changed) when `eventId` does not resolve to a pending
 unconfirmed row for `id` — never an error a UI needs to branch on.
-**Nothing in this app ever writes `confirmed: true` except these two calls
-clearing it on review** — adjudication is the entire safety model for a
+**Nothing in this app ever writes `confirmed: true` except these two
+calls, both on review** — adjudication is the entire safety model for a
 classifier with a recorded precision limit (see `docs/knowledge/
 decision-records/0013-email-confirmation-watching.md`).
 
@@ -1033,7 +1033,7 @@ acceptStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMut
 ```
 
 Accept the SPECIFIC email-derived, unconfirmed status-event row
-`eventId` names — clears its `StatusEvent.confirmed` flag; the
+`eventId` names — sets its `StatusEvent.confirmed` flag to `true`; the
 status itself is untouched. `eventId` must be the
 `StatusEvent.eventId` of the exact row the Accept affordance was
 rendered on — see `StatusEvent.eventId`'s doc for why "the most
