@@ -853,7 +853,7 @@
         "disconnectFailed": "Could not disconnect.",
         "watch": {
           "label": "Watch for confirmation emails",
-          "description": "Runs an automatic inbox check about every 15 minutes. A match creates a notification for you to confirm — nothing is ever marked applied on its own."
+          "description": "Runs an automatic inbox check about every 15 minutes. A match always creates a notification for you to confirm; it only updates the application's status directly if you've also turned on “Update status automatically” below."
         },
         "autoWrite": {
           "label": "Update status automatically",
@@ -866,7 +866,7 @@
         "checking": "Checking…",
         "checkNowFailed": "Could not reach the mailbox. Check your app password and try again.",
         "checkNowRateLimited": "Checked moments ago — try again in a minute.",
-        "disclosure": "An app password grants full access to your Gmail account — not just read-only — so it's stored only in your OS keychain, never in this app's database. Every check, automatic or via Check now, happens locally: it scans your inbox for likely application-confirmation emails, and the email content never leaves this device or reaches any AI provider. A match only ever creates a notification for you to confirm — nothing is ever marked applied automatically."
+        "disclosure": "An app password grants full access to your Gmail account — not just read-only — so it's stored only in your OS keychain, never in this app's database. Every check, automatic or via Check now, happens locally: it scans your inbox for likely application-confirmation emails, and the email content never leaves this device or reaches any AI provider. A match always creates a notification for you to confirm; whether it also updates the application's status depends on the “Update status automatically” setting above — off by default, and even when it's on, every change lands in the Timeline as unconfirmed until you accept or reject it."
       },
       "connectedViaBrowser": "{{board}} connected via browser extension",
       "boards": {

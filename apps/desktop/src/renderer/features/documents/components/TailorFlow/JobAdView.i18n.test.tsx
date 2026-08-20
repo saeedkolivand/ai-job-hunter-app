@@ -32,7 +32,7 @@
  * the posting text must not re-fire the query) is covered separately, against
  * the same tracked-mock pattern, in JobAdView.test.tsx §10.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -48,6 +48,17 @@ let stubbedScore: {
   isError?: boolean;
   refetch?: () => void;
 } = {};
+
+// Reset before EVERY test, not just the ones that assign it explicitly.
+// Three tests below (the no-résumé / empty-posting / whitespace-only-posting
+// cases) never set `stubbedScore` at all — they pass because the component
+// short-circuits on `!resumeId`/`!scoreText` before ever reading the score,
+// but without this reset they'd silently inherit whatever the PREVIOUS test
+// left behind, which only stays harmless as long as test order and every
+// other test's cleanup happen to line up.
+beforeEach(() => {
+  stubbedScore = {};
+});
 
 const mockUseJobAdTextMatchScore = vi.fn(
   (_resumeId: string | null, _jobText: string, _enabled?: boolean) => stubbedScore

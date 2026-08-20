@@ -1029,7 +1029,14 @@ function TimelineTab({ application, events, onNotePrompt }: TimelineTabProps) {
     );
   };
 
-  const orderedEvents = [...events].sort((a, b) => b.at - a.at);
+  // `events()` orders by `at ASC, rowid ASC`; `Array#sort` is stable, so a
+  // bare `b.at - a.at` keeps ASCENDING insertion order for any pair sharing
+  // one `at` while every surrounding pair is descending. That's reachable
+  // here: a reject appends its reversal row immediately after its
+  // compare-and-set wins, so a correction and the provisional row it
+  // resolves can share a millisecond. `eventId` IS the rowid — the same
+  // descending direction as `at` keeps the backend's tie order intact.
+  const orderedEvents = [...events].sort((a, b) => b.at - a.at || b.eventId - a.eventId);
   const statusLabel = (status: string) =>
     status ? t(`applications.status.${status}` as const) : t('applications.detail.created');
 

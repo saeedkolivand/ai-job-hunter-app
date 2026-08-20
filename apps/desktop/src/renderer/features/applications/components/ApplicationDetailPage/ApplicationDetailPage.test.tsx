@@ -2126,6 +2126,57 @@ describe('ApplicationDetailPage — Timeline: provisional email rows', () => {
     ).not.toBeInTheDocument();
   });
 
+  // `status_events.events()` orders by `at ASC, rowid ASC`; `eventId` IS the
+  // rowid. `Array#sort` is STABLE, so a bare `b.at - a.at` keeps ascending
+  // (input) order for any pair sharing one `at`, while every surrounding
+  // pair sorts descending — reachable here because a reject appends its
+  // reversal row immediately after its compare-and-set wins, so the
+  // correction and the provisional row it resolves can share a millisecond.
+  it('breaks a same-`at` tie using eventId, matching the backend’s at-ASC-rowid-ASC order', () => {
+    renderTimeline([
+      // Passed in backend order (oldest-inserted first), exactly like
+      // `data.events` arrives from `applications_get`.
+      makeEvent({
+        eventId: 10,
+        at: 1000,
+        fromStatus: 'saved',
+        toStatus: 'applied',
+        source: 'user',
+      }),
+      makeEvent({
+        eventId: 20,
+        at: 2000,
+        fromStatus: 'applied',
+        toStatus: 'screening',
+        source: 'email',
+        confirmed: true,
+      }),
+      // The reversal row — same `at` as the row above, but a HIGHER
+      // eventId/rowid, since it was inserted immediately after.
+      makeEvent({
+        eventId: 21,
+        at: 2000,
+        fromStatus: 'screening',
+        toStatus: 'applied',
+        source: 'email_reject',
+        confirmed: true,
+      }),
+    ]);
+
+    const list = screen.getByRole('list');
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+
+    // Newest-first display: the correction (eventId 21, the LATER of the two
+    // same-`at` rows per the backend order) must render FIRST — ahead of the
+    // row it resolves (eventId 20). A stable `b.at - a.at`-only sort keeps
+    // the tie in ascending (input) order instead, rendering the correction
+    // BELOW the very row it corrects.
+    expect(items[0]?.textContent).toContain('applications.detail.timeline.correctionBadge');
+    expect(items[1]?.textContent).not.toContain('applications.detail.timeline.correctionBadge');
+    expect(items[2]?.textContent).toContain('applications.status.saved');
+  });
+
   it('renders a provisional row without leaking the raw backend note, showing the localized hint instead', () => {
     renderTimeline([
       makeEvent({

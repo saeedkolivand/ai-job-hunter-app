@@ -55,9 +55,12 @@ vi.mock('@ajh/ui', async (importOriginal) => {
   };
 });
 
+// The model and its provider must agree — 'openai/gpt-4o' can only come
+// from the 'openai' provider, never 'ollama' (a local provider never serves
+// an OpenAI-namespaced model).
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'openai/gpt-4o',
-  useSelectedProvider: () => 'ollama',
+  useSelectedProvider: () => 'openai',
 }));
 
 vi.mock('@/services/use-contact-profile', () => ({

@@ -853,7 +853,7 @@
         "disconnectFailed": "Verbindung konnte nicht getrennt werden.",
         "watch": {
           "label": "Auf Bestätigungs-E-Mails achten",
-          "description": "Führt etwa alle 15 Minuten eine automatische Posteingangsprüfung durch. Ein Treffer erzeugt eine Benachrichtigung, die Sie bestätigen — es wird nie von selbst etwas als beworben markiert."
+          "description": "Führt etwa alle 15 Minuten eine automatische Posteingangsprüfung durch. Ein Treffer erzeugt immer eine Benachrichtigung, die Sie bestätigen; der Status wird nur automatisch geändert, wenn Sie zusätzlich unten die Option „Status automatisch aktualisieren“ aktiviert haben."
         },
         "autoWrite": {
           "label": "Status automatisch aktualisieren",
@@ -866,7 +866,7 @@
         "checking": "Wird geprüft…",
         "checkNowFailed": "Postfach nicht erreichbar. Prüfen Sie Ihr App-Passwort und versuchen Sie es erneut.",
         "checkNowRateLimited": "Gerade erst geprüft — versuchen Sie es in einer Minute erneut.",
-        "disclosure": "Ein App-Passwort gewährt vollen Zugriff auf Ihr Gmail-Konto – nicht nur Lesezugriff – und wird deshalb nur in Ihrem Betriebssystem-Schlüsselbund gespeichert, niemals in der Datenbank dieser App. Jede Prüfung, automatisch oder über „Jetzt prüfen“, erfolgt lokal: Sie durchsucht Ihren Posteingang nach wahrscheinlichen Bewerbungsbestätigungs-E-Mails, und der E-Mail-Inhalt verlässt dieses Gerät nie und erreicht keinen KI-Anbieter. Ein Treffer erzeugt ausschließlich eine Benachrichtigung, die Sie bestätigen – es wird nie automatisch etwas als beworben markiert."
+        "disclosure": "Ein App-Passwort gewährt vollen Zugriff auf Ihr Gmail-Konto – nicht nur Lesezugriff – und wird deshalb nur in Ihrem Betriebssystem-Schlüsselbund gespeichert, niemals in der Datenbank dieser App. Jede Prüfung, automatisch oder über „Jetzt prüfen“, erfolgt lokal: Sie durchsucht Ihren Posteingang nach wahrscheinlichen Bewerbungsbestätigungs-E-Mails, und der E-Mail-Inhalt verlässt dieses Gerät nie und erreicht keinen KI-Anbieter. Ein Treffer erzeugt immer eine Benachrichtigung, die Sie bestätigen; ob dabei auch der Status der Bewerbung geändert wird, hängt von der oben stehenden Option „Status automatisch aktualisieren“ ab – standardmäßig deaktiviert, und selbst wenn sie aktiviert ist, erscheint jede Änderung im Verlauf zunächst als unbestätigt, bis Sie sie annehmen oder ablehnen."
       },
       "connectedViaBrowser": "{{board}} über Browser-Erweiterung verbunden",
       "boards": {
@@ -3091,7 +3091,7 @@
         "transitionDesc": "{{from}} → {{to}}",
         "acceptSuccess": "Bestätigt — dieser Status bleibt wie erfasst.",
         "acceptError": "Diese Änderung konnte nicht bestätigt werden. Bitte erneut versuchen.",
-        "rejectSuccess": "Überprüft — im Verlauf unten sehen Sie, was sich geändert hat.",
+        "rejectSuccess": "Überprüft — der Verlauf unten zeigt, was sich geändert hat.",
         "rejectError": "Diese Änderung konnte nicht verworfen werden. Bitte erneut versuchen.",
         "correctionBadge": "Korrektur",
         "correctionHint": "Eine aus einer E-Mail erkannte Statusänderung wurde nach Prüfung rückgängig gemacht."
