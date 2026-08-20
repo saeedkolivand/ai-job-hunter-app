@@ -7,7 +7,8 @@
   },
   "errorBoundary": {
     "title": "Something went wrong",
-    "description": "This page hit an unexpected error. Try again, or pick another page from the sidebar."
+    "description": "This page hit an unexpected error. Try again, or go back to the dashboard.",
+    "goHome": "Go to dashboard"
   },
   "app": {
     "title": "AI Job Hunter",

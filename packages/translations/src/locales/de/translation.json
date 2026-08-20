@@ -7,7 +7,8 @@
   },
   "errorBoundary": {
     "title": "Etwas ist schiefgelaufen",
-    "description": "Auf dieser Seite ist ein unerwarteter Fehler aufgetreten. Versuche es erneut oder wähle eine andere Seite in der Seitenleiste."
+    "description": "Auf dieser Seite ist ein unerwarteter Fehler aufgetreten. Versuche es erneut oder kehre zum Dashboard zurück.",
+    "goHome": "Zum Dashboard"
   },
   "app": {
     "title": "AI Job Hunter",

@@ -141,23 +141,44 @@ function NotificationToastBridge() {
  * Root-level error boundary — TanStack Router walks up to this when a route
  * component throws and neither it nor any ancestor route defines its own
  * `errorComponent` (e.g. the Rules-of-Hooks crash logged 2026-08-18, which
- * white-screened the whole app because no boundary existed at all). Rendered
- * in place of the failed route's `<Outlet />` content — the shell (Sidebar/
- * Titlebar) stays mounted, so "pick another page" is a real escape hatch, not
- * just decoration. `reset` is the router's own recovery: it re-attempts
- * rendering the route that threw (a per-render bug, not a data bug, so this
- * does not fix the root cause — the underlying crash is tracked separately).
+ * white-screened the whole app because no boundary existed at all).
+ *
+ * This replaces the WHOLE shell, not just the failed route's content: the
+ * router wraps a match's own component in the catch boundary, and the root
+ * match's component IS `RootLayout` — Titlebar, Sidebar, StatusBar and every
+ * always-mounted bridge go with it. So there is no sidebar left to send the
+ * user to, and the copy must not promise one.
+ *
+ * That is also why `reset` alone is not an escape hatch. It re-attempts
+ * rendering the route that threw, which recovers a transient failure but loops
+ * straight back for a deterministic render bug — exactly the case this was
+ * built for. The dashboard button is the real way out: `useNavigate` resolves
+ * fine inside the boundary, and landing on `/` remounts the shell.
+ *
+ * Neither action fixes the root cause; the underlying crash is tracked
+ * separately.
  *
  * Exported (not just used inline) so it can be unit-tested standalone,
  * without mounting the rest of the root layout's provider tree.
  */
 export function RootErrorBoundary({ reset }: ErrorComponentProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   return (
     <ErrorState
       title={t('errorBoundary.title')}
       description={t('errorBoundary.description')}
       onRetry={reset}
+      action={
+        <Button
+          variant="default"
+          onClick={() => {
+            void navigate({ to: '/' });
+          }}
+        >
+          {t('errorBoundary.goHome')}
+        </Button>
+      }
       className="h-full"
     />
   );
