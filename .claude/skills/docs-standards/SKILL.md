@@ -17,7 +17,13 @@ description: Documentation maintenance rules — which docs map to which code ar
 
 ## No-drift rule (thin pointers)
 
-Describe **shape and contracts**; **never copy drift-prone literals** (scoring weights, template/board/applier counts). Point at the owning source symbol instead (weights → `commands/match_resume.rs`; templates → `export/templates/mod.rs`; registries → `scraping/boards/mod.rs` (SCRAPERS)). Knowledge files capped ~150 lines.
+Applies to **everything under `docs/`**, not only `docs/knowledge/` — that is the scope reviewers enforce, so it is the scope to write to.
+
+Describe **shape and contracts**; **never copy drift-prone literals** (scoring weights, thresholds, template/board/applier counts, function signatures, enum members, file lists). Point at the owning source symbol instead (weights → `commands/match_resume.rs`; templates → `export/templates/mod.rs`; registries → `scraping/boards/mod.rs` (SCRAPERS)). Knowledge files capped ~150 lines.
+
+**Self-check before saving a doc edit:** for every number, name or signature on the page, ask "if someone changed this in the code tomorrow, would this page silently become a lie?" If yes, replace it with a pointer to where it lives.
+
+**Generated pages are exempt because they are not editable at all.** A file opening with a `GENERATED FILE` banner (`docs/API.md`) is rendered from its source by a script; restating the contract is its whole purpose. Fix the TSDoc on the contract member and re-run the generator — never the page.
 
 ## After editing code or docs
 
