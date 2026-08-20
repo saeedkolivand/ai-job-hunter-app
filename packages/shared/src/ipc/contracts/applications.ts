@@ -97,12 +97,10 @@ export interface ApplicationChangedEvent {
  * }`, nothing changed) when `eventId` does not resolve to a pending
  * unconfirmed row for `id` — never an error a UI needs to branch on.
  * The invariant runs the other way, and it is the one that matters:
- * **nothing ever writes `confirmed: false` except the email-derived
- * auto-write itself.** Every user-sourced write — `set_status`, `upsert`,
- * `import`, `transition_status_if` — lands `true`, as does the column
- * default, so `false` marks exactly the rows a human has not yet ruled on.
- * That is the entire safety model for a classifier with a recorded
- * precision limit (see `docs/knowledge/
+ * **`confirmed: false` marks exactly the rows a human has not ruled on
+ * yet** — see {@link StatusEvent.confirmed}, which owns the rule and
+ * enumerates what may write it. That is the entire safety model for a
+ * classifier with a recorded precision limit (see `docs/knowledge/
  * decision-records/0013-email-confirmation-watching.md`).
  */
 export interface ApplicationsContract {
