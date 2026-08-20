@@ -389,9 +389,15 @@ impl ApplicationStore {
         )?;
 
         let conn = self.conn.lock();
+        // LOW fix: repeat the SAME conjunction the guarding `SELECT` above
+        // applied (`application_id`/`source`/`confirmed = 0`) rather than a
+        // bare `rowid` match — the two must never drift apart, or this
+        // write could mark reviewed a row the SELECT never actually
+        // verified was this application's pending email-derived one.
         conn.execute(
-            "UPDATE status_events SET confirmed = 1 WHERE rowid = ?1",
-            params![event_id],
+            "UPDATE status_events SET confirmed = 1
+             WHERE rowid = ?1 AND application_id = ?2 AND source = ?3 AND confirmed = 0",
+            params![event_id, id, EVENT_SOURCE_EMAIL],
         )?;
         Ok(reverted)
     }

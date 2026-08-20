@@ -36,26 +36,39 @@ use crate::error::AppResult;
 /// relays that routinely carry attacker-authored subject/body from their
 /// own genuinely-authentic infrastructure; (2) a free ATS-tenant signup can
 /// send from a listed vendor domain with attacker-controlled content; (3)
-/// plain `From:` header spoofing wherever a listed domain lacks `p=reject`
-/// or the user's IMAP host does not enforce DMARC. `write_authorized` (the
-/// caller's [`crate::email_watch::poller::MessageOutcome::write_authorized`],
-/// computed as [`crate::email_watch::parser::Fingerprint::write_gate_domain`]
-/// AND [`crate::email_watch::parser::EmailHeader::dmarc_pass`] — a DMARC
-/// `pass` result aligned to the visible `From:` domain, BOTH required) closes
-/// (1) and (3): DMARC `pass` cannot be produced by an attacker who does not
-/// control DKIM signing or an SPF-authorized sender for the aligned domain,
-/// and the narrower write-gate domain list drops the two open relays
-/// entirely regardless of their own DMARC posture. (2) is NOT fully closed —
-/// a malicious tenant on a legitimate ATS vendor's own infrastructure would
-/// still pass DMARC for that vendor's domain; documented here as a residual,
-/// accepted risk rather than assumed away. This app would rather auto-write
-/// LESS often (including "never, on an IMAP host that doesn't stamp
-/// `Authentication-Results` at all") than write on unauthenticated content —
-/// see [`crate::email_watch::parser::EmailHeader::dmarc_pass`]'s doc for
-/// exactly what is and is not proven, and its own doc for why only the
-/// TOPMOST `Authentication-Results` header may ever be trusted (`.any()`
-/// over every occurrence was a real, shipped, since-fixed vulnerability —
-/// an attacker's own forged header, included anywhere in the message,
+/// plain `From:` header spoofing wherever a listed domain lacks `p=reject`,
+/// OR the user's IMAP host does not stamp `Authentication-Results` at all
+/// (see below — this last one is now CLOSED for a known host population,
+/// not merely accepted). `write_authorized` (the caller's — the ONLY
+/// caller is `email_watch_scheduler`, NOT `MessageOutcome::write_authorized`
+/// alone; that field is [`crate::email_watch::parser::Fingerprint::
+/// write_gate_domain`] AND [`crate::email_watch::parser::EmailHeader::
+/// dmarc_pass`], and the scheduler ADDITIONALLY ANDs in
+/// [`crate::email_watch::parser::host_is_known_to_stamp`] before it ever
+/// reaches this function — see that fn's doc for exactly what it closes
+/// and how) closes (1) and (3): DMARC `pass` cannot be produced by an
+/// attacker who does not control DKIM signing or an SPF-authorized sender
+/// for the aligned domain, the narrower write-gate domain list drops the
+/// two open relays entirely regardless of their own DMARC posture, and
+/// `host_is_known_to_stamp` closes the "lone forged header, host never
+/// stamped a genuine one" gap for accounts on a KNOWN-stamping host by
+/// consulting the account's own LOCALLY-STORED IMAP host — data an
+/// attacker cannot influence, unlike anything inside the message — rather
+/// than trusting message content. (2) is NOT fully closed — a malicious
+/// tenant on a legitimate ATS vendor's own infrastructure would still pass
+/// DMARC for that vendor's domain; documented here as a residual, accepted
+/// risk rather than assumed away. For an account on an UNKNOWN host (not
+/// on [`crate::email_watch::parser::host_is_known_to_stamp`]'s list —
+/// self-hosted or otherwise unverified, since the app's host/port are
+/// deliberately data, not Gmail-only), the "lone forged header" gap
+/// remains genuinely open and auto-write correctly never fires at all for
+/// that account — this app would rather auto-write LESS often than write
+/// on unauthenticated content. See [`crate::email_watch::parser::
+/// EmailHeader::dmarc_pass`]'s doc for exactly what message-content-only
+/// parsing can and cannot prove, and its own doc for why only the TOPMOST
+/// `Authentication-Results` header may ever be trusted (`.any()` over
+/// every occurrence was a real, shipped, since-fixed vulnerability — an
+/// attacker's own forged header, included anywhere in the message,
 /// satisfied the old gate outright).
 ///
 /// Two WIDER signals were considered and deliberately NOT implemented: the

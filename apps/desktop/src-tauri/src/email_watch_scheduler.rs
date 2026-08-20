@@ -258,6 +258,14 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
     let host = account
         .host
         .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
+    // Computed BEFORE `host` moves into the `spawn_blocking` closure below
+    // -- consulted again at the auto-write gate near the bottom of this
+    // fn, well past that move. See `parser::host_is_known_to_stamp`'s doc:
+    // this is the write-gate's ONLY signal that isn't message content an
+    // attacker can influence -- it closes the "lone forged
+    // Authentication-Results header, host never stamped a genuine one"
+    // residual for a known-host population.
+    let write_gate_host_ok = crate::email_watch::parser::host_is_known_to_stamp(&host);
     let port = account.port.unwrap_or(DEFAULT_IMAP_PORT);
     let app_password = app
         .try_state::<Mutex<CredentialStore>>()
@@ -389,13 +397,23 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
                 // "application not found: <id>"-shaped message can't leak
                 // through this log line.
                 if let Some(applications) = applications.as_deref() {
+                    // `outcome.write_authorized` is message-content-derived
+                    // (write-gate domain + DMARC pass) and, on its own,
+                    // cannot tell a genuinely non-stamping host apart from
+                    // one where an attacker's forged header is the ONLY
+                    // `Authentication-Results` present -- see
+                    // `parser::host_is_known_to_stamp`'s doc. ANDing in
+                    // `write_gate_host_ok` (computed above from the
+                    // account's own locally-stored `host`, BEFORE it moved
+                    // into the tick's `spawn_blocking` closure) closes that
+                    // gap for a known-host population.
                     if let Err(e) = crate::email_watch::auto_write::apply_matched_intent(
                         applications,
                         store,
                         app_id,
                         matched.status,
                         outcome.intent,
-                        outcome.write_authorized,
+                        outcome.write_authorized && write_gate_host_ok,
                     ) {
                         log::warn!(
                             "[email_watch] auto-write failed for a matched application \
