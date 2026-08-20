@@ -1228,6 +1228,73 @@ fn resolve_resume_and_text_clamps_oversized_job_text() {
     );
 }
 
+/// The sibling to the test above with a genuinely MULTIBYTE fixture. That
+/// one clamps `MAX_JOB_DESCRIPTION_BYTES + 500` bytes of pure ASCII
+/// (`"x".repeat(...)`), which never exercises `clamp_to_bytes`'s
+/// char-boundary walk-back at all -- every byte offset in pure ASCII is
+/// already a char boundary, so the interesting code path is untested.
+/// An ASCII-only fixture hiding multibyte behaviour is the exact class
+/// that produced this branch's own dotted-I/e-acute byte-offset
+/// crash-loop incident: the code looked correct, the tests were green, and the
+/// only input that mattered was never tried.
+///
+/// Places a 4-byte emoji EXACTLY straddling the cap (its first byte lands
+/// at `MAX_JOB_DESCRIPTION_BYTES - 1`, one byte before it), so the naive
+/// cutoff at the cap would split it mid-character and the walk-back MUST
+/// move -- the SAME proven fixture shape `clamp_to_bytes` already has its
+/// own direct unit test for (`oversized_input_is_clamped_rather_than_
+/// processed_whole`, this file), applied through `resolve_resume_and_text`
+/// instead: a future change that inlines the clamp, reorders it, or adds
+/// a preprocessing step ahead of it inside THIS fn specifically would
+/// still be caught here, not only at the lower-level primitive.
+#[test]
+fn resolve_resume_and_text_clamps_oversized_multibyte_job_text() {
+    let (_dir, store) = scoring_store();
+    store
+        .insert(&DocumentRecord {
+            id: "doc-1".into(),
+            title: "Resume".into(),
+            name: "resume.pdf".into(),
+            locale: None,
+            text: RESUME_TEXT.into(),
+            pages: None,
+            created_at: 0,
+            indexed: false,
+            is_default: false,
+            keywords_json: None,
+        })
+        .unwrap();
+
+    let oversized = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1) + "\u{1F600}" + &"b".repeat(2_500);
+    assert!(
+        oversized.len() > MAX_JOB_DESCRIPTION_BYTES,
+        "precondition: the fixture must actually exceed the cap"
+    );
+
+    let (resume, clamped) =
+        resolve_resume_and_text(&store, "doc-1", oversized).expect("a real resume id must resolve");
+    assert_eq!(resume.id, "doc-1");
+
+    // Absolute against the cap, never against the input's own length --
+    // proves the walk-back moved exactly one byte back from the naive
+    // cutoff and stopped at the FIRST valid boundary, not some other one.
+    assert_eq!(
+        clamped.len(),
+        MAX_JOB_DESCRIPTION_BYTES - 1,
+        "clamped multibyte job text must land exactly on the char \
+         boundary immediately before the straddling character"
+    );
+    assert!(
+        !clamped.contains('\u{1F600}'),
+        "the whole straddling character must be dropped, not partially \
+         included"
+    );
+    assert!(
+        String::from_utf8(clamped.into_bytes()).is_ok(),
+        "clamping a multibyte string must never produce invalid UTF-8"
+    );
+}
+
 /// The stemmer-language guard, through the kernel that owns it. A German JD
 /// against an English-locale résumé must leave BOTH sides unstemmed, so the
 /// language-neutral tech tokens they share still intersect. Stemming one side
