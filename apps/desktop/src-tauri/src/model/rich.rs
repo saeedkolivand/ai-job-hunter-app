@@ -114,6 +114,11 @@ pub fn url_label(url: &str) -> String {
 
     if matches!(domain, "github.com" | "gitlab.com") {
         let path = host.strip_prefix(domain).unwrap_or("");
+        // Query and fragment are not part of the repository's identity, and this
+        // label is printed verbatim on the résumé — without this,
+        // `github.com/user/repo?tab=readme` and `…/repo#install` end up on the
+        // page, and the query text also inflates the last path segment.
+        let path = path.split(['?', '#']).next().unwrap_or(path);
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         if segments.len() >= 2 {
             return format!("{domain}/{}", segments.join("/"));
@@ -610,6 +615,26 @@ mod tests {
         assert_eq!(
             url_label("https://www.github.com/janedoe/my-project"),
             "github.com/janedoe/my-project"
+        );
+        // A query or fragment is not part of the repository's identity, and this
+        // label is printed verbatim on the résumé — neither may leak into it.
+        assert_eq!(
+            url_label("https://github.com/user/repo?tab=readme"),
+            "github.com/user/repo"
+        );
+        assert_eq!(
+            url_label("https://github.com/user/repo#installation"),
+            "github.com/user/repo"
+        );
+        assert_eq!(
+            url_label("https://gitlab.com/user/repo/?ref=nav#top"),
+            "gitlab.com/user/repo"
+        );
+        // A query on a PROFILE link must not manufacture a second segment and
+        // promote it to a repo-shaped label.
+        assert_eq!(
+            url_label("https://github.com/janedoe?tab=repositories"),
+            "GitHub"
         );
     }
 

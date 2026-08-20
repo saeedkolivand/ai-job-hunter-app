@@ -571,6 +571,14 @@ fn is_entry_title_shaped(clean: &str) -> bool {
         && !clean.ends_with(['.', '!', '?'])
         && !is_known_section_name(clean)
         && !is_all_caps_section_heading(clean)
+        // A header contact line is title-SHAPED by every other measure here —
+        // short, unpunctuated, not a heading — so without this it is eligible to
+        // open an entry, and the `is_contact_shaped` branch that would have
+        // claimed it runs LATER in `parse_line`. A contact line followed by a
+        // leading-date line then becomes a fabricated job entry: the details
+        // vanish from the header and resurface as a job title. Every sibling
+        // job-entry branch already guards on this; this one has to as well.
+        && !is_contact_shaped(clean)
 }
 
 /// Parse a single line

@@ -338,16 +338,42 @@ fn classic_next_line_date_entry_is_structured_bold_title_italic_date() {
             "expected {needle:?} in extracted text; got: {extracted:?}"
         );
     }
+}
 
-    // The date column now renders a genuine italic run (see
-    // `single_column.typ`'s `render-entry`) — proof it is not just a
-    // synthetic slant of Regular: a real italic face gets its own embedded
-    // `/BaseFont`, distinct from the Regular/Bold faces every prior export
-    // embedded.
+/// The embedded-italic proof, on a fixture that can ONLY get italic from the
+/// date.
+///
+/// `NEXT_LINE_DATE_FIXTURE` also produces italic SUBTITLE runs from its location
+/// remainders, and `single_column.typ` renders subtitles italic — so asserting
+/// on that fixture would still pass if the entry date silently reverted to
+/// non-italic. This fixture has a date and no subtitle, so the assertion can
+/// only be satisfied by the run under test.
+#[test]
+fn classic_entry_date_embeds_a_real_italic_face() {
+    const DATE_ONLY_FIXTURE: &str = "Saeed Kolivand
+
+EXPERIENCE
+
+Senior Frontend Developer
+Dec 2022 – Nov 2025
+- Built scalable, multilingual enterprise applications
+";
+    let model = model_from_resume_text(DATE_ONLY_FIXTURE);
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(
+        &model,
+        TypstTemplate::SingleColumn,
+        &opts_a4(),
+        Some(&classic),
+    )
+    .expect("render_pdf(classic) should succeed");
+
+    // A real italic face gets its own embedded `/BaseFont`; a synthetic slant of
+    // Regular would not, which is what makes this proof rather than inference.
     let fonts = embedded_font_base_names(&bytes);
     assert!(
         fonts.iter().any(|f| f.to_lowercase().contains("italic")),
-        "expected a genuinely embedded italic font face; embedded fonts: {fonts:?}"
+        "the entry date must render a genuinely embedded italic face; embedded fonts: {fonts:?}"
     );
 }
 
@@ -374,12 +400,15 @@ fn classic_next_line_date_write_sample_pdf_for_review() {
             "classic_next_line_date_write_sample_pdf_for_review: could not create target/: {e}"
         );
     }
+    // `target` is derived from CARGO_MANIFEST_DIR and is therefore ABSOLUTE.
+    // Path privacy (AGENTS.md) forbids emitting an absolute path anywhere — logs
+    // included — so only the repo-relative artifact name is ever printed.
+    const SAMPLE_REL: &str = "apps/desktop/src-tauri/target/classic_next_line_date_sample.pdf";
     let out_path = target.join("classic_next_line_date_sample.pdf");
     match fs::write(&out_path, &bytes) {
-        Ok(()) => eprintln!("Sample PDF written to: {}", out_path.display()),
+        Ok(()) => eprintln!("Sample PDF written to: {SAMPLE_REL}"),
         Err(e) => eprintln!(
-            "classic_next_line_date_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
-            out_path.display()
+            "classic_next_line_date_write_sample_pdf_for_review: could not write {SAMPLE_REL}: {e} (informational only)"
         ),
     }
 

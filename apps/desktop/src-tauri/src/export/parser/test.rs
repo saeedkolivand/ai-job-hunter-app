@@ -1026,3 +1026,30 @@ fn leading_blank_line_before_section_heading_still_classifies_as_heading() {
         line.kind
     );
 }
+
+/// A contact line must never be claimed as a job-entry title.
+///
+/// `is_entry_title_shaped` is checked BEFORE the `is_contact_shaped` branch, so
+/// without its own guard a header contact line that happens to be followed by a
+/// leading-date line is swallowed into a fabricated entry — the contact details
+/// vanish from the header and reappear as a job title.
+#[test]
+fn a_contact_line_is_never_claimed_as_an_entry_title() {
+    let resume = "\
+Max Mustermann
+Köln, Deutschland · max@example.de · 0179 1402319
+Jan 2021 – Heute, Berlin
+- Ein Bulletpoint
+";
+    let parsed = parse_resume(resume);
+    let contact = parsed
+        .lines
+        .iter()
+        .find(|l| l.text.contains("max@example.de"))
+        .expect("the contact line must still be present");
+    assert_ne!(
+        contact.kind,
+        LineKind::JobEntry,
+        "a contact line was turned into a job entry: {contact:?}"
+    );
+}
