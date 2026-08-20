@@ -191,7 +191,13 @@
       columns: (1fr, auto),
       gutter: 4pt,
       text(weight: title-weight, fill: c-body, title-content),
-      text(weight: title-weight, fill: c-date, size: body-pt - 1pt, date-str),
+      // Italic (not bold) so the date/duration reads as a distinct, fast-to-scan
+      // element next to the bold title — a font-variant distinction, ATS-safe
+      // (no color-only or layout-only signal). The bold-italic Carlito face is
+      // already bundled + registered; this is the first template render path
+      // that actually triggers a genuine italic run for most résumés (see the
+      // `is_entry_title_shaped` parser fix this pairs with).
+      text(style: "italic", fill: c-date, size: body-pt - 1pt, date-str),
     )
 
     if "subtitle" in blk and blk.subtitle != none and blk.subtitle.len() > 0 {

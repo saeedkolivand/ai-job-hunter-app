@@ -687,6 +687,92 @@ fn contact_line_pipes_no_date_stays_contact() {
     );
 }
 
+// ── Next-line-date job entry (owner-reported: "Title · Company" \n date) ────
+
+/// The reported shape: title/company on their own line with NO date, the date
+/// range (+ trailing location) on the line right after. None of the same-line
+/// patterns above recognize this — it used to fall through to a plain,
+/// non-bold `Text` paragraph, silently losing the entry structure entirely.
+#[test]
+fn job_entry_title_then_bare_date_line() {
+    // idx 0 is padded with a heading so the title line isn't literally the
+    // document's first line (idx==0 has its own Name/Contact special case).
+    let lines = [
+        "EXPERIENCE",
+        "Senior Frontend Developer \u{b7} ACTINEO GmbH",
+        "December 2022 \u{2013} November 2025, K\u{f6}ln, Deutschland",
+    ];
+    let line = parse_line(lines[1], 1, &lines);
+    assert!(
+        matches!(line.kind, LineKind::JobEntry),
+        "expected JobEntry, got {:?}",
+        line.kind
+    );
+    assert_eq!(line.text, "Senior Frontend Developer \u{b7} ACTINEO GmbH");
+    assert_eq!(
+        line.right_text.as_deref(),
+        Some("December 2022 \u{2013} November 2025")
+    );
+}
+
+/// The paired half: the date line itself strips the matched date and keeps
+/// the trailing location as a JobTitle (subtitle).
+#[test]
+fn job_entry_date_line_remainder_becomes_job_title() {
+    let lines = [
+        "EXPERIENCE",
+        "Senior Frontend Developer \u{b7} ACTINEO GmbH",
+        "December 2022 \u{2013} November 2025, K\u{f6}ln, Deutschland",
+    ];
+    let line = parse_line(lines[2], 2, &lines);
+    assert!(
+        matches!(line.kind, LineKind::JobTitle),
+        "expected JobTitle for the date-line remainder, got {:?}",
+        line.kind
+    );
+    assert_eq!(line.text, "K\u{f6}ln, Deutschland");
+}
+
+/// A pure date line with nothing after it (no location/description) is
+/// dropped as Blank — the date was already attached to the entry above, so
+/// it must not ALSO render as a stray, duplicate paragraph.
+#[test]
+fn job_entry_date_line_with_no_remainder_is_blank() {
+    let lines = ["Independent / Open-Source R&D", "Dec 2025 \u{2013} Present"];
+    let line = parse_line(lines[1], 1, &lines);
+    assert!(
+        matches!(line.kind, LineKind::Blank),
+        "expected Blank, got {:?}",
+        line.kind
+    );
+}
+
+/// Regression guard: a REAL section heading directly followed by a
+/// leading DATE-RANGE line (the exact shape the new backward branch matches
+/// on: "Certifications" \n "2020 – Present, AWS Certified Solutions
+/// Architect") must NOT be swallowed as a consumed job-entry date line — the
+/// heading never opened an entry, so treating this as "consumed" would
+/// silently drop the "2020 – Present" range instead of rendering it.
+#[test]
+fn heading_then_leading_date_range_line_does_not_misfire() {
+    let lines = [
+        "Certifications",
+        "2020 \u{2013} Present, AWS Certified Solutions Architect",
+    ];
+    let heading = parse_line(lines[0], 0, &lines);
+    assert!(
+        matches!(heading.kind, LineKind::SectionHeader),
+        "expected SectionHeader, got {:?}",
+        heading.kind
+    );
+    let next = parse_line(lines[1], 1, &lines);
+    assert!(
+        !matches!(next.kind, LineKind::Blank),
+        "must not drop the date-range-bearing line as Blank, got {:?}",
+        next.kind
+    );
+}
+
 /// Legacy 2-space format still works.
 /// "Acme Corp  2020 - Present" → JobEntry (existing behavior preserved)
 #[test]
@@ -938,5 +1024,32 @@ fn leading_blank_line_before_section_heading_still_classifies_as_heading() {
         matches!(line.kind, LineKind::SectionHeader),
         "expected SectionHeader for the first content line, got {:?}",
         line.kind
+    );
+}
+
+/// A contact line must never be claimed as a job-entry title.
+///
+/// `is_entry_title_shaped` is checked BEFORE the `is_contact_shaped` branch, so
+/// without its own guard a header contact line that happens to be followed by a
+/// leading-date line is swallowed into a fabricated entry — the contact details
+/// vanish from the header and reappear as a job title.
+#[test]
+fn a_contact_line_is_never_claimed_as_an_entry_title() {
+    let resume = "\
+Max Mustermann
+Köln, Deutschland · max@example.de · 0179 1402319
+Jan 2021 – Heute, Berlin
+- Ein Bulletpoint
+";
+    let parsed = parse_resume(resume);
+    let contact = parsed
+        .lines
+        .iter()
+        .find(|l| l.text.contains("max@example.de"))
+        .expect("the contact line must still be present");
+    assert_ne!(
+        contact.kind,
+        LineKind::JobEntry,
+        "a contact line was turned into a job entry: {contact:?}"
     );
 }

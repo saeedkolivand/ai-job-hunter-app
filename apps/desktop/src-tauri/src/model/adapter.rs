@@ -240,10 +240,32 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
         );
     }
 
+    // Each `contact_parts` entry is one already-classified `Contact` LINE from
+    // the source text — which, when the source itself splits the contact
+    // block across two or more physical lines, commonly already ends (or
+    // starts) with its own trailing/leading separator (a pipe or middot the
+    // source used to continue visually onto the next line). Joining those
+    // raw lines with another " · " on top used to double up: "Berlin |" + " · "
+    // + "· email@x.com ·" + " · " + "|" → visibly doubled/misaligned
+    // separators in the rendered header. Stripping ONE stray separator (plus
+    // surrounding whitespace) off each line's ends before joining keeps every
+    // line's own INTERNAL separator style untouched while guaranteeing
+    // exactly one clean " · " between lines.
     let contact = if contact_parts.is_empty() {
         Vec::new()
     } else {
-        tokenize_rich(&contact_parts.join(" · "))
+        let cleaned: Vec<String> = contact_parts
+            .iter()
+            .map(|part| {
+                part.trim()
+                    .trim_start_matches(['|', '\u{b7}', '\u{2022}'])
+                    .trim_end_matches(['|', '\u{b7}', '\u{2022}'])
+                    .trim()
+                    .to_string()
+            })
+            .filter(|s| !s.is_empty())
+            .collect();
+        tokenize_rich(&cleaned.join(" \u{b7} "))
     };
 
     let mut model = DocumentModel::new(DocumentType::Resume);
@@ -753,6 +775,89 @@ EXPERIENCE
             entry.title
         );
         assert_eq!(entry.date.as_deref(), Some("2020 - Present"));
+    }
+
+    /// Owner-reported: when the source text splits its contact block across
+    /// TWO physical lines, each ALREADY carrying its own stray leading/
+    /// trailing separator (a pipe left over from how the line visually
+    /// continued), the adapter's own " · " join used to double up into a
+    /// visible "| · |" / "· |" artifact in the rendered header. The fix
+    /// strips one stray separator off each line's ends before joining, so
+    /// exactly one clean " · " ever sits between lines while each line's own
+    /// internal separator style survives untouched.
+    #[test]
+    fn contact_lines_with_stray_edge_separators_join_without_doubling() {
+        let resume = "\
+Jane Doe
+Berlin, Germany | jane@example.com |
+| +49 30 1234567
+";
+        let m = model_from_resume_text(resume);
+        let joined = flat(&m.header.contact);
+        assert_eq!(
+            joined, "Berlin, Germany | jane@example.com \u{b7} +49 30 1234567",
+            "expected exactly one clean separator between lines, got {joined:?}"
+        );
+        assert!(
+            !joined.contains("\u{b7}  \u{b7}") && !joined.contains("| \u{b7}"),
+            "must not contain a doubled separator artifact, got {joined:?}"
+        );
+    }
+
+    /// Owner-reported regression: the title/company line carries no date at
+    /// all (separated from the role by a middot, not a comma/pipe/paren), and
+    /// the date range + location sit on their OWN following line. Before the
+    /// next-line-date `JobEntry` branches, NEITHER line matched any recognized
+    /// job-entry shape, so the whole entry silently rendered as two unrelated
+    /// plain (non-bold) paragraphs instead of a structured, bold entry with a
+    /// distinguishable date and location subtitle.
+    #[test]
+    fn title_middot_company_then_bare_date_line_yields_structured_entry() {
+        let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+Senior Frontend Developer \u{b7} ACTINEO GmbH
+December 2022 \u{2013} November 2025, K\u{f6}ln, Deutschland
+- Built scalable applications
+";
+        let m = model_from_resume_text(resume);
+        let experience = m
+            .sections
+            .iter()
+            .find(|s| s.id == SectionId::Experience)
+            .expect("experience section");
+
+        let entries: Vec<&EntryBlock> = experience
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Entry(e) => Some(e),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "expected exactly one structured entry, got blocks: {:?}",
+            experience.blocks
+        );
+        let entry = entries[0];
+        assert_eq!(
+            flat(&entry.title),
+            "Senior Frontend Developer \u{b7} ACTINEO GmbH"
+        );
+        assert_eq!(
+            entry.date.as_deref(),
+            Some("December 2022 \u{2013} November 2025")
+        );
+        assert_eq!(
+            entry.subtitle.as_ref().map(flat).as_deref(),
+            Some("K\u{f6}ln, Deutschland")
+        );
+        assert_eq!(entry.bullets.len(), 1);
+        assert_eq!(flat(&entry.bullets[0]), "Built scalable applications");
     }
 
     /// CRITICAL regression: a markdown link in the header contact line must
