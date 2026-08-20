@@ -143,18 +143,523 @@ pub const SYNONYMS: &[(&str, &str)] = &[
     ("gen-ai", "generativeai"),
 ];
 
+/// Curated function words / generic job-ad filler for the six Snowball
+/// languages [`make_stemmer`] stems for, applied by [`keywords_normalized_list`]
+/// in place of the English-only [`STOPWORDS`] when the SAME text detects as
+/// that language. Fixes the defect where a German posting's coverage
+/// denominator was inflated by German function words and adjectives
+/// (`abgeschlossenes`, `abgestimmt`, `abseits`, `abhängig`, …) that
+/// `STOPWORDS` never covered, tanking every non-English match score.
+///
+/// Curated, not exhaustive: function words plus filler unambiguously
+/// comparable to `STOPWORDS`'s own "Job-ad filler" section (`erfahrung` /
+/// "experience", `kandidat` / "candidate", …). A word that is arguably a real
+/// skill signal is deliberately left OUT — e.g. `agil`/`agilen` ("agile") is
+/// a real methodology keyword, not filler, so it is absent here even though
+/// it surfaced in the same buggy recommendations list as the words above.
+///
+/// **Deliberately separate lists from two other consts with overlapping
+/// content, not "unified" with either — do not merge them:**
+/// - `validate::content::language`'s `FUNCTION_WORDS_DE` (+ the other five)
+///   answers a language-IDENTITY question for a DIFFERENT set of curated
+///   languages, at a different correctness bar (see that module's doc).
+/// - `documents::evidence::mod`'s `FUNCTION_WORDS_DE` is a DISPLAY-only
+///   skill-claim filter, explicitly NOT formula-version-pinned (see its doc
+///   comment, "do not move these into `documents::keywords::STOPWORDS`").
+///   These lists ARE formula-version-pinned (`commands::match_resume::
+///   MATCH_FORMULA_VERSION`) because they change every document's keyword
+///   set — that is the whole point of the fix.
+const STOPWORDS_DE: &[&str] = &[
+    // Conjunctions / subordinators.
+    "dass",
+    "wenn",
+    "weil",
+    "denn",
+    "doch",
+    "noch",
+    "aber",
+    "oder",
+    "auch",
+    "sowie",
+    "sowohl",
+    "sondern",
+    "damit",
+    "sodass",
+    // Determiners / pronouns.
+    "eine",
+    "einem",
+    "einen",
+    "einer",
+    "eines",
+    "diese",
+    "dieser",
+    "dieses",
+    "diesem",
+    "diesen",
+    "jeder",
+    "jede",
+    "jedem",
+    "jeden",
+    "jedes",
+    "unser",
+    "unsere",
+    "unserem",
+    "unseren",
+    "unserer",
+    "ihre",
+    "ihrem",
+    "ihren",
+    "ihrer",
+    "ihnen",
+    "mein",
+    "meine",
+    "dein",
+    "deine",
+    "sein",
+    "seine",
+    "selbst",
+    // Adverbs.
+    "sehr",
+    "schon",
+    "immer",
+    "mehr",
+    "etwa",
+    "ganz",
+    "eher",
+    "dabei",
+    "dann",
+    // Prepositions (für is 4 BYTES despite reading 3 chars — see w.len()'s
+    // byte-length note on the kernel filter).
+    "für",
+    "über",
+    "unter",
+    "durch",
+    "gegen",
+    "ohne",
+    "nach",
+    "seit",
+    "beim",
+    "hinter",
+    "zwischen",
+    "während",
+    "innerhalb",
+    // Modal / auxiliary verbs.
+    "haben",
+    "hatte",
+    "hatten",
+    "wird",
+    "werden",
+    "wurde",
+    "wurden",
+    "kann",
+    "können",
+    "muss",
+    "müssen",
+    "sind",
+    "sollte",
+    "sollten",
+    "würde",
+    "würden",
+    "könnte",
+    "könnten",
+    // Job-ad filler, including the exact reported defect words.
+    "abgeschlossenes",
+    "abgeschlossene",
+    "abgeschlossener",
+    "abgeschlossenen",
+    "abgestimmt",
+    "abseits",
+    "abwechslungsreiche",
+    "abwechslungsreichen",
+    "abhängig",
+    "erfahrung",
+    "erfahrene",
+    "erfahrener",
+    "erfahrungen",
+    "kenntnisse",
+    "qualifikationen",
+    "anforderungen",
+    "aufgaben",
+    "voraussetzungen",
+    "wünschenswert",
+    "verantwortlich",
+    "bereits",
+    "bieten",
+    "gerne",
+    "gute",
+    "guten",
+    "idealerweise",
+    "suchen",
+    "unternehmen",
+    "position",
+    "kandidat",
+    "kandidatin",
+    "vorteile",
+    "bonus",
+];
+const STOPWORDS_FR: &[&str] = &[
+    "avec",
+    "dans",
+    "pour",
+    "sans",
+    "sous",
+    "chez",
+    "vers",
+    "cette",
+    "leur",
+    "leurs",
+    "notre",
+    "votre",
+    "vos",
+    "nous",
+    "vous",
+    "elle",
+    "elles",
+    "tout",
+    "tous",
+    "toute",
+    "toutes",
+    "être",
+    "avoir",
+    "sont",
+    "était",
+    "étaient",
+    "sera",
+    "seront",
+    "avez",
+    "avons",
+    "peut",
+    "peuvent",
+    "doit",
+    "doivent",
+    "aussi",
+    "ainsi",
+    "alors",
+    "comme",
+    "donc",
+    "mais",
+    "quand",
+    "dont",
+    "quel",
+    "quelle",
+    "quels",
+    "quelles",
+    "entre",
+    "après",
+    "avant",
+    "pendant",
+    "depuis",
+    "jusqu",
+    "plus",
+    "moins",
+    "très",
+    "bien",
+    "tant",
+    "même",
+    // Job-ad filler.
+    "expérience",
+    "expériences",
+    "compétences",
+    "connaissances",
+    "capacité",
+    "capacités",
+    "poste",
+    "candidat",
+    "candidate",
+    "entreprise",
+    "société",
+    "responsabilités",
+    "exigences",
+    "qualifications",
+    "avantages",
+    "souhaité",
+    "souhaitée",
+    "requis",
+    "requise",
+    "recherche",
+    "recherchons",
+    "équipe",
+];
+const STOPWORDS_ES: &[&str] = &[
+    "para",
+    "como",
+    "pero",
+    "esta",
+    "este",
+    "estos",
+    "estas",
+    "sus",
+    "también",
+    "cuando",
+    "donde",
+    "porque",
+    "aunque",
+    "entre",
+    "sobre",
+    "desde",
+    "hasta",
+    "sin",
+    "más",
+    "menos",
+    "todo",
+    "toda",
+    "todos",
+    "todas",
+    "otro",
+    "otra",
+    "otros",
+    "otras",
+    "cada",
+    "sido",
+    "está",
+    "están",
+    "será",
+    "serán",
+    "puede",
+    "pueden",
+    "debe",
+    "deben",
+    "tiene",
+    "tienen",
+    "haber",
+    "hacer",
+    // Job-ad filler.
+    "experiencia",
+    "conocimientos",
+    "habilidades",
+    "capacidad",
+    "puesto",
+    "candidato",
+    "candidata",
+    "empresa",
+    "responsabilidades",
+    "requisitos",
+    "requisito",
+    "calificaciones",
+    "beneficios",
+    "deseable",
+    "buscamos",
+    "equipo",
+];
+const STOPWORDS_IT: &[&str] = &[
+    "questo",
+    "questa",
+    "questi",
+    "queste",
+    "loro",
+    "nostro",
+    "nostra",
+    "nostri",
+    "nostre",
+    "vostro",
+    "vostra",
+    "essere",
+    "avere",
+    "sono",
+    "stato",
+    "stata",
+    "sarà",
+    "saranno",
+    "puoi",
+    "può",
+    "possono",
+    "deve",
+    "devono",
+    "anche",
+    "come",
+    "però",
+    "quando",
+    "dove",
+    "perché",
+    "sebbene",
+    "sopra",
+    "sotto",
+    "senza",
+    "dopo",
+    "prima",
+    "durante",
+    "molto",
+    "poco",
+    "tutto",
+    "tutta",
+    "tutti",
+    "tutte",
+    "altro",
+    "altra",
+    "altri",
+    "altre",
+    // Job-ad filler.
+    "esperienza",
+    "esperienze",
+    "competenze",
+    "conoscenze",
+    "capacità",
+    "posizione",
+    "candidato",
+    "candidata",
+    "azienda",
+    "responsabilità",
+    "requisiti",
+    "qualifiche",
+    "vantaggi",
+    "desiderabile",
+    "cerchiamo",
+    "squadra",
+];
+const STOPWORDS_PT: &[&str] = &[
+    "para",
+    "como",
+    "mais",
+    "muito",
+    "esta",
+    "este",
+    "estes",
+    "estas",
+    "seus",
+    "suas",
+    "nosso",
+    "nossa",
+    "nossos",
+    "nossas",
+    "quando",
+    "onde",
+    "porque",
+    "embora",
+    "entre",
+    "sobre",
+    "desde",
+    "após",
+    "antes",
+    "durante",
+    "todo",
+    "toda",
+    "todos",
+    "todas",
+    "outro",
+    "outra",
+    "outros",
+    "outras",
+    "cada",
+    "sido",
+    "está",
+    "estão",
+    "será",
+    "serão",
+    "pode",
+    "podem",
+    "deve",
+    "devem",
+    "têm",
+    // Job-ad filler.
+    "experiência",
+    "experiências",
+    "conhecimentos",
+    "habilidades",
+    "capacidade",
+    "posição",
+    "candidato",
+    "candidata",
+    "empresa",
+    "responsabilidades",
+    "requisitos",
+    "qualificações",
+    "benefícios",
+    "desejável",
+    "procuramos",
+    "equipe",
+    "equipa",
+];
+const STOPWORDS_NL: &[&str] = &[
+    "deze",
+    "onze",
+    "jouw",
+    "jullie",
+    "zijn",
+    "haar",
+    "wordt",
+    "worden",
+    "werd",
+    "werden",
+    "kunnen",
+    "moet",
+    "moeten",
+    "heeft",
+    "hebben",
+    "hadden",
+    "ook",
+    "maar",
+    "wanneer",
+    "waar",
+    "omdat",
+    "hoewel",
+    "tussen",
+    "boven",
+    "onder",
+    "zonder",
+    "voor",
+    "over",
+    "sinds",
+    "tijdens",
+    "veel",
+    "weinig",
+    "alle",
+    "andere",
+    "elke",
+    // Job-ad filler.
+    "ervaring",
+    "kennis",
+    "vaardigheden",
+    "vaardigheid",
+    "functie",
+    "kandidaat",
+    "bedrijf",
+    "verantwoordelijkheden",
+    "vereisten",
+    "kwalificaties",
+    "voordelen",
+    "gewenst",
+    "zoeken",
+    "team",
+];
+
+/// The Snowball [`Algorithm`] AND stopword list for the language detected in
+/// `text` — single detect()+mapping call site for both [`make_stemmer`] and
+/// [`keywords_normalized_list`]'s stopword choice, so the two answers for the
+/// SAME text can never independently drift the way `STOPWORDS` being
+/// English-only silently did.
+fn language_profile(text: &str) -> (Algorithm, &'static [&'static str]) {
+    match detect(text).map(|i| i.lang()) {
+        Some(Lang::Deu) => (Algorithm::German, STOPWORDS_DE),
+        Some(Lang::Fra) => (Algorithm::French, STOPWORDS_FR),
+        Some(Lang::Spa) => (Algorithm::Spanish, STOPWORDS_ES),
+        Some(Lang::Ita) => (Algorithm::Italian, STOPWORDS_IT),
+        Some(Lang::Por) => (Algorithm::Portuguese, STOPWORDS_PT),
+        Some(Lang::Nld) => (Algorithm::Dutch, STOPWORDS_NL),
+        _ => (Algorithm::English, STOPWORDS),
+    }
+}
+
+/// [`language_profile`]'s stopword table, keyed by an EXPLICIT ISO-639-1 tag
+/// instead of `detect()` — see [`keywords_normalized_list_for_lang`] for why a
+/// caller needs this. Falls back to the English [`STOPWORDS`] for any tag not
+/// curated here, the same fallback [`language_profile`] uses for an
+/// unrecognised or undetected language.
+fn stopwords_for_lang(lang: &str) -> &'static [&'static str] {
+    match lang {
+        "de" => STOPWORDS_DE,
+        "fr" => STOPWORDS_FR,
+        "es" => STOPWORDS_ES,
+        "it" => STOPWORDS_IT,
+        "pt" => STOPWORDS_PT,
+        "nl" => STOPWORDS_NL,
+        _ => STOPWORDS,
+    }
+}
+
 /// Build a Snowball stemmer for the language detected in text, falling back to
 /// English when detection is uncertain or the language is unsupported.
 pub fn make_stemmer(text: &str) -> Stemmer {
-    Stemmer::create(match detect(text).map(|i| i.lang()) {
-        Some(Lang::Deu) => Algorithm::German,
-        Some(Lang::Fra) => Algorithm::French,
-        Some(Lang::Spa) => Algorithm::Spanish,
-        Some(Lang::Ita) => Algorithm::Italian,
-        Some(Lang::Por) => Algorithm::Portuguese,
-        Some(Lang::Nld) => Algorithm::Dutch,
-        _ => Algorithm::English,
-    })
+    Stemmer::create(language_profile(text).0)
 }
 
 /// Whether the job posting's language and the résumé's locale are close enough
@@ -329,6 +834,37 @@ pub fn keywords_normalized(text: &str) -> HashSet<String> {
 /// to it: a second tokenizer written "just to count" is exactly the fork the
 /// keyword kernel exists to prevent.
 pub fn keywords_normalized_list(text: &str) -> Vec<String> {
+    // Same text, same detection call site `make_stemmer` uses (via
+    // `language_profile`) — the stopword language can never disagree with the
+    // stemmer language for this call. Correct for a caller that tokenizes ONE
+    // self-contained document (a whole résumé or JD); see
+    // [`keywords_normalized_list_for_lang`] for the short-fragment case where
+    // this per-call detection is NOT safe.
+    normalize_list_with_stopwords(text, language_profile(text).1)
+}
+
+/// The [`keywords_normalized_list`] pipeline, but the stopword LANGUAGE is
+/// pinned to an explicit ISO-639-1 tag rather than re-detected from `text`.
+///
+/// For a caller that already resolved ONE language decision for a whole
+/// document (e.g. `validate::content::Analysis::lang`, or
+/// `DocumentTokens`/`Analysis`'s stemmer) and then tokenizes many SHORT
+/// per-line, per-title or per-bullet fragments of it: `whatlang` reading an
+/// isolated short line in isolation is unreliable ("Kenntnisse in Rust,
+/// Python, Kubernetes, Terraform und Kafka" reads as Estonian at confidence
+/// 0.23, not German), and a per-call re-detection can silently pick a
+/// DIFFERENT stopword list than the one the whole document resolved to. A
+/// filler word filtered out of the document-level set (and so absent from its
+/// stem→readable [`display_forms`] map) would then survive un-filtered from
+/// the line-level call and leak out as a raw, unreadable stem instead of
+/// being suppressed. Mirrors [`keywords_normalized_list`] exactly — same
+/// shared tokenizer, only the stopword SOURCE differs — so the two can never
+/// diverge on tokenization itself, only on which language's filler they drop.
+pub fn keywords_normalized_list_for_lang(text: &str, lang: &str) -> Vec<String> {
+    normalize_list_with_stopwords(text, stopwords_for_lang(lang))
+}
+
+fn normalize_list_with_stopwords(text: &str, stopwords: &[&str]) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric() && c != '+' && c != '#' && c != '/')
         .map(|w| w.to_lowercase())
         .filter(|w| !w.is_empty())
@@ -347,8 +883,20 @@ pub fn keywords_normalized_list(text: &str) -> Vec<String> {
             let s = w.as_str();
             !w.is_empty()
                 && (w.len() > 3 || SHORT_TECH_TERMS.contains(&s))
-                && !STOPWORDS.contains(&s)
+                && !stopwords.contains(&s)
+                // Pure-numeric tokens (postcodes, bare years) carry no keyword
+                // signal on either side. Mixed alphanumeric tech tokens (c4, s3,
+                // oauth2, es2015) are untouched - at least one char isn't a digit.
+                && !s.chars().all(|c| c.is_ascii_digit())
         })
+        .collect()
+}
+
+/// [`keywords_normalized`], with the stopword language pinned explicitly —
+/// see [`keywords_normalized_list_for_lang`].
+pub fn keywords_normalized_for_lang(text: &str, lang: &str) -> HashSet<String> {
+    keywords_normalized_list_for_lang(text, lang)
+        .into_iter()
         .collect()
 }
 
@@ -374,6 +922,15 @@ pub fn keywords(text: &str, stemmer: &Stemmer) -> HashSet<String> {
     apply_stemmer(keywords_normalized(text), stemmer)
 }
 
+/// [`keywords`], with the stopword language pinned explicitly — see
+/// [`keywords_normalized_list_for_lang`]. `stemmer` is still whatever the
+/// caller already built (typically also from the SAME resolved language, via
+/// [`make_stemmer`] on the whole document); this only changes which stopword
+/// list filters `text` before stemming.
+pub fn keywords_for_lang(text: &str, lang: &str, stemmer: &Stemmer) -> HashSet<String> {
+    apply_stemmer(keywords_normalized_for_lang(text, lang), stemmer)
+}
+
 /// Map each stemmed JD keyword to a human-readable display form, so the gaps
 /// surfaced to the user read as real words ("kubernetes", "developer") instead
 /// of Snowball stems ("kubernet", "develop").
@@ -385,10 +942,29 @@ pub fn keywords(text: &str, stemmer: &Stemmer) -> HashSet<String> {
 /// same key the first one encountered wins. The map keys are exactly the members
 /// of `keywords(job_text, stemmer)`, so every gap has an entry.
 pub fn display_forms(job_text: &str, stemmer: &Stemmer) -> HashMap<String, String> {
+    display_forms_from(keywords_normalized(job_text), stemmer)
+}
+
+/// [`display_forms`], with the stopword language pinned explicitly — see
+/// [`keywords_normalized_list_for_lang`]. Needed alongside
+/// [`keywords_for_lang`]/[`keywords_normalized_for_lang`]: a caller that
+/// tokenizes under an explicit lang MUST build its display map the same way,
+/// or a word the explicit-lang tokenizer keeps (because the auto-detected
+/// language would have dropped it, or vice versa) gets a display entry that
+/// doesn't match what was actually tokenized.
+pub fn display_forms_for_lang(
+    job_text: &str,
+    lang: &str,
+    stemmer: &Stemmer,
+) -> HashMap<String, String> {
+    display_forms_from(keywords_normalized_for_lang(job_text, lang), stemmer)
+}
+
+fn display_forms_from(normalized: HashSet<String>, stemmer: &Stemmer) -> HashMap<String, String> {
     let mut map: HashMap<String, String> = HashMap::new();
     // Iterate a sorted Vec, not the HashSet, so the `or_insert` winner for two
     // tokens sharing a stem is deterministic across runs.
-    let mut tokens: Vec<_> = keywords_normalized(job_text).into_iter().collect();
+    let mut tokens: Vec<_> = normalized.into_iter().collect();
     tokens.sort();
     for token in tokens {
         let stem = if SHORT_TECH_TERMS.contains(&token.as_str()) {
@@ -1353,5 +1929,375 @@ mod test {
             "keyword sets must be identical with and without the markdown link; \
              with_link={kw_with_link:?} without_link={kw_without_link:?}"
         );
+    }
+
+    // --- language-aware stopwords (German posting defect) ---
+
+    /// A realistic German job posting, including the exact defect words from
+    /// the bug report (`abgeschlossenes`, `abgestimmt`, `abseits`,
+    /// `abwechslungsreiche`, `abhängig`) and a Berlin postcode (`13385`),
+    /// alongside real skill/domain keywords (`react`, `typescript`, `docker`,
+    /// `kubernetes`, `aws`, `softwareentwickler`, `informatik`).
+    const GERMAN_JD: &str =
+        "Wir suchen erfahrene Softwareentwickler (m/w/d) für unser Team in Berlin 13385.
+
+Aufgaben:
+Entwicklung moderner Webanwendungen mit React, TypeScript und Docker.
+Betrieb von Kubernetes-Clustern in der AWS Cloud.
+Eng abgestimmt mit den Kollegen arbeiten, auch abseits der Kernarbeitszeit.
+
+Anforderungen:
+Abgeschlossenes Studium der Informatik oder eine abgeschlossene Ausbildung.
+Erfahrung mit React und TypeScript.
+Kenntnisse in Docker und Kubernetes.
+Abwechslungsreiche Aufgaben, abhängig von der jeweiligen Kernzeit.
+
+Wir bieten ein motiviertes Team.";
+
+    /// Pre-fix tokenization: same length/short-tech gate + synonym collapse as
+    /// [`keywords_normalized_list`], but stopword-filtered ONLY against the
+    /// flat, English-only [`STOPWORDS`] — exactly what every caller got before
+    /// this module gained language-aware stopwords, and NO numeric filter.
+    /// Built from the SAME public consts ([`SYNONYMS`], [`SHORT_TECH_TERMS`],
+    /// [`STOPWORDS`]) so it cannot silently diverge from what they actually
+    /// contain; only the stopword SOURCE and the numeric filter differ from
+    /// the production function, which is exactly the axis under test.
+    fn old_style_keywords(text: &str) -> HashSet<String> {
+        text.split(|c: char| !c.is_alphanumeric() && c != '+' && c != '#' && c != '/')
+            .map(|w| w.to_lowercase())
+            .filter(|w| !w.is_empty())
+            .map(|w| {
+                SYNONYMS
+                    .iter()
+                    .find(|(alias, _)| *alias == w.as_str())
+                    .map(|(_, canon)| canon.to_string())
+                    .unwrap_or(w)
+            })
+            .map(|w| w.trim_matches(|c: char| c == '+' || c == '#').to_string())
+            .filter(|w| {
+                let s = w.as_str();
+                !w.is_empty()
+                    && (w.len() > 3 || SHORT_TECH_TERMS.contains(&s))
+                    && !STOPWORDS.contains(&s)
+            })
+            .collect()
+    }
+
+    /// The measured defect: a German posting's keyword denominator was
+    /// inflated by German function words/adjectives and a postcode that the
+    /// English-only `STOPWORDS` never covered, tanking real coverage
+    /// percentages (7% / 8% in production). This pins the fix on the exact
+    /// reported words, plus the postcode, plus a strict reduction in total
+    /// keyword count, while every real skill/domain term survives untouched.
+    ///
+    /// Mutation check (performed, not hypothetical): reverting
+    /// `keywords_normalized_list` to filter against `STOPWORDS` unconditionally
+    /// (dropping the `language_profile` call and the numeric guard) turns this
+    /// red — every defect-word assertion fails because `new_kw` then equals
+    /// `old_kw`. Reverted after confirming.
+    #[test]
+    fn german_job_posting_defect_words_are_filtered_real_skills_survive() {
+        let old_kw = old_style_keywords(GERMAN_JD);
+        let new_kw = keywords_normalized(GERMAN_JD);
+
+        let defect_words = [
+            "abgeschlossenes",
+            "abgestimmt",
+            "abseits",
+            "abwechslungsreiche",
+            "abhängig",
+            "13385",
+        ];
+        for word in defect_words {
+            assert!(
+                old_kw.contains(word),
+                "premise: {word:?} must have inflated the PRE-FIX keyword set, or this \
+                 test is not exercising the reported defect; old={old_kw:?}"
+            );
+            assert!(
+                !new_kw.contains(word),
+                "{word:?} must be filtered from the German keyword set after the fix; \
+                 new={new_kw:?}"
+            );
+        }
+
+        // Every real skill/domain term the JD actually asks for must survive
+        // untouched — the fix must not silently delete signal along with filler.
+        let real_skills = [
+            "softwareentwickler",
+            "react",
+            "typescript",
+            "docker",
+            "kubernetes",
+            "aws",
+            "informatik",
+        ];
+        for word in real_skills {
+            assert!(
+                new_kw.contains(word),
+                "real skill/domain term {word:?} must survive the German stopword filter; \
+                 new={new_kw:?}"
+            );
+        }
+
+        // The denominator must shrink, not just have some words swapped for
+        // others — the whole point of the fix.
+        assert!(
+            new_kw.len() < old_kw.len(),
+            "keyword count must collapse after language-aware stopwords; \
+             old={} new={} old_set={old_kw:?} new_set={new_kw:?}",
+            old_kw.len(),
+            new_kw.len()
+        );
+    }
+
+    /// A résumé sharing the JD's real skills scores meaningfully higher once
+    /// the denominator is not inflated by filler — the practical consequence
+    /// of the fix above, through the SAME `coverage_score` kernel
+    /// `commands::match_resume` and Autopilot use. Compares against an
+    /// honest pre-fix baseline computed with the same stemmer and the same
+    /// [`keyword_coverage`] formula (not a hardcoded magic threshold), so the
+    /// assertion tracks the real improvement rather than an arbitrary number
+    /// that could drift out of sync with the fixture.
+    #[test]
+    fn german_coverage_score_improves_once_denominator_is_not_inflated() {
+        let german_resume = "Erfahrener Softwareentwickler mit mehrjähriger Erfahrung in \
+             React, TypeScript, Docker und Kubernetes auf AWS Cloud-Infrastruktur.";
+
+        let stemmer = make_stemmer(GERMAN_JD);
+        let old_job_kw = apply_stemmer(old_style_keywords(GERMAN_JD), &stemmer);
+        let old_resume_kw = apply_stemmer(old_style_keywords(german_resume), &stemmer);
+        let (old_cov, _) =
+            keyword_coverage(&old_job_kw, &old_resume_kw).expect("non-empty job set");
+
+        let new_cov = coverage_score(german_resume, GERMAN_JD);
+
+        assert!(
+            new_cov > old_cov,
+            "coverage must improve once the German denominator is not inflated by \
+             filler; pre-fix (English-only stopwords) = {old_cov}%, post-fix = {new_cov}%"
+        );
+        assert!(
+            new_cov >= old_cov * 1.25,
+            "the improvement should be substantial (the production defect measured \
+             7-8%, not a marginal few points), not just strictly positive; \
+             pre-fix = {old_cov}%, post-fix = {new_cov}%"
+        );
+    }
+
+    /// Hand-written, independently-authored membership list — NOT derived by
+    /// iterating [`STOPWORDS_DE`] itself, so an accidental deletion from the
+    /// const is caught here even though a loop over the const cannot catch it
+    /// (a loop only proves "every entry that IS there gets filtered").
+    #[test]
+    fn stopwords_de_hand_written_membership() {
+        let expected = [
+            "dass",
+            "wenn",
+            "aber",
+            "oder",
+            "sind",
+            "haben",
+            "werden",
+            "können",
+            "unser",
+            "diese",
+            "für",
+            "über",
+            "hinter",
+            "unsere",
+            "bereits",
+            "erfahrung",
+            "kenntnisse",
+            "anforderungen",
+            "aufgaben",
+            "voraussetzungen",
+            "wünschenswert",
+            "verantwortlich",
+            "abgeschlossenes",
+            "abgestimmt",
+            "abseits",
+            "abwechslungsreiche",
+            "abhängig",
+        ];
+        for word in expected {
+            assert!(
+                STOPWORDS_DE.contains(&word),
+                "expected German stopword {word:?} missing from STOPWORDS_DE — hand-written \
+                 regression guard, independent of the const's own contents"
+            );
+        }
+    }
+
+    /// Every entry in [`STOPWORDS_DE`] is actually wired into the filter — a
+    /// content-correct list that never reaches `keywords_normalized_list`
+    /// would be silently useless. Pairs with the hand-written test above,
+    /// which catches the opposite failure (a word silently REMOVED from the
+    /// list without the wiring itself breaking).
+    #[test]
+    fn every_stopwords_de_entry_is_filtered_by_the_production_function() {
+        // A document unambiguously German (so `language_profile` picks
+        // STOPWORDS_DE) containing every stopword entry once, plus real skills.
+        let doc = format!(
+            "Wir suchen einen Softwareentwickler mit Erfahrung in React und Docker. {}",
+            STOPWORDS_DE.join(" ")
+        );
+        let kw = keywords_normalized(&doc);
+        for word in STOPWORDS_DE {
+            assert!(
+                !kw.contains(*word),
+                "STOPWORDS_DE entry {word:?} was not filtered by keywords_normalized_list; \
+                 got {kw:?}"
+            );
+        }
+        assert!(kw.contains("softwareentwickler"));
+        assert!(kw.contains("react"));
+        assert!(kw.contains("docker"));
+    }
+
+    /// Documents the three explicit judgment calls made while curating
+    /// `STOPWORDS_DE`: `agilen` (inflected `agil`/"agile") is a real
+    /// methodology skill signal, not filler; `academy` is an ambiguous
+    /// loanword/brand term; `analysierst` ("you analyze") names a real
+    /// action, not filler. All three must survive — "when unsure, leave it
+    /// in the keyword set".
+    #[test]
+    fn ambiguous_judgment_call_words_are_left_in_the_keyword_set() {
+        let text = "Arbeiten in agilen Teams. Wir sind eine Academy für Data Science. \
+                     Du analysierst komplexe Datensätze.";
+        let kw = keywords_normalized(text);
+        for word in ["agilen", "academy", "analysierst"] {
+            assert!(
+                kw.contains(word),
+                "{word:?} is a judgment call this fix deliberately leaves IN the keyword \
+                 set (see STOPWORDS_DE's doc comment); got {kw:?}"
+            );
+        }
+    }
+
+    /// The English path must be unchanged: [`language_profile`] for English
+    /// (or any undetected/uncovered language) still resolves to
+    /// `(Algorithm::English, STOPWORDS)`, the exact pre-fix pair, and the
+    /// actual filtered output still drops the same English filler it always did.
+    #[test]
+    fn english_path_unchanged_by_language_aware_stopwords() {
+        let english_jd = "We are looking for a Senior Backend Engineer with strong \
+             experience in Rust, Docker and Kubernetes to join our growing team.";
+        let (algo, stopwords) = language_profile(english_jd);
+        assert!(matches!(algo, Algorithm::English));
+        assert_eq!(
+            stopwords, STOPWORDS,
+            "English text must resolve to the original STOPWORDS list, unchanged"
+        );
+
+        let kw = keywords_normalized(english_jd);
+        assert!(kw.contains("backend"));
+        assert!(kw.contains("engineer"));
+        assert!(kw.contains("rust"));
+        assert!(kw.contains("docker"));
+        assert!(kw.contains("kubernetes"));
+        assert!(
+            !kw.contains("looking"),
+            "English filler must still be filtered"
+        );
+        assert!(
+            !kw.contains("strong"),
+            "English filler must still be filtered"
+        );
+        assert!(
+            !kw.contains("team"),
+            "English filler must still be filtered"
+        );
+        assert!(
+            !kw.contains("join"),
+            "English filler must still be filtered"
+        );
+    }
+
+    /// Pure-numeric tokens (postcodes, bare years) are dropped everywhere,
+    /// regardless of detected language; alphanumeric tech tokens with at
+    /// least one non-digit character are untouched.
+    ///
+    /// Mutation check (performed, not hypothetical): removing the
+    /// `!s.chars().all(|c| c.is_ascii_digit())` clause from
+    /// `keywords_normalized_list` turns this red (`13385` and `2026` survive).
+    /// Reverted after confirming.
+    #[test]
+    fn pure_numeric_tokens_dropped_alphanumeric_tech_tokens_survive() {
+        let text = "Postal code 13385, hiring for 2026. Skills: c4, s3, oauth2, es2015.";
+        let kw = keywords_normalized(text);
+        assert!(
+            !kw.contains("13385"),
+            "pure-numeric postcode must be dropped; got {kw:?}"
+        );
+        assert!(
+            !kw.contains("2026"),
+            "pure-numeric year must be dropped; got {kw:?}"
+        );
+        for tech in ["oauth2", "es2015"] {
+            assert!(
+                kw.contains(tech),
+                "mixed alphanumeric tech token {tech:?} must survive; got {kw:?}"
+            );
+        }
+        // c4/s3 are 2 chars and not in SHORT_TECH_TERMS, so they were already
+        // dropped by the length filter before this change — assert that
+        // pre-existing behavior is unaffected, not newly broken.
+        assert!(!kw.contains("c4"));
+        assert!(!kw.contains("s3"));
+    }
+
+    /// Light coverage of the other five Snowball languages: at least one
+    /// curated stopword per language is dropped, while a shared tech token
+    /// (docker) survives — full parity with German is out of scope (German is
+    /// the measured defect), but each language must have SOME curated list
+    /// wired through `language_profile`.
+    #[test]
+    fn other_snowball_languages_have_curated_stopwords_wired() {
+        let cases: &[(&str, &str, &[&str])] = &[
+            (
+                "fr",
+                "Nous recherchons un développeur avec de l'expérience en Docker et \
+                 Kubernetes pour notre équipe.",
+                &["recherchons", "expérience", "équipe"],
+            ),
+            (
+                "es",
+                "Buscamos un desarrollador con experiencia en Docker y Kubernetes \
+                 para nuestro equipo.",
+                &["buscamos", "experiencia", "equipo"],
+            ),
+            (
+                "it",
+                "Cerchiamo uno sviluppatore con esperienza in Docker e Kubernetes \
+                 per la nostra azienda.",
+                &["cerchiamo", "esperienza", "azienda"],
+            ),
+            (
+                "pt",
+                "Procuramos um desenvolvedor com experiência em Docker e Kubernetes \
+                 para a nossa empresa.",
+                &["procuramos", "experiência", "empresa"],
+            ),
+            (
+                "nl",
+                "Wij zoeken een ontwikkelaar met ervaring in Docker en Kubernetes \
+                 voor ons bedrijf.",
+                &["zoeken", "ervaring", "bedrijf"],
+            ),
+        ];
+        for (lang, text, expected_stopwords) in cases {
+            let kw = keywords_normalized(text);
+            for stopword in *expected_stopwords {
+                assert!(
+                    !kw.contains(*stopword),
+                    "[{lang}] {stopword:?} must be filtered; got {kw:?}"
+                );
+            }
+            assert!(
+                kw.contains("docker"),
+                "[{lang}] shared tech token 'docker' must survive; got {kw:?}"
+            );
+        }
     }
 }

@@ -289,7 +289,7 @@ fn vector_version_bump_invalidates_cached_score() {
 #[test]
 fn formula_version_constant_is_pinned() {
     assert_eq!(
-        MATCH_FORMULA_VERSION, 2,
+        MATCH_FORMULA_VERSION, 3,
         "MATCH_FORMULA_VERSION changed — update this assert AND invalidate \
          cached match scores (clear match_scores table or bump the stored version)"
     );

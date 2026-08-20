@@ -47,7 +47,18 @@ mod constraints;
 /// on its own (a cached score computed against an OLD-format vector is a miss
 /// once the vector itself can be a new-format one under the identical space
 /// tag) — this constant is now purely about the scoring FORMULA.
-const MATCH_FORMULA_VERSION: i64 = 2;
+///
+/// Bumped 2 -> 3: `documents::keywords::keywords_normalized_list` gained
+/// language-aware stopwords (German/French/Spanish/Italian/Portuguese/Dutch,
+/// selected the same way `make_stemmer` picks its algorithm) plus a
+/// pure-numeric-token filter. Both change which tokens survive into a job's
+/// or résumé's keyword set, so every previously-cached score is stale. A
+/// stale row is never read again once this constant differs (`formula_version`
+/// is part of the `match_scores` table's PRIMARY KEY, so a bumped-version
+/// lookup is a structural miss, not a stale hit) — old rows are simply
+/// orphaned until the existing TTL/max-rows prune sweep (`prune_caches`) or a
+/// resume-scoped delete reclaims them. No migration needed.
+const MATCH_FORMULA_VERSION: i64 = 3;
 
 /// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
 /// cache-key column: only an explicit `Some(true)` enables semantic scoring

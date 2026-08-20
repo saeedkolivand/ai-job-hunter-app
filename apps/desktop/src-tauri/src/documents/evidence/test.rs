@@ -345,17 +345,25 @@ fn german_function_words_never_reach_the_skills_split() {
 
 /// The filter must stay OUT of the scored bullet path: `hits` (and therefore
 /// `score`) drives the trim panel's wire payload and its ranking, and the
-/// scoring kernel owns that vocabulary.
+/// scoring kernel owns that vocabulary — a SEPARATE axis from this module's
+/// own `FUNCTION_WORDS_DE` (the display-only `skills_present`/`skills_absent`
+/// filter). "profil" is the probe: it's in `FUNCTION_WORDS_DE` (so it would
+/// never appear in a `skills_absent`/`skills_present` list) but NOT in the
+/// kernel's own `STOPWORDS_DE` (so it survives as a normal keyword the kernel
+/// matches on) — proving the two filters are independent. "unsere" no longer
+/// works as the probe: `STOPWORDS_DE` now curates it too (this fix's whole
+/// point), so it is correctly ABSENT from `hits` regardless of this module's
+/// filter ever touching the bullet path.
 #[test]
 fn the_function_word_filter_does_not_touch_bullet_scores() {
-    let job = "Wir suchen eine erfahrene Entwicklerin für unsere Container-Plattform \
-               mit Kubernetes und Docker.";
+    let job = "Wir suchen eine erfahrene Entwicklerin mit einem Profil für Kubernetes \
+               und Docker.";
     let resume = "BERUFSERFAHRUNG\n\n\
                   Senior Engineer | Acme | 2021 - Heute\n\
-                  - Unsere Container-Plattform mit Kubernetes betrieben\n";
+                  - Profil mit Kubernetes betrieben\n";
     let ranked = rank_bullets(resume, job);
     assert!(
-        ranked[0].hits.iter().any(|h| h == "unsere"),
+        ranked[0].hits.iter().any(|h| h == "profil"),
         "bullet hits come from the scoring kernel and must be left alone; got {:?}",
         ranked[0].hits
     );
@@ -1558,9 +1566,12 @@ fn the_pipe_form_does_not_read_an_employer_named_current_as_the_date_column() {
     }
 }
 
-/// A French posting: "pour" ×4 and "avec" ×3 outnumber every term that names a
-/// skill, which is what an unfiltered vocabulary looks like in any language
-/// whose function words nobody has listed yet.
+/// A French posting mixing curated function words the KERNEL now filters
+/// (`pour`, `avec`, `nous`, `vous`, …) with inflected verb forms the kernel
+/// deliberately leaves as curated-not-exhaustive filler (`cherchons`,
+/// `concevez`, `orchestre`) — what a partially-curated vocabulary still looks
+/// like in a language `documents::evidence`'s OWN `function_words` map has
+/// no list for.
 const FR_JOB: &str = "\
 Développeur backend pour notre plateforme de paiement. Vous concevez des \
 services pour nos clients européens, pour la fiabilité du service et pour \
@@ -1601,11 +1612,17 @@ fn an_uncurated_language_makes_no_relevance_claim_about_its_gap_list() {
         set.skills_absent
     );
 
-    // The residual, pinned rather than hidden: the fillers are still IN the
-    // list. Only a curated `function_words("fr")` can remove them, and adding
-    // one re-enables the relevance order in the same edit.
+    // The residual, pinned rather than hidden: `documents::keywords::STOPWORDS_FR`
+    // now curates core French function words (`pour`, `avec`, `nous`, `vous`, …),
+    // so those are gone from this list — but it is curated, not exhaustive
+    // (deliberately: an inflected verb form is a judgment call left IN the
+    // keyword set, same reasoning as `agilen`/`analysierst` in German). An
+    // uncurated verb form like "cherchons" ("we search") still leaks through.
+    // Only a curated `function_words("fr")` (a DIFFERENT, evidence-module-local
+    // list — see that const's doc) can remove it, and adding one re-enables the
+    // relevance order in the same edit.
     assert!(
-        set.skills_absent.iter().any(|s| s == "avec"),
+        set.skills_absent.iter().any(|s| s == "cherchons"),
         "the filler is still listed — this fix demotes it, it does not filter it; got {:?}",
         set.skills_absent
     );
