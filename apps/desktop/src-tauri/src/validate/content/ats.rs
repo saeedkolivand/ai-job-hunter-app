@@ -11,9 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::documents::evidence::{
-    function_words, has_curated_function_words, trailing_date_column, SectionKind,
-};
+use crate::documents::evidence::{has_curated_function_words, trailing_date_column, SectionKind};
 use crate::documents::keywords::keywords_normalized_list;
 use crate::export::parser::is_contact_shaped;
 use crate::export::types::{LineKind, ParsedLine};
@@ -36,7 +34,19 @@ pub const MAX_KEYWORD_OCCURRENCES: usize = 6;
 /// Below this many content tokens the density RATIO is meaningless (in a
 /// 20-token document any word twice already exceeds 4%). The absolute
 /// occurrence ceiling still applies.
-pub const MIN_TOKENS_FOR_DENSITY: usize = 50;
+///
+/// DERIVED, not tuned: the ratio must never be able to accuse a document over
+/// three ordinary repeats. `3 / total > 0.04` holds for every `total < 75`, so
+/// 75 is exactly the point where three stops firing and four is required.
+///
+/// It moved from 50 when the keyword kernel became language-aware. Filtering a
+/// posting's own function words is correct, and it makes documents ~18% shorter
+/// in CONTENT tokens — a real German fixture went 89 -> 73 raw, 82 -> 72 after
+/// this check's own filtering, which tipped an honest `backend` x3 from 3.66%
+/// to 4.17% and read as keyword stuffing. The threshold was calibrated against
+/// a denominator inflated with filler; the filler left, so the floor followed.
+/// Measured through the `eval` corpus, not reasoned about.
+pub const MIN_TOKENS_FOR_DENSITY: usize = 75;
 
 /// Character proxy for "longer than two printed lines" at résumé column widths.
 pub const MAX_BULLET_CHARS: usize = 200;
@@ -55,15 +65,30 @@ const REQUIRED_SECTIONS: &[(SectionKind, &str)] = &[
 
 /// `ats.keyword_density` — one keyword repeated past the stuffing threshold.
 ///
-/// The counted tokens are filtered through [`function_words`] for the target
-/// language first. The kernel's own `STOPWORDS` is English-only and its length
-/// test counts BYTES, so every German function word wide enough to survive it
-/// (`durch`, `eine`, `werden`, `wurde`, `sowie`, and `für` at four bytes)
-/// counted as a keyword — and ordinary German prose, which repeats those the
-/// way English repeats "the", was accused of keyword stuffing. Same list the
-/// evidence extractor keeps function words out of the skills gap with: a word
-/// that is not a skill is not a stuffed keyword either. Filtering happens
-/// BEFORE `total`, so the density denominator is content words only.
+/// The counted tokens come straight from [`keywords_normalized_list`], which
+/// now removes function words in the POSTING'S OWN language — so the density
+/// denominator is content words only, as it has to be.
+///
+/// This used to filter a second time through
+/// [`crate::documents::evidence::function_words`], because the
+/// kernel's `STOPWORDS` was English-only and its length test counts BYTES:
+/// every German function word wide enough to survive it (`durch`, `eine`,
+/// `werden`, `wurde`, `sowie`, and `für` at four bytes) counted as a keyword,
+/// and ordinary German prose was accused of stuffing. The kernel is
+/// language-aware now, so that second pass is redundant — and not harmless:
+/// filtering twice shrank `total` below what [`MAX_KEYWORD_DENSITY_RATIO`] was
+/// calibrated against, and a TRUTHFUL German fixture tipped over the line at
+/// `backend` ×3 in ~72 content words (4.17%). Measured, via the `eval` corpus,
+/// not reasoned about. Thresholds are unchanged; the denominator is what was
+/// wrong.
+///
+/// [`has_curated_function_words`] still gates the whole check, and still reads
+/// `en | de`. It no longer selects a filter — it answers "is this language
+/// curated well enough to ACCUSE someone?". The kernel now carries partial
+/// lists for fr/es/it/pt/nl too, but partial is the operative word (an
+/// uncurated inflected verb form still survives), so this deliberately stays
+/// quiet there rather than widening on the back of a list that is curated, not
+/// exhaustive.
 ///
 /// Which means the check only works for a language whose function words are
 /// KNOWN — `en` (via the kernel's `STOPWORDS`) and `de` today. For any other
@@ -90,11 +115,7 @@ fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     if ctx.language_mismatch || !has_curated_function_words(&ctx.lang) {
         return Vec::new();
     }
-    let stop = function_words(&ctx.lang);
-    let tokens: Vec<String> = keywords_normalized_list(ctx.input.generated)
-        .into_iter()
-        .filter(|t| !stop.contains(&t.as_str()))
-        .collect();
+    let tokens: Vec<String> = keywords_normalized_list(ctx.input.generated);
     if tokens.is_empty() {
         return Vec::new();
     }
