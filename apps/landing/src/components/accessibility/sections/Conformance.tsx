@@ -140,10 +140,14 @@ export function Conformance() {
         <p>
           <b>This fix is scoped to the home view.</b> The renderer has roughly 1,100{' '}
           <code>text-foreground/NN</code> usages, around 460 of them at the low-alpha steps (
-          <code>/30</code>, <code>/35</code>, <code>/40</code>, <code>/45</code>, <code>/55</code>)
-          that measure below 4.5:1 for small text. Only the home view has ever been scanned; every
-          other view is unaudited and likely carries the same defect. This is the single most
-          important known barrier on this page.
+          {/* Steps are written WITHOUT a leading slash on purpose. A bare `/30` lands in this
+              page's RSC payload as the JSON string "/30", which Googlebot reads as a relative
+              URL and crawls — that is where four phantom /NN 404s in Search Console came from.
+              The `text-foreground/NN` form above already establishes the syntax. */}
+          <code>30</code>, <code>35</code>, <code>40</code>, <code>45</code>, <code>55</code>) that
+          measure below 4.5:1 for small text. Only the home view has ever been scanned; every other
+          view is unaudited and likely carries the same defect. This is the single most important
+          known barrier on this page.
         </p>
         <p>
           Two <code>best-practice</code> axe rules also remain here — <b>landmark-unique</b> (1
