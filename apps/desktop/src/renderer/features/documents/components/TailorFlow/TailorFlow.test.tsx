@@ -79,7 +79,14 @@ const modelCapsState = {
   isSuccess: true,
 };
 
+/** Saved documents `useDefaultResumeId` resolves the Score-tab fallback from. */
+let savedDocsState: { _id: string; name?: string; isDefault?: boolean }[] = [];
+
 vi.mock('@/services', () => ({
+  // `TailorFlow` resolves the DEFAULT résumé for the Score tab's fallback id
+  // (`useDefaultResumeId` reads this). Defaults to an empty list — no default
+  // résumé — which keeps every other test on the pre-existing behaviour.
+  useDocuments: () => ({ data: savedDocsState, isLoading: false }),
   useResolveJobUrl: (_url: string, shouldFetch: boolean) => {
     lastResolveJobUrlShouldFetch = shouldFetch;
     return { data: resolveJobUrlState.data, isLoading: resolveJobUrlState.isLoading };
@@ -203,6 +210,7 @@ vi.mock('./TailorWizard', () => ({
     jobDesc,
     onJobDescChange,
     methods,
+    resumeId,
   }: {
     step: number;
     setStep: (n: number) => void;
@@ -212,12 +220,15 @@ vi.mock('./TailorWizard', () => ({
     // The RHF form — the stub reads the research toggle so the capability-driven
     // default is observable via a data attribute.
     methods: { watch: (name: 'researchCompany') => boolean };
+    /** What the Score tab will actually score — see TailorFlow's `resumeId`. */
+    resumeId?: string;
   }) => (
     <div
       data-testid={TEST_IDS.documents.tailorWizard}
       data-step={step}
       data-jobdesc={jobDesc}
       data-research={String(methods.watch('researchCompany'))}
+      data-resumeid={resumeId ?? ''}
     >
       <div
         role="button"
@@ -400,6 +411,7 @@ function renderFlow(opts: {
 // ── Reset between tests ───────────────────────────────────────────────────────
 
 beforeEach(() => {
+  savedDocsState = [];
   genMock.state = 'idle';
   genMock.busy = false;
   genMock.hasOutput = false;
@@ -1094,5 +1106,57 @@ describe('TailorFlow — persistent live-region announcer (CR-7)', () => {
     rerender(rerenderFlow());
 
     expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toBeEmptyDOMElement();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Score-tab résumé id — the SAVED résumé, which is not always the form's field
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailorFlow — which résumé the Score tab scores', () => {
+  it('falls back to the default saved résumé when the form has no picked document', () => {
+    // The autopilot apply path seeds `ap.resumeText`, a snapshot that can differ
+    // from the document it came from, so `resumeDocId` stays deliberately unset —
+    // which used to leave the Score tab permanently on "Save a résumé to score".
+    savedDocsState = [{ _id: 'doc-default', name: 'Resume.pdf', isDefault: true }];
+
+    renderFlow({});
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-resumeid',
+      'doc-default'
+    );
+  });
+
+  it('prefers an explicitly picked document over the default', () => {
+    savedDocsState = [
+      { _id: 'doc-default', name: 'Resume.pdf', isDefault: true },
+      { _id: 'doc-picked', name: 'Other.pdf' },
+    ];
+    const persistence = makePersistence();
+    persistence.wizardForm = {
+      resume: 'My resume',
+      outputType: 'both',
+      researchCompany: false,
+      resumeDocId: 'doc-picked',
+    };
+
+    renderFlow({ persistence });
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-resumeid',
+      'doc-picked'
+    );
+  });
+
+  it('scores nothing when there is no saved résumé at all — never a fabricated id', () => {
+    savedDocsState = [];
+
+    renderFlow({});
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-resumeid',
+      ''
+    );
   });
 });
