@@ -77,8 +77,8 @@ The critical decision is how to access Gmail: OAuth or an app password. This ADR
 ## Consequences
 
 - **New Rust module family `email_watch/`** holds the store, connector, parser, and poller (PR A: store + connector + IPC; PR B: parser + matcher + poller).
-- **New IPC commands** (5-step): `email_watch_status()`, `email_watch_connect(address, appPassword)`, `email_watch_disconnect()`, `email_watch_set_enabled(bool)`, `email_watch_check_now()`. Commands are backend-owned; the renderer never supplies a host/port (per ADR-0012).
-- **New Settings UI** section "Email tracking" in Accounts — email and app-password inputs, Connect/Disconnect, enabled toggle, status line (address, last check, "Check now" button), and a consent disclosure (full mailbox access, keychain storage, zero egress, notify-only v1).
+- **New IPC commands** (5-step): `email_watch_status()`, `email_watch_connect(address, appPassword)`, `email_watch_disconnect()`, `email_watch_set_enabled(bool)`, `email_watch_check_now()`, and `email_watch_set_auto_write_enabled(bool)` (v2). Commands are backend-owned; the renderer never supplies a host/port (per ADR-0012).
+- **New Settings UI** section "Email tracking" in Accounts — email and app-password inputs, Connect/Disconnect, enabled toggle, status line (address, last check, "Check now" button), the v2 auto-write toggle (default OFF, opt-in), and a consent disclosure (full mailbox access, keychain storage, zero egress, and what auto-write does once the user enables it).
 - **New egress class** (ADR-0005 class 7): "IMAP connection to the user's own mail provider (opt-in email-confirmation watching; credential user-supplied and OS-keychain-backed; email content never leaves the device)." Must be enumerated in README.md and SECURITY.md.
 - **Notification Center integration** (ADR-016): matched emails are pushed as notifications with kind `"email.match"` and a route to the application row. No new NC changes; the feature reuses the existing pattern.
 - **Poller pattern** (PR B): spawned from Tauri setup via `tauri::async_runtime::spawn`, follows the `autopilot_scheduler` precedent, respects min-check-interval + failure backoff. Layering: the poller (L2/L3) must mirror `autopilot_scheduler`'s decision on whether to use `R7_ALLOW` (upward shell reach to `commands::notifications::push_and_notify`) or split a separate `email_watch_scheduler` module — deferred to PR B's critic.
@@ -100,7 +100,7 @@ The critical decision is how to access Gmail: OAuth or an app password. This ADR
 - Phrase corpus: `apps/desktop/src-tauri/src/email_watch/intent_phrases.json` (173-phrase, 7-language compiled asset).
 - Auto-write: `apps/desktop/src-tauri/src/email_watch/auto_write.rs` (`apply_matched_intent`, provenance gate, opt-in default, wired).
 - Status events: `apps/desktop/src-tauri/src/applications/status_events.rs` (append-only audit trail with `source` and `confirmed` columns).
-- IPC: `apps/desktop/src-tauri/src/commands/email_watch.rs` (5 commands).
+- IPC: `apps/desktop/src-tauri/src/commands/email_watch.rs` (6 commands).
 - IPC contracts: `packages/shared/src/ipc/contracts/emailWatch.ts`.
 - Service hooks: `apps/desktop/src/renderer/services/use-email-watch/`.
 - Settings UI: `apps/desktop/src/renderer/features/settings/components/accounts/EmailWatchSection/`.
