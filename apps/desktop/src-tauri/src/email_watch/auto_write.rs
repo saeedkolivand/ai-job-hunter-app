@@ -52,7 +52,11 @@ use crate::error::AppResult;
 /// LESS often (including "never, on an IMAP host that doesn't stamp
 /// `Authentication-Results` at all") than write on unauthenticated content —
 /// see [`crate::email_watch::parser::EmailHeader::dmarc_pass`]'s doc for
-/// exactly what is and is not proven.
+/// exactly what is and is not proven, and its own doc for why only the
+/// TOPMOST `Authentication-Results` header may ever be trusted (`.any()`
+/// over every occurrence was a real, shipped, since-fixed vulnerability —
+/// an attacker's own forged header, included anywhere in the message,
+/// satisfied the old gate outright).
 ///
 /// Two WIDER signals were considered and deliberately NOT implemented: the
 /// sender domain matching the application's own company domain (no existing

@@ -79,40 +79,74 @@ pub fn parse_header(raw: &[u8]) -> Option<EmailHeader> {
 
 // ── DMARC authentication (the write-gate half — see `Fingerprint::write_gate_domain`) ──
 
-/// Whether ANY of `auth_results` (the raw `Authentication-Results` header
-/// value(s) on one message — there can be more than one hop) reports a
-/// DMARC `pass` result ALIGNED to `from_domain` (the visible `From:`
-/// domain, already lowercased by [`parse_header`]).
+/// Whether the TOPMOST `Authentication-Results` header on this message (and
+/// ONLY the topmost — see below) reports a DMARC `pass` result ALIGNED to
+/// `from_domain` (the visible `From:` domain, already lowercased by
+/// [`parse_header`]). `auth_results` is in DOCUMENT order (verified against
+/// `mail-parser`'s own header-collection code, which pushes each header as
+/// it scans forward through the byte stream — never reversed, never
+/// deduped; see this fn's test module for the citation).
 ///
-/// **What this closes**: plain `From:` spoofing (RFC 8601 §2.7.3's
-/// `dmarc=pass` already encodes SPF-or-DKIM alignment as evaluated by
-/// WHICHEVER server stamped this header — an attacker who does not control
-/// DKIM signing or an SPF-authorized sender for the claimed domain cannot
-/// produce a `pass`).
+/// **Only `auth_results.first()` is EVER consulted — never `.any()`.** Per
+/// RFC 8601 §5, a consumer must trust ONLY the `Authentication-Results`
+/// header added by its OWN receiving MTA, and must ignore every other
+/// occurrence. The receiving MTA PREPENDS its stamp on arrival rather than
+/// stripping what is already present, so in document order the FIRST
+/// (topmost) occurrence is the one the user's own provider just added;
+/// anything below it is an earlier hop's stamp OR attacker-composed text
+/// that arrived as part of the message body/headers, indistinguishable from
+/// the real thing by content alone. A previous version of this fn used
+/// `.any()` over every occurrence — an attacker could satisfy the gate
+/// simply by including their OWN forged `Authentication-Results` header
+/// naming a write-gate domain, since nothing distinguished it from a
+/// genuine stamp. **`.any()` must never come back here** — see this fn's
+/// `rejects_a_lone_forged_header`/`uses_only_the_topmost_stamp`/
+/// `a_genuine_topmost_fail_is_not_overridden` tests, which pin the exploit
+/// this closes as permanent regressions.
 ///
-/// **What this does NOT close** (documented, not silently assumed safe):
-/// this is a best-effort per-message-text parse, not a trust-chain
-/// validator — it does not verify WHICH hop stamped the header, so a
-/// message that reaches the user's mailbox with a forged
-/// `Authentication-Results` header inserted BEFORE the real receiving MTA's
-/// own (and not stripped by it) could still read as `pass` here. Most
-/// major providers strip inbound `Authentication-Results` before adding
-/// their own specifically to prevent this, but this fn has no way to
-/// confirm that for an arbitrary user-configured IMAP host — the residual
-/// risk the fix-forward task's bullet 3 named ("or where the user's IMAP
-/// host does not enforce DMARC"). A full authserv-id trust chain is a
-/// separate, larger change, not built here.
+/// **What this still does NOT close, and why an authserv-id check would
+/// NOT help either** (documented, not silently assumed safe): a message
+/// where the ONLY `Authentication-Results` header present is a forged one
+/// -- no genuine stamp was ever added, above or otherwise (a provider that
+/// does not enforce/stamp DMARC at all). Nothing distinguishes that from a
+/// genuine single header by CONTENT alone.
+///
+/// Checking the topmost header's `authserv-id` against a known-good value
+/// for the account's IMAP host (e.g. requiring `mx.google.com` for Gmail)
+/// was considered and NOT built, for a sharper reason than cost: it does
+/// not defend against the actual threat. An attacker composing a forged
+/// header simply writes the SAME public, well-known `authserv-id` string a
+/// genuine stamp would contain -- comparing text against text cannot tell
+/// a correct guess from the real thing. The only real-world defense against
+/// this exact case is the receiving provider's OWN behavior of stripping or
+/// overwriting an inbound header that already claims its identity before
+/// evaluating and stamping its own (documented for Gmail and most major
+/// providers) -- a guarantee that holds entirely OUTSIDE this codebase, on
+/// infrastructure this code has no way to observe or verify, and does not
+/// hold at all for a provider that doesn't do it (the account's IMAP host
+/// is user-configured data, not Gmail-only -- see `imap_client`'s own
+/// module doc). Building an authserv-id check here would look like it
+/// closes this gap while doing nothing against the attacker who gets the
+/// string right -- the exact false-confidence failure mode this whole fix
+/// exists to remove. The only way to CODE-LEVEL provably close this is
+/// independent DKIM/SPF re-verification performed by this crate itself
+/// (a new dependency, DNS resolution, cryptographic signature checking) --
+/// a substantial feature, not built here. This residual is the
+/// fix-forward task's own accepted risk ("or where the user's IMAP host
+/// does not enforce DMARC").
 ///
 /// `false` (fail closed) if `from_domain` is `None`, if `auth_results` is
-/// empty, or if nothing in it parses to a `pass` aligned with it.
+/// empty, or if the topmost entry does not parse to a `pass` aligned with
+/// `from_domain`.
 fn dmarc_pass_aligned(auth_results: &[String], from_domain: Option<&str>) -> bool {
     let Some(from_domain) = from_domain else {
         return false;
     };
-    auth_results.iter().any(|header| {
-        dmarc_result(header).is_some_and(|(result, header_from)| {
-            result.eq_ignore_ascii_case("pass") && header_from.eq_ignore_ascii_case(from_domain)
-        })
+    let Some(topmost) = auth_results.first() else {
+        return false;
+    };
+    dmarc_result(topmost).is_some_and(|(result, header_from)| {
+        result.eq_ignore_ascii_case("pass") && header_from.eq_ignore_ascii_case(from_domain)
     })
 }
 
@@ -728,13 +762,80 @@ mod tests {
         ));
     }
 
+    // -- HIGH fix: only the TOPMOST Authentication-Results is trustworthy ----
+    //
+    // RFC 8601 SS5: a consumer must only trust the header field ADDED BY ITS
+    // OWN receiving MTA and must ignore any that arrived already present in
+    // the message -- the final MTA PREPENDS its own stamp, so in document
+    // order the FIRST occurrence is the one the user's own provider just
+    // added; everything below it is either an earlier hop or attacker text
+    // and must never be consulted. `.any()` over every occurrence let an
+    // attacker satisfy the gate just by including their own forged header
+    // naming a write-gate domain -- these are the permanent regression
+    // tests for that exploit; this class returns the moment someone
+    // "simplifies" the header scan back to a search.
+    //
+    // NOT tested here, and NOT closeable by this function (see its own doc
+    // for the full reasoning): a message where the ONLY
+    // `Authentication-Results` header present is a forged one that already
+    // matches the exact string a genuine stamp would contain (e.g. an
+    // attacker who correctly writes `mx.google.com` -- the coordinator's
+    // own worked example). No text-only parse of a single header can tell
+    // that apart from a real one; only cryptographic re-verification (DKIM/
+    // SPF, performed independently by this code against DNS) closes it, and
+    // that is a substantial new feature, not built here.
+
     #[test]
-    fn dmarc_pass_aligned_checks_every_hop_not_just_the_first() {
-        // Multiple `Authentication-Results` headers (one per hop) — the
-        // authenticating one need not be first.
-        let hop1 = "relay.example; dmarc=none".to_string();
-        let hop2 = "mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io".to_string();
-        assert!(dmarc_pass_aligned(&[hop1, hop2], Some("greenhouse.io")));
+    fn dmarc_pass_aligned_uses_only_the_topmost_stamp_ignoring_a_forged_one_below() {
+        // A genuine topmost pass, aligned to the write-gate domain, PLUS a
+        // forged second header underneath claiming a pass for a completely
+        // different domain. Must authorize based on the topmost ONLY -- the
+        // forged second header must never be consulted, let alone able to
+        // redirect which domain gets authorized.
+        let genuine_topmost =
+            "mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io".to_string();
+        let forged_below = "attacker.example; dmarc=pass header.from=attacker.example".to_string();
+        assert!(dmarc_pass_aligned(
+            &[genuine_topmost.clone(), forged_below.clone()],
+            Some("greenhouse.io")
+        ));
+        // And the forged domain must NOT be authorized either, even though
+        // it is present in the list -- confirms the lower header is truly
+        // ignored, not merely "the wrong one happened to lose."
+        assert!(!dmarc_pass_aligned(
+            &[genuine_topmost, forged_below],
+            Some("attacker.example")
+        ));
+    }
+
+    #[test]
+    fn dmarc_pass_aligned_a_genuine_topmost_fail_is_not_overridden_by_a_forged_pass_below() {
+        // THE CASE `.any()` GETS EXACTLY BACKWARDS: the AUTHORITATIVE
+        // (topmost, genuine) result says `dmarc=fail`. A forged header
+        // below it claims `pass` for the same domain. Must NOT authorize --
+        // `.any()` would find the forged `pass` and return true regardless
+        // of what the real evaluation said.
+        let genuine_fail =
+            "mx.google.com; dmarc=fail (p=REJECT) header.from=greenhouse.io".to_string();
+        let forged_pass = "attacker.example; dmarc=pass header.from=greenhouse.io".to_string();
+        assert!(
+            !dmarc_pass_aligned(&[genuine_fail, forged_pass], Some("greenhouse.io")),
+            "a genuine topmost fail must never be overridden by a forged pass beneath it"
+        );
+    }
+
+    #[test]
+    fn dmarc_pass_aligned_fails_closed_when_the_topmost_header_is_unreadable() {
+        // The topmost header parses to `None` (malformed/unexpected shape)
+        // -- must fail closed, never fall through to a LOWER header (which
+        // would reintroduce the same trust-order violation as `.any()`).
+        let unreadable = "not a valid authentication-results header at all".to_string();
+        let genuine_below_it =
+            "mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io".to_string();
+        assert!(!dmarc_pass_aligned(
+            &[unreadable, genuine_below_it],
+            Some("greenhouse.io")
+        ));
     }
 
     // ── extract_candidates ───────────────────────────────────────────────────
@@ -835,6 +936,43 @@ Authentication-Results: mx.google.com; dkim=pass header.i=@greenhouse.io header.
         assert!(
             header.dmarc_pass,
             "a real, aligned dmarc=pass header must wire through"
+        );
+    }
+
+    #[test]
+    fn parse_header_end_to_end_proves_mail_parser_preserves_document_order_for_repeated_headers() {
+        // The whole topmost-only fix rests on `mail_parser` collecting
+        // repeated headers in DOCUMENT order (never reversed, never
+        // deduped) -- verified here against a REAL raw message through the
+        // REAL parser, not just by reading the crate's source (which was
+        // also checked: `MessageStream::parse_headers` in
+        // mail-parser-0.11.6/src/parsers/header.rs scans the byte stream
+        // forward and `Vec::push`es each header as it's encountered, and
+        // `Message::header_as` in src/core/message.rs iterates that Vec in
+        // order and collects matches -- but a live assertion is the
+        // authoritative check, not the source read). TWO
+        // `Authentication-Results` headers: a genuine topmost pass for
+        // greenhouse.io, a forged second one below claiming a pass for
+        // attacker.example. If mail-parser ever reversed or reordered
+        // repeated headers, this test would start authorizing the WRONG
+        // domain and fail loudly, rather than the vulnerability silently
+        // reappearing. Built via `.join("\r\n")` rather than a
+        // `\`-continued byte-string literal -- that continuation style
+        // already bit one earlier test in this file by silently eating
+        // the leading whitespace of a folded line.
+        let raw = [
+            "From: Careers <careers@greenhouse.io>",
+            "Subject: Thank you for applying!",
+            "Authentication-Results: mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io",
+            "Authentication-Results: attacker.example; dmarc=pass header.from=attacker.example",
+            "",
+            "",
+        ]
+        .join("\r\n");
+        let header = parse_header(raw.as_bytes()).expect("should parse a minimal header block");
+        assert!(
+            header.dmarc_pass,
+            "the genuine topmost header (greenhouse.io, matching the visible From:) must authorize"
         );
     }
 
