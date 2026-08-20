@@ -100,9 +100,24 @@ pub fn parse_header(raw: &[u8]) -> Option<EmailHeader> {
 /// simply by including their OWN forged `Authentication-Results` header
 /// naming a write-gate domain, since nothing distinguished it from a
 /// genuine stamp. **`.any()` must never come back here** — see this fn's
-/// `rejects_a_lone_forged_header`/`uses_only_the_topmost_stamp`/
-/// `a_genuine_topmost_fail_is_not_overridden` tests, which pin the exploit
-/// this closes as permanent regressions.
+/// `uses_only_the_topmost_stamp`/`a_genuine_topmost_fail_is_not_overridden`
+/// tests, which pin the exploit this closes as permanent regressions.
+///
+/// **The topmost entry itself is now read by a real RFC 8601 tokeniser**
+/// ([`super::auth_results::dmarc_verdict`], a sibling module — not this
+/// function, and not a substring scan). Three rounds of substring-scanning
+/// each found a NEW way to be wrong, the last of which needed no forged
+/// second header at all: a genuine, single, correctly-folded header could
+/// still be misread, because an attacker-chosen envelope-from local part —
+/// echoed VERBATIM by the receiving server's own authentic SPF evaluation,
+/// inside a `(...)` comment or the `smtp.mailfrom=` value in that SAME
+/// header — could contain the literal text `dmarc=pass header.from=...`,
+/// and a scan has no way to know it is reading a comment's or a quoted
+/// string's CONTENT rather than a real methodspec. `dmarc_verdict` tracks
+/// comment nesting and quoted-string state as it walks, so text inside
+/// either is never surfaced as a token — see that module's own doc and
+/// test suite (including a permanent regression pinning this exact
+/// exploit) for the structural fix.
 ///
 /// **What CONTENT alone still cannot close, and why an authserv-id check
 /// would not help either** (documented, not silently assumed safe): a
@@ -147,59 +162,9 @@ fn dmarc_pass_aligned(auth_results: &[String], from_domain: Option<&str>) -> boo
     let Some(topmost) = auth_results.first() else {
         return false;
     };
-    dmarc_result(topmost).is_some_and(|(result, header_from)| {
+    super::auth_results::dmarc_verdict(topmost).is_some_and(|(result, header_from)| {
         result.eq_ignore_ascii_case("pass") && header_from.eq_ignore_ascii_case(from_domain)
     })
-}
-
-/// Extract `(dmarc result, header.from domain)` from one raw
-/// `Authentication-Results` header value — RFC 8601 `resinfo` shape:
-/// `<authserv-id>; ...; dmarc=<result> (...) header.from=<domain>; ...`.
-/// Deliberately a small, auditable string scan (no new regex/parser
-/// dependency) rather than a full RFC 8601 grammar — good enough to require
-/// an exact `pass` and an exact `header.from=` domain read from the SAME
-/// `;`-delimited clause as the `dmarc=` token, never to invent one from
-/// malformed or absent text. `None` on anything it can't confidently read;
-/// the caller ([`dmarc_pass_aligned`]) treats that as "not authenticated".
-///
-/// **CRITICAL fix**: every offset used to slice is now found in, AND used
-/// to index, the SAME string (`lower`) — never mixed with the
-/// original-case string. `str::to_lowercase()` can change a character's
-/// UTF-8 byte length (`'İ'` -> `"i̇"` is 2 bytes -> 3), so a byte offset
-/// found via `.find()` on a LOWERCASED string is not guaranteed to be a
-/// valid char boundary — or even in bounds — in the ORIGINAL string. The
-/// previous version found offsets in a lowercased clause but sliced the
-/// original-case one; a single non-ASCII character ahead of `dmarc=`
-/// desynced the two enough to slice mid-character, which panics — and
-/// `panic = "abort"` in the release profile turns that into the whole
-/// desktop app crashing, permanently: `run_tick` persists the UID
-/// watermark AFTER the tick, so the crashing message is re-fetched (and
-/// re-crashes the app) on every subsequent launch. Slicing exclusively
-/// from `lower` makes this a NON-ISSUE by construction, not by careful
-/// bookkeeping: every offset `lower.find(...)` returns is trivially valid
-/// for `lower` itself. This also means the extracted `result`/`header_from`
-/// values are always already-lowercased -- harmless, both are compared
-/// case-insensitively (or already-lowercased) by the caller.
-fn dmarc_result(header: &str) -> Option<(String, String)> {
-    let lower = header.to_lowercase();
-    let clause = lower.split(';').find(|c| c.contains("dmarc="))?;
-
-    let result_start = clause.find("dmarc=")? + "dmarc=".len();
-    let result = clause[result_start..]
-        .split(|c: char| c.is_whitespace() || c == '(')
-        .next()
-        .filter(|s| !s.is_empty())?
-        .to_string();
-
-    let from_start = clause.find("header.from=")? + "header.from=".len();
-    let header_from = clause[from_start..]
-        .split(|c: char| c.is_whitespace() || c == '(' || c == ';')
-        .next()
-        .filter(|s| !s.is_empty())?
-        .trim_end_matches('.')
-        .to_string();
-
-    Some((result, header_from))
 }
 
 /// IMAP hosts independently known to stamp an `Authentication-Results`
@@ -929,48 +894,32 @@ mod tests {
         ));
     }
 
-    // -- CRITICAL fix: a byte-index desync between a lowercased offset and --
-    // -- an original-case slice must never panic ------------------------
-
-    #[test]
-    fn dmarc_result_does_not_panic_on_the_reported_char_boundary_crash() {
-        // THE EXACT reproduction from the finding: 'İ' (U+0130) lowercases
-        // to a LONGER byte sequence ("i̇", 2 bytes -> 3), desyncing an
-        // offset found in the lowercased text from the original-case text
-        // it used to be sliced from -- landing mid-character inside 'é' and
-        // panicking (`panic = "abort"` in release turns this into the whole
-        // app crashing, permanently, since the crashing message gets
-        // re-fetched every launch). Must return `None` cleanly, not panic --
-        // the assertion IS that this line completes at all.
-        let hostile = "mx.example.com; İ dmarc=épass header.from=greenhouse.io";
-        let _ = dmarc_result(hostile);
-    }
+    // -- CRITICAL fix: this used to be a byte-index desync between a --------
+    // -- lowercased offset and an original-case slice; the new tokeniser ---
+    // -- (`super::auth_results`) has no offset arithmetic to desync at all, -
+    // -- but re-run the exact reproductions here too, end-to-end through ---
+    // -- the actual public entry point every caller uses. -------------------
 
     #[test]
     fn dmarc_pass_aligned_does_not_panic_on_hostile_unicode_and_fails_closed() {
-        // End-to-end (the actual call site every caller uses): the same
-        // hostile input must not panic AND must not authorize -- it does
-        // not cleanly parse to a genuine `pass`, so it must fail closed,
-        // never crash.
-        let hostile = "mx.example.com; İ dmarc=épass header.from=greenhouse.io".to_string();
-        assert!(!dmarc_pass_aligned(&[hostile], Some("greenhouse.io")));
-    }
-
-    #[test]
-    fn dmarc_result_handles_other_byte_length_changing_unicode_without_panicking() {
-        // A handful of other characters whose `.to_lowercase()` changes
-        // byte length or codepoint count, ahead of and inside the clause --
-        // German sharp S uppercases/lowercases asymmetrically, the Kelvin
-        // sign lowercases to plain 'k', and Cherokee letters have distinct
-        // upper/lower forms with different byte lengths. None should panic;
-        // none should produce a spurious pass.
+        // 'İ' (U+0130) is THE ORIGINAL reported reproduction: it
+        // lowercases to a byte-length-changing sequence ("i̇", 2 bytes ->
+        // 3), which is exactly what desynced the OLD substring scanner's
+        // offsets (`panic = "abort"` in release turned that into the whole
+        // desktop app crashing, permanently, since the crashing message
+        // gets re-fetched every launch). ß/K (Kelvin sign)/Ꭰ (Cherokee)
+        // are the other byte-length/codepoint-count-changing cases already
+        // pinned. None should panic; none should authorize.
         for hostile in [
+            "mx.example.com; İ dmarc=épass header.from=greenhouse.io",
             "mx.example.com; ß dmarc=pass header.from=greenhouse.io",
             "mx.example.com; K dmarc=pass header.from=greenhouse.io",
             "mx.example.com; Ꭰ dmarc=pass header.from=greenhouse.io",
         ] {
-            let _ = dmarc_result(hostile);
-            let _ = dmarc_pass_aligned(&[hostile.to_string()], Some("greenhouse.io"));
+            assert!(!dmarc_pass_aligned(
+                &[hostile.to_string()],
+                Some("greenhouse.io")
+            ));
         }
     }
 
@@ -1255,58 +1204,46 @@ Thanks for applying to Acme Corp!\r\n";
         assert!(!dmarc_pass_aligned(&[ar], Some("greenhouse.io")));
     }
 
-    // -- Confirmed-live defect class: attacker-controlled envelope-sender --
-    // -- text, echoed VERBATIM inside a GENUINE header, is read as the --
-    // -- DMARC verdict. NOT fixed here -- see this crate's fix-forward --
-    // -- report. Kept failing (not asserted against) so CI does not lie --
-    // -- about this being resolved. --------------------------------------
+    // -- FIXED: the envelope-injection exploit that survived two prior ------
+    // -- rounds of substring-scanning. This test used to assert the -------
+    // -- VULNERABLE outcome (`true`), deliberately, so CI could never claim -
+    // -- it was resolved. It is flipped here because the underlying scanner
+    // -- was actually replaced (`super::auth_results`, an RFC 8601 --------
+    // -- tokeniser that tracks comment/quoted-string state) -- not because -
+    // -- the assertion was edited in isolation. --------------------------
 
     #[test]
-    fn known_unresolved_defect_attacker_injected_envelope_text_can_override_a_genuine_fail_verdict()
-    {
-        // Reproduces, rather than just asserts, the reviewer's finding: a
-        // SINGLE, GENUINE, correctly-folded header -- no forged second
-        // header, no non-stamping host. RFC 5321 permits a QUOTED
-        // local-part in an envelope MAIL FROM address (`"any text
+    fn envelope_injected_text_no_longer_overrides_a_genuine_fail_verdict() {
+        // The exploit: a SINGLE, GENUINE, correctly-folded header -- no
+        // forged second header, no non-stamping host. RFC 5321 permits a
+        // QUOTED local-part in an envelope MAIL FROM address (`"any text
         // including = and spaces"@domain`); Gmail's SPF evaluation is
         // genuinely authentic (attacker.example is the attacker's OWN
         // domain, so its SPF record can genuinely authorise it), and
         // Gmail's real `Authentication-Results` header echoes that
-        // attacker-CHOSEN local-part verbatim inside the SPF clause's
+        // attacker-CHOSEN local-part verbatim inside the SPF section's
         // comment/`smtp.mailfrom=` property. The attacker picks the local
         // part to literally BE `dmarc=pass header.from=greenhouse.io `,
-        // injecting exactly the token sequence this scanner's
-        // clause-selection is looking for -- INTO an earlier (SPF)
-        // clause, ahead of the REAL `dmarc=fail ... header.from=
-        // attacker.example` clause that comes later in the SAME genuine
-        // header. `.split(';').find(|c| c.contains("dmarc="))` finds the
-        // injected text first and never reaches the real verdict.
+        // injecting exactly the text a SUBSTRING scanner's clause-selection
+        // was looking for -- INTO an earlier (SPF) section, ahead of the
+        // REAL `dmarc=fail ... header.from=attacker.example` section that
+        // comes later in the SAME genuine header.
         //
-        // This is not a quoting bug fixable by handling RFC 8601 SS2.2
-        // quoted-strings alone -- the injected text lives inside a
-        // DIFFERENT property's OWN free-text content (a comment / an
-        // unrelated property value), which a scanner that does not
-        // distinguish "a new resinfo property" from "free text inside an
-        // existing one" cannot structurally tell apart from a real
-        // `dmarc=` token. This is exactly the class of bug RFC 8601-aware
-        // parsing (not substring scanning) exists to prevent.
+        // A tokeniser that tracks comment/quoted-string state (see
+        // `super::auth_results::dmarc_verdict`) never surfaces either echo
+        // as a `dmarc=` methodspec -- the injected text lives inside a
+        // DIFFERENT section's OWN comment/quoted pvalue, structurally
+        // distinct from a real `dmarc=` token, not merely a sharper
+        // heuristic about WHICH occurrence to trust.
         let ar = "mx.google.com; \
                    dkim=pass header.i=@attacker.example header.s=selector header.b=xyz789; \
                    spf=pass (google.com: domain of \"dmarc=pass header.from=greenhouse.io \"@attacker.example designates 5.6.7.8 as permitted sender) smtp.mailfrom=\"dmarc=pass header.from=greenhouse.io \"@attacker.example; \
                    dmarc=fail (p=REJECT sp=REJECT dis=NONE) header.from=attacker.example"
             .to_string();
-        // The CORRECT, SAFE answer is `false` (the real verdict is
-        // `dmarc=fail`). This asserts the CURRENTLY-OBSERVED (wrong, live)
-        // behavior -- `true` -- specifically so this test FAILS LOUDLY
-        // the moment anyone fixes it, forcing this comment block to be
-        // updated rather than silently going stale. Do not "fix" this
-        // test by flipping the assertion without fixing the underlying
-        // scanner; that would ship a false sense of safety.
         assert!(
-            dmarc_pass_aligned(&[ar], Some("greenhouse.io")),
-            "if this assertion starts failing, the underlying defect may be fixed -- verify with \
-             a real RFC 8601 grammar parser (or mail-auth) before updating this test, do not just \
-             flip the expected value"
+            !dmarc_pass_aligned(&[ar], Some("greenhouse.io")),
+            "the REAL dmarc=fail section must win -- the injected comment/quoted-string text \
+             must never be read as a methodspec"
         );
     }
 }

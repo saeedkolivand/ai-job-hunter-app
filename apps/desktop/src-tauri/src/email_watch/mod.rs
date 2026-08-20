@@ -55,6 +55,7 @@ use serde::Serialize;
 use crate::db::{open, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
+mod auth_results;
 pub mod auto_write;
 pub mod imap_client;
 pub mod intent;
