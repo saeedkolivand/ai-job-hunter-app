@@ -25,6 +25,14 @@ use super::{
     PROSE_TOP_P,
 };
 
+// Sibling file, not an `ollama/` subdirectory — same reason as `ollama_tests`
+// below (`#[path]` keeps this a CHILD module of `ollama` without forcing a
+// directory split). Split out purely to keep this file under R8's LOC cap; a
+// pure move, see that module's own doc for what it does and why.
+#[path = "ollama_local_chat.rs"]
+mod ollama_local_chat;
+use ollama_local_chat::ChatInFlight;
+
 const EMBED_MODEL: &str = "nomic-embed-text";
 /// Ollama's first-party Web Search API (cloud) — authenticated with the Ollama
 /// account key (`ai:ollama-cloud`), independent of the local daemon host.
@@ -413,6 +421,10 @@ impl AiProvider for OllamaClient {
         if !self.capabilities(model).supports_tools {
             return single_shot_turn(self, app, model, messages, temperature).await;
         }
+        // Held for the whole call — see `LOCAL_CHAT_INFLIGHT`'s doc. The
+        // `single_shot_turn` fallback above is covered separately: it calls
+        // `complete_with_usage` -> `complete_impl`, which guards itself.
+        let _chat_guard = ChatInFlight::begin();
         let base = host();
         let endpoint = format!("{base}/api/chat");
         let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat tools", &base, false);
@@ -631,6 +643,15 @@ fn build_ollama_embed_body(model: &str, text: &str) -> Value {
 }
 
 pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
+    // See `ollama_local_chat`'s module doc: wait briefly (bounded) for an
+    // in-flight local chat to clear the daemon before dispatching, so the
+    // request below gets a genuinely full timeout window instead of one
+    // already half-spent queueing behind chat.
+    ollama_local_chat::wait_for_quiet(timeouts::OLLAMA_EMBED_QUIET_WAIT).await;
+    // Read AFTER the wait, right before dispatching: whether chat is STILL
+    // running now is what actually explains a timeout that follows.
+    let was_busy = ollama_local_chat::is_chat_in_flight();
+
     let body = build_ollama_embed_body(model, text);
     let endpoint = format!("{}/api/embeddings", host());
     // `send_embed_with_retry`, not `send_with_retry`: the per-attempt bound and
@@ -645,8 +666,11 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     // A real `OLLAMA_EMBED` timeout (Ollama up but busy — a cold model load is
     // the ordinary case) used to be reported identically to a genuine
     // connection failure ("Ollama unreachable"), which sent two separate
-    // investigations to the wrong root cause. Distinguish them.
-    .map_err(|e| map_completion_transport_error(e, "Ollama", timeouts::OLLAMA_EMBED))?;
+    // investigations to the wrong root cause. Distinguish them — and, when
+    // `was_busy`, distinguish "the daemon is busy with a local chat" too.
+    .map_err(|e| {
+        ollama_local_chat::map_embed_transport_error(e, timeouts::OLLAMA_EMBED, was_busy)
+    })?;
     let status = resp.status();
     if !status.is_success() {
         let body_text =
@@ -1060,6 +1084,10 @@ async fn stream_chat(
     req: &AiGenerateRequest,
     sampling: SamplingProfile,
 ) -> AppResult<()> {
+    // Held for the whole streamed call (dropped on every exit path, including
+    // `?` and the final `stream_response` return) — see `LOCAL_CHAT_INFLIGHT`'s
+    // doc. The GPU is busy for the WHOLE stream, not just the handshake.
+    let _chat_guard = ChatInFlight::begin();
     let base = host();
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, &req.model, "/api/chat", &base, true);
@@ -1214,6 +1242,9 @@ async fn complete_impl(
     temperature: Option<f64>,
     structured: Option<StructuredCall<'_>>,
 ) -> AppResult<(String, Usage)> {
+    // Held for the whole call (dropped on every exit path, including `?`) —
+    // see `LOCAL_CHAT_INFLIGHT`'s doc.
+    let _chat_guard = ChatInFlight::begin();
     let base = host();
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);

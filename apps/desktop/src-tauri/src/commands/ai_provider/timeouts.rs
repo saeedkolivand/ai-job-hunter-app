@@ -183,6 +183,30 @@ pub const EMBED: Duration = Duration::from_secs(30);
 /// error, not a timeout.
 pub const OLLAMA_EMBED: Duration = Duration::from_secs(30);
 
+/// Bounded, ONE-TIME wait `embed_with` (LOCAL Ollama only — never
+/// `ollama-cloud`, which routes through the OpenAI-compatible client and
+/// never touches this) allows for an in-flight local chat completion to
+/// finish before it dispatches its own `/api/embeddings` request.
+///
+/// This is the fix for the shape [`OLLAMA_EMBED`]'s doc describes: Ollama
+/// serialises requests, so an embed that starts while chat holds the daemon
+/// just queues behind it — and the per-attempt `.timeout()` clock used to run
+/// the WHOLE time it sat in that queue, so all [`EMBED_BUDGET_ATTEMPTS`]
+/// attempts could expire without one of them ever being serviced. Waiting
+/// here first (bounded, and OUTSIDE any single attempt's timeout) means the
+/// request that follows gets a genuinely full [`OLLAMA_EMBED`] window rather
+/// than whatever was left after an unbounded queue wait — see
+/// `commands::ai_provider::ollama::wait_for_quiet_chat`.
+///
+/// **Costed into the rerank compile-time budget**, same as [`OLLAMA_EMBED`]
+/// itself: `commands/autopilot/rerank.rs` asserts
+/// `(OLLAMA_EMBED * EMBED_BUDGET_ATTEMPTS + OLLAMA_EMBED_QUIET_WAIT) *
+/// RERANK_DEGRADE_BREAKER < RERANK_STEP_TIMEOUT` — raising this needs
+/// re-reading that assertion, not just this doc comment.
+///
+/// [`EMBED_BUDGET_ATTEMPTS`]: super::EMBED_BUDGET_ATTEMPTS
+pub const OLLAMA_EMBED_QUIET_WAIT: Duration = Duration::from_secs(5);
+
 // ── Company research (provider-native web search) ───────────────────────────────
 
 /// Cloud native web-search research (`research`): the provider's own server-side
