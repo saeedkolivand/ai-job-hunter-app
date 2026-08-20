@@ -224,15 +224,32 @@ impl EmailWatchStore {
 
     /// Upsert the configured mailbox. Never touches `enabled`/`last_check_ms`
     /// — a reconnect (even to a different address/host) always preserves the
-    /// current opt-in; only [`Self::clear`] resets that.
+    /// poller opt-in; only [`Self::clear`] resets that.
     ///
-    /// The UID watermark (`last_uid`/`uidvalidity`) and the `seen` dedupe
-    /// table are preserved ONLY when `address` is unchanged from what's
-    /// already stored (a same-mailbox reconnect, e.g. re-entering a rotated
-    /// app password). Connecting to a genuinely DIFFERENT address clears both
-    /// — numeric IMAP UIDs are per-mailbox, so carrying a UID/seen row over
-    /// from a different account could collide with the new mailbox's own
-    /// numbering and silently suppress a real future match.
+    /// The UID watermark (`last_uid`/`uidvalidity`), the `seen` dedupe
+    /// table, AND `auto_write_enabled` are preserved ONLY when `address` is
+    /// unchanged from what's already stored (a same-mailbox reconnect, e.g.
+    /// re-entering a rotated app password). Connecting to a genuinely
+    /// DIFFERENT address clears all three:
+    /// - the watermark/`seen` reset is the pre-existing reason — numeric
+    ///   IMAP UIDs are per-mailbox, so carrying a UID/seen row over from a
+    ///   different account could collide with the new mailbox's own
+    ///   numbering and silently suppress a real future match;
+    /// - `auto_write_enabled` resetting on address change is what makes the
+    ///   opt-in a per-account consent rather than a per-store one: without
+    ///   it, `connect("b@example.com", …)` right after mailbox A opted in
+    ///   (with no intervening `clear()` — e.g. a future in-place "switch
+    ///   mailbox" affordance, not just today's disconnect-then-connect)
+    ///   would carry A's consent onto B, which never gave it. Currently
+    ///   unreachable through `EmailWatchSection` (it renders the connect
+    ///   form only when disconnected) — deliberately enforced HERE anyway,
+    ///   in the store's own state transition, rather than left to depend on
+    ///   which form a renderer happens to show; a UI conditional and a
+    ///   prose comment are not a consent invariant. Scoped to
+    ///   `auto_write_enabled` alone: `enabled` (the poller opt-in) keeps
+    ///   its existing preserve-always behavior — pinned by
+    ///   `connect_to_a_different_address_clears_uid_watermark_and_seen_but_not_enabled`
+    ///   — and `enabled` alone can never write anything to `applications`.
     pub fn connect(&self, address: &str, host: &str, port: u16) -> AppResult<()> {
         let mut conn = self.conn.lock();
         let previous_address: Option<String> =
@@ -256,7 +273,8 @@ impl EmailWatchStore {
         )?;
         if address_changed {
             tx.execute(
-                "UPDATE account SET last_uid = NULL, uidvalidity = NULL WHERE id = 1",
+                "UPDATE account SET last_uid = NULL, uidvalidity = NULL,
+                 auto_write_enabled = 0 WHERE id = 1",
                 [],
             )?;
             tx.execute("DELETE FROM seen", [])?;

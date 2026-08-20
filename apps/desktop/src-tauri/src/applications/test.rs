@@ -5218,3 +5218,28 @@ fn was_transition_rejected_blocks_any_future_write_landing_at_the_rejected_targe
         "the guard must still block `Interviewing` as a target reached via a          completely different pair — this is the detour the fix closes"
     );
 }
+
+/// LOW fix: `was_transition_rejected` used to fold a genuine READ error
+/// into "no rejection on record" (`false`), un-gating a target the user
+/// explicitly disputed. Forces a genuine `rusqlite::Error` (not a
+/// stand-in for "no matching row") by dropping the column the query's
+/// `WHERE` clause selects on, then asserts the fn fails CLOSED (`true`,
+/// "treat as rejected") rather than open.
+#[test]
+fn was_transition_rejected_fails_closed_on_a_genuine_read_error() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap();
+
+    store
+        .conn
+        .lock()
+        .execute_batch("ALTER TABLE status_events DROP COLUMN from_status;")
+        .expect("drop column to force a genuine read error");
+
+    assert!(
+        store.was_transition_rejected(&id, ApplicationStatus::Interviewing),
+        "a read error must fail CLOSED (true — treat as rejected), never \
+         un-gate a target the user may have actually disputed"
+    );
+}

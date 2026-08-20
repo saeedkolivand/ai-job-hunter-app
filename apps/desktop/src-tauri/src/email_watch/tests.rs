@@ -185,6 +185,43 @@ fn connect_to_a_different_address_clears_uid_watermark_and_seen_but_not_enabled(
     );
 }
 
+/// MEDIUM fix: `connect()` to a DIFFERENT address used to carry the
+/// PREVIOUS mailbox's `auto_write_enabled` opt-in onto the new one —
+/// consent is per-account, and nothing about a different address implies
+/// that account made the same choice. Currently unreachable through
+/// `EmailWatchSection` (the connect form only renders when disconnected),
+/// but the invariant belongs to the store's own state transition, not to
+/// which form a renderer happens to show — see `connect()`'s own doc.
+/// Scoped to `auto_write_enabled` alone: `enabled` must still survive
+/// (already pinned by
+/// `connect_to_a_different_address_clears_uid_watermark_and_seen_but_not_enabled`
+/// right above).
+#[test]
+fn connect_to_a_different_address_resets_the_auto_write_opt_in() {
+    let (_dir, store) = new_store();
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+    assert!(store.set_auto_write_enabled(true).unwrap());
+    assert!(store.status().auto_write_enabled, "precondition: opted in");
+
+    // Reconnecting to the SAME address must preserve the opt-in — this is
+    // the ordinary "re-enter a rotated app password" path, not a new
+    // account, and mirrors the same-address preservation already pinned
+    // for the UID watermark/seen rows above.
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+    assert!(
+        store.status().auto_write_enabled,
+        "same-address reconnect must preserve the auto-write opt-in"
+    );
+
+    // A DIFFERENT address must reset it — mailbox B never made this choice.
+    store.connect("b@gmail.com", "imap.gmail.com", 993).unwrap();
+    assert!(
+        !store.status().auto_write_enabled,
+        "a different address must reset the auto-write opt-in — it is \
+         per-account consent, not per-store"
+    );
+}
+
 // ── Enabled toggle ────────────────────────────────────────────────────────────
 
 #[test]

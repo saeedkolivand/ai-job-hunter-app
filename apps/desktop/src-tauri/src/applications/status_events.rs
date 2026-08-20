@@ -274,19 +274,38 @@ impl ApplicationStore {
     /// that happens to walk back through the same status can never
     /// false-positive this gate — only [`Self::reject_status_event`] ever
     /// writes that source value.
+    ///
+    /// **LOW fix**: this used to fold a genuine READ error into "no
+    /// rejection on record" (`.optional().unwrap_or(None).is_some()` maps
+    /// both `Ok(None)` — legitimately never rejected — and any `Err` from
+    /// the query onto the same `false`), which fails OPEN: a transient DB
+    /// read failure could un-gate a target the user explicitly disputed.
+    /// Its neighbour [`Self::current_status_is_unconfirmed_email_write`]
+    /// already fails CLOSED on the identical `.optional()` shape (`.ok()`
+    /// discards the error into `None`, but that fn's caller treats `None`
+    /// as "not an unconfirmed email write", the SAFE direction there) —
+    /// the two were inconsistent with each other for no reason tied to
+    /// what each guards. Fixed by matching the `Result` explicitly: `Err`
+    /// blocks (`true`, "treat as rejected"), matching this fn's own stated
+    /// preference ("would rather auto-write less than silently re-apply a
+    /// verdict the user already disputed") — a read failure is exactly the
+    /// kind of uncertainty that preference is FOR.
     pub(crate) fn was_transition_rejected(&self, id: &str, to: ApplicationStatus) -> bool {
         use rusqlite::OptionalExtension;
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT 1 FROM status_events
-             WHERE application_id = ?1 AND source = ?2 AND from_status = ?3
-             LIMIT 1",
-            params![id, EVENT_SOURCE_EMAIL_REJECT, to.as_id()],
-            |_| Ok(()),
-        )
-        .optional()
-        .unwrap_or(None)
-        .is_some()
+        match conn
+            .query_row(
+                "SELECT 1 FROM status_events
+                 WHERE application_id = ?1 AND source = ?2 AND from_status = ?3
+                 LIMIT 1",
+                params![id, EVENT_SOURCE_EMAIL_REJECT, to.as_id()],
+                |_| Ok(()),
+            )
+            .optional()
+        {
+            Ok(row) => row.is_some(),
+            Err(_) => true,
+        }
     }
 
     /// Accept the SPECIFIC email-derived, unconfirmed status-event row
