@@ -385,19 +385,20 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
         if let Some(app_id) = &outcome.matched_application_id {
             if let Some(matched) = candidates_for_notify.iter().find(|a| &a.id == app_id) {
                 notify_match(app, matched, outcome.intent);
-                // v2 slice 3: the actual auto-write. `matched.status` is the
-                // PRE-TICK snapshot `matcher::best_match` matched against —
-                // any candidate status now, not just `Saved` (see that fn's
-                // module doc) — safe to pass as `current_status` even though
-                // it may be stale by now: the underlying compare-and-set
-                // re-validates the LIVE status at write time and simply
-                // no-ops on a lost race, the same tolerance every other
-                // `transition_status_if`-family caller already has.
-                // Best-effort: a write failure here (e.g. a
-                // transient SQLite contention) must not block `mark_seen`/
-                // `advance_last_uid` for the REST of this tick's outcomes —
-                // `.code()` only (never `.to_string()`/`{e}`), so a
-                // "application not found: <id>"-shaped message can't leak
+                // v2 slice 3: the actual auto-write. `apply_matched_intent`
+                // reads the LIVE status itself (see its own doc) rather than
+                // taking one from this loop — two matched messages for the
+                // SAME application in one tick (an ordinary ATS thread: a
+                // confirmation then a later rejection inside one 15-minute
+                // window) used to both receive the SAME pre-tick snapshot
+                // here, so the second outcome's compare-and-set raced a
+                // status the FIRST outcome had already moved, lost, and was
+                // silently dropped forever (its uid already stamped by
+                // `mark_seen`, above). Best-effort: a write failure here
+                // (e.g. a transient SQLite contention) must not block
+                // `mark_seen`/`advance_last_uid` for the REST of this tick's
+                // outcomes — `.code()` only (never `.to_string()`/`{e}`), so
+                // a "application not found: <id>"-shaped message can't leak
                 // through this log line.
                 if let Some(applications) = applications.as_deref() {
                     // `outcome.write_authorized` is message-content-derived
@@ -414,7 +415,6 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
                         applications,
                         store,
                         app_id,
-                        matched.status,
                         outcome.intent,
                         outcome.write_authorized && write_gate_host_ok,
                     ) {

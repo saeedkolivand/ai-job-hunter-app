@@ -268,13 +268,24 @@ pub async fn applications_set_status(
 /// store method can panic on a garbage id (a no-op `Ok(false)`, matched-zero
 /// rows), but a rejected-up-front empty id is a clearer signal than a silent
 /// "nothing happened" success.
-fn require_non_empty_id(id: &str) -> AppResult<()> {
-    if id.trim().is_empty() {
+///
+/// **MINOR fix: returns the TRIMMED `&str`, not `()`.** This used to
+/// validate on `id.trim()` but then discard the trimmed value, so the
+/// caller forwarded the ORIGINAL, untrimmed `id` — `" app-1-abcd1234 "`
+/// passed this gate (non-empty after trimming) but then matched ZERO rows
+/// in both store methods (neither trims), returning `{ "success": true }`
+/// — the exact silent "nothing happened" this gate's own doc says it
+/// exists to prevent. Forcing the caller to use the RETURNED value (not
+/// the original `id` still in scope) makes that class of bug a borrow-
+/// checker-shaped mistake to reintroduce, not just a documented intent.
+fn require_non_empty_id(id: &str) -> AppResult<&str> {
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
         return Err(AppError::Validation(
             "application id is required".to_string(),
         ));
     }
-    Ok(())
+    Ok(trimmed)
 }
 
 /// Pure core shared by both accept/reject commands below — testable without
@@ -292,7 +303,7 @@ fn resolve_status_event_action(
     event_id: i64,
     action: impl FnOnce(&ApplicationStore, &str, i64) -> AppResult<bool>,
 ) -> AppResult<bool> {
-    require_non_empty_id(id)?;
+    let id = require_non_empty_id(id)?;
     action(store, id, event_id)
 }
 
@@ -987,6 +998,20 @@ mod tests {
         assert!(require_non_empty_id("abc123").is_ok());
     }
 
+    /// MINOR fix: the RETURNED value must be trimmed, not just checked for
+    /// emptiness after trimming — a caller using the original `id` instead
+    /// of this fn's return value would forward `" app-1-abcd1234 "`
+    /// untrimmed, matching zero rows in the store and silently reporting
+    /// success. Pins the exact reproduction from the fix-forward task.
+    #[test]
+    fn require_non_empty_id_returns_the_trimmed_value() {
+        assert_eq!(require_non_empty_id(" abc ").unwrap(), "abc");
+        assert_eq!(
+            require_non_empty_id(" app-1-abcd1234 ").unwrap(),
+            "app-1-abcd1234"
+        );
+    }
+
     #[test]
     fn accept_over_the_command_layer_matches_the_direct_store_call() {
         // Two IDENTICALLY-seeded stores: one mutated through the command-layer
@@ -1061,5 +1086,31 @@ mod tests {
         // The real (non-empty) application's pending row must be untouched.
         let last = store.events(&id).into_iter().last().unwrap();
         assert!(!last.confirmed);
+    }
+
+    /// MINOR fix, end to end: a whitespace-padded id (renderer input with
+    /// stray leading/trailing whitespace) must still resolve — before the
+    /// fix, this cleared `require_non_empty_id`'s check (non-empty after
+    /// trimming) but then forwarded the UNTRIMMED id to the store, which
+    /// matches zero rows and silently returns `Ok(false)` — the exact
+    /// "nothing happened" success this test would NOT have caught if it
+    /// only checked `require_non_empty_id` in isolation.
+    #[test]
+    fn accept_over_the_command_layer_trims_a_whitespace_padded_id() {
+        let (_dir, store, id) = seeded_store();
+        let event_id = store.events(&id).into_iter().last().unwrap().event_id;
+        let padded = format!(" {id} ");
+        let result = resolve_status_event_action(
+            &store,
+            &padded,
+            event_id,
+            ApplicationStore::accept_status_event,
+        );
+        assert!(
+            result.unwrap(),
+            "a whitespace-padded id must still match the real row"
+        );
+        let last = store.events(&id).into_iter().last().unwrap();
+        assert!(last.confirmed, "the real row must have been accepted");
     }
 }

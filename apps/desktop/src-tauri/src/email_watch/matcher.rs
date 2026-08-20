@@ -280,6 +280,35 @@ mod tests {
         );
     }
 
+    /// MAJOR fix: `Ghosted` used to be grouped with the hard-terminal
+    /// statuses in `status_ladder::is_live` (see that fn's own doc), so a
+    /// ghosted application was never even a match candidate — the email
+    /// was dropped before `next_status` ever saw it, regardless of what it
+    /// said. `ApplicationStatus::is_terminal` deliberately excludes
+    /// `Ghosted` ("a ghosted pursuit can still revive"); the matcher must
+    /// agree, unconditionally (no `unconfirmed_email_write` needed) — an
+    /// employer resurfacing after ghosting is exactly the case the domain
+    /// type exists for.
+    #[test]
+    fn a_ghosted_application_is_still_a_candidate() {
+        let apps = vec![app(
+            "a1",
+            "Acme Corp",
+            "Software Engineer",
+            ApplicationStatus::Ghosted,
+        )];
+        assert_eq!(
+            best_match(
+                &candidates(Some("Acme Corp"), None),
+                &apps,
+                false,
+                &HashSet::new()
+            )
+            .map(|s| s.application_id),
+            Some("a1".to_string())
+        );
+    }
+
     #[test]
     fn a_user_set_terminal_status_is_not_a_candidate() {
         // Rejected and NOT in unconfirmed_email_write_ids — i.e. the user

@@ -10,8 +10,7 @@
 //! from [`super::poller`]'s tick itself, which stays pure matching (see its
 //! own module doc). See `email_watch_scheduler::run_check_inner`'s own doc
 //! for exactly where in the tick this is called.
-
-use crate::applications::{ApplicationStatus, ApplicationStore};
+use crate::applications::ApplicationStore;
 use crate::email_watch::intent::{next_status, EmailIntent};
 use crate::email_watch::EmailWatchStore;
 use crate::error::AppResult;
@@ -21,6 +20,31 @@ use crate::error::AppResult;
 /// target, and [`ApplicationStore::transition_status_if_sourced`] (the SAME
 /// atomic compare-and-set every other caller in this crate uses) performs
 /// the write.
+///
+/// **`current_status` is read HERE, by this function, immediately before
+/// deciding the target — never accepted as a caller-supplied argument.**
+/// This used to take `current_status: ApplicationStatus` from the caller,
+/// which in `email_watch_scheduler`'s tick loop was a SINGLE pre-tick
+/// snapshot (`matcher::best_match`'s match, taken once before the loop)
+/// reused for every outcome in that tick. Two matched messages for the
+/// SAME application in one tick — an ordinary ATS thread, e.g. a
+/// confirmation then a later rejection inside one 15-minute window — both
+/// received the identical stale status: the first outcome's CAS succeeded
+/// and moved the row; the second's CAS then raced the STALE value against
+/// the row the first outcome had ALREADY changed, lost, and returned
+/// `Ok(false)` — indistinguishable from "a real external writer beat us to
+/// it", so the second message's write was silently, permanently dropped
+/// (its uid was already stamped by `mark_seen` before this ever ran, so a
+/// later tick never reconsiders it). Reading live status inside this
+/// function, immediately before each call's own CAS, means the SECOND
+/// outcome in that same sequential loop sees the FIRST outcome's write
+/// and rolls forward from it correctly. This does not weaken the CAS
+/// itself — `transition_status_if_sourced` still atomically re-validates
+/// at write time and still fails closed against a genuinely concurrent
+/// external writer (the read-then-CAS gap inside this function is exactly
+/// as wide as it always was for that case); it only removes the SELF-
+/// INFLICTED staleness of a caller passing a snapshot from before other
+/// outcomes in the same loop had already run.
 ///
 /// **`write_authorized` gates the write on AUTHENTICATED sender provenance —
 /// a cold or spoofed email must never write.**
@@ -93,17 +117,22 @@ use crate::error::AppResult;
 ///    decided nothing (a real, testable no-op here, not merely "the caller
 ///    happened not to call this" — the caller passes `MessageOutcome::
 ///    intent` straight through);
-/// 4. [`next_status`] itself says no-op — a terminal, still-CONFIRMED-or-
-///    user-set `current_status` (absorbing by design), or the intent
-///    doesn't advance the ladder;
-/// 5. the user already rejected a write LANDING AT `target` for this
+/// 4. the application no longer exists (read fails) — vanishingly narrow,
+///    but a target that vanished mid-tick (e.g. `remove`d concurrently)
+///    must not panic or write against nothing;
+/// 5. [`next_status`] itself says no-op — a terminal, still-CONFIRMED-or-
+///    user-set status (absorbing by design), or the intent doesn't
+///    advance the ladder;
+/// 6. the user already rejected a write LANDING AT `target` for this
 ///    application — keyed on `target` alone, not the `(current_status,
 ///    target)` pair, so a detour through a different live status can't
 ///    re-apply a target the user has already told us was wrong (see
 ///    [`ApplicationStore::was_transition_rejected`]'s doc);
-/// 6. the compare-and-set itself loses (the application's status changed
-///    since the caller last read it — the same race every other
-///    `transition_status_if`-family caller already tolerates).
+/// 7. the compare-and-set itself loses — status changed in the narrow
+///    window between this function's own read (gate 4) and the write,
+///    which by now can only be a genuinely concurrent EXTERNAL writer
+///    (the user's own hand, or another IPC call), never a stale snapshot
+///    from earlier in the same tick — that class is what gate 4 removed.
 ///
 /// **Hard constraint: always writes `confirmed = false`.** Nothing in this
 /// function, or reachable from it, may ever pass `true` for the write this
@@ -112,7 +141,6 @@ pub fn apply_matched_intent(
     applications: &ApplicationStore,
     email_watch: &EmailWatchStore,
     application_id: &str,
-    current_status: ApplicationStatus,
     intent: Option<EmailIntent>,
     write_authorized: bool,
 ) -> AppResult<bool> {
@@ -125,6 +153,13 @@ pub fn apply_matched_intent(
     let Some(intent) = intent else {
         return Ok(false);
     };
+    // MAJOR fix: read LIVE, right here, right before deciding the target —
+    // never trust a caller's snapshot. See this fn's own doc for the
+    // two-matched-messages-in-one-tick bug this closes.
+    let Some(current) = applications.get(application_id) else {
+        return Ok(false); // vanished mid-tick — safe no-op, not an error
+    };
+    let current_status = current.status;
     let current_is_unconfirmed_email_write =
         applications.current_status_is_unconfirmed_email_write(application_id);
     let Some(target) = next_status(intent, current_status, current_is_unconfirmed_email_write)
@@ -149,7 +184,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::applications::{ApplicationMeta, ApplicationOrigin};
+    use crate::applications::{ApplicationMeta, ApplicationOrigin, ApplicationStatus};
 
     /// Fresh `ApplicationStore` + `EmailWatchStore`, each in its own temp
     /// dir (they are separate `.db` files in the real app too — no shared
@@ -210,7 +245,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Saved,
             Some(EmailIntent::Confirmation),
             true,
         )
@@ -241,7 +275,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Saved,
             Some(EmailIntent::Confirmation),
             false,
         )
@@ -265,15 +298,7 @@ mod tests {
         let (_d1, applications, _d2, email_watch) = stores();
         let id = saved_app(&applications);
 
-        let wrote = apply_matched_intent(
-            &applications,
-            &email_watch,
-            &id,
-            ApplicationStatus::Saved,
-            None,
-            true,
-        )
-        .unwrap();
+        let wrote = apply_matched_intent(&applications, &email_watch, &id, None, true).unwrap();
         assert!(!wrote, "a None intent must never write");
         assert_eq!(
             applications.get(&id).unwrap().status,
@@ -295,7 +320,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Saved,
             Some(EmailIntent::Confirmation),
             true,
         )
@@ -323,7 +347,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Offer,
             Some(EmailIntent::Confirmation),
             true,
         )
@@ -350,7 +373,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Interviewing,
             Some(EmailIntent::Rejection),
             true,
         )
@@ -384,7 +406,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Interviewing,
             Some(EmailIntent::Rejection),
             true,
         )
@@ -402,6 +423,69 @@ mod tests {
             applications.events(&id).len(),
             events_after_reject,
             "the blocked second write must append nothing"
+        );
+    }
+
+    /// MAJOR fix: two matched messages for the SAME application in one
+    /// tick — an ordinary ATS thread, a confirmation then a later
+    /// rejection inside one 15-minute window — used to both be handed the
+    /// SAME pre-tick status snapshot by `email_watch_scheduler`'s loop
+    /// (see [`apply_matched_intent`]'s own doc). The first call's CAS
+    /// would succeed and move the row; the second's CAS then raced the
+    /// STALE snapshot against a row the first call had ALREADY changed,
+    /// lost, and returned `Ok(false)` — silently, permanently dropping the
+    /// second message (its uid was already stamped by `mark_seen` before
+    /// any of this ran, so a later tick never reconsiders it). This test
+    /// mirrors the scheduler's own call shape exactly: TWO calls back to
+    /// back for the SAME application id, with nothing in between re-
+    /// reading or re-setting status — that gap is now closed INSIDE
+    /// `apply_matched_intent` itself (it reads live status per call), not
+    /// by this test doing the caller's job for it. Both must land.
+    #[test]
+    fn two_matched_outcomes_for_one_application_in_one_tick_both_land() {
+        let (_d1, applications, _d2, email_watch) = stores();
+        let id = saved_app(&applications); // starts `Saved`
+        let events_before = applications.events(&id).len();
+
+        // Outcome A: a confirmation email — Saved -> Applied.
+        let wrote_first = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            Some(EmailIntent::Confirmation),
+            true,
+        )
+        .unwrap();
+        assert!(wrote_first, "the first outcome must land");
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Applied
+        );
+
+        // Outcome B: a later rejection in the SAME tick — must roll forward
+        // from what outcome A just wrote (Applied -> Rejected), not from the
+        // stale pre-tick Saved snapshot outcome A itself started from.
+        let wrote_second = apply_matched_intent(
+            &applications,
+            &email_watch,
+            &id,
+            Some(EmailIntent::Rejection),
+            true,
+        )
+        .unwrap();
+        assert!(
+            wrote_second,
+            "the second outcome in the same tick must not be silently \
+             dropped by racing a stale snapshot"
+        );
+        assert_eq!(
+            applications.get(&id).unwrap().status,
+            ApplicationStatus::Rejected
+        );
+        assert_eq!(
+            applications.events(&id).len(),
+            events_before + 2,
+            "both writes must have appended their own event — neither was lost"
         );
     }
 
@@ -425,7 +509,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Interviewing,
             Some(EmailIntent::Rejection),
             true,
         )
@@ -441,7 +524,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Rejected,
             Some(EmailIntent::Interview),
             true,
         )
@@ -475,7 +557,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Interviewing,
             Some(EmailIntent::Rejection),
             true,
         )
@@ -495,7 +576,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Rejected,
             Some(EmailIntent::Interview),
             true,
         )
@@ -531,7 +611,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Interviewing,
             Some(EmailIntent::Rejection),
             true,
         )
@@ -575,7 +654,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Rejected,
             Some(EmailIntent::Interview),
             true,
         )
@@ -599,7 +677,6 @@ mod tests {
             &applications,
             &email_watch,
             &id,
-            ApplicationStatus::Withdrawn,
             Some(EmailIntent::Interview),
             true,
         )

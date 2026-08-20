@@ -11,35 +11,49 @@ use crate::email_watch::intent::EmailIntent;
 
 // ── The pure status-ladder rule (consumes an intent, decides on nothing yet) ──
 
-/// Live (non-terminal) statuses this rule is allowed to move. The other 4
-/// (`Accepted`/`Rejected`/`Ghosted`/`Withdrawn`) are final outcomes — see
-/// [`next_status`]'s doc for why nothing moves them further.
+/// Live (non-terminal) statuses this rule is allowed to move — delegates
+/// DIRECTLY to [`ApplicationStatus::is_terminal`] rather than re-deriving
+/// the same classification independently. That independence was ALREADY a
+/// shipped bug: this fn used to group `Ghosted` with the three hard-
+/// terminal statuses, while the domain type deliberately excludes it
+/// ("soft-terminal, reopenable — a ghosted pursuit can still revive"). The
+/// two disagreeing meant `next_status` returned `None` for every intent on
+/// a ghosted application, and [`crate::email_watch::matcher::best_match`]
+/// (which shares this classification via [`is_actionable`] below) never
+/// even considered a ghosted application a match candidate — an employer
+/// resurfacing after ghosting, exactly the case the domain type exists
+/// for, was dropped before the ladder ever saw it. There is now exactly
+/// ONE place that decides "is this status closed" — the domain type — and
+/// this fn just inverts it for the ladder's own vocabulary, so the two
+/// cannot independently drift again.
 fn is_live(status: ApplicationStatus) -> bool {
-    matches!(
-        status,
-        ApplicationStatus::Saved
-            | ApplicationStatus::Applied
-            | ApplicationStatus::Screening
-            | ApplicationStatus::Interviewing
-            | ApplicationStatus::Offer
-    )
+    !status.is_terminal()
 }
 
-/// Forward-ladder position for the 5 live statuses (higher = further along).
-/// [`next_status`] only ever calls this on a status already known `is_live`,
-/// but the match stays total (never panics) — a terminal status is parked at
-/// `u8::MAX` so a future caller mistake could only ever look like "no
-/// advance available" (fails closed), never manufacture a spurious advance.
+/// Forward-ladder position for the 6 live statuses (higher = further
+/// along; `Ghosted` counts as live now — see [`is_live`]'s doc). Total,
+/// never panics: [`next_status`] only ever calls this on a status already
+/// known `is_live`, but a HARD-terminal status (`Accepted`/`Rejected`/
+/// `Withdrawn`) is still parked at `u8::MAX` so a future caller mistake
+/// could only ever look like "no advance available" (fails closed), never
+/// manufacture a spurious advance.
 fn ladder_rank(status: ApplicationStatus) -> u8 {
     match status {
-        ApplicationStatus::Saved => 0,
+        // `Ghosted` carries no memory of which live stage it ghosted FROM
+        // (the domain type collapses that), so it ranks at the BOTTOM —
+        // same as `Saved` — meaning ANY forward-advancing intent
+        // (Confirmation/Interview/Offer) counts as reviving it, matching
+        // "a ghosted pursuit can still revive" without guessing where it
+        // left off. `Rejection` applies unconditionally to any live status
+        // regardless of rank (see `next_status`), so this rank never gates
+        // that path either way.
+        ApplicationStatus::Saved | ApplicationStatus::Ghosted => 0,
         ApplicationStatus::Applied => 1,
         ApplicationStatus::Screening => 2,
         ApplicationStatus::Interviewing => 3,
         ApplicationStatus::Offer => 4,
         ApplicationStatus::Accepted
         | ApplicationStatus::Rejected
-        | ApplicationStatus::Ghosted
         | ApplicationStatus::Withdrawn => u8::MAX,
     }
 }
@@ -100,10 +114,13 @@ pub(super) fn is_actionable(status: ApplicationStatus, unconfirmed_email_write: 
 /// - **A LIVE `current` behaves exactly as before**, regardless of this
 ///   flag — never regress the ladder; `Rejection` wins unconditionally from
 ///   any live status (`Saved` through `Offer`, including `Offer` itself —
-///   an offer can be rescinded before the candidate accepts it); everything
-///   else only ever advances (`advance_to`), never repeats a no-op write.
-/// - **A TERMINAL `current`** (`Accepted`/`Rejected`/`Ghosted`/`Withdrawn`)
-///   **absorbs by default** — a later email (a resend, a stale/reordered
+///   an offer can be rescinded before the candidate accepts it — AND
+///   `Ghosted`, which counts as live: see [`is_live`]'s doc for why);
+///   everything else only ever advances (`advance_to`), never repeats a
+///   no-op write.
+/// - **A HARD-TERMINAL `current`** (`Accepted`/`Rejected`/`Withdrawn` —
+///   NOT `Ghosted`, which is live per [`is_live`]) **absorbs by
+///   default** — a later email (a resend, a stale/reordered
 ///   notification, or a genuinely new event this 4-way classifier has no
 ///   intent for, like a rescinded offer) is out of scope: silently
 ///   overwriting a final — usually user-set or user-accepted — outcome
@@ -282,11 +299,47 @@ mod tests {
         );
     }
 
+    /// MAJOR fix: `Ghosted` is live now (see `is_live`'s own doc), not
+    /// grouped with the hard-terminal statuses — INVERTED from an earlier
+    /// version of this test (`rejection_from_ghosted_is_a_noop`, asserting
+    /// `None`) that pinned exactly the predicate-disagreement bug this
+    /// fixes. `Rejection` applies unconditionally to any live status, so a
+    /// ghosted application confirmed dead by a later email must land
+    /// `Rejected`, not stay stuck.
     #[test]
-    fn rejection_from_ghosted_is_a_noop() {
+    fn rejection_from_ghosted_applies_unconditionally_like_any_live_status() {
         assert_eq!(
             next_status(EmailIntent::Rejection, ApplicationStatus::Ghosted, false),
-            None
+            Some(ApplicationStatus::Rejected)
+        );
+    }
+
+    /// The employer resurfacing after ghosting — the domain type's own
+    /// stated reason `Ghosted` is excluded from `is_terminal` — must reach
+    /// the ladder: a confirmation/interview/offer intent advances a
+    /// ghosted application exactly like it would from `Saved` (both rank
+    /// 0; see `ladder_rank`'s doc for why).
+    #[test]
+    fn a_confirmation_intent_revives_a_ghosted_application() {
+        assert_eq!(
+            next_status(EmailIntent::Confirmation, ApplicationStatus::Ghosted, false),
+            Some(ApplicationStatus::Applied)
+        );
+    }
+
+    #[test]
+    fn an_interview_intent_revives_a_ghosted_application() {
+        assert_eq!(
+            next_status(EmailIntent::Interview, ApplicationStatus::Ghosted, false),
+            Some(ApplicationStatus::Interviewing)
+        );
+    }
+
+    #[test]
+    fn an_offer_intent_revives_a_ghosted_application() {
+        assert_eq!(
+            next_status(EmailIntent::Offer, ApplicationStatus::Ghosted, false),
+            Some(ApplicationStatus::Offer)
         );
     }
 

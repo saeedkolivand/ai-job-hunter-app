@@ -169,6 +169,25 @@ pub fn parse_header(raw: &[u8]) -> Option<EmailHeader> {
 /// `from_domain` — but a `true` here is a best-effort signal, not a proof,
 /// and the caller's OWN combination with `host_is_known_to_stamp` narrows
 /// the exposed population without eliminating it.
+///
+/// **"ALIGNED" here is EXACT (`eq_ignore_ascii_case`), STRICTER than
+/// DMARC's own relaxed-alignment default** — real DMARC accepts an
+/// organizational-domain match (RFC 7489 §3.1's "Organizational Domain"),
+/// so a genuine `header.from=greenhouse.io` stamp on a message whose
+/// visible `From:` is `careers@mail.greenhouse.io` is legitimately
+/// DMARC-aligned but returns `false` HERE — this fn does not implement
+/// DMARC's own alignment rule, it implements a narrower one. Deliberate,
+/// not an oversight: [`domain_matches_any`] (the sender-domain hint/
+/// write-gate check one layer up) DOES accept subdomains, so the two
+/// checks are asymmetric on purpose — the direction is safe (a
+/// legitimate pass on a subdomain goes UNRECOGNISED here and the write
+/// gate simply doesn't fire, never the reverse: nothing this strictness
+/// removes could have let a FORGERY through). Loosening this to match
+/// DMARC's real relaxed-alignment rule would need to compute each
+/// domain's registrable/organizational domain (a public-suffix-list
+/// lookup, not a string comparison) — real scope, not a one-line change,
+/// and not needed while the strict direction is merely under-matching
+/// rather than over-trusting.
 fn dmarc_pass_aligned(auth_results: &[String], from_domain: Option<&str>) -> bool {
     let Some(from_domain) = from_domain else {
         return false;
@@ -817,6 +836,20 @@ mod tests {
         // a write-gate-eligible one.
         let ar = "mx.google.com; dmarc=pass (p=REJECT) header.from=attacker.example".to_string();
         assert!(!dmarc_pass_aligned(&[ar], Some("greenhouse.io")));
+    }
+
+    /// MINOR fix (doc-only, behavior unchanged and deliberately NOT
+    /// loosened): a genuine `header.from=greenhouse.io` stamp on a message
+    /// whose visible `From:` domain is the SUBDOMAIN
+    /// `mail.greenhouse.io` is legitimate DMARC relaxed alignment (RFC
+    /// 7489 organizational-domain match) but this fn's `eq_ignore_ascii_case`
+    /// is EXACT, so a real pass goes unrecognised — see this fn's own doc
+    /// for why that direction (under-matching, never over-trusting) is
+    /// safe and deliberate.
+    #[test]
+    fn dmarc_pass_aligned_is_stricter_than_dmarc_organizational_alignment() {
+        let ar = "mx.google.com; dmarc=pass (p=REJECT) header.from=greenhouse.io".to_string();
+        assert!(!dmarc_pass_aligned(&[ar], Some("mail.greenhouse.io")));
     }
 
     #[test]
