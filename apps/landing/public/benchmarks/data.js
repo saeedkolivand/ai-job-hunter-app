@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787257439955,
+  "lastUpdate": 1787260313487,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -8309,6 +8309,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 304131,
             "range": "± 3585",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "21a74eea65b6e2d67e701f1fe5dae0629d7b0f6d",
+          "message": "fix(export): give résumé entries the hierarchy they were never structured for (#1061)\n\n* fix(export): give résumé entries the hierarchy they were never structured for\n\nThe owner asked for bold company names and a distinguishable duration and got\nneither, because the entries were not styled at all — they were never parsed as\nentries. The exported text reads\n\n    Independent / Open-Source R&D . Self-directed\n    December 2025 – Present, Köln, Deutschland\n\nand `export/parser` recognised three job-entry shapes, ALL of which require the\ndate on the same line as the title. This shape matched none, so the whole entry\nfell through to `LineKind::Text` → `Block::Paragraph` and rendered in plain body\nweight. Tuning the styling knobs alone would have been cosmetic.\n\nThe parser now also recognises a title line followed by a bare leading date\nrange, attaching the date and taking the remainder as the subtitle. Guarded by\n`is_entry_title_shaped`, and the not-a-heading exclusion is load-bearing: without\nit a real section heading followed by a leading-date line reads as \"consumed\" and\nthe date is silently dropped. `DATE_RE`'s middle span also had to go greedy so\n`.find()` captures the whole range rather than stopping at the first year —\nverified a no-op for every other call site, all of which are boolean\n`.is_match()`.\n\nOnce entries parse, bold falls out: titles were already unconditionally bold and\n`emphasize_education` is already hardcoded on, so company, project, education and\ncertification titles all get it. The date now renders italic rather than\ninheriting the title's bold, which is the fast-scan distinction that was asked\nfor — and no unsafe technique was needed for it: no colour-only signal, no\ntables, no letter-spacing.\n\nItalic was never a font problem. All four Carlito faces including italic are\nalready registered in the Typst `FontBook`; only Regular and Bold were embedded\nbecause no italic run had ever executed. There is now an assertion that a real\nitalic `/BaseFont` is embedded, so a synthetic slant cannot pass for one.\n\nDOCX carried the same gap in the other direction — its date run was plain while\nthe PDF's was bold, so the two formats disagreed. Both are italic now, pinned by\nan XML-level test asserting `<w:i />` and no `<w:b />`.\n\n`url_label` keeps the full `domain/user/repo` text for a repository URL instead\nof collapsing it to \"GitHub\", matching the reference résumé's bare-domain project\nlinks. A profile URL with a single path segment still collapses.\n\nThe header contact line was emitting doubled separators\n(`Köln |  · mail ·  | phone`); each raw line's own edge separator is now stripped\nbefore the join.\n\nScoped to `single_column.typ`, shared by six templates that are all\n`TemplateTier::Ats`; the nine bespoke templates are untouched.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(export): stop the new entry branch swallowing a contact line\n\nFour review findings, all valid against HEAD.\n\nThe next-line-date branch had no contact guard, and it is checked BEFORE the\n`is_contact_shaped` branch that would otherwise claim the line. A header contact\nline is title-SHAPED by every other measure — short, unpunctuated, not a heading\n— so a contact line followed by a leading-date line became a fabricated job\nentry. Reproduced before fixing: \"Köln, Deutschland · max@example.de · 0179\n1402319\" parsed as JobEntry carrying right_text \"Jan 2021 – Heute\", i.e. the\nuser's contact details vanish from the header and resurface as a job title.\nEvery sibling job-entry branch already guarded on this; this one does now too.\n\nThe embedded-italic assertion could pass for the wrong reason. Its fixture also\nproduces italic SUBTITLE runs from location remainders, and `single_column.typ`\nrenders subtitles italic, so the assertion would have survived the entry date\nsilently reverting to non-italic. Moved to its own fixture with a date and no\nsubtitle. Mutation-checked at the right line this time: dropping `style:\n\"italic\"` from the DATE (line 200, not the markdown-italic run at 112) leaves\nonly Carlito-Bold and Carlito-Regular embedded and fails the test.\n\nThe sample-PDF test printed an absolute path. `CARGO_MANIFEST_DIR` makes\n`out_path` absolute and both arms passed it to `eprintln!`, against the\npath-privacy rule that covers logs explicitly. It prints the repo-relative\nartifact name now.\n\n`url_label` kept a URL's query and fragment, so `github.com/user/repo?tab=readme`\nwould have been printed verbatim on a résumé. Query and fragment are stripped\nbefore the path is split — which also stops a query on a PROFILE link\nmanufacturing a second segment and promoting it to a repo-shaped label.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-20T23:00:06+02:00",
+          "tree_id": "b85adf69605acaafd5bb6a8ae9b65fd4a52f66fa",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/21a74eea65b6e2d67e701f1fe5dae0629d7b0f6d"
+        },
+        "date": 1787260312679,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2307543,
+            "range": "± 52535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2739455,
+            "range": "± 28744",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 309320,
+            "range": "± 6031",
             "unit": "ns/iter"
           }
         ]
