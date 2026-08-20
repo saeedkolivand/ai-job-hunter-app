@@ -510,6 +510,26 @@ describe('JobAdView — Score tab: CLI-agent egress disclosure', () => {
       )
     ).toBeInTheDocument();
   });
+
+  it('DOES disclose egress on the error state — a resolved-but-unusable response already egressed', async () => {
+    // The error branch is `scoreError || (score && !isMeasured(score))`. Reaching
+    // it at all means the request went out; the second disjunct means it came
+    // BACK. Either way the posting text was already sent, so this is the one
+    // failure state that still owes the user a disclosure.
+    mockActiveProvider = 'claude-code';
+    stubbedScore = { data: undefined, isLoading: false, isError: true, refetch: vi.fn() };
+    render(<JobAdView {...makeProps()} />);
+    await openScoreTab();
+
+    expect(
+      screen.getByText(i18n.t('autopilot.apply.jobAdView.score.errorTitle'))
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t('autopilot.apply.jobAdView.score.cliAgentEgress', { provider: 'Claude Code' })
+      )
+    ).toBeInTheDocument();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

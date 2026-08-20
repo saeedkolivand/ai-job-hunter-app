@@ -459,6 +459,24 @@ mod tests {
     // a reported reasoning-model session timed out, and each cover letter was
     // written with no company knowledge and no visible failure.
 
+    /// The rerank const assertion bounds `OLLAMA_EMBED` from ABOVE only, so a
+    /// revert to the old 15s would satisfy it and silently restore the budget the
+    /// field measurement showed was too small. Pin the value here, and pin the
+    /// doc's own claim ("the same bound as cloud EMBED, not a tighter one") next
+    /// to it so the two cannot drift apart silently.
+    #[test]
+    fn ollama_embed_is_pinned_at_thirty_seconds_and_matches_the_cloud_bound() {
+        assert_eq!(
+            OLLAMA_EMBED,
+            Duration::from_secs(30),
+            "15s could not survive a local chat model holding the GPU; 30s is also the              ceiling that keeps RERANK_DEGRADE_BREAKER able to fire"
+        );
+        assert_eq!(
+            OLLAMA_EMBED, EMBED,
+            "OLLAMA_EMBED's doc claims local is not bounded tighter than cloud — keep              these equal or reword it"
+        );
+    }
+
     #[test]
     fn research_deadline_exceeds_the_inner_search_bounds_it_wraps() {
         // It wraps a web search AND a synthesis completion. If the outer bound

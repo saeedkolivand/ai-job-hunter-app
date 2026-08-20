@@ -177,8 +177,13 @@ where
 /// fresh attempt then succeeds immediately; without one, the first document of
 /// an indexing run fails for a reason that has already gone away.
 ///
-/// The worst case is unchanged from before that collapse (`MAX_ATTEMPTS` × the
-/// per-attempt timeout + backoff) and it is bounded. Indexing has no run-level
+/// The worst case is unchanged from before that collapse and it is bounded — and
+/// the bound is the WHOLE sequence, not just its request time: `budget` below is
+/// wall clock measured from the first attempt, and `send_with_retry_capped` pays
+/// each backoff OUT of it (projecting `spent` past the sleep before deciding
+/// whether another attempt still fits). So one call costs at most
+/// `per_attempt` × [`EMBED_BUDGET_ATTEMPTS`] in total, backoff included — never
+/// that plus backoff. Indexing has no run-level
 /// deadline that counts it — but the autopilot re-rank phase DOES: this budget
 /// (`per_attempt` × [`EMBED_BUDGET_ATTEMPTS`]) is what one degraded job costs
 /// there, and `RERANK_DEGRADE_BREAKER` of them has to fit inside
