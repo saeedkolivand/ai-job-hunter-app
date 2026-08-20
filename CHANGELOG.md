@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.139.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.138.1...v0.139.0) (2026-08-20)
+
+### ✨ Features
+
+* job-ad score surfaces, and email tracking v2 with opt-in auto-write ([#1056](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1056)) ([74a54b4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/74a54b44c9c6ffa29d0890fdd2593012239ae742))
+
+### 🐛 Bug Fixes
+
+* **landing:** stop the a11y page minting phantom numeric urls ([#1055](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1055)) ([5a79bc2](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5a79bc261e162090c002ab9869fb468e890cc8f8))
+
 ## [0.138.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.138.0...v0.138.1) (2026-08-19)
 
 ### 🐛 Bug Fixes
