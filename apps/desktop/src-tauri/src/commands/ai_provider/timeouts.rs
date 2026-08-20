@@ -159,22 +159,29 @@ pub fn ollama_completion_deadline(effort: Option<&str>) -> Duration {
 /// Gemini.
 pub const EMBED: Duration = Duration::from_secs(30);
 
-/// Local Ollama embeddings (`/api/embeddings`): the local daemon's embeddings
-/// endpoint, bounded LOOSER than cloud embeddings — the opposite of the usual
-/// local-is-faster assumption, and deliberately so.
+/// Local Ollama embeddings (`/api/embeddings`): the same bound as cloud
+/// [`EMBED`], not a tighter one — local is not reliably faster here.
 ///
 /// A local daemon shares one GPU with whatever chat model is loaded, and Ollama
-/// serialises by default: an embed request queues behind an in-flight generation
-/// rather than running beside it. Measured in the field at the previous 15s
-/// bound — embed cycles failing in exactly 45s (3 x 15s) while a 27B chat
-/// completion held the GPU for 213s. That is a queue wait, not an unreachable
-/// daemon, and failing it produced a silent keyword-only degrade.
+/// serialises by default: an embed request queues behind an in-flight
+/// generation rather than running beside it. Measured in the field at the
+/// previous 15s bound — embed cycles failing in exactly 45s (3 x 15s) while a
+/// 27B chat completion held the GPU for 213s. That is a queue wait, not an
+/// unreachable daemon, and failing it produced a silent keyword-only degrade.
+/// A cold load of a large embedding model (e.g. a 4B / 2560-dim one) can exceed
+/// 15s unaided too.
 ///
-/// A cold load of a large embedding model (e.g. a 4B / 2560-dim one) can also
-/// exceed 15s unaided. The cost of the wider bound is that a genuinely dead
-/// daemon now takes 3 x 60s to give up instead of 3 x 15s; a refused connection
-/// still fails fast, because that is a transport error rather than a timeout.
-pub const OLLAMA_EMBED: Duration = Duration::from_secs(60);
+/// 30s is a CEILING, not a preference: this constant is coupled to the
+/// autopilot re-rank phase, where
+/// `OLLAMA_EMBED * EMBED_BUDGET_ATTEMPTS * RERANK_DEGRADE_BREAKER` must stay
+/// under `RERANK_STEP_TIMEOUT` or the breaker can never fire and the phase
+/// burns its full wall clock hourly instead of giving up. That invariant is
+/// asserted at compile time in `commands/autopilot/rerank.rs` — raising this
+/// past ~33s fails the build rather than silently re-opening that defect.
+///
+/// A refused connection still fails fast either way: that is a transport
+/// error, not a timeout.
+pub const OLLAMA_EMBED: Duration = Duration::from_secs(30);
 
 // ── Company research (provider-native web search) ───────────────────────────────
 

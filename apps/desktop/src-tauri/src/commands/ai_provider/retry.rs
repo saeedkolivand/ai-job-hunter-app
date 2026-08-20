@@ -75,14 +75,14 @@ const MAX_STREAM_DELAY_MS: u64 = 30_000;
 /// 2 s is a deliberate small value: a cloud 429 rejection round-trips in a few
 /// hundred milliseconds, so this is roughly 4× the observed floor plus
 /// handshake headroom, while staying far below the SMALLEST per-attempt bound
-/// that reaches this loop (`timeouts::EMBED`, 30 s — it took that title from
-/// `OLLAMA_EMBED` when the latter widened to 60 s) — so it can only ever refuse
-/// an attempt that was already doomed, never one that had a real chance.
+/// that reaches this loop (`timeouts::EMBED` and `timeouts::OLLAMA_EMBED`, both
+/// 30 s) — so it can only ever refuse an attempt that was already doomed, never
+/// one that had a real chance.
 const MIN_RETRY_ATTEMPT_FLOOR: Duration = Duration::from_secs(2);
 
 /// How many per-attempt timeouts one EMBED call may spend in total (see
 /// [`send_embed_with_retry`]).
-const EMBED_BUDGET_ATTEMPTS: u32 = 3;
+pub(crate) const EMBED_BUDGET_ATTEMPTS: u32 = 3;
 
 /// Whether a response status is worth retrying. 429 (rate limit / quota) and 5xx
 /// (service errors) are transient; everything else (success, 4xx client errors)
@@ -171,16 +171,20 @@ where
 /// to a second attempt. That is the intended trade for a 120 s/300 s completion
 /// — an attempt that spent five minutes is not worth repeating, and the outer
 /// `quality_run_deadline` counts exactly one of them per call. It is the WRONG
-/// trade here: `OLLAMA_EMBED` is 60 s, and the case that needs a second attempt
+/// trade here: `OLLAMA_EMBED` is 30 s, and the case that needs a second attempt
 /// is the first embed of an indexing run, where Ollama is COLD-LOADING the
 /// embedding model and the first request times out while the load completes. A
 /// fresh attempt then succeeds immediately; without one, the first document of
 /// an indexing run fails for a reason that has already gone away.
 ///
 /// The worst case is unchanged from before that collapse (`MAX_ATTEMPTS` × the
-/// per-attempt timeout + backoff), it is bounded, and no outer deadline is
-/// derived from the embed constants — indexing has no run-level deadline that
-/// counts them.
+/// per-attempt timeout + backoff) and it is bounded. Indexing has no run-level
+/// deadline that counts it — but the autopilot re-rank phase DOES: this budget
+/// (`per_attempt` × [`EMBED_BUDGET_ATTEMPTS`]) is what one degraded job costs
+/// there, and `RERANK_DEGRADE_BREAKER` of them has to fit inside
+/// `RERANK_STEP_TIMEOUT` or the breaker never fires. `rerank.rs` asserts that
+/// at compile time; do not widen `OLLAMA_EMBED` or this constant without
+/// reading it.
 pub async fn send_embed_with_retry<F>(build: F, per_attempt: Duration) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
@@ -510,12 +514,12 @@ mod retry_loop_tests {
     ///
     /// Collapsing the per-attempt timeout into the sequence budget made
     /// retry-after-timeout structurally unreachable at every call site — correct
-    /// for a 300 s completion, wrong for a 60 s embed, where the first request of
+    /// for a 300 s completion, wrong for a 30 s embed, where the first request of
     /// an indexing run times out while Ollama cold-loads the embedding model and
     /// a fresh attempt then succeeds at once. `send_embed_with_retry` separates
     /// the two values so that recovery exists again.
     ///
-    /// The 2 s per-attempt bound is scaled down from `OLLAMA_EMBED`'s 60 s but the
+    /// The 2 s per-attempt bound is scaled down from `OLLAMA_EMBED`'s 30 s but the
     /// arithmetic is the real one: attempt 1 burns the full per-attempt timeout,
     /// the 500 ms backoff follows, and the 3× sequence budget still leaves 3.5 s —
     /// comfortably over the 2 s floor, so a slow host cannot flip it. Mutation
