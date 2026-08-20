@@ -146,7 +146,11 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
   }: {
     seedGeneration?: { id: string };
     onJobDescChange?: (text: string) => void;
-    persistence?: { runId: string | null; runJobId: string | null };
+    persistence?: {
+      runId: string | null;
+      runJobId: string | null;
+      wizardForm?: { resumeDocId?: string } | null;
+    };
     resumeDocId?: string;
   }) => {
     capturedOnJobDescChange = onJobDescChange;
@@ -157,6 +161,9 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
         data-runid={persistence?.runId ?? ''}
         data-runjobid={persistence?.runJobId ?? ''}
         data-resumedocid={resumeDocId ?? ''}
+        // The PERSISTED form's id, distinct from the freshly-seeded prop above —
+        // this is the one a deleted résumé can leave dangling.
+        data-formdocid={persistence?.wizardForm?.resumeDocId ?? ''}
       />
     );
   },
@@ -1333,10 +1340,56 @@ describe('ApplicationDetailPage — seedResumeDocId (Score tab résumé identity
     );
   });
 
+  it('strips a persisted résumé id whose document no longer exists', () => {
+    // `resume_source` is ID-WINS with NO fallback: a stale id fails the whole
+    // run with "resume not found" while the résumé text sits visible on screen.
+    mockTab = 'documents';
+    mockDocsData = [{ _id: 'doc-alive', name: 'Resume.pdf', isDefault: true }];
+    mockDocumentTextData = 'Default resume text';
+    mockSessionState.applicationApply.applySeedResume = null;
+    mockSessionState.applicationApply.applyWizardForm = {
+      resume: 'Some resume text',
+      outputType: 'both',
+      researchCompany: false,
+      resumeDocId: 'doc-deleted',
+    };
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    renderLoaded({ id: 'app-1' });
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute('data-formdocid', '');
+  });
+
+  it('keeps a persisted résumé id whose document still exists', () => {
+    mockTab = 'documents';
+    mockDocsData = [{ _id: 'doc-alive', name: 'Resume.pdf', isDefault: true }];
+    mockDocumentTextData = 'Default resume text';
+    mockSessionState.applicationApply.applySeedResume = null;
+    mockSessionState.applicationApply.applyWizardForm = {
+      resume: 'Some resume text',
+      outputType: 'both',
+      researchCompany: false,
+      resumeDocId: 'doc-alive',
+    };
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    renderLoaded({ id: 'app-1' });
+
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute(
+      'data-formdocid',
+      'doc-alive'
+    );
+  });
+
   it("does NOT seed a résumé id when the text came from a previous generation's output", () => {
     mockTab = 'documents';
-    mockDocsData = []; // no saved résumé at all — defaultResumeId is null
-    mockDocumentTextData = undefined;
+    // A default résumé DOES exist, so `defaultResumeId` is a real id and the
+    // `?? undefined` fallback cannot carry this test on its own — the equality
+    // guard is the only thing preventing the seed. Its text is EMPTY, which is
+    // what lets the `||` chain fall through to the generation's text: a
+    // non-empty default text would win the chain and legitimately seed the id.
+    mockDocsData = [{ _id: 'doc-1', name: 'Resume.pdf', isDefault: true }];
+    mockDocumentTextData = '';
     mockSessionState.applicationApply.applySeedResume = null;
     // `renderLoaded` always overwrites the generations mock to `{ data: [] }`
     // (it's the "no matching generation" default for every OTHER test in this

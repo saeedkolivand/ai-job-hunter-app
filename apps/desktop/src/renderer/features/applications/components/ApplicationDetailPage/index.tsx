@@ -62,6 +62,7 @@ import {
 } from '@/features/documents/components/TailorFlow';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
+import type { RawDoc } from '@/lib/doc-record';
 import { DETAIL_TABS, type DetailTab, Route } from '@/routes/applications.$id';
 import {
   useAcceptStatusEvent,
@@ -1389,9 +1390,32 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
   const applyRun =
     applicationApply.applyRun?.forId === application.id ? applicationApply.applyRun : null;
 
+  // A persisted `resumeDocId` can outlive the document it points at: advance a
+  // wizard step (which snapshots the form into the memory-only
+  // `applyWizardForm`), delete that résumé on the Documents page, come back.
+  // `resume_source` is ID-WINS with NO fallback — `resolve_resume` answers
+  // `resume not found: <id>` and never consults `resumeText`, which
+  // `useTailorPipeline` has already blanked precisely BECAUSE an id was set. So
+  // a stale id fails the whole run with an opaque id echo while the résumé text
+  // sits visible on screen. Drop the id and let the run use that text; this is
+  // the one place that holds both the persisted form and the live document
+  // list, so it is the only place that can tell.
+  const persistedWizardForm = applicationApply.applyWizardForm;
+  // `useDocuments` is TYPED as `DocumentRecord[]` (`id`) but the backend really
+  // returns `_id` — `useDefaultResume` casts through `RawDoc` for exactly this
+  // reason, and `defaultResumeId` (what we compare against) is a `_id`. Reading
+  // `.id` here would typecheck and be `undefined` at runtime, quietly stripping
+  // EVERY persisted id instead of only stale ones.
+  const rawDocs = (docsQuery.data ?? []) as unknown as RawDoc[];
+  const knownDocIds = new Set(rawDocs.map((d) => d._id));
+  const wizardForm =
+    persistedWizardForm?.resumeDocId && !knownDocIds.has(persistedWizardForm.resumeDocId)
+      ? { ...persistedWizardForm, resumeDocId: undefined }
+      : persistedWizardForm;
+
   const persistence: TailorFlowPersistence = {
     wizardStep: applicationApply.applyWizardStep,
-    wizardForm: applicationApply.applyWizardForm,
+    wizardForm,
     templateId: applicationApply.applyTemplateId,
     atsMode: applicationApply.applyAtsMode,
     accent: applicationApply.applyAccent,

@@ -224,9 +224,13 @@ export function JobAdView({
   // A CLI-agent provider (Claude Code, Codex, Gemini CLI) egresses despite
   // reading as "local" elsewhere in this app — scoring a foreign-language
   // posting routes through translation, which sends the job ad text to it.
-  // Rendered ONLY where a score is actually loading or shown below (never on
-  // the no-résumé/no-posting/error branches, which never send anything) —
-  // computed once here so both call sites stay in sync.
+  // Rendered on every branch that can only be reached AFTER a request went out
+  // — loading, measured, and error. The error branch counts: its second
+  // disjunct (`score && !isMeasured(score)`) requires the query to have
+  // RESOLVED, so the round trip provably completed and the posting text was
+  // already sent. Only the no-résumé/no-posting branches are silent, because
+  // those short-circuit before `scoreEnabled` ever turns on. Computed once here
+  // so all three call sites stay in sync.
   const egressNotice = isCliAgentProvider ? (
     <p className="shrink-0 text-[10px] leading-relaxed text-foreground/70">
       {t('autopilot.apply.jobAdView.score.cliAgentEgress', {
@@ -365,14 +369,17 @@ export function JobAdView({
               // `isMeasured`'s doc). Neither is "not scored" — that copy would
               // tell a user who waited up to two minutes for a failure exactly
               // what they'd be told about a posting with nothing in it.
-              <ErrorState
-                title={t('autopilot.apply.jobAdView.score.errorTitle')}
-                description={t('autopilot.apply.jobAdView.score.errorDescription')}
-                onRetry={() => {
-                  void refetchScore();
-                }}
-                className="rounded-lg border border-red-400/20 bg-red-400/5 py-6"
-              />
+              <>
+                {egressNotice}
+                <ErrorState
+                  title={t('autopilot.apply.jobAdView.score.errorTitle')}
+                  description={t('autopilot.apply.jobAdView.score.errorDescription')}
+                  onRetry={() => {
+                    void refetchScore();
+                  }}
+                  className="rounded-lg border border-red-400/20 bg-red-400/5 py-6"
+                />
+              </>
             ) : score ? (
               <>
                 {egressNotice}
