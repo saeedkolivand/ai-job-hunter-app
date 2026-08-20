@@ -12,12 +12,21 @@ import { createMockClient, makeQueryClient } from '@/test-support';
 
 import { EmailWatchSection } from './index';
 
-const DISCONNECTED: EmailWatchStatus = { connected: false, enabled: false };
+// autoWriteEnabled defaults to false in both fixtures — the backend's real
+// default after five security rounds (the sender-authentication gate is
+// best-effort and can be fooled, so nobody gets auto-write silently). Tests
+// that specifically exercise the ON state override it explicitly.
+const DISCONNECTED: EmailWatchStatus = {
+  connected: false,
+  enabled: false,
+  autoWriteEnabled: false,
+};
 const CONNECTED: EmailWatchStatus = {
   connected: true,
   address: 'me@gmail.com',
   enabled: true,
   lastCheckAt: 1_700_000_000_000,
+  autoWriteEnabled: false,
 };
 
 function renderSection(overrides: Record<string, (...args: never[]) => unknown> = {}) {
@@ -271,6 +280,92 @@ describe('EmailWatchSection — connected', () => {
     });
     await waitFor(() => {
       expect(screen.getByText('Could not update the email-tracking setting.')).toBeInTheDocument();
+    });
+  });
+});
+
+describe('EmailWatchSection — auto-write toggle', () => {
+  // Pins the new default: OFF unless the user explicitly turns it on. Uses
+  // CONNECTED as-is (autoWriteEnabled: false) rather than an override, so a
+  // careless flip of the fixture back to `true` would also fail this test.
+  it('reads OFF by default — reflects autoWriteEnabled: false from the backend', async () => {
+    renderSection({ 'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED) });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('reflects autoWriteEnabled: true when the backend says the user turned it on', async () => {
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue({ ...CONNECTED, autoWriteEnabled: true }),
+    });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('calls the auto-write setter with the new value when toggled', async () => {
+    // Starts OFF (CONNECTED's default) — toggling it turns it ON.
+    const setAutoWriteEnabled = vi.fn().mockResolvedValue({ ...CONNECTED, autoWriteEnabled: true });
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.setAutoWriteEnabled': setAutoWriteEnabled,
+    });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    await userEvent.click(sw);
+
+    await waitFor(() => {
+      expect(setAutoWriteEnabled).toHaveBeenCalledWith(true);
+    });
+  });
+
+  it('shows a fixed-copy notification when toggling auto-write fails', async () => {
+    const setAutoWriteEnabled = vi.fn().mockRejectedValue(new Error('store write failed'));
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.setAutoWriteEnabled': setAutoWriteEnabled,
+    });
+
+    const sw = await screen.findByRole('switch', { name: 'Update status automatically' });
+    await userEvent.click(sw);
+
+    await waitFor(() => {
+      expect(screen.getByText('Could not update the email-tracking setting.')).toBeInTheDocument();
+    });
+  });
+
+  // The real backend default is now OFF (was ON before five security
+  // rounds). Before the status query resolves, the component must never
+  // commit the switch to ON — that is the unsafe direction now: it would
+  // suggest auto-write is already protecting/active before that is known.
+  // There is exactly ONE gate that gives the switch a value at all —
+  // `{status?.connected ? … }` in the component, which is what narrows
+  // `status` for the `<Switch checked={status.autoWriteEnabled}>` a few
+  // lines below it. So exercising that gate's pending window (this test)
+  // is the whole guarantee: resolving to `true` here proves the switch
+  // never flashed `true` — or any value — before this point.
+  it('never renders the auto-write switch as ON before the status is known — no premature commit', async () => {
+    let resolveStatus!: (value: EmailWatchStatus) => void;
+    const statusFn = vi.fn(
+      () => new Promise<EmailWatchStatus>((resolve) => (resolveStatus = resolve))
+    );
+    renderSection({ 'emailWatch.status': statusFn });
+
+    // While the query is in flight there is no `connected` value yet either,
+    // so the switch (like the rest of the connected view) is simply absent —
+    // never present with a committed `aria-checked="true"`.
+    expect(
+      screen.queryByRole('switch', { name: 'Update status automatically' })
+    ).not.toBeInTheDocument();
+
+    resolveStatus({ ...CONNECTED, autoWriteEnabled: true });
+
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Update status automatically' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
     });
   });
 });

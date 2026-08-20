@@ -54,6 +54,19 @@ export const useSetEmailWatchEnabled = () => {
   });
 };
 
+/** Toggle the v2 auto-write opt-in (default OFF) — independent of the poller
+ *  opt-in above. Not the primary safeguard even when on: every auto-write
+ *  always lands unconfirmed regardless of this toggle, requiring the
+ *  user's own adjudication. */
+export const useSetAutoWriteEnabled = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation<EmailWatchStatus, Error, boolean>({
+    mutationFn: (enabled) => api.emailWatch.setAutoWriteEnabled(enabled),
+    onSuccess: (data) => qc.setQueryData(keys.emailWatch.status, data),
+  });
+};
+
 /** Manual re-check: re-validates the existing connection, updates lastCheckAt. */
 export const useEmailWatchCheckNow = () => {
   const api = useAppClient();

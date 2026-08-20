@@ -40,6 +40,14 @@ fn every_match_percent_surface_runs_the_same_pre_processing() {
         "the extension's zero-egress guarantee is structural: it must never reach the \
          provider layer, and it never shows a combined number"
     );
+    assert_eq!(
+        MatchSurface::JobAdText.translates(),
+        MatchSurface::JobsPage.translates(),
+        "the Score tab's ad-hoc text surface renders under the SAME 'Match' label as the \
+         Jobs page and runs INSIDE the app against a user-owned résumé (not the untrusted \
+         browser bridge), so it has no zero-egress obligation and must run the same pipeline \
+         — unlike Extension, which is the one deliberate exception"
+    );
 }
 
 /// The résumé language is resolved from ONE source — the persisted
@@ -94,6 +102,11 @@ fn only_a_real_document_resume_is_written_to_the_document_vector_index() {
     assert_eq!(
         MatchSurface::Extension.resume_vector_home(),
         ResumeVectorHome::DocumentIndex
+    );
+    assert_eq!(
+        MatchSurface::JobAdText.resume_vector_home(),
+        ResumeVectorHome::DocumentIndex,
+        "the Score tab scores a real stored résumé, not a text snapshot"
     );
     assert_eq!(
         MatchSurface::Autopilot.resume_vector_home(),
@@ -945,6 +958,340 @@ async fn a_jd_with_no_extractable_keywords_reports_an_unavailable_score() {
     assert!(
         result["gaps"].as_array().is_some_and(|g| g.is_empty()),
         "…and no gap terms either — there were no keywords to miss"
+    );
+}
+
+// ── the Score tab's ad-hoc text surface (job_ad_text_id / MatchSurface::JobAdText) ──
+
+/// [`job_ad_text_id`] must be stable (repeated opens of the SAME hashed text
+/// reuse the SAME `match_scores` row) and prefixed so it can never collide
+/// with a real `PostingsCache` id. Mirrors `extension_bridge::match_live`'s
+/// `adhoc_job_id_is_stable_and_prefixed`.
+#[test]
+fn job_ad_text_id_is_stable_and_prefixed() {
+    let a = job_ad_text_id("Senior Rust engineer, Kubernetes, Postgres.");
+    let b = job_ad_text_id("Senior Rust engineer, Kubernetes, Postgres.");
+    assert_eq!(
+        a, b,
+        "the same job text must yield the same cache key — a repeated open of the same \
+         posting must reuse the same row"
+    );
+    assert!(
+        a.starts_with("job-ad-text:"),
+        "must be namespaced so it can never collide with a real PostingsCache id"
+    );
+}
+
+#[test]
+fn job_ad_text_id_differs_per_text() {
+    let a = job_ad_text_id("posting one");
+    let b = job_ad_text_id("posting two");
+    assert_ne!(a, b, "different postings must never share a cache key");
+}
+
+/// BLOCKING regression pin: the Score tab's ad-hoc pre-processing
+/// ([`job_ad_text_blob`]) must strip markdown IDENTICALLY to the Jobs-page
+/// path ([`posting_to_text`]) for the SAME description. Before this fix,
+/// `score_resume_against_text` hashed and scored `job_text` raw — a markdown
+/// anchor like `[Apply now](https://acme.example.com/jobs)` collapsed to
+/// `Apply now` on the Jobs page (the bare url deleted) but leaked the JD
+/// keywords `https`/`acme`/`example`/`com` here, inflating the coverage
+/// denominator with tokens no résumé can ever contain while diverging from
+/// the SAME posting's Jobs-page percentage. `posting_to_text` is driven with
+/// an empty title and no requirements — the ONE axis that legitimately still
+/// differs between the two surfaces (composition, not markdown-handling) —
+/// so this test isolates the description-only transformation both surfaces
+/// must share.
+#[test]
+fn job_ad_text_blob_matches_posting_to_text_for_the_same_markdown_description() {
+    let description = "[Apply now](https://acme.example.com/jobs) to help us build reliable \
+                        systems with Rust and Kubernetes. See more at \
+                        https://acme.example.com/careers.";
+    let posting = json!({ "title": "", "description": description });
+
+    let via_jobs_page = posting_to_text(&posting);
+    let via_score_tab = job_ad_text_blob(description);
+
+    assert_eq!(
+        via_jobs_page, via_score_tab,
+        "identical description must pre-process IDENTICALLY on both surfaces"
+    );
+    let blob = via_score_tab.expect("a real description must yield a scorable blob");
+    assert!(
+        !blob.contains("https") && !blob.contains("acme") && !blob.contains("example"),
+        "markdown links and bare URLs must be stripped, never tokenized into the keyword set: {blob}"
+    );
+    assert!(
+        blob.contains("Apply now") && blob.contains("reliable systems") && blob.contains("Rust"),
+        "the anchor TEXT and the rest of the JD vocabulary must survive: {blob}"
+    );
+}
+
+/// The mandated absolute-expectation check: an empty/keyword-less posting
+/// scored through the Score tab's [`MatchSurface::JobAdText`] surface must
+/// report the HONEST degrade (a real, named "unavailable" state), never a
+/// fabricated plausible-looking number. Anchored to the kernel's OWN
+/// absolute-zero contract — not to a second, independently derived score —
+/// exactly the shape `a_jd_with_no_extractable_keywords_reports_an_unavailable_score`
+/// already pins for the Autopilot surface, driven here on the new surface.
+#[tokio::test]
+async fn job_ad_text_surface_reports_the_honest_degrade_for_a_keyword_less_posting() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[]);
+    let resume = DocumentRecord {
+        id: "doc-en".into(),
+        title: String::new(),
+        name: String::new(),
+        locale: None,
+        text: RESUME_TEXT.into(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    let active = store.embedding_config();
+
+    // Punctuation and digits only: nothing survives keyword extraction — the
+    // same garbled fixture the Autopilot-surface test above uses.
+    let job_text = "--- 123 456 --- *** ///".to_string();
+    let job_id = job_ad_text_id(&job_text);
+    let result = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        &job_id,
+        Some(job_text),
+        0,
+        MatchSurface::JobAdText,
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        result["ats"].as_f64(),
+        Some(0.0),
+        "an unscorable posting must report the honest absolute zero, never a fabricated score"
+    );
+    assert_eq!(result["combined"].as_f64(), Some(0.0));
+    assert!(result["gaps"].as_array().is_some_and(|g| g.is_empty()));
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_KEYWORD),
+        "keyword-only is structural on this surface, not a default"
+    );
+    let explanation = result["explanation"].as_str().unwrap_or_default();
+    assert!(
+        explanation.contains("No extractable keywords"),
+        "an unscorable posting must be named as such: {explanation}"
+    );
+    assert!(
+        !explanation.contains("0%"),
+        "…and must never be reported as a 0% match, which is a real measurement: {explanation}"
+    );
+}
+
+/// The ONE runnable check the task requires: identical job text must score
+/// IDENTICALLY through the Score tab's ad-hoc [`MatchSurface::JobAdText`] path
+/// and the Jobs-page [`MatchSurface::JobsPage`] path — same ruler, no forked
+/// scorer. Driven on the German→English translation fixture (not a same-
+/// language pair) so the assertion actually exercises the shared pre-
+/// processing pipeline: if `JobAdText` ever stopped translating (e.g. by
+/// copy-pasting `Extension`'s behaviour), the two surfaces would tokenize
+/// different-language text and this comparison would catch it, unlike a
+/// same-language fixture where a missing translate step is invisible.
+#[tokio::test]
+async fn the_score_tab_surface_runs_the_same_pipeline_as_the_jobs_page_for_identical_text() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let resume = DocumentRecord {
+        id: "doc-en".into(),
+        title: String::new(),
+        name: String::new(),
+        locale: None, // → "en"
+        text: RESUME_TEXT.into(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    let active = store.embedding_config();
+
+    let jobs_page = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        "posting-1",
+        Some(GERMAN_JD.to_string()),
+        0,
+        MatchSurface::JobsPage,
+        None,
+    )
+    .await;
+
+    let job_id = job_ad_text_id(GERMAN_JD);
+    let score_tab = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        &job_id,
+        Some(GERMAN_JD.to_string()),
+        0,
+        MatchSurface::JobAdText,
+        None,
+    )
+    .await;
+
+    // Absolute anchor, not just cross-equality: every assertion below compares
+    // the two surfaces to EACH OTHER, so a degraded/stubbed shared kernel
+    // (translation silently no-op on both sides, the tokenizer returning
+    // empty) would let both move together and stay green — the exact shape
+    // this repo has shipped before. This fixture pair overlaps heavily on
+    // real vocabulary (Rust/Kubernetes/distributed systems on both sides), so
+    // a genuinely working pipeline must clear a real floor, not just agree
+    // with itself.
+    assert!(
+        jobs_page["combined"].as_f64().unwrap_or(0.0) > 40.0,
+        "absolute floor: got {jobs_page:?} — a dead/stubbed pipeline returning 0 on both sides \
+         would still pass every equality assertion below"
+    );
+    assert_eq!(
+        jobs_page["scoreSource"].as_str(),
+        Some(SCORE_SOURCE_KEYWORD),
+        "both calls pass semantic_enabled = 0 — the parity claim only holds keyword-only, per \
+         MatchSurface's doc"
+    );
+
+    assert_eq!(
+        jobs_page["ats"], score_tab["ats"],
+        "identical job text must produce identical keyword coverage on both surfaces"
+    );
+    assert_eq!(jobs_page["combined"], score_tab["combined"]);
+    assert_eq!(jobs_page["gaps"], score_tab["gaps"]);
+    assert_eq!(jobs_page["scoreSource"], score_tab["scoreSource"]);
+    assert_ne!(
+        jobs_page["jobId"], score_tab["jobId"],
+        "distinct cache identities by design — a real posting id vs. the content-addressed \
+         text id — everything else must still match"
+    );
+}
+
+// ── match_resume_text's pure precondition (resolve_resume_and_text) ──────────
+
+/// The résumé-not-found error must be returned BEFORE any clamp/cache work —
+/// mirrors `match_resume`'s own resume-not-found shape and the errors-never-
+/// cached invariant.
+#[test]
+fn resolve_resume_and_text_reports_resume_not_found() {
+    let (_dir, store) = scoring_store();
+    let err = resolve_resume_and_text(&store, "missing-resume", "some job text".into())
+        .expect_err("no such resume must be an error, not a silent default");
+    assert_eq!(err["error"], "resume not found: missing-resume");
+}
+
+/// Job text over [`MAX_JOB_DESCRIPTION_BYTES`] must be clamped, not rejected —
+/// mirrors `resume_trim_suggestions`'s convention (an advisory/estimate score
+/// on the first 200 kB beats an error dialog for unbounded scraper/user input
+/// reaching this new IPC surface).
+#[test]
+fn resolve_resume_and_text_clamps_oversized_job_text() {
+    let (_dir, store) = scoring_store();
+    store
+        .insert(&DocumentRecord {
+            id: "doc-1".into(),
+            title: "Resume".into(),
+            name: "resume.pdf".into(),
+            locale: None,
+            text: RESUME_TEXT.into(),
+            pages: None,
+            created_at: 0,
+            indexed: false,
+            is_default: false,
+            keywords_json: None,
+        })
+        .unwrap();
+
+    let oversized = "x".repeat(MAX_JOB_DESCRIPTION_BYTES + 500);
+    let (resume, clamped) =
+        resolve_resume_and_text(&store, "doc-1", oversized).expect("a real resume id must resolve");
+    assert_eq!(resume.id, "doc-1");
+    assert!(
+        clamped.len() <= MAX_JOB_DESCRIPTION_BYTES,
+        "job text over the cap must be truncated, not passed through unbounded"
+    );
+}
+
+/// The sibling to the test above with a genuinely MULTIBYTE fixture. That
+/// one clamps `MAX_JOB_DESCRIPTION_BYTES + 500` bytes of pure ASCII
+/// (`"x".repeat(...)`), which never exercises `clamp_to_bytes`'s
+/// char-boundary walk-back at all -- every byte offset in pure ASCII is
+/// already a char boundary, so the interesting code path is untested.
+/// An ASCII-only fixture hiding multibyte behaviour is the exact class
+/// that produced this branch's own dotted-I/e-acute byte-offset
+/// crash-loop incident: the code looked correct, the tests were green, and the
+/// only input that mattered was never tried.
+///
+/// Places a 4-byte emoji EXACTLY straddling the cap (its first byte lands
+/// at `MAX_JOB_DESCRIPTION_BYTES - 1`, one byte before it), so the naive
+/// cutoff at the cap would split it mid-character and the walk-back MUST
+/// move -- the SAME proven fixture shape `clamp_to_bytes` already has its
+/// own direct unit test for (`oversized_input_is_clamped_rather_than_
+/// processed_whole`, this file), applied through `resolve_resume_and_text`
+/// instead: a future change that inlines the clamp, reorders it, or adds
+/// a preprocessing step ahead of it inside THIS fn specifically would
+/// still be caught here, not only at the lower-level primitive.
+#[test]
+fn resolve_resume_and_text_clamps_oversized_multibyte_job_text() {
+    let (_dir, store) = scoring_store();
+    store
+        .insert(&DocumentRecord {
+            id: "doc-1".into(),
+            title: "Resume".into(),
+            name: "resume.pdf".into(),
+            locale: None,
+            text: RESUME_TEXT.into(),
+            pages: None,
+            created_at: 0,
+            indexed: false,
+            is_default: false,
+            keywords_json: None,
+        })
+        .unwrap();
+
+    let oversized = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1) + "\u{1F600}" + &"b".repeat(2_500);
+    assert!(
+        oversized.len() > MAX_JOB_DESCRIPTION_BYTES,
+        "precondition: the fixture must actually exceed the cap"
+    );
+
+    let (resume, clamped) =
+        resolve_resume_and_text(&store, "doc-1", oversized).expect("a real resume id must resolve");
+    assert_eq!(resume.id, "doc-1");
+
+    // Absolute against the cap, never against the input's own length --
+    // proves the walk-back moved exactly one byte back from the naive
+    // cutoff and stopped at the FIRST valid boundary, not some other one.
+    assert_eq!(
+        clamped.len(),
+        MAX_JOB_DESCRIPTION_BYTES - 1,
+        "clamped multibyte job text must land exactly on the char \
+         boundary immediately before the straddling character"
+    );
+    assert!(
+        !clamped.contains('\u{1F600}'),
+        "the whole straddling character must be dropped, not partially \
+         included"
+    );
+    assert!(
+        String::from_utf8(clamped.into_bytes()).is_ok(),
+        "clamping a multibyte string must never produce invalid UTF-8"
     );
 }
 

@@ -58,6 +58,7 @@ vi.mock('motion/react', () => ({
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'test-model',
   useCanUseAI: () => ({ canUse: true, reason: undefined }),
+  useSelectedProvider: () => 'ollama',
 }));
 
 // ── Service hooks — no real IPC / QueryClient needed ─────────────────────────

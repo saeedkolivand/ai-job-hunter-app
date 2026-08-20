@@ -38,7 +38,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | ------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | [`ai`](#ai)                           | 29      |                                                                                                                                        |
 | [`aiGenerations`](#aigenerations)     | 5       |                                                                                                                                        |
-| [`applications`](#applications)       | 8       | Application-tracking capability (ADR 0001).                                                                                            |
+| [`applications`](#applications)       | 10      | Application-tracking capability (ADR 0001).                                                                                            |
 | [`autopilot`](#autopilot)             | 11      | Job-discovery agent:                                                                                                                   |
 | [`boards`](#boards)                   | 6       |                                                                                                                                        |
 | [`cliAgents`](#cliagents)             | 3       |                                                                                                                                        |
@@ -49,14 +49,14 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`dialog`](#dialog)                   | 1       |                                                                                                                                        |
 | [`discovery`](#discovery)             | 3       | Discovery namespace (ADR-030 §f):                                                                                                      |
 | [`documents`](#documents)             | 9       |                                                                                                                                        |
-| [`emailWatch`](#emailwatch)           | 5       |                                                                                                                                        |
+| [`emailWatch`](#emailwatch)           | 6       |                                                                                                                                        |
 | [`extensionBridge`](#extensionbridge) | 9       |                                                                                                                                        |
 | [`geocode`](#geocode)                 | 1       |                                                                                                                                        |
 | [`github`](#github)                   | 1       |                                                                                                                                        |
 | [`jobPreferences`](#jobpreferences)   | 5       |                                                                                                                                        |
 | [`jobs`](#jobs)                       | 5       |                                                                                                                                        |
 | [`linkedin`](#linkedin)               | 5       |                                                                                                                                        |
-| [`match`](#match)                     | 2       |                                                                                                                                        |
+| [`match`](#match)                     | 3       |                                                                                                                                        |
 | [`menu`](#menu)                       | 3       |                                                                                                                                        |
 | [`notifications`](#notifications)     | 9       | Notification Center capability (Phase 2).                                                                                              |
 | [`privacy`](#privacy)                 | 5       |                                                                                                                                        |
@@ -958,6 +958,35 @@ deliberately has no field for it. There is **no** counts command:
 overdue/upcoming badges are derived client-side from the `nextActionAt` values
 already carried by `list()` (see `features/applications/lib/pipeline.ts`).
 
+## Email-derived status adjudication (v2)
+
+`get()`'s `events` now also carry `StatusEvent.source`/
+`StatusEvent.confirmed`. A `source: 'email'` row with `confirmed: false`
+is a provisional, auto-written transition (see the `email.match` notification)
+that the timeline must render distinctly, with Accept/Reject affordances:
+
+- `acceptStatusEvent` sets `confirmed` to `true` in place — the status itself is
+  untouched (the auto-write already applied it).
+- `rejectStatusEvent` reverts the status BY COMPARE-AND-SET (a status the user
+  changed by hand in the meantime is never clobbered — the row is simply
+  marked reviewed instead) and APPENDS a reversal event
+  (`source: 'email_reject'`); `status_events` stays append-only, so the
+  original row is never edited or deleted.
+
+**Both require `StatusEvent.eventId` — the id of the SPECIFIC row
+being actioned, not just the application id.** Two provisional rows can
+coexist (a confirmation email, then a later rejection email, both still
+unreviewed); always pass the `eventId` of the exact row the Accept/Reject
+affordance was rendered on. Both are idempotent no-ops (`{ success: true
+}`, nothing changed) when `eventId` does not resolve to a pending
+unconfirmed row for `id` — never an error a UI needs to branch on.
+The invariant runs the other way, and it is the one that matters:
+**`confirmed: false` marks exactly the rows a human has not ruled on
+yet** — see `StatusEvent.confirmed`, which owns the rule and
+enumerates what may write it. That is the entire safety model for a
+classifier with a recorded precision limit (see `docs/knowledge/
+decision-records/0013-email-confirmation-watching.md`).
+
 Contract: `ApplicationsContract` in `packages/shared/src/ipc/contracts/applications.ts`
 
 ### Methods — `applications`
@@ -965,6 +994,8 @@ Contract: `ApplicationsContract` in `packages/shared/src/ipc/contracts/applicati
 - [`applications.list`](#applicationslist)
 - [`applications.get`](#applicationsget)
 - [`applications.setStatus`](#applicationssetstatus)
+- [`applications.acceptStatusEvent`](#applicationsacceptstatusevent)
+- [`applications.rejectStatusEvent`](#applicationsrejectstatusevent)
 - [`applications.update`](#applicationsupdate)
 - [`applications.remove`](#applicationsremove)
 - [`applications.track`](#applicationstrack)
@@ -996,6 +1027,34 @@ setStatus(args: {
 Transition the status, optionally recording a free-text `note` — persisted
 on the appended `status_events` row and returned as `StatusEvent.note` by
 `get()` (the interaction log).
+
+#### `applications.acceptStatusEvent`
+
+```ts
+acceptStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
+```
+
+Accept the SPECIFIC email-derived, unconfirmed status-event row
+`eventId` names — sets its `StatusEvent.confirmed` flag to `true`; the
+status itself is untouched. `eventId` must be the
+`StatusEvent.eventId` of the exact row the Accept affordance was
+rendered on — see `StatusEvent.eventId`'s doc for why "the most
+recent pending row" is not a safe substitute. A no-op when `eventId`
+does not resolve to a pending row for `id` (still `{ success: true }`,
+not an error).
+
+#### `applications.rejectStatusEvent`
+
+```ts
+rejectStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
+```
+
+Reject the SPECIFIC email-derived, unconfirmed status-event row
+`eventId` names — reverts the status by compare-and-set (never clobbers
+a status that moved on, whether by the user's own hand or a later
+email, in the meantime) and appends a reversal event. Same
+`eventId`-targeting requirement as `acceptStatusEvent`. A no-op
+when `eventId` does not resolve to a pending row.
 
 #### `applications.update`
 
@@ -1034,17 +1093,19 @@ Returns a sync unsubscribe handle.
 
 `APPLICATIONS_CHANNELS` in `packages/shared/src/ipc/contracts/applications.ts`:
 
-| Key               | Channel                        |
-| ----------------- | ------------------------------ |
-| `list`            | `applications:list`            |
-| `get`             | `applications:get`             |
-| `setStatus`       | `applications:setStatus`       |
-| `update`          | `applications:update`          |
-| `remove`          | `applications:remove`          |
-| `track`           | `applications:track`           |
-| `saveFromPosting` | `applications:saveFromPosting` |
+| Key                 | Channel                          |
+| ------------------- | -------------------------------- |
+| `list`              | `applications:list`              |
+| `get`               | `applications:get`               |
+| `setStatus`         | `applications:setStatus`         |
+| `acceptStatusEvent` | `applications:acceptStatusEvent` |
+| `rejectStatusEvent` | `applications:rejectStatusEvent` |
+| `update`            | `applications:update`            |
+| `remove`            | `applications:remove`            |
+| `track`             | `applications:track`             |
+| `saveFromPosting`   | `applications:saveFromPosting`   |
 
-`APPLICATIONS_CHANNELS` registers 7 of this namespace's 8 methods; the rest have no entry in it.
+`APPLICATIONS_CHANNELS` registers 9 of this namespace's 10 methods; the rest have no entry in it.
 
 ### Types — `applications`
 
@@ -2276,6 +2337,7 @@ Contract: `EmailWatchContract` in `packages/shared/src/ipc/contracts/emailWatch.
 - [`emailWatch.connect`](#emailwatchconnect)
 - [`emailWatch.disconnect`](#emailwatchdisconnect)
 - [`emailWatch.setEnabled`](#emailwatchsetenabled)
+- [`emailWatch.setAutoWriteEnabled`](#emailwatchsetautowriteenabled)
 - [`emailWatch.checkNow`](#emailwatchchecknow)
 
 #### `emailWatch.status`
@@ -2306,6 +2368,15 @@ Removes the keychain app password and clears the account row.
 setEnabled(enabled: boolean): Promise<EmailWatchStatus>;
 ```
 
+#### `emailWatch.setAutoWriteEnabled`
+
+```ts
+setAutoWriteEnabled(enabled: boolean): Promise<EmailWatchStatus>;
+```
+
+The v2 auto-write opt-in — see `EmailWatchStatus.autoWriteEnabled`.
+Echoes the fresh status back, like every other mutating call here.
+
 #### `emailWatch.checkNow`
 
 ```ts
@@ -2319,13 +2390,14 @@ background poller runs). Rejects if a check already ran too recently.
 
 `EMAIL_WATCH_CHANNELS` in `packages/shared/src/ipc/contracts/emailWatch.ts`:
 
-| Key          | Channel                 |
-| ------------ | ----------------------- |
-| `status`     | `emailWatch:status`     |
-| `connect`    | `emailWatch:connect`    |
-| `disconnect` | `emailWatch:disconnect` |
-| `setEnabled` | `emailWatch:setEnabled` |
-| `checkNow`   | `emailWatch:checkNow`   |
+| Key                   | Channel                          |
+| --------------------- | -------------------------------- |
+| `status`              | `emailWatch:status`              |
+| `connect`             | `emailWatch:connect`             |
+| `disconnect`          | `emailWatch:disconnect`          |
+| `setEnabled`          | `emailWatch:setEnabled`          |
+| `setAutoWriteEnabled` | `emailWatch:setAutoWriteEnabled` |
+| `checkNow`            | `emailWatch:checkNow`            |
 
 ### Types — `emailWatch`
 
@@ -2341,12 +2413,15 @@ Declared in `packages/shared/src/ipc/contracts/emailWatch.ts`.
  * backend-owned background poller periodically fetches new INBOX headers,
  * fingerprints them as plausible application-confirmation emails, and
  * fuzzy-matches company/title against the user's saved applications — a
- * match surfaces as a Notification Center card (never an auto-write; the
- * user still marks applied themselves). `checkNow` runs that SAME pass
- * on-demand, gated by a short server-side min-interval guard (rejects if a
- * check ran too recently) so it can't be used to spam Gmail logins.
- * `appPassword` is write-only: sent once to `connect`, stored in the OS
- * keychain, and never returned or logged.
+ * match surfaces as a Notification Center card AND (v2, gated by
+ * {@link EmailWatchStatus.autoWriteEnabled}) an UNCONFIRMED status write the
+ * application's timeline surfaces with Accept/Reject
+ * (`applications.acceptStatusEvent`/`rejectStatusEvent`) — never a
+ * `confirmed: true` write; adjudication is the whole safety model. `checkNow`
+ * runs that SAME pass on-demand, gated by a short server-side min-interval
+ * guard (rejects if a check ran too recently) so it can't be used to spam
+ * Gmail logins. `appPassword` is write-only: sent once to `connect`, stored
+ * in the OS keychain, and never returned or logged.
  */
 
 /** Current connection status. `connected` means an account has been
@@ -2360,6 +2435,12 @@ export interface EmailWatchStatus {
   lastCheckAt?: number;
   /** Timestamp of the most recent email→application match, if any. */
   lastMatchAt?: number;
+  /** The v2 auto-write opt-in — default OFF, independent of `enabled`. Not
+   *  the primary safeguard even when on: every auto-write always lands
+   *  `confirmed: false` regardless of this toggle, requiring the user's own
+   *  adjudication; the toggle only decides whether the write happens at
+   *  all, in favour of the notify-only v1 behaviour when off. */
+  autoWriteEnabled: boolean;
 }
 
 export interface EmailWatchConnectRequest {
@@ -2876,6 +2957,7 @@ Contract: `MatchContract` in `packages/shared/src/ipc/contracts/match.ts`
 ### Methods — `match`
 
 - [`match.resume`](#matchresume)
+- [`match.text`](#matchtext)
 - [`match.trimSuggestions`](#matchtrimsuggestions)
 
 #### `match.resume`
@@ -2893,6 +2975,27 @@ Keyword-only by default. Semantic (embedding) scoring is opt-in per
 request via `semanticScoringEnabled`; omitting it means keyword-only, not
 "provider decides".
 
+#### `match.text`
+
+```ts
+text(req: MatchTextRequest): Promise<MatchScore>;
+```
+
+Score one résumé against arbitrary job-ad TEXT — for a caller with a
+`jobDesc: string` in hand but no `PostingsCache` id (e.g. the Score tab in
+`JobAdView`, whose `TailorFlow` parent receives an `Application` /
+`AutopilotFoundJob`, neither of which carries one). Routes through the
+SAME shared kernel `resume()` does, over the SAME pre-processed text (the
+Rust command strips markdown before scoring, exactly as `resume()` does
+for a cached posting) — not a second scorer — but two axes still
+legitimately diverge from `resume()`: this call never has a title or
+requirements to compose in (only the description `JobAdView` holds), and
+semantic (embedding) scoring is always OFF here, never
+caller-configurable, so its number only matches `resume()`'s when
+semantic scoring is off there too. Content-addressed on the pre-processed
+job text, so repeated opens of the same posting reuse that cached score.
+`scoreSource` is therefore always `'keyword'` on the result.
+
 #### `match.trimSuggestions`
 
 ```ts
@@ -2906,11 +3009,12 @@ trimSuggestions(req: ResumeTrimSuggestionsRequest): Promise<TrimSuggestions>;
 | Key               | Channel                 |
 | ----------------- | ----------------------- |
 | `resume`          | `match:resume`          |
+| `text`            | `match:text`            |
 | `trimSuggestions` | `match:trimSuggestions` |
 
 ### Referenced types — `match`
 
-- `packages/shared/src/schemas/index.ts` — `MatchResumeRequest`, `ResumeTrimSuggestionsRequest`
+- `packages/shared/src/schemas/index.ts` — `MatchResumeRequest`, `MatchTextRequest`, `ResumeTrimSuggestionsRequest`
 - `packages/shared/src/types/index.ts` — `MatchScore`, `TrimSuggestions`
 
 ---

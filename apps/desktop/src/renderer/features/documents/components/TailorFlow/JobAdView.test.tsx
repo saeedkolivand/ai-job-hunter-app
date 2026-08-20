@@ -8,6 +8,10 @@
  *   4. Truncation hint visible iff description ends with ellipsis.
  *   5. ExternalLink "view job" rendered only when jobUrl is provided.
  *   6. TextArea a11y: short aria-label (tab key, NOT editHelper sentence) + aria-describedby wiring.
+ *   7. Score tab query gating — opening it snapshots the posting text ONCE;
+ *      editing it afterwards never re-enables the query (no per-keystroke
+ *      scoring storm — this surface translates, so a live wire could route a
+ *      slow local-model call onto every keystroke).
  *
  * Strategy:
  *  - `@ajh/translations` returns keys as-is (deterministic assertions).
@@ -20,7 +24,7 @@
  */
 
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -42,6 +46,11 @@ vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: ({ className }: { className?: string }) => (
     <div data-testid="model-selector-stub" className={className} />
   ),
+  // Score-tab CLI-agent egress disclosure reads this — 'ollama' (kind:
+  // local-server) keeps every existing test in this file's assertions
+  // unaffected; the real-copy assertion for the disclosure itself lives in
+  // JobAdView.i18n.test.tsx.
+  useSelectedProvider: () => 'ollama',
 }));
 
 // ── ExternalLink — thin anchor wrapper, no special provider needed ─────────────
@@ -62,6 +71,32 @@ vi.mock('@/components/ui/ExternalLink', () => ({
 
 vi.mock('@/lib/generate', () => ({
   OUTPUT_LANGUAGES: [{ code: 'en', endonym: 'English' }],
+}));
+
+// ── useJobAdTextMatchScore — the Score tab's only data source. Stubbed (as a
+// tracked vi.fn, not a plain arrow) so no QueryClient/AppClient/IPC is needed
+// here, while section 10 below can still assert on ITS call arguments — the
+// component-level guard that a keystroke never flips `enabled` to `true`.
+// The Score tab's real vs. "not scored" render logic is covered separately in
+// JobAdView.i18n.test.tsx against REAL translated copy. Most tests below
+// never open the Score tab, but the hook is still called unconditionally on
+// every render (Rules of Hooks), so SOME `@/services` binding must exist.
+// `mockUseJobAdTextMatchScore` (the `mock`-prefixed name) is Vitest's
+// documented exception to the "no out-of-scope refs in a hoisted factory"
+// rule — see MatchScoresProvider.test.tsx for the same pattern.
+
+const mockUseJobAdTextMatchScore = vi.fn(
+  (_resumeId: string | null, _jobText: string, _enabled?: boolean) => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  })
+);
+
+vi.mock('@/services', () => ({
+  useJobAdTextMatchScore: (...args: Parameters<typeof mockUseJobAdTextMatchScore>) =>
+    mockUseJobAdTextMatchScore(...args),
 }));
 
 // ── Import component AFTER all mocks ─────────────────────────────────────────
@@ -431,5 +466,118 @@ describe('JobAdView — tab resync on posting change', () => {
 
     // Tab should re-derive to source (no desc).
     expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+  });
+});
+
+// ── 9. Score tab — presence + empty-state wiring ─────────────────────────────
+// The "never a 0" / "never reads ATS score" guarantees are covered against REAL
+// translated copy in JobAdView.i18n.test.tsx (this file's `t` is a raw-key echo,
+// which can't catch either regression). This block only covers structural wiring.
+
+describe('JobAdView — Score tab presence and empty states', () => {
+  it('renders a third "score" tab option alongside summary/source', () => {
+    render(<JobAdView {...makeProps()} />);
+    expect(screen.getByText('autopilot.apply.jobAdView.scoreTab')).toBeInTheDocument();
+  });
+
+  it('shows the no-resume reason when resumeId is absent (never a score)', async () => {
+    render(<JobAdView {...makeProps({ resumeId: undefined })} />);
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(screen.getByText('jobs.scoreNoResume')).toBeInTheDocument();
+  });
+
+  it('shows the no-posting reason when resumeId is present but the snapshot is empty', async () => {
+    render(<JobAdView {...makeProps({ resumeId: 'resume-1', jobDesc: '' })} />);
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(screen.getByText('autopilot.apply.jobAdView.score.noPosting')).toBeInTheDocument();
+  });
+
+  it('treats a whitespace-only posting as empty (no-posting reason, not a score)', async () => {
+    render(<JobAdView {...makeProps({ resumeId: 'resume-1', jobDesc: '   ' })} />);
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(screen.getByText('autopilot.apply.jobAdView.score.noPosting')).toBeInTheDocument();
+  });
+});
+
+// ── 10. Score tab query gating — no per-keystroke storm ──────────────────────
+// The hazard: `useJobAdTextMatchScore`'s query key is content-addressed on the
+// job text, and the Job Ad sub-tab right next to Score is a live-editing
+// textarea. A naive wire-up (pass `jobDesc` straight through, gate `enabled`
+// only on `tab === 'score'`) still re-enables the query with a NEW key on
+// every keystroke typed while the tab happens to stay open. The fix
+// snapshots `jobDesc` once, at the moment the tab opens. Asserted against the
+// mocked hook's actual `enabled` argument (absolute counts), not a
+// before/after comparison — see JobAdView's `handleTabChange`.
+
+/** Controlled wrapper — `makeProps()`'s `onJobDescChange` is a no-op `vi.fn`,
+ *  so typing in the real component needs a real state loop backing it. */
+function ControlledJobAdView(overrides: Partial<Parameters<typeof JobAdView>[0]> = {}) {
+  const [jobDesc, setJobDesc] = React.useState(overrides.jobDesc ?? '');
+  return <JobAdView {...makeProps({ ...overrides, jobDesc, onJobDescChange: setJobDesc })} />;
+}
+
+describe('JobAdView — Score tab query gating (no per-keystroke storm)', () => {
+  beforeEach(() => {
+    mockUseJobAdTextMatchScore.mockClear();
+  });
+
+  // The real property under test is DISTINCT query keys fired, not raw call
+  // count — the mock is invoked on every render (Rules of Hooks) regardless
+  // of `enabled`, so an incidental extra re-render with the SAME (already-
+  // enabled) key would fail a plain length check while behaviour never
+  // actually changed. Counting `enabled` calls by their distinct `jobText`
+  // argument survives that.
+  function distinctEnabledKeyCount() {
+    return new Set(
+      mockUseJobAdTextMatchScore.mock.calls
+        .filter((call) => call[2] === true)
+        .map((call) => call[1])
+    ).size;
+  }
+
+  it('typing on the source tab never enables the query; opening Score enables it exactly once', async () => {
+    render(
+      <ControlledJobAdView
+        resumeId="resume-1"
+        jobDesc="Full description that looks truncated..."
+        hasDesc
+      />
+    );
+    // Truncated ("...") → starts on the source tab, textarea already visible.
+    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
+
+    await userEvent.type(textarea, 'more');
+    expect(distinctEnabledKeyCount()).toBe(0);
+
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(distinctEnabledKeyCount()).toBe(1);
+  });
+
+  it('re-opening the Score tab re-scores, but editing while it stays open does not', async () => {
+    render(
+      <ControlledJobAdView
+        resumeId="resume-1"
+        jobDesc="Full description that looks truncated..."
+        hasDesc
+      />
+    );
+
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(distinctEnabledKeyCount()).toBe(1);
+
+    // Back to source, edit, and stay there — the (now closed) Score tab's
+    // query must not flip enabled again from a live jobDesc change. The
+    // textarea is RE-QUERIED here (not the reference from before the tab
+    // switch) — the source tab's whole subtree, textarea included, unmounts
+    // while the Score tab is showing, so a stale node would silently no-op.
+    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
+    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
+    await userEvent.type(textarea, ' plus some edits');
+    expect(distinctEnabledKeyCount()).toBe(1);
+
+    // Re-opening IS the explicit action that re-scores the edited (DIFFERENT)
+    // text — a genuinely new key, not just another render.
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
+    expect(distinctEnabledKeyCount()).toBe(2);
   });
 });

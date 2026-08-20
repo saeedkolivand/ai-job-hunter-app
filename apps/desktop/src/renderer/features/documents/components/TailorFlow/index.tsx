@@ -203,6 +203,12 @@ export function TailorFlow({
   // below need its live value (the staged run itself takes no such field —
   // see the shared schema's doc comment on `ResumePipelineRunRequest`).
   const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
+  // The SAVED résumé backing this generation, unedited (see `tailor-state.ts`'s
+  // doc on `resumeDocId`) — distinct from `resumeText`/`methods.getValues('resume')`,
+  // which is the wizard's live, possibly-tailored text. Threaded to JobAdView's
+  // Score tab so it reads the same résumé the Jobs page would score. Undefined
+  // until the user picks a saved résumé on the Resume step (or none is seeded).
+  const resumeId = useWatch({ control: methods.control, name: 'resumeDocId' });
 
   // Keep the "search company" default in sync with the active model's capability:
   // seed it when the capability resolves after a cold-cache seed, and RE-seed it
@@ -444,6 +450,7 @@ export function TailorFlow({
         hasDesc={hasDesc}
         fetchingDesc={fetchingDesc}
         jobUrl={job.url}
+        resumeId={resumeId}
         canUse={canUse}
         reason={reason}
         onGenerate={startGeneration}
@@ -473,6 +480,7 @@ export function TailorFlow({
         hasDesc={hasDesc}
         fetchingDesc={fetchingDesc}
         jobUrl={job.url}
+        resumeId={resumeId}
         jobAdSummary={jobAdSummary}
         activeOut={gen.activeOut}
         setActiveOut={gen.setActiveOut}

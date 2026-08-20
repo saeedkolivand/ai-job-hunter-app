@@ -10,6 +10,7 @@ import {
   useEmailWatchCheckNow,
   useEmailWatchStatus,
   useOpenExternal,
+  useSetAutoWriteEnabled,
   useSetEmailWatchEnabled,
 } from '@/services';
 
@@ -40,8 +41,10 @@ function Spinner() {
  * connection on demand. Once connected, `enabled` governs a backend-owned
  * ~15-minute background poller (PR B); "Check now" runs that SAME
  * fetch+parse+match+notify pass immediately, rate-limited server-side to one
- * per 60s. A match never auto-writes — it only produces a Notification
- * Center card the user confirms themselves.
+ * per 60s. A match always produces a Notification Center card; the SEPARATE
+ * auto-write opt-in below (off by default) additionally writes an
+ * unconfirmed status the application's Timeline tab surfaces with
+ * Accept/Reject when the user has turned it on.
  */
 export function EmailWatchSection() {
   const { t } = useTranslation();
@@ -51,13 +54,13 @@ export function EmailWatchSection() {
   const connect = useConnectEmailWatch();
   const disconnect = useDisconnectEmailWatch();
   const setEnabled = useSetEmailWatchEnabled();
+  const setAutoWrite = useSetAutoWriteEnabled();
   const checkNow = useEmailWatchCheckNow();
   const openExternal = useOpenExternal();
 
   const [address, setAddress] = useState('');
   const [appPassword, setAppPassword] = useState('');
 
-  const connected = status?.connected ?? false;
   const enabled = status?.enabled ?? false;
 
   const handleConnect = async () => {
@@ -89,6 +92,14 @@ export function EmailWatchSection() {
     }
   };
 
+  const handleToggleAutoWrite = async (next: boolean) => {
+    try {
+      await setAutoWrite.mutateAsync(next);
+    } catch {
+      notify.error({ message: t('settings.accounts.emailWatch.toggleFailed') });
+    }
+  };
+
   const handleCheckNow = async () => {
     try {
       await checkNow.mutateAsync();
@@ -109,7 +120,7 @@ export function EmailWatchSection() {
   return (
     <SettingsSection icon={Mail} label={t('settings.accounts.emailWatch.title')}>
       <div className="space-y-4">
-        {connected ? (
+        {status?.connected ? (
           <>
             {/* Connection status */}
             <div className="flex items-center justify-between gap-3">
@@ -138,6 +149,27 @@ export function EmailWatchSection() {
                 disabled={setEnabled.isPending}
                 label={t('settings.accounts.emailWatch.watch.label')}
                 description={t('settings.accounts.emailWatch.watch.description')}
+              />
+            </div>
+
+            {/* v2 auto-write opt-in — OFF by default (five security rounds:
+                the sender-authentication gate is best-effort and a determined
+                sender can fool it, so nobody gets this silently). The copy
+                states that trade-off in plain language. Independent of the
+                watch toggle above: this only gates whether a match WRITES a
+                status, never whether it's checked.
+                `status` is narrowed to defined here — this whole block sits
+                inside `{status?.connected ? … }` above, which TS's control
+                flow analysis treats as proof `status` exists. No loading
+                placeholder is needed: by the time this renders, the value is
+                already known. */}
+            <div className="space-y-2 border-t border-foreground/10 pt-3">
+              <Switch
+                checked={status.autoWriteEnabled}
+                onCheckedChange={(next) => void handleToggleAutoWrite(next)}
+                disabled={setAutoWrite.isPending}
+                label={t('settings.accounts.emailWatch.autoWrite.label')}
+                description={t('settings.accounts.emailWatch.autoWrite.description')}
               />
             </div>
 

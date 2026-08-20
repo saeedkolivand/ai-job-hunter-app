@@ -7,6 +7,16 @@
 //! `commands::autopilot::autopilot_run`, via its own `R7_ALLOW` entry rather
 //! than growing one on the L1 store.
 //!
+//! **v2 slice 3**: [`run_check_inner`]'s per-outcome loop is also where
+//! [`crate::email_watch::auto_write::apply_matched_intent`] gets its ONE
+//! runtime caller (ADR-0013's own text names this module, not `poller`, as
+//! the wiring site — `poller::run_tick` stays pure matching/classification;
+//! this file is the only place with both the `ApplicationStore` handle and
+//! the license to write). Same ordering the store's own doc requires: after
+//! `mark_seen` (dedupe always lands first) and right alongside
+//! `notify_match` (both read the same matched application).
+//!
+
 //! Spawns a single Tokio task on app startup (`start`), after a short
 //! [`STARTUP_GRACE`] so the rest of boot settles first. Every
 //! [`TICK_INTERVAL`] it checks whether a REAL IMAP check is due — gated by
@@ -33,12 +43,14 @@ use chrono::Local;
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 
-use crate::applications::{Application, ApplicationStatus, ApplicationStore};
+use crate::applications::{Application, ApplicationStore};
 use crate::credentials::CredentialStore;
 use crate::db::now_ms;
 use crate::email_watch::imap_client::{self, DEFAULT_IMAP_HOST, DEFAULT_IMAP_PORT};
+use crate::email_watch::intent::EmailIntent;
 use crate::email_watch::{poller, EmailWatchStatus, EmailWatchStore, CREDENTIAL_SLOT};
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, APPLICATIONS_CHANGED};
 use crate::observability::sanitize_reason;
 
 /// Internal check cadence — how often the loop wakes up to ask "is a real
@@ -248,6 +260,14 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
     let host = account
         .host
         .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
+    // Computed BEFORE `host` moves into the `spawn_blocking` closure below
+    // -- consulted again at the auto-write gate near the bottom of this
+    // fn, well past that move. See `parser::host_is_known_to_stamp`'s doc:
+    // this is the write-gate's ONLY signal that isn't message content an
+    // attacker can influence -- it closes the "lone forged
+    // Authentication-Results header, host never stamped a genuine one"
+    // residual for a known-host population.
+    let write_gate_host_ok = crate::email_watch::parser::host_is_known_to_stamp(&host);
     let port = account.port.unwrap_or(DEFAULT_IMAP_PORT);
     let app_password = app
         .try_state::<Mutex<CredentialStore>>()
@@ -259,14 +279,36 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
             AppError::Config("no app password is stored for this account".to_string())
         })?;
 
-    let saved: Vec<Application> = app
-        .try_state::<ApplicationStore>()
+    // Kept (not just consumed into `candidates`/`candidates_for_notify`) —
+    // the post-tick loop below needs the live store for the auto-write call
+    // AND for the eligibility set below.
+    //
+    // Candidacy is no longer "status == Saved" — see
+    // `email_watch::matcher`'s module doc. The candidate list is every
+    // application (live statuses are unconditionally eligible), plus
+    // `unconfirmed_email_write_ids` telling `poller::run_tick` (which
+    // threads it straight through to `matcher::best_match`) which of the
+    // TERMINAL ones are themselves still-unconfirmed email-derived writes
+    // — the one case a terminal status stays a candidate. This is the only
+    // place with the `ApplicationStore` handle needed to compute that set,
+    // which is why it's computed here rather than inside the pure L1
+    // matcher/poller.
+    let applications = app.try_state::<ApplicationStore>();
+    let candidates: Vec<Application> = applications
+        .as_deref()
         .map(|s| s.list())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|a| a.status == ApplicationStatus::Saved)
-        .collect();
-    let saved_for_notify = saved.clone();
+        .unwrap_or_default();
+    let unconfirmed_email_write_ids: std::collections::HashSet<String> = applications
+        .as_deref()
+        .map(|s| {
+            candidates
+                .iter()
+                .filter(|a| s.current_status_is_unconfirmed_email_write(&a.id))
+                .map(|a| a.id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let candidates_for_notify = candidates.clone();
 
     let since = Local::now().date_naive() - chrono::Duration::days(LOOKBACK_DAYS);
     let stored_uidvalidity = account.uidvalidity;
@@ -281,7 +323,8 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
             since,
             stored_uidvalidity,
             stored_last_uid,
-            &saved,
+            &candidates,
+            &unconfirmed_email_write_ids,
         )
     })
     .await
@@ -304,8 +347,9 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
     // the writes (already guarded at the DB layer above — this store method
     // resolved just now, so a race after this point is vanishingly narrow)
     // AND the notification, which has NO DB awareness of its own and would
-    // otherwise fire a "Possible application confirmation" card sourced from
-    // a mailbox the user just disconnected. Bail silently — nothing to
+    // otherwise fire a card (title now chosen by `outcome.intent` — see
+    // `notify_match`) sourced from a mailbox the user just disconnected.
+    // Bail silently — nothing to
     // report for an account that no longer exists. The decision itself is a
     // pure fn (see `should_commit_outcomes`) so it's directly unit-tested,
     // not just exercised indirectly via the DB-layer no-op guards.
@@ -339,8 +383,73 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
             now_ms(),
         )?;
         if let Some(app_id) = &outcome.matched_application_id {
-            if let Some(matched) = saved_for_notify.iter().find(|a| &a.id == app_id) {
-                notify_match(app, matched);
+            if let Some(matched) = candidates_for_notify.iter().find(|a| &a.id == app_id) {
+                notify_match(app, matched, outcome.intent);
+                // v2 slice 3: the actual auto-write. `apply_matched_intent`
+                // reads the LIVE status itself (see its own doc) rather than
+                // taking one from this loop — two matched messages for the
+                // SAME application in one tick (an ordinary ATS thread: a
+                // confirmation then a later rejection inside one 15-minute
+                // window) used to both receive the SAME pre-tick snapshot
+                // here, so the second outcome's compare-and-set raced a
+                // status the FIRST outcome had already moved, lost, and was
+                // silently dropped forever (its uid already stamped by
+                // `mark_seen`, above). Best-effort: a write failure here
+                // (e.g. a transient SQLite contention) must not block
+                // `mark_seen`/`advance_last_uid` for the REST of this tick's
+                // outcomes — `.code()` only (never `.to_string()`/`{e}`), so
+                // a "application not found: <id>"-shaped message can't leak
+                // through this log line.
+                if let Some(applications) = applications.as_deref() {
+                    // `outcome.write_authorized` is message-content-derived
+                    // (write-gate domain + DMARC pass) and, on its own,
+                    // cannot tell a genuinely non-stamping host apart from
+                    // one where an attacker's forged header is the ONLY
+                    // `Authentication-Results` present -- see
+                    // `parser::host_is_known_to_stamp`'s doc. ANDing in
+                    // `write_gate_host_ok` (computed above from the
+                    // account's own locally-stored `host`, BEFORE it moved
+                    // into the tick's `spawn_blocking` closure) closes that
+                    // gap for a known-host population.
+                    match crate::email_watch::auto_write::apply_matched_intent(
+                        applications,
+                        store,
+                        app_id,
+                        outcome.intent,
+                        outcome.write_authorized && write_gate_host_ok,
+                    ) {
+                        // A live application row/status_events row just changed
+                        // underneath whatever's on screen right now (e.g. an open
+                        // `/applications/$id` detail/timeline page) — the same
+                        // event every OTHER backend-initiated write already emits
+                        // (`extension_bridge::import_flow`,
+                        // `extension_bridge::status_update`). Without it, the
+                        // provisional-badge/Accept/Reject UI that makes an
+                        // unconfirmed write visible and adjudicable never appears
+                        // until the user navigates away and back — silently
+                        // defeating the one property ADR-0013 relies on to call
+                        // this gate's residual risk acceptable. `Ok(false)` is a
+                        // gated no-op (opt-in off, not authorized, no intent, no
+                        // valid transition, rejected target, or a lost CAS race)
+                        // and must stay silent — emitting for a write that never
+                        // happened would be its own (milder) lie to the UI.
+                        Ok(true) => {
+                            emit_event(
+                                app,
+                                APPLICATIONS_CHANGED,
+                                serde_json::json!({ "applicationId": app_id }),
+                            );
+                        }
+                        Ok(false) => {}
+                        Err(e) => {
+                            log::warn!(
+                                "[email_watch] auto-write failed for a matched application \
+                                 (non-fatal): {}",
+                                e.code()
+                            );
+                        }
+                    }
+                }
             }
         }
     }
@@ -351,7 +460,30 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
     Ok(())
 }
 
-fn notify_match(app: &AppHandle, matched: &Application) {
+/// Title reflects `intent`, not just "a match happened" — this used to be
+/// hardcoded "Possible application confirmation" from when the matcher only
+/// ever considered `Saved` applications (a confirmation was the only
+/// plausible outcome for those). Candidacy widened to every `is_actionable`
+/// status (see `matcher`'s own doc), so the SAME card now also has to speak
+/// for a rejection reaching an `Interviewing` application, an interview
+/// invite, or an offer — announcing all of those as "confirmation" would be
+/// actively misleading, not just imprecise. `intent` is `None` when the
+/// email matched a candidate but the classifier couldn't place it in one of
+/// the four buckets — kept generic rather than guessed. Every case stays
+/// hedged ("Possible" / "?"): this is a pattern match on email content, not
+/// a verified outcome — the uncertainty lives in the CLASSIFICATION, not
+/// just in "did this email belong to this application".
+fn notify_title(intent: Option<EmailIntent>) -> &'static str {
+    match intent {
+        Some(EmailIntent::Confirmation) => "Possible application confirmation",
+        Some(EmailIntent::Rejection) => "Possible rejection notice",
+        Some(EmailIntent::Interview) => "Possible interview invite",
+        Some(EmailIntent::Offer) => "Possible offer notice",
+        None => "Possible application update",
+    }
+}
+
+fn notify_match(app: &AppHandle, matched: &Application, intent: Option<EmailIntent>) {
     let mut search = serde_json::Map::new();
     search.insert(
         "highlight".to_string(),
@@ -366,7 +498,7 @@ fn notify_match(app: &AppHandle, matched: &Application) {
         app,
         crate::notifications::NewNotification {
             kind: "email.match".to_string(),
-            title: "Possible application confirmation".to_string(),
+            title: notify_title(intent).to_string(),
             body,
             route: Some(crate::notifications::NotificationRoute {
                 to: "/applications".to_string(),
@@ -380,6 +512,40 @@ fn notify_match(app: &AppHandle, matched: &Application) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── notify_title reflects the widened candidacy ──────────────────────────
+    //
+    // MEDIUM fix: the title used to be hardcoded "confirmation" from when the
+    // matcher only ever considered `Saved` applications; candidacy widened to
+    // every `is_actionable` status, so a rejection reaching an `Interviewing`
+    // application must not be announced as a confirmation.
+
+    #[test]
+    fn notify_title_names_the_actual_intent_not_always_confirmation() {
+        assert_eq!(
+            notify_title(Some(EmailIntent::Confirmation)),
+            "Possible application confirmation"
+        );
+        assert_eq!(
+            notify_title(Some(EmailIntent::Rejection)),
+            "Possible rejection notice"
+        );
+        assert_eq!(
+            notify_title(Some(EmailIntent::Interview)),
+            "Possible interview invite"
+        );
+        assert_eq!(
+            notify_title(Some(EmailIntent::Offer)),
+            "Possible offer notice"
+        );
+        // Distinct from every named-intent title — must never collapse to
+        // "confirmation" just because the classifier came back empty.
+        let unclassified = notify_title(None);
+        assert_ne!(unclassified, notify_title(Some(EmailIntent::Confirmation)));
+        assert_ne!(unclassified, notify_title(Some(EmailIntent::Rejection)));
+        assert_ne!(unclassified, notify_title(Some(EmailIntent::Interview)));
+        assert_ne!(unclassified, notify_title(Some(EmailIntent::Offer)));
+    }
 
     // ── RATE_LIMITED_MESSAGE ↔ renderer sentinel parity ─────────────────────
     //
@@ -529,5 +695,85 @@ mod tests {
         }
         drop(guard);
         assert!(RunGuard::try_acquire().is_some());
+    }
+
+    // ── apply_matched_intent reachability (v2 slice 3) ──────────────────────
+    //
+    // Mirrors `rate_limited_message_matches_the_renderer_sentinel`'s own
+    // technique above: read this file's OWN source as text and assert a
+    // substring, since `apply_matched_intent`'s runtime call site cannot be
+    // exercised from a unit test (it is buried inside `run_check_inner`,
+    // which needs a real IMAP round trip — see this module's "No automated
+    // test for the network-round-trip functions" precedent in
+    // `email_watch::imap_client`).
+
+    #[test]
+    fn apply_matched_intent_has_a_non_test_caller() {
+        // The whole point of this slice: `email_watch::auto_write::
+        // apply_matched_intent` must be called from PRODUCTION code, not
+        // only from its OWN unit tests (`auto_write::tests`) — a test-only
+        // caller would mean the infrastructure exists but never actually
+        // runs, exactly the gap v2 slice 2 shipped and this slice closes.
+        let source = include_str!("email_watch_scheduler.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("this file always has content before its first #[cfg(test)]");
+        assert!(
+            production.contains("apply_matched_intent("),
+            "apply_matched_intent must be called from this file's production \
+             code — the auto-write path exists to actually run, not just to \
+             be unit-tested"
+        );
+    }
+
+    /// HIGH fix: an `Ok(true)` write from `apply_matched_intent` (a real,
+    /// committed status transition) must emit `APPLICATIONS_CHANGED` — it is
+    /// the ONLY thing that makes the write visible on an already-open
+    /// `/applications/$id` page (`useApplicationEvents`, mounted once in
+    /// `routes/__root.tsx`, is the sole consumer, and those queries have
+    /// `refetchOnWindowFocus`/`refetchOnReconnect` both off with no
+    /// `refetchInterval`). Every OTHER backend-initiated application write
+    /// (`extension_bridge::import_flow`, `extension_bridge::status_update`)
+    /// already emits it; this call site was the exception. Scoped to the
+    /// literal `Ok(true) =>` / `Ok(false) =>` arms (not "does this string
+    /// appear anywhere in the file") so removing the emit from THIS call
+    /// site fails the test even though `APPLICATIONS_CHANGED` legitimately
+    /// appears elsewhere for the other emitters — and so an emit that moved
+    /// into the wrong arm (firing on a gated no-op) fails it too.
+    #[test]
+    fn a_successful_auto_write_emits_applications_changed_but_a_gated_noop_does_not() {
+        let source = include_str!("email_watch_scheduler.rs");
+        let call_site = source
+            .split("crate::email_watch::auto_write::apply_matched_intent(")
+            .nth(1)
+            .expect("apply_matched_intent is still called from this file");
+        let ok_true_arm = call_site
+            .split("Ok(true) =>")
+            .nth(1)
+            .expect("the match on apply_matched_intent's result still has an Ok(true) arm")
+            .split("Ok(false) =>")
+            .next()
+            .expect("Ok(true) is still followed by an Ok(false) arm");
+        assert!(
+            ok_true_arm.contains("emit_event") && ok_true_arm.contains("APPLICATIONS_CHANGED"),
+            "a successful (Ok(true)) apply_matched_intent write must emit \
+             APPLICATIONS_CHANGED so an open application page refreshes without \
+             requiring navigation away and back"
+        );
+        let ok_false_arm = call_site
+            .split("Ok(false) =>")
+            .nth(1)
+            .expect("the match on apply_matched_intent's result still has an Ok(false) arm")
+            .split("Err(e) =>")
+            .next()
+            .expect("Ok(false) is still followed by an Err arm");
+        assert!(
+            !ok_false_arm.contains("emit_event"),
+            "a gated no-op (Ok(false) — opt-in off, unauthorized, no intent, no \
+             valid transition, rejected target, or a lost CAS race) must stay \
+             silent; emitting for a write that never happened is its own, \
+             milder lie to the UI"
+        );
     }
 }

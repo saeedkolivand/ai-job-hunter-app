@@ -74,6 +74,34 @@ export interface ApplicationChangedEvent {
  * deliberately has no field for it. There is **no** counts command:
  * overdue/upcoming badges are derived client-side from the `nextActionAt` values
  * already carried by `list()` (see `features/applications/lib/pipeline.ts`).
+ *
+ * ## Email-derived status adjudication (v2)
+ *
+ * `get()`'s `events` now also carry {@link StatusEvent.source}/
+ * {@link StatusEvent.confirmed}. A `source: 'email'` row with `confirmed: false`
+ * is a provisional, auto-written transition (see the `email.match` notification)
+ * that the timeline must render distinctly, with Accept/Reject affordances:
+ * - `acceptStatusEvent` sets `confirmed` to `true` in place — the status itself is
+ *   untouched (the auto-write already applied it).
+ * - `rejectStatusEvent` reverts the status BY COMPARE-AND-SET (a status the user
+ *   changed by hand in the meantime is never clobbered — the row is simply
+ *   marked reviewed instead) and APPENDS a reversal event
+ *   (`source: 'email_reject'`); `status_events` stays append-only, so the
+ *   original row is never edited or deleted.
+ *
+ * **Both require {@link StatusEvent.eventId} — the id of the SPECIFIC row
+ * being actioned, not just the application id.** Two provisional rows can
+ * coexist (a confirmation email, then a later rejection email, both still
+ * unreviewed); always pass the `eventId` of the exact row the Accept/Reject
+ * affordance was rendered on. Both are idempotent no-ops (`{ success: true
+ * }`, nothing changed) when `eventId` does not resolve to a pending
+ * unconfirmed row for `id` — never an error a UI needs to branch on.
+ * The invariant runs the other way, and it is the one that matters:
+ * **`confirmed: false` marks exactly the rows a human has not ruled on
+ * yet** — see {@link StatusEvent.confirmed}, which owns the rule and
+ * enumerates what may write it. That is the entire safety model for a
+ * classifier with a recorded precision limit (see `docs/knowledge/
+ * decision-records/0013-email-confirmation-watching.md`).
  */
 export interface ApplicationsContract {
   list(): Promise<Application[]>;
@@ -86,6 +114,22 @@ export interface ApplicationsContract {
     status: string;
     note?: string;
   }): Promise<ApplicationMutationResult>;
+  /** Accept the SPECIFIC email-derived, unconfirmed status-event row
+   *  `eventId` names — sets its {@link StatusEvent.confirmed} flag to `true`; the
+   *  status itself is untouched. `eventId` must be the
+   *  {@link StatusEvent.eventId} of the exact row the Accept affordance was
+   *  rendered on — see {@link StatusEvent.eventId}'s doc for why "the most
+   *  recent pending row" is not a safe substitute. A no-op when `eventId`
+   *  does not resolve to a pending row for `id` (still `{ success: true }`,
+   *  not an error). */
+  acceptStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
+  /** Reject the SPECIFIC email-derived, unconfirmed status-event row
+   *  `eventId` names — reverts the status by compare-and-set (never clobbers
+   *  a status that moved on, whether by the user's own hand or a later
+   *  email, in the meantime) and appends a reversal event. Same
+   *  `eventId`-targeting requirement as {@link acceptStatusEvent}. A no-op
+   *  when `eventId` does not resolve to a pending row. */
+  rejectStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
   update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
   remove(args: { id: string; keepDocuments: boolean }): Promise<ApplicationMutationResult>;
   track(req: ApplicationTrackRequest): Promise<ApplicationCreateResult>;
@@ -99,6 +143,8 @@ export const APPLICATIONS_CHANNELS = {
   list: 'applications:list',
   get: 'applications:get',
   setStatus: 'applications:setStatus',
+  acceptStatusEvent: 'applications:acceptStatusEvent',
+  rejectStatusEvent: 'applications:rejectStatusEvent',
   update: 'applications:update',
   remove: 'applications:remove',
   track: 'applications:track',

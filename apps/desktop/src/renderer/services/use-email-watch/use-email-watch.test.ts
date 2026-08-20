@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, waitFor } from '@testing-library/react';
 
+import type { EmailWatchStatus } from '@ajh/shared';
+
 import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
 
 import { keys } from '../query-client';
@@ -10,15 +12,24 @@ import {
   useDisconnectEmailWatch,
   useEmailWatchCheckNow,
   useEmailWatchStatus,
+  useSetAutoWriteEnabled,
   useSetEmailWatchEnabled,
 } from './use-email-watch';
 
-const DISCONNECTED = { connected: false, enabled: false };
-const CONNECTED = {
+// Typed as EmailWatchStatus (not left as inferred object literals) so a
+// fixture that forgets a required field — autoWriteEnabled included — is a
+// compile error here, rather than silently testing an incomplete payload.
+const DISCONNECTED: EmailWatchStatus = {
+  connected: false,
+  enabled: false,
+  autoWriteEnabled: false,
+};
+const CONNECTED: EmailWatchStatus = {
   connected: true,
   address: 'me@gmail.com',
   enabled: false,
   lastCheckAt: 1_700_000_000_000,
+  autoWriteEnabled: false,
 };
 
 describe('use-email-watch services', () => {
@@ -116,6 +127,33 @@ describe('useSetEmailWatchEnabled', () => {
       expect(queryClient.getQueryData(keys.emailWatch.status)).toEqual({
         ...CONNECTED,
         enabled: true,
+      });
+    });
+  });
+});
+
+describe('useSetAutoWriteEnabled', () => {
+  // CONNECTED's own autoWriteEnabled is false — mutating with `true` here
+  // means the argument, the mocked response, AND the baseline all differ.
+  // A mutationFn that ignored its parameter and always sent `false` (the
+  // fixture's default) would fail this, unlike the all-`false` version it
+  // replaces.
+  it('forwards the enabled flag and seeds the returned status', async () => {
+    const setAutoWriteEnabled = vi.fn().mockResolvedValue({ ...CONNECTED, autoWriteEnabled: true });
+    const client = createMockClient({ 'emailWatch.setAutoWriteEnabled': setAutoWriteEnabled });
+    const { result, queryClient } = renderHookWithClient(() => useSetAutoWriteEnabled(), {
+      client,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(true);
+    });
+
+    expect(setAutoWriteEnabled).toHaveBeenCalledWith(true);
+    await waitFor(() => {
+      expect(queryClient.getQueryData(keys.emailWatch.status)).toEqual({
+        ...CONNECTED,
+        autoWriteEnabled: true,
       });
     });
   });

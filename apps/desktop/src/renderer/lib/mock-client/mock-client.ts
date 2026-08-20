@@ -139,6 +139,8 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       list: emptyList,
       get: async () => ({ application: null, events: [] }),
       setStatus: async () => ({ success: true }),
+      acceptStatusEvent: async () => ({ success: true }),
+      rejectStatusEvent: async () => ({ success: true }),
       update: async () => ({ success: true }),
       remove: async () => ({ success: true }),
       track: async () => ({ success: true }),
@@ -203,16 +205,29 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       onChanged: unsub,
     },
 
+    // autoWriteEnabled defaults to false — matches the real backend default
+    // (opt-in only, after five security rounds on the sender-authentication
+    // gate's known-imperfect check).
     emailWatch: {
-      status: async () => ({ connected: false, enabled: false }),
+      status: async () => ({ connected: false, enabled: false, autoWriteEnabled: false }),
       connect: async ({ address }: EmailWatchConnectRequest) => ({
         connected: true,
         address,
         enabled: false,
+        autoWriteEnabled: false,
       }),
-      disconnect: async () => ({ connected: false, enabled: false }),
-      setEnabled: async (enabled: boolean) => ({ connected: false, enabled }),
-      checkNow: async () => ({ connected: false, enabled: false }),
+      disconnect: async () => ({ connected: false, enabled: false, autoWriteEnabled: false }),
+      setEnabled: async (enabled: boolean) => ({
+        connected: false,
+        enabled,
+        autoWriteEnabled: false,
+      }),
+      setAutoWriteEnabled: async (autoWriteEnabled: boolean) => ({
+        connected: false,
+        enabled: false,
+        autoWriteEnabled,
+      }),
+      checkNow: async () => ({ connected: false, enabled: false, autoWriteEnabled: false }),
     },
 
     scrape: {
@@ -238,6 +253,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     match: {
       resume: noop,
+      text: noop,
       trimSuggestions: async () => ({ maxPages: 2, lines: [] }),
     },
 

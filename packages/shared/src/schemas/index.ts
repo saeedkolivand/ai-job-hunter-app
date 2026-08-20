@@ -281,6 +281,23 @@ export const MatchResumeRequestSchema = z.object({
 });
 
 /**
+ * Request for `match:text`: score a stored résumé against arbitrary job-ad
+ * TEXT instead of a `PostingsCache` id. The Score tab in `JobAdView` only ever
+ * has `jobDesc: string` in hand — `TailorFlow` receives an `Application` /
+ * `AutopilotFoundJob`, neither of which carries a posting-cache id, and that
+ * cache is RAM-only and deliberately transient (discovery is transient by
+ * design), so a saved application could never have an entry anyway. Same
+ * 200_000-byte cap as `ResumeTrimSuggestionsRequestSchema.jobText` below (this
+ * reads the same kind of text and mirrors the server's
+ * `MAX_JOB_DESCRIPTION_BYTES`); the Rust command clamps too, since this is an
+ * IPC boundary a non-UI caller can reach directly.
+ */
+export const MatchTextRequestSchema = z.object({
+  resumeId: z.string().min(1),
+  jobText: z.string().min(1).max(200_000),
+});
+
+/**
  * Request for the advisory trim panel: rank a résumé's bullets by how much
  * keyword weight each one carries for THIS posting, weakest first.
  *
@@ -866,4 +883,5 @@ export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
+export type MatchTextRequest = z.infer<typeof MatchTextRequestSchema>;
 export type ResumeTrimSuggestionsRequest = z.infer<typeof ResumeTrimSuggestionsRequestSchema>;

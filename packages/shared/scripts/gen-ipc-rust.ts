@@ -58,6 +58,7 @@ import {
   GENERATION_DEPTHS,
   JobEventSchema,
   MatchResumeRequestSchema,
+  MatchTextRequestSchema,
   ReferralUpsertSchema,
   ResumeExtractTextSchema,
   ResumePipelineRegenerateSectionSchema,
@@ -155,6 +156,7 @@ const MODULES: ModuleSpec[] = [
     outFile: 'apps/desktop/src-tauri/src/ipc_contracts/matching.rs',
     structs: [
       { rustName: 'MatchResumeRequest', schema: MatchResumeRequestSchema },
+      { rustName: 'MatchTextRequest', schema: MatchTextRequestSchema },
       {
         rustName: 'ResumeTrimSuggestionsRequest',
         schema: ResumeTrimSuggestionsRequestSchema,

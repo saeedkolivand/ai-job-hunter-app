@@ -134,9 +134,13 @@ pub async fn email_watch_connect(
     Ok(store.status())
 }
 
-/// Remove the stored app password and clear the account row (does NOT touch
-/// `seen` dedupe rows semantically differently than a factory reset — both go
-/// through the same [`crate::email_watch::EmailWatchStore::clear`]).
+/// Remove the stored app password and clear the account row (`seen` dedupe
+/// rows are wiped too — `clear()` treats disconnect and a privacy factory
+/// reset as the SAME operation, deliberately: see
+/// [`crate::email_watch::EmailWatchStore::clear`]'s own doc for why an
+/// earlier attempt to split the two, preserving `auto_write_enabled`
+/// across disconnect specifically, turned out to rest on an unverifiable
+/// premise).
 #[tauri::command]
 pub async fn email_watch_disconnect(app: AppHandle) -> AppResult<EmailWatchStatus> {
     credentials(&app).lock().remove(CREDENTIAL_SLOT)?;
@@ -149,6 +153,22 @@ pub async fn email_watch_disconnect(app: AppHandle) -> AppResult<EmailWatchStatu
 pub async fn email_watch_set_enabled(app: AppHandle, enabled: bool) -> AppResult<EmailWatchStatus> {
     let store = store_or_err(&app)?;
     store.set_enabled(enabled)?;
+    Ok(store.status())
+}
+
+/// v2 slice 3: the auto-write opt-in — defaults OFF (flipped from its
+/// original default-ON after a residual the parser cannot close by content
+/// inspection alone was found; see `EmailWatchStore::auto_write_enabled`'s
+/// own doc). Adjudication (every write lands unconfirmed) remains the
+/// backstop regardless of this toggle's value. Mirrors
+/// [`email_watch_set_enabled`]'s shape exactly.
+#[tauri::command]
+pub async fn email_watch_set_auto_write_enabled(
+    app: AppHandle,
+    enabled: bool,
+) -> AppResult<EmailWatchStatus> {
+    let store = store_or_err(&app)?;
+    store.set_auto_write_enabled(enabled)?;
     Ok(store.status())
 }
 

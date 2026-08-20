@@ -228,6 +228,25 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             )
         },
     },
+    Migration {
+        name: "add_status_events_source_confirmed",
+        up: |conn| {
+            // Email tracking v2 slice 2: every status_events row now carries
+            // WHO/WHAT asserted the transition and whether a human has
+            // reviewed it — see `super::StatusEvent::source`/`confirmed`.
+            // Every row already on disk is user-driven, already-settled
+            // history, and every future write EXCEPT the new email-derived
+            // auto-write (`crate::email_watch::auto_write`) explicitly writes
+            // the SAME defaults these columns fall back to — so a plain
+            // `ADD COLUMN ... DEFAULT` is the whole migration, no backfill
+            // UPDATE needed (mirrors `add_applications_salary`/
+            // `add_applications_recipient` above).
+            conn.execute_batch(
+                "ALTER TABLE status_events ADD COLUMN source TEXT NOT NULL DEFAULT 'user';
+                 ALTER TABLE status_events ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 1;",
+            )
+        },
+    },
 ];
 
 /// `backfill_state.name` for [`ApplicationStore::backfill_from_generations`]'s

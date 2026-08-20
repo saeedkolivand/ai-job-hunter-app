@@ -21,6 +21,7 @@ vi.mock('@ajh/translations', () => ({
 // that reach the summary tab don't need a full provider tree.
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector-stub" />,
+  useSelectedProvider: () => 'ollama',
 }));
 
 // ExternalLink uses useAppClient (requires AppClientProvider) — stub it with a
@@ -35,6 +36,14 @@ vi.mock('@/components/ui/ExternalLink', () => ({
       {children}
     </a>
   ),
+}));
+
+// useJobAdTextMatchScore (JobAdView's Score tab, via useAppClient/QueryClient) —
+// stub so tests that reach the Job-ad tab don't need a provider tree. None of
+// the tests in this file exercise the Score tab's own render logic (that's
+// JobAdView.test.tsx / JobAdView.i18n.test.tsx's job).
+vi.mock('@/services', () => ({
+  useJobAdTextMatchScore: () => ({ data: undefined, isLoading: false }),
 }));
 
 // EditableOutput mock — exposes onChange/onBlur/isPending + renders previewSlot.

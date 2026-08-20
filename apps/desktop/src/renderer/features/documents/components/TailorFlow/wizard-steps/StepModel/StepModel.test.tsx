@@ -14,6 +14,7 @@ vi.mock('@ajh/translations', () => ({
 // The global model picker is out of scope here — stub it to a stable marker.
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector" />,
+  useSelectedProvider: () => 'ollama',
 }));
 
 // Controllable Ollama-key predicate — the seam under test.
