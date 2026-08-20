@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.139.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.2...v0.139.3) (2026-08-20)
+
+### 🐛 Bug Fixes
+
+* **export:** give résumé entries the hierarchy they were never structured for ([#1061](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1061)) ([21a74ee](https://github.com/saeedkolivand/ai-job-hunter-app/commit/21a74eea65b6e2d67e701f1fe5dae0629d7b0f6d))
+* **match:** score non-english postings honestly, and let the score tab run semantic ([#1060](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1060)) ([b7764dd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b7764dda472b50b7f6c4d408d7935b4c6461d27e)), closes [#1051](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1051)
+
+### 📚 Documentation
+
+* make the thin-pointer rule reach the agent that writes docs ([#1062](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1062)) ([974cd14](https://github.com/saeedkolivand/ai-job-hunter-app/commit/974cd143591c8dfaf983a32e7c7dd7e7768b7ddf))
+
 ## [0.139.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.1...v0.139.2) (2026-08-20)
 
 ### 🐛 Bug Fixes
