@@ -414,6 +414,10 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
         &RunOpts::entry_title(t, ctx.colors),
     );
     if let Some(date) = &e.date {
+        // Italic (not bold) — matches the PDF path (`single_column.typ`'s
+        // date-str run): the date/duration reads as a distinct, fast-to-scan
+        // element next to the bold entry title, without a heavier weight that
+        // would compete with it. Font-variant only, ATS-safe.
         if ctx.right_align_date {
             title = title
                 .add_run(Run::new().add_tab())
@@ -422,7 +426,8 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
                         .add_text(date)
                         .size(pt_to_half_points(9.5))
                         .color(ctx.colors.date.as_str())
-                        .fonts(docx_run_fonts(t.fonts.body_family)),
+                        .fonts(docx_run_fonts(t.fonts.body_family))
+                        .italic(),
                 )
                 .add_tab(Tab::new().val(TabValueType::Right).pos(ctx.width_dxa));
         } else {
@@ -431,7 +436,8 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
                     .add_text(format!("  ·  {date}"))
                     .size(pt_to_half_points(9.5))
                     .color(ctx.colors.date.as_str())
-                    .fonts(docx_run_fonts(t.fonts.body_family)),
+                    .fonts(docx_run_fonts(t.fonts.body_family))
+                    .italic(),
             );
         }
     }
