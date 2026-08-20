@@ -146,11 +146,16 @@ impl Resettable for SpendStore {
 }
 impl Resettable for EmailWatchStore {
     fn reset(&self) {
-        // Account row back to defaults + every `seen` row gone. The keychain
+        // Account row back to defaults + every `seen` row gone — via
+        // `factory_reset`, NOT `clear` (see both fns' own docs): a factory
+        // reset's next-connected mailbox may be a DIFFERENT account than
+        // whichever one opted into auto-write, so this MUST also zero
+        // `auto_write_enabled` rather than carry it forward the way a same-
+        // account disconnect/reconnect (`clear`) correctly does. The keychain
         // app password is cleared separately by `Mutex<CredentialStore>`'s own
         // `reset` (registered under the "credentials" label), which wipes
         // every stored secret including this store's `email-imap` slot.
-        let _ = self.clear();
+        let _ = self.factory_reset();
     }
 }
 
@@ -425,6 +430,31 @@ mod tests {
 
         Resettable::reset(&cache);
         assert!(cache.get("ns", "k", 3600).is_none(), "cache wiped on reset");
+    }
+
+    // MEDIUM fix: guards the WIRING specifically, not just `factory_reset`'s
+    // own body (that's `email_watch::tests::factory_reset_does_reset_the_
+    // auto_write_opt_in`) — a regression back to `let _ = self.clear();`
+    // here would pass every other test in this file (labels, other stores'
+    // resets) while silently letting a factory reset carry a stranger
+    // account's auto-write opt-in forward to whichever mailbox connects
+    // next.
+    #[test]
+    fn email_watch_store_reset_clears_the_auto_write_opt_in() {
+        let dir = TempDir::new().unwrap();
+        let store = EmailWatchStore::open(&dir.path().to_path_buf()).unwrap();
+        store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+        assert!(store.set_auto_write_enabled(true).unwrap());
+        assert!(store.status().auto_write_enabled, "precondition: opted in");
+
+        Resettable::reset(&store);
+
+        assert!(
+            !store.status().auto_write_enabled,
+            "a factory reset (Resettable::reset) must clear the auto-write \
+             opt-in, not just the account/seen rows — a different mailbox \
+             may connect next and never made this choice"
+        );
     }
 
     // Registration is type-checked (`T: Resettable`) and ordered — a store that

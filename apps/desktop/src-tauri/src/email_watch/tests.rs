@@ -47,6 +47,32 @@ fn auto_write_enabled_defaults_off() {
     assert!(!store.status().auto_write_enabled);
 }
 
+/// Forces `auto_write_enabled_conn`'s error branch to actually run — the
+/// test above only ever exercises the happy-path row read (a real `0`),
+/// leaving the fallback itself uncovered. Drops the exact column the read
+/// selects so the query genuinely errors (not a stand-in for "no row" or
+/// "wrong type" — a real `rusqlite::Error` from the same store this whole
+/// module otherwise treats as healthy), then asserts the read still comes
+/// back `false`. This is the safe direction now that the shipped default
+/// is OFF; it was NOT the safe direction when this fallback was written
+/// (see `auto_write_enabled_conn`'s own doc) — a future default flip must
+/// re-derive this fallback's direction too, not just the migration.
+#[test]
+fn auto_write_enabled_fails_closed_on_a_genuine_read_error() {
+    let (_dir, store) = new_store();
+    store
+        .conn
+        .lock()
+        .execute_batch("ALTER TABLE account DROP COLUMN auto_write_enabled;")
+        .expect("drop column to force a genuine read error");
+
+    assert!(
+        !store.auto_write_enabled(),
+        "a read error must fail CLOSED (false), not toward the old ON default"
+    );
+    assert!(!store.status().auto_write_enabled);
+}
+
 // ── Connect / disconnect roundtrip (mock keyring for the credential half) ────
 
 #[test]
@@ -429,12 +455,15 @@ fn clear_wipes_account_and_seen_rows() {
     assert!(!store.has_seen("uid-1"), "seen rows must be wiped too");
 }
 
-/// MEDIUM fix: `clear()` deliberately does NOT reset `auto_write_enabled` —
-/// pins the behavior the fix-forward task's doc-vs-behavior review confirmed
-/// is the safe direction (see `clear()`'s own doc for why), so a future
-/// change to the `UPDATE` column list that accidentally starts resetting it
-/// fails this test rather than silently flip a user's DELIBERATE choice back
-/// to the default on their next disconnect/reconnect.
+/// MEDIUM fix: `clear()` (disconnect/reconnect of the SAME mailbox address)
+/// deliberately does NOT reset `auto_write_enabled` — pins the behavior
+/// (see `clear()`'s own doc for why). This is now DELIBERATELY narrower
+/// than an earlier version of this test claimed: `clear()` is disconnect
+/// ONLY — a privacy factory reset goes through [`super::EmailWatchStore::
+/// factory_reset`] instead (see `factory_reset_does_reset_the_auto_write_opt_in`
+/// right below), which DOES reset this column, because the next-connected
+/// mailbox after a factory reset may be a different account than whichever
+/// one made this opt-in choice.
 ///
 /// **Tests the OPT-IN direction, not opt-out** — `auto_write_enabled` now
 /// defaults OFF (flipped from its original default-ON; see the
@@ -459,11 +488,38 @@ fn clear_does_not_reset_the_auto_write_opt_in() {
     store.clear().expect("clear");
 
     // `auto_write_enabled` has no `address IS NOT NULL` guard on its OWN
-    // read path, so it is readable even post-clear — reconnecting the same
+    // read path, so it is readable even post-clear — reconnecting the SAME
     // account afterward must not find it silently reset to the (now OFF)
     // default.
     assert!(
         store.status().auto_write_enabled,
-        "a user's DELIBERATE auto-write opt-in must survive a disconnect/factory-reset wipe"
+        "a user's DELIBERATE auto-write opt-in must survive a disconnect (clear())"
+    );
+}
+
+/// MEDIUM fix, the other half: unlike `clear()`, a privacy factory reset
+/// MUST zero `auto_write_enabled` — the account connected next may not be
+/// the one that made this choice, and ADR-0013 lists "opt-in default,
+/// nobody exposed without asking" as mitigation #1 for the
+/// `dmarc_pass_aligned` residual. `Resettable::reset` in `commands/privacy.rs`
+/// calls `factory_reset`, not `clear` — this pins that `factory_reset`
+/// itself has the right behavior independent of that wiring (which is its
+/// own, separate concern).
+#[test]
+fn factory_reset_does_reset_the_auto_write_opt_in() {
+    let (_dir, store) = new_store();
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+    assert!(
+        store.set_auto_write_enabled(true).unwrap(),
+        "precondition: the toggle write must succeed while connected"
+    );
+    assert!(store.status().auto_write_enabled, "precondition: opted in");
+
+    store.factory_reset().expect("factory_reset");
+
+    assert!(
+        !store.status().auto_write_enabled,
+        "a factory reset must clear the opt-in — the next connected mailbox \
+         may be a different account than whichever one chose it"
     );
 }

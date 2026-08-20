@@ -54,9 +54,10 @@ export const useSetEmailWatchEnabled = () => {
   });
 };
 
-/** Toggle the v2 auto-write opt-in (default ON) — independent of the poller
- *  opt-in above. An escape hatch, not the primary safeguard: every
- *  auto-write always lands unconfirmed regardless of this toggle. */
+/** Toggle the v2 auto-write opt-in (default OFF) — independent of the poller
+ *  opt-in above. Not the primary safeguard even when on: every auto-write
+ *  always lands unconfirmed regardless of this toggle, requiring the
+ *  user's own adjudication. */
 export const useSetAutoWriteEnabled = () => {
   const api = useAppClient();
   const qc = useQueryClient();

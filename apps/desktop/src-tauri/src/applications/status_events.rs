@@ -24,7 +24,7 @@ pub(crate) const EVENT_SOURCE_USER: &str = "user";
 /// ONLY source that may ever write a row with `confirmed: false`. See
 /// [`StatusEvent::confirmed`]'s doc for why nothing else may.
 pub(crate) const EVENT_SOURCE_EMAIL: &str = "email";
-/// The reversal row [`ApplicationStore::reject_latest_status_event`] appends
+/// The reversal row [`ApplicationStore::reject_status_event`] appends
 /// when the user rejects an [`EVENT_SOURCE_EMAIL`] write — a DISTINCT source
 /// value (not [`EVENT_SOURCE_USER`]) so [`ApplicationStore::
 /// was_transition_rejected`] can precisely recognize "the user explicitly
@@ -74,11 +74,13 @@ pub struct StatusEvent {
     /// ever write `false` except the email-derived auto-write itself** — an
     /// unconfirmed row is the whole safety model for a classifier with a
     /// recorded precision limit (see `crate::email_watch::intent`'s module
-    /// doc). Cleared in place by [`ApplicationStore::
-    /// accept_latest_status_event`]/[`ApplicationStore::
-    /// reject_latest_status_event`] — never by editing `from_status`/
-    /// `to_status`/`at`, so the append-only trail always still shows exactly
-    /// what the email claimed.
+    /// doc). Flipped to `true` IN PLACE — never cleared back to `false` by
+    /// anything — by [`ApplicationStore::accept_status_event`] (marks
+    /// reviewed, keeps the transition) or [`ApplicationStore::
+    /// reject_status_event`] (marks reviewed AND reverts the transition);
+    /// neither ever edits `from_status`/`to_status`/`at`, so the
+    /// append-only trail always still shows exactly what the email
+    /// claimed.
     #[serde(default = "default_event_confirmed")]
     pub confirmed: bool,
 }
@@ -200,7 +202,7 @@ impl ApplicationStore {
     /// confirmed — see [`StatusEvent::source`]/[`StatusEvent::confirmed`].
     /// `pub(crate)`: `crate::email_watch::auto_write` is the email-derived
     /// caller (always `EVENT_SOURCE_EMAIL`, `confirmed: false`);
-    /// [`Self::reject_latest_status_event`] is the other (always
+    /// [`Self::reject_status_event`] is the other (always
     /// `EVENT_SOURCE_EMAIL_REJECT`, `confirmed: true`).
     pub(crate) fn transition_status_if_sourced(
         &self,
@@ -288,11 +290,16 @@ impl ApplicationStore {
     }
 
     /// Accept the SPECIFIC email-derived, unconfirmed status-event row
-    /// `event_id` names — clears its `confirmed` flag IN PLACE. Never
-    /// touches `applications.status` (the auto-write already applied it —
-    /// accepting only marks it reviewed) and never edits `from_status`/
-    /// `to_status`/`at`/`note`, so the append-only trail is unchanged; only
-    /// the confirmation bit flips.
+    /// `event_id` names — sets its `confirmed` flag to `true` (`confirmed
+    /// = 1`) IN PLACE, marking the transition reviewed. This was
+    /// previously (mis)described here as "clears its `confirmed` flag",
+    /// backwards: `confirmed` starts `false` and this fn is what makes it
+    /// `true`, never the other direction — see [`StatusEvent::confirmed`]'s
+    /// own doc, which had the same inversion (fixed alongside this one).
+    /// Never touches `applications.status` (the auto-write already applied
+    /// it — accepting only marks it reviewed) and never edits
+    /// `from_status`/`to_status`/`at`/`note`, so the append-only trail is
+    /// unchanged; only the confirmation bit flips.
     ///
     /// **HIGH-1 fix**: `event_id` (the row's [`StatusEvent::event_id`], i.e.
     /// `rowid`) is matched EXACTLY in the `WHERE` clause — this used to

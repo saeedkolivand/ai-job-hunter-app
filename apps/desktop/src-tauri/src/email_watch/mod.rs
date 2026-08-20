@@ -18,7 +18,7 @@
 //! **v2 slice 2** adds [`auto_write`]: the actual `ApplicationStore` write —
 //! [`auto_write::apply_matched_intent`] turns one classified `EmailIntent`
 //! into a real, but always UNCONFIRMED, status transition (gated first by
-//! [`Self::auto_write_enabled`] — originally default ON, flipped to
+//! [`EmailWatchStore::auto_write_enabled`] — originally default ON, flipped to
 //! default OFF once a residual the parser cannot close by content
 //! inspection alone was found; see that fn's own doc). Still not wired into
 //! [`poller`]'s tick itself — `run_tick` stays pure matching, and the
@@ -42,7 +42,7 @@
 //!   DATA, not hardcoded, so a future non-Gmail provider needs no code change),
 //!   `enabled` (the poller opt-in PR B will gate on — default OFF),
 //!   `auto_write_enabled` (v2 slice 2's auto-write opt-in — default OFF, see
-//!   [`Self::auto_write_enabled`]), and the poller's own watermark:
+//!   [`EmailWatchStore::auto_write_enabled`]), and the poller's own watermark:
 //!   `last_uid`/`uidvalidity`/`last_check_ms`.
 //! - `seen` — `uid` (PK) → `matched_app_id` (nullable) + `ts`. Dedupes which
 //!   messages have already been considered so the (future) poller never
@@ -425,25 +425,32 @@ impl EmailWatchStore {
         Ok(affected > 0)
     }
 
-    /// Full wipe: the account row back to its just-migrated defaults, and
-    /// every `seen` row gone. Used by BOTH `email_watch_disconnect` (the
+    /// Disconnect wipe: the account row back to its just-migrated defaults,
+    /// and every `seen` row gone. Used ONLY by `email_watch_disconnect` (the
     /// keychain credential itself is removed separately by the command layer
-    /// via `CredentialStore`) and the factory reset (`Resettable::reset` in
-    /// `commands/privacy.rs`).
+    /// via `CredentialStore`) — see [`Self::factory_reset`] for the
+    /// privacy-reset path, which is a DIFFERENT operation, not a caller of
+    /// this one.
     ///
     /// **`auto_write_enabled` is DELIBERATELY not reset here** — every other
     /// account column goes back to its migrated default, but this one
-    /// survives the wipe as-is. Kept this way on purpose: WHATEVER the user
-    /// explicitly chose — opted out when the shipped default was ON, or
-    /// (the current shipped default) opted IN against a default-OFF value —
-    /// a disconnect/reconnect (or a factory reset that reconnects the SAME
-    /// account) must not silently reset it back toward whichever default
-    /// happens to be migrated at the time. Deliberately phrased direction-
-    /// agnostically: this column's default has already flipped once (v2
-    /// shipped it ON; a residual the parser cannot close by content
-    /// inspection alone — see `auto_write_enabled`'s own doc — moved it to
-    /// OFF), and the safety property this guards is "preserve the user's
-    /// own choice," not "preserve `false`" specifically.
+    /// survives the wipe as-is. Sound for disconnect specifically because a
+    /// disconnect/reconnect through `email_watch_disconnect` is the user
+    /// re-authenticating the SAME mailbox address they already made this
+    /// choice about — not a new account inheriting someone else's opt-in.
+    /// WHATEVER they explicitly chose — opted out when the shipped default
+    /// was ON, or (the current shipped default) opted IN against a
+    /// default-OFF value — a disconnect/reconnect of that same address must
+    /// not silently reset it back toward whichever default happens to be
+    /// migrated at the time. Deliberately phrased direction-agnostically:
+    /// this column's default has already flipped once (v2 shipped it ON; a
+    /// residual the parser cannot close by content inspection alone — see
+    /// `auto_write_enabled`'s own doc — moved it to OFF), and the safety
+    /// property this guards is "preserve the user's own choice for the
+    /// account that made it," not "preserve `false`" specifically. That
+    /// reasoning stops applying the moment the NEXT connected mailbox might
+    /// be a different account — which is exactly what a factory reset
+    /// permits and disconnect does not, and is why the two paths are split.
     pub fn clear(&self) -> AppResult<()> {
         let mut conn = self.conn.lock();
         // Same atomicity requirement as `connect`'s address-changed branch —
@@ -454,6 +461,41 @@ impl EmailWatchStore {
         tx.execute(
             "UPDATE account SET address = NULL, host = NULL, port = NULL, enabled = 0,
              last_uid = NULL, uidvalidity = NULL, last_check_ms = NULL WHERE id = 1",
+            [],
+        )?;
+        tx.execute("DELETE FROM seen", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Privacy factory reset ([`crate::data_store::Resettable::reset`] in
+    /// `commands/privacy.rs`)
+    /// — wipes everything [`Self::clear`] wipes, PLUS `auto_write_enabled`,
+    /// explicitly set to `0` (not "whatever the migration's current DEFAULT
+    /// happens to be" — an explicit value, so this stays correct even if a
+    /// future migration changes that DEFAULT again).
+    ///
+    /// NOT the same operation as [`Self::clear`] despite overlapping with
+    /// it, and not a caller of it either (own transaction, same SQL
+    /// inlined) — a factory reset's whole point is that whatever mailbox
+    /// gets connected next may be a DIFFERENT account than whichever one
+    /// made this opt-in choice, and that account never agreed to auto-write.
+    /// `clear()`'s "preserve the user's own choice" reasoning is sound only
+    /// because a disconnect/reconnect re-authenticates the SAME address; it
+    /// does not transfer to a factory reset, and treating the two as one
+    /// operation was this store's own earlier mistake (an approved fix that
+    /// covered only the same-account case). ADR-0013 lists "opt-in default,
+    /// nobody exposed without asking" as mitigation #1 for the
+    /// `dmarc_pass_aligned` residual — inheriting a stranger account's
+    /// opt-in through a factory reset would silently break that mitigation
+    /// for the very account that never asked.
+    pub fn factory_reset(&self) -> AppResult<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "UPDATE account SET address = NULL, host = NULL, port = NULL, enabled = 0,
+             last_uid = NULL, uidvalidity = NULL, last_check_ms = NULL,
+             auto_write_enabled = 0 WHERE id = 1",
             [],
         )?;
         tx.execute("DELETE FROM seen", [])?;
@@ -504,8 +546,20 @@ impl EmailWatchStore {
     /// [`Self::status`] (which already holds `self.conn.lock()` and would
     /// deadlock calling the self-locking public method). A read failure
     /// (should not happen — migration `add_auto_write_enabled` seeds every
-    /// row with this column) fails toward the documented default (ON)
-    /// rather than silently disabling the feature.
+    /// row with this column) fails CLOSED (`false`), not toward whichever
+    /// default the migration happens to seed. This is the FIRST gate in
+    /// [`crate::email_watch::auto_write::apply_matched_intent`]; `true`
+    /// here on a read error would run auto-write for a user this store
+    /// cannot even confirm opted in — the exact outcome the opt-in exists
+    /// to prevent, and worse now than it would have been when this line
+    /// was `unwrap_or(true)`: that was written while the shipped default
+    /// was ON, so failing toward it matched "assume nothing changed
+    /// unexpectedly". The default flip (see the `add_auto_write_enabled`
+    /// migration's own doc) inverted which direction is safe on error, and
+    /// this fallback was not updated along with it — do not trust a
+    /// comment's claim about which way a fallback fails; re-derive it from
+    /// the CURRENT default and CURRENT gate order, the way the fix here
+    /// had to be re-derived.
     fn auto_write_enabled_conn(conn: &Connection) -> bool {
         conn.query_row(
             "SELECT auto_write_enabled FROM account WHERE id = 1",
@@ -513,7 +567,7 @@ impl EmailWatchStore {
             |row| row.get::<_, i64>(0),
         )
         .map(|v| v != 0)
-        .unwrap_or(true)
+        .unwrap_or(false)
     }
 }
 

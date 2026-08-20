@@ -61,8 +61,9 @@ use crate::error::AppResult;
 ///   one section, indistinguishable from real grammar by content alone —
 ///   because it genuinely IS real grammar by the time anything here reads
 ///   it. Two candidate fixes for this were measured and both failed; see
-///   [`crate::email_watch::parser::dmarc_pass_aligned`]'s doc for the full
-///   accounting, including why an authserv-id check does not help either.
+///   `parser::dmarc_pass_aligned`'s doc for the full accounting, including
+///   why an authserv-id check does not help either (not a rustdoc link —
+///   that fn is private to `parser`, unreachable from a sibling module).
 ///
 /// What actually mitigates the open residual: (1)
 /// [`EmailWatchStore::auto_write_enabled`] defaults OFF, so the gate is

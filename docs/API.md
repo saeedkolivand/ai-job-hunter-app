@@ -2433,11 +2433,11 @@ export interface EmailWatchStatus {
   lastCheckAt?: number;
   /** Timestamp of the most recent email→application match, if any. */
   lastMatchAt?: number;
-  /** The v2 auto-write opt-in — default ON, independent of `enabled`. An
-   *  escape hatch, not the primary safeguard: every auto-write always lands
-   *  `confirmed: false` regardless of this toggle: turning it off just stops
-   *  the write from happening at all, in favour of the notify-only v1
-   *  behaviour. */
+  /** The v2 auto-write opt-in — default OFF, independent of `enabled`. Not
+   *  the primary safeguard even when on: every auto-write always lands
+   *  `confirmed: false` regardless of this toggle, requiring the user's own
+   *  adjudication; the toggle only decides whether the write happens at
+   *  all, in favour of the notify-only v1 behaviour when off. */
   autoWriteEnabled: boolean;
 }
 
