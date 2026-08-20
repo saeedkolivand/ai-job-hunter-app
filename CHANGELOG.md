@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.139.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.1...v0.139.2) (2026-08-20)
+
+### 🐛 Bug Fixes
+
+* **documents:** score the saved résumé the score tab promises ([#1059](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1059)) ([cbc0dc1](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cbc0dc1dc1ac6c278995ff5eede7dca8eb9c3079)), closes [#1057](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1057)
+
 ## [0.139.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.0...v0.139.1) (2026-08-20)
 
 ### 🐛 Bug Fixes
