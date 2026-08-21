@@ -66,9 +66,12 @@ jobs:
       # The growth charts the home page embeds are regenerated daily by
       # 📈 Repo Charts and live on the orphan `badges` branch. They are pulled in
       # HERE rather than committed, because they are ~77 KB combined and change
-      # every day (new date stamp, new data point) — committing them to main
-      # would add ~28 MB of git history per year, the exact cost the parentless
-      # `badges` branch exists to avoid.
+      # every day (new date stamp, new data point). Committing them would grow
+      # main's history for output nobody reads twice — the cost the parentless
+      # `badges` branch exists to avoid. Deliberately not quantified as
+      # 77 KB x 365: git deltas near-identical daily files hard, and most of
+      # each SVG is an embedded font that never changes at all, so that
+      # multiplication overstates it badly (it did, in this comment, before).
       #
       # Runs AFTER the Next.js cache step on purpose: that step's key hashes
       # apps/landing/public/**, so landing a file that changes daily before it

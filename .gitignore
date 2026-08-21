@@ -264,9 +264,11 @@ apps/landing/public/world/vid/
 
 # Growth charts fetched from the orphan `badges` branch at deploy time
 # (.github/workflows/pages.yml). ~77 KB that changes every day, so committing
-# them would add ~28 MB of git history a year — the cost the parentless badges
-# branch exists to avoid. Same rule as the /world clips above: build-time
-# asset, never a commit.
+# them would grow main's history for regenerated output — the cost the
+# parentless badges branch exists to avoid. Not quantified as 77 KB x 365: git
+# deltas near-identical daily files hard and most of each SVG is an unchanging
+# embedded font, so that multiplication overstates it (see pages.yml). Same
+# rule as the /world clips above: build-time asset, never a commit.
 apps/landing/public/stars.svg
 apps/landing/public/downloads.svg
 
