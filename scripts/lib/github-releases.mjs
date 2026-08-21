@@ -54,6 +54,80 @@ export function installerDownloads(releases) {
 }
 
 /**
+ * Which installer asset belongs to which button on /download.
+ *
+ * Matched by SUFFIX rather than by a version-bearing full name, so a version
+ * bump can never silently zero a platform. The seven suffixes partition the
+ * INSTALLER_RE set exactly — checked against every asset of every release:
+ * 1013 assets, 0 unmatched, 0 matched twice — and `downloadsByPlatform` asserts
+ * that partition on every run rather than trusting it.
+ */
+export const PLATFORM_SUFFIX = {
+  macArm: '_aarch64-apple-silicon.dmg',
+  macIntel: '_x64-intel.dmg',
+  winExe: '_x64-setup.exe',
+  winMsi: '_x64_en-US.msi',
+  linuxAppImage: '_amd64.AppImage',
+  linuxDeb: '_amd64.deb',
+  linuxRpm: '.x86_64.rpm',
+};
+
+/**
+ * Per-platform installer downloads, with the automated floor removed.
+ *
+ * Every asset picks up one download nobody performed. Measured across all
+ * releases, 334 of 438 installer assets sit at exactly 1 — including all seven
+ * installers of a release published the day before, .rpm included. Nobody
+ * downloads an rpm they have not heard of within a day, seven times over.
+ *
+ * Left in, that floor IS the number for the quiet platforms: .msi and .rpm each
+ * read 67 raw against 5 real, and three platforms tie at exactly the release
+ * count because that is all they are. A badge saying 67 where the truth is 5
+ * is not a rounding error, it is a different claim.
+ *
+ * So each asset contributes `max(0, count - 1)`. That is a floor subtraction,
+ * not a model — assets sitting at 0 exist, so it is clamped rather than
+ * assumed. It can undercount by one per release when a real download coincides
+ * with the automated one; undercounting is the right way to be wrong here.
+ */
+export function downloadsByPlatform(releases) {
+  const out = Object.fromEntries(Object.keys(PLATFORM_SUFFIX).map((k) => [k, 0]));
+  let rawMatched = 0;
+
+  for (const release of releases) {
+    for (const asset of release.assets ?? []) {
+      if (!INSTALLER_RE.test(asset.name)) continue;
+      const hits = Object.keys(PLATFORM_SUFFIX).filter((k) =>
+        asset.name.endsWith(PLATFORM_SUFFIX[k])
+      );
+      // A rename upstream must fail the build, not publish a badge that is
+      // quietly missing a platform. Same rule as readJsonArray in
+      // downloads-history.mjs: never publish reduced output silently.
+      if (hits.length !== 1) {
+        throw new Error(
+          `downloadsByPlatform: "${asset.name}" matched ${hits.length} platform suffixes ` +
+            `(expected exactly 1). Installer naming changed — update PLATFORM_SUFFIX.`
+        );
+      }
+      const count = asset.download_count ?? 0;
+      out[hits[0]] += Math.max(0, count - 1);
+      rawMatched += count;
+    }
+  }
+
+  // The partition check, stated as an equation rather than a comment: every
+  // download installerDownloads() counts must land in exactly one bucket.
+  const expected = installerDownloads(releases);
+  if (rawMatched !== expected) {
+    throw new Error(
+      `downloadsByPlatform: buckets saw ${rawMatched} raw downloads but ` +
+        `installerDownloads() counted ${expected} — the suffix map no longer partitions INSTALLER_RE.`
+    );
+  }
+  return out;
+}
+
+/**
  * Stargazers with their `starred_at` timestamps.
  *
  * Needs the `star+json` media type — the default representation omits

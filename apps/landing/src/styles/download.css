@@ -177,6 +177,42 @@ h2 {
   outline-offset: 3px;
   border-radius: 12px;
 }
+/* Download-count pill, appended into each .dl-btn by DownloadCounts.tsx once
+   the static /downloads-by-platform.json lands. It is absent on first paint and
+   absent entirely when the fetch fails, so nothing here may change the button's
+   resting size — margin-left only, no padding on the button itself. */
+.dl-count {
+  margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  /* inherit, so the pill rides whichever button colour it lands on: cream text
+     on .dl-btn's ink, ink text on .dl-btn.alt's transparent card. */
+  color: inherit;
+  background: rgba(244, 236, 220, 0.18);
+  white-space: nowrap;
+}
+.dl-btn.alt .dl-count {
+  background: rgba(28, 24, 18, 0.1);
+}
+
+/* The pill's unit, spoken but not shown: "Intel · .dmg 5" reads as though the
+   5 were part of the file description. Not previously needed on this page, so
+   it is defined here rather than imported — /download loads download.css alone
+   (see readStyle in app/download/page.tsx), exactly like home.css elsewhere. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* note drops to its own full-width line beneath the head + buttons */
 .dl-note {
   flex-basis: 100%;

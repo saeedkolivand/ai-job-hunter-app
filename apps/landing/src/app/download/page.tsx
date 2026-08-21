@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
 import { DownloadBody } from '@/components/download/DownloadBody';
+import { DownloadCounts } from '@/components/DownloadCounts';
 import { DownloadFreshness } from '@/components/DownloadFreshness';
 import { PageStyle } from '@/components/PageStyle';
 import versionData from '@/data/version.json';
@@ -52,6 +53,7 @@ export default function DownloadPage() {
       <PageStyle css={readStyle('download.css')} />
       <DownloadBody version={data.version} installers={data.installers} />
       <DownloadFreshness baked={data.version} />
+      <DownloadCounts />
       <ClientScripts srcs={['/scripts/download-0.js']} />
     </>
   );
