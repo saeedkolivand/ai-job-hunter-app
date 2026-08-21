@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
-import { CHROME_EXT, FIREFOX_EXT } from '@/lib/site-links';
+import { CHROME_EXT, FIREFOX_EXT, KOFI, PAYPAL, SPONSOR } from '@/lib/site-links';
 import { buildInstallers } from '@/lib/version';
 
 import { DownloadBody } from './DownloadBody';
@@ -83,6 +83,43 @@ describe('DownloadBody', () => {
       expect(a.getAttribute('target')).toBe('_blank');
       expect(a.getAttribute('rel')).toBe('noopener noreferrer');
     }
+  });
+
+  it('offers all three funding destinations, in order, above the extension section', () => {
+    const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
+    const notes = Array.from(container.querySelectorAll('p.auto-note'));
+    const tipJar = notes.find((p) => p.textContent?.includes('earns its keep'));
+    expect(tipJar).toBeTruthy();
+
+    const links = Array.from(tipJar?.querySelectorAll('a') ?? []);
+    // Order is the owner's call, not incidental — assert it rather than membership.
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([SPONSOR, PAYPAL, KOFI]);
+    expect(links.map((a) => a.textContent)).toEqual(['GitHub Sponsors', 'PayPal', 'Ko-fi']);
+
+    for (const a of links) {
+      expect(a.getAttribute('target')).toBe('_blank');
+      expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+    }
+
+    // Slot A: the ask sits before the extension section, not stacked on the
+    // footer's own "♥ sponsor" link (DownloadBody.tsx's placement comment).
+    const extGrid = container.querySelector('.ext-grid');
+    expect(tipJar?.compareDocumentPosition(extGrid as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('states the funding ask without a price or a positional reference', () => {
+    const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
+    const tipJar = Array.from(container.querySelectorAll('p.auto-note')).find((p) =>
+      p.textContent?.includes('earns its keep')
+    );
+    const text = tipJar?.textContent ?? '';
+
+    // A committed price silently becomes a lie when certificate costs change —
+    // the failure scripts/check-landing-drift.mjs exists for.
+    expect(text).not.toMatch(/[$€£]\s?\d/);
+    // WCAG 1.3.3: "the warning above" is meaningless in a linear screen-reader
+    // read, and the warnings reflow anyway. Name the thing, never its position.
+    expect(text).not.toMatch(/\b(above|below|to the (left|right))\b/i);
   });
 
   it('wires the footer with "download" as plain text', () => {
