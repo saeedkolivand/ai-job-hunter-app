@@ -19,10 +19,15 @@ vi.mock('@ajh/translations', () => ({
 }));
 
 // ModelSelector uses useAppClient (requires AppClientProvider) — stub so tests
-// that reach the summary tab don't need a full provider tree.
+// that reach the summary tab don't need a full provider tree. `useSelectedProvider`
+// reads a mutable module-level var (not a plain arrow) so the CLI-agent egress
+// tests below can select a CLI-agent provider; every other test relies on the
+// default ('ollama' — not a CLI agent, so the score strip never discloses egress).
+let mockActiveProvider = 'ollama';
+
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector-stub" />,
-  useSelectedProvider: () => 'ollama',
+  useSelectedProvider: () => mockActiveProvider,
 }));
 
 // ExternalLink uses useAppClient (requires AppClientProvider) — stub it with a
@@ -58,6 +63,7 @@ let stubbedScore: {
 
 beforeEach(() => {
   stubbedScore = { data: undefined, isLoading: false };
+  mockActiveProvider = 'ollama';
 });
 
 const mockUseJobAdTextMatchScore = vi.fn((..._args: unknown[]) => stubbedScore);
@@ -1489,6 +1495,123 @@ describe('GenerationOutput', () => {
       const enabledCall = mockUseJobAdTextMatchScore.mock.calls.find((call) => call[2] === true);
       expect(enabledCall?.[0]).toBe('resume-1');
       expect(enabledCall?.[1]).toBe('Snapshot-worthy posting text');
+    });
+
+    // ── Loading / error / malformed-payload branches ─────────────────────────
+    // GenerationOutput.test.tsx previously covered only measured / placeholder /
+    // no-résumé / tab-gating — these are the branches that enforce the honesty
+    // guarantee itself (never a fabricated `0%`/score for a request that hasn't
+    // resolved, failed, or came back malformed).
+
+    it('announces loading via a live region', () => {
+      stubbedScore = { data: undefined, isLoading: true };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      const strip = screen.getByTestId(TEST_IDS.documents.scoreStrip);
+      expect(strip).toHaveAttribute('role', 'status');
+      expect(strip).toHaveAttribute('aria-live', 'polite');
+      expect(strip).toHaveTextContent('autopilot.apply.jobAdView.score.loading');
+    });
+
+    it('shows an alert with a working retry on a rejected request', async () => {
+      const user = userEvent.setup();
+      const refetch = vi.fn();
+      stubbedScore = { data: undefined, isLoading: false, isError: true, refetch };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      const strip = screen.getByTestId(TEST_IDS.documents.scoreStrip);
+      expect(strip).toHaveAttribute('role', 'alert');
+      expect(strip).toHaveTextContent('autopilot.apply.jobAdView.score.errorTitle');
+
+      await user.click(screen.getByRole('button', { name: /autopilot\.apply\.tryAgain/i }));
+      expect(refetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the same alert (never a fabricated score) for a resolved-but-malformed payload', () => {
+      // `invoke()` never validates the resolved shape — a failure response
+      // (e.g. a résumé id that outlived its résumé) can resolve typed as
+      // MatchScore while missing ats/combined/gaps/recommendations.
+      stubbedScore = {
+        data: { resumeId: 'resume-1', jobId: 'job-1' },
+        isLoading: false,
+      };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      const strip = screen.getByTestId(TEST_IDS.documents.scoreStrip);
+      expect(strip).toHaveAttribute('role', 'alert');
+      expect(strip).toHaveTextContent('autopilot.apply.jobAdView.score.errorTitle');
+      expect(screen.queryByText('0%')).not.toBeInTheDocument();
+      expect(screen.queryByText(/NaN%/)).not.toBeInTheDocument();
+    });
+
+    // ── CLI-agent egress disclosure (mirrors JobAdView's Score tab) ──────────
+    // Unlike the Score tab, this strip fires ON MOUNT whenever a résumé is
+    // threaded — no explicit click required — so the disclosure matters even
+    // more here.
+
+    it('discloses CLI-agent egress while loading and on the error branch, never for a local provider', () => {
+      mockActiveProvider = 'claude-code';
+      stubbedScore = { data: undefined, isLoading: true };
+      const { rerender } = render(
+        <GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />
+      );
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+
+      stubbedScore = { data: undefined, isLoading: false, isError: true, refetch: vi.fn() };
+      rerender(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+
+      mockActiveProvider = 'ollama';
+      rerender(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).not.toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+    });
+
+    it('does NOT disclose egress on the no-résumé reason — nothing was ever sent', () => {
+      mockActiveProvider = 'claude-code';
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: undefined })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).not.toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+    });
+
+    // ── Finding 1 regression: the snapshot must survive the strip unmounting ──
+    // The strip only renders on `view === 'doc' && activeOut === 'resume'`, so
+    // switching to the Job ad tab unmounts it. The snapshot MUST be owned by
+    // GenerationOutput (which stays mounted) — a snapshot re-initialised on
+    // the strip's own remount would silently score the EDITED posting text,
+    // through a path that can route via translation.
+
+    it('a tab switch away and back still scores the ORIGINAL snapshot, not a jobDesc edited while away', async () => {
+      const user = userEvent.setup();
+      stubbedScore = { data: baseScore(), isLoading: false };
+      const props = makeProps({
+        activeOut: 'resume',
+        resumeId: 'resume-1',
+        jobDesc: 'Original posting text',
+      });
+      const { rerender } = render(<GenerationOutput {...props} />);
+
+      // Switch to the Job ad tab — the strip unmounts.
+      await clickJobAdTab(user);
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStrip)).not.toBeInTheDocument();
+
+      // Simulate the posting being edited on the Job ad sub-tab while the
+      // strip is unmounted — GenerationOutput is controlled, so the parent
+      // would pass this back down as a new `jobDesc`.
+      rerender(<GenerationOutput {...props} jobDesc="Edited posting text" />);
+
+      // Switch back to the résumé tab — the strip remounts.
+      await user.click(screen.getByRole('tab', { name: 'autopilot.apply.target.resume' }));
+
+      const enabledCalls = mockUseJobAdTextMatchScore.mock.calls.filter((call) => call[2] === true);
+      const lastEnabledCall = enabledCalls[enabledCalls.length - 1];
+      expect(lastEnabledCall?.[1]).toBe('Original posting text');
     });
   });
 });

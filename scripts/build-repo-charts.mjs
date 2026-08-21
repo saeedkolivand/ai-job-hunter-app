@@ -21,10 +21,11 @@
 // Output: badge-out/{downloads.json,downloads-history.json,downloads.svg,stars.svg}
 // Run locally: GITHUB_TOKEN=$(gh auth token) node scripts/build-repo-charts.mjs
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { mergePoints, readJsonArray } from './lib/downloads-history.mjs';
 import { fetchAllReleases, fetchStargazers, installerDownloads } from './lib/github-releases.mjs';
 import { GOLD, RED, renderLineChart } from './lib/line-chart-svg.mjs';
 
@@ -38,36 +39,6 @@ const today = new Date().toISOString().slice(0, 10);
 /** Shields does NOT humanize an endpoint `message`, so do it here. */
 function humanize(n) {
   return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
-}
-
-function readJson(path, fallback) {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    return fallback;
-  }
-}
-
-/**
- * Merge point lists by date, highest reading per date wins, sorted ascending.
- *
- * Highest-wins rather than last-wins because an installer download count can
- * only grow: if two sources disagree for one date, the larger reading is the
- * later — and therefore better — observation. It also makes the merge
- * order-independent, so re-running with the seed in a different position cannot
- * change the output.
- */
-function mergePoints(...lists) {
-  const byDate = new Map();
-  for (const list of lists) {
-    for (const p of list ?? []) {
-      if (!p?.date || typeof p.value !== 'number') continue;
-      byDate.set(p.date, Math.max(byDate.get(p.date) ?? 0, p.value));
-    }
-  }
-  return [...byDate.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, value]) => ({ date, value }));
 }
 
 /** Cumulative star count per day, derived wholly from `starred_at`. */
@@ -96,9 +67,12 @@ const total = installerDownloads(releases);
 // `--prev-history` is the copy the workflow fetched off the `badges` branch.
 // Absent on a first run, and absent locally — both degrade to seed-only.
 const prevArg = process.argv.indexOf('--prev-history');
-const prevHistory = prevArg === -1 ? [] : readJson(process.argv[prevArg + 1], []);
+const prevHistory =
+  prevArg === -1 ? [] : readJsonArray(process.argv[prevArg + 1], 'prior downloads history');
 
-const history = mergePoints(readJson(seedPath, []), prevHistory, [{ date: today, value: total }]);
+const history = mergePoints(readJsonArray(seedPath, 'downloads history seed'), prevHistory, [
+  { date: today, value: total },
+]);
 
 mkdirSync(outDir, { recursive: true });
 

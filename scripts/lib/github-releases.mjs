@@ -74,9 +74,18 @@ export async function fetchStargazers(repo = DEFAULT_REPO) {
     const batch = await res.json();
     stars.push(...batch);
     if (batch.length < 100) break;
-    // The stargazers endpoint hard-stops at 400 pages; nothing here is close,
-    // but bail rather than loop forever if that ever changes.
-    if (page >= 400) break;
+    // The stargazers endpoint hard-stops at 400 pages and returns an empty list
+    // beyond it rather than an error, so page 400 coming back FULL means the
+    // repo has more stars than this endpoint will ever hand over. Throw rather
+    // than break: breaking would return a silently truncated 40,000 and publish
+    // a star chart that is wrong without saying so. Same rule as the history
+    // reader in build-repo-charts.mjs — never publish reduced data quietly.
+    if (page >= 400) {
+      throw new Error(
+        'stargazers pagination limit reached (40,000) — the chart would be truncated; ' +
+          'switch to the GraphQL API before publishing again'
+      );
+    }
   }
   return stars;
 }

@@ -22,13 +22,16 @@ import {
 } from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
-import { ModelSelector, useSelectedProvider } from '@/components/ui/ModelSelector';
-import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { ModelSelector } from '@/components/ui/ModelSelector';
 import { OUTPUT_LANGUAGES } from '@/lib/generate';
 import { useJobAdTextMatchScore } from '@/services';
-import type { AiProvider } from '@/store/preferences-schema';
 
-import { hasScoreCoverage, isMeasured, ScoreMetric } from './MatchScoreMetric';
+import {
+  hasScoreCoverage,
+  isMeasured,
+  ScoreMetric,
+  useCliAgentEgressNotice,
+} from './MatchScoreMetric';
 
 interface Props {
   jobDesc: string;
@@ -84,13 +87,9 @@ export function JobAdView({
 }: Props) {
   const { t } = useTranslation();
 
-  // Score-tab egress disclosure: scoring a foreign-language posting routes
-  // through translation, and the CLI-agent providers (Claude Code, Codex,
-  // Gemini CLI) egress despite reading as "local" elsewhere in this app —
-  // see the Score tab's guidance paragraph below.
-  const activeProvider = useSelectedProvider();
-  const activeProviderMeta = PROVIDERS[activeProvider as AiProvider];
-  const isCliAgentProvider = activeProviderMeta?.kind === 'cli-agent';
+  // Score-tab egress disclosure — shared with the résumé result's score strip
+  // (GenerationScoreStrip), see `useCliAgentEgressNotice`'s doc.
+  const egressNotice = useCliAgentEgressNotice();
 
   // Start on `source` when there's nothing to show or the snippet is truncated —
   // that's when paste is the most useful action. `summary` otherwise (normal case).
@@ -173,24 +172,6 @@ export function JobAdView({
   // ('German', 'Dutch') silently collapsed to English. Labels are endonyms, each
   // language shown in its own script.
   const languageOptions = OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.endonym }));
-
-  // A CLI-agent provider (Claude Code, Codex, Gemini CLI) egresses despite
-  // reading as "local" elsewhere in this app — scoring a foreign-language
-  // posting routes through translation, which sends the job ad text to it.
-  // Rendered on every branch that can only be reached AFTER a request went out
-  // — loading, measured, and error. The error branch counts: its second
-  // disjunct (`score && !isMeasured(score)`) requires the query to have
-  // RESOLVED, so the round trip provably completed and the posting text was
-  // already sent. Only the no-résumé/no-posting branches are silent, because
-  // those short-circuit before `scoreEnabled` ever turns on. Computed once here
-  // so all three call sites stay in sync.
-  const egressNotice = isCliAgentProvider ? (
-    <p className="shrink-0 text-[10px] leading-relaxed text-foreground/70">
-      {t('autopilot.apply.jobAdView.score.cliAgentEgress', {
-        provider: activeProviderMeta?.label ?? activeProvider,
-      })}
-    </p>
-  ) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
