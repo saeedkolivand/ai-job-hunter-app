@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.140.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.3...v0.140.0) (2026-08-21)
+
+### ✨ Features
+
+* **landing:** ask for support on the download page, in the page's own voice ([#1064](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1064)) ([ee59589](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ee595899e2bfc689a945f1297f9b3a83dd5d4196))
+* **landing:** show real per-platform download counts on the download buttons ([#1068](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1068)) ([3971a8d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3971a8d7b5a115b5aef37238f2aaf797a326243d))
+* put the growth charts on the home page, and stop the repo doubling yearly ([#1065](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1065)) ([2554382](https://github.com/saeedkolivand/ai-job-hunter-app/commit/25543821feda49c332fa0f73c6fdd1773db6c2db)), closes [#1063](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1063) [#0a0c11](https://github.com/saeedkolivand/ai-job-hunter-app/issues/0a0c11) [#0a0c11](https://github.com/saeedkolivand/ai-job-hunter-app/issues/0a0c11) [#b9c4d4](https://github.com/saeedkolivand/ai-job-hunter-app/issues/b9c4d4) [#6b6459](https://github.com/saeedkolivand/ai-job-hunter-app/issues/6b6459) [#0a0c11](https://github.com/saeedkolivand/ai-job-hunter-app/issues/0a0c11) [#ece2cf](https://github.com/saeedkolivand/ai-job-hunter-app/issues/ece2cf)
+* surface the match score on the résumé, and self-host the growth charts ([#1063](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1063)) ([86b3366](https://github.com/saeedkolivand/ai-job-hunter-app/commit/86b3366ad638a1a66507e5e84468eff6e0f3397d)), closes [#1056](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1056)
+
+### 🐛 Bug Fixes
+
+* **ci:** publish downloads-by-platform.json, and stop it from blocking deploys ([#1069](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1069)) ([666ea7b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/666ea7bc1edf86cf2e2d411737a67c09ee908484)), closes [#1068](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1068)
+
+### 📚 Documentation
+
+* repair the citations the history rewrite broke, and stop citing shas ([#1070](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1070)) ([b3132ba](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b3132bac923d0ffa46f190c1ae939ff2f360fc41)), closes [#709](https://github.com/saeedkolivand/ai-job-hunter-app/issues/709) [#313](https://github.com/saeedkolivand/ai-job-hunter-app/issues/313)
+* replace three extrapolated git-history figures with a measured one ([#1067](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1067)) ([ee9ca54](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ee9ca540fef9427b4d38d2836ea85996038373af))
+
 ## [0.139.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.2...v0.139.3) (2026-08-20)
 
 ### 🐛 Bug Fixes

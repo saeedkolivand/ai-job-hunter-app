@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "ajh-tauri"
-version = "0.139.3"
+version = "0.140.0"
 dependencies = [
  "aes 0.9.2",
  "aes-gcm",
