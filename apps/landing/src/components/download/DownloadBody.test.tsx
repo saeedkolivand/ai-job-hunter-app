@@ -101,8 +101,17 @@ describe('DownloadBody', () => {
       expect(a.getAttribute('rel')).toBe('noopener noreferrer');
     }
 
-    // Slot A: the ask sits before the extension section, not stacked on the
-    // footer's own "♥ sponsor" link (DownloadBody.tsx's placement comment).
+    // Slot A is bounded at BOTH ends, because either bound alone permits a
+    // placement the design rejected: only "before .ext-grid" would allow the ask
+    // to sit above the download buttons (a toll gate), and only "after the
+    // install note" would allow it to slide down onto the footer's own
+    // "♥ sponsor" link. See DownloadBody.tsx's placement comment.
+    const installNote = notes.find((p) => p.textContent?.includes('auto-update'));
+    expect(installNote).toBeTruthy();
+    expect(installNote?.compareDocumentPosition(tipJar as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+
     const extGrid = container.querySelector('.ext-grid');
     expect(tipJar?.compareDocumentPosition(extGrid as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
@@ -116,7 +125,16 @@ describe('DownloadBody', () => {
 
     // A committed price silently becomes a lie when certificate costs change —
     // the failure scripts/check-landing-drift.mjs exists for.
-    expect(text).not.toMatch(/[$€£]\s?\d/);
+    //
+    // A heuristic, and deliberately labelled as one: no regex enumerates every
+    // way to write a price, and pretending otherwise would be the weak-assertion
+    // trap dressed as rigour. It covers the forms someone would plausibly reach
+    // for — symbol+digits, digits+currency word, and an ISO currency code —
+    // which is what a future edit is actually likely to introduce.
+    expect(text).not.toMatch(/[$€£]\s?\d/); // $99, €400
+    expect(text).not.toMatch(/\d[\d,.]*\s?(?:usd|eur|gbp|dollars?|euros?|pounds?|quid)\b/i);
+    expect(text).not.toMatch(/\b(?:usd|eur|gbp)\s?\d/i); // USD 20
+    expect(text).not.toMatch(/\b(?:costs?|priced?|fee)\b[^.]*\d/i); // "costs 400 a year"
     // WCAG 1.3.3: "the warning above" is meaningless in a linear screen-reader
     // read, and the warnings reflow anyway. Name the thing, never its position.
     expect(text).not.toMatch(/\b(above|below|to the (left|right))\b/i);
