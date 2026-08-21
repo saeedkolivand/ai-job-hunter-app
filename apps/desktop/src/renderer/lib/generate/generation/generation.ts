@@ -1333,6 +1333,40 @@ export interface GeneratedGitHubProject {
   name: string;
   description: string;
   link: string;
+  /** `·`-joined tech list, built from the repo's own metadata — see
+   *  {@link repoTechnologies}. Never written by the AI. */
+  technologies: string;
+}
+
+/** Cap mirroring `buildGitHubReposBlock`'s `MAX_TOPICS` / `MAX_TOPIC`
+    (`packages/prompts/src/generate/github-projects`), so a repo with a hundred
+    hostile topics cannot flood the résumé line either. */
+const MAX_TECH_ITEMS = 10;
+const MAX_TECH_ITEM_CHARS = 40;
+
+/**
+ * The project's technology list, taken STRAIGHT from the repo's own metadata
+ * (primary language first, then topics) rather than from the model.
+ *
+ * The prompt already shows the model `language` and `topics`, but it is
+ * forbidden from emitting anything except NAME/DESC — so asking it for the tech
+ * list would add a fabrication surface for data the caller already holds
+ * verbatim. Repo topics are untrusted, attacker-influenceable text, so they are
+ * capped and land in an editable form field the candidate reviews before any
+ * résumé is generated.
+ */
+function repoTechnologies(repo: GitHubRepo): string {
+  const seen = new Set<string>();
+  const items: string[] = [];
+  for (const raw of [repo.language, ...(repo.topics ?? [])]) {
+    const item = (raw ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_TECH_ITEM_CHARS);
+    const key = item.toLowerCase();
+    if (!item || seen.has(key)) continue;
+    seen.add(key);
+    items.push(item);
+    if (items.length === MAX_TECH_ITEMS) break;
+  }
+  return items.join(' · ');
 }
 
 /** De-slug a repo name for the offline fallback title ("my-cool-app" → "My Cool App"). */
@@ -1347,7 +1381,12 @@ function deslugRepoName(name: string): string {
  *  name when empty), with the canonical link attached. Import always works. */
 function fallbackProject(repo: GitHubRepo): GeneratedGitHubProject {
   const description = repo.description?.trim() || deslugRepoName(repo.name);
-  return { name: deslugRepoName(repo.name), description, link: repo.htmlUrl };
+  return {
+    name: deslugRepoName(repo.name),
+    description,
+    link: repo.htmlUrl,
+    technologies: repoTechnologies(repo),
+  };
 }
 
 /** Normalize a title/repo name to a match key: de-slug, lowercase, drop every
@@ -1455,7 +1494,12 @@ export async function generateGitHubProjects(params: {
     if (description) {
       const name = entry?.name.trim() || deslugRepoName(repo.name);
       // Link is ALWAYS the repo's own URL — never the AI, never the matched entry.
-      return { name, description, link: repo.htmlUrl };
+      return {
+        name,
+        description,
+        link: repo.htmlUrl,
+        technologies: repoTechnologies(repo),
+      };
     }
     return fallbackProject(repo);
   });

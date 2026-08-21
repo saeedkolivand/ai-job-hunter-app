@@ -128,6 +128,9 @@
         "namePlaceholder": "z. B. Payment-Service",
         "description": "Beschreibung",
         "descriptionPlaceholder": "Was es leistet und deine Rolle.",
+        "technologies": "Technologien",
+        "technologiesHint": "Wird als eigene Zeile unter dem Projektnamen dargestellt.",
+        "technologiesPlaceholder": "z. B. React, TypeScript, Node",
         "github": {
           "trigger": "Von GitHub importieren",
           "modalTitle": "GitHub-Projekte importieren",

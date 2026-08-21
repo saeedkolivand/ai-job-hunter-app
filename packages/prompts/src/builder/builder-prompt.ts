@@ -34,6 +34,21 @@ const SUMMARY_RULE = `PROFESSIONAL SUMMARY:
 - If the candidate wrote a summary, keep its substance and claims (you may lightly polish grammar and flow) — do NOT replace it with a generic one.
 - If they wrote none, write a 2–3 sentence summary derived strictly from the answers (seniority and domain inferred from their roles) — invent no years, metrics, or claims.`;
 
+/**
+ * The Projects shape, shared by all three system-prompt depths.
+ *
+ * The export adapter rebuilds a project into a styled entry (bold title, a
+ * technologies meta line, then the description) by reading exactly this
+ * three-line signature out of the finished résumé text. Getting it wrong is not
+ * fatal — the lines simply render as plain paragraphs, which is what they did
+ * before — but getting it right is what puts the tech list in its own styled
+ * line in the PDF and the DOCX.
+ */
+const PROJECTS_RULE = `PROJECTS: write each project as EXACTLY three lines and nothing else:
+1. **Project Name** · [label](url) — the name in double asterisks; append the link only if the answers gave one.
+2. The technologies for that project, separated by · — ONLY when the answers list them, and copied verbatim; never invent, add or reorder a technology.
+3. One or two sentences of plain description. No bullet marker on any of the three lines.`;
+
 function buildBuilderSystemFull(): string {
   return `You are an expert résumé writer with deep knowledge of ATS systems, recruiter behavior, and modern hiring practices. Build a complete, ATS-ready résumé from the candidate's interview answers.
 
@@ -52,6 +67,8 @@ BULLET POINTS:
 
 SKILLS: group ATS-style (e.g. Languages / Frameworks / Tools / Platforms) when the entries support it; otherwise a single clean line.
 
+${PROJECTS_RULE}
+
 OUTPUT: plain text only. Start with the candidate's name, then a contact line. Standard localized section headers, "•" for bullets, **double asterisks** for emphasis, no other markdown, no commentary, no XML tags. Output ONLY the résumé.`;
 }
 
@@ -63,6 +80,8 @@ ${HARD_RULES}
 ${SUMMARY_RULE}
 
 REQUIRED SECTION HEADERS: use the localized headers the task provides, consistently. Add optional sections (Projects, Publications, Certifications) only when the answers include them.
+
+${PROJECTS_RULE}
 
 DATE FORMAT: one consistent format (the task gives an example); en-dash for ranges; the target language's word for "Present" for current roles.
 
@@ -85,6 +104,9 @@ ACCEPTANCE CHECKS — verify and revise until all pass:
 - No skill, employer, date, or number appears that the candidate did not provide.
 - Every provided link is preserved inline on its item.
 - Optional sections appear only when the answers contain them.
+- Every Projects entry follows the three-line shape below.
+
+${PROJECTS_RULE}
 
 OUTPUT: the finished résumé (plain text; name + contact line first; "•" bullets; only **bold** markdown).`;
 }
@@ -135,12 +157,31 @@ function renderEducation(items: InterviewEducation[]): string {
     .join('\n');
 }
 
+/**
+ * The `·` a résumé's project signature separates technologies with — the same
+ * separator the Rust side renders with and the export adapter reads back
+ * (`pipeline/resume/project_render.rs`). A candidate types
+ * "React, TypeScript, Node"; commas and semicolons both normalize to it, so the
+ * answer sheet always hands the model the shape the résumé wants.
+ */
+const TECH_SEPARATOR = ' · ';
+
+function renderTechnologies(value: string | undefined): string {
+  return (value ?? '')
+    .split(/[,;·|]/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .join(TECH_SEPARATOR);
+}
+
 function renderProjects(items: InterviewProject[]): string {
   return items
     .filter((p) => p.name?.trim())
     .map((p) => {
       const desc = p.description?.trim() ? ` — ${p.description.trim()}` : '';
-      return `- ${p.name.trim()}${desc}${linkSuffix(p.name, p.link)}`;
+      const tech = renderTechnologies(p.technologies);
+      const stack = tech ? `\n  tech: ${tech}` : '';
+      return `- ${p.name.trim()}${desc}${linkSuffix(p.name, p.link)}${stack}`;
     })
     .join('\n');
 }
@@ -233,6 +274,7 @@ Build a complete, single-column, ATS-ready résumé from the answers above.
 - Then Work Experience (every role, most relevant bullets first within each role), Education, and Skills.
 - Add Projects / Publications / Certifications / Awards / Volunteering / Languages sections ONLY when the answers include them, using the market's standard header names.
 - Keep every provided link inline on its item as [label](url).
+- Render each Projects entry as three lines: **Name** · link, then its technologies separated by · (only if the answers list them), then the description.
 
 Output ONLY the résumé as plain text — name + contact line first, standard localized section headers, "•" bullets, **double asterisks** for emphasis only.`;
 }

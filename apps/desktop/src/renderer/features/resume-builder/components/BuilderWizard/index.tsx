@@ -67,6 +67,7 @@ function toFormValues(answers: InterviewAnswers): BuilderForm {
       name: p.name ?? '',
       description: p.description ?? '',
       link: p.link ?? '',
+      technologies: p.technologies ?? '',
     })),
     publications: (answers.publications ?? []).map((p) => ({
       title: p.title ?? '',

@@ -44,6 +44,14 @@ export interface InterviewProject {
   description?: string;
   /** Repo / live / case-study URL — kept inline as `[name](link)`. */
   link?: string;
+  /**
+   * Technologies used, as the candidate typed them — a free-text list, NOT an
+   * array. The résumé-builder form binds a single text input to this field, and
+   * `schema.ts`'s compile-time assignability guard keeps the two in step; an
+   * array would force a mapping layer on both sides for no gain.
+   * `renderProjects` normalizes the separators.
+   */
+  technologies?: string;
 }
 
 /** One publication (optional, repeatable) — academic résumés. DOI/url is a body link (#18). */
