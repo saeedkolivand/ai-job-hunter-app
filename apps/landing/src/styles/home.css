@@ -1,5 +1,9 @@
 :root {
   --red: #e24b4a;
+  /* .finale's cream — one shade deeper than --paper. Named because .growth's
+     seam gradient must END on exactly this value; as two hand-kept literals
+     they could drift apart with nothing failing. */
+  --paper-deep: #ece2cf;
   /* legibility floor: Space Mono >=13px copy, Gloria Hallelujah >=15px copy, Patrick Hand >=14px */
 }
 * {
@@ -1230,6 +1234,10 @@ svg.inkline {
   background: var(--paper);
   color: var(--ink);
   --line: var(--ink);
+  /* .growth sits between this and .finale now, and it is the same cream
+     (--paper) — so this seam has nothing to fade. Declared anyway, because
+     ::after below reads it unconditionally and an unset value paints black. */
+  --seam-next: var(--paper);
   padding: 30px 22px 90px;
   text-align: center;
   position: relative;
@@ -1243,7 +1251,7 @@ svg.inkline {
   height: clamp(70px, 10vh, 120px);
   z-index: 1;
   pointer-events: none;
-  background: linear-gradient(to top, #ece2cf, transparent);
+  background: linear-gradient(to top, var(--seam-next), transparent);
 }
 .testi > * {
   position: relative;
@@ -1307,11 +1315,81 @@ svg.inkline {
   color: var(--ink);
 }
 
-/* ================= FINALE ================= */
-.finale {
-  background: #ece2cf;
+/* ================= GROWTH ================= */
+/* CREAM, matching .testi directly above it — deliberately NOT a dark band.
+   It was one, and it looked wrong: a dark section between two cream ones needs
+   a cross-fade at BOTH edges, and a cream->transparent gradient painted over
+   #0a0c11 renders as a white-to-black smear rather than a blend. The seam
+   system works for the page's dark beats because those neighbour each other;
+   it cannot rescue a single dark slab dropped into the cream run at the end of
+   the page.
+   So there is no luminance jump in the SECTION to fade. The charts themselves
+   stay dark and sit on the cream as inset cards — the page already does this
+   with .screencap, and a bounded dark card reads as an embedded screen, which a
+   full-bleed dark band between two cream sections never did.
+   Only the bottom edge needs a seam, into .finale's slightly deeper cream —
+   exactly the boundary .testi used to own before this section existed.
+   Not a `.stage`: that forces min-height:100vh for the parallax sections. */
+.growth {
+  background: var(--paper);
   color: var(--ink);
   --line: var(--ink);
+  --seam-next: var(--paper-deep); /* == .finale's background, by construction */
+  padding: 70px 22px 80px;
+  text-align: center;
+  position: relative;
+}
+.growth::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: clamp(70px, 10vh, 120px);
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--seam-next), transparent);
+}
+/* lifts real content above the z-index:1 seam fade, same fix .testi > * needs */
+.growth > * {
+  position: relative;
+  z-index: 2;
+}
+.growth-charts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+.growth-charts img {
+  display: block;
+  width: 100%;
+  max-width: 860px;
+  height: auto;
+}
+.growth-note {
+  margin: 28px auto 0;
+  font-family: var(--hand);
+  font-size: 15px;
+  /* Was #b9c4d4, a token for the dark beats — 1.50:1 on --paper, a clear fail
+     for 15px body text. #6b6459 is the warm grey that clears AA (~4.98:1) on
+     this exact surface. It equals creature.css's --muted by VALUE but not by
+     reference: the home route loads home.css alone, so var(--muted) resolves
+     to nothing here and the colour would fall back to full --ink, silently. */
+  color: #6b6459;
+  max-width: 46ch;
+}
+
+/* ================= FINALE ================= */
+.finale {
+  background: var(--paper-deep);
+  color: var(--ink);
+  --line: var(--ink);
+  /* .growth (cream) sits above this now, not .testi — and .growth owns the
+     fade into --paper-deep through its own ::after, so this section needs no
+     seam of its own. */
   padding: 90px 22px;
   text-align: center;
   position: relative;

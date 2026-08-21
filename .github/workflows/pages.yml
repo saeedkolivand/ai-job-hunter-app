@@ -63,6 +63,38 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
 
+      # The growth charts the home page embeds are regenerated daily by
+      # 📈 Repo Charts and live on the orphan `badges` branch. They are pulled in
+      # HERE rather than committed, because they are ~77 KB combined and change
+      # every day (new date stamp, new data point) — committing them to main
+      # would add ~28 MB of git history per year, the exact cost the parentless
+      # `badges` branch exists to avoid.
+      #
+      # Runs AFTER the Next.js cache step on purpose: that step's key hashes
+      # apps/landing/public/**, so landing a file that changes daily before it
+      # would bust the build cache every single night for no reason.
+      #
+      # Copying them into public/ keeps them SAME-ORIGIN. Pointing the page at
+      # raw.githubusercontent.com instead would make this the first third-party
+      # request the site has ever issued, sending every visitor's IP to GitHub on
+      # page load — and it is blocked outright on /mission-control, whose CSP
+      # sets `img-src 'self' data:` to close an Image()-beacon exfil path.
+      - name: 📈 Fetch growth charts from the badges branch
+        run: |
+          set -euo pipefail
+          git fetch --depth 1 origin badges
+          for f in stars.svg downloads.svg; do
+            git show "FETCH_HEAD:$f" > "apps/landing/public/$f"
+            # `git show` into a redirect leaves an empty file behind on failure,
+            # so check for content, not just existence. Failing the build is the
+            # correct outcome: the last good site stays up, whereas shipping a
+            # broken <img> onto the home page is a visible defect. Same rule as
+            # readJsonArray in scripts/lib/downloads-history.mjs — never publish
+            # reduced output quietly.
+            [ -s "apps/landing/public/$f" ] || { echo "::error::$f missing or empty on the badges branch"; exit 1; }
+            echo "fetched $f ($(wc -c < "apps/landing/public/$f") bytes)"
+          done
+
       - name: 🏗️ Build landing (static export)
         run: pnpm --filter @ajh/landing build
 
