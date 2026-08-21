@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.141.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.140.0...v0.141.0) (2026-08-21)
+
+### ✨ Features
+
+* **export:** render projects as bold name, technologies meta line, description ([#1071](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1071)) ([1ff8aa3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1ff8aa3bb9c770b0bb74540833469f38cf314598))
+
 ## [0.140.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.139.3...v0.140.0) (2026-08-21)
 
 ### ✨ Features
