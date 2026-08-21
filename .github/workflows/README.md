@@ -20,11 +20,11 @@
 
 ### 🔎 Advisory — never blocks
 
-[![📥 Downloads Badge](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
 [![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
 [![📸 Mission Control Snapshot](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml)
 [![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)
+[![📈 Repo Charts](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/repo-charts.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/repo-charts.yml)
 [![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml)
 [![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml)
 
@@ -50,15 +50,15 @@
 
 ### 🔎 Advisory — never blocks
 
-| Workflow                                            | Triggers               | What it does                                                                                                                                                   |
-| --------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [📥 Downloads Badge](downloads-badge.yml)           | release, daily, manual | Recompute the "real installer downloads" count and publish a Shields endpoint-badge JSON. The stock github/downloads/<repo>/total badge is updater-inflated —… |
-| [🎨 Format Guard](format-guard.yml)                 | push, manual           | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there.                                |
-| [🏷️ PR Labeler](labeler.yml)                        | PR                     | Applies area/type labels to pull requests from their changed paths (config: .github/labeler.yml).                                                              |
-| [📸 Mission Control Snapshot](metrics-snapshot.yml) | daily, manual          | Bake the /mission-control GitHub data into static nightly JSON and commit it to main, so the dashboard reads pre-baked data instead of the live REST API.      |
-| [🔎 Quality](quality.yml)                           | PR, push, manual       | Advisory quality + perf (consolidated from quality/rust-quality/benchmark).                                                                                    |
-| [🖥️ UI Checks](ui-checks.yml)                       | PR, manual             | Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual).                                                                                         |
-| [🧹 Workflow Lint](workflow-lint.yml)               | PR, manual             | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                                                       |
+| Workflow                                            | Triggers               | What it does                                                                                                                                                 |
+| --------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [🎨 Format Guard](format-guard.yml)                 | push, manual           | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there.                              |
+| [🏷️ PR Labeler](labeler.yml)                        | PR                     | Applies area/type labels to pull requests from their changed paths (config: .github/labeler.yml).                                                            |
+| [📸 Mission Control Snapshot](metrics-snapshot.yml) | daily, manual          | Bake the /mission-control GitHub data into static nightly JSON and commit it to main, so the dashboard reads pre-baked data instead of the live REST API.    |
+| [🔎 Quality](quality.yml)                           | PR, push, manual       | Advisory quality + perf (consolidated from quality/rust-quality/benchmark).                                                                                  |
+| [📈 Repo Charts](repo-charts.yml)                   | release, daily, manual | publish everything the README embeds about repo growth, generated in-repo so no third-party service sits in the README's critical path. 1. downloads.json —… |
+| [🖥️ UI Checks](ui-checks.yml)                       | PR, manual             | Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual).                                                                                       |
+| [🧹 Workflow Lint](workflow-lint.yml)               | PR, manual             | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                                                     |
 
 ### 🚀 Deploy — publishes on push to main
 
