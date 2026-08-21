@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787329755413,
+  "lastUpdate": 1787349611985,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "4580e112e58075ad5614654024d0bb18aa343848",
-          "message": "feat: add status.update bridge verb for one-click mark as applied (#632)\n\n* feat: add status.update bridge verb for one-click mark as applied\n\nThe popup shows a mark-as-applied button when the checked page maps to\na saved application. The desktop enforces the transition with an atomic\ncompare-and-set (transition_status_if: update guarded on current status\nplus status event in one transaction) so only saved to applied can ever\nbe written, even under concurrent writers. Errors are user-facing fixed\nsentinels; untracked pages keep using import with the applied checkbox.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: preserve first applied timestamp in status transition cas\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: require explicit saved status and discriminate status result contract\n\nCodeRabbit fixes: resolveShowMarkAppliedButton now requires an explicit\n`status === 'saved'` (the CAS precondition), no longer defaulting a missing\nstatus to true. ExtensionStatusUpdateResult becomes a discriminated union\n(`ok:true` requires applicationId + status:'applied'; `ok:false` requires\nerror) mirrored in the zod schema and the extension's hand-written guard;\nthe Rust status_update.rs replies already satisfied the union.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: roll back status transition when event insert fails\n\nappend_event_conn now returns AppResult<()> and every call site\npropagates with `?`, so a failed status-event insert rolls back the\nwhole transaction instead of committing an orphan status flip.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-14T09:58:22+02:00",
-          "tree_id": "33c34e90fa3c72c9805ab61632937f581e7123c7",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4580e112e58075ad5614654024d0bb18aa343848"
-        },
-        "date": 1784016453897,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2224767,
-            "range": "± 31687",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2737129,
-            "range": "± 105296",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 298332,
-            "range": "± 4545",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 322108,
             "range": "± 5548",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1ff8aa3bb9c770b0bb74540833469f38cf314598",
+          "message": "feat(export): render projects as bold name, technologies meta line, description (#1071)\n\n* feat(export): render projects as bold name, tech-stack meta line, description\n\nA project's locked signature (bold name + links, a middot-separated stack\nline, then prose) arrived at the renderer as three indistinguishable\nparagraphs: the parser reads the title line as Contact because it holds a\nURL, and the stack line as Contact or Text depending only on how many\ntechnologies are listed. Every template already styles an entry title and\nsubtitle; nothing styles three paragraphs.\n\nRegroup those lines back into the EntryBlock the text always described,\nscoped to a Projects section and to the line directly under a title. No\ntemplate, DOCX renderer or model field changes: both export formats build\nfrom model_from_resume_text, so PDF, DOCX and the live SVG preview pick it\nup together.\n\nAlso localize the Projects arm of SectionId::from_header. It matched only\n\"project\", so a German Projekte heading classified as Custom and\nreorder_sections sorts an unknown id last - meaning ATS mode dumped those\nprojects at the bottom of the document, contradicting DE_ORDER. The other\nsections stay English-only; that is a wider gap with its own blast radius.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* feat(builder): let projects carry a technologies list\n\nThe export path now renders a project's tech line as its own styled meta\nline, but nothing outside an uploaded CV could author one: the builder\nwizard's project form had name, description and link, and the GitHub\nimport fed language/topics into the prompt only to get name and\ndescription back.\n\nAdd a technologies field to the interview contract and the wizard form,\nnormalize whatever separators the candidate types to the one the resume\nrenders with, and tell the model the three-line project shape at all three\nprompt depths from one shared rule.\n\nThe GitHub import fills it deterministically from the repo's own language\nand topics rather than asking the model, which would add a fabrication\nsurface for data the caller already holds verbatim. Topics are untrusted\ntext, so the list is deduped and capped the same way the prompt block caps\nthem, and lands in an editable field the candidate reviews first.\n\nThe zod field is optional on purpose: builder drafts persist, and a\nrequired string would fail safeParse on every draft saved before this\nfield existed and discard the candidate's answers.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(export): keep contact lines out of the project tech-stack slot\n\nA line directly under a project title was read as the technology list on\nseparator count alone, so a resume that puts its project links on their own\nline got them styled as the tech stack.\n\nReject email, phone, a URL scheme, a markdown link and the known contact\nhosts instead. Not is_contact_shaped: it treats two or more separators as\ncontact-shaped, which is what a three-item stack looks like. URL_RE alone is\nalso not enough, since its scheme arm is anchored at the start of the line\nand a trailing link like \"Demo - https://example.dev\" slips past it; the\nunanchored :// test is what catches that.\n\nNo bare-domain test on purpose. Node.js - socket.io - Express is a real\nstack, and every heuristic that catches demo.example.dev catches socket.io\ntoo. A bare-domain link line stays accepted: that failure is cosmetic, the\nother one corrupts a genuine stack.\n\nBoth new guards were mutation-checked - reverting the predicate fails them.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-21T23:35:38+02:00",
+          "tree_id": "ea90d0cf942efb1ffb86b903ecb5996c22d9bd48",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1ff8aa3bb9c770b0bb74540833469f38cf314598"
+        },
+        "date": 1787349610870,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2205734,
+            "range": "± 18746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2604762,
+            "range": "± 21237",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 312762,
+            "range": "± 11986",
             "unit": "ns/iter"
           }
         ]
