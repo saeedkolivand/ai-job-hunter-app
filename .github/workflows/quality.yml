@@ -432,6 +432,17 @@ jobs:
           benchmark-data-dir-path: apps/landing/public/benchmarks
           skip-fetch-gh-pages: true
           auto-push: false
+          # Bound the series. Without this the action appends forever: 199 entries
+          # had accumulated over 76 days (~2.6/day at ~7.7 KB each, because every
+          # entry embeds a full commit object for three benches), making data.js
+          # 1.5 MB and growing ~20 KB/day — and it is committed to main on every
+          # run, so the cost compounds in git history rather than replacing.
+          #
+          # 100 entries is ~5 weeks at the current cadence, far more resolution
+          # than the /mission-control sparkline or the regression alert needs,
+          # and it halves the file on the next run. The alert compares against the
+          # previous entry, so trimming old points cannot weaken it.
+          max-items-in-chart: 100
           comment-on-alert: true
           alert-threshold: '150%'
           fail-on-alert: false

@@ -1230,6 +1230,8 @@ svg.inkline {
   background: var(--paper);
   color: var(--ink);
   --line: var(--ink);
+  /* next section is .growth (dark #0a0c11), not .finale directly anymore */
+  --seam-next: #0a0c11;
   padding: 30px 22px 90px;
   text-align: center;
   position: relative;
@@ -1243,7 +1245,7 @@ svg.inkline {
   height: clamp(70px, 10vh, 120px);
   z-index: 1;
   pointer-events: none;
-  background: linear-gradient(to top, #ece2cf, transparent);
+  background: linear-gradient(to top, var(--seam-next), transparent);
 }
 .testi > * {
   position: relative;
@@ -1307,14 +1309,100 @@ svg.inkline {
   color: var(--ink);
 }
 
+/* ================= GROWTH ================= */
+/* Sits between the cream .testi and the cream .finale — the page's biggest
+   luminance jump at this point (paper -> #0a0c11 -> paper), so both edges
+   get an explicit two-sided cross-fade (this section's ::before/::after
+   *and* the neighbours' facing edge, mirroring the .testi <-> .finale pair
+   below) rather than the single shared-tone fade a same-brightness boundary
+   (e.g. .beat4 -> .features) can get away with. Not a `.stage`: `.stage`
+   forces min-height:100vh for the parallax/photo sections, which this
+   content-sized chart band doesn't want. */
+.growth {
+  background: #0a0c11;
+  --seam-prev: #f4ecdc; /* --paper, .testi's own background */
+  --seam-next: #ece2cf; /* .finale's background */
+  padding: 70px 22px;
+  text-align: center;
+  position: relative;
+}
+.growth::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: clamp(70px, 10vh, 120px);
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--seam-prev), transparent);
+}
+.growth::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: clamp(70px, 10vh, 120px);
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--seam-next), transparent);
+}
+/* lifts real content above the z-index:1 seam fades, same fix .testi > *
+   already needed below */
+.growth > * {
+  position: relative;
+  z-index: 2;
+}
+.growth-charts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+.growth-charts img {
+  display: block;
+  width: 100%;
+  max-width: 860px;
+  height: auto;
+}
+.growth-note {
+  margin: 28px auto 0;
+  font-family: var(--hand);
+  font-size: 15px;
+  color: #b9c4d4;
+  max-width: 46ch;
+}
+
 /* ================= FINALE ================= */
 .finale {
   background: #ece2cf;
   color: var(--ink);
   --line: var(--ink);
+  /* previous section is now .growth (dark #0a0c11), not .testi directly */
+  --seam-prev: #0a0c11;
   padding: 90px 22px;
   text-align: center;
   position: relative;
+}
+.finale::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: clamp(70px, 10vh, 120px);
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--seam-prev), transparent);
+}
+/* lifts real content above the new ::before seam fade — same fix .testi > *
+   already needed for its own ::after */
+.finale > * {
+  position: relative;
+  z-index: 2;
 }
 .finale .honest {
   font-family: var(--mono);

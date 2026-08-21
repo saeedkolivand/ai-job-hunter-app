@@ -83,20 +83,64 @@ jobs:
         run: |
           set -euo pipefail
           dir="apps/landing/public/metrics"
+          # EVERY payload below is field-allowlisted against the interfaces in
+          # apps/landing/src/lib/mission-control/types.ts, whose own header says
+          # "Only the fields we actually use are typed". The allowlists mirror
+          # those interfaces EXACTLY — deliberately not the narrower set
+          # metrics.ts happens to touch today, because a field dropped here does
+          # not fail: it renders a silent '—' in a stat card.
+          #
+          # Why it matters: these files are committed to main nightly. Dumped
+          # raw they were 3.4 MB, which cost ~70 MB of git history per year on a
+          # 54 MB repo — undoing the 147 MB -> 54 MB history rewrite within a
+          # year. Allowlisted they are ~170 KB. closed-pulls.json alone was
+          # 1.2 MB nightly to produce one median and one ratio.
+          #
+          # It is also a page-weight fix: /mission-control was downloading
+          # 3.4 MB to render fifteen numbers.
           mkdir -p "$dir"
           gh api "repos/$REPO" > "$dir/repo.json"
-          gh api "repos/$REPO/releases?per_page=30" > "$dir/releases.json"
-          # commits.json is trimmed to the exact fields the client (GhCommit in
-          # types.ts) consumes — sha, commit.message, commit.author.date,
-          # author.login — dropping the git author/committer name+email so a real
-          # personal address is never baked to a public, indexable URL.
+
+          # GhRelease. `assets` is the bulk — each raw asset carries a full
+          # uploader user object; only name + download_count are ever read.
+          gh api "repos/$REPO/releases?per_page=30" \
+            | jq 'map({ tag_name, name, published_at, html_url, assets: [.assets[] | { name, download_count }] })' \
+            > "$dir/releases.json"
+
+          # GhCommit. The name+email strip is a PRIVACY requirement, not an size
+          # one: it keeps a real personal address off a public, indexable URL.
+          # `message` is truncated to the subject line because the sole consumer
+          # is `c.commit.message.split('\n', 1)[0]` in metrics.ts — the body is
+          # never displayed. Verified equivalent on a single API response: same
+          # typed/fixish counts, same per-day sparkline buckets, same sha order.
           gh api "repos/$REPO/commits?per_page=100" \
-            | jq 'map({ sha, commit: { message: .commit.message, author: { date: .commit.author.date } }, author: (if .author == null then null else { login: .author.login } end) })' \
+            | jq 'map({ sha, commit: { message: (.commit.message | split("\n")[0]), author: { date: .commit.author.date } }, author: (if .author == null then null else { login: .author.login } end) })' \
             > "$dir/commits.json"
-          gh api "repos/$REPO/pulls?state=open&per_page=50" > "$dir/open-pulls.json"
-          gh api "repos/$REPO/pulls?state=closed&per_page=50&sort=updated&direction=desc" > "$dir/closed-pulls.json"
+
+          # GhPull, both lists. `requested_reviewers` is typed `unknown[]` and
+          # only `.length` is read (metrics.ts), so each entry collapses to a
+          # login and the array length — the thing actually consumed — survives.
+          # The raw bulk is `body`, `head`/`base` (two full repo objects each)
+          # and `_links`.
+          pull_filter='map({ number, title, html_url, draft, created_at, updated_at, merged_at, closed_at, requested_reviewers: [.requested_reviewers[] | { login }], user: (if .user == null then null else { login: .user.login } end) })'
+          gh api "repos/$REPO/pulls?state=open&per_page=50" | jq "$pull_filter" > "$dir/open-pulls.json"
+          gh api "repos/$REPO/pulls?state=closed&per_page=50&sort=updated&direction=desc" | jq "$pull_filter" > "$dir/closed-pulls.json"
+
+          # issues.json is deliberately NOT allowlisted. It is ~6 KB raw, so
+          # there is nothing to win, and `realIssues()` discriminates a PR from
+          # an issue with `i.pull_request === undefined` — a STRICT undefined
+          # check. jq cannot express "omit this key" as naturally as it can
+          # "set it to null", and `null === undefined` is false, so the obvious
+          # filter silently reclassifies every issue as a PR and zeroes the
+          # critical count, the needs-attention list and time-to-first-response.
+          # Six kilobytes is not worth that failure mode.
           gh api "repos/$REPO/issues?state=open&per_page=100" > "$dir/issues.json"
-          gh api "repos/$REPO/actions/runs?per_page=50&branch=main" > "$dir/runs.json"
+
+          # GhWorkflowRun. The `{ total_count, workflow_runs }` wrapper is kept
+          # verbatim — model.ts unwraps it.
+          gh api "repos/$REPO/actions/runs?per_page=50&branch=main" \
+            | jq '{ total_count, workflow_runs: [.workflow_runs[] | { id, name, path, head_branch, status, conclusion, created_at, updated_at, run_started_at, html_url, event }] }' \
+            > "$dir/runs.json"
           jq -n --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{ generatedAt: $t }' > "$dir/meta.json"
 
       # Mirror the benchmark-data commit idiom: no-changes guard, then rebase the

@@ -258,3 +258,11 @@ docs/NEXT_ISSUES.md
 # /world video clips ship as GitHub release assets (world-assets-vN), not in git.
 # See apps/landing/src/app/world/world-config.ts. A local copy here is fine and ignored.
 apps/landing/public/world/vid/
+
+# Growth charts fetched from the orphan `badges` branch at deploy time
+# (.github/workflows/pages.yml). ~77 KB that changes every day, so committing
+# them would add ~28 MB of git history a year — the cost the parentless badges
+# branch exists to avoid. Same rule as the /world clips above: build-time
+# asset, never a commit.
+apps/landing/public/stars.svg
+apps/landing/public/downloads.svg
