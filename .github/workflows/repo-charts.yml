@@ -113,7 +113,11 @@ jobs:
 
           # Build the tree from whichever outputs exist.
           tree="$(
-            for f in downloads.json downloads-history.json downloads.svg stars.svg; do
+            # Every file build-repo-charts.mjs emits must be listed here AND in
+            # pages.yml's fetch loop. Adding an output to the script alone publishes
+            # nothing — which is exactly how downloads-by-platform.json shipped
+            # missing and broke the next Pages deploy.
+            for f in downloads.json downloads-by-platform.json downloads-history.json downloads.svg stars.svg; do
               [ -f "badge-out/$f" ] || continue
               printf '100644 blob %s\t%s\n' "$(git hash-object -w "badge-out/$f")" "$f"
             done | git mktree
