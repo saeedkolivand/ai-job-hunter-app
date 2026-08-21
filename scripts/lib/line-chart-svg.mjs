@@ -24,6 +24,16 @@
 // `prefers-color-scheme` inside an SVG is not reliably honoured, so a
 // transparent chart would be at the mercy of whichever backdrop it landed on.
 //
+// NO ANIMATION, DELIBERATELY — this is load-bearing, not an omission.
+// An earlier version drew the line in with a stroke-dasharray animation.
+// Measured side by side on one page: embedded via an img tag, the animated copy
+// rendered the card, title, gridlines and axis labels but NEVER the data line,
+// fill or annotation, while the identical file with the animation stripped
+// rendered perfectly. Chrome applies the animation there but does not advance
+// its timeline, so animation-fill-mode:backwards pins the from-state forever.
+// GitHub embeds these through camo the same way, so the README was affected too.
+// A chart whose data is visible only if a stylesheet animates is not a chart.
+//
 // FONT EMBEDDED ON PURPOSE: web fonts never load through camo. The woff2 is
 // vendored (apps/landing/public/fonts, SIL OFL) and inlined as a data URI — the
 // same technique star-history.com used. ~33KB per SVG, free here because the
@@ -162,14 +172,6 @@ export function renderLineChart({ points, title, accent, subtitle = '', noun = '
   const line = stroke(0);
   const area = `${padL},${baseline} ${line} ${xOf(points.length - 1).toFixed(1)},${baseline}`;
 
-  // Approximate path length for the draw-on dasharray. Over-estimating is safe
-  // (the line just finishes early); under-estimating would leave a visible gap.
-  let pathLen = 0;
-  for (let i = 1; i < points.length; i++) {
-    pathLen += Math.hypot(xOf(i) - xOf(i - 1), yOf(points[i].value) - yOf(points[i - 1].value));
-  }
-  pathLen = Math.ceil(pathLen * 1.1) + 10;
-
   // Ruled notebook lines: denser than the value gridlines and much fainter, so
   // the page reads as paper rather than as a chart with too many gridlines.
   const rules = [];
@@ -237,19 +239,6 @@ export function renderLineChart({ points, title, accent, subtitle = '', noun = '
     <style>
       @font-face{font-family:"Patrick Hand";font-style:normal;font-weight:400;src:url(${handFont()}) format("woff2");}
       .ink{font-family:'Patrick Hand',cursive}
-      /* The finished state is the DEFAULT state, and the animation only plays
-         back INTO it (from-keyframes + backwards fill). An earlier version set
-         the hidden state statically and animated out of it, which drew a chart
-         with no data line anywhere the animation did not run — and it does not
-         run in every img-embedded-SVG context. Never let a stylesheet be the
-         only thing standing between a reader and the data. */
-      .draw{stroke-dasharray:${pathLen};stroke-dashoffset:0;animation:draw 1.8s ease-out backwards}
-      .fade{opacity:1;animation:fade .7s ease-out 1.5s backwards}
-      @keyframes draw{from{stroke-dashoffset:${pathLen}}}
-      @keyframes fade{from{opacity:0}}
-      @media (prefers-reduced-motion:reduce){
-        .draw,.fade{animation:none}
-      }
     </style>
     <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2"/></filter>
     <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
@@ -269,13 +258,11 @@ export function renderLineChart({ points, title, accent, subtitle = '', noun = '
     <text x="${W - padR}" y="40" fill="${accent}" font-size="34" text-anchor="end">${humanize(latest.value)}</text>
     <text x="${W - padR}" y="59" fill="${FG}" fill-opacity="0.6" font-size="13.5" text-anchor="end">${esc(delta)}</text>
     ${grid}
-    <polygon class="fade" points="${area}" fill="url(#fill)"/>
-    <polyline class="draw" points="${stroke(1)}" fill="none" stroke="${accent}" stroke-opacity="0.45" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
-    <polyline class="draw" points="${line}" fill="none" stroke="${accent}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle class="fade" cx="${xOf(points.length - 1).toFixed(1)}" cy="${yOf(latest.value).toFixed(1)}" r="5" fill="${accent}" stroke="${BG}" stroke-width="2.5"/>
-    <g class="fade">
-      ${note}
-    </g>
+    <polygon points="${area}" fill="url(#fill)"/>
+    <polyline points="${stroke(1)}" fill="none" stroke="${accent}" stroke-opacity="0.45" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline points="${line}" fill="none" stroke="${accent}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${xOf(points.length - 1).toFixed(1)}" cy="${yOf(latest.value).toFixed(1)}" r="5" fill="${accent}" stroke="${BG}" stroke-width="2.5"/>
+    ${note}
     ${ticks}
   </g>
 </svg>

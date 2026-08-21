@@ -47,6 +47,10 @@ on:
 # Only write access — needed to push the regenerated charts to the badges branch.
 permissions:
   contents: write
+  # Dispatching pages.yml below. workflow_dispatch is exempt from the
+  # GITHUB_TOKEN no-recursion rule, so this is sufficient — same as
+  # metrics-snapshot.yml, which triggers the deploy the same way.
+  actions: write
 
 # Don't cancel an in-flight publish; queue overlapping runs (schedule + release).
 concurrency:
@@ -90,6 +94,7 @@ jobs:
         run: node scripts/build-repo-charts.mjs --prev-history prev-history.json
 
       - name: 📤 Publish to the badges branch
+        id: publish
         run: |
           set -euo pipefail
 
@@ -120,9 +125,23 @@ jobs:
           # short-circuits a same-day re-run.)
           if [ "$tree" = "$(git rev-parse FETCH_HEAD^{tree} 2>/dev/null || echo none)" ]; then
             echo "Charts unchanged — skipping publish."
+            echo "published=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           commit="$(git commit-tree "$tree" -m 'chore: update repo charts [skip ci]')"
           git push --force origin "$commit:refs/heads/badges"
+          echo "published=true" >> "$GITHUB_OUTPUT"
           echo "Published repo charts to the badges branch."
+
+      # The home page embeds these charts, and pages.yml copies them out of the
+      # `badges` branch at build time — so a fresh chart is not live until the
+      # site rebuilds. Without this dispatch the site would always trail the
+      # README by a day: the nightly Pages deploy is triggered by
+      # metrics-snapshot.yml at 03:17 UTC, an hour BEFORE these charts are
+      # regenerated at 04:17. Same idiom as that workflow's own trigger step.
+      - name: 🚀 Trigger Pages deploy
+        if: steps.publish.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
