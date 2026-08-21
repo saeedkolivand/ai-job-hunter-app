@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import type { MatchScore } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 
@@ -18,10 +19,15 @@ vi.mock('@ajh/translations', () => ({
 }));
 
 // ModelSelector uses useAppClient (requires AppClientProvider) — stub so tests
-// that reach the summary tab don't need a full provider tree.
+// that reach the summary tab don't need a full provider tree. `useSelectedProvider`
+// reads a mutable module-level var (not a plain arrow) so the CLI-agent egress
+// tests below can select a CLI-agent provider; every other test relies on the
+// default ('ollama' — not a CLI agent, so the score strip never discloses egress).
+let mockActiveProvider = 'ollama';
+
 vi.mock('@/components/ui/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector-stub" />,
-  useSelectedProvider: () => 'ollama',
+  useSelectedProvider: () => mockActiveProvider,
 }));
 
 // ExternalLink uses useAppClient (requires AppClientProvider) — stub it with a
@@ -38,12 +44,32 @@ vi.mock('@/components/ui/ExternalLink', () => ({
   ),
 }));
 
-// useJobAdTextMatchScore (JobAdView's Score tab, via useAppClient/QueryClient) —
-// stub so tests that reach the Job-ad tab don't need a provider tree. None of
-// the tests in this file exercise the Score tab's own render logic (that's
-// JobAdView.test.tsx / JobAdView.i18n.test.tsx's job).
+// useJobAdTextMatchScore — shared by JobAdView's Score tab AND the résumé
+// result's score strip (GenerationScoreStrip), via useAppClient/QueryClient —
+// stubbed so tests that reach either don't need a provider tree. A mutable
+// `stubbedScore` (not a plain arrow) so the score-strip tests below can drive
+// it — same pattern as JobAdView.i18n.test.tsx. `mockUseJobAdTextMatchScore`
+// (the `mock`-prefixed name) is Vitest's documented exception to the "no
+// out-of-scope refs in a hoisted factory" rule. Reset before EVERY test —
+// most never touch it and rely on this default (undefined data, not
+// loading), which is what makes the strip render its honest "not scored"
+// placeholder rather than a stale value leaking across tests.
+let stubbedScore: {
+  data?: unknown;
+  isLoading?: boolean;
+  isError?: boolean;
+  refetch?: () => void;
+} = { data: undefined, isLoading: false };
+
+beforeEach(() => {
+  stubbedScore = { data: undefined, isLoading: false };
+  mockActiveProvider = 'ollama';
+});
+
+const mockUseJobAdTextMatchScore = vi.fn((..._args: unknown[]) => stubbedScore);
+
 vi.mock('@/services', () => ({
-  useJobAdTextMatchScore: () => ({ data: undefined, isLoading: false }),
+  useJobAdTextMatchScore: (...args: unknown[]) => mockUseJobAdTextMatchScore(...args),
 }));
 
 // EditableOutput mock — exposes onChange/onBlur/isPending + renders previewSlot.
@@ -1377,6 +1403,215 @@ describe('GenerationOutput', () => {
 
       await user.click(screen.getByRole('button', { name: /quality\.badge\.stale/ }));
       expect(screen.queryByRole('button', { name: /quality\.panel\.recheck/ })).toBeNull();
+    });
+  });
+
+  // ── 11. Score strip — résumé result surfaces the job-match score ─────────────
+  // Real render-logic guards (isMeasured/hasScoreCoverage/ScoreMetric) are
+  // covered once, at the source, by JobAdView.i18n.test.tsx against REAL
+  // translated copy — that module is now shared (MatchScoreMetric.tsx), not
+  // forked. This block covers GenerationScoreStrip's OWN wiring: which tab it
+  // renders on, and that it never fabricates a `0`.
+
+  describe('Score strip', () => {
+    // Clears accumulated calls from every earlier test in this file so the
+    // "which text did the LATEST render call the hook with" test below finds
+    // this test's own call, not some earlier test's.
+    beforeEach(() => {
+      mockUseJobAdTextMatchScore.mockClear();
+    });
+
+    function baseScore(overrides: Partial<MatchScore> = {}): MatchScore {
+      return {
+        resumeId: 'resume-1',
+        jobId: 'job-1',
+        ats: 72,
+        semantic: 0,
+        combined: 72,
+        gaps: ['docker'],
+        recommendations: [],
+        scoreSource: 'keyword',
+        ...overrides,
+      };
+    }
+
+    it('renders a real percentage when the score is measured', () => {
+      stubbedScore = { data: baseScore({ ats: 72 }), isLoading: false };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStripCoverage)).toHaveTextContent('72%');
+    });
+
+    it('renders the stated reason, never "0%", for the no-extractable-keywords placeholder', () => {
+      stubbedScore = {
+        data: baseScore({ ats: 0, combined: 0, gaps: [] }),
+        isLoading: false,
+      };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStripCoverage)).toHaveTextContent(
+        'autopilot.apply.jobAdView.score.noKeywords'
+      );
+      expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    });
+
+    it('shows the no-résumé reason (never a score) when no resumeId is threaded', () => {
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: undefined })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).toHaveTextContent(
+        'jobs.scoreNoResume'
+      );
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStripCoverage)).not.toBeInTheDocument();
+    });
+
+    it('does NOT render on the cover-letter tab — a cover letter is not scored against keyword coverage', () => {
+      stubbedScore = { data: baseScore(), isLoading: false };
+      render(
+        <GenerationOutput
+          {...makeProps({ target: 'both', activeOut: 'cover', resumeId: 'resume-1' })}
+        />
+      );
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStrip)).not.toBeInTheDocument();
+    });
+
+    it('does NOT render on the job-ad tab', async () => {
+      const user = userEvent.setup();
+      stubbedScore = { data: baseScore(), isLoading: false };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      await clickJobAdTab(user);
+
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStrip)).not.toBeInTheDocument();
+    });
+
+    it('passes the snapshotted jobDesc (not a live-editable value) as the query text argument', () => {
+      stubbedScore = { data: baseScore(), isLoading: false };
+      render(
+        <GenerationOutput
+          {...makeProps({
+            activeOut: 'resume',
+            resumeId: 'resume-1',
+            jobDesc: 'Snapshot-worthy posting text',
+          })}
+        />
+      );
+      const enabledCall = mockUseJobAdTextMatchScore.mock.calls.find((call) => call[2] === true);
+      expect(enabledCall?.[0]).toBe('resume-1');
+      expect(enabledCall?.[1]).toBe('Snapshot-worthy posting text');
+    });
+
+    // ── Loading / error / malformed-payload branches ─────────────────────────
+    // GenerationOutput.test.tsx previously covered only measured / placeholder /
+    // no-résumé / tab-gating — these are the branches that enforce the honesty
+    // guarantee itself (never a fabricated `0%`/score for a request that hasn't
+    // resolved, failed, or came back malformed).
+
+    it('announces loading via a live region', () => {
+      stubbedScore = { data: undefined, isLoading: true };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      const strip = screen.getByTestId(TEST_IDS.documents.scoreStrip);
+      expect(strip).toHaveAttribute('role', 'status');
+      expect(strip).toHaveAttribute('aria-live', 'polite');
+      expect(strip).toHaveTextContent('autopilot.apply.jobAdView.score.loading');
+    });
+
+    it('shows an alert with a working retry on a rejected request', async () => {
+      const user = userEvent.setup();
+      const refetch = vi.fn();
+      stubbedScore = { data: undefined, isLoading: false, isError: true, refetch };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      const strip = screen.getByTestId(TEST_IDS.documents.scoreStrip);
+      expect(strip).toHaveAttribute('role', 'alert');
+      expect(strip).toHaveTextContent('autopilot.apply.jobAdView.score.errorTitle');
+
+      await user.click(screen.getByRole('button', { name: /autopilot\.apply\.tryAgain/i }));
+      expect(refetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the same alert (never a fabricated score) for a resolved-but-malformed payload', () => {
+      // `invoke()` never validates the resolved shape — a failure response
+      // (e.g. a résumé id that outlived its résumé) can resolve typed as
+      // MatchScore while missing ats/combined/gaps/recommendations.
+      stubbedScore = {
+        data: { resumeId: 'resume-1', jobId: 'job-1' },
+        isLoading: false,
+      };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      const strip = screen.getByTestId(TEST_IDS.documents.scoreStrip);
+      expect(strip).toHaveAttribute('role', 'alert');
+      expect(strip).toHaveTextContent('autopilot.apply.jobAdView.score.errorTitle');
+      expect(screen.queryByText('0%')).not.toBeInTheDocument();
+      expect(screen.queryByText(/NaN%/)).not.toBeInTheDocument();
+    });
+
+    // ── CLI-agent egress disclosure (mirrors JobAdView's Score tab) ──────────
+    // Unlike the Score tab, this strip fires ON MOUNT whenever a résumé is
+    // threaded — no explicit click required — so the disclosure matters even
+    // more here.
+
+    it('discloses CLI-agent egress while loading and on the error branch, never for a local provider', () => {
+      mockActiveProvider = 'claude-code';
+      stubbedScore = { data: undefined, isLoading: true };
+      const { rerender } = render(
+        <GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />
+      );
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+
+      stubbedScore = { data: undefined, isLoading: false, isError: true, refetch: vi.fn() };
+      rerender(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+
+      mockActiveProvider = 'ollama';
+      rerender(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).not.toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+    });
+
+    it('does NOT disclose egress on the no-résumé reason — nothing was ever sent', () => {
+      mockActiveProvider = 'claude-code';
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: undefined })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).not.toHaveTextContent(
+        'autopilot.apply.jobAdView.score.cliAgentEgress'
+      );
+    });
+
+    // ── Finding 1 regression: the snapshot must survive the strip unmounting ──
+    // The strip only renders on `view === 'doc' && activeOut === 'resume'`, so
+    // switching to the Job ad tab unmounts it. The snapshot MUST be owned by
+    // GenerationOutput (which stays mounted) — a snapshot re-initialised on
+    // the strip's own remount would silently score the EDITED posting text,
+    // through a path that can route via translation.
+
+    it('a tab switch away and back still scores the ORIGINAL snapshot, not a jobDesc edited while away', async () => {
+      const user = userEvent.setup();
+      stubbedScore = { data: baseScore(), isLoading: false };
+      const props = makeProps({
+        activeOut: 'resume',
+        resumeId: 'resume-1',
+        jobDesc: 'Original posting text',
+      });
+      const { rerender } = render(<GenerationOutput {...props} />);
+
+      // Switch to the Job ad tab — the strip unmounts.
+      await clickJobAdTab(user);
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStrip)).not.toBeInTheDocument();
+
+      // Simulate the posting being edited on the Job ad sub-tab while the
+      // strip is unmounted — GenerationOutput is controlled, so the parent
+      // would pass this back down as a new `jobDesc`.
+      rerender(<GenerationOutput {...props} jobDesc="Edited posting text" />);
+
+      // Switch back to the résumé tab — the strip remounts.
+      await user.click(screen.getByRole('tab', { name: 'autopilot.apply.target.resume' }));
+
+      const enabledCalls = mockUseJobAdTextMatchScore.mock.calls.filter((call) => call[2] === true);
+      const lastEnabledCall = enabledCalls[enabledCalls.length - 1];
+      expect(lastEnabledCall?.[1]).toBe('Original posting text');
     });
   });
 });

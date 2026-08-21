@@ -1,0 +1,128 @@
+name: 📈 Repo Charts
+
+# ──────────────────────────────────────────────────────────────────────
+# Self-hosted downloads badge, downloads chart and star-history chart
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: publish everything the README embeds about repo growth, generated
+#   in-repo so no third-party service sits in the README's critical path.
+#
+#   1. downloads.json         — Shields endpoint badge. The stock
+#        github/downloads/<repo>/total badge is updater-inflated (it sums
+#        latest.json polling, .sig fetches and Tauri update payloads);
+#        scripts/build-repo-charts.mjs keeps only OS installers.
+#   2. downloads-history.json — the daily series behind the chart. GitHub has NO
+#        historical download endpoint, so a time series exists only because this
+#        job appends one reading per day. Losing this file loses the past.
+#   3. downloads.svg          — that series, drawn.
+#   4. stars.svg              — star history, rebuilt from scratch each run.
+#
+#   Charts are dark-only, matching apps/landing's body (#0a0c11 / #e7ecf3).
+#
+# Why stars are here at all: on 2026-06-30 GitHub restricted the stargazers API
+#   to a repo's own admins and collaborators, which broke every third-party
+#   star-history embed (star-history.com now renders "GitHub restricted access to
+#   star data" in place of a chart). Running under GITHUB_TOKEN puts this job on
+#   the allowed side of that restriction.
+#
+# Triggers:
+#   - schedule: once daily, off-peak (04:17 UTC — deliberately off the hour to
+#       dodge GitHub's top-of-hour cron congestion)
+#   - workflow_dispatch: manual refresh
+#   - release published: refresh immediately after a new release ships
+#
+# Publish target: the orphan `badges` branch, as a PARENTLESS commit that is
+#   force-pushed. That keeps `badges` a single-commit branch with zero history,
+#   which is what makes a ~35KB font-embedding SVG cheap to republish daily.
+#   It is also why downloads history must live INSIDE downloads-history.json —
+#   git history on this branch is destroyed by design, every run.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+# Only write access — needed to push the regenerated charts to the badges branch.
+permissions:
+  contents: write
+
+# Don't cancel an in-flight publish; queue overlapping runs (schedule + release).
+concurrency:
+  group: repo-charts
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build & publish charts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 22
+          # zizmor cache-poisoning: no dependency cache in a workflow that publishes (contents: write).
+          package-manager-cache: false
+
+      - name: 📜 Recover the existing downloads history
+        # The one piece of state that cannot be recomputed. Absent on the first
+        # run and on a branch that has never been published — both are fine, the
+        # build falls back to the committed seed.
+        run: |
+          set -euo pipefail
+          if git fetch --quiet origin badges 2>/dev/null \
+             && git show FETCH_HEAD:downloads-history.json > prev-history.json 2>/dev/null; then
+            echo "recovered $(node -p "require('./prev-history.json').length") prior daily points"
+          else
+            echo '[]' > prev-history.json
+            echo "no prior history on the badges branch — seeding from the repo"
+          fi
+
+      - name: 📊 Build badge and charts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/build-repo-charts.mjs --prev-history prev-history.json
+
+      - name: 📤 Publish to the badges branch
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # stars.svg is deliberately not written when the API returned no dated
+          # stargazers — carry the previous one forward rather than publishing an
+          # empty chart into the README.
+          if [ ! -f badge-out/stars.svg ]; then
+            git show FETCH_HEAD:stars.svg > badge-out/stars.svg 2>/dev/null \
+              && echo "reusing the previous stars.svg" || true
+            # `git show` into a redirect leaves an empty file behind on failure.
+            [ -s badge-out/stars.svg ] || rm -f badge-out/stars.svg
+          fi
+
+          # Build the tree from whichever outputs exist.
+          tree="$(
+            for f in downloads.json downloads-history.json downloads.svg stars.svg; do
+              [ -f "badge-out/$f" ] || continue
+              printf '100644 blob %s\t%s\n' "$(git hash-object -w "badge-out/$f")" "$f"
+            done | git mktree
+          )"
+
+          # Idempotent: comparing the whole TREE covers every published file at
+          # once, so no file can drift in unnoticed and an unchanged day pushes
+          # nothing. (The charts stamp "as of <date>", so in practice this only
+          # short-circuits a same-day re-run.)
+          if [ "$tree" = "$(git rev-parse FETCH_HEAD^{tree} 2>/dev/null || echo none)" ]; then
+            echo "Charts unchanged — skipping publish."
+            exit 0
+          fi
+
+          commit="$(git commit-tree "$tree" -m 'chore: update repo charts [skip ci]')"
+          git push --force origin "$commit:refs/heads/badges"
+          echo "Published repo charts to the badges branch."

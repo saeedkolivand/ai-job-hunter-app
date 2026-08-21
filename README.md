@@ -472,11 +472,11 @@ a verdict-first, full-repo dashboard (delivery, work, quality, community) update
 
 ### 🔎 Advisory — never blocks
 
-[![📥 Downloads Badge](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
 [![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
 [![📸 Mission Control Snapshot](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml)
 [![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)
+[![📈 Repo Charts](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/repo-charts.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/repo-charts.yml)
 [![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml)
 [![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml)
 
@@ -589,9 +589,18 @@ Found a vulnerability? Please report it privately: see **<a href="SECURITY.md" t
 
 ---
 
-<h2 align="center">Star History</h2>
-  <p align="center">
-    <a href="https://www.star-history.com/?repos=saeedkolivand%2Fai-job-hunter-app&type=date&legend=top-left">
-       <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=saeedkolivand/ai-job-hunter-app&type=date&legend=top-left&sealed_token=BvlEx3sgtGKQYdgEFgO0q7skVO0JVaZw7myCd6nqU0QRYPMWEolRDGnP84qLWCIw5sOLAj5tgu8Nb4PCenKo3rGaNq_DxuWe1KA7LvDv0tPfcOeRJW8_Y1FW1TL0U-ids3n2UdrBQ_xwCp_2TxL1zpFRV6ze0KFuzQC3JEi0FBSQWhreF2KUgT1YwTN6" />
-    </a>
+<h2 align="center">Growth</h2>
+
+<p align="center">
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/stargazers">
+    <img alt="Star history: cumulative stars over time" width="800" src="https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/badges/stars.svg">
+  </a>
 </p>
+
+<p align="center">
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases">
+    <img alt="Installer downloads over time" width="800" src="https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/badges/downloads.svg">
+  </a>
+</p>
+
+<p align="center"><em>Both charts are generated in-repo by <a href=".github/workflows/repo-charts.yml">📈 Repo Charts</a> and served from the <code>badges</code> branch &mdash; no third-party service.</em></p>

@@ -31,6 +31,7 @@ import {
   TEMPLATES,
 } from '@/lib/generate';
 
+import { GenerationScoreStrip } from './GenerationScoreStrip';
 import { JobAdView } from './JobAdView';
 import type { TailorTarget } from './lib/tailor-target';
 
@@ -131,6 +132,31 @@ export function GenerationOutput({
   // Highlighted format in the export picker. The picker is immediate (a click
   // downloads), so this only tracks the visual selection between opens.
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
+
+  // Score-strip snapshot — lives HERE, not inside `GenerationScoreStrip`,
+  // because that strip only renders while `view === 'doc' && activeOut ===
+  // 'resume'`: switching to the Job ad or Cover tab unmounts it. A `useState`
+  // owned by the strip itself would re-initialise from whatever `jobDesc` is
+  // live at remount — the Job ad sub-tab is an editable textarea one view
+  // over, so "résumé tab → Job ad tab → edit posting → back" would silently
+  // mint a fresh score for the edited text, including the translation-egress
+  // cost `JobAdView`'s own snapshot (`scoreSnapshot`) exists to avoid. This
+  // component stays mounted across every tab switch, so the snapshot survives
+  // here instead. Lazy-initializes from `jobDesc` to cover a cold-hydrated
+  // session (`output` restored from a saved record with no `report` yet, so
+  // the effect below never fires — the strip then scores against whatever
+  // `jobDesc` this component mounted with, same as before the lift);
+  // re-snapshots exactly once per NEW completed generation (`report`'s own
+  // `generatedAt` changing).
+  const [scoreSnapshot, setScoreSnapshot] = useState(jobDesc);
+  const lastScoreKeyRef = useRef(report?.generatedAt);
+  useEffect(() => {
+    const key = report?.generatedAt;
+    if (key !== undefined && key !== lastScoreKeyRef.current) {
+      lastScoreKeyRef.current = key;
+      setScoreSnapshot(jobDesc);
+    }
+  }, [report?.generatedAt, jobDesc]);
 
   // Committed text per doc — what PdfPreview renders. Local edits auto-commit
   // after ~700 ms via useDebouncedCommit; generation/regeneration commits immediately.
@@ -343,6 +369,13 @@ export function GenerationOutput({
           (edits, tab switches) leave a dismissal in place. Pinned like the
           toolbar above it, not part of the scrollport below. */}
       {view === 'doc' && report && <HandEditNudge key={report.generatedAt} className="mx-3 mt-2" />}
+      {/* Score strip — résumé only (a cover letter isn't scored against
+          keyword coverage). Surfaces the score users otherwise only find two
+          clicks away, behind the opt-in Job ad → Score sub-tab. Pinned like
+          the nudge above it, so it's visible without scrolling the preview. */}
+      {view === 'doc' && activeOut === 'resume' && (
+        <GenerationScoreStrip resumeId={resumeId} jobDesc={scoreSnapshot} className="mx-3 mt-2" />
+      )}
       {/* The scrollport. ONLY the tab/action bar above pins — the option strips
           scroll WITH the document: pinning them too costs more permanent chrome
           than a small window can spare, collapsing the document to nothing and
