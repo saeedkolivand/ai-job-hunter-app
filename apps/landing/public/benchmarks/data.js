@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787327084565,
+  "lastUpdate": 1787329755413,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "63994473b965ebeeb351474862737e769441dc38",
-          "message": "feat: add applied.check bridge verb with adaptive popup status (#631)\n\n* feat: add applied.check bridge verb with adaptive popup status\n\nImplements the reserved applied.check protocol verb end-to-end: the\npopup auto-checks the active tab URL on entering the connected phase\n(fire-and-forget, soft-fail silent) and the desktop answers with a pure\nread-only store lookup — canonical url, normalize, find by job url. The\npopup renders an already-in-pipeline status line and relabels the\nimport button. No protocol bump, no manifest changes, no consent gate\nneeded (device-local metadata over the authenticated loopback bridge).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: reset applied status line and import label on phase change\n\nClear the appliedCheck status line and import button label whenever the\nconnection leaves connected, and synchronously before each fresh check, so\nstale text from a prior page never flashes after a reconnect.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: include year in applied date when not current year\n\nformatShortDate omitted the year unconditionally, so an applied date from a\nprior year read ambiguously (e.g. \"Jun 12\"); add year:'numeric' when the\ndate's year differs from today's.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: guard applied auto-check against stale in-flight responses\n\nA disconnect->reconnect re-enters connected and fires a fresh\nappliedCheck while a previous one may still be in flight; without a\ngeneration guard the stale response (or its catch) could resolve\nafter the newer check and overwrite its rendered state. Add a\nmodule-level generation counter that bails before any DOM mutation\nin both the success and catch paths when a newer check has since\nstarted.\n\nAlso documents the consent-gate boundary (read-only own-metadata\nlookups need no desktop opt-in vs. fresh-PII/billable verbs that do)\nin extension-protocol-constants.ts, and notes the wire-error\nsentinel-text discipline on applied_result_reply's Err arm in the\nbridge (comment-only, no behavior change).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-14T06:34:20+02:00",
-          "tree_id": "595d022d7a5219d09f16225e19c3a195a703d556",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/63994473b965ebeeb351474862737e769441dc38"
-        },
-        "date": 1784004245300,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2060526,
-            "range": "± 70065",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2423789,
-            "range": "± 74433",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 225259,
-            "range": "± 7935",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 300644,
             "range": "± 8010",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e0a9066bacecc55260891ed0ced7550f350e1cdb",
+          "message": "chore: stop committing generated images, and fix the note that said otherwise (#1066)\n\nTwenty files, 6.38 MB, none of them source. Each is rendered output of a\ngenerator that is itself committed, so every regeneration wrote another few MB\ninto history that no clone needs but every clone pays for.\n\nWhere each set went, and why they could not all go to the same place:\n\n- branding/marketing/0{1..4}.png and the extension's screenshots + promo tiles\n  are attached to the assets-v1 release as two zips. They are downloaded once\n  and re-uploaded by hand to Product Hunt and the Chrome Web Store, so GitHub\n  serving release assets as application/octet-stream with\n  Content-Disposition: attachment is the shape their use already wants.\n- docs/assets/templates-showcase.png could NOT go there. The README embeds it,\n  and an attachment-disposition octet-stream does not render in an img tag. It\n  now lives on a parentless `assets` branch and is served from\n  raw.githubusercontent.com, which answers image/png — the same transport the\n  README's badges and growth charts already use.\n\nicon-512.png stays tracked: build.mjs reads it as base64, so it is an input,\nnot output. The gitignore negates it explicitly.\n\nThree places would have quietly undone this:\n\n- docs/EXPORT_TEMPLATES.md instructed the reader to regenerate the showcase\n  banner \"and commit\" it. It now says where to publish it instead, and carries\n  the plumbing to do so. That snippet is tested, not assumed: run verbatim it\n  reproduces the exact tree hash this branch published, and its first draft\n  did not — `mktemp` creates an empty file and git rejects an empty index, so\n  it needs -u to hand back a path.\n- typst_engine/test.rs still writes the banner to the now-ignored path, which\n  is correct, but nothing there said not to force-add the result. It does now.\n- The extension's store-assets README described files that are no longer in a\n  clone. It points at the release zip.\n\nAlso corrected while adjacent: the gitignore claimed the /world clips \"ship as\nGitHub release assets (world-assets-vN)\". No such tag was ever cut and\nworld-config.ts says Cloudflare R2 — because scrub-engine.js loads clips with\nfetch().blob() and release downloads carry no Access-Control-Allow-Origin. The\nabandoned plan is now recorded as abandoned, with the reason.\n\nThis stops the growth; it does not undo it. The blobs stay in history until a\nrewrite, and the gitignore says so where someone would otherwise assume the\nrepo just got 6 MB smaller.\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-21T18:17:14+02:00",
+          "tree_id": "ba2522bdf16a4dc8d5f3c953adb633aa2ff1a310",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/e0a9066bacecc55260891ed0ced7550f350e1cdb"
+        },
+        "date": 1787329754811,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2264226,
+            "range": "± 50218",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2678144,
+            "range": "± 27954",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 322108,
+            "range": "± 5548",
             "unit": "ns/iter"
           }
         ]
