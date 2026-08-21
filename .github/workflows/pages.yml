@@ -87,17 +87,35 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --depth 1 origin badges
-          for f in stars.svg downloads.svg downloads-by-platform.json; do
+          # REQUIRED. The home page embeds these two in <img>, so a missing one
+          # is a broken image on the landing page. `git show` into a redirect
+          # leaves an empty file behind on failure, so check for content, not
+          # existence. Failing is the correct outcome — the last good site stays
+          # up. Same rule as readJsonArray in scripts/lib/downloads-history.mjs.
+          for f in stars.svg downloads.svg; do
             git show "FETCH_HEAD:$f" > "apps/landing/public/$f"
-            # `git show` into a redirect leaves an empty file behind on failure,
-            # so check for content, not just existence. Failing the build is the
-            # correct outcome: the last good site stays up, whereas shipping a
-            # broken <img> onto the home page is a visible defect. Same rule as
-            # readJsonArray in scripts/lib/downloads-history.mjs — never publish
-            # reduced output quietly.
             [ -s "apps/landing/public/$f" ] || { echo "::error::$f missing or empty on the badges branch"; exit 1; }
             echo "fetched $f ($(wc -c < "apps/landing/public/$f") bytes)"
           done
+
+          # OPTIONAL, and the distinction is deliberate. DownloadCounts fetches
+          # this at runtime and no-ops when it is absent, so the failure mode is
+          # /download without its count pills — invisible, not broken. Taking the
+          # whole site's deploy down for that would block every unrelated fix
+          # behind a decorative file, which is a worse outcome than the thing it
+          # is guarding against. Warned rather than silent, so a persistently
+          # missing file is still visible in the run summary.
+          #
+          # It shipped missing exactly once, because repo-charts.yml builds the
+          # badges tree from its own hardcoded file list: adding an output to
+          # build-repo-charts.mjs publishes nothing until that list names it too.
+          if git show "FETCH_HEAD:downloads-by-platform.json" > apps/landing/public/downloads-by-platform.json 2>/dev/null \
+            && [ -s apps/landing/public/downloads-by-platform.json ]; then
+            echo "fetched downloads-by-platform.json ($(wc -c < apps/landing/public/downloads-by-platform.json) bytes)"
+          else
+            rm -f apps/landing/public/downloads-by-platform.json
+            echo "::warning::downloads-by-platform.json missing on the badges branch — /download ships without its count pills. Check the publish list in repo-charts.yml."
+          fi
 
       - name: 🏗️ Build landing (static export)
         run: pnpm --filter @ajh/landing build
