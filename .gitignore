@@ -255,8 +255,11 @@ post-commit
 CLAUDE.local.md
 docs/NEXT_ISSUES.md
 
-# /world video clips ship as GitHub release assets (world-assets-vN), not in git.
-# See apps/landing/src/app/world/world-config.ts. A local copy here is fine and ignored.
+# /world video clips are served from Cloudflare R2 behind cdn.aijobhunter.app,
+# not from git. See apps/landing/src/app/world/world-config.ts, which is the
+# authority (an earlier plan to ship them as `world-assets-vN` release assets was
+# abandoned: scrub-engine.js loads each clip with fetch().blob(), and GitHub
+# release downloads send no Access-Control-Allow-Origin). A local copy is fine.
 apps/landing/public/world/vid/
 
 # Growth charts fetched from the orphan `badges` branch at deploy time
@@ -266,3 +269,27 @@ apps/landing/public/world/vid/
 # asset, never a commit.
 apps/landing/public/stars.svg
 apps/landing/public/downloads.svg
+
+# ── Generated image sets ───────────────────────────────────────────────────────
+# All rendered output, not source: every file below is produced by a committed
+# generator, and each regeneration used to write another few MB into history that
+# no clone needs but every clone pays for. Rendered copies are archived on the
+# `assets-v1` release; the résumé showcase banner the README embeds lives on the
+# parentless `assets` branch instead, because a release asset is served as
+# application/octet-stream with Content-Disposition: attachment and will not
+# render in a README. Same rule as the /world clips and the growth charts above.
+#
+# NOTE none of this shrinks .git on its own — the old blobs stay in history until
+# a rewrite. It stops the growth; it does not undo it.
+
+# node branding/marketing/build.mjs  (icon-512.png is an INPUT — it stays)
+branding/marketing/*.png
+!branding/marketing/icon-512.png
+
+# node apps/extension/scripts/gen-store-assets.mjs
+apps/extension/store-assets/screenshots/
+apps/extension/store-assets/promo/
+
+# cargo test generate_templates_showcase_banner (typst_engine/test.rs)
+# Published to the `assets` branch — see docs/EXPORT_TEMPLATES.md.
+docs/assets/templates-showcase.png

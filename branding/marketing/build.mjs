@@ -1,6 +1,10 @@
 // Generates the Product Hunt gallery images (1270x760 @2x) from a single template.
 // Run: node branding/marketing/build.mjs
 // Output: 01-hero.png ... 04-private-ai.png in this folder. First image = social preview.
+// Those four are gitignored — they are render output, and re-rendering them used
+// to write ~3.4 MB into history each time. A rendered copy is attached to the
+// `assets-v1` release as marketing-gallery.zip. icon-512.png below is an INPUT
+// (inlined as base64) and stays tracked.
 // Renders via headless Chrome (no extra deps). Edit SLIDES below to tweak copy.
 
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';

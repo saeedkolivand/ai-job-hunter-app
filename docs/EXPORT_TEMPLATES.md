@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-08-17
+Last updated: 2026-08-21
 
 The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
@@ -361,10 +361,31 @@ libtest fns (`generate_templates_showcase_banner` and
 now works on branches containing the build.rs delay-load fix (2fb85227). Preview
 assets may still be stale/incomplete: `cadence`, `regent`, `aria`,
 and `saffron` may lack `.svg` (résumé + cover), the `classic` preview
-may still reflect older `classic.typ`, and the résumé showcase banner
-(`docs/assets/templates-showcase.png`) may show the old nine. **Regenerate in CI
-or on a dev host with the fix, and commit** the refreshed `template-previews/`,
-`cover-template-previews/`, and the showcase banner.
+may still reflect older `classic.typ`, and the résumé showcase banner may show the old nine. **Regenerate in CI or on
+a dev host with the fix, and commit** the refreshed `template-previews/` and
+`cover-template-previews/` — those two are bundled into the renderer, so they
+belong in the tree.
+
+The showcase banner does **not**. It is a 1.4 MB PNG that only the README
+embeds, so it lives on the parentless `assets` branch and is served from
+`raw.githubusercontent.com`; committing it here would write a fresh copy into
+history on every regeneration. Publish a new one without leaving `main`:
+
+```bash
+# Stage the one file in a scratch index so main's index is untouched.
+export GIT_INDEX_FILE=$(mktemp -u)  # -u: a PATH, not a file — git rejects an empty index
+git update-index --add --cacheinfo 100644 "$(git hash-object -w path/to/templates-showcase.png)" templates-showcase.png
+tree=$(git write-tree)
+unset GIT_INDEX_FILE
+
+# Parentless commit, force-pushed: the branch keeps no history by design.
+commit=$(git commit-tree "$tree" -m 'chore: publish README-embedded images')
+git push --force origin "$commit":refs/heads/assets
+```
+
+Verify with `git ls-tree $(git fetch --depth 1 origin assets && echo FETCH_HEAD)`,
+never by loading the CDN URL — `raw.githubusercontent.com` serves a stale 404 for
+minutes after a push.
 
 ---
 
