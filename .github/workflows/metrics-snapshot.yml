@@ -90,11 +90,22 @@ jobs:
           # metrics.ts happens to touch today, because a field dropped here does
           # not fail: it renders a silent '—' in a stat card.
           #
-          # Why it matters: these files are committed to main nightly. Dumped
-          # raw they were 3.4 MB, which cost ~70 MB of git history per year on a
-          # 54 MB repo — undoing the 147 MB -> 54 MB history rewrite within a
-          # year. Allowlisted they are ~170 KB. closed-pulls.json alone was
-          # 1.2 MB nightly to produce one median and one ratio.
+          # Why it matters: these files are committed to main nightly, and raw
+          # they were 3.4 MB a night. The cost to git is NOT that times 365.
+          # Consecutive snapshots differ only slightly, so git delta-compresses
+          # them hard, and an earlier note here said ~70 MB/year by multiplying
+          # raw bytes — wrong by about 2.7x. Measured instead, on the real
+          # thing: the 34 nightly revisions from 2026-07-21 to 2026-08-21 cost
+          # 2.2 MB of PACK space, i.e. ~26 MB/year — a rate this repo cannot
+          # absorb for long at any plausible clone size. Still
+          # very much worth removing; just a number that came from
+          # `cat-file --batch-check='%(objectsize:disk)'` rather than from
+          # multiplication. Allowlisted they are ~170 KB a night.
+          #
+          # closed-pulls.json alone was 1.2 MB nightly to produce one median and
+          # one ratio. That half is a page-weight win regardless of what git
+          # does with it: /mission-control was downloading 3.4 MB to render
+          # fifteen numbers.
           #
           # It is also a page-weight fix: /mission-control was downloading
           # 3.4 MB to render fifteen numbers.
