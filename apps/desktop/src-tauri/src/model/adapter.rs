@@ -77,6 +77,45 @@ fn push_nonempty_section(section: Section, sections: &mut Vec<Section>) {
     }
 }
 
+/// The next line with content, skipping blanks. Blank lines separate projects,
+/// so a project's LAST description line looks ahead to the NEXT project's title
+/// rather than stopping at the gap.
+fn next_content_line(lines: &[ParsedLine], idx: usize) -> Option<&ParsedLine> {
+    lines[idx.saturating_add(1)..]
+        .iter()
+        .find(|l| !matches!(l.kind, LineKind::Blank) && !l.text.trim().is_empty())
+}
+
+/// Does this line open a project entry?
+///
+/// A leading bold run is the signal the generated signature carries and the one
+/// `validate::content`'s tier grader reads. But bold is MARKDOWN, and a résumé
+/// imported from PDF or DOCX has none — extraction keeps the words and drops the
+/// styling. A candidate's own CV can therefore carry a perfectly-formed project
+/// block (`AI Job Hunter   aijobhunter.app` / `Tauri 2 · Rust · React 19` / prose)
+/// and still be rendered as loose paragraphs, which is exactly the flat output
+/// this feature exists to remove.
+///
+/// So fall back to the SHAPE: a short, non-sentence line whose next line is a
+/// technology stack is a project title. The stack line is the discriminator —
+/// prose does not sit above a `·`-separated list — and the line must not be a
+/// stack itself, or a two-stack sequence would open an entry on the second one.
+fn opens_project_entry(line: &ParsedLine, next: Option<&ParsedLine>) -> bool {
+    if line
+        .segments
+        .first()
+        .is_some_and(|seg| seg.bold && !seg.text.trim().is_empty())
+    {
+        return true;
+    }
+    let clean = line.text.trim();
+    !clean.is_empty()
+        && clean.chars().count() <= 100
+        && !clean.ends_with(['.', '!', '?'])
+        && !is_project_stack_shaped(clean)
+        && next.is_some_and(|n| is_project_stack_shaped(&n.text))
+}
+
 /// Regroup one line of a Projects section into an [`EntryBlock`], returning
 /// `true` when the line was consumed.
 ///
@@ -103,6 +142,7 @@ fn push_nonempty_section(section: Section, sections: &mut Vec<Section>) {
 /// Experience or a custom heading are not touched.
 fn absorb_project_line(
     line: &ParsedLine,
+    next: Option<&ParsedLine>,
     entry: &mut Option<EntryBlock>,
     current: &mut Option<Section>,
     preamble: &mut Vec<Block>,
@@ -111,13 +151,7 @@ fn absorb_project_line(
         return false;
     }
 
-    // A bold-led line is the start of the next project — the same signal
-    // `validate::content`'s project-tier grader reads.
-    if line
-        .segments
-        .first()
-        .is_some_and(|seg| seg.bold && !seg.text.trim().is_empty())
-    {
+    if opens_project_entry(line, next) {
         flush_entry(entry, current, preamble);
         *entry = Some(EntryBlock {
             // `line.raw` so the bold run and the markdown links survive.
@@ -171,7 +205,7 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
     let mut current: Option<Section> = None;
     let mut entry: Option<EntryBlock> = None;
 
-    for line in &parsed.lines {
+    for (idx, line) in parsed.lines.iter().enumerate() {
         match line.kind {
             LineKind::Blank => {}
 
@@ -194,7 +228,13 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
                     // Header contact: keep the raw (un-stripped) line so markdown
                     // links `[label](url)` tokenize into clickable runs.
                     contact_parts.push(line.raw.clone());
-                } else if !absorb_project_line(line, &mut entry, &mut current, &mut preamble) {
+                } else if !absorb_project_line(
+                    line,
+                    next_content_line(&parsed.lines, idx),
+                    &mut entry,
+                    &mut current,
+                    &mut preamble,
+                ) {
                     flush_entry(&mut entry, &mut current, &mut preamble);
                     push_block(
                         Block::Paragraph(tokenize_rich(&line.raw)),
@@ -272,7 +312,13 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
                     && is_title_like(&line.text)
                 {
                     title = Some(line.text.clone());
-                } else if !absorb_project_line(line, &mut entry, &mut current, &mut preamble) {
+                } else if !absorb_project_line(
+                    line,
+                    next_content_line(&parsed.lines, idx),
+                    &mut entry,
+                    &mut current,
+                    &mut preamble,
+                ) {
                     flush_entry(&mut entry, &mut current, &mut preamble);
                     push_block(
                         Block::Paragraph(tokenize_rich(&line.raw)),
@@ -1133,6 +1179,57 @@ Framework-agnostic component library published to npm.
             ],
             "the link stays body content, in source order"
         );
+    }
+
+    /// An IMPORTED résumé carries no markdown: PDF and DOCX extraction keeps the
+    /// words and drops the bold. A candidate's own CV with a perfectly-formed
+    /// project block therefore has no `**` anywhere, and a bold-only opener
+    /// rendered the whole section as loose paragraphs — the exact flat output
+    /// this feature exists to remove. Real shape, taken from an imported CV.
+    #[test]
+    fn a_project_title_is_recognized_without_markdown_bold() {
+        let m = model_from_resume_text(
+            "PROJECTS
+
+             AI Job Hunter   aijobhunter.app
+             Tauri 2 · Rust · React 19 · TypeScript
+             Local-first Windows and macOS desktop application with local SQLite storage.
+
+             CrossKit   crosskit.iamsaeed.dev
+             TypeScript · React · Vue
+             Framework-agnostic component library published to npm.
+",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 2, "one entry per project, got {found:?}");
+        assert_eq!(flat(&found[0].title), "AI Job Hunter   aijobhunter.app");
+        assert_eq!(
+            found[0].subtitle.as_ref().map(flat).as_deref(),
+            Some("Tauri 2 · Rust · React 19 · TypeScript")
+        );
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec!["Local-first Windows and macOS desktop application with local SQLite storage."]
+        );
+        assert_eq!(flat(&found[1].title), "CrossKit   crosskit.iamsaeed.dev");
+        assert_eq!(
+            found[1].subtitle.as_ref().map(flat).as_deref(),
+            Some("TypeScript · React · Vue")
+        );
+    }
+
+    /// The shape fallback must not fire on ordinary prose. A description line is
+    /// only ever followed by more prose or the next title, never by a stack.
+    #[test]
+    fn prose_followed_by_prose_never_opens_an_entry() {
+        let m = model_from_resume_text(
+            "PROJECTS
+
+             Built an internal deploy tool used by the whole team
+             and documented it for the on-call rotation.
+",
+        );
+        assert!(entries(&m).is_empty(), "no stack line, so no entry opens");
     }
 
     /// A2: the same text under a German heading takes the same path. Before this
