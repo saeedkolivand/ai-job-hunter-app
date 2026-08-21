@@ -1,6 +1,6 @@
 import { BackLink } from '@/components/BackLink';
 import { SiteFooter } from '@/components/SiteFooter';
-import { CHROME_EXT, FIREFOX_EXT } from '@/lib/site-links';
+import { CHROME_EXT, FIREFOX_EXT, KOFI, PAYPAL, SPONSOR } from '@/lib/site-links';
 import type { Installers } from '@/lib/version';
 
 import { DownloadCards } from './DownloadCards';
@@ -55,6 +55,40 @@ export function DownloadBody({ version, installers }: { version: string; install
             brew install --cask ai-job-hunter
           </code>
           .
+        </p>
+
+        {/* The tip jar. Deliberately AFTER the install notes: the page has already
+            given the visitor everything it promised, so this reads as "if it works
+            out" rather than as a toll gate on a free download.
+
+            The angle is the page's own running joke — it says twice that the app is
+            unsigned because the author has no money — which makes this the one ask
+            where paying visibly benefits the payer: it buys the certificate that
+            removes the warning they just read about.
+
+            No price is named on purpose. Certificate costs change, and a number
+            committed to a public page is a number that silently becomes a lie
+            (cf. scripts/check-landing-drift.mjs, which exists for that failure).
+
+            No positional reference either ("the warning above"): the warnings live
+            in per-button notes that DownloadFreshness rewrites at runtime and that
+            reflow on narrow viewports, and "above" means nothing in a screen
+            reader's linear read — WCAG 1.3.3, which the /accessibility statement
+            claims partial conformance with. */}
+        <p className="auto-note">
+          That unsigned-app warning is a <b>code-signing certificate I can&apos;t afford yet</b>. If
+          this earns its keep →{' '}
+          <a href={SPONSOR} target="_blank" rel="noopener noreferrer">
+            GitHub Sponsors
+          </a>{' '}
+          ·{' '}
+          <a href={PAYPAL} target="_blank" rel="noopener noreferrer">
+            PayPal
+          </a>{' '}
+          ·{' '}
+          <a href={KOFI} target="_blank" rel="noopener noreferrer">
+            Ko-fi
+          </a>
         </p>
 
         <hr className="scrawl" />
