@@ -1377,6 +1377,7 @@ describe('generateGitHubProjects', () => {
       name: 'Merry Oasis',
       description: 'Built a local-first task planner • Implemented offline sync',
       link: 'https://github.com/me/merry-oasis',
+      technologies: 'TypeScript · offline-first',
     });
     // Link is the repo's verbatim htmlUrl, in input order.
     expect(out[1]?.link).toBe('https://github.com/me/tiny-parser');
@@ -1409,8 +1410,59 @@ describe('generateGitHubProjects', () => {
       name: 'Merry Oasis',
       description: 'A local-first task planner.',
       link: 'https://github.com/me/merry-oasis',
+      technologies: 'TypeScript · offline-first',
     });
     expect(out[1]?.link).toBe('https://github.com/me/tiny-parser');
+  });
+
+  it('builds technologies from repo metadata only — deduped, capped, never from the AI', async () => {
+    const client = createMockClient({
+      ai: { generatePipeline: vi.fn().mockRejectedValue(new Error('no provider configured')) },
+      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
+    });
+    _registerClient(client);
+
+    const noisy: GitHubRepo[] = [
+      {
+        name: 'kitchen-sink',
+        description: 'Everything.',
+        htmlUrl: 'https://github.com/me/kitchen-sink',
+        language: 'Rust',
+        topics: [
+          '  rust  ', // duplicate of the language, case- and space-insensitive
+          'cli',
+          'a'.repeat(60), // over the per-item cap
+          '',
+          't4',
+          't5',
+          't6',
+          't7',
+          't8',
+          't9',
+          't10',
+          't11', // past the 10-item cap
+        ],
+        stars: 0,
+      },
+    ];
+
+    const [out] = await generateGitHubProjects({ repos: noisy, model: 'llama3' });
+    const items = (out?.technologies ?? '').split(' · ');
+
+    expect(items).toEqual([
+      'Rust',
+      'cli',
+      'a'.repeat(40),
+      't4',
+      't5',
+      't6',
+      't7',
+      't8',
+      't9',
+      't10',
+    ]);
+    // The model was never asked for, and never supplied, a technology list.
+    expect(out?.technologies).not.toContain('t11');
   });
 
   it('fills missing entries from the fallback when the model returns fewer than the repos', async () => {
@@ -1429,6 +1481,7 @@ describe('generateGitHubProjects', () => {
       name: 'Tiny Parser',
       description: 'Zero-dependency JSON parser.',
       link: 'https://github.com/me/tiny-parser',
+      technologies: 'Rust',
     });
   });
 
@@ -1482,11 +1535,13 @@ describe('generateGitHubProjects', () => {
       name: 'Merry Oasis',
       description: 'Built a local-first task planner',
       link: 'https://github.com/me/merry-oasis',
+      technologies: 'TypeScript · offline-first',
     });
     expect(out[1]).toEqual({
       name: 'Tiny Parser',
       description: 'Wrote a zero-dependency JSON parser',
       link: 'https://github.com/me/tiny-parser',
+      technologies: 'Rust',
     });
   });
 

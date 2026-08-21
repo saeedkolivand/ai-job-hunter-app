@@ -76,6 +76,42 @@ describe('renderInterviewAnswers', () => {
     expect(out).toContain('[On Caches](https://doi.org/10.1/abc)');
   });
 
+  it('renders a project tech stack as its own middot-separated line', () => {
+    const out = renderInterviewAnswers({
+      ...ANSWERS,
+      projects: [
+        {
+          name: 'OSS Tool',
+          description: 'A CLI',
+          link: 'https://github.com/x/y',
+          // Comma-typed by the candidate, semicolon and stray middot mixed in:
+          // all three normalize to the one separator the résumé renders with.
+          technologies: 'React,  TypeScript ; Node · Vite',
+        },
+      ],
+    });
+    expect(out).toContain('\n  tech: React · TypeScript · Node · Vite');
+  });
+
+  it('omits the tech line entirely when no technologies were given', () => {
+    const out = renderInterviewAnswers({
+      ...ANSWERS,
+      projects: [{ name: 'OSS Tool', description: 'A CLI', technologies: '  ,  ; ' }],
+    });
+    expect(out).toContain('- OSS Tool — A CLI');
+    expect(out).not.toContain('tech:');
+  });
+
+  it('tells the model the three-line project shape at every prompt depth', () => {
+    for (const target of ['large', 'medium', 'small'] as const) {
+      const system = buildBuilderSystemPrompt(target);
+      expect(system, target).toContain('PROJECTS: write each project as EXACTLY three lines');
+    }
+    expect(buildInterviewResumePrompt(ANSWERS, META)).toContain(
+      'Render each Projects entry as three lines'
+    );
+  });
+
   it('renders awards, volunteering, languages, and certifications when present', () => {
     const out = renderInterviewAnswers({
       ...ANSWERS,

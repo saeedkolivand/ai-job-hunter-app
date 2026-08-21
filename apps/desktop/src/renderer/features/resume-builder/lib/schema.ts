@@ -105,6 +105,15 @@ const projectSchema = z.object({
   name: z.string(),
   description: z.string(),
   link: urlField,
+  /**
+   * Free-text list — `renderProjects` normalizes the separators.
+   *
+   * `.optional()`, not a required string: builder drafts persist in the session
+   * store, and every draft saved before this field existed has no
+   * `technologies` key. A required string would fail `safeParse` on those and
+   * discard the candidate's in-progress answers.
+   */
+  technologies: z.string().optional(),
 });
 
 const publicationSchema = z.object({

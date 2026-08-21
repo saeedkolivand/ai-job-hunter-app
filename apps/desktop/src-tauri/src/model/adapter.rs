@@ -23,8 +23,8 @@
 //! date, recipient, salutation, body, closing, signature) and stay on the legacy
 //! `export::pdf` path until a later phase models them explicitly.
 
-use crate::export::parser::parse_resume;
-use crate::export::types::{DocumentType, LineKind};
+use crate::export::parser::{is_project_stack_shaped, parse_resume};
+use crate::export::types::{DocumentType, LineKind, ParsedLine};
 
 use super::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Section, SectionId};
 use super::rich::tokenize_rich;
@@ -75,6 +75,69 @@ fn push_nonempty_section(section: Section, sections: &mut Vec<Section>) {
     if !section.blocks.is_empty() {
         sections.push(section);
     }
+}
+
+/// Regroup one line of a Projects section into an [`EntryBlock`], returning
+/// `true` when the line was consumed.
+///
+/// Projects are the one section whose entries carry no date, and that is why
+/// they arrive here as loose lines. The parser reads a project's title line
+/// (`**Ledger CLI** · https://github.com/…`) as `Contact` — it holds a URL — and
+/// its `·`-separated tech-stack line as `Contact` or `Text` depending only on how
+/// many technologies are listed, so the generic arms below flatten a whole
+/// project into three indistinguishable paragraphs. Every template already
+/// styles an entry's title and subtitle; nothing styles three paragraphs. This
+/// rebuilds the entry the text was always describing:
+///
+/// ```text
+/// **Ledger CLI** · https://github.com/janedoe/ledger   <- title  (bold-led)
+/// Rust · SQLite · Clap                                 <- subtitle (stack line)
+/// A double-entry bookkeeping tool for the terminal.    <- bullet  (description)
+/// ```
+///
+/// Only the line DIRECTLY under a title can claim the subtitle slot
+/// (`subtitle.is_none() && bullets.is_empty()`), so a later `·`-bearing sentence
+/// stays body content. A line that opens no entry and has no entry to join is
+/// left to the caller untouched, so a prose-only Projects section renders exactly
+/// as it does today. Scoped to [`SectionId::Projects`]: the same shapes under
+/// Experience or a custom heading are not touched.
+fn absorb_project_line(
+    line: &ParsedLine,
+    entry: &mut Option<EntryBlock>,
+    current: &mut Option<Section>,
+    preamble: &mut Vec<Block>,
+) -> bool {
+    if !matches!(current, Some(section) if section.id == SectionId::Projects) {
+        return false;
+    }
+
+    // A bold-led line is the start of the next project — the same signal
+    // `validate::content`'s project-tier grader reads.
+    if line
+        .segments
+        .first()
+        .is_some_and(|seg| seg.bold && !seg.text.trim().is_empty())
+    {
+        flush_entry(entry, current, preamble);
+        *entry = Some(EntryBlock {
+            // `line.raw` so the bold run and the markdown links survive.
+            title: tokenize_rich(&line.raw),
+            subtitle: None,
+            date: None,
+            bullets: Vec::new(),
+        });
+        return true;
+    }
+
+    let Some(open) = entry.as_mut() else {
+        return false;
+    };
+    if open.subtitle.is_none() && open.bullets.is_empty() && is_project_stack_shaped(&line.text) {
+        open.subtitle = Some(tokenize_rich(&line.raw));
+    } else {
+        open.bullets.push(tokenize_rich(&line.raw));
+    }
+    true
 }
 
 /// Close the in-progress entry (if any), emitting it as a [`Block::Entry`].
@@ -131,7 +194,7 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
                     // Header contact: keep the raw (un-stripped) line so markdown
                     // links `[label](url)` tokenize into clickable runs.
                     contact_parts.push(line.raw.clone());
-                } else {
+                } else if !absorb_project_line(line, &mut entry, &mut current, &mut preamble) {
                     flush_entry(&mut entry, &mut current, &mut preamble);
                     push_block(
                         Block::Paragraph(tokenize_rich(&line.raw)),
@@ -209,7 +272,7 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
                     && is_title_like(&line.text)
                 {
                     title = Some(line.text.clone());
-                } else {
+                } else if !absorb_project_line(line, &mut entry, &mut current, &mut preamble) {
                     flush_entry(&mut entry, &mut current, &mut preamble);
                     push_block(
                         Block::Paragraph(tokenize_rich(&line.raw)),
@@ -878,5 +941,214 @@ jane@example.com | [linkedin.com/in/jane](https://linkedin.com/in/jane)
             "expected a link run, got {:?}",
             m.header.contact
         );
+    }
+
+    // ── Projects: bold title / tech-stack subtitle / description ──────────────
+
+    /// The locked project signature `pipeline::resume::project_render` emits:
+    /// bold name + links, a `·`-separated stack line, then prose. Two projects,
+    /// so entry GROUPING is under test and not just a single lucky line.
+    const PROJECTS: &str = "\
+PROJECTS
+
+**Ledger CLI** · https://github.com/janedoe/ledger
+Rust · SQLite · Clap
+A double-entry bookkeeping tool for the terminal.
+
+**Atlas** · https://atlas.example.dev
+TypeScript · React
+Framework-agnostic component library published to npm.
+";
+
+    fn entries(model: &DocumentModel) -> Vec<&EntryBlock> {
+        model
+            .sections
+            .iter()
+            .flat_map(|s| &s.blocks)
+            .filter_map(|b| match b {
+                Block::Entry(e) => Some(e),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn project_lines_regroup_into_entries_with_a_stack_subtitle() {
+        let m = model_from_resume_text(PROJECTS);
+        let found = entries(&m);
+        assert_eq!(found.len(), 2, "one entry per project, got {found:?}");
+
+        // Absolute expected strings — not a comparison against another value
+        // derived from the same parse, which would stay green if BOTH drifted.
+        // `tokenize_rich` shows a bare URL without its scheme; the href itself
+        // stays intact (asserted in `project_title_keeps_its_bold_run_and_link`).
+        assert_eq!(
+            flat(&found[0].title),
+            "Ledger CLI · github.com/janedoe/ledger"
+        );
+        assert_eq!(
+            found[0].subtitle.as_ref().map(flat).as_deref(),
+            Some("Rust · SQLite · Clap"),
+            "the tech line must land in the subtitle slot every template styles"
+        );
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec!["A double-entry bookkeeping tool for the terminal."]
+        );
+        assert_eq!(found[0].date, None, "projects carry no date column");
+
+        // The second project proves the first entry was CLOSED, not extended.
+        assert_eq!(flat(&found[1].title), "Atlas · atlas.example.dev");
+        assert_eq!(
+            found[1].subtitle.as_ref().map(flat).as_deref(),
+            Some("TypeScript · React"),
+            "a two-item stack has only ONE separator — it must still be a stack"
+        );
+        assert_eq!(
+            found[1].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec!["Framework-agnostic component library published to npm."]
+        );
+    }
+
+    #[test]
+    fn project_title_keeps_its_bold_run_and_link() {
+        let m = model_from_resume_text(PROJECTS);
+        let title = &entries(&m)[0].title;
+        assert!(
+            title
+                .iter()
+                .any(|r| r.bold && r.text.contains("Ledger CLI")),
+            "the project NAME must stay bold: {title:?}"
+        );
+        assert!(
+            title
+                .iter()
+                .any(|r| r.link.as_deref() == Some("https://github.com/janedoe/ledger")),
+            "the project link must stay clickable: {title:?}"
+        );
+    }
+
+    /// The regression guard that matters: the identical shapes under any OTHER
+    /// heading must keep rendering exactly as they did before this change.
+    #[test]
+    fn the_same_shapes_under_experience_are_untouched() {
+        let text = PROJECTS.replacen("PROJECTS", "EXPERIENCE", 1);
+        let m = model_from_resume_text(&text);
+        assert!(
+            entries(&m).is_empty(),
+            "no Projects section, so no project regrouping may happen"
+        );
+        let paragraphs = m
+            .sections
+            .iter()
+            .flat_map(|s| &s.blocks)
+            .filter(|b| matches!(b, Block::Paragraph(_)))
+            .count();
+        assert_eq!(paragraphs, 6, "all six lines stay paragraphs");
+    }
+
+    #[test]
+    fn a_prose_only_projects_section_stays_paragraphs() {
+        let m = model_from_resume_text(
+            "PROJECTS\n\nBuilt an internal deploy tool used by the whole team.\n",
+        );
+        assert!(entries(&m).is_empty(), "nothing bold-led opens an entry");
+        assert_eq!(m.sections[0].blocks.len(), 1);
+        assert!(matches!(m.sections[0].blocks[0], Block::Paragraph(_)));
+    }
+
+    /// A `·`-bearing sentence AFTER the description must not be mistaken for a
+    /// second stack line — only the line directly under the title can be one.
+    #[test]
+    fn only_the_line_under_the_title_can_be_the_stack() {
+        let m = model_from_resume_text(
+            "PROJECTS\n\n\
+             **Ledger CLI** · https://github.com/janedoe/ledger\n\
+             Rust · SQLite\n\
+             Ships on Windows · macOS · Linux\n",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].subtitle.as_ref().map(flat).as_deref(),
+            Some("Rust · SQLite")
+        );
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec!["Ships on Windows · macOS · Linux"],
+            "the second separator line is body content, not a second subtitle"
+        );
+    }
+
+    /// The `bullets.is_empty()` half of the stack guard, which the "only the
+    /// line under the title" case above does NOT reach (there the subtitle slot
+    /// is already taken). A project with NO stack line has an empty subtitle for
+    /// its whole run, so without this half a later `·`-bearing sentence would be
+    /// hoisted into the subtitle slot and RENDER ABOVE the description it
+    /// followed — reordering the candidate's own prose.
+    #[test]
+    fn a_separator_line_after_the_description_is_never_hoisted() {
+        let m = model_from_resume_text(
+            "PROJECTS\n\n\
+             **Ledger CLI** · https://github.com/janedoe/ledger\n\
+             A double-entry bookkeeping tool for the terminal.\n\
+             Ships on Windows · macOS · Linux\n",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].subtitle, None, "this project has no stack line");
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec![
+                "A double-entry bookkeeping tool for the terminal.",
+                "Ships on Windows · macOS · Linux",
+            ],
+            "body order must survive verbatim"
+        );
+    }
+
+    /// A résumé that puts its project links on their OWN line, rather than on the
+    /// title line the locked signature uses, must not have that link line styled
+    /// as the technology list. It stays body content; the entry simply has no
+    /// subtitle, which is what it rendered as before this feature existed.
+    #[test]
+    fn a_link_line_under_the_title_is_never_styled_as_the_tech_list() {
+        let m = model_from_resume_text(
+            "PROJECTS\n\n\
+             **Ledger CLI**\n\
+             Demo · https://example.dev\n\
+             A double-entry bookkeeping tool for the terminal.\n",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].subtitle, None,
+            "a link line must not be mistaken for a technology stack"
+        );
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec![
+                "Demo · example.dev",
+                "A double-entry bookkeeping tool for the terminal.",
+            ],
+            "the link stays body content, in source order"
+        );
+    }
+
+    /// A2: the same text under a German heading takes the same path. Before this
+    /// change `Projekte` classified as `Custom` and the whole feature was
+    /// silently English-only.
+    #[test]
+    fn a_localized_projects_heading_takes_the_same_path() {
+        for heading in ["PROJEKTE", "PROJETS", "PROYECTOS", "PROGETTI", "PROJECTEN"] {
+            let text = PROJECTS.replacen("PROJECTS", heading, 1);
+            let m = model_from_resume_text(&text);
+            assert_eq!(
+                m.sections[0].id,
+                SectionId::Projects,
+                "{heading} must classify as Projects"
+            );
+            assert_eq!(entries(&m).len(), 2, "{heading} must regroup its entries");
+        }
     }
 }

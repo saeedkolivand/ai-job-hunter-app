@@ -48,7 +48,9 @@ export function StepExtras() {
             </Button>
             <FieldArrayList
               fields={projects.fields}
-              onAppend={() => projects.append({ name: '', description: '', link: '' })}
+              onAppend={() =>
+                projects.append({ name: '', description: '', link: '', technologies: '' })
+              }
               onRemove={projects.remove}
               addLabel={t('build.extras.projects.add')}
               removeLabel={t('build.remove')}
@@ -83,6 +85,24 @@ export function StepExtras() {
                           onBlur={field.onBlur}
                           rows={2}
                           placeholder={t('build.extras.projects.descriptionPlaceholder')}
+                        />
+                      )}
+                    />
+                  </WizardField>
+                  <WizardField
+                    label={t('build.extras.projects.technologies')}
+                    hint={t('build.extras.projects.technologiesHint')}
+                  >
+                    <Controller
+                      control={control}
+                      name={`projects.${index}.technologies`}
+                      render={({ field }) => (
+                        <Input
+                          className="w-full"
+                          value={field.value ?? ''}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          placeholder={t('build.extras.projects.technologiesPlaceholder')}
                         />
                       )}
                     />

@@ -36,7 +36,12 @@ interface GitHubImportModalProps {
   open: boolean;
   onClose: () => void;
   /** Called with each generated project entry to append to the field array. */
-  onAppend: (entry: { name: string; description: string; link: string }) => void;
+  onAppend: (entry: {
+    name: string;
+    description: string;
+    link: string;
+    technologies: string;
+  }) => void;
 }
 
 type FetchState = 'idle' | 'fetching' | 'done' | 'error';

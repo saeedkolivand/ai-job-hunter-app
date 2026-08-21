@@ -453,3 +453,55 @@ fn resume_docx_header_name_paragraph_has_explicit_spacing_before_contact() {
          before the run reaches the contact line; paragraph head: {para_head}"
     );
 }
+
+/// A project's `·`-separated tech-stack line must reach DOCX as the entry
+/// SUBTITLE — the italic run `RunOpts::subtitle` styles — and not as an ordinary
+/// body paragraph. This is the structural guard for the adapter regrouping
+/// (`model::adapter::absorb_project_line`) surviving all the way to the second
+/// export format: the PDF matrix test can only see that the WORDS rendered,
+/// while run properties here can tell a styled meta line from flat prose.
+const PROJECTS_RESUME: &str = "\
+Jane Doe
+jane@example.com
+
+PROJECTS
+
+**Ledger CLI** · https://github.com/janedoe/ledger
+Rust · SQLite · Clap
+A double-entry bookkeeping tool for the terminal.
+";
+
+#[test]
+fn project_tech_stack_lands_in_the_italic_subtitle_run() {
+    let template = Template::get(TemplateId::Classic);
+    let docx =
+        generate_resume_docx(PROJECTS_RESUME, None, &template, false).expect("generate docx");
+    let mut buffer = Cursor::new(Vec::new());
+    docx.build().pack(&mut buffer).expect("pack docx");
+    let xml = part(&buffer.into_inner(), "word/document.xml");
+
+    let idx = xml
+        .find("SQLite")
+        .expect("the tech-stack text must appear in document.xml");
+    let run_start = xml[..idx].rfind("<w:r>").expect("enclosing run start");
+    let run_end = idx + xml[idx..].find("</w:r>").expect("enclosing run end");
+    let run_xml = &xml[run_start..run_end];
+    assert!(
+        run_xml.contains("<w:i "),
+        "the tech-stack line must render as the italic subtitle run, not flat \
+         body prose; run xml: {run_xml:?}"
+    );
+
+    // The project NAME stays bold, and the description is still there.
+    let name_idx = xml
+        .find("Ledger CLI")
+        .expect("project name in document.xml");
+    let name_start = xml[..name_idx].rfind("<w:r>").expect("name run start");
+    let name_end = name_idx + xml[name_idx..].find("</w:r>").expect("name run end");
+    assert!(
+        xml[name_start..name_end].contains("<w:b "),
+        "the project name must stay bold; run xml: {:?}",
+        &xml[name_start..name_end]
+    );
+    assert!(xml.contains("double-entry bookkeeping"));
+}

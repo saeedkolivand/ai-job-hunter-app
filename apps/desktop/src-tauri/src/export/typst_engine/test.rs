@@ -7326,3 +7326,68 @@ fn letter_system_prompt_still_promises_the_export_adds_the_salutation() {
          Got:\n{prompt}"
     );
 }
+
+// ── Projects: bold name + technologies meta line ──────────────────────────────
+
+/// A Projects section in the locked signature `pipeline::resume::project_render`
+/// emits: bold name + link, a `·`-separated tech-stack line, then prose. Kept
+/// separate from `FIXTURE_RESUME` on purpose — that fixture is shared by
+/// page-count and layout assertions, and growing it would move them.
+const PROJECTS_FIXTURE: &str = "\
+Jane Doe
+jane@example.com | https://github.com/janedoe
+
+PROJECTS
+
+**Ledger CLI** · https://github.com/janedoe/ledger
+Rust · SQLite · Clap
+A double-entry bookkeeping tool for the terminal.
+
+**Atlas** · https://atlas.example.dev
+TypeScript · React · Vite
+Framework-agnostic component library published to npm.
+";
+
+/// The tech-stack line rides the entry SUBTITLE slot, which every template
+/// already styles. This is the guard that the adapter's regrouping actually
+/// reaches rendered output on all 16 templates — a template that dropped or
+/// never rendered `subtitle` would lose the candidate's technology list
+/// silently, and no `%PDF`-header or page-count check would notice.
+#[test]
+fn every_template_renders_the_project_tech_stack_line() {
+    let model = model_from_resume_text(PROJECTS_FIXTURE);
+    for id in canonical_template_ids() {
+        let template = Template::get(id);
+        let bytes = render_pdf(
+            &model,
+            TypstTemplate::from_template(&template),
+            &opts_a4(),
+            Some(&template),
+        )
+        .unwrap_or_else(|e| panic!("render_pdf({id:?}) should succeed: {e:?}"));
+
+        let extracted = pdf_extract::extract_text_from_mem(&bytes)
+            .unwrap_or_else(|e| panic!("{id:?}: pdf-extract must succeed: {e:?}"));
+        let lower: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+        let lower = lower.to_lowercase();
+
+        assert!(
+            lower.contains("ledger cli") && lower.contains("atlas"),
+            "{id:?}: project names missing\n---\n{extracted:?}"
+        );
+        // Both stacks, so a template that renders only the FIRST entry's
+        // subtitle cannot pass.
+        assert!(
+            lower.contains("rust") && lower.contains("sqlite") && lower.contains("clap"),
+            "{id:?}: first project's tech stack missing\n---\n{extracted:?}"
+        );
+        assert!(
+            lower.contains("typescript") && lower.contains("react") && lower.contains("vite"),
+            "{id:?}: second project's tech stack missing\n---\n{extracted:?}"
+        );
+        assert!(
+            lower.contains("double-entry bookkeeping"),
+            "{id:?}: project description missing\n---\n{extracted:?}"
+        );
+    }
+}

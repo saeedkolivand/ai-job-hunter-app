@@ -60,7 +60,21 @@ impl SectionId {
             SectionId::Education
         } else if has("skill") || has("competenc") || has("technolog") {
             SectionId::Skills
-        } else if has("project") {
+        } else if has("project")
+            || has("projekt")
+            || has("projet")
+            || has("proyecto")
+            || has("progetti")
+        {
+            // Every résumé market this app writes for (`locale::resume`) gets its
+            // own Projects heading, so an English-only test silently downgraded
+            // German/French/Spanish/Italian documents to `Custom` — which costs
+            // them both the Projects entry rendering AND their place in the
+            // market section order (`transform::reorder_sections` sorts an
+            // unknown id last). Dutch "projecten" and Portuguese "projeto(s)"
+            // need no arm of their own: they already contain "project"/"projet".
+            // Same stem set as `documents::evidence::PROJECT_HEADINGS` — keep the
+            // two in step.
             SectionId::Projects
         } else if has("certification") || has("certificate") || has("license") {
             SectionId::Certifications

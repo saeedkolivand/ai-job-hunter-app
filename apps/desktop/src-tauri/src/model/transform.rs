@@ -136,4 +136,38 @@ mod tests {
             ]
         );
     }
+
+    /// A German résumé's `Projekte` heading used to classify as
+    /// `SectionId::Custom`, and `reorder_sections` sorts an unknown id to
+    /// `usize::MAX` — so ATS mode silently dumped the candidate's projects at the
+    /// BOTTOM of the document, contradicting `DE_ORDER`, which places Projects
+    /// between Languages and Awards. Built from real text (not hand-placed ids)
+    /// so it fails if either `SectionId::from_header` or the order regresses.
+    ///
+    /// The `Custom` neighbours are NOT an oversight in this fixture: they pin a
+    /// KNOWN, WIDER gap this change deliberately does not close. `from_header`
+    /// is English-only for every OTHER section too, so `BERUFSERFAHRUNG` and
+    /// `SPRACHEN` still classify as `Custom` and still sort last. Only the
+    /// Projects arm was localized here. Closing the rest reorders every
+    /// non-English résumé and is its own change with its own review.
+    #[test]
+    fn a_german_projekte_heading_linearizes_into_its_market_slot() {
+        let mut m = crate::model::adapter::model_from_resume_text(
+            "BERUFSERFAHRUNG\n\nAcme GmbH  2020 - Heute\n\
+             - Ein Team von fünf Ingenieuren geleitet\n\n\
+             PROJEKTE\n\n**Ledger CLI** · https://github.com/janedoe/ledger\n\
+             Rust · SQLite\nEin Buchhaltungswerkzeug für das Terminal.\n\n\
+             SPRACHEN\n\nDeutsch, Englisch\n",
+        );
+        linearize(&mut m, "de");
+        assert_eq!(
+            ids(&m),
+            vec![
+                SectionId::Projects,
+                SectionId::Custom("BERUFSERFAHRUNG".to_string()),
+                SectionId::Custom("SPRACHEN".to_string()),
+            ],
+            "Projekte must carry a real id and sort by DE_ORDER, not last"
+        );
+    }
 }
