@@ -6548,6 +6548,11 @@ fn regent_maps_to_serif_small_caps_burgundy_style() {
 // #F4F4F5 background with 20 px border-padding and 14 px gaps, writing the
 // result to docs/assets/templates-showcase.png.
 //
+// That path is GITIGNORED and must stay that way: the banner is ~1.4 MB of
+// render output the README embeds, so it is served from the parentless `assets`
+// branch rather than committed here. After regenerating, publish it with the
+// snippet in docs/EXPORT_TEMPLATES.md; do not `git add -f` it.
+//
 // As a side output it also writes one per-template preview SVG to
 // apps/desktop/src/renderer/features/ai-generate/assets/template-previews/<id>.svg,
 // which the AI-Generate option previews show in the result panel. SVG (vector)

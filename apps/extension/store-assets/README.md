@@ -9,6 +9,12 @@ red, hand-drawn doodles, film grain, the same Google Fonts) is lifted from
 Firefox AMO reuses the **same** 1280×800 screenshot set (AMO accepts the same
 dimensions); no separate render is needed.
 
+The rendered PNGs are **not in git** — they are output, and every regeneration
+used to add ~1.7 MB to history that no clone needs. A rendered copy is attached
+to the [`assets-v1`](https://github.com/saeedkolivand/ai-job-hunter-app/releases/tag/assets-v1)
+release as `extension-store-assets.zip`, which is the copy to grab when you are
+filling in a store listing and do not want to rebuild the extension first.
+
 Regenerate everything:
 
 ```bash
