@@ -34,7 +34,7 @@ describe('HomeBody', () => {
   // The Growth section's two charts are same-origin static assets copied into
   // public/ at build time (pages.yml) — never a third-party fetch — and each
   // needs real alt text since they're the first <img> elements on the page.
-  it('renders the growth charts as same-origin images with real alt text', () => {
+  it('renders the growth charts as same-origin images', () => {
     const { container } = render(<HomeBody />);
     const images = Array.from(container.querySelectorAll('.growth img'));
 
@@ -43,7 +43,31 @@ describe('HomeBody', () => {
       const src = img.getAttribute('src') ?? '';
       expect(src.startsWith('http')).toBe(false);
       expect(src.startsWith('/')).toBe(true);
-      expect((img.getAttribute('alt') ?? '').length).toBeGreaterThan(0);
+    }
+  });
+
+  // A non-empty alt is not the property worth asserting — `alt=" "` satisfies
+  // it. What each alt has to do is name the quantity being plotted, and say
+  // nothing about which way the line goes: these SVGs are rebuilt nightly from
+  // live data this file never sees, so a directional word is a claim that turns
+  // into a lie the first flat or falling week. Same class of guard as the
+  // no-price assertion in DownloadBody.test.tsx.
+  it('gives each chart an alt naming the metric, with no directional claim', () => {
+    const { container } = render(<HomeBody />);
+    const alts = Array.from(container.querySelectorAll('.growth img')).map(
+      (img) => img.getAttribute('alt') ?? ''
+    );
+
+    expect(alts).toHaveLength(2);
+    expect(alts.some((a) => /\bstars?\b/i.test(a))).toBe(true);
+    expect(alts.some((a) => /\bdownloads?\b/i.test(a))).toBe(true);
+
+    for (const alt of alts) {
+      expect(alt.trim().length).toBeGreaterThan(20);
+      expect(alt).toMatch(/\bchart\b/i);
+      expect(alt).not.toMatch(
+        /\b(climb\w*|ris\w+|grow\w+|soar\w*|surg\w+|upward\w*|increas\w+|fall\w+|declin\w+|drop\w+)\b/i
+      );
     }
   });
 

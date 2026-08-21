@@ -9,6 +9,16 @@
 // below is bound by public/scripts/home-0.js; the #journey line overlay
 // picks this section up generically (it walks every `main > section` until
 // it hits .finale, with no per-section special-casing).
+//
+// The alt text names what each chart PLOTS, never which way the line is
+// going: the SVGs are rebuilt nightly from live data, so "climbing" is a
+// claim about a number this file cannot see and would become a lie the first
+// flat or falling week. It also stops short of the current totals — those
+// live only inside the nightly SVG, which is gitignored and absent from a
+// local checkout, so reading them at build time would break `next build`
+// and the jsdom tests everywhere except CI. renderLineChart already emits
+// role="img" + aria-label carrying the value and date; wiring that through
+// to the page needs the numbers plumbed to build time as their own artifact.
 export function Growth() {
   return (
     <section className="growth">
@@ -17,14 +27,14 @@ export function Growth() {
           src="/stars.svg"
           width={860}
           height={360}
-          alt="Line chart of the AI Job Hunter GitHub repository's star count climbing over time"
+          alt="Line chart of the AI Job Hunter GitHub repository's star count over time"
           loading="lazy"
         />
         <img
           src="/downloads.svg"
           width={860}
           height={360}
-          alt="Line chart of AI Job Hunter's installer download count climbing over time"
+          alt="Line chart of AI Job Hunter's cumulative installer downloads over time"
           loading="lazy"
         />
       </div>
