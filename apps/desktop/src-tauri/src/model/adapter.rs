@@ -23,7 +23,7 @@
 //! date, recipient, salutation, body, closing, signature) and stay on the legacy
 //! `export::pdf` path until a later phase models them explicitly.
 
-use crate::export::parser::{is_project_stack_shaped, parse_resume};
+use crate::export::parser::{is_project_stack_shaped, is_project_title_shaped, parse_resume};
 use crate::export::types::{DocumentType, LineKind, ParsedLine};
 
 use super::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Section, SectionId};
@@ -86,20 +86,16 @@ fn next_content_line(lines: &[ParsedLine], idx: usize) -> Option<&ParsedLine> {
         .find(|l| !matches!(l.kind, LineKind::Blank) && !l.text.trim().is_empty())
 }
 
-/// Does this line open a project entry?
+/// Does this line open a project entry in the RENDER model?
 ///
-/// A leading bold run is the signal the generated signature carries and the one
-/// `validate::content`'s tier grader reads. But bold is MARKDOWN, and a résumé
-/// imported from PDF or DOCX has none — extraction keeps the words and drops the
-/// styling. A candidate's own CV can therefore carry a perfectly-formed project
-/// block (`AI Job Hunter   aijobhunter.app` / `Tauri 2 · Rust · React 19` / prose)
-/// and still be rendered as loose paragraphs, which is exactly the flat output
-/// this feature exists to remove.
+/// A leading bold run is the signal the generated signature carries. Failing
+/// that, the shape decides — see [`is_project_title_shaped`], which is shared
+/// with the pipeline's grouping so the two can never disagree about where an
+/// entry begins.
 ///
-/// So fall back to the SHAPE: a short, non-sentence line whose next line is a
-/// technology stack is a project title. The stack line is the discriminator —
-/// prose does not sit above a `·`-separated list — and the line must not be a
-/// stack itself, or a two-stack sequence would open an entry on the second one.
+/// A bullet is deliberately NOT an opener here: the compact tier
+/// (`• Name · Website · Github`) is a standalone one-liner, and the `Bullet` arm
+/// already appends bullets to whichever entry is open.
 fn opens_project_entry(line: &ParsedLine, next: Option<&ParsedLine>) -> bool {
     if line
         .segments
@@ -108,12 +104,7 @@ fn opens_project_entry(line: &ParsedLine, next: Option<&ParsedLine>) -> bool {
     {
         return true;
     }
-    let clean = line.text.trim();
-    !clean.is_empty()
-        && clean.chars().count() <= 100
-        && !clean.ends_with(['.', '!', '?'])
-        && !is_project_stack_shaped(clean)
-        && next.is_some_and(|n| is_project_stack_shaped(&n.text))
+    is_project_title_shaped(&line.text, next.map(|n| n.text.as_str()))
 }
 
 /// Regroup one line of a Projects section into an [`EntryBlock`], returning

@@ -241,6 +241,34 @@ pub(crate) fn is_project_stack_shaped(clean: &str) -> bool {
         && clean.chars().count() <= 120
 }
 
+/// Does this line look like a project TITLE purely by SHAPE — no markdown?
+///
+/// The generated project signature marks its title with a bold run, and a
+/// hand-written one often uses a bullet. Neither survives IMPORT: PDF and DOCX
+/// extraction keeps the words and drops the styling, so a candidate's own CV
+/// carrying a perfectly-formed project block has no `**` and no `•` anywhere.
+///
+/// The shape itself is the fallback signal: a short, non-sentence line whose
+/// NEXT line is a technology stack is a title. The stack line is what makes it
+/// unambiguous — prose does not sit directly above a `·`-separated list — and the
+/// line must not be a stack itself, or a two-stack sequence would open an entry
+/// on the second one.
+///
+/// `pub(crate)` and deliberately SHARED: `model::adapter` groups a section into
+/// render entries with it and `validate::content::project_entry_starts` groups
+/// the same section for the seeder, the normalizer and the tier grader. A second
+/// answer to "where does an entry begin" would shift every following line by one
+/// — turning a stack line into a description and a truthful document into a
+/// `consistency.project_structure` warning.
+pub(crate) fn is_project_title_shaped(clean: &str, next_clean: Option<&str>) -> bool {
+    let clean = clean.trim();
+    !clean.is_empty()
+        && clean.chars().count() <= 100
+        && !clean.ends_with(['.', '!', '?'])
+        && !is_project_stack_shaped(clean)
+        && next_clean.is_some_and(is_project_stack_shaped)
+}
+
 /// Contact-ish content that must never be read as a technology list: an email,
 /// a phone number, a URL scheme or markdown link, or a known contact host.
 ///

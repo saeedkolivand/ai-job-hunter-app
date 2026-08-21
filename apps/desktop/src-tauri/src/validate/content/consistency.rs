@@ -475,8 +475,10 @@ enum ProjectTier {
 /// second answer to "where does an entry begin" there would shift every
 /// subsequent line by one — turning a stack line into a description and a
 /// truthful document into a `consistency.project_structure` warning.
-pub fn project_entry_starts(line: &ParsedLine) -> bool {
-    matches!(line.kind, LineKind::Bullet) || line.segments.iter().any(|s| s.bold)
+pub fn project_entry_starts(line: &ParsedLine, next: Option<&ParsedLine>) -> bool {
+    matches!(line.kind, LineKind::Bullet)
+        || line.segments.iter().any(|s| s.bold)
+        || crate::export::parser::is_project_title_shaped(&line.text, next.map(|n| n.text.as_str()))
 }
 
 /// Group a projects section's non-blank lines into entries.
@@ -488,13 +490,16 @@ pub fn project_entry_starts(line: &ParsedLine) -> bool {
 /// which line is the stack line — two graders disagreeing about where an entry
 /// starts is how a structure warning and a link Critical contradict each other.
 pub(super) fn project_entries(section: &Section) -> Vec<Vec<&ParsedLine>> {
-    let mut entries: Vec<Vec<&ParsedLine>> = Vec::new();
-    for line in section
+    // Collected first: the shape rule reads the NEXT content line, and blanks
+    // (which separate projects) must not hide the following title from it.
+    let lines: Vec<&ParsedLine> = section
         .lines
         .iter()
         .filter(|l| !matches!(l.kind, LineKind::Blank) && !l.text.trim().is_empty())
-    {
-        let starts_entry = project_entry_starts(line);
+        .collect();
+    let mut entries: Vec<Vec<&ParsedLine>> = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        let starts_entry = project_entry_starts(line, lines.get(idx + 1).copied());
         if starts_entry || entries.is_empty() {
             entries.push(vec![line]);
         } else if let Some(last) = entries.last_mut() {

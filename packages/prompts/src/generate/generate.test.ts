@@ -1071,6 +1071,14 @@ describe('buildEmphasisDirectivesBlock (#15)', () => {
 });
 
 describe('buildResumePrompt', () => {
+  it('asks for project technologies on their own line, so the export can style them', () => {
+    const prompt = buildResumePrompt(RESUME_WITH_LINKS, 'Job ad', META, 'ats');
+    // Without this the model merges the stack into the description sentence and
+    // the export has no technologies line to render as its own meta row.
+    expect(prompt).toContain("put them on their OWN line directly under that item's title");
+    expect(prompt).toContain('omit the line entirely rather than inventing a stack');
+  });
+
   it('includes candidate context and a language note', () => {
     const prompt = buildResumePrompt(RESUME_WITH_LINKS, 'Job ad', META, 'ats');
     expect(prompt).toContain('John Doe');

@@ -184,13 +184,17 @@ static MD_LINK_RE: LazyLock<Regex> =
 /// the seeder and the normalizer can never disagree about where an entry
 /// starts.
 pub(crate) fn entries(section: &SourceSection) -> Vec<Vec<&SourceLine>> {
-    let mut out: Vec<Vec<&SourceLine>> = Vec::new();
-    for line in section
+    // Collected first: the shape rule reads the NEXT content line, and blanks
+    // (which separate projects) must not hide the following title from it.
+    let lines: Vec<&SourceLine> = section
         .lines
         .iter()
         .filter(|l| !matches!(l.parsed.kind, LineKind::Blank) && !l.parsed.text.trim().is_empty())
-    {
-        if project_entry_starts(&line.parsed) || out.is_empty() {
+        .collect();
+    let mut out: Vec<Vec<&SourceLine>> = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        let next = lines.get(idx + 1).map(|l| &l.parsed);
+        if project_entry_starts(&line.parsed, next) || out.is_empty() {
             out.push(vec![line]);
         } else if let Some(last) = out.last_mut() {
             last.push(line);
