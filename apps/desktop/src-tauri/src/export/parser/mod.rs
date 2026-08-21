@@ -215,6 +215,32 @@ pub(crate) fn is_contact_shaped(clean: &str) -> bool {
         || URL_RE.is_match(clean)
 }
 
+/// The project TECH-STACK line shape: the `·`-separated technologies line that
+/// sits directly under a project's bold title in the locked project signature
+/// (`pipeline::resume::project_render::render_project`).
+///
+/// Deliberately looser than [`is_contact_shaped`] on separator count — a
+/// two-item stack (`Rust · SQLite`) has only ONE separator and would otherwise
+/// fall through to `Text` — and tighter on everything else, because the only
+/// other thing that can appear in that slot is the project's prose description.
+/// Terminal sentence punctuation and length are what separate the two: a stack
+/// is a short list, a description is a sentence. The `@` arm keeps a stray
+/// contact line out.
+///
+/// Shape-only, and NOT section-aware: the caller
+/// (`crate::model::adapter`) applies it exclusively inside a
+/// [`SectionId::Projects`](crate::model::document::SectionId) section and only
+/// for the line immediately under an entry title, so a `·`-bearing line
+/// anywhere else is unaffected.
+pub(crate) fn is_project_stack_shaped(clean: &str) -> bool {
+    let clean = clean.trim();
+    !clean.is_empty()
+        && separator_count(clean) >= 1
+        && !clean.contains('@')
+        && !clean.ends_with(['.', '!', '?', ':'])
+        && clean.chars().count() <= 120
+}
+
 /// The line-0-ONLY Contact test — narrower than [`is_contact_shaped`]: just an
 /// `@` or a phone shape, with no pipe/URL arms. This is what decides Name vs
 /// Contact for the résumé's first line (`parse_line`'s `idx == 0` case) — a
