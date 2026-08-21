@@ -1107,6 +1107,34 @@ Framework-agnostic component library published to npm.
         );
     }
 
+    /// A résumé that puts its project links on their OWN line, rather than on the
+    /// title line the locked signature uses, must not have that link line styled
+    /// as the technology list. It stays body content; the entry simply has no
+    /// subtitle, which is what it rendered as before this feature existed.
+    #[test]
+    fn a_link_line_under_the_title_is_never_styled_as_the_tech_list() {
+        let m = model_from_resume_text(
+            "PROJECTS\n\n\
+             **Ledger CLI**\n\
+             Demo · https://example.dev\n\
+             A double-entry bookkeeping tool for the terminal.\n",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].subtitle, None,
+            "a link line must not be mistaken for a technology stack"
+        );
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec![
+                "Demo · example.dev",
+                "A double-entry bookkeeping tool for the terminal.",
+            ],
+            "the link stays body content, in source order"
+        );
+    }
+
     /// A2: the same text under a German heading takes the same path. Before this
     /// change `Projekte` classified as `Custom` and the whole feature was
     /// silently English-only.

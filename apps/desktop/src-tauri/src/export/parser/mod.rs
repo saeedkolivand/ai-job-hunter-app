@@ -236,9 +236,34 @@ pub(crate) fn is_project_stack_shaped(clean: &str) -> bool {
     let clean = clean.trim();
     !clean.is_empty()
         && separator_count(clean) >= 1
-        && !clean.contains('@')
+        && !is_contactish_for_stack(clean)
         && !clean.ends_with(['.', '!', '?', ':'])
         && clean.chars().count() <= 120
+}
+
+/// Contact-ish content that must never be read as a technology list: an email,
+/// a phone number, a URL scheme or markdown link, or a known contact host.
+///
+/// NOT [`is_contact_shaped`]: that treats ≥ 2 separators as contact-shaped, which
+/// is exactly what a three-item technology stack looks like, so reusing it would
+/// reject the common case outright.
+///
+/// [`URL_RE`] alone is not enough either — it only knows the contact platforms
+/// and a scheme ANCHORED at the start of the line, so a trailing link like
+/// `Demo · https://example.dev` slips past it. The unanchored `://` / `](` /
+/// `www.` tests are what actually catch a link sitting after a separator.
+///
+/// A bare-domain test is deliberately absent: `Node.js · socket.io · Express` is a
+/// real stack, and every heuristic that catches `demo.example.dev` also catches
+/// `socket.io`. A bare-domain link line is left accepted rather than corrupting
+/// a genuine stack — the failure it causes is cosmetic, the other is not.
+fn is_contactish_for_stack(clean: &str) -> bool {
+    clean.contains('@')
+        || clean.contains("://")
+        || clean.contains("](")
+        || clean.to_ascii_lowercase().contains("www.")
+        || PHONE_RE.is_match(clean)
+        || URL_RE.is_match(clean)
 }
 
 /// The line-0-ONLY Contact test — narrower than [`is_contact_shaped`]: just an
