@@ -63,7 +63,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
 
-      # The growth charts the home page embeds are regenerated daily by
+      # The growth charts the home page embeds, plus the per-platform download
+      # counts /download shows on its buttons, are regenerated daily by
       # 📈 Repo Charts and live on the orphan `badges` branch. They are pulled in
       # HERE rather than committed, because they are ~77 KB combined and change
       # every day (new date stamp, new data point). Committing them would grow
@@ -86,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --depth 1 origin badges
-          for f in stars.svg downloads.svg; do
+          for f in stars.svg downloads.svg downloads-by-platform.json; do
             git show "FETCH_HEAD:$f" > "apps/landing/public/$f"
             # `git show` into a redirect leaves an empty file behind on failure,
             # so check for content, not just existence. Failing the build is the

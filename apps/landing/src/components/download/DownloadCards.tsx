@@ -10,6 +10,11 @@ import type { Installers } from '@/lib/version';
 // linuxRpm — because DownloadFreshness swaps hrefs by `querySelectorAll` index,
 // not by any per-anchor identifier. Never reorder/insert/remove a `.dl-btn`
 // anchor here without updating DownloadFreshness.tsx (and its test) in lockstep.
+//
+// Each anchor also carries `data-platform`, which is what DownloadCounts keys
+// its download pills off — an explicit identifier rather than the positional
+// index above. DownloadFreshness could be moved onto it too; that swap is not
+// this change's to make, so the positional contract stands as written.
 export function DownloadCards({
   version,
   installers,
@@ -29,10 +34,10 @@ export function DownloadCards({
           <h2>macOS</h2>
         </div>
         <div className="pc-actions">
-          <a className="dl-btn" href={installers.macArm}>
+          <a className="dl-btn" data-platform="macArm" href={installers.macArm}>
             Apple Silicon · .dmg
           </a>
-          <a className="dl-btn alt" href={installers.macIntel}>
+          <a className="dl-btn alt" data-platform="macIntel" href={installers.macIntel}>
             Intel · .dmg
           </a>
         </div>
@@ -83,10 +88,10 @@ export function DownloadCards({
           <h2>Windows</h2>
         </div>
         <div className="pc-actions">
-          <a className="dl-btn" href={installers.winExe}>
+          <a className="dl-btn" data-platform="winExe" href={installers.winExe}>
             Installer · .exe
           </a>
-          <a className="dl-btn alt" href={installers.winMsi}>
+          <a className="dl-btn alt" data-platform="winMsi" href={installers.winMsi}>
             .msi
           </a>
         </div>
@@ -101,13 +106,13 @@ export function DownloadCards({
           <h2>Linux</h2>
         </div>
         <div className="pc-actions">
-          <a className="dl-btn" href={installers.linuxAppImage}>
+          <a className="dl-btn" data-platform="linuxAppImage" href={installers.linuxAppImage}>
             .AppImage
           </a>
-          <a className="dl-btn alt" href={installers.linuxDeb}>
+          <a className="dl-btn alt" data-platform="linuxDeb" href={installers.linuxDeb}>
             .deb
           </a>
-          <a className="dl-btn alt" href={installers.linuxRpm}>
+          <a className="dl-btn alt" data-platform="linuxRpm" href={installers.linuxRpm}>
             .rpm
           </a>
         </div>
