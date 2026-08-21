@@ -35,6 +35,28 @@ describe('DownloadBody', () => {
     expect(dlBtns.map((a) => a.getAttribute('href'))).toEqual(DL_BTN_ORDER);
   });
 
+  // DownloadCounts keys each download pill off data-platform, so a missing or
+  // misspelled one silently drops that platform's count with nothing else
+  // breaking. Asserted here in the same order as the href contract above, so
+  // the two identifiers for one button cannot drift apart.
+  it('labels every dl-btn with the data-platform key DownloadCounts looks up', () => {
+    const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
+    const platforms = Array.from(container.querySelectorAll('a.dl-btn')).map((a) =>
+      a.getAttribute('data-platform')
+    );
+    expect(platforms).toEqual([
+      'macArm',
+      'macIntel',
+      'winExe',
+      'winMsi',
+      'linuxAppImage',
+      'linuxDeb',
+      'linuxRpm',
+    ]);
+    // Same keys the installer URLs are built from — one vocabulary, not two.
+    expect(platforms).toEqual(Object.keys(installers));
+  });
+
   it('renders #downloads-block as a display:contents node inside .platforms', () => {
     const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
     const block = container.querySelector('#downloads-block');

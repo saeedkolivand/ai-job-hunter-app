@@ -271,6 +271,7 @@ apps/landing/public/world/vid/
 # rule as the /world clips above: build-time asset, never a commit.
 apps/landing/public/stars.svg
 apps/landing/public/downloads.svg
+apps/landing/public/downloads-by-platform.json
 
 # ── Generated image sets ───────────────────────────────────────────────────────
 # All rendered output, not source: every file below is produced by a committed

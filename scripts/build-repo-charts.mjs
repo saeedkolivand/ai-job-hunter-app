@@ -18,7 +18,8 @@
 //     seeded once from git history (scripts/backfill-downloads-history.mjs) and
 //     appended to daily from here.
 //
-// Output: badge-out/{downloads.json,downloads-history.json,downloads.svg,stars.svg}
+// Output: badge-out/{downloads.json,downloads-by-platform.json,
+//                    downloads-history.json,downloads.svg,stars.svg}
 // Run locally: GITHUB_TOKEN=$(gh auth token) node scripts/build-repo-charts.mjs
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -26,7 +27,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { mergePoints, readJsonArray } from './lib/downloads-history.mjs';
-import { fetchAllReleases, fetchStargazers, installerDownloads } from './lib/github-releases.mjs';
+import {
+  downloadsByPlatform,
+  fetchAllReleases,
+  fetchStargazers,
+  installerDownloads,
+} from './lib/github-releases.mjs';
 import { GOLD, RED, renderLineChart } from './lib/line-chart-svg.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,6 +87,16 @@ writeFileSync(
   `${JSON.stringify({ schemaVersion: 1, label: 'downloads', message: humanize(total), color: RED.slice(1) }, null, 2)}\n`
 );
 writeFileSync(join(outDir, 'downloads-history.json'), `${JSON.stringify(history, null, 2)}\n`);
+
+// Per-platform split for the /download buttons. Published here rather than
+// fetched by the page: the honest number is cumulative across every release, so
+// a client would need the whole paginated release list to compute it — against
+// a 60/hour budget shared by every visitor. This costs one static same-origin
+// file that pages.yml copies into public/ alongside the charts.
+writeFileSync(
+  join(outDir, 'downloads-by-platform.json'),
+  `${JSON.stringify(downloadsByPlatform(releases), null, 2)}\n`
+);
 
 function writeChart(name, opts) {
   writeFileSync(join(outDir, `${name}.svg`), renderLineChart(opts));
