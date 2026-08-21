@@ -357,8 +357,11 @@ confined to the test function; no typst types appear in production code paths.
 
 **Dev note — preview-regen.** The two preview generators are `#[ignore]`
 libtest fns (`generate_templates_showcase_banner` and
-`generate_cover_template_previews` in `typst_engine/test.rs`). Local `cargo test`
-now works on branches containing the build.rs delay-load fix (2fb85227). Preview
+`generate_cover_template_previews` in `typst_engine/test.rs`). Local `cargo test` works
+unconditionally — the delay-load fix that used to be branch-dependent lives in
+`apps/desktop/src-tauri/build.rs` on main (grep `DELAYLOAD`). The sha that
+caveat named stopped resolving in an earlier history rewrite and went unnoticed,
+which is the argument for naming the file rather than the commit. Preview
 assets may still be stale/incomplete: `cadence`, `regent`, `aria`,
 and `saffron` may lack `.svg` (résumé + cover), the `classic` preview
 may still reflect older `classic.typ`, and the résumé showcase banner may show the old nine. **Regenerate in CI or on

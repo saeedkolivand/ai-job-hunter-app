@@ -1,12 +1,13 @@
 # ADR-018: Revive accent-tinted aurora ambient background
 
-Last updated: 2026-07-16
+Last updated: 2026-08-21
 
 **Status:** Accepted
 
 ## Context
 
-The aurora/cinematic backdrop was removed in commit `8688eb91` ("apple design system + UX overhaul") as part of restraint-driven design and performance optimization. At that time, `CinematicBackground` became a flat fill, shedding parallax orbs, streaks, grid, film-grain, and the animated aurora ribbons + nebulae.
+The aurora/cinematic backdrop was removed in PR #313 (`2b254fbcac` after the
+2026-08-21 history rewrite — cite the PR, the sha moves) ("apple design system + UX overhaul") as part of restraint-driven design and performance optimization. At that time, `CinematicBackground` became a flat fill, shedding parallax orbs, streaks, grid, film-grain, and the animated aurora ribbons + nebulae.
 
 The two-tone accent-gradient work (brand → brand-2 hue pair) introduced a visual opportunity: a living accent-tinted surface for the gradient to inhabit. The flat backdrop had become inert with respect to the customizable accent, making it visually disconnected from user personalization choices.
 

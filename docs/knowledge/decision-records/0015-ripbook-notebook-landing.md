@@ -25,7 +25,8 @@ The GL landing shipped through P0-P5 as the "living sketchbook" of
 [ADR 0014](0014-landing-gl-takeover.md) - a scroll-scrubbed camera Journey through
 8 Beats - then was reset to an empty `apps/landing` in #710. The owner judged the
 sketchbook journey **not premium enough** and approved a rebuild under a new concept,
-**RIPBOOK**. The old Next 16 app at git `66c36c68` remains **salvage material**, not the
+**RIPBOOK**. The old Next 16 app, as of PR #709 (`d72a401652` after the 2026-08-21 history
+rewrite — cite the PR, the sha moves), remains **salvage material**, not the
 baseline.
 
 Everything structural in 0014 still constrains this rebuild: the deploy stays a Next 16

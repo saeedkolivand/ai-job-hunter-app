@@ -63,8 +63,12 @@ No runtime behavior changes: every current call already complies. The fix is to 
 - Opt-in setting: `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (company-logo preference, default OFF).
 - Machine-readable inventory: `apps/desktop/src-tauri/tests/egress.rs` (EGRESS const).
 - Audit finding: `p2-contra-cross-001`, §4 of the 2026-08-16 full-history audit.
-  That report was a 1.5 MB one-off snapshot scoped to `v0.123.0` and is no longer in
-  the tree; read it with `git show cd1219ef7:AUDIT_REPORT.md`. That sha moved once
-  already, in the history rewrite of PR #1033 — if it stops resolving, find the
-  commit for PR #1000 and read the file there. Its `path:line` citations
-  point at that commit's HEAD, not this one.
+  That report was a 1.5 MB one-off snapshot scoped to
+  `v0.123.0`. It is not in the tree and, since the 2026-08-21 history rewrite,
+  not in any commit either — read it at
+  [AUDIT_REPORT.md on the `assets` branch](https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/assets/AUDIT_REPORT.md).
+  Deliberately no longer cited by commit sha: this citation has now been broken
+  by two separate rewrites, and a sha in a doc is precisely the drift-prone
+  literal rule 17 forbids. The `assets` branch is parentless and force-pushed,
+  so the URL is stable and the file costs no history. Its `path:line` citations
+  point at the tree as of PR #1000, not this one.
