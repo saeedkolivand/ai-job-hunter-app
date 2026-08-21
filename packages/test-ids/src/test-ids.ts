@@ -142,6 +142,12 @@ export const TEST_IDS = {
     jobAdViewScoreMatch: 'job-ad-view-score-match',
     jobAdViewScoreCoverage: 'job-ad-view-score-coverage',
     jobAdViewScoreSemantic: 'job-ad-view-score-semantic',
+    /** Résumé result's compact score strip (GenerationOutput) — root + the
+     *  coverage metric's value cell. Shares its `MatchScore` predicates/row
+     *  with the Score tab above (see `MatchScoreMetric.tsx`) but is its own
+     *  surface, so it gets its own ids rather than reusing the tab's. */
+    scoreStrip: 'score-strip',
+    scoreStripCoverage: 'score-strip-coverage',
   },
 
   /** Resume shared components (ResumeInputCard) */

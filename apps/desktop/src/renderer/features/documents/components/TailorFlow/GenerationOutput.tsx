@@ -31,6 +31,7 @@ import {
   TEMPLATES,
 } from '@/lib/generate';
 
+import { GenerationScoreStrip } from './GenerationScoreStrip';
 import { JobAdView } from './JobAdView';
 import type { TailorTarget } from './lib/tailor-target';
 
@@ -343,6 +344,18 @@ export function GenerationOutput({
           (edits, tab switches) leave a dismissal in place. Pinned like the
           toolbar above it, not part of the scrollport below. */}
       {view === 'doc' && report && <HandEditNudge key={report.generatedAt} className="mx-3 mt-2" />}
+      {/* Score strip — résumé only (a cover letter isn't scored against
+          keyword coverage). Surfaces the score users otherwise only find two
+          clicks away, behind the opt-in Job ad → Score sub-tab. Pinned like
+          the nudge above it, so it's visible without scrolling the preview. */}
+      {view === 'doc' && activeOut === 'resume' && (
+        <GenerationScoreStrip
+          resumeId={resumeId}
+          jobDesc={jobDesc}
+          snapshotKey={report?.generatedAt}
+          className="mx-3 mt-2"
+        />
+      )}
       {/* The scrollport. ONLY the tab/action bar above pins — the option strips
           scroll WITH the document: pinning them too costs more permanent chrome
           than a small window can spare, collapsing the document to nothing and

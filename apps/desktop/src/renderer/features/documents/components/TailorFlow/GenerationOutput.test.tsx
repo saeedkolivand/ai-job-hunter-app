@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import type { MatchScore } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 
@@ -38,12 +39,31 @@ vi.mock('@/components/ui/ExternalLink', () => ({
   ),
 }));
 
-// useJobAdTextMatchScore (JobAdView's Score tab, via useAppClient/QueryClient) —
-// stub so tests that reach the Job-ad tab don't need a provider tree. None of
-// the tests in this file exercise the Score tab's own render logic (that's
-// JobAdView.test.tsx / JobAdView.i18n.test.tsx's job).
+// useJobAdTextMatchScore — shared by JobAdView's Score tab AND the résumé
+// result's score strip (GenerationScoreStrip), via useAppClient/QueryClient —
+// stubbed so tests that reach either don't need a provider tree. A mutable
+// `stubbedScore` (not a plain arrow) so the score-strip tests below can drive
+// it — same pattern as JobAdView.i18n.test.tsx. `mockUseJobAdTextMatchScore`
+// (the `mock`-prefixed name) is Vitest's documented exception to the "no
+// out-of-scope refs in a hoisted factory" rule. Reset before EVERY test —
+// most never touch it and rely on this default (undefined data, not
+// loading), which is what makes the strip render its honest "not scored"
+// placeholder rather than a stale value leaking across tests.
+let stubbedScore: {
+  data?: unknown;
+  isLoading?: boolean;
+  isError?: boolean;
+  refetch?: () => void;
+} = { data: undefined, isLoading: false };
+
+beforeEach(() => {
+  stubbedScore = { data: undefined, isLoading: false };
+});
+
+const mockUseJobAdTextMatchScore = vi.fn((..._args: unknown[]) => stubbedScore);
+
 vi.mock('@/services', () => ({
-  useJobAdTextMatchScore: () => ({ data: undefined, isLoading: false }),
+  useJobAdTextMatchScore: (...args: unknown[]) => mockUseJobAdTextMatchScore(...args),
 }));
 
 // EditableOutput mock — exposes onChange/onBlur/isPending + renders previewSlot.
@@ -1377,6 +1397,98 @@ describe('GenerationOutput', () => {
 
       await user.click(screen.getByRole('button', { name: /quality\.badge\.stale/ }));
       expect(screen.queryByRole('button', { name: /quality\.panel\.recheck/ })).toBeNull();
+    });
+  });
+
+  // ── 11. Score strip — résumé result surfaces the job-match score ─────────────
+  // Real render-logic guards (isMeasured/hasScoreCoverage/ScoreMetric) are
+  // covered once, at the source, by JobAdView.i18n.test.tsx against REAL
+  // translated copy — that module is now shared (MatchScoreMetric.tsx), not
+  // forked. This block covers GenerationScoreStrip's OWN wiring: which tab it
+  // renders on, and that it never fabricates a `0`.
+
+  describe('Score strip', () => {
+    // Clears accumulated calls from every earlier test in this file so the
+    // "which text did the LATEST render call the hook with" test below finds
+    // this test's own call, not some earlier test's.
+    beforeEach(() => {
+      mockUseJobAdTextMatchScore.mockClear();
+    });
+
+    function baseScore(overrides: Partial<MatchScore> = {}): MatchScore {
+      return {
+        resumeId: 'resume-1',
+        jobId: 'job-1',
+        ats: 72,
+        semantic: 0,
+        combined: 72,
+        gaps: ['docker'],
+        recommendations: [],
+        scoreSource: 'keyword',
+        ...overrides,
+      };
+    }
+
+    it('renders a real percentage when the score is measured', () => {
+      stubbedScore = { data: baseScore({ ats: 72 }), isLoading: false };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStripCoverage)).toHaveTextContent('72%');
+    });
+
+    it('renders the stated reason, never "0%", for the no-extractable-keywords placeholder', () => {
+      stubbedScore = {
+        data: baseScore({ ats: 0, combined: 0, gaps: [] }),
+        isLoading: false,
+      };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStripCoverage)).toHaveTextContent(
+        'autopilot.apply.jobAdView.score.noKeywords'
+      );
+      expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    });
+
+    it('shows the no-résumé reason (never a score) when no resumeId is threaded', () => {
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: undefined })} />);
+      expect(screen.getByTestId(TEST_IDS.documents.scoreStrip)).toHaveTextContent(
+        'jobs.scoreNoResume'
+      );
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStripCoverage)).not.toBeInTheDocument();
+    });
+
+    it('does NOT render on the cover-letter tab — a cover letter is not scored against keyword coverage', () => {
+      stubbedScore = { data: baseScore(), isLoading: false };
+      render(
+        <GenerationOutput
+          {...makeProps({ target: 'both', activeOut: 'cover', resumeId: 'resume-1' })}
+        />
+      );
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStrip)).not.toBeInTheDocument();
+    });
+
+    it('does NOT render on the job-ad tab', async () => {
+      const user = userEvent.setup();
+      stubbedScore = { data: baseScore(), isLoading: false };
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', resumeId: 'resume-1' })} />);
+
+      await clickJobAdTab(user);
+
+      expect(screen.queryByTestId(TEST_IDS.documents.scoreStrip)).not.toBeInTheDocument();
+    });
+
+    it('passes the snapshotted jobDesc (not a live-editable value) as the query text argument', () => {
+      stubbedScore = { data: baseScore(), isLoading: false };
+      render(
+        <GenerationOutput
+          {...makeProps({
+            activeOut: 'resume',
+            resumeId: 'resume-1',
+            jobDesc: 'Snapshot-worthy posting text',
+          })}
+        />
+      );
+      const enabledCall = mockUseJobAdTextMatchScore.mock.calls.find((call) => call[2] === true);
+      expect(enabledCall?.[0]).toBe('resume-1');
+      expect(enabledCall?.[1]).toBe('Snapshot-worthy posting text');
     });
   });
 });
