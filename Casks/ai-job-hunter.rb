@@ -16,8 +16,8 @@
 
 cask "ai-job-hunter" do
   version "0.139.3"
-  sha256 arm:   "3326ccc42047c84c4334cb51de300077a7c17c5b1a857d1f75f6c8cea503ac72",
-         intel: "d3cd715873f208d514cb5b814952c655bf5adc04057fa4fa7eb2185f5137b8d2"
+  sha256 arm:   "879ed0db7725f1ec577dce16ec760f5980ad780757a441b7c0fbe44ed062c84e",
+         intel: "e583b68720ddcdcb639660f21ed9634fef660493ae49b5259edaef26ade85ca5"
 
   arch arm: "aarch64-apple-silicon", intel: "x64-intel"
 
