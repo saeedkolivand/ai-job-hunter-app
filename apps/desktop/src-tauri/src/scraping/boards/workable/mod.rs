@@ -195,6 +195,14 @@ pub(crate) fn parse_workable_response(
             .or(j.created_at.as_deref())
             .and_then(parse_workable_date);
 
+        // `telecommuting` is binary: `Some(true)` declares remote, but
+        // `Some(false)` only means "not flagged remote", not "on-site" — so it
+        // writes nothing rather than a guessed OnSite.
+        let mut extra = std::collections::HashMap::new();
+        if j.telecommuting == Some(true) {
+            extra.insert("workType".to_string(), serde_json::json!("remote"));
+        }
+
         // Namespaced with the company slug: `shortcode` is only unique WITHIN
         // one Workable tenant, so two companies fetched in the same
         // `companies[]` batch could otherwise collide on the same id.
@@ -210,7 +218,7 @@ pub(crate) fn parse_workable_response(
             requirements: None,
             posted_at,
             captured_at: now,
-            extra: std::collections::HashMap::new(),
+            extra,
         });
     }
 

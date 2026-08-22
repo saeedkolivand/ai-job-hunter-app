@@ -67,6 +67,67 @@ async fn freehire_ok_response_maps_end_to_end() {
         "freehire's own upstream must be carried so a posting is not attributed \
          to freehire itself"
     );
+    assert_eq!(
+        job.extra.get("workType").and_then(|v| v.as_str()),
+        Some("remote"),
+        "work_mode must map to extra.workType (renamed from the unread workMode key)"
+    );
+}
+
+/// `work_mode` truth table via the same end-to-end path: hybrid and onsite
+/// round-trip, and an absent field writes nothing (Unknown), never a guessed
+/// value.
+#[tokio::test]
+async fn freehire_work_mode_maps_every_declared_value_and_absence() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"data":[
+                {"public_slug":"hybrid-1","title":"Hybrid Engineer","company":"Acme",
+                    "url":"https://apply.example.com/j/2","work_mode":"hybrid"},
+                {"public_slug":"onsite-1","title":"Onsite Engineer","company":"Acme",
+                    "url":"https://apply.example.com/j/3","work_mode":"onsite"},
+                {"public_slug":"absent-1","title":"Undeclared Engineer","company":"Acme",
+                    "url":"https://apply.example.com/j/4"}
+            ],"meta":{"total":3}}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let items = fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a 2xx freehire response must map");
+
+    let work_type = |slug_suffix: &str| -> Option<String> {
+        items
+            .iter()
+            .find(|p| p.external_id.as_deref() == Some(&format!("freehire-{slug_suffix}")))
+            .and_then(|p| p.extra.get("workType"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(work_type("hybrid-1"), Some("hybrid".to_string()));
+    assert_eq!(
+        work_type("onsite-1"),
+        Some("on-site".to_string()),
+        "freehire's no-hyphen 'onsite' spelling must still normalize"
+    );
+    assert_eq!(
+        work_type("absent-1"),
+        None,
+        "an absent work_mode must write nothing, not a guessed value"
+    );
 }
 
 /// The request is built from the PUBLISHED spec: the documented

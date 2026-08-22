@@ -394,6 +394,107 @@ async fn clean_run_reports_no_note() {
     );
 }
 
+/// `workplaceType` must win over `isRemote` — a Hybrid row with `isRemote:true`
+/// (the live-measured shape: 107 of 136 Ramp postings) must map to
+/// `extra.workType == "hybrid"`, not fall through to a remote badge. Covers all
+/// three declared values plus an absent field.
+#[tokio::test]
+async fn workplace_type_maps_to_extra_work_type() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/posting-api/job-board/acme"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "apiVersion": "1",
+            "jobs": [
+                {
+                    "id": "hybrid-1",
+                    "title": "Hybrid Engineer",
+                    "locationName": "Berlin",
+                    "isRemote": true,
+                    "workplaceType": "Hybrid",
+                    "jobUrl": "https://jobs.ashbyhq.com/acme/hybrid-1",
+                },
+                {
+                    "id": "remote-1",
+                    "title": "Remote Engineer",
+                    "locationName": "Anywhere",
+                    "isRemote": true,
+                    "workplaceType": "Remote",
+                    "jobUrl": "https://jobs.ashbyhq.com/acme/remote-1",
+                },
+                {
+                    "id": "onsite-1",
+                    "title": "Onsite Engineer",
+                    "locationName": "Berlin",
+                    "isRemote": false,
+                    "workplaceType": "OnSite",
+                    "jobUrl": "https://jobs.ashbyhq.com/acme/onsite-1",
+                },
+                {
+                    "id": "absent-1",
+                    "title": "Undeclared Engineer",
+                    "locationName": "Berlin",
+                    "isRemote": false,
+                    "jobUrl": "https://jobs.ashbyhq.com/acme/absent-1",
+                },
+            ],
+        })))
+        .mount(&server)
+        .await;
+
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+        on_truncation: None,
+        on_note: None,
+    };
+    let input = BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        provider_amount: None,
+        date_filter: None,
+        job_type: None,
+        work_types: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: vec!["acme".to_string()],
+    };
+
+    let out = AshbyScraper
+        .search_with_base(&server.uri(), input, ctx)
+        .await
+        .expect("mocked run must succeed");
+
+    let work_type = |id: &str| -> Option<String> {
+        out.iter()
+            .find(|p| p.external_id.as_deref() == Some(id))
+            .and_then(|p| p.extra.get("workType"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(work_type("hybrid-1"), Some("hybrid".to_string()));
+    assert_eq!(work_type("remote-1"), Some("remote".to_string()));
+    assert_eq!(work_type("onsite-1"), Some("on-site".to_string()));
+    assert_eq!(
+        work_type("absent-1"),
+        None,
+        "an undeclared workplaceType must write nothing, not a guessed value"
+    );
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {

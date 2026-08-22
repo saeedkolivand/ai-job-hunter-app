@@ -133,6 +133,11 @@ fn test_parse_fixture_job1_full_html_description_becomes_markdown() {
         .timestamp_millis();
     assert_eq!(j.posted_at, Some(expected_ms));
     assert_eq!(j.extra.get("remote").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        j.extra.get("workType").and_then(|v| v.as_str()),
+        Some("remote"),
+        "an all-remote board must write extra.workType unconditionally"
+    );
 }
 
 #[test]

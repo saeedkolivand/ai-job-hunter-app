@@ -385,6 +385,37 @@ fn parse_pinpoint_response_rejects_userinfo_url() {
     assert_eq!(postings[0].title, "Legit Listing");
 }
 
+/// `workplace_type` maps to `extra.workType`; `workplace_type_text` must never
+/// be read (it is i18n'd), and an absent field writes nothing.
+#[test]
+fn parse_pinpoint_response_workplace_type_maps_to_extra_work_type() {
+    let json = r#"{
+        "data": [
+            {"title": "Remote Role", "url": "https://acme.pinpointhq.com/postings/1", "location": null, "workplace_type": "remote"},
+            {"title": "Hybrid Role", "url": "https://acme.pinpointhq.com/postings/2", "location": null, "workplace_type": "hybrid"},
+            {"title": "Undeclared Role", "url": "https://acme.pinpointhq.com/postings/3", "location": null}
+        ]
+    }"#;
+    let resp: PpResponse = serde_json::from_str(json).unwrap();
+    let postings = parse_pinpoint_response(resp, "acme", 0);
+
+    let work_type = |title: &str| -> Option<String> {
+        postings
+            .iter()
+            .find(|p| p.title == title)
+            .and_then(|p| p.extra.get("workType"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(work_type("Remote Role"), Some("remote".to_string()));
+    assert_eq!(work_type("Hybrid Role"), Some("hybrid".to_string()));
+    assert_eq!(
+        work_type("Undeclared Role"),
+        None,
+        "an absent workplace_type must write nothing, not a guessed value"
+    );
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {

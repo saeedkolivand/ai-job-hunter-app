@@ -5,7 +5,9 @@
 //! No global keyword-only search — requires a company slug. The engine skips
 //! this board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{ats_all_fetches_failed, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -15,6 +17,41 @@ struct Location {
     city: Option<String>,
     country: Option<String>,
     remote: Option<bool>,
+    hybrid: Option<bool>,
+}
+
+/// `locationType` request-param spelling — `ONSITE`, no underscore/hyphen,
+/// unlike the wire VALUE this board reports back (see
+/// [`smartrecruiters_work_type`]'s doc).
+fn smartrecruiters_location_type_param(wt: WorkType) -> &'static str {
+    match wt {
+        WorkType::Remote => "REMOTE",
+        WorkType::Hybrid => "HYBRID",
+        WorkType::OnSite => "ONSITE",
+    }
+}
+
+/// Map SmartRecruiters' `location.remote` / `location.hybrid` booleans to a
+/// declared work type, precedence **hybrid > remote > on-site**.
+///
+/// **Board-specific rule, proven by live measurement, not the generic
+/// all-false→Unknown policy used elsewhere:** `locationType` partitions this
+/// board EXACTLY (westerndigital: no filter 367 = REMOTE 3 + HYBRID 36 +
+/// ONSITE 328) — there is no undeclared bucket, so `remote:false &&
+/// hybrid:false` genuinely means on-site here. Only writes a value when at
+/// least one of the two booleans is present in the payload; both absent means
+/// the field itself was missing, which correctly stays `Unknown`.
+fn smartrecruiters_work_type(remote: Option<bool>, hybrid: Option<bool>) -> Option<WorkType> {
+    if remote.is_none() && hybrid.is_none() {
+        return None;
+    }
+    if hybrid == Some(true) {
+        Some(WorkType::Hybrid)
+    } else if remote == Some(true) {
+        Some(WorkType::Remote)
+    } else {
+        Some(WorkType::OnSite)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +118,14 @@ impl Scraper for SmartRecruitersScraper {
         true
     }
 
+    /// SmartRecruiters is the only board in v1 that both validates a
+    /// `locationType` param AND partitions its corpus exactly (no undeclared
+    /// bucket) — see [`smartrecruiters_work_type`]. Live-verified: a bogus
+    /// value returns an error object instead of silently ignoring it.
+    fn supports_work_type(&self) -> bool {
+        true
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
@@ -112,7 +157,7 @@ impl Scraper for SmartRecruitersScraper {
 
             // SmartRecruiters supports a real `q` keyword param — pass it when set.
             let keyword = input.query.trim();
-            let list_url = if keyword.is_empty() {
+            let mut list_url = if keyword.is_empty() {
                 format!(
                     "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100",
                     urlencoding::encode(company)
@@ -124,6 +169,15 @@ impl Scraper for SmartRecruitersScraper {
                     urlencoding::encode(keyword)
                 )
             };
+            // Upstream pass-through — the only board in v1 (see
+            // `supports_work_type`). Repeatable param, one occurrence per
+            // requested type.
+            if let Some(work_types) = input.work_types.as_ref().filter(|wt| !wt.is_empty()) {
+                for wt in work_types {
+                    list_url.push_str("&locationType=");
+                    list_url.push_str(smartrecruiters_location_type_param(*wt));
+                }
+            }
 
             let list =
                 match fetch_json::<ListResp>(&list_url, Default::default(), ctx.signal.clone())
@@ -255,8 +309,13 @@ impl Scraper for SmartRecruitersScraper {
                     captured_at: now,
                     extra: {
                         let mut map = std::collections::HashMap::new();
-                        if let Some(remote) = p.location.as_ref().and_then(|l| l.remote) {
+                        let remote_flag = p.location.as_ref().and_then(|l| l.remote);
+                        let hybrid_flag = p.location.as_ref().and_then(|l| l.hybrid);
+                        if let Some(remote) = remote_flag {
                             map.insert("remote".to_string(), serde_json::json!(remote));
+                        }
+                        if let Some(wt) = smartrecruiters_work_type(remote_flag, hybrid_flag) {
+                            map.insert("workType".to_string(), serde_json::json!(wt));
                         }
                         map
                     },

@@ -6,6 +6,15 @@ use crate::error::AppError;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+/// Map arbeitnow's `remote` boolean to a declared work type. **`Some(false)`
+/// must write nothing, never `OnSite`** — the field is badly under-populated
+/// live (rows titled `"Germany Remote"` and `"Berlin, Hybrid"` both carry
+/// `remote:false`), so a positive `false` here is not trustworthy evidence of
+/// on-site. Standalone so it is unit-testable without a network round-trip.
+pub(crate) fn arbeitnow_work_type(remote: Option<bool>) -> Option<&'static str> {
+    (remote == Some(true)).then_some("remote")
+}
+
 #[derive(Debug, Deserialize)]
 struct Job {
     slug: String,
@@ -125,6 +134,9 @@ impl Scraper for ArbeitnowScraper {
                         let mut map = std::collections::HashMap::new();
                         if let Some(remote) = j.remote {
                             map.insert("remote".to_string(), serde_json::json!(remote));
+                        }
+                        if let Some(wt) = arbeitnow_work_type(j.remote) {
+                            map.insert("workType".to_string(), serde_json::json!(wt));
                         }
                         map
                     },

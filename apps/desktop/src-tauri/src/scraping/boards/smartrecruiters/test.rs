@@ -24,9 +24,11 @@ fn test_location_struct_fields() {
         city: Some("Berlin".to_string()),
         country: Some("Germany".to_string()),
         remote: Some(true),
+        hybrid: Some(false),
     };
     assert_eq!(location.city, Some("Berlin".to_string()));
     assert_eq!(location.remote, Some(true));
+    assert_eq!(location.hybrid, Some(false));
 }
 
 #[test]
@@ -35,9 +37,77 @@ fn test_location_struct_defaults() {
         city: None,
         country: None,
         remote: None,
+        hybrid: None,
     };
     assert!(location.city.is_none());
     assert!(location.remote.is_none());
+    assert!(location.hybrid.is_none());
+}
+
+// ---------------------------------------------------------------------------
+// smartrecruiters_work_type — precedence + the exact-partition rule
+// ---------------------------------------------------------------------------
+
+#[test]
+fn work_type_hybrid_wins_over_remote() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(true), Some(true)),
+        Some(WorkType::Hybrid)
+    );
+}
+
+#[test]
+fn work_type_remote_when_hybrid_false() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(true), Some(false)),
+        Some(WorkType::Remote)
+    );
+}
+
+/// Board-specific rule: unlike the generic all-false→Unknown policy, both
+/// booleans false means on-site HERE — the partition is exact (367 = 3 + 36 +
+/// 328), so there is no undeclared bucket for a company that reports at all.
+#[test]
+fn work_type_both_false_means_on_site_not_unknown() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(false), Some(false)),
+        Some(WorkType::OnSite)
+    );
+}
+
+/// Both booleans absent — the field itself was missing from the payload —
+/// stays Unknown (writes nothing), unlike the both-false case above.
+#[test]
+fn work_type_both_absent_is_unknown() {
+    assert_eq!(smartrecruiters_work_type(None, None), None);
+}
+
+#[test]
+fn work_type_only_remote_present_still_resolves() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(true), None),
+        Some(WorkType::Remote)
+    );
+    assert_eq!(
+        smartrecruiters_work_type(Some(false), None),
+        Some(WorkType::OnSite)
+    );
+}
+
+#[test]
+fn location_type_param_spelling_has_no_separator() {
+    assert_eq!(
+        smartrecruiters_location_type_param(WorkType::Remote),
+        "REMOTE"
+    );
+    assert_eq!(
+        smartrecruiters_location_type_param(WorkType::Hybrid),
+        "HYBRID"
+    );
+    assert_eq!(
+        smartrecruiters_location_type_param(WorkType::OnSite),
+        "ONSITE"
+    );
 }
 
 #[test]

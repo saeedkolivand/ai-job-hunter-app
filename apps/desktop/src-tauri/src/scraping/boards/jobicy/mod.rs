@@ -132,6 +132,10 @@ pub(crate) fn map_job(j: Job, scraper_id: &str, now: i64) -> Option<JobPosting> 
         extra: {
             let mut map = std::collections::HashMap::new();
             map.insert("remote".to_string(), serde_json::json!(true));
+            // All-remote by definition — no per-posting field to read, but a
+            // declared value all the same so this board's rows participate in
+            // the work-type filter/badge like every other board.
+            map.insert("workType".to_string(), serde_json::json!("remote"));
             map
         },
     })

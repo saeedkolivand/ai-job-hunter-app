@@ -136,6 +136,8 @@ impl Scraper for RemoteOkScraper {
                 extra: {
                     let mut map = std::collections::HashMap::new();
                     map.insert("remote".to_string(), serde_json::json!(true));
+                    // All-remote by definition — see jobicy's copy of this comment.
+                    map.insert("workType".to_string(), serde_json::json!("remote"));
                     map
                 },
             };

@@ -3,6 +3,7 @@
 //! Endpoint: `https://api.ashbyhq.com/posting-api/job-board/{company}?includeCompensation=true`
 //! No global keyword search — requires a company slug. The engine skips this
 //! board with `"needs-company"` when `input.companies` is empty.
+use super::super::engine::work_type_filter::parse_work_type;
 use super::super::http::{fetch_json, FetchOptions};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use super::common::{ats_all_fetches_failed, ats_failed_fetches_note, normalize_companies};
@@ -21,8 +22,16 @@ struct Job {
     team_name: Option<String>,
     #[serde(rename = "locationName")]
     location_name: Option<String>,
+    /// **Not a remote signal on its own** — measured live (`api.ashbyhq.com/posting-api/job-board/Ramp`,
+    /// 136 jobs): `isRemote == true` for 107 Hybrid rows as well as 16 Remote rows, so a bare `true`
+    /// means "Hybrid OR Remote", not "Remote". Kept only for the pre-existing `extra["remote"]`
+    /// badge fallback; [`Job::workplace_type`] is the field that actually distinguishes the three.
     #[serde(rename = "isRemote")]
     is_remote: Option<bool>,
+    /// The declared workplace arrangement — `"OnSite" | "Remote" | "Hybrid"`. Added because
+    /// `isRemote` alone conflates Hybrid and Remote (see its doc comment).
+    #[serde(rename = "workplaceType")]
+    workplace_type: Option<String>,
     #[serde(rename = "jobUrl")]
     job_url: String,
     #[serde(rename = "descriptionPlain")]
@@ -180,6 +189,9 @@ impl AshbyScraper {
                         let mut map = std::collections::HashMap::new();
                         if let Some(remote) = j.is_remote {
                             map.insert("remote".to_string(), serde_json::json!(remote));
+                        }
+                        if let Some(wt) = j.workplace_type.as_deref().and_then(parse_work_type) {
+                            map.insert("workType".to_string(), serde_json::json!(wt));
                         }
                         map
                     },

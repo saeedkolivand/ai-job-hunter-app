@@ -18,6 +18,28 @@ fn test_arbeitnow_scraper_mode() {
     assert_eq!(scraper.mode(), ScraperMode::Http);
 }
 
+// ---------------------------------------------------------------------------
+// arbeitnow_work_type — Some(false) must never become OnSite
+// ---------------------------------------------------------------------------
+
+#[test]
+fn work_type_true_maps_to_remote() {
+    assert_eq!(arbeitnow_work_type(Some(true)), Some("remote"));
+}
+
+/// The under-populated-field guard: `remote:false` on this board is measured
+/// to co-occur with titles like "Germany Remote" / "Berlin, Hybrid" — must
+/// write nothing, never a guessed OnSite.
+#[test]
+fn work_type_false_writes_nothing_never_on_site() {
+    assert_eq!(arbeitnow_work_type(Some(false)), None);
+}
+
+#[test]
+fn work_type_absent_writes_nothing() {
+    assert_eq!(arbeitnow_work_type(None), None);
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {

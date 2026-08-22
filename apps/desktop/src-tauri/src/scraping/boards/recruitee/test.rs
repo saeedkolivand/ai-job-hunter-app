@@ -213,6 +213,8 @@ fn test_offer_struct_fields() {
         city: Some("Berlin".to_string()),
         country: Some("Germany".to_string()),
         remote: Some(true),
+        hybrid: Some(false),
+        on_site: Some(false),
         created_at: None,
         company_name: Some("Test Corp".to_string()),
     };
@@ -233,6 +235,8 @@ fn test_offer_struct_defaults() {
         city: None,
         country: None,
         remote: None,
+        hybrid: None,
+        on_site: None,
         created_at: None,
         company_name: None,
     };
@@ -244,6 +248,54 @@ fn test_offer_struct_defaults() {
 fn test_resp_struct() {
     let resp = Resp { offers: vec![] };
     assert!(resp.offers.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// recruitee_work_type — precedence hybrid > remote > on_site; all-false/absent
+// stays Unknown (writes nothing)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn work_type_matches_the_live_measured_tenant_shape() {
+    // fastned.recruitee.com: (F,T,F) x25
+    assert_eq!(
+        recruitee_work_type(Some(false), Some(true), Some(false)),
+        Some(WorkType::Hybrid)
+    );
+    // fastned.recruitee.com: (F,F,T) x2
+    assert_eq!(
+        recruitee_work_type(Some(false), Some(false), Some(true)),
+        Some(WorkType::OnSite)
+    );
+}
+
+#[test]
+fn work_type_hybrid_wins_when_multiple_true() {
+    assert_eq!(
+        recruitee_work_type(Some(true), Some(true), Some(true)),
+        Some(WorkType::Hybrid)
+    );
+}
+
+#[test]
+fn work_type_remote_wins_over_on_site() {
+    assert_eq!(
+        recruitee_work_type(Some(true), Some(false), Some(true)),
+        Some(WorkType::Remote)
+    );
+}
+
+#[test]
+fn work_type_all_false_is_unknown() {
+    assert_eq!(
+        recruitee_work_type(Some(false), Some(false), Some(false)),
+        None
+    );
+}
+
+#[test]
+fn work_type_all_absent_is_unknown() {
+    assert_eq!(recruitee_work_type(None, None, None), None);
 }
 
 #[tokio::test]

@@ -489,6 +489,40 @@ fn parse_breezy_response_is_remote_true_with_no_other_info_yields_remote() {
     let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(postings.len(), 1);
     assert_eq!(postings[0].location, Some("Remote".to_string()));
+    assert_eq!(
+        postings[0].extra.get("workType").and_then(|v| v.as_str()),
+        Some("remote")
+    );
+}
+
+/// `is_remote:false` and an absent `location` block must both write nothing —
+/// missing/false is not evidence of on-site, only "not flagged remote".
+#[test]
+fn parse_breezy_response_is_remote_false_or_absent_writes_nothing() {
+    let json = r#"[
+        {
+            "name": "Office Role",
+            "url": "https://acme.breezy.hr/p/office-role",
+            "published_date": null,
+            "location": { "name": "Austin", "city": "Austin", "state": null, "country": null, "is_remote": false }
+        },
+        {
+            "name": "No Location Block",
+            "url": "https://acme.breezy.hr/p/no-location",
+            "published_date": null,
+            "location": null
+        }
+    ]"#;
+    let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
+    let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
+    assert_eq!(postings.len(), 2);
+    for p in &postings {
+        assert!(
+            !p.extra.contains_key("workType"),
+            "false/absent is_remote must not write a guessed workType, got {:?}",
+            p.extra.get("workType")
+        );
+    }
 }
 
 /// `is_remote` merge branch: city/state present → base gets ", Remote"
