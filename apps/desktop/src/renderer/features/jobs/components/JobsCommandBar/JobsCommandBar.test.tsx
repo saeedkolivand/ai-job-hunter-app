@@ -66,7 +66,7 @@ function setJobs(patch: Parameters<ReturnType<typeof useSessionStore.getState>['
 }
 
 beforeEach(() => {
-  setJobs({ filter: '', sortBy: 'newest', viewMode: 'list', hideAgency: false });
+  setJobs({ filter: '', sortBy: 'newest', viewMode: 'list', hideAgency: false, workTypes: [] });
 });
 
 describe('JobsCommandBar — active filter chips', () => {
@@ -226,6 +226,29 @@ describe('JobsCommandBar — view mode + count', () => {
       within(screen.getByTestId(TEST_IDS.jobs.hideAgencyToggle)).getByRole('button')
     );
     expect(useSessionStore.getState().jobs.hideAgency).toBe(true);
+  });
+
+  it('the work-type chips toggle workTypes independently', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    await user.click(within(group).getByRole('button', { name: 'jobs.workType.remote' }));
+    expect(useSessionStore.getState().jobs.workTypes).toEqual(['remote']);
+
+    await user.click(within(group).getByRole('button', { name: 'jobs.workType.hybrid' }));
+    expect(useSessionStore.getState().jobs.workTypes).toEqual(['remote', 'hybrid']);
+
+    await user.click(within(group).getByRole('button', { name: 'jobs.workType.remote' }));
+    expect(useSessionStore.getState().jobs.workTypes).toEqual(['hybrid']);
+  });
+
+  it('does NOT chip the work-type filter — same "already a visible control" rule as hideAgency', () => {
+    act(() => {
+      useSessionStore.getState().setJobs({ workTypes: ['remote'] });
+    });
+    renderBar();
+    expect(screen.queryByTestId(TEST_IDS.jobs.filterChips)).not.toBeInTheDocument();
   });
 });
 

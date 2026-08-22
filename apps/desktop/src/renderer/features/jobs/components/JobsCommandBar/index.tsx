@@ -1,7 +1,7 @@
 import { LayoutList, LayoutPanelLeft, ListFilter, Loader2, Plus, Trash2 } from 'lucide-react';
 import type { Ref } from 'react';
 
-import type { BoardScrapeSummary } from '@ajh/shared';
+import { type BoardScrapeSummary, WORK_TYPE_OPTIONS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, Input, SegmentedControl, Tag } from '@ajh/ui';
@@ -77,6 +77,7 @@ export function JobsCommandBar({
   const sortBy = useSessionStore((s) => s.jobs.sortBy);
   const viewMode = useSessionStore((s) => s.jobs.viewMode);
   const hideAgency = useSessionStore((s) => s.jobs.hideAgency);
+  const workTypes = useSessionStore((s) => s.jobs.workTypes);
 
   const trimmedFilter = filter.trim();
   const hasActiveFilter = trimmedFilter.length > 0;
@@ -174,6 +175,29 @@ export function JobsCommandBar({
           <Tag.CheckableTag checked={hideAgency} onChange={(v) => setJobs({ hideAgency: v })}>
             {t('jobs.filters.hideAgency')}
           </Tag.CheckableTag>
+        </span>
+
+        {/* View-only work-type filter — filters postings ALREADY on screen, no
+            re-scrape. Same "already a visible control, no separate chip" rule
+            as hideAgency above (see the chips-row test for why). */}
+        <span
+          role="group"
+          aria-label={t('jobs.workType.label')}
+          className="inline-flex items-center gap-1"
+        >
+          {WORK_TYPE_OPTIONS.map((opt) => (
+            <Tag.CheckableTag
+              key={opt}
+              checked={workTypes.includes(opt)}
+              onChange={(checked) =>
+                setJobs({
+                  workTypes: checked ? [...workTypes, opt] : workTypes.filter((w) => w !== opt),
+                })
+              }
+            >
+              {t(`jobs.workType.${opt}`)}
+            </Tag.CheckableTag>
+          ))}
         </span>
 
         {/* Trailing actions — right-aligned when there is room, wrapped to their

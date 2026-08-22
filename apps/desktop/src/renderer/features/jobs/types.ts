@@ -3,6 +3,7 @@ import {
   type DATE_FILTER_OPTIONS,
   type JobInteraction,
   type JobTrustAssessment,
+  type WorkTypeOption,
 } from '@ajh/shared';
 
 export interface Posting {
@@ -14,6 +15,12 @@ export interface Posting {
   company: string;
   location?: string;
   remote?: boolean;
+  /** Declared work arrangement, attached by the backend at scrape-time from
+   *  what the board itself reported (`work_type_filter::work_type_verdict`) —
+   *  never inferred client-side. Absent means the board didn't declare one
+   *  ("undeclared"), not "not remote"; the renderer must keep such postings
+   *  under any work-type filter, matching the backend's keep-unknowns policy. */
+  workType?: WorkTypeOption;
   description: string;
   postedAt?: number;
   capturedAt: number;
@@ -88,6 +95,13 @@ export interface ScrapeFormState {
    * Empty array = no filter; backend skips ATS boards with `needs-company`.
    */
   companies: string[];
+  /**
+   * Requested work arrangement(s) — the `WORK_TYPE_OPTIONS` vocabulary.
+   * Empty array = no filter ("any"); all three = "all" (byte-equivalent to no
+   * filter on every board that validates it — see the SmartRecruiters
+   * measurement in `.claude/scratch/work-type-filter.md`).
+   */
+  workTypes: WorkTypeOption[];
 }
 
 /**
@@ -104,5 +118,6 @@ export function makeScrapeFormDefaults(): ScrapeFormState {
     amount: 25,
     dateFilter: '',
     companies: [],
+    workTypes: [],
   };
 }

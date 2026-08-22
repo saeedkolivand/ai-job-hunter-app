@@ -121,6 +121,7 @@ function buildForm(boards: string[]): Parameters<typeof ScrapeForm>[0]['form'] {
     amount: 25,
     dateFilter: '' as const,
     companies: [],
+    workTypes: [],
   };
 }
 

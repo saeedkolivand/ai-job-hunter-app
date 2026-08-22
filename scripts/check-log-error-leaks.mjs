@@ -278,7 +278,7 @@ const ALLOWLIST = {
       'own fallback path) — its Display is a structural markdown-conversion failure, never ' +
       'a path/URL/host/credential.',
   },
-  'scraping/engine/mod.rs:1182': {
+  'scraping/engine/mod.rs:1189': {
     status: 'safe',
     reason:
       'tokio::task::JoinError from the record_health spawn_blocking handle (the task ' +

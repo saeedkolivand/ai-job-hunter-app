@@ -51,9 +51,9 @@ describe('buildDefaults()', () => {
     expect(state.scheduleMinute).toBe(0);
   });
 
-  it("defaults workType to the 'any' sentinel (no job-preference seed)", () => {
-    expect(buildDefaults().workType).toBe('any');
-    expect(buildDefaults({ location: 'Berlin' }).workType).toBe('any');
+  it("defaults workTypes to an empty array (the 'any' sentinel; no job-preference seed)", () => {
+    expect(buildDefaults().workTypes).toEqual([]);
+    expect(buildDefaults({ location: 'Berlin' }).workTypes).toEqual([]);
   });
 
   it('sets default schedule to daily', () => {
@@ -235,6 +235,22 @@ describe('autopilotToWizardState()', () => {
     expect(state.assistant).toBe(false);
   });
 
+  it('round-trips a multi-value workTypes array from the target', () => {
+    const ap: Autopilot = {
+      ...BASE_AUTOPILOT,
+      target: { ...BASE_AUTOPILOT.target, workTypes: ['remote', 'hybrid'] },
+    };
+    expect(autopilotToWizardState(ap).workTypes).toEqual(['remote', 'hybrid']);
+  });
+
+  it('falls back to an empty workTypes array when target does not carry one (legacy record)', () => {
+    const ap: Autopilot = {
+      ...BASE_AUTOPILOT,
+      target: { ...BASE_AUTOPILOT.target, workTypes: undefined },
+    };
+    expect(autopilotToWizardState(ap).workTypes).toEqual([]);
+  });
+
   it('round-trips watchedCompaniesOnly: true from the target (ADR-030 §e)', () => {
     const ap: Autopilot = {
       ...BASE_AUTOPILOT,
@@ -269,7 +285,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     boards: ['linkedin'],
     query: 'rust backend',
     location: 'Berlin',
-    workType: 'remote',
+    workTypes: ['remote'],
     pages: 3,
     dateFilter: '24h',
     watchedCompaniesOnly: false,
@@ -342,15 +358,21 @@ describe('wizardStateToPayload()', () => {
     });
   });
 
-  describe('workType sentinel', () => {
-    it("drops workTypes when it is the 'any' sentinel", () => {
-      expect(wizardStateToPayload(makeForm({ workType: 'any' })).target.workTypes).toBeUndefined();
+  describe('workTypes', () => {
+    it("drops workTypes when the array is empty (the 'any' sentinel)", () => {
+      expect(wizardStateToPayload(makeForm({ workTypes: [] })).target.workTypes).toBeUndefined();
     });
 
-    it('keeps a concrete workType as a one-item workTypes array', () => {
-      expect(wizardStateToPayload(makeForm({ workType: 'hybrid' })).target.workTypes).toEqual([
+    it('keeps a one-item workTypes array verbatim', () => {
+      expect(wizardStateToPayload(makeForm({ workTypes: ['hybrid'] })).target.workTypes).toEqual([
         'hybrid',
       ]);
+    });
+
+    it('keeps a multi-item workTypes array verbatim', () => {
+      expect(
+        wizardStateToPayload(makeForm({ workTypes: ['remote', 'on-site'] })).target.workTypes
+      ).toEqual(['remote', 'on-site']);
     });
   });
 

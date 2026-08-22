@@ -34,6 +34,14 @@ export interface BoardCatalogEntry {
    */
   supportsLocation?: boolean;
   /**
+   * Whether the board narrows results by the requested work type server-side.
+   * When `false`, the engine post-filters this board's results on device,
+   * keeping every posting whose work type the board did not declare, so the
+   * picker can indicate which boards will genuinely honor a work-type filter.
+   * Optional so older/absent payloads read as `false`.
+   */
+  supportsWorkType?: boolean;
+  /**
    * Curated companies this company-scoped ATS board will query when the user
    * supplies none; empty/absent for boards without a seed.
    */

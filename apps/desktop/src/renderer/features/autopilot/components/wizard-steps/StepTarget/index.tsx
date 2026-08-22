@@ -2,11 +2,16 @@ import { Globe } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
-import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
+import {
+  AGGREGATOR_BOARD_ID,
+  type BoardCatalogEntry,
+  PROVIDER_SLOTS,
+  WORK_TYPE_OPTIONS,
+} from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Alert, Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
-import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
+import { LocationFilterNote, WorkTypeFilterNote } from '@/components/scrape/LocationFilterNote';
 import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
@@ -44,9 +49,13 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   const countryCode = useWatch({ control, name: 'countryCode' });
   // Location text — drives the honest "location filtered locally" board hint.
   const location = useWatch({ control, name: 'location' });
+  // Work-type selection — drives the honest "work type filtered locally" board hint.
+  const workTypes = useWatch({ control, name: 'workTypes' });
 
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const focusedBoardIdx = useRef<number>(0);
+  const workTypeRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const focusedWorkTypeIdx = useRef<number>(0);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
@@ -205,6 +214,11 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                 <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
               </div>
 
+              {/* Same honesty disclosure for work type — mirrors ScrapeForm */}
+              <div className="mt-2 empty:mt-0">
+                <WorkTypeFilterNote boards={selectedListedBoards} active={workTypes.length > 0} />
+              </div>
+
               {/* Seeded-companies disclosure — names the curated companies a
                   company-scoped ATS board (Greenhouse/Lever/Ashby/…) will query (#621) */}
               <SeededCompaniesNote boards={selectedListedBoards} />
@@ -216,6 +230,66 @@ export function StepTarget({ prefilled }: StepTargetProps) {
       {/* Watched-companies target (ADR-030 §e) — resolve the user's starred
           companies at run time instead of the curated seed. */}
       <WatchedCompaniesField />
+
+      <Controller
+        control={control}
+        name="workTypes"
+        render={({ field }) => {
+          const sel = new Set(field.value);
+          const toggle = (opt: (typeof WORK_TYPE_OPTIONS)[number]) => {
+            field.onChange(
+              sel.has(opt) ? field.value.filter((w) => w !== opt) : [...field.value, opt]
+            );
+          };
+          return (
+            <WizardField label={t('autopilot.wizard.target.workType')}>
+              {/* Multi-select set, not a Dropdown — a Dropdown can't express a
+                  set. Empty = any, all three = all. Mirrors the board picker
+                  above and ScrapeForm's manual-search control. */}
+              <div
+                role="group"
+                aria-label={t('autopilot.wizard.target.workType')}
+                className="grid grid-cols-3 gap-1.5"
+                onKeyDown={makeMultiSelectKeyHandler(
+                  WORK_TYPE_OPTIONS.length,
+                  focusedWorkTypeIdx,
+                  workTypeRefs,
+                  (idx) => {
+                    const opt = WORK_TYPE_OPTIONS[idx];
+                    if (opt !== undefined) toggle(opt);
+                  }
+                )}
+              >
+                {WORK_TYPE_OPTIONS.map((opt, i) => {
+                  const active = sel.has(opt);
+                  return (
+                    <Button
+                      key={opt}
+                      ref={(el) => {
+                        workTypeRefs.current[i] = el;
+                      }}
+                      aria-pressed={active}
+                      tabIndex={i === focusedWorkTypeIdx.current ? 0 : -1}
+                      onClick={() => {
+                        focusedWorkTypeIdx.current = i;
+                        toggle(opt);
+                      }}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-[10px] font-medium transition-all h-auto',
+                        active
+                          ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                          : 'border-[var(--border-clear)] text-foreground/40 hover:bg-muted hover:text-foreground/65'
+                      )}
+                    >
+                      {t(`jobs.workType.${opt}`)}
+                    </Button>
+                  );
+                })}
+              </div>
+            </WizardField>
+          );
+        }}
+      />
 
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller

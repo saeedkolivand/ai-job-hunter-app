@@ -14,7 +14,8 @@
  */
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import type * as AjhUi from '@ajh/ui';
 
@@ -76,6 +77,7 @@ function buildForm(overrides: Partial<ScrapeFormState> = {}): ScrapeFormState {
     amount: 25,
     dateFilter: '',
     companies: [],
+    workTypes: [],
     ...overrides,
   };
 }
@@ -124,5 +126,74 @@ describe('ScrapeFilters — location', () => {
       latitude: 52.52,
       longitude: 13.4,
     });
+  });
+});
+
+describe('ScrapeFilters — work type multi-select', () => {
+  async function renderAdvanced(form = buildForm(), scraping = false) {
+    const onFormChange = vi.fn();
+    render(
+      <ScrapeFilters
+        form={form}
+        scraping={scraping}
+        boardConnected={false}
+        onFormChange={onFormChange}
+        onGeocode={() => Promise.resolve([])}
+      />
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByText('jobs.advanced'));
+    return { onFormChange, user };
+  }
+
+  it('renders a role="group" with three unpressed options when workTypes is empty', async () => {
+    await renderAdvanced();
+
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    const buttons = within(group).getAllByRole('button');
+    expect(buttons).toHaveLength(3);
+    for (const btn of buttons) {
+      expect(btn).toHaveAttribute('aria-pressed', 'false');
+    }
+  });
+
+  it('adds an option to workTypes on click (set, not radio)', async () => {
+    const { onFormChange, user } = await renderAdvanced(buildForm({ workTypes: [] }));
+
+    await user.click(screen.getByRole('button', { name: 'jobs.workType.remote' }));
+
+    expect(onFormChange).toHaveBeenCalledWith({ workTypes: ['remote'] });
+  });
+
+  it('removes an already-selected option on a second click', async () => {
+    const { onFormChange, user } = await renderAdvanced(
+      buildForm({ workTypes: ['remote', 'hybrid'] })
+    );
+
+    await user.click(screen.getByRole('button', { name: 'jobs.workType.remote' }));
+
+    expect(onFormChange).toHaveBeenCalledWith({ workTypes: ['hybrid'] });
+  });
+
+  it('reflects a persisted selection as aria-pressed="true"', async () => {
+    await renderAdvanced(buildForm({ workTypes: ['hybrid'] }));
+
+    expect(screen.getByRole('button', { name: 'jobs.workType.hybrid' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'jobs.workType.remote' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+  });
+
+  it('disables every option while scraping', async () => {
+    await renderAdvanced(buildForm({ workTypes: [] }), true);
+
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    for (const btn of within(group).getAllByRole('button')) {
+      expect(btn).toBeDisabled();
+    }
   });
 });

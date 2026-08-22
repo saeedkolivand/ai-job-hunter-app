@@ -13,7 +13,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     boards: ['linkedin'],
     query: 'rust backend',
     location: '',
-    workType: 'any',
+    workTypes: [],
     pages: 2,
     dateFilter: '',
     watchedCompaniesOnly: false,
@@ -107,5 +107,24 @@ describe('autopilotWizardSchema — step-0 gate', () => {
   it('accepts the full 1–10 page range', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ pages: 1 })).success).toBe(true);
     expect(autopilotWizardSchema.safeParse(makeForm({ pages: 10 })).success).toBe(true);
+  });
+
+  it('accepts an empty workTypes array (the "any" sentinel)', () => {
+    expect(autopilotWizardSchema.safeParse(makeForm({ workTypes: [] })).success).toBe(true);
+  });
+
+  it('accepts a full workTypes selection', () => {
+    expect(
+      autopilotWizardSchema.safeParse(makeForm({ workTypes: ['remote', 'hybrid', 'on-site'] }))
+        .success
+    ).toBe(true);
+  });
+
+  it('rejects a workTypes entry outside the enum', () => {
+    expect(
+      autopilotWizardSchema.safeParse(
+        makeForm({ workTypes: ['bogus'] as unknown as WizardState['workTypes'] })
+      ).success
+    ).toBe(false);
   });
 });

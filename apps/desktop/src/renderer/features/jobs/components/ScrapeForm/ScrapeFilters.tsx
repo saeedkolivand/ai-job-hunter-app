@@ -1,9 +1,12 @@
 import { ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
-import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
+import { type DATE_FILTER_OPTIONS, WORK_TYPE_OPTIONS, type WorkTypeOption } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, LocationInput, NumberField } from '@ajh/ui';
+
+import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 
 import { AUTH_BENEFITS } from '../../constants';
 import type { ScrapeFormState } from './constants';
@@ -16,6 +19,11 @@ interface Props {
   onGeocode: (query: string) => Promise<{ display: string }[]>;
 }
 
+/** Toggle membership of `opt` in the array without mutation. */
+function toggleWorkType(workTypes: WorkTypeOption[], opt: WorkTypeOption): WorkTypeOption[] {
+  return workTypes.includes(opt) ? workTypes.filter((w) => w !== opt) : [...workTypes, opt];
+}
+
 const LABEL =
   'mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55';
 
@@ -24,6 +32,8 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
   // Location stays primary; the lower-value fields move behind an Advanced
   // disclosure (#35 — IA: low-priority controls don't crowd the form).
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const workTypeRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const focusedWorkTypeIdx = useRef<number>(0);
 
   return (
     <div className="@container mb-4 space-y-3">
@@ -126,6 +136,62 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
               disabled={scraping}
               className="w-full bg-field shadow-none text-xs text-foreground disabled:opacity-50"
             />
+          </div>
+          <div>
+            <label className={LABEL}>{t('jobs.workType.label')}</label>
+            {/* Multi-select set, not a Dropdown — a Dropdown can't express a set.
+                Empty = any, all three = all (byte-equivalent to no filter on
+                every board that validates the param). Mirrors the board picker
+                idiom in ScrapeForm/index.tsx. */}
+            <div
+              data-testid={TEST_IDS.jobs.workTypeFilter}
+              role="group"
+              aria-label={t('jobs.workType.label')}
+              className="flex flex-wrap gap-1.5"
+              onKeyDown={
+                scraping
+                  ? undefined
+                  : makeMultiSelectKeyHandler(
+                      WORK_TYPE_OPTIONS.length,
+                      focusedWorkTypeIdx,
+                      workTypeRefs,
+                      (idx) => {
+                        const opt = WORK_TYPE_OPTIONS[idx];
+                        if (opt !== undefined)
+                          onFormChange({ workTypes: toggleWorkType(form.workTypes, opt) });
+                      }
+                    )
+              }
+            >
+              {WORK_TYPE_OPTIONS.map((opt, i) => {
+                const active = form.workTypes.includes(opt);
+                return (
+                  <Button
+                    key={opt}
+                    ref={(el) => {
+                      workTypeRefs.current[i] = el;
+                    }}
+                    aria-pressed={active}
+                    tabIndex={i === focusedWorkTypeIdx.current ? 0 : -1}
+                    variant="ghost"
+                    disabled={scraping}
+                    onClick={() => {
+                      focusedWorkTypeIdx.current = i;
+                      onFormChange({ workTypes: toggleWorkType(form.workTypes, opt) });
+                    }}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-[11px] transition-all',
+                      active
+                        ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
+                        : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80',
+                      'disabled:cursor-not-allowed disabled:opacity-40'
+                    )}
+                  >
+                    {t(`jobs.workType.${opt}`)}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

@@ -11,6 +11,7 @@ import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { mergePostings } from '@/features/jobs/lib/merge-postings';
+import { matchesWorkTypeFilter } from '@/features/jobs/lib/work-type-filter';
 import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting, ScrapeFormState } from '@/features/jobs/types';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
@@ -52,6 +53,7 @@ export function JobsPage() {
   const filter = useSessionStore((s) => s.jobs.filter);
   const sortBy = useSessionStore((s) => s.jobs.sortBy);
   const hideAgency = useSessionStore((s) => s.jobs.hideAgency);
+  const workTypes = useSessionStore((s) => s.jobs.workTypes);
   const scrapeForm = useSessionStore((s) => s.jobs.scrapeForm);
   const scrapeSummaries = useSessionStore((s) => s.jobs.scrapeSummaries);
   const scrapeFailureNote = useSessionStore((s) => s.jobs.scrapeFailureNote);
@@ -282,6 +284,10 @@ export function JobsPage() {
     // Optional agency filter — hide recruiting/staffing-agency postings.
     if (hideAgency) result = result.filter((p) => !p.isAgency);
 
+    // Optional work-type filter — view-only, no re-scrape. An undeclared
+    // `workType` is always kept (see `matchesWorkTypeFilter`).
+    result = result.filter((p) => matchesWorkTypeFilter(p, workTypes));
+
     // Stable, deterministic ordering (audit quick win 8): an `id` tiebreak so
     // equal timestamps never reorder between renders (nondeterministic order
     // reads as flakiness), and — for the date sorts — undated postings (no
@@ -307,7 +313,7 @@ export function JobsPage() {
     });
 
     return result;
-  }, [allPostings, filter, sortBy, hideAgency]);
+  }, [allPostings, filter, sortBy, hideAgency, workTypes]);
 
   // Denominator for the "N / M" count = distinct jobs (clusters): rows that
   // aren't a collapsed non-canonical duplicate. The numerator (`filtered`)

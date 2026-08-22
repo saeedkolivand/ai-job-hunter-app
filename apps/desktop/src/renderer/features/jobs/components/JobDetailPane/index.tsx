@@ -35,6 +35,7 @@ import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { hostOf } from '@/components/job/host-of';
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
+import { workTypeBadgeKey } from '@/features/jobs/lib/work-type-badge';
 import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
 import { TrustBadge } from '@/lib/trust-badge';
@@ -80,6 +81,7 @@ function DetailContent({
   const notify = useNotification();
   const openExternal = useOpenExternal();
   const split = useMarkNotDuplicate();
+  const workTypeKey = workTypeBadgeKey(posting);
 
   // Cross-board cluster members (ADR-029) — canonical first for the "All
   // sources" list; a member is self when it shares the row's key or url.
@@ -257,9 +259,9 @@ function DetailContent({
                   <MapPin size={9} /> {posting.location}
                 </span>
               )}
-              {posting.remote && (
+              {workTypeKey && (
                 <Tag color="green" className={statusTagCls}>
-                  {t('jobs.remote')}
+                  {t(workTypeKey)}
                 </Tag>
               )}
               <span role="presentation">
