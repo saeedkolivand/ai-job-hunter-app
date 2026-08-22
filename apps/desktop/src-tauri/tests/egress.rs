@@ -247,7 +247,12 @@ const SCHEMELESS: &[Schemeless] = &[
 /// on `(path, matched literal)` rather than line number so an edit above the
 /// site doesn't churn this table.
 const DYNAMIC_SITES: &[(&str, &str)] = &[
+    // Both of these BUILD A STRING and never fetch it: `rich.rs` makes a bare
+    // URL clickable in the rendered document, and `extraction/pdf.rs` writes a
+    // scheme onto a host the CV spelled out without one, for the extractor's
+    // own markdown reference list. Neither reaches the network.
     ("model/rich.rs", "https://{url}"),
+    ("extraction/pdf.rs", "https://{token}"),
     ("scraping/board_login/mod.rs", "https://{host}"),
     ("scraping/boards/personio/mod.rs", "https://{}.{}"),
     ("scraping/scrape_url/mod.rs", "https://{host}"),
