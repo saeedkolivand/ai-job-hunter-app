@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.142.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.141.2...v0.142.0) (2026-08-22)
+
+### ✨ Features
+
+* **scraping:** make freehire its own selectable board ([#1074](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1074)) ([1d70c49](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1d70c491c3f327d84da5a81059a65da4689ad1d3))
+
 ## [0.141.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.141.1...v0.141.2) (2026-08-22)
 
 ### 🐛 Bug Fixes

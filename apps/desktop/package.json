@@ -1,6 +1,6 @@
 {
   "name": "@ajh/desktop",
-  "version": "0.141.2",
+  "version": "0.142.0",
   "private": true,
   "description": "AI Job Hunter — desktop application",
   "scripts": {
