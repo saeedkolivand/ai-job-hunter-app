@@ -236,25 +236,25 @@ const ALLOWLIST = {
   // reaches these log lines even on failure. Traced individually against the
   // current source, not pattern-matched.
   'scraping/boards/greenhouse/mod.rs:110': httpChokepointSafe(),
-  'scraping/boards/breezy/mod.rs:287': httpChokepointSafe(),
+  'scraping/boards/breezy/mod.rs:296': httpChokepointSafe(),
   'scraping/boards/ycombinator/mod.rs:109': httpChokepointSafe(),
   'scraping/boards/aggregator/adzuna.rs:429': httpChokepointSafe(),
   'scraping/boards/aggregator/adzuna.rs:562': httpChokepointSafe(),
-  'scraping/boards/arbeitnow/mod.rs:81': httpChokepointSafe(),
-  'scraping/boards/bamboohr/mod.rs:204': httpChokepointSafe(),
+  'scraping/boards/arbeitnow/mod.rs:90': httpChokepointSafe(),
+  'scraping/boards/bamboohr/mod.rs:237': httpChokepointSafe(),
   'scraping/boards/arbeitsagentur/mod.rs:164': httpChokepointSafe(),
   'scraping/boards/aggregator/mod.rs:318': httpChokepointSafe(),
   'scraping/boards/aggregator/mod.rs:352': httpChokepointSafe(),
   'scraping/boards/aggregator/mod.rs:385': httpChokepointSafe(),
   'scraping/boards/aggregator/mod.rs:623': httpChokepointSafe(),
-  'scraping/boards/ashby/mod.rs:146': httpChokepointSafe(),
-  'scraping/boards/workable/mod.rs:294': httpChokepointSafe(),
-  'scraping/boards/lever/mod.rs:143': httpChokepointSafe(),
-  'scraping/boards/pinpoint/mod.rs:181': httpChokepointSafe(),
-  'scraping/boards/smartrecruiters/mod.rs:142': httpChokepointSafe(),
-  'scraping/boards/smartrecruiters/mod.rs:180': httpChokepointSafe(),
+  'scraping/boards/ashby/mod.rs:155': httpChokepointSafe(),
+  'scraping/boards/workable/mod.rs:302': httpChokepointSafe(),
+  'scraping/boards/lever/mod.rs:154': httpChokepointSafe(),
+  'scraping/boards/pinpoint/mod.rs:192': httpChokepointSafe(),
+  'scraping/boards/smartrecruiters/mod.rs:196': httpChokepointSafe(),
+  'scraping/boards/smartrecruiters/mod.rs:234': httpChokepointSafe(),
   'scraping/boards/themuse/mod.rs:193': httpChokepointSafe(),
-  'scraping/boards/recruitee/mod.rs:117': httpChokepointSafe(),
+  'scraping/boards/recruitee/mod.rs:145': httpChokepointSafe(),
   'scraping/boards/rippling/mod.rs:230': httpChokepointSafe(),
   'scraping/boards/personio/mod.rs:208': httpChokepointSafe(),
 
@@ -265,8 +265,8 @@ const ALLOWLIST = {
   // credential.
   'scraping/boards/breezy/mod.rs:100': inMemoryParseSafe(),
   'scraping/boards/jobicy/mod.rs:64': inMemoryParseSafe(),
-  'scraping/boards/jobicy/mod.rs:165': inMemoryParseSafe(),
-  'scraping/boards/comeet/mod.rs:70': inMemoryParseSafe(),
+  'scraping/boards/jobicy/mod.rs:169': inMemoryParseSafe(),
+  'scraping/boards/comeet/mod.rs:76': inMemoryParseSafe(),
   'scraping/boards/rippling/mod.rs:89': inMemoryParseSafe(),
   'scraping/boards/workable/mod.rs:116': inMemoryParseSafe(),
   'scraping/http/mod.rs:332': inMemoryParseSafe(),
@@ -278,7 +278,7 @@ const ALLOWLIST = {
       'own fallback path) — its Display is a structural markdown-conversion failure, never ' +
       'a path/URL/host/credential.',
   },
-  'scraping/engine/mod.rs:1084': {
+  'scraping/engine/mod.rs:1182': {
     status: 'safe',
     reason:
       'tokio::task::JoinError from the record_health spawn_blocking handle (the task ' +

@@ -26,8 +26,10 @@ pub(crate) mod location_filter;
 pub(crate) mod work_type_filter;
 
 /// Per-item keep predicate for a single board (already bound to that board's
-/// name where relevant) — `true` = keep. Trust PR F's central location filter;
-/// `None` when no location filter applies to this run.
+/// name where relevant) — `true` = keep. Composes trust PR F's central
+/// location filter AND the work-type filter into ONE predicate (never two —
+/// `run_one`/`run_boards` accept a single `KeepItemFn`); `None` only when
+/// NEITHER filter applies to this run.
 ///
 /// **Cap/filter ordering invariant (canonical explanation — HIGH-1):** `run_one`
 /// checks this predicate BEFORE its item cap counts/cancels, so a filtered item
@@ -101,18 +103,33 @@ pub struct BoardScrapeSummary {
     /// Serde-optional so records persisted before this field deserialize as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated: Option<String>,
-    /// Set when a board applied a location policy the user did not explicitly
-    /// request (informational, NOT a failure — `count` is still authoritative):
+    /// Zero or more informational notes about a policy the board/engine applied
+    /// that the user did not explicitly request (NOT a failure — `count` is
+    /// still authoritative). Widened from a single `Option<String>` (trust PR
+    /// F/H) because up to THREE independent honesty signals can legitimately
+    /// coexist on one board in one run — a board-native note (e.g. an ATS
+    /// board's own `slugs-invalid:<n>`), the central location post-filter, and
+    /// the central work-type post-filter — and a single slot silently dropped
+    /// whichever one lost. Precedence/order when more than one applies: the
+    /// board's own note first, then `location-filtered`, then
+    /// `work-type-filtered`. Possible entries:
     /// - `"guessed-market:<cc>"` — no country was supplied, so the `<cc>` market
     ///   was guessed and returned an authoritative result set; set a country for
     ///   deterministic results.
     /// - `"broadened:<cc>"` — a sparse city search was widened country-wide within
     ///   the `<cc>` market.
+    /// - `"location-filtered:<n>"` / `"work-type-filtered:<n>"` — see
+    ///   [`location_filter`]/[`work_type_filter`] module docs.
     ///
-    /// `<cc>` is an ISO country code; the note never carries the raw location
-    /// (free-text PII). Serde-optional so pre-existing records deserialize as `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
+    /// `<cc>` is an ISO country code; an entry never carries the raw location
+    /// (free-text PII). `#[serde(default)]` so pre-existing records (which
+    /// carried a singular `note` field under a different JSON key) deserialize
+    /// as an empty list rather than failing — this is a display-only,
+    /// informational field, so losing a historical entry on an old record is an
+    /// acceptable, already-established trade-off (same as `truncated`/`health`
+    /// above).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     /// Cross-run reliability for this board, folded from every previous run by
     /// [`super::board_health`] and attached here so a chip can distinguish "this
     /// board found nothing today" from "this board has been broken since
@@ -710,6 +727,30 @@ impl ScraperEngine {
             std::collections::HashSet::new()
         };
 
+        // Work-type sibling of the location post-filter above (same shape,
+        // same conservatism — see `work_type_filter`'s module doc). `Some(vec![])`
+        // (the user cleared the filter) is folded into `None` right here via
+        // `.filter(|wt| !wt.is_empty())` — an empty requested set must behave
+        // EXACTLY like no request, never "match nothing", so this is the one
+        // place that distinction is resolved for the whole run.
+        let requested_work_types: Option<Vec<super::types::WorkType>> =
+            input.work_types.clone().filter(|wt| !wt.is_empty());
+        let non_work_type_boards: std::collections::HashSet<String> =
+            if requested_work_types.is_some() {
+                resolved
+                    .iter()
+                    .filter(|(_, scraper)| {
+                        scraper
+                            .as_ref()
+                            .map(|s| !s.supports_work_type())
+                            .unwrap_or(false)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            } else {
+                std::collections::HashSet::new()
+            };
+
         for (idx, (id, scraper)) in resolved.into_iter().enumerate() {
             // Determine skip reason (if any) from the resolved scraper.
             // Unknown-board Err values always pass through (no skip) so they
@@ -773,7 +814,7 @@ impl ScraperEngine {
                     error: None,
                     skipped: Some(reason.into()),
                     truncated: None,
-                    note: None,
+                    notes: Vec::new(),
                     health: None,
                 });
             } else {
@@ -799,7 +840,7 @@ impl ScraperEngine {
 
         // Per-board informational location-policy notes (aggregator guessed-market /
         // sparse city broadened country-wide). Same board-name-keyed collection as
-        // truncations; folded into `BoardScrapeSummary.note` below. Empty for a run
+        // truncations; folded into `BoardScrapeSummary.notes` below. Empty for a run
         // where no board applied such a policy.
         let notes: Arc<std::sync::Mutex<HashMap<String, String>>> =
             Arc::new(std::sync::Mutex::new(HashMap::new()));
@@ -815,26 +856,52 @@ impl ScraperEngine {
         // Per-board LIVE drop counts (see `KeepItemFn`) — the only place a
         // live-filtered item's count is observable; merged with the post-hoc
         // pass below (the no-live-streaming path, e.g. tests) into the note.
+        // Location and work-type each get their OWN counter so the two notes
+        // report independent, honest counts rather than a conflated total.
         let location_drops: Arc<std::sync::Mutex<HashMap<String, usize>>> =
             Arc::new(std::sync::Mutex::new(HashMap::new()));
-        let keep_item: Option<Arc<KeepItemByBoardFn>> = requested_location.clone().map(|req| {
+        let work_type_drops: Arc<std::sync::Mutex<HashMap<String, usize>>> =
+            Arc::new(std::sync::Mutex::new(HashMap::new()));
+        // Single composed predicate (NOT two): `run_boards`/`run_one` accept only
+        // one `KeepItemByBoardFn`, so this is `Some` whenever EITHER filter is
+        // active, and each half below is individually inert (`true`/no-op) when
+        // its OWN filter was not requested — see the module-level `KeepItemFn`
+        // doc for the cap/filter ordering invariant this participates in.
+        let keep_item: Option<Arc<KeepItemByBoardFn>> = if requested_location.is_some()
+            || requested_work_types.is_some()
+        {
             let non_loc = non_location_boards.clone();
-            let drops = location_drops.clone();
+            let loc_req = requested_location.clone();
+            let loc_drops = location_drops.clone();
+            let non_wt = non_work_type_boards.clone();
+            let wt_req = requested_work_types.clone();
+            let wt_drops = work_type_drops.clone();
             let f: Arc<KeepItemByBoardFn> = Arc::new(move |board: &str, item: &JobPosting| {
-                if !non_loc.contains(board) {
-                    return true; // board supports location — never filtered here
-                }
-                if location_filter::location_mismatch(item, &req) {
-                    if let Ok(mut guard) = drops.lock() {
-                        *guard.entry(board.to_string()).or_insert(0) += 1;
+                // Location half — inert (no-op) when no location was requested.
+                if let Some(ref req) = loc_req {
+                    if non_loc.contains(board) && location_filter::location_mismatch(item, req) {
+                        if let Ok(mut guard) = loc_drops.lock() {
+                            *guard.entry(board.to_string()).or_insert(0) += 1;
+                        }
+                        return false;
                     }
-                    false
-                } else {
-                    true
                 }
+                // Work-type half — inert (no-op) when no work type was requested.
+                if let Some(ref wanted) = wt_req {
+                    if non_wt.contains(board) && work_type_filter::work_type_mismatch(item, wanted)
+                    {
+                        if let Ok(mut guard) = wt_drops.lock() {
+                            *guard.entry(board.to_string()).or_insert(0) += 1;
+                        }
+                        return false;
+                    }
+                }
+                true
             });
-            f
-        });
+            Some(f)
+        } else {
+            None
+        };
 
         // Per-board company slugs for the company-scoped ATS scrapers. Keyed on the
         // caller-supplied board-list id (`run_boards`'s `name` param), matching how
@@ -920,6 +987,15 @@ impl ScraperEngine {
                         }
                         _ => (postings, 0),
                     };
+                    // Central work-type post-filter — the identical safety-net shape,
+                    // one line down: a no-op when the live gate already ran, the only
+                    // filtering pass otherwise.
+                    let (postings, wt_post_hoc_dropped) = match &requested_work_types {
+                        Some(wanted) if non_work_type_boards.contains(&board) => {
+                            work_type_filter::filter_postings(postings, wanted)
+                        }
+                        _ => (postings, 0),
+                    };
                     if !postings.is_empty() {
                         any_recovered_items = true;
                     }
@@ -927,14 +1003,23 @@ impl ScraperEngine {
                     // is surfaced here so it is not indistinguishable from a complete
                     // run; a board that completed its pages has no map entry.
                     let truncated = truncations.lock().ok().and_then(|mut m| m.remove(&board));
-                    let mut note = notes.lock().ok().and_then(|mut m| m.remove(&board));
+                    // `notes` (plural) can now carry MULTIPLE independent honesty
+                    // signals at once — see `BoardScrapeSummary::notes`. Order fixes
+                    // the precedence: the board's own note (if any) first, then
+                    // location, then work type.
+                    let mut board_notes: Vec<String> = notes
+                        .lock()
+                        .ok()
+                        .and_then(|mut m| m.remove(&board))
+                        .into_iter()
+                        .collect();
                     // Combine the live gate's drop count with this pass's.
-                    let live_dropped = location_drops
+                    let live_location_dropped = location_drops
                         .lock()
                         .ok()
                         .and_then(|mut m| m.remove(&board))
                         .unwrap_or(0);
-                    let dropped = live_dropped + post_hoc_dropped;
+                    let location_dropped = live_location_dropped + post_hoc_dropped;
                     // UNCONDITIONAL (incl. dropped==0): a location was requested and
                     // this board doesn't honor it server-side, so its results were
                     // never authoritative for that location regardless of whether any
@@ -950,12 +1035,25 @@ impl ScraperEngine {
                     if non_location_boards.contains(&board) && requested_location.is_some() {
                         // Surface via the existing note side-channel using the PR D
                         // `kind:value` grammar (cf. `broadened:<cc>`). Count only —
-                        // never the raw location text (free-text PII). Precedence: a
-                        // board-native note (e.g. an ATS board's `slugs-invalid:<n>`/
-                        // `rows-dropped:<n>`, trust-H) wins — `get_or_insert_with` only
-                        // fills an empty slot, so `location-filtered` never clobbers a
-                        // message the board already reported this run.
-                        note.get_or_insert_with(|| format!("location-filtered:{dropped}"));
+                        // never the raw location text (free-text PII). `notes` now
+                        // holds every applicable signal (see the doc above), so this
+                        // ADDS a `location-filtered` entry rather than only filling an
+                        // empty slot — a board-native note no longer silently loses it.
+                        board_notes.push(format!("location-filtered:{location_dropped}"));
+                    }
+                    // Combine the live gate's drop count with this pass's (work type).
+                    let live_wt_dropped = work_type_drops
+                        .lock()
+                        .ok()
+                        .and_then(|mut m| m.remove(&board))
+                        .unwrap_or(0);
+                    let wt_dropped = live_wt_dropped + wt_post_hoc_dropped;
+                    // UNCONDITIONAL for the identical reason as `location-filtered`
+                    // above: a non-supporting board's results were never authoritative
+                    // for the requested work type regardless of whether a row happened
+                    // to drop this run.
+                    if non_work_type_boards.contains(&board) && requested_work_types.is_some() {
+                        board_notes.push(format!("work-type-filtered:{wt_dropped}"));
                     }
                     slot_summaries[idx] = Some(BoardScrapeSummary {
                         board,
@@ -963,7 +1061,7 @@ impl ScraperEngine {
                         error: None,
                         skipped: None,
                         truncated,
-                        note,
+                        notes: board_notes,
                         health: None,
                     });
                     all_postings.extend(postings);
@@ -975,7 +1073,7 @@ impl ScraperEngine {
                         error: Some(e.to_string()),
                         skipped: None,
                         truncated: None,
-                        note: None,
+                        notes: Vec::new(),
                         health: None,
                     });
                 }

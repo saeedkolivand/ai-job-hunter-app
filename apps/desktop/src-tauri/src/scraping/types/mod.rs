@@ -185,7 +185,8 @@ pub struct ScrapeContext {
     /// Per-board **informational** side-channel for a location policy the board
     /// applied that the user didn't explicitly ask for — currently the aggregator's
     /// guessed market (no `country_code` supplied) or a sparse city search widened
-    /// country-wide. The engine surfaces it as `BoardScrapeSummary.note`. Unlike
+    /// country-wide. The engine surfaces it as an entry in
+    /// `BoardScrapeSummary.notes`. Unlike
     /// [`Self::on_truncation`] this is an `Arc`, not a `Box`: the aggregator hands
     /// it to a sub-provider (`AdzunaProvider`) that holds it across `.await`, so it
     /// must be `Send + Sync`. `None` when the board reports no policy note and

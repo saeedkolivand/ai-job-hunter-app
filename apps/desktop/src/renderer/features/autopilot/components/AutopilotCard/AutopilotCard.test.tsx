@@ -1166,7 +1166,7 @@ describe('AutopilotCard — persisted per-board chips', () => {
   });
 
   it('does NOT escalate for an informational location note alone (no cry-wolf amber)', () => {
-    renderCard(withRun('completed', [{ board: 'linkedin', count: 5, note: 'broadened:de' }]));
+    renderCard(withRun('completed', [{ board: 'linkedin', count: 5, notes: ['broadened:de'] }]));
     expect(
       screen.getByRole('button', { name: 'autopilot.boardResults.infoLabel' })
     ).toHaveAttribute('data-degraded', 'false');

@@ -1528,9 +1528,10 @@ async fn scrape_boards_partial_pagination_surfaces_truncated_and_keeps_count() {
 /// PR D — a board that applied a silent location policy (the aggregator's guessed
 /// market / sparse-city broadening) reports it through `ctx.report_note`; the
 /// engine tags it with the board name and attributes it to THAT board's summary
-/// as `BoardScrapeSummary.note`, while a sibling that reports nothing stays
-/// `note: None`. Exercised through the engine seam (the aggregator hardcodes its
-/// providers) rather than a live network — same pattern as the truncation test.
+/// as an entry in `BoardScrapeSummary.notes`, while a sibling that reports
+/// nothing stays `notes: []`. Exercised through the engine seam (the aggregator
+/// hardcodes its providers) rather than a live network — same pattern as the
+/// truncation test.
 #[tokio::test]
 async fn scrape_boards_surfaces_location_note_on_the_right_summary() {
     struct NotingScraper;
@@ -1576,7 +1577,7 @@ async fn scrape_boards_surfaces_location_note_on_the_right_summary() {
     }
 
     static NOTING: std::sync::LazyLock<NotingScraper> = std::sync::LazyLock::new(|| NotingScraper);
-    // A sibling that applies no policy — must report note: None.
+    // A sibling that applies no policy — must report empty `notes`.
     static PLAIN: std::sync::LazyLock<FakeScraper> =
         std::sync::LazyLock::new(|| FakeScraper::http(2));
 
@@ -1605,9 +1606,9 @@ async fn scrape_boards_surfaces_location_note_on_the_right_summary() {
         .find(|s| s.board == "note-board")
         .expect("note-board summary missing");
     assert_eq!(
-        noted.note.as_deref(),
-        Some("guessed-market:de"),
-        "the location-policy note must survive into BoardScrapeSummary.note on the \
+        noted.notes,
+        vec!["guessed-market:de".to_string()],
+        "the location-policy note must survive into BoardScrapeSummary.notes on the \
          reporting board"
     );
     assert!(noted.error.is_none() && noted.skipped.is_none() && noted.truncated.is_none());
@@ -1617,13 +1618,13 @@ async fn scrape_boards_surfaces_location_note_on_the_right_summary() {
         .find(|s| s.board == "plain-board")
         .expect("plain-board summary missing");
     assert!(
-        plain.note.is_none(),
+        plain.notes.is_empty(),
         "a board that applied no location policy must not be tagged with a note; got {plain:?}"
     );
 }
 
 /// PR D regression guard — a board that reports a note and THEN fails (returns
-/// `Err`) must end up `note: None` on its summary: the Err arm of
+/// `Err`) must end up `notes: []` on its summary: the Err arm of
 /// `scrape_boards_with_resolver` intentionally does not read the notes map, so
 /// the note is dropped rather than misattributed to an error summary that also
 /// carries stale/irrelevant location-policy context. Pins the intended Err-arm
@@ -1685,7 +1686,7 @@ async fn scrape_boards_drops_note_when_board_then_errors() {
         .find(|s| s.board == "noting-failing-board")
         .expect("noting-failing-board summary missing");
     assert!(
-        summary.note.is_none(),
+        summary.notes.is_empty(),
         "a note reported before an Err must be dropped, not attached to the \
          error summary; got {summary:?}"
     );
@@ -1695,13 +1696,14 @@ async fn scrape_boards_drops_note_when_board_then_errors() {
     );
 }
 
-/// trust-H HIGH fix — a non-location board's OWN note (e.g. an ATS board's
-/// `slugs-invalid:<n>`, trust-H) must win over the central `location-filtered`
-/// note, not be silently clobbered by it. A sibling non-location board that
-/// reports no note of its own still gets `location-filtered` — the precedence
-/// only protects a board that actually reported something.
+/// trust-H HIGH fix, widened for the `notes: Vec<String>` shape — a non-location
+/// board's OWN note (e.g. an ATS board's `slugs-invalid:<n>`, trust-H) must
+/// COEXIST with the central `location-filtered` note, not be silently clobbered
+/// by (or clobber) it: `notes` carries both, board-native FIRST. A sibling
+/// non-location board that reports no note of its own still gets exactly
+/// `location-filtered` alone.
 #[tokio::test]
-async fn scrape_boards_board_native_note_wins_over_location_filtered() {
+async fn scrape_boards_board_native_note_coexists_with_location_filtered() {
     /// Non-location board (default `supports_location() == false`) that reports
     /// its own note AND streams one row whose location clearly mismatches the
     /// requested "Berlin" — so `dropped > 0` and `location-filtered` would fire
@@ -1817,9 +1819,13 @@ async fn scrape_boards_board_native_note_wins_over_location_filtered() {
         .find(|s| s.board == "nativenoting")
         .expect("nativenoting summary missing");
     assert_eq!(
-        native.note.as_deref(),
-        Some("slugs-invalid:2"),
-        "the board's own note must win over location-filtered, not be clobbered; got {native:?}"
+        native.notes,
+        vec![
+            "slugs-invalid:2".to_string(),
+            "location-filtered:1".to_string()
+        ],
+        "the board's own note must survive AND location-filtered must still be appended, \
+         board-native first; got {native:?}"
     );
 
     let quiet = summaries
@@ -1827,8 +1833,8 @@ async fn scrape_boards_board_native_note_wins_over_location_filtered() {
         .find(|s| s.board == "quietnonloc")
         .expect("quietnonloc summary missing");
     assert_eq!(
-        quiet.note.as_deref(),
-        Some("location-filtered:1"),
+        quiet.notes,
+        vec!["location-filtered:1".to_string()],
         "a board with no note of its own must still get location-filtered; got {quiet:?}"
     );
 }
@@ -3921,8 +3927,8 @@ async fn scrape_boards_central_location_filter_drops_only_clear_mismatches() {
         "only the clear London mismatch is dropped; got {locfake:?}"
     );
     assert_eq!(
-        locfake.note.as_deref(),
-        Some("location-filtered:1"),
+        locfake.notes,
+        vec!["location-filtered:1".to_string()],
         "the single drop must surface as a location-filtered note; got {locfake:?}"
     );
     assert!(
@@ -3955,7 +3961,7 @@ async fn scrape_boards_central_location_filter_drops_only_clear_mismatches() {
         "a server-side location board is not re-filtered; got {locaware:?}"
     );
     assert!(
-        locaware.note.is_none(),
+        locaware.notes.is_empty(),
         "a supporting board must not get a location-filtered note; got {locaware:?}"
     );
     assert!(
@@ -4045,7 +4051,7 @@ async fn scrape_boards_no_location_requested_is_inert() {
         .expect("anywherefake summary missing");
     assert_eq!(s.count, 3, "all rows kept when no location was requested");
     assert!(
-        s.note.is_none(),
+        s.notes.is_empty(),
         "no location requested → no location-filtered note; got {s:?}"
     );
 }
@@ -4159,8 +4165,8 @@ async fn scrape_boards_cap_and_location_filter_combined_delivers_only_matches() 
          mismatches ahead of/interleaved with them; got {s:?}"
     );
     assert_eq!(
-        s.note.as_deref(),
-        Some("location-filtered:2"),
+        s.notes,
+        vec!["location-filtered:2".to_string()],
         "both mismatches must be counted as dropped; got {s:?}"
     );
 
@@ -4369,8 +4375,8 @@ async fn scrape_boards_zero_drops_still_emits_unconditional_note_for_non_support
         "the matching row is kept; got {allmatch:?}"
     );
     assert_eq!(
-        allmatch.note.as_deref(),
-        Some("location-filtered:0"),
+        allmatch.notes,
+        vec!["location-filtered:0".to_string()],
         "a non-supporting board must emit the note even with ZERO drops when a \
          location was requested; got {allmatch:?}"
     );
@@ -4380,9 +4386,587 @@ async fn scrape_boards_zero_drops_still_emits_unconditional_note_for_non_support
         .find(|s| s.board == "supporting")
         .expect("supporting summary missing");
     assert!(
-        supporting.note.is_none(),
+        supporting.notes.is_empty(),
         "a server-side location board must never carry a location-filtered note; \
          got {supporting:?}"
+    );
+}
+
+// ── Central work-type post-filter (Phase 2b) — mirrors the location filter tests
+// above; see `work_type_filter`'s module doc for the shared shape/conservatism. ─
+
+/// A non-work-type-supporting board (default `supports_work_type() == false`)
+/// streaming a mix of declared-remote, declared-on-site, declared-hybrid and
+/// undeclared rows. Reused by several tests below.
+struct WorkTypeFake;
+#[async_trait::async_trait]
+impl Scraper for WorkTypeFake {
+    fn id(&self) -> &'static str {
+        "wtfake"
+    }
+    fn display_name(&self) -> &'static str {
+        "WorkTypeFake"
+    }
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+    async fn search(
+        &self,
+        _input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        let rows: [(&str, Option<&str>); 4] = [
+            ("keep-remote", Some("remote")),
+            ("drop-onsite", Some("on-site")),
+            ("keep-unknown", None), // undeclared → Unknown → always kept
+            ("drop-hybrid", Some("hybrid")),
+        ];
+        let mut out = Vec::new();
+        for (slug, work_type) in rows {
+            let mut extra = std::collections::HashMap::new();
+            if let Some(wt) = work_type {
+                extra.insert("workType".to_string(), serde_json::json!(wt));
+            }
+            let job = JobPosting {
+                id: format!("wtfake:{slug}"),
+                external_id: Some(slug.to_string()),
+                title: "Job".to_string(),
+                company: "WT".to_string(),
+                location: None,
+                url: format!("https://wt.example/{slug}"),
+                source: "wtfake".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra,
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            out.push(job);
+        }
+        Ok(out)
+    }
+}
+
+/// Requesting `[Remote]` against [`WorkTypeFake`] must drop ONLY the declared
+/// on-site and hybrid rows; the declared-remote row and the UNDECLARED
+/// ("Unknown") row must both survive — pinning the keep-unknowns policy at the
+/// engine level (the pure-function truth table lives in `work_type_filter`'s
+/// own tests; this proves the engine wiring honors it too).
+#[tokio::test]
+async fn scrape_boards_central_work_type_filter_drops_only_declared_mismatches_keeps_unknown() {
+    static WTFAKE: std::sync::LazyLock<WorkTypeFake> = std::sync::LazyLock::new(|| WorkTypeFake);
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(10);
+    input.work_types = Some(vec![super::super::types::WorkType::Remote]);
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["wtfake".to_string()],
+            input,
+            "job-wt-core-filter".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| {
+                if id == "wtfake" {
+                    Ok(&*WTFAKE as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("a work-type-filtered run is still Ok");
+
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "wtfake")
+        .expect("wtfake summary missing");
+    assert_eq!(
+        s.count, 2,
+        "declared-remote + undeclared (Unknown, never dropped) survive; got {s:?}"
+    );
+    assert_eq!(
+        s.notes,
+        vec!["work-type-filtered:2".to_string()],
+        "both declared mismatches (on-site, hybrid) must be counted as dropped; got {s:?}"
+    );
+    let ids: std::collections::HashSet<&str> = postings.iter().map(|p| p.id.as_str()).collect();
+    assert!(ids.contains("wtfake:keep-remote") && ids.contains("wtfake:keep-unknown"));
+    assert!(!ids.contains("wtfake:drop-onsite") && !ids.contains("wtfake:drop-hybrid"));
+}
+
+/// `Some(vec![])` (the user cleared the filter) must behave EXACTLY like
+/// `None` — no filtering at all, not "match nothing". Pins the amendment
+/// documented on `BoardSearchInput::work_types`.
+#[tokio::test]
+async fn scrape_boards_empty_work_types_set_is_a_noop() {
+    static WTFAKE2: std::sync::LazyLock<WorkTypeFake> = std::sync::LazyLock::new(|| WorkTypeFake);
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(10);
+    input.work_types = Some(vec![]); // cleared filter, NOT "match nothing"
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["wtfake".to_string()],
+            input,
+            "job-wt-empty-set-noop".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| {
+                if id == "wtfake" {
+                    Ok(&*WTFAKE2 as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    assert_eq!(
+        postings.len(),
+        4,
+        "an empty requested set must keep every row, same as no request at all; got {postings:?}"
+    );
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "wtfake")
+        .expect("wtfake summary missing");
+    assert_eq!(s.count, 4, "nothing dropped for an empty requested set");
+    assert!(
+        s.notes.is_empty(),
+        "an empty requested set is inert — it must not even emit a \
+         work-type-filtered:0 note (unlike a genuinely requested, non-empty set); got {s:?}"
+    );
+}
+
+/// A board that DOES declare `supports_work_type() == true` (mirrors
+/// smartrecruiters) must NEVER be touched by the central filter, even when its
+/// own declared value clearly contradicts the requested set — the engine
+/// trusts it was already filtered upstream.
+#[tokio::test]
+async fn scrape_boards_work_type_supporting_board_never_touched_by_central_filter() {
+    struct WorkTypeSupportingFake;
+    #[async_trait::async_trait]
+    impl Scraper for WorkTypeSupportingFake {
+        fn id(&self) -> &'static str {
+            "wtsupporting"
+        }
+        fn display_name(&self) -> &'static str {
+            "WorkTypeSupporting"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn supports_work_type(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let mut extra = std::collections::HashMap::new();
+            extra.insert("workType".to_string(), serde_json::json!("on-site"));
+            let job = JobPosting {
+                id: "wtsupporting:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "WTS".to_string(),
+                location: None,
+                url: "https://wts.example/0".to_string(),
+                source: "wtsupporting".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra,
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            Ok(vec![job])
+        }
+    }
+    static WTSUPPORTING: std::sync::LazyLock<WorkTypeSupportingFake> =
+        std::sync::LazyLock::new(|| WorkTypeSupportingFake);
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(10);
+    // Requests Remote while the board's own row declares on-site — a mismatch
+    // the central filter would drop for a NON-supporting board.
+    input.work_types = Some(vec![super::super::types::WorkType::Remote]);
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["wtsupporting".to_string()],
+            input,
+            "job-wt-supporting-untouched".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| {
+                if id == "wtsupporting" {
+                    Ok(&*WTSUPPORTING as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    assert_eq!(
+        postings.len(),
+        1,
+        "a supporting board's mismatching row must survive — the engine never \
+         re-filters it; got {postings:?}"
+    );
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "wtsupporting")
+        .expect("wtsupporting summary missing");
+    assert_eq!(s.count, 1);
+    assert!(
+        s.notes.is_empty(),
+        "a supporting board must never carry a work-type-filtered note; got {s:?}"
+    );
+}
+
+/// A fake board that streams 4 rows (2 clear work-type mismatches interleaved
+/// with 2 matches) via `ctx.on_item`, in the SAME order it returns them —
+/// mirrors [`CapFilterFake`]'s location-filter counterpart.
+struct WorkTypeCapFilterFake;
+#[async_trait::async_trait]
+impl Scraper for WorkTypeCapFilterFake {
+    fn id(&self) -> &'static str {
+        "wtcapfilter"
+    }
+    fn display_name(&self) -> &'static str {
+        "WorkTypeCapFilter"
+    }
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+    async fn search(
+        &self,
+        _input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        let rows: [(&str, &str); 4] = [
+            ("row1-mismatch", "on-site"),
+            ("row2-match", "remote"),
+            ("row3-mismatch", "hybrid"),
+            ("row4-match", "remote"),
+        ];
+        let mut out = Vec::new();
+        for (slug, work_type) in rows {
+            if ctx.signal.is_cancelled() {
+                break;
+            }
+            let mut extra = std::collections::HashMap::new();
+            extra.insert("workType".to_string(), serde_json::json!(work_type));
+            let job = JobPosting {
+                id: format!("wtcapfilter:{slug}"),
+                external_id: Some(slug.to_string()),
+                title: "Job".to_string(),
+                company: "WTCF".to_string(),
+                location: None,
+                url: format!("https://wtcf.example/{slug}"),
+                source: "wtcapfilter".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra,
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            out.push(job);
+        }
+        Ok(out)
+    }
+}
+
+/// HIGH-1 sibling for work type — the item cap must count only MATCHING items;
+/// `amount=2`, 4 rows where rows 1 and 3 mismatch → both matches (rows 2 and 4)
+/// must be delivered, `count == 2`, and NEITHER mismatch survives (mirrors
+/// `scrape_boards_cap_and_location_filter_combined_delivers_only_matches`).
+#[tokio::test]
+async fn scrape_boards_cap_and_work_type_filter_combined_delivers_only_matches() {
+    static WTCAPFILTER: std::sync::LazyLock<WorkTypeCapFilterFake> =
+        std::sync::LazyLock::new(|| WorkTypeCapFilterFake);
+
+    let streamed: Arc<std::sync::Mutex<Vec<JobPosting>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let streamed_cb = streamed.clone();
+    let on_item: Arc<dyn Fn(JobPosting) + Send + Sync> = Arc::new(move |item: JobPosting| {
+        if let Ok(mut g) = streamed_cb.lock() {
+            g.push(item);
+        }
+    });
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(2); // amount=2 — the cap under test
+    input.work_types = Some(vec![super::super::types::WorkType::Remote]);
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["wtcapfilter".to_string()],
+            input,
+            "job-wt-cap-and-filter".to_string(),
+            None,
+            Some(on_item),
+            std::path::Path::new("."),
+            |id| {
+                if id == "wtcapfilter" {
+                    Ok(&*WTCAPFILTER as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "wtcapfilter")
+        .expect("wtcapfilter summary missing");
+    assert_eq!(
+        s.count, 2,
+        "both real matches must be delivered despite amount=2 and 2 raw \
+         mismatches ahead of/interleaved with them; got {s:?}"
+    );
+    assert_eq!(
+        s.notes,
+        vec!["work-type-filtered:2".to_string()],
+        "both mismatches must be counted as dropped; got {s:?}"
+    );
+
+    let ids: std::collections::HashSet<&str> = postings.iter().map(|p| p.id.as_str()).collect();
+    assert!(
+        ids.contains("wtcapfilter:row2-match") && ids.contains("wtcapfilter:row4-match"),
+        "both real matches must survive, including the LATER one (row4); got {postings:?}"
+    );
+    assert!(
+        !ids.contains("wtcapfilter:row1-mismatch") && !ids.contains("wtcapfilter:row3-mismatch"),
+        "neither mismatch may survive; got {postings:?}"
+    );
+}
+
+/// Same shape as `scrape_boards_zero_drops_still_emits_unconditional_note_for_non_supporting_board`,
+/// for work type: a non-supporting board whose rows all declare a wanted type
+/// still gets `work-type-filtered:0` (checked, nothing hidden), while a
+/// supporting board never gets the note at all regardless of its own data.
+#[tokio::test]
+async fn scrape_boards_work_type_zero_drops_still_emits_unconditional_note() {
+    struct AllMatchNonSupportingWt;
+    #[async_trait::async_trait]
+    impl Scraper for AllMatchNonSupportingWt {
+        fn id(&self) -> &'static str {
+            "wtallmatch"
+        }
+        fn display_name(&self) -> &'static str {
+            "WtAllMatch"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let mut extra = std::collections::HashMap::new();
+            extra.insert("workType".to_string(), serde_json::json!("remote"));
+            let job = JobPosting {
+                id: "wtallmatch:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "WTAM".to_string(),
+                location: None,
+                url: "https://wtam.example/0".to_string(),
+                source: "wtallmatch".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra,
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            Ok(vec![job])
+        }
+    }
+    static WTALLMATCH: std::sync::LazyLock<AllMatchNonSupportingWt> =
+        std::sync::LazyLock::new(|| AllMatchNonSupportingWt);
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(10);
+    input.work_types = Some(vec![super::super::types::WorkType::Remote]);
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["wtallmatch".to_string()],
+            input,
+            "job-wt-zero-drop-note".to_string(),
+            None,
+            None, // no live on_item — exercises the post-hoc path
+            std::path::Path::new("."),
+            |id| {
+                if id == "wtallmatch" {
+                    Ok(&*WTALLMATCH as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "wtallmatch")
+        .expect("wtallmatch summary missing");
+    assert_eq!(s.count, 1, "the matching row is kept; got {s:?}");
+    assert_eq!(
+        s.notes,
+        vec!["work-type-filtered:0".to_string()],
+        "a non-supporting board must emit the note even with ZERO drops when a \
+         work type was requested; got {s:?}"
+    );
+}
+
+/// Both filters active on ONE non-supporting board must produce BOTH notes,
+/// location first, then work type — never one silently clobbering the other.
+///
+/// Mutation check (do not delete this comment): if `BoardScrapeSummary.notes`
+/// were reverted to a single `Option<String>` slot, `location-filtered` would
+/// win (first write wins under `get_or_insert_with`) and `work-type-filtered`
+/// would be silently dropped — this assertion on the FULL vector fails the
+/// instant that happens, which is the point of this test.
+#[tokio::test]
+async fn scrape_boards_location_and_work_type_notes_coexist_on_one_board() {
+    struct BothMismatchFake;
+    #[async_trait::async_trait]
+    impl Scraper for BothMismatchFake {
+        fn id(&self) -> &'static str {
+            "bothmismatch"
+        }
+        fn display_name(&self) -> &'static str {
+            "BothMismatch"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let mut out = Vec::new();
+            // Row 1: matches location, mismatches work type.
+            {
+                let mut extra = std::collections::HashMap::new();
+                extra.insert("workType".to_string(), serde_json::json!("on-site"));
+                let job = JobPosting {
+                    id: "bothmismatch:wt".to_string(),
+                    external_id: Some("wt".to_string()),
+                    title: "Job".to_string(),
+                    company: "BM".to_string(),
+                    location: Some("Berlin, Germany".to_string()),
+                    url: "https://bm.example/wt".to_string(),
+                    source: "bothmismatch".to_string(),
+                    description: None,
+                    requirements: None,
+                    posted_at: None,
+                    captured_at: 0,
+                    extra,
+                };
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(job.clone());
+                }
+                out.push(job);
+            }
+            // Row 2: matches work type, mismatches location.
+            {
+                let mut extra = std::collections::HashMap::new();
+                extra.insert("workType".to_string(), serde_json::json!("remote"));
+                let job = JobPosting {
+                    id: "bothmismatch:loc".to_string(),
+                    external_id: Some("loc".to_string()),
+                    title: "Job".to_string(),
+                    company: "BM".to_string(),
+                    location: Some("London, UK".to_string()),
+                    url: "https://bm.example/loc".to_string(),
+                    source: "bothmismatch".to_string(),
+                    description: None,
+                    requirements: None,
+                    posted_at: None,
+                    captured_at: 0,
+                    extra,
+                };
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(job.clone());
+                }
+                out.push(job);
+            }
+            Ok(out)
+        }
+    }
+    static BOTH_MISMATCH: std::sync::LazyLock<BothMismatchFake> =
+        std::sync::LazyLock::new(|| BothMismatchFake);
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(10);
+    input.location = Some("Berlin".to_string());
+    input.work_types = Some(vec![super::super::types::WorkType::Remote]);
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["bothmismatch".to_string()],
+            input,
+            "job-wt-and-loc-coexist".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| {
+                if id == "bothmismatch" {
+                    Ok(&*BOTH_MISMATCH as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "bothmismatch")
+        .expect("bothmismatch summary missing");
+    assert_eq!(
+        s.count, 0,
+        "row 1 drops on work type, row 2 drops on location — nothing survives; got {s:?}"
+    );
+    assert_eq!(
+        s.notes,
+        vec![
+            "location-filtered:1".to_string(),
+            "work-type-filtered:1".to_string(),
+        ],
+        "both notes must coexist, location BEFORE work type, each with its OWN \
+         independent count; got {s:?}"
     );
 }
 

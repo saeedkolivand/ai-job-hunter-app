@@ -26,12 +26,12 @@
 //! safe direction, and widening it here would silently change a shipped
 //! feature with nothing failing.
 //!
-//! **Foundation only.** [`parse_work_type`] is already wired (the
-//! `ScrapeBoardsRequest`/`AutopilotTarget` IPC boundary uses it), but
-//! [`work_type_verdict`], [`work_type_mismatch`] and [`filter_postings`] have
-//! no caller yet — the per-board `extra["workType"]` mapping and the engine
-//! wiring (mirroring `location_filter`'s `:693-946`) are later phases.
-#![allow(dead_code)]
+//! Wired end-to-end: [`parse_work_type`] backs the `ScrapeBoardsRequest`/
+//! `AutopilotTarget` IPC boundary, every board that declares a workplace
+//! value writes `extra["workType"]` through it, and [`filter_postings`] (via
+//! [`work_type_mismatch`]/[`work_type_verdict`]) is the central post-filter
+//! `scraping::engine::mod` composes into its `keep_item` predicate, mirroring
+//! `location_filter`.
 
 use crate::scraping::types::{JobPosting, WorkType};
 

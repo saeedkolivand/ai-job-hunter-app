@@ -26,7 +26,7 @@ fn ok(board: &str, count: usize) -> BoardScrapeSummary {
         error: None,
         skipped: None,
         truncated: None,
-        note: None,
+        notes: Vec::new(),
         health: None,
     }
 }

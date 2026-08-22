@@ -158,17 +158,20 @@ function skipDetail(skipped: string, t: TFunction): string {
 }
 
 /**
- * Map a controlled location `note` token to a localized label — or `null` for an
- * unknown/future token so a legacy or newer backend can never leak a raw machine
- * token into the UI (tolerant, like the `skipped` fallback). Two shapes:
+ * Map a controlled location/work-type `note` token to a localized label — or
+ * `null` for an unknown/future token so a legacy or newer backend can never
+ * leak a raw machine token into the UI (tolerant, like the `skipped`
+ * fallback). Two shapes:
  *   - `kind:<countryCode>` (lowercase alpha-2) — `broadened` / `guessed-market`;
  *     the country name is resolved natively.
- *   - `location-filtered:<n>` (PR F) — the engine emits this unconditionally for
- *     a board without server-side location support (even n=0, "checked, nothing
- *     hidden"); n=0 gets a plain marker label, n>0 the pluralized hidden-count.
+ *   - `location-filtered:<n>` (PR F) / `work-type-filtered:<n>` (Phase 2b) —
+ *     the engine emits these unconditionally for a board without server-side
+ *     support for that filter (even n=0, "checked, nothing hidden"); n=0 gets
+ *     a plain marker label, n>0 the pluralized hidden-count.
  *   - `slugs-invalid:<n>` / `rows-dropped:<n>` (PR H) / `companies-failed:<n>` —
  *     partial per-company visibility from the ATS boards; all emitted ONLY when
- *     n>0, so unlike `location-filtered` a zero/malformed n renders no chip.
+ *     n>0, so unlike `location-filtered`/`work-type-filtered` a zero/malformed
+ *     n renders no chip.
  */
 function noteDetail(note: string, t: TFunction, locale: string): string | null {
   const sep = note.indexOf(':');
@@ -176,19 +179,25 @@ function noteDetail(note: string, t: TFunction, locale: string): string | null {
   const kind = note.slice(0, sep);
   const value = note.slice(sep + 1).trim();
 
-  // `location-filtered:<n>` — count of results dropped by the local location
-  // filter (0 = the board was checked and nothing was hidden). A malformed /
-  // negative / non-integer `n` is tolerated (no chip), like an unknown token,
-  // so a legacy or garbled payload never renders junk.
-  if (kind === 'location-filtered') {
+  // `location-filtered:<n>` / `work-type-filtered:<n>` — count of results
+  // dropped by the respective local post-filter (0 = the board was checked and
+  // nothing was hidden). A malformed / negative / non-integer `n` is tolerated
+  // (no chip), like an unknown token, so a legacy or garbled payload never
+  // renders junk.
+  if (kind === 'location-filtered' || kind === 'work-type-filtered') {
     // `Number('')` coerces to `0` in JS — reject empty explicitly so a bare
     // "location-filtered:" (no digits at all) stays malformed, not a false 0.
     if (!value) return null;
     const n = Number(value);
     if (!Number.isInteger(n) || n < 0) return null;
+    if (kind === 'location-filtered') {
+      return n === 0
+        ? t('jobs.boardSummary.note.locationFilteredNone')
+        : t('jobs.boardSummary.note.locationFiltered', { count: n });
+    }
     return n === 0
-      ? t('jobs.boardSummary.note.locationFilteredNone')
-      : t('jobs.boardSummary.note.locationFiltered', { count: n });
+      ? t('jobs.boardSummary.note.workTypeFilteredNone')
+      : t('jobs.boardSummary.note.workTypeFiltered', { count: n });
   }
 
   // `slugs-invalid:<n>` / `rows-dropped:<n>` (PR H) / `companies-failed:<n>` —
@@ -295,8 +304,11 @@ function healthDetail(
  * be a legacy/tampered persisted record, so unknown shapes are tolerated (a
  * non-object entry, a missing board id, a non-numeric count) rather than trusted.
  * Per-board precedence mirrors Rust `scrape_diagnostics`, with the informational
- * location note slotting below the failure/partial tones: error > skipped >
- * truncated > note > success.
+ * notes slotting below the failure/partial tones: error > skipped > truncated >
+ * note > success. Up to three notes can legitimately coexist on one board (a
+ * board-native note, `location-filtered`, `work-type-filtered`) — each renders
+ * its OWN chip rather than one replacing another, mirroring the Rust
+ * `BoardScrapeSummary.notes` array.
  */
 function toChips(
   summaries: readonly BoardScrapeSummary[],
@@ -315,29 +327,55 @@ function toChips(
     const error = typeof s.error === 'string' && s.error.trim() ? s.error : null;
     const skipped = typeof s.skipped === 'string' && s.skipped.trim() ? s.skipped : null;
     const truncated = typeof s.truncated === 'string' && s.truncated.trim() ? s.truncated : null;
-    const noteRaw = typeof s.note === 'string' && s.note.trim() ? s.note : null;
-    const note = noteRaw ? noteDetail(noteRaw, t, locale) : null;
+    const notesRaw = Array.isArray(s.notes)
+      ? s.notes.filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+      : [];
+    const noteDetails = notesRaw
+      .map((n) => noteDetail(n, t, locale))
+      .filter((d): d is string => d !== null);
     const count = typeof s.count === 'number' && Number.isFinite(s.count) ? s.count : 0;
 
-    let tone: ChipTone;
-    let detail: string;
     if (error) {
-      tone = 'error';
-      detail = sanitizeReason(error);
+      chips.push({
+        key: `${boardId}-${i}`,
+        tone: 'error',
+        board,
+        detail: capDetail(sanitizeReason(error)),
+      });
     } else if (skipped) {
-      tone = 'skipped';
-      detail = skipDetail(skipped, t);
+      chips.push({
+        key: `${boardId}-${i}`,
+        tone: 'skipped',
+        board,
+        detail: capDetail(skipDetail(skipped, t)),
+      });
     } else if (truncated) {
-      tone = 'truncated';
-      detail = t('jobs.boardSummary.partial');
-    } else if (note) {
-      tone = 'note';
-      detail = note;
+      chips.push({
+        key: `${boardId}-${i}`,
+        tone: 'truncated',
+        board,
+        detail: capDetail(t('jobs.boardSummary.partial')),
+      });
+    } else if (noteDetails.length > 0) {
+      // One chip per applicable note — never collapse several independent
+      // honesty signals into one, which is exactly the bug the Rust-side
+      // `notes: Vec<String>` widening fixed.
+      noteDetails.forEach((detail, ni) => {
+        chips.push({
+          key: `${boardId}-${i}-note-${ni}`,
+          tone: 'note',
+          board,
+          detail: capDetail(detail),
+        });
+      });
     } else {
-      tone = 'success';
-      detail = t('jobs.boardSummary.count', { count });
+      chips.push({
+        key: `${boardId}-${i}`,
+        tone: 'success',
+        board,
+        detail: capDetail(t('jobs.boardSummary.count', { count })),
+      });
     }
-    chips.push({ key: `${boardId}-${i}`, tone, board, detail: capDetail(detail) });
 
     // Track B1 — the cross-run history rides alongside, never replaces, this
     // run's own chip: "wwr · HTTP 500" then "wwr · down for 4 runs · last
