@@ -138,7 +138,7 @@ const SUBSCRIBERS = {
   },
   'features/jobs/hooks/useScraping.ts': {
     mount: 'route-scoped',
-    hash: 'b16ef7bcd515',
+    hash: 'b780df7c3055',
     note:
       'Nothing user-visible is lost on a route change any more. The progress readout used to ' +
       'show a false 0% for the rest of the run — on the default single-board search ' +
@@ -152,7 +152,7 @@ const SUBSCRIBERS = {
   },
   'features/jobs/components/JobsPage/index.tsx': {
     mount: 'route-scoped',
-    hash: 'b2df3b57b2c8',
+    hash: '8492eea6a608',
     note:
       'A scrape that ends off-page — completed OR failed — now comes back explained. The ' +
       "watchdog re-reads the job record's `result.boards` for the diagnostics strip, writes " +

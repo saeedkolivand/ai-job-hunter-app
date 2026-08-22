@@ -24,9 +24,11 @@ fn test_location_struct_fields() {
         city: Some("Berlin".to_string()),
         country: Some("Germany".to_string()),
         remote: Some(true),
+        hybrid: Some(false),
     };
     assert_eq!(location.city, Some("Berlin".to_string()));
     assert_eq!(location.remote, Some(true));
+    assert_eq!(location.hybrid, Some(false));
 }
 
 #[test]
@@ -35,9 +37,99 @@ fn test_location_struct_defaults() {
         city: None,
         country: None,
         remote: None,
+        hybrid: None,
     };
     assert!(location.city.is_none());
     assert!(location.remote.is_none());
+    assert!(location.hybrid.is_none());
+}
+
+// ---------------------------------------------------------------------------
+// smartrecruiters_work_type — precedence + the exact-partition rule
+// ---------------------------------------------------------------------------
+
+#[test]
+fn work_type_hybrid_wins_over_remote() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(true), Some(true)),
+        Some(WorkType::Hybrid)
+    );
+}
+
+#[test]
+fn work_type_remote_when_hybrid_false() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(true), Some(false)),
+        Some(WorkType::Remote)
+    );
+}
+
+/// Board-specific rule: unlike the generic all-false→Unknown policy, both
+/// booleans false means on-site HERE — the partition is exact (367 = 3 + 36 +
+/// 328), so there is no undeclared bucket for a company that reports at all.
+#[test]
+fn work_type_both_false_means_on_site_not_unknown() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(false), Some(false)),
+        Some(WorkType::OnSite)
+    );
+}
+
+/// Both booleans absent — the field itself was missing from the payload —
+/// stays Unknown (writes nothing), unlike the both-false case above.
+#[test]
+fn work_type_both_absent_is_unknown() {
+    assert_eq!(smartrecruiters_work_type(None, None), None);
+}
+
+#[test]
+fn work_type_only_remote_present_still_resolves() {
+    assert_eq!(
+        smartrecruiters_work_type(Some(true), None),
+        Some(WorkType::Remote)
+    );
+    assert_eq!(
+        smartrecruiters_work_type(Some(false), None),
+        Some(WorkType::OnSite)
+    );
+}
+
+/// The dual-write regression (same shape as the Ashby `isRemote`/`workplaceType`
+/// defect): `remote:true` co-occurring with `hybrid:true` classifies as Hybrid
+/// (`work_type_hybrid_wins_over_remote`), so `extra["remote"]` must be `false`
+/// for that shape, not a copy of the raw `remote` boolean — otherwise
+/// `location_filter`'s "never drop a remote job" rule would fire for a Hybrid
+/// posting.
+#[test]
+fn declared_remote_flag_follows_the_classifier_not_the_raw_boolean() {
+    let hybrid_but_remote_true = smartrecruiters_work_type(Some(true), Some(true));
+    assert_eq!(hybrid_but_remote_true, Some(WorkType::Hybrid));
+    assert!(
+        !smartrecruiters_is_declared_remote(hybrid_but_remote_true),
+        "a Hybrid row must not also write extra.remote == true"
+    );
+    assert!(
+        smartrecruiters_is_declared_remote(Some(WorkType::Remote)),
+        "a genuinely Remote row must still write extra.remote == true"
+    );
+    assert!(!smartrecruiters_is_declared_remote(None));
+    assert!(!smartrecruiters_is_declared_remote(Some(WorkType::OnSite)));
+}
+
+#[test]
+fn location_type_param_spelling_has_no_separator() {
+    assert_eq!(
+        smartrecruiters_location_type_param(WorkType::Remote),
+        "REMOTE"
+    );
+    assert_eq!(
+        smartrecruiters_location_type_param(WorkType::Hybrid),
+        "HYBRID"
+    );
+    assert_eq!(
+        smartrecruiters_location_type_param(WorkType::OnSite),
+        "ONSITE"
+    );
 }
 
 #[test]
@@ -177,7 +269,7 @@ async fn empty_companies_returns_empty_without_network() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -222,7 +314,7 @@ async fn all_blank_companies_returns_ok_empty() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -258,7 +350,7 @@ async fn live_search_returns_results() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,

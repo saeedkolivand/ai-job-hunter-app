@@ -35,6 +35,8 @@ export const TEST_IDS = {
     scrapeStatusLive: 'jobs-scrape-status-live',
     /** stub-only: no matching attribute on the real component */
     scrapeFilters: 'scrape-filters',
+    /** The manual search form's remote/hybrid/on-site multi-select group. */
+    workTypeFilter: 'work-type-filter',
     aggregatorKeyHint: 'aggregator-key-hint',
     scrapeStartButton: 'scrape-start-button',
     jobsResults: 'jobs-results',

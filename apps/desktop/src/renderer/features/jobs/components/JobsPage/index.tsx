@@ -11,6 +11,7 @@ import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { mergePostings } from '@/features/jobs/lib/merge-postings';
+import { matchesWorkTypeFilter } from '@/features/jobs/lib/work-type-filter';
 import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting, ScrapeFormState } from '@/features/jobs/types';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
@@ -52,6 +53,7 @@ export function JobsPage() {
   const filter = useSessionStore((s) => s.jobs.filter);
   const sortBy = useSessionStore((s) => s.jobs.sortBy);
   const hideAgency = useSessionStore((s) => s.jobs.hideAgency);
+  const workTypes = useSessionStore((s) => s.jobs.workTypes);
   const scrapeForm = useSessionStore((s) => s.jobs.scrapeForm);
   const scrapeSummaries = useSessionStore((s) => s.jobs.scrapeSummaries);
   const scrapeFailureNote = useSessionStore((s) => s.jobs.scrapeFailureNote);
@@ -261,7 +263,7 @@ export function JobsPage() {
     void startScrape(next);
   };
 
-  const filtered = useMemo(() => {
+  const { filtered, hasDeclaredWorkType } = useMemo(() => {
     let result = allPostings;
     const q = filter.trim().toLowerCase();
     if (q) {
@@ -281,6 +283,20 @@ export function JobsPage() {
 
     // Optional agency filter — hide recruiting/staffing-agency postings.
     if (hideAgency) result = result.filter((p) => !p.isAgency);
+
+    // Whether the JobsCommandBar work-type control is even worth showing:
+    // computed on this EXACT array — the one the work-type filter is about to
+    // run over, right below — so the gate and the filter can never disagree.
+    // Deliberately measured BEFORE the work-type filter itself: with an active
+    // selection the filter narrows this array, and "does the still-visible set
+    // declare a type" would trivially say yes for a matching selection and no
+    // for one that filters to zero — neither answers the question the control
+    // needs ("is there anything for this control to do on THIS search").
+    const hasDeclaredWorkType = result.some((p) => p.workType != null);
+
+    // Optional work-type filter — view-only, no re-scrape. An undeclared
+    // `workType` is always kept (see `matchesWorkTypeFilter`).
+    result = result.filter((p) => matchesWorkTypeFilter(p, workTypes));
 
     // Stable, deterministic ordering (audit quick win 8): an `id` tiebreak so
     // equal timestamps never reorder between renders (nondeterministic order
@@ -306,8 +322,8 @@ export function JobsPage() {
       return cmp || byId(a, b);
     });
 
-    return result;
-  }, [allPostings, filter, sortBy, hideAgency]);
+    return { filtered: result, hasDeclaredWorkType };
+  }, [allPostings, filter, sortBy, hideAgency, workTypes]);
 
   // Denominator for the "N / M" count = distinct jobs (clusters): rows that
   // aren't a collapsed non-canonical duplicate. The numerator (`filtered`)
@@ -351,6 +367,7 @@ export function JobsPage() {
             boardSummaries={showDiagnostics ? scrapeSummaries : []}
             failureNote={showDiagnostics ? scrapeFailureNote : null}
             scrapeButtonRef={scrapeButtonRef}
+            hasDeclaredWorkType={hasDeclaredWorkType}
           />
 
           <JobsResults

@@ -1,6 +1,6 @@
 # Architecture — AI Job Hunter
 
-Last updated: 2026-08-10
+Last updated: 2026-08-22
 
 ## High-Level Overview
 
@@ -284,6 +284,13 @@ const result = await client.ai.generate(req);
 
 The app uses **rusqlite** (`Cargo.toml`: `rusqlite = "0.40"`, bundled) for local-first persistence. All SQL operations are Rust-native with in-process schema management: **in-code migrations in `apps/desktop/src-tauri/src/db.rs`** (each an `up` closure), applied transactionally and tracked via `PRAGMA user_version` — no `.sql` files, no `migrations/` dir. No ORM; direct `rusqlite::Connection` queries scoped by `db::open()` (L0 shared infra).
 
+> **Illustrative, not authoritative.** The migrations named above are the only source of
+> truth for the schema; entities below are a shape sketch and some have drifted from it
+> (notably `jobs`, which in code is the background-task tracker, not a postings table —
+> scraped postings live in the in-memory `PostingsCache`, and `interactions` is a JSON
+> file rather than a table). Verify against `db.rs` and each store's `MIGRATIONS` before
+> relying on any row here.
+
 ```mermaid
 erDiagram
     documents {
@@ -307,7 +314,6 @@ erDiagram
         text url
         text description
         text salary
-        text remote
         text status
         text appliedAt
         text scrapedAt
@@ -337,7 +343,6 @@ erDiagram
         text location
         text boards
         text salary
-        integer remote
         text createdAt
     }
 

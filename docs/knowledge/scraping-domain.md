@@ -478,13 +478,14 @@ When a board achieves partial success (some companies reached, some invalid slug
 | ---------------------------------------------- | ---------------------------------------------------- | ----------------- | ----------- | -------------------------------- |
 | board-native (`slugs-invalid`, `rows-dropped`) | present                                              | board-native wins | note (blue) | 3 invalid company slugs          |
 | `companies-failed`                             | slug-validator-less ATS board, partial fetch failure | n/a (disjoint)    | note (blue) | 2 companies could not be fetched |
-| `location-filtered`                            | non-supporting board + location requested            | fallback          | note (blue) | 5 off-location results hidden    |
+| `location-filtered`                            | non-supporting board + location requested            | first-written     | note (blue) | 5 off-location results hidden    |
+| `work-type-filtered`                           | non-supporting board + work type requested           | first-written     | note (blue) | 4 off-work-type results hidden   |
 | `broadened`/`guessed`                          | aggregator location heuristic                        | aggregator-only   | note (blue) | broadened from city to country   |
 | error                                          | fatal (all-fail, all-reject)                         | error not note    | error (red) | all hosts failed                 |
 
-`companies-failed` and the `slugs-invalid`/`rows-dropped` pair are emitted by **disjoint** board sets (validator-less vs. slug-validating), so they never contend; a board still reports at most ONE note per run overall.
+Prior to 2026-08-22, `BoardScrapeSummary.note` was a single `Option<String>` slot. Updated to `notes: Vec<String>` (empty serializes as absent for back-compat) to allow multiple notes per board per run (e.g., both `location-filtered:2` and `work-type-filtered:1` on the same board). Precedence is ordering: board-native first, then `location-filtered`, then `work-type-filtered`. Legacy single-note records deserialize with empty `notes`, preserving old scrape history. Rendering: one chip per note, severity order (error > skipped > truncated > note > success).
 
-**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only). `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs) via sequential if checks: `successful_fetches==0` → None (all-fail is an error); `rejected_slugs>0` → `"slugs-invalid:{n}"` (preferred, wins); else `rows_dropped>0` → `"rows-dropped:{n}"`. `ats_failed_fetches_note(successful_fetches, failed_fetches)` is its companion for the validator-less boards. Source: both in `apps/desktop/src-tauri/src/scraping/boards/common.rs`, wired through `scraping/engine/mod.rs`.
+**Implementation:** every applicable note is pushed onto `notes` (see the 2026-08-22 paragraph above; the old single-slot `get_or_insert_with` is gone). `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs) via sequential if checks: `successful_fetches==0` → None (all-fail is an error); `rejected_slugs>0` → `"slugs-invalid:{n}"` (preferred, wins); else `rows_dropped>0` → `"rows-dropped:{n}"`. `ats_failed_fetches_note(successful_fetches, failed_fetches)` is its companion for the validator-less boards. Source: both in `apps/desktop/src-tauri/src/scraping/boards/common.rs`, wired through `scraping/engine/mod.rs`.
 
 ## Job-search trust program — COMPLETE (PRs A–H, 2026-07-10/11)
 
@@ -542,6 +543,50 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 4. **Aggregate row-cap** — defense-in-depth: MAX_COMPANIES per ATS per board.
 5. **Consolidate useDebounced** — merge local `useDebounced` in CompanySlugField with shared `use-debounced-commit` hook.
 6. **Distinct rate-limit/error union for `scrape_resolve_url`** — currently returns null for all failures (no distinct rate-limit shape); a dedicated error union would enable specialized UI feedback (ADR-031 addendum).
+
+## Work-type filter (remote / hybrid / on-site)
+
+**Declared data only — no text inference.** Boards write `extra["workType"]` from a field they declare on the API (see per-board mapping below); everything else is `Unknown`. A filter that lies was deliberately refused.
+
+**`Unknown` is a value and is always KEPT.** It is the majority state (87% of Lever is `unspecified`; 72% of freehire's corpus carries no `work_mode`). Omitting `Unknown` from a filtered set would silently drop most of some boards.
+
+**`BoardSearchInput::work_types`** — an absent or empty set means no filter ("any"). `BoardSearchInput::work_type_spec()` resolves that degenerate case and dedupes, and is the ONLY reader; it mirrors `location_spec()`. The Zod `.max()` on the wire schema is a typecheck-time guard only — that schema is never parsed at runtime, so the Rust dedupe is the sole runtime bound.
+
+**`Scraper::supports_work_type()`** — boolean flag, `default false`. Only **SmartRecruiters** returns `true` in v1 (validates the `locationType` param and partitions exactly: 3+36+328=367). LinkedIn's guest endpoint is facet-stripped for anonymous callers (measured: `f_WT=1` and `f_WT=2` overlapped 30/49 urns; a filter that lies). Freehire's facet is real but 72% undeclared—pushing the filter upstream discards most of the board.
+
+**Classifier:** `scraping/engine/work_type_filter.rs` — pure functions `work_type_verdict(posting) -> WorkTypeVerdict` and `work_type_mismatch(posting, wanted) -> bool`. Reads ONLY `extra.workType` (declared by the board at parse time); no text inference. Tests: normalized spellings (`on-site`, `onsite`, `OnSite`, `ONSITE`, `on_site`), unknown-never-drops invariant.
+
+**Engine wiring:** `scraping/engine/mod.rs` — `keep_item` predicate applies `work_type_mismatch` alongside `location_mismatch` (two independent filters, one predicate). Emits `work-type-filtered:<n>` unconditionally when a work type is requested (n=0 preserves honesty: "not honored by non-supporting boards").
+
+**Note precedence (updated):** see the "Partial-failure notes" section above.
+
+**Per-board mapping:** one table, in `docs/SCRAPING_ENDPOINTS.md` — that page exists to snapshot
+external endpoint truth and carries the measurement dates. Repeating it here would be a second copy to
+drift (it already had, on the board count). The authoritative source is each board's own parse function
+under `apps/desktop/src-tauri/src/scraping/boards/`.
+
+**UI surfaces:**
+
+- **Manual search** — three-button multi-select in ScrapeFilters (role="group", aria-pressed, plain tab stops — roving tabindex is reserved for the ~26-item board picker). Empty set = no filter, surfaced as "any" microcopy.
+- **Autopilot wizard** — multi-select restored in StepTarget (deleted as dead in #614); replaced scalar "any" sentinel with empty array.
+- **Jobs page view filter** — three CheckableTag chips in JobsCommandBar (control-only, no chip duplicate per existing hideAgency precedent). Filters via `matchesWorkTypeFilter` predicate without re-scraping.
+- **Picker hint** — LocationFilterNote generalized to FilterCapabilityNote; WorkTypeFilterNote renders when selected boards include non-supporting ones + work type is set.
+- **Badge** — PostingRow + JobDetailPane prefer `posting.workType`, fall back to `jobs.remote` boolean, else `null`.
+
+**Fast-follow work items (deferred):**
+
+1. LinkedIn re-test when authentication cookies available (guest endpoint is facet-stripped; authenticated path may differ).
+2. Rippling (v2 undocumented), Arbeitsagentur (v6), Workable (v3 POST) require endpoint version changes.
+
+**Source pointers:**
+
+- Classifier: `apps/desktop/src-tauri/src/scraping/engine/work_type_filter.rs`
+- Engine wiring: `apps/desktop/src-tauri/src/scraping/engine/mod.rs` (`keep_item` predicate, note emission)
+- Per-board mappings: each board module (`boards/{lever,ashby,smartrecruiters,...}/mod.rs`)
+- Capability flag: `Scraper::supports_work_type()` in `scraping/types/mod.rs`
+- Catalog: `BoardCatalogEntry.supportsWorkType?` in `packages/shared/src/ipc/contracts/boards.ts`
+- UI contract: `packages/shared/src/schemas/index.ts` (WORK_TYPE_OPTIONS, schema arrays)
+- Frontend surfaces: `ScrapeFilters.tsx`, `StepTarget/index.tsx`, `JobsCommandBar/index.tsx`, `PostingRow/index.tsx`, `JobDetailPane/index.tsx`
 
 ## See also
 

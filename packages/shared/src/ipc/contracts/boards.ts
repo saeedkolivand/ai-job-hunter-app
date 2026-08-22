@@ -34,6 +34,14 @@ export interface BoardCatalogEntry {
    */
   supportsLocation?: boolean;
   /**
+   * Whether the board narrows results by the requested work type server-side.
+   * When `false`, the engine post-filters this board's results on device,
+   * keeping every posting whose work type the board did not declare, so the
+   * picker can indicate which boards will genuinely honor a work-type filter.
+   * Optional so older/absent payloads read as `false`.
+   */
+  supportsWorkType?: boolean;
+  /**
    * Curated companies this company-scoped ATS board will query when the user
    * supplies none; empty/absent for boards without a seed.
    */
@@ -95,8 +103,14 @@ export interface BoardsContract {
  * - `truncated` — a paginated board kept a partial harvest after a mid-run page
  *   failure (e.g. `"page 3 of 5 failed: HTTP 429"`); `count` is a partial tally,
  *   not the full result set. Absent when the harvest ran to completion.
- * - `note` — an INFORMATIONAL location policy the board applied that the user did
- *   not explicitly request (not a failure; `count` is still authoritative). One of:
+ * - `notes` — ZERO OR MORE INFORMATIONAL policies the board/engine applied that
+ *   the user did not explicitly request (not a failure; `count` is still
+ *   authoritative). Widened from a single optional `note` because up to three
+ *   independent signals can legitimately coexist in one run: a board-native
+ *   note, the central location filter, and the central work-type filter — a
+ *   single slot silently dropped whichever one lost. Order fixes precedence
+ *   when more than one applies: the board's own note first, then
+ *   `location-filtered`, then `work-type-filtered`. Possible entries:
  *   - `"guessed-market:<cc>"` — no country was supplied, so the `<cc>` market was
  *     guessed and returned an authoritative result set; set a country for
  *     deterministic results.
@@ -106,6 +120,11 @@ export interface BoardsContract {
  *     (`supportsLocation: false`), so the engine conservatively dropped `<n>`
  *     of its results whose own location clearly mismatched the request; never
  *     drops remote/unknown-location rows.
+ *   - `"work-type-filtered:<n>"` — the sibling filter for the requested work
+ *     type(s) (remote/hybrid/on-site): this board doesn't honor it server-side
+ *     (`supportsWorkType: false`), so the engine conservatively dropped `<n>`
+ *     of its results whose own DECLARED work type clearly mismatched; a row
+ *     the board never declared a work type for is never dropped.
  *   - `"slugs-invalid:<n>"` — a company-slug ATS board rejected `<n>` of the
  *     supplied slugs pre-fetch (malformed company names) but still returned
  *     results from the valid ones. If EVERY slug was rejected it's an `error`,
@@ -122,8 +141,10 @@ export interface BoardsContract {
  *     an `error`, not a note. Emitted independently of the
  *     `slugs-invalid`/`rows-dropped` pair above — those come from boards that
  *     validate slugs pre-fetch, this one from the boards that don't — but a
- *     board still reports at most ONE note per run overall.
- *   `<cc>` is an ISO country code; the field never carries the raw location text.
+ *     board still reports at most ONE board-native note per run (it can still
+ *     coexist with `location-filtered`/`work-type-filtered`, per the ordering
+ *     above).
+ *   `<cc>` is an ISO country code; an entry never carries the raw location text.
  */
 /**
  * Verdict of a board's cross-run history (Track B1). Mirrors the Rust
@@ -189,7 +210,7 @@ export interface BoardScrapeSummary {
   error?: string;
   skipped?: 'needs-login' | 'needs-company' | 'needs-keys';
   truncated?: string;
-  note?: string;
+  notes?: string[];
   /** Cross-run reliability, present only when the board is unhealthy AND this
    *  is a LIVE scrape response. Never persisted (it is cross-run state, not part
    *  of this run) — a stored run record carries none, and the Autopilot card

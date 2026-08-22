@@ -3,6 +3,7 @@
 /// Endpoint: `https://api.lever.co/v0/postings/{company}?mode=json`
 /// No global keyword search — requires a company slug. The engine skips this
 /// board with `"needs-company"` when `input.companies` is empty.
+use super::super::engine::work_type_filter::parse_work_type;
 use super::super::http::{fetch_json, FetchOptions};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use super::common::{ats_all_fetches_failed, ats_failed_fetches_note};
@@ -29,6 +30,16 @@ struct LeverPosting {
     description_plain: Option<String>,
     #[serde(rename = "createdAt")]
     created_at: Option<i64>,
+    /// Declared workplace arrangement. Measured live
+    /// (`api.lever.co/v0/postings/leverdemo?mode=json`, 383 postings):
+    /// `unspecified` 334 · `remote` 20 · `onsite` 15 · `hybrid` 14 — the wire
+    /// spells on-site WITHOUT a hyphen even though Lever's own README says
+    /// `on-site`, and `unspecified` dominates the corpus. Routed through
+    /// [`parse_work_type`] rather than matched literally so the hyphen drift
+    /// doesn't silently misroute the board, and `unspecified` naturally falls
+    /// through to `None` (unrecognised, not `OnSite`).
+    #[serde(rename = "workplaceType")]
+    workplace_type: Option<String>,
 }
 
 /// Map a Lever `createdAt` value (already epoch-milliseconds) to the
@@ -149,6 +160,11 @@ impl LeverScraper {
             successful_fetches += 1;
 
             for p in postings {
+                let mut extra = std::collections::HashMap::new();
+                if let Some(wt) = p.workplace_type.as_deref().and_then(parse_work_type) {
+                    extra.insert("workType".to_string(), serde_json::json!(wt));
+                }
+
                 let posting = JobPosting {
                     id: format!("{}:{}", self.id(), p.id),
                     external_id: Some(p.id.clone()),
@@ -161,7 +177,7 @@ impl LeverScraper {
                     requirements: None,
                     posted_at: map_posted_at(p.created_at), // createdAt is already epoch-milliseconds
                     captured_at: now,
-                    extra: std::collections::HashMap::new(),
+                    extra,
                 };
 
                 if let Some(ref on_item) = ctx.on_item {

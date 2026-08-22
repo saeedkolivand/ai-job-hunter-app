@@ -10,7 +10,9 @@
 //! endpoint was confirmed by a real request, not reconnaissance-ported from a
 //! doc/blog — so it isn't marked "unverified" like those.
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{ats_finish_search, ats_partial_note, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -195,6 +197,14 @@ pub(crate) fn parse_workable_response(
             .or(j.created_at.as_deref())
             .and_then(parse_workable_date);
 
+        // `telecommuting` is binary: `Some(true)` declares remote, but
+        // `Some(false)` only means "not flagged remote", not "on-site" — so it
+        // writes nothing rather than a guessed OnSite.
+        let mut extra = std::collections::HashMap::new();
+        if j.telecommuting == Some(true) {
+            extra.insert("workType".to_string(), serde_json::json!(WorkType::Remote));
+        }
+
         // Namespaced with the company slug: `shortcode` is only unique WITHIN
         // one Workable tenant, so two companies fetched in the same
         // `companies[]` batch could otherwise collide on the same id.
@@ -210,7 +220,7 @@ pub(crate) fn parse_workable_response(
             requirements: None,
             posted_at,
             captured_at: now,
-            extra: std::collections::HashMap::new(),
+            extra,
         });
     }
 

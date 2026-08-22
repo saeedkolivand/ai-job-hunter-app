@@ -37,7 +37,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     boards: ['linkedin'],
     query: 'react developer',
     location: '',
-    workType: 'any',
+    workTypes: [],
     pages: 2,
     dateFilter: '',
     watchedCompaniesOnly: false,

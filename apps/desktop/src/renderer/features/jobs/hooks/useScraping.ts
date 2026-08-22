@@ -76,6 +76,7 @@ export function useScraping(
       ...(replace ? { replace: true } : {}),
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
       ...(scrapeForm.companies.length > 0 ? { companies: scrapeForm.companies } : {}),
+      ...(scrapeForm.workTypes.length > 0 ? { workTypes: scrapeForm.workTypes } : {}),
     } as Parameters<typeof scrapeBoards.mutateAsync>[0])) as { jobId: string; error?: string };
     return res;
   };
@@ -104,6 +105,7 @@ export function useScraping(
       scrapeForm.radiusKm ?? '',
       scrapeForm.dateFilter ?? '',
       scrapeForm.companies.slice().sort().join(','),
+      scrapeForm.workTypes.slice().sort().join(','),
     ].join('|');
     // Read through getState(): the signature of the search the DISPLAYED
     // postings came from, which survives a route change. Compared against a

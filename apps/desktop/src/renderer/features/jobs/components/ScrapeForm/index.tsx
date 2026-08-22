@@ -7,7 +7,7 @@ import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, type CompanyTypeaheadHandle, Input } from '@ajh/ui';
 
-import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
+import { LocationFilterNote, WorkTypeFilterNote } from '@/components/scrape/LocationFilterNote';
 import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
 import { AUTH_BENEFITS } from '@/features/jobs/constants';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
@@ -318,6 +318,11 @@ export function ScrapeForm({
         {/* Honest location hint — names selected boards that don't filter by
                 location server-side (results are matched on-device instead). */}
         <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
+
+        {/* Same honesty disclosure for work type — only smartrecruiters filters
+                it server-side today; every other selected board's results are
+                matched on-device instead. */}
+        <WorkTypeFilterNote boards={selectedListedBoards} active={form.workTypes.length > 0} />
 
         {/* Seeded-companies disclosure — names the curated companies a
                 company-scoped ATS board (Greenhouse/Lever/Ashby/…) will query (#621) */}

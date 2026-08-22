@@ -191,7 +191,15 @@ impl Scraper for LinkedInScraper {
             start: 0,
             date_filter: input.date_filter.clone(),
             job_type: input.job_type.clone(),
-            work_type: input.work_type.clone(),
+            // TODO(work-type): input.work_types is not forwarded yet. A
+            // disjointness probe (see .claude/scratch/work-type-filter.md §4)
+            // found f_WT=1 and f_WT=2 sharing 29/50 job urns, with a control
+            // arm (f_JT=F vs f_JT=I) that also overlapped — an anonymous
+            // client may have this facet stripped server-side, and LinkedIn's
+            // payload has no workplace field to catch a lying filter with.
+            // Gate on that probe passing (from the app's real egress) before
+            // ever mapping input.work_types into this param again.
+            work_type: None,
             experience_level: input.experience_level.clone(),
             easy_apply: input.easy_apply,
             actively_hiring: input.actively_hiring,

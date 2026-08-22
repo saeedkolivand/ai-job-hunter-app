@@ -22,6 +22,7 @@
 //! (so a saved Comeet target still runs and a future live-verification just flips
 //! the flag back), but the app no longer PROMISES a board that can currently only
 //! return a silent zero. Do NOT delete the code.
+use super::super::engine::work_type_filter::parse_work_type;
 use super::super::http::fetch_json;
 use super::super::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
@@ -54,6 +55,11 @@ pub(crate) struct CmPosition {
     // verification — it always will be).
     #[serde(default, alias = "company")]
     company_name: Option<String>,
+    // Same speculative-field convention as `company_name` above: docs-only,
+    // not live-verified (the live endpoint 400s without real credentials —
+    // see the module doc), and this board is `listed() -> false` anyway.
+    #[serde(default)]
+    workplace_type: Option<String>,
 }
 
 /// Deserialize each position row independently, dropping (with a debug log)
@@ -157,6 +163,11 @@ pub(crate) fn parse_comeet_response(
 
         let posted_at = p.time_updated.as_deref().and_then(parse_comeet_time);
 
+        let mut extra = std::collections::HashMap::new();
+        if let Some(wt) = p.workplace_type.as_deref().and_then(parse_work_type) {
+            extra.insert("workType".to_string(), serde_json::json!(wt));
+        }
+
         out.push(JobPosting {
             id: format!("{BOARD_ID}:{uid}"),
             external_id: Some(uid),
@@ -169,7 +180,7 @@ pub(crate) fn parse_comeet_response(
             requirements: None,
             posted_at,
             captured_at: now,
-            extra: std::collections::HashMap::new(),
+            extra,
         });
     }
 

@@ -13,7 +13,7 @@ fn make_input(companies: Vec<String>) -> BoardSearchInput {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,

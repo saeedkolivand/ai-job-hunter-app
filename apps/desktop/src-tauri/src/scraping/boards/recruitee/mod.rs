@@ -4,7 +4,9 @@
 /// No global keyword search — requires a company slug. The engine skips this
 /// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{ats_finish_search, ats_partial_note};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -22,10 +24,48 @@ struct Offer {
     city: Option<String>,
     country: Option<String>,
     remote: Option<bool>,
+    hybrid: Option<bool>,
+    #[serde(rename = "on_site")]
+    on_site: Option<bool>,
     #[serde(rename = "created_at")]
     created_at: Option<String>,
     #[serde(rename = "company_name")]
     company_name: Option<String>,
+}
+
+/// Map Recruitee's three independent booleans to a declared work type,
+/// precedence **hybrid > remote > on_site**. Live-measured
+/// (`fastned.recruitee.com/api/offers/`, 27 offers): all three present on
+/// 100% of rows, `(remote,hybrid,on_site)` = `(F,T,F)`×25, `(F,F,T)`×2 — but
+/// that is ONE tenant, so exclusivity is NOT assumed as an invariant here
+/// (unlike SmartRecruiters' proven exact partition). All-false or all-absent
+/// maps to `Unknown` (writes nothing).
+fn recruitee_work_type(
+    remote: Option<bool>,
+    hybrid: Option<bool>,
+    on_site: Option<bool>,
+) -> Option<WorkType> {
+    if hybrid == Some(true) {
+        Some(WorkType::Hybrid)
+    } else if remote == Some(true) {
+        Some(WorkType::Remote)
+    } else if on_site == Some(true) {
+        Some(WorkType::OnSite)
+    } else {
+        None
+    }
+}
+
+/// Whether `extra["remote"]` should be written `true`, given the CLASSIFIED
+/// work type — never derived from the raw `remote` boolean directly. Because
+/// [`recruitee_work_type`]'s precedence can resolve a `remote:true` row to
+/// `Hybrid` (exclusivity between the three booleans is NOT assumed as an
+/// invariant here), writing the raw boolean would make `location_filter`'s
+/// "a board-flagged-remote posting can never conflict with a place"
+/// short-circuit fire for a Hybrid job. Standalone so the dual-write
+/// regression is unit-testable without a network round-trip.
+fn recruitee_is_declared_remote(work_type: Option<WorkType>) -> bool {
+    work_type == Some(WorkType::Remote)
 }
 
 #[derive(Debug, Deserialize)]
@@ -167,8 +207,12 @@ impl Scraper for RecruiteeScraper {
                     captured_at: now,
                     extra: {
                         let mut map = std::collections::HashMap::new();
-                        if let Some(remote) = o.remote {
-                            map.insert("remote".to_string(), serde_json::json!(remote));
+                        let work_type = recruitee_work_type(o.remote, o.hybrid, o.on_site);
+                        if recruitee_is_declared_remote(work_type) {
+                            map.insert("remote".to_string(), serde_json::json!(true));
+                        }
+                        if let Some(wt) = work_type {
+                            map.insert("workType".to_string(), serde_json::json!(wt));
                         }
                         map
                     },

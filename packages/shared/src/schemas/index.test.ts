@@ -107,21 +107,21 @@ describe('AutopilotCreateSchema', () => {
     ).toThrow();
   });
 
-  it('rejects workType outside enum', () => {
+  it('rejects a workTypes entry outside the enum', () => {
     expect(() =>
       AutopilotCreateSchema.parse({
         ...valid,
-        target: { ...valid.target, workType: 'freelance' },
+        target: { ...valid.target, workTypes: ['freelance'] },
       })
     ).toThrow();
   });
 
-  it('accepts valid workType values', () => {
-    for (const wt of ['remote', 'hybrid', 'on-site']) {
+  it('accepts every valid workTypes combination', () => {
+    for (const wt of [[], ['remote'], ['hybrid'], ['on-site'], ['remote', 'hybrid', 'on-site']]) {
       expect(() =>
         AutopilotCreateSchema.parse({
           ...valid,
-          target: { ...valid.target, workType: wt },
+          target: { ...valid.target, workTypes: wt },
         })
       ).not.toThrow();
     }

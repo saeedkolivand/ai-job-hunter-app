@@ -19,7 +19,7 @@
 import { FormProvider, useForm, useFormContext } from 'react-hook-form';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -148,7 +148,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     boards: ['aggregator'],
     query: 'react developer',
     location: '',
-    workType: 'any',
+    workTypes: [],
     pages: 2,
     dateFilter: '24h',
     watchedCompaniesOnly: false,
@@ -527,6 +527,109 @@ describe('StepTarget — location filter note (PR F integration)', () => {
   it('hides the note when no location is set (default empty location)', () => {
     renderStep({ boards: ['aggregator'], location: '' });
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+});
+
+// ── Work-type multi-select (restored control, deleted as a disabled stub in
+// #614, rebuilt as a real enabled multi-select) ─────────────────────────────
+
+describe('StepTarget — work type multi-select', () => {
+  it('renders all three options unselected by default and toggles aria-pressed on click', async () => {
+    const user = userEvent.setup();
+    renderStep({ workTypes: [] });
+
+    const remote = screen.getByRole('button', { name: 'jobs.workType.remote' });
+    const hybrid = screen.getByRole('button', { name: 'jobs.workType.hybrid' });
+    const onSite = screen.getByRole('button', { name: 'jobs.workType.on-site' });
+    for (const btn of [remote, hybrid, onSite]) {
+      expect(btn).toHaveAttribute('aria-pressed', 'false');
+    }
+
+    await user.click(hybrid);
+    expect(hybrid).toHaveAttribute('aria-pressed', 'true');
+    expect(remote).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('toggling twice returns to unselected (it is a set, not a radio)', async () => {
+    const user = userEvent.setup();
+    renderStep({ workTypes: [] });
+
+    const remote = screen.getByRole('button', { name: 'jobs.workType.remote' });
+    await user.click(remote);
+    expect(remote).toHaveAttribute('aria-pressed', 'true');
+    await user.click(remote);
+    expect(remote).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('seeds selection from a persisted workTypes array', () => {
+    renderStep({ workTypes: ['hybrid', 'on-site'] });
+
+    expect(screen.getByRole('button', { name: 'jobs.workType.hybrid' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'jobs.workType.on-site' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'jobs.workType.remote' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+  });
+
+  it('gives the control group an accessible name', () => {
+    renderStep({ workTypes: [] });
+    expect(
+      screen.getByRole('group', { name: 'autopilot.wizard.target.workType' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows visible "any" microcopy next to the label when the set is empty', () => {
+    renderStep({ workTypes: [] });
+    expect(screen.getByText('jobs.workType.any')).toBeInTheDocument();
+  });
+
+  it('hides the "any" microcopy once at least one work type is picked', () => {
+    renderStep({ workTypes: ['remote'] });
+    expect(screen.queryByText('jobs.workType.any')).toBeNull();
+  });
+
+  it('every option is an independent tab stop — no roving tabindex for a 3-item set', () => {
+    renderStep({ workTypes: [] });
+    const group = screen.getByRole('group', { name: 'autopilot.wizard.target.workType' });
+    // Roving tabindex would set explicit tabIndex={-1}/{0} attributes; a plain
+    // tab stop leaves the native button default (no `tabindex` attribute at
+    // all), so every option in a 3-item set is independently Tab-reachable —
+    // matching ScrapeFilters' manual-search control (same keyboard model).
+    for (const btn of within(group).getAllByRole('button')) {
+      expect(btn).not.toHaveAttribute('tabindex');
+    }
+  });
+});
+
+// ── WorkTypeFilterNote integration ───────────────────────────────────────────
+// Real component, not stubbed, so a wrong prop name at the StepTarget call
+// site would fail this render — mirrors the LocationFilterNote integration
+// block above.
+
+describe('StepTarget — work type filter note integration', () => {
+  it('shows the note when a work type is picked and the selected board does not support it', async () => {
+    const user = userEvent.setup();
+    // catalog stub: aggregator, listed, no `supportsWorkType` — falsy, non-supporting.
+    renderStep({ boards: ['aggregator'], workTypes: [] });
+
+    await user.click(screen.getByRole('button', { name: 'jobs.workType.remote' }));
+
+    // Two `role="note"` elements can coexist (location + work type); scope by content.
+    const notes = screen.getAllByRole('note');
+    expect(notes.some((n) => n.textContent?.includes('jobs.workType.filterSummary'))).toBe(true);
+  });
+
+  it('hides the note when no work type is picked (default empty selection)', () => {
+    renderStep({ boards: ['aggregator'], workTypes: [] });
+    const notes = screen.queryAllByRole('note');
+    expect(notes.some((n) => n.textContent?.includes('jobs.workType.filterSummary'))).toBe(false);
   });
 });
 

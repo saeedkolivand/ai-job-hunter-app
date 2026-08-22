@@ -1,4 +1,4 @@
-import type { AutopilotSchedule } from '@ajh/shared';
+import type { AutopilotSchedule, WorkTypeOption } from '@ajh/shared';
 
 export interface WizardState {
   name: string;
@@ -8,7 +8,8 @@ export interface WizardState {
   location: string;
   /** Country code captured when the user picks a geocode suggestion (e.g. "gb", "us"). */
   countryCode?: string;
-  workType: 'remote' | 'hybrid' | 'on-site' | 'any';
+  /** Requested work arrangement(s); empty = any (mirrors the manual search form). */
+  workTypes: WorkTypeOption[];
   /**
    * Scraper page budget (integer 1–10) — stored and sent verbatim as `target.pages`.
    * Each board decides what a "page" means (LinkedIn 10 results, The Muse 20) and

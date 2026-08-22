@@ -40,7 +40,7 @@ pub struct AutopilotCreateRequestTarget {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub work_type: Option<String>,
+    pub work_types: Option<Vec<String>>,
     #[serde(default = "default_autopilot_create_request_target_pages")]
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,7 +104,7 @@ pub struct AutopilotUpdateRequestTarget {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub work_type: Option<String>,
+    pub work_types: Option<Vec<String>>,
     #[serde(default = "default_autopilot_update_request_target_pages")]
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]

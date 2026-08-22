@@ -396,7 +396,7 @@ async fn primary_chain(
     // legit hits (better than nothing). The uncertainty was already logged above.
     //
     // NOTE (deliberately under-surfaced, PR D): this salvage path returns the sparse
-    // guessed hits WITHOUT a `BoardScrapeSummary.note`, because only `primary_chain`
+    // guessed hits WITHOUT a `BoardScrapeSummary.notes` entry, because only `primary_chain`
     // (not `AdzunaProvider`, which holds the note sink) knows the guess was salvaged
     // rather than authoritative or replaced. Revisit when PR F threads location
     // context through this path.

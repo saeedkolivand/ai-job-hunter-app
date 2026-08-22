@@ -13,7 +13,7 @@ fn make_input(companies: Vec<String>) -> BoardSearchInput {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -295,6 +295,10 @@ fn parse_workable_response_telecommuting_appends_remote() {
         postings[0].location,
         Some("Berlin, Germany, Remote".to_string())
     );
+    assert_eq!(
+        postings[0].extra.get("workType").and_then(|v| v.as_str()),
+        Some("remote")
+    );
 }
 
 #[test]
@@ -306,6 +310,22 @@ fn parse_workable_response_telecommuting_with_no_other_location_yields_bare_remo
     let postings = parse_workable_response(jobs, "Acme", "acme", 0);
     assert_eq!(postings.len(), 1);
     assert_eq!(postings[0].location, Some("Remote".to_string()));
+}
+
+/// `telecommuting: false` is a binary "not flagged remote", not a positive
+/// on-site declaration — must write nothing to `extra.workType`.
+#[test]
+fn parse_workable_response_telecommuting_false_writes_nothing() {
+    let json = r#"[
+        {"title": "Office Role", "shortcode": "OFF1", "url": "https://apply.workable.com/j/OFF1/", "city": "Berlin", "state": null, "country": "Germany", "telecommuting": false}
+    ]"#;
+    let jobs: Vec<WkJob> = rows_to_jobs(serde_json::from_str(json).unwrap());
+    let postings = parse_workable_response(jobs, "Acme", "acme", 0);
+    assert_eq!(postings.len(), 1);
+    assert!(
+        !postings[0].extra.contains_key("workType"),
+        "telecommuting:false must not write a guessed on-site value"
+    );
 }
 
 #[test]

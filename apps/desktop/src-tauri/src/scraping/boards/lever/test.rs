@@ -79,7 +79,7 @@ async fn empty_companies_returns_empty_without_network() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -157,7 +157,7 @@ async fn partial_company_failure_reports_the_companies_failed_note() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -219,7 +219,7 @@ async fn clean_run_reports_no_note() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -243,6 +243,101 @@ async fn clean_run_reports_no_note() {
     );
 }
 
+/// `workplaceType` truth table: the no-hyphen wire spelling (`onsite`) must
+/// still resolve via [`parse_work_type`], and `unspecified` — 87% of the
+/// live-measured corpus — must write NOTHING (`Unknown`, never a guessed
+/// value).
+#[tokio::test]
+async fn workplace_type_maps_to_extra_work_type() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v0/postings/acme"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {
+                "id": "remote-1",
+                "text": "Remote Engineer",
+                "hostedUrl": "https://jobs.lever.co/acme/remote-1",
+                "workplaceType": "remote",
+            },
+            {
+                "id": "hybrid-1",
+                "text": "Hybrid Engineer",
+                "hostedUrl": "https://jobs.lever.co/acme/hybrid-1",
+                "workplaceType": "hybrid",
+            },
+            {
+                "id": "onsite-1",
+                "text": "Onsite Engineer",
+                "hostedUrl": "https://jobs.lever.co/acme/onsite-1",
+                "workplaceType": "onsite",
+            },
+            {
+                "id": "unspecified-1",
+                "text": "Unspecified Engineer",
+                "hostedUrl": "https://jobs.lever.co/acme/unspecified-1",
+                "workplaceType": "unspecified",
+            },
+        ])))
+        .mount(&server)
+        .await;
+
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+        on_truncation: None,
+        on_note: None,
+    };
+    let input = BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        provider_amount: None,
+        date_filter: None,
+        job_type: None,
+        work_types: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: vec!["acme".to_string()],
+    };
+
+    let out = LeverScraper
+        .search_with_base(&server.uri(), input, ctx)
+        .await
+        .expect("mocked run must succeed");
+
+    let work_type = |id: &str| -> Option<String> {
+        out.iter()
+            .find(|p| p.external_id.as_deref() == Some(id))
+            .and_then(|p| p.extra.get("workType"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(work_type("remote-1"), Some("remote".to_string()));
+    assert_eq!(work_type("hybrid-1"), Some("hybrid".to_string()));
+    assert_eq!(
+        work_type("onsite-1"),
+        Some("on-site".to_string()),
+        "the no-hyphen wire spelling 'onsite' must still normalize"
+    );
+    assert_eq!(
+        work_type("unspecified-1"),
+        None,
+        "'unspecified' must write nothing, not a guessed value"
+    );
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {
@@ -255,7 +350,7 @@ async fn live_search_returns_results() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,

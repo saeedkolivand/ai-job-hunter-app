@@ -1,7 +1,8 @@
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
-import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
+import { type DATE_FILTER_OPTIONS, WORK_TYPE_OPTIONS, type WorkTypeOption } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, LocationInput, NumberField } from '@ajh/ui';
 
@@ -14,6 +15,11 @@ interface Props {
   boardConnected: boolean;
   onFormChange: (updates: Partial<ScrapeFormState>) => void;
   onGeocode: (query: string) => Promise<{ display: string }[]>;
+}
+
+/** Toggle membership of `opt` in the array without mutation. */
+function toggleWorkType(workTypes: WorkTypeOption[], opt: WorkTypeOption): WorkTypeOption[] {
+  return workTypes.includes(opt) ? workTypes.filter((w) => w !== opt) : [...workTypes, opt];
 }
 
 const LABEL =
@@ -126,6 +132,56 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
               disabled={scraping}
               className="w-full bg-field shadow-none text-xs text-foreground disabled:opacity-50"
             />
+          </div>
+          <div>
+            <label className={LABEL}>
+              {t('jobs.workType.label')}
+              {/* Empty set silently means "any" — three neutral, identically
+                  unselected buttons read as broken/unset otherwise. Mirrors
+                  the "Any time" placeholder idiom the Posted Dropdown above
+                  uses for its own empty state. */}
+              {form.workTypes.length === 0 && (
+                <span className="ml-1 font-normal normal-case tracking-normal text-foreground/35">
+                  · {t('jobs.workType.any')}
+                </span>
+              )}
+            </label>
+            {/* Multi-select set, not a Dropdown — a Dropdown can't express a set.
+                Empty = any, all three = all (byte-equivalent to no filter on
+                every board that validates the param). Mirrors the board picker
+                idiom in ScrapeForm/index.tsx. Plain tab stops, not roving
+                tabindex — that pattern earns its keep on the ~26-item board
+                picker it was copied from, but for 3 items it breaks the
+                standard "Tab moves to the next toggle" expectation for no
+                efficiency win. */}
+            <div
+              data-testid={TEST_IDS.jobs.workTypeFilter}
+              role="group"
+              aria-label={t('jobs.workType.label')}
+              className="flex flex-wrap gap-1.5"
+            >
+              {WORK_TYPE_OPTIONS.map((opt) => {
+                const active = form.workTypes.includes(opt);
+                return (
+                  <Button
+                    key={opt}
+                    aria-pressed={active}
+                    variant="ghost"
+                    disabled={scraping}
+                    onClick={() => onFormChange({ workTypes: toggleWorkType(form.workTypes, opt) })}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-[11px] transition-all',
+                      active
+                        ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
+                        : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80',
+                      'disabled:cursor-not-allowed disabled:opacity-40'
+                    )}
+                  >
+                    {t(`jobs.workType.${opt}`)}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

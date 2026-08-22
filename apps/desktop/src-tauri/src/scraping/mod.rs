@@ -13,4 +13,4 @@ pub mod types;
 
 pub use board_health::{BoardHealth, BoardHealthEntry, BoardHealthStatus, BoardHealthStore};
 pub use engine::{BoardScrapeSummary, ScraperEngine};
-pub use types::{BoardSearchInput, JobPosting, LocationSpec};
+pub use types::{BoardSearchInput, JobPosting, LocationSpec, WorkType};

@@ -20,7 +20,7 @@ fn summary_full(
         error: error.map(String::from),
         skipped: skipped.map(String::from),
         truncated: truncated.map(String::from),
-        note: None,
+        notes: Vec::new(),
         health: None,
     }
 }

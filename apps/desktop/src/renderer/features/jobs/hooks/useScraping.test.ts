@@ -53,6 +53,7 @@ function makeForm(overrides: Partial<ScrapeFormState> = {}): ScrapeFormState {
     amount: 25,
     dateFilter: '',
     companies: [],
+    workTypes: [],
     ...overrides,
   };
 }
@@ -120,6 +121,79 @@ describe('useScraping — companies field in scrapeBoards payload', () => {
     expect(mutateAsync).toHaveBeenCalledOnce();
     const payload = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(payload).toHaveProperty('companies', ['stripe', 'airbnb']);
+  });
+});
+
+describe('useScraping — workTypes field in scrapeBoards payload', () => {
+  it('omits workTypes from the payload when the array is empty', async () => {
+    const form = makeForm({ workTypes: [] });
+
+    const { result } = renderHookWithClient(() => useScraping(noopNotify, form));
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(mutateAsync).toHaveBeenCalledOnce();
+    const payload = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('workTypes');
+  });
+
+  it('includes workTypes in the payload when the array is non-empty', async () => {
+    const form = makeForm({ workTypes: ['remote', 'hybrid'] });
+
+    const { result } = renderHookWithClient(() => useScraping(noopNotify, form));
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(mutateAsync).toHaveBeenCalledOnce();
+    const payload = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).toHaveProperty('workTypes', ['remote', 'hybrid']);
+  });
+});
+
+describe('useScraping — workTypes in the replace-vs-append search signature', () => {
+  it('replaces (not appends) when only the requested work type differs', async () => {
+    // The bug this pins: omitting workTypes from the signature means changing
+    // the work-type filter and pressing "Show more" would APPEND results from
+    // a different filter instead of replacing them.
+    const { result, rerender } = renderHookWithClient(
+      ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
+      { initialProps: { form: makeForm({ workTypes: ['remote'] }) } }
+    );
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    rerender({ form: makeForm({ workTypes: ['hybrid'] }) });
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(sentReplace(1)).toBe(true);
+  });
+
+  it('appends when the requested work-type set is identical regardless of order', async () => {
+    const { result, rerender } = renderHookWithClient(
+      ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
+      { initialProps: { form: makeForm({ workTypes: ['remote', 'hybrid'] }) } }
+    );
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    // Sorted+joined signature: order must not matter.
+    rerender({ form: makeForm({ workTypes: ['hybrid', 'remote'] }) });
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(sentReplace(0)).toBe(true);
+    expect(sentReplace(1)).toBeUndefined();
   });
 });
 

@@ -14,7 +14,9 @@
 //! board. Confirmed present: `name`, `url`, `published_date` (RFC3339),
 //! `location{name, city, state{name}, country{name}, is_remote}`.
 use super::super::http::fetch_json;
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{
     ats_finish_search, ats_partial_note, is_https_url, is_valid_dns_label_slug, normalize_companies,
 };
@@ -156,6 +158,10 @@ pub(crate) fn parse_breezy_response(
 
         let posted_at = p.published_date.as_deref().and_then(parse_breezy_date);
 
+        // `is_remote` is absent on 2 of 3 live-measured jobs — missing is not
+        // false, so only an explicit `true` writes a value.
+        let declared_remote = p.location.as_ref().and_then(|l| l.is_remote);
+
         let location = p.location.and_then(|l| {
             let is_remote = l.is_remote.unwrap_or(false);
             let mut base = match l.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -184,6 +190,11 @@ pub(crate) fn parse_breezy_response(
             (!base.is_empty()).then_some(base)
         });
 
+        let mut extra = std::collections::HashMap::new();
+        if declared_remote == Some(true) {
+            extra.insert("workType".to_string(), serde_json::json!(WorkType::Remote));
+        }
+
         out.push(JobPosting {
             id: format!("{BOARD_ID}:{url}"),
             external_id: Some(url.clone()),
@@ -196,7 +207,7 @@ pub(crate) fn parse_breezy_response(
             requirements: None,
             posted_at,
             captured_at: now,
-            extra: std::collections::HashMap::new(),
+            extra,
         });
     }
 

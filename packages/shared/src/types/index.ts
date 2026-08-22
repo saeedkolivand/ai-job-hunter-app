@@ -6,7 +6,7 @@
 import type { z } from 'zod';
 
 import type { BoardScrapeSummary } from '../ipc/contracts/boards.js';
-import type { AiStreamChunkSchema, JobEventSchema } from '../schemas/index.js';
+import type { AiStreamChunkSchema, JobEventSchema, WorkTypeOption } from '../schemas/index.js';
 
 export type Locale = 'en' | 'de' | 'fr' | 'es' | 'it' | 'tr' | 'pt' | 'ru' | 'zh' | 'ja' | 'ko';
 
@@ -97,6 +97,14 @@ export interface JobPosting {
   postedAt?: number;
   capturedAt: number;
   trust?: JobTrustAssessment;
+  /**
+   * Declared work arrangement, when the board's own payload states one — a
+   * later phase attaches it via the Rust side's serde-flattened `extra` map,
+   * so (like `trust`) this is hand-synced with the Rust `JobPosting`, not
+   * Zod-derived. Absent means undeclared, not on-site — most boards (e.g.
+   * Greenhouse, Personio) state nothing at all.
+   */
+  workType?: WorkTypeOption;
   /** Board-specific metadata (salary, remote status, etc.) */
   [key: string]: unknown;
 }
@@ -347,7 +355,7 @@ export interface Autopilot {
     query: string;
     location?: string;
     countryCode?: string;
-    workType?: 'remote' | 'hybrid' | 'on-site';
+    workTypes?: WorkTypeOption[];
     pages: number;
     dateFilter?: string;
     /**
