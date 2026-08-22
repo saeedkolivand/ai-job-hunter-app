@@ -20,7 +20,7 @@ The UI already has per-board scraping since the introduction of company-scoped A
 
 **Board coverage:**
 
-- 13 boards declare a workplace value on their public API
+- Most boards declare a workplace value on their public API (see the per-board table in `docs/SCRAPING_ENDPOINTS.md`)
 - 4 boards are all-remote by definition (RemoteOK, Remotive, WWR, Jobicy)
 - 9 boards have no workplace signal at all (Greenhouse, Personio, LinkedIn, YCombinator, Adzuna aggregator, and others)
 
@@ -61,14 +61,14 @@ The UI already has per-board scraping since the introduction of company-scoped A
 
 ### Classifier, engine, UI, i18n
 
-| Layer      | Shape                                                                    | Notes                                                |
-| ---------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
-| Classifier | `work_type_filter.rs`: `WorkTypeVerdict` enum                            | Remote / Hybrid / OnSite / Unknown                   |
-| Engine     | `keep_item` predicate composes both filters                              | Location mismatch + work-type mismatch (independent) |
-| Note       | `work-type-filtered:<n>` token                                           | Emitted unconditionally when work type requested     |
-| UI         | Three surfaces: manual search / autopilot wizard / jobs-page view filter | Multi-select, empty = "any"                          |
-| IPC        | `ScrapeRequest.workTypes`, `AutopilotTarget.workTypes`                   | `z.array(z.enum(WORK_TYPE_OPTIONS)).max(3)`          |
-| i18n       | `jobs.workType.*` nested keys                                            | Label, remote, hybrid, on-site, filterHint           |
+| Layer      | Shape                                                                    | Notes                                                              |
+| ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Classifier | `work_type_filter.rs`: `WorkTypeVerdict` enum                            | Remote / Hybrid / OnSite / Unknown                                 |
+| Engine     | `keep_item` predicate composes both filters                              | Location mismatch + work-type mismatch (independent)               |
+| Note       | `work-type-filtered:<n>` token                                           | Emitted unconditionally when work type requested                   |
+| UI         | Three surfaces: manual search / autopilot wizard / jobs-page view filter | Multi-select, empty = "any"                                        |
+| IPC        | `ScrapeRequest.workTypes`, `AutopilotTarget.workTypes`                   | `z.array(z.enum(WORK_TYPE_OPTIONS)).max(WORK_TYPE_OPTIONS.length)` |
+| i18n       | `jobs.workType.*` nested keys                                            | Label, remote, hybrid, on-site, any, filterSummary                 |
 
 ## Alternatives considered
 
@@ -79,14 +79,13 @@ The UI already has per-board scraping since the introduction of company-scoped A
 | Send `f_WT` to LinkedIn's guest endpoint                                  | Guest endpoint is facet-stripped for anonymous callers (measured: `f_WT=1` and `f_WT=2` overlapped 30/49; control arm also overlapped). Creates a filter that lies.                                              |
 | Push `work_mode` filter to Freehire upstream                              | 72% of corpus undeclared. Pushing upstream silently discards 72% of the board. Local filter keeps the Unknown rows.                                                                                              |
 | Persist a `work_type` candidate preference on `job_preferences`           | Column was deliberately dropped by `drop_unused_job_preferences_columns` migration (ADR-013 deferral). Resurrect only if we have new use case (none today).                                                      |
-| Two-phase training: measure prevalence, then choose depth by board        | Premature optimization. 13 boards declare; that is enough coverage to launch. Text inference can be added post-launch if needed (it won't be).                                                                   |
+| Two-phase training: measure prevalence, then choose depth by board        | Premature optimization. Enough boards declare a value to launch on declared data alone. Text inference can be added post-launch if needed (it won't be).                                                         |
 
 ## Consequences
 
-- **Registry expanded from 23 to 23 boards** (no new/retired boards; all existing boards already have the infra to emit `extra.workType`).
 - **Majority-Unknown is kept.** Lever (87% unspecified), Freehire (72% undeclared) users can now filter by the 13% and 28% they do declare, with the rest kept for fallback matching.
 - **SmartRecruiters narrows upstream.** Only verified board that accepts the filter param validates it. Saves network on large companies (Cloudflare, Uber, etc. with 1000s of postings).
-- **LinkedIn filter not exposed.** Guest endpoint is facet-stripped; authenticated path untested. No user-visible loss (89% of users don't connect LinkedIn login anyway).
+- **LinkedIn filter not exposed.** The guest endpoint is facet-stripped for anonymous callers (measured twice; the `f_JT` control arm failed identically). The cookie'd path is a different cell and is UNTESTED — do not assume it behaves the same. LinkedIn postings therefore read as `Unknown` and are always kept, so the cost is a filter that does not narrow LinkedIn, not results going missing.
 - **Text inference deferred.** Can be added post-launch; no refactoring needed (classifier boundary is clean). Inferred fields would write to `extra.workType` same as declared fields.
 - **Note-slot contention fixed.** `BoardScrapeSummary.note` widened to `notes: Vec<String>` so both `location-filtered` and `work-type-filtered` can coexist on one board (precedence: board-native, location, work-type, aggregator).
 

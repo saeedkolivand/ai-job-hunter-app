@@ -884,7 +884,7 @@ Each skip reason is surfaced separately in the scrape results UI with its own re
 
 ## Work-type (remote / hybrid / on-site) support summary — Live verified 2026-08-22
 
-Declared data only. 13 boards emit a `work_mode` / `workType` / `workplace_type` field; all others map to `Unknown`. No text inference.
+Declared data only. Eleven boards read a workplace field their API actually declares and four all-remote boards write a constant, so fifteen write `extra.workType`; every other board maps to `Unknown`. No text inference.
 
 **Upstream filter (sends param to the board):** Only **SmartRecruiters** validates the input in v1.
 

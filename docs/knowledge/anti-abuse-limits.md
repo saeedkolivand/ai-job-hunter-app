@@ -1,6 +1,6 @@
 # Anti-Abuse Rate & Concurrency Limits
 
-Last updated: 2026-08-17
+Last updated: 2026-08-22
 
 Canonical source: `apps/desktop/src-tauri/src/limits/mod.rs`
 
@@ -13,7 +13,7 @@ The `limits` module provides **in-memory rate limiting + concurrency control** o
 - `agent_run`: Agentic loop command (fans out into multiple turns)
 - `scrape_board` / `scrape_url`: Web scraping (target rate-limits, IP bans)
 
-The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: server-side cap enforced by `max_boards_per_batch()` in `apps/desktop/src-tauri/src/scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads. The engine-level bound scales automatically as new boards are added to the registry (see `max_boards_per_batch()` source; no `scraping/engine` code edit required). Note: the shared Zod schemas in `packages/shared/src/schemas/index.ts` (ScrapeBoardsRequestSchema `.max(BOARD_IDS.length)`) independently bound request size at the IPC boundary; scaling is subject to both limits.
+The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: server-side cap enforced by `max_boards_per_batch()` in `apps/desktop/src-tauri/src/scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads. The engine-level bound scales automatically as new boards are added to the registry (see `max_boards_per_batch()` source; no `scraping/engine` code edit required). Note: `ScrapeBoardsRequestSchema` in `packages/shared/src/schemas/index.ts` carries matching `.max(...)` bounds, but it is a **typecheck-time guard only** — that schema is never `.parse()`d at runtime (its only consumers are `gen-ipc-rust.ts` and `z.infer`), and the generated Rust field is an unbounded `Vec<String>`. The Rust-side bound is therefore the ONLY runtime control, not one of two.
 
 ## Design
 
