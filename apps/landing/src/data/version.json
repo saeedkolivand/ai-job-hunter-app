@@ -1,13 +1,13 @@
 {
-  "version": "0.141.2",
-  "releasedAt": "2026-08-22T03:21:16.412Z",
+  "version": "0.142.0",
+  "releasedAt": "2026-08-22T06:40:00.306Z",
   "installers": {
-    "macArm": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.141.2/macos-AI-Job-Hunter_0.141.2_aarch64-apple-silicon.dmg",
-    "macIntel": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.141.2/macos-AI-Job-Hunter_0.141.2_x64-intel.dmg",
-    "winExe": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.141.2/windows-AI-Job-Hunter_0.141.2_x64-setup.exe",
-    "winMsi": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.141.2/windows-AI-Job-Hunter_0.141.2_x64_en-US.msi",
-    "linuxAppImage": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.141.2/linux-AI-Job-Hunter_0.141.2_amd64.AppImage",
-    "linuxDeb": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.141.2/linux-AI-Job-Hunter_0.141.2_amd64.deb",
-    "linuxRpm": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.141.2/linux-AI-Job-Hunter-0.141.2-1.x86_64.rpm"
+    "macArm": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.142.0/macos-AI-Job-Hunter_0.142.0_aarch64-apple-silicon.dmg",
+    "macIntel": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.142.0/macos-AI-Job-Hunter_0.142.0_x64-intel.dmg",
+    "winExe": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.142.0/windows-AI-Job-Hunter_0.142.0_x64-setup.exe",
+    "winMsi": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.142.0/windows-AI-Job-Hunter_0.142.0_x64_en-US.msi",
+    "linuxAppImage": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.142.0/linux-AI-Job-Hunter_0.142.0_amd64.AppImage",
+    "linuxDeb": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.142.0/linux-AI-Job-Hunter_0.142.0_amd64.deb",
+    "linuxRpm": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.142.0/linux-AI-Job-Hunter-0.142.0-1.x86_64.rpm"
   }
 }
