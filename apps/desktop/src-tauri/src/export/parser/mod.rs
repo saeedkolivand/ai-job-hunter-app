@@ -248,11 +248,24 @@ pub(crate) fn is_project_stack_shaped(clean: &str) -> bool {
 /// extraction keeps the words and drops the styling, so a candidate's own CV
 /// carrying a perfectly-formed project block has no `**` and no `•` anywhere.
 ///
-/// The shape itself is the fallback signal: a short, non-sentence line whose
-/// NEXT line is a technology stack is a title. The stack line is what makes it
-/// unambiguous — prose does not sit directly above a `·`-separated list — and the
-/// line must not be a stack itself, or a two-stack sequence would open an entry
-/// on the second one.
+/// Three conditions, and all three are load-bearing:
+///
+/// * `at_paragraph_start` — the line opens a paragraph (first content line of
+///   the section, or preceded by a blank). Entries are separated by blank lines
+///   and a description line never is, which is what stops an unpunctuated line
+///   INSIDE an entry from hijacking a following stack line: `Used by 200 teams`
+///   above a second `Go · gRPC · Redis` line is prose, not a new project.
+/// * The next line is a technology stack — prose does not sit directly above a
+///   `·`-separated list. Callers must not look past the end of the section for
+///   it, or a separator-bearing HEADING (`SKILLS · TOOLS`) makes a title out of
+///   the last line of Projects.
+/// * The line is short, is not a sentence, and is not a stack itself — or a
+///   two-stack sequence would open an entry on the second one.
+///
+/// KNOWN LIMIT: a section whose entries are not blank-separated, or that has no
+/// stack lines at all, has no shape signal and is left to the markdown rules.
+/// Pinned by tests; widening it trades false negatives for false positives on a
+/// candidate's real prose, which is the worse failure.
 ///
 /// `pub(crate)` and deliberately SHARED: `model::adapter` groups a section into
 /// render entries with it and `validate::content::project_entry_starts` groups
@@ -260,9 +273,14 @@ pub(crate) fn is_project_stack_shaped(clean: &str) -> bool {
 /// answer to "where does an entry begin" would shift every following line by one
 /// — turning a stack line into a description and a truthful document into a
 /// `consistency.project_structure` warning.
-pub(crate) fn is_project_title_shaped(clean: &str, next_clean: Option<&str>) -> bool {
+pub(crate) fn is_project_title_shaped(
+    clean: &str,
+    next_clean: Option<&str>,
+    at_paragraph_start: bool,
+) -> bool {
     let clean = clean.trim();
-    !clean.is_empty()
+    at_paragraph_start
+        && !clean.is_empty()
         && clean.chars().count() <= 100
         && !clean.ends_with(['.', '!', '?'])
         && !is_project_stack_shaped(clean)

@@ -475,10 +475,18 @@ enum ProjectTier {
 /// second answer to "where does an entry begin" there would shift every
 /// subsequent line by one — turning a stack line into a description and a
 /// truthful document into a `consistency.project_structure` warning.
-pub fn project_entry_starts(line: &ParsedLine, next: Option<&ParsedLine>) -> bool {
+pub fn project_entry_starts(
+    line: &ParsedLine,
+    next: Option<&ParsedLine>,
+    at_paragraph_start: bool,
+) -> bool {
     matches!(line.kind, LineKind::Bullet)
         || line.segments.iter().any(|s| s.bold)
-        || crate::export::parser::is_project_title_shaped(&line.text, next.map(|n| n.text.as_str()))
+        || crate::export::parser::is_project_title_shaped(
+            &line.text,
+            next.map(|n| n.text.as_str()),
+            at_paragraph_start,
+        )
 }
 
 /// Group a projects section's non-blank lines into entries.
@@ -492,14 +500,22 @@ pub fn project_entry_starts(line: &ParsedLine, next: Option<&ParsedLine>) -> boo
 pub(super) fn project_entries(section: &Section) -> Vec<Vec<&ParsedLine>> {
     // Collected first: the shape rule reads the NEXT content line, and blanks
     // (which separate projects) must not hide the following title from it.
-    let lines: Vec<&ParsedLine> = section
-        .lines
-        .iter()
-        .filter(|l| !matches!(l.kind, LineKind::Blank) && !l.text.trim().is_empty())
-        .collect();
+    // Each kept line carries whether it OPENED a paragraph, computed before the
+    // blanks are dropped — the shape rule needs it and the filter destroys it.
+    let mut lines: Vec<(&ParsedLine, bool)> = Vec::new();
+    let mut at_paragraph_start = true;
+    for line in &section.lines {
+        if matches!(line.kind, LineKind::Blank) || line.text.trim().is_empty() {
+            at_paragraph_start = true;
+            continue;
+        }
+        lines.push((line, at_paragraph_start));
+        at_paragraph_start = false;
+    }
     let mut entries: Vec<Vec<&ParsedLine>> = Vec::new();
-    for (idx, line) in lines.iter().enumerate() {
-        let starts_entry = project_entry_starts(line, lines.get(idx + 1).copied());
+    for (idx, (line, opens_paragraph)) in lines.iter().enumerate() {
+        let starts_entry =
+            project_entry_starts(line, lines.get(idx + 1).map(|(l, _)| *l), *opens_paragraph);
         if starts_entry || entries.is_empty() {
             entries.push(vec![line]);
         } else if let Some(last) = entries.last_mut() {

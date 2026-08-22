@@ -186,15 +186,22 @@ static MD_LINK_RE: LazyLock<Regex> =
 pub(crate) fn entries(section: &SourceSection) -> Vec<Vec<&SourceLine>> {
     // Collected first: the shape rule reads the NEXT content line, and blanks
     // (which separate projects) must not hide the following title from it.
-    let lines: Vec<&SourceLine> = section
-        .lines
-        .iter()
-        .filter(|l| !matches!(l.parsed.kind, LineKind::Blank) && !l.parsed.text.trim().is_empty())
-        .collect();
+    // Each kept line carries whether it OPENED a paragraph, computed before the
+    // blanks are dropped — the shape rule needs it and the filter destroys it.
+    let mut lines: Vec<(&SourceLine, bool)> = Vec::new();
+    let mut at_paragraph_start = true;
+    for line in &section.lines {
+        if matches!(line.parsed.kind, LineKind::Blank) || line.parsed.text.trim().is_empty() {
+            at_paragraph_start = true;
+            continue;
+        }
+        lines.push((line, at_paragraph_start));
+        at_paragraph_start = false;
+    }
     let mut out: Vec<Vec<&SourceLine>> = Vec::new();
-    for (idx, line) in lines.iter().enumerate() {
-        let next = lines.get(idx + 1).map(|l| &l.parsed);
-        if project_entry_starts(&line.parsed, next) || out.is_empty() {
+    for (idx, (line, opens_paragraph)) in lines.iter().enumerate() {
+        let next = lines.get(idx + 1).map(|(l, _)| &l.parsed);
+        if project_entry_starts(&line.parsed, next, *opens_paragraph) || out.is_empty() {
             out.push(vec![line]);
         } else if let Some(last) = out.last_mut() {
             last.push(line);
