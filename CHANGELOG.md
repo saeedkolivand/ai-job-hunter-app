@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.141.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.141.0...v0.141.1) (2026-08-22)
+
+### 🐛 Bug Fixes
+
+* **export:** render projects from resumes imported as pdf or docx ([#1072](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1072)) ([c2df7bf](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c2df7bf6ea04914c8981ccf1961f4457a44ab228))
+
 ## [0.141.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.140.0...v0.141.0) (2026-08-21)
 
 ### ✨ Features
