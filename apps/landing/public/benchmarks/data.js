@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787380104754,
+  "lastUpdate": 1787412145313,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "d888929429b677e7d25c06ecdc26aabfec883fc7",
-          "message": "feat: suggest saved answers for application form questions (#637)\n\n* feat: suggest saved answers for application form questions\n\nNew answers.suggest verb: the popup scans empty labeled fields and the\ndesktop matches them against all stored application answers with a pure\nlocal token-jaccard matcher (punctuation-stripping tokenizer, threshold\n0.4, one suggestion per question, capped). Suggestions render with copy\nand a fail-safe single-field fill; salary-like and duplicate-labeled\nquestions are copy-only. Gated on the autofill opt-in; the settings\ndisclosure now spells out the answers flow in both locales.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: harden salary detection and fill correlation against page variance\n\nRe-tokenize on non-alphanumeric boundaries before the salary-keyword\nsubstring check so hyphen/slash questions (\"Day-rate\", \"day/rate\") are\nno longer missed and wrongly offered a Fill button. Thread the\nscan-time same-question occurrence count through the answer-fill\nrequest/message/injected-arg chain so the fill-time re-scan refuses\nwhen a same-labelled field was inserted/removed since the scan,\ninstead of silently filling whatever now sits at that index. Add a\nnear-miss (0.375 < 0.4) negative regression pair for the suggest\nmatcher.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: match salary tokens exactly and pretokenize suggestion candidates\n\nSingle-word salary keywords now require a whole-token match instead of a\nsubstring one (fixes \"paid\" false-positiving inside \"unpaid\"); candidate and\nquestion tokenization is cached once instead of redone per jaccard pair.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: surface source question and extend salary rule to matched answers\n\nCloses the stopword footgun where an unrelated question (e.g. \"What is\nyour current location?\") can still cross the matcher's threshold on\nfiller words shared with a stored question (e.g. \"What is your current\nsalary?\"). Rather than stopword-filter the tokenizer or retune\nMIN_SCORE (both risk breaking the short-paraphrase matches it was tuned\nagainst), the popup now always shows the matched candidate's original\nquestion (\"answered as: ...\") so a cross-question match is visually\nself-evident, and the salary Copy-only guard checks BOTH the scanned\ninput question and the matched candidate's own question.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-14T20:31:16+02:00",
-          "tree_id": "c1614c010084440310d12953b3fda5744beb97db",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/d888929429b677e7d25c06ecdc26aabfec883fc7"
-        },
-        "date": 1784055038508,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2243374,
-            "range": "± 41123",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2687158,
-            "range": "± 46550",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 251473,
-            "range": "± 1642",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 189252,
             "range": "± 3048",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc339661d47229b12f5699d97933470e47d96c24",
+          "message": "fix(scraping): send the requested location to freehire (#1075)\n\n* fix(scraping): send the requested location to freehire\n\nfreehire never received the location at all. `FreehireScraper::search` passed\n`None` for geography, so every search fetched the worldwide first page and left\nthe whole job to the engine's central post-filter — which can only narrow the\npage it is handed. A \"Berlin\" search fetched Johannesburg, Bengaluru and\nSingapore, then discarded 38 of 50 rows; the survivors were the ones with a\nblank or remote location the filter conservatively refuses to drop.\n\nThe old comment claimed freehire has no city parameter and that naming a place\nWIDENS the search. Half right. `cities` is documented, and geography is one\nOR-group — `countries=de&cities=Berlin` reads \"Germany or Berlin\" and is indeed\nwider. But a city ALONE narrows, which was never measured (live):\n\n  (none)                      1,348,012\n  countries=de                   41,154\n  countries=de&cities=Berlin     41,241   <- the widening that was measured\n  cities=Berlin                   8,000   <- never measured\n\nSo send exactly ONE geography parameter. The city is resolved through\nfreehire's own `/geo/cities` typeahead first, because the facet holds canonical\ndisplay names and matches nothing on a near miss (`Munich` -> 6,105,\n`Muenchen` -> 0). An unresolvable place falls back to the country, then to no\ngeography — the resolver is an optimisation, never a dependency, so its outage\ndegrades the filter instead of failing the search.\n\nTwo details the API forces:\n\n- Only the city segment is sent. The UI's location is a \"{city}, {country}\"\n  label and freehire splits a comma into two OR'd values, so passing it whole\n  widens (`cities=Berlin, Germany` -> 8,360).\n- The resolved city is re-checked against the country code client-side. City\n  names are not unique (\"London\" is both gb and ca) and the `cities` facet has\n  no country qualifier, so pairing it with `countries` would trip the OR-group.\n\n`supports_location` stays false on purpose: that flag switches OFF the central\npost-filter, and freehire's filter is coarser than the request (`cities=Berlin`\nlegitimately returns \"Remote (Karlsruhe, Berlin, Muenchen, Hamburg)\"). The\nserver-side parameter narrows the page; the post-filter still decides.\n\nLive after the fix, same query: 50 of 50 results in Berlin.\n\nFive tests added, each mutation-checked — reverting to no geography, sending\ncity and country together, dropping the country cross-check, and keeping the\ncomma all fail a distinct test.\n\nAlso corrects two docs that the fix turned into lies: ADR-0005 said freehire\n\"sends no location at all today\", and the scraping domain note pointed at\n`supports_location` for a geography rule that now lives on `fetch_freehire`.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: keep the freehire scraping note a thin pointer\n\nThe paragraph opens by promising \"shape only, because the remaining rules are\nload-bearing and must not be paraphrased here\" — and then the location edit\nparaphrased one: it spelled out the geography facet names and the OR-group\nbehaviour, both of which live on `fetch_freehire`. Name the topic, point at the\nsymbol, and let the source own the rule.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-22T16:58:15+02:00",
+          "tree_id": "a5873d7d574e61ed2005e9a45392ca5054e30667",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/fc339661d47229b12f5699d97933470e47d96c24"
+        },
+        "date": 1787412144968,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2281471,
+            "range": "± 22489",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2708825,
+            "range": "± 32956",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 309589,
+            "range": "± 12719",
             "unit": "ns/iter"
           }
         ]
