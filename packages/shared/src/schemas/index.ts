@@ -187,6 +187,7 @@ export const BOARD_IDS = [
   'comeet',
   // Remote-first / aggregators
   'aggregator',
+  'freehire',
   'remoteok',
   'remotive',
   'arbeitnow',

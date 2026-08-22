@@ -2340,6 +2340,7 @@
       "wwr": "WWR",
       "ycombinator": "YC Jobs",
       "aggregator": "Aggregator",
+      "freehire": "freehire",
       "url": "Web-Import"
     },
     "aggregatorKeyHint": "Fügen Sie Ihren kostenlosen Adzuna-Schlüssel in den Einstellungen hinzu, um die aggregierte Jobsuche zu aktivieren.",

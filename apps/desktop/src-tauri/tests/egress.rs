@@ -103,7 +103,7 @@ const EGRESS: &[Egress] = &[
     Egress { host: "jsearch.p.rapidapi.com", public_name: Some("RapidAPI"), note: "JSearch, aggregator paid fallback tier, via RapidAPI. scraping/boards/aggregator/providers.rs." },
     Egress { host: "jooble.org", public_name: Some("Jooble"), note: "Aggregator last-resort fallback tier. scraping/boards/aggregator/providers.rs." },
     Egress { host: "api.apify.com", public_name: Some("Apify"), note: "Aggregator LinkedIn actor tier — additive, opt-in, paid. scraping/boards/aggregator/providers.rs." },
-    Egress { host: "freehire.me", public_name: Some("freehire"), note: "Aggregator KEYLESS tier — no API key, so it is what a fresh install searches with; runs last, after every keyed tier, and degrades silently. scraping/boards/aggregator/freehire.rs." },
+    Egress { host: "freehire.me", public_name: Some("freehire"), note: "Keyless job board — no API key, so it is the one broad board a fresh install can search with. Selected explicitly in the catalog. scraping/boards/freehire/mod.rs." },
     Egress { host: "api.ashbyhq.com", public_name: None, note: "Ashby ATS board fetch. scraping/boards/ashby/mod.rs." },
     Egress { host: "jobs.ashbyhq.com", public_name: None, note: "Ashby single-pasted-URL resolver. scraping/scrape_url/mod.rs." },
     Egress { host: "api.lever.co", public_name: None, note: "Lever ATS board fetch + single-URL resolver. scraping/boards/lever/mod.rs, scraping/scrape_url/mod.rs." },
