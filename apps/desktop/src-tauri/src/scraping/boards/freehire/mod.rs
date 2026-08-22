@@ -160,6 +160,86 @@ struct FreehireJob {
     work_mode: Option<String>,
 }
 
+/// One match from `GET /geo/cities` — freehire's city typeahead.
+#[derive(Debug, Deserialize)]
+struct FreehireCity {
+    value: String,
+    #[serde(default)]
+    country: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct FreehireCityEnvelope {
+    #[serde(default)]
+    data: Vec<FreehireCity>,
+}
+
+/// Resolve a free-text place to freehire's canonical `cities` facet value.
+///
+/// The facet holds canonical display names and **matches nothing on a near
+/// miss** (live-verified: `cities=Munich` → 6,105 postings, `cities=München`
+/// → 0), so the spec tells callers to resolve first — that is what this does.
+/// The free text is also cut at the first comma: the UI's location is a
+/// `"{city}, {country}"` label from `commands::geocoding`, and freehire splits
+/// a comma into two OR'd values, so passing it whole WIDENS the search
+/// (`cities=Berlin` → 8,000, `cities=Berlin, Germany` → 8,360).
+///
+/// `country` disambiguates: city names are not unique ("London" is both `gb`
+/// and `ca`) and the `cities` facet has no country qualifier, so the filtering
+/// has to happen here rather than by also sending `countries` — see
+/// [`fetch_freehire`] on the geography OR-group.
+///
+/// `None` on any failure (unknown place, network, cancelled). The caller
+/// degrades to a country filter or to no geography at all, never to an error:
+/// a place freehire has never heard of must not fail the whole search.
+async fn resolve_freehire_city(
+    base_url: &str,
+    place: &str,
+    country: Option<&str>,
+    signal: tokio_util::sync::CancellationToken,
+) -> Option<String> {
+    let city = place.split(',').next()?.trim();
+    if city.is_empty() {
+        return None;
+    }
+
+    let mut url = format!(
+        "{}/geo/cities?q={}",
+        base_url.trim_end_matches('/'),
+        urlencoding::encode(city)
+    );
+    if let Some(cc) = country.map(str::trim).filter(|c| !c.is_empty()) {
+        url.push_str(&format!("&country={}", urlencoding::encode(cc)));
+    }
+
+    let resp = fetch_json::<FreehireCityEnvelope>(
+        &url,
+        FetchOptions {
+            retries: 0,
+            timeout: Some(std::time::Duration::from_secs(10)),
+            user_agent: Some(freehire_user_agent()),
+            ..FetchOptions::default()
+        },
+        signal,
+    )
+    .await
+    .ok()?;
+
+    // An exact name match wins over the typeahead's first prefix hit, so
+    // "Amsterdam" resolves to Amsterdam and not "Amsterdam Nieuw-West".
+    // `country` is re-checked here because it is only a *hint* to the endpoint.
+    let matches_country = |c: &FreehireCity| match (country, c.country.as_deref()) {
+        (Some(want), Some(got)) => want.eq_ignore_ascii_case(got),
+        (Some(_), None) => false,
+        (None, _) => true,
+    };
+    resp.data
+        .iter()
+        .find(|c| c.value.eq_ignore_ascii_case(city) && matches_country(c))
+        .or_else(|| resp.data.iter().find(|c| matches_country(c)))
+        .map(|c| c.value.clone())
+}
+
 fn map_freehire_job(j: FreehireJob, now: i64) -> Option<JobPosting> {
     let title = j
         .title
@@ -245,20 +325,19 @@ fn map_freehire_job(j: FreehireJob, now: i64) -> Option<JobPosting> {
 /// `FreehireProvider::search`, so these paths stay observable in a test while
 /// the caller still can't turn a freehire outage into a user-facing board error.
 ///
-/// **`location` is deliberately unused.** The documented search takes
-/// `countries` (and region/work-mode/skill facets) but has NO city or free-text
-/// location parameter, so the only place a city could go is `q` — which
-/// full-text-matches title, company and description. Folding a city in there
-/// silently drops every posting that does not happen to spell its city out,
-/// including remote ones, which is worse than the country-level filter this
-/// tier already applies. City precision stays the keyed tiers' job; this one is
-/// a keyless floor, not a replacement for them.
+/// **Geography is ONE OR-group.** `regions`, `countries` and `cities` name a
+/// single concept — *where* — so their values UNION instead of intersecting:
+/// `countries=gb&cities=London` means "United Kingdom **or** London" and is
+/// live-verified WIDER than `countries=gb` alone. The spec's own instruction is
+/// "to search one place, name only that place", so this function sends at most
+/// ONE geography parameter: the resolved city when [`resolve_freehire_city`]
+/// recognises the requested place, otherwise the country, otherwise nothing.
 ///
-/// Not adding `cities` either, though issue #1026 confirms it is real: geography
-/// is a single OR-group on this API (`countries=gb` → 89,211;
-/// `countries=gb&cities=London` → 89,617 — WIDER, not narrower, live-verified),
-/// so folding a city in would need a location-UI decision this change doesn't
-/// make. Left as a follow-up, not silently worked around here.
+/// (An earlier revision sent no geography at all and left the whole job to the
+/// engine's post-filter. That does not work on a paged API: the filter can only
+/// narrow the page it is handed, and an unfiltered first page of 50 is drawn
+/// from ~1.3M worldwide postings — a "Berlin" search fetched Johannesburg,
+/// Bengaluru and Singapore and then discarded nearly all of it.)
 ///
 /// **`reality=fresh` is always sent, unconditionally.** freehire's `reality`
 /// facet (`fresh`/`stale`/`likely-evergreen`) is live-verified to cut the
@@ -291,6 +370,7 @@ fn map_freehire_job(j: FreehireJob, now: i64) -> Option<JobPosting> {
 async fn fetch_freehire(
     base_url: &str,
     query: &str,
+    location: Option<&str>,
     country: Option<&str>,
     date_filter: Option<&str>,
     amount: Option<u32>,
@@ -309,21 +389,22 @@ async fn fetch_freehire(
     if !query.is_empty() {
         url.push_str(&format!("&q={}", urlencoding::encode(query)));
     }
-    // `None` means "do not filter by country", and that is what this board
-    // sends today: see `Scraper::supports_location`, which stays `false` here
-    // because freehire's geography facets are a single OR-GROUP — measured,
-    // `countries=gb` returns 89,211 postings and `countries=gb&cities=London`
-    // returns 89,617, so adding a place WIDENS the result instead of narrowing
-    // it. A board that claimed server-side location support would switch off
-    // the engine's central post-filter, which is the only thing actually
-    // narrowing this board's results to the requested place.
-    //
-    // The parameter is kept (rather than dropped) because the facet itself is
-    // real and correct for a caller that has a CHOSEN, non-guessed country;
-    // there simply is no such caller now that `BoardSearchInput` carries only
-    // a free-text location.
-    if let Some(country) = country.map(str::trim).filter(|c| !c.is_empty()) {
-        url.push_str(&format!("&countries={}", urlencoding::encode(country)));
+    // Exactly ONE geography parameter — see this function's doc on the OR-group.
+    // The city is preferred because it is what the user actually asked for; the
+    // country is the fallback for a place freehire's dictionary does not know
+    // (an exonym like "München", a village, "Remote"), where a country-wide page
+    // still beats a worldwide one for the engine's post-filter to narrow.
+    let resolved_city = match location.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(place) => resolve_freehire_city(base_url, place, country, signal.clone()).await,
+        None => None,
+    };
+    match (
+        &resolved_city,
+        country.map(str::trim).filter(|c| !c.is_empty()),
+    ) {
+        (Some(city), _) => url.push_str(&format!("&cities={}", urlencoding::encode(city))),
+        (None, Some(cc)) => url.push_str(&format!("&countries={}", urlencoding::encode(cc))),
+        (None, None) => {}
     }
     if let Some(days) = freehire_posted_within_days(date_filter) {
         url.push_str(&format!("&posted_within_days={days}"));
@@ -398,12 +479,14 @@ impl Scraper for FreehireScraper {
         ScraperMode::Http
     }
 
-    /// `false`, deliberately. freehire's geography facets are one OR-GROUP:
-    /// measured, `countries=gb` returns 89,211 postings and
-    /// `countries=gb&cities=London` returns 89,617 — naming a place WIDENS the
-    /// result. Claiming server-side support would switch off the engine's
-    /// central post-filter, which is the only thing narrowing this board to the
-    /// requested location. See `fetch_freehire`'s `country` parameter.
+    /// Still `false`, even though `search` now DOES send a server-side
+    /// geography filter (see `fetch_freehire`). The two are not the same claim:
+    /// `true` would switch off the engine's central post-filter, and freehire's
+    /// filter is coarser than the request — `cities=Berlin` legitimately returns
+    /// "Remote (Karlsruhe, Berlin, München, Hamburg)", the country fallback
+    /// returns a whole country, and an unresolvable place sends no geography at
+    /// all. The server-side parameter narrows the PAGE so the post-filter has
+    /// the right 50 postings to choose from; the post-filter still decides.
     fn supports_location(&self) -> bool {
         false
     }
@@ -423,8 +506,8 @@ impl Scraper for FreehireScraper {
         let out = fetch_freehire(
             FREEHIRE_BASE_URL,
             input.query.trim(),
-            // No country filter — see `supports_location`.
-            None,
+            input.location.as_deref(),
+            input.country_code.as_deref(),
             input.date_filter.as_deref(),
             Some(input.amount),
             ctx.signal.clone(),
