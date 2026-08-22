@@ -72,9 +72,36 @@ fn push_block(block: Block, current: &mut Option<Section>, preamble: &mut Vec<Bl
 /// zero-content case is dropped, so nothing a source document or a generator
 /// actually wrote is ever discarded here.
 fn push_nonempty_section(section: Section, sections: &mut Vec<Section>) {
-    if !section.blocks.is_empty() {
+    if !section.blocks.is_empty() && !is_placeholder_only(&section) {
         sections.push(section);
     }
+}
+
+/// A section whose ENTIRE content is one parenthetical aside, e.g.
+///
+/// ```text
+/// AUSZEICHNUNGEN
+/// (Keine Auszeichnungen im vorliegenden Lebenslauf)
+/// ```
+///
+/// A generator told to omit a section it has no content for sometimes writes
+/// the heading anyway with a note explaining the absence. `push_nonempty_section`
+/// cannot catch that — the section is not empty — so it reached the page as a
+/// real heading advertising that the candidate has no awards, which is strictly
+/// worse than not printing the section at all.
+///
+/// Tested on the SHAPE, not on wording: the note is written in the résumé's own
+/// language, so a keyword list ("Keine", "None", "N/A") would be a permanent
+/// translation debt. A lone paragraph wrapped end to end in parentheses is a
+/// meta-comment about the document in any language; real résumé content is not
+/// written that way.
+fn is_placeholder_only(section: &Section) -> bool {
+    let [Block::Paragraph(runs)] = section.blocks.as_slice() else {
+        return false;
+    };
+    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+    let text = text.trim();
+    text.starts_with('(') && text.ends_with(')') && text.chars().count() > 2
 }
 
 /// The next line with content WITHIN the current section, skipping blanks.
@@ -1301,6 +1328,44 @@ Framework-agnostic component library published to npm.
             vec!["Used by 200 teams", "Go · gRPC · Redis"],
             "both later lines stay body content, in order"
         );
+    }
+
+    /// A generator told to omit a section it has no content for sometimes writes
+    /// the heading anyway plus a note explaining the absence. Reported from a
+    /// real export: two headings advertising that the candidate has no awards
+    /// and no publications, which is worse than printing neither.
+    #[test]
+    fn a_section_that_is_only_a_parenthetical_note_is_dropped() {
+        let m = model_from_resume_text(
+            "PROJEKTE\n\n\
+             Ledger CLI   example.dev\n\
+             Rust · SQLite\n\
+             Ein Buchhaltungswerkzeug.\n\n\
+             AUSZEICHNUNGEN\n\
+             (Keine Auszeichnungen im vorliegenden Lebenslauf)\n\n\
+             PUBLIKATIONEN\n\
+             (Keine Publikationen im vorliegenden Lebenslauf)\n",
+        );
+        let headings: Vec<&str> = m.sections.iter().map(|s| s.heading.as_str()).collect();
+        assert_eq!(
+            headings,
+            vec!["PROJEKTE"],
+            "both placeholder sections must be gone"
+        );
+    }
+
+    /// Shape, not wording, so it holds in any language. A section with REAL
+    /// content that merely CONTAINS a parenthetical must survive.
+    #[test]
+    fn a_section_with_real_content_survives_a_parenthetical() {
+        let m = model_from_resume_text(
+            "AWARDS\n\n\
+             Employee of the Year (2024)\n\n\
+             PUBLICATIONS\n\
+             (None)\n",
+        );
+        let headings: Vec<&str> = m.sections.iter().map(|s| s.heading.as_str()).collect();
+        assert_eq!(headings, vec!["AWARDS"]);
     }
 
     /// A2: the same text under a German heading takes the same path. Before this
