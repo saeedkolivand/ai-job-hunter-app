@@ -6,6 +6,7 @@ use crate::postings::{attach_interactions, InteractionRecord, InteractionStore, 
 use crate::scraping::cluster::{
     assign_clusters, posting_cluster_input, ClusterAssignment, ClusterInput,
 };
+use crate::scraping::engine::work_type_filter;
 use crate::scraping::{BoardSearchInput, ScraperEngine};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -161,9 +162,20 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         // Structured search filters from the IPC request (ScrapeBoardsRequestSchema
         // in packages/shared). Optional, so absent fields stay None; LinkedIn's
         // search_paginated honors them and other boards ignore them. UI controls
-        // for these are a follow-up — only the contract + propagation exist today.
+        // for jobType/experienceLevel/etc. are a follow-up — only the contract +
+        // propagation exist today. `work_types` is no longer in that bucket: it
+        // normalises through the shared `WORK_TYPE_OPTIONS`/`WorkType` vocabulary.
         job_type: req.job_type.clone(),
-        work_type: req.work_type.clone(),
+        // Zod already restricts every entry to WORK_TYPE_OPTIONS; `parse_work_type`
+        // is still the parser (never a raw cast) so an unrecognised entry is
+        // dropped instead of silently miscoded — the same defensive posture the
+        // rest of this module takes at an IPC boundary.
+        work_types: req.work_types.clone().map(|types| {
+            types
+                .iter()
+                .filter_map(|s| work_type_filter::parse_work_type(s))
+                .collect()
+        }),
         experience_level: req.experience_level.clone(),
         easy_apply: req.easy_apply,
         actively_hiring: req.actively_hiring,
@@ -697,7 +709,7 @@ mod test {
             provider_amount: None,
             date_filter: None,
             job_type: None,
-            work_type: None,
+            work_types: None,
             experience_level: None,
             easy_apply: None,
             actively_hiring: None,

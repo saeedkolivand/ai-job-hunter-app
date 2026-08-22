@@ -214,6 +214,14 @@ export const DATE_FILTER_OPTIONS = [
 ] as const;
 export type DateFilterOption = (typeof DATE_FILTER_OPTIONS)[number];
 
+// The one normalised work-arrangement vocabulary this app uses everywhere — the
+// manual search filter, the autopilot target, and (a later phase) each board's
+// own declared data. Replaces two previously-incompatible ones: the scrape
+// schema's LinkedIn raw codes ('1'/'2'/'3') and the autopilot's own ad-hoc
+// enum. Multi-select: an empty/absent set means "no filter" ("any").
+export const WORK_TYPE_OPTIONS = ['remote', 'hybrid', 'on-site'] as const;
+export type WorkTypeOption = (typeof WORK_TYPE_OPTIONS)[number];
+
 export const ScrapeBoardsRequestSchema = z.object({
   // Bounded by the catalog size (not a fixed number) so selecting every listed
   // board always validates and adding a board needs no schema edit.
@@ -253,10 +261,13 @@ export const ScrapeBoardsRequestSchema = z.object({
   // ignored by boards without such filters). Free-text codes so new LinkedIn
   // filter values work without a schema change; validated server-side.
   // `jobType`: 'F' (Full-time), 'P' (Part-time), 'C' (Contract), … ;
-  // `workType`: '1' (On-site), '2' (Remote), '3' (Hybrid);
   // `sortBy`: 'DD' (Date Descending), 'R' (Relevance).
   jobType: z.string().optional(),
-  workType: z.string().optional(),
+  // Requested work arrangement(s) — the normalised `WORK_TYPE_OPTIONS`
+  // vocabulary, not a per-board code (LinkedIn's own `f_WT` encoding now lives
+  // inside the LinkedIn board module, not this shared contract). Multi-select;
+  // empty/absent = no filter.
+  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).optional(),
   experienceLevel: z.string().optional(),
   easyApply: z.boolean().optional(),
   activelyHiring: z.boolean().optional(),
@@ -759,7 +770,9 @@ export const AutopilotTargetSchema = z.object({
     .trim()
     .regex(/^[A-Za-z]{2}$/)
     .optional(),
-  workType: z.enum(['remote', 'hybrid', 'on-site']).optional(),
+  // Requested work arrangement(s) — same `WORK_TYPE_OPTIONS` vocabulary the
+  // manual search filter uses. Multi-select; empty/absent = no filter.
+  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).optional(),
   pages: z.number().int().min(1).max(10).default(2),
   dateFilter: z.string().optional(),
   // Watched-companies-only mode (ADR-030 §e): when true, a run resolves the

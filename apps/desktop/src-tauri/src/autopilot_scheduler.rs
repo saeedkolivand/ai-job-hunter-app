@@ -446,7 +446,7 @@ mod test {
                 query: "rust".into(),
                 location: None,
                 country_code: None,
-                work_type: None,
+                work_types: None,
                 pages: 1,
                 date_filter: None,
                 top_n: 3,

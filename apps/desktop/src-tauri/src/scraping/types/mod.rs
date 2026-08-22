@@ -59,7 +59,11 @@ pub struct BoardSearchInput {
     pub provider_amount: Option<u32>,
     pub date_filter: Option<String>,
     pub job_type: Option<String>, // 'F' (Full-time), 'P' (Part-time), etc.
-    pub work_type: Option<String>, // '1' (On-site), '2' (Remote), '3' (Hybrid)
+    /// Requested work arrangement(s) — absent/empty means "no filter" ("any").
+    /// LinkedIn's private `f_WT` numeric encoding is NOT part of this struct
+    /// any more; it now lives entirely inside `boards::linkedin` (the one
+    /// board that ever spoke it), which maps this field to that code.
+    pub work_types: Option<Vec<WorkType>>,
     pub experience_level: Option<String>,
     pub easy_apply: Option<bool>,
     pub actively_hiring: Option<bool>,
@@ -78,6 +82,21 @@ pub struct BoardSearchInput {
     /// keyword search. Empty = no company filter; only those ATS boards read
     /// it, every other board ignores it.
     pub companies: Vec<String>,
+}
+
+/// One work arrangement a search or a posting can declare — the single
+/// normalised vocabulary this app uses everywhere, replacing two previously
+/// incompatible ones: the scrape contract's old LinkedIn raw codes
+/// (`'1'`/`'2'`/`'3'`) and the autopilot target's own ad-hoc string enum.
+/// Serializes as `"remote"` | `"hybrid"` | `"on-site"` via
+/// `#[serde(rename_all = "kebab-case")]`, matching `WORK_TYPE_OPTIONS` in
+/// `packages/shared/src/schemas/index.ts` byte-for-byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkType {
+    Remote,
+    Hybrid,
+    OnSite,
 }
 
 /// Canonical structured location for a search — the single model the engine's
@@ -284,6 +303,13 @@ pub trait Scraper: Send + Sync {
     /// and boards that only filter location client-side — returns the default
     /// `false`.
     fn supports_location(&self) -> bool {
+        false
+    }
+
+    /// Whether this board narrows results by the requested work type SERVER-SIDE.
+    /// When `false` the engine post-filters this board's results locally, keeping
+    /// every posting whose work type is undeclared. Default `false`.
+    fn supports_work_type(&self) -> bool {
         false
     }
 

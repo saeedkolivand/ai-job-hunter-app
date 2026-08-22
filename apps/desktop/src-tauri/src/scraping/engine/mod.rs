@@ -21,6 +21,9 @@ use crate::jobs::cancel::CancelRegistry;
 /// [`location_filter::location_verdict`] instead of forking a second place-name
 /// matcher with its own remote-marker list and exonym table.
 pub(crate) mod location_filter;
+/// Work-type sibling of [`location_filter`] — see its module doc for shape and
+/// conservatism, and for why it does not read `location_filter::REMOTE_MARKERS`.
+pub(crate) mod work_type_filter;
 
 /// Per-item keep predicate for a single board (already bound to that board's
 /// name where relevant) — `true` = keep. Trust PR F's central location filter;

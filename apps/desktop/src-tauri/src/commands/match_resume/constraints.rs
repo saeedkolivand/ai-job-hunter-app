@@ -36,7 +36,7 @@
 //!   own address — is exactly the false accusation: living in one country is not
 //!   evidence of lacking authorization in another.
 //! - **`employmentType`** — no persisted candidate preference exists.
-//!   `AutopilotTarget::work_type` is a per-autopilot SEARCH filter (and is a
+//!   `AutopilotTarget::work_types` is a per-autopilot SEARCH filter (and is a
 //!   work arrangement: remote/hybrid/on-site, not full-time/contract), scoped to
 //!   one autopilot config; the Jobs-page match has no autopilot in hand.
 //! - **`salaryFloor`** — `job_preferences.salary_expectation` is free text

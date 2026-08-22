@@ -127,7 +127,7 @@ const SRC_REL = 'apps/desktop/src-tauri/src';
  */
 const ALLOWLIST = {
   // ── safe: provably cannot carry a path/URL/host/credential ────────────────
-  'autopilot/mod.rs:754': {
+  'autopilot/mod.rs:790': {
     status: 'safe',
     reason:
       "serde_json::from_value type-mismatch parsing the app's own Autopilot " +
@@ -278,7 +278,7 @@ const ALLOWLIST = {
       'own fallback path) — its Display is a structural markdown-conversion failure, never ' +
       'a path/URL/host/credential.',
   },
-  'scraping/engine/mod.rs:1081': {
+  'scraping/engine/mod.rs:1084': {
     status: 'safe',
     reason:
       'tokio::task::JoinError from the record_health spawn_blocking handle (the task ' +

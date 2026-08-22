@@ -80,6 +80,29 @@ where
     de.deserialize_any(StringOrVec)
 }
 
+// ── Lenient deserializer: unrecognised workTypes entries are dropped ──────────
+
+/// `Option<Vec<WorkType>>` that DROPS an unrecognised entry rather than
+/// failing the whole field — mirrors [`string_or_vec`]'s back-compat posture,
+/// one level down (an entry, not the field). A missing key deserializes as
+/// `None` via `#[serde(default)]` on the field before this function is ever
+/// called; an array left empty after dropping is `Some(vec![])`, which reads
+/// as "no filter" the same as `None` does everywhere this is consumed.
+fn parse_work_types_lenient<'de, D>(
+    de: D,
+) -> Result<Option<Vec<crate::scraping::types::WorkType>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Option<Vec<String>> = Option::deserialize(de)?;
+    Ok(raw.map(|values| {
+        values
+            .iter()
+            .filter_map(|s| crate::scraping::engine::work_type_filter::parse_work_type(s))
+            .collect()
+    }))
+}
+
 use crate::db::now_ms;
 use crate::error::AppResult;
 use crate::observability::sanitize_reason;
@@ -99,8 +122,21 @@ pub struct AutopilotTarget {
     pub location: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub work_type: Option<String>,
+    /// Requested work arrangement(s) — empty/absent means "no filter" ("any").
+    /// Unrecognised entries are DROPPED, not a hard parse failure: this struct
+    /// deserializes as one JSON object in `AutopilotStore::create`/`update`, so
+    /// a single bad entry must not fail the WHOLE target back to an empty
+    /// fallback (see [`parse_work_types_lenient`]). `#[serde(default)]` so a
+    /// pre-existing `autopilots.json` record with no `workTypes` key at all —
+    /// every record on disk today, since the only UI control that could ever
+    /// set this was removed in PR #614 before this field existed — still
+    /// deserializes.
+    #[serde(
+        default,
+        deserialize_with = "parse_work_types_lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub work_types: Option<Vec<crate::scraping::types::WorkType>>,
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
@@ -441,7 +477,7 @@ impl AutopilotStore {
                     query: String::new(),
                     location: None,
                     country_code: None,
-                    work_type: None,
+                    work_types: None,
                     pages: 1,
                     date_filter: None,
                     top_n: default_top_n(),
@@ -900,7 +936,7 @@ const RELAX_MARKER_FILE: &str = "autopilot_relax_v1.done";
 ///   `Some("24h")`.
 ///
 /// Everything else (`exclude_keywords`, `query`, `location`, `country_code`,
-/// `boards`, `pages`, `work_type`, `top_n`) is left untouched. Pure + filesystem-
+/// `boards`, `pages`, `work_types`, `top_n`) is left untouched. Pure + filesystem-
 /// free so it is unit-testable on a bare `&mut Autopilot`.
 ///
 /// **Idempotency guarantee.** "Legacy" is decided up front from the two *sentinel*

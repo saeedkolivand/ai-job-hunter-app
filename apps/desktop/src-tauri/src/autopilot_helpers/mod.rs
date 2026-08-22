@@ -41,7 +41,7 @@ pub async fn autopilot_scrape(
         provider_amount: None,
         date_filter: target.date_filter.clone(),
         job_type: None,
-        work_type: None,
+        work_types: target.work_types.clone(),
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,

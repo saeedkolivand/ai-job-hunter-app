@@ -1,4 +1,5 @@
 use super::*;
+use crate::scraping::types::WorkType;
 
 #[test]
 fn test_default_top_n() {
@@ -18,7 +19,7 @@ fn test_autopilot_target_serialization() {
         query: "software engineer".to_string(),
         location: Some("Berlin".to_string()),
         country_code: None,
-        work_type: None,
+        work_types: None,
         pages: 5,
         date_filter: None,
         top_n: 3,
@@ -1178,7 +1179,7 @@ fn target_round_trips_as_boards_array() {
         query: "rust".to_string(),
         location: None,
         country_code: None,
-        work_type: None,
+        work_types: None,
         pages: 2,
         date_filter: None,
         top_n: 3,
@@ -1229,7 +1230,7 @@ fn target_country_code_round_trips_and_none_is_omitted() {
         query: "frontend engineer".to_string(),
         location: None,
         country_code: Some("us".to_string()),
-        work_type: None,
+        work_types: None,
         pages: 1,
         date_filter: None,
         top_n: 3,
@@ -1250,7 +1251,7 @@ fn target_country_code_round_trips_and_none_is_omitted() {
         query: "frontend engineer".to_string(),
         location: None,
         country_code: None,
-        work_type: None,
+        work_types: None,
         pages: 1,
         date_filter: None,
         top_n: 3,
@@ -2072,7 +2073,7 @@ fn base_autopilot() -> Autopilot {
             query: "engineer".into(),
             location: None,
             country_code: None,
-            work_type: None,
+            work_types: None,
             pages: 1,
             date_filter: Some("24h".into()),
             top_n: 3,
@@ -2280,7 +2281,7 @@ fn relax_preserves_all_unrelated_fields() {
     ap.target.country_code = Some("de".into());
     ap.target.boards = vec!["linkedin".into(), "indeed".into()];
     ap.target.pages = 3;
-    ap.target.work_type = Some("remote".into());
+    ap.target.work_types = Some(vec![WorkType::Remote]);
 
     relax_legacy_filters(&mut ap);
 
@@ -2300,7 +2301,7 @@ fn relax_preserves_all_unrelated_fields() {
     assert_eq!(ap.target.country_code.as_deref(), Some("de"));
     assert_eq!(ap.target.boards, vec!["linkedin", "indeed"]);
     assert_eq!(ap.target.pages, 3);
-    assert_eq!(ap.target.work_type.as_deref(), Some("remote"));
+    assert_eq!(ap.target.work_types, Some(vec![WorkType::Remote]));
 }
 
 #[test]

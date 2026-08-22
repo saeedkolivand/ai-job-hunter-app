@@ -30,7 +30,11 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       query: form.query,
       location: form.location || undefined,
       countryCode: form.countryCode || undefined,
-      workType: form.workType !== 'any' ? form.workType : undefined,
+      // The wizard form still holds a single sentinel-scalar (`workType`); the
+      // wire contract is a multi-select set. Widened to a one-item array here
+      // so the wire round-trips correctly — the form itself only gains a real
+      // multi-select control in a later phase (see the plan's §8b).
+      workTypes: form.workType !== 'any' ? [form.workType] : undefined,
       pages: form.pages,
       dateFilter: form.dateFilter || undefined,
       // Off collapses to undefined so an old autopilot stays free of the field.
@@ -93,7 +97,10 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     query: target.query,
     location: target.location ?? '',
     countryCode: target.countryCode,
-    workType: target.workType ?? 'any',
+    // Narrowed back to the form's single-scalar sentinel: only the first
+    // selected work type round-trips into the editing form today (see the
+    // note in wizardStateToPayload above).
+    workType: target.workTypes?.[0] ?? 'any',
     pages: target.pages,
     dateFilter: target.dateFilter ?? '',
     watchedCompaniesOnly: target.watchedCompaniesOnly ?? false,

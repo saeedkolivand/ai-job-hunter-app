@@ -16,7 +16,7 @@ const BASE_AUTOPILOT: Autopilot = {
     boards: ['linkedin'],
     query: 'react developer',
     location: 'Berlin',
-    workType: 'remote',
+    workTypes: ['remote'],
     pages: 2,
     dateFilter: '24h',
   },
@@ -293,7 +293,7 @@ describe('wizardStateToPayload()', () => {
         boards: ['linkedin'],
         query: 'rust backend',
         location: 'Berlin',
-        workType: 'remote',
+        workTypes: ['remote'],
         pages: 3,
         dateFilter: '24h',
       },
@@ -343,12 +343,14 @@ describe('wizardStateToPayload()', () => {
   });
 
   describe('workType sentinel', () => {
-    it("drops workType when it is the 'any' sentinel", () => {
-      expect(wizardStateToPayload(makeForm({ workType: 'any' })).target.workType).toBeUndefined();
+    it("drops workTypes when it is the 'any' sentinel", () => {
+      expect(wizardStateToPayload(makeForm({ workType: 'any' })).target.workTypes).toBeUndefined();
     });
 
-    it('keeps a concrete workType', () => {
-      expect(wizardStateToPayload(makeForm({ workType: 'hybrid' })).target.workType).toBe('hybrid');
+    it('keeps a concrete workType as a one-item workTypes array', () => {
+      expect(wizardStateToPayload(makeForm({ workType: 'hybrid' })).target.workTypes).toEqual([
+        'hybrid',
+      ]);
     });
   });
 
