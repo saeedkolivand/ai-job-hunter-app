@@ -32,9 +32,17 @@ async fn freehire_ok_response_maps_end_to_end() {
         .mount(&server)
         .await;
 
-    let items = fetch_freehire(&server.uri(), "rust", Some("de"), None, None, make_token())
-        .await
-        .expect("a 2xx freehire response must map");
+    let items = fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a 2xx freehire response must map");
 
     assert_eq!(items.len(), 1);
     let job = &items[0];
@@ -90,6 +98,7 @@ async fn freehire_request_follows_the_published_spec() {
     fetch_freehire(
         &server.uri(),
         "rust engineer",
+        None,
         Some("de"),
         None,
         None,
@@ -126,9 +135,17 @@ async fn freehire_sends_the_identifying_user_agent_in_place_of_the_default() {
         .mount(&server)
         .await;
 
-    fetch_freehire(&server.uri(), "rust", Some("de"), None, None, make_token())
-        .await
-        .expect("the identifying-UA request must succeed");
+    fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("the identifying-UA request must succeed");
 }
 
 /// `freehire_user_agent` carries only the app name, the crate version, and the
@@ -198,6 +215,7 @@ async fn freehire_wires_date_filter_to_posted_within_days() {
     fetch_freehire(
         &server.uri(),
         "rust",
+        None,
         Some("de"),
         Some("week"),
         None,
@@ -229,9 +247,17 @@ async fn freehire_refuses_a_response_with_ignored_params() {
         .mount(&server)
         .await;
 
-    let err = fetch_freehire(&server.uri(), "rust", Some("de"), None, None, make_token())
-        .await
-        .expect_err("a response reporting an ignored param must not be treated as filtered");
+    let err = fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect_err("a response reporting an ignored param must not be treated as filtered");
     let msg = err.to_string();
     assert!(
         msg.contains("ignored"),
@@ -259,9 +285,17 @@ async fn freehire_maps_normally_when_no_params_are_ignored() {
         .mount(&server)
         .await;
 
-    let items = fetch_freehire(&server.uri(), "rust", Some("de"), None, None, make_token())
-        .await
-        .expect("a clean response (no ignored_params) must map normally");
+    let items = fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a clean response (no ignored_params) must map normally");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Fine");
 }
@@ -290,7 +324,7 @@ async fn freehire_sends_no_country_filter_when_none_was_chosen() {
         .mount(&server)
         .await;
 
-    fetch_freehire(&server.uri(), "rust", None, None, None, make_token())
+    fetch_freehire(&server.uri(), "rust", None, None, None, None, make_token())
         .await
         .expect("a guessed-country search must still run");
 }
@@ -308,10 +342,18 @@ async fn freehire_non_2xx_maps_to_prefixed_err() {
         .mount(&server)
         .await;
 
-    let msg = fetch_freehire(&server.uri(), "rust", Some("de"), None, None, make_token())
-        .await
-        .unwrap_err()
-        .to_string();
+    let msg = fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
     assert!(
         msg.starts_with("freehire:"),
         "the error must name the provider; got: {msg}"
@@ -356,9 +398,17 @@ async fn freehire_drops_unusable_rows_without_losing_the_page() {
         .mount(&server)
         .await;
 
-    let items = fetch_freehire(&server.uri(), "rust", Some("de"), None, None, make_token())
-        .await
-        .expect("a page with unusable rows must still map the usable ones");
+    let items = fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a page with unusable rows must still map the usable ones");
 
     assert_eq!(items.len(), 1, "only the complete row maps");
     assert_eq!(items[0].title, "Good");
@@ -382,9 +432,17 @@ async fn freehire_slugless_rows_key_off_their_url_not_each_other() {
         .mount(&server)
         .await;
 
-    let items = fetch_freehire(&server.uri(), "rust", Some("de"), None, None, make_token())
-        .await
-        .expect("slugless rows must map");
+    let items = fetch_freehire(
+        &server.uri(),
+        "rust",
+        None,
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("slugless rows must map");
 
     assert_eq!(items.len(), 2);
     // Concrete values, not just pairwise inequality. A review mutated the
@@ -422,6 +480,7 @@ async fn freehire_clamps_limit_to_the_specs_range() {
     fetch_freehire(
         &server.uri(),
         "rust",
+        None,
         Some("de"),
         None,
         Some(5_000),
@@ -429,4 +488,195 @@ async fn freehire_clamps_limit_to_the_specs_range() {
     )
     .await
     .expect("an over-large amount must clamp, not fail");
+}
+
+/// The requested city reaches freehire as a `cities` filter — and does so
+/// ALONE. This is the regression guard for the shipped defect: the board sent
+/// no geography whatsoever, so a "Berlin" search fetched the worldwide first
+/// page (Johannesburg, Bengaluru, Singapore) and the engine's post-filter
+/// discarded nearly all of it.
+///
+/// The `absent("countries")` half is not decoration. Geography is one OR-GROUP
+/// on this API, so `countries=de&cities=Berlin` reads "Germany OR Berlin" and
+/// is WIDER than either alone — sending both would look like a tighter filter
+/// while actually undoing the fix.
+#[tokio::test]
+async fn freehire_sends_the_resolved_city_alone() {
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    // The typeahead resolves the free text to freehire's canonical value. The
+    // reply deliberately leads with a near miss to pin the exact-match rule.
+    Mock::given(method("GET"))
+        .and(path("/geo/cities"))
+        .and(query_param("q", "Berlin"))
+        .and(query_param("country", "de"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"data":[{"value":"Berlin-Mitte","country":"de"},{"value":"Berlin","country":"de"}]}"#,
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/agent/jobs/search"))
+        .and(query_param("cities", "Berlin"))
+        .and(query_param_is_missing("countries"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // The UI's location is a `"{city}, {country}"` label; only the city segment
+    // may be sent — freehire splits a comma into two OR'd values.
+    fetch_freehire(
+        &server.uri(),
+        "rust",
+        Some("Berlin, Germany"),
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a located search must run");
+}
+
+/// A place freehire's dictionary does not know ("München" — the facet holds
+/// "Munich" and matches nothing on a near miss) falls back to the country
+/// filter rather than to no geography at all. A country-wide page is still
+/// vastly narrower than the worldwide one the post-filter used to be handed.
+#[tokio::test]
+async fn freehire_falls_back_to_country_when_the_city_is_unknown() {
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/geo/cities"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/agent/jobs/search"))
+        .and(query_param("countries", "de"))
+        .and(query_param_is_missing("cities"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    fetch_freehire(
+        &server.uri(),
+        "rust",
+        Some("München"),
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("an unresolvable city must not fail the search");
+}
+
+/// A city that resolves only in the WRONG country is not used. "London" exists
+/// in both `gb` and `ca` and the `cities` facet carries no country qualifier,
+/// so the country check has to happen client-side — otherwise a Canadian
+/// London search would silently filter on the British one.
+#[tokio::test]
+async fn freehire_rejects_a_city_match_from_another_country() {
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/geo/cities"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"{"data":[{"value":"London","country":"gb"}]}"#),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/agent/jobs/search"))
+        .and(query_param("countries", "ca"))
+        .and(query_param_is_missing("cities"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    fetch_freehire(
+        &server.uri(),
+        "rust",
+        Some("London, Canada"),
+        Some("ca"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a mismatched city must fall back, not filter on the wrong London");
+}
+
+/// A location-free search sends NEITHER geography parameter — the no-location
+/// path stays byte-identical to what shipped, and the typeahead is not called.
+#[tokio::test]
+async fn freehire_sends_no_geography_without_a_location_or_country() {
+    use wiremock::matchers::{method, path, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/geo/cities"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/agent/jobs/search"))
+        .and(query_param_is_missing("cities"))
+        .and(query_param_is_missing("countries"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    fetch_freehire(&server.uri(), "rust", None, None, None, None, make_token())
+        .await
+        .expect("an unlocated search must still run");
+}
+
+/// A typeahead outage degrades to the country filter instead of failing the
+/// search: the resolver is an optimisation, never a dependency.
+#[tokio::test]
+async fn freehire_survives_a_city_typeahead_outage() {
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/geo/cities"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/agent/jobs/search"))
+        .and(query_param("countries", "de"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"data":[]}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    fetch_freehire(
+        &server.uri(),
+        "rust",
+        Some("Berlin"),
+        Some("de"),
+        None,
+        None,
+        make_token(),
+    )
+    .await
+    .expect("a typeahead outage must not fail the search");
 }

@@ -127,7 +127,7 @@ Location input policy is now visible via per-board summary notes. When a search 
 
 It was the aggregator's always-on keyless floor until it became separately selectable. The rules that belonged to that position — last rung, silent degradation to `Ok(empty)`, skip-on-real-failure, merge-behind-sparse-hits — went with it: the user now chooses this board, so it runs when picked and reports its failures like any other board.
 
-Shape only, because the remaining rules are load-bearing and must not be paraphrased here: the endpoint choice, `meta.ignored_params` handling, rate limits, User-Agent and data rights are all specified in the module doc of `apps/desktop/src-tauri/src/scraping/boards/freehire/mod.rs`, and `FreehireScraper::supports_location` says why no location is sent. The egress/privacy side is ADR-0005 class 2.
+Shape only, because the remaining rules are load-bearing and must not be paraphrased here: the endpoint choice, `meta.ignored_params` handling, rate limits, User-Agent and data rights are all specified in the module doc of `apps/desktop/src-tauri/src/scraping/boards/freehire/mod.rs`. How the requested location is turned into a search filter is on `fetch_freehire`, and `FreehireScraper::supports_location` says why the engine's post-filter still runs on top of it. The egress/privacy side is ADR-0005 class 2.
 
 ## Aggregator page loop & spend budget (PR #896, 2026-07-28)
 
