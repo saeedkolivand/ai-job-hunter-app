@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.143.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.142.1...v0.143.0) (2026-08-22)
+
+### ✨ Features
+
+* filter jobs by remote, hybrid and on-site ([#1076](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1076)) ([6c6019c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6c6019cf665c992b23aebef497741b739d0404bb)), closes [#614](https://github.com/saeedkolivand/ai-job-hunter-app/issues/614)
+
 ## [0.142.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.142.0...v0.142.1) (2026-08-22)
 
 ### 🐛 Bug Fixes
