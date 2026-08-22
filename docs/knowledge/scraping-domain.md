@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-22
 
-Describes the job-scraping subsystem: board registry (24 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
+Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
 ## Board registry & catalog
 
@@ -123,11 +123,11 @@ Location input policy is now visible via per-board summary notes. When a search 
 
 ## freehire board (keyless)
 
-**The one broad board that needs no API key** (issue #1002; implemented from the published `openapi.yaml`, not the maintainer's offered PR — no CLA in this repo). It answers `GET /api/v1/agent/jobs/search` unauthenticated, so a fresh install can search something broad before configuring anything.
+**The one broad board that needs no API key** (issue #1002; implemented from the published `openapi.yaml`, not the maintainer's offered PR — no CLA in this repo). It answers unauthenticated, so a fresh install can search something broad before configuring anything.
 
 It was the aggregator's always-on keyless floor until it became separately selectable. The rules that belonged to that position — last rung, silent degradation to `Ok(empty)`, skip-on-real-failure, merge-behind-sparse-hits — went with it: the user now chooses this board, so it runs when picked and reports its failures like any other board.
 
-Shape only, because the remaining rules are load-bearing and must not be paraphrased here: see the module doc of `apps/desktop/src-tauri/src/scraping/boards/freehire/mod.rs` (endpoint choice, `meta.ignored_params` handling, rate limits, User-Agent, data rights) and `FreehireScraper::supports_location` for why no location is sent. The egress/privacy side is ADR-0005 class 2.
+Shape only, because the remaining rules are load-bearing and must not be paraphrased here: the endpoint choice, `meta.ignored_params` handling, rate limits, User-Agent and data rights are all specified in the module doc of `apps/desktop/src-tauri/src/scraping/boards/freehire/mod.rs`, and `FreehireScraper::supports_location` says why no location is sent. The egress/privacy side is ADR-0005 class 2.
 
 ## Aggregator page loop & spend budget (PR #896, 2026-07-28)
 
