@@ -391,6 +391,119 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// work-type-filtered:<n> note chips — the zero-drop case collapses across
+// boards (25 of 26 boards don't support the filter, unlike location's 4 of 26)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('BoardSummaryChips — work-type-filtered:0 collapse', () => {
+  it('a single board with the zero-drop note still gets its own per-board chip', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['work-type-filtered:0'] }]}
+      />
+    );
+    expect(chips()).toHaveLength(1);
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).toContain('label(greenhouse)');
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.workTypeFilteredNone');
+  });
+
+  it('collapses 2+ boards carrying only the zero-drop note into ONE summary chip', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 4, notes: ['work-type-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:0'] },
+          { board: 'personio', count: 1, notes: ['work-type-filtered:0'] },
+        ]}
+      />
+    );
+    expect(chips()).toHaveLength(1);
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    // The collapsed chip carries no board name — same "board: ''" shape as the
+    // all-ok summary chip.
+    expect(chip?.textContent).toBe('jobs.boardSummary.note.workTypeFilteredNoneSummary:3');
+    expect(chip?.textContent).not.toContain('label(greenhouse)');
+  });
+
+  it('does NOT collapse a non-zero work-type-filtered count — it stays a per-board chip', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 4, notes: ['work-type-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:3'] },
+        ]}
+      />
+    );
+    // One collapsed-solo chip for greenhouse (only 1 zero-drop board) + one
+    // per-board chip for lever's n=3.
+    expect(chips()).toHaveLength(2);
+    const texts = chips().map((c) => c.textContent ?? '');
+    expect(texts.some((t) => t.includes('label(lever)') && t.includes('workTypeFiltered:3'))).toBe(
+      true
+    );
+  });
+
+  it('does not regress location-filtered — it keeps one chip per board even at 2+', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 4, notes: ['location-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['location-filtered:0'] },
+        ]}
+      />
+    );
+    expect(chips()).toHaveLength(2);
+    expect(chips()[0]?.textContent).toContain('label(greenhouse)');
+    expect(chips()[1]?.textContent).toContain('label(lever)');
+  });
+
+  it('a board with BOTH location-filtered and a zero-drop work-type note renders both: its own location chip plus a share of the work-type collapse', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          {
+            board: 'greenhouse',
+            count: 4,
+            notes: ['location-filtered:2', 'work-type-filtered:0'],
+          },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:0'] },
+        ]}
+      />
+    );
+    // greenhouse: its own location-filtered chip; both boards' zero-drop work
+    // type notes fold into one summary chip.
+    expect(chips()).toHaveLength(2);
+    const texts = chips().map((c) => c.textContent ?? '');
+    expect(
+      texts.some((t) => t.includes('label(greenhouse)') && t.includes('locationFiltered:2'))
+    ).toBe(true);
+    expect(texts.some((t) => t === 'jobs.boardSummary.note.workTypeFilteredNoneSummary:2')).toBe(
+      true
+    );
+  });
+
+  it('precedence: an error on one board excludes it from the collapse pool', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 0, error: 'boom', notes: ['work-type-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:0'] },
+        ]}
+      />
+    );
+    // greenhouse's error chip + lever's solo zero-drop chip (only 1 board in
+    // the collapse pool — greenhouse's note never entered it).
+    expect(chips()).toHaveLength(2);
+    expect(chips()[0]?.getAttribute('data-color')).toBe('error');
+    expect(chips()[1]?.textContent).toContain('label(lever)');
+    expect(chips()[1]?.textContent).toContain('workTypeFilteredNone');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // slugs-invalid:<n> / rows-dropped:<n> note chips (PR H) — partial ATS visibility
 // ─────────────────────────────────────────────────────────────────────────────
 

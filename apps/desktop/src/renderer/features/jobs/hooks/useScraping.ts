@@ -116,6 +116,16 @@ export function useScraping(
       scrapeOutcome: null,
       lastSearchSignature: signature,
       replacePending: replace,
+      // A genuinely NEW search (not "Show more") re-seeds the command bar's
+      // view-only work-type control to the scrape-time selection that
+      // actually produced this result set — otherwise the control reads
+      // "Any" while the backend silently narrowed to e.g. Remote, which is a
+      // false statement about what's on screen. Gated on `replace`, not
+      // every call: "Show more" reuses the identical scrapeForm (same
+      // signature), so re-seeding there would also stomp a view-only
+      // selection the user made mid-session (e.g. widening to Hybrid too)
+      // for zero benefit — the value would be unchanged anyway.
+      ...(replace ? { workTypes: scrapeForm.workTypes } : {}),
     });
 
     const prevJobId = useSessionStore.getState().jobs.scrapeJobId;

@@ -4,12 +4,14 @@
 //!
 //! Every posting's work arrangement is classified from DECLARED data only —
 //! `extra["workType"]`, the value each board writes at parse time. Board
-//! coverage drifts as boards are added or their upstream fields change —
-//! `docs/SCRAPING_ENDPOINTS.md`'s work-type table is the authoritative,
-//! live-verified per-board count; a board that doesn't declare a workplace
-//! field on the endpoint we call simply never writes the key, and its
-//! postings read as [`WorkTypeVerdict::Unknown`]. There is deliberately no
-//! text inference:
+//! coverage drifts as boards are added or their upstream fields change, so
+//! each board's own parse function under `scraping/boards/` is authoritative
+//! for what that board declares — no count is repeated here, because one
+//! already rotted. A board that declares nothing on the endpoint we call
+//! simply never writes the key, and its postings read as
+//! [`WorkTypeVerdict::Unknown`].
+//!
+//! There is deliberately no text inference:
 //! keyword matching flips true on "this role is NOT remote" and
 //! "remote-first culture, 3 days in office" just as readily as it flips true
 //! on the real thing, and there is no way to tell the two apart from outside

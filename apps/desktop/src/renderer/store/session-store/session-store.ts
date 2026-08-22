@@ -108,6 +108,13 @@ interface JobsSlice {
    * no client-side classification. Empty = no filter. A posting with no
    * declared `workType` is undeclared and always KEPT, matching the backend's
    * keep-unknowns policy (see `features/jobs/lib/work-type-filter.ts`).
+   *
+   * Re-seeded to `scrapeForm.workTypes` by `useScraping.startScrape` at the
+   * start of every genuinely NEW search (not "Show more") — otherwise this
+   * control's baseline would read "Any" even when the backend actually
+   * narrowed the result set to e.g. Remote, which is a false statement about
+   * what's on screen. Not reset on "Show more" (same search signature), so a
+   * mid-session manual adjustment here survives paging in more results.
    */
   workTypes: WorkTypeOption[];
   /**

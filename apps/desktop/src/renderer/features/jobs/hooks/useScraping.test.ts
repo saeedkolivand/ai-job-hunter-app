@@ -197,6 +197,54 @@ describe('useScraping — workTypes in the replace-vs-append search signature', 
   });
 });
 
+describe('useScraping — seeding the command-bar view filter (jobs.workTypes)', () => {
+  it('seeds jobs.workTypes from the scrape-time selection on a NEW search', async () => {
+    const form = makeForm({ workTypes: ['remote'] });
+    const { result } = renderHookWithClient(() => useScraping(noopNotify, form));
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(useSessionStore.getState().jobs.workTypes).toEqual(['remote']);
+  });
+
+  it('resets jobs.workTypes to empty on a NEW search with no work-type selection', async () => {
+    // A stale selection from a PREVIOUS search (or a manual view-filter
+    // toggle) must not survive an unrelated new search.
+    useSessionStore.setState((s) => ({ jobs: { ...s.jobs, workTypes: ['hybrid'] } }));
+    const form = makeForm({ query: 'engineer', workTypes: [] });
+    const { result } = renderHookWithClient(() => useScraping(noopNotify, form));
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(useSessionStore.getState().jobs.workTypes).toEqual([]);
+  });
+
+  it('does NOT stomp a mid-session view-filter widening on "Show more" (same search)', async () => {
+    const form = makeForm({ workTypes: ['remote'] });
+    const { result } = renderHookWithClient(() => useScraping(noopNotify, form));
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+    expect(useSessionStore.getState().jobs.workTypes).toEqual(['remote']);
+
+    // User manually widens the view-only filter after the search lands.
+    useSessionStore.setState((s) => ({ jobs: { ...s.jobs, workTypes: ['remote', 'hybrid'] } }));
+
+    // "Show more": identical scrapeForm, so the signature is unchanged and
+    // this call appends rather than replacing.
+    await act(async () => {
+      await result.current.startScrape(50);
+    });
+
+    expect(useSessionStore.getState().jobs.workTypes).toEqual(['remote', 'hybrid']);
+  });
+});
+
 describe('useScraping — geo fields in the replace-vs-append signature', () => {
   it('replaces (not appends) when only the countryCode differs', async () => {
     const { result, rerender } = renderHookWithClient(

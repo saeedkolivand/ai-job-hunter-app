@@ -138,7 +138,7 @@ const SUBSCRIBERS = {
   },
   'features/jobs/hooks/useScraping.ts': {
     mount: 'route-scoped',
-    hash: 'b780df7c3055',
+    hash: 'f3ed099b0d4a',
     note:
       'Nothing user-visible is lost on a route change any more. The progress readout used to ' +
       'show a false 0% for the rest of the run — on the default single-board search ' +

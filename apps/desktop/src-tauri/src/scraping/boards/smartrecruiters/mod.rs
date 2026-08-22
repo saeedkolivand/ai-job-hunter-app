@@ -31,27 +31,70 @@ fn smartrecruiters_location_type_param(wt: WorkType) -> &'static str {
     }
 }
 
+/// Builds the SmartRecruiters postings-list URL: company slug, optional
+/// keyword, and zero-or-more `&locationType=` params — one per requested
+/// work type, in order. This is the exact shape the repeatable-param OR
+/// semantics were live-verified against (no filter 367 = REMOTE 3 + HYBRID
+/// 36 + ONSITE 328; `&locationType=REMOTE&locationType=HYBRID` → 39 = 3+36;
+/// all three → 367, the unfiltered total — see
+/// `.claude/scratch/work-type-filter.md`, "SmartRecruiters repeatable
+/// `locationType`", verified 2026-08-22).
+///
+/// De-dupes `work_types` itself (first-seen order) rather than trusting the
+/// caller to have already called [`crate::scraping::types::BoardSearchInput::work_type_spec`] —
+/// `WorkType` has exactly 3 variants, so de-duping bounds the output to at
+/// most 3 `&locationType=` occurrences no matter how many (possibly
+/// duplicated) entries are passed in. CWE-770 defense-in-depth: a future
+/// caller regression that reverts to a raw, un-deduped work-types field must
+/// not reopen the URL-amplification vector this function alone can still
+/// close.
+fn build_list_url(company: &str, keyword: &str, work_types: &[WorkType]) -> String {
+    let mut url = if keyword.is_empty() {
+        format!(
+            "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100",
+            urlencoding::encode(company)
+        )
+    } else {
+        format!(
+            "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100&q={}",
+            urlencoding::encode(company),
+            urlencoding::encode(keyword)
+        )
+    };
+    let mut seen = std::collections::HashSet::with_capacity(work_types.len());
+    for wt in work_types.iter().copied().filter(|wt| seen.insert(*wt)) {
+        url.push_str("&locationType=");
+        url.push_str(smartrecruiters_location_type_param(wt));
+    }
+    url
+}
+
 /// Map SmartRecruiters' `location.remote` / `location.hybrid` booleans to a
 /// declared work type, precedence **hybrid > remote > on-site**.
 ///
-/// **Board-specific rule, proven by live measurement, not the generic
-/// all-false→Unknown policy used elsewhere:** `locationType` partitions this
-/// board EXACTLY (westerndigital: no filter 367 = REMOTE 3 + HYBRID 36 +
-/// ONSITE 328) — there is no undeclared bucket, so `remote:false &&
-/// hybrid:false` genuinely means on-site here. Only writes a value when at
-/// least one of the two booleans is present in the payload; both absent means
-/// the field itself was missing, which correctly stays `Unknown`.
+/// **`OnSite` requires POSITIVE evidence on BOTH sides — both keys present
+/// AND both `false`.** A `Some(bool)` on one side with the other side absent
+/// is NOT enough to conclude on-site: the absence of one key must never
+/// manufacture a positive `OnSite` declaration from the other. This board's
+/// `locationType` filter partitions its corpus exactly when both keys are
+/// present (westerndigital: no filter 367 = REMOTE 3 + HYBRID 36 + ONSITE
+/// 328, and a direct 100-row sample on 2026-08-22 confirmed both keys
+/// present on 100/100 rows for that tenant) — but that measurement is about
+/// the `locationType` **request** param, not payload-boolean completeness,
+/// and says nothing about a tenant (or a future SmartRecruiters payload
+/// change) that emits `remote` without `hybrid`. Any partial-absence shape
+/// with no positive signal on either side stays `Unknown` (returns `None`).
 fn smartrecruiters_work_type(remote: Option<bool>, hybrid: Option<bool>) -> Option<WorkType> {
-    if remote.is_none() && hybrid.is_none() {
-        return None;
-    }
     if hybrid == Some(true) {
-        Some(WorkType::Hybrid)
-    } else if remote == Some(true) {
-        Some(WorkType::Remote)
-    } else {
-        Some(WorkType::OnSite)
+        return Some(WorkType::Hybrid);
     }
+    if remote == Some(true) {
+        return Some(WorkType::Remote);
+    }
+    if remote == Some(false) && hybrid == Some(false) {
+        return Some(WorkType::OnSite);
+    }
+    None
 }
 
 /// Whether `extra["remote"]` should be written `true`, given the CLASSIFIED
@@ -169,30 +212,13 @@ impl Scraper for SmartRecruitersScraper {
 
             // SmartRecruiters supports a real `q` keyword param — pass it when set.
             let keyword = input.query.trim();
-            let mut list_url = if keyword.is_empty() {
-                format!(
-                    "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100",
-                    urlencoding::encode(company)
-                )
-            } else {
-                format!(
-                    "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100&q={}",
-                    urlencoding::encode(company),
-                    urlencoding::encode(keyword)
-                )
-            };
             // Upstream pass-through — the only board in v1 (see
-            // `supports_work_type`). Repeatable param, one occurrence per
-            // requested type. `work_type_spec()` (not the raw `work_types`
-            // field) both resolves the empty/absent-means-no-filter invariant
-            // and dedupes — CWE-770 defense-in-depth against a generous
-            // multi-select fanning out into an unbounded `&locationType=` tail.
-            if let Some(work_types) = input.work_type_spec() {
-                for wt in &work_types {
-                    list_url.push_str("&locationType=");
-                    list_url.push_str(smartrecruiters_location_type_param(*wt));
-                }
-            }
+            // `supports_work_type`). `work_type_spec()` (not the raw
+            // `work_types` field) resolves the empty/absent-means-no-filter
+            // invariant; `build_list_url` de-dupes again on its own (see its
+            // doc comment) as defense-in-depth.
+            let work_types = input.work_type_spec().unwrap_or_default();
+            let list_url = build_list_url(company, keyword, &work_types);
 
             let list =
                 match fetch_json::<ListResp>(&list_url, Default::default(), ctx.signal.clone())

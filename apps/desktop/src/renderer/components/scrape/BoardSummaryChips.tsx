@@ -300,6 +300,21 @@ function healthDetail(
 }
 
 /**
+ * True only for a well-formed `work-type-filtered:0` token — numeric parsing
+ * mirrors `noteDetail`'s own (a malformed/non-zero value is not this case and
+ * falls through to the normal per-note handling below, matching `noteDetail`'s
+ * own tolerance).
+ */
+function isZeroWorkTypeFilteredNote(note: string): boolean {
+  const sep = note.indexOf(':');
+  if (sep < 0 || note.slice(0, sep) !== 'work-type-filtered') return false;
+  const value = note.slice(sep + 1).trim();
+  if (!value) return false;
+  const n = Number(value);
+  return Number.isInteger(n) && n === 0;
+}
+
+/**
  * Normalize + classify each summary defensively — the array crosses IPC and may
  * be a legacy/tampered persisted record, so unknown shapes are tolerated (a
  * non-object entry, a missing board id, a non-numeric count) rather than trusted.
@@ -309,6 +324,18 @@ function healthDetail(
  * board-native note, `location-filtered`, `work-type-filtered`) — each renders
  * its OWN chip rather than one replacing another, mirroring the Rust
  * `BoardScrapeSummary.notes` array.
+ *
+ * One deliberate exception: `work-type-filtered:0` ("checked, nothing hidden")
+ * is unconditionally emitted for every board that doesn't support the filter —
+ * 25 of 26 boards, vs. `location-filtered`'s 4 of 26 (see
+ * `WorkTypeFilterNote`'s own doc comment for the same ratio argument). A
+ * per-board chip is a rare, informative signal for location; for work type it
+ * would put a near-identical chip on almost every board in the run. So a
+ * board's OWN `work-type-filtered:0` chip is deferred and collapsed across the
+ * whole run below: exactly one board still gets its normal per-board chip,
+ * two or more collapse into a single "N boards checked, nothing hidden"
+ * summary chip. `location-filtered` and every other note kind are untouched —
+ * they keep the shipped one-chip-per-board presentation.
  */
 function toChips(
   summaries: readonly BoardScrapeSummary[],
@@ -318,6 +345,10 @@ function toChips(
 ): Chip[] {
   if (!Array.isArray(summaries)) return [];
   const chips: Chip[] = [];
+  // Localized names of boards whose ONLY note this run is a zero-drop
+  // work-type-filtered note — collapsed after the loop, see the doc comment.
+  const zeroWorkTypeBoards: string[] = [];
+
   summaries.forEach((raw, i) => {
     if (!raw || typeof raw !== 'object') return;
     const s = raw as Partial<BoardScrapeSummary>;
@@ -330,7 +361,11 @@ function toChips(
     const notesRaw = Array.isArray(s.notes)
       ? s.notes.filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
       : [];
+    // Pull the zero-drop work-type note out of the normal stream — it never
+    // gets its own per-board chip here, only via the post-loop collapse.
+    const sawZeroWorkType = notesRaw.some(isZeroWorkTypeFilteredNote);
     const noteDetails = notesRaw
+      .filter((n) => !isZeroWorkTypeFilteredNote(n))
       .map((n) => noteDetail(n, t, locale))
       .filter((d): d is string => d !== null);
     const count = typeof s.count === 'number' && Number.isFinite(s.count) ? s.count : 0;
@@ -356,25 +391,28 @@ function toChips(
         board,
         detail: capDetail(t('jobs.boardSummary.partial')),
       });
-    } else if (noteDetails.length > 0) {
-      // One chip per applicable note — never collapse several independent
-      // honesty signals into one, which is exactly the bug the Rust-side
-      // `notes: Vec<String>` widening fixed.
-      noteDetails.forEach((detail, ni) => {
-        chips.push({
-          key: `${boardId}-${i}-note-${ni}`,
-          tone: 'note',
-          board,
-          detail: capDetail(detail),
-        });
-      });
     } else {
-      chips.push({
-        key: `${boardId}-${i}`,
-        tone: 'success',
-        board,
-        detail: capDetail(t('jobs.boardSummary.count', { count })),
-      });
+      if (sawZeroWorkType) zeroWorkTypeBoards.push(board);
+      if (noteDetails.length > 0) {
+        // One chip per applicable (non-zero-work-type) note — never collapse
+        // several independent honesty signals into one, which is exactly the
+        // bug the Rust-side `notes: Vec<String>` widening fixed.
+        noteDetails.forEach((detail, ni) => {
+          chips.push({
+            key: `${boardId}-${i}-note-${ni}`,
+            tone: 'note',
+            board,
+            detail: capDetail(detail),
+          });
+        });
+      } else if (!sawZeroWorkType) {
+        chips.push({
+          key: `${boardId}-${i}`,
+          tone: 'success',
+          board,
+          detail: capDetail(t('jobs.boardSummary.count', { count })),
+        });
+      }
     }
 
     // Track B1 — the cross-run history rides alongside, never replaces, this
@@ -400,6 +438,29 @@ function toChips(
       });
     }
   });
+
+  // Collapse the zero-drop work-type notes gathered above: exactly one board
+  // keeps its normal per-board chip (no noisier than before), two or more
+  // fold into a single summary chip instead of repeating the same "checked,
+  // nothing hidden" line once per board.
+  if (zeroWorkTypeBoards.length === 1) {
+    chips.push({
+      key: 'work-type-filtered-none-solo',
+      tone: 'note',
+      board: zeroWorkTypeBoards[0] ?? '',
+      detail: capDetail(t('jobs.boardSummary.note.workTypeFilteredNone')),
+    });
+  } else if (zeroWorkTypeBoards.length > 1) {
+    chips.push({
+      key: 'work-type-filtered-none-summary',
+      tone: 'note',
+      board: '',
+      detail: t('jobs.boardSummary.note.workTypeFilteredNoneSummary', {
+        count: zeroWorkTypeBoards.length,
+      }),
+    });
+  }
+
   return chips;
 }
 

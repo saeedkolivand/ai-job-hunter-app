@@ -2406,6 +2406,8 @@
         "workTypeFilteredNone": "Arbeitsform lokal gefiltert",
         "workTypeFiltered_one": "{{count}} Treffer mit falscher Arbeitsform ausgeblendet",
         "workTypeFiltered_other": "{{count}} Treffer mit falscher Arbeitsform ausgeblendet",
+        "workTypeFilteredNoneSummary_one": "Arbeitsform bei {{count}} Board geprüft — nichts ausgeblendet",
+        "workTypeFilteredNoneSummary_other": "Arbeitsform bei {{count}} Boards geprüft — nichts ausgeblendet",
         "slugsInvalid_one": "{{count}} Firmenname ungültig",
         "slugsInvalid_other": "{{count}} Firmennamen ungültig",
         "rowsDropped_one": "{{count}} Zeile unlesbar — Board-Format eventuell geändert",

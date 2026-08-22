@@ -882,7 +882,15 @@ Each skip reason is surfaced separately in the scrape results UI with its own re
 
 ---
 
-## Work-type (remote / hybrid / on-site) support summary — Live verified 2026-08-22
+## Work-type (remote / hybrid / on-site) support summary
+
+> **Mixed confidence — read the per-row note before trusting a row.** Rows marked with a measurement
+> were live-probed on 2026-08-22 (SmartRecruiters' exact partition, Lever's 87% `unspecified`,
+> freehire's 72% undeclared, the LinkedIn disjointness probe). Others are explicitly `unverified`,
+> `docs-only`, or carry `?` — Pinpoint has no public slug to probe, BambooHR's code mapping is
+> inferred from correlation rather than a published enum, and Comeet needs credentials. Branding the
+> whole table "live verified" would lend the weak rows the strong rows' credibility, which is the
+> opposite of what this feature argues for.
 
 Declared data only. Eleven boards read a workplace field their API actually declares and four all-remote boards write a constant, so fifteen write `extra.workType`; every other board maps to `Unknown`. No text inference.
 

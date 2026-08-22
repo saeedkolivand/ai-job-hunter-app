@@ -82,16 +82,38 @@ fn work_type_both_absent_is_unknown() {
     assert_eq!(smartrecruiters_work_type(None, None), None);
 }
 
+/// Regression for the "absence manufactures a positive declaration" defect
+/// (PR #1076 review): `remote:false` with `hybrid` absent must stay
+/// `Unknown`, NOT resolve to `OnSite` — `OnSite` requires a positive `false`
+/// on BOTH sides (see the doc comment on `smartrecruiters_work_type`). A
+/// positive signal on one side (`Some(true)`) still resolves even when the
+/// other side is absent — only the negative/absent combination is unsafe.
 #[test]
-fn work_type_only_remote_present_still_resolves() {
+fn work_type_only_remote_present_positive_resolves_negative_stays_unknown() {
     assert_eq!(
         smartrecruiters_work_type(Some(true), None),
-        Some(WorkType::Remote)
+        Some(WorkType::Remote),
+        "a positive remote signal must still resolve when hybrid is absent"
     );
     assert_eq!(
         smartrecruiters_work_type(Some(false), None),
-        Some(WorkType::OnSite)
+        None,
+        "remote:false with hybrid absent has no positive signal from either \
+         side and must NOT be classified OnSite — a tenant (or a future \
+         payload change) emitting remote without hybrid must not label \
+         every hybrid row on-site"
     );
+}
+
+/// Symmetric case: a positive `hybrid` signal resolves alone, but
+/// `hybrid:false` with `remote` absent has no positive signal either.
+#[test]
+fn work_type_only_hybrid_present_positive_resolves_negative_stays_unknown() {
+    assert_eq!(
+        smartrecruiters_work_type(None, Some(true)),
+        Some(WorkType::Hybrid)
+    );
+    assert_eq!(smartrecruiters_work_type(None, Some(false)), None);
 }
 
 /// The dual-write regression (same shape as the Ashby `isRemote`/`workplaceType`
@@ -129,6 +151,85 @@ fn location_type_param_spelling_has_no_separator() {
     assert_eq!(
         smartrecruiters_location_type_param(WorkType::OnSite),
         "ONSITE"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// build_list_url — the request-side security gate (PR #1076 review finding:
+// this URL builder previously had no test, so reverting the
+// `work_type_spec()` call to the raw field would have restored the
+// URL-amplification vector with a fully green suite)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn build_list_url_no_work_types_appends_nothing() {
+    let url = build_list_url("acme", "", &[]);
+    assert_eq!(
+        url,
+        "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100"
+    );
+    assert!(!url.contains("locationType"));
+}
+
+#[test]
+fn build_list_url_one_locationtype_per_requested_type_in_order() {
+    let url = build_list_url(
+        "acme",
+        "",
+        &[WorkType::Remote, WorkType::Hybrid, WorkType::OnSite],
+    );
+    assert_eq!(
+        url,
+        "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100\
+&locationType=REMOTE&locationType=HYBRID&locationType=ONSITE"
+    );
+}
+
+/// The request-param spelling is `ONSITE` — no hyphen/underscore — which
+/// differs from the wire VALUE this board reports back in `location.hybrid`/
+/// `location.remote` (booleans, not this string at all). See
+/// `smartrecruiters_location_type_param`'s doc.
+#[test]
+fn build_list_url_uses_exact_onsite_param_spelling() {
+    let url = build_list_url("acme", "", &[WorkType::OnSite]);
+    assert!(url.ends_with("&locationType=ONSITE"));
+    assert!(!url.contains("ON_SITE"));
+    assert!(!url.contains("On-site") && !url.contains("on-site"));
+}
+
+#[test]
+fn build_list_url_keyword_present_places_q_before_locationtype() {
+    let url = build_list_url("acme", "backend engineer", &[WorkType::Remote]);
+    assert_eq!(
+        url,
+        "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100\
+&q=backend%20engineer&locationType=REMOTE"
+    );
+}
+
+/// CWE-770 defense-in-depth: `WorkType` has exactly 3 variants, so
+/// de-duplicating a caller-supplied (possibly duplicated) slice must never
+/// produce more than 3 `&locationType=` occurrences.
+#[test]
+fn build_list_url_duplicated_input_yields_at_most_three_occurrences() {
+    let url = build_list_url(
+        "acme",
+        "",
+        &[
+            WorkType::Remote,
+            WorkType::Remote,
+            WorkType::Remote,
+            WorkType::Hybrid,
+        ],
+    );
+    let occurrences = url.matches("&locationType=").count();
+    assert!(
+        occurrences <= 3,
+        "at most 3 possible WorkType variants, got {occurrences}"
+    );
+    assert_eq!(
+        occurrences, 2,
+        "de-duped: REMOTE once (first-seen), HYBRID once"
     );
 }
 
