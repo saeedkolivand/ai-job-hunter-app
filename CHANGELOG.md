@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.142.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.142.0...v0.142.1) (2026-08-22)
+
+### 🐛 Bug Fixes
+
+* **scraping:** send the requested location to freehire ([#1075](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1075)) ([fc33966](https://github.com/saeedkolivand/ai-job-hunter-app/commit/fc339661d47229b12f5699d97933470e47d96c24))
+
 ## [0.142.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.141.2...v0.142.0) (2026-08-22)
 
 ### ✨ Features
