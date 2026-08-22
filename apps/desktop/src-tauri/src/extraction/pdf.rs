@@ -307,11 +307,34 @@ pub(crate) fn repair_utf16_mojibake(s: &str) -> Cow<'_, str> {
 /// `validate::content::factual::URL_RE`: that regex grades link Criticals, and
 /// widening it would change what counts as a claimed link everywhere.
 static TEXT_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:https?://[^\s)\]<>]+|(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|org|net|dev|app|de|co|ai|sh|me|io)(?:/[^\s)\]<>]*)?)").unwrap()
+    Regex::new(r"(?i)(?:https?://[^\s\]<>]+|(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|org|net|dev|app|de|co|ai|sh|me|io)(?:/[^\s\]<>]*)?)").unwrap()
 });
 
 /// TLDs a bare, path-less host may end in — see [`TEXT_URL_RE`].
 const PATHLESS_TLDS: [&str; 8] = ["com", "org", "net", "dev", "app", "de", "co", "ai"];
+
+/// Trim what trails a URL in prose without eating part of the path.
+///
+/// A `)` may belong to the URL (`…/Function_(mathematics)`) or to the sentence
+/// around it (`(see example.com/a)`), and the regex cannot tell which. It keeps
+/// every `)` and this decides after the fact: a closing paren survives only when
+/// an unclosed `(` inside the token is waiting for it. Sentence punctuation and
+/// an unbalanced paren are stripped in turn, since either can sit outside the
+/// other (`(see example.com/a).`).
+fn trim_url_tail(token: &str) -> &str {
+    let mut token = token;
+    loop {
+        let trimmed = token.trim_end_matches(['.', ',', ';', ':']);
+        let trimmed = match trimmed.strip_suffix(')') {
+            Some(without) if trimmed.matches(')').count() > trimmed.matches('(').count() => without,
+            _ => trimmed,
+        };
+        if trimmed == token {
+            return token;
+        }
+        token = trimmed;
+    }
+}
 
 fn links_from_text(text: &str) -> Vec<Link> {
     let mut out: Vec<Link> = Vec::new();
@@ -321,7 +344,7 @@ fn links_from_text(text: &str) -> Vec<Link> {
         if text[..m.start()].ends_with(['@', '.']) {
             continue;
         }
-        let token = m.as_str().trim_end_matches(['.', ',', ';', ':', ')']);
+        let token = trim_url_tail(m.as_str());
         let has_scheme = token.to_ascii_lowercase().starts_with("http");
         if !has_scheme && !token.contains('/') {
             let tld = token
@@ -667,6 +690,34 @@ Framework-agnostic component library.
                 links_from_text(text)
             );
         }
+    }
+
+    /// A `)` may belong to the URL or to the sentence around it. Both shapes
+    /// appear in real résumés, and truncating the first produces a dead link.
+    #[test]
+    fn a_balanced_parenthesis_in_a_path_survives_but_a_sentence_paren_does_not() {
+        let urls =
+            |t: &str| -> Vec<String> { links_from_text(t).into_iter().map(|l| l.url).collect() };
+        assert_eq!(
+            urls("See https://example.com/Function_(mathematics) for details"),
+            vec!["https://example.com/Function_(mathematics)"],
+            "a balanced pair belongs to the path"
+        );
+        assert_eq!(
+            urls("(see https://example.com/a)"),
+            vec!["https://example.com/a"],
+            "an unmatched closing paren belongs to the sentence"
+        );
+        assert_eq!(
+            urls("(see https://example.com/a)."),
+            vec!["https://example.com/a"],
+            "punctuation and an unbalanced paren can nest either way round"
+        );
+        assert_eq!(
+            urls("Portfolio: https://example.com/work."),
+            vec!["https://example.com/work"],
+            "a trailing full stop is sentence punctuation"
+        );
     }
 
     /// A `.io` host WITH a path is unambiguous, so it stays.
