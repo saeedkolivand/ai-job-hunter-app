@@ -1102,3 +1102,69 @@ fn project_stack_shape_accepts_stacks_and_rejects_prose() {
         assert!(!is_project_stack_shaped(prose), "must reject {prose:?}");
     }
 }
+
+/// Designers set headings with wide tracking, and some PDF producers bake it
+/// into the text layer. A real CV extracted its headings as
+/// `S E L E C T E D   P R O J E C T S`, which matched no heading test anywhere —
+/// the section was invisible, so its projects never seeded and its links were
+/// never collected.
+#[test]
+fn letter_spaced_headings_collapse_back_into_words() {
+    assert_eq!(
+        despace_letterspaced("S E L E C T E D   P R O J E C T S").as_deref(),
+        Some("SELECTED PROJECTS"),
+        "a double-space is a word gap, not a letter gap"
+    );
+    assert_eq!(
+        despace_letterspaced("P R O J E K T E").as_deref(),
+        Some("PROJEKTE")
+    );
+    assert_eq!(
+        despace_letterspaced("E D U C A T I O N   &   L A N G U A G E S").as_deref(),
+        Some("EDUCATION & LANGUAGES")
+    );
+
+    // Never rewrite an ordinary line.
+    for plain in [
+        "Projects",
+        "SELECTED PROJECTS",
+        "A B C", // under the four-token floor
+        "Rust · SQLite · Clap",
+        "Built a CLI tool for teams",
+    ] {
+        assert_eq!(
+            despace_letterspaced(plain),
+            None,
+            "must not rewrite {plain:?}"
+        );
+    }
+}
+
+#[test]
+fn a_letter_spaced_section_heading_is_recognized_and_readable() {
+    let doc = "S E L E C T E D   P R O J E C T S\n\
+               Ledger CLI   example.dev\n";
+    let parsed = parse_resume(doc);
+    let head = &parsed.lines[0];
+    assert!(
+        matches!(head.kind, LineKind::SectionHeader),
+        "expected a section heading, got {:?}",
+        head.kind
+    );
+    assert_eq!(
+        head.text, "SELECTED PROJECTS",
+        "downstream heading matching reads `text`, so it must be the collapsed form"
+    );
+}
+
+/// The rewrite is gated on the collapsed form being a KNOWN heading, so a
+/// letter-spaced line that is not one is left exactly as the candidate wrote it.
+#[test]
+fn a_letter_spaced_line_that_is_not_a_heading_is_left_alone() {
+    let parsed = parse_resume("N O T   A   H E A D I N G   A T   A L L\n");
+    assert_eq!(
+        parsed.lines[0].text,
+        "N O T   A   H E A D I N G   A T   A L L"
+    );
+    assert!(!matches!(parsed.lines[0].kind, LineKind::SectionHeader));
+}
