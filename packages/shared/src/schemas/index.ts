@@ -266,8 +266,10 @@ export const ScrapeBoardsRequestSchema = z.object({
   // Requested work arrangement(s) — the normalised `WORK_TYPE_OPTIONS`
   // vocabulary, not a per-board code (LinkedIn's own `f_WT` encoding now lives
   // inside the LinkedIn board module, not this shared contract). Multi-select;
-  // empty/absent = no filter.
-  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).optional(),
+  // empty/absent = no filter. `z.enum` bounds VALUES only, never length/
+  // multiplicity (CWE-770) — `.max` caps a duplicated/hostile payload at the
+  // vocabulary size; the Rust side dedupes too (`BoardSearchInput::work_type_spec`).
+  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).max(WORK_TYPE_OPTIONS.length).optional(),
   experienceLevel: z.string().optional(),
   easyApply: z.boolean().optional(),
   activelyHiring: z.boolean().optional(),
@@ -771,8 +773,9 @@ export const AutopilotTargetSchema = z.object({
     .regex(/^[A-Za-z]{2}$/)
     .optional(),
   // Requested work arrangement(s) — same `WORK_TYPE_OPTIONS` vocabulary the
-  // manual search filter uses. Multi-select; empty/absent = no filter.
-  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).optional(),
+  // manual search filter uses. Multi-select; empty/absent = no filter. Same
+  // `.max` CWE-770 cap as `ScrapeBoardsRequestSchema.workTypes` above.
+  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).max(WORK_TYPE_OPTIONS.length).optional(),
   pages: z.number().int().min(1).max(10).default(2),
   dateFilter: z.string().optional(),
   // Watched-companies-only mode (ADR-030 §e): when true, a run resolves the

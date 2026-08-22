@@ -1,12 +1,10 @@
 import { ChevronDown } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { type DATE_FILTER_OPTIONS, WORK_TYPE_OPTIONS, type WorkTypeOption } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, LocationInput, NumberField } from '@ajh/ui';
-
-import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 
 import { AUTH_BENEFITS } from '../../constants';
 import type { ScrapeFormState } from './constants';
@@ -32,8 +30,6 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
   // Location stays primary; the lower-value fields move behind an Advanced
   // disclosure (#35 — IA: low-priority controls don't crowd the form).
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const workTypeRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const focusedWorkTypeIdx = useRef<number>(0);
 
   return (
     <div className="@container mb-4 space-y-3">
@@ -138,47 +134,41 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
             />
           </div>
           <div>
-            <label className={LABEL}>{t('jobs.workType.label')}</label>
+            <label className={LABEL}>
+              {t('jobs.workType.label')}
+              {/* Empty set silently means "any" — three neutral, identically
+                  unselected buttons read as broken/unset otherwise. Mirrors
+                  the "Any time" placeholder idiom the Posted Dropdown above
+                  uses for its own empty state. */}
+              {form.workTypes.length === 0 && (
+                <span className="ml-1 font-normal normal-case tracking-normal text-foreground/35">
+                  · {t('jobs.workType.any')}
+                </span>
+              )}
+            </label>
             {/* Multi-select set, not a Dropdown — a Dropdown can't express a set.
                 Empty = any, all three = all (byte-equivalent to no filter on
                 every board that validates the param). Mirrors the board picker
-                idiom in ScrapeForm/index.tsx. */}
+                idiom in ScrapeForm/index.tsx. Plain tab stops, not roving
+                tabindex — that pattern earns its keep on the ~26-item board
+                picker it was copied from, but for 3 items it breaks the
+                standard "Tab moves to the next toggle" expectation for no
+                efficiency win. */}
             <div
               data-testid={TEST_IDS.jobs.workTypeFilter}
               role="group"
               aria-label={t('jobs.workType.label')}
               className="flex flex-wrap gap-1.5"
-              onKeyDown={
-                scraping
-                  ? undefined
-                  : makeMultiSelectKeyHandler(
-                      WORK_TYPE_OPTIONS.length,
-                      focusedWorkTypeIdx,
-                      workTypeRefs,
-                      (idx) => {
-                        const opt = WORK_TYPE_OPTIONS[idx];
-                        if (opt !== undefined)
-                          onFormChange({ workTypes: toggleWorkType(form.workTypes, opt) });
-                      }
-                    )
-              }
             >
-              {WORK_TYPE_OPTIONS.map((opt, i) => {
+              {WORK_TYPE_OPTIONS.map((opt) => {
                 const active = form.workTypes.includes(opt);
                 return (
                   <Button
                     key={opt}
-                    ref={(el) => {
-                      workTypeRefs.current[i] = el;
-                    }}
                     aria-pressed={active}
-                    tabIndex={i === focusedWorkTypeIdx.current ? 0 : -1}
                     variant="ghost"
                     disabled={scraping}
-                    onClick={() => {
-                      focusedWorkTypeIdx.current = i;
-                      onFormChange({ workTypes: toggleWorkType(form.workTypes, opt) });
-                    }}
+                    onClick={() => onFormChange({ workTypes: toggleWorkType(form.workTypes, opt) })}
                     className={cn(
                       'rounded-lg px-2.5 py-1 text-[11px] transition-all',
                       active

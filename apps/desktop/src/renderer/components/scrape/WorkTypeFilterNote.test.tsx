@@ -1,9 +1,14 @@
 /**
  * WorkTypeFilterNote — the work-type sibling of LocationFilterNote, both
  * generated from the same `FilterCapabilityNote` body in `LocationFilterNote.tsx`.
- * Covers the same contract with `active`/`supportsWorkType` in place of
+ * Covers the same gating contract with `active`/`supportsWorkType` in place of
  * `hasLocation`/`supportsLocation` — see `LocationFilterNote.test.tsx` for the
  * shared-body rationale.
+ *
+ * Presentation differs deliberately: only `smartrecruiters` supports work type
+ * upstream (1 of 26 boards, vs 4 of 26 for location), so a chip-per-board list
+ * would name almost the entire selection — noise, not a hint. This variant
+ * collapses to a `{{count}}`/`{{total}}` summary sentence instead of chips.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -14,7 +19,10 @@ import type { BoardCatalogEntry } from '@ajh/shared';
 import { WorkTypeFilterNote } from './LocationFilterNote';
 
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { count?: number; total?: number }) =>
+      opts ? `${key}|count=${opts.count}|total=${opts.total}` : key,
+  }),
 }));
 
 function board(id: string, supportsWorkType?: boolean): BoardCatalogEntry {
@@ -40,7 +48,7 @@ describe('WorkTypeFilterNote', () => {
     expect(screen.queryByRole('note')).toBeNull();
   });
 
-  it('names ONLY the non-supporting boards when a work type is selected', () => {
+  it('renders a count summary, never a chip-per-board list, when boards lack upstream support', () => {
     render(
       <WorkTypeFilterNote
         boards={[board('smartrecruiters', true), board('greenhouse', false), board('lever', false)]}
@@ -48,14 +56,19 @@ describe('WorkTypeFilterNote', () => {
       />
     );
     const note = screen.getByRole('note');
-    expect(note.textContent).toContain('jobs.workType.filterHint');
-    expect(note.textContent).toContain('jobs.boards.greenhouse');
-    expect(note.textContent).toContain('jobs.boards.lever');
+    // 2 of the 3 SELECTED boards don't support it upstream — counted against
+    // the full selection, not just the affected subset.
+    expect(note.textContent).toContain('jobs.workType.filterSummary|count=2|total=3');
+    // No per-board chip — this is exactly the noise the summary replaces.
+    expect(note.textContent).not.toContain('jobs.boards.greenhouse');
+    expect(note.textContent).not.toContain('jobs.boards.lever');
     expect(note.textContent).not.toContain('jobs.boards.smartrecruiters');
   });
 
   it('treats an absent supportsWorkType flag as "does not support work type"', () => {
     render(<WorkTypeFilterNote boards={[board('greenhouse', undefined)]} active />);
-    expect(screen.getByRole('note').textContent).toContain('jobs.boards.greenhouse');
+    expect(screen.getByRole('note').textContent).toContain(
+      'jobs.workType.filterSummary|count=1|total=1'
+    );
   });
 });

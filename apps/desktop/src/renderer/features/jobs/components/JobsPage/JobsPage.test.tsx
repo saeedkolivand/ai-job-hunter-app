@@ -925,3 +925,44 @@ describe('JobsPage — scrape drawer', () => {
     expect(screen.getByTestId(TEST_IDS.jobs.scrapeForm)).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Work-type control visibility gate — end-to-end through the REAL JobsCommandBar
+// (not stubbed in this file), proving JobsPage derives `hasDeclaredWorkType`
+// from the actual merged/rendered posting list rather than some parallel
+// computation that could drift from it.
+// ---------------------------------------------------------------------------
+
+describe('JobsPage — work-type control visibility gate', () => {
+  beforeEach(() => {
+    postingsContainer.data = [];
+  });
+
+  it('hides the work-type group when nothing on screen declares a workType and no selection is active', () => {
+    postingsContainer.data = [samplePosting('a'), samplePosting('b')];
+    renderJobsPage();
+    expect(screen.queryByRole('group', { name: 'jobs.workType.label' })).not.toBeInTheDocument();
+  });
+
+  it('shows the work-type group when at least one visible posting declares a workType', () => {
+    postingsContainer.data = [samplePosting('a'), { ...samplePosting('b'), workType: 'remote' }];
+    renderJobsPage();
+    expect(screen.getByRole('group', { name: 'jobs.workType.label' })).toBeInTheDocument();
+  });
+
+  // The trap: a selection made while an earlier, declaring result set was on
+  // screen must stay visible (and clearable) even after a fresh search whose
+  // results declare nothing — a naive `hasDeclaredWorkType`-only gate would
+  // hide the only control that shows/clears a filter that is STILL applied,
+  // leaving the page silently short of results with no visible cause.
+  it('keeps the work-type group visible for an active selection even when the current results declare nothing', () => {
+    postingsContainer.data = [samplePosting('a'), samplePosting('b')]; // nothing declares workType
+    act(() => {
+      useSessionStore.getState().setJobs({ workTypes: ['remote'] });
+    });
+    renderJobsPage();
+
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    expect(group).toBeInTheDocument();
+  });
+});

@@ -735,13 +735,13 @@ impl ScraperEngine {
         };
 
         // Work-type sibling of the location post-filter above (same shape,
-        // same conservatism — see `work_type_filter`'s module doc). `Some(vec![])`
-        // (the user cleared the filter) is folded into `None` right here via
-        // `.filter(|wt| !wt.is_empty())` — an empty requested set must behave
-        // EXACTLY like no request, never "match nothing", so this is the one
-        // place that distinction is resolved for the whole run.
-        let requested_work_types: Option<Vec<super::types::WorkType>> =
-            input.work_types.clone().filter(|wt| !wt.is_empty());
+        // same conservatism — see `work_type_filter`'s module doc).
+        // `BoardSearchInput::work_type_spec` is the one place that resolves
+        // "empty/absent means no request" (mirroring `location_spec`) and
+        // dedupes, so this is the ONLY reader of `input.work_types` — a future
+        // upstream-pass-through board reads the same seam instead of
+        // re-deriving the invariant.
+        let requested_work_types: Option<Vec<super::types::WorkType>> = input.work_type_spec();
         let non_work_type_boards: std::collections::HashSet<String> =
             if requested_work_types.is_some() {
                 resolved
@@ -863,8 +863,17 @@ impl ScraperEngine {
         // Per-board LIVE drop counts (see `KeepItemFn`) — the only place a
         // live-filtered item's count is observable; merged with the post-hoc
         // pass below (the no-live-streaming path, e.g. tests) into the note.
-        // Location and work-type each get their OWN counter so the two notes
-        // report independent, honest counts rather than a conflated total.
+        // Location and work-type each get their OWN counter, but they are NOT
+        // independent for a row that fails BOTH: the composed predicate below
+        // evaluates location first and returns as soon as it drops a row, so a
+        // row failing both is counted ONCE, under location — first-match-wins,
+        // not two disjoint tallies. That is the right behavior (sum of the two
+        // counters always equals total drops, never double-counting one row),
+        // but it means `work-type-filtered:<n>` on such a run reports `n` net
+        // of every row location already claimed, not "how many rows would have
+        // failed the work-type check on their own" — still emitted
+        // unconditionally (even at 0) below so the chip never reads as "this
+        // filter didn't run" when it demonstrably did.
         let location_drops: Arc<std::sync::Mutex<HashMap<String, usize>>> =
             Arc::new(std::sync::Mutex::new(HashMap::new()));
         let work_type_drops: Arc<std::sync::Mutex<HashMap<String, usize>>> =

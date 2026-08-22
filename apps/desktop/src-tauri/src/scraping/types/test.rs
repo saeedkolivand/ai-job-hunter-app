@@ -181,6 +181,69 @@ fn location_spec_none_when_no_location_signal() {
 }
 
 #[test]
+fn work_type_spec_dedupes_preserving_first_seen_order() {
+    let input = BoardSearchInput {
+        query: "dev".into(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        provider_amount: None,
+        date_filter: None,
+        job_type: None,
+        work_types: Some(vec![WorkType::Hybrid, WorkType::Remote, WorkType::Hybrid]),
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: Vec::new(),
+    };
+    assert_eq!(
+        input.work_type_spec(),
+        Some(vec![WorkType::Hybrid, WorkType::Remote]),
+        "duplicates collapse, first-seen order preserved — NOT re-sorted, since \
+         smartrecruiters emits one &locationType= per entry in this exact order"
+    );
+}
+
+#[test]
+fn work_type_spec_none_when_absent_or_cleared_to_empty() {
+    let base = BoardSearchInput {
+        query: "dev".into(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        provider_amount: None,
+        date_filter: None,
+        job_type: None,
+        work_types: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: Vec::new(),
+    };
+    assert!(base.work_type_spec().is_none(), "absent must be None");
+    let cleared = BoardSearchInput {
+        work_types: Some(Vec::new()),
+        ..base
+    };
+    assert!(
+        cleared.work_type_spec().is_none(),
+        "Some(vec![]) — the user cleared the filter — must behave exactly like None"
+    );
+}
+
+#[test]
 fn supports_location_defaults_false() {
     // A minimal scraper that only implements the required methods must inherit the
     // conservative default (a board opts IN to server-side location handling).

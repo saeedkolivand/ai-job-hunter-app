@@ -152,7 +152,7 @@ const SUBSCRIBERS = {
   },
   'features/jobs/components/JobsPage/index.tsx': {
     mount: 'route-scoped',
-    hash: 'da8feeb7c4b7',
+    hash: '8492eea6a608',
     note:
       'A scrape that ends off-page — completed OR failed — now comes back explained. The ' +
       "watchdog re-reads the job record's `result.boards` for the diagnostics strip, writes " +

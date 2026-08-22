@@ -2302,7 +2302,8 @@
       "remote": "Remote",
       "hybrid": "Hybrid",
       "on-site": "Vor Ort",
-      "filterHint": "Arbeitsform lokal gefiltert:"
+      "any": "Beliebig",
+      "filterSummary": "{{count}} von {{total}} ausgewählten Boards können die Arbeitsform nicht serverseitig bestätigen — lokal gefiltert"
     },
     "advanced": "Erweitert",
     "scraping": "Scraping läuft",

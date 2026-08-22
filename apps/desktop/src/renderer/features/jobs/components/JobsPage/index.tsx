@@ -263,7 +263,7 @@ export function JobsPage() {
     void startScrape(next);
   };
 
-  const filtered = useMemo(() => {
+  const { filtered, hasDeclaredWorkType } = useMemo(() => {
     let result = allPostings;
     const q = filter.trim().toLowerCase();
     if (q) {
@@ -283,6 +283,16 @@ export function JobsPage() {
 
     // Optional agency filter — hide recruiting/staffing-agency postings.
     if (hideAgency) result = result.filter((p) => !p.isAgency);
+
+    // Whether the JobsCommandBar work-type control is even worth showing:
+    // computed on this EXACT array — the one the work-type filter is about to
+    // run over, right below — so the gate and the filter can never disagree.
+    // Deliberately measured BEFORE the work-type filter itself: with an active
+    // selection the filter narrows this array, and "does the still-visible set
+    // declare a type" would trivially say yes for a matching selection and no
+    // for one that filters to zero — neither answers the question the control
+    // needs ("is there anything for this control to do on THIS search").
+    const hasDeclaredWorkType = result.some((p) => p.workType != null);
 
     // Optional work-type filter — view-only, no re-scrape. An undeclared
     // `workType` is always kept (see `matchesWorkTypeFilter`).
@@ -312,7 +322,7 @@ export function JobsPage() {
       return cmp || byId(a, b);
     });
 
-    return result;
+    return { filtered: result, hasDeclaredWorkType };
   }, [allPostings, filter, sortBy, hideAgency, workTypes]);
 
   // Denominator for the "N / M" count = distinct jobs (clusters): rows that
@@ -357,6 +367,7 @@ export function JobsPage() {
             boardSummaries={showDiagnostics ? scrapeSummaries : []}
             failureNote={showDiagnostics ? scrapeFailureNote : null}
             scrapeButtonRef={scrapeButtonRef}
+            hasDeclaredWorkType={hasDeclaredWorkType}
           />
 
           <JobsResults

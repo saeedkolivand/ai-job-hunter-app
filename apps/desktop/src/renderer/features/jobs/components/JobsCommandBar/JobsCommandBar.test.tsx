@@ -53,6 +53,11 @@ const baseProps: BarProps = {
   onCancelScrape: vi.fn(),
   boardSummaries: [],
   failureNote: null,
+  // Most existing tests below predate the visibility gate and assume the
+  // work-type control renders; default it "on" so they keep testing what
+  // they were written to test. The gate itself is covered by its own
+  // describe block further down, which overrides this per-case.
+  hasDeclaredWorkType: true,
 };
 
 function renderBar(overrides: Partial<BarProps> = {}) {
@@ -243,12 +248,56 @@ describe('JobsCommandBar — view mode + count', () => {
     expect(useSessionStore.getState().jobs.workTypes).toEqual(['hybrid']);
   });
 
+  it('shows visible "any" microcopy next to the work-type chips when the set is empty', () => {
+    renderBar();
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    expect(within(group).getByText('jobs.workType.any')).toBeInTheDocument();
+  });
+
+  it('hides the "any" microcopy once at least one work type is picked', () => {
+    act(() => {
+      useSessionStore.getState().setJobs({ workTypes: ['remote'] });
+    });
+    renderBar();
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    expect(within(group).queryByText('jobs.workType.any')).toBeNull();
+  });
+
   it('does NOT chip the work-type filter — same "already a visible control" rule as hideAgency', () => {
     act(() => {
       useSessionStore.getState().setJobs({ workTypes: ['remote'] });
     });
     renderBar();
     expect(screen.queryByTestId(TEST_IDS.jobs.filterChips)).not.toBeInTheDocument();
+  });
+});
+
+describe('JobsCommandBar — work-type control visibility gate', () => {
+  it('hides the control when nothing on screen declares a workType and no selection is active', () => {
+    renderBar({ hasDeclaredWorkType: false });
+    expect(screen.queryByRole('group', { name: 'jobs.workType.label' })).not.toBeInTheDocument();
+  });
+
+  it('shows the control when at least one visible posting declares a workType', () => {
+    renderBar({ hasDeclaredWorkType: true });
+    expect(screen.getByRole('group', { name: 'jobs.workType.label' })).toBeInTheDocument();
+  });
+
+  // The trap: an active selection from a PREVIOUS search must stay visible
+  // (and clearable) even after a new search whose results declare nothing —
+  // a naive `hasDeclaredWorkType` gate alone would hide the only control that
+  // shows/clears a filter that is still applied, on a page silently showing
+  // fewer results than it should.
+  it('keeps the control visible when a selection is active, even if nothing currently declares a workType', () => {
+    act(() => {
+      useSessionStore.getState().setJobs({ workTypes: ['remote'] });
+    });
+    renderBar({ hasDeclaredWorkType: false });
+
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    expect(group).toBeInTheDocument();
+    const remote = within(group).getByRole('button', { name: 'jobs.workType.remote' });
+    expect(remote).toHaveAttribute('aria-pressed', 'true');
   });
 });
 

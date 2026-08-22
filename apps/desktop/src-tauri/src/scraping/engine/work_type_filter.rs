@@ -3,9 +3,11 @@
 //! conservatism.
 //!
 //! Every posting's work arrangement is classified from DECLARED data only —
-//! `extra["workType"]`, the value each board writes at parse time (per-board
-//! mapping is a later phase; today no board writes it, so every posting reads
-//! as [`WorkTypeVerdict::Unknown`]). There is deliberately no text inference:
+//! `extra["workType"]`, the value each board writes at parse time. Thirteen
+//! boards declare one; the rest (Greenhouse, Personio, LinkedIn, Adzuna,
+//! Y Combinator and the regional feeds) declare nothing readable from the
+//! endpoint we call, so their postings read as [`WorkTypeVerdict::Unknown`].
+//! There is deliberately no text inference:
 //! keyword matching flips true on "this role is NOT remote" and
 //! "remote-first culture, 3 days in office" just as readily as it flips true
 //! on the real thing, and there is no way to tell the two apart from outside
@@ -35,26 +37,18 @@
 
 use crate::scraping::types::{JobPosting, WorkType};
 
-/// Lowercase, strip `-`/`_`/whitespace, then match. Returns `None` for
-/// anything unrecognised — NEVER a default; a spelling drift silently routing
-/// a whole board to the wrong bucket is worse than an admitted
-/// [`WorkTypeVerdict::Unknown`]. Every ATS spells this differently: `on-site`
-/// (Lever's README) vs `onsite` (Lever's actual wire) vs `OnSite` (Ashby) vs
-/// `ONSITE` (SmartRecruiters) vs `on_site` (Workable) vs `On-site` (LinkedIn's
-/// feed) — one normalizer so every board's per-parse mapping (a later phase)
-/// reaches the SAME matcher instead of six drifting copies.
+/// Thin alias for [`WorkType::from_str`] — the canonical parser now lives on
+/// `WorkType` itself in `scraping::types` (the module's front door, per
+/// `docs/architecture-rules.md` §L1) so a caller outside `scraping::engine`
+/// reaches it via `str::parse`/`WorkType::from_str` directly instead of
+/// importing this module's internals. Kept here, at this exact name, only so
+/// this module's OWN tests and the per-board callers in `scraping::boards::*`
+/// (which already sit inside the same L1 domain) keep reading
+/// `parse_work_type(s)` rather than churning every call site for a rename.
+/// Returns `None` for anything unrecognised — NEVER a default; see
+/// [`WorkType::from_str`]'s doc for why.
 pub(crate) fn parse_work_type(raw: &str) -> Option<WorkType> {
-    let folded: String = raw
-        .chars()
-        .filter(|c| !matches!(c, '-' | '_') && !c.is_whitespace())
-        .flat_map(char::to_lowercase)
-        .collect();
-    match folded.as_str() {
-        "remote" => Some(WorkType::Remote),
-        "hybrid" => Some(WorkType::Hybrid),
-        "onsite" => Some(WorkType::OnSite),
-        _ => None,
-    }
+    raw.parse().ok()
 }
 
 /// What reading a posting's declared work arrangement actually established.

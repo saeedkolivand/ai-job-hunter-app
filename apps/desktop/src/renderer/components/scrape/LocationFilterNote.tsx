@@ -9,10 +9,18 @@ interface FilterCapabilityNoteProps {
   /** True once the filter this hint describes is actually in effect — the
    *  hint is meaningless otherwise (no location typed / no work type picked). */
   active: boolean;
-  /** i18n key for the lead-in text (e.g. "Location filtered locally:"). */
+  /** i18n key for the lead-in text (chip mode), or for the whole sentence
+   *  (summary mode — interpolated with `{{count}}`/`{{total}}`). */
   hintKey: string;
   /** Reads the board's support flag for this capability off the catalog entry. */
   supports: (board: BoardCatalogEntry) => boolean | undefined;
+  /**
+   * Collapse the affected-board list into a count/summary sentence instead of
+   * one chip per board. Location has only 4 non-supporting boards out of 26 —
+   * naming them is the point. Work type has 25 of 26 — naming them all reads
+   * as noise, not a hint, so it uses the summary sentence instead.
+   */
+  summary?: boolean;
 }
 
 /**
@@ -27,7 +35,13 @@ interface FilterCapabilityNoteProps {
  * Not exported — {@link LocationFilterNote} and {@link WorkTypeFilterNote} are
  * thin, capability-specific wrappers over this one body.
  */
-function FilterCapabilityNote({ boards, active, hintKey, supports }: FilterCapabilityNoteProps) {
+function FilterCapabilityNote({
+  boards,
+  active,
+  hintKey,
+  supports,
+  summary,
+}: FilterCapabilityNoteProps) {
   const { t } = useTranslation();
   if (!active) return null;
 
@@ -36,6 +50,15 @@ function FilterCapabilityNote({ boards, active, hintKey, supports }: FilterCapab
   // conservative post-filter.
   const affected = boards.filter((b) => !supports(b));
   if (affected.length === 0) return null;
+
+  if (summary) {
+    return (
+      <div role="note" className="mb-3 flex items-center gap-1.5 text-[10px] text-foreground/70">
+        <Info size={11} aria-hidden="true" className="shrink-0" />
+        <span>{t(hintKey, { count: affected.length, total: boards.length })}</span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -89,16 +112,19 @@ interface WorkTypeFilterNoteProps {
 
 /**
  * Work-type variant of {@link FilterCapabilityNote} (work-type filter feature).
- * Only `smartrecruiters` validates the filter server-side today, so this
- * usually names most of the selection — intended honesty, not a bug.
+ * Only `smartrecruiters` validates the filter server-side today, so a
+ * chip-per-board list (the location variant's presentation) would name
+ * almost the entire selection — noise, not a hint. Collapses to a count
+ * summary sentence instead (`summary`).
  */
 export function WorkTypeFilterNote({ boards, active }: WorkTypeFilterNoteProps) {
   return (
     <FilterCapabilityNote
       boards={boards}
       active={active}
-      hintKey="jobs.workType.filterHint"
+      hintKey="jobs.workType.filterSummary"
       supports={(b) => b.supportsWorkType}
+      summary
     />
   );
 }

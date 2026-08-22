@@ -19,7 +19,7 @@
 import { FormProvider, useForm, useFormContext } from 'react-hook-form';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -584,6 +584,28 @@ describe('StepTarget — work type multi-select', () => {
       screen.getByRole('group', { name: 'autopilot.wizard.target.workType' })
     ).toBeInTheDocument();
   });
+
+  it('shows visible "any" microcopy next to the label when the set is empty', () => {
+    renderStep({ workTypes: [] });
+    expect(screen.getByText('jobs.workType.any')).toBeInTheDocument();
+  });
+
+  it('hides the "any" microcopy once at least one work type is picked', () => {
+    renderStep({ workTypes: ['remote'] });
+    expect(screen.queryByText('jobs.workType.any')).toBeNull();
+  });
+
+  it('every option is an independent tab stop — no roving tabindex for a 3-item set', () => {
+    renderStep({ workTypes: [] });
+    const group = screen.getByRole('group', { name: 'autopilot.wizard.target.workType' });
+    // Roving tabindex would set explicit tabIndex={-1}/{0} attributes; a plain
+    // tab stop leaves the native button default (no `tabindex` attribute at
+    // all), so every option in a 3-item set is independently Tab-reachable —
+    // matching ScrapeFilters' manual-search control (same keyboard model).
+    for (const btn of within(group).getAllByRole('button')) {
+      expect(btn).not.toHaveAttribute('tabindex');
+    }
+  });
 });
 
 // ── WorkTypeFilterNote integration ───────────────────────────────────────────
@@ -601,13 +623,13 @@ describe('StepTarget — work type filter note integration', () => {
 
     // Two `role="note"` elements can coexist (location + work type); scope by content.
     const notes = screen.getAllByRole('note');
-    expect(notes.some((n) => n.textContent?.includes('jobs.workType.filterHint'))).toBe(true);
+    expect(notes.some((n) => n.textContent?.includes('jobs.workType.filterSummary'))).toBe(true);
   });
 
   it('hides the note when no work type is picked (default empty selection)', () => {
     renderStep({ boards: ['aggregator'], workTypes: [] });
     const notes = screen.queryAllByRole('note');
-    expect(notes.some((n) => n.textContent?.includes('jobs.workType.filterHint'))).toBe(false);
+    expect(notes.some((n) => n.textContent?.includes('jobs.workType.filterSummary'))).toBe(false);
   });
 });
 

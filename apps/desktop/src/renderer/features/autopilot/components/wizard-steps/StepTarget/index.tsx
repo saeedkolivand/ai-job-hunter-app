@@ -54,8 +54,6 @@ export function StepTarget({ prefilled }: StepTargetProps) {
 
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const focusedBoardIdx = useRef<number>(0);
-  const workTypeRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const focusedWorkTypeIdx = useRef<number>(0);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
@@ -242,43 +240,41 @@ export function StepTarget({ prefilled }: StepTargetProps) {
             );
           };
           return (
-            <WizardField label={t('autopilot.wizard.target.workType')}>
+            <WizardField
+              label={t('autopilot.wizard.target.workType')}
+              // Empty set silently means "any" — three neutral, identically
+              // unselected buttons read as broken/unset otherwise. Same
+              // "Any time"-style visible microcopy idiom as the Posted
+              // Dropdown's own empty state.
+              hint={field.value.length === 0 ? t('jobs.workType.any') : undefined}
+            >
               {/* Multi-select set, not a Dropdown — a Dropdown can't express a
                   set. Empty = any, all three = all. Mirrors the board picker
-                  above and ScrapeForm's manual-search control. */}
+                  above and ScrapeForm's manual-search control — including its
+                  visual language (same selected/unselected classes) and its
+                  flex-wrap (not a fixed grid column, which can clip "Vor
+                  Ort"). Plain tab stops, not roving tabindex: that pattern
+                  earns its keep on the ~26-item board picker above, but a
+                  3-item set has no efficiency win from it and it breaks the
+                  standard "Tab moves to the next toggle" expectation. */}
               <div
                 role="group"
                 aria-label={t('autopilot.wizard.target.workType')}
-                className="grid grid-cols-3 gap-1.5"
-                onKeyDown={makeMultiSelectKeyHandler(
-                  WORK_TYPE_OPTIONS.length,
-                  focusedWorkTypeIdx,
-                  workTypeRefs,
-                  (idx) => {
-                    const opt = WORK_TYPE_OPTIONS[idx];
-                    if (opt !== undefined) toggle(opt);
-                  }
-                )}
+                className="flex flex-wrap gap-1.5"
               >
-                {WORK_TYPE_OPTIONS.map((opt, i) => {
+                {WORK_TYPE_OPTIONS.map((opt) => {
                   const active = sel.has(opt);
                   return (
                     <Button
                       key={opt}
-                      ref={(el) => {
-                        workTypeRefs.current[i] = el;
-                      }}
                       aria-pressed={active}
-                      tabIndex={i === focusedWorkTypeIdx.current ? 0 : -1}
-                      onClick={() => {
-                        focusedWorkTypeIdx.current = i;
-                        toggle(opt);
-                      }}
+                      variant="ghost"
+                      onClick={() => toggle(opt)}
                       className={cn(
-                        'rounded-lg border px-2 py-1.5 text-[10px] font-medium transition-all h-auto',
+                        'rounded-lg px-2.5 py-1 text-[11px] transition-all',
                         active
-                          ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                          : 'border-[var(--border-clear)] text-foreground/40 hover:bg-muted hover:text-foreground/65'
+                          ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
+                          : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80'
                       )}
                     >
                       {t(`jobs.workType.${opt}`)}

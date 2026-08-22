@@ -96,10 +96,24 @@ where
 {
     let raw: Option<Vec<String>> = Option::deserialize(de)?;
     Ok(raw.map(|values| {
-        values
-            .iter()
-            .filter_map(|s| crate::scraping::engine::work_type_filter::parse_work_type(s))
-            .collect()
+        let parsed: Vec<crate::scraping::types::WorkType> =
+            values.iter().filter_map(|s| s.parse().ok()).collect();
+        let dropped = values.len() - parsed.len();
+        if dropped > 0 {
+            // Count only — never the raw unrecognised string (see
+            // `AutopilotStore::load`'s own `[autopilot]`-prefixed warn just
+            // above for the sibling convention). This is the ONLY trace a
+            // future vocabulary rename leaves before a persisted autopilot's
+            // filter silently widens to "any" (an all-dropped array reads as
+            // `Some(vec![])`, identical to no filter — see
+            // `BoardSearchInput::work_type_spec`).
+            log::warn!(
+                "[autopilot] dropped {dropped} unrecognised workTypes entr{} while \
+                 loading a persisted target",
+                if dropped == 1 { "y" } else { "ies" }
+            );
+        }
+        parsed
     }))
 }
 
@@ -123,14 +137,27 @@ pub struct AutopilotTarget {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
     /// Requested work arrangement(s) — empty/absent means "no filter" ("any").
-    /// Unrecognised entries are DROPPED, not a hard parse failure: this struct
-    /// deserializes as one JSON object in `AutopilotStore::create`/`update`, so
-    /// a single bad entry must not fail the WHOLE target back to an empty
-    /// fallback (see [`parse_work_types_lenient`]). `#[serde(default)]` so a
-    /// pre-existing `autopilots.json` record with no `workTypes` key at all —
-    /// every record on disk today, since the only UI control that could ever
-    /// set this was removed in PR #614 before this field existed — still
-    /// deserializes.
+    /// Unrecognised entries are DROPPED, not a hard parse failure (see
+    /// [`parse_work_types_lenient`]). This matters on THREE paths, in
+    /// increasing order of consequence:
+    /// - `AutopilotStore::create`'s `unwrap_or_else` (a hard target parse
+    ///   failure falls back to an empty target — only `work_types` would be
+    ///   affected either way, since it is the one field that never hard-fails).
+    /// - `AutopilotStore::update`'s patch merge silently ignores the WHOLE
+    ///   target patch on a parse failure — every other edited field in the
+    ///   same call is lost too, not just this one.
+    /// - **The strongest reason, and the one that makes this load-bearing
+    ///   rather than a nicety:** `AutopilotStore::load` deserializes each
+    ///   persisted record individually and `filter_map`s out any that fail —
+    ///   logged, never panicked — and the very next `save()` rewrites
+    ///   `autopilots.json` WITHOUT that record. A single unrecognised
+    ///   `workTypes` entry surviving to a hard parse failure would silently
+    ///   delete an entire autopilot, including `found_jobs` and
+    ///   `last_run_summaries`, on the next write. `#[serde(default)]` so a
+    ///   pre-existing `autopilots.json` record with no `workTypes` key at
+    ///   all — every record on disk today, since the only UI control that
+    ///   could ever set this was removed in PR #614 before this field
+    ///   existed — still deserializes.
     #[serde(
         default,
         deserialize_with = "parse_work_types_lenient",

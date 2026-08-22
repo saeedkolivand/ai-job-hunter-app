@@ -2298,7 +2298,8 @@
       "remote": "Remote",
       "hybrid": "Hybrid",
       "on-site": "On-site",
-      "filterHint": "Work type filtered locally:"
+      "any": "Any",
+      "filterSummary": "{{count}} of {{total}} selected boards can't confirm work type upstream — filtered locally"
     },
     "advanced": "Advanced",
     "scraping": "Scraping",

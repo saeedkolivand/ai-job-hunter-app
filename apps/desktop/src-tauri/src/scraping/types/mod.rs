@@ -99,6 +99,46 @@ pub enum WorkType {
     OnSite,
 }
 
+/// Returned by [`WorkType::from_str`] for an unrecognised value. Carries no
+/// data — every caller drops it via `.ok()`, matching the pre-existing
+/// `parse_work_type` contract: an unmatched spelling is a `None`/`Err`, never
+/// a guessed default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseWorkTypeError;
+
+impl std::fmt::Display for ParseWorkTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unrecognised work type")
+    }
+}
+
+impl std::error::Error for ParseWorkTypeError {}
+
+/// The canonical string→`WorkType` parser, reachable through the module's
+/// front door (`docs/architecture-rules.md` §L1) instead of two levels into
+/// `scraping::engine::work_type_filter`'s internals. Lowercase, strip
+/// `-`/`_`/whitespace, then match — every ATS spells this differently:
+/// `on-site` (Lever's README) vs `onsite` (Lever's actual wire) vs `OnSite`
+/// (Ashby) vs `ONSITE` (SmartRecruiters) vs `on_site` (Workable) vs `On-site`
+/// (LinkedIn's feed).
+impl std::str::FromStr for WorkType {
+    type Err = ParseWorkTypeError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let folded: String = raw
+            .chars()
+            .filter(|c| !matches!(c, '-' | '_') && !c.is_whitespace())
+            .flat_map(char::to_lowercase)
+            .collect();
+        match folded.as_str() {
+            "remote" => Ok(WorkType::Remote),
+            "hybrid" => Ok(WorkType::Hybrid),
+            "onsite" => Ok(WorkType::OnSite),
+            _ => Err(ParseWorkTypeError),
+        }
+    }
+}
+
 /// Canonical structured location for a search — the single model the engine's
 /// central location post-filter (and location-aware boards) reason over,
 /// assembled once from the free-text `location` plus the structured geo fields a
@@ -165,6 +205,32 @@ impl BoardSearchInput {
             radius_km: self.radius_km,
         };
         (!spec.is_empty()).then_some(spec)
+    }
+
+    /// The canonical requested-work-types set for this search — the sibling of
+    /// [`Self::location_spec`], same shape: the ONE place that resolves
+    /// "empty/absent means no filter" so every consumer (the engine's central
+    /// post-filter, and any board that pushes the param upstream) reads it
+    /// through here instead of re-deriving the invariant. Returns `None` both
+    /// when `work_types` is absent AND when the caller cleared the filter to
+    /// `Some(vec![])` — the two must behave identically.
+    ///
+    /// Also dedupes (CWE-770 defense-in-depth: a generous/duplicated
+    /// multi-select must not fan out into repeated per-type work at every
+    /// consumer — an upstream board emitting one query param per entry, or an
+    /// extra pass of the per-posting classifier). Order-preserving, first-seen
+    /// wins — deliberately NOT a `HashSet`: `smartrecruiters` emits one
+    /// `&locationType=` per entry in this exact order, and a set gives no
+    /// ordering guarantee.
+    pub fn work_type_spec(&self) -> Option<Vec<WorkType>> {
+        let types = self.work_types.as_ref()?;
+        let mut seen = std::collections::HashSet::with_capacity(types.len());
+        let deduped: Vec<WorkType> = types
+            .iter()
+            .copied()
+            .filter(|wt| seen.insert(*wt))
+            .collect();
+        (!deduped.is_empty()).then_some(deduped)
     }
 }
 

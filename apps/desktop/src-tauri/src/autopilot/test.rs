@@ -29,6 +29,95 @@ fn test_autopilot_target_serialization() {
     assert!(json.is_ok());
 }
 
+// ── `parse_work_types_lenient` — the only persisted, data-loss-capable path ──
+//
+// MUTATION CHECK for all four tests below: replace the `work_types` field's
+// attributes with the naive
+// `#[serde(default)] pub work_types: Option<Vec<crate::scraping::types::WorkType>>`
+// (delete `deserialize_with = "parse_work_types_lenient"`). Every one of these
+// tests goes red — `work_types_mixed_validity_drops_bad_entry_keeps_boards_and_query`
+// because stock `Vec<WorkType>::deserialize` fails the WHOLE array (and so the
+// whole `from_value::<AutopilotTarget>` call) on the one unrecognised entry
+// instead of dropping it, which is exactly the data-loss path
+// `AutopilotStore::load` → `save()` this field's doc warns about. Restore
+// after checking.
+
+#[test]
+fn work_types_mixed_validity_drops_bad_entry_keeps_boards_and_query() {
+    let raw = serde_json::json!({
+        "boards": ["linkedin"],
+        "query": "rust",
+        "pages": 1,
+        "workTypes": ["remote", "bogus", "hybrid"],
+    });
+    let target: AutopilotTarget = serde_json::from_value(raw)
+        .expect("a single unrecognised workTypes entry must not fail the whole target");
+    assert_eq!(target.boards, vec!["linkedin".to_string()]);
+    assert_eq!(target.query, "rust");
+    assert_eq!(
+        target.work_types,
+        Some(vec![WorkType::Remote, WorkType::Hybrid]),
+        "the bad entry is dropped, the valid ones kept in order"
+    );
+}
+
+#[test]
+fn work_types_absent_key_deserializes_to_none() {
+    // Every autopilot on disk today has no `workTypes` key at all (the only
+    // UI control that could set it was removed in PR #614 before this field
+    // existed) — this is the common case, not an edge case.
+    let raw = serde_json::json!({
+        "boards": ["linkedin"],
+        "query": "rust",
+        "pages": 1,
+    });
+    let target: AutopilotTarget = serde_json::from_value(raw)
+        .expect("a legacy record with no workTypes key must deserialize");
+    assert_eq!(target.work_types, None);
+}
+
+#[test]
+fn work_types_all_unrecognised_collapses_to_empty_vec_not_none() {
+    // `Some(vec![])`, not `None` — the deserializer's job is only to drop bad
+    // entries, not to decide "empty means no filter"; that collapse belongs to
+    // `BoardSearchInput::work_type_spec`, the single seam every consumer reads.
+    let raw = serde_json::json!({
+        "boards": ["linkedin"],
+        "query": "rust",
+        "pages": 1,
+        "workTypes": ["bogus", "also-bogus"],
+    });
+    let target: AutopilotTarget =
+        serde_json::from_value(raw).expect("an all-unrecognised array must still deserialize");
+    assert_eq!(target.work_types, Some(Vec::new()));
+}
+
+#[test]
+fn work_types_roundtrips_through_serialize_deserialize() {
+    let target = AutopilotTarget {
+        boards: vec!["linkedin".to_string()],
+        query: "rust".to_string(),
+        location: None,
+        country_code: None,
+        work_types: Some(vec![WorkType::OnSite, WorkType::Hybrid]),
+        pages: 1,
+        date_filter: None,
+        top_n: default_top_n(),
+        watched_companies_only: None,
+    };
+    let json = serde_json::to_value(&target).unwrap();
+    assert_eq!(
+        json.get("workTypes"),
+        Some(&serde_json::json!(["on-site", "hybrid"])),
+        "must serialize through the shared kebab-case WorkType vocabulary"
+    );
+    let back: AutopilotTarget = serde_json::from_value(json).unwrap();
+    assert_eq!(
+        back.work_types,
+        Some(vec![WorkType::OnSite, WorkType::Hybrid])
+    );
+}
+
 #[test]
 fn test_autopilot_filter_serialization() {
     let filter = AutopilotFilter {
@@ -973,6 +1062,31 @@ fn autopilot_record_without_summaries_field_deserializes_to_empty() {
     let ap: Autopilot = serde_json::from_value(legacy).expect("legacy record must deserialize");
     assert!(ap.last_run_summaries.is_empty());
     assert_eq!(ap.run_status, None);
+}
+
+#[test]
+fn board_scrape_summary_legacy_single_note_field_deserializes_with_empty_notes() {
+    // A record persisted by the old single-slot `note: Option<String>` shape
+    // must still load. There is no `#[serde(alias = "note")]` — the legacy key
+    // is silently ignored (unknown fields are dropped by default) and `notes`
+    // takes its `#[serde(default)]` empty vec. Documented as an accepted,
+    // already-established trade-off for this display-only field (see the doc
+    // on `BoardScrapeSummary::notes`) — pinned here so it stays a DECISION,
+    // not an unverified assumption.
+    let legacy = serde_json::json!({
+        "board": "greenhouse",
+        "count": 6,
+        "note": "location-filtered:5",
+    });
+    let back: crate::scraping::BoardScrapeSummary =
+        serde_json::from_value(legacy).expect("legacy single-note record must deserialize");
+    assert_eq!(back.board, "greenhouse");
+    assert_eq!(back.count, 6);
+    assert!(
+        back.notes.is_empty(),
+        "the legacy singular `note` key must NOT populate `notes` (no alias); got {:?}",
+        back.notes
+    );
 }
 
 #[test]

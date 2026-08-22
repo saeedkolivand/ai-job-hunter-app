@@ -196,4 +196,26 @@ describe('ScrapeFilters — work type multi-select', () => {
       expect(btn).toBeDisabled();
     }
   });
+
+  it('shows visible "any" microcopy next to the label when the set is empty', async () => {
+    await renderAdvanced(buildForm({ workTypes: [] }));
+    expect(screen.getByText('· jobs.workType.any')).toBeInTheDocument();
+  });
+
+  it('hides the "any" microcopy once at least one work type is picked', async () => {
+    await renderAdvanced(buildForm({ workTypes: ['remote'] }));
+    expect(screen.queryByText('· jobs.workType.any')).toBeNull();
+  });
+
+  it('every option is an independent tab stop — no roving tabindex for a 3-item set', async () => {
+    await renderAdvanced();
+
+    const group = screen.getByRole('group', { name: 'jobs.workType.label' });
+    // Roving tabindex would set explicit tabIndex={-1}/{0} attributes; a plain
+    // tab stop leaves the native button default (no `tabindex` attribute at
+    // all), so every option in a 3-item set is independently Tab-reachable.
+    for (const btn of within(group).getAllByRole('button')) {
+      expect(btn).not.toHaveAttribute('tabindex');
+    }
+  });
 });

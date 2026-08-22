@@ -6,8 +6,7 @@ use crate::postings::{attach_interactions, InteractionRecord, InteractionStore, 
 use crate::scraping::cluster::{
     assign_clusters, posting_cluster_input, ClusterAssignment, ClusterInput,
 };
-use crate::scraping::engine::work_type_filter;
-use crate::scraping::{BoardSearchInput, ScraperEngine};
+use crate::scraping::{BoardSearchInput, ScraperEngine, WorkType};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -166,15 +165,25 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         // propagation exist today. `work_types` is no longer in that bucket: it
         // normalises through the shared `WORK_TYPE_OPTIONS`/`WorkType` vocabulary.
         job_type: req.job_type.clone(),
-        // Zod already restricts every entry to WORK_TYPE_OPTIONS; `parse_work_type`
+        // Zod already restricts every entry to WORK_TYPE_OPTIONS; `WorkType::from_str`
         // is still the parser (never a raw cast) so an unrecognised entry is
         // dropped instead of silently miscoded — the same defensive posture the
-        // rest of this module takes at an IPC boundary.
+        // rest of this module takes at an IPC boundary. A drop here is logged
+        // (count only, never the raw string): silent on the manual-search path
+        // today because Zod already blocks it, but this is the same
+        // deserializer shape `AutopilotTarget` reuses on ITS persisted path,
+        // where a future vocabulary rename landing here with nothing failing
+        // is exactly the silent-widening failure mode this guards against.
         work_types: req.work_types.clone().map(|types| {
-            types
-                .iter()
-                .filter_map(|s| work_type_filter::parse_work_type(s))
-                .collect()
+            let parsed: Vec<WorkType> = types.iter().filter_map(|s| s.parse().ok()).collect();
+            let dropped = types.len() - parsed.len();
+            if dropped > 0 {
+                log::warn!(
+                    "[scrape] dropped {dropped} unrecognised work-type entr{} from the request",
+                    if dropped == 1 { "y" } else { "ies" }
+                );
+            }
+            parsed
         }),
         experience_level: req.experience_level.clone(),
         easy_apply: req.easy_apply,

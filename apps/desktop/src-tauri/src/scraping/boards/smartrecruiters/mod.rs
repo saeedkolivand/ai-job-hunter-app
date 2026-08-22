@@ -171,9 +171,12 @@ impl Scraper for SmartRecruitersScraper {
             };
             // Upstream pass-through — the only board in v1 (see
             // `supports_work_type`). Repeatable param, one occurrence per
-            // requested type.
-            if let Some(work_types) = input.work_types.as_ref().filter(|wt| !wt.is_empty()) {
-                for wt in work_types {
+            // requested type. `work_type_spec()` (not the raw `work_types`
+            // field) both resolves the empty/absent-means-no-filter invariant
+            // and dedupes — CWE-770 defense-in-depth against a generous
+            // multi-select fanning out into an unbounded `&locationType=` tail.
+            if let Some(work_types) = input.work_type_spec() {
+                for wt in &work_types {
                     list_url.push_str("&locationType=");
                     list_url.push_str(smartrecruiters_location_type_param(*wt));
                 }
