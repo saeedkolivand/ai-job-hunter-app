@@ -45,11 +45,18 @@ use super::stages::sections;
 /// when it did — content-free (ADR-027), for the draft-stage ledger.
 ///
 /// Every extractor in `extraction::*` (PDF/DOCX/RTF) emits plain prose, no
-/// markdown at all — `source::entries` groups a section's lines by
-/// `project_entry_starts` (bold or bullet) OR "first line of the section",
-/// and that second arm exists only so a section with exactly one project
-/// still seeds. On a plain-text section it is the only arm that fires, so a
-/// multi-project section collapses into fewer, garbled entries.
+/// markdown at all. `project_entry_starts` therefore reads a THIRD signal
+/// besides bold and bullet: a short, non-sentence line directly above a
+/// technology stack is a title (`export::parser::is_project_title_shaped`).
+/// Before that, the only arm a plain-text section could fire was "first line
+/// of the section", so a multi-project section collapsed into ONE garbled
+/// mega-entry whose description swallowed every following project's title —
+/// which the `link_in_description` bail below then correctly refused to
+/// normalize from. A plain-prose section now groups correctly, so these bails
+/// fire on genuinely broken input rather than on every imported résumé.
+///
+/// They are still load-bearing: a section with no stack lines at all has no
+/// shape signal either, and still collapses.
 ///
 /// Three independent, WHOLE-BAIL guards (a partial filter would still leave
 /// the rest of a mis-grouped section to normalize from):

@@ -23,7 +23,7 @@
 //! date, recipient, salutation, body, closing, signature) and stay on the legacy
 //! `export::pdf` path until a later phase models them explicitly.
 
-use crate::export::parser::{is_project_stack_shaped, parse_resume};
+use crate::export::parser::{is_project_stack_shaped, is_project_title_shaped, parse_resume};
 use crate::export::types::{DocumentType, LineKind, ParsedLine};
 
 use super::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Section, SectionId};
@@ -77,6 +77,50 @@ fn push_nonempty_section(section: Section, sections: &mut Vec<Section>) {
     }
 }
 
+/// The next line with content WITHIN the current section, skipping blanks.
+///
+/// Blanks separate projects, so a project's last description line must still
+/// see the next project's title. A [`LineKind::SectionHeader`] ends the search
+/// instead: looking past it let a separator-bearing heading (`SKILLS · TOOLS`)
+/// turn the final line of Projects into a title, and the sibling groupings in
+/// `pipeline::resume::source` and `validate::content` are section-scoped by
+/// construction — this is what keeps all three answering alike.
+fn next_content_line(lines: &[ParsedLine], idx: usize) -> Option<&ParsedLine> {
+    lines[idx.saturating_add(1)..]
+        .iter()
+        .take_while(|l| !matches!(l.kind, LineKind::SectionHeader))
+        .find(|l| !matches!(l.kind, LineKind::Blank) && !l.text.trim().is_empty())
+}
+
+/// Does this line open a project entry in the RENDER model?
+///
+/// A leading bold run is the signal the generated signature carries. Failing
+/// that, the shape decides — see [`is_project_title_shaped`], which is shared
+/// with the pipeline's grouping so the two can never disagree about where an
+/// entry begins.
+///
+/// A bullet is deliberately NOT an opener here: the compact tier
+/// (`• Name · Website · Github`) is a standalone one-liner, and the `Bullet` arm
+/// already appends bullets to whichever entry is open.
+fn opens_project_entry(
+    line: &ParsedLine,
+    next: Option<&ParsedLine>,
+    at_paragraph_start: bool,
+) -> bool {
+    if line
+        .segments
+        .first()
+        .is_some_and(|seg| seg.bold && !seg.text.trim().is_empty())
+    {
+        return true;
+    }
+    is_project_title_shaped(
+        &line.text,
+        next.map(|n| n.text.as_str()),
+        at_paragraph_start,
+    )
+}
+
 /// Regroup one line of a Projects section into an [`EntryBlock`], returning
 /// `true` when the line was consumed.
 ///
@@ -103,6 +147,8 @@ fn push_nonempty_section(section: Section, sections: &mut Vec<Section>) {
 /// Experience or a custom heading are not touched.
 fn absorb_project_line(
     line: &ParsedLine,
+    next: Option<&ParsedLine>,
+    at_paragraph_start: bool,
     entry: &mut Option<EntryBlock>,
     current: &mut Option<Section>,
     preamble: &mut Vec<Block>,
@@ -111,13 +157,7 @@ fn absorb_project_line(
         return false;
     }
 
-    // A bold-led line is the start of the next project — the same signal
-    // `validate::content`'s project-tier grader reads.
-    if line
-        .segments
-        .first()
-        .is_some_and(|seg| seg.bold && !seg.text.trim().is_empty())
-    {
+    if opens_project_entry(line, next, at_paragraph_start) {
         flush_entry(entry, current, preamble);
         *entry = Some(EntryBlock {
             // `line.raw` so the bold run and the markdown links survive.
@@ -171,7 +211,16 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
     let mut current: Option<Section> = None;
     let mut entry: Option<EntryBlock> = None;
 
-    for line in &parsed.lines {
+    // True when the line about to be handled opens a paragraph: the first
+    // content line after a blank or a section heading. Projects are separated by
+    // blank lines and a description line never is, which is what keeps an
+    // unpunctuated line INSIDE an entry from being read as the next title.
+    let mut at_paragraph_start = true;
+    for (idx, line) in parsed.lines.iter().enumerate() {
+        let at_paragraph_start = std::mem::replace(
+            &mut at_paragraph_start,
+            matches!(line.kind, LineKind::Blank | LineKind::SectionHeader),
+        );
         match line.kind {
             LineKind::Blank => {}
 
@@ -194,7 +243,14 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
                     // Header contact: keep the raw (un-stripped) line so markdown
                     // links `[label](url)` tokenize into clickable runs.
                     contact_parts.push(line.raw.clone());
-                } else if !absorb_project_line(line, &mut entry, &mut current, &mut preamble) {
+                } else if !absorb_project_line(
+                    line,
+                    next_content_line(&parsed.lines, idx),
+                    at_paragraph_start,
+                    &mut entry,
+                    &mut current,
+                    &mut preamble,
+                ) {
                     flush_entry(&mut entry, &mut current, &mut preamble);
                     push_block(
                         Block::Paragraph(tokenize_rich(&line.raw)),
@@ -272,7 +328,14 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
                     && is_title_like(&line.text)
                 {
                     title = Some(line.text.clone());
-                } else if !absorb_project_line(line, &mut entry, &mut current, &mut preamble) {
+                } else if !absorb_project_line(
+                    line,
+                    next_content_line(&parsed.lines, idx),
+                    at_paragraph_start,
+                    &mut entry,
+                    &mut current,
+                    &mut preamble,
+                ) {
                     flush_entry(&mut entry, &mut current, &mut preamble);
                     push_block(
                         Block::Paragraph(tokenize_rich(&line.raw)),
@@ -1132,6 +1195,111 @@ Framework-agnostic component library published to npm.
                 "A double-entry bookkeeping tool for the terminal.",
             ],
             "the link stays body content, in source order"
+        );
+    }
+
+    /// An IMPORTED résumé carries no markdown: PDF and DOCX extraction keeps the
+    /// words and drops the bold. A candidate's own CV with a perfectly-formed
+    /// project block therefore has no `**` anywhere, and a bold-only opener
+    /// rendered the whole section as loose paragraphs — the exact flat output
+    /// this feature exists to remove. Real shape, taken from an imported CV.
+    #[test]
+    fn a_project_title_is_recognized_without_markdown_bold() {
+        let m = model_from_resume_text(
+            "PROJECTS
+
+             AI Job Hunter   aijobhunter.app
+             Tauri 2 · Rust · React 19 · TypeScript
+             Local-first Windows and macOS desktop application with local SQLite storage.
+
+             CrossKit   crosskit.iamsaeed.dev
+             TypeScript · React · Vue
+             Framework-agnostic component library published to npm.
+",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 2, "one entry per project, got {found:?}");
+        assert_eq!(flat(&found[0].title), "AI Job Hunter   aijobhunter.app");
+        assert_eq!(
+            found[0].subtitle.as_ref().map(flat).as_deref(),
+            Some("Tauri 2 · Rust · React 19 · TypeScript")
+        );
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec!["Local-first Windows and macOS desktop application with local SQLite storage."]
+        );
+        assert_eq!(flat(&found[1].title), "CrossKit   crosskit.iamsaeed.dev");
+        assert_eq!(
+            found[1].subtitle.as_ref().map(flat).as_deref(),
+            Some("TypeScript · React · Vue")
+        );
+    }
+
+    /// The shape fallback must not fire on ordinary prose. A description line is
+    /// only ever followed by more prose or the next title, never by a stack.
+    #[test]
+    fn prose_followed_by_prose_never_opens_an_entry() {
+        let m = model_from_resume_text(
+            "PROJECTS
+
+             Built an internal deploy tool used by the whole team
+             and documented it for the on-call rotation.
+",
+        );
+        assert!(entries(&m).is_empty(), "no stack line, so no entry opens");
+    }
+
+    /// The shape signal must not read across a section boundary. A
+    /// separator-bearing HEADING (`SKILLS · TOOLS`, and German/French headings
+    /// like `KENNTNISSE · SPRACHEN` are the same shape) sits right after the last
+    /// line of Projects, and looking past the heading made that line a title.
+    #[test]
+    fn the_shape_signal_never_looks_past_a_section_heading() {
+        let m = model_from_resume_text(
+            "PROJECTS
+
+             Ledger CLI   example.dev
+             Rust · SQLite
+             A bookkeeping tool I maintain
+
+             SKILLS · TOOLS
+             Rust, Python
+",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 1, "one project, got {found:?}");
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec!["A bookkeeping tool I maintain"],
+            "the last line stays this project's body"
+        );
+    }
+
+    /// A line INSIDE an entry must not hijack a following stack line. Entries are
+    /// blank-separated and a description line never is, which is the signal that
+    /// separates the two: `Used by 200 teams` above a SECOND stack is prose.
+    #[test]
+    fn an_unpunctuated_body_line_above_a_stack_is_not_a_title() {
+        let m = model_from_resume_text(
+            "PROJECTS
+
+             Ledger CLI   example.dev
+             Rust · SQLite
+             Used by 200 teams
+             Go · gRPC · Redis
+",
+        );
+        let found = entries(&m);
+        assert_eq!(found.len(), 1, "one project, got {found:?}");
+        assert_eq!(
+            found[0].subtitle.as_ref().map(flat).as_deref(),
+            Some("Rust · SQLite"),
+            "the FIRST stack stays the technology line"
+        );
+        assert_eq!(
+            found[0].bullets.iter().map(flat).collect::<Vec<_>>(),
+            vec!["Used by 200 teams", "Go · gRPC · Redis"],
+            "both later lines stay body content, in order"
         );
     }
 
