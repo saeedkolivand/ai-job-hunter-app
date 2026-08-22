@@ -342,6 +342,7 @@ const SECTION_NAMES: &[&str] = &[
     "academic history",
     "skills",
     "technical skills",
+    "core skills",
     "core competencies",
     "key skills",
     "competencies",
@@ -355,6 +356,7 @@ const SECTION_NAMES: &[&str] = &[
     "key projects",
     "notable projects",
     "side projects",
+    "selected projects",
     "achievements",
     "awards",
     "honors",
@@ -460,6 +462,43 @@ const SECTION_NAMES: &[&str] = &[
 /// …) can ask without forking a second copy of the list — those headings are
 /// all in [`SECTION_NAMES`], but `classify_section`'s six-variant
 /// `SectionKind` has no arm for any of them and buckets them all as `Other`.
+/// Collapse a LETTER-SPACED heading back into words, or `None` when the line is
+/// not one.
+///
+/// Designers set headings with wide tracking, and some PDF producers bake that
+/// into the text layer as real spaces: a CV in the wild extracts its headings as
+/// `S E L E C T E D   P R O J E C T S`. Every heading test in this file, in
+/// `documents::evidence` and in `model::document::SectionId` is a
+/// string match, so that line matches NOTHING — the section is invisible, its
+/// projects never seed, its links are never collected, and it renders as body
+/// text. (It is also an ATS hazard in its own right: wide tracking is exactly
+/// what breaks text extraction for a real applicant-tracking parser.)
+///
+/// Single-character tokens are the signal. Word gaps survive as RUNS of two or
+/// more spaces, so `S E L E C T E D   P R O J E C T S` restores as
+/// `SELECTED PROJECTS` rather than one welded word. Requires at least four
+/// single-character tokens, so an ordinary short line is never rewritten.
+fn despace_letterspaced(clean: &str) -> Option<String> {
+    let clean = clean.trim();
+    let mut tokens = 0usize;
+    for token in clean.split_whitespace() {
+        if token.chars().count() != 1 {
+            return None;
+        }
+        tokens += 1;
+    }
+    if tokens < 4 {
+        return None;
+    }
+    let words: Vec<String> = clean
+        .split("  ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| part.split_whitespace().collect::<String>())
+        .collect();
+    (!words.is_empty()).then(|| words.join(" "))
+}
+
 pub(crate) fn is_known_section_name(text: &str) -> bool {
     let lower = text.trim().to_lowercase();
     if SECTION_NAMES.contains(&lower.as_str()) {
@@ -681,7 +720,18 @@ fn is_entry_title_shaped(clean: &str) -> bool {
 /// Parse a single line
 fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     let trimmed = raw.trim();
-    let clean = strip_md(trimmed);
+    let mut clean = strip_md(trimmed);
+    // A letter-spaced heading is rewritten to its collapsed form ONLY when that
+    // form is a heading we know. Gating on the result means an ordinary line can
+    // never be rewritten by accident, and every downstream consumer
+    // (`SectionId::from_header`, `documents::evidence`, the renderer) sees the
+    // same readable text.
+    if let Some(despaced) = despace_letterspaced(&clean) {
+        if is_known_section_name(&despaced) {
+            clean = despaced;
+        }
+    }
+    let clean = clean;
     let segments = parse_inline_md(trimmed);
 
     // Blank line

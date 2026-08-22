@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::sync::LazyLock;
 
 use lopdf::{Dictionary, Document, Object};
+use regex::Regex;
 use tracing::warn;
 
 use crate::extraction::types::{ExtractedResume, ExtractionError, Link, SourceFormat};
@@ -286,6 +288,89 @@ pub(crate) fn repair_utf16_mojibake(s: &str) -> Cow<'_, str> {
     }
 }
 
+/// URL-ish tokens written as PLAIN TEXT in the document body.
+///
+/// The reference list below is built from a PDF's `/Annot` link layer. A CV
+/// typeset without real hyperlinks has none, so `aijobhunter.app` survives only
+/// as characters — and every consumer downstream (the TS link injector that
+/// re-attaches a project's URL to its item, the résumé seeder) reads the
+/// reference list. The result was a generated résumé with no project links at
+/// all, whether or not the model happened to copy them.
+///
+/// A path-less host is only accepted for a TLD a technology name does not use.
+/// `.io` is excluded there ON PURPOSE: `socket.io` and `crates.io` are a library
+/// and a registry, not the candidate's links, and they are indistinguishable
+/// from a real apex domain by shape alone. `.io` WITH a path
+/// (`saeedkolivand.github.io/ai-engineering-hub`) is unambiguous and kept.
+///
+/// Deliberately local rather than a relaxation of
+/// `validate::content::factual::URL_RE`: that regex grades link Criticals, and
+/// widening it would change what counts as a claimed link everywhere.
+static TEXT_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(?:https?://[^\s\]<>]+|(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|org|net|dev|app|de|co|ai|sh|me|io)(?:/[^\s\]<>]*)?)").unwrap()
+});
+
+/// TLDs a bare, path-less host may end in — see [`TEXT_URL_RE`].
+const PATHLESS_TLDS: [&str; 8] = ["com", "org", "net", "dev", "app", "de", "co", "ai"];
+
+/// Trim what trails a URL in prose without eating part of the path.
+///
+/// A `)` may belong to the URL (`…/Function_(mathematics)`) or to the sentence
+/// around it (`(see example.com/a)`), and the regex cannot tell which. It keeps
+/// every `)` and this decides after the fact: a closing paren survives only when
+/// an unclosed `(` inside the token is waiting for it. Sentence punctuation and
+/// an unbalanced paren are stripped in turn, since either can sit outside the
+/// other (`(see example.com/a).`).
+fn trim_url_tail(token: &str) -> &str {
+    let mut token = token;
+    loop {
+        let trimmed = token.trim_end_matches(['.', ',', ';', ':']);
+        let trimmed = match trimmed.strip_suffix(')') {
+            Some(without) if trimmed.matches(')').count() > trimmed.matches('(').count() => without,
+            _ => trimmed,
+        };
+        if trimmed == token {
+            return token;
+        }
+        token = trimmed;
+    }
+}
+
+fn links_from_text(text: &str) -> Vec<Link> {
+    let mut out: Vec<Link> = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for m in TEXT_URL_RE.find_iter(text) {
+        // Never take the host half of an email address.
+        if text[..m.start()].ends_with(['@', '.']) {
+            continue;
+        }
+        let token = trim_url_tail(m.as_str());
+        let has_scheme = token.to_ascii_lowercase().starts_with("http");
+        if !has_scheme && !token.contains('/') {
+            let tld = token
+                .rsplit('.')
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if !PATHLESS_TLDS.contains(&tld.as_str()) {
+                continue;
+            }
+        }
+        let url = if has_scheme {
+            token.to_string()
+        } else {
+            format!("https://{token}")
+        };
+        if seen.insert(url.to_ascii_lowercase()) {
+            out.push(Link {
+                anchor_text: token.to_string(),
+                url,
+            });
+        }
+    }
+    out
+}
+
 /// Append extracted links at the end of the text as a markdown reference list.
 ///
 /// PDF text and annotation layers use separate coordinate systems; there is no
@@ -293,6 +378,15 @@ pub(crate) fn repair_utf16_mojibake(s: &str) -> Cow<'_, str> {
 /// pdfium. Appending them as a reference list is accurate and never corrupts
 /// surrounding text.
 fn inline_links(text: &str, links: &[Link]) -> String {
+    // No annotation layer: recover what the text itself spells out, so a CV
+    // typeset without real hyperlinks still carries its links forward.
+    let harvested;
+    let links = if links.is_empty() {
+        harvested = links_from_text(text);
+        harvested.as_slice()
+    } else {
+        links
+    };
     if links.is_empty() {
         return text.to_string();
     }
@@ -535,6 +629,124 @@ mod test {
             repaired.contains('\0'),
             "the un-recovered exotic suffix must stay detectably corrupt, not be \
              silently smoothed into \"giN-hub\"; got {repaired:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod text_link_test {
+    use super::*;
+
+    /// Real shape from a reported CV: the links are typeset as plain text, with
+    /// no `/Annot` layer behind them, so the reference list came out empty and
+    /// every generated résumé lost its project links.
+    const PLAIN_TEXT_CV: &str = "\
+Saeed Kolivand
+iamsaeed.dev  ·  github.com/saeedkolivand
+
+SELECTED PROJECTS
+
+AI Job Hunter   aijobhunter.app
+Tauri 2 · Rust · React 19
+Local-first desktop application.
+
+CrossKit   crosskit.iamsaeed.dev
+TypeScript · React · Vue
+Framework-agnostic component library.
+";
+
+    #[test]
+    fn plain_text_links_are_recovered_when_a_pdf_has_no_annotations() {
+        let urls: Vec<String> = links_from_text(PLAIN_TEXT_CV)
+            .into_iter()
+            .map(|l| l.url)
+            .collect();
+        assert_eq!(
+            urls,
+            vec![
+                "https://iamsaeed.dev",
+                "https://github.com/saeedkolivand",
+                "https://aijobhunter.app",
+                "https://crosskit.iamsaeed.dev",
+            ],
+            "every link the CV spells out, in document order, deduped"
+        );
+    }
+
+    /// The reason a path-less `.io` is refused: these are libraries and
+    /// registries on a technology line, not the candidate's links, and nothing
+    /// about their SHAPE distinguishes them from an apex domain.
+    #[test]
+    fn technology_names_that_look_like_domains_are_not_links() {
+        for text in [
+            "Node.js · socket.io · Express",
+            "Published to crates.io; adopted by fourteen organisations",
+            "Vue.js and Next.js",
+            "Contact: jane@example.com",
+        ] {
+            assert!(
+                links_from_text(text).is_empty(),
+                "must not harvest a link from {text:?}: {:?}",
+                links_from_text(text)
+            );
+        }
+    }
+
+    /// A `)` may belong to the URL or to the sentence around it. Both shapes
+    /// appear in real résumés, and truncating the first produces a dead link.
+    #[test]
+    fn a_balanced_parenthesis_in_a_path_survives_but_a_sentence_paren_does_not() {
+        let urls =
+            |t: &str| -> Vec<String> { links_from_text(t).into_iter().map(|l| l.url).collect() };
+        assert_eq!(
+            urls("See https://example.com/Function_(mathematics) for details"),
+            vec!["https://example.com/Function_(mathematics)"],
+            "a balanced pair belongs to the path"
+        );
+        assert_eq!(
+            urls("(see https://example.com/a)"),
+            vec!["https://example.com/a"],
+            "an unmatched closing paren belongs to the sentence"
+        );
+        assert_eq!(
+            urls("(see https://example.com/a)."),
+            vec!["https://example.com/a"],
+            "punctuation and an unbalanced paren can nest either way round"
+        );
+        assert_eq!(
+            urls("Portfolio: https://example.com/work."),
+            vec!["https://example.com/work"],
+            "a trailing full stop is sentence punctuation"
+        );
+    }
+
+    /// A `.io` host WITH a path is unambiguous, so it stays.
+    #[test]
+    fn a_dot_io_host_with_a_path_is_still_a_link() {
+        let urls: Vec<String> =
+            links_from_text("AI Engineering Hub   saeedkolivand.github.io/ai-engineering-hub")
+                .into_iter()
+                .map(|l| l.url)
+                .collect();
+        assert_eq!(
+            urls,
+            vec!["https://saeedkolivand.github.io/ai-engineering-hub"]
+        );
+    }
+
+    /// The harvest is a FALLBACK: a PDF with a real annotation layer keeps it,
+    /// so an accurate anchor is never replaced by a guessed one.
+    #[test]
+    fn a_real_annotation_layer_wins_over_the_text_harvest() {
+        let annotated = [Link {
+            anchor_text: "My Portfolio".to_string(),
+            url: "https://iamsaeed.dev/".to_string(),
+        }];
+        let out = inline_links(PLAIN_TEXT_CV, &annotated);
+        assert!(out.contains("- [My Portfolio](https://iamsaeed.dev/)"));
+        assert!(
+            !out.contains("https://aijobhunter.app"),
+            "the text harvest must not run when annotations exist"
         );
     }
 }
