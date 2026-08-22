@@ -1,10 +1,10 @@
 /// Aggregator board — Adzuna (primary) → JSearch (paid fallback) → Jooble
-/// (last-resort fallback) → freehire (keyless floor).
+/// (last-resort fallback).
 ///
 /// Design:
 /// * One `Scraper` in the registry (id = `"aggregator"`).
 /// * Internally holds an ordered `JobProvider` registry: Adzuna → JSearch →
-///   Jooble → freehire.
+///   Jooble.
 /// * Fallback semantics (enforced in `primary_chain`):
 ///   - Adzuna configured + `Ok(items)` (even empty) → use those, do NOT call JSearch/Jooble.
 ///   - Adzuna configured + `Err(_)` → log, try JSearch if configured.
@@ -15,19 +15,13 @@
 ///     have failed to produce a decisive result, e.g. the unsupported-country case,
 ///     never on a routine "genuinely zero results" search, since its rate limit is
 ///     undocumented).
-///   - None of the three configured, or all unconfigured/failed to be decisive
-///     → try **freehire**, the KEYLESS floor: it has no key, so it is always
-///     "configured" and is what a fresh install actually searches with. Only a
-///     NON-EMPTY answer from it short-circuits, it is skipped entirely when a
-///     configured provider FAILED (that diagnostic must not be masked — see
-///     `primary_chain`), and after a distrusted guessed market its results are
-///     merged BEHIND the sparse keyed hits rather than replacing them.
-///   - Nothing left → `Ok(vec![])`. This is no longer the same as
-///     "keyless-empty": a keyless install now reaches freehire first, so an
-///     empty result here means the search genuinely found nothing, not that
-///     no keys were configured.
-/// * Keys are optional: absent means the keyed tiers sit out and freehire
-///   answers alone.  Never hardcoded, never logged.
+///   - Nothing left → `Ok(vec![])`.
+/// * **Every provider here is key-backed**, so with no keys at all this board is
+///   skipped with `needs-keys` rather than run. freehire used to sit under the
+///   keyed tiers as an always-on keyless floor, which is what made that skip
+///   unreachable; it is now its own catalog board
+///   (`scraping::boards::freehire`), chosen explicitly, so the skip means what
+///   it says again. Keys are never hardcoded, never logged.
 /// * Keys are read from the OS keychain via `credentials::read_credential`,
 ///   under the `ai:` keyring namespace + the BARE slot names generated from the
 ///   cross-language source of truth in `ipc_contracts::provider_slots`
@@ -55,10 +49,8 @@ use crate::scraping::types::{
 };
 
 mod adzuna;
-mod freehire;
 mod providers;
 use adzuna::*;
-use freehire::FreehireProvider;
 use providers::*;
 
 /// Below this many results from a supported market, a non-empty `where` retries
@@ -236,7 +228,6 @@ async fn primary_chain(
     let primary = providers.iter().find(|p| p.provider_id() == "adzuna");
     let fallback = providers.iter().find(|p| p.provider_id() == "jsearch");
     let jooble = providers.iter().find(|p| p.provider_id() == "jooble");
-    let freehire = providers.iter().find(|p| p.provider_id() == "freehire");
 
     // Track whether each provider was CONFIGURED but its call FAILED, so we can
     // distinguish "keys present, request failed" from "no keys at all" at the
@@ -258,14 +249,6 @@ async fn primary_chain(
     // is nothing to return, and a silent zero is the exact autopilot bug the
     // diagnostic guards) — it keeps the diagnostic-Err path via `adzuna_configured_failed`.
     let mut sparse_guessed_items: Option<Vec<JobPosting>> = None;
-
-    // The guessed-market branch below records its fall-through in
-    // `adzuna_configured_failed` so the terminal diagnostic can explain it —
-    // but that is DISTRUST OF A GUESS, not a broken key. The keyless tier's
-    // "never mask a real failure" guard has to tell the two apart, or it
-    // switches itself off in exactly the case it is most useful (no country
-    // supplied, so the keyed tier could not answer).
-    let mut adzuna_distrusted_a_guessed_market = false;
 
     // Run primary if configured.
     if let Some(p) = primary {
@@ -324,7 +307,6 @@ async fn primary_chain(
                     if !items.is_empty() {
                         sparse_guessed_items = Some(items);
                     }
-                    adzuna_distrusted_a_guessed_market = true;
                     // Fall through to JSearch/diagnostic below.
                 }
                 Ok(items) => {
@@ -405,90 +387,6 @@ async fn primary_chain(
                     // Fall through to the sparse-guessed salvage / diagnostic below,
                     // same as a JSearch failure would without Jooble configured.
                 }
-            }
-        }
-    }
-
-    // Try freehire — the KEYLESS tier, below every keyed one.
-    //
-    // Reached only here, once no keyed provider produced a decisive result. It
-    // is ALWAYS "configured" (no key to have), so unlike the tiers above, this
-    // is what a fresh install actually searches with — and it is also why it
-    // must not pre-empt the sparse-guessed salvage or the diagnostic below
-    // unless it genuinely has jobs to show.
-    //
-    // Only a NON-EMPTY result short-circuits. Every keyed tier treats its own
-    // `Ok(empty)` as decisive ("this provider says there are no such jobs"),
-    // but that rule earns its keep from the user having chosen that provider.
-    // Nobody chose this one, so an empty answer from it is not evidence about
-    // the search. `search` never returns `Err` here (it degrades internally,
-    // see `FreehireProvider::search`), so the error arm is unreachable defence
-    // rather than a live path.
-    //
-    // TWO things this tier must never do, both of which it did in the first
-    // draft and both of which a review reproduced:
-    //
-    // 1. **Never REPLACE the sparse guessed-market hits — merge with them.**
-    //    Those hits are location-relevant; this tier on a guessed market is
-    //    location-BLIND (it is not sent one, and suppresses `countries` on a
-    //    guess), so swapping them out trades a few right answers for many
-    //    global ones. That is the guessed-market bug this repo already fixed
-    //    for Adzuna, re-entered through a new door. Merging keeps the sparse
-    //    hits FIRST, so `dedupe`'s first-seen-wins order preserves them.
-    //
-    // 2. **Never run when a configured provider FAILED.** A key that has been
-    //    revoked or rate-limited must reach `BoardScrapeSummary.error`. This
-    //    tier is always on, so without this guard that diagnostic would be
-    //    swallowed on essentially every failed-key search — and since
-    //    `needs_keys()` is now permanently false, nothing else in the app
-    //    would report it either. The user silently keeps paying for a key that
-    //    stopped working. Losing this tier's results on a failed search is the
-    //    cheaper error: the search still returns something to act on (the
-    //    honest diagnostic), and the next search once the key is fixed gets
-    //    the keyed tier's better results anyway.
-    // A REAL failure — a key that errored — as opposed to the guessed-market
-    // distrust above, which is a routing decision wearing an error's clothes.
-    let a_configured_provider_failed = (adzuna_configured_failed.is_some()
-        && !adzuna_distrusted_a_guessed_market)
-        || jsearch_configured_failed.is_some()
-        || jooble_configured_failed.is_some();
-
-    if let Some(f) = freehire {
-        if f.is_configured() && !a_configured_provider_failed {
-            match f
-                .search(
-                    query,
-                    location,
-                    country,
-                    country_guessed,
-                    date_filter,
-                    amount,
-                    signal.clone(),
-                )
-                .await
-            {
-                Ok(items) if !items.is_empty() => {
-                    return Ok(match sparse_guessed_items.take() {
-                        // The only CROSS-PROVIDER merge inside this function,
-                        // so it needs both dedup passes. `dedupe` keys on
-                        // `external_id`, which is provider-prefixed
-                        // (`adzuna-…` vs `freehire-…`) and therefore cannot
-                        // collide across providers even for the SAME job —
-                        // see `dedupe_by_url`'s own doc, which exists for
-                        // exactly this reason on the additive Apify merge.
-                        // Without the URL pass, one job surfaced by both tiers
-                        // renders twice.
-                        Some(mut sparse) => {
-                            sparse.extend(items);
-                            dedupe_by_url(dedupe(sparse))
-                        }
-                        // Single provider — `external_id` is sufficient and
-                        // `canonical_url` collapsing is not wanted.
-                        None => dedupe(items),
-                    });
-                }
-                Ok(_) => {}
-                Err(e) => log::warn!("[aggregator] freehire keyless tier failed: {e}"),
             }
         }
     }
@@ -761,15 +659,6 @@ fn aggregator_has_configured_provider() -> bool {
         || JSearchProvider::new().is_configured()
         || JoobleProvider::new().is_configured()
         || ApifyLinkedInProvider::new().is_configured()
-        // Keyless — always true, so this function is now always true and the
-        // `needs-keys` skip never fires. That is the intended consequence, not
-        // an oversight: the skip existed because a keyless aggregator search
-        // could only ever return nothing, and with freehire it can return
-        // jobs. A keyring READ FAULT is still classified separately by
-        // `aggregator_store_error`, so the one case this function's `false`
-        // used to protect (surface a store fault, don't call it needs-keys) is
-        // unaffected.
-        || FreehireProvider::new().is_configured()
 }
 
 /// First keyring READ error across the aggregator's provider credential slots
@@ -891,9 +780,6 @@ impl Scraper for AggregatorScraper {
             // Additive, opt-in, paid: only runs when the toggle is ON and a token
             // is present (gated in `ApifyLinkedInProvider::is_configured`).
             Box::new(ApifyLinkedInProvider::new()),
-            // KEYLESS tier, below every keyed one. Always "configured", so it
-            // is what a fresh install with no API keys actually searches with.
-            Box::new(FreehireProvider::new()),
         ];
         // `amount` caps the OUTPUT; `provider_amount` is the only thing that buys
         // upstream calls — the free tiers' page budgets AND the paid Apify tier

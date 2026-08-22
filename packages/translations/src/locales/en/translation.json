@@ -2336,6 +2336,7 @@
       "wwr": "WWR",
       "ycombinator": "YC Jobs",
       "aggregator": "Aggregator",
+      "freehire": "freehire",
       "url": "Web import"
     },
     "aggregatorKeyHint": "Add your free Adzuna key in Settings to enable aggregated search.",

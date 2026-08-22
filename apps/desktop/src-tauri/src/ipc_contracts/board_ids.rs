@@ -21,6 +21,7 @@ pub const BOARD_IDS: &[&str] = &[
     "workable",
     "comeet",
     "aggregator",
+    "freehire",
     "remoteok",
     "remotive",
     "arbeitnow",

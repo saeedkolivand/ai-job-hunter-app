@@ -1,4 +1,4 @@
-//! freehire — the aggregator's KEYLESS tier.
+//! freehire — the keyless, keyword-searchable job board.
 //!
 //! Requested in issue #1002 by freehire's own maintainer, who disclosed the
 //! interest. Implemented here from their **published `openapi.yaml`** rather
@@ -8,36 +8,19 @@
 //! be derivative — the worst of both worlds — so the spec is the only source
 //! used.
 //!
-//! **Why it is worth a tier at all:** every other provider needs an API key, so
-//! a fresh install with no keys gets a `needs-keys` skip and zero jobs. freehire
-//! answers `GET /api/v1/agent/jobs/search` **unauthenticated**, which makes the
-//! aggregator board useful before the user has configured anything. That is the
-//! entire value; it is not a better data source than the keyed tiers and is
-//! never preferred over one.
+//! **Why it earns a place at all:** every other keyless board is a niche or
+//! regional feed, and every broad source the app has needs an API key. freehire
+//! answers `GET /api/v1/agent/jobs/search` **unauthenticated**, so it is the one
+//! broad board a fresh install can search with before configuring anything.
 //!
-//! **Tier position: last.** It runs only once Adzuna, JSearch and Jooble have
-//! all failed to produce a decisive result — same rule that already governs
-//! Jooble, one step further down. A keyed provider's `Ok` (even empty) still
-//! short-circuits before this is reached, so a user with a working Adzuna key
-//! and a genuinely empty search never contacts freehire at all.
-//!
-//! Two extra conditions, both added after a review reproduced the bugs their
-//! absence caused (see `primary_chain`):
-//!
-//! * it does NOT run when a configured provider actually FAILED — a revoked or
-//!   rate-limited key has to reach `BoardScrapeSummary.error`, and an always-on
-//!   tier answering in its place would hide that on every search;
-//! * when it does run after a distrusted guessed market, its results are
-//!   MERGED behind the sparse keyed hits rather than replacing them, because
-//!   on a guessed market this tier is location-blind and those hits are not.
-//!
-//! **Degradation:** any non-2xx, timeout, schema drift, or ignored request
-//! parameter (see `fetch_freehire`'s doc) resolves to `Ok(empty)`, NOT `Err`.
-//! Every other provider reports its failure because a configured key means the
-//! user asked for that provider specifically. freehire is configured by
-//! nobody — it is always on — so surfacing its outage as a board error would
-//! turn a third party's downtime into an error banner on a search the user
-//! never pointed at them.
+//! **History — it used to be the aggregator's keyless floor.** It ran last in
+//! `aggregator::primary_chain`, only once every keyed provider had failed or come
+//! back empty, and it degraded every fault to `Ok(empty)` because nobody had
+//! opted into it. Both of those rules were consequences of it being ALWAYS ON
+//! inside another board, and both are gone: it is now selected explicitly, so it
+//! runs when — and only when — the user picks it, and a failure is reported
+//! rather than swallowed (see `FreehireScraper::search`). The aggregator is once
+//! again keyed providers only, and reports `needs-keys` without them.
 //!
 //! **Rate limits (as of the maintainer's issue #1026 disclosure, live-verified
 //! 2026-08-18):** 600 req/min for ordinary reads, 300 req/min for
@@ -48,9 +31,8 @@
 //! count by one — pace against it, never reconcile it exactly). No new
 //! rate-limiting code lives here: `scraping::http::fetch_text` already backs
 //! off on `429`/`503` honoring `Retry-After` when present, for every board
-//! that goes through it. This tier's own traffic (one request per aggregator
-//! search, only reached after every keyed tier has failed or come back
-//! empty) sits nowhere near either ceiling.
+//! that goes through it. This board's own traffic (one request per search)
+//! sits nowhere near either ceiling.
 //!
 //! **User-Agent:** every request carries an identifying UA
 //! (`freehire_user_agent`) — app name, crate version, and this repo's public
@@ -72,18 +54,16 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::scraping::http::{fetch_json, html_to_markdown, FetchOptions};
-use crate::scraping::types::JobPosting;
-
-use super::JobProvider;
+use crate::scraping::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 
 /// Documented base (`servers[0].url` in the published spec).
-pub(super) const FREEHIRE_BASE_URL: &str = "https://freehire.me/api/v1";
+const FREEHIRE_BASE_URL: &str = "https://freehire.me/api/v1";
 
 /// Spec ceiling for `limit`. Sending more is a 4xx, not a clamp.
 const MAX_LIMIT: u32 = 100;
 
 /// What we ask for when the caller expressed no item-count intent. The keyless
-/// tier has no spend to bound, so this is purely "enough to be useful without
+/// board has no spend to bound, so this is purely "enough to be useful without
 /// pulling a page nobody reads".
 const DEFAULT_LIMIT: u32 = 50;
 
@@ -92,16 +72,16 @@ const DEFAULT_LIMIT: u32 = 50;
 /// the parameter entirely — freehire's own semantics for "omit" is "no
 /// freshness restriction" (`PostedWithinDays`'s description), so unlike
 /// Adzuna/JSearch (which always send SOME day cap, even with no filter) this
-/// floor tier's no-filter search stays genuinely unfiltered.
+/// board's no-filter search stays genuinely unfiltered.
 ///
 /// Same 3-day floor as `adzuna::adzuna_max_days_old` / `providers::jsearch_date_posted`
 /// for the identical reason: `posted_within_days` has no sub-day granularity —
 /// a whole day is its smallest unit, and the spec forbids `0` outright — and a
 /// naive same-day floor zeroed out autopilot "recent" filters on quiet days
 /// (see those two functions' doc comments). Reusing the exact established
-/// floor rather than inventing a new number keeps all three tiers' recency
+/// floor rather than inventing a new number keeps every source's recency
 /// skew for sub-day tokens identical.
-pub(super) fn freehire_posted_within_days(date_filter: Option<&str>) -> Option<u32> {
+fn freehire_posted_within_days(date_filter: Option<&str>) -> Option<u32> {
     match date_filter {
         None => None,
         Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => Some(3),
@@ -118,7 +98,7 @@ pub(super) fn freehire_posted_within_days(date_filter: Option<&str>) -> Option<u
 /// existing `"ai-job-hunter/1.0"` convention `commands::geocoding` already
 /// uses for Photon, with a version that tracks releases instead of a
 /// hand-typed number that can rot.
-pub(super) fn freehire_user_agent() -> String {
+fn freehire_user_agent() -> String {
     format!(
         "ai-job-hunter/{} (+https://github.com/saeedkolivand/ai-job-hunter-app)",
         env!("CARGO_PKG_VERSION")
@@ -154,7 +134,7 @@ struct FreehireIgnoredParam {
 
 /// Only the fields this mapping consumes. `#[serde(default)]` throughout and no
 /// `deny_unknown_fields`: the spec is a third party's and may gain fields, and a
-/// keyless tier must never fail a search over a shape change.
+/// keyless board must never fail a search over a shape change.
 #[derive(Debug, Deserialize)]
 struct FreehireJob {
     #[serde(default)]
@@ -308,11 +288,10 @@ fn map_freehire_job(j: FreehireJob, now: i64) -> Option<JobPosting> {
 /// failure. The one option NOT taken is returning `resp.data` anyway: that
 /// would silently hand back an unfiltered set dressed as a filtered one, which
 /// is the one thing issue #1026 calls out as unacceptable.
-pub(super) async fn fetch_freehire(
+async fn fetch_freehire(
     base_url: &str,
     query: &str,
-    country: &str,
-    country_guessed: bool,
+    country: Option<&str>,
     date_filter: Option<&str>,
     amount: Option<u32>,
     signal: tokio_util::sync::CancellationToken,
@@ -330,18 +309,20 @@ pub(super) async fn fetch_freehire(
     if !query.is_empty() {
         url.push_str(&format!("&q={}", urlencoding::encode(query)));
     }
-    // Only filter by country when the caller actually chose one. A GUESSED
-    // country is `AggregatorScraper::search`'s "de" default, and pinning the
-    // keyless tier to a guessed market is how the guessed-market bug this
-    // repo already fixed for Adzuna would reappear here.
+    // `None` means "do not filter by country", and that is what this board
+    // sends today: see `Scraper::supports_location`, which stays `false` here
+    // because freehire's geography facets are a single OR-GROUP — measured,
+    // `countries=gb` returns 89,211 postings and `countries=gb&cities=London`
+    // returns 89,617, so adding a place WIDENS the result instead of narrowing
+    // it. A board that claimed server-side location support would switch off
+    // the engine's central post-filter, which is the only thing actually
+    // narrowing this board's results to the requested place.
     //
-    // The consequence is deliberate and worth stating plainly: on a guessed
-    // market this tier is location-blind, because `location` reaches it
-    // nowhere at all (see the note on this function's `location` omission).
-    // A globally-unfiltered result is therefore WEAKER than a keyed tier's
-    // sparse guessed-market hits, not a replacement for them — which is why
-    // `primary_chain` merges the two instead of letting this one win.
-    if !country_guessed && !country.is_empty() {
+    // The parameter is kept (rather than dropped) because the facet itself is
+    // real and correct for a caller that has a CHOSEN, non-guessed country;
+    // there simply is no such caller now that `BoardSearchInput` carries only
+    // a free-text location.
+    if let Some(country) = country.map(str::trim).filter(|c| !c.is_empty()) {
         url.push_str(&format!("&countries={}", urlencoding::encode(country)));
     }
     if let Some(days) = freehire_posted_within_days(date_filter) {
@@ -397,74 +378,71 @@ pub(super) async fn fetch_freehire(
         .collect())
 }
 
-/// The keyless tier. Holds no credential, so there is nothing to construct
-/// from and nothing to fail reading — only the base URL, which exists as a
-/// field purely so the silent-degradation contract below is reachable from a
-/// test. That contract (a failure becomes `Ok(empty)`, never `Err`) is the
-/// single most important thing about this provider and the easiest to
-/// regress, so it must not be a claim only the live host can check.
-pub(super) struct FreehireProvider {
-    base_url: String,
-}
-
-impl FreehireProvider {
-    pub(super) fn new() -> Self {
-        Self {
-            base_url: FREEHIRE_BASE_URL.to_string(),
-        }
-    }
-
-    /// Point the provider at a mock server.
-    #[cfg(test)]
-    pub(super) fn with_base_url(base_url: impl Into<String>) -> Self {
-        Self {
-            base_url: base_url.into(),
-        }
-    }
-}
+/// freehire as a board the user picks in the catalog.
+///
+/// It holds no credential, so unlike every keyed source there is nothing to
+/// configure and nothing to fail reading — selecting it is the whole setup.
+pub struct FreehireScraper;
 
 #[async_trait]
-impl JobProvider for FreehireProvider {
-    fn provider_id(&self) -> &'static str {
+impl Scraper for FreehireScraper {
+    fn id(&self) -> &'static str {
         "freehire"
     }
 
-    /// Always. This is the one provider with no key, and it is what makes the
-    /// aggregator board produce results on a fresh install — see
-    /// `aggregator_has_configured_provider`, which counts it for exactly that
-    /// reason.
-    fn is_configured(&self) -> bool {
-        true
+    fn display_name(&self) -> &'static str {
+        "freehire"
+    }
+
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+
+    /// `false`, deliberately. freehire's geography facets are one OR-GROUP:
+    /// measured, `countries=gb` returns 89,211 postings and
+    /// `countries=gb&cities=London` returns 89,617 — naming a place WIDENS the
+    /// result. Claiming server-side support would switch off the engine's
+    /// central post-filter, which is the only thing narrowing this board to the
+    /// requested location. See `fetch_freehire`'s `country` parameter.
+    fn supports_location(&self) -> bool {
+        false
     }
 
     async fn search(
         &self,
-        query: &str,
-        _location: &str,
-        country: &str,
-        country_guessed: bool,
-        date_filter: Option<&str>,
-        amount: Option<u32>,
-        signal: tokio_util::sync::CancellationToken,
+        input: BoardSearchInput,
+        ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        // The silent-degradation boundary (see the module doc). Nobody opted
-        // into this provider, so its failure is never the user's error to read.
-        match fetch_freehire(
-            &self.base_url,
-            query,
-            country,
-            country_guessed,
-            date_filter,
-            amount,
-            signal,
+        // A FAILURE IS REPORTED, not swallowed. As the aggregator's always-on
+        // keyless tier this module degraded every fault to `Ok(empty)`, because
+        // nobody had opted into it and a third party's outage should not raise
+        // an error banner on a search the user never pointed at them. As a board
+        // in the catalog that premise is gone: the user chose freehire, so its
+        // outage is exactly the diagnostic they need, and an empty result would
+        // read as "no such jobs" instead.
+        let out = fetch_freehire(
+            FREEHIRE_BASE_URL,
+            input.query.trim(),
+            // No country filter — see `supports_location`.
+            None,
+            input.date_filter.as_deref(),
+            Some(input.amount),
+            ctx.signal.clone(),
         )
-        .await
-        {
-            Ok(items) => Ok(items),
-            Err(e) => {
-                log::warn!("[aggregator] freehire keyless tier unavailable: {e}");
-                Ok(vec![])
+        .await?;
+
+        if let Some(ref on_item) = ctx.on_item {
+            for posting in &out {
+                on_item(posting.clone());
             }
         }
+        if let Some(ref on_progress) = ctx.on_progress {
+            on_progress(1.0);
+        }
+
+        Ok(out)
     }
 }
+
+#[cfg(test)]
+mod test;

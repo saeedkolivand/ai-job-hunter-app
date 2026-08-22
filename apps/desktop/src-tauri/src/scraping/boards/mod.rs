@@ -12,6 +12,7 @@ pub mod breezy;
 pub mod comeet;
 /// Shared helpers reused across several ATS boards — not itself a `Scraper`.
 pub(crate) mod common;
+pub mod freehire;
 pub mod germantechjobs;
 pub mod greenhouse;
 pub mod jobicy;
@@ -37,6 +38,7 @@ pub use bamboohr::BambooHrScraper;
 pub use berlinstartupjobs::BerlinStartupJobsScraper;
 pub use breezy::BreezyScraper;
 pub use comeet::ComeetScraper;
+pub use freehire::FreehireScraper;
 pub use germantechjobs::GermanTechJobsScraper;
 pub use greenhouse::GreenhouseScraper;
 pub use jobicy::JobicyScraper;
@@ -62,6 +64,7 @@ use super::types::Scraper;
 /// implementation module + one line here (no parallel match or hardcoded array).
 static SCRAPERS: &[&dyn Scraper] = &[
     &AggregatorScraper,
+    &FreehireScraper,
     &LinkedInScraper,
     &YCombinatorScraper,
     &RemotiveScraper,
