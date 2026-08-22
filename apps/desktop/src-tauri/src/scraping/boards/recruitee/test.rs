@@ -13,7 +13,7 @@ fn make_input(companies: Vec<String>) -> BoardSearchInput {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -213,6 +213,8 @@ fn test_offer_struct_fields() {
         city: Some("Berlin".to_string()),
         country: Some("Germany".to_string()),
         remote: Some(true),
+        hybrid: Some(false),
+        on_site: Some(false),
         created_at: None,
         company_name: Some("Test Corp".to_string()),
     };
@@ -233,6 +235,8 @@ fn test_offer_struct_defaults() {
         city: None,
         country: None,
         remote: None,
+        hybrid: None,
+        on_site: None,
         created_at: None,
         company_name: None,
     };
@@ -244,6 +248,76 @@ fn test_offer_struct_defaults() {
 fn test_resp_struct() {
     let resp = Resp { offers: vec![] };
     assert!(resp.offers.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// recruitee_work_type — precedence hybrid > remote > on_site; all-false/absent
+// stays Unknown (writes nothing)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn work_type_matches_the_live_measured_tenant_shape() {
+    // fastned.recruitee.com: (F,T,F) x25
+    assert_eq!(
+        recruitee_work_type(Some(false), Some(true), Some(false)),
+        Some(WorkType::Hybrid)
+    );
+    // fastned.recruitee.com: (F,F,T) x2
+    assert_eq!(
+        recruitee_work_type(Some(false), Some(false), Some(true)),
+        Some(WorkType::OnSite)
+    );
+}
+
+#[test]
+fn work_type_hybrid_wins_when_multiple_true() {
+    assert_eq!(
+        recruitee_work_type(Some(true), Some(true), Some(true)),
+        Some(WorkType::Hybrid)
+    );
+}
+
+#[test]
+fn work_type_remote_wins_over_on_site() {
+    assert_eq!(
+        recruitee_work_type(Some(true), Some(false), Some(true)),
+        Some(WorkType::Remote)
+    );
+}
+
+#[test]
+fn work_type_all_false_is_unknown() {
+    assert_eq!(
+        recruitee_work_type(Some(false), Some(false), Some(false)),
+        None
+    );
+}
+
+#[test]
+fn work_type_all_absent_is_unknown() {
+    assert_eq!(recruitee_work_type(None, None, None), None);
+}
+
+/// The dual-write regression (same shape as the Ashby `isRemote`/`workplaceType`
+/// defect): `remote:true` co-occurring with `hybrid:true` classifies as Hybrid
+/// (`work_type_hybrid_wins_when_multiple_true`), so `extra["remote"]` must be
+/// `false` for that shape, not a copy of the raw `remote` boolean — otherwise
+/// `location_filter`'s "never drop a remote job" rule would fire for a Hybrid
+/// posting.
+#[test]
+fn declared_remote_flag_follows_the_classifier_not_the_raw_boolean() {
+    let hybrid_but_remote_true = recruitee_work_type(Some(true), Some(true), Some(true));
+    assert_eq!(hybrid_but_remote_true, Some(WorkType::Hybrid));
+    assert!(
+        !recruitee_is_declared_remote(hybrid_but_remote_true),
+        "a Hybrid row must not also write extra.remote == true"
+    );
+    assert!(
+        recruitee_is_declared_remote(Some(WorkType::Remote)),
+        "a genuinely Remote row must still write extra.remote == true"
+    );
+    assert!(!recruitee_is_declared_remote(None));
+    assert!(!recruitee_is_declared_remote(Some(WorkType::OnSite)));
 }
 
 #[tokio::test]
@@ -258,7 +332,7 @@ async fn live_search_returns_results() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,

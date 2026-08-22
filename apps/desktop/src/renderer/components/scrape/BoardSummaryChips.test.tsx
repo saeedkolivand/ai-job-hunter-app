@@ -230,7 +230,7 @@ describe('BoardSummaryChips — variants', () => {
 describe('BoardSummaryChips — location note chips', () => {
   it('maps a "broadened:<cc>" note to the informational (processing) broadened label', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 3, note: 'broadened:de' }]} />
+      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 3, notes: ['broadened:de'] }]} />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('processing');
@@ -242,7 +242,7 @@ describe('BoardSummaryChips — location note chips', () => {
   it('maps a "guessed-market:<cc>" note to the guessed-market label', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'aggregator', count: 2, note: 'guessed-market:gb' }]}
+        summaries={[{ board: 'aggregator', count: 2, notes: ['guessed-market:gb'] }]}
       />
     );
     const chip = chips()[0];
@@ -253,7 +253,9 @@ describe('BoardSummaryChips — location note chips', () => {
 
   it('tolerates an unknown/future note token — falls through to the plain success chip', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 4, note: 'future-token:de' }]} />
+      <BoardSummaryChips
+        summaries={[{ board: 'aggregator', count: 4, notes: ['future-token:de'] }]}
+      />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('success');
@@ -262,7 +264,9 @@ describe('BoardSummaryChips — location note chips', () => {
   });
 
   it('ignores a malformed (colon-less) note token', () => {
-    render(<BoardSummaryChips summaries={[{ board: 'aggregator', count: 4, note: 'mystery' }]} />);
+    render(
+      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 4, notes: ['mystery'] }]} />
+    );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('success');
     expect(chip?.textContent).not.toContain('mystery');
@@ -271,7 +275,7 @@ describe('BoardSummaryChips — location note chips', () => {
   it('ignores a malformed multi-colon token instead of rendering the trailing garbage as a country', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'aggregator', count: 4, note: 'broadened:de:extra' }]}
+        summaries={[{ board: 'aggregator', count: 4, notes: ['broadened:de:extra'] }]}
       />
     );
     const chip = chips()[0];
@@ -283,7 +287,7 @@ describe('BoardSummaryChips — location note chips', () => {
   it('precedence: error wins over a co-present note', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'aggregator', count: 0, error: 'boom', note: 'broadened:de' }]}
+        summaries={[{ board: 'aggregator', count: 0, error: 'boom', notes: ['broadened:de'] }]}
       />
     );
     expect(chips()[0]?.getAttribute('data-color')).toBe('error');
@@ -293,7 +297,7 @@ describe('BoardSummaryChips — location note chips', () => {
     render(
       <BoardSummaryChips
         summaries={[
-          { board: 'aggregator', count: 5, truncated: 'page 2 failed', note: 'broadened:de' },
+          { board: 'aggregator', count: 5, truncated: 'page 2 failed', notes: ['broadened:de'] },
         ]}
       />
     );
@@ -302,7 +306,7 @@ describe('BoardSummaryChips — location note chips', () => {
 
   it('precedence: a valid note wins over the plain success count', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 6, note: 'broadened:de' }]} />
+      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 6, notes: ['broadened:de'] }]} />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('processing');
@@ -318,7 +322,7 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
   it('maps "location-filtered:<n>" to the pluralized informational (processing) label', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:5' }]}
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['location-filtered:5'] }]}
       />
     );
     const chip = chips()[0];
@@ -332,7 +336,7 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
   it('tolerates a non-numeric n — falls through to the plain success chip', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:abc' }]}
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['location-filtered:abc'] }]}
       />
     );
     const chip = chips()[0];
@@ -344,7 +348,7 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
   it('maps "location-filtered:0" to the plain marker label (engine now emits n=0 too)', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:0' }]}
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['location-filtered:0'] }]}
       />
     );
     const chip = chips()[0];
@@ -356,7 +360,9 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
 
   it('tolerates an empty n (bare "location-filtered:") — falls through to success', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'lever', count: 3, note: 'location-filtered:' }]} />
+      <BoardSummaryChips
+        summaries={[{ board: 'lever', count: 3, notes: ['location-filtered:'] }]}
+      />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('success');
@@ -366,7 +372,7 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
   it('tolerates a fractional / negative n (no chip)', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:2.5' }]}
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['location-filtered:2.5'] }]}
       />
     );
     expect(chips()[0]?.getAttribute('data-color')).toBe('success');
@@ -375,10 +381,125 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
   it('precedence: an error still wins over a co-present location-filtered note', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'greenhouse', count: 0, error: 'boom', note: 'location-filtered:4' }]}
+        summaries={[
+          { board: 'greenhouse', count: 0, error: 'boom', notes: ['location-filtered:4'] },
+        ]}
       />
     );
     expect(chips()[0]?.getAttribute('data-color')).toBe('error');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// work-type-filtered:<n> note chips — the zero-drop case collapses across
+// boards (25 of 26 boards don't support the filter, unlike location's 4 of 26)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('BoardSummaryChips — work-type-filtered:0 collapse', () => {
+  it('a single board with the zero-drop note still gets its own per-board chip', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['work-type-filtered:0'] }]}
+      />
+    );
+    expect(chips()).toHaveLength(1);
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).toContain('label(greenhouse)');
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.workTypeFilteredNone');
+  });
+
+  it('collapses 2+ boards carrying only the zero-drop note into ONE summary chip', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 4, notes: ['work-type-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:0'] },
+          { board: 'personio', count: 1, notes: ['work-type-filtered:0'] },
+        ]}
+      />
+    );
+    expect(chips()).toHaveLength(1);
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    // The collapsed chip carries no board name — same "board: ''" shape as the
+    // all-ok summary chip.
+    expect(chip?.textContent).toBe('jobs.boardSummary.note.workTypeFilteredNoneSummary:3');
+    expect(chip?.textContent).not.toContain('label(greenhouse)');
+  });
+
+  it('does NOT collapse a non-zero work-type-filtered count — it stays a per-board chip', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 4, notes: ['work-type-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:3'] },
+        ]}
+      />
+    );
+    // One collapsed-solo chip for greenhouse (only 1 zero-drop board) + one
+    // per-board chip for lever's n=3.
+    expect(chips()).toHaveLength(2);
+    const texts = chips().map((c) => c.textContent ?? '');
+    expect(texts.some((t) => t.includes('label(lever)') && t.includes('workTypeFiltered:3'))).toBe(
+      true
+    );
+  });
+
+  it('does not regress location-filtered — it keeps one chip per board even at 2+', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 4, notes: ['location-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['location-filtered:0'] },
+        ]}
+      />
+    );
+    expect(chips()).toHaveLength(2);
+    expect(chips()[0]?.textContent).toContain('label(greenhouse)');
+    expect(chips()[1]?.textContent).toContain('label(lever)');
+  });
+
+  it('a board with BOTH location-filtered and a zero-drop work-type note renders both: its own location chip plus a share of the work-type collapse', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          {
+            board: 'greenhouse',
+            count: 4,
+            notes: ['location-filtered:2', 'work-type-filtered:0'],
+          },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:0'] },
+        ]}
+      />
+    );
+    // greenhouse: its own location-filtered chip; both boards' zero-drop work
+    // type notes fold into one summary chip.
+    expect(chips()).toHaveLength(2);
+    const texts = chips().map((c) => c.textContent ?? '');
+    expect(
+      texts.some((t) => t.includes('label(greenhouse)') && t.includes('locationFiltered:2'))
+    ).toBe(true);
+    expect(texts.some((t) => t === 'jobs.boardSummary.note.workTypeFilteredNoneSummary:2')).toBe(
+      true
+    );
+  });
+
+  it('precedence: an error on one board excludes it from the collapse pool', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'greenhouse', count: 0, error: 'boom', notes: ['work-type-filtered:0'] },
+          { board: 'lever', count: 2, notes: ['work-type-filtered:0'] },
+        ]}
+      />
+    );
+    // greenhouse's error chip + lever's solo zero-drop chip (only 1 board in
+    // the collapse pool — greenhouse's note never entered it).
+    expect(chips()).toHaveLength(2);
+    expect(chips()[0]?.getAttribute('data-color')).toBe('error');
+    expect(chips()[1]?.textContent).toContain('label(lever)');
+    expect(chips()[1]?.textContent).toContain('workTypeFilteredNone');
   });
 });
 
@@ -389,7 +510,9 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
 describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
   it('maps "slugs-invalid:<n>" to the pluralized informational (processing) label', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, note: 'slugs-invalid:3' }]} />
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['slugs-invalid:3'] }]}
+      />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('processing');
@@ -401,7 +524,7 @@ describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
 
   it('maps "rows-dropped:<n>" to the pluralized informational (processing) label', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'rippling', count: 8, note: 'rows-dropped:2' }]} />
+      <BoardSummaryChips summaries={[{ board: 'rippling', count: 8, notes: ['rows-dropped:2'] }]} />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('processing');
@@ -414,7 +537,9 @@ describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
     // or an over-cap payload). The board still returns Ok, so this note is the
     // ONLY user-visible signal that the run was incomplete.
     render(
-      <BoardSummaryChips summaries={[{ board: 'lever', count: 12, note: 'companies-failed:2' }]} />
+      <BoardSummaryChips
+        summaries={[{ board: 'lever', count: 12, notes: ['companies-failed:2'] }]}
+      />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('processing');
@@ -424,7 +549,9 @@ describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
 
   it('rejects n=0 (these tokens are only emitted for n>0) — falls through to the success chip', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, note: 'slugs-invalid:0' }]} />
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, notes: ['slugs-invalid:0'] }]}
+      />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('success');
@@ -435,7 +562,7 @@ describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
   it('rejects a negative / fractional / non-numeric n (no chip, falls through to success)', () => {
     for (const note of ['slugs-invalid:-1', 'rows-dropped:2.5', 'slugs-invalid:abc']) {
       const { unmount } = render(
-        <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, note }]} />
+        <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, notes: [note] }]} />
       );
       expect(chips()[0]?.getAttribute('data-color')).toBe('success');
       unmount();
@@ -444,7 +571,7 @@ describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
 
   it('tolerates a bare "slugs-invalid:" (empty n) — falls through to success', () => {
     render(
-      <BoardSummaryChips summaries={[{ board: 'lever', count: 3, note: 'slugs-invalid:' }]} />
+      <BoardSummaryChips summaries={[{ board: 'lever', count: 3, notes: ['slugs-invalid:'] }]} />
     );
     const chip = chips()[0];
     expect(chip?.getAttribute('data-color')).toBe('success');
@@ -454,7 +581,7 @@ describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
   it('precedence: an error still wins over a co-present partial note', () => {
     render(
       <BoardSummaryChips
-        summaries={[{ board: 'greenhouse', count: 0, error: 'boom', note: 'slugs-invalid:2' }]}
+        summaries={[{ board: 'greenhouse', count: 0, error: 'boom', notes: ['slugs-invalid:2'] }]}
       />
     );
     expect(chips()[0]?.getAttribute('data-color')).toBe('error');
@@ -539,7 +666,7 @@ describe('BoardSummaryChips — all-ok collapse', () => {
       <BoardSummaryChips
         summaries={[
           { board: 'a', count: 4 },
-          { board: 'b', count: 2, note: 'broadened:de' },
+          { board: 'b', count: 2, notes: ['broadened:de'] },
         ]}
       />
     );

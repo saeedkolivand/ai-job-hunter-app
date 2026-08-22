@@ -28,7 +28,7 @@ pub struct ScrapeBoardsRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub job_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub work_type: Option<String>,
+    pub work_types: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub experience_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

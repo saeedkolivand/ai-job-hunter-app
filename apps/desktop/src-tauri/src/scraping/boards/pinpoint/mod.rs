@@ -12,6 +12,7 @@
 //! all-invalid-slug run surfaces the `ats_board_failure` all-slugs-invalid error,
 //! and a drifted-but-200 shape fails `fetch_json`'s parse (also a board error) —
 //! no silent zero in any case.
+use super::super::engine::work_type_filter::parse_work_type;
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use super::common::{
@@ -38,6 +39,11 @@ struct PpPosting {
     title: Option<String>,
     url: Option<String>,
     location: Option<PpLocation>,
+    /// `remote`/`hybrid` were observed live; the on-site literal was NOT —
+    /// noted here rather than assumed. **Never read `workplace_type_text`,
+    /// it is i18n'd** and must not be matched against an English literal.
+    #[serde(rename = "workplace_type")]
+    workplace_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,6 +92,11 @@ pub(crate) fn parse_pinpoint_response(
             (!parts.is_empty()).then(|| parts.join(", "))
         });
 
+        let mut extra = std::collections::HashMap::new();
+        if let Some(wt) = p.workplace_type.as_deref().and_then(parse_work_type) {
+            extra.insert("workType".to_string(), serde_json::json!(wt));
+        }
+
         out.push(JobPosting {
             id: format!("{BOARD_ID}:{url}"),
             external_id: Some(url.clone()),
@@ -98,7 +109,7 @@ pub(crate) fn parse_pinpoint_response(
             requirements: None,
             posted_at: None,
             captured_at: now,
-            extra: std::collections::HashMap::new(),
+            extra,
         });
     }
 

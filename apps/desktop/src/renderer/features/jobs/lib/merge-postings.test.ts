@@ -224,17 +224,29 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
   it('every enrichment field the challenger carries survives a collapse onto a bare incumbent (fill-list guard)', () => {
     // Mechanical pin on collapseDuplicate's fill-list: builds a challenger with
     // every enrichment key `JobPosting.extra` carries today (salaryMin/Max/
-    // Currency, remote, trust) set, and a bare incumbent with none of them, then
-    // asserts ALL of them survive the collapse. A future `extra` key added to the
-    // Rust side without a matching entry in collapseDuplicate's fill-list makes
-    // THIS test fail once the new field is added to the fixture below — when you
-    // add a key here, add the matching `?? ` line in collapseDuplicate too.
+    // Currency, remote, workType, trust) set, and a bare incumbent with none of
+    // them, then asserts ALL of them survive the collapse.
+    //
+    // NOTE — this guard is fixture-driven, not structural: it only catches a
+    // forgotten fill-list entry once the corresponding key is ALSO added to the
+    // challenger literal below, so it cannot catch a NEW Rust `extra` key
+    // nobody remembered to add here in the first place (the same "guard driven
+    // off its own data" shape as a const-loop test). A source-derived guard
+    // (deriving the required key set from the Rust `extra.insert("...")` call
+    // sites at test time) was considered and rejected as a bigger detour than
+    // this fix warrants: `trust` is attached at the engine level, not via a
+    // per-board `extra.insert("trust", ...)` literal, so a naive regex over
+    // `scraping/boards/**` would need bespoke exceptions and would be its own
+    // source of drift. When you add a key here, add the matching `?? ` line in
+    // collapseDuplicate too — and vice versa, per the lockstep-pair doc comment
+    // on both sides.
     const trust: JobTrustAssessment = { score: 55, level: 'medium', flags: [] };
     const incumbent = makePosting({ id: 'a', url: 'https://acme.example/jobs/42' });
     const challenger = makePosting({
       id: 'b',
       url: 'https://acme.example/jobs/42',
       remote: true,
+      workType: 'hybrid',
       salaryMin: 80000,
       salaryMax: 100000,
       salaryCurrency: 'GBP',
@@ -244,6 +256,7 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('a'); // incumbent identity kept
     expect(result[0]?.remote).toBe(true);
+    expect(result[0]?.workType).toBe('hybrid');
     expect(result[0]?.salaryMin).toBe(80000);
     expect(result[0]?.salaryMax).toBe(100000);
     expect(result[0]?.salaryCurrency).toBe('GBP');

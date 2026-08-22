@@ -53,6 +53,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
+use crate::scraping::engine::work_type_filter::parse_work_type;
 use crate::scraping::http::{fetch_json, html_to_markdown, FetchOptions};
 use crate::scraping::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 
@@ -266,16 +267,13 @@ fn map_freehire_job(j: FreehireJob, now: i64) -> Option<JobPosting> {
             serde_json::Value::String(upstream.to_string()),
         );
     }
-    if let Some(mode) = j
-        .work_mode
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        extra.insert(
-            "workMode".to_string(),
-            serde_json::Value::String(mode.to_string()),
-        );
+    // Rename, not a new feature: this key used to be `workMode` and nothing in
+    // the repo read it. Routed through the shared normalizer (not matched
+    // literally) even though freehire's own spelling already matches it,
+    // because every consumer of `extra["workType"]` must reach the same
+    // matcher — see `work_type_filter::parse_work_type`'s doc.
+    if let Some(wt) = j.work_mode.as_deref().and_then(parse_work_type) {
+        extra.insert("workType".to_string(), serde_json::json!(wt));
     }
 
     Some(JobPosting {

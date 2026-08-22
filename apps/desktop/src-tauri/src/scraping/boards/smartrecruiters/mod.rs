@@ -5,7 +5,9 @@
 //! No global keyword-only search — requires a company slug. The engine skips
 //! this board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{ats_all_fetches_failed, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -15,6 +17,96 @@ struct Location {
     city: Option<String>,
     country: Option<String>,
     remote: Option<bool>,
+    hybrid: Option<bool>,
+}
+
+/// `locationType` request-param spelling — `ONSITE`, no underscore/hyphen,
+/// unlike the wire VALUE this board reports back (see
+/// [`smartrecruiters_work_type`]'s doc).
+fn smartrecruiters_location_type_param(wt: WorkType) -> &'static str {
+    match wt {
+        WorkType::Remote => "REMOTE",
+        WorkType::Hybrid => "HYBRID",
+        WorkType::OnSite => "ONSITE",
+    }
+}
+
+/// Builds the SmartRecruiters postings-list URL: company slug, optional
+/// keyword, and zero-or-more `&locationType=` params — one per requested
+/// work type, in order. This is the exact shape the repeatable-param OR
+/// semantics were live-verified against (no filter 367 = REMOTE 3 + HYBRID
+/// 36 + ONSITE 328; `&locationType=REMOTE&locationType=HYBRID` → 39 = 3+36;
+/// all three → 367, the unfiltered total — see
+/// `.claude/scratch/work-type-filter.md`, "SmartRecruiters repeatable
+/// `locationType`", verified 2026-08-22).
+///
+/// De-dupes `work_types` itself (first-seen order) rather than trusting the
+/// caller to have already called [`crate::scraping::types::BoardSearchInput::work_type_spec`] —
+/// `WorkType` has exactly 3 variants, so de-duping bounds the output to at
+/// most 3 `&locationType=` occurrences no matter how many (possibly
+/// duplicated) entries are passed in. CWE-770 defense-in-depth: a future
+/// caller regression that reverts to a raw, un-deduped work-types field must
+/// not reopen the URL-amplification vector this function alone can still
+/// close.
+fn build_list_url(company: &str, keyword: &str, work_types: &[WorkType]) -> String {
+    let mut url = if keyword.is_empty() {
+        format!(
+            "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100",
+            urlencoding::encode(company)
+        )
+    } else {
+        format!(
+            "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100&q={}",
+            urlencoding::encode(company),
+            urlencoding::encode(keyword)
+        )
+    };
+    let mut seen = std::collections::HashSet::with_capacity(work_types.len());
+    for wt in work_types.iter().copied().filter(|wt| seen.insert(*wt)) {
+        url.push_str("&locationType=");
+        url.push_str(smartrecruiters_location_type_param(wt));
+    }
+    url
+}
+
+/// Map SmartRecruiters' `location.remote` / `location.hybrid` booleans to a
+/// declared work type, precedence **hybrid > remote > on-site**.
+///
+/// **`OnSite` requires POSITIVE evidence on BOTH sides — both keys present
+/// AND both `false`.** A `Some(bool)` on one side with the other side absent
+/// is NOT enough to conclude on-site: the absence of one key must never
+/// manufacture a positive `OnSite` declaration from the other. This board's
+/// `locationType` filter partitions its corpus exactly when both keys are
+/// present (westerndigital: no filter 367 = REMOTE 3 + HYBRID 36 + ONSITE
+/// 328, and a direct 100-row sample on 2026-08-22 confirmed both keys
+/// present on 100/100 rows for that tenant) — but that measurement is about
+/// the `locationType` **request** param, not payload-boolean completeness,
+/// and says nothing about a tenant (or a future SmartRecruiters payload
+/// change) that emits `remote` without `hybrid`. Any partial-absence shape
+/// with no positive signal on either side stays `Unknown` (returns `None`).
+fn smartrecruiters_work_type(remote: Option<bool>, hybrid: Option<bool>) -> Option<WorkType> {
+    if hybrid == Some(true) {
+        return Some(WorkType::Hybrid);
+    }
+    if remote == Some(true) {
+        return Some(WorkType::Remote);
+    }
+    if remote == Some(false) && hybrid == Some(false) {
+        return Some(WorkType::OnSite);
+    }
+    None
+}
+
+/// Whether `extra["remote"]` should be written `true`, given the CLASSIFIED
+/// work type — never derived from the raw `remote` boolean directly. The two
+/// source booleans are independent and both-true is representable (see
+/// [`smartrecruiters_work_type`]'s doc), so a raw `remote:true` can resolve to
+/// `Hybrid` once `hybrid` also wins the precedence; writing the raw boolean
+/// would make `location_filter`'s "a board-flagged-remote posting can never
+/// conflict with a place" short-circuit fire for a Hybrid job. Standalone so
+/// the dual-write regression is unit-testable without a network round-trip.
+fn smartrecruiters_is_declared_remote(work_type: Option<WorkType>) -> bool {
+    work_type == Some(WorkType::Remote)
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +173,14 @@ impl Scraper for SmartRecruitersScraper {
         true
     }
 
+    /// SmartRecruiters is the only board in v1 that both validates a
+    /// `locationType` param AND partitions its corpus exactly (no undeclared
+    /// bucket) — see [`smartrecruiters_work_type`]. Live-verified: a bogus
+    /// value returns an error object instead of silently ignoring it.
+    fn supports_work_type(&self) -> bool {
+        true
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
@@ -112,18 +212,13 @@ impl Scraper for SmartRecruitersScraper {
 
             // SmartRecruiters supports a real `q` keyword param — pass it when set.
             let keyword = input.query.trim();
-            let list_url = if keyword.is_empty() {
-                format!(
-                    "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100",
-                    urlencoding::encode(company)
-                )
-            } else {
-                format!(
-                    "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100&q={}",
-                    urlencoding::encode(company),
-                    urlencoding::encode(keyword)
-                )
-            };
+            // Upstream pass-through — the only board in v1 (see
+            // `supports_work_type`). `work_type_spec()` (not the raw
+            // `work_types` field) resolves the empty/absent-means-no-filter
+            // invariant; `build_list_url` de-dupes again on its own (see its
+            // doc comment) as defense-in-depth.
+            let work_types = input.work_type_spec().unwrap_or_default();
+            let list_url = build_list_url(company, keyword, &work_types);
 
             let list =
                 match fetch_json::<ListResp>(&list_url, Default::default(), ctx.signal.clone())
@@ -255,8 +350,14 @@ impl Scraper for SmartRecruitersScraper {
                     captured_at: now,
                     extra: {
                         let mut map = std::collections::HashMap::new();
-                        if let Some(remote) = p.location.as_ref().and_then(|l| l.remote) {
-                            map.insert("remote".to_string(), serde_json::json!(remote));
+                        let remote_flag = p.location.as_ref().and_then(|l| l.remote);
+                        let hybrid_flag = p.location.as_ref().and_then(|l| l.hybrid);
+                        let work_type = smartrecruiters_work_type(remote_flag, hybrid_flag);
+                        if smartrecruiters_is_declared_remote(work_type) {
+                            map.insert("remote".to_string(), serde_json::json!(true));
+                        }
+                        if let Some(wt) = work_type {
+                            map.insert("workType".to_string(), serde_json::json!(wt));
                         }
                         map
                     },

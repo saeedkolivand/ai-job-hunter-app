@@ -1,7 +1,7 @@
 use crate::scraping::linkedin::api_client::{JobsSearchParams, LinkedInJobsApiClient};
 use crate::scraping::linkedin::client::LinkedInHttpClient;
 use crate::scraping::types::BoardSearchInput;
-use crate::scraping::types::{JobPosting, ScrapeContext, Scraper};
+use crate::scraping::types::{JobPosting, ScrapeContext, Scraper, WorkType};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -134,6 +134,27 @@ async fn resolve_geo_id(location: &str, country_code: Option<&str>) -> Option<St
     Some(geo)
 }
 
+/// The `f_WT` value to send for a search's requested work types — currently
+/// ALWAYS `None`. LinkedIn's guest endpoint does not reliably honor `f_WT`: a
+/// disjointness probe found `f_WT=1` and `f_WT=2` sharing 29/50 job urns
+/// (independently reproduced from the app's real egress: 30/49), with a
+/// control facet (`f_JT=F` vs `f_JT=I`) that overlapped identically — an
+/// anonymous client has this facet stripped server-side, and LinkedIn's
+/// payload carries no workplace field and no JSON-LD, so there is no
+/// client-side fallback to catch a lying filter with. Do not map
+/// `input.work_types` into `f_WT` until a disjointness probe passes from the
+/// app's real egress IP with its real headers (see
+/// `.claude/scratch/work-type-filter.md` §4 / "LIVE VERIFICATION").
+///
+/// Isolated as its own pure function — rather than inlined where
+/// `JobsSearchParams` is built — so this invariant is pinned by a test even
+/// though nothing else about `search()` is unit-testable without a network
+/// round-trip. This is the seam a future contributor most plausibly re-wires
+/// `input.work_types` through; the failure would otherwise be silent.
+fn linkedin_f_wt_param(_work_types: &Option<Vec<WorkType>>) -> Option<String> {
+    None
+}
+
 #[async_trait]
 impl Scraper for LinkedInScraper {
     fn id(&self) -> &'static str {
@@ -191,7 +212,7 @@ impl Scraper for LinkedInScraper {
             start: 0,
             date_filter: input.date_filter.clone(),
             job_type: input.job_type.clone(),
-            work_type: input.work_type.clone(),
+            work_type: linkedin_f_wt_param(&input.work_types),
             experience_level: input.experience_level.clone(),
             easy_apply: input.easy_apply,
             actively_hiring: input.actively_hiring,

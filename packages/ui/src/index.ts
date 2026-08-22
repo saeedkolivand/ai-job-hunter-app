@@ -79,6 +79,7 @@ export { type TabItem, Tabs, type TabsProps } from './components/Tabs/index';
 export {
   type CheckableTagProps,
   Tag,
+  type TagColor,
   type TagProps,
   type TagStatusColor,
 } from './components/Tag/index';

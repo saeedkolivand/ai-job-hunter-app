@@ -133,6 +133,11 @@ fn test_parse_fixture_job1_full_html_description_becomes_markdown() {
         .timestamp_millis();
     assert_eq!(j.posted_at, Some(expected_ms));
     assert_eq!(j.extra.get("remote").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        j.extra.get("workType").and_then(|v| v.as_str()),
+        Some("remote"),
+        "an all-remote board must write extra.workType unconditionally"
+    );
 }
 
 #[test]
@@ -384,7 +389,7 @@ async fn live_search_returns_results() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -440,7 +445,7 @@ async fn live_garbage_tag_returns_ok_empty_not_error() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -491,7 +496,7 @@ async fn search_respects_pre_cancelled_token() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,

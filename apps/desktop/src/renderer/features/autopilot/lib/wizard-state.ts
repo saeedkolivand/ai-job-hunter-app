@@ -30,7 +30,9 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       query: form.query,
       location: form.location || undefined,
       countryCode: form.countryCode || undefined,
-      workType: form.workType !== 'any' ? form.workType : undefined,
+      // Empty array = the form's "any" sentinel; collapse to undefined so an
+      // old autopilot round-trips clean, matching the `dateFilter` precedent below.
+      workTypes: form.workTypes.length > 0 ? form.workTypes : undefined,
       pages: form.pages,
       dateFilter: form.dateFilter || undefined,
       // Off collapses to undefined so an old autopilot stays free of the field.
@@ -66,8 +68,8 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     // saved preferred location keeps its real country instead of the
     // aggregator having to guess one at scrape time.
     countryCode: jobPrefs?.countryCode,
-    // No job-preference field seeds work type; default to the 'any' sentinel.
-    workType: 'any',
+    // No job-preference field seeds work type; default to the empty "any" set.
+    workTypes: [],
     // Matches the backend's AutopilotTargetSchema.pages default.
     pages: 2,
     dateFilter: '',
@@ -93,7 +95,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     query: target.query,
     location: target.location ?? '',
     countryCode: target.countryCode,
-    workType: target.workType ?? 'any',
+    workTypes: target.workTypes ?? [],
     pages: target.pages,
     dateFilter: target.dateFilter ?? '',
     watchedCompaniesOnly: target.watchedCompaniesOnly ?? false,

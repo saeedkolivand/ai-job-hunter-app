@@ -113,6 +113,7 @@ function buildForm(
     amount: 25,
     dateFilter: '' as const,
     companies,
+    workTypes: [],
   };
 }
 

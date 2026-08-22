@@ -18,6 +18,7 @@ import { AgencyChip } from '@/components/job/AgencyChip';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
+import { getWorkTypeBadge } from '@/features/jobs/lib/work-type-badge';
 import type { Posting } from '@/features/jobs/types';
 import { TrustBadge } from '@/lib/trust-badge';
 
@@ -35,6 +36,7 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const { t } = useTranslation();
   const { has, handleOpen, handleCopyLink, handleTailor, handleView, handleSave, saved, pending } =
     usePostingActions(posting);
+  const workTypeBadge = getWorkTypeBadge(posting);
 
   // The row is NOT clickable: a posting has no detail page, and clicking it must
   // not open the external job link. Opening the link stays available explicitly
@@ -45,9 +47,9 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-caption-strong text-foreground/95">
           <span className="truncate">{posting.title}</span>
-          {posting.remote && (
-            <Tag color="green" className={STATUS_TAG}>
-              {t('jobs.remote')}
+          {workTypeBadge && (
+            <Tag color={workTypeBadge.color} className={STATUS_TAG}>
+              {t(workTypeBadge.key)}
             </Tag>
           )}
           {has('applied') && (

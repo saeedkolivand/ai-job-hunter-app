@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { WORK_TYPE_OPTIONS } from '@ajh/shared';
+
 import type { WizardState } from '@/features/autopilot/types';
 
 /**
@@ -8,8 +10,8 @@ import type { WizardState } from '@/features/autopilot/types';
  * {@link WizardState} exactly so `useForm<WizardState>` and the resolver agree.
  *
  * This is deliberately NOT the IPC `AutopilotCreate` shape: `keywords` /
- * `excludeKeywords` are editable comma strings here (split on save), and
- * `workType: 'any'` + an empty `dateFilter` are form-level sentinels that
+ * `excludeKeywords` are editable comma strings here (split on save), and an
+ * empty `workTypes`/`dateFilter` are form-level sentinels that
  * {@link wizardStateToPayload} maps away. Enum controls are bounded by their own
  * widgets, so the user-failable fields are `name`, `query` and `pages` (whose
  * NumberField clamps its range but not to a whole number) — all three live on
@@ -33,7 +35,7 @@ export const autopilotWizardSchema = z.object({
   query: z.string().trim().min(1, 'autopilot.wizard.validation.queryRequired'),
   location: z.string(),
   countryCode: z.string().optional(),
-  workType: z.enum(['remote', 'hybrid', 'on-site', 'any']),
+  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)),
   // Mirrors the backend's AutopilotTargetSchema.pages (int 1–10) and the
   // NumberField's own min/max, which blur-clamps into the same range. All three
   // checks share one message so the field reports a single, actionable rule.

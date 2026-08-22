@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import type { InterviewAnswers } from '@ajh/prompts/builder';
-import type { BoardScrapeSummary } from '@ajh/shared';
+import type { BoardScrapeSummary, WorkTypeOption } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
@@ -102,6 +102,21 @@ interface JobsSlice {
   listScrollTop: number;
   /** Hide postings flagged as recruiting/staffing agencies (ADR-029 §i). */
   hideAgency: boolean;
+  /**
+   * View-only work-type filter applied to postings ALREADY on screen — no
+   * re-scrape. Reads `posting.workType`, which the backend already computed;
+   * no client-side classification. Empty = no filter. A posting with no
+   * declared `workType` is undeclared and always KEPT, matching the backend's
+   * keep-unknowns policy (see `features/jobs/lib/work-type-filter.ts`).
+   *
+   * Re-seeded to `scrapeForm.workTypes` by `useScraping.startScrape` at the
+   * start of every genuinely NEW search (not "Show more") — otherwise this
+   * control's baseline would read "Any" even when the backend actually
+   * narrowed the result set to e.g. Remote, which is a false statement about
+   * what's on screen. Not reset on "Show more" (same search signature), so a
+   * mid-session manual adjustment here survives paging in more results.
+   */
+  workTypes: WorkTypeOption[];
   /**
    * The search criteria in the scrape drawer. Here rather than in `JobsPage`
    * because `lastSearchSignature` below is DERIVED from it: if the form reset on
@@ -327,6 +342,7 @@ export function makeJobsDefaults(): JobsSlice {
     selectedId: null,
     listScrollTop: 0,
     hideAgency: false,
+    workTypes: [],
     scrapeForm: makeScrapeFormDefaults(),
     lastSearchSignature: '',
     replacePending: false,

@@ -16,7 +16,7 @@ fn make_input() -> BoardSearchInput {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
@@ -232,6 +232,34 @@ fn parse_comeet_response_drops_malformed_rows() {
         titles,
         vec!["Valid One", "Valid Two"],
         "malformed rows must be dropped without panicking, valid rows kept: {titles:?}"
+    );
+}
+
+/// `workplace_type` is a speculative, unverified field (see the module doc)
+/// but still routes through the shared normalizer; an absent field writes
+/// nothing.
+#[test]
+fn parse_comeet_response_workplace_type_maps_to_extra_work_type() {
+    let json = r#"[
+        {"name": "Remote Role", "uid": "WT1", "url_active_page": "https://www.comeet.co/jobs/1", "workplace_type": "remote"},
+        {"name": "Undeclared Role", "uid": "WT2", "url_active_page": "https://www.comeet.co/jobs/2"}
+    ]"#;
+    let positions: Vec<CmPosition> = rows_to_jobs(serde_json::from_str(json).unwrap());
+    let postings = parse_comeet_response(positions, "uid", 0);
+
+    let work_type = |external_id: &str| -> Option<String> {
+        postings
+            .iter()
+            .find(|p| p.external_id.as_deref() == Some(external_id))
+            .and_then(|p| p.extra.get("workType"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(work_type("WT1"), Some("remote".to_string()));
+    assert_eq!(
+        work_type("WT2"),
+        None,
+        "an absent workplace_type must write nothing, not a guessed value"
     );
 }
 

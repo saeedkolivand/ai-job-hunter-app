@@ -33,7 +33,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     boards: ['linkedin'],
     query: 'react developer',
     location: 'Berlin',
-    workType: 'remote',
+    workTypes: ['remote'],
     pages: 2,
     dateFilter: '24h',
     watchedCompaniesOnly: false,

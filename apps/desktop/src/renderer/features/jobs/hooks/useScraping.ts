@@ -76,6 +76,7 @@ export function useScraping(
       ...(replace ? { replace: true } : {}),
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
       ...(scrapeForm.companies.length > 0 ? { companies: scrapeForm.companies } : {}),
+      ...(scrapeForm.workTypes.length > 0 ? { workTypes: scrapeForm.workTypes } : {}),
     } as Parameters<typeof scrapeBoards.mutateAsync>[0])) as { jobId: string; error?: string };
     return res;
   };
@@ -104,6 +105,7 @@ export function useScraping(
       scrapeForm.radiusKm ?? '',
       scrapeForm.dateFilter ?? '',
       scrapeForm.companies.slice().sort().join(','),
+      scrapeForm.workTypes.slice().sort().join(','),
     ].join('|');
     // Read through getState(): the signature of the search the DISPLAYED
     // postings came from, which survives a route change. Compared against a
@@ -114,6 +116,16 @@ export function useScraping(
       scrapeOutcome: null,
       lastSearchSignature: signature,
       replacePending: replace,
+      // A genuinely NEW search (not "Show more") re-seeds the command bar's
+      // view-only work-type control to the scrape-time selection that
+      // actually produced this result set — otherwise the control reads
+      // "Any" while the backend silently narrowed to e.g. Remote, which is a
+      // false statement about what's on screen. Gated on `replace`, not
+      // every call: "Show more" reuses the identical scrapeForm (same
+      // signature), so re-seeding there would also stomp a view-only
+      // selection the user made mid-session (e.g. widening to Hybrid too)
+      // for zero benefit — the value would be unchanged anyway.
+      ...(replace ? { workTypes: scrapeForm.workTypes } : {}),
     });
 
     const prevJobId = useSessionStore.getState().jobs.scrapeJobId;

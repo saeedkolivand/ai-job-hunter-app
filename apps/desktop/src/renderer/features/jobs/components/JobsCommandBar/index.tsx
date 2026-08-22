@@ -1,7 +1,7 @@
 import { LayoutList, LayoutPanelLeft, ListFilter, Loader2, Plus, Trash2 } from 'lucide-react';
 import type { Ref } from 'react';
 
-import type { BoardScrapeSummary } from '@ajh/shared';
+import { type BoardScrapeSummary, WORK_TYPE_OPTIONS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, Input, SegmentedControl, Tag } from '@ajh/ui';
@@ -37,6 +37,16 @@ interface JobsCommandBarProps {
    * when the empty-state CTA it was opened from has since unmounted.
    */
   scrapeButtonRef?: Ref<HTMLButtonElement>;
+  /**
+   * Whether at least one currently-displayed posting declares a `workType`
+   * (computed by the caller on the exact array the work-type filter itself
+   * runs over, so the two can never disagree). Gates the work-type control's
+   * visibility: most searches (Greenhouse/Adzuna/…) declare nothing, and
+   * three permanently-inert toggles cost a 3rd wrapped line at the 900×600
+   * floor for no payoff. An ACTIVE selection always overrides this and keeps
+   * the control visible regardless — see the render below.
+   */
+  hasDeclaredWorkType: boolean;
 }
 
 /**
@@ -68,6 +78,7 @@ export function JobsCommandBar({
   boardSummaries,
   failureNote,
   scrapeButtonRef,
+  hasDeclaredWorkType,
 }: JobsCommandBarProps) {
   const { t } = useTranslation();
   // One selector per field (see JobsPage): an unselected `useSessionStore()`
@@ -77,10 +88,21 @@ export function JobsCommandBar({
   const sortBy = useSessionStore((s) => s.jobs.sortBy);
   const viewMode = useSessionStore((s) => s.jobs.viewMode);
   const hideAgency = useSessionStore((s) => s.jobs.hideAgency);
+  const workTypes = useSessionStore((s) => s.jobs.workTypes);
 
   const trimmedFilter = filter.trim();
   const hasActiveFilter = trimmedFilter.length > 0;
   const showChipsRow = hasActiveFilter || boardSummaries.length > 0 || failureNote !== null;
+
+  // Show the work-type control only when it can do something: some visible
+  // posting declares a workType, OR the user already has a selection active.
+  // The second half is load-bearing, not a nicety — without it, running a new
+  // search whose results declare nothing while a selection from a PREVIOUS
+  // search is still applied would hide the only control that explains/clears
+  // an active filter. `matchesWorkTypeFilter`'s keep-undeclared policy means
+  // that surviving selection is inert here (it drops nothing), but inert is
+  // not the same as invisible — the user must still be able to see and clear it.
+  const showWorkTypeFilter = hasDeclaredWorkType || workTypes.length > 0;
 
   // The row is shared: it holds removable FILTER chips and/or read-only scrape
   // DIAGNOSTICS. Announcing "Active filters" over a row that only carries
@@ -175,6 +197,43 @@ export function JobsCommandBar({
             {t('jobs.filters.hideAgency')}
           </Tag.CheckableTag>
         </span>
+
+        {/* View-only work-type filter — filters postings ALREADY on screen, no
+            re-scrape. Same "already a visible control, no separate chip" rule
+            as hideAgency above (see the chips-row test for why). Hidden when
+            nothing on screen declares a workType AND no selection is active
+            (`showWorkTypeFilter` above) — most searches declare nothing, and
+            three permanently-inert toggles cost a 3rd wrapped line at the
+            900×600 floor for zero payoff. An active selection always keeps
+            its own control visible, even once it becomes inert, so it is
+            never a filter the user can't see or clear. */}
+        {showWorkTypeFilter && (
+          <span
+            role="group"
+            aria-label={t('jobs.workType.label')}
+            className="inline-flex items-center gap-1"
+          >
+            {/* Empty set silently means "any" — three identically-unchecked
+                tags read as broken/unset otherwise. Same visible microcopy
+                idiom as the manual-search and autopilot-wizard controls. */}
+            {workTypes.length === 0 && (
+              <span className="text-[10px] text-foreground/35">{t('jobs.workType.any')}</span>
+            )}
+            {WORK_TYPE_OPTIONS.map((opt) => (
+              <Tag.CheckableTag
+                key={opt}
+                checked={workTypes.includes(opt)}
+                onChange={(checked) =>
+                  setJobs({
+                    workTypes: checked ? [...workTypes, opt] : workTypes.filter((w) => w !== opt),
+                  })
+                }
+              >
+                {t(`jobs.workType.${opt}`)}
+              </Tag.CheckableTag>
+            ))}
+          </span>
+        )}
 
         {/* Trailing actions — right-aligned when there is room, wrapped to their
             own line when there isn't. */}

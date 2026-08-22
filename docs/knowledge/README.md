@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-08-18
+Last updated: 2026-08-22
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -78,6 +78,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-032](decision-records/adr-032-generation-pipeline-ownership-and-rule-enforcement.md)    | Generation-pipeline ownership — mechanical core-rule enforcement (Rust orchestration)     |
 | [ADR-033](decision-records/adr-033-no-model-written-agent-memory.md)                         | No model-written agent memory (immutable run history, not LLM-synthesized state)          |
 | [ADR-034](decision-records/adr-034-cover-letter-export-boundary-completion.md)               | Cover-letter export boundary completes a body-only letter (salutation/sign-off/signature) |
+| [ADR-035](decision-records/adr-035-work-type-filter-declared-data-only.md)                   | Work-type filter classifies from declared board data only; undeclared is kept             |
 
 ### The `NNNN-` series (closed)
 

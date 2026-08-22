@@ -1,6 +1,6 @@
 # AI Job Hunter — Design Decisions
 
-Last updated: 2026-07-28
+Last updated: 2026-08-22
 
 This document records the major architectural decisions in the project — the reasoning behind the technology choices, the patterns used, and the trade-offs considered. It is a reference for contributors and reviewers who want to understand the _why_ behind the codebase.
 
@@ -267,19 +267,19 @@ The wrapper in `lib/i18n.ts` provides a consistent namespace and isolates the un
 IPC request/response payloads and user-facing form data are validated with Zod:
 
 ```typescript
-// packages/shared/src/schemas/job.ts
-export const JobRecordSchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().min(1),
-  company: z.string().min(1),
+// packages/shared/src/schemas/index.ts (partial)
+export const WORK_TYPE_OPTIONS = ['remote', 'hybrid', 'on-site'] as const;
+
+export const ScrapeBoardsRequestSchema = z.object({
+  boards: z.array(z.enum(BOARD_IDS)),
+  query: z.string(),
   location: z.string().optional(),
-  salary: z.string().optional(),
-  remote: z.enum(['remote', 'hybrid', 'onsite']).optional(),
-  status: z.enum(['new', 'saved', 'applied', 'rejected', 'interviewing']),
-  scrapedAt: z.number().int().positive(),
+  companies: z.array(z.string()).optional(),
+  workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).max(WORK_TYPE_OPTIONS.length).optional(),
+  // ... other fields
 });
 
-export type JobRecord = z.infer<typeof JobRecordSchema>;
+export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 ```
 
 Validation happens at system boundaries (IPC receive, form submit). Inside the app the TypeScript types are trusted — no defensive `if (!data?.id)` checks scattered through component logic.

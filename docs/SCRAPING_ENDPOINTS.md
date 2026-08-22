@@ -880,6 +880,52 @@ The Rust scraping engine (`apps/desktop/src-tauri/src/scraping/engine/mod.rs`) r
 
 Each skip reason is surfaced separately in the scrape results UI with its own remediation message.
 
+---
+
+## Work-type (remote / hybrid / on-site) support summary
+
+> **Mixed confidence — read the per-row note before trusting a row.** Rows marked with a measurement
+> were live-probed on 2026-08-22 (SmartRecruiters' exact partition, Lever's 87% `unspecified`,
+> freehire's 72% undeclared, the LinkedIn disjointness probe). Others are explicitly `unverified`,
+> `docs-only`, or carry `?` — Pinpoint has no public slug to probe, BambooHR's code mapping is
+> inferred from correlation rather than a published enum, and Comeet needs credentials. Branding the
+> whole table "live verified" would lend the weak rows the strong rows' credibility, which is the
+> opposite of what this feature argues for.
+
+Declared data only. Eleven boards read a workplace field their API actually declares and four all-remote boards write a constant, so fifteen write `extra.workType`; every other board maps to `Unknown`. No text inference.
+
+**Upstream filter (sends param to the board):** Only **SmartRecruiters** validates the input in v1.
+
+- **SmartRecruiters** — `&locationType=REMOTE|HYBRID|ONSITE` (repeatable, one `&` per type); exact partition verified (367 = 3 REMOTE + 36 HYBRID + 328 ONSITE)
+
+**Server-side support (board declares the field, we filter client-side):**
+
+| Board                                           | Field                                | Values                           | Declared % | Notes                                                   |
+| ----------------------------------------------- | ------------------------------------ | -------------------------------- | ---------- | ------------------------------------------------------- |
+| Lever                                           | `workplaceType`                      | unspecified/remote/onsite/hybrid | 13%        | 87% unspecified → Unknown                               |
+| Ashby                                           | **`workplaceType`**                  | OnSite/Remote/Hybrid             | ~100%      | (stop reading `isRemote` — true for both Hybrid+Remote) |
+| Recruitee                                       | `remote`/`hybrid`/`on_site` booleans |                                  | 100%       | Precedence: hybrid > remote > on_site                   |
+| Workable                                        | `telecommuting` bool                 | binary only                      | ~100%      | No hybrid option on v1 endpoint                         |
+| Freehire                                        | `work_mode`                          | remote/hybrid/onsite             | 28%        | 72% absent → Unknown                                    |
+| Breezy                                          | `location.is_remote` bool            | binary only                      | ~50%       | Absent ≠ false → Unknown                                |
+| Arbeitnow                                       | `remote` bool (under-populated)      | binary only                      | ~low       | Under-populated; false → Unknown                        |
+| Pinpoint                                        | `workplace_type`                     | remote/hybrid                    | ?          | Unverified (no public slug found)                       |
+| BambooHR                                        | `locationType` "0"/"1"/"2"           | binary/ternary                   | ?          | Mapping inferred (unverified)                           |
+| Comeet                                          | `workplace_type`                     | ?                                | ?          | Docs-only; board is hidden (listed()=false)             |
+| RemoteOK                                        | —                                    | constant Remote                  | 100%       | All-remote by definition                                |
+| Remotive                                        | —                                    | constant Remote                  | 100%       | All-remote by definition                                |
+| WWR                                             | —                                    | constant Remote                  | 100%       | All-remote by definition                                |
+| Jobicy                                          | —                                    | constant Remote                  | 100%       | All-remote by definition                                |
+| Greenhouse/Personio/YCombinator/Adzuna/LinkedIn | —                                    | Unknown                          | 0%         | No workplace field on endpoint                          |
+
+**Rejected alternatives:**
+
+- **Text inference (keywords like "remote", "hybrid", "home office", etc.):** Flipped false positives on "this role is not remote" and "remote-first culture, 3 days in office". Rejected.
+- **LinkedIn `f_WT` filter:** Guest endpoint is facet-stripped for anonymous callers. Measured: `f_WT=1` (onsite) and `f_WT=2` (remote) overlapped 30/49 urns; control arm (`f_JT=F` vs `f_JT=I`) also overlapped 32/50 → environment-wide facet stripping, not `f_WT` being fake. Authenticated path (with `li_at` cookie) remains untested and may behave differently.
+- **Freehire upstream param `work_mode=remote,hybrid,onsite`:** Board is real and fails closed (bad value → 0 results). However, 72% of the 1.35M corpus carries no `work_mode`, so pushing the filter upstream discards 72% of the board. Client-side filter keeps the Unknown rows.
+
+**Source:** `docs/knowledge/scraping-domain.md` § Work-type filter for shape + policy · `apps/desktop/src-tauri/src/scraping/engine/work_type_filter.rs` for the classifier · per-board modules for mappings.
+
 ### chromiumoxide Warnings
 
 `WS Invalid message: did not match any variant of untagged enum Message` warnings from chromiumoxide (v0.8.0+) are **benign**. They appear when the browser emits Chrome DevTools Protocol (CDP) events that the pinned chromiumoxide bindings don't model. The warning is cosmetic; RPC command dispatch is unaffected. This is a documented resilience improvement over chromiumoxide 0.7.0 (which could hard-panic on unknown messages). The warnings appear in logs but do not affect scraper correctness or completeness.

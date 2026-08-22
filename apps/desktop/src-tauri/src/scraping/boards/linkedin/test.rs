@@ -139,6 +139,25 @@ fn select_geo_id_numeric_id_and_empty() {
     assert!(select_geo_id(&[], Some("de")).is_none());
 }
 
+// ── f_WT invariant (PR #1076 review, LOW finding) ────────────────────────────
+
+/// LinkedIn's guest endpoint does not honor `f_WT` (measured twice — see the
+/// doc comment on `linkedin_f_wt_param`), so a `BoardSearchInput` carrying
+/// `work_types` must never produce a non-`None` value here. This is the seam
+/// a future contributor most plausibly re-wires `input.work_types` through,
+/// and the failure would be silent: LinkedIn's payload has no workplace
+/// field, so a lying filter looks identical to a working one.
+#[test]
+fn linkedin_never_sends_f_wt_until_the_disjointness_probe_passes() {
+    assert_eq!(linkedin_f_wt_param(&None), None);
+    assert_eq!(
+        linkedin_f_wt_param(&Some(vec![WorkType::Remote, WorkType::Hybrid])),
+        None,
+        "a BoardSearchInput carrying work_types must not produce f_WT"
+    );
+    assert_eq!(linkedin_f_wt_param(&Some(vec![])), None);
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {
@@ -151,7 +170,7 @@ async fn live_search_returns_results() {
         provider_amount: None,
         date_filter: None,
         job_type: None,
-        work_type: None,
+        work_types: None,
         experience_level: None,
         easy_apply: None,
         actively_hiring: None,
