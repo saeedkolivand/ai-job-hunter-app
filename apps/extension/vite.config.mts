@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig, type Plugin } from 'vite';
 
-import { type BrowserTarget, buildManifest } from './src/manifest';
+import { type BrowserTarget, buildManifest } from './src/manifest.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(here, 'src');
