@@ -298,6 +298,28 @@ fn work_type_all_absent_is_unknown() {
     assert_eq!(recruitee_work_type(None, None, None), None);
 }
 
+/// The dual-write regression (same shape as the Ashby `isRemote`/`workplaceType`
+/// defect): `remote:true` co-occurring with `hybrid:true` classifies as Hybrid
+/// (`work_type_hybrid_wins_when_multiple_true`), so `extra["remote"]` must be
+/// `false` for that shape, not a copy of the raw `remote` boolean — otherwise
+/// `location_filter`'s "never drop a remote job" rule would fire for a Hybrid
+/// posting.
+#[test]
+fn declared_remote_flag_follows_the_classifier_not_the_raw_boolean() {
+    let hybrid_but_remote_true = recruitee_work_type(Some(true), Some(true), Some(true));
+    assert_eq!(hybrid_but_remote_true, Some(WorkType::Hybrid));
+    assert!(
+        !recruitee_is_declared_remote(hybrid_but_remote_true),
+        "a Hybrid row must not also write extra.remote == true"
+    );
+    assert!(
+        recruitee_is_declared_remote(Some(WorkType::Remote)),
+        "a genuinely Remote row must still write extra.remote == true"
+    );
+    assert!(!recruitee_is_declared_remote(None));
+    assert!(!recruitee_is_declared_remote(Some(WorkType::OnSite)));
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {

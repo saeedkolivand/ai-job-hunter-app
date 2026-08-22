@@ -51,9 +51,12 @@ function mergeInteractions(
  *   incumbent's salary (Adzuna's `salaryMin/Max/Currency`, consumed by
  *   usePostingActions / TailorFlow / ApplicationDetailPage) when a direct-board
  *   duplicate with no salary beat it on description length. `trust` (the ghost-job
- *   signal) is filled the same way so a collapse never regresses a row from "has a
- *   trust read" to "none". This fill-list must track every key any board writes
- *   into `JobPosting.extra` — lockstep with Rust `merge_extra`.
+ *   signal) and `workType` (the declared work-arrangement badge/filter value) are
+ *   filled the same way so a collapse never regresses a row from "has a trust
+ *   read" / "has a declared work type" to "none". **This fill-list must track
+ *   every key any board writes into `JobPosting.extra` — lockstep with Rust
+ *   `merge_extra`; a key added there and forgotten here is silently dropped
+ *   whenever the incumbent lacks it and a challenger with it is absorbed.**
  */
 function collapseDuplicate(incumbent: Posting, challenger: Posting): Posting {
   return {
@@ -65,6 +68,7 @@ function collapseDuplicate(incumbent: Posting, challenger: Posting): Posting {
     interactions: mergeInteractions(incumbent.interactions, challenger.interactions),
     // Fill only where the incumbent has nothing; `??` keeps a present incumbent value.
     remote: incumbent.remote ?? challenger.remote,
+    workType: incumbent.workType ?? challenger.workType,
     salaryMin: incumbent.salaryMin ?? challenger.salaryMin,
     salaryMax: incumbent.salaryMax ?? challenger.salaryMax,
     salaryCurrency: incumbent.salaryCurrency ?? challenger.salaryCurrency,

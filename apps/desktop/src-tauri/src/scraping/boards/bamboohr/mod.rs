@@ -9,7 +9,9 @@
 //! `{meta, result[{id (string), jobOpeningName, location{city, state (string)},
 //! isRemote}]}` — shape confirmed, no drift.
 use super::super::http::fetch_json;
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{
     ats_finish_search, ats_partial_note, is_valid_dns_label_slug, normalize_companies,
 };
@@ -78,11 +80,16 @@ struct BhPosting {
 /// during research. Kept behind this one named helper (with its own unit
 /// test below) so a future live re-verification has exactly one place to
 /// correct if the inference turns out wrong.
-fn bamboohr_location_type_to_work_type(location_type: &str) -> Option<&'static str> {
+///
+/// Returns the typed [`WorkType`] enum, not a bare string literal — a bare
+/// `"on-site"`/`"remote"`/`"hybrid"` would silently stop matching the
+/// classifier if `WorkType`'s serde spelling ever changed, with nothing
+/// failing to say so.
+fn bamboohr_location_type_to_work_type(location_type: &str) -> Option<WorkType> {
     match location_type {
-        "0" => Some("on-site"),
-        "1" => Some("remote"),
-        "2" => Some("hybrid"),
+        "0" => Some(WorkType::OnSite),
+        "1" => Some(WorkType::Remote),
+        "2" => Some(WorkType::Hybrid),
         _ => None,
     }
 }

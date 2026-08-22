@@ -1,6 +1,8 @@
 /// We Work Remotely — public RSS feed
 use super::super::http::{fetch_text, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use async_trait::async_trait;
 
 pub struct WeWorkRemotelyScraper;
@@ -93,7 +95,7 @@ impl Scraper for WeWorkRemotelyScraper {
                     let mut map = std::collections::HashMap::new();
                     map.insert("remote".to_string(), serde_json::json!(true));
                     // All-remote by definition — see jobicy's copy of this comment.
-                    map.insert("workType".to_string(), serde_json::json!("remote"));
+                    map.insert("workType".to_string(), serde_json::json!(WorkType::Remote));
                     map
                 },
             };

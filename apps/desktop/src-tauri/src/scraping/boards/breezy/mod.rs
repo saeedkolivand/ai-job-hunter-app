@@ -14,7 +14,9 @@
 //! board. Confirmed present: `name`, `url`, `published_date` (RFC3339),
 //! `location{name, city, state{name}, country{name}, is_remote}`.
 use super::super::http::fetch_json;
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{
     ats_finish_search, ats_partial_note, is_https_url, is_valid_dns_label_slug, normalize_companies,
 };
@@ -190,7 +192,7 @@ pub(crate) fn parse_breezy_response(
 
         let mut extra = std::collections::HashMap::new();
         if declared_remote == Some(true) {
-            extra.insert("workType".to_string(), serde_json::json!("remote"));
+            extra.insert("workType".to_string(), serde_json::json!(WorkType::Remote));
         }
 
         out.push(JobPosting {

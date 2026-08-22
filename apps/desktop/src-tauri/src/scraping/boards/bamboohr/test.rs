@@ -421,9 +421,18 @@ fn parse_bamboohr_response_cross_tenant_ids_do_not_collide() {
 
 #[test]
 fn location_type_maps_the_three_known_codes() {
-    assert_eq!(bamboohr_location_type_to_work_type("0"), Some("on-site"));
-    assert_eq!(bamboohr_location_type_to_work_type("1"), Some("remote"));
-    assert_eq!(bamboohr_location_type_to_work_type("2"), Some("hybrid"));
+    assert_eq!(
+        bamboohr_location_type_to_work_type("0"),
+        Some(WorkType::OnSite)
+    );
+    assert_eq!(
+        bamboohr_location_type_to_work_type("1"),
+        Some(WorkType::Remote)
+    );
+    assert_eq!(
+        bamboohr_location_type_to_work_type("2"),
+        Some(WorkType::Hybrid)
+    );
 }
 
 #[test]

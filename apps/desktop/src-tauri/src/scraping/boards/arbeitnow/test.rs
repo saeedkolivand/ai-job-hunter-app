@@ -24,7 +24,7 @@ fn test_arbeitnow_scraper_mode() {
 
 #[test]
 fn work_type_true_maps_to_remote() {
-    assert_eq!(arbeitnow_work_type(Some(true)), Some("remote"));
+    assert_eq!(arbeitnow_work_type(Some(true)), Some(WorkType::Remote));
 }
 
 /// The under-populated-field guard: `remote:false` on this board is measured

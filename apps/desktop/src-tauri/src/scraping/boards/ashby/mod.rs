@@ -5,7 +5,9 @@
 //! board with `"needs-company"` when `input.companies` is empty.
 use super::super::engine::work_type_filter::parse_work_type;
 use super::super::http::{fetch_json, FetchOptions};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::{ats_all_fetches_failed, ats_failed_fetches_note, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -187,10 +189,25 @@ impl AshbyScraper {
                     captured_at: now,
                     extra: {
                         let mut map = std::collections::HashMap::new();
-                        if let Some(remote) = j.is_remote {
-                            map.insert("remote".to_string(), serde_json::json!(remote));
+                        let work_type = j.workplace_type.as_deref().and_then(parse_work_type);
+                        // `isRemote` conflates Hybrid and Remote (see the field's doc
+                        // comment above) — it is a location-filter/badge signal, not a
+                        // work-type one, so it must AGREE with the declared
+                        // `workplaceType` rather than compete with it. Once
+                        // `workplaceType` is present, trust ONLY it: write `remote`
+                        // when it resolved to Remote, write nothing when it resolved to
+                        // Hybrid/OnSite (regardless of `isRemote`), and fall back to the
+                        // raw `isRemote` only when `workplaceType` itself is absent
+                        // (older/odd tenants with no other signal at all).
+                        let remote = match work_type {
+                            Some(WorkType::Remote) => true,
+                            Some(_) => false,
+                            None => j.is_remote.unwrap_or(false),
+                        };
+                        if remote {
+                            map.insert("remote".to_string(), serde_json::json!(true));
                         }
-                        if let Some(wt) = j.workplace_type.as_deref().and_then(parse_work_type) {
+                        if let Some(wt) = work_type {
                             map.insert("workType".to_string(), serde_json::json!(wt));
                         }
                         map

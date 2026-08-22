@@ -54,6 +54,18 @@ fn smartrecruiters_work_type(remote: Option<bool>, hybrid: Option<bool>) -> Opti
     }
 }
 
+/// Whether `extra["remote"]` should be written `true`, given the CLASSIFIED
+/// work type — never derived from the raw `remote` boolean directly. The two
+/// source booleans are independent and both-true is representable (see
+/// [`smartrecruiters_work_type`]'s doc), so a raw `remote:true` can resolve to
+/// `Hybrid` once `hybrid` also wins the precedence; writing the raw boolean
+/// would make `location_filter`'s "a board-flagged-remote posting can never
+/// conflict with a place" short-circuit fire for a Hybrid job. Standalone so
+/// the dual-write regression is unit-testable without a network round-trip.
+fn smartrecruiters_is_declared_remote(work_type: Option<WorkType>) -> bool {
+    work_type == Some(WorkType::Remote)
+}
+
 #[derive(Debug, Deserialize)]
 struct Posting {
     id: String,
@@ -314,10 +326,11 @@ impl Scraper for SmartRecruitersScraper {
                         let mut map = std::collections::HashMap::new();
                         let remote_flag = p.location.as_ref().and_then(|l| l.remote);
                         let hybrid_flag = p.location.as_ref().and_then(|l| l.hybrid);
-                        if let Some(remote) = remote_flag {
-                            map.insert("remote".to_string(), serde_json::json!(remote));
+                        let work_type = smartrecruiters_work_type(remote_flag, hybrid_flag);
+                        if smartrecruiters_is_declared_remote(work_type) {
+                            map.insert("remote".to_string(), serde_json::json!(true));
                         }
-                        if let Some(wt) = smartrecruiters_work_type(remote_flag, hybrid_flag) {
+                        if let Some(wt) = work_type {
                             map.insert("workType".to_string(), serde_json::json!(wt));
                         }
                         map

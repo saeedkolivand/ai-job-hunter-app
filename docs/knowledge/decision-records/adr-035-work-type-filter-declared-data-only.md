@@ -20,9 +20,9 @@ The UI already has per-board scraping since the introduction of company-scoped A
 
 **Board coverage:**
 
-- Most boards declare a workplace value on their public API (see the per-board table in `docs/SCRAPING_ENDPOINTS.md`)
+- 15 boards declare a workplace value (11 read a field their API declares, 4 write a constant `remote`) — see the per-board table in `docs/SCRAPING_ENDPOINTS.md`, the authoritative source; don't copy the count here
 - 4 boards are all-remote by definition (RemoteOK, Remotive, WWR, Jobicy)
-- 9 boards have no workplace signal at all (Greenhouse, Personio, LinkedIn, YCombinator, Adzuna aggregator, and others)
+- The remaining boards have no workplace signal at all on the endpoint we call (Greenhouse, Personio, LinkedIn, YCombinator, Adzuna aggregator, Arbeitsagentur, Rippling, TheMuse, BerlinStartupJobs, GermanTechJobs)
 
 ## Decision
 
@@ -50,7 +50,7 @@ The UI already has per-board scraping since the introduction of company-scoped A
 | BambooHR                     | `locationType` "0"/"1"/"2"   | (Mapping inferred; marked for re-check)                                |
 | Comeet                       | `workplace_type`             | (Docs-only; board hidden; marked for re-check)                         |
 | RemoteOK/Remotive/WWR/Jobicy | —                            | Constant `remote` (all-remote by definition)                           |
-| Others                       | —                            | `Unknown` (Greenhouse, Personio, LinkedIn, YCombinator, Adzuna)        |
+| Others                       | —                            | `Unknown` — see `docs/SCRAPING_ENDPOINTS.md` for the current list      |
 
 ### What is NOT built
 

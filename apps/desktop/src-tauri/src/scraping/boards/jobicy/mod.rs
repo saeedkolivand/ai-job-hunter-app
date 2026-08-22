@@ -18,7 +18,9 @@
 /// through to `scrape_url`'s generic HTML fallback, same as any other
 /// unregistered host.
 use super::super::http::{fetch_text, html_to_markdown};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -135,7 +137,7 @@ pub(crate) fn map_job(j: Job, scraper_id: &str, now: i64) -> Option<JobPosting> 
             // All-remote by definition — no per-posting field to read, but a
             // declared value all the same so this board's rows participate in
             // the work-type filter/badge like every other board.
-            map.insert("workType".to_string(), serde_json::json!("remote"));
+            map.insert("workType".to_string(), serde_json::json!(WorkType::Remote));
             map
         },
     })

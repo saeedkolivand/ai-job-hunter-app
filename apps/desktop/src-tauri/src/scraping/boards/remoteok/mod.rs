@@ -1,6 +1,8 @@
 /// RemoteOK — public JSON feed
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -137,7 +139,7 @@ impl Scraper for RemoteOkScraper {
                     let mut map = std::collections::HashMap::new();
                     map.insert("remote".to_string(), serde_json::json!(true));
                     // All-remote by definition — see jobicy's copy of this comment.
-                    map.insert("workType".to_string(), serde_json::json!("remote"));
+                    map.insert("workType".to_string(), serde_json::json!(WorkType::Remote));
                     map
                 },
             };

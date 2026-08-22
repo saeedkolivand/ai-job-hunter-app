@@ -1,6 +1,8 @@
 /// Arbeitnow — public JSON API
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::super::types::{
+    BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode, WorkType,
+};
 use super::common::should_propagate_page_error;
 use crate::error::AppError;
 use async_trait::async_trait;
@@ -11,8 +13,12 @@ use serde::Deserialize;
 /// live (rows titled `"Germany Remote"` and `"Berlin, Hybrid"` both carry
 /// `remote:false`), so a positive `false` here is not trustworthy evidence of
 /// on-site. Standalone so it is unit-testable without a network round-trip.
-pub(crate) fn arbeitnow_work_type(remote: Option<bool>) -> Option<&'static str> {
-    (remote == Some(true)).then_some("remote")
+///
+/// Returns the typed [`WorkType`] enum, not a bare string literal — a bare
+/// `"remote"` would silently stop matching the classifier if `WorkType`'s
+/// serde spelling ever changed, with nothing failing to say so.
+pub(crate) fn arbeitnow_work_type(remote: Option<bool>) -> Option<WorkType> {
+    (remote == Some(true)).then_some(WorkType::Remote)
 }
 
 #[derive(Debug, Deserialize)]

@@ -94,6 +94,28 @@ fn work_type_only_remote_present_still_resolves() {
     );
 }
 
+/// The dual-write regression (same shape as the Ashby `isRemote`/`workplaceType`
+/// defect): `remote:true` co-occurring with `hybrid:true` classifies as Hybrid
+/// (`work_type_hybrid_wins_over_remote`), so `extra["remote"]` must be `false`
+/// for that shape, not a copy of the raw `remote` boolean — otherwise
+/// `location_filter`'s "never drop a remote job" rule would fire for a Hybrid
+/// posting.
+#[test]
+fn declared_remote_flag_follows_the_classifier_not_the_raw_boolean() {
+    let hybrid_but_remote_true = smartrecruiters_work_type(Some(true), Some(true));
+    assert_eq!(hybrid_but_remote_true, Some(WorkType::Hybrid));
+    assert!(
+        !smartrecruiters_is_declared_remote(hybrid_but_remote_true),
+        "a Hybrid row must not also write extra.remote == true"
+    );
+    assert!(
+        smartrecruiters_is_declared_remote(Some(WorkType::Remote)),
+        "a genuinely Remote row must still write extra.remote == true"
+    );
+    assert!(!smartrecruiters_is_declared_remote(None));
+    assert!(!smartrecruiters_is_declared_remote(Some(WorkType::OnSite)));
+}
+
 #[test]
 fn location_type_param_spelling_has_no_separator() {
     assert_eq!(
