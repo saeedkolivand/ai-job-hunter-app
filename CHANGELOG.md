@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.141.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.141.1...v0.141.2) (2026-08-22)
+
+### 🐛 Bug Fixes
+
+* make letter-spaced headings, plain-text links and placeholder sections behave ([#1073](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1073)) ([52830b0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/52830b0c29885830bf7942af38865530167dba94))
+
 ## [0.141.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.141.0...v0.141.1) (2026-08-22)
 
 ### 🐛 Bug Fixes
