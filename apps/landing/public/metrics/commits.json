@@ -1,5 +1,197 @@
 [
   {
+    "sha": "fd3daf9f87daa25b85c5d97847ae5a0bcf7bd85d",
+    "commit": {
+      "message": "chore: sync landing download version to v0.143.0",
+      "author": {
+        "date": "2026-08-22T23:22:02Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "427c658137e52b658563f65362929fa528a8c28f",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.143.0 [skip ci]",
+      "author": {
+        "date": "2026-08-22T23:21:32Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "be581e785ab373754b37c58375596c4d70c28aa2",
+    "commit": {
+      "message": "build(extension): name the manifest import's file extension (#1077)",
+      "author": {
+        "date": "2026-08-22T22:48:36Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "dc196dc671514d9093b778dfff3228aafa9c7839",
+    "commit": {
+      "message": "chore(release): 0.143.0 [skip ci]",
+      "author": {
+        "date": "2026-08-22T22:41:17Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "6c6019cf665c992b23aebef497741b739d0404bb",
+    "commit": {
+      "message": "feat: filter jobs by remote, hybrid and on-site (#1076)",
+      "author": {
+        "date": "2026-08-22T22:40:28Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "cb46e57726adb25e042af887674e71f7190719ac",
+    "commit": {
+      "message": "chore: sync landing download version to v0.142.1",
+      "author": {
+        "date": "2026-08-22T15:33:07Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "78ad24b90ead8659f002e3d9c9e463d24c864904",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.142.1 [skip ci]",
+      "author": {
+        "date": "2026-08-22T15:32:39Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "835950361a2642deddf17809c300340cbd2e5032",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-22T15:22:25Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "91209e8bffcfb5d0ed316cec95d48d78d9127a4c",
+    "commit": {
+      "message": "chore(release): 0.142.1 [skip ci]",
+      "author": {
+        "date": "2026-08-22T14:59:57Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "fc339661d47229b12f5699d97933470e47d96c24",
+    "commit": {
+      "message": "fix(scraping): send the requested location to freehire (#1075)",
+      "author": {
+        "date": "2026-08-22T14:58:15Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "7d39be8d55dae324970d810e8bf49cb7188c3e99",
+    "commit": {
+      "message": "chore: sync landing download version to v0.142.0",
+      "author": {
+        "date": "2026-08-22T06:40:00Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "8124bd6516b5ce2aecca0de5a46638ad514931e8",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.142.0 [skip ci]",
+      "author": {
+        "date": "2026-08-22T06:39:26Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "b1eb5584bcd8b61dd7a9b1eca42c5264d5d6e1bf",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-22T06:28:24Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "8acc6e5e09fc393d920e54f8edd86a4565cf0dee",
+    "commit": {
+      "message": "chore(release): 0.142.0 [skip ci]",
+      "author": {
+        "date": "2026-08-22T06:07:37Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "1d70c491c3f327d84da5a81059a65da4689ad1d3",
+    "commit": {
+      "message": "feat(scraping): make freehire its own selectable board (#1074)",
+      "author": {
+        "date": "2026-08-22T06:06:28Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "55385ae80fd60f7976a7f0fbb9fedf0b62b9d6df",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-22T03:55:29Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "f358f08eb4003851dcbaf0e4617cabe52226e938",
     "commit": {
       "message": "chore: sync landing download version to v0.141.2",
@@ -1005,198 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "e4b8bccc95254b2650ee0817ed5065384c023436",
-    "commit": {
-      "message": "fix(scraping): wire the freehire params their spec never documented (#1035)",
-      "author": {
-        "date": "2026-08-18T15:12:14Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c6aedbf25810703b1da0ba2b5a437dbfea6bfebd",
-    "commit": {
-      "message": "docs: repoint the audit-report sha after the history rewrite (#1034)",
-      "author": {
-        "date": "2026-08-18T14:57:56Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "190363f2c8af87174532c77c4694c5b11f2ffe4c",
-    "commit": {
-      "message": "chore: drop the 1.5 mb audit report from the tree, keep it in history (#1028)",
-      "author": {
-        "date": "2026-08-18T14:29:15Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d31685ca5960023009c57fd1c4417d6c851805ce",
-    "commit": {
-      "message": "feat(scraping): remember which boards actually work between runs (#1027)",
-      "author": {
-        "date": "2026-08-18T14:19:54Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1ddd60cc9435925624a313c93701c50ad08ad09e",
-    "commit": {
-      "message": "fix(resume-pipeline): resolve a fabrication remove by its anchored line (#1029)",
-      "author": {
-        "date": "2026-08-18T14:18:03Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "61931deaba27bae1303240768940ccc0da93aac2",
-    "commit": {
-      "message": "fix(landing): serve the /world clips from r2, which can send cors headers (#1032)",
-      "author": {
-        "date": "2026-08-18T14:08:07Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "0f39c5b12801fcb08bd1db439b341f040c924698",
-    "commit": {
-      "message": "refactor(landing): serve the /world clips from a release, not from the repo (#1031)",
-      "author": {
-        "date": "2026-08-18T13:36:30Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "14989f184444eb6dec26e9020d02a125eed5c050",
-    "commit": {
-      "message": "docs(persistence): state that the persisted record is authoritative and events only notify (#1025)",
-      "author": {
-        "date": "2026-08-18T12:52:37Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "12a6e8c4e97fe660e466bfbcd410c88da992dad9",
-    "commit": {
-      "message": "feat(validate): catch invented tenure, certifications and education (#1024)",
-      "author": {
-        "date": "2026-08-18T12:36:50Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "35fd59216b1a753e0d7af47fa3d90f08729cc598",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-18T11:11:33Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "16c894f57852dadf3509d51fdbd72001c31404bf",
-    "commit": {
-      "message": "feat(match): report hard constraints beside the score instead of blending them into it (#1023)",
-      "author": {
-        "date": "2026-08-18T10:47:41Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c16d726eaa57a8c397ae0282ea789c1f51c7b132",
-    "commit": {
-      "message": "ci: enforce that every adr citation resolves to a real record (#1022)",
-      "author": {
-        "date": "2026-08-18T10:38:15Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ef334d3b8a2b26ca8bcf61c689c48b771187e115",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-18T09:50:46Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "b12c421b82f164543041c73f8f8840ed504bffdb",
-    "commit": {
-      "message": "test(pipeline): pin what a killed resume run leaves on disk and what nothing cleans up (#1020)",
-      "author": {
-        "date": "2026-08-18T09:25:17Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4e4ece97655b6b1c73bcd83867dc6336229d80c0",
-    "commit": {
-      "message": "chore(deps): bump h2 to 0.4.16 for rustsec-2026-0258 (#1021)",
-      "author": {
-        "date": "2026-08-18T09:12:23Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4ca2fbebec98c25ac70d13e8abc5590118707dcc",
-    "commit": {
-      "message": "fix(jobs): keep the scrape state alive across a route change (#1019)",
-      "author": {
-        "date": "2026-08-18T08:15:34Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]

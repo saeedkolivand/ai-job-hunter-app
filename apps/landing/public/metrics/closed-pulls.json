@@ -1,5 +1,61 @@
 [
   {
+    "number": 1077,
+    "title": "build(extension): name the manifest import's file extension",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1077",
+    "draft": false,
+    "created_at": "2026-08-22T22:47:05Z",
+    "updated_at": "2026-08-22T22:48:38Z",
+    "merged_at": "2026-08-22T22:48:36Z",
+    "closed_at": "2026-08-22T22:48:37Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1076,
+    "title": "feat: filter jobs by remote, hybrid and on-site",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1076",
+    "draft": false,
+    "created_at": "2026-08-22T21:38:02Z",
+    "updated_at": "2026-08-22T22:43:24Z",
+    "merged_at": "2026-08-22T22:40:28Z",
+    "closed_at": "2026-08-22T22:40:28Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1075,
+    "title": "fix(scraping): send the requested location to freehire",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1075",
+    "draft": false,
+    "created_at": "2026-08-22T14:45:00Z",
+    "updated_at": "2026-08-22T15:20:38Z",
+    "merged_at": "2026-08-22T14:58:15Z",
+    "closed_at": "2026-08-22T14:58:16Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1074,
+    "title": "feat(scraping): make freehire its own selectable board",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1074",
+    "draft": false,
+    "created_at": "2026-08-22T04:33:35Z",
+    "updated_at": "2026-08-22T06:07:44Z",
+    "merged_at": "2026-08-22T06:06:29Z",
+    "closed_at": "2026-08-22T06:06:29Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1073,
     "title": "fix: make letter-spaced headings, plain-text links and placeholder sections behave",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1073",
@@ -638,62 +694,6 @@
     "updated_at": "2026-08-18T12:52:43Z",
     "merged_at": "2026-08-18T12:52:38Z",
     "closed_at": "2026-08-18T12:52:38Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1024,
-    "title": "feat(validate): catch invented tenure, certifications and education",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1024",
-    "draft": false,
-    "created_at": "2026-08-18T11:04:31Z",
-    "updated_at": "2026-08-18T12:39:11Z",
-    "merged_at": "2026-08-18T12:36:51Z",
-    "closed_at": "2026-08-18T12:36:51Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1023,
-    "title": "feat(match): report hard constraints beside the score instead of blending them into it",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1023",
-    "draft": false,
-    "created_at": "2026-08-18T09:32:19Z",
-    "updated_at": "2026-08-18T11:03:21Z",
-    "merged_at": "2026-08-18T10:47:41Z",
-    "closed_at": "2026-08-18T10:47:42Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1022,
-    "title": "ci: enforce that every adr citation resolves to a real record",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1022",
-    "draft": false,
-    "created_at": "2026-08-18T09:31:38Z",
-    "updated_at": "2026-08-18T10:47:37Z",
-    "merged_at": "2026-08-18T10:38:15Z",
-    "closed_at": "2026-08-18T10:38:16Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1020,
-    "title": "test(pipeline): pin what a killed resume run leaves on disk and what nothing cleans up",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1020",
-    "draft": false,
-    "created_at": "2026-08-18T07:36:52Z",
-    "updated_at": "2026-08-18T09:37:40Z",
-    "merged_at": "2026-08-18T09:25:18Z",
-    "closed_at": "2026-08-18T09:25:18Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
