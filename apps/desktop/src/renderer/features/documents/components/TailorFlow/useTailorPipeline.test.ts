@@ -88,8 +88,20 @@ vi.mock('@/services/use-ai-generations', () => ({
   useUpdateAiGeneration: () => ({ mutate: updateAiGenerationMutate }),
 }));
 
+// Records what the hook was ASKED for. `recheck` is derived from
+// `onReportChange` here exactly as the real hook derives it ("No session writer
+// means no way to show a result — hide the action", `use-quality-recheck.ts`),
+// so a test can assert on the returned action instead of on this stub's own
+// hardcoded value — which is what the previous `recheck: undefined` stub made
+// impossible.
+const qualityRecheckArgs = vi.hoisted(() => ({
+  current: null as { onReportChange?: unknown } | null,
+}));
 vi.mock('@/hooks/use-quality-recheck', () => ({
-  useQualityRecheck: () => ({ recheck: undefined, rechecking: false }),
+  useQualityRecheck: (args: { onReportChange?: unknown }) => {
+    qualityRecheckArgs.current = args;
+    return { recheck: args.onReportChange ? () => {} : undefined, rechecking: false };
+  },
 }));
 
 vi.mock('@/lib/generate', async () => {
@@ -119,6 +131,9 @@ const PARAMS = {
   board: 'linkedin',
   canUse: true,
   hasDesc: true,
+  // The wizard's own default (`buildTailorDefaults`), so every existing case
+  // keeps describing a run that produces both documents.
+  target: 'both' as const,
   templateId: 'classic' as const,
   atsMode: false,
 };
@@ -198,21 +213,22 @@ describe('useTailorPipeline — start() builds the id-wins run request', () => {
     );
   });
 
-  it('sets includeCoverLetter from outputType', async () => {
+  // The reported bug, at its source. This used to assert `includeCoverLetter`
+  // for 'resume' and 'cover' only — and never compared 'cover' against 'both',
+  // which is the one pair that was broken: with no résumé flag on the wire, the
+  // three-way choice collapsed onto ONE boolean and those two sent a
+  // byte-identical request. Asserting the PAIR, for all three values, against
+  // absolute literals is what makes that impossible to reintroduce.
+  it.each([
+    ['resume', { includeResume: true, includeCoverLetter: false }],
+    ['cover', { includeResume: false, includeCoverLetter: true }],
+    ['both', { includeResume: true, includeCoverLetter: true }],
+  ] as const)('maps outputType=%s onto both document flags', async (outputType, flags) => {
     const { result } = render();
     await act(async () => {
-      await result.current.start({ resume: 'r', outputType: 'resume', researchCompany: false });
+      await result.current.start({ resume: 'r', outputType, researchCompany: false });
     });
-    expect(sessionBus.start).toHaveBeenCalledWith(
-      expect.objectContaining({ includeCoverLetter: false })
-    );
-
-    await act(async () => {
-      await result.current.start({ resume: 'r', outputType: 'cover', researchCompany: false });
-    });
-    expect(sessionBus.start).toHaveBeenLastCalledWith(
-      expect.objectContaining({ includeCoverLetter: true })
-    );
+    expect(sessionBus.start).toHaveBeenLastCalledWith(expect.objectContaining(flags));
   });
 
   it('never fabricates a jobUrl — sends exactly what it was given, including empty', async () => {
@@ -1049,5 +1065,78 @@ describe('useTailorPipeline — a hard failure with no run record still invalida
     const { rerender } = render();
     rerender();
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+  // ── which document the panel opens on ──────────────────────────────────────
+  //
+  // The user-visible half of the reported bug: `activeOut` used to be a plain
+  // `useState('resume')` that nothing ever corrected from the run's target, and
+  // `GenerationOutput` builds its TAB LIST from it — so a cover-only run
+  // rendered exactly one tab, labelled "Resume", showing the résumé.
+});
+
+describe('useTailorPipeline — which document the panel opens on', () => {
+  // A finished run whose detail still carries a résumé — the posting's
+  // aggregate keeps whatever an earlier run saved, so "there is no résumé to
+  // show" is NOT what makes the cover-only case below pass.
+  const RESUME = 'FINAL RESUME';
+  const LETTER = 'THE LETTER';
+  const withLetter = {
+    id: 'gen-1',
+    coverLetterText: LETTER,
+  } as unknown as AiGenerationRecord;
+
+  beforeEach(() => {
+    sessionBus.detail = detail({ resumeText: RESUME });
+  });
+
+  it('opens a cover-only run on the letter, never on the résumé', () => {
+    const { result } = render({ target: 'cover', latestGeneration: withLetter });
+
+    expect(result.current.activeOut).toBe('cover');
+    expect(result.current.output).toBe(LETTER);
+    // The reported bug, verbatim.
+    expect(result.current.output).not.toBe(RESUME);
+  });
+
+  it.each(['resume', 'both'] as const)(
+    'opens a %s run on the résumé, exactly as before',
+    (target) => {
+      const { result } = render({ target, latestGeneration: withLetter });
+      expect(result.current.activeOut).toBe('resume');
+      expect(result.current.output).toBe(RESUME);
+    }
+  );
+
+  it('lets a tab click override the target-derived default', () => {
+    const { result } = render({ target: 'cover', latestGeneration: withLetter });
+    act(() => result.current.setActiveOut('resume'));
+    // Derivation, not a lock: the résumé tab a cover-only run shows for a
+    // previously saved document has to be selectable.
+    expect(result.current.activeOut).toBe('resume');
+    expect(result.current.output).toBe(RESUME);
+  });
+
+  it('offers no review controls on a document this run did not write', () => {
+    const { result } = render({ target: 'cover', latestGeneration: withLetter });
+    // The letter — this run's own document — keeps its review controls.
+    expect(result.current.pipelineReview).toBeDefined();
+    expect(result.current.recheck).toBeDefined();
+
+    act(() => result.current.setActiveOut('resume'));
+    // Re-check re-validates the ACTIVE document and persists the merged wrapper
+    // back onto the aggregate (`useQualityRecheck`'s `persistReport`), so
+    // leaving it live would let a run with no résumé of its own overwrite the
+    // posting's résumé report. The same hole as Fix section, one affordance
+    // over — found by review, not by me.
+    expect(result.current.recheck).toBeUndefined();
+    // …and the reason is that the writer was WITHHELD, not that some other
+    // precondition happened to be missing.
+    expect(qualityRecheckArgs.current?.onReportChange).toBeUndefined();
+    // The résumé does not. `PipelineRunDetail.report` is read off the per-job
+    // AGGREGATE, not the run, so an older run's `resume` slot is still present
+    // here — and `regenerateSection` would ACCEPT a Fix click against it (this
+    // IS the posting's newest run), spending a provider call rewriting a
+    // document the run on screen never produced.
+    expect(result.current.pipelineReview).toBeUndefined();
   });
 });

@@ -37,6 +37,10 @@ import type { TailorTarget } from './lib/tailor-target';
 
 interface Props {
   target: TailorTarget;
+  /** Whether the posting has a saved tailored résumé to show at all. Only ever
+   *  `false` for a cover-only run on a posting that has never produced one —
+   *  a `resume`/`both` run always has (or is producing) its own. */
+  hasResume: boolean;
   activeOut: 'resume' | 'cover';
   setActiveOut: (o: 'resume' | 'cover') => void;
   // Render-time template/ATS (sticky store) — drives BOTH the preview here and the
@@ -95,6 +99,7 @@ interface Props {
 
 export function GenerationOutput({
   target,
+  hasResume,
   activeOut,
   setActiveOut,
   templateId,
@@ -226,10 +231,21 @@ export function GenerationOutput({
   // (band / rail / monogram tile) the renderer drops under `data.opts.ats`.
   const letterAtsApplies = target !== 'resume' && isDecoratedLetterLayout(letterLayoutId);
 
+  // …and does this panel show a résumé tab at all? ONE definition, read by both
+  // the tab list below and the ATS-flag release below it — a `resume`/`both`
+  // run always has one; a cover-only run does only when the posting already
+  // carries a saved tailored résumé from an earlier run.
+  const hasResumeTab = target !== 'cover' || hasResume;
+
   // …and is there a résumé in this export at all? A cover-only run still has a
-  // templateId (it supplies the letter's palette) but renders no résumé from it,
-  // so a design-tier id must not keep the shared flag alive on its behalf.
-  const resumeInRun = target !== 'cover';
+  // templateId (it supplies the letter's palette), so a design-tier id must not
+  // keep the shared ATS flag alive on a résumé that is not there. Deliberately
+  // the SAME predicate as the tab list rather than `target !== 'cover'`: a
+  // cover-only run on a posting that already has a saved tailored résumé keeps
+  // it as an exportable tab, and releasing the flag out from under a document
+  // the user can still see and export is the failure this shares a definition
+  // to prevent.
+  const resumeInRun = hasResumeTab;
 
   // …and does it act on the document currently on screen? That is what decides
   // whether the toolbar shows the switch: the résumé tab asks about the template,
@@ -271,7 +287,21 @@ export function GenerationOutput({
 
   type TabKey = 'resume' | 'cover' | 'jobad';
   const tabItems = useMemo<readonly TabItem<TabKey>[]>(() => {
-    const docKeys: ('resume' | 'cover')[] = target === 'both' ? ['resume', 'cover'] : [activeOut];
+    // Off `target`, never `activeOut`: deriving the tab LIST from which tab
+    // happens to be SELECTED is what made a cover-only run render exactly one
+    // tab, labelled "Resume", showing the résumé — the reported bug. The
+    // résumé tab is now structurally absent for a cover-only run rather than
+    // merely unselected, except when the posting already has a saved tailored
+    // résumé from an earlier run, which stays viewable and exportable
+    // (review-inert — see `useTailorPipeline`'s `reviewableOut`).
+    const docKeys: ('resume' | 'cover')[] =
+      target === 'both'
+        ? ['resume', 'cover']
+        : target === 'cover'
+          ? hasResumeTab
+            ? ['cover', 'resume']
+            : ['cover']
+          : ['resume'];
     const items: TabItem<TabKey>[] = docKeys.map((o) => ({
       value: o,
       label:
@@ -286,7 +316,7 @@ export function GenerationOutput({
       ariaControls: 'tailor-panel-jobad',
     });
     return items;
-  }, [target, activeOut, t]);
+  }, [target, hasResumeTab, t]);
 
   const handleTabChange = (key: TabKey) => {
     if (key === 'jobad') {

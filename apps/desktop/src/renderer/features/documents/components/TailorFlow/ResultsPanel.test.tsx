@@ -49,6 +49,7 @@ function run(overrides: Partial<PipelineRunSummary> = {}): PipelineRunSummary {
 function makeProps(): ComponentProps<typeof ResultsPanel> {
   return {
     target: 'both',
+    hasResume: true,
     jobDesc: 'Full job description text',
     onJobDescChange: vi.fn(),
     hasDesc: true,

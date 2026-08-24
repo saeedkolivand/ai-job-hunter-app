@@ -67,6 +67,11 @@ pub mod max;
 pub mod notify;
 pub mod report;
 mod resolve;
+mod save;
+
+/// Re-exported so the two call sites — and the tests that pin them — name the
+/// decision, not the file it happens to live in.
+pub(crate) use save::{save_verdict, SaveVerdict};
 
 #[cfg(test)]
 mod max_test;
@@ -370,6 +375,7 @@ async fn execute(
             today: &clamped.today,
             cover_letter: &clamped.cover_letter,
             include_cover_letter: req.include_cover_letter,
+            include_resume: req.include_resume,
             company_name: &meta.company,
             research_company: req.research_company,
             effort: req.effort.as_deref(),
@@ -436,7 +442,12 @@ async fn execute(
     // would otherwise read `outcome == Ok` and report `completed` — a run the
     // user is told succeeded, over a document that never changed, with nothing
     // anywhere saying why. Only `Refused` counts: `Nothing` is the unlinked /
-    // empty-draft case, which is benign and already reported by its own path.
+    // produced-nothing case, which is benign and already reported by its own
+    // path. `ctx.input.include_resume` is what tells the verdict WHICH document
+    // to ask those two questions of — without it, a cover-letter-only run's
+    // empty draft reads as a failed résumé and the letter is either silently
+    // discarded (`Nothing`) or refused with a work-history message about a
+    // document the run was never asked to write.
     // Gated on `ctx.letter` — the stage's OWN output, the only letter text
     // this run can actually persist — never `ctx.letter_text()`'s fallback to
     // `input.cover_letter` (the user's own pasted reference letter, read when
@@ -448,7 +459,13 @@ async fn execute(
     // `persist_document`'s identical gate below for the save decision itself;
     // this one only has to AGREE with it for `refused`/`terminal_state` to be
     // consistent with what was actually written.
-    let verdict = save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, &job_url);
+    let verdict = save_verdict(
+        ctx.input.source_resume,
+        &ctx.draft,
+        &ctx.letter,
+        &job_url,
+        ctx.input.include_resume,
+    );
     let refused = matches!(verdict, SaveVerdict::Refused(_));
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
@@ -501,6 +518,14 @@ async fn execute(
         if let Some(id) = resolve::source_resume_id_for_metrics(resume_choice) {
             object.insert("sourceResumeId".to_string(), json!(id));
         }
+        // PROVENANCE again, same reasoning and the same home: did THIS run
+        // write the résumé the posting's aggregate now holds? Read back by
+        // `run_wrote_a_resume` to keep `regenerateSection` off a document the
+        // run never produced. Written unconditionally (unlike `sourceResumeId`
+        // above) because ABSENT has to keep meaning `true` — every run that
+        // predates the cover-letter-only mode wrote one, and a missing key
+        // must not lock those out of a section regenerate.
+        object.insert("resumeInRun".to_string(), json!(ctx.input.include_resume));
     }
     row.metrics_json = metrics.to_string();
     store.upsert_run(&row)?;
@@ -597,9 +622,18 @@ async fn execute(
 /// that reason — a save that wrote the text and left the report to a second
 /// call would leave a window where the panel describes the previous document.
 ///
-/// `None` when there was nothing to save (an empty draft, or a run that failed
-/// before validation): a record with no text and no report is not an aggregate
-/// update, it is noise.
+/// `None` when there was nothing to save — a run that failed before validating
+/// EITHER document, or one whose [`save_verdict`] came back anything but
+/// `Save`: a record with no text and no report is not an aggregate update, it
+/// is noise.
+///
+/// **An empty `draft` is not by itself "nothing to save".** A
+/// cover-letter-only run (`includeResume: false`) reaches here with one by
+/// design, and it saves: `resume_text` goes in empty, which
+/// `ai_generations::pick` reads as "keep the stored value", and the wrapper
+/// omits the `resume` key entirely, which the merge reads the same way. The
+/// posting's previously tailored résumé — and every Keep/Remove verdict
+/// recorded against it — survives the save untouched.
 ///
 /// **An UNLINKED run (no resolvable `jobUrl`) saves nothing.** The aggregate is
 /// keyed by posting url, so a row with an empty one is unreachable by every
@@ -673,7 +707,14 @@ fn persist_document(
     ctx: &QualityCtx<'_>,
     depth: &str,
 ) -> Option<String> {
-    let report = ctx.report.as_ref()?;
+    // At least ONE document must have been validated. This used to be
+    // `ctx.report.as_ref()?` — the résumé's report as the gate for the whole
+    // save — which on a cover-letter-only run (no résumé, so no résumé report
+    // by design; see `stages::validate`) would discard a fully generated,
+    // validated letter without a word anywhere.
+    if ctx.report.is_none() && ctx.letter_report.is_none() {
+        return None;
+    }
     // The gate gates `ctx.letter` — what `cover_letter_text` below actually
     // stores — NOT `ctx.letter_text()`'s fallback to the user's own pasted
     // reference letter (see the identical comment on `execute`'s own
@@ -682,14 +723,28 @@ fn persist_document(
     // describes whichever text `report::build` was given, stage output or
     // fallback, and that's what `letter_text()` is for.
     let letter_text = ctx.letter_text();
-    if save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, job_url) != SaveVerdict::Save
+    if save_verdict(
+        ctx.input.source_resume,
+        &ctx.draft,
+        &ctx.letter,
+        job_url,
+        ctx.input.include_resume,
+    ) != SaveVerdict::Save
     {
         return None;
     }
     let wrapper = report::build(
         depth,
         crate::db::now_ms(),
-        Some((report, &ctx.draft)),
+        // `Option`, not an unconditional `Some`: `report::build`'s own doc —
+        // "a document this run did not validate contributes NO key at all" —
+        // is what keeps a cover-letter-only run's wrapper from overwriting the
+        // posting's stored `resume` slot with an empty one. The merge overlays
+        // whatever keys the wrapper carries, so the older résumé's report and
+        // its fabrication verdicts survive untouched.
+        ctx.report
+            .as_ref()
+            .map(|report| (report, ctx.draft.as_str())),
         ctx.letter_report
             .as_ref()
             .map(|letter| (letter, letter_text)),
@@ -746,136 +801,6 @@ fn persist_document(
             None
         }
     }
-}
-
-/// What [`persist_document`] will do with this run's document, decided from the
-/// two documents and the posting url alone.
-///
-/// Three outcomes rather than a bool, because two of them mean opposite things
-/// to the RUN: `Nothing` is benign (an unlinked run is session-only by design,
-/// an empty draft is a run that failed before it wrote anything and is already
-/// reported as such), while `Refused` means the run produced a document and it
-/// was rejected — which must not come out as a successful completion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SaveVerdict {
-    Save,
-    /// There was nothing to save, or nowhere to save it.
-    Nothing,
-    /// There WAS a document, and it was rejected — for the user-facing reason
-    /// carried here, surfaced verbatim by `execute` (see
-    /// [`LOST_WORK_HISTORY_MESSAGE`]/[`LEAKED_FENCE_TAG_MESSAGE`]).
-    Refused(&'static str),
-}
-
-/// [`SaveVerdict::Refused`] reason: [`is_persistable`] rejected the draft for
-/// dropping the source's whole work history.
-const LOST_WORK_HISTORY_MESSAGE: &str = "The generated résumé came back without any of your work \
-    history, so your saved document was left unchanged. Try again.";
-
-/// [`SaveVerdict::Refused`] reason: the résumé or letter echoed one of the
-/// internal prompt-fence wrapper tags (`<generated_resume>`,
-/// `<candidate_resume>`, …) instead of real content — see
-/// [`crate::prompt_fence::contains_fence_tag`]. `draft`/`cover_letter` are the
-/// SOLE producers of these documents (unlike `humanize`/`repair`, which can
-/// discard a bad candidate and keep the last-good text they started from), so
-/// `save_verdict` is the last chokepoint that can catch a leak here before it
-/// reaches the saved aggregate and the exported PDF. Refusing to save —
-/// rather than saving with a flagged report — is the deliberate choice: it
-/// costs the run producing nothing this time, but a raw framework artifact
-/// reaching an employer is worse than a document the user has to retry, and
-/// it keeps this gate consistent with [`LOST_WORK_HISTORY_MESSAGE`] above
-/// rather than inventing a second, weaker failure mode for a defect that is
-/// arguably more visible to the reader.
-const LEAKED_FENCE_TAG_MESSAGE: &str = "The generated document came back with an internal \
-    formatting artifact that must never reach your résumé or cover letter, so your saved \
-    document was left unchanged. Try again.";
-
-/// One definition of "will this save", shared by `persist_document` (which
-/// acts on it) and `execute` (which has to report it). `letter` is checked
-/// independently of `draft`: `persist_document` writes both documents into
-/// ONE `AiGenerationRecord`, so there is no lower-granularity save to fall
-/// back to — a defect in EITHER document refuses the whole save, the same way
-/// [`is_persistable`] already treats a résumé-only defect as blocking it.
-pub(crate) fn save_verdict(
-    source_resume: &str,
-    draft: &str,
-    letter: &str,
-    job_url: &str,
-) -> SaveVerdict {
-    if draft.trim().is_empty() || job_url.trim().is_empty() {
-        return SaveVerdict::Nothing;
-    }
-    if !is_persistable(source_resume, draft) {
-        return SaveVerdict::Refused(LOST_WORK_HISTORY_MESSAGE);
-    }
-    // `humanize`/`sections` already gate their OWN rewrite candidates against
-    // an echoed fence tag (`is_usable_rewrite`, the splice guard in
-    // `sections.rs`) — but `draft`/`cover_letter` are what FIRST produce this
-    // text, and neither had a shape check of its own before this gate.
-    if crate::prompt_fence::contains_fence_tag(draft)
-        || crate::prompt_fence::contains_fence_tag(letter)
-    {
-        return SaveVerdict::Refused(LEAKED_FENCE_TAG_MESSAGE);
-    }
-    SaveVerdict::Save
-}
-
-/// Whether a run's document may OVERWRITE the posting's saved one.
-///
-/// One rule, and it is RELATIVE TO THE SOURCE: **refuse when the candidate's
-/// own résumé has an employment section and the generated document does not.**
-/// Everything else about completeness is a judgement the report already makes
-/// visible (a missing employer is a `factual.dropped_role` Critical and
-/// `needsReview`), but a document that lost ALL of a real work history is not a
-/// shorter résumé — it is not one — and this save has no versioning to undo it
-/// with.
-///
-/// **Why the source and not the run's outcome.** Two earlier versions of this
-/// gate read the run instead of the documents, and each was wrong in its own
-/// direction:
-///
-/// * keying on the recorded stop REASON refused a perfectly good run whose
-///   source simply has no employment section (a new graduate, an academic CV)
-///   the moment its repair round hit the daily cap — `stages::repair` records
-///   `Budgeted`/`RunTimeout` for a stop it RECOVERED from and then returns
-///   `Ok(())`. Status `completed`, document unchanged, no explanation anywhere;
-/// * keying on the run's OUTCOME missed the case the gate exists for. The
-///   removed `max` depth's now-deleted per-section fan-out treated a
-///   daily-cap refusal as `StoppedReason::Budgeted`, broke, and returned
-///   `Ok(())` — and nothing downstream converted that into an `Err`. So a max
-///   run that hit the cap right after Summary produced a summary-only
-///   document with `outcome == Ok`, and it overwrote the saved résumé.
-///
-/// Comparing the two DOCUMENTS answers both at once and needs no run state:
-/// a source with no work history can never trip it, and a truncated draft
-/// over a real one always does — however the run happened to end.
-///
-/// Both sides go through the SAME [`sections::find`] seam, so the
-/// undated-entry caveat (an entry with no date column is not a
-/// `LineKind::JobEntry`) applies equally to each and cannot create a false
-/// asymmetry.
-pub(crate) fn is_persistable(source_resume: &str, draft: &str) -> bool {
-    has_work_history(draft) || !has_work_history(source_resume)
-}
-
-/// Whether `text` has an employment section with anything under it.
-///
-/// The SECTION with a body, not a per-entry line range: `LineKind::JobEntry`
-/// legitimately fails for an entry with no date column, and a résumé whose
-/// dates the source never carried is a real document rather than an empty
-/// one.
-fn has_work_history(text: &str) -> bool {
-    let split = crate::pipeline::resume::stages::sections::split(text);
-    let lines: Vec<&str> = text.lines().collect();
-    crate::pipeline::resume::stages::sections::find(&split, SectionKey::Experience(0)).is_some_and(
-        |section| {
-            section
-                .text(&lines)
-                .lines()
-                .skip(1)
-                .any(|line| !line.trim().is_empty())
-        },
-    )
 }
 
 /// The all-empty record the pipeline's own save fills three fields of.
@@ -1137,6 +1062,18 @@ pub async fn resume_pipeline_regenerate_section(
     let generations = app
         .try_state::<AiGenerationStore>()
         .ok_or_else(|| AppError::Storage("the generation store is unavailable".to_string()))?;
+    // The PROPERTY, not the proxy: a run that never wrote a résumé has no
+    // section to regenerate, however full the posting's aggregate is. Checked
+    // before the record lookup so a cover-letter-only run is refused for the
+    // true reason rather than falling through to the emptiness filter below,
+    // which an earlier run's saved résumé would satisfy. See
+    // `run_wrote_a_resume`.
+    if !run_wrote_a_resume(&row) {
+        return Err(AppError::Validation(
+            "this run generated a cover letter, not a résumé, so it has no section to              regenerate"
+                .to_string(),
+        ));
+    }
     let record = generations
         .find_for_job(&row.job_url)
         .filter(|record| !record.resume_text.trim().is_empty())
@@ -1337,6 +1274,30 @@ pub async fn resume_pipeline_resolve_fabrication(
 /// links out of the document it is about to overwrite, i.e. codify whatever
 /// the last generation happened to say as fact. Callers that write must check
 /// this flag; callers that only validate may ignore it.
+/// Whether `row`'s run actually WROTE the résumé the posting's aggregate now
+/// holds — `metrics_json.resumeInRun`, written by `execute`.
+///
+/// **Absent means `true`.** Every run that predates the cover-letter-only mode
+/// wrote a résumé, and there is no migration touching those rows; reading a
+/// missing key as `false` would refuse a section regenerate on every historic
+/// run in the store.
+///
+/// This exists because the check it replaces was a PROXY. `regenerateSection`
+/// asked whether the aggregate's `resume_text` is non-empty — which answers
+/// "does this posting have a résumé", not "did this run write one". Those were
+/// the same question until `includeResume` arrived: a cover-letter-only run is
+/// the posting's newest (so `ensure_latest_run` passes) and the aggregate still
+/// carries an EARLIER run's résumé (so the emptiness filter passes), and the
+/// command would then splice, re-validate and persist a section of a document
+/// the run never produced — spending a provider call and overwriting the
+/// posting's report on the way.
+fn run_wrote_a_resume(row: &RunRow) -> bool {
+    serde_json::from_str::<Value>(&row.metrics_json)
+        .ok()
+        .and_then(|metrics| metrics.get("resumeInRun").and_then(Value::as_bool))
+        .unwrap_or(true)
+}
+
 fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord) -> (String, bool) {
     let hit = serde_json::from_str::<Value>(&row.metrics_json)
         .ok()

@@ -42,6 +42,7 @@ import {
 
 import { pipelineStepForStage } from './lib/pipeline-steps';
 import type { TailorWizardState } from './lib/tailor-state';
+import type { TailorTarget } from './lib/tailor-target';
 
 interface Params {
   jobDesc: string;
@@ -61,6 +62,18 @@ interface Params {
   board: string;
   canUse: boolean;
   hasDesc: boolean;
+  /**
+   * Which document(s) the run on screen produces — the host's `generatedTarget`
+   * (the PERSISTED wizard form, falling back to the live one). Read here for
+   * one reason: it decides which document the results panel opens on.
+   *
+   * A prop rather than something `start()` remembers, because the cold path has
+   * no `start()` to remember anything: navigating away and back, or reopening
+   * the app on a posting whose last run was cover-only, remounts this hook with
+   * a finished run and no session. The persisted form is the only surviving
+   * answer to "what did that run produce", so the derivation has to hang off it.
+   */
+  target: TailorTarget;
   templateId: TemplateId;
   atsMode: boolean;
   accent?: string;
@@ -184,6 +197,7 @@ export function useTailorPipeline({
   board,
   canUse,
   hasDesc,
+  target,
   templateId,
   atsMode,
   accent,
@@ -244,7 +258,19 @@ export function useTailorPipeline({
     : t(`pipeline.state.${session.state}`, { defaultValue: '' });
 
   // Modal-local, ephemeral UI — fine to reset on remount.
-  const [activeOut, setActiveOut] = useState<'resume' | 'cover'>('resume');
+  //
+  // DERIVED from the run's target, with the user's own tab click as the
+  // override. It used to be a plain `useState('resume')` that nothing ever
+  // corrected, so a cover-only run opened on the résumé tab and showed the
+  // résumé — which, together with `GenerationOutput`'s tab list being built
+  // from this value, is the whole reason "Cover letter" looked like it had
+  // generated a résumé. Deriving rather than seeding in `start()` is what also
+  // covers the COLD path: a remount (navigate away and back, or a fresh app
+  // start on a posting whose last run was cover-only) has a finished run and no
+  // `start()` call to have seeded anything.
+  const [activeOutOverride, setActiveOut] = useState<'resume' | 'cover' | null>(null);
+  const activeOut: 'resume' | 'cover' =
+    activeOutOverride ?? (target === 'cover' ? 'cover' : 'resume');
   const [copied, setCopied] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -425,13 +451,50 @@ export function useTailorPipeline({
     [qc, session.runId]
   );
 
+  /**
+   * Whether the document currently on screen is one THIS run produced.
+   *
+   * Only a cover-letter-only run can answer `false`, and only on its résumé
+   * tab: that tab shows the posting's older tailored résumé, which stays
+   * viewable and exportable (see `GenerationOutput`'s tab list) but must not be
+   * acted on by this run's machinery.
+   *
+   * Two affordances read it, and both WRITE:
+   *
+   * * **Fix section** (`pipelineReview`). `session.detail.report` comes off the
+   *   per-job AGGREGATE, not the run (`resume_pipeline_get` joins
+   *   `find_for_job`), so the older `resume` slot is still present here and the
+   *   panel would render Fix buttons over it. `regenerateSection` would ACCEPT
+   *   the click — `ensure_latest_run` only asks whether this is the posting's
+   *   newest run, which it is — and spend a provider call rewriting a document
+   *   this run never wrote. (Also refused server-side now; this is the half
+   *   that stops the button existing.)
+   * * **Re-check** (`recheck`). It re-validates the ACTIVE document and
+   *   `persistReport`s the merged wrapper back onto the aggregate, so it would
+   *   overwrite the posting's report with one computed under a run that has no
+   *   résumé of its own.
+   *
+   * Gated by withholding `onReportChange` rather than by a second condition on
+   * `recheck`: `useQualityRecheck` already returns `recheck: undefined` when it
+   * has no session writer ("no way to show a result — hide the action"), so
+   * this reuses that rule instead of adding a parallel one that could drift
+   * from it.
+   *
+   * Deliberately NOT gated: inline editing (`editActiveOutput`) and export.
+   * Those are ordinary hand edits and downloads of a document the user already
+   * has saved — the same thing the Documents editor does — and they are the
+   * reason the tab is shown at all. Audited against every other `activeOut`
+   * reader in this hook; `output` and the export `docType` are read-only.
+   */
+  const activeIsThisRunsOwn = !(target === 'cover' && activeOut === 'resume');
+
   const { recheck, rechecking } = useQualityRecheck({
     report,
     meta,
     sourceResume,
     jobAd: jobDesc,
     docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
-    onReportChange,
+    onReportChange: activeIsThisRunsOwn ? onReportChange : undefined,
     resumeText: resumeOut,
     coverLetterText: coverOut,
     generating: session.busy,
@@ -446,8 +509,12 @@ export function useTailorPipeline({
   // Read off the RAW `PipelineQualityReport` (not the renderer-shaped `report`
   // above) — its slot type declares `fabrications`, where `QualityReportSlot`
   // deliberately doesn't (it's opaque additional data there).
-  const rawSlot =
-    activeOut === 'resume' ? session.detail?.report?.resume : session.detail?.report?.coverLetter;
+  //
+  const rawSlot = !activeIsThisRunsOwn
+    ? undefined
+    : activeOut === 'resume'
+      ? session.detail?.report?.resume
+      : session.detail?.report?.coverLetter;
   const sections = useMemo(() => buildSectionVerdicts(rawSlot?.report, output), [rawSlot, output]);
   const fabrications = useMemo(() => parseFabrications(rawSlot?.fabrications), [rawSlot]);
   const runId = session.detail?.runId;
@@ -469,35 +536,38 @@ export function useTailorPipeline({
       : 0;
     return resumeUnresolved + coverUnresolved;
   }, [resumeReportSlot, coverReportSlot, resumeOut, coverOut]);
-  const pipelineReview: QualityPipelineReview | undefined = runId
-    ? {
-        documentText: output,
-        sections,
-        fabrications,
-        onFixSection: (sectionKey, note) =>
-          regenerate.mutate({ runId, sectionKey, ...(note ? { note } : {}) }),
-        fixingSection: regenerate.isPending ? (regenerate.variables?.sectionKey ?? null) : null,
-        fixError: regenerate.error
-          ? t('autopilot.apply.wizard.results.fixFailed', { detail: errorDetail(regenerate.error) })
-          : null,
-        onResolveFabrication: (issueKey, decision) =>
-          resolveFabrication.mutate({ runId, issueKey, decision }),
-        resolvingIssueKey: resolveFabrication.isPending
-          ? (resolveFabrication.variables?.issueKey ?? null)
-          : null,
-        resolveError: resolveFabrication.error
-          ? t('autopilot.apply.wizard.results.resolveFailed', {
-              detail: errorDetail(resolveFabrication.error),
-            })
-          : null,
-        ...(session.detail?.metrics.repairRounds != null
-          ? { repairRounds: session.detail.metrics.repairRounds }
-          : {}),
-        ...(session.detail?.metrics.reverted != null
-          ? { repairReverted: session.detail.metrics.reverted }
-          : {}),
-      }
-    : undefined;
+  const pipelineReview: QualityPipelineReview | undefined =
+    runId && activeIsThisRunsOwn
+      ? {
+          documentText: output,
+          sections,
+          fabrications,
+          onFixSection: (sectionKey, note) =>
+            regenerate.mutate({ runId, sectionKey, ...(note ? { note } : {}) }),
+          fixingSection: regenerate.isPending ? (regenerate.variables?.sectionKey ?? null) : null,
+          fixError: regenerate.error
+            ? t('autopilot.apply.wizard.results.fixFailed', {
+                detail: errorDetail(regenerate.error),
+              })
+            : null,
+          onResolveFabrication: (issueKey, decision) =>
+            resolveFabrication.mutate({ runId, issueKey, decision }),
+          resolvingIssueKey: resolveFabrication.isPending
+            ? (resolveFabrication.variables?.issueKey ?? null)
+            : null,
+          resolveError: resolveFabrication.error
+            ? t('autopilot.apply.wizard.results.resolveFailed', {
+                detail: errorDetail(resolveFabrication.error),
+              })
+            : null,
+          ...(session.detail?.metrics.repairRounds != null
+            ? { repairRounds: session.detail.metrics.repairRounds }
+            : {}),
+          ...(session.detail?.metrics.reverted != null
+            ? { repairReverted: session.detail.metrics.reverted }
+            : {}),
+        }
+      : undefined;
 
   const editActiveOutput = (text: string) => {
     if (activeOut === 'resume') setResumeOverride(text);
@@ -517,6 +587,9 @@ export function useTailorPipeline({
     if (!canUse || !hasDesc) return null;
     setResumeOverride(null);
     setLetterOverride(null);
+    // A regenerate that CHANGES the target must not strand the panel on a tab
+    // the new run does not produce — drop back to the derived default.
+    setActiveOut(null);
     setCurrentStep(0);
     const resumeId = values.resumeDocId ?? '';
     // Computed HERE, not in a memo — a memo evaluated at mount would go stale
@@ -579,6 +652,11 @@ export function useTailorPipeline({
       today,
       topRequirements: [],
       coverLetterText: '',
+      // TWO independent flags, not one three-valued token. `'cover'` used to
+      // collapse onto the byte-identical request `'both'` sends, because there
+      // was no résumé flag to turn off — so the backend ran, validated,
+      // repaired and PERSISTED a résumé for a run that asked for a letter.
+      includeResume: values.outputType !== 'cover',
       includeCoverLetter: values.outputType !== 'resume',
       researchCompany: values.researchCompany,
     });

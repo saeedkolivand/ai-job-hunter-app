@@ -441,6 +441,15 @@ export const ResumePipelineRunSchema = z
      *  caller that never sets this gets byte-identical behavior — the stage
      *  finishes instantly at zero cost, exactly as if it did not exist. */
     includeCoverLetter: z.boolean().default(false),
+    /** Whether the run's `draft` stage should generate a résumé. Default true:
+     *  an existing caller that never sets this gets byte-identical behavior.
+     *  `false` is the cover-letter-only run — `draft` no-ops at zero cost,
+     *  nothing résumé-shaped is validated, repaired or persisted, and the
+     *  posting's saved résumé is left alone (`ai_generations::pick` keeps the
+     *  stored value for an empty incoming field). The grounding stages
+     *  (`analyze_job`, `match_evidence`, `strategy`) still run: the letter
+     *  prompt fences `<resume_strategy>` and is told to follow it. */
+    includeResume: z.boolean().default(true),
     /** Opt-in: research the posting's company before writing the letter and
      *  fence a `<company_research>` block into its prompt when a brief comes
      *  back non-empty. Ignored when {@link includeCoverLetter} is false.
@@ -458,6 +467,10 @@ export const ResumePipelineRunSchema = z
   .refine((data) => data.jobId.trim() !== '' || data.jobAdText.trim() !== '', {
     message: 'either jobId or jobAdText is required',
     path: ['jobId'],
+  })
+  .refine((data) => data.includeResume || data.includeCoverLetter, {
+    message: 'a run must produce at least one document',
+    path: ['includeResume'],
   });
 /**
  * The INPUT shape, not `z.infer`'s output — deliberately. Every field here has

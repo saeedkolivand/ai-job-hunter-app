@@ -280,6 +280,13 @@ export function TailorFlow({
   // with a snippet present it renders immediately and upgrades silently on fetch.
   const fetchingDesc = !initialDesc && resolved.isLoading;
 
+  // The target that produced (or is producing) the output. Persisted form value
+  // is the source of truth once a run starts; falls back to the live form value.
+  // Declared HERE, above the hook, because the hook needs it too: it is what
+  // decides which document the results panel opens on, including on a cold
+  // remount where no `start()` call survives to have seeded it.
+  const generatedTarget = persistence.wizardForm?.outputType ?? methods.getValues('outputType');
+
   const gen = useTailorPipeline({
     jobDesc,
     // The résumé the wizard tailors FROM — the quality panel's "Re-check" needs
@@ -293,6 +300,7 @@ export function TailorFlow({
     board,
     canUse,
     hasDesc,
+    target: generatedTarget,
     templateId: persistence.templateId,
     atsMode: persistence.atsMode,
     accent: persistence.accent,
@@ -372,9 +380,6 @@ export function TailorFlow({
       ? 'done'
       : 'configuring';
 
-  // The target that produced (or is producing) the output. Persisted form value
-  // is the source of truth once a run starts; falls back to the live form value.
-  const generatedTarget = persistence.wizardForm?.outputType ?? methods.getValues('outputType');
   const runState = toRunState(gen.state, gen.runs);
 
   // CR-7: a `role="status"` element that only enters the DOM once its
@@ -488,13 +493,18 @@ export function TailorFlow({
         // streams past it (validate/repair/humanize make no visible calls),
         // so this is the right live text for every later step too.
         output={gen.letterDraft || gen.draft}
-        streamingTarget={gen.letterDraft ? 'cover' : 'resume'}
+        // `letterDraft` alone is not enough: a cover-only run skips the
+        // `draft` stage entirely, so there is no résumé stream to precede the
+        // letter's first token and the pane spent the whole analyze → strategy
+        // warm-up labelled "Resume".
+        streamingTarget={gen.letterDraft || generatedTarget === 'cover' ? 'cover' : 'resume'}
         onCancel={gen.cancel}
       />
     ),
     done: () => (
       <ResultsPanel
         target={generatedTarget}
+        hasResume={!!gen.resumeOut}
         jobDesc={jobDesc}
         onJobDescChange={handleJobDescEdit}
         hasDesc={hasDesc}

@@ -160,6 +160,7 @@ const noop = () => undefined;
 function makeProps(overrides: Partial<Parameters<typeof GenerationOutput>[0]> = {}) {
   return {
     target: 'both' as const,
+    hasResume: true,
     activeOut: 'resume' as const,
     setActiveOut: vi.fn(),
     templateId: 'classic' as const,
@@ -398,6 +399,39 @@ describe('GenerationOutput', () => {
       expect(
         screen.queryByRole('tab', { name: 'autopilot.apply.target.cover' })
       ).not.toBeInTheDocument();
+    });
+
+    // The reported bug's visible half. The tab LIST used to be built from
+    // `activeOut` (`target === 'both' ? [...] : [activeOut]`), which for a
+    // cover-only run — whose `activeOut` was an uncorrected `'resume'` — put a
+    // single tab on screen labelled "Resume", showing the résumé. Passed the
+    // INCONSISTENT prop pair the old code actually produced, so it fails
+    // against a build that reads `activeOut` again.
+    it('does not render the Resume tab for a cover-only run with nothing saved', () => {
+      render(
+        <GenerationOutput
+          {...makeProps({ target: 'cover', activeOut: 'resume', hasResume: false })}
+        />
+      );
+      expect(
+        screen.queryByRole('tab', { name: 'autopilot.apply.target.resume' })
+      ).not.toBeInTheDocument();
+      // …and the letter's own tab IS there — otherwise this would pass just as
+      // happily against a build that rendered no document tabs at all.
+      expect(screen.getByRole('tab', { name: 'autopilot.apply.target.cover' })).toBeInTheDocument();
+    });
+
+    it('keeps the Resume tab for a cover-only run on a posting that already has one', () => {
+      render(
+        <GenerationOutput
+          {...makeProps({ target: 'cover', activeOut: 'cover', hasResume: true })}
+        />
+      );
+      expect(screen.getByRole('tab', { name: 'autopilot.apply.target.cover' })).toBeInTheDocument();
+      // The saved document from an earlier run stays viewable and exportable.
+      expect(
+        screen.getByRole('tab', { name: 'autopilot.apply.target.resume' })
+      ).toBeInTheDocument();
     });
   });
 
@@ -919,8 +953,11 @@ describe('GenerationOutput', () => {
       expect(onAtsModeChange).not.toHaveBeenCalled();
     });
 
-    // target='cover': no résumé is exported, so the (design-tier) template must
-    // not hold the shared flag open once the letter stops reading it.
+    // target='cover' with nothing saved: no résumé is exported, so the
+    // (design-tier) template must not hold the shared flag open once the letter
+    // stops reading it. `hasResume: false` is now what makes that true — the
+    // question is whether a résumé is REACHABLE in this panel, not whether the
+    // run produced one.
     it("target='cover': releases atsMode even under a design-tier template", async () => {
       const user = userEvent.setup();
       const onAtsModeChange = vi.fn();
@@ -928,6 +965,7 @@ describe('GenerationOutput', () => {
         <GenerationOutput
           {...makeProps({
             target: 'cover',
+            hasResume: false,
             activeOut: 'cover',
             templateId: 'atelier',
             letterLayoutId: 'monogram',
@@ -938,6 +976,31 @@ describe('GenerationOutput', () => {
       );
       await user.click(screen.getByTestId(letterOption('classic')));
       expect(onAtsModeChange).toHaveBeenCalledWith(false);
+    });
+
+    // …and the counterpart the saved-résumé tab introduces: that résumé is
+    // still on screen and still exportable under the design-tier template, so
+    // releasing the flag would strand it with no way back on. One predicate
+    // (`hasResumeTab`) drives both the tab list and this decision precisely so
+    // the two cannot disagree.
+    it("target='cover' with a saved résumé: keeps atsMode under a design-tier template", async () => {
+      const user = userEvent.setup();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            target: 'cover',
+            hasResume: true,
+            activeOut: 'cover',
+            templateId: 'atelier',
+            letterLayoutId: 'monogram',
+            atsMode: true,
+            onAtsModeChange,
+          })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('classic')));
+      expect(onAtsModeChange).not.toHaveBeenCalled();
     });
 
     it('does not release atsMode when swapping between two DECORATED layouts', async () => {

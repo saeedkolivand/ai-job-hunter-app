@@ -495,12 +495,22 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
     }
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
-        let Some(resume_report) = ctx.report.clone() else {
-            // validate did not run — nothing to grade against.
+        // The guard asks about BOTH documents, not just the résumé. It used to
+        // bind `ctx.report` with a `let … else`, which made a résumé report the
+        // precondition for the WHOLE stage — and `letter_flagged` is computed
+        // below it. A cover-letter-only run has no résumé report by design
+        // (`stages::validate`), so that shape would return here and record a
+        // zero-flag artifact for a letter it never looked at: the polish pass
+        // silently skipped, and the trail claiming nothing was flagged.
+        //
+        // `None` on BOTH is the case the original guard was written for —
+        // validate did not run, so there is nothing to grade against.
+        let resume_report = ctx.report.clone();
+        if resume_report.is_none() && ctx.letter_report.is_none() {
             ctx.ledger.record(NAME, Artifact::default().into_json());
             return Ok(());
-        };
-        let resume_flagged = voice_count(&resume_report);
+        }
+        let resume_flagged = resume_report.as_ref().map_or(0, voice_count);
         let letter_flagged = ctx.letter_report.as_ref().map_or(0, voice_count);
         let voice_before = resume_flagged + letter_flagged;
 
@@ -547,6 +557,11 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
             } else if ctx.deadline.passed() {
                 timed_out = true;
             } else {
+                // Safe: `resume_flagged > 0` only counts when `ctx.report` is
+                // `Some` (see its own `voice_count` above) — the exact idiom,
+                // and the exact justification, the letter arm below already
+                // uses for `ctx.letter_report`.
+                let resume_report = resume_report.clone().unwrap_or_else(empty_ok_report);
                 let findings = voice_findings(&resume_report, &ctx.draft);
                 if !findings.is_empty() {
                     match completer.charge_daily() {

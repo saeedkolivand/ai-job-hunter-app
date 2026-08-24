@@ -37,6 +37,8 @@ pub struct ResumePipelineRunRequest {
     pub cover_letter_text: String,
     #[serde(default = "default_resume_pipeline_run_request_include_cover_letter")]
     pub include_cover_letter: bool,
+    #[serde(default = "default_resume_pipeline_run_request_include_resume")]
+    pub include_resume: bool,
     #[serde(default = "default_resume_pipeline_run_request_research_company")]
     pub research_company: bool,
 }
@@ -114,6 +116,10 @@ fn default_resume_pipeline_run_request_cover_letter_text() -> String {
 
 fn default_resume_pipeline_run_request_include_cover_letter() -> bool {
     false
+}
+
+fn default_resume_pipeline_run_request_include_resume() -> bool {
+    true
 }
 
 fn default_resume_pipeline_run_request_research_company() -> bool {
