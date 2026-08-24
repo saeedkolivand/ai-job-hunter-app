@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.143.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.143.0...v0.143.1) (2026-08-24)
+
+### 🐛 Bug Fixes
+
+* **pipeline:** stop a cover-letter-only run from generating a résumé ([#1078](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1078)) ([f2f2836](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f2f28361247a3e57d5ff49d04909bd085e6043c8))
+
 ## [0.143.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.142.1...v0.143.0) (2026-08-22)
 
 ### ✨ Features
