@@ -451,13 +451,50 @@ export function useTailorPipeline({
     [qc, session.runId]
   );
 
+  /**
+   * Whether the document currently on screen is one THIS run produced.
+   *
+   * Only a cover-letter-only run can answer `false`, and only on its résumé
+   * tab: that tab shows the posting's older tailored résumé, which stays
+   * viewable and exportable (see `GenerationOutput`'s tab list) but must not be
+   * acted on by this run's machinery.
+   *
+   * Two affordances read it, and both WRITE:
+   *
+   * * **Fix section** (`pipelineReview`). `session.detail.report` comes off the
+   *   per-job AGGREGATE, not the run (`resume_pipeline_get` joins
+   *   `find_for_job`), so the older `resume` slot is still present here and the
+   *   panel would render Fix buttons over it. `regenerateSection` would ACCEPT
+   *   the click — `ensure_latest_run` only asks whether this is the posting's
+   *   newest run, which it is — and spend a provider call rewriting a document
+   *   this run never wrote. (Also refused server-side now; this is the half
+   *   that stops the button existing.)
+   * * **Re-check** (`recheck`). It re-validates the ACTIVE document and
+   *   `persistReport`s the merged wrapper back onto the aggregate, so it would
+   *   overwrite the posting's report with one computed under a run that has no
+   *   résumé of its own.
+   *
+   * Gated by withholding `onReportChange` rather than by a second condition on
+   * `recheck`: `useQualityRecheck` already returns `recheck: undefined` when it
+   * has no session writer ("no way to show a result — hide the action"), so
+   * this reuses that rule instead of adding a parallel one that could drift
+   * from it.
+   *
+   * Deliberately NOT gated: inline editing (`editActiveOutput`) and export.
+   * Those are ordinary hand edits and downloads of a document the user already
+   * has saved — the same thing the Documents editor does — and they are the
+   * reason the tab is shown at all. Audited against every other `activeOut`
+   * reader in this hook; `output` and the export `docType` are read-only.
+   */
+  const activeIsThisRunsOwn = !(target === 'cover' && activeOut === 'resume');
+
   const { recheck, rechecking } = useQualityRecheck({
     report,
     meta,
     sourceResume,
     jobAd: jobDesc,
     docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
-    onReportChange,
+    onReportChange: activeIsThisRunsOwn ? onReportChange : undefined,
     resumeText: resumeOut,
     coverLetterText: coverOut,
     generating: session.busy,
@@ -473,18 +510,6 @@ export function useTailorPipeline({
   // above) — its slot type declares `fabrications`, where `QualityReportSlot`
   // deliberately doesn't (it's opaque additional data there).
   //
-  // A document this run did not WRITE gets no review controls. On a cover-only
-  // run the panel can still show the posting's older tailored résumé (it is
-  // saved, viewable and exportable — see `GenerationOutput`'s tab list), and
-  // `session.detail.report` is read off the per-job AGGREGATE rather than the
-  // run (`commands/resume_pipeline/mod.rs`'s `resume_pipeline_get` joins
-  // `find_for_job`), so that older `resume` slot is still present here. Without
-  // this gate the résumé tab would offer "Fix section" on it — and
-  // `regenerateSection` would ACCEPT the click, because `ensure_latest_run`
-  // only asks whether this is the posting's newest run, which it is. The user
-  // would spend a provider call rewriting a document the run on screen never
-  // produced, charged to that run.
-  const activeIsThisRunsOwn = !(target === 'cover' && activeOut === 'resume');
   const rawSlot = !activeIsThisRunsOwn
     ? undefined
     : activeOut === 'resume'

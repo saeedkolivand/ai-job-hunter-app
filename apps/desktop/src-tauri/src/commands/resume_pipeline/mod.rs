@@ -518,6 +518,14 @@ async fn execute(
         if let Some(id) = resolve::source_resume_id_for_metrics(resume_choice) {
             object.insert("sourceResumeId".to_string(), json!(id));
         }
+        // PROVENANCE again, same reasoning and the same home: did THIS run
+        // write the résumé the posting's aggregate now holds? Read back by
+        // `run_wrote_a_resume` to keep `regenerateSection` off a document the
+        // run never produced. Written unconditionally (unlike `sourceResumeId`
+        // above) because ABSENT has to keep meaning `true` — every run that
+        // predates the cover-letter-only mode wrote one, and a missing key
+        // must not lock those out of a section regenerate.
+        object.insert("resumeInRun".to_string(), json!(ctx.input.include_resume));
     }
     row.metrics_json = metrics.to_string();
     store.upsert_run(&row)?;
@@ -1054,6 +1062,18 @@ pub async fn resume_pipeline_regenerate_section(
     let generations = app
         .try_state::<AiGenerationStore>()
         .ok_or_else(|| AppError::Storage("the generation store is unavailable".to_string()))?;
+    // The PROPERTY, not the proxy: a run that never wrote a résumé has no
+    // section to regenerate, however full the posting's aggregate is. Checked
+    // before the record lookup so a cover-letter-only run is refused for the
+    // true reason rather than falling through to the emptiness filter below,
+    // which an earlier run's saved résumé would satisfy. See
+    // `run_wrote_a_resume`.
+    if !run_wrote_a_resume(&row) {
+        return Err(AppError::Validation(
+            "this run generated a cover letter, not a résumé, so it has no section to              regenerate"
+                .to_string(),
+        ));
+    }
     let record = generations
         .find_for_job(&row.job_url)
         .filter(|record| !record.resume_text.trim().is_empty())
@@ -1254,6 +1274,30 @@ pub async fn resume_pipeline_resolve_fabrication(
 /// links out of the document it is about to overwrite, i.e. codify whatever
 /// the last generation happened to say as fact. Callers that write must check
 /// this flag; callers that only validate may ignore it.
+/// Whether `row`'s run actually WROTE the résumé the posting's aggregate now
+/// holds — `metrics_json.resumeInRun`, written by `execute`.
+///
+/// **Absent means `true`.** Every run that predates the cover-letter-only mode
+/// wrote a résumé, and there is no migration touching those rows; reading a
+/// missing key as `false` would refuse a section regenerate on every historic
+/// run in the store.
+///
+/// This exists because the check it replaces was a PROXY. `regenerateSection`
+/// asked whether the aggregate's `resume_text` is non-empty — which answers
+/// "does this posting have a résumé", not "did this run write one". Those were
+/// the same question until `includeResume` arrived: a cover-letter-only run is
+/// the posting's newest (so `ensure_latest_run` passes) and the aggregate still
+/// carries an EARLIER run's résumé (so the emptiness filter passes), and the
+/// command would then splice, re-validate and persist a section of a document
+/// the run never produced — spending a provider call and overwriting the
+/// posting's report on the way.
+fn run_wrote_a_resume(row: &RunRow) -> bool {
+    serde_json::from_str::<Value>(&row.metrics_json)
+        .ok()
+        .and_then(|metrics| metrics.get("resumeInRun").and_then(Value::as_bool))
+        .unwrap_or(true)
+}
+
 fn source_resume_for(app: &AppHandle, row: &RunRow, record: &AiGenerationRecord) -> (String, bool) {
     let hit = serde_json::from_str::<Value>(&row.metrics_json)
         .ok()

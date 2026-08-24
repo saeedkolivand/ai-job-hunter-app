@@ -88,8 +88,20 @@ vi.mock('@/services/use-ai-generations', () => ({
   useUpdateAiGeneration: () => ({ mutate: updateAiGenerationMutate }),
 }));
 
+// Records what the hook was ASKED for. `recheck` is derived from
+// `onReportChange` here exactly as the real hook derives it ("No session writer
+// means no way to show a result — hide the action", `use-quality-recheck.ts`),
+// so a test can assert on the returned action instead of on this stub's own
+// hardcoded value — which is what the previous `recheck: undefined` stub made
+// impossible.
+const qualityRecheckArgs = vi.hoisted(() => ({
+  current: null as { onReportChange?: unknown } | null,
+}));
 vi.mock('@/hooks/use-quality-recheck', () => ({
-  useQualityRecheck: () => ({ recheck: undefined, rechecking: false }),
+  useQualityRecheck: (args: { onReportChange?: unknown }) => {
+    qualityRecheckArgs.current = args;
+    return { recheck: args.onReportChange ? () => {} : undefined, rechecking: false };
+  },
 }));
 
 vi.mock('@/lib/generate', async () => {
@@ -1108,8 +1120,18 @@ describe('useTailorPipeline — which document the panel opens on', () => {
     const { result } = render({ target: 'cover', latestGeneration: withLetter });
     // The letter — this run's own document — keeps its review controls.
     expect(result.current.pipelineReview).toBeDefined();
+    expect(result.current.recheck).toBeDefined();
 
     act(() => result.current.setActiveOut('resume'));
+    // Re-check re-validates the ACTIVE document and persists the merged wrapper
+    // back onto the aggregate (`useQualityRecheck`'s `persistReport`), so
+    // leaving it live would let a run with no résumé of its own overwrite the
+    // posting's résumé report. The same hole as Fix section, one affordance
+    // over — found by review, not by me.
+    expect(result.current.recheck).toBeUndefined();
+    // …and the reason is that the writer was WITHHELD, not that some other
+    // precondition happened to be missing.
+    expect(qualityRecheckArgs.current?.onReportChange).toBeUndefined();
     // The résumé does not. `PipelineRunDetail.report` is read off the per-job
     // AGGREGATE, not the run, so an older run's `resume` slot is still present
     // here — and `regenerateSection` would ACCEPT a Fix click against it (this
