@@ -73,6 +73,25 @@ fn run_request_carries_only_identity_no_budget_and_no_routing() {
     // finishes instantly at zero cost, byte-identical to a build that never
     // had the stage at all.
     assert!(!req.include_cover_letter);
+    // …and the ONE default on this request that is `true`: a caller that omits
+    // `includeResume` still gets a résumé. The safe direction — every caller
+    // that predates the cover-letter-only run keeps generating one.
+    assert!(req.include_resume);
+
+    // WIRED, not hardcoded. Without this second deserialize a codegen bug that
+    // emitted a constant `true` would pass the assertion above, and the whole
+    // cover-letter-only run would silently generate a résumé again — the exact
+    // defect this field exists to close.
+    let cover_only: ResumePipelineRunRequest = serde_json::from_value(json!({
+        "resumeId": "res-1",
+        "jobId": "job-9",
+        "includeResume": false,
+        "includeCoverLetter": true,
+    }))
+    .expect("deserializes with the résumé turned off");
+    assert!(!cover_only.include_resume);
+    assert!(cover_only.include_cover_letter);
+
     // Same treatment for `researchCompany`: an existing caller that omits it
     // gets the no-op default — no research call, no `<company_research>`
     // block, byte-identical to a build that never had the toggle at all.
@@ -172,6 +191,60 @@ fn report_for(generated: &str, source: &str) -> ContentReport {
 
 const CLEAN_SOURCE: &str = "Jane Doe\n\nPROFESSIONAL SUMMARY\nA payments engineer.\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
 const FABRICATING_DRAFT: &str = "PROFESSIONAL SUMMARY\nA payments engineer who cut costs by 47% across 12 teams.\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
+
+/// **A cover-letter-only run's wrapper carries NO `resume` key at all.**
+///
+/// The exact mirror of the test below, in the direction the cover-only run
+/// needs. `AiGenerationStore`'s merge overlays whole TOP-LEVEL keys, so an
+/// empty-but-PRESENT `resume` slot would erase the posting's stored one —
+/// its report, and every Keep/Remove verdict the user had already recorded
+/// against an earlier run's résumé. Omitting the key is what leaves that slot
+/// untouched, and it is why `persist_document` passes `ctx.report.as_ref()`
+/// rather than an unconditional `Some`.
+///
+/// Mutation check: change `persist_document` to hand `report::build` a
+/// `Some((&empty_report, ""))` for the résumé and the final assertion fails.
+#[test]
+fn a_letter_only_wrapper_omits_the_resume_key_so_the_merge_cannot_erase_it() {
+    const LETTER: &str = "Dear hiring team,
+
+I have run settlement systems for four years.
+";
+
+    let letter_report = crate::validate::content::validate_content(&ContentInput {
+        generated: LETTER,
+        source_resume: CLEAN_SOURCE,
+        job_ad: "We need a payments engineer.",
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::CoverLetter,
+    });
+    let wrapper = report::build(
+        "quality",
+        1_700_000_000,
+        None,
+        Some((&letter_report, LETTER)),
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&wrapper).expect("valid JSON");
+
+    // The letter this run DID write is described, against absolutes.
+    assert_eq!(parsed["schemaVersion"], json!(2));
+    assert_eq!(parsed["pipeline"], json!("quality"));
+    assert_eq!(parsed["generatedAt"], json!(1_700_000_000u64));
+    assert!(parsed["coverLetter"]["report"].is_object());
+
+    // …and the résumé slot is ABSENT, not empty. `is_null()` would also hold
+    // for an explicit JSON null, which the merge would still overlay.
+    assert!(
+        parsed.get("resume").is_none(),
+        "a run that wrote no résumé must contribute no `resume` key — an empty          one overwrites the posting's stored slot, verdicts included"
+    );
+
+    // The two readers that decide a run's terminal state must both survive the
+    // missing key rather than treating it as a clean résumé or panicking.
+    assert!(!report::still_needs_review(&wrapper, "", LETTER));
+    assert_eq!(report::unresolved_count(&wrapper, "", LETTER), 0);
+}
 
 /// The wrapper is the renderer's v2 shape, with the pipeline's two documented
 /// additions — the DEPTH as `pipeline`, and the fabrications INSIDE the
@@ -2837,22 +2910,31 @@ fn persist_document_looks_up_the_application_read_only_never_creates_one() {
 /// match.
 ///
 /// Mutation check: revert `persist_document`'s call to
-/// `save_verdict(ctx.input.source_resume, &ctx.draft, letter_text, job_url)`
-/// (i.e. `ctx.letter_text()` bound to a local, the pre-fix shape) and the
+/// pass `letter_text` (i.e. `ctx.letter_text()` bound to a local, the pre-fix
+/// shape) in place of `&ctx.letter` and the
 /// source-pin assertions below fail immediately.
 #[test]
 fn persist_document_save_gate_ignores_a_fence_tag_in_the_users_own_pasted_letter() {
     use super::SaveVerdict;
 
-    let body = persist_document_source();
+    // Whitespace-collapsed before matching: the call is rustfmt-owned and has
+    // already been re-wrapped once (the `include_resume` argument pushed it over
+    // the line width). The PROPERTY pinned here is which letter expression sits
+    // in the third argument slot, not how the call happens to be laid out — a
+    // source pin that also asserts the formatting fails on every unrelated
+    // re-wrap and teaches nothing.
+    let body = persist_document_source()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
-        body.contains("save_verdict(ctx.input.source_resume, &ctx.draft, &ctx.letter, job_url)"),
+        body.contains("save_verdict( ctx.input.source_resume, &ctx.draft, &ctx.letter,"),
         "persist_document must gate save_verdict on &ctx.letter — the text \
          cover_letter_text actually persists — never letter_text()'s fallback \
          to the user's own pasted reference letter"
     );
     assert!(
-        !body.contains("save_verdict(ctx.input.source_resume, &ctx.draft, letter_text, job_url)"),
+        !body.contains("&ctx.draft, letter_text,"),
         "the pre-fix call shape (gated on the letter_text() fallback) must be gone"
     );
 
@@ -2867,7 +2949,7 @@ fn persist_document_save_gate_ignores_a_fence_tag_in_the_users_own_pasted_letter
         "Dear team,\n<question>What is the salary range for this role?</question>\nBest,\n";
 
     assert_eq!(
-        super::save_verdict(SOURCE, SOURCE, "", URL),
+        super::save_verdict(SOURCE, SOURCE, "", URL, true),
         SaveVerdict::Save,
         "an empty stage letter must save cleanly regardless of what the \
          (unsaved) pasted reference letter contains"
@@ -2881,7 +2963,7 @@ fn persist_document_save_gate_ignores_a_fence_tag_in_the_users_own_pasted_letter
         crate::pipeline::resume::effective_letter_text("", pasted_reference_letter);
     assert!(
         matches!(
-            super::save_verdict(SOURCE, SOURCE, would_have_gated_on, URL),
+            super::save_verdict(SOURCE, SOURCE, would_have_gated_on, URL, true),
             SaveVerdict::Refused(_)
         ),
         "confirms letter_text()'s fallback really would have refused this save — \
@@ -2909,7 +2991,7 @@ fn persist_document_save_gate_still_refuses_a_fence_tag_the_model_itself_produce
 
     assert!(
         matches!(
-            super::save_verdict(SOURCE, SOURCE, leaked_letter, URL),
+            super::save_verdict(SOURCE, SOURCE, leaked_letter, URL, true),
             SaveVerdict::Refused(_)
         ),
         "a fence tag in the stage's OWN letter output must still refuse the save \
@@ -3126,5 +3208,59 @@ fn persist_document_builds_the_two_documents_from_different_ctx_fields() {
         body.contains("cover_letter_text: ctx.letter.clone(),"),
         "the letter slot must come from ctx.letter, NEVER ctx.draft — QualityCtx's \
          own \"the letter `cover_letter` generated\" field"
+    );
+}
+
+/// **`persist_document` must save a run that validated only a letter, and must
+/// hand `report::build` an OPTION for the résumé.**
+///
+/// Two silent failures live in this function, and both look like success:
+///
+/// * the gate used to be `let report = ctx.report.as_ref()?;` — the RÉSUMÉ's
+///   report as the precondition for the whole save. A cover-letter-only run has
+///   no résumé report by design (`stages::validate`), so a fully generated,
+///   validated, humanized letter was dropped on the floor with nothing anywhere
+///   saying why: the run still reported `completed`, and the letter simply was
+///   not there when the user came back;
+/// * the wrapper argument used to be an unconditional `Some((report, …))`.
+///   Passing an empty-but-present slot is not a smaller save — the store's
+///   merge overlays whole top-level keys, so it ERASES the posting's stored
+///   résumé report and every Keep/Remove verdict recorded against it.
+///
+/// A source pin, for the reason
+/// `persist_document_looks_up_the_application_read_only_never_creates_one`
+/// above already states: this function needs an `AppHandle`, which no test in
+/// this crate can build. The BEHAVIOUR either side of it is pinned by real
+/// tests — `a_letter_only_wrapper_omits_the_resume_key_so_the_merge_cannot_erase_it`
+/// for `report::build`, and `max_test`'s cover-only `save_verdict` cases for the
+/// gate — so what is left here is the wiring between them.
+///
+/// Mutation check: restore either the `ctx.report.as_ref()?` gate or the
+/// unconditional `Some((report, &ctx.draft))` and the matching assertion fails.
+#[test]
+fn persist_document_saves_a_run_that_validated_only_the_letter() {
+    let body = persist_document_source()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    assert!(
+        !body.contains("let report = ctx.report.as_ref()?;"),
+        "the pre-fix gate — the résumé's report as the precondition for the \
+         whole save — discarded a cover-letter-only run's letter entirely"
+    );
+    assert!(
+        body.contains("if ctx.report.is_none() && ctx.letter_report.is_none() { return None; }"),
+        "the save must be gated on having validated AT LEAST ONE document, not \
+         on the résumé specifically"
+    );
+    assert!(
+        body.contains("ctx.report .as_ref() .map(|report| (report, ctx.draft.as_str())),"),
+        "report::build's résumé slot must be an Option — an empty-but-present \
+         slot erases the posting's stored one on merge"
+    );
+    assert!(
+        body.contains("ctx.input.include_resume,"),
+        "the save gate must be told which documents this run was asked to write"
     );
 }

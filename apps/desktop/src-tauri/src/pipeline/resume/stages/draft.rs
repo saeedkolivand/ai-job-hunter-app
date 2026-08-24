@@ -81,6 +81,16 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
     }
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
+        // The cover-letter-only run — the exact shape, and the exact position,
+        // `stages::cover_letter` already uses for its own gate. FIRST, before
+        // `completer_for` and before any seeding: a stage that no-ops instantly
+        // at zero cost is what keeps `includeResume: false` a real skip rather
+        // than a discarded result.
+        if !ctx.input.include_resume {
+            ctx.ledger.record(NAME, json!({ "skipped": true }));
+            return Ok(());
+        }
+
         let completer = ctx.completer_for(NAME);
         // Read out of `ctx` before it is borrowed mutably again below —
         // `top_requirements()` reads `ctx.analysis`, which `analyze_job`

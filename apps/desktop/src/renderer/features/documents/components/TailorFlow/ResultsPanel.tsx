@@ -50,6 +50,9 @@ export const PIPELINE_STATUS_KEY: Record<
 
 interface Props {
   target: TailorTarget;
+  /** Whether the posting has a saved tailored résumé at all — see
+   *  {@link GenerationOutput}'s own prop doc. */
+  hasResume: boolean;
   jobDesc: string;
   onJobDescChange: (v: string) => void;
   hasDesc: boolean;
@@ -131,6 +134,7 @@ interface Props {
  */
 export function ResultsPanel({
   target,
+  hasResume,
   jobDesc,
   onJobDescChange,
   hasDesc,
@@ -284,6 +288,7 @@ export function ResultsPanel({
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-8 py-6">
         <GenerationOutput
           target={target}
+          hasResume={hasResume}
           activeOut={activeOut}
           setActiveOut={setActiveOut}
           templateId={templateId}

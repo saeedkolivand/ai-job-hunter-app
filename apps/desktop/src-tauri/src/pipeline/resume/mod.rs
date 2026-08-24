@@ -8,7 +8,7 @@
 //! | `analyze_job`    | 1      | [`JobAnalysis`] — what the posting asks         |
 //! | `match_evidence` | 1      | [`EvidenceMap`] — what the RÉSUMÉ backs         |
 //! | `strategy`       | 1      | [`ResumeStrategy`] — how to present it          |
-//! | `draft`          | 1      | the résumé body, streamed for display           |
+//! | `draft`          | 0 or 1 | the résumé body, streamed — 0 unless `includeResume` |
 //! | `cover_letter`   | 0 or 1 | the letter body, streamed — 0 unless `includeCoverLetter` |
 //! | `validate`       | 0      | the deterministic [`ContentReport`]             |
 //! | `repair`         | ≤2×N   | section-scoped corrections, re-checked          |
@@ -225,6 +225,23 @@ pub struct QualityInput<'a> {
     /// for every caller that predates it, so this field is the ONLY thing that
     /// changes behavior.
     pub include_cover_letter: bool,
+    /// Whether the `draft` stage should generate a résumé. `true` is the wire
+    /// default and every pre-existing caller's behavior; `false` is the
+    /// cover-letter-only run, where `draft` finishes instantly at zero cost and
+    /// [`QualityCtx::draft`] stays empty for the whole run.
+    ///
+    /// **Three downstream readers depend on this, and two of them fail QUIETLY
+    /// if it is ignored.** `stages::validate` must not grade a résumé that was
+    /// never written (an empty draft against a real source is a
+    /// `factual.dropped_role` Critical per employer); `stages::humanize` keys
+    /// its whole stage on a résumé report existing, so a `None` there would
+    /// skip the LETTER's polish pass while recording a zero-flag artifact; and
+    /// `commands::resume_pipeline::save_verdict` treats an empty draft as
+    /// "nothing to save", which would discard the letter this run just paid
+    /// for. The grounding stages (`analyze_job`, `match_evidence`, `strategy`)
+    /// deliberately still run — `stages::cover_letter` fences `ctx.strategy`
+    /// into the letter prompt and is instructed to follow it.
+    pub include_resume: bool,
     /// The run's resolved company identity (`meta.company` — cache-resolved
     /// on the id path, the request's own `companyName` on the text path).
     /// Read ONLY by `cover_letter`'s opt-in research call, as the accurate

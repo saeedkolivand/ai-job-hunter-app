@@ -261,7 +261,12 @@ vi.mock('./TailorWizard', () => ({
 }));
 
 vi.mock('./GeneratingPanel', () => ({
-  GeneratingPanel: () => <div data-testid={TEST_IDS.documents.generatingPanel} />,
+  // `streamingTarget` is surfaced as a data attribute: the panel's own
+  // rendering of it is `GeneratingPanel.test.tsx`'s job — what belongs HERE is
+  // which value TailorFlow hands it, which is a decision this component makes.
+  GeneratingPanel: ({ streamingTarget }: { streamingTarget: 'resume' | 'cover' }) => (
+    <div data-testid={TEST_IDS.documents.generatingPanel} data-streaming={streamingTarget} />
+  ),
 }));
 
 vi.mock('./ResultsPanel', () => ({
@@ -445,6 +450,40 @@ describe('TailorFlow — stage derivation', () => {
     expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.generatingPanel)).not.toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
+  });
+
+  // A cover-only run skips the `draft` stage entirely, so there is no résumé
+  // stream to precede the letter's first token — `letterDraft ? 'cover' :
+  // 'resume'` alone labelled the pane "Resume" for the whole analyze → strategy
+  // warm-up of a run that produces no résumé at all.
+  it('labels the streaming pane Cover letter for a cover-only run before the first token', () => {
+    genMock.busy = true;
+    genMock.letterDraft = '';
+    genMock.draft = '';
+    renderFlow({
+      persistence: makePersistence({
+        wizardForm: { resume: 'r', outputType: 'cover', researchCompany: false },
+      }),
+    });
+    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toHaveAttribute(
+      'data-streaming',
+      'cover'
+    );
+  });
+
+  it('still labels it Resume for a run that produces one', () => {
+    genMock.busy = true;
+    genMock.letterDraft = '';
+    genMock.draft = '';
+    renderFlow({
+      persistence: makePersistence({
+        wizardForm: { resume: 'r', outputType: 'both', researchCompany: false },
+      }),
+    });
+    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toHaveAttribute(
+      'data-streaming',
+      'resume'
+    );
   });
 
   it('renders the generating panel when busy=true (no output)', () => {

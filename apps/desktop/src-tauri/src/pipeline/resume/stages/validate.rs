@@ -112,20 +112,46 @@ impl<'a> Stage<QualityCtx<'a>> for Validate {
         )
         .await?;
 
-        let (issues, criticals) = counts(&report);
+        // A résumé this run never wrote gets NO report. `ctx.draft` is empty on
+        // a cover-letter-only run, and grading an empty document against a real
+        // source résumé is a `factual.dropped_role` Critical per employer — a
+        // pile of findings about a document that does not exist, which would
+        // park the run at `needsReview` and (via `is_persistable`) refuse the
+        // save of the letter it DID write.
+        //
+        // `None` rather than a fabricated clean report: `ContentReport` has no
+        // `Default` on purpose, its own doc reserves `ok: true` for "nothing
+        // Critical was found", and `stages::humanize::empty_ok_report` already
+        // documents why a fabricated report is safe as a BASELINE and wrong as
+        // an OUTCOME. Every downstream reader already handles the absence —
+        // `stages::repair` no-ops, `report::build` omits the key entirely, and
+        // `stages::humanize`'s guard is widened to ask about BOTH documents.
+        //
+        // The résumé scan itself still runs above and is dropped here. That
+        // costs nothing (the scanned document is empty) and keeps the change to
+        // one line instead of a new parameter on `validate_documents`, which
+        // has four other call sites — one of which (`humanize`'s letter arm)
+        // already discards the résumé half exactly like this.
+        ctx.report = ctx.input.include_resume.then_some(report);
+        ctx.letter_report = letter;
+
         // Codes and counts only — never the offending span (ADR-027). The full
-        // report, evidence included, lives in the DB.
+        // report, evidence included, lives in the DB. Read off `ctx.report`,
+        // not the local `report`, so a cover-letter-only run's trail does not
+        // advertise a pile of `factual.dropped_role` codes for a document it
+        // deliberately never wrote — the numbers here have to describe what the
+        // run actually kept.
+        let resume = ctx.report.as_ref();
         ctx.ledger.record(
             "validate",
             json!({
-                "issues": issues,
-                "criticals": criticals,
-                "letterIssues": letter.as_ref().map(|r| r.issues.len()),
-                "codes": code_histogram(&report),
+                "issues": resume.map(|r| r.issues.len()),
+                "criticals": resume.map(|r| counts(r).1),
+                "letterIssues": ctx.letter_report.as_ref().map(|r| r.issues.len()),
+                "codes": resume.map(code_histogram),
+                "resumeSkipped": !ctx.input.include_resume,
             }),
         );
-        ctx.report = Some(report);
-        ctx.letter_report = letter;
         Ok(())
     }
 }

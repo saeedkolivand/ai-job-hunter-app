@@ -159,11 +159,11 @@ fn a_document_that_lost_the_sources_whole_work_history_may_not_overwrite_it() {
     //     The run returns Ok — nothing converts `Budgeted` into an error — so
     //     only the documents can tell that everything was lost.
     assert!(
-        !super::is_persistable(SOURCE_WITH_WORK, NO_WORK),
+        !super::save::is_persistable(SOURCE_WITH_WORK, NO_WORK),
         "a document that dropped the source's entire work history must not overwrite it"
     );
     assert!(
-        !super::is_persistable(SOURCE_WITH_WORK, EMPTY_SECTION),
+        !super::save::is_persistable(SOURCE_WITH_WORK, EMPTY_SECTION),
         "a heading with nothing under it is not work history"
     );
 
@@ -172,22 +172,22 @@ fn a_document_that_lost_the_sources_whole_work_history_may_not_overwrite_it() {
     //     is the case a stop-reason gate silently refused — `completed` status,
     //     unchanged document, no explanation anywhere.
     assert!(
-        super::is_persistable(SOURCE_NO_WORK, NO_WORK),
+        super::save::is_persistable(SOURCE_NO_WORK, NO_WORK),
         "a source with no work history is a real input, not a truncated run"
     );
-    assert!(super::is_persistable(SOURCE_NO_WORK, EMPTY_SECTION));
+    assert!(super::save::is_persistable(SOURCE_NO_WORK, EMPTY_SECTION));
 
     // A document that KEPT its work history is always fine, however short.
-    assert!(super::is_persistable(SOURCE_WITH_WORK, WITH_WORK));
-    assert!(super::is_persistable(SOURCE_NO_WORK, WITH_WORK));
+    assert!(super::save::is_persistable(SOURCE_WITH_WORK, WITH_WORK));
+    assert!(super::save::is_persistable(SOURCE_NO_WORK, WITH_WORK));
 
     // Both sides read through the SAME seam, so an undated entry — which is not
     // a `LineKind::JobEntry` — counts as work history on both, and a source
     // full of them cannot make every run unsaveable.
     const UNDATED: &str =
         "Work Experience\n\nStaff Engineer, Acme\n- Owned the settlement service\n";
-    assert!(super::is_persistable(UNDATED, UNDATED));
-    assert!(!super::is_persistable(UNDATED, NO_WORK));
+    assert!(super::save::is_persistable(UNDATED, UNDATED));
+    assert!(!super::save::is_persistable(UNDATED, NO_WORK));
 }
 
 /// **A REFUSED save is not a successful run.**
@@ -212,12 +212,12 @@ fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
     const URL: &str = "https://boards.example/jobs/1";
 
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, "", URL),
+        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, "", URL, true),
         SaveVerdict::Save
     );
     assert!(
         matches!(
-            super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL),
+            super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL, true),
             SaveVerdict::Refused(_)
         ),
         "a document that lost the source's work history is REFUSED, not skipped"
@@ -226,16 +226,16 @@ fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
     // Benign non-saves stay benign: an unlinked run is session-only by design,
     // and an empty draft is a run that already failed on its own terms.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", ""),
+        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", "", true),
         SaveVerdict::Nothing
     );
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "   ", "", URL),
+        super::save_verdict(SOURCE_WITH_WORK, "   ", "", URL, true),
         SaveVerdict::Nothing
     );
     // …and a source with no work history of its own is never refused.
     assert_eq!(
-        super::save_verdict(NO_WORK, NO_WORK, "", URL),
+        super::save_verdict(NO_WORK, NO_WORK, "", URL, true),
         SaveVerdict::Save
     );
 }
@@ -276,27 +276,28 @@ fn a_leaked_fence_tag_in_either_document_refuses_the_save() {
 
     // A clean draft + no letter still saves.
     assert_eq!(
-        super::save_verdict(SOURCE, CLEAN_DRAFT, "", URL),
+        super::save_verdict(SOURCE, CLEAN_DRAFT, "", URL, true),
         SaveVerdict::Save
     );
 
     // The draft itself leaked.
     assert!(matches!(
-        super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL),
+        super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL, true),
         SaveVerdict::Refused(_)
     ));
 
     // The draft is clean but the LETTER leaked — must still refuse; this is
     // exactly the gap a draft-only check would miss.
     assert!(matches!(
-        super::save_verdict(SOURCE, CLEAN_DRAFT, LEAKED_LETTER, URL),
+        super::save_verdict(SOURCE, CLEAN_DRAFT, LEAKED_LETTER, URL, true),
         SaveVerdict::Refused(_)
     ));
 
     // The refusal must be ACTIONABLE, not a bare tag — and distinguishable
     // from the work-history refusal so the two defects don't share a
     // (potentially misleading) message.
-    let SaveVerdict::Refused(reason) = super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL) else {
+    let SaveVerdict::Refused(reason) = super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL, true)
+    else {
         panic!("expected Refused");
     };
     assert!(
@@ -308,6 +309,7 @@ fn a_leaked_fence_tag_in_either_document_refuses_the_save() {
         "Professional Summary\n\nA payments engineer.\n",
         "",
         URL,
+        true,
     ) else {
         panic!("expected Refused");
     };
@@ -326,5 +328,133 @@ fn the_quality_pipeline_matches_its_pinned_stage_list() {
     assert_eq!(
         crate::pipeline::resume::quality_pipeline().stage_names(),
         QUALITY_STAGES
+    );
+}
+
+/// **A cover-letter-only run saves its letter — and is never told its résumé
+/// lost the work history it was never asked to write.**
+///
+/// `Draft::run` no-ops when `includeResume` is false, so this run reaches
+/// `save_verdict` with an empty `draft` BY DESIGN. Both résumé rules read an
+/// empty draft as a failure, and each fails in its own direction: the emptiness
+/// arm returned [`SaveVerdict::Nothing`] and silently discarded the letter the
+/// run had just paid four provider calls for, and [`is_persistable`] then
+/// called it `Refused`, which `execute` turns into a red "your résumé came back
+/// without any of your work history" banner. Neither question applies to a
+/// document that was deliberately not written.
+///
+/// The `include_resume: true` line is the CONTROL, and it is what stops this
+/// passing for the wrong reason: the SAME source résumé and the SAME empty-ish
+/// draft must still be refused for a run that asked for a résumé, so a fix that
+/// simply stopped calling `is_persistable` would fail here.
+///
+/// Mutation check: drop the `resume_in_run &&` from the `is_persistable` gate
+/// and the cover-only case flips to `Refused`; drop the `resume_in_run` branch
+/// from `produced_nothing` and it flips to `Nothing`.
+#[test]
+fn a_cover_letter_only_run_saves_its_letter_and_is_never_refused_for_a_missing_resume() {
+    use super::save::LOST_WORK_HISTORY_MESSAGE;
+    use super::SaveVerdict;
+
+    const SOURCE_WITH_WORK: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                                    - Owned the settlement service\n";
+    const NO_WORK: &str = "Professional Summary\n\nA payments engineer.\n";
+    const LETTER: &str = "Dear hiring team,\n\nI have run settlement systems for four years.\n";
+    const URL: &str = "https://boards.example/jobs/1";
+
+    // The CONTROL: for a run that asked for a résumé, this source still refuses
+    // a draft that lost its work history — the absolute the case below hangs on.
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL, true),
+        SaveVerdict::Refused(LOST_WORK_HISTORY_MESSAGE)
+    );
+
+    // …and an ABSENT résumé is not a lost work history. The letter saves.
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, "", LETTER, URL, false),
+        SaveVerdict::Save
+    );
+
+    // A cover-only run that produced no letter either really has nothing.
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, "", "", URL, false),
+        SaveVerdict::Nothing
+    );
+
+    // Unlinked stays session-only, whichever documents were asked for.
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, "", LETTER, "", false),
+        SaveVerdict::Nothing
+    );
+}
+
+/// **A résumé-bearing run's verdict is byte-identical to before the flag.**
+///
+/// The whole change is meant to be invisible to `resume` and `both` runs, and
+/// the one case a careless rewrite silently moves is a run that ASKED for a
+/// résumé and got an empty draft back while a letter succeeded. Writing the
+/// emptiness rule as `draft.is_empty() && letter.is_empty()` reads correctly
+/// for a cover-only run and flips exactly this case from `Nothing` to `Save` —
+/// which would persist a letter alongside an empty `resume_text` for a run the
+/// user asked a résumé of, and skip `is_persistable` on the way (it cannot
+/// speak for a draft that is not there).
+///
+/// Mutation check: replace `produced_nothing`'s branch with
+/// `draft.trim().is_empty() && letter.trim().is_empty()` and the first
+/// assertion fails.
+#[test]
+fn save_verdict_is_unchanged_for_a_run_that_asked_for_a_resume() {
+    use super::SaveVerdict;
+
+    const SOURCE_WITH_WORK: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                                    - Owned the settlement service\n";
+    const LETTER: &str = "Dear hiring team,\n\nI have run settlement systems for four years.\n";
+    const URL: &str = "https://boards.example/jobs/1";
+
+    // An empty draft is still "nothing to save" for a run that wanted one —
+    // even when the letter succeeded.
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, "", LETTER, URL, true),
+        SaveVerdict::Nothing
+    );
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, "", "", URL, true),
+        SaveVerdict::Nothing
+    );
+    // …and a real draft still saves.
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, LETTER, URL, true),
+        SaveVerdict::Save
+    );
+}
+
+/// **The fence-tag gate is NOT résumé-scoped.** It is the last chokepoint
+/// before an internal prompt-wrapper tag reaches an exported document, and a
+/// cover-only run's letter is exactly a document that can carry one — so the
+/// gate has to sit outside the `resume_in_run` branches the other two rules
+/// moved into.
+///
+/// Mutation check: move the `contains_fence_tag` check inside
+/// `if resume_in_run` and the leaked case flips to `Save`.
+#[test]
+fn save_verdict_still_refuses_a_leaked_fence_tag_in_a_cover_only_runs_letter() {
+    use super::save::LEAKED_FENCE_TAG_MESSAGE;
+    use super::SaveVerdict;
+
+    const SOURCE: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                          - Owned the settlement service\n";
+    const CLEAN_LETTER: &str = "Dear hiring team,\n\nI have run settlement systems.\n";
+    const LEAKED_LETTER: &str = "<candidate_resume>\nDear hiring team,\n</candidate_resume>";
+    const URL: &str = "https://boards.example/jobs/1";
+
+    // The control: the same shape without a tag saves, so this cannot pass by
+    // refusing every cover-only run.
+    assert_eq!(
+        super::save_verdict(SOURCE, "", CLEAN_LETTER, URL, false),
+        SaveVerdict::Save
+    );
+    assert_eq!(
+        super::save_verdict(SOURCE, "", LEAKED_LETTER, URL, false),
+        SaveVerdict::Refused(LEAKED_FENCE_TAG_MESSAGE)
     );
 }
