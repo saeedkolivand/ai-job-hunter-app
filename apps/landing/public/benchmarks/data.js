@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787412145313,
+  "lastUpdate": 1787603170483,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "c4f4b2c93ea19da2a7358bedbefdd59c2bfdb91b",
-          "message": "test: pin xing and stepstone list urls as already canonical (#639)\n\n* test: pin xing and stepstone list urls as already canonical\n\nLive verification (public sessions) found both boards navigate to\npath-canonical urls at selection time, so no canonicalizer arms are\nneeded; regression tests guard the captured shapes and the tracking\nquery drop. Glassdoor stays open (cloudflare-blocked site-wide) and\nstepstone keeps a residual todo for its unprobed login-gated inline\nview, since this resolver's real caller is the authenticated import.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: carry captured tracking params in canonical url guards\n\nXing/StepStone detail-URL guards now carry the actually-captured\ntracking query params (ijt/rltr), matching the doc comment above them.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-14T21:23:53+02:00",
-          "tree_id": "915175fa31fe291cfff28a33f43e3b9d263bfe5e",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c4f4b2c93ea19da2a7358bedbefdd59c2bfdb91b"
-        },
-        "date": 1784057579949,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2143167,
-            "range": "± 48912",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2580419,
-            "range": "± 40964",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 303289,
-            "range": "± 9153",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 309589,
             "range": "± 12719",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f2f28361247a3e57d5ff49d04909bd085e6043c8",
+          "message": "fix(pipeline): stop a cover-letter-only run from generating a résumé (#1078)\n\n* fix(pipeline): stop a cover-letter-only run from generating a résumé\n\nPicking \"Cover letter\" in the Tailor wizard generated, validated, repaired\nand persisted a résumé, and then showed it instead of the letter. \"Both\"\nworked. Two defects stacked.\n\nThe choice was lost on the wire: useTailorPipeline encoded the three-way\noutputType as one boolean (includeCoverLetter: outputType !== 'resume'), so\n'cover' and 'both' sent a byte-identical request — there was no résumé flag\nto turn off. And the résumé stage was unconditional: CoverLetter::run had a\ngate, Draft::run had none.\n\nAdds includeResume (default true) to ResumePipelineRunSchema, threads it to\nQualityInput, and gates Draft::run exactly where CoverLetter::run gates its\nown — before the completer resolution, so a skip costs nothing. One stage\nlist, unchanged: paying_stages(), PIPELINE_STAGES and the renderer's step map\nare all derived from it.\n\nThree downstream readers needed scoping, two of which failed quietly:\n\n- validate no longer keeps a résumé report for a résumé that was never\n  written — an empty draft graded under DocKind::Resume is a dropped_role\n  Critical per employer, which parked the run at needsReview;\n- humanize no longer keys the WHOLE stage on the résumé's report. Its\n  `let Some(resume_report) = ctx.report … else { return }` head ran before\n  letter_flagged was computed, so a cover-only run skipped the letter's\n  polish pass and recorded a zero-flag artifact saying nothing was flagged;\n- save_verdict asks its two résumé questions only of a run that has one.\n  An empty draft returned Nothing (discarding the letter the run had just\n  paid four calls for), and is_persistable then called it Refused — a \"your\n  résumé came back without any of your work history\" banner on a run that\n  never asked for a résumé. persist_document passes report::build an Option,\n  so the wrapper omits the resume key and the merge leaves the posting's\n  stored slot, verdicts included, untouched.\n\nrepair needed no change: its ctx.report early return was already correct.\n\nRenderer: activeOut is derived from the run's target with a tab click as the\noverride (covering the cold remount, where no start() survives to seed it);\nthe tab list comes off target rather than off activeOut; a cover-only run on\na posting with an older tailored résumé still shows it, exportable but\nreview-inert — resume_pipeline_get reads report off the aggregate, so Fix\nsection would otherwise accept a click and rewrite a document this run never\nproduced.\n\nA cover-only run now costs 4 provider calls guaranteed and at most 6, down\nfrom 5 and up to 17.\n\nsave_verdict/is_persistable move to their own module: mod.rs crossed R8's\n1400-LOC cap.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(pipeline): close the two write paths a borrowed résumé tab left open\n\nBoth raised in review on #1078, both verified against the code first, and both\nintroduced by that PR: before it, a cover-letter-only run still produced its own\ndraft, so \"the aggregate has a résumé\" and \"this run wrote one\" were the same\nquestion.\n\nresume_pipeline_regenerate_section gated on a PROXY — ensure_latest_run plus a\nnon-empty ai_generations.resume_text. A cover-only run satisfies both: it IS the\nposting's newest run, and the aggregate still carries whatever an earlier run\nsaved. The command would splice, re-validate and persist a section of a résumé\nthis run never wrote, spending a provider call and overwriting the posting's\nreport on the way. execute now records metrics_json.resumeInRun — the same\nprovenance-in-metrics escape hatch sourceResumeId already documents, so no\nmigration — and the command refuses before it reads the aggregate. Absent reads\nas true: no migration touches the rows that predate includeResume, and every one\nof them wrote a résumé.\n\nuseTailorPipeline still handed Re-check the borrowed document. It re-validates\nwhatever is active and persistReports the merged wrapper back onto the\naggregate, so it would overwrite the posting's résumé report from a run with no\nrésumé of its own. Gated by withholding onReportChange rather than by a second\ncondition on recheck, so it reuses useQualityRecheck's own \"no session writer,\nno action\" rule instead of a parallel one that could drift.\n\nAudited every other activeOut reader in the hook rather than patching the two\nthat were reported: output and the export docType are read-only, and inline\nediting stays live deliberately — a hand edit is the user's own typing on a\ndocument they already have saved, which is the reason the tab is shown.\nresolve_fabrication needs no guard: it records a verdict, spends nothing, and\nlands in the same aggregate slot either way.\n\nThree of the new tests were mutation-verified the usual way. The fourth had to\nbe added because mutation testing found the hole: deleting the guard's CALL SITE\nleft both original tests green — they pinned run_wrote_a_resume and the metrics\nwrite, neither of which says the command consults either. A function nobody\ncalls is not a guard.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-24T22:02:31+02:00",
+          "tree_id": "d4a1948e9f750684ecadeee34ee4a536d77d17fd",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f2f28361247a3e57d5ff49d04909bd085e6043c8"
+        },
+        "date": 1787603169723,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2328918,
+            "range": "± 38890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2701131,
+            "range": "± 71099",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 306183,
+            "range": "± 5562",
             "unit": "ns/iter"
           }
         ]
