@@ -1,11 +1,25 @@
 [
   {
+    "number": 1078,
+    "title": "fix(pipeline): stop a cover-letter-only run from generating a résumé",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1078",
+    "draft": false,
+    "created_at": "2026-08-24T18:42:09Z",
+    "updated_at": "2026-08-24T20:17:08Z",
+    "merged_at": "2026-08-24T20:02:32Z",
+    "closed_at": "2026-08-24T20:02:32Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1077,
     "title": "build(extension): name the manifest import's file extension",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1077",
     "draft": false,
     "created_at": "2026-08-22T22:47:05Z",
-    "updated_at": "2026-08-22T22:48:38Z",
+    "updated_at": "2026-08-24T20:04:30Z",
     "merged_at": "2026-08-22T22:48:36Z",
     "closed_at": "2026-08-22T22:48:37Z",
     "requested_reviewers": [],
@@ -680,20 +694,6 @@
     "updated_at": "2026-08-18T13:57:32Z",
     "merged_at": "2026-08-18T13:36:31Z",
     "closed_at": "2026-08-18T13:36:31Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1025,
-    "title": "docs(persistence): state that the persisted record is authoritative and events only notify",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1025",
-    "draft": false,
-    "created_at": "2026-08-18T11:05:50Z",
-    "updated_at": "2026-08-18T12:52:43Z",
-    "merged_at": "2026-08-18T12:52:38Z",
-    "closed_at": "2026-08-18T12:52:38Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

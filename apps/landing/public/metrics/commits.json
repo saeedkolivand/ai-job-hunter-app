@@ -1,5 +1,77 @@
 [
   {
+    "sha": "77ed42a82a46733466588ed1729fb91af87ee066",
+    "commit": {
+      "message": "chore: sync landing download version to v0.143.1",
+      "author": {
+        "date": "2026-08-24T21:41:43Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "06c68b009d4a1f9a6da67a37b143ef87dccc6cc3",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.143.1 [skip ci]",
+      "author": {
+        "date": "2026-08-24T21:41:15Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "cb25a98b61424d695be64e0c18ea369d6b374344",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-24T20:26:10Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "7ad92df05ed6c290bb83b24328511c7342f54864",
+    "commit": {
+      "message": "chore(release): 0.143.1 [skip ci]",
+      "author": {
+        "date": "2026-08-24T20:04:19Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f2f28361247a3e57d5ff49d04909bd085e6043c8",
+    "commit": {
+      "message": "fix(pipeline): stop a cover-letter-only run from generating a résumé (#1078)",
+      "author": {
+        "date": "2026-08-24T20:02:31Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "e14b3b24392ed5794cefd4270d898cf6dbde84cc",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-24T04:04:04Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "93379df501f3d6fb321b4df90dc770d5e0a9d2d1",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1125,78 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "8efe6b12fd3a25560a381d6eb79d9058dcc032ca",
-    "commit": {
-      "message": "chore(release): 0.138.0 [skip ci]",
-      "author": {
-        "date": "2026-08-19T12:00:34Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "e005c698c3f743dedae6ff56df93f6703eaed248",
-    "commit": {
-      "message": "fix: stop a false language critical and read today as a date column (#1038)",
-      "author": {
-        "date": "2026-08-19T11:40:31Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c8e5775a4f3876cf4a496f5e47c8b37489584c08",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-19T03:57:28Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "e57302c442f36556f89df1df8132f85ce0523010",
-    "commit": {
-      "message": "docs: generate the ipc api reference from the contracts (#1037)",
-      "author": {
-        "date": "2026-08-18T23:54:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d82653a0722d01539ea9a6f21466c444242eba79",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-18T21:55:18Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "49d758e0a527f5b7c235fea9709a75d10458cde6",
-    "commit": {
-      "message": "fix: make in-flight backend work survive navigation, and stop logs leaking paths (#1036)",
-      "author": {
-        "date": "2026-08-18T21:42:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
