@@ -10,7 +10,7 @@
 
 [ADR-029](adr-029-cross-board-job-clustering-recompute-at-ingest.md) established clustering as a recompute-at-_ingest_ operation over a **single record's** found jobs. A user running two autopilots (e.g., one for "Rust" and one for "Berlin") can see the same job twice — once from each autopilot's last run. De-duplication happens only within a single autopilot's state.
 
-A cross-autopilot surface (a Best Matches page) aggregates found jobs across ALL active autopilots into a deduplicated ranked list. This requires three decisions:
+A cross-autopilot surface (a Best Matches page) aggregates found jobs across ALL non-archived autopilots into a deduplicated ranked list. This requires three decisions:
 
 1. Whether to merge results at the renderer (IPC-free; data already in React Query cache) or in Rust.
 2. How to rank a cross-record result set when ADR-020's two-block rule applies per-kernel, not per-union.
@@ -80,7 +80,8 @@ selection criterion. Qualifying count before the cap is reported as `total`, so 
 ### (d) Cross-autopilot sources and aggregation
 
 Each row carries an array `sources: AutopilotBestMatchSource[]` listing every autopilot that
-surfaced the job. At minimum, one source; at maximum, the count of active autopilots at query time.
+surfaced the job. At minimum, one source; at maximum, the count of non-archived autopilots at query
+time — paused autopilots contribute, so "active" would understate the ceiling.
 
 `autopilotCount` reports the count of **distinct autopilots contributing at least one qualifying
 row**. A single autopilot surfacing 5 qualifying jobs increments the count by 1.

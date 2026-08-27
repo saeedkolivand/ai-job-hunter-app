@@ -50,10 +50,11 @@ Bounded retry + run guard + provisional-score honesty:
 
 ### Best Matches — cross-autopilot fuzzy ranking
 
-A deduplicated ranked surface across all active autopilots' found jobs. Computed at query time by
-clustering the union of all records' found jobs, ranking via [ADR-020](decision-records/adr-020-unified-autopilot-scoring-kernel.md)'s
-two-block rule, and capping the wire payload at 100 rows. Dismissed jobs are excluded; paused
-autopilots contribute (archived do not). See [ADR-036](decision-records/adr-036-cross-autopilot-best-matches.md).
+A deduplicated ranked surface across all non-archived autopilots' found jobs (paused autopilots
+contribute; archived do not). Computed at query time by clustering the union of all records' found
+jobs, ranking via [ADR-020](decision-records/adr-020-unified-autopilot-scoring-kernel.md)'s
+two-block rule, and capping the wire payload at `BEST_MATCHES_CAP`
+(`apps/desktop/src-tauri/src/commands/autopilot/best_matches.rs`). Dismissed jobs are excluded. See [ADR-036](decision-records/adr-036-cross-autopilot-best-matches.md).
 
 - **IPC contract** — `AutopilotContract.bestMatches()` → `AutopilotBestMatchesResult` (matches, total count, contributing autopilot count). Source: `packages/shared/src/ipc/contracts/autopilot.ts`.
 - **Rust command** — `commands/autopilot/best_matches.rs`: pure `compute_best_matches` + async IPC wrapper. Dedupes the union on `canonical_job_key`, clusters via `scraping::cluster::assign_clusters`, selects best member per cluster via the two-block rule, filters by qualification (best member >= its own kernel's high cut), and sorts Combined-first then Keyword-first each by score desc + key asc.
