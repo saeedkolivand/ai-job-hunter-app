@@ -18,6 +18,8 @@ export const scrape = {
   updateDescription: (req: { id: string; description: string }) =>
     invoke<boolean>('scrape_update_description', { req }),
   persistJob: (req: unknown) => invoke<void>('scrape_persist_job', { req }),
+  removeInteraction: (req: { jobId: string; interactionType: string }) =>
+    invoke<boolean>('scrape_remove_interaction', { req }),
   listPostings: () => invoke<JobPosting[]>('scrape_list_postings'),
   clearPostings: () => invoke<void>('scrape_clear_postings'),
   listInteractions: (filter?: unknown) =>

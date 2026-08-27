@@ -302,6 +302,26 @@ impl InteractionStore {
         self.save();
     }
 
+    /// Remove the interaction keyed by `(job_id, interaction_type)` — the exact
+    /// key `upsert` writes under. The real "undo" for a persisted interaction
+    /// (e.g. reversing a `dismissed` write): unlike a client-side-only revert,
+    /// this deletes the record so a later `list`/`compute_best_matches` pass no
+    /// longer sees it. Returns `true` when a record was removed, `false` when
+    /// there was nothing to remove — callers need to tell "undone" apart from
+    /// "there was nothing there". Only writes to disk when something actually
+    /// changed, matching `upsert`'s save-on-write behavior without an idle
+    /// rewrite when the key was already absent.
+    pub fn remove(&mut self, job_id: &str, interaction_type: &str) -> bool {
+        let map = self.map_mut();
+        let removed = map
+            .remove(&(job_id.to_string(), interaction_type.to_string()))
+            .is_some();
+        if removed {
+            self.save();
+        }
+        removed
+    }
+
     pub fn clear_all(&mut self) {
         self.cache = Some(HashMap::new());
         self.save();

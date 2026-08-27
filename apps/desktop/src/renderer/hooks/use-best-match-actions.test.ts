@@ -40,12 +40,20 @@ vi.mock('@/store/session-store', () => ({
 
 const mockOpenExternalMutate = vi.fn();
 const mockPersistJobMutate = vi.fn();
+const mockRemoveInteractionMutate = vi.fn();
+const mockInvalidateQueries = vi.fn();
 const mockSaveFromPostingMutateAsync = vi.fn().mockResolvedValue({ id: 'app-1' });
 let mockAutopilots: Autopilot[] = [];
 
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
+}));
+
 vi.mock('@/services', () => ({
+  keys: { autopilot: { all: ['autopilot'] } },
   useOpenExternal: () => ({ mutate: mockOpenExternalMutate }),
   usePersistJob: () => ({ mutate: mockPersistJobMutate }),
+  useRemoveInteraction: () => ({ mutate: mockRemoveInteractionMutate }),
   useAutopilots: () => ({ data: mockAutopilots }),
   useSaveFromPosting: () => ({ mutateAsync: mockSaveFromPostingMutateAsync }),
 }));
@@ -212,16 +220,49 @@ describe('useBestMatchActions — handleDismiss payload', () => {
 });
 
 describe('useBestMatchActions — undoDismiss', () => {
-  it('removes a key from dismissedKeys', () => {
+  it('removes a key from dismissedKeys and calls removeInteraction with the SAME (url, "dismissed") pair handleDismiss wrote', () => {
     mockPersistJobMutate.mockImplementation(() => {});
     const { result } = renderHook(() => useBestMatchActions());
-    const match = makeMatch({ key: 'k-undo' });
+    const match = makeMatch({ key: 'k-undo', url: 'https://example.com/job/undo-me' });
 
     act(() => result.current.handleDismiss(match));
     expect(result.current.dismissedKeys.has('k-undo')).toBe(true);
 
-    act(() => result.current.undoDismiss('k-undo'));
+    act(() => result.current.undoDismiss(match.key, match.url));
     expect(result.current.dismissedKeys.has('k-undo')).toBe(false);
+
+    expect(mockRemoveInteractionMutate).toHaveBeenCalledTimes(1);
+    const [payload] = mockRemoveInteractionMutate.mock.calls[0] as [
+      { jobId: string; interactionType: string },
+    ];
+    expect(payload).toEqual({ jobId: match.url, interactionType: 'dismissed' });
+  });
+
+  it('invalidates keys.autopilot.all on a successful removal', () => {
+    mockRemoveInteractionMutate.mockImplementation(
+      (_payload, opts?: { onSuccess?: () => void }) => {
+        opts?.onSuccess?.();
+      }
+    );
+    const { result } = renderHook(() => useBestMatchActions());
+
+    act(() => result.current.undoDismiss('k1', 'https://example.com/job/1'));
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['autopilot'] });
+  });
+
+  it('rolls back the optimistic reveal and notifies on a failed removal', () => {
+    mockRemoveInteractionMutate.mockImplementation((_payload, opts?: { onError?: () => void }) => {
+      opts?.onError?.();
+    });
+    const { result } = renderHook(() => useBestMatchActions());
+    const match = makeMatch({ key: 'k-fail' });
+
+    act(() => result.current.handleDismiss(match));
+    act(() => result.current.undoDismiss(match.key, match.url));
+
+    expect(result.current.dismissedKeys.has('k-fail')).toBe(true);
+    expect(notifyError).toHaveBeenCalledTimes(1);
   });
 });
 

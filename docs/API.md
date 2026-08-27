@@ -63,7 +63,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`referrals`](#referrals)             | 3       |                                                                                                                                        |
 | [`resume`](#resume)                   | 2       |                                                                                                                                        |
 | [`resumePipeline`](#resumepipeline)   | 6       | The staged résumé pipeline — one fixed stage sequence; there is no depth choice.                                                       |
-| [`scrape`](#scrape)                   | 9       |                                                                                                                                        |
+| [`scrape`](#scrape)                   | 10      |                                                                                                                                        |
 | [`support`](#support)                 | 1       |                                                                                                                                        |
 | [`system`](#system)                   | 16      |                                                                                                                                        |
 | [`updater`](#updater)                 | 5       |                                                                                                                                        |
@@ -3979,6 +3979,7 @@ Contract: `ScrapeContract` in `packages/shared/src/ipc/contracts/scrape.ts`
 - [`scrape.clearPostings`](#scrapeclearpostings)
 - [`scrape.listInteractions`](#scrapelistinteractions)
 - [`scrape.persistJob`](#scrapepersistjob)
+- [`scrape.removeInteraction`](#scraperemoveinteraction)
 
 #### `scrape.boards`
 
@@ -4057,6 +4058,20 @@ listInteractions(filter?: { interactionType?: string }): Promise<
 persistJob(req: { job: Record<string, unknown>; interactionType: string }): Promise<void>;
 ```
 
+#### `scrape.removeInteraction`
+
+```ts
+removeInteraction(req: { jobId: string; interactionType: string }): Promise<boolean>;
+```
+
+Delete a persisted interaction — the real "undo" for `persistJob`,
+e.g. reversing an accidental `dismissed` write. Keys on the SAME
+`(jobId, interactionType)` pair `persistJob` writes under (the stored
+`InteractionRecord.job_id`, not necessarily a cluster/UI key) — passing a
+different `jobId` silently removes nothing. Returns `true` when a record
+was removed, `false` when there was nothing to remove, so a caller can
+tell "undone" apart from "there was nothing there".
+
 ### Channels — `scrape`
 
 `SCRAPE_CHANNELS` in `packages/shared/src/ipc/contracts/scrape.ts`:
@@ -4069,10 +4084,11 @@ persistJob(req: { job: Record<string, unknown>; interactionType: string }): Prom
 | `updateDescription` | `scrape:updateDescription` |
 | `listPostings`      | `scrape:listPostings`      |
 | `persistJob`        | `scrape:persistJob`        |
+| `removeInteraction` | `scrape:removeInteraction` |
 | `clearPostings`     | `scrape:clearPostings`     |
 | `listInteractions`  | `scrape:listInteractions`  |
 
-`SCRAPE_CHANNELS` registers 8 of this namespace's 9 methods; the rest have no entry in it.
+`SCRAPE_CHANNELS` registers 9 of this namespace's 10 methods; the rest have no entry in it.
 
 ### Referenced types — `scrape`
 

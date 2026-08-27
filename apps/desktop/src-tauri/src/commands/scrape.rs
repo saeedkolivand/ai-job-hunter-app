@@ -49,6 +49,13 @@ pub struct ScrapeListFilter {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ScrapeRemoveInteractionRequest {
+    pub job_id: String,
+    pub interaction_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScrapeUpdateDescriptionRequest {
     pub id: String,
     pub description: String,
@@ -531,6 +538,17 @@ pub fn scrape_persist_job(app: AppHandle, req: ScrapePersistJobRequest) -> Value
     json!({ "success": true })
 }
 
+/// The real "undo" for [`scrape_persist_job`] — deletes the persisted
+/// interaction instead of only hiding it client-side. Keys on the same
+/// `(jobId, interactionType)` pair `upsert` writes; see
+/// [`InteractionStore::remove`] for the "nothing to remove" distinction.
+#[tauri::command]
+pub fn scrape_remove_interaction(app: AppHandle, req: ScrapeRemoveInteractionRequest) -> bool {
+    app.state::<Mutex<InteractionStore>>()
+        .lock()
+        .remove(&req.job_id, &req.interaction_type)
+}
+
 /// Resolve a single job posting (incl. full description) from its URL.
 /// Synchronous request/response — used to fetch a description on demand for
 /// boards whose list scrape omits it (LinkedIn, Glassdoor, etc.).
@@ -663,6 +681,16 @@ mod test {
         let req: ScrapeUpdateDescriptionRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.id, "job-1");
         assert_eq!(req.description, "full text");
+    }
+
+    // The request must deserialize from the camelCase wire shape the renderer
+    // sends (`jobId`/`interactionType`).
+    #[test]
+    fn remove_interaction_request_deserializes_camel_case() {
+        let json = r#"{"jobId":"https://example.com/job/1","interactionType":"dismissed"}"#;
+        let req: ScrapeRemoveInteractionRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.job_id, "https://example.com/job/1");
+        assert_eq!(req.interaction_type, "dismissed");
     }
 
     #[test]

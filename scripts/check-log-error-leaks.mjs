@@ -166,14 +166,14 @@ const ALLOWLIST = {
       'without_url() before wrapping in AppError::Network (see accumulate_capped in ' +
       'net/http.rs) — the URL is stripped upstream of this call site.',
   },
-  'postings/mod.rs:385': {
+  'postings/mod.rs:405': {
     status: 'safe',
     reason:
       "err: &serde_json::Error is back_up_corrupt_file's parameter — the from_str parse " +
       'failure of interactions.json content already read into memory (map_mut). Same ' +
       'in-memory-parse shape as inMemoryParseSafe() below, never a path/URL/host/credential.',
   },
-  'postings/mod.rs:427': {
+  'postings/mod.rs:447': {
     status: 'safe',
     reason:
       "serde_json::to_string_pretty is a SERIALIZE error on the app's own " +

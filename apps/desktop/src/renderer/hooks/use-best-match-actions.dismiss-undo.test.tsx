@@ -7,9 +7,16 @@
  * dismissed job from that refetch — evicting the row from the cache
  * entirely and making Undo a dead button. The earlier unit test only
  * asserted `dismissedKeys` gained/lost a key, which is a test of a `useState`
- * setter: it stayed green with the feature completely broken. This one
- * renders the row, dismisses it, asserts it is gone, clicks Undo, and
- * asserts the row is VISIBLE AGAIN.
+ * setter: it stayed green with the feature completely broken.
+ *
+ * Undo is now a REAL server-side undo (`scrape.removeInteraction`), not just
+ * a local reveal — so the mock backend here mirrors that too: it tracks
+ * dismissals in the SAME set `persistJob`/`removeInteraction` both mutate,
+ * and `bestMatches()` excludes exactly what's currently in that set. This
+ * test renders the row, dismisses it, asserts it is gone, clicks Undo, and
+ * — the assertion the earlier optimistic-only version could NOT make —
+ * forces a REFETCH after Undo and asserts the row is STILL visible, proving
+ * the persisted dismissal was actually deleted, not just hidden client-side.
  */
 
 import type { ReactNode } from 'react';
@@ -57,16 +64,19 @@ function makeMatch(): AutopilotBestMatch {
  *  exercise the exact hook interaction under test without pulling in @ajh/ui
  *  primitives, routing, or icons unrelated to the bug. */
 function Harness() {
-  const { data } = useBestMatches();
+  const { data, refetch } = useBestMatches();
   const { dismissedKeys, handleDismiss, undoDismiss } = useBestMatchActions();
   const matches = data?.matches ?? [];
   return (
     <div>
+      <button type="button" onClick={() => void refetch()}>
+        Refetch
+      </button>
       {matches.map((m) =>
         dismissedKeys.has(m.key) ? (
           <div key={m.key}>
             <span>row-dismissed</span>
-            <button type="button" onClick={() => undoDismiss(m.key)}>
+            <button type="button" onClick={() => undoDismiss(m.key, m.url)}>
               Undo
             </button>
           </div>
@@ -85,8 +95,10 @@ function Harness() {
 
 /** Builds a mock AppClient whose `autopilot.bestMatches()` mirrors the real
  *  `compute_best_matches`: once a job's been dismissed (its persisted
- *  interaction recorded), a later fetch excludes it. This is what makes the
- *  regression actually visible rather than just asserting call counts. */
+ *  interaction recorded), a later fetch excludes it. `removeInteraction`
+ *  deletes from the SAME set `persistJob` writes into — mirroring the real
+ *  `InteractionStore::remove`/`upsert` sharing one on-disk record — so a
+ *  refetch after a successful Undo can see the job again. */
 function makeWiredClient() {
   const dismissedOnBackend = new Set<string>();
   const match = makeMatch();
@@ -101,13 +113,19 @@ function makeWiredClient() {
     if (req.interactionType === 'dismissed') dismissedOnBackend.add(req.job.url);
   });
 
+  const removeInteraction = vi.fn(async (req: { jobId: string; interactionType: string }) => {
+    if (req.interactionType !== 'dismissed') return false;
+    return dismissedOnBackend.delete(req.jobId);
+  });
+
   const client = createMockClient({
     'autopilot.bestMatches': bestMatches,
     'autopilot.list': async (): Promise<Autopilot[]> => [],
     'scrape.persistJob': persistJob,
+    'scrape.removeInteraction': removeInteraction,
   });
 
-  return { client, bestMatches, persistJob, match };
+  return { client, bestMatches, persistJob, removeInteraction, match };
 }
 
 function renderHarness(client: ReturnType<typeof createMockClient>) {
@@ -126,9 +144,9 @@ function renderHarness(client: ReturnType<typeof createMockClient>) {
 }
 
 describe('useBestMatchActions — Dismiss then Undo (real QueryClient)', () => {
-  it('hides the row on Dismiss, then Undo brings it back — no premature refetch evicts it', async () => {
+  it('hides the row on Dismiss, then Undo brings it back — and STAYS back after a refetch', async () => {
     const user = userEvent.setup();
-    const { client, bestMatches, persistJob, match } = makeWiredClient();
+    const { client, bestMatches, persistJob, removeInteraction, match } = makeWiredClient();
     renderHarness(client);
 
     await waitFor(() => expect(screen.getByText(match.title)).toBeInTheDocument());
@@ -145,8 +163,29 @@ describe('useBestMatchActions — Dismiss then Undo (real QueryClient)', () => {
 
     await user.click(screen.getByText('Undo'));
 
-    // The whole point of Undo: the row must come back.
+    // The optimistic reveal fires immediately.
     await waitFor(() => expect(screen.getByText(match.title)).toBeInTheDocument());
+    expect(screen.queryByText('row-dismissed')).not.toBeInTheDocument();
+
+    // The real assertion this test exists for: the persisted dismissal must
+    // actually be GONE server-side, not just hidden client-side. Wait for the
+    // removal to land, then force a FRESH fetch (independent of the
+    // onSuccess-triggered one) and confirm the row survives it — this is what
+    // an optimistic-only Undo (the earlier, dead-button version) could not do:
+    // any refetch after that version re-excluded the job forever.
+    await waitFor(() => expect(removeInteraction).toHaveBeenCalledTimes(1));
+    expect(removeInteraction).toHaveBeenCalledWith({
+      jobId: match.url,
+      interactionType: 'dismissed',
+    });
+
+    const bestMatchesCallsBeforeRefetch = bestMatches.mock.calls.length;
+    await user.click(screen.getByText('Refetch'));
+
+    await waitFor(() =>
+      expect(bestMatches.mock.calls.length).toBeGreaterThan(bestMatchesCallsBeforeRefetch)
+    );
+    expect(screen.getByText(match.title)).toBeInTheDocument();
     expect(screen.queryByText('row-dismissed')).not.toBeInTheDocument();
   });
 });

@@ -50,7 +50,11 @@ export function BestMatchesPreview() {
       <div className="space-y-2">
         {preview.map((match) =>
           dismissedKeys.has(match.key) ? (
-            <DismissedBestMatchRow key={match.key} compact onUndo={() => undoDismiss(match.key)} />
+            <DismissedBestMatchRow
+              key={match.key}
+              compact
+              onUndo={() => undoDismiss(match.key, match.url)}
+            />
           ) : (
             <BestMatchRow
               key={match.key}

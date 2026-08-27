@@ -2226,6 +2226,7 @@
       "dismissed": "Verworfen",
       "undo": "Rückgängig",
       "dismissFailed": "Dieser Job konnte nicht verworfen werden. Bitte versuche es erneut.",
+      "undoFailed": "Das Rückgängigmachen ist fehlgeschlagen. Bitte versuche es erneut.",
       "discovered": "Entdeckt {{time}}",
       "foundBy": "Gefunden von: „{{name}}“",
       "pausedSuffix": " (pausiert)"

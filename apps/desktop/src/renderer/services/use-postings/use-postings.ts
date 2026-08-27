@@ -98,3 +98,17 @@ export const usePersistJob = () => {
     },
   });
 };
+
+/** The real "undo" for {@link usePersistJob} — deletes a persisted interaction
+ *  (e.g. reversing a `dismissed` write) instead of only hiding it client-side.
+ *  No baked-in cache invalidation: unlike `usePersistJob`, callers need this
+ *  for domain-specific caches (e.g. Best Matches invalidating `autopilot`,
+ *  not `postings`), so that decision is left to the call site via the
+ *  `mutate(vars, { onSuccess })` options argument. */
+export const useRemoveInteraction = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (req: { jobId: string; interactionType: string }) =>
+      api.scrape.removeInteraction(req),
+  });
+};

@@ -2222,6 +2222,7 @@
       "dismissed": "Dismissed",
       "undo": "Undo",
       "dismissFailed": "Couldn't dismiss this job. Please try again.",
+      "undoFailed": "Couldn't undo the dismiss. Please try again.",
       "discovered": "Discovered {{time}}",
       "foundBy": "Found by: \"{{name}}\"",
       "pausedSuffix": " (paused)"

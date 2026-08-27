@@ -32,6 +32,7 @@ const STATIC_KEYS = [
   'bestMatches.row.dismissed',
   'bestMatches.row.undo',
   'bestMatches.row.dismissFailed',
+  'bestMatches.row.undoFailed',
   'bestMatches.row.discovered',
   'bestMatches.row.foundBy',
   'bestMatches.row.pausedSuffix',

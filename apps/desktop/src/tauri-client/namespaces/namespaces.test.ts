@@ -56,6 +56,11 @@ describe('tauri-client namespaces', () => {
       req: { boards: ['linkedin'], query: 'react', amount: 25 },
     });
 
+    scrape.removeInteraction({ jobId: 'https://example.com/job/1', interactionType: 'dismissed' });
+    expect(invoke).toHaveBeenCalledWith('scrape_remove_interaction', {
+      req: { jobId: 'https://example.com/job/1', interactionType: 'dismissed' },
+    });
+
     documents.remove('doc-1');
     expect(invoke).toHaveBeenCalledWith('documents_remove', { id: 'doc-1' });
 

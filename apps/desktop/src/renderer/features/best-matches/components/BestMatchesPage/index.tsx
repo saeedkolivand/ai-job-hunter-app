@@ -95,7 +95,10 @@ function BestMatchesPage() {
           <div className="space-y-2">
             {sorted.map((match) =>
               dismissedKeys.has(match.key) ? (
-                <DismissedBestMatchRow key={match.key} onUndo={() => undoDismiss(match.key)} />
+                <DismissedBestMatchRow
+                  key={match.key}
+                  onUndo={() => undoDismiss(match.key, match.url)}
+                />
               ) : (
                 <BestMatchRow
                   key={match.key}
