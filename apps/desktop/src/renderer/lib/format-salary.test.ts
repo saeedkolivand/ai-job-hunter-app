@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatSalaryRange } from './salary';
+import { formatSalaryRange } from './format-salary';
 
 // A fixed locale keeps the group separators deterministic across CI hosts.
 const EN = 'en-US';
