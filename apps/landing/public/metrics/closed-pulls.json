@@ -1,5 +1,61 @@
 [
   {
+    "number": 1082,
+    "title": "chore: bump the javascript group with 31 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1082",
+    "draft": false,
+    "created_at": "2026-08-26T16:35:02Z",
+    "updated_at": "2026-08-26T17:10:10Z",
+    "merged_at": "2026-08-26T16:47:01Z",
+    "closed_at": "2026-08-26T16:47:01Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1080,
+    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 4 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1080",
+    "draft": false,
+    "created_at": "2026-08-26T16:09:10Z",
+    "updated_at": "2026-08-26T16:30:33Z",
+    "merged_at": "2026-08-26T16:18:17Z",
+    "closed_at": "2026-08-26T16:18:17Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1081,
+    "title": "chore: bump the ci-actions group with 2 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1081",
+    "draft": false,
+    "created_at": "2026-08-26T16:11:31Z",
+    "updated_at": "2026-08-26T16:43:40Z",
+    "merged_at": "2026-08-26T16:18:59Z",
+    "closed_at": "2026-08-26T16:18:59Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1079,
+    "title": "chore: bump the codeql-action group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1079",
+    "draft": false,
+    "created_at": "2026-08-26T16:07:17Z",
+    "updated_at": "2026-08-26T16:24:46Z",
+    "merged_at": "2026-08-26T16:17:48Z",
+    "closed_at": "2026-08-26T16:17:48Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
     "number": 1078,
     "title": "fix(pipeline): stop a cover-letter-only run from generating a résumé",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1078",
@@ -638,62 +694,6 @@
     "updated_at": "2026-08-18T14:39:17Z",
     "merged_at": "2026-08-18T14:19:55Z",
     "closed_at": "2026-08-18T14:19:55Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1032,
-    "title": "fix(landing): serve the /world clips from r2, which can send cors headers",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1032",
-    "draft": false,
-    "created_at": "2026-08-18T14:07:18Z",
-    "updated_at": "2026-08-18T14:31:08Z",
-    "merged_at": "2026-08-18T14:08:08Z",
-    "closed_at": "2026-08-18T14:08:08Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1028,
-    "title": "chore: drop the 1.5 mb audit report from the tree, keep it in history",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1028",
-    "draft": false,
-    "created_at": "2026-08-18T13:03:27Z",
-    "updated_at": "2026-08-18T14:30:32Z",
-    "merged_at": "2026-08-18T14:29:15Z",
-    "closed_at": "2026-08-18T14:29:15Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1029,
-    "title": "fix(resume-pipeline): resolve a fabrication remove by its anchored line",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1029",
-    "draft": false,
-    "created_at": "2026-08-18T13:10:22Z",
-    "updated_at": "2026-08-18T14:18:07Z",
-    "merged_at": "2026-08-18T14:18:04Z",
-    "closed_at": "2026-08-18T14:18:04Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1031,
-    "title": "refactor(landing): serve the /world clips from a release, not from the repo",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1031",
-    "draft": false,
-    "created_at": "2026-08-18T13:35:56Z",
-    "updated_at": "2026-08-18T13:57:32Z",
-    "merged_at": "2026-08-18T13:36:31Z",
-    "closed_at": "2026-08-18T13:36:31Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

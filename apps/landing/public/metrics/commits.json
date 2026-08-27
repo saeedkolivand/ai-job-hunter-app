@@ -1,5 +1,65 @@
 [
   {
+    "sha": "ff2447d4952d01e45845372d1da42e546a5b3b0c",
+    "commit": {
+      "message": "chore: bump the javascript group with 31 updates (#1082)",
+      "author": {
+        "date": "2026-08-26T16:47:00Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "dfc23216f5e1c740768be4d6115a879eb6572cb4",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 2 updates (#1081)",
+      "author": {
+        "date": "2026-08-26T16:18:58Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "518ff1e7c27c4536c7aa5631bc1838301f5aebbc",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1080)",
+      "author": {
+        "date": "2026-08-26T16:18:17Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "ce66548dd446fd903ac9a321bda1925cf6221d06",
+    "commit": {
+      "message": "chore: bump the codeql-action group with 3 updates (#1079)",
+      "author": {
+        "date": "2026-08-26T16:17:47Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "db5b54a089aee335325e60a1269cf016b2aee326",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-26T04:02:02Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "6bad7c720b0f8747171aef6b96866d8adfc0249e",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1137,66 +1197,6 @@
     },
     "author": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "a4620c96cd98497739a2513056380e8cfb6e808d",
-    "commit": {
-      "message": "build(deps): bump swatinem/rust-cache from 2.9.1 to 2.9.2 (#1046)",
-      "author": {
-        "date": "2026-08-19T16:23:03Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "919e8b344b91a6ab3a2906eb6a885f44550b7432",
-    "commit": {
-      "message": "build(deps): bump taiki-e/install-action from 2.85.11 to 2.86.1 (#1045)",
-      "author": {
-        "date": "2026-08-19T16:23:00Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "d0c37eccb9f98075418ed8feb10ba30666672876",
-    "commit": {
-      "message": "build(deps): bump the codeql-action group with 3 updates (#1044)",
-      "author": {
-        "date": "2026-08-19T16:22:56Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "d8909feb41f6b8a0e20550f5498cdc2c90b7c736",
-    "commit": {
-      "message": "chore: sync landing download version to v0.138.0",
-      "author": {
-        "date": "2026-08-19T12:38:13Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f84cfa4a06a05632f1d7c03f137d6ab1423481e8",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.138.0 [skip ci]",
-      "author": {
-        "date": "2026-08-19T12:37:35Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
