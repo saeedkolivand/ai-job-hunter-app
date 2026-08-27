@@ -1348,8 +1348,10 @@ export interface AutopilotBestMatchSource {
  * One cross-autopilot best-match row. When the same posting was found by more
  * than one autopilot (or scraped from more than one board), those finds
  * collapse into a single row — `sources.length > 1` is how a caller tells a
- * merged duplicate from a single-source match, and `clusterMembers` lists the
- * other board copies the way a `Posting`/`AutopilotFoundJob` row already does.
+ * merged duplicate from a single-source match. `clusterMembers` lists every
+ * clustered copy INCLUDING the canonical member itself, not just the other
+ * board copies — that completeness is what lets a dismissal match against
+ * any member's own identity, not only the row's displayed one.
  */
 export interface AutopilotBestMatch {
   /** Cluster id — usually stable across refetches, but the seed is chosen
@@ -1377,8 +1379,11 @@ export interface AutopilotBestMatch {
   applied?: boolean;
   isAgency?: boolean;
   trust?: JobTrustAssessment;
-  /** A cluster member's AI-reasoned note, when any member has one. */
+  /** The canonical member's AI-reasoned note, falling back to the
+   *  best-scored member's, then any member's, when one exists. */
   assistantNotes?: string;
+  /** Every clustered copy, including the canonical member itself — not just
+   *  the other board copies. */
   clusterMembers?: Array<{ key: string; board?: string; url: string }>;
   /** Every autopilot that surfaced this job. Length > 1 means a merged duplicate. */
   sources: AutopilotBestMatchSource[];

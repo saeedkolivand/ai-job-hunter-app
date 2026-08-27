@@ -279,7 +279,18 @@ pub(super) fn compute_best_matches(
             .flat_map(|&i| origins[i].iter().map(|o| o.found_at))
             .min()
             .expect("a cluster group has at least one origin");
-        let assistant_notes = idxs.iter().find_map(|&i| jobs[i].assistant_notes.clone());
+        // Prefer the canonical member's own note (every OTHER display field
+        // already reads from `canonical`), then the best-scored member's
+        // (the row's score/scoreSource identity), then any member's — never
+        // whichever member happens to be first in `idxs`' iteration order,
+        // which on a merged cross-autopilot row can be a different
+        // autopilot's résumé/provider context entirely, with no provenance
+        // on the payload to say so.
+        let assistant_notes = canonical
+            .assistant_notes
+            .clone()
+            .or_else(|| jobs[best_idx].assistant_notes.clone())
+            .or_else(|| idxs.iter().find_map(|&i| jobs[i].assistant_notes.clone()));
 
         // One `BestMatchSource` per distinct contributing autopilot — a
         // `BTreeMap` (not `HashMap`) so a cluster whose members span the same
@@ -635,6 +646,55 @@ mod tests {
             row.board.as_deref(),
             Some("greenhouse"),
             "display fields still come from the CANONICAL member, not the best-scored one"
+        );
+    }
+
+    #[test]
+    fn assistant_notes_prefer_canonical_over_first_in_input_order() {
+        // First-in-input-order member is NOT canonical (no description, so
+        // `resolve_block`'s canonical-preference ranks it below the second
+        // member) and carries its OWN note. The canonical member (full JD)
+        // carries a DIFFERENT note. The canonical's note must win — the same
+        // member every other display field (title/company/url/board/...)
+        // already reads from.
+        let first_in_input = FoundJob {
+            description: None,
+            assistant_notes: Some("note from the first-found aggregator copy".into()),
+            ..job(
+                "https://agg.example.com/job?id=1",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(90.0),
+                ScoreSource::Keyword,
+            )
+        };
+        let canonical_job = FoundJob {
+            description: Some("full JD text".into()),
+            assistant_notes: Some("note from the canonical board copy".into()),
+            ..job(
+                "https://x.example.com/job",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(80.0),
+                ScoreSource::Keyword,
+            )
+        };
+        let ap = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![first_in_input, canonical_job],
+        );
+        let out = compute_best_matches(&[ap], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(
+            out.matches.len(),
+            1,
+            "identical title+company joins one cluster"
+        );
+        assert_eq!(
+            out.matches[0].assistant_notes.as_deref(),
+            Some("note from the canonical board copy"),
+            "assistant_notes must come from the canonical member, not whichever member \
+             happens to be first in input order"
         );
     }
 
@@ -1002,6 +1062,34 @@ mod tests {
         assert!(
             out.matches.is_empty(),
             "dismissing the NON-canonical copy's own identity still drops the whole cluster"
+        );
+    }
+
+    #[test]
+    fn degenerate_dismissed_key_does_not_drop_a_blank_identity_job() {
+        // A job with no url/title/company at all derives the degenerate
+        // `canonical_job_key` fallback (the bare "\u{1}" separator, both
+        // halves empty). `is_degenerate_key` exists so a dismissal record
+        // that ALSO derived to this same meaningless identity — e.g.
+        // persisted against a different, equally-blank posting — can't veto
+        // this unrelated one. Without the guard, `dismissed_keys.contains`
+        // matches on the bare "\u{1}" and the job silently disappears.
+        let degenerate_key = crate::scraping::boards::common::canonical_job_key("", "", "");
+        assert_eq!(
+            degenerate_key, "\u{1}",
+            "fixture assumption: blank url/title/company derives the bare separator"
+        );
+        let ap = autopilot(
+            "blank",
+            AutopilotStatus::Active,
+            vec![job("", "", "", Some(90.0), ScoreSource::Keyword)],
+        );
+        let dismissed: HashSet<String> = [degenerate_key].into_iter().collect();
+        let out = compute_best_matches(&[ap], &no_tombstones(), &[], &dismissed);
+        assert_eq!(
+            out.matches.len(),
+            1,
+            "a degenerate dismissed key must not veto a job whose own identity is equally degenerate"
         );
     }
 
