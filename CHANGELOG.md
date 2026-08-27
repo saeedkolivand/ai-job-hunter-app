@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.144.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.143.1...v0.144.0) (2026-08-27)
+
+### ✨ Features
+
+* **autopilot:** surface the strongest jobs across every autopilot in one place ([#1083](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1083)) ([9bfb174](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9bfb174a8d3daa84004183988c0463f46cb0f669))
+
 ## [0.143.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.143.0...v0.143.1) (2026-08-24)
 
 ### 🐛 Bug Fixes
