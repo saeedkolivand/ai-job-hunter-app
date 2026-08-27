@@ -428,6 +428,11 @@ export function AutopilotCard({
     try {
       await persistJob.mutateAsync({
         job: {
+          // `job.url` doubles as the interaction's identity key — omitting it
+          // collapses EVERY autopilot found job onto the single `("", "viewed")`
+          // slot in InteractionStore::upsert (job_id defaults to "" server-side),
+          // so only the most-recently-opened job ever showed the Viewed badge.
+          id: job.url,
           url: job.url,
           title: job.title,
           company: job.company ?? '',
