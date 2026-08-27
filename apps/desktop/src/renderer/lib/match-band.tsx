@@ -1,3 +1,4 @@
+import { MATCH_TIER_CUTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { cn, Tag, type TagStatusColor } from '@ajh/ui';
 
@@ -5,22 +6,21 @@ type ScoreTier = 'High' | 'Medium' | 'Low';
 
 /** Map a 0–100 score to a tier + colour.
  *
- *  variant='combined' (default) — combined semantic+ATS score, 75/50 cut points.
+ *  variant='combined' (default) — combined semantic+ATS score.
  *  variant='coverage'           — raw ATS keyword-coverage score; coverage clusters
  *                                 lower than combined, so cut points are relaxed.
- *                                 // ponytail: heuristic starting values, not calibrated
+ *
+ *  Cut points come from the shared `MATCH_TIER_CUTS` (also the Rust
+ *  `autopilot_best_matches` qualification bar) — the single source, not a
+ *  literal here. // ponytail: heuristic starting values, not calibrated
  */
 export function scoreTier(
   value: number,
   variant: 'combined' | 'coverage' = 'combined'
 ): { key: ScoreTier; color: TagStatusColor } {
-  if (variant === 'coverage') {
-    if (value >= 55) return { key: 'High', color: 'success' };
-    if (value >= 30) return { key: 'Medium', color: 'warning' };
-    return { key: 'Low', color: 'error' };
-  }
-  if (value >= 75) return { key: 'High', color: 'success' };
-  if (value >= 50) return { key: 'Medium', color: 'warning' };
+  const cuts = MATCH_TIER_CUTS[variant];
+  if (value >= cuts.high) return { key: 'High', color: 'success' };
+  if (value >= cuts.medium) return { key: 'Medium', color: 'warning' };
   return { key: 'Low', color: 'error' };
 }
 
