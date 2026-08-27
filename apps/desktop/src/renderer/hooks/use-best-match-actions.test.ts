@@ -41,15 +41,9 @@ vi.mock('@/store/session-store', () => ({
 const mockOpenExternalMutate = vi.fn();
 const mockPersistJobMutate = vi.fn();
 const mockSaveFromPostingMutateAsync = vi.fn().mockResolvedValue({ id: 'app-1' });
-const mockInvalidateQueries = vi.fn();
 let mockAutopilots: Autopilot[] = [];
 
-vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
-}));
-
 vi.mock('@/services', () => ({
-  keys: { autopilot: { all: ['autopilot'] } },
   useOpenExternal: () => ({ mutate: mockOpenExternalMutate }),
   usePersistJob: () => ({ mutate: mockPersistJobMutate }),
   useAutopilots: () => ({ data: mockAutopilots }),
@@ -111,6 +105,17 @@ describe('useBestMatchActions — handleView', () => {
     expect(payload.job.id).toBe(match.url);
     expect(payload.job.url).toBe(match.url);
   });
+
+  // Checked DELIBERATELY, not by omission (see the hook's doc comment): a
+  // view doesn't change compute_best_matches's qualification predicate, so
+  // there is nothing for it to invalidate — no second (options) arg at all,
+  // i.e. no onSuccess/invalidate callback wired up.
+  it('does not attach an onSuccess/invalidate callback to the persistJob mutation', () => {
+    const { result } = renderHook(() => useBestMatchActions());
+    act(() => result.current.handleView(makeMatch()));
+
+    expect(mockPersistJobMutate.mock.calls[0]).toHaveLength(1);
+  });
 });
 
 describe('useBestMatchActions — handleSave', () => {
@@ -121,6 +126,15 @@ describe('useBestMatchActions — handleSave', () => {
     expect(mockPersistJobMutate).toHaveBeenCalledTimes(1);
     const [payload] = mockPersistJobMutate.mock.calls[0] as [{ interactionType: string }];
     expect(payload.interactionType).toBe('bookmarked');
+  });
+
+  // Same deliberate check as handleView above — a bookmark doesn't change
+  // qualification either.
+  it('does not attach an onSuccess/invalidate callback to the persistJob mutation', () => {
+    const { result } = renderHook(() => useBestMatchActions());
+    act(() => result.current.handleSave(makeMatch()));
+
+    expect(mockPersistJobMutate.mock.calls[0]).toHaveLength(1);
   });
 });
 
@@ -162,15 +176,25 @@ describe('useBestMatchActions — handleDismiss payload', () => {
     expect(result.current.dismissedKeys.has('k-optimistic')).toBe(true);
   });
 
-  it('invalidates keys.autopilot.all on a successful dismiss (so the row is confirmed gone next refetch)', () => {
+  // Regression for the reported bug: an onSuccess invalidation here forces
+  // useBestMatches to refetch before the user could ever reach for Undo, and
+  // the backend (compute_best_matches) already excludes a dismissed job from
+  // that refetch — evicting the row from the cache entirely and making Undo
+  // delete a key for a row that no longer exists anywhere to show. See
+  // use-best-match-actions.dismiss-undo.test.tsx for the end-to-end version
+  // of this same assertion against a REAL QueryClient (this one only proves
+  // no onSuccess callback is wired up at all — cheap, but blind to the
+  // cache/timing consequence, which is why that second file exists).
+  it('does NOT attach an onSuccess/invalidate callback to the dismiss mutation', () => {
+    let capturedOnSuccess: (() => void) | undefined;
     mockPersistJobMutate.mockImplementation((_payload, opts?: { onSuccess?: () => void }) => {
-      opts?.onSuccess?.();
+      capturedOnSuccess = opts?.onSuccess;
     });
     const { result } = renderHook(() => useBestMatchActions());
 
     act(() => result.current.handleDismiss(makeMatch()));
 
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['autopilot'] });
+    expect(capturedOnSuccess).toBeUndefined();
   });
 
   it('rolls back the optimistic hide and surfaces a notification on failure', () => {

@@ -1,12 +1,11 @@
 import { useCallback, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
 import type { AutopilotBestMatch } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import { useApplyToFoundJob } from '@/hooks/use-apply-to-found-job';
-import { keys, useAutopilots, useOpenExternal, usePersistJob } from '@/services';
+import { useAutopilots, useOpenExternal, usePersistJob } from '@/services';
 
 /**
  * Interaction payload for a best-match row. Deliberately carries `id`
@@ -45,9 +44,26 @@ function toPersistPayload(match: AutopilotBestMatch, interactionType: string) {
  * row optimistically (`onMutate`-style, matching `useRemoveAutopilot`'s own
  * optimistic-delete precedent) and rolls back on failure; `undoDismiss` just
  * reveals the row again locally — there is no server-side "un-dismiss" IPC
- * call, this only cancels the OPTIMISTIC hide. Once the dismiss mutation's
- * own `keys.autopilot.all` invalidation lands, a genuinely-dismissed row
- * stops coming back from the backend regardless of local state.
+ * call, this only cancels the OPTIMISTIC hide.
+ *
+ * `handleDismiss` deliberately does NOT invalidate `keys.autopilot.bestMatches`
+ * (or its parent `keys.autopilot.all`) on success. The dismiss write is a
+ * local JSON persist — it resolves in milliseconds, long before a user could
+ * ever reach for Undo — so forcing a refetch there would immediately drop the
+ * row out of the query cache (`compute_best_matches` already excludes
+ * dismissed jobs server-side) and make Undo a dead button: it would delete a
+ * key from `dismissedKeys` for a row that no longer exists anywhere to show.
+ * An affordance that renders but does nothing is worse than not shipping one.
+ * The optimistic hide is enough on its own to keep the row gone for the rest
+ * of this mount; the backend is already authoritative, so any NATURAL
+ * refetch this hook doesn't control (a remount, a route change, another
+ * autopilot mutation invalidating `keys.autopilot.all`) will reflect the
+ * dismissal on its own once it happens — local state and the backend only
+ * ever disagree about *when* the row leaves, never about *whether* it does.
+ * `handleView`/`handleSave` were checked against the same question
+ * deliberately: neither participates in `compute_best_matches`'s
+ * qualification predicate (only autopilot membership + dismissal do), so
+ * there is nothing for either to invalidate — confirmed by their own tests.
  */
 export function useBestMatchActions() {
   const { t } = useTranslation();
@@ -56,7 +72,6 @@ export function useBestMatchActions() {
   const persistJob = usePersistJob();
   const applyToFoundJob = useApplyToFoundJob();
   const { data: autopilots } = useAutopilots();
-  const qc = useQueryClient();
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
 
   const handleView = useCallback(
@@ -88,7 +103,8 @@ export function useBestMatchActions() {
     (match: AutopilotBestMatch) => {
       setDismissedKeys((prev) => new Set(prev).add(match.key));
       persistJob.mutate(toPersistPayload(match, 'dismissed'), {
-        onSuccess: () => void qc.invalidateQueries({ queryKey: keys.autopilot.all }),
+        // No onSuccess invalidation — see the hook's doc comment above for why
+        // that would make Undo inert.
         onError: () => {
           setDismissedKeys((prev) => {
             const next = new Set(prev);
@@ -99,7 +115,7 @@ export function useBestMatchActions() {
         },
       });
     },
-    [persistJob, qc, notify, t]
+    [persistJob, notify, t]
   );
 
   const undoDismiss = useCallback((key: string) => {
