@@ -3,26 +3,27 @@ import { AnimatePresence } from 'motion/react';
 import { useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import { AGGREGATOR_BOARD_ID, type Autopilot, type AutopilotFoundJob } from '@ajh/shared';
+import type { Autopilot } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton } from '@ajh/ui';
 
+import { BestMatchesPreview } from '@/components/job/BestMatchesPreview';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AutopilotCard } from '@/features/autopilot/components/AutopilotCard';
 import { CreationWizard } from '@/features/autopilot/components/CreationWizard';
 import { EmptyState } from '@/features/autopilot/components/EmptyState';
 import { useAutopilotRun } from '@/features/autopilot/hooks/useAutopilotRun';
 import { autopilotToWizardState } from '@/features/autopilot/lib/wizard-state';
-import { scoreToLevel } from '@/lib/match-level';
+import { useApplyToFoundJob } from '@/hooks/use-apply-to-found-job';
 import { Route } from '@/routes/autopilot.index';
-import { useAutopilots, useInvalidateAutopilots, useSaveFromPosting } from '@/services';
+import { useAutopilots, useInvalidateAutopilots } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 function AutopilotPage() {
   const { t } = useTranslation();
   const { data: autopilotList = [], isLoading: loading } = useAutopilots();
   const autopilots = autopilotList;
-  const { autopilot, setAutopilot, resetAutopilotWizard, setApplicationApply } = useSessionStore();
+  const { autopilot, setAutopilot, resetAutopilotWizard } = useSessionStore();
   const { creating, focusedId, focusedJobUrl } = autopilot;
   const setCreating = (v: boolean) => setAutopilot({ creating: v });
   const resetWizard = resetAutopilotWizard;
@@ -62,7 +63,7 @@ function AutopilotPage() {
 
   const { runStates, stepLogs, error, setError, handleRun, handleTogglePause, handleDelete } =
     useAutopilotRun();
-  const saveFromPosting = useSaveFromPosting();
+  const applyToFoundJob = useApplyToFoundJob();
 
   const handleCreated = (ap: Autopilot) => {
     // #44 — kick off the first run immediately after *creating* a new autopilot
@@ -80,46 +81,6 @@ function AutopilotPage() {
       wizardStep: 0,
       wizardForm: autopilotToWizardState(ap),
     });
-  };
-
-  // Apply creates (or reuses, deduped by jobUrl) the Application for this job,
-  // seeds the autopilot base résumé for the Documents-tab wizard, then deep-links
-  // into the application detail — the single place tailoring happens. `from=autopilot`
-  // makes the detail's Back button return here.
-  const handleApply = async (job: AutopilotFoundJob, ap: Autopilot) => {
-    try {
-      const res = await saveFromPosting.mutateAsync({
-        jobUrl: job.url,
-        board: job.board ?? ap.target.boards[0] ?? AGGREGATOR_BOARD_ID,
-        company: job.company,
-        title: job.title,
-        salaryMin: job.salaryMin,
-        salaryMax: job.salaryMax,
-        salaryCurrency: job.salaryCurrency,
-      });
-      if (!res?.id) {
-        setError(res?.error ?? 'Failed to create the application');
-        return;
-      }
-      setApplicationApply({
-        applyForId: res.id,
-        applySeedResume: ap.resumeText ?? null,
-        applyMatchLevel: typeof job.score === 'number' ? scoreToLevel(job.score) : null,
-        applyWizardStep: 0,
-        applyWizardForm: null,
-      });
-      // Remember which autopilot (and specific job) we applied from so Back
-      // re-expands it and scrolls to that row (consumed on the Autopilot page's
-      // next mount).
-      setAutopilot({ lastAppliedId: ap._id, lastAppliedJobUrl: job.url });
-      void navigate({
-        to: '/applications/$id',
-        params: { id: res.id },
-        search: { tab: 'documents', from: 'autopilot' },
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create the application');
-    }
   };
 
   return (
@@ -158,6 +119,10 @@ function AutopilotPage() {
               </Button>
             </div>
           )}
+
+          {/* Top-scoring matches across every autopilot — self-fetching, renders
+              nothing while there are no qualifying rows. */}
+          <BestMatchesPreview />
 
           {loading ? (
             <div className="space-y-3">
@@ -209,7 +174,7 @@ function AutopilotPage() {
                     onTogglePause={() => void handleTogglePause(ap)}
                     onEdit={() => handleEdit(ap)}
                     onDelete={() => void handleDelete(ap._id)}
-                    onApply={(job) => void handleApply(job, ap)}
+                    onApply={(job) => void applyToFoundJob(job, ap)}
                   />
                 );
               })}
