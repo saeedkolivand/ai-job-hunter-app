@@ -210,14 +210,17 @@ pub fn attach_interactions(items: &[Value], interactions: &[InteractionRecord]) 
 /// struct so a future storage-only field can't leak into `scrape_list_postings`.
 ///
 /// `interactionType` is a strict union in the shared contract
-/// (`viewed | opened | applied | bookmarked`), but the persisted value is a free
-/// `String` on disk — a corrupt or unexpected entry must not break the cross-layer
-/// contract at runtime, so an out-of-union value is coerced to `"viewed"`.
+/// (`viewed | opened | applied | bookmarked | dismissed`), but the persisted
+/// value is a free `String` on disk — a corrupt or unexpected entry must not
+/// break the cross-layer contract at runtime, so an out-of-union value is
+/// coerced to `"viewed"`.
 fn interaction_value(record: &InteractionRecord) -> Value {
     // ponytail: clamp the on-disk type to the shared union; unknown → "viewed"
     // (the most benign default — it only dims the row, never marks applied/saved).
     let interaction_type = match record.interaction_type.as_str() {
-        "viewed" | "opened" | "applied" | "bookmarked" => record.interaction_type.as_str(),
+        "viewed" | "opened" | "applied" | "bookmarked" | "dismissed" => {
+            record.interaction_type.as_str()
+        }
         _ => "viewed",
     };
     json!({

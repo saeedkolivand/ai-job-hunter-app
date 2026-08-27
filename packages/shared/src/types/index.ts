@@ -116,7 +116,7 @@ export interface JobInteraction {
   url: string;
   source: string;
   location?: string;
-  interactionType: 'viewed' | 'opened' | 'applied' | 'bookmarked';
+  interactionType: 'viewed' | 'opened' | 'applied' | 'bookmarked' | 'dismissed';
   timestamp: number;
 }
 

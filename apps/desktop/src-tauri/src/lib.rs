@@ -1158,6 +1158,7 @@ pub fn run() {
             commands::autopilot::autopilot_pause,
             commands::autopilot::autopilot_resume,
             commands::autopilot::autopilot_take_pending_focus,
+            commands::autopilot::autopilot_best_matches,
             // ai generations
             commands::ai_generations::ai_generations_list,
             commands::ai_generations::ai_generations_save,

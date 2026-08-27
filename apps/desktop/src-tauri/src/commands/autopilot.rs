@@ -705,6 +705,50 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
     json!(null)
 }
 
+/// Cross-autopilot top-match surface (see `best_matches`'s module doc for the
+/// recompute-vs-persist rationale). Thin I/O wrapper: every decision lives in
+/// the pure, unit-tested `compute_best_matches`; this only resolves the
+/// stores it needs and applies the one enrichment (`applied`) that can't be
+/// expressed as a pure input, mirroring `enrich_applied`'s own
+/// `ApplicationStore` read (a different row shape, so the pattern — not the
+/// fn — is reused here).
+#[tauri::command]
+pub fn autopilot_best_matches(app: AppHandle) -> Value {
+    let records = store(&app).lock().list();
+    let (tombstones, extra_agency) = snapshot_dedup_inputs(&app);
+
+    let dismissed_keys: HashSet<String> = app
+        .try_state::<Mutex<crate::postings::InteractionStore>>()
+        .map(|s| {
+            s.lock()
+                .list(Some("dismissed"))
+                .into_iter()
+                .map(|r| {
+                    crate::scraping::boards::common::canonical_job_key(&r.url, &r.title, &r.company)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut outcome = compute_best_matches(&records, &tombstones, &extra_agency, &dismissed_keys);
+
+    let applied_urls = app
+        .try_state::<crate::applications::ApplicationStore>()
+        .map(|s| s.applied_job_urls())
+        .unwrap_or_default();
+    if !applied_urls.is_empty() {
+        for row in &mut outcome.matches {
+            row.applied = applied_urls.contains(&crate::applications::normalize_job_url(&row.url));
+        }
+    }
+
+    json!({
+        "matches": outcome.matches,
+        "total": outcome.total,
+        "autopilotCount": outcome.autopilot_count,
+    })
+}
+
 // Helper functions
 
 /// `JobPosting.source` of the aggregator board (Adzuna → JSearch). Adzuna caps
@@ -802,6 +846,14 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
 // test module below — exactly as they were before the move.
 mod rerank;
 use rerank::*;
+
+// ── Best Matches: cross-autopilot top-match surface ────────────────────────
+//
+// Same LOC-cap reasoning as `rerank` above (see that module's doc for the
+// pattern); see `best_matches`'s own module doc for why membership is
+// recomputed here rather than persisted.
+mod best_matches;
+use best_matches::*;
 
 /// Whether a posting passes the autopilot's keyword filters: it must contain
 /// **all** must-include keywords and **none** of the exclude keywords, matched
