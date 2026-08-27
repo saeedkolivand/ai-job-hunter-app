@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787603170483,
+  "lastUpdate": 1787869683180,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "abf8f2bdbe5b161ceb35530319107922fe25e842",
-          "message": "feat: source the settings changelog from the bundled changelog file (#640)\n\n* feat: source the settings changelog from the bundled changelog file\n\nupdater_changelog previously fetched api.github.com/.../releases on every\nSettings changelog view. It now parses the repo's own CHANGELOG.md, bundled\ninto the binary at compile time via include_str! (Cargo tracks it for\nrebuilds like any other source dependency, no build.rs needed).\n\nThe changelog works fully offline now and removes a per-release GitHub API\ncall the app was making beyond the single on-launch version check that\ndocs/adr/0005-network-egress-privacy-boundary.md already accounts for.\n\nRelease-ordering check: the release job's semantic-release run commits\nCHANGELOG.md and tags vX.Y.Z in one step (.releaserc.json); the separate\nbuild-installers job later checks out that exact tag (.github/workflows/release.yml),\nso the shipped binary's bundled changelog always includes its own version's\nentry with no lag.\n\nThe IPC response shape (ChangelogResult/ChangelogRelease) is unchanged, so\nthe renderer (update-section, useChangelog) needed no changes.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: render changelog dates as local calendar dates\n\nDate-only publishedAt parsed as UTC midnight, showing the previous day west of UTC.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-14T22:26:49+02:00",
-          "tree_id": "5e923fd0b1b8aee6b0b99e8417a386e0b741b6c8",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/abf8f2bdbe5b161ceb35530319107922fe25e842"
-        },
-        "date": 1784061350405,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2139936,
-            "range": "± 22016",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2590873,
-            "range": "± 76866",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 287621,
-            "range": "± 5254",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 306183,
             "range": "± 5562",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9bfb174a8d3daa84004183988c0463f46cb0f669",
+          "message": "feat(autopilot): surface the strongest jobs across every autopilot in one place (#1083)\n\n* feat(autopilot): add cross-autopilot best-matches backend (phase 1)\n\nAdds the shared MATCH_TIER_CUTS constant (generated to Rust), the\ndismissed interaction type, the AutopilotContract.bestMatches wire\ncontract, and the autopilot_best_matches command that clusters every\nnon-archived autopilot's found jobs at query time and qualifies them\nagainst their own score kernel's tier cut. Renderer wiring is phase 2.\n\n* fix(shared): export the best-match wire types and harden the tier emitter\n\nThe contracts barrel re-exports a named list rather than `export *`, so the\nthree new AutopilotBestMatch* types never reached `@ajh/shared` and every\nconsumer failed to typecheck. Found by review, not by the pre-push hook, which\nruns gen:ipc:check but not typecheck from a consumer package.\n\ngenMatchTiers hardcoded four const names and built each f64 by concatenating\n\".0\", so a fractional cut point would emit invalid Rust and a new variant on\nMATCH_TIER_CUTS would be dropped silently — gen:ipc:check regenerates from the\nsame function, so it would compare the omission against itself and stay green.\nFormat with toFixed(1) and assert the variant set, verified by mutation.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(autopilot): stop found-job views colliding on the viewed badge\n\nInteractionStore::upsert keys on (job_id, interaction_type); scrape_persist_job\ndefaults job_id to \"\" when absent. AutopilotCard.handleJobClick never sent an\nid, so every autopilot found job collapsed onto the same (\"\", \"viewed\") slot\nand only the most-recently-opened job ever showed the Viewed badge. Pass\njob.url as the id, mirroring how the rest of the app keys interactions.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* refactor(autopilot): consume the shared match-tier cut points in scoretier\n\nmatch-band.tsx hardcoded the 55/30 and 75/50 band cut points; import the\nsingle shared MATCH_TIER_CUTS source (now also the Rust autopilot_best_matches\nqualification bar) instead of a second literal copy that could drift.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* feat(autopilot): wire the best-matches ipc channel through the renderer\n\n- tauri-client autopilot namespace: bestMatches() -> invoke('autopilot_best_matches')\n- mock-client: bestMatches stub (unblocks typecheck against Phase 1's contract)\n- query-client: keys.autopilot.bestMatches, a deliberate CHILD of\n  keys.autopilot.all so every existing autopilot invalidation refreshes it by\n  prefix match with no extra wiring\n- use-autopilot: useBestMatches() service hook\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* refactor: point at the relocated salary-formatter import path\n\napps/desktop/src/renderer/lib/salary.ts moved to lib/format-salary.ts in\n7051055b (folded into that commit's staged changes from a shared worktree) so\na second feature (BestMatchRow) can reuse it without an illegal\nfeatures/applications -> features/best-matches cross-feature import. Update\nthe two references that still pointed at the old path.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* feat(best-matches): add the cross-autopilot best-matches page and preview\n\nNew /best-matches route: sort by score (backend order, untouched) / newest /\nsalary, honest empty states (no autopilot has run vs. nothing has cleared the\ntier bar yet), a truncated notice when the backend capped the list, and a\nsalary-coverage caption on the salary sort. Row actions (View/Save/Apply/\nDismiss) and the \"Found by\" source chip -> /autopilot focus jump are shared\nwith the /autopilot top-3 preview strip via one BestMatchRow component\n(components/job/, since features/autopilot may not import features/best-matches)\nand one useBestMatchActions hook.\n\nDismiss hides the row optimistically (mirrors useRemoveAutopilot's own\noptimistic-delete pattern) with an inline \"Dismissed — Undo\" row, and its\npersistJob payload carries id + url + title + company — Rust matches a\ndismissal by deriving canonical_job_key(url, title, company) against every\ncluster member's own key, so a payload missing any of those never matches and\nthe row never disappears.\n\nApply resolves the source autopilot from sources[0].autopilotId against the\nuseAutopilots() cache and reuses use-apply-to-found-job.ts (lifted separately).\n\nAll scraped/LLM-generated fields (title, company, location, salaryCurrency,\nassistantNotes) render as plain JSX text nodes, never dangerouslySetInnerHTML;\nurl only ever reaches useOpenExternal, never a raw href.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* feat(autopilot): surface the best-matches preview above the found-jobs list\n\nRenders <BestMatchesPreview /> after the error banner, before the card list\n(renders nothing itself while there are no qualifying matches). Also switches\nhandleApply to the newly-lifted useApplyToFoundJob hook, so /autopilot and\n/best-matches share exactly one Apply implementation instead of a second copy\nthat could drift.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(dashboard): exclude dismissed interactions from total tracked\n\nuseInteractions() with no filter returns every interaction type, so the\ndashboard's \"Total tracked\" tile was about to start counting the new\ndismissed type once best-matches ships it — inflating the headline number for\na job the user explicitly rejected, and silencing the empty-state hint\nwhenever only dismissals were present. Filter to an explicit allowlist\n(viewed/opened/applied/bookmarked) instead of \"everything except dismissed\",\nso a future sixth type needs a deliberate decision here too.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(documents): localize the dismissed activity-feed badge\n\nINTERACTION_TYPES had entries for applied/viewed/bookmarked only; a dismissed\nrecord fell through InteractionRow's forward-compat fallback and rendered the\nraw English word \"dismissed\" in every locale, once best-matches starts\nwriting that interaction type. Add the missing config entry (labelKey + icon\n+ colours), localized in en/de.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* feat(i18n): add best-matches copy and the dismissed activity label\n\nNew bestMatches.* sub-tree + nav.bestMatches for the /best-matches page and\npreview strip, and resumes.activity.dismissed for the Activity feed's\ndismissed badge. Real German throughout, not English placeholders.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: regenerate api.md for the autopilot best-matches method\n\nPhase 1 added the bestMatches contract method (with TSDoc) but did not run\npnpm gen:api; docs/API.md was stale. Regenerated, no hand edits.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(best-matches): stop the dismiss success invalidation from killing undo\n\nhandleDismiss invalidated keys.autopilot.all on a successful persist. That\ninvalidation is a prefix match on keys.autopilot.bestMatches, so it forced an\nimmediate refetch — and the dismiss write is a local JSON persist that\nresolves in milliseconds, long before a user could ever reach for undo.\ncompute_best_matches already excludes a dismissed job from that refetch, so\nthe row was evicted from the query cache entirely; undoDismiss then deleted a\nkey from dismissedKeys for a row that no longer existed anywhere to render.\nAn affordance that renders but does nothing is worse than not shipping one.\n\nThe optimistic local hide is sufficient on its own: the backend is already\nauthoritative, so any natural refetch this hook doesn't force (a remount, a\nroute change, another autopilot mutation) reflects the dismissal once it\nhappens. Local state and the backend only ever disagree about *when* the row\nleaves, never *whether* it does. Dropped the success invalidation entirely.\n\nChecked handleView/handleSave for the same shape of problem: neither\nparticipates in compute_best_matches's qualification predicate, so there was\nnothing to invalidate — confirmed with dedicated tests, not by omission.\n\nThe old dismiss test asserted only that dismissedKeys gained then lost a\nkey — true even with the feature fully broken (a pure useState-setter test).\nReplaced/added:\n  - a unit test asserting no success callback is wired to the dismiss\n    mutation at all\n  - use-best-match-actions.dismiss-undo.test.tsx: a real-QueryClient,\n    real-AppClient integration test that renders the row, dismisses it,\n    asserts it's gone, clicks undo, and asserts it's visible again, with a\n    mock backend that (like compute_best_matches) excludes a dismissed job\n    from any later fetch\n\nMutation-verified: reintroduced the exact success invalidation, reran the\nnew integration test — red, failing even earlier than expected (the\noptimistic placeholder assertion itself fails, since the invalidation-driven\nrefetch evicts the row before that assertion runs, not just before undo).\nRestored the fix, reran — green. Full desktop suite green.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(autopilot): fix cross-scale scoring and cluster-id collisions in best matches\n\nThree independent reviews of the best-matches command found the same two\nroot causes: best-member selection and the row sort both compared a\nCombined semantic score against a Keyword coverage score on one raw axis,\nand canonical_job_key collisions across title/company blocks let unrelated\npostings share a cluster id. Both are fixed structurally - member/row\nordering now goes through the shared ADR-020 two-block rule, and the union\nis deduped by canonical_job_key before clustering ever runs, which also\nremoves a second full-struct clone of every found job. Also fixes: the\nuntested dismissed interaction type, applied-status matching only the\ncanonical url instead of every board copy, the command blocking the IPC\nthread instead of running via spawn_blocking, and several undertested\ncontract clauses (foundAt earliest, autopilotCount, tombstone veto, exact\nscore-cut boundaries).\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: close best-matches feature (adr-036, automation-domain update)\n\nAdd adr-036 documenting cross-autopilot best-matches query-time clustering\nwith two-block ranking (combined block first, then keyword), union dedup by\ncanonical_job_key, per-member qualification against own kernel's high cut,\npaused autopilot inclusion, and per-member dismissal identity.\n\nUpdate automation-domain.md with best matches subsection covering ipc contract,\nrust command (clustering, filtering, sorting), renderer surfaces (route, sort\noptions, dismiss action), and query-key strategy (prefix invalidation).\n\nAdd adr-036 to decision-records index in readme.md.\n\nAll validation gates pass: check:adr-citations ok, check:agent-system ok.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(autopilot): read best-matches assistant notes from the canonical member\n\nassistant_notes previously read whichever cluster member came first in\ninput order, which on a merged cross-autopilot row could surface a note\nwritten against a different autopilot's resume/provider context with no\nprovenance on the payload. Now prefers canonical, then best-scored, then\nany member, matching every other display field.\n\nAlso adds a regression test pinning is_degenerate_key's guard (deleting\nit does not fail any existing test) and corrects the clusterMembers\nTSDoc, which claimed the list excludes the canonical copy when the\nbackend always includes it -- the completeness dismiss-matching relies on.\n\n* docs: point at the payload cap and say non-archived, not active\n\nThe living automation-domain page copied the 100-row cap as a literal, which\nrule 17 exists to stop: tuning BEST_MATCHES_CAP would have left the page\nasserting a number the code no longer uses. Point at the constant instead.\n\nBoth pages also said \"active autopilots\" where the contract means non-archived\n— paused autopilots contribute, so \"active\" understated the source ceiling.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(best-matches): make undo actually reverse a dismissal\n\nUndo only removed a local dismissedKeys entry, so the persisted\ndismissed interaction survived every refetch/remount and the row kept\ndisappearing. Add InteractionStore::remove and a\nscrape.removeInteraction IPC round trip, then wire undoDismiss to call\nit (keyed on the same job url the dismiss wrote) and invalidate\nautopilot on success so the row genuinely comes back.\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-28T00:04:31+02:00",
+          "tree_id": "e319d03d444cdd9da75e1bf6cdc3886e2bce5fd3",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9bfb174a8d3daa84004183988c0463f46cb0f669"
+        },
+        "date": 1787869683017,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2195056,
+            "range": "± 18268",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2548474,
+            "range": "± 18093",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 297096,
+            "range": "± 5749",
             "unit": "ns/iter"
           }
         ]
