@@ -25,6 +25,7 @@
     "build": "Resume Builder",
     "jobs": "Jobs",
     "autopilot": "Autopilot",
+    "bestMatches": "Best Matches",
     "documents": "Documents",
     "resumes": "Resumes",
     "monitoring": "Monitoring",
@@ -2199,6 +2200,43 @@
       "found": "Found"
     }
   },
+  "bestMatches": {
+    "title": "Best Matches",
+    "subtitle": "Top-scoring jobs across every autopilot, in one place.",
+    "viewAll": "View all {{count}} →",
+    "errorTitle": "Couldn't load best matches",
+    "errorDescription": "Something went wrong loading this list. Try again.",
+    "sort": {
+      "label": "Sort",
+      "score": "Score",
+      "newest": "Newest",
+      "salary": "Salary"
+    },
+    "truncated": "Showing {{shown}} of {{total}} qualifying matches",
+    "salaryCaption": "{{count}} of {{total}} rows report a salary — most boards don't",
+    "row": {
+      "view": "View",
+      "save": "Save",
+      "apply": "Apply",
+      "dismiss": "Dismiss",
+      "dismissed": "Dismissed",
+      "undo": "Undo",
+      "dismissFailed": "Couldn't dismiss this job. Please try again.",
+      "discovered": "Discovered {{time}}",
+      "foundBy": "Found by: \"{{name}}\"",
+      "pausedSuffix": " (paused)"
+    },
+    "empty": {
+      "noRuns": {
+        "title": "No best matches yet",
+        "description": "None of your autopilots have run yet — run one to start finding and scoring jobs. The strongest matches across every autopilot will show up here."
+      },
+      "noneQualified": {
+        "title": "Nothing has cleared the bar yet",
+        "description": "Your autopilots are running, but no job has scored high enough to qualify yet. Check back after the next run, or loosen an autopilot's match-score filter."
+      }
+    }
+  },
   "dashboard": {
     "welcome": "Welcome back",
     "subtitle": "Your local AI co-pilot for jobs, resumes, and documents.",
@@ -2504,6 +2542,7 @@
       "applied": "Applied",
       "viewed": "Viewed",
       "bookmarked": "Bookmarked",
+      "dismissed": "Dismissed",
       "empty": "No activity yet",
       "emptyDesc": "Jobs you view, bookmark, or apply to will appear here."
     },
