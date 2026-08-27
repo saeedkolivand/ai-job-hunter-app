@@ -63,6 +63,17 @@ impl Drop for RunGuard {
     }
 }
 
+/// Snapshot the set of normalized job urls that already have an Application
+/// past `saved` (ADR 0001) — the one shared read `enrich_applied` and
+/// `autopilot_best_matches` both need, expressed once instead of twice.
+/// Best-effort: a missing store yields an empty set (nothing reads as
+/// applied), never a failure.
+fn applied_job_urls(app: &AppHandle) -> HashSet<String> {
+    app.try_state::<crate::applications::ApplicationStore>()
+        .map(|s| s.applied_job_urls())
+        .unwrap_or_default()
+}
+
 /// Fill each found job's `applied` from the set of `job_url`s that have a saved
 /// generation — so the badge reflects a real link (a generation exists for that
 /// job) rather than a hand-set flag that could drift.
@@ -71,10 +82,7 @@ fn enrich_applied(app: &AppHandle, list: &mut [crate::autopilot::Autopilot]) {
     // counts as applied when it has an Application whose status is past `saved`.
     // The set is keyed by the SAME normalization the store applies on write, so
     // found-job urls must be normalized before the membership check below.
-    let applied = app
-        .try_state::<crate::applications::ApplicationStore>()
-        .map(|s| s.applied_job_urls())
-        .unwrap_or_default();
+    let applied = applied_job_urls(app);
     if applied.is_empty() {
         return;
     }
@@ -712,10 +720,48 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 /// expressed as a pure input, mirroring `enrich_applied`'s own
 /// `ApplicationStore` read (a different row shape, so the pattern — not the
 /// fn — is reused here).
+///
+/// Genuinely `async` + `spawn_blocking` (M4), not just the `async` keyword:
+/// a plain sync `#[tauri::command]` fn runs INLINE on whichever thread
+/// received the IPC call (the UI event-loop thread for a desktop webview —
+/// see `commands::resume::resume_validate_content`'s doc for the traced
+/// proof there is no Tauri-provided blocking pool for it), and clustering
+/// the union is real CPU work: measured quadratic in the largest
+/// title/company block (3.03s at 2000 items, 12.3s at 4000), unbounded
+/// because `found_jobs` is never truncated.
+///
+/// On a `JoinError` this degrades to an empty result rather than propagating
+/// — matching every other best-effort resolution in this command (a missing
+/// store also degrades to an empty result). The join failure itself is
+/// logged as a fixed category (`panicked` / `cancelled` / `failed`) — NEVER
+/// the error's own `Display`: a `JoinError`'s panic-case message carries the
+/// panic payload, arbitrary formatted text from whatever panicked inside a
+/// closure that walks the user's data directory, which is exactly the shape
+/// AGENTS.md's path-privacy rule exists to stop. The category is also the
+/// only distinction anything here would act on differently, so nothing is
+/// lost by not interpolating the raw error.
 #[tauri::command]
-pub fn autopilot_best_matches(app: AppHandle) -> Value {
-    let records = store(&app).lock().list();
-    let (tombstones, extra_agency) = snapshot_dedup_inputs(&app);
+pub async fn autopilot_best_matches(app: AppHandle) -> Value {
+    tauri::async_runtime::spawn_blocking(move || autopilot_best_matches_blocking(&app))
+        .await
+        .unwrap_or_else(|e| {
+            // `tauri::async_runtime::spawn_blocking`'s error is `tauri::Error`,
+            // which only ever wraps a `tokio::task::JoinError` for this call —
+            // matched out here rather than trusting `From` to have produced
+            // anything else.
+            let category = match &e {
+                tauri::Error::JoinError(je) if je.is_panic() => "panicked",
+                tauri::Error::JoinError(je) if je.is_cancelled() => "cancelled",
+                _ => "failed",
+            };
+            log::error!("[autopilot] best_matches task {category}");
+            json!({ "matches": [], "total": 0, "autopilotCount": 0 })
+        })
+}
+
+fn autopilot_best_matches_blocking(app: &AppHandle) -> Value {
+    let records = store(app).lock().list();
+    let (tombstones, extra_agency) = snapshot_dedup_inputs(app);
 
     let dismissed_keys: HashSet<String> = app
         .try_state::<Mutex<crate::postings::InteractionStore>>()
@@ -731,16 +777,7 @@ pub fn autopilot_best_matches(app: AppHandle) -> Value {
         .unwrap_or_default();
 
     let mut outcome = compute_best_matches(&records, &tombstones, &extra_agency, &dismissed_keys);
-
-    let applied_urls = app
-        .try_state::<crate::applications::ApplicationStore>()
-        .map(|s| s.applied_job_urls())
-        .unwrap_or_default();
-    if !applied_urls.is_empty() {
-        for row in &mut outcome.matches {
-            row.applied = applied_urls.contains(&crate::applications::normalize_job_url(&row.url));
-        }
-    }
+    mark_applied(&mut outcome.matches, &applied_job_urls(app));
 
     json!({
         "matches": outcome.matches,

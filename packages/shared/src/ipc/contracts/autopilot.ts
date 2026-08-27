@@ -109,7 +109,10 @@ export interface AutopilotBestMatchSource {
  * other board copies the way a `Posting`/`AutopilotFoundJob` row already does.
  */
 export interface AutopilotBestMatch {
-  /** Cluster id — the row's stable identity across refetches. */
+  /** Cluster id — usually stable across refetches, but the seed is chosen
+   *  over the UNION of every non-archived autopilot's found jobs, so
+   *  creating or archiving an autopilot can re-seed a block and change
+   *  `key` for an otherwise-unchanged job. */
   key: string;
   title: string;
   company: string;
@@ -140,8 +143,10 @@ export interface AutopilotBestMatch {
 
 /** Response shape for {@link AutopilotContract.bestMatches}. */
 export interface AutopilotBestMatchesResult {
-  /** Qualifying rows, pre-sorted (tier desc, score desc, key asc). Capped at a
-   *  fixed size — see {@link AutopilotContract.bestMatches}. */
+  /** Qualifying rows, pre-sorted: `combined`-scored rows first, then
+   *  `keyword`-scored ones (the two kernels are not on one scale), each
+   *  block ordered score desc, `key` asc. Capped at a fixed size — see
+   *  {@link AutopilotContract.bestMatches}. */
   matches: AutopilotBestMatch[];
   /** Qualifying count BEFORE the cap. `total > matches.length` means truncated. */
   total: number;

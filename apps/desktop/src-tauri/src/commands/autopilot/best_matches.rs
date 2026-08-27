@@ -22,10 +22,7 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::autopilot::{Autopilot, AutopilotStatus, FoundJob, ScoreSource};
-use crate::ipc_contracts::match_tiers::{
-    MATCH_TIER_COMBINED_HIGH, MATCH_TIER_COMBINED_MEDIUM, MATCH_TIER_COVERAGE_HIGH,
-    MATCH_TIER_COVERAGE_MEDIUM,
-};
+use crate::ipc_contracts::match_tiers::{MATCH_TIER_COMBINED_HIGH, MATCH_TIER_COVERAGE_HIGH};
 use crate::scraping::cluster::{assign_clusters, ClusterMemberRef};
 use crate::scraping::trust::TrustAssessment;
 
@@ -77,7 +74,7 @@ pub(super) struct BestMatchRow {
     pub(super) trust: Option<TrustAssessment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) assistant_notes: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) cluster_members: Vec<ClusterMemberRef>,
     pub(super) sources: Vec<BestMatchSource>,
 }
@@ -95,28 +92,13 @@ pub(super) struct BestMatchesOutcome {
     pub(super) autopilot_count: usize,
 }
 
-/// The (high, medium) cut-point pair for whichever kernel produced a score —
-/// read from the generated `MATCH_TIER_CUTS`-derived consts, never hardcoded,
-/// so this and the renderer's `scoreTier` can't disagree.
-fn cuts(source: ScoreSource) -> (f64, f64) {
+/// The High cut-point for whichever kernel produced a score — read from the
+/// generated `MATCH_TIER_CUTS`-derived consts, never hardcoded, so this and
+/// the renderer's `scoreTier` can't disagree.
+fn high_cut(source: ScoreSource) -> f64 {
     match source {
-        ScoreSource::Keyword => (MATCH_TIER_COVERAGE_HIGH, MATCH_TIER_COVERAGE_MEDIUM),
-        ScoreSource::Combined => (MATCH_TIER_COMBINED_HIGH, MATCH_TIER_COMBINED_MEDIUM),
-    }
-}
-
-/// 2 = High, 1 = Medium, 0 = Low — mirrors the renderer's `scoreTier`. Every
-/// row that survives [`qualifies`] is High by construction; kept as a real
-/// 3-way rank (not a bool) so the sort below stays correct if the
-/// qualification bar ever loosens to Medium-or-above.
-fn tier_rank(score: f64, source: ScoreSource) -> u8 {
-    let (high, medium) = cuts(source);
-    if score >= high {
-        2
-    } else if score >= medium {
-        1
-    } else {
-        0
+        ScoreSource::Keyword => MATCH_TIER_COVERAGE_HIGH,
+        ScoreSource::Combined => MATCH_TIER_COMBINED_HIGH,
     }
 }
 
@@ -124,7 +106,16 @@ fn tier_rank(score: f64, source: ScoreSource) -> u8 {
 /// Never a single shared threshold: a `keyword` 60 qualifies, a `combined` 60
 /// does not (coverage scores cluster lower than combined ones).
 fn qualifies(score: f64, source: ScoreSource) -> bool {
-    score >= cuts(source).0
+    score >= high_cut(source)
+}
+
+/// A `canonical_job_key` degrades to the empty string or the bare separator
+/// (`"\u{1}"`) when a record carries no url, title, or company at all (see
+/// `canonical_job_key`'s own url-less fallback). Treating either as a real
+/// identity would let ONE degenerate dismissed record veto EVERY other
+/// equally-degenerate cluster — never a job the user actually asked to hide.
+fn is_degenerate_key(key: &str) -> bool {
+    key.is_empty() || key == "\u{1}"
 }
 
 /// Compute the cross-autopilot best-matches list. Pure: every input the
@@ -144,38 +135,82 @@ pub(super) fn compute_best_matches(
         autopilot_id: String,
         autopilot_name: String,
         paused: bool,
+        /// THIS origin's own `found_at` — kept per-origin (not read off the
+        /// surviving `FoundJob` below) because two origins deduped onto the
+        /// same key can disagree about when THEY first saw it.
+        found_at: u64,
     }
 
     // Steps 1+2: flat-map every non-archived record's found jobs, tagging
-    // each with its origin. Paused records DO contribute — pause only stops
-    // an autopilot scraping, it doesn't forget what it already found.
-    let mut jobs: Vec<FoundJob> = Vec::new();
-    let mut origins: Vec<Origin> = Vec::new();
+    // each with its origin, then dedupe the UNION on `canonical_job_key`
+    // (H3) BEFORE clustering. Two different problems both need this: the
+    // ordinary case is the same posting surfacing under two autopilots; the
+    // dangerous one is the key itself colliding for two UNRELATED postings
+    // (an ATS whose job id lives in the query string —
+    // `applications/job_url.rs`). Either way, `assign_clusters`'s
+    // `cluster_id = items[seed].key` is only guaranteed unique WITHIN one
+    // title/company block — two items sharing a key can resolve in two
+    // DIFFERENT blocks and each seed its own cluster under the identical id
+    // string, and `by_cluster` (below) then silently unions them: whichever
+    // resolved first wins the display fields, and a `clusterMembers` entry
+    // can be duplicated once per contributing autopilot. Deduping to ONE
+    // entry per key here makes every surviving key globally unique, so that
+    // collision can no longer happen. Kept: the best-scored copy (block-aware
+    // — the same Combined-beats-Keyword rule a cluster's own representative
+    // uses below, so this step can't reintroduce that bug one level up), and
+    // EVERY origin (not just the winner's) is unioned — mirrors
+    // `merge_found_jobs`'s per-record dedupe, one level higher (across
+    // records instead of across runs).
+    let mut key_order: Vec<String> = Vec::new();
+    let mut by_key: HashMap<String, (&FoundJob, Vec<Origin>)> = HashMap::new();
     for ap in records
         .iter()
         .filter(|ap| ap.status != AutopilotStatus::Archived)
     {
         let paused = ap.status == AutopilotStatus::Paused;
         for job in &ap.found_jobs {
-            jobs.push(job.clone());
-            origins.push(Origin {
+            let key = crate::scraping::boards::common::canonical_job_key(
+                &job.url,
+                &job.title,
+                &job.company,
+            );
+            let origin = Origin {
                 autopilot_id: ap.id.clone(),
                 autopilot_name: ap.name.clone(),
                 paused,
-            });
+                found_at: job.found_at,
+            };
+            match by_key.get_mut(&key) {
+                Some((kept, origins)) => {
+                    if super::rerank::by_rank(job, kept) == std::cmp::Ordering::Less {
+                        *kept = job;
+                    }
+                    origins.push(origin);
+                }
+                None => {
+                    key_order.push(key.clone());
+                    by_key.insert(key, (job, vec![origin]));
+                }
+            }
         }
     }
 
-    if jobs.is_empty() {
+    if key_order.is_empty() {
         return BestMatchesOutcome::default();
     }
 
-    // Step 3+4: cluster inputs over the WHOLE union, then assign clusters —
-    // the SAME pair of calls `cluster_aware_retain` makes for one record.
-    let inputs = crate::autopilot::found_job_cluster_inputs(&jobs);
+    let jobs: Vec<&FoundJob> = key_order.iter().map(|k| by_key[k].0).collect();
+    let origins: Vec<&Vec<Origin>> = key_order.iter().map(|k| &by_key[k].1).collect();
+
+    // Step 3+4: cluster inputs over the WHOLE (now deduped) union, then
+    // assign clusters — the SAME pair of calls `cluster_aware_retain` makes
+    // for one record.
+    let inputs = crate::autopilot::found_job_cluster_inputs(jobs.iter().copied());
     let assignments = assign_clusters(inputs, tombstones, extra_agency);
 
-    // Step 5: group by cluster id.
+    // Step 5: group by cluster id. Safe to key straight off `cluster_id` now
+    // — every input key is globally unique post-dedupe, so two different
+    // blocks can never resolve to the same id.
     let mut by_cluster: HashMap<&str, Vec<usize>> = HashMap::new();
     for (i, a) in assignments.iter().enumerate() {
         by_cluster.entry(a.cluster_id.as_str()).or_default().push(i);
@@ -186,19 +221,18 @@ pub(super) fn compute_best_matches(
 
     for (cluster_id, idxs) in &by_cluster {
         // The best-scored member decides qualification, and its
-        // score/scoreSource/scoreProvisional travel to the row — mirrors
-        // `commands::autopilot::is_better_representative`'s own
-        // scored-beats-unscored, higher-beats-lower contract.
+        // score/scoreSource/scoreProvisional travel to the row — picked
+        // WITHIN one `score_source` block first (Combined beats Keyword
+        // regardless of the raw number), exactly `rerank::by_rank`'s own
+        // ordering. `is_better_representative`'s raw `a.score > b.score`
+        // compare is only sound single-scale (its one prior caller runs
+        // BEFORE the semantic re-rank); this cluster spans the whole union,
+        // where a Combined canonical and a Keyword aggregator copy are the
+        // NORM once semantic scoring is on (H1).
         let best_idx = idxs
             .iter()
             .copied()
-            .reduce(|acc, cand| {
-                if super::is_better_representative(&jobs[cand], &jobs[acc]) {
-                    cand
-                } else {
-                    acc
-                }
-            })
+            .min_by(|&a, &b| super::rerank::by_rank(jobs[a], jobs[b]))
             .expect("a cluster group from `by_cluster` is never empty");
 
         // Step 6: unscored clusters never qualify; scored ones must clear
@@ -215,8 +249,17 @@ pub(super) fn compute_best_matches(
         // identity drops the whole cluster — `members` already carries each
         // member's `canonical_job_key` (computed once by
         // `found_job_cluster_inputs`), so no extra key derivation is needed.
+        // Every index in `idxs` shares the SAME `members` list (attached
+        // identically to every member of a resolved cluster by
+        // `assign_clusters`), so reading it off `idxs[0]` is safe. A
+        // degenerate key (empty url/title/company) is skipped so one
+        // degenerate dismissed record can't veto every other equally
+        // degenerate cluster (L2).
         let members = &assignments[idxs[0]].members;
-        if members.iter().any(|m| dismissed_keys.contains(&m.key)) {
+        if members
+            .iter()
+            .any(|m| !is_degenerate_key(&m.key) && dismissed_keys.contains(&m.key))
+        {
             continue;
         }
 
@@ -226,13 +269,16 @@ pub(super) fn compute_best_matches(
             .copied()
             .find(|&i| assignments[i].canonical)
             .unwrap_or(idxs[0]);
-        let canonical = &jobs[canonical_idx];
+        let canonical = jobs[canonical_idx];
 
+        // EARLIEST discovery across every ORIGIN (not every deduped job) —
+        // two origins deduped onto the same key can carry different
+        // `found_at` values even though only one `FoundJob` survived above.
         let found_at = idxs
             .iter()
-            .map(|&i| jobs[i].found_at)
+            .flat_map(|&i| origins[i].iter().map(|o| o.found_at))
             .min()
-            .unwrap_or(canonical.found_at);
+            .expect("a cluster group has at least one origin");
         let assistant_notes = idxs.iter().find_map(|&i| jobs[i].assistant_notes.clone());
 
         // One `BestMatchSource` per distinct contributing autopilot — a
@@ -241,12 +287,13 @@ pub(super) fn compute_best_matches(
         let mut per_autopilot: std::collections::BTreeMap<&str, (&str, bool, u64)> =
             std::collections::BTreeMap::new();
         for &i in idxs {
-            let o = &origins[i];
-            per_autopilot
-                .entry(o.autopilot_id.as_str())
-                .and_modify(|(_, _, found_at)| *found_at = (*found_at).min(jobs[i].found_at))
-                .or_insert((o.autopilot_name.as_str(), o.paused, jobs[i].found_at));
-            contributing.insert(o.autopilot_id.as_str());
+            for o in origins[i] {
+                per_autopilot
+                    .entry(o.autopilot_id.as_str())
+                    .and_modify(|(_, _, found_at)| *found_at = (*found_at).min(o.found_at))
+                    .or_insert((o.autopilot_name.as_str(), o.paused, o.found_at));
+                contributing.insert(o.autopilot_id.as_str());
+            }
         }
         let sources: Vec<BestMatchSource> = per_autopilot
             .into_iter()
@@ -284,13 +331,17 @@ pub(super) fn compute_best_matches(
         });
     }
 
-    // Step 9: (tier desc, score desc, key asc). Every row here already
-    // cleared its own High cut, so `tier_rank` is currently a constant 2 —
-    // kept anyway (see its doc) rather than sorting on score alone.
+    // Step 9: ADR-020's two-block rule — `Combined` rows first, then
+    // `Keyword`, each block score-desc, `key` asc. Not a single cross-scale
+    // axis: every row here already cleared its OWN kernel's High cut, so a
+    // tier-desc-then-score-desc sort degenerates to a raw score compare — a
+    // `keyword` 95 is not "better" than a `combined` 80, they are not on the
+    // same scale. `score_block` is the exact rule `rerank::by_rank` uses to
+    // order `FoundJob`s, reused here (over `BestMatchRow`) instead of
+    // re-derived.
     rows.sort_by(|a, b| {
-        let ta = tier_rank(a.score, a.score_source);
-        let tb = tier_rank(b.score, b.score_source);
-        tb.cmp(&ta)
+        super::rerank::score_block(a.score_source)
+            .cmp(&super::rerank::score_block(b.score_source))
             .then_with(|| {
                 b.score
                     .partial_cmp(&a.score)
@@ -308,6 +359,27 @@ pub(super) fn compute_best_matches(
         matches: rows,
         total,
         autopilot_count,
+    }
+}
+
+/// Mark every row that already has an Application (ADR 0001) — checked
+/// against every `clusterMembers[i].url` (which always includes the
+/// canonical's own, since the canonical is itself one of the cluster's
+/// members), not just `row.url`. A row's canonical is picked by content
+/// richness (`has_description` etc.), not by which board copy the user
+/// actually clicked "Apply" from — checking only the canonical url missed a
+/// row applied to via a non-canonical copy (M2), leaving `applied: false`
+/// and inviting a duplicate application. Pure and unit-tested directly; the
+/// one I/O caller is `autopilot_best_matches`.
+pub(super) fn mark_applied(rows: &mut [BestMatchRow], applied: &HashSet<String>) {
+    if applied.is_empty() {
+        return;
+    }
+    for row in rows.iter_mut() {
+        row.applied = row
+            .cluster_members
+            .iter()
+            .any(|m| applied.contains(&crate::applications::normalize_job_url(&m.url)));
     }
 }
 
@@ -347,6 +419,14 @@ mod tests {
             cluster_members: Vec::new(),
             is_agency: false,
         }
+    }
+
+    /// `job()` above hardcodes `found_at: 0` (every existing fixture needs
+    /// it); this overrides it for the tests that actually exercise the
+    /// EARLIEST-across-sources rule.
+    fn job_found_at(mut j: FoundJob, found_at: u64) -> FoundJob {
+        j.found_at = found_at;
+        j
     }
 
     fn autopilot(id: &str, status: AutopilotStatus, found_jobs: Vec<FoundJob>) -> Autopilot {
@@ -398,6 +478,17 @@ mod tests {
         HashSet::new()
     }
 
+    /// Mirrors `scraping::cluster::mod::ordered_pair` (private to that
+    /// module) — the same `key_a <= key_b` canonical shape `DedupStore::pair`
+    /// enforces on write.
+    fn tombstone_pair(a: &str, b: &str) -> (String, String) {
+        if a <= b {
+            (a.to_string(), b.to_string())
+        } else {
+            (b.to_string(), a.to_string())
+        }
+    }
+
     #[test]
     fn same_listing_across_two_autopilots_merges_into_one_row_with_two_sources() {
         let a = autopilot(
@@ -431,6 +522,291 @@ mod tests {
         assert_eq!(out.matches[0].sources.len(), 2);
         assert_eq!(out.total, 1);
         assert_eq!(out.autopilot_count, 2);
+    }
+
+    #[test]
+    fn identical_url_from_two_autopilots_dedupes_cluster_members_to_one() {
+        // The EXACT same posting url, found independently by two autopilots.
+        // Before H3's pre-clustering dedupe this produced TWO identical
+        // `ClusterMemberRef`s (one per input item) even though there is only
+        // one real board copy — any `clusterMembers.length > 1` gate would
+        // misread that as "found on 2 boards".
+        let a = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://jobs.lever.co/acme/123",
+                "Rust Developer",
+                "Acme",
+                Some(80.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let b = autopilot(
+            "b",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://jobs.lever.co/acme/123",
+                "Rust Developer",
+                "Acme",
+                Some(85.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let out = compute_best_matches(&[a, b], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(out.matches.len(), 1);
+        assert_eq!(
+            out.matches[0].cluster_members.len(),
+            1,
+            "the identical url is ONE cluster member, not one per contributing autopilot"
+        );
+        assert_eq!(
+            out.matches[0].sources.len(),
+            2,
+            "both autopilots are still credited as sources"
+        );
+        assert_eq!(
+            out.matches[0].score, 85.0,
+            "the better-scored duplicate copy wins"
+        );
+    }
+
+    #[test]
+    fn best_scored_member_wins_within_its_own_scale_even_when_not_canonical() {
+        // Cluster = {canonical: combined 40, full JD, direct board}
+        //         u {non-canonical: keyword 60, aggregator snippet, no JD}.
+        // `resolve_block`'s canonical-preference (has_description desc,
+        // non-aggregator source first) picks the FIRST as canonical even
+        // though its raw number is lower than the second's — exactly the
+        // shape H1 broke: a raw cross-scale compare would have picked the
+        // higher-numbered keyword aggregator copy as the row's score,
+        // mislabeling a genuinely-scored semantic match as a much stronger
+        // "combined" number than the semantic kernel actually gave it. Both
+        // scores clear their OWN High cut, so the cluster still qualifies
+        // either way — this isolates the block-selection question from
+        // `qualifies`.
+        let combined_score = MATCH_TIER_COMBINED_HIGH + 1.0;
+        let keyword_score = MATCH_TIER_COVERAGE_HIGH + 35.0;
+        assert!(
+            keyword_score > combined_score,
+            "fixture assumption: the keyword number reads as \"better\" raw"
+        );
+        let canonical_job = FoundJob {
+            description: Some("full JD text".into()),
+            board: Some("greenhouse".into()),
+            ..job(
+                "https://x.example.com/job",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(combined_score),
+                ScoreSource::Combined,
+            )
+        };
+        let aggregator_copy = FoundJob {
+            description: None,
+            board: Some(crate::scraping::boards::aggregator::AGGREGATOR_BOARD_ID.into()),
+            ..job(
+                "https://agg.example.com/job?id=1",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(keyword_score),
+                ScoreSource::Keyword,
+            )
+        };
+        let ap = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![canonical_job, aggregator_copy],
+        );
+        let out = compute_best_matches(&[ap], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(
+            out.matches.len(),
+            1,
+            "identical title+company joins one cluster"
+        );
+        let row = &out.matches[0];
+        assert_eq!(
+            row.score_source,
+            ScoreSource::Combined,
+            "Combined beats Keyword regardless of the raw number"
+        );
+        assert_eq!(row.score, combined_score);
+        assert_eq!(
+            row.board.as_deref(),
+            Some("greenhouse"),
+            "display fields still come from the CANONICAL member, not the best-scored one"
+        );
+    }
+
+    #[test]
+    fn combined_block_sorts_before_keyword_block_regardless_of_raw_score() {
+        let keyword_score = MATCH_TIER_COVERAGE_HIGH + 40.0;
+        let combined_score = MATCH_TIER_COMBINED_HIGH + 5.0;
+        let hot_keyword = autopilot(
+            "hk",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://k.example.com/job",
+                "A Engineer",
+                "AltCo",
+                Some(keyword_score),
+                ScoreSource::Keyword,
+            )],
+        );
+        let modest_combined = autopilot(
+            "mc",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://c.example.com/job",
+                "B Engineer",
+                "BravoCo",
+                Some(combined_score),
+                ScoreSource::Combined,
+            )],
+        );
+        let out = compute_best_matches(
+            &[hot_keyword, modest_combined],
+            &no_tombstones(),
+            &[],
+            &no_dismissed(),
+        );
+        assert_eq!(out.matches.len(), 2);
+        assert_eq!(
+            out.matches[0].score_source,
+            ScoreSource::Combined,
+            "the combined block sorts FIRST even though its raw number ({combined_score}) is \
+             lower than the keyword row's ({keyword_score}) — the two axes are not comparable"
+        );
+        assert_eq!(out.matches[1].score_source, ScoreSource::Keyword);
+    }
+
+    #[test]
+    fn tombstone_veto_splits_a_cross_autopilot_near_duplicate_into_two_rows() {
+        let key_a = crate::scraping::boards::common::canonical_job_key(
+            "https://a.example.com/job1",
+            "Senior Rust Engineer",
+            "Acme",
+        );
+        let key_b = crate::scraping::boards::common::canonical_job_key(
+            "https://b.example.com/job2",
+            "Senior Rust Engineer",
+            "Acme",
+        );
+        let a = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://a.example.com/job1",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(90.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let b = autopilot(
+            "b",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://b.example.com/job2",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(85.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let tombstones: HashSet<(String, String)> =
+            [tombstone_pair(&key_a, &key_b)].into_iter().collect();
+        let out = compute_best_matches(&[a, b], &tombstones, &[], &no_dismissed());
+        assert_eq!(
+            out.matches.len(),
+            2,
+            "a tombstoned pair never joins, even across autopilots"
+        );
+        assert_eq!(out.total, 2);
+        for row in &out.matches {
+            assert_eq!(row.sources.len(), 1);
+        }
+    }
+
+    #[test]
+    fn autopilot_count_excludes_non_contributing_autopilots() {
+        let a = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://a.example.com/job",
+                "Data Engineer",
+                "AlphaCo",
+                Some(90.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let b = autopilot(
+            "b",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://b.example.com/job",
+                "Data Scientist",
+                "BetaCo",
+                Some(90.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let c = autopilot(
+            "c",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://c.example.com/job",
+                "Data Analyst",
+                "GammaCo",
+                Some(10.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let out = compute_best_matches(&[a, b, c], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(out.matches.len(), 2);
+        assert_eq!(
+            out.autopilot_count, 2,
+            "an autopilot with zero qualifying rows doesn't count"
+        );
+    }
+
+    #[test]
+    fn found_at_is_the_earliest_across_cluster_members() {
+        let a = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![job_found_at(
+                job(
+                    "https://a.example.com/job",
+                    "Senior Rust Engineer",
+                    "Acme",
+                    Some(90.0),
+                    ScoreSource::Keyword,
+                ),
+                500,
+            )],
+        );
+        let b = autopilot(
+            "b",
+            AutopilotStatus::Active,
+            vec![job_found_at(
+                job(
+                    "https://b.example.com/job",
+                    "Senior Rust Engineer",
+                    "Acme",
+                    Some(80.0),
+                    ScoreSource::Keyword,
+                ),
+                100,
+            )],
+        );
+        let out = compute_best_matches(&[a, b], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(out.matches.len(), 1);
+        assert_eq!(
+            out.matches[0].found_at, 100,
+            "row found_at is the EARLIEST across all sources, not the best-scored member's own"
+        );
     }
 
     #[test]
@@ -471,6 +847,15 @@ mod tests {
 
     #[test]
     fn qualification_cut_depends_on_score_source() {
+        // A score that clears the (lower) coverage cut but not the (higher)
+        // combined cut — derived from the consts so this stays correct if
+        // either cut moves (both are documented "not calibrated"), rather
+        // than pinning today's specific numbers.
+        let score = MATCH_TIER_COVERAGE_HIGH + 1.0;
+        assert!(
+            score < MATCH_TIER_COMBINED_HIGH,
+            "fixture assumption: the coverage High cut sits below the combined one"
+        );
         let keyword_ap = autopilot(
             "k",
             AutopilotStatus::Active,
@@ -478,7 +863,7 @@ mod tests {
                 "https://k.example.com/job",
                 "Data Engineer",
                 "KeyCo",
-                Some(60.0),
+                Some(score),
                 ScoreSource::Keyword,
             )],
         );
@@ -489,7 +874,7 @@ mod tests {
                 "https://c.example.com/job",
                 "Data Engineer II",
                 "CombCo",
-                Some(60.0),
+                Some(score),
                 ScoreSource::Combined,
             )],
         );
@@ -502,9 +887,50 @@ mod tests {
         assert_eq!(
             out.matches.len(),
             1,
-            "a 60 keyword row qualifies, a 60 combined row does not"
+            "a coverage-qualifying score does not also qualify under the combined cut"
         );
         assert_eq!(out.matches[0].score_source, ScoreSource::Keyword);
+    }
+
+    #[test]
+    fn qualifies_at_the_exact_high_cut_for_both_kernels() {
+        // The boundary is reachable in practice (coverage is a `matched /
+        // total * 100` percentage, so an exact 55.0 is a real score) and the
+        // renderer's `scoreTier` uses `>=` too — both must agree at the cut,
+        // not just above it.
+        let keyword_ap = autopilot(
+            "k",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://k.example.com/job",
+                "Data Engineer",
+                "KeyCo",
+                Some(MATCH_TIER_COVERAGE_HIGH),
+                ScoreSource::Keyword,
+            )],
+        );
+        let combined_ap = autopilot(
+            "c",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://c.example.com/job",
+                "Data Engineer II",
+                "CombCo",
+                Some(MATCH_TIER_COMBINED_HIGH),
+                ScoreSource::Combined,
+            )],
+        );
+        let out = compute_best_matches(
+            &[keyword_ap, combined_ap],
+            &no_tombstones(),
+            &[],
+            &no_dismissed(),
+        );
+        assert_eq!(
+            out.matches.len(),
+            2,
+            "a score exactly AT the High cut qualifies, for both kernels"
+        );
     }
 
     #[test]
@@ -532,6 +958,51 @@ mod tests {
             "a dismissed url's cluster never qualifies"
         );
         assert_eq!(out.total, 0);
+    }
+
+    #[test]
+    fn dismissed_key_on_a_non_canonical_member_still_drops_the_cluster() {
+        // A two-member cluster where the dismissed identity belongs to the
+        // NON-canonical copy — `dismissed_url_is_dropped` above uses a
+        // single-member cluster where the only member IS the canonical, so
+        // it can't tell a per-member scan apart from a
+        // `dismissed_keys.contains(cluster_id)` shortcut. This can.
+        let canonical_job = FoundJob {
+            description: Some("full JD".into()),
+            ..job(
+                "https://x.example.com/job",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(90.0),
+                ScoreSource::Keyword,
+            )
+        };
+        let dup_url = "https://agg.example.com/job?id=9";
+        let dup_title = "Senior Rust Engineer";
+        let dup_company = "Acme";
+        let non_canonical = FoundJob {
+            description: None,
+            ..job(
+                dup_url,
+                dup_title,
+                dup_company,
+                Some(60.0),
+                ScoreSource::Keyword,
+            )
+        };
+        let ap = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![canonical_job, non_canonical],
+        );
+        let dismissed_key =
+            crate::scraping::boards::common::canonical_job_key(dup_url, dup_title, dup_company);
+        let dismissed: HashSet<String> = [dismissed_key].into_iter().collect();
+        let out = compute_best_matches(&[ap], &no_tombstones(), &[], &dismissed);
+        assert!(
+            out.matches.is_empty(),
+            "dismissing the NON-canonical copy's own identity still drops the whole cluster"
+        );
     }
 
     #[test]
@@ -573,5 +1044,57 @@ mod tests {
         let out = compute_best_matches(&[ap], &no_tombstones(), &[], &no_dismissed());
         assert!(out.matches.is_empty());
         assert_eq!(out.total, 0);
+    }
+
+    #[test]
+    fn mark_applied_matches_a_non_canonical_board_copy() {
+        // The canonical url is the direct-board copy; the user actually
+        // applied through the Adzuna redirect, a NON-canonical member
+        // (M2). Checking only `row.url` would miss this.
+        let ap = autopilot(
+            "m",
+            AutopilotStatus::Active,
+            vec![
+                FoundJob {
+                    description: Some("full JD".into()),
+                    ..job(
+                        "https://direct.example.com/job",
+                        "Senior Rust Engineer",
+                        "Acme",
+                        Some(90.0),
+                        ScoreSource::Keyword,
+                    )
+                },
+                FoundJob {
+                    description: None,
+                    board: Some(crate::scraping::boards::aggregator::AGGREGATOR_BOARD_ID.into()),
+                    ..job(
+                        "https://redirect.example.com/job?id=1",
+                        "Senior Rust Engineer",
+                        "Acme",
+                        Some(60.0),
+                        ScoreSource::Keyword,
+                    )
+                },
+            ],
+        );
+        let out = compute_best_matches(&[ap], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(out.matches.len(), 1);
+        assert_eq!(
+            out.matches[0].url, "https://direct.example.com/job",
+            "the canonical (richer) copy is the direct-board one"
+        );
+
+        let mut matches = out.matches;
+        let applied: HashSet<String> = [crate::applications::normalize_job_url(
+            "https://redirect.example.com/job?id=1",
+        )]
+        .into_iter()
+        .collect();
+        mark_applied(&mut matches, &applied);
+        assert!(
+            matches[0].applied,
+            "applied via a non-canonical cluster member still marks the row applied"
+        );
     }
 }

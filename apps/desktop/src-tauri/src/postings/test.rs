@@ -271,6 +271,7 @@ fn attach_interactions_clamps_unknown_interaction_type_to_viewed() {
         interaction("1", "garbage"),
         interaction("1", "applied"),
         interaction("1", "opened"),
+        interaction("1", "dismissed"),
     ];
 
     let joined = attach_interactions(&items, &interactions);
@@ -285,8 +286,9 @@ fn attach_interactions_clamps_unknown_interaction_type_to_viewed() {
         .collect();
     assert_eq!(
         types,
-        ["viewed", "applied", "opened"],
-        "an unknown type is coerced to \"viewed\"; valid types pass through unchanged"
+        ["viewed", "applied", "opened", "dismissed"],
+        "an unknown type is coerced to \"viewed\"; valid types (including \"dismissed\",
+        load-bearing for Best Matches' dismiss filter) pass through unchanged"
     );
 }
 

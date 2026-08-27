@@ -1202,8 +1202,17 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
 /// always `None` on this path — a `FoundJob` has no posting id, so there is no
 /// cached embedding to look up (the string path is structurally primary here,
 /// ADR-029 §c). `pub(crate)` so the L3 retain pass reuses the exact projection.
-pub(crate) fn found_job_cluster_inputs(jobs: &[FoundJob]) -> Vec<ClusterInput> {
-    jobs.iter()
+///
+/// Generic over anything that yields `&FoundJob` (a slice reference, `.iter()`,
+/// or any other borrowing iterator) rather than `&[FoundJob]` specifically —
+/// `commands::autopilot::best_matches::compute_best_matches` builds its union
+/// as `Vec<&FoundJob>` (borrowing straight from the already-owned autopilot
+/// records) so this projection never forces a second full-struct clone of
+/// every found job just to feed it.
+pub(crate) fn found_job_cluster_inputs<'a>(
+    jobs: impl IntoIterator<Item = &'a FoundJob>,
+) -> Vec<ClusterInput> {
+    jobs.into_iter()
         .map(|j| ClusterInput {
             key: merge_key(j),
             title: j.title.clone(),
@@ -1230,7 +1239,7 @@ fn cluster_found_jobs(
     tombstones: &HashSet<(String, String)>,
     extra_agency: &[String],
 ) -> Vec<ClusterAssignment> {
-    let inputs = found_job_cluster_inputs(jobs);
+    let inputs = found_job_cluster_inputs(jobs.iter());
     let assignments = assign_clusters(inputs, tombstones, extra_agency);
     for (job, assignment) in jobs.iter_mut().zip(assignments.iter()) {
         job.cluster_id = Some(assignment.cluster_id.clone());
