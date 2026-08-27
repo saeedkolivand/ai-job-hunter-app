@@ -572,6 +572,45 @@ describe('AutopilotCard — handleJobClick', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// handleJobClick — persistJob `id` (regression: InteractionStore::upsert keys
+// on (job_id, interaction_type); job_id defaults to "" server-side, so every
+// autopilot found job without an id collided on the SAME slot and only the
+// most-recently-opened job ever showed the Viewed badge — .claude/scratch/
+// best-matches.md's "known trap".)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — handleJobClick persistJob id (viewed-badge collision regression)', () => {
+  it('two distinct found jobs produce two distinct persistJob payload ids', async () => {
+    const user = userEvent.setup();
+    const jobA = makeJob('https://example.com/job/a');
+    const jobB = makeJob('https://example.com/job/b');
+    renderCard(makeAutopilot([jobA, jobB]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await user.click(header);
+
+    const [buttonA, buttonB] = screen.getAllByTitle('autopilot.viewJob');
+    if (!buttonA || !buttonB) throw new Error('expected two job view buttons');
+
+    await act(async () => {
+      await user.click(buttonA);
+    });
+    await act(async () => {
+      await user.click(buttonB);
+    });
+
+    expect(mockPersistJobAsync).toHaveBeenCalledTimes(2);
+    const callA = mockPersistJobAsync.mock.calls[0]?.[0] as
+      { job: Record<string, unknown> } | undefined;
+    const callB = mockPersistJobAsync.mock.calls[1]?.[0] as
+      { job: Record<string, unknown> } | undefined;
+    expect(callA?.job.id).toBe('https://example.com/job/a');
+    expect(callB?.job.id).toBe('https://example.com/job/b');
+    expect(callA?.job.id).not.toBe(callB?.job.id);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Found-jobs render the coverage MatchBand
 // ─────────────────────────────────────────────────────────────────────────────
 

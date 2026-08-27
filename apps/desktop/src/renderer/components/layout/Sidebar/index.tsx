@@ -10,6 +10,7 @@ import {
   type LucideIcon,
   PanelLeftClose,
   Settings,
+  Sparkles,
   User,
   Wand2,
   Zap,
@@ -56,6 +57,12 @@ const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
     labelKey: 'nav.sections.automation',
     items: [
       { to: ROUTES.AUTOPILOT, label: 'nav.autopilot', icon: Zap, tourId: 'autopilot' },
+      {
+        to: ROUTES.BEST_MATCHES,
+        label: 'nav.bestMatches',
+        icon: Sparkles,
+        tourId: 'best-matches',
+      },
       { to: ROUTES.MONITORING, label: 'nav.monitoring', icon: Activity, tourId: 'monitoring' },
     ],
   },

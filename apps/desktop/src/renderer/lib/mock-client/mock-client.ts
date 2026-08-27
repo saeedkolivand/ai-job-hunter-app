@@ -236,6 +236,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       resolveUrl: async () => null,
       updateDescription: async () => false,
       persistJob: noop,
+      removeInteraction: async () => false,
       listPostings: emptyList,
       clearPostings: noop,
       listInteractions: emptyList,
@@ -387,6 +388,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       onStep: () => () => {},
       onFocus: () => () => {},
       takePendingFocus: () => Promise.resolve(null),
+      bestMatches: async () => ({ matches: [], total: 0, autopilotCount: 0 }),
     },
 
     menu: {

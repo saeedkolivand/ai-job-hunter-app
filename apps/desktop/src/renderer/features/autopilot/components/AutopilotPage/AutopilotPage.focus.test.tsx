@@ -93,6 +93,13 @@ vi.mock('@/features/autopilot/components/EmptyState', () => ({
   EmptyState: () => <div data-testid={TEST_IDS.autopilot.emptyState} />,
 }));
 
+// Self-fetching (useBestMatches → useAppClient), so it needs an
+// AppClientProvider this test file doesn't set up — stubbed like every other
+// heavy sub-component here.
+vi.mock('@/components/job/BestMatchesPreview', () => ({
+  BestMatchesPreview: () => null,
+}));
+
 // Mutable so a test can put the hook in the state a real mount would be in
 // (empty after a navigation; a terminal state once a step event was observed).
 let mockRunStates: Record<string, string> = {};

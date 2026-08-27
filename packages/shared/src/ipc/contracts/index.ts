@@ -169,6 +169,9 @@ export {
 } from './applications.js';
 export {
   AUTOPILOT_CHANNELS,
+  type AutopilotBestMatch,
+  type AutopilotBestMatchesResult,
+  type AutopilotBestMatchSource,
   type AutopilotContract,
   type AutopilotFocusEvent,
   type AutopilotStepEvent,

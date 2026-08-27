@@ -43,18 +43,26 @@ pub(crate) fn should_semantic_rerank(semantic_scoring: bool, resume: &str) -> bo
 /// score-descending sort (unscored last) — one comparator for both call sites,
 /// nothing to drift.
 pub(super) fn by_rank(a: &FoundJob, b: &FoundJob) -> std::cmp::Ordering {
-    fn block(j: &FoundJob) -> u8 {
-        match j.score_source {
-            ScoreSource::Combined => 0,
-            ScoreSource::Keyword => 1,
-        }
+    score_block(a.score_source)
+        .cmp(&score_block(b.score_source))
+        .then_with(|| {
+            b.score
+                .unwrap_or(-1.0)
+                .partial_cmp(&a.score.unwrap_or(-1.0))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
+/// The ADR-020 block a score's kernel sorts into — `Combined` always before
+/// `Keyword`, independent of the raw number (the two scales are not
+/// comparable). Extracted out of [`by_rank`] so `best_matches`'s own row sort
+/// (over `BestMatchRow`, not `FoundJob`) can share the exact same rule
+/// instead of re-deriving a second one-off comparator.
+pub(super) fn score_block(source: ScoreSource) -> u8 {
+    match source {
+        ScoreSource::Combined => 0,
+        ScoreSource::Keyword => 1,
     }
-    block(a).cmp(&block(b)).then_with(|| {
-        b.score
-            .unwrap_or(-1.0)
-            .partial_cmp(&a.score.unwrap_or(-1.0))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    })
 }
 
 /// How many of a run's top keyword-ranked jobs get the semantic re-rank.

@@ -44,6 +44,17 @@ export interface ScrapeContract {
   >;
 
   persistJob(req: { job: Record<string, unknown>; interactionType: string }): Promise<void>;
+
+  /**
+   * Delete a persisted interaction — the real "undo" for {@link persistJob},
+   * e.g. reversing an accidental `dismissed` write. Keys on the SAME
+   * `(jobId, interactionType)` pair `persistJob` writes under (the stored
+   * `InteractionRecord.job_id`, not necessarily a cluster/UI key) — passing a
+   * different `jobId` silently removes nothing. Returns `true` when a record
+   * was removed, `false` when there was nothing to remove, so a caller can
+   * tell "undone" apart from "there was nothing there".
+   */
+  removeInteraction(req: { jobId: string; interactionType: string }): Promise<boolean>;
 }
 
 export const SCRAPE_CHANNELS = {
@@ -53,6 +64,7 @@ export const SCRAPE_CHANNELS = {
   updateDescription: 'scrape:updateDescription',
   listPostings: 'scrape:listPostings',
   persistJob: 'scrape:persistJob',
+  removeInteraction: 'scrape:removeInteraction',
   clearPostings: 'scrape:clearPostings',
   listInteractions: 'scrape:listInteractions',
 } as const;

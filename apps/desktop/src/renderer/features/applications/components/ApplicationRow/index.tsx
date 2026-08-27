@@ -6,9 +6,9 @@ import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { ActionMenu, Button, cn, ConfirmModal, Dropdown, Tag } from '@ajh/ui';
 
-import { formatSalaryRange } from '@/features/applications/lib/salary';
 import { isStale, nextActionLabel, staleDays } from '@/features/applications/lib/stale';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
+import { formatSalaryRange } from '@/lib/format-salary';
 import { useOpenExternal, useRemoveApplication, useSetApplicationStatus } from '@/services';
 
 interface ApplicationRowProps {

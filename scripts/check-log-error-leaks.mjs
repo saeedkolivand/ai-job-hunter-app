@@ -166,14 +166,14 @@ const ALLOWLIST = {
       'without_url() before wrapping in AppError::Network (see accumulate_capped in ' +
       'net/http.rs) — the URL is stripped upstream of this call site.',
   },
-  'postings/mod.rs:382': {
+  'postings/mod.rs:405': {
     status: 'safe',
     reason:
       "err: &serde_json::Error is back_up_corrupt_file's parameter — the from_str parse " +
       'failure of interactions.json content already read into memory (map_mut). Same ' +
       'in-memory-parse shape as inMemoryParseSafe() below, never a path/URL/host/credential.',
   },
-  'postings/mod.rs:424': {
+  'postings/mod.rs:447': {
     status: 'safe',
     reason:
       "serde_json::to_string_pretty is a SERIALIZE error on the app's own " +
@@ -181,9 +181,9 @@ const ALLOWLIST = {
   },
   'notifications/mod.rs:231': {
     status: 'safe',
-    reason: 'Same serde_json serialize-error shape as postings/mod.rs:424 (AppNotification).',
+    reason: 'Same serde_json serialize-error shape as postings/mod.rs:427 (AppNotification).',
   },
-  'commands/autopilot/rerank.rs:270': {
+  'commands/autopilot/rerank.rs:278': {
     status: 'safe',
     reason: 'Same charge_provider_daily fixed-template message as autopilot_helpers/mod.rs:395.',
   },

@@ -222,6 +222,21 @@ export type DateFilterOption = (typeof DATE_FILTER_OPTIONS)[number];
 export const WORK_TYPE_OPTIONS = ['remote', 'hybrid', 'on-site'] as const;
 export type WorkTypeOption = (typeof WORK_TYPE_OPTIONS)[number];
 
+/**
+ * Match-score band cut points — the SINGLE source for the renderer's
+ * `scoreTier` badge bands AND the Rust `autopilot_best_matches` qualification
+ * bar (emitted to `ipc_contracts/match_tiers.rs` by `pnpm gen:ipc`; CI's
+ * `gen:ipc:check` guards drift). `coverage` gates the embedding-free
+ * keyword-coverage kernel's 0–100 score; `combined` gates the semantic+ATS
+ * kernel's — coverage clusters lower than combined, so its cut points are
+ * relaxed.
+ * // ponytail: heuristic starting values, not calibrated
+ */
+export const MATCH_TIER_CUTS = {
+  coverage: { high: 55, medium: 30 },
+  combined: { high: 75, medium: 50 },
+} as const;
+
 export const ScrapeBoardsRequestSchema = z.object({
   // Bounded by the catalog size (not a fixed number) so selecting every listed
   // board always validates and adding a board needs no schema edit.

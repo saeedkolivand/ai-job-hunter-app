@@ -210,14 +210,17 @@ pub fn attach_interactions(items: &[Value], interactions: &[InteractionRecord]) 
 /// struct so a future storage-only field can't leak into `scrape_list_postings`.
 ///
 /// `interactionType` is a strict union in the shared contract
-/// (`viewed | opened | applied | bookmarked`), but the persisted value is a free
-/// `String` on disk — a corrupt or unexpected entry must not break the cross-layer
-/// contract at runtime, so an out-of-union value is coerced to `"viewed"`.
+/// (`viewed | opened | applied | bookmarked | dismissed`), but the persisted
+/// value is a free `String` on disk — a corrupt or unexpected entry must not
+/// break the cross-layer contract at runtime, so an out-of-union value is
+/// coerced to `"viewed"`.
 fn interaction_value(record: &InteractionRecord) -> Value {
     // ponytail: clamp the on-disk type to the shared union; unknown → "viewed"
     // (the most benign default — it only dims the row, never marks applied/saved).
     let interaction_type = match record.interaction_type.as_str() {
-        "viewed" | "opened" | "applied" | "bookmarked" => record.interaction_type.as_str(),
+        "viewed" | "opened" | "applied" | "bookmarked" | "dismissed" => {
+            record.interaction_type.as_str()
+        }
         _ => "viewed",
     };
     json!({
@@ -297,6 +300,26 @@ impl InteractionStore {
             record,
         );
         self.save();
+    }
+
+    /// Remove the interaction keyed by `(job_id, interaction_type)` — the exact
+    /// key `upsert` writes under. The real "undo" for a persisted interaction
+    /// (e.g. reversing a `dismissed` write): unlike a client-side-only revert,
+    /// this deletes the record so a later `list`/`compute_best_matches` pass no
+    /// longer sees it. Returns `true` when a record was removed, `false` when
+    /// there was nothing to remove — callers need to tell "undone" apart from
+    /// "there was nothing there". Only writes to disk when something actually
+    /// changed, matching `upsert`'s save-on-write behavior without an idle
+    /// rewrite when the key was already absent.
+    pub fn remove(&mut self, job_id: &str, interaction_type: &str) -> bool {
+        let map = self.map_mut();
+        let removed = map
+            .remove(&(job_id.to_string(), interaction_type.to_string()))
+            .is_some();
+        if removed {
+            self.save();
+        }
+        removed
     }
 
     pub fn clear_all(&mut self) {

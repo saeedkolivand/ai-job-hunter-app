@@ -5,6 +5,15 @@ import { GlassCard } from '@ajh/ui';
 
 import { useInteractions } from '@/services';
 
+/**
+ * Interaction types that count toward "tracked" in the pipeline overview.
+ * An explicit allowlist — not "every type except `dismissed`" — so a future
+ * SIXTH interaction type must be deliberately added here before it can
+ * silently inflate this headline number. `dismissed` is excluded on purpose:
+ * a job the user explicitly rejected was never "tracked".
+ */
+const TRACKED_INTERACTION_TYPES = new Set(['viewed', 'opened', 'applied', 'bookmarked']);
+
 export function JobPipelineOverview() {
   const { t } = useTranslation();
 
@@ -12,6 +21,12 @@ export function JobPipelineOverview() {
   const { data: applied = [] } = useInteractions('applied');
   const { data: viewed = [] } = useInteractions('viewed');
   const { data: allInteractions = [] } = useInteractions();
+
+  // `useInteractions()` (no filter) returns every interaction regardless of
+  // type — including `dismissed`, which is not tracking, it's the opposite.
+  const trackedInteractions = (allInteractions as { interactionType?: string }[]).filter((i) =>
+    TRACKED_INTERACTION_TYPES.has(i.interactionType ?? '')
+  );
 
   const stats = [
     {
@@ -37,7 +52,7 @@ export function JobPipelineOverview() {
     },
     {
       label: t('dashboard.totalTracked'),
-      value: (allInteractions as unknown[]).length,
+      value: trackedInteractions.length,
       icon: TrendingUp,
       color: 'text-purple-400',
       bg: 'bg-purple-400/10',
@@ -69,7 +84,7 @@ export function JobPipelineOverview() {
         })}
       </div>
 
-      {(allInteractions as unknown[]).length === 0 && (
+      {trackedInteractions.length === 0 && (
         <p className="mt-3 text-center text-xs text-muted-foreground">
           {t('dashboard.noJobsTracked')}
         </p>

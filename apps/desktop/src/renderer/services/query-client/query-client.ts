@@ -93,7 +93,25 @@ export const keys = {
   credentials: { all: ['credentials'] as const },
   privacy: { crashReporting: ['privacy', 'crashReporting'] as const },
   cliAgents: { all: ['cliAgents'] as const },
-  autopilot: { all: ['autopilot'] as const, detail: (id: string) => ['autopilot', id] as const },
+  autopilot: {
+    all: ['autopilot'] as const,
+    detail: (id: string) => ['autopilot', id] as const,
+    /**
+     * Deliberately a CHILD of `autopilot.all` (`['autopilot']`), not a sibling
+     * top-level key. `invalidateQueries({ queryKey })` matches by PREFIX, so
+     * every existing autopilot invalidation — run complete, create, update,
+     * delete, pause, resume, all of which invalidate `autopilot.all` today —
+     * refreshes this list too, for free, with zero extra wiring. That prefix
+     * relationship IS the entire "updates automatically as autopilots discover
+     * new jobs" requirement; there is no separate invalidation to add or keep
+     * in sync as new autopilot mutations are added later.
+     *
+     * Can never collide with `detail(id)`: `id` is always a real autopilot's
+     * `_id` (a uuid v4), which can never equal the literal string
+     * `'bestMatches'`.
+     */
+    bestMatches: ['autopilot', 'bestMatches'] as const,
+  },
   aiGenerations: { all: ['aiGenerations'] as const },
   referrals: {
     all: ['referrals'] as const,

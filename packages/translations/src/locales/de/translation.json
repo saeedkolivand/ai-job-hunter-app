@@ -25,6 +25,7 @@
     "build": "Lebenslauf-Builder",
     "jobs": "Jobs",
     "autopilot": "Autopilot",
+    "bestMatches": "Beste Treffer",
     "documents": "Dokumente",
     "resumes": "Lebensläufe",
     "monitoring": "Monitoring",
@@ -2203,6 +2204,44 @@
       "found": "Gefunden"
     }
   },
+  "bestMatches": {
+    "title": "Beste Treffer",
+    "subtitle": "Die bestbewerteten Jobs über alle Autopiloten hinweg, an einem Ort.",
+    "viewAll": "Alle {{count}} anzeigen →",
+    "errorTitle": "Beste Treffer konnten nicht geladen werden",
+    "errorDescription": "Beim Laden dieser Liste ist etwas schiefgelaufen. Versuche es erneut.",
+    "sort": {
+      "label": "Sortieren",
+      "score": "Score",
+      "newest": "Neueste",
+      "salary": "Gehalt"
+    },
+    "truncated": "{{shown}} von {{total}} qualifizierenden Treffern werden angezeigt",
+    "salaryCaption": "{{count}} von {{total}} Zeilen nennen ein Gehalt — die meisten Boards tun das nicht",
+    "row": {
+      "view": "Anzeigen",
+      "save": "Speichern",
+      "apply": "Bewerben",
+      "dismiss": "Verwerfen",
+      "dismissed": "Verworfen",
+      "undo": "Rückgängig",
+      "dismissFailed": "Dieser Job konnte nicht verworfen werden. Bitte versuche es erneut.",
+      "undoFailed": "Das Rückgängigmachen ist fehlgeschlagen. Bitte versuche es erneut.",
+      "discovered": "Entdeckt {{time}}",
+      "foundBy": "Gefunden von: „{{name}}“",
+      "pausedSuffix": " (pausiert)"
+    },
+    "empty": {
+      "noRuns": {
+        "title": "Noch keine besten Treffer",
+        "description": "Keiner deiner Autopiloten ist bisher gelaufen — starte einen, um Jobs zu finden und zu bewerten. Die stärksten Treffer über alle Autopiloten hinweg erscheinen dann hier."
+      },
+      "noneQualified": {
+        "title": "Noch nichts hat die Schwelle überschritten",
+        "description": "Deine Autopiloten laufen bereits, aber noch kein Job hat einen ausreichend hohen Score erreicht. Schau nach dem nächsten Durchlauf noch einmal vorbei, oder lockere den Mindest-Score-Filter eines Autopiloten."
+      }
+    }
+  },
   "dashboard": {
     "welcome": "Willkommen zurück",
     "subtitle": "Ihr lokaler AI-Co-Pilot für Jobs, Lebensläufe und Dokumente.",
@@ -2508,6 +2547,7 @@
       "applied": "Beworben",
       "viewed": "Angesehen",
       "bookmarked": "Gespeichert",
+      "dismissed": "Verworfen",
       "empty": "Noch keine Aktivität",
       "emptyDesc": "Jobs, die du ansiehst, speicherst oder auf die du dich bewirbst, erscheinen hier."
     },

@@ -1,4 +1,4 @@
-import { Activity, Bookmark, Eye, FileText, type LucideIcon, Mail, Send } from 'lucide-react';
+import { Activity, Bookmark, Eye, FileText, type LucideIcon, Mail, Send, X } from 'lucide-react';
 
 export interface Interaction {
   jobId: string;
@@ -53,5 +53,11 @@ export const INTERACTION_TYPES: Record<string, InteractionTypeConfig> = {
     icon: Bookmark,
     color: 'text-amber-300',
     ringColor: 'border-amber-400/30 bg-amber-400/10',
+  },
+  dismissed: {
+    labelKey: 'resumes.activity.dismissed',
+    icon: X,
+    color: 'text-rose-300',
+    ringColor: 'border-rose-400/30 bg-rose-400/10',
   },
 };

@@ -28,6 +28,7 @@ import { EVENT_CHANNELS } from '@ajh/shared';
 import { createTauriInvokeClient } from '../index';
 import { ai } from './ai';
 import { applications } from './applications';
+import { autopilot } from './autopilot';
 import { boards } from './boards';
 import { documents } from './documents';
 import { extensionBridge } from './extensionBridge';
@@ -55,6 +56,11 @@ describe('tauri-client namespaces', () => {
       req: { boards: ['linkedin'], query: 'react', amount: 25 },
     });
 
+    scrape.removeInteraction({ jobId: 'https://example.com/job/1', interactionType: 'dismissed' });
+    expect(invoke).toHaveBeenCalledWith('scrape_remove_interaction', {
+      req: { jobId: 'https://example.com/job/1', interactionType: 'dismissed' },
+    });
+
     documents.remove('doc-1');
     expect(invoke).toHaveBeenCalledWith('documents_remove', { id: 'doc-1' });
 
@@ -72,6 +78,9 @@ describe('tauri-client namespaces', () => {
 
     boards.disconnect({ boardId: 'indeed' });
     expect(invoke).toHaveBeenCalledWith('boards_logout', { boardId: 'indeed' });
+
+    autopilot.bestMatches();
+    expect(invoke).toHaveBeenCalledWith('autopilot_best_matches');
   });
 
   it('wires event subscriptions through listen and forwards payloads', () => {
