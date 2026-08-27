@@ -1,6 +1,6 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-08-17 (task #16: backend-owned active AI provider store)
+Last updated: 2026-08-27 (task #16: backend-owned active AI provider store)
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
@@ -47,6 +47,18 @@ Bounded retry + run guard + provisional-score honesty:
 - **Field-level merge honesty** — when a job resurfaces across multiple sources, `merge_found_jobs` now carries `score_provisional` alongside `score` in the field-level-upgrade path. A snippet score resurfaced by a full-text board flips the flag to `false` (now authoritative); full-text resurfaced by a snippet flips to `true` (now provisional). Bidirectional regression test asserts both directions work and the worse case (snippet score masquerading as authoritative) is explicitly rejected. Source: `apps/desktop/src-tauri/src/autopilot/mod.rs`.
 
 - **Security** — never log credentials/cookies; board session handling for **scraping** is co-reviewed by `tauri-security-reviewer`.
+
+### Best Matches — cross-autopilot fuzzy ranking
+
+A deduplicated ranked surface across all active autopilots' found jobs. Computed at query time by
+clustering the union of all records' found jobs, ranking via [ADR-020](decision-records/adr-020-unified-autopilot-scoring-kernel.md)'s
+two-block rule, and capping the wire payload at 100 rows. Dismissed jobs are excluded; paused
+autopilots contribute (archived do not). See [ADR-036](decision-records/adr-036-cross-autopilot-best-matches.md).
+
+- **IPC contract** — `AutopilotContract.bestMatches()` → `AutopilotBestMatchesResult` (matches, total count, contributing autopilot count). Source: `packages/shared/src/ipc/contracts/autopilot.ts`.
+- **Rust command** — `commands/autopilot/best_matches.rs`: pure `compute_best_matches` + async IPC wrapper. Dedupes the union on `canonical_job_key`, clusters via `scraping::cluster::assign_clusters`, selects best member per cluster via the two-block rule, filters by qualification (best member >= its own kernel's high cut), and sorts Combined-first then Keyword-first each by score desc + key asc.
+- **Renderer surfaces** — `/best-matches` route with sort options (score desc, newest first, salary), empty states (no autopilot run yet vs. run completed, nothing qualified), and a truncation notice. `BestMatchRow` component reused by the Best Matches page and the `/autopilot` route's preview strip. Dismiss action via `useBestMatchActions` persists to `InteractionStore` as `interaction_type: 'dismissed'`, matching per-member on `canonical_job_key` and rolling back optimistically if the persist fails.
+- **Query key** — `keys.autopilot.bestMatches` (a child prefix of `keys.autopilot.all`, so fresh autopilot runs invalidate best-matches queries via prefix match).
 
 ## Email confirmation watching (task #23, auto-track Layer C)
 

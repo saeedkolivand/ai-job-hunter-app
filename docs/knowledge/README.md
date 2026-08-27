@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-08-22
+Last updated: 2026-08-27
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -79,6 +79,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-033](decision-records/adr-033-no-model-written-agent-memory.md)                         | No model-written agent memory (immutable run history, not LLM-synthesized state)          |
 | [ADR-034](decision-records/adr-034-cover-letter-export-boundary-completion.md)               | Cover-letter export boundary completes a body-only letter (salutation/sign-off/signature) |
 | [ADR-035](decision-records/adr-035-work-type-filter-declared-data-only.md)                   | Work-type filter classifies from declared board data only; undeclared is kept             |
+| [ADR-036](decision-records/adr-036-cross-autopilot-best-matches.md)                          | Cross-autopilot best matches: fuzzy clustering, rank by ADR-020 two-block rule            |
 
 ### The `NNNN-` series (closed)
 
