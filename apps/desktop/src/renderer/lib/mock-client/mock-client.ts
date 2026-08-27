@@ -387,6 +387,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       onStep: () => () => {},
       onFocus: () => () => {},
       takePendingFocus: () => Promise.resolve(null),
+      bestMatches: async () => ({ matches: [], total: 0, autopilotCount: 0 }),
     },
 
     menu: {

@@ -28,6 +28,7 @@ import { EVENT_CHANNELS } from '@ajh/shared';
 import { createTauriInvokeClient } from '../index';
 import { ai } from './ai';
 import { applications } from './applications';
+import { autopilot } from './autopilot';
 import { boards } from './boards';
 import { documents } from './documents';
 import { extensionBridge } from './extensionBridge';
@@ -72,6 +73,9 @@ describe('tauri-client namespaces', () => {
 
     boards.disconnect({ boardId: 'indeed' });
     expect(invoke).toHaveBeenCalledWith('boards_logout', { boardId: 'indeed' });
+
+    autopilot.bestMatches();
+    expect(invoke).toHaveBeenCalledWith('autopilot_best_matches');
   });
 
   it('wires event subscriptions through listen and forwards payloads', () => {

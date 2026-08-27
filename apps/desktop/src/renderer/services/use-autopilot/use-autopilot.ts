@@ -142,6 +142,23 @@ export const useAutopilotStepEvents = (onStep?: (event: AutopilotStepEvent) => v
   }, [api, onStep]);
 };
 
+/**
+ * Cross-autopilot top-match list (`/best-matches` + the `/autopilot` preview
+ * strip). `keys.autopilot.bestMatches` is a CHILD of `keys.autopilot.all`, so
+ * every existing autopilot invalidation refreshes it by prefix match — no
+ * separate invalidation wiring here (see the key's own doc comment).
+ * `staleTime` inherits the app-wide default (`query-client.ts`'s MEDIUM,
+ * 30s): unlike `useAutopilots`, no path here needs a same-mount freshness
+ * guarantee, so the default is fine.
+ */
+export const useBestMatches = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.autopilot.bestMatches,
+    queryFn: () => api.autopilot.bestMatches(),
+  });
+};
+
 export const useAutopilotFocusEvents = (onFocus?: (event: AutopilotFocusEvent) => void) => {
   const api = useAppClient();
   useEffect(() => {

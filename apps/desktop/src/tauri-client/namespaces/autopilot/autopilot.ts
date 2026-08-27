@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { type AutopilotFocusEvent, type AutopilotStepEvent, EVENT_CHANNELS } from '@ajh/shared';
+import {
+  type AutopilotBestMatchesResult,
+  type AutopilotFocusEvent,
+  type AutopilotStepEvent,
+  EVENT_CHANNELS,
+} from '@ajh/shared';
 import type { AutopilotCreate, AutopilotUpdate } from '@ajh/shared/schemas';
 
 import { asyncUnsub } from '../../utils.js';
@@ -25,4 +30,5 @@ export const autopilot = {
       listen<AutopilotFocusEvent>(EVENT_CHANNELS.autopilot.focus, (e) => handler(e.payload))
     ),
   takePendingFocus: () => invoke<string | null>('autopilot_take_pending_focus'),
+  bestMatches: () => invoke<AutopilotBestMatchesResult>('autopilot_best_matches'),
 };

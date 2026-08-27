@@ -6,7 +6,7 @@ import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/
 
 import { keys } from '../query-client';
 import * as mod from './use-autopilot';
-import { useAutopilots, useRemoveAutopilot } from './use-autopilot';
+import { useAutopilots, useBestMatches, useRemoveAutopilot } from './use-autopilot';
 
 // gcTime: Infinity so cache seeded without an active observer is not collected.
 const persistentClient = () =>
@@ -56,6 +56,29 @@ describe('useAutopilots — staleTime', () => {
     const second = renderHookWithClient(() => useAutopilots(), { client, queryClient });
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(second.result.current.data?.[0]?.runStatus).toBe('inProgress'));
+  });
+});
+
+describe('useBestMatches', () => {
+  it('reads through api.autopilot.bestMatches() under the shared keys.autopilot.bestMatches key', async () => {
+    const bestMatches = vi
+      .fn()
+      .mockResolvedValue({ matches: [{ key: 'k1' }], total: 1, autopilotCount: 1 });
+    const client = createMockClient({ 'autopilot.bestMatches': bestMatches });
+    const queryClient = persistentClient();
+
+    const { result } = renderHookWithClient(() => useBestMatches(), { client, queryClient });
+
+    await waitFor(() => expect(result.current.data?.total).toBe(1));
+    expect(bestMatches).toHaveBeenCalledTimes(1);
+    // Invalidating the PREFIX (what every autopilot mutation already does)
+    // must refetch this query too — the whole point of nesting the key under
+    // `autopilot.all` rather than a sibling top-level key.
+    expect(queryClient.getQueryState(keys.autopilot.bestMatches)?.isInvalidated).toBe(false);
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.autopilot.all });
+    });
+    expect(bestMatches).toHaveBeenCalledTimes(2);
   });
 });
 
