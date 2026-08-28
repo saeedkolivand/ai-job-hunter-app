@@ -1,5 +1,77 @@
 [
   {
+    "sha": "0c46d4af1f591b1e2c81ffd01fdac051ce3af4c6",
+    "commit": {
+      "message": "chore: sync landing download version to v0.144.0",
+      "author": {
+        "date": "2026-08-27T22:44:00Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "e469f717efc996889940e699e1e77bc70d8a16b4",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.144.0 [skip ci]",
+      "author": {
+        "date": "2026-08-27T22:43:40Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "adc5a3da4769c2801d5c8f1f3e421b1fcc2d0116",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-27T22:28:03Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "94f1c77aab445ff794b762acf8445a9514bb2d8f",
+    "commit": {
+      "message": "chore(release): 0.144.0 [skip ci]",
+      "author": {
+        "date": "2026-08-27T22:06:12Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "9bfb174a8d3daa84004183988c0463f46cb0f669",
+    "commit": {
+      "message": "feat(autopilot): surface the strongest jobs across every autopilot in one place (#1083)",
+      "author": {
+        "date": "2026-08-27T22:04:31Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "eea7ab9e6ad03e82f280eda72e2f4f1eaa8ad765",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-27T14:10:14Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "ff2447d4952d01e45845372d1da42e546a5b3b0c",
     "commit": {
       "message": "chore: bump the javascript group with 31 updates (#1082)",
@@ -1121,78 +1193,6 @@
       "message": "chore: bump dbus-secret-service-keyring-store in /apps/desktop/src-tauri (#1043)",
       "author": {
         "date": "2026-08-19T16:24:56Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "426488540540e387bc304ca7173ab0a6b80d51ce",
-    "commit": {
-      "message": "chore: bump rusqlite from 0.40.1 to 0.40.2 in /apps/desktop/src-tauri (#1042)",
-      "author": {
-        "date": "2026-08-19T16:24:48Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "81a9df6eed634bbd1411b844fa42c3701d838cc9",
-    "commit": {
-      "message": "chore: bump uuid from 1.24.0 to 1.24.1 in /apps/desktop/src-tauri (#1041)",
-      "author": {
-        "date": "2026-08-19T16:24:40Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "3e7f99f4bd295574fd2480384aa84f7478fc57eb",
-    "commit": {
-      "message": "chore: bump futures from 0.3.33 to 0.3.34 in /apps/desktop/src-tauri (#1040)",
-      "author": {
-        "date": "2026-08-19T16:24:32Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "871582a1eb5008f960cb2d273100249a4e20d7a2",
-    "commit": {
-      "message": "chore: bump mail-parser from 0.11.5 to 0.11.6 in /apps/desktop/src-tauri (#1039)",
-      "author": {
-        "date": "2026-08-19T16:24:24Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "6f9634e5c405a2c68620a84de81f2bf71776a5cc",
-    "commit": {
-      "message": "build(deps): bump step-security/harden-runner from 2.20.1 to 2.21.0 (#1048)",
-      "author": {
-        "date": "2026-08-19T16:23:10Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "54e2262802b50f93c5af4ddf0695e323fa2ddfd4",
-    "commit": {
-      "message": "build(deps): bump astral-sh/setup-uv from 9.0.0 to 10.0.1 (#1047)",
-      "author": {
-        "date": "2026-08-19T16:23:07Z"
       }
     },
     "author": {
