@@ -1,5 +1,17 @@
 [
   {
+    "sha": "0601de02783d724b58feb061599ae25aad7384dc",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-28T15:20:05Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "0c46d4af1f591b1e2c81ffd01fdac051ce3af4c6",
     "commit": {
       "message": "chore: sync landing download version to v0.144.0",
@@ -1181,18 +1193,6 @@
       "message": "chore: bump the minor-and-patch group with 24 updates (#1049)",
       "author": {
         "date": "2026-08-19T16:41:30Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "3ae9f5d84266e333530515839e85ce313362c8b3",
-    "commit": {
-      "message": "chore: bump dbus-secret-service-keyring-store in /apps/desktop/src-tauri (#1043)",
-      "author": {
-        "date": "2026-08-19T16:24:56Z"
       }
     },
     "author": {
