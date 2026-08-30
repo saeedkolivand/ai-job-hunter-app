@@ -1,5 +1,17 @@
 [
   {
+    "sha": "12894efe7690f7fa89785a02a7ab8b9f7897e237",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-29T10:01:45Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "0601de02783d724b58feb061599ae25aad7384dc",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "945600a3791e50cc3b3686b9ba715ca00f0ae33a",
-    "commit": {
-      "message": "chore: bump the minor-and-patch group with 24 updates (#1049)",
-      "author": {
-        "date": "2026-08-19T16:41:30Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
     }
   }
 ]
