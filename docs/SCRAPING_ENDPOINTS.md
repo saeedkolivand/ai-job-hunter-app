@@ -867,6 +867,10 @@ Pinpoint, Rippling, Breezy HR, BambooHR, The Muse were added from `santifer/care
 
 Comeet was added from the career-ops (MIT) field spec; the live endpoint 400s without real credentials, so the response shape is unconfirmed (see the Comeet section above). Workable, added the same day, IS live-verified (real request against a live tenant) and is listed under "Confirmed solid" above instead.
 
+### Vendored company-slug seed data (2026-08-31)
+
+`apps/desktop/src-tauri/ats-slugs/{bamboohr,greenhouse,lever,ashby}.txt.gz` — a ~27k-slug offline directory feeding the discovery typeahead's "community slug directory" feeder (ADR-030 §b), vendored from [`Feashliaa/job-board-aggregator`](https://github.com/Feashliaa/job-board-aggregator) at commit `644fb02f9630d55ba7210bd0d4e03ef7881f0ff8`. Only the four platforms `scraping/ats_ref.rs::extract_ats_ref` has a parser for are included (`icims`/`paylocity`/`workday` from the same upstream source are NOT vendored — no extractor, no board). The upstream code repo is MIT, but its README carves the `data/` datasets themselves out under **CC BY-NC 4.0** — attribution to Riley Dorrington is required in distributed builds; see `apps/desktop/src-tauri/ats-slugs/README.md` for the full provenance record, digests, and license note (this app is itself PolyForm Noncommercial, so no conflict). Zero new network calls: the directory is gzip-embedded into the binary via `include_bytes!` and searched entirely offline in `discovered/vendored.rs`.
+
 ---
 
 ## Notes

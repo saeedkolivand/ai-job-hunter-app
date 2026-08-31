@@ -6,8 +6,12 @@
 //! lists the current stars. Every input is re-validated + clamped SERVER-SIDE —
 //! the renderer's Zod is not a trust boundary.
 
+use std::collections::HashSet;
+
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+
+use crate::discovered::DiscoveredCompany;
 
 // Generated from the Zod schemas by `pnpm gen:ipc`.
 pub use crate::ipc_contracts::discovery::{DiscoverySearchRequest, DiscoveryStarRequest};
@@ -33,16 +37,50 @@ fn clamp_bytes(s: &str, max: usize) -> String {
 /// How many typeahead rows to return per search. The store also clamps this.
 const SEARCH_LIMIT: u32 = 50;
 
-/// Typeahead search over discovered/seeded company slugs + display names.
-/// Returns `[]` when the store is unavailable (startup failure) rather than
-/// erroring — an empty typeahead degrades gracefully.
+/// Typeahead search over discovered/seeded company slugs + display names,
+/// topped up with the vendored community slug directory (ADR-030 §b) when the
+/// organic/starred rows don't already fill the page. Vendored rows never
+/// outrank a real DB row for the same `(atsKind, slug)` — a duplicate is
+/// dropped in favor of the DB row, which carries real seen-count/starred
+/// state. Returns `[]` when the store is unavailable (startup failure) rather
+/// than erroring — an empty typeahead degrades gracefully.
 #[tauri::command]
 pub fn discovery_search_companies(app: AppHandle, req: DiscoverySearchRequest) -> Value {
     let Some(store) = app.try_state::<crate::discovered::DiscoveredCompanyStore>() else {
         return json!([]);
     };
     let query = clamp_bytes(&req.query, MAX_QUERY_BYTES);
-    json!(store.search(&query, SEARCH_LIMIT))
+    let db_results = store.search(&query, SEARCH_LIMIT);
+    let remaining = (SEARCH_LIMIT as usize).saturating_sub(db_results.len());
+    let vendor_results = if remaining > 0 {
+        crate::discovered::vendored::search(&query, remaining)
+    } else {
+        Vec::new()
+    };
+    json!(merge_vendor_results(db_results, vendor_results))
+}
+
+/// Append `vendor` rows after `db` rows, dropping any vendor row that
+/// duplicates a `(atsKind, slug)` already present in `db` — a real DB row
+/// always wins because it carries actual seen-count/starred state, where a
+/// vendor row is always `seen_count=0, starred=false`. Case-insensitive on
+/// the key (Ashby preserves slug casing, so `Linear` from the DB and
+/// `linear` from the vendor directory are the same company). `db` is already
+/// capped at [`SEARCH_LIMIT`] by the store and `vendor` at whatever
+/// `remaining` room was left, so the result never exceeds `SEARCH_LIMIT`.
+fn merge_vendor_results(
+    db: Vec<DiscoveredCompany>,
+    vendor: Vec<DiscoveredCompany>,
+) -> Vec<DiscoveredCompany> {
+    let seen: HashSet<(String, String)> = db
+        .iter()
+        .map(|c| (c.ats_kind.to_ascii_lowercase(), c.slug.to_ascii_lowercase()))
+        .collect();
+    let mut results = db;
+    results.extend(vendor.into_iter().filter(|c| {
+        !seen.contains(&(c.ats_kind.to_ascii_lowercase(), c.slug.to_ascii_lowercase()))
+    }));
+    results
 }
 
 /// Star / unstar a company. RESOLVES an `{ error }` union on failure (the hook
@@ -88,7 +126,50 @@ pub fn discovery_watched(app: AppHandle) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_bytes, MAX_QUERY_BYTES};
+    use super::{clamp_bytes, merge_vendor_results, DiscoveredCompany, MAX_QUERY_BYTES};
+
+    fn company(ats: &str, slug: &str, source: &str) -> DiscoveredCompany {
+        DiscoveredCompany {
+            ats_kind: ats.to_string(),
+            slug: slug.to_string(),
+            display_name: None,
+            seen_count: if source == "vendor" { 0 } else { 3 },
+            starred: false,
+            source: source.to_string(),
+        }
+    }
+
+    #[test]
+    fn vendor_rows_fill_in_after_db_rows() {
+        let db = vec![company("greenhouse", "stripe", "scrape")];
+        let vendor = vec![company("ashby", "notion", "vendor")];
+        let merged = merge_vendor_results(db, vendor);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].slug, "stripe");
+        assert_eq!(merged[1].slug, "notion");
+    }
+
+    #[test]
+    fn a_db_row_wins_over_a_duplicate_vendor_row_case_insensitively() {
+        // Ashby preserves casing — the DB row (real seen_count) is `Linear`,
+        // the vendor directory only has the lowercase `linear`. Must dedupe.
+        let db = vec![company("ashby", "Linear", "scrape")];
+        let vendor = vec![company("ashby", "linear", "vendor")];
+        let merged = merge_vendor_results(db, vendor);
+        assert_eq!(merged.len(), 1, "the vendor duplicate must be dropped");
+        assert_eq!(
+            merged[0].source, "scrape",
+            "the DB row must win, not the vendor row"
+        );
+    }
+
+    #[test]
+    fn distinct_ats_kinds_with_the_same_slug_both_survive() {
+        // Same slug string on two different ATS platforms is not a collision.
+        let db = vec![company("greenhouse", "acme", "scrape")];
+        let vendor = vec![company("lever", "acme", "vendor")];
+        assert_eq!(merge_vendor_results(db, vendor).len(), 2);
+    }
 
     #[test]
     fn clamp_trims_and_byte_caps_on_char_boundary() {
