@@ -51,13 +51,37 @@ pub fn discovery_search_companies(app: AppHandle, req: DiscoverySearchRequest) -
     };
     let query = clamp_bytes(&req.query, MAX_QUERY_BYTES);
     let db_results = store.search(&query, SEARCH_LIMIT);
+    json!(fill_with_vendor_results(
+        db_results,
+        &query,
+        crate::discovered::vendored::search
+    ))
+}
+
+/// Top up `db_results` with vendored rows up to [`SEARCH_LIMIT`], via
+/// `search_vendor` (production: [`crate::discovered::vendored::search`];
+/// swappable in tests so this over-fetch/dedup interaction doesn't need a
+/// `DiscoveredCompanyStore`/`AppHandle`).
+///
+/// Over-fetches before deduping: a vendor row can only collide with one of
+/// the `db_results.len()` DB rows, so asking `search_vendor` for
+/// `remaining + db_results.len()` candidates guarantees `remaining` survive
+/// even in the worst case where every collision lands at the front of the
+/// (alphabetical) vendor pool. Asking for exactly `remaining` and deduping
+/// after — the previous behavior — could under-fill the page by exactly as
+/// many rows as collided.
+fn fill_with_vendor_results(
+    db_results: Vec<DiscoveredCompany>,
+    query: &str,
+    search_vendor: impl Fn(&str, usize) -> Vec<DiscoveredCompany>,
+) -> Vec<DiscoveredCompany> {
     let remaining = (SEARCH_LIMIT as usize).saturating_sub(db_results.len());
-    let vendor_results = if remaining > 0 {
-        crate::discovered::vendored::search(&query, remaining)
-    } else {
-        Vec::new()
-    };
-    json!(merge_vendor_results(db_results, vendor_results))
+    if remaining == 0 {
+        return db_results;
+    }
+    let pool = remaining.saturating_add(db_results.len());
+    let vendor_results = search_vendor(query, pool);
+    merge_vendor_results(db_results, vendor_results, remaining)
 }
 
 /// Append `vendor` rows after `db` rows, dropping any vendor row that
@@ -65,21 +89,29 @@ pub fn discovery_search_companies(app: AppHandle, req: DiscoverySearchRequest) -
 /// always wins because it carries actual seen-count/starred state, where a
 /// vendor row is always `seen_count=0, starred=false`. Case-insensitive on
 /// the key (Ashby preserves slug casing, so `Linear` from the DB and
-/// `linear` from the vendor directory are the same company). `db` is already
-/// capped at [`SEARCH_LIMIT`] by the store and `vendor` at whatever
-/// `remaining` room was left, so the result never exceeds `SEARCH_LIMIT`.
+/// `linear` from the vendor directory are the same company). The
+/// `remaining`-row cap is applied AFTER dedup (not by the caller pre-sizing
+/// `vendor`), so a duplicate doesn't consume page room a further unique
+/// match could have filled; `db` is already capped at [`SEARCH_LIMIT`] by
+/// the store, so the result never exceeds `SEARCH_LIMIT`.
 fn merge_vendor_results(
     db: Vec<DiscoveredCompany>,
     vendor: Vec<DiscoveredCompany>,
+    remaining: usize,
 ) -> Vec<DiscoveredCompany> {
     let seen: HashSet<(String, String)> = db
         .iter()
         .map(|c| (c.ats_kind.to_ascii_lowercase(), c.slug.to_ascii_lowercase()))
         .collect();
     let mut results = db;
-    results.extend(vendor.into_iter().filter(|c| {
-        !seen.contains(&(c.ats_kind.to_ascii_lowercase(), c.slug.to_ascii_lowercase()))
-    }));
+    results.extend(
+        vendor
+            .into_iter()
+            .filter(|c| {
+                !seen.contains(&(c.ats_kind.to_ascii_lowercase(), c.slug.to_ascii_lowercase()))
+            })
+            .take(remaining),
+    );
     results
 }
 
@@ -126,7 +158,10 @@ pub fn discovery_watched(app: AppHandle) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_bytes, merge_vendor_results, DiscoveredCompany, MAX_QUERY_BYTES};
+    use super::{
+        clamp_bytes, fill_with_vendor_results, merge_vendor_results, DiscoveredCompany,
+        MAX_QUERY_BYTES,
+    };
 
     fn company(ats: &str, slug: &str, source: &str) -> DiscoveredCompany {
         DiscoveredCompany {
@@ -143,7 +178,7 @@ mod tests {
     fn vendor_rows_fill_in_after_db_rows() {
         let db = vec![company("greenhouse", "stripe", "scrape")];
         let vendor = vec![company("ashby", "notion", "vendor")];
-        let merged = merge_vendor_results(db, vendor);
+        let merged = merge_vendor_results(db, vendor, 10);
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].slug, "stripe");
         assert_eq!(merged[1].slug, "notion");
@@ -155,7 +190,7 @@ mod tests {
         // the vendor directory only has the lowercase `linear`. Must dedupe.
         let db = vec![company("ashby", "Linear", "scrape")];
         let vendor = vec![company("ashby", "linear", "vendor")];
-        let merged = merge_vendor_results(db, vendor);
+        let merged = merge_vendor_results(db, vendor, 10);
         assert_eq!(merged.len(), 1, "the vendor duplicate must be dropped");
         assert_eq!(
             merged[0].source, "scrape",
@@ -168,7 +203,60 @@ mod tests {
         // Same slug string on two different ATS platforms is not a collision.
         let db = vec![company("greenhouse", "acme", "scrape")];
         let vendor = vec![company("lever", "acme", "vendor")];
-        assert_eq!(merge_vendor_results(db, vendor).len(), 2);
+        assert_eq!(merge_vendor_results(db, vendor, 10).len(), 2);
+    }
+
+    #[test]
+    fn remaining_cap_is_applied_after_dedup_not_before() {
+        // Two unique vendor candidates but only room for one: the dropped
+        // duplicate must not consume the one slot that was available — the
+        // page must still fill with the second, non-duplicate candidate.
+        let db = vec![company("greenhouse", "stripe", "scrape")];
+        let vendor = vec![
+            company("greenhouse", "stripe", "vendor"), // duplicate of the db row
+            company("ashby", "notion", "vendor"),      // the real remaining candidate
+        ];
+        let merged = merge_vendor_results(db, vendor, 1);
+        assert_eq!(
+            merged.len(),
+            2,
+            "a duplicate must not starve the page when a further unique match exists"
+        );
+        assert_eq!(merged[1].slug, "notion");
+    }
+
+    /// The MINOR this fixed: with 49 db rows (1 slot of room), the previous
+    /// caller asked `vendored::search` for exactly 1 candidate. If that one
+    /// candidate collided with a db row, the reply came back with 49 rows
+    /// even though a further vendor match existed. Faking `search_vendor`
+    /// lets this reproduce the bug deterministically without a real
+    /// `DiscoveredCompanyStore`/`AppHandle`.
+    #[test]
+    fn a_duplicate_near_the_front_of_the_vendor_pool_does_not_starve_the_page() {
+        let db: Vec<DiscoveredCompany> = (0..49)
+            .map(|i| company("greenhouse", &format!("db-{i}"), "scrape"))
+            .collect();
+        let fake_vendor = |_: &str, limit: usize| -> Vec<DiscoveredCompany> {
+            vec![
+                company("greenhouse", "db-0", "vendor"), // duplicate of a db row
+                company("ashby", "notion", "vendor"),    // the real remaining candidate
+            ]
+            .into_iter()
+            .take(limit)
+            .collect()
+        };
+
+        let merged = fill_with_vendor_results(db, "x", fake_vendor);
+
+        assert_eq!(
+            merged.len(),
+            50,
+            "a duplicate must not starve the page when a further unique vendor match exists"
+        );
+        assert!(
+            merged.iter().any(|c| c.slug == "notion"),
+            "the further unique vendor match must be present"
+        );
     }
 
     #[test]

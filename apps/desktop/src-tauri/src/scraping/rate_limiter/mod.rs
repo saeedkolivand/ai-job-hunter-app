@@ -4,7 +4,7 @@
 /// Each struct is identical to what was previously in `linkedin/rate_limiter/mod.rs`
 /// so that module keeps working with a single `use super::...` import swap.
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
@@ -30,7 +30,7 @@ impl Default for RateLimiterOptions {
 }
 
 pub struct RateLimiter {
-    requests: Arc<Mutex<Vec<u64>>>,
+    requests: Arc<Mutex<Vec<Instant>>>,
     options: RateLimiterOptions,
 }
 
@@ -46,51 +46,60 @@ impl RateLimiter {
     ///
     /// Re-validates the window under the lock after each sleep so that multiple
     /// concurrent waiters (thundering herd) cannot all pass simultaneously.
+    ///
+    /// Timestamps are `Instant`, not wall-clock `SystemTime`. `Instant` is
+    /// monotonic — it can never step backwards (NTP correction, DST, a clock
+    /// set by the user) — so a stored timestamp can never read as "ahead of
+    /// now" the way a `SystemTime` could. That removes the underflow panic
+    /// this used to hit (`now - t` on a `u64`) at the root, with no clamping
+    /// or saturating arithmetic needed to reason about clock steps.
     pub async fn wait_for_slot(&self) {
         loop {
             let mut requests = self.requests.lock().await;
-            // Sampled AFTER the lock, never before it. Sampling first and then
-            // `.await`ing the lock lets another task record a timestamp LATER
-            // than `now` while we wait, and `now - t` then underflows and
-            // panics — the intermittent `attempt to subtract with overflow`
-            // that rotated around the scraping tests.
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
+            let now = Instant::now();
+            let window = Duration::from_millis(self.options.window_ms);
 
-            // Remove requests outside the current window. `saturating_sub` for
-            // an independent reason: timestamps are recorded elsewhere, so a
-            // backward wall-clock step (NTP) can still put `t` ahead of `now`.
-            requests.retain(|&t| now.saturating_sub(t) < self.options.window_ms);
+            // Remove requests outside the current window.
+            requests.retain(|&t| now.saturating_duration_since(t) < window);
 
-            if requests.len() < self.options.max_requests {
-                // Slot is free — return; caller will record after the request.
-                return;
+            match Self::wait_for_full_window(&requests, now, window, self.options.max_requests) {
+                None => return, // slot is free — caller will record after the request
+                Some(wait) => {
+                    drop(requests);
+                    sleep(wait).await;
+                    // Loop and re-check under the lock — another waiter may
+                    // have filled the slot while we were sleeping.
+                }
             }
-
-            // Window is full: compute how long until the oldest slot expires,
-            // then release the lock and sleep before re-checking.
-            let wait_ms = match requests.first() {
-                Some(&oldest) => oldest + self.options.window_ms - now,
-                None => return, // empty after retain — should not happen, but be safe
-            };
-            drop(requests);
-            sleep(Duration::from_millis(wait_ms)).await;
-            // Loop and re-check under the lock — another waiter may have filled
-            // the slot while we were sleeping.
         }
+    }
+
+    /// Given the already-window-filtered `requests` (oldest first — insertion
+    /// order matches chronological order because `Instant` is monotonic),
+    /// decide whether the caller must wait for a slot, and for how long.
+    ///
+    /// Returns `None` when a slot is free. The returned wait is always capped
+    /// at one `window`: even a request timestamp that somehow reads as ahead
+    /// of `now` (not reachable via the normal record path, since every write
+    /// goes through this same lock — kept as an explicit invariant here
+    /// rather than an assumption) cannot inflate the wait past one window.
+    fn wait_for_full_window(
+        requests: &[Instant],
+        now: Instant,
+        window: Duration,
+        max_requests: usize,
+    ) -> Option<Duration> {
+        if requests.len() < max_requests {
+            return None;
+        }
+        let oldest = *requests.first()?;
+        Some((oldest + window).saturating_duration_since(now).min(window))
     }
 
     /// Record a request was made.
     pub async fn record_request(&self) {
         let mut requests = self.requests.lock().await;
-        requests.push(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
-        );
+        requests.push(Instant::now());
     }
 
     /// Clear all recorded request timestamps, resetting the window.
@@ -145,27 +154,81 @@ mod test {
 
     /// A timestamp AHEAD of `now` must not panic the window sweep.
     ///
-    /// Two ways that happens in the wild: `wait_for_slot` used to sample `now`
-    /// BEFORE awaiting the lock, so a concurrent `record_request` could land a
-    /// later timestamp while it waited; and a backward wall-clock step (NTP)
-    /// can do it even with correct lock ordering. Before the fix this panicked
-    /// with `attempt to subtract with overflow`.
+    /// This used to be reachable two ways with `SystemTime`: sampling `now`
+    /// BEFORE awaiting the lock let a concurrent `record_request` land a
+    /// later timestamp while this task waited, and a backward wall-clock
+    /// step (NTP) could do it even with correct lock ordering — both hit
+    /// `attempt to subtract with overflow`. `Instant` closes off the second
+    /// cause structurally; this test proves the sweep also can't panic if,
+    /// against that invariant, a stored value is still ahead of `now`.
     #[tokio::test]
-    async fn a_future_timestamp_does_not_underflow_the_window() {
+    async fn a_future_instant_does_not_underflow_the_window() {
         let limiter = RateLimiter::new(RateLimiterOptions {
             max_requests: 30,
             window_ms: 60_000,
             ..RateLimiterOptions::default()
         });
-        let future = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-            + 5_000;
+        let future = Instant::now() + Duration::from_secs(5);
         limiter.requests.lock().await.push(future);
 
         // Must return (slot free: 1 of 30) rather than panic.
         limiter.wait_for_slot().await;
+    }
+
+    /// The MAJOR this fixed: a full window plus one pathological entry ahead
+    /// of `now` must not add its skew on top of the wait. Before capping the
+    /// result, the formula was `oldest + window - now`, so an `oldest` far
+    /// ahead of `now` inflated the wait to `window + skew` instead of at
+    /// most one `window` — a live-traffic stall, not just a panic.
+    #[test]
+    fn full_window_with_a_skewed_entry_waits_at_most_one_window() {
+        let now = Instant::now();
+        let window = Duration::from_millis(60_000);
+        let skewed = now + Duration::from_secs(3_600); // pathological: 1h ahead
+        let requests = [skewed];
+
+        let wait = RateLimiter::wait_for_full_window(&requests, now, window, 1)
+            .expect("window is full (1 of 1) so a wait must be returned");
+
+        assert!(
+            wait <= window,
+            "a skewed entry must not push the wait beyond one window, got {wait:?}"
+        );
+    }
+
+    /// Baseline: normal (non-skewed) gating still works — the first
+    /// `max_requests` calls get a slot immediately, and once the window is
+    /// full the next caller actually waits for roughly one window rather
+    /// than returning immediately or stalling far longer than the window.
+    #[tokio::test]
+    async fn slots_are_gated_and_freed_after_the_window_elapses() {
+        let limiter = RateLimiter::new(RateLimiterOptions {
+            max_requests: 2,
+            window_ms: 80,
+            ..RateLimiterOptions::default()
+        });
+
+        for _ in 0..2 {
+            let start = Instant::now();
+            limiter.wait_for_slot().await;
+            limiter.record_request().await;
+            assert!(
+                start.elapsed() < Duration::from_millis(40),
+                "a free slot must not wait"
+            );
+        }
+
+        let start = Instant::now();
+        limiter.wait_for_slot().await;
+        let waited = start.elapsed();
+        assert!(
+            waited >= Duration::from_millis(40),
+            "the third request must wait for a slot to free up, waited {waited:?}"
+        );
+        assert!(
+            waited <= Duration::from_millis(500),
+            "the wait must stay close to one window, waited {waited:?}"
+        );
     }
 
     /// All hosts get the uniform 30-req/60-s default (per-board overrides were
