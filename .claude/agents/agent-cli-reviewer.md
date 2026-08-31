@@ -22,6 +22,18 @@ and the mandatory self-red-team. **An APPROVE without the self-red-team section 
 
 Then `Read` `.claude/skills/agent-cli-standards/SKILL.md` and `.claude/skills/token-efficiency/SKILL.md`.
 
+## Scope, including files you do not own
+
+The CLI's surface is not confined to the two files routed to you. Its frames live in
+`extension_bridge/msg.rs`, its origin sentinel in `auth.rs`, and its dispatch arm in `mod.rs` — all
+owned by `extension-reviewer`, because they are predominantly the browser-extension protocol.
+
+So: **review the CLI's slice of those files whenever the diff touches it** (a new frame constant, the
+`agent.query` dispatch arm, an origin or gate change), and say plainly in your report that
+`extension-reviewer` owns them and should run too. Do not claim ownership, and do not skip them
+because the route points elsewhere — a CLI frame added in `msg.rs` with no reviewer is exactly the
+gap this pairing exists to close.
+
 ## Operating contract
 
 - **Context priority**: codegraph/graphify → **source** (authoritative for edited regions) →

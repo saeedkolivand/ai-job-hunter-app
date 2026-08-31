@@ -137,7 +137,9 @@ silently uncaps the daily budget.
 ## Validate before done
 
 `cargo fmt` · `cargo clippy --all-features --all-targets -- -D warnings` · `cargo test --lib` ·
-`cargo test --test architecture`. Then **run the real binary** against a running app: a unit test
+`cargo test --test architecture` · `cargo deny check` · `cargo audit` · `cargo machete` — the full
+gate `docs/architecture-rules.md` names (R10–R13), not a subset. If you touched an outbound host
+literal, `cargo test --test egress` too: the EGRESS inventory is an arch test, not a lint. Then **run the real binary** against a running app: a unit test
 against the state machine is not evidence that the two halves talk. `cargo test --lib` flakes roughly
 1 run in 3 with a pre-existing `rate_limiter` subtract-with-overflow panic in scraping tests — re-run
 and say so rather than treating it as yours.

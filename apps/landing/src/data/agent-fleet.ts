@@ -250,6 +250,7 @@ export const PAIRS: readonly (readonly [string, readonly string[]])[] = [
   ['test-author', ['testing-reviewer']],
   ['code-quality-author', ['code-quality-reviewer']],
   ['extension-author', ['extension-reviewer']],
+  ['agent-cli-author', ['agent-cli-reviewer']],
 ];
 
 // Cross-cutting / risk agents — they ride along, no author pairing.

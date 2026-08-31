@@ -43,7 +43,8 @@ Your consumer is an LLM with shell access, not a person. That drives everything:
 ## Before you call it done
 
 `cargo fmt` · `cargo clippy --all-features --all-targets -- -D warnings` · `cargo test --lib` ·
-`cargo test --test architecture`. Then **run the real binary against a running app** — a unit test
+`cargo test --test architecture` · `cargo deny check` · `cargo audit` · `cargo machete` (the full
+R10–R13 gate), plus `cargo test --test egress` if you touched an outbound host literal. Then **run the real binary against a running app** — a unit test
 against the state machine does not prove the two halves talk; this surface has already shipped a
 30-second hang and an empty-payload scare that only an end-to-end run exposed. `cargo test --lib`
 flakes ~1 run in 3 on a pre-existing `rate_limiter` overflow in scraping tests; re-run and say so.
