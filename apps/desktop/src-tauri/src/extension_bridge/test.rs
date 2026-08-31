@@ -687,7 +687,8 @@ fn advance_authenticated_routes_autotrack_check() {
         "reqId": "req-9",
         "payload": Value::Null,
     });
-    let decision = advance_authenticated(msg::AUTOTRACK_CHECK, "req-9".to_string(), &envelope);
+    let decision =
+        advance_authenticated(msg::AUTOTRACK_CHECK, "req-9".to_string(), &envelope, false);
     match decision {
         FrameDecision::AutotrackCheck { req_id } => assert_eq!(req_id, "req-9"),
         other => panic!("expected FrameDecision::AutotrackCheck, got {other:?}"),
@@ -717,11 +718,50 @@ fn advance_authenticated_routes_autofill_check() {
         "reqId": "req-10",
         "payload": Value::Null,
     });
-    let decision = advance_authenticated(msg::AUTOFILL_CHECK, "req-10".to_string(), &envelope);
+    let decision =
+        advance_authenticated(msg::AUTOFILL_CHECK, "req-10".to_string(), &envelope, false);
     match decision {
         FrameDecision::AutofillCheck { req_id } => assert_eq!(req_id, "req-10"),
         other => panic!("expected FrameDecision::AutofillCheck, got {other:?}"),
     }
+}
+
+// ── agent.query is gated on `is_agent_cli` (finding #5, security review) ──
+
+#[test]
+fn advance_authenticated_routes_agent_query_only_for_the_cli_origin() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_QUERY,
+        "reqId": "req-11",
+        "payload": { "resource": "schema" },
+    });
+    let decision = advance_authenticated(msg::AGENT_QUERY, "req-11".to_string(), &envelope, true);
+    match decision {
+        FrameDecision::AgentQuery { req_id, .. } => assert_eq!(req_id, "req-11"),
+        other => panic!("expected FrameDecision::AgentQuery, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_authenticated_refuses_agent_query_from_a_non_cli_origin() {
+    // The exact case this fix closes: an authenticated connection whose
+    // handshake Origin was NOT the CLI's — e.g. the browser extension's own
+    // already-authenticated session — must never reach `FrameDecision::
+    // AgentQuery`, even though it is fully authenticated.
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_QUERY,
+        "reqId": "req-12",
+        "payload": { "resource": "schema" },
+    });
+    let decision = advance_authenticated(msg::AGENT_QUERY, "req-12".to_string(), &envelope, false);
+    let FrameDecision::Reply(text) = decision else {
+        panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
+    };
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["type"], msg::AGENT_RESULT);
+    assert_eq!(v["reqId"], "req-12");
+    assert_eq!(v["payload"]["ok"], false);
+    assert_eq!(v["payload"]["resource"], "schema");
 }
 
 // ── AUTO status.update gate (defense-in-depth, Task #22) ──────────────────────
@@ -777,7 +817,7 @@ fn advance_authenticated_routes_assist_cancel_by_req_id() {
         "reqId": "req-7",
         "payload": Value::Null,
     });
-    let decision = advance_authenticated(msg::ASSIST_CANCEL, "req-7".to_string(), &envelope);
+    let decision = advance_authenticated(msg::ASSIST_CANCEL, "req-7".to_string(), &envelope, false);
     match decision {
         FrameDecision::AssistCancel { req_id } => assert_eq!(req_id, "req-7"),
         other => panic!("expected FrameDecision::AssistCancel, got {other:?}"),

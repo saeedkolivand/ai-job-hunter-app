@@ -145,18 +145,23 @@ pub const ASSIST_DONE: &str = "assist.done";
 /// connection's own [`stream::AssistStreamRegistry`], never a global
 /// registry (see [`stream`]'s module doc).
 pub const ASSIST_CANCEL: &str = "assist.cancel";
-/// Extension/CLI → desktop: the read-only agent surface (issue #1084 PR 1).
+/// CLI → desktop: the read-only agent surface (issue #1084 PR 1).
 /// `{ resource: "best-matches"|"job"|"profile"|"automations"|"schema", url?,
 /// limit? }` — see [`super::agent_read`]'s module doc for the full wire shape
-/// per resource. **CLI-agent only** — unlike every other constant in this
-/// file, this one is deliberately NOT mirrored in the shared TS
-/// `EXTENSION_MESSAGE_TYPES` (`packages/shared/src/ipc/extension-protocol-constants.ts`)
-/// or the Rust↔TS parity test (`super::test::message_type_constants_match_ts`):
-/// the browser extension never sends it (the CLI is a separate Rust process
+/// per resource. **CLI-agent only, and now actually gated on it**
+/// (`super::advance_authenticated` refuses this for any connection whose
+/// handshake `Origin` isn't `auth::AGENT_CLI_ORIGIN` — finding #5, security
+/// review; before that fix this was true of the extension's OWN code, but
+/// unenforced server-side, so any authenticated socket could send it).
+/// Unlike every other constant in this file, this one is deliberately NOT
+/// mirrored in the shared TS `EXTENSION_MESSAGE_TYPES`
+/// (`packages/shared/src/ipc/extension-protocol-constants.ts`) or the
+/// Rust↔TS parity test (`super::test::message_type_constants_match_ts`): the
+/// browser extension never sends it (the CLI is a separate Rust process
 /// speaking this same loopback protocol directly), so there is no
-/// browser-vs-desktop drift for `extension-standards`' protocol-lockstep rule
-/// to guard against. A future PR that lets the extension itself use this verb
-/// would need to add both.
+/// browser-vs-desktop drift for `extension-standards`' protocol-lockstep
+/// rule to guard against. A future PR that lets the extension itself use
+/// this verb would need to add both AND extend the origin gate.
 pub const AGENT_QUERY: &str = "agent.query";
 /// Desktop → extension/CLI: the `agent.query` outcome — `{ ok: true,
 /// resource, data } | { ok: false, resource, error }`. See [`AGENT_QUERY`]'s doc.

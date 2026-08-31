@@ -38,6 +38,28 @@ pub const ALLOWED_EXTENSION_IDS: &[&str] = &[
 /// listener, which the host relays through unchanged.
 pub const NATIVE_HOST_ORIGIN: &str = "ajh-native-host";
 
+/// Sentinel `Origin` [`super::agent_cli::attempt_port`] sends (MEDIUM fix —
+/// security review). The CLI used to reuse [`NATIVE_HOST_ORIGIN`], so the
+/// server could not distinguish "the CLI" from "the browser extension
+/// arriving via the native-host relay" — `msg::AGENT_QUERY`'s doc claimed
+/// `agent.query` is CLI-agent-only, but that was true of the extension's OWN
+/// code, not of anything the server itself enforced.
+///
+/// **Be honest about what this is**: a plain string a local process types
+/// into a WebSocket handshake header, trivially spoofable by anything that
+/// can open a loopback socket — NOT a security boundary. The v2 mutual HMAC
+/// handshake ([`super::handshake::verify_client_proof`]) remains the ONLY
+/// boundary; this origin gate stays defense-in-depth exactly like every
+/// other entry in [`is_allowed_origin`]. What it DOES do: make the
+/// documented "CLI-agent only" restriction on `agent.query` actually
+/// enforced against every NON-COLLUDING case — a future bug in the
+/// extension's own code, or a compromised extension update that starts
+/// sending frames it was never meant to — none of which know to spoof this
+/// origin. It does nothing against a deliberate local attacker, who can
+/// simply set this header (the same limitation every entry in
+/// [`is_allowed_origin`] already carries).
+pub const AGENT_CLI_ORIGIN: &str = "ajh-agent-cli";
+
 /// Whether a handshake `Origin` is an allowed extension origin.
 ///
 /// This check is **defense-in-depth, not the primary boundary**. The real
@@ -85,6 +107,11 @@ pub fn is_allowed_origin(origin: &str, dev_origins: &[String]) -> bool {
     // bridge — see `NATIVE_HOST_ORIGIN`). Exact match only; the mutual handshake
     // + loopback binding remain the real boundary.
     if origin == NATIVE_HOST_ORIGIN {
+        return true;
+    }
+    // The `ajh-tauri agent` CLI — see `AGENT_CLI_ORIGIN`'s doc for why this
+    // is a label, not a boundary.
+    if origin == AGENT_CLI_ORIGIN {
         return true;
     }
     // Chrome: scheme + known store id. An origin is just scheme + host, so a
@@ -323,6 +350,27 @@ mod tests {
         // Only the exact sentinel is accepted — not strings that contain it.
         assert!(!is_allowed_origin("ajh-native-host.evil.com", &[]));
         assert!(!is_allowed_origin("xajh-native-host", &[]));
+    }
+
+    #[test]
+    fn allows_agent_cli_sentinel_origin() {
+        assert!(is_allowed_origin(AGENT_CLI_ORIGIN, &[]));
+        assert!(is_allowed_origin("ajh-agent-cli", &[]));
+        assert!(is_allowed_origin("  ajh-agent-cli  ", &[]));
+    }
+
+    #[test]
+    fn rejects_origins_that_merely_contain_agent_cli_sentinel() {
+        assert!(!is_allowed_origin("ajh-agent-cli.evil.com", &[]));
+        assert!(!is_allowed_origin("xajh-agent-cli", &[]));
+    }
+
+    #[test]
+    fn agent_cli_and_native_host_sentinels_are_distinct() {
+        // The whole point of a SEPARATE sentinel (finding #5, security
+        // review) is that the two are distinguishable — one must never
+        // satisfy the other's exact-match check.
+        assert_ne!(AGENT_CLI_ORIGIN, NATIVE_HOST_ORIGIN);
     }
 
     #[test]

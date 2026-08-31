@@ -316,6 +316,27 @@ pub(super) fn spawn_answer_assist(
     });
 }
 
+/// Drive an `agent.query` on its OWN task, decoupled from the connection's
+/// read loop (finding #4, security review — the same reason
+/// [`spawn_answer_assist`] exists above): `best-matches` can run
+/// multi-second (see `agent_read`'s throttle doc), and awaiting it INLINE in
+/// the read loop would stall `reader.next()` — including this connection's
+/// own `token.revoked` observation, so an in-flight read could complete on
+/// an already-revoked token. Unlike `answer.assist`, the reply here is a
+/// single non-streamed `agent.result` frame — no chunking, no per-connection
+/// registry — so this is a plain spawn-and-reply.
+pub(super) fn spawn_agent_query(
+    app: AppHandle,
+    req_id: String,
+    payload: Value,
+    out_tx: UnboundedSender<Message>,
+) {
+    tokio::spawn(async move {
+        let reply = super::agent_read::handle_agent_query(&app, &req_id, &payload).await;
+        let _ = out_tx.send(Message::text(reply));
+    });
+}
+
 /// The synchronous half of [`spawn_answer_assist`] — factored out so it is
 /// directly unit-testable WITHOUT a live `AppHandle` (this crate has no
 /// `tauri::test` mock-app harness). A plain (non-`async`) function, so a

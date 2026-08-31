@@ -22,6 +22,14 @@
 //! was previously no Rust-side implementation of this handshake; the browser
 //! extension's lives in TS, `apps/extension/src/lib/bridge.ts`).
 //!
+//! **This defeats a dumb port squatter (one with no way to answer the
+//! challenge), not a RELAYING one** — a local process that transparently
+//! proxies bytes between us and the real app would pass the server-proof
+//! check too, since it never has to know the token itself, only forward it.
+//! The v2 handshake has no channel binding to close that gap; this is a
+//! pre-existing, inherent limitation shared with the browser extension's own
+//! handshake, not something this client-side change introduces or fixes.
+//!
 //! ## Exit codes (the process-level contract — see [`run`])
 //! - `0` — `agent.result` replied `{"ok":true,...}`; the payload is on stdout.
 //! - `1` — `agent.result` replied `{"ok":false,...}` (a server-side refusal:
@@ -48,10 +56,63 @@ use tokio_tungstenite::tungstenite::{ClientRequestBuilder, Message};
 
 use crate::error::{AppError, AppResult};
 
-use super::auth::NATIVE_HOST_ORIGIN;
-use super::{handshake, msg, MAX_FRAME_BYTES, PORT_RANGE, PROTOCOL_VERSION, TOKEN_FILE};
+use super::{auth, handshake, msg, MAX_FRAME_BYTES, PORT_RANGE, PROTOCOL_VERSION, TOKEN_FILE};
 
 type WsStream = tokio_tungstenite::WebSocketStream<TcpStream>;
+
+// ── Error sentinels (the exit-2 `error` field) ──────────────────────────────
+// Named once, referenced everywhere they're emitted AND by `help_text()`'s
+// own listing — never a second hand-typed copy, so `--help` can't drift from
+// what this CLI actually returns (the same anti-drift discipline as
+// `agent_read::RESOURCES`).
+const ERR_APP_NOT_LOCATED: &str = "app_not_located";
+const ERR_PAIRING_TOKEN_UNAVAILABLE: &str = "pairing_token_unavailable";
+const ERR_APP_NOT_RUNNING: &str = "app_not_running";
+const ERR_PAIRING_REJECTED: &str = "pairing_rejected";
+const ERR_CONNECTION_ERROR: &str = "connection_error";
+const ERR_RUNTIME_UNAVAILABLE: &str = "runtime_unavailable";
+const ERR_CONNECTION_LOST: &str = "connection_lost";
+const ERR_TIMEOUT: &str = "timeout";
+const ERR_UNSUPPORTED_BY_APP: &str = "unsupported_by_app";
+const ERR_USAGE: &str = "usage";
+
+/// `(sentinel, meaning)` — [`help_text`] lists these verbatim.
+const ERROR_SENTINELS: &[(&str, &str)] = &[
+    (
+        ERR_APP_NOT_LOCATED,
+        "the app has not written its pointer file yet (needs a newer build, or has never launched)",
+    ),
+    (
+        ERR_PAIRING_TOKEN_UNAVAILABLE,
+        "no pairing token on disk yet",
+    ),
+    (
+        ERR_APP_NOT_RUNNING,
+        "nothing answered a connect on any candidate port",
+    ),
+    (
+        ERR_PAIRING_REJECTED,
+        "every reachable port rejected this token — re-pair from Settings",
+    ),
+    (
+        ERR_CONNECTION_ERROR,
+        "a handshake started but failed before authenticating — not evidence of a bad token",
+    ),
+    (
+        ERR_UNSUPPORTED_BY_APP,
+        "the running app doesn't understand this verb yet — update it",
+    ),
+    (ERR_TIMEOUT, "no reply within the round-trip budget"),
+    (
+        ERR_CONNECTION_LOST,
+        "the socket closed or errored mid-round-trip",
+    ),
+    (ERR_RUNTIME_UNAVAILABLE, "could not start an async runtime"),
+    (
+        ERR_USAGE,
+        "bad CLI usage — see \"detail\" for what was wrong",
+    ),
+];
 
 /// Wall-clock bound on each individual handshake step (send hello → await
 /// challenge; send auth → await auth.ok). Generous for a loopback round trip;
@@ -105,10 +166,59 @@ impl Verb {
     }
 }
 
+/// One verb's `--help` metadata. [`VERB_TABLE`] is `parse_verb`'s own
+/// canonical name list (never a second hand-typed one — see [`help_text`]
+/// and `parse_verb`'s "unknown verb" branch below, both of which read from
+/// this SAME array) so the CLI's usage text cannot silently drift from what
+/// it actually parses (LOW fix — security review, folded into this same
+/// verb table so it can't recur here either).
+struct VerbHelp {
+    name: &'static str,
+    args: &'static str,
+    returns: &'static str,
+}
+
+const VERB_TABLE: &[VerbHelp] = &[
+    VerbHelp {
+        name: "best-matches",
+        args: "[--limit <n>]",
+        returns: "the strongest jobs across every autopilot (default 20, max 50)",
+    },
+    VerbHelp {
+        name: "job",
+        args: "<url>",
+        returns: "full detail for one posting",
+    },
+    VerbHelp {
+        name: "profile",
+        args: "",
+        returns:
+            "contact-profile fields for autofill (same consent gate as the extension's profile.get)",
+    },
+    VerbHelp {
+        name: "automations",
+        args: "",
+        returns: "every autopilot and its status",
+    },
+    VerbHelp {
+        name: "schema",
+        args: "",
+        returns: "this resource list, as machine-readable JSON",
+    },
+];
+
+fn verb_names_joined() -> String {
+    VERB_TABLE
+        .iter()
+        .map(|v| v.name)
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 /// Parse `args` (excludes the program name AND the `agent` sentinel itself —
-/// e.g. `["best-matches", "--limit", "10"]`). Every error message here is
-/// built only from CLI flag/verb tokens the caller itself typed — never a
-/// path — so it is safe to echo back verbatim. `AppError::Validation` per
+/// e.g. `["best-matches", "--limit", "10"]`). `--help`/`-h`/bare `help` are
+/// intercepted by [`run`] BEFORE this is ever called, so this only ever sees
+/// a real (or invalid) verb attempt. `AppError::Validation` per
 /// `rust-standards`' R6 (no stringly-typed `Result<_, String>` outside
 /// `error.rs`), even for this process-local, never-IPC-round-tripped parse.
 fn parse_verb(args: &[String]) -> AppResult<Verb> {
@@ -127,12 +237,17 @@ fn parse_verb(args: &[String]) -> AppResult<Verb> {
         Some("profile") => Ok(Verb::Profile),
         Some("automations") => Ok(Verb::Automations),
         Some("schema") => Ok(Verb::Schema),
-        Some(other) => Err(AppError::Validation(format!(
-            "unknown verb '{other}' (expected best-matches|job|profile|automations|schema)"
+        // Never echoes the typed token (LOW fix — security review): argv can
+        // carry a path/username, and this reply lands in an agent transcript
+        // — list the allowed verbs instead of the one that failed.
+        Some(_) => Err(AppError::Validation(format!(
+            "unknown verb (run `ajh-tauri agent --help`; expected one of: {})",
+            verb_names_joined()
         ))),
-        None => Err(AppError::Validation(
-            "missing verb (best-matches|job|profile|automations|schema)".to_string(),
-        )),
+        None => Err(AppError::Validation(format!(
+            "missing verb (run `ajh-tauri agent --help`; expected one of: {})",
+            verb_names_joined()
+        ))),
     }
 }
 
@@ -177,10 +292,33 @@ fn read_agent_pointer() -> Option<AgentPointer> {
     serde_json::from_str(&text).ok()
 }
 
+/// Reject a `dataDir` that is not an absolute LOCAL path (MEDIUM fix —
+/// security review). The pointer file is written by the app itself, but this
+/// CLI treats its `dataDir` value as arriving from disk and joins it
+/// unvalidated — a UNC path (`\\attacker.example.com\share`) turns the
+/// read below into an outbound SMB/WebDAV session on Windows, leaking NTLM
+/// credentials to whatever host it names: a network primitive smuggled
+/// through a file read, on a path `tests/egress.rs`'s allowlist does not
+/// cover. `//` is rejected too (POSIX gives a leading double-slash
+/// implementation-defined meaning; on Windows it's UNC-equivalent). Plain
+/// string-prefix checks, so this runs before ANY filesystem call.
+fn is_safe_local_data_dir(data_dir: &str) -> bool {
+    if data_dir.starts_with(r"\\") || data_dir.starts_with("//") {
+        return false;
+    }
+    Path::new(data_dir).is_absolute()
+}
+
 /// Read the persisted pairing token from `data_dir` — the exact file
 /// [`super::persist::persist_token`] writes, read the same way
 /// [`super::persist::load_or_create_token`] does (trimmed, empty ⇒ absent).
+/// `None` (never a filesystem read) for a `dataDir` [`is_safe_local_data_dir`]
+/// rejects — the caller reports the same `pairing_token_unavailable` sentinel
+/// as any other absent/unreadable token.
 fn read_pairing_token(data_dir: &str) -> Option<String> {
+    if !is_safe_local_data_dir(data_dir) {
+        return None;
+    }
     let text = std::fs::read_to_string(Path::new(data_dir).join(TOKEN_FILE)).ok()?;
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
@@ -297,12 +435,14 @@ async fn attempt_port(port: u16, token: &str) -> Result<WsStream, PortOutcome> {
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_FRAME_BYTES))
         .max_frame_size(Some(MAX_FRAME_BYTES));
-    // Reuses the native-host's own sentinel Origin: this CLI is, like it, our
-    // own process speaking the loopback protocol directly rather than a
-    // browser extension — see `auth::is_allowed_origin`'s doc. The origin
-    // check is defense-in-depth only; the mutual HMAC handshake below is the
+    // Its OWN sentinel Origin (finding #5, security review) — distinct from
+    // the native host's, so the server can tell "the CLI" apart from "the
+    // browser extension arriving via the native-host relay" and gate
+    // `agent.query` on it (see `auth::AGENT_CLI_ORIGIN`'s doc for exactly
+    // what this label does and doesn't defend against). The origin check
+    // remains defense-in-depth only; the mutual HMAC handshake below is the
     // real boundary.
-    let request = ClientRequestBuilder::new(uri).with_header("Origin", NATIVE_HOST_ORIGIN);
+    let request = ClientRequestBuilder::new(uri).with_header("Origin", auth::AGENT_CLI_ORIGIN);
     let (mut ws, _resp) = tokio_tungstenite::client_async_with_config(request, tcp, Some(config))
         .await
         .map_err(|_| PortOutcome::NoUpgrade)?;
@@ -389,13 +529,22 @@ async fn connect_authenticated(token: &str) -> Result<WsStream, PairingFailure> 
 
 // ── agent.query round trip ──────────────────────────────────────────────────
 
-/// Send one `agent.query` and wait for its matching `agent.result` (by
-/// `reqId`), within [`QUERY_REPLY_TIMEOUT`] overall. A `token.revoked` seen
-/// instead (the pairing was rotated mid-session) is reported distinctly
-/// rather than left to time out. Any other frame is ignored — a fresh,
-/// one-shot connection should never see one, but ignoring rather than failing
-/// on it costs nothing and is more robust to a future additive frame.
-async fn send_agent_query(mut ws: WsStream, verb: &Verb) -> Result<Value, &'static str> {
+/// [`send_agent_query`], but with the overall budget as an explicit
+/// parameter — directly unit-testable against a real (but fast) loopback
+/// server without waiting out the real 30s [`QUERY_REPLY_TIMEOUT`].
+/// Production always goes through the convenience wrapper below.
+///
+/// Waits for the matching `agent.result` (by `reqId`), within `budget`
+/// overall. A `token.revoked` seen instead (the pairing was rotated
+/// mid-session) is reported distinctly rather than left to time out. Any
+/// OTHER frame carrying a DIFFERENT `reqId` is ignored — a fresh, one-shot
+/// connection should never see one, but ignoring rather than failing on it
+/// costs nothing and is more robust to a future additive frame.
+async fn send_agent_query_within(
+    mut ws: WsStream,
+    verb: &Verb,
+    budget: Duration,
+) -> Result<Value, &'static str> {
     let req_id = uuid::Uuid::new_v4().to_string();
     let frame = json!({
         "type": msg::AGENT_QUERY,
@@ -404,38 +553,68 @@ async fn send_agent_query(mut ws: WsStream, verb: &Verb) -> Result<Value, &'stat
     })
     .to_string();
     if ws.send(Message::text(frame)).await.is_err() {
-        return Err("connection_lost");
+        return Err(ERR_CONNECTION_LOST);
     }
 
-    let deadline = Instant::now() + QUERY_REPLY_TIMEOUT;
+    let deadline = Instant::now() + budget;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err("timeout");
+            return Err(ERR_TIMEOUT);
         }
         let Some(v) = next_json(&mut ws, remaining).await else {
-            return Err("connection_lost");
+            // `next_json` returning `None` is EITHER a genuine timeout (it
+            // burned the whole `remaining` budget waiting) OR a real
+            // transport failure (a close/IO error/malformed frame arriving
+            // well BEFORE the deadline) — the two used to collapse into one
+            // `connection_lost`, so a real 30s round-trip timeout (measured
+            // against v0.144.0: `agent schema` returned `connection_lost`
+            // after burning the full budget) misreported as a transport
+            // failure instead. Distinguish by checking the clock: only a
+            // call that actually reached the deadline is a timeout (same
+            // defect class as `6bdd6785` — a definite outcome misreported as
+            // something else).
+            return if Instant::now() >= deadline {
+                Err(ERR_TIMEOUT)
+            } else {
+                Err(ERR_CONNECTION_LOST)
+            };
         };
         match v.get("type").and_then(Value::as_str) {
             Some(t)
                 if t == msg::AGENT_RESULT
                     && v.get("reqId").and_then(Value::as_str) == Some(req_id.as_str()) =>
             {
-                return v.get("payload").cloned().ok_or("connection_lost");
+                return v.get("payload").cloned().ok_or(ERR_CONNECTION_LOST);
             }
-            Some(t) if t == msg::TOKEN_REVOKED => return Err("pairing_rejected"),
+            Some(t) if t == msg::TOKEN_REVOKED => return Err(ERR_PAIRING_REJECTED),
+            _ if v.get("reqId").and_then(Value::as_str) == Some(req_id.as_str()) => {
+                // Any OTHER frame carrying OUR OWN reqId is precisely
+                // detectable: an app that doesn't understand `agent.query`
+                // replies via `advance_authenticated`'s "unknown message
+                // type" fallback, echoing this exact reqId on an
+                // `import.result` envelope. Fail fast instead of waiting out
+                // the full `QUERY_REPLY_TIMEOUT` for an `agent.result` that
+                // will never arrive.
+                return Err(ERR_UNSUPPORTED_BY_APP);
+            }
             _ => continue,
         }
     }
+}
+
+/// Send one `agent.query`, budgeted at [`QUERY_REPLY_TIMEOUT`].
+async fn send_agent_query(ws: WsStream, verb: &Verb) -> Result<Value, &'static str> {
+    send_agent_query_within(ws, verb, QUERY_REPLY_TIMEOUT).await
 }
 
 // ── entrypoint + output ─────────────────────────────────────────────────────
 
 fn pairing_failure_sentinel(f: PairingFailure) -> &'static str {
     match f {
-        PairingFailure::AppNotRunning => "app_not_running",
-        PairingFailure::PairingRejected => "pairing_rejected",
-        PairingFailure::ConnectionError => "connection_error",
+        PairingFailure::AppNotRunning => ERR_APP_NOT_RUNNING,
+        PairingFailure::PairingRejected => ERR_PAIRING_REJECTED,
+        PairingFailure::ConnectionError => ERR_CONNECTION_ERROR,
     }
 }
 
@@ -454,10 +633,10 @@ async fn run_verb(verb: Verb) -> i32 {
     let resource = verb.resource_name();
 
     let Some(pointer) = read_agent_pointer() else {
-        return emit_cli_error(Some(resource), "app_not_located");
+        return emit_cli_error(Some(resource), ERR_APP_NOT_LOCATED);
     };
     let Some(token) = read_pairing_token(&pointer.data_dir) else {
-        return emit_cli_error(Some(resource), "pairing_token_unavailable");
+        return emit_cli_error(Some(resource), ERR_PAIRING_TOKEN_UNAVAILABLE);
     };
 
     let ws = match connect_authenticated(&token).await {
@@ -477,6 +656,46 @@ async fn run_verb(verb: Verb) -> i32 {
     }
 }
 
+/// Whether `args`' first token requests help. `-h`/`--help` are checked
+/// anywhere the flag would normally sit as the FIRST argument (this CLI has
+/// no other flags before a verb); a bare `help` verb is also accepted.
+fn is_help_request(args: &[String]) -> bool {
+    matches!(
+        args.first().map(String::as_str),
+        Some("--help") | Some("-h") | Some("help")
+    )
+}
+
+/// Human-readable usage text — derived ENTIRELY from [`VERB_TABLE`] and
+/// [`ERROR_SENTINELS`], never a hand-typed second copy of either (see both
+/// constants' own docs). Pure, allocation-only: no `AppHandle`, no pointer
+/// file, no token, no socket — safe to print with the app not running at all
+/// (the owner's hard requirement for `--help`).
+fn help_text() -> String {
+    let mut out = String::from(
+        "ajh-tauri agent <verb> [args]\n\n\
+         A thin CLI client over the AI Job Hunter desktop app's loopback bridge.\n\
+         The desktop app must already be running for any verb below EXCEPT --help.\n\n\
+         VERBS:\n",
+    );
+    for v in VERB_TABLE {
+        out.push_str(&format!("  {:<16}{:<16}{}\n", v.name, v.args, v.returns));
+    }
+    out.push_str(
+        "  --help, -h, help                Show this help and exit (works even if the app is not running).\n\n\
+         EXIT CODES:\n\
+         \x20 0   Success — the reply is printed as JSON on stdout.\n\
+         \x20 1   The app replied with a refusal (rate-limited, validation, not found, autofill off, ...) \
+           — still printed as JSON on stdout.\n\
+         \x20 2   The round trip never completed, or usage was invalid — see \"error\" below.\n\n\
+         ERROR SENTINELS (the \"error\" field on an exit-2 reply):\n",
+    );
+    for (sentinel, meaning) in ERROR_SENTINELS {
+        out.push_str(&format!("  {sentinel:<26}{meaning}\n"));
+    }
+    out
+}
+
 /// `ajh-tauri agent <verb>` entrypoint. `args` excludes the program name AND
 /// the `agent` sentinel itself. Called from `lib::run_agent_cli_if_invoked`,
 /// itself called from `main()` BELOW the native-host short-circuit and ABOVE
@@ -485,14 +704,34 @@ async fn run_verb(verb: Verb) -> i32 {
 /// [`super::native_host::run`]): this path runs before Tauri boots, so there
 /// is no ambient reactor. Never panics out.
 pub fn run(args: &[String]) -> i32 {
+    // MUST run first — `--help` is the single most likely command a human
+    // types interactively on Windows, precisely the NULL-stdout case this
+    // probe exists for (`platform::windows_console`'s own doc).
     crate::platform::windows_console::ensure_console_output();
+
+    if is_help_request(args) {
+        // No pointer, no token, no socket, no network — pure local text, per
+        // the owner's requirement that `--help` work with the app NOT
+        // running.
+        println!("{}", help_text());
+        return 0;
+    }
+    if args.is_empty() {
+        // A bare `ajh-tauri agent` is far more likely a human looking for
+        // guidance than a scripted caller depending on today's terse JSON
+        // usage error, so it gets the SAME help text `--help` prints — to
+        // stderr (this is still an error exit), never stdout, so a script
+        // that only reads stdout for the JSON reply sees nothing new.
+        eprintln!("{}", help_text());
+        return 2;
+    }
 
     let verb = match parse_verb(args) {
         Ok(v) => v,
         Err(e) => {
             println!(
                 "{}",
-                json!({ "ok": false, "error": "usage", "detail": e.to_string() })
+                json!({ "ok": false, "error": ERR_USAGE, "detail": e.to_string() })
             );
             return 2;
         }
@@ -503,7 +742,7 @@ pub fn run(args: &[String]) -> i32 {
         .build()
     {
         Ok(rt) => rt,
-        Err(_) => return emit_cli_error(Some(verb.resource_name()), "runtime_unavailable"),
+        Err(_) => return emit_cli_error(Some(verb.resource_name()), ERR_RUNTIME_UNAVAILABLE),
     };
     rt.block_on(run_verb(verb))
 }
@@ -580,6 +819,94 @@ mod tests {
     #[test]
     fn rejects_a_missing_verb() {
         assert!(parse_verb(&s(&[])).is_err());
+    }
+
+    #[test]
+    fn unknown_verb_error_never_echoes_the_typed_argv_token() {
+        // LOW fix (security review): argv can carry a path/username, and
+        // this reply lands in an agent transcript — the error must list the
+        // allowed verbs, never the token the caller typed.
+        let leaky = r"C:\Users\alice\Desktop\secret-notes";
+        let err = parse_verb(&s(&[leaky])).unwrap_err().to_string();
+        assert!(
+            !err.contains(leaky),
+            "unknown-verb error must not echo argv: {err}"
+        );
+        assert!(
+            err.contains("best-matches"),
+            "must list the allowed verbs: {err}"
+        );
+    }
+
+    // ── --help / VERB_TABLE anti-drift (owner request) ──────────────────────
+    // Hand-written literal list, not derived from VERB_TABLE itself (mirrors
+    // the repo's standing "pair a loop-over-own-fields test with a
+    // hand-written literal list" lesson).
+
+    #[test]
+    fn verb_table_names_match_a_hand_written_literal_list() {
+        let mut names: Vec<&str> = VERB_TABLE.iter().map(|v| v.name).collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            vec!["automations", "best-matches", "job", "profile", "schema"]
+        );
+    }
+
+    /// Every verb [`VERB_TABLE`] names must actually be parseable — the
+    /// first half of the owner's anti-drift requirement.
+    #[test]
+    fn every_verb_in_the_table_is_parseable_with_its_minimal_args() {
+        for v in VERB_TABLE {
+            let args: Vec<String> = match v.name {
+                "job" => s(&["job", "https://example.com/1"]),
+                other => s(&[other]),
+            };
+            assert!(
+                parse_verb(&args).is_ok(),
+                "verb `{}` listed in VERB_TABLE must parse",
+                v.name
+            );
+        }
+    }
+
+    /// Every parseable verb must appear in the help text — the SECOND half
+    /// of the owner's anti-drift requirement (together with the test above,
+    /// this pins BOTH directions: help ⊆ parseable AND parseable ⊆ help).
+    #[test]
+    fn help_text_names_every_verb_in_the_table() {
+        let text = help_text();
+        for v in VERB_TABLE {
+            assert!(
+                text.contains(v.name),
+                "help text is missing verb `{}`: {text}",
+                v.name
+            );
+        }
+        assert!(text.contains("--help"));
+        assert!(text.contains("EXIT CODES"));
+    }
+
+    #[test]
+    fn help_text_lists_every_error_sentinel_this_cli_can_emit() {
+        let text = help_text();
+        for (sentinel, _) in ERROR_SENTINELS {
+            assert!(
+                text.contains(sentinel),
+                "help text is missing sentinel `{sentinel}`: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_help_request_recognizes_help_h_and_bare_help_verb() {
+        assert!(is_help_request(&s(&["--help"])));
+        assert!(is_help_request(&s(&["-h"])));
+        assert!(is_help_request(&s(&["help"])));
+        assert!(is_help_request(&s(&["--help", "job"])));
+        assert!(!is_help_request(&s(&["job", "--help"])));
+        assert!(!is_help_request(&s(&["best-matches"])));
+        assert!(!is_help_request(&s(&[])));
     }
 
     #[test]
@@ -813,6 +1140,127 @@ mod tests {
         );
     }
 
+    // ── `send_agent_query_within` (finding #7 fix — security review):
+    // distinguish a genuine timeout from an early transport failure, and
+    // fail fast on a same-`reqId` reply of the wrong type instead of waiting
+    // out the whole budget. All three drive the REAL production fn over a
+    // real loopback socket, the same pattern as `attempt_port_authenticates_
+    // over_a_real_socket_against_the_real_server`. ──
+
+    async fn connect_plain(port: u16) -> WsStream {
+        let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let uri = format!("ws://127.0.0.1:{port}/").parse().unwrap();
+        tokio_tungstenite::client_async(ClientRequestBuilder::new(uri), tcp)
+            .await
+            .unwrap()
+            .0
+    }
+
+    #[tokio::test]
+    async fn send_agent_query_within_reports_a_genuine_timeout_when_nothing_ever_replies() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let _server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            // Read and discard the query, then go silent for the rest of
+            // this test — never replies, never closes.
+            let _ = ws.next().await;
+            std::future::pending::<()>().await
+        });
+
+        let ws = connect_plain(port).await;
+        let budget = Duration::from_millis(150);
+        // Bounded well past `budget` so a regression that hangs past the
+        // deadline fails this test instead of the whole suite.
+        let outcome = tokio::time::timeout(
+            budget * 4,
+            send_agent_query_within(ws, &Verb::Schema, budget),
+        )
+        .await;
+        assert_eq!(
+            outcome.ok(),
+            Some(Err(ERR_TIMEOUT)),
+            "a call that genuinely exhausts its budget must report `timeout`, not `connection_lost`"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_agent_query_within_reports_connection_lost_fast_on_an_early_close() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let _server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            let _ = ws.next().await; // read the query
+                                     // Close immediately — well before any realistic budget.
+        });
+
+        let ws = connect_plain(port).await;
+        // A generous budget — the point is proving this returns FAST, not
+        // by waiting it out.
+        let generous_budget = Duration::from_secs(5);
+        let outcome = tokio::time::timeout(
+            Duration::from_millis(500),
+            send_agent_query_within(ws, &Verb::Schema, generous_budget),
+        )
+        .await;
+        assert_eq!(
+            outcome.ok(),
+            Some(Err(ERR_CONNECTION_LOST)),
+            "a close well before the deadline must never be reported as `timeout`"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_agent_query_within_fails_fast_on_a_same_req_id_wrong_type_reply() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let _server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            let msg = ws.next().await.unwrap().unwrap();
+            let text = match msg {
+                Message::Text(t) => t.to_string(),
+                other => panic!("expected a text frame, got {other:?}"),
+            };
+            let sent: Value = serde_json::from_str(&text).unwrap();
+            let req_id = sent["reqId"].as_str().unwrap().to_string();
+            // Mirrors `advance_authenticated`'s "unknown message type"
+            // fallback — a real (old) app that doesn't understand
+            // `agent.query` replies exactly this way, echoing OUR reqId on
+            // an `import.result` envelope.
+            let reply = json!({
+                "type": "import.result",
+                "reqId": req_id,
+                "payload": { "error": "unknown message type 'agent.query'" },
+            })
+            .to_string();
+            let _ = ws.send(Message::text(reply)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        });
+
+        let ws = connect_plain(port).await;
+        let generous_budget = Duration::from_secs(5);
+        let outcome = tokio::time::timeout(
+            Duration::from_millis(500),
+            send_agent_query_within(ws, &Verb::Schema, generous_budget),
+        )
+        .await;
+        assert_eq!(
+            outcome.ok(),
+            Some(Err(ERR_UNSUPPORTED_BY_APP)),
+            "a same-reqId reply of the wrong type must fail fast as `unsupported_by_app`, \
+             not silently `continue` toward a 30s timeout"
+        );
+    }
+
     // ── pointer + token file reads (pure fs, no env mutation needed here —
     // the path itself is exercised by platform::config's own tests) ────────
 
@@ -834,5 +1282,36 @@ mod tests {
             read_pairing_token(missing_dir.path().to_str().unwrap()),
             None
         );
+    }
+
+    // ── UNC `dataDir` guard (MEDIUM fix — security review) ─────────────────
+
+    #[test]
+    fn rejects_unc_and_double_slash_data_dirs() {
+        assert!(!is_safe_local_data_dir(r"\\attacker.example.com\share"));
+        assert!(!is_safe_local_data_dir("//attacker.example.com/share"));
+        // A mixed-separator UNC path is still UNC.
+        assert!(!is_safe_local_data_dir(r"\\attacker.example.com/share"));
+    }
+
+    #[test]
+    fn rejects_a_relative_data_dir() {
+        assert!(!is_safe_local_data_dir("relative/path"));
+        assert!(!is_safe_local_data_dir(""));
+    }
+
+    #[test]
+    fn accepts_a_normal_absolute_local_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        assert!(is_safe_local_data_dir(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn read_pairing_token_never_touches_the_filesystem_for_a_unc_data_dir() {
+        // No real UNC share exists in a hermetic test — the proof this guard
+        // works is that it returns `None` WITHOUT ever attempting the read
+        // (a real attempt against an unreachable host would hang/timeout,
+        // not return promptly).
+        assert_eq!(read_pairing_token(r"\\attacker.example.com\share"), None);
     }
 }
