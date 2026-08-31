@@ -506,17 +506,19 @@ _Avoid_: reusing Line boil / `uBoil` for any TERMINAL VELOCITY effect
 ## Domain — Agent CLI surface
 
 **Command**:
-A `#[tauri::command]` Rust function. There are 164, and the set is exactly 1:1 with the
-`generate_handler!` registration list — diffed both directions, no ghosts, no unregistered
-commands. This is the **authoritative registry** of what the app can do, and the only source a
-parity surface may derive from.
+A `#[tauri::command]` Rust function. The set is exactly 1:1 with the `generate_handler!`
+registration list in `lib.rs` — that list is the **authoritative registry** of what the app can
+do, and the only source a parity surface may derive from. Read the macro for current membership;
+the agent-CLI policy table and its test are what stop anything being added without a declared
+Effect class.
 _Avoid_: "channel" (a different, incomplete set) / "endpoint" (there is no HTTP surface)
 
 **Channel**:
 A TypeScript-side `namespace:verb` string in `IPC_CHANNELS`, used by the renderer to call a
-Command. **Not authoritative and not complete**: `NOTIFICATIONS_CHANNELS` is literally
-`{} as const`, and `AI_CHANNELS` carries 5 entries for a 29-method contract. A surface derived
-from Channels silently cannot do things the UI can.
+Command. **Not authoritative and not complete** — at least one namespace declares no channels at
+all, and others declare far fewer than their contract has methods (compare any
+`packages/shared/src/ipc/contracts/*.ts` contract interface against its `*_CHANNELS` const). A
+surface derived from Channels silently cannot do things the UI can.
 _Avoid_: treating the Channel list as "the API" — it is one renderer-side view of it
 
 **Resource**:

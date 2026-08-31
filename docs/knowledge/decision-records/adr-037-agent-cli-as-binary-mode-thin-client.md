@@ -37,8 +37,11 @@ client over the extension bridge** that already exists. The app must be running.
    `register_native_host`'s existing best-effort lifecycle — the binary is not on `PATH` on Windows,
    macOS or Linux AppImage.
 
-4. **Every payload is an allowlist projection**, nested types included, and third-party scraped text
-   goes through `prompt_fence` ([ADR-010](adr-010-untrusted-input-fencing.md)).
+4. **Every payload of these five Resources is an allowlist projection**, nested types included, and
+   third-party scraped text goes through `prompt_fence`
+   ([ADR-010](adr-010-untrusted-input-fencing.md)). This guarantee is scoped to the **curated tier**:
+   [ADR-038](adr-038-agent-cli-full-parity-two-tier.md) later adds a generic tier that deliberately
+   returns records raw, and fencing is the only half that carries over to it.
 
 ## Consequences
 
