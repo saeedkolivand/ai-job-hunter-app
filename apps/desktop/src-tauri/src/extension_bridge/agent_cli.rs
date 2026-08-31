@@ -164,10 +164,13 @@ struct AgentPointer {
     data_dir: String,
 }
 
-/// Read + parse the pointer file, or `None` on any I/O/parse failure — the
-/// caller folds that uniformly into `app_not_running` (without a data dir
-/// there is no token file to read either, so there is nothing more specific
-/// to say). Never logs/echoes the path itself (path privacy).
+/// Read + parse the pointer file, or `None` on any I/O/parse failure. The
+/// caller reports this as `app_not_located`, NOT `app_not_running`: the app
+/// may well be running and simply not have written a pointer yet (it is
+/// written on launch, so a build predating it leaves none), and conflating
+/// the two sends anyone debugging this to look at the wrong thing — it did
+/// exactly that during this feature's own end-to-end verification.
+/// Never logs/echoes the path itself (path privacy).
 fn read_agent_pointer() -> Option<AgentPointer> {
     let path = crate::platform::config::agent_pointer_path()?;
     let text = std::fs::read_to_string(path).ok()?;
@@ -438,10 +441,10 @@ async fn run_verb(verb: Verb) -> i32 {
     let resource = verb.resource_name();
 
     let Some(pointer) = read_agent_pointer() else {
-        return emit_cli_error(Some(resource), "app_not_running");
+        return emit_cli_error(Some(resource), "app_not_located");
     };
     let Some(token) = read_pairing_token(&pointer.data_dir) else {
-        return emit_cli_error(Some(resource), "app_not_running");
+        return emit_cli_error(Some(resource), "pairing_token_unavailable");
     };
 
     let ws = match connect_authenticated(&token).await {
