@@ -126,6 +126,34 @@ fn confirmation_required_sentinel_matches_the_one_agent_cli_special_cases_for_ex
     assert_eq!(ERR_CONFIRMATION_REQUIRED, "confirmation_required");
 }
 
+// ── dispatchable (the gate `dispatch` actually calls) ───────────────────
+// The exhaustive walk over every real POLICY row lives in
+// `extension_bridge::test` (needs `POLICY`, not just a hand-picked sample);
+// this covers the 4 variants directly, once each, as the fast/local check.
+
+#[test]
+fn dispatchable_is_true_for_read_and_reversible_regardless_of_confirm() {
+    assert!(super::dispatchable(Effect::Read, false));
+    assert!(super::dispatchable(Effect::Read, true));
+    assert!(super::dispatchable(Effect::Reversible, false));
+    assert!(super::dispatchable(Effect::Reversible, true));
+}
+
+#[test]
+fn dispatchable_is_false_for_not_exposed_regardless_of_confirm() {
+    assert!(!super::dispatchable(Effect::NotExposed("x"), false));
+    assert!(!super::dispatchable(Effect::NotExposed("x"), true));
+}
+
+#[test]
+fn dispatchable_for_irreversible_depends_only_on_whether_confirm_was_supplied() {
+    let irreversible = Effect::Irreversible(super::super::agent_cli::policy::ProofSource::Count {
+        read_command: "notifications_list",
+    });
+    assert!(!super::dispatchable(irreversible, false));
+    assert!(super::dispatchable(irreversible, true));
+}
+
 // ── call_result_reply shape ───────────────────────────────────────────
 
 #[test]

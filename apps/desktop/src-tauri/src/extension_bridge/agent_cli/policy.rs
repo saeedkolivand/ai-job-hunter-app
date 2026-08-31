@@ -44,9 +44,17 @@
 //!   for the renderer's own window, focuses the app); an unimplemented
 //!   stub whose payload would misrepresent itself as real (`ai_unload_model`,
 //!   `support_get_system_info` — both reclassified from `Read` once Phase 2
-//!   made that classification reachable, not merely descriptive); or a real
+//!   made that classification reachable, not merely descriptive); a real
 //!   read with no anti-abuse gate on its own paid egress (`ai_embed`,
-//!   reclassified once Phase 4 made the SAME thing true of its blast radius).
+//!   reclassified once Phase 4 made the SAME thing true of its blast radius);
+//!   or an `Irreversible` command whose ONLY reachable [`ProofSource`] is
+//!   provably vacuous — not merely weak, but a value the caller is
+//!   structurally guaranteed to already hold or that reads as a constant for
+//!   the whole duration of the ceremony (`extension_bridge_regenerate_token`,
+//!   reclassified once Phase 3 made a proof requirement reachable for it —
+//!   see that row's own comment for the two independent reasons neither of
+//!   `extension_bridge_status`'s fields can ever bind this ceremony to
+//!   anything the caller didn't already know).
 //!
 //! ADR-038 itself names four canonical [`Effect::Irreversible`] patterns:
 //! `privacy:reset_app`, `sign_out_all`, `credentials:*`, and "the `*_remove`
@@ -78,11 +86,12 @@
 //! - **No record exists** (a global wipe, a credential set with nothing to
 //!   compare against, a caller-controlled external URL): the strongest
 //!   available signal is used and the row says so — a count of what's about
-//!   to be lost (`notifications_clear_all`, `privacy_clear_interactions`),
-//!   or, honestly, a WEAK fallback with no real binding to the specific
-//!   target (`system_open_external`, `updater_install`,
-//!   `extension_bridge_regenerate_token`) — flagged per-row rather than
-//!   dressed up as strict.
+//!   to be lost, scaled to the actual blast radius wherever a Read row
+//!   reaches the PRIMARY store being wiped rather than a secondary one
+//!   (`notifications_clear_all`, `privacy_clear_interactions`,
+//!   `privacy_reset_app`), or, honestly, a WEAK fallback with no real
+//!   binding to the specific target (`system_open_external`,
+//!   `updater_install`) — flagged per-row rather than dressed up as strict.
 //!
 //! Four commands here carry zero renderer references (never called from the
 //! UI, per ADR-038's own Context section) — flagged per-row below: `boards::
@@ -353,6 +362,14 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // pre-existing and also reachable from the UI's bulk-indexing path,
     // which embeds per chunk — a per-request daily cap may be the wrong
     // granularity there) — NotExposed until that gate exists.
+    //
+    // STATUS (recorded so this doesn't get re-litigated on every review
+    // pass — the reasoning previously lived only in a PR thread): the fix
+    // is a real charge being added directly in `commands/ai/mod.rs`, tracked
+    // separately from this table. Once that lands, this ONE row flips back
+    // to `Read` — do not flip it preemptively; the point of doing it as its
+    // own follow-up is that there must never be a commit where this command
+    // is BOTH dispatchable by name AND ungated.
     PolicyEntry {
         path: "commands::ai::ai_embed",
         effect: Effect::NotExposed(
@@ -631,15 +648,25 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         }),
     },
     // ADR-038's own named example of Irreversible ("privacy:reset_app") —
-    // full factory reset. No Read row captures the full blast radius (every
-    // registered store); the count of saved AI generations is real, honest,
-    // and readable, but covers only ONE of the many stores this wipes — the
-    // WEAKEST row in this table alongside `updater_install`, flagged
-    // prominently.
+    // full factory reset. No Read row captures the full blast radius (19
+    // stores registered via `manage_resettable`, `data_store.rs`); the proof
+    // now reads `applications_list` rather than `ai_generations_list` —
+    // reclassified (security review on this PR): `ApplicationStore` IS one
+    // of the 19 (`reg.register::<ApplicationStore>("applications")`,
+    // `commands/privacy.rs`'s own reset-registry test), and it is the
+    // PRIMARY user-authored record this app exists to hold (the tracked job
+    // search itself), not a secondary/derived table of AI-generated text —
+    // `ai_generations_list` counted a DIFFERENT store's rows and proved
+    // nothing about the applications actually at risk. This also scales
+    // correctly with the thing ADR-038 §4 cares about: a user with 200
+    // tracked applications is protected by a genuinely unguessable number,
+    // and a user with 0 has nothing of substance in the store this counts —
+    // still PARTIAL (one of 19 stores, not the full blast radius) and still
+    // flagged, but bound to the core data rather than a side table.
     PolicyEntry {
         path: "commands::privacy::privacy_reset_app",
         effect: Effect::Irreversible(ProofSource::Count {
-            read_command: "ai_generations_list",
+            read_command: "applications_list",
         }),
     },
     PolicyEntry { path: "commands::privacy::privacy_get_crash_reporting", effect: Effect::Read },
@@ -839,26 +866,79 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     },
 
     // commands/profile_import.rs
+    // Network (fetches the given profile url), but no PAID provider in the
+    // chain — `Read` on both axes (no persisted-state change, no un-metered
+    // billable spend), unlike `ai_embed` above. VERIFIED (recorded so this
+    // doesn't get re-raised every review pass): takes a CALLER-SUPPLIED url
+    // as its own argument, so `agent call` makes this an egress primitive
+    // reachable from the CLI — the SAME reach the UI already has (a user
+    // pastes a profile url there too), not a new one this table opens.
+    // `import_from_url`'s own `detect_platform` host-allowlists the fetch to
+    // linkedin.com (exact/suffix match on the URL's HOST, never a substring
+    // scan — guards the `attacker.example/linkedin.com/...` lookalike and a
+    // loopback-egress url), so the caller controls WHICH linkedin.com path
+    // is fetched, never an arbitrary destination host.
     PolicyEntry { path: "commands::profile_import::profile_import_from_url", effect: Effect::Read },
 
     // commands/github.rs
+    // Network, no paid provider in the chain — same `Read` reasoning as
+    // `profile_import_from_url` above. VERIFIED, and UNLIKE that row: this
+    // DOES take a caller-supplied `input` (a username or github.com url),
+    // but `parse_username` extracts+validates it into a bare username (SSRF
+    // guard — rejects a metadata-service url, e.g. `169.254.169.254`, and
+    // anything not github.com-shaped) before `api_url` builds a request
+    // against the FIXED host `api.github.com` — the caller controls a path
+    // segment, never the destination host, so this is not an arbitrary-url
+    // egress primitive the way `profile_import_from_url` is.
     PolicyEntry { path: "commands::github::github_import_repos", effect: Effect::Read },
 
     // commands/extension_bridge.rs
     PolicyEntry { path: "commands::extension_bridge::extension_bridge_status", effect: Effect::Read },
     // Rotates the pairing token, which REVOKES every currently-paired
-    // browser session — the same "sign-out"-shaped irreversibility ADR-038
-    // names for `sign_out_all`. No record exists besides the token itself,
-    // and the CLI already possesses today's token locally (it needed it to
-    // authenticate this very connection) — reading it back through
-    // `extension_bridge_status` proves nothing the caller didn't already
-    // have; the WEAKEST kind of proof in this table, flagged.
+    // browser session. Reclassified NotExposed (was `Irreversible` with a
+    // `ProofSource::Scalar` over `extension_bridge_status`) — VERIFIED that
+    // NO proof reachable from this table can ever bind this ceremony to
+    // anything the caller didn't already have, for two INDEPENDENT reasons,
+    // not one:
+    //   1. `port` and `token` are values this exact CLI connection already
+    //      needed to exist at all — it scanned `PORT_RANGE` to find the port
+    //      and read the plaintext token off disk to compute the handshake's
+    //      `client_proof` (`agent_cli.rs::read_pairing_token`/
+    //      `connect_authenticated`), so echoing either back through
+    //      `extension_bridge_status` proves nothing.
+    //   2. `connected` is worse than merely a low-entropy boolean: it is
+    //      `BridgeState.connected > 0`, and this VERY call's own socket
+    //      already incremented that same counter on authenticating
+    //      (`inc_connected`, `extension_bridge/mod.rs`) — `agent.call` only
+    //      reaches here over an already-`Authenticated` connection, so
+    //      `connected` reads `true` for the ENTIRE duration of every possible
+    //      ceremony attempt, regardless of whether any browser is paired. A
+    //      hallucinated `true` does not merely have decent odds; it is
+    //      GUARANTEED to match.
+    // No other Read row in the `extension_bridge` namespace is bound to the
+    // pairing session this revokes either — `extension_bridge_autofill_
+    // enabled`/`ai_assist_enabled`/`auto_track_enabled` are unrelated
+    // feature toggles, no stronger than the rejected `connected` boolean.
+    // Falling back to a totally unrelated Read row (the `system_get_version`
+    // pattern `system_open_external`/`updater_install` use when no domain
+    // read exists at all) would be decorative here, not merely weak: unlike
+    // those two — which are ADR-038-adjacent but not one of its four NAMED
+    // canonical Irreversible patterns (`privacy:reset_app`, `sign_out_all`,
+    // `credentials:*`, `*_remove`) — this command's only real-world effect
+    // is breaking the user's OWN browser-extension pairing (a UI Settings
+    // "Regenerate" self-service action a human performs while looking at the
+    // resulting "re-pair your browser" state), with no job-hunting workflow
+    // that plausibly motivates an autonomous agent driving it. A ceremony
+    // that can never fail is worse than an honest refusal.
     PolicyEntry {
         path: "commands::extension_bridge::extension_bridge_regenerate_token",
-        effect: Effect::Irreversible(ProofSource::Scalar {
-            read_command: "extension_bridge_status",
-            path: &["token"],
-        }),
+        effect: Effect::NotExposed(
+            "rotating the pairing token has no reachable non-vacuous proof: every field of \
+             extension_bridge_status (port, token) is a value this exact connection already \
+             had to possess to authenticate, and `connected` reads true for the whole call \
+             because this CLI socket's own authentication is what increments it — see the \
+             row's own comment for the full two-part argument",
+        ),
     },
     PolicyEntry {
         path: "commands::extension_bridge::extension_bridge_autofill_enabled",
@@ -947,7 +1027,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // neither is eligible as a proof source. `system_get_version` is the
     // strongest available Read row, but it names the CURRENTLY RUNNING
     // version, not the one about to be installed — one of the WEAKEST rows
-    // in this table, flagged prominently alongside `privacy_reset_app`.
+    // in this table, flagged prominently.
     PolicyEntry {
         path: "updater::updater_install",
         effect: Effect::Irreversible(ProofSource::Scalar {
@@ -1145,8 +1225,10 @@ mod tests {
         }
         // Hand-written literal (not derived from POLICY itself — the same
         // "pair a loop with a literal" discipline as
-        // `policy_table_has_exactly_164_rows`): 31 Irreversible rows.
-        assert_eq!(checked, 31, "expected exactly 31 Irreversible rows");
+        // `policy_table_has_exactly_164_rows`): 30 Irreversible rows
+        // (`extension_bridge_regenerate_token` moved to `NotExposed` —
+        // security review on this PR, see that row's own comment).
+        assert_eq!(checked, 30, "expected exactly 30 Irreversible rows");
     }
 
     /// Mutation-style guard: an `Irreversible` row whose `ProofSource`
