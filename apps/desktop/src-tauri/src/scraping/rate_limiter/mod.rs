@@ -48,14 +48,21 @@ impl RateLimiter {
     /// concurrent waiters (thundering herd) cannot all pass simultaneously.
     pub async fn wait_for_slot(&self) {
         loop {
+            let mut requests = self.requests.lock().await;
+            // Sampled AFTER the lock, never before it. Sampling first and then
+            // `.await`ing the lock lets another task record a timestamp LATER
+            // than `now` while we wait, and `now - t` then underflows and
+            // panics — the intermittent `attempt to subtract with overflow`
+            // that rotated around the scraping tests.
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_millis() as u64;
-            let mut requests = self.requests.lock().await;
 
-            // Remove requests outside the current window.
-            requests.retain(|&t| now - t < self.options.window_ms);
+            // Remove requests outside the current window. `saturating_sub` for
+            // an independent reason: timestamps are recorded elsewhere, so a
+            // backward wall-clock step (NTP) can still put `t` ahead of `now`.
+            requests.retain(|&t| now.saturating_sub(t) < self.options.window_ms);
 
             if requests.len() < self.options.max_requests {
                 // Slot is free — return; caller will record after the request.
@@ -135,6 +142,31 @@ pub(crate) fn options_for_host(_host: &str) -> RateLimiterOptions {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// A timestamp AHEAD of `now` must not panic the window sweep.
+    ///
+    /// Two ways that happens in the wild: `wait_for_slot` used to sample `now`
+    /// BEFORE awaiting the lock, so a concurrent `record_request` could land a
+    /// later timestamp while it waited; and a backward wall-clock step (NTP)
+    /// can do it even with correct lock ordering. Before the fix this panicked
+    /// with `attempt to subtract with overflow`.
+    #[tokio::test]
+    async fn a_future_timestamp_does_not_underflow_the_window() {
+        let limiter = RateLimiter::new(RateLimiterOptions {
+            max_requests: 30,
+            window_ms: 60_000,
+            ..RateLimiterOptions::default()
+        });
+        let future = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 5_000;
+        limiter.requests.lock().await.push(future);
+
+        // Must return (slot free: 1 of 30) rather than panic.
+        limiter.wait_for_slot().await;
+    }
 
     /// All hosts get the uniform 30-req/60-s default (per-board overrides were
     /// removed when the anti-bot scraper boards were retired).
