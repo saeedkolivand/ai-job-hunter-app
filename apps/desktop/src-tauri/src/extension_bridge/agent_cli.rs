@@ -102,7 +102,10 @@ const ERROR_SENTINELS: &[(&str, &str)] = &[
         ERR_UNSUPPORTED_BY_APP,
         "the running app doesn't understand this verb yet — update it",
     ),
-    (ERR_TIMEOUT, "no reply within the round-trip budget"),
+    (
+        ERR_TIMEOUT,
+        "no reply within the round-trip budget, or the whole invocation ran past its overall deadline",
+    ),
     (
         ERR_CONNECTION_LOST,
         "the socket closed or errored mid-round-trip",
@@ -114,10 +117,16 @@ const ERROR_SENTINELS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Wall-clock bound on each individual handshake step (send hello → await
-/// challenge; send auth → await auth.ok). Generous for a loopback round trip;
-/// short enough that one hung/squatting port can't stall the whole
-/// invocation across [`PORT_RANGE`].
+/// Wall-clock bound on each individual step of [`attempt_port`] — the raw
+/// `TcpStream::connect`, the WS upgrade (`client_async_with_config`), send
+/// hello → await challenge, and send auth → await auth.ok. Generous for a
+/// loopback round trip; short enough that one hung/squatting port can't
+/// stall the whole invocation across [`PORT_RANGE`] (MAJOR fix — security
+/// review round 2: `connect`/the WS upgrade used to be the two UNBOUNDED
+/// exceptions to that claim — a local process that accepts on a candidate
+/// port and never completes the upgrade, including a wedged previous app
+/// instance whose accept loop stopped running but whose listener is still
+/// bound, parked this fn, and so the whole CLI invocation, forever).
 const HANDSHAKE_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Wall-clock bound on the `agent.query` round trip itself, AFTER
@@ -125,6 +134,23 @@ const HANDSHAKE_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 /// at 4000 found jobs; see `agent_read`'s throttle doc), not the handshake
 /// budget above.
 const QUERY_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The WHOLE invocation's outer deadline (MAJOR fix — security review round
+/// 2) — wraps [`run_verb`] in [`run`], so no COMBINATION of slow/hung
+/// candidate ports can exceed it, even though each individual step above
+/// already has its own bound. Derived from the worst *legitimate* sweep, not
+/// just one port: up to 5 non-real ports in [`PORT_RANGE`] each maximally
+/// stalling both connect and upgrade (2 × [`HANDSHAKE_STEP_TIMEOUT`] = 10s
+/// apiece = 50s) before the real app's own port is even reached, PLUS that
+/// real port's own worst-case full round trip (2 × `HANDSHAKE_STEP_TIMEOUT`
+/// for challenge/auth-ok + [`QUERY_REPLY_TIMEOUT`] for a slow `best-matches`
+/// ≈ 40s) — roughly 90s, so this sits right at that sum rather than
+/// padding it further: a real hang should surface promptly, not merely
+/// "eventually". On expiry [`run`] reports [`ERR_TIMEOUT`] — the same
+/// sentinel `send_agent_query_within`'s own post-auth timeout uses, since
+/// from the caller's side both mean the identical thing: the CLI gave up
+/// after its round-trip budget, whichever phase burned it.
+const INVOCATION_TIMEOUT: Duration = Duration::from_secs(90);
 
 // ── argv → verb ─────────────────────────────────────────────────────────────
 
@@ -265,7 +291,16 @@ fn parse_best_matches(rest: &[String]) -> AppResult<Verb> {
                 })?);
                 i += 2;
             }
-            other => return Err(AppError::Validation(format!("unknown argument '{other}'"))),
+            // Never echoes the typed token (MINOR fix — same reasoning as
+            // the unknown-verb branch above and pinned by the same kind of
+            // test): argv can carry a path/username, and this reply lands
+            // in an agent transcript — name the flag this verb accepts
+            // instead of the one that failed.
+            _ => {
+                return Err(AppError::Validation(
+                    "unknown argument (expected: --limit)".to_string(),
+                ))
+            }
         }
     }
     Ok(Verb::BestMatches { limit })
@@ -299,11 +334,19 @@ fn read_agent_pointer() -> Option<AgentPointer> {
 /// read below into an outbound SMB/WebDAV session on Windows, leaking NTLM
 /// credentials to whatever host it names: a network primitive smuggled
 /// through a file read, on a path `tests/egress.rs`'s allowlist does not
-/// cover. `//` is rejected too (POSIX gives a leading double-slash
-/// implementation-defined meaning; on Windows it's UNC-equivalent). Plain
-/// string-prefix checks, so this runs before ANY filesystem call.
+/// cover. Windows treats `/` and `\` interchangeably as path separators, so
+/// the two leading bytes are checked as EITHER separator in EITHER
+/// combination (`\\`, `//`, `\/`, `/\`) — confirmed against `ntpath` (a
+/// faithful model of Windows path parsing) that a mixed-separator UNC root
+/// still parses as absolute UNC and, before this fix, passed a check that
+/// only matched the two same-separator prefixes literally (a MEDIUM fix,
+/// security review round 2 — a straight string-prefix match doesn't survive
+/// Windows' separator equivalence). Plain byte checks, so this runs before
+/// ANY filesystem call.
 fn is_safe_local_data_dir(data_dir: &str) -> bool {
-    if data_dir.starts_with(r"\\") || data_dir.starts_with("//") {
+    let bytes = data_dir.as_bytes();
+    let is_sep = |b: Option<&u8>| matches!(b, Some(b'\\') | Some(b'/'));
+    if is_sep(bytes.first()) && is_sep(bytes.get(1)) {
         return false;
     }
     Path::new(data_dir).is_absolute()
@@ -425,10 +468,28 @@ enum PortOutcome {
 /// Drive the full handshake against one port. `Ok` only once the SERVER's
 /// proof has verified (mutual auth complete); every other case reports
 /// [`PortOutcome`] instead of the (now-dropped) socket.
+///
+/// Both `connect` and the WS upgrade below are wrapped in
+/// [`HANDSHAKE_STEP_TIMEOUT`] (MAJOR fix — security review round 2): before
+/// this fix they were the two UNBOUNDED steps in an otherwise fully-budgeted
+/// function — a local process that accepts a connection on this port and
+/// never completes either step (a wedged previous app instance whose
+/// listener is still bound but whose accept loop stopped running is exactly
+/// this: `connect` succeeds instantly off the kernel's own backlog, then the
+/// upgrade read waits forever for a reply nothing will ever send) parked
+/// this fn, and so [`connect_authenticated`]'s whole port loop, forever. Both
+/// timeout outcomes fold into [`PortOutcome::NoUpgrade`] — "nothing usable
+/// answered" is exactly what that variant already means, whether the cause
+/// was a refused connect, a rejected upgrade, or one of these now-bounded
+/// hangs.
 async fn attempt_port(port: u16, token: &str) -> Result<WsStream, PortOutcome> {
-    let tcp = TcpStream::connect(("127.0.0.1", port))
-        .await
-        .map_err(|_| PortOutcome::NoUpgrade)?;
+    let tcp = timeout(
+        HANDSHAKE_STEP_TIMEOUT,
+        TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await
+    .map_err(|_| PortOutcome::NoUpgrade)?
+    .map_err(|_| PortOutcome::NoUpgrade)?;
     let uri = format!("ws://127.0.0.1:{port}/")
         .parse()
         .map_err(|_| PortOutcome::NoUpgrade)?;
@@ -443,9 +504,13 @@ async fn attempt_port(port: u16, token: &str) -> Result<WsStream, PortOutcome> {
     // remains defense-in-depth only; the mutual HMAC handshake below is the
     // real boundary.
     let request = ClientRequestBuilder::new(uri).with_header("Origin", auth::AGENT_CLI_ORIGIN);
-    let (mut ws, _resp) = tokio_tungstenite::client_async_with_config(request, tcp, Some(config))
-        .await
-        .map_err(|_| PortOutcome::NoUpgrade)?;
+    let (mut ws, _resp) = timeout(
+        HANDSHAKE_STEP_TIMEOUT,
+        tokio_tungstenite::client_async_with_config(request, tcp, Some(config)),
+    )
+    .await
+    .map_err(|_| PortOutcome::NoUpgrade)?
+    .map_err(|_| PortOutcome::NoUpgrade)?;
 
     let client_nonce = handshake::new_nonce();
     if ws
@@ -618,6 +683,17 @@ fn pairing_failure_sentinel(f: PairingFailure) -> &'static str {
     }
 }
 
+/// The exit-2 usage-error body — pulled out as its own pure fn (MINOR fix —
+/// security review round 2) so it's directly unit-testable, and so its shape
+/// stays byte-for-byte in sync with [`emit_cli_error`]'s: both always carry
+/// `resource` (this one `null` — no `Verb` exists yet at the point a usage
+/// error is raised), matching the module doc's exit-2 table. `detail` is
+/// this branch's own extra, human/agent-useful context, not part of the
+/// shape the doc pins.
+fn usage_error_value(detail: &str) -> Value {
+    json!({ "ok": false, "resource": Value::Null, "error": ERR_USAGE, "detail": detail })
+}
+
 /// Print a synthesized CLI-level error (exit 2) and return that code. Never
 /// echoes a path or a raw I/O error string — only fixed sentinels (see the
 /// module doc's exit-code table).
@@ -696,6 +772,31 @@ fn help_text() -> String {
     out
 }
 
+/// Race `fut` (in production, [`run_verb`]'s own future) against `budget` —
+/// [`run`]'s outer, WHOLE-INVOCATION deadline (MAJOR fix — security review
+/// round 2; see [`INVOCATION_TIMEOUT`]'s own doc for why this exists
+/// alongside, not instead of, the per-step timeouts already inside
+/// [`attempt_port`]/[`send_agent_query_within`]). `resource` is a plain
+/// `&str` rather than a `Verb` so the caller can hand this a `Verb`'s
+/// `resource_name()` BEFORE moving the `Verb` itself into `fut` — a `Verb`
+/// doesn't survive being consumed by the future this races.
+///
+/// Generic over `F` (rather than `run_verb`'s own concrete future) so this
+/// race's OUTCOME is directly unit-testable against a controllable budget
+/// and a controllable inner future, without a live pointer file/token/socket
+/// and without waiting out the real [`INVOCATION_TIMEOUT`] — mirrors
+/// [`send_agent_query_within`]'s existing "explicit budget parameter, prod
+/// wraps it" pattern one section up.
+async fn run_verb_within<F>(resource: &str, budget: Duration, fut: F) -> i32
+where
+    F: std::future::Future<Output = i32>,
+{
+    match timeout(budget, fut).await {
+        Ok(code) => code,
+        Err(_) => emit_cli_error(Some(resource), ERR_TIMEOUT),
+    }
+}
+
 /// `ajh-tauri agent <verb>` entrypoint. `args` excludes the program name AND
 /// the `agent` sentinel itself. Called from `lib::run_agent_cli_if_invoked`,
 /// itself called from `main()` BELOW the native-host short-circuit and ABOVE
@@ -729,10 +830,11 @@ pub fn run(args: &[String]) -> i32 {
     let verb = match parse_verb(args) {
         Ok(v) => v,
         Err(e) => {
-            println!(
-                "{}",
-                json!({ "ok": false, "error": ERR_USAGE, "detail": e.to_string() })
-            );
+            // See `usage_error_value`'s doc (MINOR fix — security review
+            // round 2): this branch runs before a `Verb` exists, but the
+            // exit-2 shape must still carry `resource` (null here), the same
+            // as every other exit-2 reply on this surface.
+            println!("{}", usage_error_value(&e.to_string()));
             return 2;
         }
     };
@@ -744,574 +846,15 @@ pub fn run(args: &[String]) -> i32 {
         Ok(rt) => rt,
         Err(_) => return emit_cli_error(Some(verb.resource_name()), ERR_RUNTIME_UNAVAILABLE),
     };
-    rt.block_on(run_verb(verb))
+    // `resource_name()` is read BEFORE `verb` moves into `run_verb` below —
+    // see `run_verb_within`'s own doc.
+    let resource = verb.resource_name();
+    rt.block_on(run_verb_within(
+        resource,
+        INVOCATION_TIMEOUT,
+        run_verb(verb),
+    ))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    // `advance_frame`/`ConnState`/`FrameDecision` are private to the parent
-    // `extension_bridge` module — visible here because privacy in Rust
-    // extends to every DESCENDANT module, not just direct children, so this
-    // test module (a grandchild) can reach them exactly as
-    // `extension_bridge::test` does one level up.
-    use super::super::{advance_frame, BridgeState, ConnState, FrameDecision};
-
-    // ── argv parsing ─────────────────────────────────────────────────────────
-
-    fn s(v: &[&str]) -> Vec<String> {
-        v.iter().map(|x| x.to_string()).collect()
-    }
-
-    #[test]
-    fn parses_best_matches_with_no_flags() {
-        assert_eq!(
-            parse_verb(&s(&["best-matches"])).unwrap(),
-            Verb::BestMatches { limit: None }
-        );
-    }
-
-    #[test]
-    fn parses_best_matches_with_limit() {
-        assert_eq!(
-            parse_verb(&s(&["best-matches", "--limit", "5"])).unwrap(),
-            Verb::BestMatches { limit: Some(5) }
-        );
-    }
-
-    #[test]
-    fn rejects_a_non_numeric_limit() {
-        assert!(parse_verb(&s(&["best-matches", "--limit", "abc"])).is_err());
-    }
-
-    #[test]
-    fn rejects_limit_missing_its_value() {
-        assert!(parse_verb(&s(&["best-matches", "--limit"])).is_err());
-    }
-
-    #[test]
-    fn parses_job_with_url() {
-        assert_eq!(
-            parse_verb(&s(&["job", "https://example.com/1"])).unwrap(),
-            Verb::Job {
-                url: "https://example.com/1".to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_job_without_a_url() {
-        assert!(parse_verb(&s(&["job"])).is_err());
-    }
-
-    #[test]
-    fn parses_the_three_no_arg_verbs() {
-        assert_eq!(parse_verb(&s(&["profile"])).unwrap(), Verb::Profile);
-        assert_eq!(parse_verb(&s(&["automations"])).unwrap(), Verb::Automations);
-        assert_eq!(parse_verb(&s(&["schema"])).unwrap(), Verb::Schema);
-    }
-
-    #[test]
-    fn rejects_an_unknown_verb() {
-        assert!(parse_verb(&s(&["delete-everything"])).is_err());
-    }
-
-    #[test]
-    fn rejects_a_missing_verb() {
-        assert!(parse_verb(&s(&[])).is_err());
-    }
-
-    #[test]
-    fn unknown_verb_error_never_echoes_the_typed_argv_token() {
-        // LOW fix (security review): argv can carry a path/username, and
-        // this reply lands in an agent transcript — the error must list the
-        // allowed verbs, never the token the caller typed.
-        let leaky = r"C:\Users\alice\Desktop\secret-notes";
-        let err = parse_verb(&s(&[leaky])).unwrap_err().to_string();
-        assert!(
-            !err.contains(leaky),
-            "unknown-verb error must not echo argv: {err}"
-        );
-        assert!(
-            err.contains("best-matches"),
-            "must list the allowed verbs: {err}"
-        );
-    }
-
-    // ── --help / VERB_TABLE anti-drift (owner request) ──────────────────────
-    // Hand-written literal list, not derived from VERB_TABLE itself (mirrors
-    // the repo's standing "pair a loop-over-own-fields test with a
-    // hand-written literal list" lesson).
-
-    #[test]
-    fn verb_table_names_match_a_hand_written_literal_list() {
-        let mut names: Vec<&str> = VERB_TABLE.iter().map(|v| v.name).collect();
-        names.sort_unstable();
-        assert_eq!(
-            names,
-            vec!["automations", "best-matches", "job", "profile", "schema"]
-        );
-    }
-
-    /// Every verb [`VERB_TABLE`] names must actually be parseable — the
-    /// first half of the owner's anti-drift requirement.
-    #[test]
-    fn every_verb_in_the_table_is_parseable_with_its_minimal_args() {
-        for v in VERB_TABLE {
-            let args: Vec<String> = match v.name {
-                "job" => s(&["job", "https://example.com/1"]),
-                other => s(&[other]),
-            };
-            assert!(
-                parse_verb(&args).is_ok(),
-                "verb `{}` listed in VERB_TABLE must parse",
-                v.name
-            );
-        }
-    }
-
-    /// Every parseable verb must appear in the help text — the SECOND half
-    /// of the owner's anti-drift requirement (together with the test above,
-    /// this pins BOTH directions: help ⊆ parseable AND parseable ⊆ help).
-    #[test]
-    fn help_text_names_every_verb_in_the_table() {
-        let text = help_text();
-        for v in VERB_TABLE {
-            assert!(
-                text.contains(v.name),
-                "help text is missing verb `{}`: {text}",
-                v.name
-            );
-        }
-        assert!(text.contains("--help"));
-        assert!(text.contains("EXIT CODES"));
-    }
-
-    #[test]
-    fn help_text_lists_every_error_sentinel_this_cli_can_emit() {
-        let text = help_text();
-        for (sentinel, _) in ERROR_SENTINELS {
-            assert!(
-                text.contains(sentinel),
-                "help text is missing sentinel `{sentinel}`: {text}"
-            );
-        }
-    }
-
-    #[test]
-    fn is_help_request_recognizes_help_h_and_bare_help_verb() {
-        assert!(is_help_request(&s(&["--help"])));
-        assert!(is_help_request(&s(&["-h"])));
-        assert!(is_help_request(&s(&["help"])));
-        assert!(is_help_request(&s(&["--help", "job"])));
-        assert!(!is_help_request(&s(&["job", "--help"])));
-        assert!(!is_help_request(&s(&["best-matches"])));
-        assert!(!is_help_request(&s(&[])));
-    }
-
-    #[test]
-    fn payload_carries_the_wire_resource_name() {
-        assert_eq!(Verb::Schema.payload()["resource"], "schema");
-        assert_eq!(
-            Verb::Job {
-                url: "https://x.example.com".to_string()
-            }
-            .payload()["url"],
-            "https://x.example.com"
-        );
-        let with_limit = Verb::BestMatches { limit: Some(7) }.payload();
-        assert_eq!(with_limit["limit"], 7);
-        let without_limit = Verb::BestMatches { limit: None }.payload();
-        assert!(without_limit.get("limit").is_none());
-    }
-
-    // ── pairing-failure classification (pure) ───────────────────────────────
-    // Hand-written expected buckets, not derived from `classify_pairing_failure`
-    // itself — mirrors the repo's standing lesson to pair a loop/derived check
-    // with a literal.
-
-    #[test]
-    fn all_ports_absent_is_app_not_running() {
-        assert_eq!(
-            classify_pairing_failure(&[PortOutcome::NoUpgrade, PortOutcome::NoUpgrade]),
-            PairingFailure::AppNotRunning
-        );
-        assert_eq!(classify_pairing_failure(&[]), PairingFailure::AppNotRunning);
-    }
-
-    #[test]
-    fn every_reachable_port_rejecting_the_proof_is_pairing_rejected() {
-        assert_eq!(
-            classify_pairing_failure(&[PortOutcome::NoUpgrade, PortOutcome::ProofRejected]),
-            PairingFailure::PairingRejected
-        );
-    }
-
-    #[test]
-    fn any_pre_auth_error_is_connection_error_not_pairing_rejected() {
-        // Issue #1084 PR1's own decision: "a crash between challenge and auth
-        // is not a pairing failure" — even alongside a genuine proof
-        // rejection on another port, the mixed case must NOT be reported as
-        // a wrong token.
-        assert_eq!(
-            classify_pairing_failure(&[PortOutcome::PreAuthError, PortOutcome::ProofRejected]),
-            PairingFailure::ConnectionError
-        );
-        assert_eq!(
-            classify_pairing_failure(&[PortOutcome::PreAuthError]),
-            PairingFailure::ConnectionError
-        );
-    }
-
-    // ── handshake wire-shape round trip against the REAL server state
-    // machine (`super::advance_frame`) — no socket, no AppHandle needed:
-    // `advance_hello`/`advance_auth` are pure functions of `&BridgeState`.
-    // This is the proof the client's frame-building/parsing is wire-compatible
-    // with the committed server half, not just internally self-consistent. ──
-
-    #[test]
-    fn handshake_round_trips_against_the_real_server_state_machine() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let state = BridgeState::load(dir.path());
-        let token = state.token();
-
-        let client_nonce = handshake::new_nonce();
-        let hello = build_hello(&client_nonce);
-
-        let decision = advance_frame(&state, &ConnState::AwaitingHello, &hello);
-        let FrameDecision::Challenge { reply, next } = decision else {
-            panic!("expected Challenge, got {decision:?}");
-        };
-        let challenge_json: Value = serde_json::from_str(&reply).unwrap();
-        let server_nonce = parse_challenge(&challenge_json).expect("well-formed challenge");
-
-        let proof = handshake::client_proof(&token, &server_nonce, &client_nonce);
-        let auth = build_auth(&proof);
-
-        let decision = advance_frame(&state, &next, &auth);
-        let FrameDecision::AuthOk(reply) = decision else {
-            panic!("expected AuthOk, got {decision:?}");
-        };
-        let auth_ok_json: Value = serde_json::from_str(&reply).unwrap();
-        let server_proof = parse_auth_ok(&auth_ok_json).expect("well-formed auth.ok");
-
-        assert!(
-            handshake::verify_server_proof(&token, &server_nonce, &client_nonce, &server_proof),
-            "the client's own verification must accept the real server's serverProof"
-        );
-    }
-
-    #[test]
-    fn handshake_round_trip_rejects_a_wrong_token() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let state = BridgeState::load(dir.path());
-
-        let client_nonce = handshake::new_nonce();
-        let hello = build_hello(&client_nonce);
-        let decision = advance_frame(&state, &ConnState::AwaitingHello, &hello);
-        let FrameDecision::Challenge { reply, next } = decision else {
-            panic!("expected Challenge, got {decision:?}");
-        };
-        let server_nonce =
-            parse_challenge(&serde_json::from_str(&reply).unwrap()).expect("well-formed challenge");
-
-        // A wrong token — the CLI's persisted copy is stale.
-        let wrong_proof =
-            handshake::client_proof("not-the-real-token", &server_nonce, &client_nonce);
-        let auth = build_auth(&wrong_proof);
-        let decision = advance_frame(&state, &next, &auth);
-        assert!(
-            matches!(decision, FrameDecision::Unauthorized),
-            "expected Unauthorized, got {decision:?}"
-        );
-    }
-
-    // ── the SAME round trip, but over a REAL loopback socket, driving the
-    // production `attempt_port` fn (not a reimplementation) against a
-    // minimal server that itself calls the real `advance_frame` state
-    // machine — the strongest available proof that the client's transport
-    // code (WS upgrade, frame send/receive) interoperates with the actual
-    // server, not just that the JSON shapes match in-process. ──
-
-    #[tokio::test]
-    async fn attempt_port_authenticates_over_a_real_socket_against_the_real_server() {
-        use tokio::net::TcpListener;
-
-        let dir = tempfile::TempDir::new().unwrap();
-        let state = BridgeState::load(dir.path());
-        let token = state.token();
-
-        // Kernel-assigned ephemeral port (never collides with a real running
-        // app or another test) — same hermetic pattern as
-        // `import_tests::claim_busy_port`.
-        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-
-        let server = tokio::spawn(async move {
-            let (tcp, _) = listener.accept().await.unwrap();
-            // No Origin check here (that gate is `handle_connection`'s own,
-            // covered by `auth`'s tests) — everything past the WS upgrade is
-            // the real per-frame `advance_frame` dispatch `handle_connection`
-            // itself runs.
-            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
-            let mut conn = ConnState::AwaitingHello;
-            loop {
-                let msg = ws.next().await.unwrap().unwrap();
-                let text = match msg {
-                    tokio_tungstenite::tungstenite::Message::Text(t) => t.to_string(),
-                    other => panic!("expected a text frame, got {other:?}"),
-                };
-                match advance_frame(&state, &conn, &text) {
-                    FrameDecision::Challenge { reply, next } => {
-                        conn = next;
-                        ws.send(tokio_tungstenite::tungstenite::Message::text(reply))
-                            .await
-                            .unwrap();
-                    }
-                    FrameDecision::AuthOk(reply) => {
-                        ws.send(tokio_tungstenite::tungstenite::Message::text(reply))
-                            .await
-                            .unwrap();
-                        break;
-                    }
-                    other => panic!("unexpected FrameDecision in test server: {other:?}"),
-                }
-            }
-        });
-
-        let result = attempt_port(port, &token).await;
-        assert!(
-            result.is_ok(),
-            "attempt_port must authenticate against the real server over a real socket, got {:?}",
-            result.err()
-        );
-        server.await.unwrap();
-    }
-
-    // ── `next_json`'s deadline must cover the WHOLE call, not be re-armed
-    // per iteration — a peer that floods control frames (ping/pong) faster
-    // than the budget must not stall it past that budget. Drives the real
-    // production `next_json` over a real loopback socket against a minimal
-    // server, the same pattern as `attempt_port_authenticates_over_a_real_
-    // socket_against_the_real_server` above. ──
-
-    #[tokio::test]
-    async fn next_json_returns_at_its_deadline_even_when_flooded_with_pings() {
-        use tokio::net::TcpListener;
-
-        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-
-        // Server: upgrade, then flood Ping frames faster than the client's
-        // own per-call budget below — for as long as this task keeps
-        // running (it is dropped, not joined, at the end of this test), so
-        // a regression (a timeout re-armed on every iteration) would hang
-        // past the outer bound below instead of merely returning late.
-        let _server = tokio::spawn(async move {
-            let (tcp, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
-            loop {
-                if ws.send(Message::Ping(Vec::new().into())).await.is_err() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        });
-
-        let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let uri = format!("ws://127.0.0.1:{port}/").parse().unwrap();
-        let (mut ws, _resp) = tokio_tungstenite::client_async(ClientRequestBuilder::new(uri), tcp)
-            .await
-            .unwrap();
-
-        // The server's 10ms ping cadence is far faster than this budget, so
-        // a correctly-fixed `next_json` still returns `None` right at the
-        // deadline; a per-iteration-re-armed `timeout` (the bug) never
-        // would, since every ping resets its clock — bound the assertion in
-        // an outer timeout well past the budget so a regression fails this
-        // test instead of hanging the whole suite.
-        let budget = Duration::from_millis(150);
-        let outcome = tokio::time::timeout(budget * 4, next_json(&mut ws, budget)).await;
-        assert_eq!(
-            outcome.ok(),
-            Some(None),
-            "next_json must return None at its own deadline, not hang past it, when flooded \
-             with pings faster than that deadline"
-        );
-    }
-
-    // ── `send_agent_query_within` (finding #7 fix — security review):
-    // distinguish a genuine timeout from an early transport failure, and
-    // fail fast on a same-`reqId` reply of the wrong type instead of waiting
-    // out the whole budget. All three drive the REAL production fn over a
-    // real loopback socket, the same pattern as `attempt_port_authenticates_
-    // over_a_real_socket_against_the_real_server`. ──
-
-    async fn connect_plain(port: u16) -> WsStream {
-        let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let uri = format!("ws://127.0.0.1:{port}/").parse().unwrap();
-        tokio_tungstenite::client_async(ClientRequestBuilder::new(uri), tcp)
-            .await
-            .unwrap()
-            .0
-    }
-
-    #[tokio::test]
-    async fn send_agent_query_within_reports_a_genuine_timeout_when_nothing_ever_replies() {
-        use tokio::net::TcpListener;
-
-        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let _server = tokio::spawn(async move {
-            let (tcp, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
-            // Read and discard the query, then go silent for the rest of
-            // this test — never replies, never closes.
-            let _ = ws.next().await;
-            std::future::pending::<()>().await
-        });
-
-        let ws = connect_plain(port).await;
-        let budget = Duration::from_millis(150);
-        // Bounded well past `budget` so a regression that hangs past the
-        // deadline fails this test instead of the whole suite.
-        let outcome = tokio::time::timeout(
-            budget * 4,
-            send_agent_query_within(ws, &Verb::Schema, budget),
-        )
-        .await;
-        assert_eq!(
-            outcome.ok(),
-            Some(Err(ERR_TIMEOUT)),
-            "a call that genuinely exhausts its budget must report `timeout`, not `connection_lost`"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_agent_query_within_reports_connection_lost_fast_on_an_early_close() {
-        use tokio::net::TcpListener;
-
-        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let _server = tokio::spawn(async move {
-            let (tcp, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
-            let _ = ws.next().await; // read the query
-                                     // Close immediately — well before any realistic budget.
-        });
-
-        let ws = connect_plain(port).await;
-        // A generous budget — the point is proving this returns FAST, not
-        // by waiting it out.
-        let generous_budget = Duration::from_secs(5);
-        let outcome = tokio::time::timeout(
-            Duration::from_millis(500),
-            send_agent_query_within(ws, &Verb::Schema, generous_budget),
-        )
-        .await;
-        assert_eq!(
-            outcome.ok(),
-            Some(Err(ERR_CONNECTION_LOST)),
-            "a close well before the deadline must never be reported as `timeout`"
-        );
-    }
-
-    #[tokio::test]
-    async fn send_agent_query_within_fails_fast_on_a_same_req_id_wrong_type_reply() {
-        use tokio::net::TcpListener;
-
-        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let _server = tokio::spawn(async move {
-            let (tcp, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
-            let msg = ws.next().await.unwrap().unwrap();
-            let text = match msg {
-                Message::Text(t) => t.to_string(),
-                other => panic!("expected a text frame, got {other:?}"),
-            };
-            let sent: Value = serde_json::from_str(&text).unwrap();
-            let req_id = sent["reqId"].as_str().unwrap().to_string();
-            // Mirrors `advance_authenticated`'s "unknown message type"
-            // fallback — a real (old) app that doesn't understand
-            // `agent.query` replies exactly this way, echoing OUR reqId on
-            // an `import.result` envelope.
-            let reply = json!({
-                "type": "import.result",
-                "reqId": req_id,
-                "payload": { "error": "unknown message type 'agent.query'" },
-            })
-            .to_string();
-            let _ = ws.send(Message::text(reply)).await;
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        });
-
-        let ws = connect_plain(port).await;
-        let generous_budget = Duration::from_secs(5);
-        let outcome = tokio::time::timeout(
-            Duration::from_millis(500),
-            send_agent_query_within(ws, &Verb::Schema, generous_budget),
-        )
-        .await;
-        assert_eq!(
-            outcome.ok(),
-            Some(Err(ERR_UNSUPPORTED_BY_APP)),
-            "a same-reqId reply of the wrong type must fail fast as `unsupported_by_app`, \
-             not silently `continue` toward a 30s timeout"
-        );
-    }
-
-    // ── pointer + token file reads (pure fs, no env mutation needed here —
-    // the path itself is exercised by platform::config's own tests) ────────
-
-    #[test]
-    fn read_pairing_token_trims_and_rejects_empty() {
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::write(dir.path().join(TOKEN_FILE), "  abc123  \n").unwrap();
-        assert_eq!(
-            read_pairing_token(dir.path().to_str().unwrap()),
-            Some("abc123".to_string())
-        );
-
-        let empty_dir = tempfile::TempDir::new().unwrap();
-        std::fs::write(empty_dir.path().join(TOKEN_FILE), "   \n").unwrap();
-        assert_eq!(read_pairing_token(empty_dir.path().to_str().unwrap()), None);
-
-        let missing_dir = tempfile::TempDir::new().unwrap();
-        assert_eq!(
-            read_pairing_token(missing_dir.path().to_str().unwrap()),
-            None
-        );
-    }
-
-    // ── UNC `dataDir` guard (MEDIUM fix — security review) ─────────────────
-
-    #[test]
-    fn rejects_unc_and_double_slash_data_dirs() {
-        assert!(!is_safe_local_data_dir(r"\\attacker.example.com\share"));
-        assert!(!is_safe_local_data_dir("//attacker.example.com/share"));
-        // A mixed-separator UNC path is still UNC.
-        assert!(!is_safe_local_data_dir(r"\\attacker.example.com/share"));
-    }
-
-    #[test]
-    fn rejects_a_relative_data_dir() {
-        assert!(!is_safe_local_data_dir("relative/path"));
-        assert!(!is_safe_local_data_dir(""));
-    }
-
-    #[test]
-    fn accepts_a_normal_absolute_local_path() {
-        let dir = tempfile::TempDir::new().unwrap();
-        assert!(is_safe_local_data_dir(dir.path().to_str().unwrap()));
-    }
-
-    #[test]
-    fn read_pairing_token_never_touches_the_filesystem_for_a_unc_data_dir() {
-        // No real UNC share exists in a hermetic test — the proof this guard
-        // works is that it returns `None` WITHOUT ever attempting the read
-        // (a real attempt against an unreachable host would hang/timeout,
-        // not return promptly).
-        assert_eq!(read_pairing_token(r"\\attacker.example.com\share"), None);
-    }
-}
+mod tests;

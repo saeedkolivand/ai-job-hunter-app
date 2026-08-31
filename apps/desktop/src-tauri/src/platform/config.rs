@@ -245,8 +245,15 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn home_dir_honors_userprofile_before_home() {
-        let prev_userprofile = std::env::var_os("USERPROFILE");
-        let prev_home = std::env::var_os("HOME");
+        // `HomeDirGuard`'s `Drop` restores whatever `USERPROFILE`/`HOME` were
+        // BEFORE this test ran, even on a panicking assert below (MEDIUM fix
+        // — security review): the manual save/restore block this replaces
+        // only ran on a normal return, so a failing assert used to leak
+        // mutated env into every later test in this process. The path here
+        // is never read (this test overwrites both vars immediately below,
+        // for each state it exercises) — only the guard's captured
+        // "restore to" values matter.
+        let _guard = HomeDirGuard::set(std::path::Path::new("/unused-initial"));
 
         // USERPROFILE wins when both are set (the Windows case: HOME is
         // typically unset there, but this pins the precedence regardless).
@@ -268,18 +275,6 @@ mod tests {
             std::env::remove_var("HOME");
         }
         assert_eq!(home_dir(), None);
-
-        // Restore.
-        unsafe {
-            match prev_userprofile {
-                Some(v) => std::env::set_var("USERPROFILE", v),
-                None => std::env::remove_var("USERPROFILE"),
-            }
-            match prev_home {
-                Some(v) => std::env::set_var("HOME", v),
-                None => std::env::remove_var("HOME"),
-            }
-        }
     }
 
     #[test]

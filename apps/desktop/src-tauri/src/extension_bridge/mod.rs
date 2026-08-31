@@ -689,6 +689,13 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // `stream::AssistStreamRegistry`'s doc for why this is per-connection
     // rather than a field on the global `BridgeState`.
     let assist_streams = std::sync::Arc::new(stream::AssistStreamRegistry::default());
+    // Cancels every in-flight `agent.query` spawned for THIS connection
+    // (MAJOR fix — security review round 2) — cancelled once, below, at the
+    // SAME shared teardown site as `assist_streams.cancel_all`, so it covers
+    // every way this loop can end (a token revocation, but also a normal
+    // close, a read error, or a stalled writer), not just revocation. See
+    // `stream::spawn_agent_query`'s doc for what this closes.
+    let agent_query_cancel = tokio_util::sync::CancellationToken::new();
 
     loop {
         let frame =
@@ -862,7 +869,13 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 // `reader.next()` — including its own `token.revoked`
                 // observation, so an in-flight read could complete on an
                 // already-revoked token. See `stream::spawn_agent_query`.
-                stream::spawn_agent_query(app.clone(), req_id, payload, out_tx.clone());
+                stream::spawn_agent_query(
+                    app.clone(),
+                    req_id,
+                    payload,
+                    out_tx.clone(),
+                    agent_query_cancel.clone(),
+                );
                 None
             }
             FrameDecision::AgentQuery { req_id, payload } => Some(agent_read::throttled_reply(
@@ -910,6 +923,12 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // socket's own registry — see `stream`'s module doc for why that's
     // never a global `BridgeState` field).
     assist_streams.cancel_all(&app);
+    // Same reasoning, for every in-flight `agent.query` this connection
+    // spawned (MAJOR fix — security review round 2): suppresses its reply
+    // and releases this task's hold on `out_tx` immediately, rather than
+    // only once a slow `best-matches` finishes — see
+    // `stream::spawn_agent_query`'s doc.
+    agent_query_cancel.cancel();
     // Only a socket that actually reached `Authenticated` (and so incremented
     // the count above) decrements it here — an unauthenticated socket's
     // teardown (a rejected origin, a failed proof, an over-cap/outdated first
