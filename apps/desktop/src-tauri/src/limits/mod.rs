@@ -1,6 +1,6 @@
 //! In-memory anti-abuse limiter for paid / expensive commands.
 //!
-//! Guards `ai_generate`, `ai_lookup_salary`, `ai_research_company`,
+//! Guards `ai_generate`, `ai_embed`, `ai_lookup_salary`, `ai_research_company`,
 //! `ai_research_answer`, `scrape_board`, and `scrape_url` against a looping (or
 //! XSS'd) renderer driving unbounded paid-API spend or
 //! scrape abuse — today only autopilot is wall-clock bounded, so a direct IPC
@@ -57,6 +57,23 @@ pub const AI_GENERATE_CONCURRENCY_MAX: usize = 3;
 /// the caller is rejected rather than parked, so the queue itself can never
 /// become the unbounded resource.
 pub const AI_GENERATE_QUEUE_MAX: usize = 20;
+
+/// `ai_embed`: at most this many starts per [`RATE_WINDOW`].
+///
+/// A single embedding round-trip is far cheaper than a generation — no output
+/// tokens, one forward pass — so this is a generous multiple of
+/// [`AI_GENERATE_RATE_MAX`] rather than reusing it outright: the generation
+/// cap would throttle ordinary rapid embedding (e.g. scoring several postings
+/// back to back) well before real abuse. Only the direct `ai_embed` IPC call
+/// is gated here — `ai_reembed_all`/`ai_index_stale_documents` (batch
+/// re-indexing) and match-score resolution call `documents::embed` directly
+/// and never pass through this bucket.
+pub const AI_EMBED_RATE_MAX: usize = 60;
+/// `ai_embed`: at most this many in-flight at once. Roughly double
+/// `AI_GENERATE_CONCURRENCY_MAX`, in the same spirit as the rate cap above —
+/// still the same order of magnitude as `run_embed_job`'s internal
+/// `REEMBED_CONCURRENCY` (4) batch fan-out.
+pub const AI_EMBED_CONCURRENCY_MAX: usize = 6;
 
 /// The shared command-bucket name every web-research lookup admits against —
 /// `ai_lookup_salary`, `ai_research_company`, `ai_research_answer`

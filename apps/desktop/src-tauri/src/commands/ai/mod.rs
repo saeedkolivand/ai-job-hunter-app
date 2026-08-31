@@ -646,12 +646,69 @@ pub fn ai_unload_model(_model: String) -> Value {
     json!({ "success": true })
 }
 
+/// Admit one `ai_embed` call: rate + concurrency cap, then the per-provider
+/// daily charge — in that order, so a rejected call costs no budget. Mirrors
+/// `ai_generate`'s admission shape (see its doc comment), sized for
+/// embeddings via [`crate::limits::AI_EMBED_RATE_MAX`]/
+/// [`crate::limits::AI_EMBED_CONCURRENCY_MAX`] rather than reusing the
+/// generation constants.
+///
+/// Caps are parameters rather than the constants directly, purely so this is
+/// testable with a tiny cap — the same reason `charge_daily_or_reject` above
+/// takes `max_per_day` instead of hardcoding [`crate::limits::PROVIDER_DAILY_MAX`].
+/// Production (`ai_embed`) always passes the real constants.
+fn admit_embed(
+    limiter: &std::sync::Arc<crate::limits::Limiter>,
+    embedding_provider: &str,
+    max_requests: usize,
+    max_concurrent: usize,
+    max_per_day: u32,
+) -> AppResult<crate::limits::ConcurrencyGuard> {
+    let guard = limiter.acquire("ai_embed", max_requests, max_concurrent)?;
+    limiter.charge_provider_daily(embedding_provider, max_per_day)?;
+    Ok(guard)
+}
+
 /// Embed text using the active embedding provider/model (persisted in the
 /// document store). Routes through the centralized provider layer, so the
 /// returned vector is tagged with its embedding space.
+///
+/// Anti-abuse, mirroring `ai_generate`: a rate/concurrency guard rejected
+/// before any provider work, then a per-provider daily charge — this is a
+/// paid provider call reachable directly over IPC (no UI currently calls it,
+/// but a looping/XSS'd renderer or an agent CLI can), so it needs the same
+/// backstop `ai_generate` has. The charge lands on the EMBEDDING provider —
+/// resolved from [`DocumentStore::embedding_config`], the exact same read
+/// `documents::embed` itself makes — never the generation provider, which is
+/// a separate, independently-configured setting (`ai_set_embedding_config`).
+/// `req.text` is clamped to `MAX_JOB_DESCRIPTION_BYTES` before it reaches the
+/// provider: uncapped, a single admitted call could still balloon into
+/// `embed_adaptive`'s ~32-chunk ceiling, each a real (billed) provider
+/// round-trip — a cost multiplier the per-call rate cap alone doesn't bound.
 #[tauri::command]
 pub async fn ai_embed(app: AppHandle, req: AiEmbedRequest) -> Value {
-    match crate::documents::embed(&app, &req.text).await {
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let embedding_provider = app.state::<DocumentStore>().embedding_config().provider;
+
+    let _guard = match admit_embed(
+        &limiter,
+        &embedding_provider,
+        crate::limits::AI_EMBED_RATE_MAX,
+        crate::limits::AI_EMBED_CONCURRENCY_MAX,
+        crate::limits::PROVIDER_DAILY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+
+    let text = crate::applications::clamp_to_bytes(
+        req.text,
+        crate::applications::MAX_JOB_DESCRIPTION_BYTES,
+    );
+    match crate::documents::embed(&app, &text).await {
         Ok(ev) => json!({
             "vector": ev.values,
             "dim": ev.space.dim,
