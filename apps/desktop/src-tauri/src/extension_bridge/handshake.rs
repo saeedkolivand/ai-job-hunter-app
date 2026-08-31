@@ -88,6 +88,27 @@ pub fn verify_client_proof(
     mac.verify_slice(&candidate).is_ok()
 }
 
+/// Verify the server's step-4 `serverProof` (lowercase hex) **in constant
+/// time**, mirroring [`verify_client_proof`] with [`ROLE_SERVER`] — the
+/// counterpart the CLI-agent client (issue #1084 PR 1) needs and the browser
+/// extension never did (its handshake lives in TS, `bridge.ts`'s
+/// `constantTimeHexEqual`). A malformed-hex proof is rejected the same way.
+#[must_use]
+pub fn verify_server_proof(
+    token: &str,
+    server_nonce: &str,
+    client_nonce: &str,
+    proof_hex: &str,
+) -> bool {
+    let Some(candidate) = hex_decode(proof_hex) else {
+        return false;
+    };
+    let mut mac = HmacSha256::new_from_slice(token.as_bytes())
+        .expect("HMAC-SHA256 accepts a key of any length");
+    mac.update(handshake_message(ROLE_SERVER, server_nonce, client_nonce).as_bytes());
+    mac.verify_slice(&candidate).is_ok()
+}
+
 fn proof_hex(token: &str, role: &str, server_nonce: &str, client_nonce: &str) -> String {
     let mut mac = HmacSha256::new_from_slice(token.as_bytes())
         .expect("HMAC-SHA256 accepts a key of any length");
@@ -208,6 +229,56 @@ mod tests {
             SERVER_NONCE,
             CLIENT_NONCE,
             CLIENT_PROOF
+        ));
+    }
+
+    // ── verify_server_proof (client-side, issue #1084 PR 1) ────────────────────
+
+    #[test]
+    fn verify_server_proof_accepts_the_correct_proof() {
+        assert!(verify_server_proof(
+            TOKEN,
+            SERVER_NONCE,
+            CLIENT_NONCE,
+            SERVER_PROOF
+        ));
+    }
+
+    #[test]
+    fn verify_server_proof_rejects_a_tampered_or_wrong_proof() {
+        let mut tampered = SERVER_PROOF.to_string();
+        tampered.replace_range(0..1, "0");
+        assert!(!verify_server_proof(
+            TOKEN,
+            SERVER_NONCE,
+            CLIENT_NONCE,
+            &tampered
+        ));
+        // The client proof is not a valid server proof (role mismatch) — proves
+        // the two can never be swapped/replayed for each other.
+        assert!(!verify_server_proof(
+            TOKEN,
+            SERVER_NONCE,
+            CLIENT_NONCE,
+            CLIENT_PROOF
+        ));
+        // A wrong token fails.
+        assert!(!verify_server_proof(
+            &"9".repeat(64),
+            SERVER_NONCE,
+            CLIENT_NONCE,
+            SERVER_PROOF
+        ));
+    }
+
+    #[test]
+    fn verify_server_proof_rejects_malformed_hex() {
+        assert!(!verify_server_proof(TOKEN, SERVER_NONCE, CLIENT_NONCE, ""));
+        assert!(!verify_server_proof(
+            TOKEN,
+            SERVER_NONCE,
+            CLIENT_NONCE,
+            "xyz"
         ));
     }
 

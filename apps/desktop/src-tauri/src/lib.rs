@@ -382,6 +382,36 @@ fn is_native_host_launch<I: IntoIterator<Item = String>>(args: I) -> bool {
     })
 }
 
+/// `agent <verb>` argv sentinel (issue #1084 PR 1) — mirrors
+/// [`run_native_host_if_invoked`]'s shape exactly. `main.rs` calls this BELOW
+/// the native-host short-circuit and ABOVE `run()`: placement is
+/// load-bearing in both directions — `run()`'s first act forks the minidump
+/// supervisor process (everything above that fork line runs in BOTH
+/// processes), and the single-instance plugin `run()` installs would
+/// otherwise hand this argv to an already-running GUI instance, pop its
+/// window, and exit with no stdout at all — exactly the failure this
+/// short-circuit exists to avoid.
+///
+/// Detected purely from argv (`agent` as the FIRST post-exe token) — our deep
+/// links use the `ajh://` scheme and the native-host launch is detected by
+/// [`is_native_host_launch`]'s own distinct argv shapes, so neither collides
+/// with this one.
+pub fn run_agent_cli_if_invoked() -> Option<i32> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !is_agent_cli_launch(&args) {
+        return None;
+    }
+    Some(extension_bridge::agent_cli::run(&args[1..]))
+}
+
+/// True when the FIRST post-exe argv token is exactly the `agent` sentinel.
+/// Extracted for the same reason as [`is_native_host_launch`]: argv is
+/// process-global and can't be set in a test, so the predicate is
+/// unit-tested against a synthetic slice instead.
+fn is_agent_cli_launch(args: &[String]) -> bool {
+    args.first().map(String::as_str) == Some("agent")
+}
+
 /// Build and run the Tauri application. Called by the binary shim in `main.rs`.
 pub fn run() {
     // Remote crash reporting is initialised before ANYTHING else, for two
@@ -1285,6 +1315,41 @@ mod tests {
         // only the manifest basename counts.
         assert!(!is_native_host_launch(args(&[
             "/opt/app.aijobhunter.bridge/other.json"
+        ])));
+    }
+
+    // ── agent-CLI argv sentinel (issue #1084 PR 1) ───────────────────────────
+
+    use super::is_agent_cli_launch;
+
+    #[test]
+    fn agent_sentinel_as_first_arg_is_agent_cli() {
+        assert!(is_agent_cli_launch(&args(&["agent", "best-matches"])));
+        assert!(is_agent_cli_launch(&args(&["agent"])));
+    }
+
+    #[test]
+    fn agent_elsewhere_in_argv_is_not_the_sentinel() {
+        // Only the FIRST post-exe token counts — a later `agent` (e.g. a job
+        // verb's own url containing the word) must not trigger CLI mode.
+        assert!(!is_agent_cli_launch(&args(&["job", "agent"])));
+    }
+
+    #[test]
+    fn empty_launch_is_not_agent_cli() {
+        assert!(!is_agent_cli_launch(&args(&[])));
+    }
+
+    #[test]
+    fn deep_link_launch_is_not_agent_cli() {
+        assert!(!is_agent_cli_launch(&args(&["ajh://settings/extension"])));
+    }
+
+    #[test]
+    fn native_host_argv_is_not_agent_cli() {
+        // The two sentinels must never overlap on the same argv shape.
+        assert!(!is_agent_cli_launch(&args(&[
+            "chrome-extension://oaoekkgkhmgdfnpmfkpphgiikliaicll/",
         ])));
     }
 }

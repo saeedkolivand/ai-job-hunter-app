@@ -66,6 +66,12 @@ use self::persist::{
     persist_ai_assist_optin, persist_autofill_optin, persist_token,
 };
 
+/// `ajh-tauri agent <verb>` — the CLIENT half of the agent/CLI surface (issue
+/// #1084 PR 1): argv parsing, the v2-handshake-carrying bridge client, and
+/// process exit codes. `pub` (not plain `mod`) because `lib::
+/// run_agent_cli_if_invoked` calls into it from OUTSIDE this module tree,
+/// exactly like [`native_host`] below. See its own module doc.
+pub mod agent_cli;
 /// The `agent.query` read-only agent/CLI surface (issue #1084 PR 1) — see its
 /// module doc.
 mod agent_read;

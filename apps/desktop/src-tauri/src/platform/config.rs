@@ -32,12 +32,41 @@ pub fn data_dir() -> PathBuf {
     PathBuf::from(home).join(FALLBACK_DIR_NAME)
 }
 
-/// The current user's home directory (`$HOME`), if set. Centralizes the raw
-/// env read for the few callers (e.g. the native-messaging host registration)
-/// that need OS-mandated well-known directories outside the app data dir, so
-/// the R4 "env access only in platform/**" rule holds.
+/// The current user's home directory, if resolvable. Centralizes the raw env
+/// read for the few callers (e.g. the native-messaging host registration,
+/// the agent-CLI pointer file) that need OS-mandated well-known directories
+/// outside the app data dir, so the R4 "env access only in platform/**" rule
+/// holds.
+///
+/// Checks `USERPROFILE` (Windows) before `HOME` — mirrors [`data_dir`]'s own
+/// fallback order. `HOME` alone is unset on Windows, so a Windows-only caller
+/// of the old `$HOME`-only version silently never resolved a home dir at all
+/// (its one caller at the time was already `#[cfg(not(windows))]`, so nothing
+/// behavioral changes here — this only widens what future/other-OS callers,
+/// like the agent-CLI pointer, can rely on).
 pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+}
+
+/// Directory holding the agent-CLI pointer file — a SIBLING of, and
+/// deliberately NOT reusing, [`FALLBACK_DIR_NAME`]: a foreign process reading
+/// this pointer must never mistake this directory for the app's actual data
+/// dir (which [`resolve_and_export_data_dir`] resolves via Tauri and may live
+/// somewhere else entirely, e.g. `%APPDATA%` on Windows).
+const AGENT_POINTER_DIR_NAME: &str = ".ajh-agent";
+/// Filename of the pointer JSON itself (`{ exePath, dataDir }`) inside
+/// [`AGENT_POINTER_DIR_NAME`].
+const AGENT_POINTER_FILE_NAME: &str = "agent.json";
+
+/// Path to the agent-CLI pointer file, if a home dir is resolvable. Shared by
+/// the writer (`extension_bridge::register`, on every launch) and the reader
+/// (`extension_bridge::agent_cli`, a foreign process with no `AJH_DATA_DIR`
+/// and no `AppHandle`) so both agree on the same location without either
+/// reconstructing it independently.
+pub fn agent_pointer_path() -> Option<PathBuf> {
+    home_dir().map(|h| h.join(AGENT_POINTER_DIR_NAME).join(AGENT_POINTER_FILE_NAME))
 }
 
 /// Setup-side resolver (has an `AppHandle`). Resolves the authoritative app data
@@ -131,6 +160,58 @@ impl Drop for DataDirGuard {
     }
 }
 
+/// Test-only RAII scope for BOTH home-dir env vars (`USERPROFILE` + `HOME`) —
+/// same reason and shape as [`DataDirGuard`], extended to a pair because
+/// [`home_dir`] checks `USERPROFILE` first: a test overriding only `HOME`
+/// would silently lose to a real `USERPROFILE` on a Windows host. Any OTHER
+/// crate module (e.g. `extension_bridge::register`'s agent-pointer tests)
+/// that needs an isolated home dir goes through this rather than touching
+/// `std::env` itself, so R4 ("env access only in platform/**") holds even
+/// for tests embedded in a non-`platform` file (R4's own text-scan exempts
+/// only files whose name ends in `test(s).rs`, not an inline `#[cfg(test)]`
+/// module — the same gap `DataDirGuard`'s doc calls out).
+#[cfg(test)]
+pub(crate) struct HomeDirGuard {
+    prev_userprofile: Option<std::ffi::OsString>,
+    prev_home: Option<std::ffi::OsString>,
+}
+
+#[cfg(test)]
+impl HomeDirGuard {
+    /// Point `home_dir()` (and therefore `agent_pointer_path()`) at `path`
+    /// until the guard drops.
+    pub(crate) fn set(path: &std::path::Path) -> Self {
+        let prev_userprofile = std::env::var_os("USERPROFILE");
+        let prev_home = std::env::var_os("HOME");
+        // SAFETY: test-only, and callers hold `#[serial]`.
+        unsafe {
+            std::env::set_var("USERPROFILE", path);
+            std::env::set_var("HOME", path);
+        }
+        Self {
+            prev_userprofile,
+            prev_home,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for HomeDirGuard {
+    fn drop(&mut self) {
+        // SAFETY: as above — restoring exactly what was read in `set`.
+        unsafe {
+            match self.prev_userprofile.take() {
+                Some(previous) => std::env::set_var("USERPROFILE", previous),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match self.prev_home.take() {
+                Some(previous) => std::env::set_var("HOME", previous),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,5 +237,64 @@ mod tests {
             std::env::remove_var(DATA_DIR_ENV);
         }
         assert!(data_dir().to_string_lossy().contains(FALLBACK_DIR_NAME));
+    }
+
+    // `home_dir`/`USERPROFILE` mutate process-global env — `#[serial]` so this
+    // can't race `data_dir_honors_env_then_falls_back` (a different var) or any
+    // other `#[serial]` mutator in this module.
+    #[test]
+    #[serial_test::serial]
+    fn home_dir_honors_userprofile_before_home() {
+        let prev_userprofile = std::env::var_os("USERPROFILE");
+        let prev_home = std::env::var_os("HOME");
+
+        // USERPROFILE wins when both are set (the Windows case: HOME is
+        // typically unset there, but this pins the precedence regardless).
+        unsafe {
+            std::env::set_var("USERPROFILE", "/from/userprofile");
+            std::env::set_var("HOME", "/from/home");
+        }
+        assert_eq!(home_dir().unwrap().to_string_lossy(), "/from/userprofile");
+
+        // HOME alone (USERPROFILE unset) — the pre-fix behavior, still honored.
+        unsafe {
+            std::env::remove_var("USERPROFILE");
+        }
+        assert_eq!(home_dir().unwrap().to_string_lossy(), "/from/home");
+
+        // Neither set — this is what silently broke on Windows before the fix
+        // (HOME-only never resolved there).
+        unsafe {
+            std::env::remove_var("HOME");
+        }
+        assert_eq!(home_dir(), None);
+
+        // Restore.
+        unsafe {
+            match prev_userprofile {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn agent_pointer_path_sits_beside_not_inside_the_data_dir_fallback() {
+        let home = std::path::Path::new("/home/tester");
+        let _guard = HomeDirGuard::set(home);
+        let path = agent_pointer_path().unwrap();
+        assert_eq!(
+            path,
+            home.join(AGENT_POINTER_DIR_NAME)
+                .join(AGENT_POINTER_FILE_NAME)
+        );
+        // Never the bare FALLBACK_DIR_NAME (`.ajh`) — that name is the data-dir
+        // fallback, and a pointer file living there would be mistakable for it.
+        assert!(!path.starts_with(home.join(FALLBACK_DIR_NAME)));
     }
 }

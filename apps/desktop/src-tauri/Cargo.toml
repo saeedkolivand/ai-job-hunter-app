@@ -322,7 +322,10 @@ wmi = "0.18"
 windows-native-keyring-store = "1"
 # DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows;
 # UI_ViewManagement reads the system accent color via UISettings (Appearance).
-windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement", "Win32_System_Registry"] }
+# Win32_System_Console (issue #1084 PR 1): `platform::windows_console` probes
+# GetStdHandle/AttachConsole so `ajh-tauri agent …` has a working stdout under
+# the release build's `windows_subsystem = "windows"`.
+windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement", "Win32_System_Registry", "Win32_System_Console"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
