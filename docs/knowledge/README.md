@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-08-27
+Last updated: 2026-08-31
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -80,6 +80,8 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-034](decision-records/adr-034-cover-letter-export-boundary-completion.md)               | Cover-letter export boundary completes a body-only letter (salutation/sign-off/signature) |
 | [ADR-035](decision-records/adr-035-work-type-filter-declared-data-only.md)                   | Work-type filter classifies from declared board data only; undeclared is kept             |
 | [ADR-036](decision-records/adr-036-cross-autopilot-best-matches.md)                          | Cross-autopilot best matches: fuzzy clustering, rank by ADR-020 two-block rule            |
+| [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md)                  | Agent CLI is a mode of the shipped binary and a thin client over the loopback bridge      |
+| [ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md)                        | Full CLI parity via a 164-row policy table; curated and generic tiers kept apart          |
 
 ### The `NNNN-` series (closed)
 

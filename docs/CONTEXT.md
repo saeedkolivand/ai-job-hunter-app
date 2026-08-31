@@ -502,3 +502,46 @@ Was the shader-driven wobble of ink strokes (`uBoil`) that gave RIPBOOK its hand
 Retired - TERMINAL VELOCITY is a PBR realistic film, no ink boil. The only "on twos" that
 carries over is character animation stepped at ~12 fps against a smooth 60 fps camera.
 _Avoid_: reusing Line boil / `uBoil` for any TERMINAL VELOCITY effect
+
+## Domain — Agent CLI surface
+
+**Command**:
+A `#[tauri::command]` Rust function. There are 164, and the set is exactly 1:1 with the
+`generate_handler!` registration list — diffed both directions, no ghosts, no unregistered
+commands. This is the **authoritative registry** of what the app can do, and the only source a
+parity surface may derive from.
+_Avoid_: "channel" (a different, incomplete set) / "endpoint" (there is no HTTP surface)
+
+**Channel**:
+A TypeScript-side `namespace:verb` string in `IPC_CHANNELS`, used by the renderer to call a
+Command. **Not authoritative and not complete**: `NOTIFICATIONS_CHANNELS` is literally
+`{} as const`, and `AI_CHANNELS` carries 5 entries for a 29-method contract. A surface derived
+from Channels silently cannot do things the UI can.
+_Avoid_: treating the Channel list as "the API" — it is one renderer-side view of it
+
+**Resource**:
+A hand-written, allowlist-**projected** read surface of the agent CLI (`best-matches`, `job`,
+`profile`, `automations`, `schema`). A Resource never returns a raw record: its response type
+cannot express the forbidden fields, nested types included. The curated tier.
+_Avoid_: "endpoint" / using Resource for anything that mutates
+
+**Verb**:
+The token a caller types after `ajh-tauri agent`. A Verb resolves either to a Resource (curated
+tier) or, via `call`, to a Command (generic tier). Verbs are derived from one table that also
+generates `--help` and `schema`, so the three cannot disagree.
+_Avoid_: using Verb and Command interchangeably — one is the CLI's word, the other is the app's
+
+**Effect class**:
+The declared blast radius of a Command in the policy table — Read, Reversible, Irreversible, or
+NotExposed (with a stated reason). Declared, never inferred, and pessimistic by default: an
+unclassified Command fails CI rather than defaulting to safe. The table must match the Command
+registry exactly, which is [ADR-014](knowledge/decision-records/adr-014-cli-agent-shell-plugin-static-allowlist.md)'s
+static-allowlist invariant applied to inbound dispatch.
+_Avoid_: "permission" (nothing is granted per-caller; every caller is the user)
+
+**Confirm proof**:
+The value an Irreversible Command demands before it will run. It is deliberately **withheld from
+the refusal** — the refusal names which Resource yields it, never the value — so satisfying it
+requires a second call to a different Verb, and therefore requires having actually read the
+record. This is the safety property that survives the absence of a dry-run.
+_Avoid_: "confirmation prompt" (there is no interactive prompt; an autonomous caller cannot answer one)
