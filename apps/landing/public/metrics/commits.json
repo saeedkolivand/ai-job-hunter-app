@@ -1,5 +1,17 @@
 [
   {
+    "sha": "056c3e3977cbd5a9b421c6d6766e690e39e07c8e",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-30T09:12:31Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "12894efe7690f7fa89785a02a7ab8b9f7897e237",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "bf9e44d046d9f3a4482dcc59e151eaca4fa5412f",
-    "commit": {
-      "message": "ci: group dependabot updates by area, and unblock local pushes (#1050)",
-      "author": {
-        "date": "2026-08-19T17:03:46Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
