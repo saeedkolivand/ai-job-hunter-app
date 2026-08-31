@@ -98,15 +98,30 @@
 // its only identity, so ANY unrelated edit that inserts a line above a
 // declared site breaks the guard both ways at once (undeclared at the new
 // line, stale at the old one) — it happened to `documents/mod.rs`'s
-// `charge_provider_daily` site the same day it was written. An entry can now
+// `charge_provider_daily` site the same day it was written. An entry can
 // opt into content-anchored matching by adding `sig` (copied from the `sig`
 // `findLeaks` reports for that site — its own format-string literal,
 // whitespace-collapsed), which survives a line shift as long as it stays the
-// ONLY declared entry with that (file, sig) pair — see `violations`. Kept
-// opt-in rather than migrating all existing entries at once: `sig` is a
-// verbatim copy of live source text, so a mechanical mass-migration script
-// would need to run and be verified against every entry, a bigger and
-// separately-reviewable change from fixing the one break in hand.
+// ONLY declared entry with that (file, sig) pair — see `violations`. That
+// first pass deliberately kept `sig` opt-in rather than migrating every
+// existing entry at once, reasoning a mass-migration was a bigger, separately
+// reviewable change from fixing the one break in hand.
+//
+// That deferral turned out to be wrong: the same shape re-broke three more
+// times on this branch alone, twice on `extension_bridge/mod.rs` and once on
+// `extension_bridge/register.rs` — exactly the entries the first pass hadn't
+// migrated. `sig` is now backfilled onto every ALLOWLIST entry, including the
+// `httpChokepointSafe`/`inMemoryParseSafe` factories (both now take `sig` as
+// a parameter and thread it into the returned entry, one factory call per
+// site so each site still keeps its own independent declaration). Generated
+// mechanically from `findLeaks()`'s own `sig` output rather than
+// hand-transcribed, so it cannot drift from the real source text it was
+// copied from. `sig` stays a per-entry opt-in field rather than a hard
+// requirement enforced by `violations()` — the line-exact-only path is real,
+// tested behavior (see check-log-error-leaks.test.mjs's `violations` suite),
+// not dead code to delete — but every NEW entry should still add one; a bare
+// `{ status, reason }` entry works but is one more line insertion away from
+// this exact recurrence.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -118,7 +133,10 @@ const SRC_REL = 'apps/desktop/src-tauri/src';
 /**
  * Every surviving `{e}` site, keyed `"<path relative to src/>:<line>"` (the
  * line the literal `{e}` text sits on — for a multi-line format string that
- * is not necessarily the `log::` call's own line).
+ * is not necessarily the `log::` call's own line). The line in the key is a
+ * human-readable pointer, not the sole identity: every entry below also
+ * carries `sig` (see the file header), which is what actually survives the
+ * site moving to a different line.
  *
  * `status: 'safe'` — the error's `Display` structurally cannot carry a
  *   path/URL/host/credential; `.code()`/`sanitize_reason` would only lose
@@ -132,6 +150,7 @@ const ALLOWLIST = {
     reason:
       "serde_json::from_value type-mismatch parsing the app's own Autopilot " +
       'record on the load path — a pure parse failure, never a path/URL.',
+    sig: '[autopilot] dropping unparseable record: {e}',
   },
   'autopilot_helpers/mod.rs:399': {
     status: 'safe',
@@ -139,6 +158,7 @@ const ALLOWLIST = {
       "limits::Limiter::charge_provider_daily's AppError::RateLimited message is a " +
       'fixed, author-written template naming only the provider id and a static ' +
       'daily-ceiling number — see limits/mod.rs.',
+    sig: '[autopilot] AI notes stopped at daily ceiling: {e}',
   },
   'documents/embedding.rs:153': {
     status: 'safe',
@@ -158,6 +178,7 @@ const ALLOWLIST = {
     reason:
       'lopdf::Document::load_mem parses IN-MEMORY bytes, not a file path — its errors ' +
       'are fixed format-parse messages ("trailer not found", …), never a path.',
+    sig: 'export: lopdf failed to parse rendered PDF bytes: {e}',
   },
   'profile_import/linkedin.rs:134': {
     status: 'safe',
@@ -165,6 +186,7 @@ const ALLOWLIST = {
       "net::http::read_text_capped's error path already calls reqwest::Error::" +
       'without_url() before wrapping in AppError::Network (see accumulate_capped in ' +
       'net/http.rs) — the URL is stripped upstream of this call site.',
+    sig: '[profile_import] linkedin body read failed: has_session={has_session} error={e}',
   },
   'postings/mod.rs:405': {
     status: 'safe',
@@ -172,20 +194,24 @@ const ALLOWLIST = {
       "err: &serde_json::Error is back_up_corrupt_file's parameter — the from_str parse " +
       'failure of interactions.json content already read into memory (map_mut). Same ' +
       'in-memory-parse shape as inMemoryParseSafe() below, never a path/URL/host/credential.',
+    sig: '[postings] interactions.json failed to parse ({err}); \\ backed_up={renamed} backup_name={}',
   },
   'postings/mod.rs:447': {
     status: 'safe',
     reason:
       "serde_json::to_string_pretty is a SERIALIZE error on the app's own " +
       'InteractionRecord — a type-system failure, not an echo of file content.',
+    sig: '[postings] save skipped: could not serialize {} interaction(s): {e}',
   },
   'notifications/mod.rs:231': {
     status: 'safe',
     reason: 'Same serde_json serialize-error shape as postings/mod.rs:427 (AppNotification).',
+    sig: 'failed to serialize notifications: {e}',
   },
   'commands/autopilot/rerank.rs:278': {
     status: 'safe',
     reason: 'Same charge_provider_daily fixed-template message as autopilot_helpers/mod.rs:395.',
+    sig: '[autopilot] semantic re-rank stopped at daily ceiling: {e}',
   },
   'commands/profile_import.rs:20': {
     status: 'safe',
@@ -194,24 +220,28 @@ const ALLOWLIST = {
       "failure to a fixed AppError::Network string ('could not reach linkedin' / " +
       "'could not read the linkedin response') before returning — no URL/host " +
       'reaches this call site.',
+    sig: '[profile_import] import failed: host={host} error={e}',
   },
   'extension_bridge/register.rs:138': {
     status: 'safe',
     reason:
       'std::env::current_exe() takes no input path to leak — a failure here is a ' +
       'generic OS resource-resolution error.',
+    sig: '[native_host] current_exe() failed (non-fatal): {e}',
   },
   'extension_bridge/native_host.rs:50': {
     status: 'safe',
     reason:
       'tokio::runtime::Builder::build() failure is a generic OS-thread/resource error; ' +
       'building a runtime touches no filesystem path.',
+    sig: '[native_host] failed to build runtime: {e}',
   },
   'extension_bridge/mod.rs:510': {
     status: 'safe',
     reason:
       'TcpListener::accept() failure is a local socket-resource error (e.g. EMFILE); it ' +
       'carries no peer address or path — the peer is a separate, unread `_peer` binding.',
+    sig: '[extension_bridge] accept error (continuing): {e}',
   },
   'platform/linux_appimage.rs:170': {
     status: 'safe',
@@ -220,6 +250,7 @@ const ALLOWLIST = {
       'Display is only the OS errno message (e.g. "No such file or directory (os error ' +
       '2)"); Rust does not embed the failed program path in that error, so `exe`\'s ' +
       'absolute path never reaches this log line.',
+    sig: '[startup] AppImage Wayland LD_PRELOAD re-exec failed, continuing without preload: {err}',
   },
 
   // ── scraping/**: fetch_text/fetch_json chokepoint already strips the URL ──
@@ -235,41 +266,85 @@ const ALLOWLIST = {
   // JSearch/Jooble/Apify carries an API key in the query string — never
   // reaches these log lines even on failure. Traced individually against the
   // current source, not pattern-matched.
-  'scraping/boards/greenhouse/mod.rs:110': httpChokepointSafe(),
-  'scraping/boards/breezy/mod.rs:298': httpChokepointSafe(),
-  'scraping/boards/ycombinator/mod.rs:109': httpChokepointSafe(),
-  'scraping/boards/aggregator/adzuna.rs:429': httpChokepointSafe(),
-  'scraping/boards/aggregator/adzuna.rs:562': httpChokepointSafe(),
-  'scraping/boards/arbeitnow/mod.rs:96': httpChokepointSafe(),
-  'scraping/boards/bamboohr/mod.rs:244': httpChokepointSafe(),
-  'scraping/boards/arbeitsagentur/mod.rs:164': httpChokepointSafe(),
-  'scraping/boards/aggregator/mod.rs:318': httpChokepointSafe(),
-  'scraping/boards/aggregator/mod.rs:352': httpChokepointSafe(),
-  'scraping/boards/aggregator/mod.rs:385': httpChokepointSafe(),
-  'scraping/boards/aggregator/mod.rs:623': httpChokepointSafe(),
-  'scraping/boards/ashby/mod.rs:157': httpChokepointSafe(),
-  'scraping/boards/workable/mod.rs:304': httpChokepointSafe(),
-  'scraping/boards/lever/mod.rs:154': httpChokepointSafe(),
-  'scraping/boards/pinpoint/mod.rs:192': httpChokepointSafe(),
-  'scraping/boards/smartrecruiters/mod.rs:237': httpChokepointSafe(),
-  'scraping/boards/smartrecruiters/mod.rs:275': httpChokepointSafe(),
-  'scraping/boards/themuse/mod.rs:193': httpChokepointSafe(),
-  'scraping/boards/recruitee/mod.rs:157': httpChokepointSafe(),
-  'scraping/boards/rippling/mod.rs:230': httpChokepointSafe(),
-  'scraping/boards/personio/mod.rs:208': httpChokepointSafe(),
+  'scraping/boards/greenhouse/mod.rs:110': httpChokepointSafe(
+    "[greenhouse] fetch failed for '{}': {e}"
+  ),
+  'scraping/boards/breezy/mod.rs:298': httpChokepointSafe("[breezy] fetch failed for '{}': {e}"),
+  'scraping/boards/ycombinator/mod.rs:109': httpChokepointSafe(
+    '[ycombinator] item {id} failed: {e}; skipping'
+  ),
+  'scraping/boards/aggregator/adzuna.rs:429': httpChokepointSafe(
+    '[aggregator] adzuna broaden retry failed, keeping narrow result: {e}'
+  ),
+  'scraping/boards/aggregator/adzuna.rs:562': httpChokepointSafe(
+    '[aggregator] adzuna page {page} failed, keeping {} result(s) already collected: {e}'
+  ),
+  'scraping/boards/arbeitnow/mod.rs:96': httpChokepointSafe(
+    '[arbeitnow] page {page} failed: {e}; returning {} collected'
+  ),
+  'scraping/boards/bamboohr/mod.rs:244': httpChokepointSafe(
+    "[bamboohr] fetch failed for '{}': {e}"
+  ),
+  'scraping/boards/arbeitsagentur/mod.rs:164': httpChokepointSafe(
+    '[arbeitsagentur] page {page} failed: {e}; returning {} collected'
+  ),
+  'scraping/boards/aggregator/mod.rs:318': httpChokepointSafe(
+    '[aggregator] adzuna error, attempting jsearch fallback: {e}'
+  ),
+  'scraping/boards/aggregator/mod.rs:352': httpChokepointSafe(
+    '[aggregator] jsearch error, attempting jooble fallback: {e}'
+  ),
+  'scraping/boards/aggregator/mod.rs:385': httpChokepointSafe(
+    '[aggregator] jooble fallback failed: {e}'
+  ),
+  'scraping/boards/aggregator/mod.rs:623': httpChokepointSafe(
+    '[aggregator] apify_linkedin error (additive, ignored): {e}'
+  ),
+  'scraping/boards/ashby/mod.rs:157': httpChokepointSafe("[ashby] fetch failed for '{}': {e}"),
+  'scraping/boards/workable/mod.rs:304': httpChokepointSafe(
+    "[workable] fetch failed for '{}': {e}"
+  ),
+  'scraping/boards/lever/mod.rs:154': httpChokepointSafe("[lever] fetch failed for '{}': {e}"),
+  'scraping/boards/pinpoint/mod.rs:192': httpChokepointSafe(
+    "[pinpoint] fetch failed for '{}': {e}"
+  ),
+  'scraping/boards/smartrecruiters/mod.rs:237': httpChokepointSafe(
+    "[smartrecruiters] list fetch failed for '{}': {e}"
+  ),
+  'scraping/boards/smartrecruiters/mod.rs:275': httpChokepointSafe(
+    '[smartrecruiters] detail fetch failed for posting {} ({detail_url}): {e}; skipping'
+  ),
+  'scraping/boards/themuse/mod.rs:193': httpChokepointSafe(
+    '[themuse] page {page} failed: {e}; returning {} collected'
+  ),
+  'scraping/boards/recruitee/mod.rs:157': httpChokepointSafe(
+    "[recruitee] fetch failed for '{}': {e}"
+  ),
+  'scraping/boards/rippling/mod.rs:230': httpChokepointSafe(
+    "[rippling] fetch failed for '{}': {e}"
+  ),
+  'scraping/boards/personio/mod.rs:208': httpChokepointSafe(
+    "[personio] fetch failed for '{}' via {}: {e}"
+  ),
 
   // ── scraping/**: pure in-memory parse of already-fetched data ─────────────
   // `serde_json::from_value`/`from_str` on a JSON value/body already read into
   // memory — Display is a schema-mismatch message ("missing field `x`",
   // "invalid type: …"), structurally incapable of carrying a path/URL/host/
   // credential.
-  'scraping/boards/breezy/mod.rs:102': inMemoryParseSafe(),
-  'scraping/boards/jobicy/mod.rs:66': inMemoryParseSafe(),
-  'scraping/boards/jobicy/mod.rs:171': inMemoryParseSafe(),
-  'scraping/boards/comeet/mod.rs:76': inMemoryParseSafe(),
-  'scraping/boards/rippling/mod.rs:89': inMemoryParseSafe(),
-  'scraping/boards/workable/mod.rs:118': inMemoryParseSafe(),
-  'scraping/http/mod.rs:332': inMemoryParseSafe(),
+  'scraping/boards/breezy/mod.rs:102': inMemoryParseSafe('[breezy] skipping malformed row: {e}'),
+  'scraping/boards/jobicy/mod.rs:66': inMemoryParseSafe('[jobicy] skipping malformed row: {e}'),
+  'scraping/boards/jobicy/mod.rs:171': inMemoryParseSafe(
+    '[jobicy] response parse failure (HTTP {status_code}): {e}'
+  ),
+  'scraping/boards/comeet/mod.rs:76': inMemoryParseSafe('[comeet] skipping malformed row: {e}'),
+  'scraping/boards/rippling/mod.rs:89': inMemoryParseSafe('[rippling] skipping malformed row: {e}'),
+  'scraping/boards/workable/mod.rs:118': inMemoryParseSafe(
+    '[workable] skipping malformed row: {e}'
+  ),
+  'scraping/http/mod.rs:332': inMemoryParseSafe(
+    '[scraping::http] fetch_json parse failure for {safe_url} ({e}); body_len={}'
+  ),
 
   'scraping/http/mod.rs:442': {
     status: 'safe',
@@ -277,6 +352,7 @@ const ALLOWLIST = {
       "htmd::convert parses an already-fetched, in-memory HTML string (html_to_markdown's " +
       'own fallback path) — its Display is a structural markdown-conversion failure, never ' +
       'a path/URL/host/credential.',
+    sig: '[scraping::http] htmd conversion failed ({e}); falling back to html_to_text',
   },
   'scraping/engine/mod.rs:1198': {
     status: 'safe',
@@ -286,14 +362,19 @@ const ALLOWLIST = {
       'state, never a path/URL/host/credential. Distinct from the sibling arm 3 lines ' +
       'above, which IS a path-carrying AppError from the store and already uses .code() ' +
       'for exactly that reason.',
+    sig: '[scrape] board-health record task failed: {e}',
   },
 };
 
 /** Factory for the fetch_text/fetch_json-chokepoint shape — see the comment
  * above the first entry that uses it for the full rationale; kept as one
  * factory so the reasoning is written once and every site stays independently
- * declared (the undeclared/stale checks below still cover each individually). */
-function httpChokepointSafe() {
+ * declared (the undeclared/stale checks below still cover each individually).
+ * `sig` is the call site's own format-string literal (copied from `findLeaks`'
+ * output for it — see `normalizeSig`), threaded straight through so every
+ * factory-built entry gets content-anchored matching too, same as a plain
+ * entry that declares `sig` inline. */
+function httpChokepointSafe(sig) {
   return {
     status: 'safe',
     reason:
@@ -303,17 +384,19 @@ function httpChokepointSafe() {
       'transport-failure branch already calls reqwest::Error::without_url() before ' +
       'wrapping in AppError::Network, and whose other error variants (HTTP-status, ' +
       'body-too-large, generic schema-drift, cancelled) are fixed path/URL-free messages.',
+    sig,
   };
 }
 
 /** Factory for the pure in-memory-parse shape — see the comment above the
- * first entry that uses it. */
-function inMemoryParseSafe() {
+ * first entry that uses it. `sig` — see `httpChokepointSafe` above. */
+function inMemoryParseSafe(sig) {
   return {
     status: 'safe',
     reason:
       'serde_json parsing an already-fetched, in-memory JSON value/body — a pure schema-' +
       'mismatch failure, never a path, URL, host, or credential.',
+    sig,
   };
 }
 
@@ -533,8 +616,13 @@ export function findLeaks(srcDir = join(REPO_ROOT, SRC_REL)) {
 export function violations(inventory = ALLOWLIST, leaks) {
   const problems = [];
 
-  const foundKeys = new Set(leaks.map((l) => l.key));
   const declaredKeys = new Set(Object.keys(inventory));
+  // The leak actually sitting at a given key today (if any) — used below to
+  // tell "still the same site" apart from "a DIFFERENT site now happens to
+  // sit on this line number", which line-exact-by-key alone cannot: a `key`
+  // match only proves the LINE lines up, not that the log message is still
+  // the one the entry's `reason` was written against.
+  const leakAtKey = new Map(leaks.map((l) => [l.key, l]));
 
   // Content-anchored matching (opt-in — an ALLOWLIST entry declares its own
   // `sig`, copied from the `sig` `findLeaks` reports for it): a line-keyed
@@ -554,10 +642,11 @@ export function violations(inventory = ALLOWLIST, leaks) {
   //   - Entry side: two entries sharing one (file, sig) were each satisfied
   //     by the SAME single leak, so the stale duplicate was never reported.
   //   - Already-claimed leak: an entry's sig can match the leak a DIFFERENT
-  //     entry declares line-exactly; that entry then has no site of its own
-  //     and IS stale. A sig pairing therefore only counts for a leak no entry
-  //     declares by line — when the leak sits on the entry's own line,
-  //     line-exact matching already covers it and `sig` is not needed.
+  //     entry declares by key; that entry then has no site of its own and IS
+  //     stale. A sig pairing therefore only counts for a leak no entry
+  //     declares by key — when the leak sits on an entry's own declared key
+  //     (see `lineExactOk` below), that's the ordinary same-site case and
+  //     `sig` (if present) is checked there instead, not here.
   //
   // Both holes could only ever suppress a STALE-entry error, never an
   // undeclared-leak one: a second site with the same message makes the LEAK
@@ -576,10 +665,10 @@ export function violations(inventory = ALLOWLIST, leaks) {
   };
   // NUL separator: it occurs in neither a path nor a Rust string literal, so
   // two different (file, sig) pairs can never collide on one bucket key.
-  const leaksBySig = bucketBy(leaks, (l) => `${l.file} ${l.sig}`);
+  const leaksBySig = bucketBy(leaks, (l) => `${l.file}\0${l.sig}`);
   const entriesBySig = bucketBy(
     Object.entries(inventory).filter(([, entry]) => entry.sig),
-    ([entryKey, entry]) => `${fileOf(entryKey)} ${entry.sig}`
+    ([entryKey, entry]) => `${fileOf(entryKey)}\0${entry.sig}`
   );
   const sigSatisfiedLeakKeys = new Set();
   const sigSatisfiedEntryKeys = new Set();
@@ -592,9 +681,24 @@ export function violations(inventory = ALLOWLIST, leaks) {
     sigSatisfiedEntryKeys.add(entries[0][0]);
   }
 
-  const undeclared = leaks.filter(
-    (l) => !declaredKeys.has(l.key) && !sigSatisfiedLeakKeys.has(l.key)
-  );
+  // Line-exact is only a real match when the entry ALSO has no opinion on
+  // content (no `sig`) or its content still agrees: a `sig`-bearing entry
+  // whose line still has a leak, but a DIFFERENT one (the message text
+  // changed in place, line number untouched), must not read as "still
+  // declared" just because the two keys happen to coincide — that would
+  // silently certify a message nobody re-traced. Entries without `sig` keep
+  // the original, purely positional behavior (see the file header on why
+  // `sig` is opt-in, not mandatory).
+  const lineExactOk = (key) => {
+    const leak = leakAtKey.get(key);
+    if (!leak) return false;
+    const entry = inventory[key];
+    if (!entry) return false;
+    if (entry.sig && entry.sig !== leak.sig) return false;
+    return true;
+  };
+
+  const undeclared = leaks.filter((l) => !lineExactOk(l.key) && !sigSatisfiedLeakKeys.has(l.key));
   if (undeclared.length > 0) {
     problems.push(
       'These log call sites interpolate a caught error, captured or positional, which can ' +
@@ -611,7 +715,7 @@ export function violations(inventory = ALLOWLIST, leaks) {
     );
   }
 
-  const stale = [...declaredKeys].filter((k) => !foundKeys.has(k) && !sigSatisfiedEntryKeys.has(k));
+  const stale = [...declaredKeys].filter((k) => !lineExactOk(k) && !sigSatisfiedEntryKeys.has(k));
   if (stale.length > 0) {
     problems.push(
       'Declared in ALLOWLIST but no `{e}` site found there anymore (fixed, moved, or ' +
