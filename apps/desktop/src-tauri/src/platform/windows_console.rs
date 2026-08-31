@@ -45,11 +45,20 @@ pub fn ensure_console_output() {
 
     // SAFETY: `AttachConsole` only attaches this process to an existing
     // console buffer already owned by the parent process; it allocates
-    // nothing this process must free. A failure (no parent console — e.g.
-    // launched fresh from Explorer) is expected and left silent: stdout
-    // stays unusable, same as before the probe, and this function never
-    // panics either way — the caller degrades to a non-zero exit with no
-    // printed JSON, not a crash.
+    // nothing this process must free. A failure (no parent console — e.g. a
+    // service/scheduled-task spawn with no redirect) is expected and left
+    // silent: stdout stays unusable, same as before the probe.
+    //
+    // What that costs the caller, stated accurately: `println!` on an
+    // invalid stdout PANICS ("failed printing to stdout"), and because
+    // `[profile.release]` sets `panic = "abort"` and the CLI short-circuits
+    // ABOVE `ajh_tauri::run()` (so `crash_reporting::init` never ran), that
+    // is a silent abort — no message, no crash report. This function itself
+    // never panics, but it cannot promise the caller won't: printing through
+    // `writeln!(std::io::stdout(), …)` and ignoring the `Err` is what makes
+    // that true, and the print paths in `extension_bridge::agent_cli` own
+    // that. Reachability is low (it needs no console AND no redirect), which
+    // is why this is a documented limit rather than a blocker.
     let _ = unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
 }
 
