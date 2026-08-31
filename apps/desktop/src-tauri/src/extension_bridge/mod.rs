@@ -66,6 +66,9 @@ use self::persist::{
     persist_ai_assist_optin, persist_autofill_optin, persist_token,
 };
 
+/// The `agent.query` read-only agent/CLI surface (issue #1084 PR 1) — see its
+/// module doc.
+mod agent_read;
 mod answer_assist;
 mod answer_rewrite;
 mod answers_save;
@@ -194,6 +197,11 @@ pub struct BridgeState {
     /// near-instant handshake) can never reset the burst allowance. See
     /// [`match_live::MatchLiveThrottle`]'s doc.
     match_live_limiter: Mutex<match_live::MatchLiveThrottle>,
+    /// `agent.query` token-bucket throttle(s) — shared across EVERY
+    /// connection for this pairing for the SAME reconnect-proof reason as
+    /// `match_live_limiter`; a fresh CLI process/socket per invocation must
+    /// not reset the bucket. See [`agent_read::AgentQueryThrottle`]'s doc.
+    agent_query_limiter: Mutex<agent_read::AgentQueryThrottle>,
     /// Fan-out signal telling every LIVE connection task that the pairing
     /// token is being rotated (see [`Self::regenerate_token`]). A broadcast —
     /// not a per-connection registry — because that is exactly the shape the
@@ -234,6 +242,7 @@ impl BridgeState {
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
             autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
+            agent_query_limiter: Mutex::new(agent_read::AgentQueryThrottle::new()),
             // Capacity 1: the signal is a bare "rotate happened" edge, so a
             // receiver that fell behind two back-to-back rotations gets
             // `RecvError::Lagged` — which the read loop treats exactly like the
@@ -370,6 +379,13 @@ impl BridgeState {
     /// the burst).
     pub fn try_acquire_match_live(&self) -> bool {
         self.match_live_limiter.lock().try_acquire()
+    }
+
+    /// Try to consume one `agent.query` token for `resource` — `best-matches`
+    /// draws from its OWN tighter bucket; every other resource shares the
+    /// cheap-read bucket. See [`agent_read::AgentQueryThrottle`]'s doc.
+    pub(super) fn try_acquire_agent(&self, resource: &str) -> bool {
+        self.agent_query_limiter.lock().try_acquire(resource)
     }
 
     fn set_port(&self, port: Option<u16>) {
@@ -820,6 +836,15 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 Some(match_live::handle_match_live(&app, &req_id, &payload).await)
             }
             FrameDecision::MatchLive { req_id, .. } => Some(match_live::throttled_reply(&req_id)),
+            FrameDecision::AgentQuery { req_id, payload }
+                if state.try_acquire_agent(agent_read::resource_name(&payload)) =>
+            {
+                Some(agent_read::handle_agent_query(&app, &req_id, &payload).await)
+            }
+            FrameDecision::AgentQuery { req_id, payload } => Some(agent_read::throttled_reply(
+                &req_id,
+                agent_read::resource_name(&payload),
+            )),
             FrameDecision::AnswerAssist { req_id, payload } => {
                 // Spawned onto its OWN task (see `stream::spawn_answer_assist`)
                 // so a multi-second stream never blocks THIS loop's
@@ -979,6 +1004,10 @@ enum FrameDecision {
     /// by `req_id` on THIS connection's own
     /// [`stream::AssistStreamRegistry`]. No reply is ever sent for this frame.
     AssistCancel { req_id: String },
+    /// An authenticated `agent.query` (issue #1084 PR 1) to answer through
+    /// [`agent_read::handle_agent_query`]. Carries the payload verbatim so
+    /// the handler can read `resource` (+ `url`/`limit`).
+    AgentQuery { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -1125,6 +1154,11 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
         // Cancel an in-flight stream — no payload to read, `req_id` names the
         // target (see `msg::ASSIST_CANCEL`'s doc).
         msg::ASSIST_CANCEL => FrameDecision::AssistCancel { req_id },
+        // The read-only agent/CLI surface (issue #1084 PR 1).
+        msg::AGENT_QUERY => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::AgentQuery { req_id, payload }
+        }
         // Unknown message types — acknowledged as an error, never panic.
         other => FrameDecision::Reply(import_flow::result_reply(
             &req_id,
@@ -1294,10 +1328,13 @@ fn profile_result_reply(req_id: &str, outcome: AppResult<AutofillProfile>) -> St
     .to_string()
 }
 
-/// Answer an authenticated `profile.get`: read the opt-in + the contact profile
-/// off app state and return a ready-to-send `profile.result` reply. Fetch-fresh —
-/// nothing is cached; the desktop is the sole owner of the PII.
-fn handle_profile(app: &AppHandle, req_id: &str) -> String {
+/// Read the opt-in + the contact profile off app state and resolve the
+/// `profile.get` outcome. Fetch-fresh — nothing is cached; the desktop is the
+/// sole owner of the PII. Factored out of [`handle_profile`] so the agent
+/// `profile` resource ([`agent_read::profile_resource`], a CHILD module —
+/// visible to it with no widening needed) reuses this EXACT consent gate +
+/// projection rather than a second profile path.
+fn profile_outcome(app: &AppHandle) -> AppResult<AutofillProfile> {
     let enabled = app
         .try_state::<BridgeState>()
         .map(|s| s.autofill_enabled())
@@ -1305,7 +1342,13 @@ fn handle_profile(app: &AppHandle, req_id: &str) -> String {
     let profile = app
         .try_state::<crate::contact_profile::ContactProfileStore>()
         .map(|s| s.get());
-    profile_result_reply(req_id, resolve_profile(enabled, profile.as_ref()))
+    resolve_profile(enabled, profile.as_ref())
+}
+
+/// Answer an authenticated `profile.get`: return a ready-to-send
+/// `profile.result` reply.
+fn handle_profile(app: &AppHandle, req_id: &str) -> String {
+    profile_result_reply(req_id, profile_outcome(app))
 }
 
 /// Manage the bridge state and register its factory-reset hook. Returns the

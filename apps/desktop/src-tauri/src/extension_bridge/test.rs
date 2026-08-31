@@ -781,6 +781,56 @@ fn resolve_profile_projects_when_opt_in_on() {
     assert_eq!(out.github, None);
 }
 
+/// The `profile` resource ([`super::agent_read`]) reuses this exact
+/// `resolve_profile` outcome verbatim — so this pins BOTH `profile.get`'s and
+/// the agent `profile` resource's wire key set in one place. Hand-written,
+/// not derived from `AutofillProfile`'s own field list (a self-referential
+/// check proves nothing — see the repo's standing lesson on exactly this).
+/// `ContactProfile.photo` is populated here too, to prove it never crosses:
+/// `AutofillProfile::from_contact` has no field to receive it.
+#[test]
+fn resolve_profile_projection_has_exact_keys_and_no_forbidden_fields() {
+    use crate::contact_profile::{ContactLink, ContactProfile, LocalizedText};
+    let profile = ContactProfile {
+        full_name: Some("Saeed Kolivand".to_string()),
+        email: Some("saeed@example.com".to_string()),
+        phone: Some("+31 6 12".to_string()),
+        location: Some(LocalizedText {
+            default: "Amsterdam".to_string(),
+            ..Default::default()
+        }),
+        linkedin: Some("https://linkedin.com/in/saeed".to_string()),
+        github: Some("https://github.com/saeed".to_string()),
+        website: Some("https://saeed.dev".to_string()),
+        extra_links: vec![ContactLink {
+            label: "Portfolio".to_string(),
+            url: "https://saeed.dev/p".to_string(),
+        }],
+        photo: Some("data:image/png;base64,AAAA".to_string()),
+    };
+    let out = resolve_profile(true, Some(&profile)).expect("projects");
+    let value = serde_json::to_value(&out).unwrap();
+    let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec![
+            "email",
+            "extraLinks",
+            "fullName",
+            "github",
+            "linkedin",
+            "location",
+            "phone",
+            "website",
+        ]
+    );
+    assert!(
+        !value.to_string().contains("data:image"),
+        "the candidate photo must never cross this wire"
+    );
+}
+
 #[test]
 fn resolve_profile_errors_when_store_missing() {
     // opt-in on but no profile available (store not managed) → a Config error, not a panic.
