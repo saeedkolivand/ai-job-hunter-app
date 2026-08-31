@@ -1,28 +1,36 @@
 //! ADR-038 §1 — the command policy table: every one of the 164
 //! `#[tauri::command]` sites registered in `tauri::generate_handler!`
-//! (`lib.rs`), classified by [`Effect`]. This is data only, Phase 1 of
-//! ADR-038 — nothing dispatches through it yet (§2's `agent call
-//! <ns>:<command>` generic tier is a later phase). The value here is the
-//! exactness test at the bottom: it is ADR-014's (`docs/knowledge/
-//! decision-records/adr-014-cli-agent-shell-plugin-static-allowlist.md`)
-//! static-allowlist invariant applied to *inbound* dispatch, so a new
-//! command that lands in `generate_handler!` without a row here fails CI
-//! instead of shipping silently reachable by a future generic-tier caller.
+//! (`lib.rs`), classified by [`Effect`]. Phase 1 (this table) shipped with
+//! nothing dispatching through it; Phase 2 (`super::super::agent_call`) now
+//! reads it to drive `agent call <ns>:<command>` — but ONLY
+//! [`Effect::Read`] rows dispatch, every other class refuses. The value
+//! here is the exactness test at the bottom: it is ADR-014's
+//! (`docs/knowledge/decision-records/adr-014-cli-agent-shell-plugin-static-
+//! allowlist.md`) static-allowlist invariant applied to *inbound* dispatch,
+//! so a new command that lands in `generate_handler!` without a row here
+//! fails CI instead of shipping silently reachable by a future caller.
 //!
 //! ## How each row was classified
 //! - Read from the command's BODY, never its name — `*_remove` is not
 //!   automatically [`Effect::Irreversible`] and `*_list` is not
 //!   automatically [`Effect::Read`]; a command that returns data but also
 //!   writes a cache/backfill on the way is [`Effect::Reversible`] (or
-//!   [`Effect::Irreversible`]) rather than [`Effect::Read`] by default.
+//!   [`Effect::Irreversible`]) rather than [`Effect::Read`] by default. A
+//!   command whose BODY is an unimplemented stub (a hardcoded success, a
+//!   bare `null`) is [`Effect::NotExposed`] even though nothing it does
+//!   mutates state — `Read` promises the RETURNED DATA is real, and a stub
+//!   dispatched by name would hand back a convincing lie instead.
 //! - Pessimistic default: anything not fully verified from the body is
 //!   [`Effect::Irreversible`].
 //! - [`Effect::NotExposed`] always carries a real, specific reason — never
 //!   "unclear". The genuine cases found: a native OS dialog handle with no
-//!   argv/JSON equivalent (`tauri_plugin_dialog`'s blocking pickers), or a
+//!   argv/JSON equivalent (`tauri_plugin_dialog`'s blocking pickers); a
 //!   window/menu/tray action that is meaningless off a UI a non-interactive
 //!   caller cannot see (opens devtools, delivers a buffered intent meant
-//!   for the renderer's own window, focuses the app).
+//!   for the renderer's own window, focuses the app); or an unimplemented
+//!   stub whose payload would misrepresent itself as real (`ai_unload_model`,
+//!   `support_get_system_info` — both reclassified from `Read` once Phase 2
+//!   made that classification reachable, not merely descriptive).
 //!
 //! ADR-038 itself names four canonical [`Effect::Irreversible`] patterns:
 //! `privacy:reset_app`, `sign_out_all`, `credentials:*`, and "the `*_remove`
@@ -46,9 +54,11 @@
 //! `support::support_get_system_info`, `resume::extract_resume`. One of the
 //! four (`privacy_clear_data`) is destructive.
 
-// Consumed by ADR-038 §2 dispatch (a later phase, not yet implemented) —
-// allowed-dead in a non-test build until that dispatcher reads `POLICY`.
-// Exercised today only by this module's own tests below.
+// `POLICY`/`Effect`/`PolicyEntry` are now consumed by ADR-038 §2's
+// `agent_call` dispatcher (`super::super::agent_call`) — kept for the odd
+// field a future row might carry unread by any current match arm, mirroring
+// the same allow every other exhaustively-matched policy-style table in
+// this crate carries defensively.
 #![allow(dead_code)]
 
 /// The declared consequence class for one registered command (ADR-038 §1).
@@ -159,9 +169,22 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // destroyed, not charged against the paid-provider ceiling (Ollama is
     // local/free).
     PolicyEntry { path: "commands::ai::ai_pull_model", effect: Effect::Reversible },
-    // Verified: the current body is a no-op stub (`_model` unused, always
-    // returns `{ success: true }`) — no state change at all today.
-    PolicyEntry { path: "commands::ai::ai_unload_model", effect: Effect::Read },
+    // ADR-038 §2 revision (Phase 2 landed dispatch-by-name): the current
+    // body is a no-op stub (`_model` unused, always returns
+    // `{ success: true }`) — classifying this Read would let `agent call`
+    // dispatch it and hand back a CONVINCING FALSE SUCCESS for a model that
+    // was never actually unloaded. `Read` truthfully describes "no state
+    // change", but truthfulness about the STATE CHANGE is not the same
+    // guarantee as truthfulness about the RETURNED PAYLOAD once a caller can
+    // invoke this by name — NotExposed until the body is real.
+    PolicyEntry {
+        path: "commands::ai::ai_unload_model",
+        effect: Effect::NotExposed(
+            "stub — the body ignores its argument and always returns a hardcoded success; \
+             dispatching it by name would hand back a convincing false success for a model \
+             that was never actually unloaded",
+        ),
+    },
     // Verified: returns the embedding vector; no store write, no daily-budget charge.
     PolicyEntry { path: "commands::ai::ai_embed", effect: Effect::Read },
     // Writes a secret into the OS keychain — ADR-038's `credentials:*` pattern.
@@ -340,9 +363,18 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // which TRUNCATES an existing file at that path — an arbitrary pre-existing
     // file there is unrecoverably overwritten with the diagnostics bundle.
     PolicyEntry { path: "commands::support::support_export_diagnostics", effect: Effect::Irreversible },
-    // Zero renderer references (ADR-038 Context) — verified: current body is
-    // a literal stub (`// Stub - implement when needed`), returns `null`.
-    PolicyEntry { path: "commands::support::support_get_system_info", effect: Effect::Read },
+    // Zero renderer references (ADR-038 Context). ADR-038 §2 revision (same
+    // reasoning as `ai_unload_model` above): the current body is a literal
+    // stub (`// Stub - implement when needed`) that always returns `null` —
+    // Read would let `agent call` dispatch it and hand back `null` as if it
+    // were genuine system info. NotExposed until the body is real.
+    PolicyEntry {
+        path: "commands::support::support_get_system_info",
+        effect: Effect::NotExposed(
+            "stub — the body is unimplemented and always returns null; dispatching it by name \
+             would hand back null as if it were genuine system info",
+        ),
+    },
 
     // commands/dialog.rs
     PolicyEntry {

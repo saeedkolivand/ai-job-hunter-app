@@ -127,6 +127,8 @@ fn reserved_types_are_distinct() {
         // exactly like the rest.
         msg::AGENT_QUERY,
         msg::AGENT_RESULT,
+        msg::AGENT_CALL,
+        msg::AGENT_CALL_RESULT,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");
@@ -762,6 +764,40 @@ fn advance_authenticated_refuses_agent_query_from_a_non_cli_origin() {
     assert_eq!(v["reqId"], "req-12");
     assert_eq!(v["payload"]["ok"], false);
     assert_eq!(v["payload"]["resource"], "schema");
+}
+
+// ── agent.call is gated on `is_agent_cli` too (ADR-038 §2, Phase 2) ───────
+
+#[test]
+fn advance_authenticated_routes_agent_call_only_for_the_cli_origin() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_CALL,
+        "reqId": "req-13",
+        "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
+    });
+    let decision = advance_authenticated(msg::AGENT_CALL, "req-13".to_string(), &envelope, true);
+    match decision {
+        FrameDecision::AgentCall { req_id, .. } => assert_eq!(req_id, "req-13"),
+        other => panic!("expected FrameDecision::AgentCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_CALL,
+        "reqId": "req-14",
+        "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
+    });
+    let decision = advance_authenticated(msg::AGENT_CALL, "req-14".to_string(), &envelope, false);
+    let FrameDecision::Reply(text) = decision else {
+        panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
+    };
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["type"], msg::AGENT_CALL_RESULT);
+    assert_eq!(v["reqId"], "req-14");
+    assert_eq!(v["payload"]["dispatched"], false);
+    assert_eq!(v["payload"]["error"], "cli_only");
 }
 
 // ── AUTO status.update gate (defense-in-depth, Task #22) ──────────────────────

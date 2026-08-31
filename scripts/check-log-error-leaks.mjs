@@ -207,7 +207,7 @@ const ALLOWLIST = {
       'tokio::runtime::Builder::build() failure is a generic OS-thread/resource error; ' +
       'building a runtime touches no filesystem path.',
   },
-  'extension_bridge/mod.rs:507': {
+  'extension_bridge/mod.rs:510': {
     status: 'safe',
     reason:
       'TcpListener::accept() failure is a local socket-resource error (e.g. EMFILE); it ' +
