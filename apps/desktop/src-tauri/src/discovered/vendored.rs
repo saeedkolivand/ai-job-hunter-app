@@ -102,7 +102,13 @@ fn load() -> HashMap<&'static str, Vec<Entry>> {
 fn decode(ats: &str, gz: &[u8]) -> Vec<Entry> {
     let mut decoded = String::new();
     if let Err(e) = flate2::read::GzDecoder::new(gz).read_to_string(&mut decoded) {
-        log::warn!("vendored ats slugs ({ats}): bundled asset unreadable: {e}");
+        // `e.kind()` is a fixed enum, not the error's free text: the reader is over a
+        // compile-time `include_bytes!` slice, so there is no path or host to leak here —
+        // logging the category removes the need to argue that at all.
+        log::warn!(
+            "vendored ats slugs ({ats}): bundled asset unreadable: {:?}",
+            e.kind()
+        );
         return Vec::new();
     }
     decoded
