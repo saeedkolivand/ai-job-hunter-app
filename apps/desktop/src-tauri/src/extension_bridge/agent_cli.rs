@@ -42,6 +42,11 @@
 //!   of the (nonexistent) server payload. Never a raw absolute path or an
 //!   echoed I/O error string — only fixed sentinels, so this CLI's own stdout
 //!   never leaks a path into whatever reads it (an LLM agent's context).
+//! - `4` — `call` only (ADR-038 §4, Phase 3): the target is
+//!   `Effect::Irreversible` and no `--confirm` was supplied. The reply's
+//!   `detail` names WHICH other read command/resource to read the proof
+//!   value from and NEVER the value itself — a distinct outcome from a
+//!   refusal (exit 2), never collapsed into it.
 
 use std::path::Path;
 use std::time::Duration;
@@ -56,7 +61,9 @@ use tokio_tungstenite::tungstenite::{ClientRequestBuilder, Message};
 
 use crate::error::{AppError, AppResult};
 
-use super::{auth, handshake, msg, MAX_FRAME_BYTES, PORT_RANGE, PROTOCOL_VERSION, TOKEN_FILE};
+use super::{
+    agent_call, auth, handshake, msg, MAX_FRAME_BYTES, PORT_RANGE, PROTOCOL_VERSION, TOKEN_FILE,
+};
 
 type WsStream = tokio_tungstenite::WebSocketStream<TcpStream>;
 
@@ -166,14 +173,18 @@ enum Verb {
     Automations,
     Schema,
     /// ADR-038 §2's generic dispatch tier (`agent call <namespace>:<command>
-    /// [--input '<json>']`) — a SEPARATE wire frame (`agent.call`, never
-    /// `agent.query`) and reply shape (`dispatched`, never `ok`); see
-    /// [`Verb::wire_type`]/[`Verb::reply_type`] and `run_verb`'s own
-    /// dispatched-vs-ok branch below.
+    /// [--input '<json>'] [--confirm '<value>']`) — a SEPARATE wire frame
+    /// (`agent.call`, never `agent.query`) and reply shape (`dispatched`,
+    /// never `ok`); see [`Verb::wire_type`]/[`Verb::reply_type`] and
+    /// `run_verb`'s own dispatched-vs-ok branch below. `confirm` is the
+    /// Phase 3 ceremony's proof value for an `Effect::Irreversible` command
+    /// — `None` for every other row, and never logged/echoed anywhere on
+    /// this client (see `parse_call`'s own doc).
     Call {
         namespace: String,
         command: String,
         input: Value,
+        confirm: Option<String>,
     },
 }
 
@@ -225,7 +236,14 @@ impl Verb {
                 namespace,
                 command,
                 input,
-            } => json!({ "namespace": namespace, "command": command, "input": input }),
+                confirm,
+            } => {
+                let mut p = json!({ "namespace": namespace, "command": command, "input": input });
+                if let Some(confirm) = confirm {
+                    p["confirm"] = json!(confirm);
+                }
+                p
+            }
         }
     }
 }
@@ -271,9 +289,11 @@ const VERB_TABLE: &[VerbHelp] = &[
     },
     VerbHelp {
         name: "call",
-        args: "<namespace>:<command> [--input '<json>']",
-        returns: "ADR-038 §2's generic dispatch tier — Phase 2 only allows Effect::Read \
-                  commands; every other class refuses (see docs/knowledge/decision-records/adr-038-*)",
+        args: "<namespace>:<command> [--input '<json>'] [--confirm '<value>']",
+        returns: "ADR-038 §2's generic dispatch tier — Read/Reversible commands dispatch \
+                  directly; an Irreversible command needs --confirm '<value>' (a proof read \
+                  from ANOTHER command, named but never disclosed by a --confirm-less call — \
+                  exit 4); NotExposed always refuses (see docs/knowledge/decision-records/adr-038-*)",
     },
 ];
 
@@ -351,12 +371,18 @@ fn parse_best_matches(rest: &[String]) -> AppResult<Verb> {
     Ok(Verb::BestMatches { limit })
 }
 
-/// Parse `call`'s own args: `<namespace>:<command> [--input '<json>']`. Both
-/// failure modes here are pure ARGV shape — no policy-table lookup, no
-/// network — so they resolve the SAME way `--help` does: without the app
-/// running. Whether `<namespace>:<command>` names a real, `Effect::Read`
-/// command is decided server-side (`agent_call::dispatch`), never guessed
-/// here — this fn only rejects a token that couldn't possibly be one.
+/// Parse `call`'s own args: `<namespace>:<command> [--input '<json>']
+/// [--confirm '<value>']`. Both target-parsing failure modes are pure ARGV
+/// shape — no policy-table lookup, no network — so they resolve the SAME way
+/// `--help` does: without the app running. Whether `<namespace>:<command>`
+/// names a real, dispatchable command (and which class it is) is decided
+/// server-side (`agent_call::dispatch`), never guessed here — this fn only
+/// rejects a token that couldn't possibly be one.
+///
+/// `--confirm`'s raw value is NEVER echoed in any error here, and is carried
+/// only as far as [`Verb::payload`] — this client never logs it, never
+/// prints it outside the one frame it belongs on (path privacy AND ADR-038
+/// §4's own "the caller's own data" rule apply equally to this flag).
 fn parse_call(rest: &[String]) -> AppResult<Verb> {
     let target = rest
         .first()
@@ -377,6 +403,7 @@ fn parse_call(rest: &[String]) -> AppResult<Verb> {
         })?;
 
     let mut input = json!({});
+    let mut confirm = None;
     let mut i = 1;
     while i < rest.len() {
         match rest[i].as_str() {
@@ -396,9 +423,18 @@ fn parse_call(rest: &[String]) -> AppResult<Verb> {
                 input = parsed;
                 i += 2;
             }
+            "--confirm" => {
+                let raw = rest.get(i + 1).ok_or_else(|| {
+                    AppError::Validation("--confirm requires a value".to_string())
+                })?;
+                // Never echoed anywhere — this IS the ceremony's proof
+                // value (ADR-038 §4).
+                confirm = Some(raw.to_string());
+                i += 2;
+            }
             _ => {
                 return Err(AppError::Validation(
-                    "unknown argument (expected: --input)".to_string(),
+                    "unknown argument (expected: --input, --confirm)".to_string(),
                 ))
             }
         }
@@ -407,6 +443,7 @@ fn parse_call(rest: &[String]) -> AppResult<Verb> {
         namespace: namespace.to_string(),
         command: command.to_string(),
         input,
+        confirm,
     })
 }
 
@@ -839,13 +876,23 @@ async fn run_verb(verb: Verb) -> i32 {
 /// TIER (ADR-038 §2/§5): the curated tier keeps a truthful `ok` (0 on
 /// `true`, 1 — "the app replied with a refusal" — on `false`). The generic
 /// `call` tier never claims `ok`; its `dispatched` means only "did
-/// `Webview::on_message` run", so `false` there is a REFUSAL BEFORE dispatch
-/// (unknown command, wrong effect class, rate-limited) — the SAME class as a
-/// usage error, hence exit 2, not 1, and never collapsed into one sentinel
-/// (the payload's own `error` field already names the cause).
+/// `Webview::on_message` run", so `false` there is normally a REFUSAL BEFORE
+/// dispatch (unknown command, wrong effect class, rate-limited) — the SAME
+/// class as a usage error, hence exit 2, not 1. ONE `dispatched:false` cause
+/// is its own distinct exit code (ADR-038 §4, Phase 3): an `Irreversible`
+/// command called with no `--confirm` is `confirmation_required`, which
+/// exits 4 rather than 2 — "needs confirmation" is a different outcome from
+/// a refusal, never collapsed into it (the payload's own `error` field is
+/// what names every cause; this fn only routes the ONE that gets a
+/// different process exit code).
 fn exit_code_for_reply(verb: &Verb, payload: &Value) -> i32 {
     match verb {
         Verb::Call { .. } => {
+            if payload.get("error").and_then(Value::as_str)
+                == Some(agent_call::ERR_CONFIRMATION_REQUIRED)
+            {
+                return 4;
+            }
             let dispatched = payload
                 .get("dispatched")
                 .and_then(Value::as_bool)
@@ -894,7 +941,10 @@ fn help_text() -> String {
          \x20 0   Success — the reply is printed as JSON on stdout.\n\
          \x20 1   The app replied with a refusal (rate-limited, validation, not found, autofill off, ...) \
            — still printed as JSON on stdout.\n\
-         \x20 2   The round trip never completed, or usage was invalid — see \"error\" below.\n\n\
+         \x20 2   The round trip never completed, or usage was invalid — see \"error\" below.\n\
+         \x20 4   `call` only: an Effect::Irreversible command needs --confirm '<value>' — the \
+           reply's \"detail\" names which OTHER read command/resource to read the proof from, \
+           and never the value itself (ADR-038 §4).\n\n\
          ERROR SENTINELS (the \"error\" field on an exit-2 reply):\n",
     );
     for (sentinel, meaning) in ERROR_SENTINELS {

@@ -117,6 +117,7 @@ fn parses_call_with_namespace_command_and_input() {
             namespace: "jobs".to_string(),
             command: "jobs_list".to_string(),
             input: serde_json::json!({ "a": 1 }),
+            confirm: None,
         }
     );
 }
@@ -129,8 +130,82 @@ fn parses_call_without_input_as_an_empty_object() {
             namespace: "jobs".to_string(),
             command: "jobs_list".to_string(),
             input: serde_json::json!({}),
+            confirm: None,
         }
     );
+}
+
+#[test]
+fn parses_call_with_confirm() {
+    assert_eq!(
+        parse_verb(&s(&[
+            "call",
+            "documents:documents_remove",
+            "--confirm",
+            "Resume A"
+        ]))
+        .unwrap(),
+        Verb::Call {
+            namespace: "documents".to_string(),
+            command: "documents_remove".to_string(),
+            input: serde_json::json!({}),
+            confirm: Some("Resume A".to_string()),
+        }
+    );
+}
+
+#[test]
+fn parses_call_with_both_input_and_confirm_in_either_order() {
+    let forward = parse_verb(&s(&[
+        "call",
+        "documents:documents_remove",
+        "--input",
+        r#"{"id":"doc-1"}"#,
+        "--confirm",
+        "Resume A",
+    ]))
+    .unwrap();
+    let backward = parse_verb(&s(&[
+        "call",
+        "documents:documents_remove",
+        "--confirm",
+        "Resume A",
+        "--input",
+        r#"{"id":"doc-1"}"#,
+    ]))
+    .unwrap();
+    assert_eq!(forward, backward);
+    assert_eq!(
+        forward,
+        Verb::Call {
+            namespace: "documents".to_string(),
+            command: "documents_remove".to_string(),
+            input: serde_json::json!({ "id": "doc-1" }),
+            confirm: Some("Resume A".to_string()),
+        }
+    );
+}
+
+#[test]
+fn rejects_confirm_missing_its_value() {
+    assert!(parse_verb(&s(&["call", "jobs:jobs_list", "--confirm"])).is_err());
+}
+
+#[test]
+fn confirm_error_never_echoes_the_typed_value() {
+    // Same path-privacy discipline as `--input` — `--confirm` is user data
+    // (ADR-038 §4) and must never appear in a usage error either.
+    let leaky = r"C:\Users\alice\Desktop\secret-notes";
+    let err = parse_verb(&s(&[
+        "call",
+        "jobs:jobs_list",
+        "--confirm",
+        leaky,
+        "--bogus",
+    ]))
+    .unwrap_err()
+    .to_string();
+    assert!(!err.contains(leaky), "must not echo --confirm: {err}");
 }
 
 #[test]
@@ -179,6 +254,7 @@ fn call_verb_sends_the_agent_call_wire_type_and_expects_its_own_reply_type() {
         namespace: "jobs".to_string(),
         command: "jobs_list".to_string(),
         input: serde_json::json!({}),
+        confirm: None,
     };
     assert_eq!(verb.wire_type(), msg::AGENT_CALL);
     assert_eq!(verb.reply_type(), msg::AGENT_CALL_RESULT);
@@ -187,6 +263,21 @@ fn call_verb_sends_the_agent_call_wire_type_and_expects_its_own_reply_type() {
     assert_eq!(payload["namespace"], "jobs");
     assert_eq!(payload["command"], "jobs_list");
     assert_eq!(payload["input"], serde_json::json!({}));
+    assert!(
+        payload.get("confirm").is_none(),
+        "confirm must be absent from the payload when not supplied, not null"
+    );
+}
+
+#[test]
+fn call_verb_payload_carries_confirm_only_when_supplied() {
+    let verb = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: serde_json::json!({ "id": "doc-1" }),
+        confirm: Some("Resume A".to_string()),
+    };
+    assert_eq!(verb.payload()["confirm"], "Resume A");
 }
 
 #[test]
@@ -201,6 +292,7 @@ fn exit_code_for_reply_reads_dispatched_for_call_and_ok_for_every_other_verb() {
         namespace: "jobs".to_string(),
         command: "jobs_list".to_string(),
         input: serde_json::json!({}),
+        confirm: None,
     };
     assert_eq!(
         exit_code_for_reply(&call, &serde_json::json!({ "dispatched": true })),
@@ -219,6 +311,40 @@ fn exit_code_for_reply_reads_dispatched_for_call_and_ok_for_every_other_verb() {
         exit_code_for_reply(&Verb::Schema, &serde_json::json!({ "ok": false })),
         1
     );
+}
+
+/// ADR-038 §4 (Phase 3): "needs confirmation" is its OWN exit code, never
+/// collapsed into the exit-2 "refusal" bucket every other `dispatched:false`
+/// cause shares.
+#[test]
+fn exit_code_for_reply_reports_4_for_confirmation_required_and_2_for_every_other_refusal() {
+    let call = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: serde_json::json!({}),
+        confirm: None,
+    };
+    assert_eq!(
+        exit_code_for_reply(
+            &call,
+            &serde_json::json!({ "dispatched": false, "error": "confirmation_required" }),
+        ),
+        4
+    );
+    for other_error in [
+        "confirmation_mismatch",
+        "proof_unavailable",
+        "unknown_command",
+    ] {
+        assert_eq!(
+            exit_code_for_reply(
+                &call,
+                &serde_json::json!({ "dispatched": false, "error": other_error }),
+            ),
+            2,
+            "{other_error} must stay exit 2, not be confused with confirmation_required"
+        );
+    }
 }
 
 // ── --help / VERB_TABLE anti-drift (owner request) ──────────────────────

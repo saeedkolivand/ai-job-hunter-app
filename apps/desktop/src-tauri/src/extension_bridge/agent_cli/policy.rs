@@ -1,10 +1,13 @@
 //! ADR-038 §1 — the command policy table: every one of the 164
 //! `#[tauri::command]` sites registered in `tauri::generate_handler!`
 //! (`lib.rs`), classified by [`Effect`]. Phase 1 (this table) shipped with
-//! nothing dispatching through it; Phase 2 (`super::super::agent_call`) now
-//! reads it to drive `agent call <ns>:<command>` — but ONLY
-//! [`Effect::Read`] rows dispatch, every other class refuses. The value
-//! here is the exactness test at the bottom: it is ADR-014's
+//! nothing dispatching through it; Phase 2 (`super::super::agent_call`) reads
+//! it to drive `agent call <ns>:<command>` — [`Effect::Read`] AND
+//! [`Effect::Reversible`] rows dispatch directly (Phase 4), and
+//! [`Effect::Irreversible`] rows dispatch only after a `--confirm` ceremony
+//! whose expected value is named per-row by [`ProofSource`] (Phase 3) — but
+//! ONLY [`Effect::Read`] rows are curated-tier-eligible; the value here is
+//! the exactness test at the bottom: it is ADR-014's
 //! (`docs/knowledge/decision-records/adr-014-cli-agent-shell-plugin-static-
 //! allowlist.md`) static-allowlist invariant applied to *inbound* dispatch,
 //! so a new command that lands in `generate_handler!` without a row here
@@ -19,7 +22,18 @@
 //!   command whose BODY is an unimplemented stub (a hardcoded success, a
 //!   bare `null`) is [`Effect::NotExposed`] even though nothing it does
 //!   mutates state — `Read` promises the RETURNED DATA is real, and a stub
-//!   dispatched by name would hand back a convincing lie instead.
+//!   dispatched by name would hand back a convincing lie instead. The same
+//!   rule caught a THIRD case once Phase 4 made `Reversible` dispatch: `Read`
+//!   also promises the returned data cost nothing to produce — `ai_embed`
+//!   mutates no state (a legitimate `Read` call on that axis alone) but
+//!   hits a paid embedding provider with no `charge_provider_daily`/
+//!   `limiter.acquire` gate anywhere in its call chain (verified against
+//!   `commands::ai::ai_embed` → `documents::embed` → `embed_text`), so
+//!   dispatching it by name would let a caller spend against a paid
+//!   provider with zero budget enforcement — `NotExposed` until that gate
+//!   exists (a separate change: the gap is pre-existing and UI-reachable
+//!   too, and the right cap is per-request or per-byte, not this table's
+//!   concern).
 //! - Pessimistic default: anything not fully verified from the body is
 //!   [`Effect::Irreversible`].
 //! - [`Effect::NotExposed`] always carries a real, specific reason — never
@@ -27,10 +41,12 @@
 //!   argv/JSON equivalent (`tauri_plugin_dialog`'s blocking pickers); a
 //!   window/menu/tray action that is meaningless off a UI a non-interactive
 //!   caller cannot see (opens devtools, delivers a buffered intent meant
-//!   for the renderer's own window, focuses the app); or an unimplemented
+//!   for the renderer's own window, focuses the app); an unimplemented
 //!   stub whose payload would misrepresent itself as real (`ai_unload_model`,
 //!   `support_get_system_info` — both reclassified from `Read` once Phase 2
-//!   made that classification reachable, not merely descriptive).
+//!   made that classification reachable, not merely descriptive); or a real
+//!   read with no anti-abuse gate on its own paid egress (`ai_embed`,
+//!   reclassified once Phase 4 made the SAME thing true of its blast radius).
 //!
 //! ADR-038 itself names four canonical [`Effect::Irreversible`] patterns:
 //! `privacy:reset_app`, `sign_out_all`, `credentials:*`, and "the `*_remove`
@@ -47,6 +63,26 @@
 //! derived* cache (embeddings, match scores) with no user-authored content
 //! lost is [`Effect::Reversible`], not Irreversible — noted per-row where
 //! that distinction is load-bearing.
+//!
+//! ## Phase 3 — [`ProofSource`], the confirmation ceremony's proof
+//! Every `Irreversible` row now carries a [`ProofSource`]: WHERE the
+//! `--confirm` value a caller must supply comes from. The value is never
+//! derivable, invented, or handed out by the dispatcher itself (never a
+//! hash/nonce) — it is always the user's OWN data, read fresh through
+//! ANOTHER `Effect::Read` row (asserted by
+//! `every_proof_source_read_command_is_a_read_row` below), so possessing it
+//! proves the caller actually read the affected record. Two shapes:
+//! - **A real record exists** (a delete-by-id, a run-by-id): the proof is
+//!   that record's own name/title, read by the SAME id the caller supplied
+//!   — `documents_remove`, `autopilot_remove`, `applications_delete`, etc.
+//! - **No record exists** (a global wipe, a credential set with nothing to
+//!   compare against, a caller-controlled external URL): the strongest
+//!   available signal is used and the row says so — a count of what's about
+//!   to be lost (`notifications_clear_all`, `privacy_clear_interactions`),
+//!   or, honestly, a WEAK fallback with no real binding to the specific
+//!   target (`system_open_external`, `updater_install`,
+//!   `extension_bridge_regenerate_token`) — flagged per-row rather than
+//!   dressed up as strict.
 //!
 //! Four commands here carry zero renderer references (never called from the
 //! UI, per ADR-038's own Context section) — flagged per-row below: `boards::
@@ -66,8 +102,10 @@
 /// doc for the exact rule each variant follows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Effect {
-    /// No state change — the command only returns data (a network read
-    /// counts as `Read` too, as long as nothing persisted changes).
+    /// No state change, and no un-metered cost — the command only returns
+    /// data (a network read counts as `Read` too, as long as nothing
+    /// persisted changes AND nothing billable/rate-limited is spent
+    /// un-gated; see `ai_embed`'s reclassification in the module doc).
     Read,
     /// Mutates persisted or in-memory state, but the change can be undone
     /// through another call on this same surface (edit again, toggle back,
@@ -76,13 +114,94 @@ pub(crate) enum Effect {
     Reversible,
     /// Cannot be undone through the app. See the module doc's "ADR-038
     /// itself names four canonical patterns" paragraph for exactly what
-    /// qualifies.
-    Irreversible,
+    /// qualifies. Carries the [`ProofSource`] the Phase 3 confirmation
+    /// ceremony resolves its `--confirm` value against.
+    Irreversible(ProofSource),
     /// Deliberately unreachable from this CLI surface. The `&'static str`
     /// is the reason a future dispatcher must refuse this command outright
     /// — never a placeholder like "unclear"
     /// (see `not_exposed_rows_carry_a_real_reason`).
     NotExposed(&'static str),
+}
+
+/// Where an [`Effect::Irreversible`] command's `--confirm` value must come
+/// from (ADR-038 §4, Phase 3) — resolved FRESH at confirm-check time by
+/// dispatching `read_command` through the exact same real-command path
+/// every other row already uses (`agent_call::invoke_command`), never a
+/// second implementation of that command's logic and never a value the
+/// dispatcher invents (no hash, no nonce). Every field is `&'static`, so the
+/// whole table stays `'static` data like every other row in [`POLICY`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProofSource {
+    /// `read_command` takes no input; the proof is the response at `path`
+    /// (an empty `path` uses the bare response value itself, e.g. a plain
+    /// string like `system_get_version`'s).
+    Scalar {
+        read_command: &'static str,
+        path: &'static [&'static str],
+    },
+    /// `read_command` takes ONE input key, `key`, whose value is either
+    /// forwarded verbatim from the irreversible command's OWN input (the
+    /// caller already supplied it to target this exact record) or a fixed
+    /// literal (a selector-less command with no id of its own to forward).
+    /// The proof is the response at `path`.
+    Lookup {
+        read_command: &'static str,
+        key: &'static str,
+        input: LookupInput,
+        path: &'static [&'static str],
+    },
+    /// `read_command` takes no input and returns an ARRAY; the proof is
+    /// `value_field` off the element whose `match_field` equals the
+    /// irreversible command's own `id_field` input — the "delete by id,
+    /// prove you read its name" shape.
+    ListMatch {
+        read_command: &'static str,
+        id_field: &'static str,
+        match_field: &'static str,
+        value_field: &'static str,
+    },
+    /// `read_command` takes no input and returns an array; the proof is its
+    /// length — the strongest available signal for a selector-less wipe
+    /// (the module doc's "no record exists" case).
+    Count { read_command: &'static str },
+    /// `read_command` takes no input and returns an array; the proof is the
+    /// count of its elements whose `match_field` is a member of the
+    /// irreversible command's own `ids_field` (a JSON array input) —
+    /// `ai_generations_remove_bulk`'s own bulk-selector shape.
+    MatchCount {
+        read_command: &'static str,
+        ids_field: &'static str,
+        match_field: &'static str,
+    },
+}
+
+impl ProofSource {
+    /// The bare command name the proof is read from — every variant carries
+    /// exactly one.
+    pub(crate) fn read_command(self) -> &'static str {
+        match self {
+            ProofSource::Scalar { read_command, .. }
+            | ProofSource::Lookup { read_command, .. }
+            | ProofSource::ListMatch { read_command, .. }
+            | ProofSource::Count { read_command }
+            | ProofSource::MatchCount { read_command, .. } => read_command,
+        }
+    }
+}
+
+/// How [`ProofSource::Lookup`] builds the ONE input key it sends to its own
+/// `read_command`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LookupInput {
+    /// Forward the irreversible command's own input field of this name,
+    /// verbatim, as `read_command`'s SAME-named input field — the caller
+    /// already supplied it to target this exact record.
+    FromCaller(&'static str),
+    /// A fixed literal — used only by a selector-less command that still
+    /// needs ONE representative id to query (see `privacy_sign_out_all`'s
+    /// row comment for why this is one of the weaker rows).
+    Literal(&'static str),
 }
 
 /// One row of the policy table: the exact path `generate_handler!`
@@ -116,8 +235,17 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::system::system_accent_color", effect: Effect::Read },
     // Launches the OS's default http(s) handler (an external process this
     // app does not control) — scheme-allowlisted, but still an external
-    // side effect with no undo, per the module doc's pattern list.
-    PolicyEntry { path: "commands::system::system_open_external", effect: Effect::Irreversible },
+    // side effect with no undo, per the module doc's pattern list. No
+    // record exists to prove a caller read (the url IS the caller's own
+    // input, so echoing it back would prove nothing) — the current app
+    // version is the strongest available unrelated signal; WEAK, flagged.
+    PolicyEntry {
+        path: "commands::system::system_open_external",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "system_get_version",
+            path: &[],
+        }),
+    },
     PolicyEntry { path: "commands::system::system_set_performance_mode", effect: Effect::Reversible },
     PolicyEntry { path: "commands::system::system_get_launch_at_login", effect: Effect::Read },
     PolicyEntry { path: "commands::system::system_set_launch_at_login", effect: Effect::Reversible },
@@ -154,17 +282,45 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // commands/ai/mod.rs
     // Charges `Limiter::charge_provider_daily` (verified at the call site)
     // before streaming a completion — real spend against a paid provider,
-    // no refund path.
-    PolicyEntry { path: "commands::ai::ai_generate", effect: Effect::Irreversible },
+    // no refund path. No id-scoped record to read back (the request is a
+    // bare messages array) — the strongest available signal is the
+    // caller's OWN today-so-far spend, read fresh via `ai_spend_summary`;
+    // WEAK (not scoped to this specific call), flagged.
+    PolicyEntry {
+        path: "commands::ai::ai_generate",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
+    },
     PolicyEntry { path: "commands::ai::ai_list_models", effect: Effect::Read },
     PolicyEntry { path: "commands::ai::ai_model_capabilities", effect: Effect::Read },
     PolicyEntry { path: "commands::ai::ai_inspect_model", effect: Effect::Read },
-    // Charges the daily provider ceiling via `admit_research`.
-    PolicyEntry { path: "commands::ai::ai_research_company", effect: Effect::Irreversible },
+    // Charges the daily provider ceiling via `admit_research`. Same
+    // no-id-to-scope-to reasoning and WEAK spend-total proof as `ai_generate`.
+    PolicyEntry {
+        path: "commands::ai::ai_research_company",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
+    },
     // Charges the daily provider ceiling directly (fans out per selected question).
-    PolicyEntry { path: "commands::ai::ai_research_answer", effect: Effect::Irreversible },
+    PolicyEntry {
+        path: "commands::ai::ai_research_answer",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
+    },
     // Charges the daily provider ceiling via `ai_salary::ai_lookup_salary_reasoned` → `admit_research`.
-    PolicyEntry { path: "commands::ai::ai_lookup_salary", effect: Effect::Irreversible },
+    PolicyEntry {
+        path: "commands::ai::ai_lookup_salary",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
+    },
     // Downloads a model into the local Ollama store — additive, no data
     // destroyed, not charged against the paid-provider ceiling (Ollama is
     // local/free).
@@ -185,12 +341,53 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
              that was never actually unloaded",
         ),
     },
-    // Verified: returns the embedding vector; no store write, no daily-budget charge.
-    PolicyEntry { path: "commands::ai::ai_embed", effect: Effect::Read },
+    // ADR-038 §4 revision (Phase 4 revision — security review on this PR):
+    // reclassified from `Read`. `Read` promises no state change AND no
+    // un-metered cost; this body (`documents::embed` → `embed_text`) hits a
+    // PAID embedding provider (OpenAI/Gemini) with NO
+    // `charge_provider_daily`/`limiter.acquire` anywhere in its call
+    // chain — unlike `ai_generate`, which has both (verified by reading
+    // both bodies, not generalized from one to the other). Dispatching this
+    // by name would let a caller spend against the paid provider with zero
+    // budget enforcement. Fixing the gap itself is a separate change (it is
+    // pre-existing and also reachable from the UI's bulk-indexing path,
+    // which embeds per chunk — a per-request daily cap may be the wrong
+    // granularity there) — NotExposed until that gate exists.
+    PolicyEntry {
+        path: "commands::ai::ai_embed",
+        effect: Effect::NotExposed(
+            "no charge_provider_daily/limiter gate anywhere in this command's call chain \
+             (verified: ai_embed → documents::embed → embed_text hits the paid provider \
+             directly) — dispatching it by name would let a caller spend against a paid \
+             embedding provider with no daily-budget cap; the gap is pre-existing and also \
+             reachable from the UI, so it is fixed there, not here",
+        ),
+    },
     // Writes a secret into the OS keychain — ADR-038's `credentials:*` pattern.
-    PolicyEntry { path: "commands::ai::ai_set_provider_key", effect: Effect::Irreversible },
-    // Removes a secret from the OS keychain — `credentials:*`.
-    PolicyEntry { path: "commands::ai::ai_remove_provider_key", effect: Effect::Irreversible },
+    // No prior key to name (a fresh set has nothing to compare against); the
+    // strongest available signal is whether a key for this SAME provider
+    // already exists — WEAK (boolean, low entropy), flagged.
+    PolicyEntry {
+        path: "commands::ai::ai_set_provider_key",
+        effect: Effect::Irreversible(ProofSource::Lookup {
+            read_command: "ai_has_provider_key",
+            key: "provider",
+            input: LookupInput::FromCaller("provider"),
+            path: &["has"],
+        }),
+    },
+    // Removes a secret from the OS keychain — `credentials:*`. Same WEAK
+    // boolean proof as `ai_set_provider_key` (a real removal, `has` should
+    // read `true` beforehand — but that's a coin flip's worth of entropy).
+    PolicyEntry {
+        path: "commands::ai::ai_remove_provider_key",
+        effect: Effect::Irreversible(ProofSource::Lookup {
+            read_command: "ai_has_provider_key",
+            key: "provider",
+            input: LookupInput::FromCaller("provider"),
+            path: &["has"],
+        }),
+    },
     PolicyEntry { path: "commands::ai::ai_has_provider_key", effect: Effect::Read },
     // Verified: only probes the provider (`test_key`); no store write.
     PolicyEntry { path: "commands::ai::ai_test_provider_key", effect: Effect::Read },
@@ -201,10 +398,24 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // user-authored content, so this stays Reversible rather than
     // Irreversible (contrast `scrape_clear_postings` below).
     PolicyEntry { path: "commands::ai::ai_set_embedding_config", effect: Effect::Reversible },
-    // Bulk re-embeds every document; charges the daily provider ceiling per document.
-    PolicyEntry { path: "commands::ai::ai_reembed_all", effect: Effect::Irreversible },
-    // Same charged re-embed path, scoped to stale documents.
-    PolicyEntry { path: "commands::ai::ai_index_stale_documents", effect: Effect::Irreversible },
+    // Bulk re-embeds every document; charges the daily provider ceiling per
+    // document. Global (no id), WEAK spend-total fallback, flagged.
+    PolicyEntry {
+        path: "commands::ai::ai_reembed_all",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
+    },
+    // Same charged re-embed path, scoped to stale documents. Same WEAK
+    // spend-total fallback.
+    PolicyEntry {
+        path: "commands::ai::ai_index_stale_documents",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
+    },
     PolicyEntry { path: "commands::ai::ai_spend_summary", effect: Effect::Read },
     PolicyEntry { path: "commands::ai::ai_active_config", effect: Effect::Read },
     PolicyEntry { path: "commands::ai::ai_set_active_provider", effect: Effect::Reversible },
@@ -217,8 +428,15 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
 
     // commands/pipeline.rs
     // Same charged-generation path as `ai_generate` (verified: charges
-    // `charge_provider_daily` after admission).
-    PolicyEntry { path: "commands::pipeline::generate_pipeline", effect: Effect::Irreversible },
+    // `charge_provider_daily` after admission). Same no-id / WEAK spend-total
+    // fallback.
+    PolicyEntry {
+        path: "commands::pipeline::generate_pipeline",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
+    },
 
     // commands/resume.rs
     // Zero renderer references (ADR-038 Context) — still a plain file-text
@@ -227,14 +445,31 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::resume::resume_validate_content", effect: Effect::Read },
 
     // commands/resume_pipeline/mod.rs
-    // Multi-stage AI-driven résumé/cover-letter generation; charges provider spend.
-    PolicyEntry { path: "commands::resume_pipeline::resume_pipeline_run", effect: Effect::Irreversible },
+    // Multi-stage AI-driven résumé/cover-letter generation; charges provider
+    // spend. Scoped to a real résumé DOCUMENT (`resumeId`) — proof is that
+    // document's own `name`, read via `documents_list`, matched by id.
+    PolicyEntry {
+        path: "commands::resume_pipeline::resume_pipeline_run",
+        effect: Effect::Irreversible(ProofSource::ListMatch {
+            read_command: "documents_list",
+            id_field: "resumeId",
+            match_field: "id",
+            value_field: "name",
+        }),
+    },
     PolicyEntry { path: "commands::resume_pipeline::resume_pipeline_get", effect: Effect::Read },
     PolicyEntry { path: "commands::resume_pipeline::resume_pipeline_list_for_job", effect: Effect::Read },
-    // Same charged AI-regenerate path as `resume_pipeline_run`.
+    // Same charged AI-regenerate path as `resume_pipeline_run`, scoped to a
+    // real run (`runId`) — proof is that run's own `jobUrl`, read via
+    // `resume_pipeline_get`.
     PolicyEntry {
         path: "commands::resume_pipeline::resume_pipeline_regenerate_section",
-        effect: Effect::Irreversible,
+        effect: Effect::Irreversible(ProofSource::Lookup {
+            read_command: "resume_pipeline_get",
+            key: "runId",
+            input: LookupInput::FromCaller("runId"),
+            path: &["jobUrl"],
+        }),
     },
     // Records a keep/remove verdict on the saved quality report — a
     // decision that can be re-recorded, nothing deleted.
@@ -248,7 +483,16 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::documents::documents_import", effect: Effect::Reversible },
     PolicyEntry { path: "commands::documents::documents_recommend_template", effect: Effect::Read },
     // Deletes a stored document's extracted text permanently — no undo.
-    PolicyEntry { path: "commands::documents::documents_remove", effect: Effect::Irreversible },
+    // Proof is the target document's own `name`, read via `documents_list`.
+    PolicyEntry {
+        path: "commands::documents::documents_remove",
+        effect: Effect::Irreversible(ProofSource::ListMatch {
+            read_command: "documents_list",
+            id_field: "id",
+            match_field: "id",
+            value_field: "name",
+        }),
+    },
     PolicyEntry { path: "commands::documents::documents_set_default", effect: Effect::Reversible },
     PolicyEntry { path: "commands::documents::documents_get_text", effect: Effect::Read },
 
@@ -287,8 +531,15 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::scrape::scrape_remove_interaction", effect: Effect::Reversible },
     PolicyEntry { path: "commands::scrape::scrape_list_postings", effect: Effect::Read },
     // Unconditional wipe of EVERY live posting — no selector, matches the
-    // module doc's "any selector that can expand to everything" rule.
-    PolicyEntry { path: "commands::scrape::scrape_clear_postings", effect: Effect::Irreversible },
+    // module doc's "any selector that can expand to everything" rule. Proof
+    // is the exact count about to be lost, read via `scrape_list_postings`
+    // itself.
+    PolicyEntry {
+        path: "commands::scrape::scrape_clear_postings",
+        effect: Effect::Irreversible(ProofSource::Count {
+            read_command: "scrape_list_postings",
+        }),
+    },
     PolicyEntry { path: "commands::scrape::scrape_list_interactions", effect: Effect::Read },
 
     // commands/data.rs
@@ -346,23 +597,69 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // commands/privacy.rs
     // Zero renderer references (ADR-038 Context) — and the ONE destructive
     // command among the four zero-UI commands: disconnects 4 boards and
-    // unconditionally clears the entire postings + interactions cache.
-    PolicyEntry { path: "commands::privacy::privacy_clear_data", effect: Effect::Irreversible },
+    // unconditionally clears the entire postings + interactions cache. No
+    // single Read row captures the FULL blast radius (boards + postings +
+    // interactions) — `scrape_list_postings`'s count is the strongest single
+    // available signal, but it is PARTIAL; flagged.
+    PolicyEntry {
+        path: "commands::privacy::privacy_clear_data",
+        effect: Effect::Irreversible(ProofSource::Count {
+            read_command: "scrape_list_postings",
+        }),
+    },
     // Unconditional wipe of every interaction (viewed/applied/saved) — no
-    // selector, real user history lost.
-    PolicyEntry { path: "commands::privacy::privacy_clear_interactions", effect: Effect::Irreversible },
-    // ADR-038's own named example of Irreversible ("sign_out_all").
-    PolicyEntry { path: "commands::privacy::privacy_sign_out_all", effect: Effect::Irreversible },
-    // ADR-038's own named example of Irreversible ("privacy:reset_app") — full factory reset.
-    PolicyEntry { path: "commands::privacy::privacy_reset_app", effect: Effect::Irreversible },
+    // selector, real user history lost. Proof is the EXACT count about to be
+    // lost, read via `scrape_list_interactions` — precisely scoped.
+    PolicyEntry {
+        path: "commands::privacy::privacy_clear_interactions",
+        effect: Effect::Irreversible(ProofSource::Count {
+            read_command: "scrape_list_interactions",
+        }),
+    },
+    // ADR-038's own named example of Irreversible ("sign_out_all"). No
+    // single Read row reports "how many of the 4 boards are connected right
+    // now" — the strongest available is whether ONE representative board
+    // (linkedin) currently has a session; WEAK (boolean, covers 1 of 4),
+    // flagged.
+    PolicyEntry {
+        path: "commands::privacy::privacy_sign_out_all",
+        effect: Effect::Irreversible(ProofSource::Lookup {
+            read_command: "boards_get_status",
+            key: "boardId",
+            input: LookupInput::Literal("linkedin"),
+            path: &["connected"],
+        }),
+    },
+    // ADR-038's own named example of Irreversible ("privacy:reset_app") —
+    // full factory reset. No Read row captures the full blast radius (every
+    // registered store); the count of saved AI generations is real, honest,
+    // and readable, but covers only ONE of the many stores this wipes — the
+    // WEAKEST row in this table alongside `updater_install`, flagged
+    // prominently.
+    PolicyEntry {
+        path: "commands::privacy::privacy_reset_app",
+        effect: Effect::Irreversible(ProofSource::Count {
+            read_command: "ai_generations_list",
+        }),
+    },
     PolicyEntry { path: "commands::privacy::privacy_get_crash_reporting", effect: Effect::Read },
     PolicyEntry { path: "commands::privacy::privacy_set_crash_reporting", effect: Effect::Reversible },
 
     // commands/support.rs
     // `dest` is a caller-supplied path passed straight to `std::fs::File::create`,
     // which TRUNCATES an existing file at that path — an arbitrary pre-existing
-    // file there is unrecoverably overwritten with the diagnostics bundle.
-    PolicyEntry { path: "commands::support::support_export_diagnostics", effect: Effect::Irreversible },
+    // file there is unrecoverably overwritten with the diagnostics bundle. No
+    // record to prove reading (the caller already supplies `dest` themselves);
+    // the running app version is the strongest available unrelated signal —
+    // it IS embedded in the diagnostics bundle itself, but proves nothing
+    // about `dest`; WEAK, flagged.
+    PolicyEntry {
+        path: "commands::support::support_export_diagnostics",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "system_get_version",
+            path: &[],
+        }),
+    },
     // Zero renderer references (ADR-038 Context). ADR-038 §2 revision (same
     // reasoning as `ai_unload_model` above): the current body is a literal
     // stub (`// Stub - implement when needed`) that always returns `null` —
@@ -393,13 +690,32 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::autopilot::autopilot_get", effect: Effect::Read },
     PolicyEntry { path: "commands::autopilot::autopilot_create", effect: Effect::Reversible },
     PolicyEntry { path: "commands::autopilot::autopilot_update", effect: Effect::Reversible },
-    // Deletes an autopilot record (and orphans its résumé-derived cache rows).
-    PolicyEntry { path: "commands::autopilot::autopilot_remove", effect: Effect::Irreversible },
+    // Deletes an autopilot record (and orphans its résumé-derived cache
+    // rows). Proof is the target automation's own `name`, read via
+    // `autopilot_get` by the SAME `autopilotId`.
+    PolicyEntry {
+        path: "commands::autopilot::autopilot_remove",
+        effect: Effect::Irreversible(ProofSource::Lookup {
+            read_command: "autopilot_get",
+            key: "autopilotId",
+            input: LookupInput::FromCaller("autopilotId"),
+            path: &["name"],
+        }),
+    },
     // "Autopilot is a discovery agent... a run only finds, ranks and saves
     // results" (verified — no application submission), BUT the semantic
     // re-rank phase charges `charge_provider_daily` per embed when enabled
     // (`autopilot/rerank.rs::charge_one_embed`) — real, if capped, spend.
-    PolicyEntry { path: "commands::autopilot::autopilot_run", effect: Effect::Irreversible },
+    // Same id-scoped proof as `autopilot_remove`.
+    PolicyEntry {
+        path: "commands::autopilot::autopilot_run",
+        effect: Effect::Irreversible(ProofSource::Lookup {
+            read_command: "autopilot_get",
+            key: "autopilotId",
+            input: LookupInput::FromCaller("autopilotId"),
+            path: &["name"],
+        }),
+    },
     PolicyEntry { path: "commands::autopilot::autopilot_pause", effect: Effect::Reversible },
     PolicyEntry { path: "commands::autopilot::autopilot_resume", effect: Effect::Reversible },
     PolicyEntry {
@@ -415,11 +731,30 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::ai_generations::ai_generations_list", effect: Effect::Read },
     PolicyEntry { path: "commands::ai_generations::ai_generations_save", effect: Effect::Reversible },
     PolicyEntry { path: "commands::ai_generations::ai_generations_update", effect: Effect::Reversible },
-    // Deletes a generation AND cascades to delete its pipeline run trail (`purge_run_trails`).
-    PolicyEntry { path: "commands::ai_generations::ai_generations_remove", effect: Effect::Irreversible },
+    // Deletes a generation AND cascades to delete its pipeline run trail
+    // (`purge_run_trails`). Proof is the target generation's own `jobTitle`,
+    // read via `ai_generations_list`, matched by id.
+    PolicyEntry {
+        path: "commands::ai_generations::ai_generations_remove",
+        effect: Effect::Irreversible(ProofSource::ListMatch {
+            read_command: "ai_generations_list",
+            id_field: "id",
+            match_field: "id",
+            value_field: "jobTitle",
+        }),
+    },
+    // Bulk delete by a caller-supplied `ids` array — no single record to
+    // name. Proof is the COUNT of those ids that actually exist right now,
+    // read via `ai_generations_list` — genuinely computed and scoped to the
+    // targeted set, but a count, not a name; weaker than the single-id row
+    // above, flagged.
     PolicyEntry {
         path: "commands::ai_generations::ai_generations_remove_bulk",
-        effect: Effect::Irreversible,
+        effect: Effect::Irreversible(ProofSource::MatchCount {
+            read_command: "ai_generations_list",
+            ids_field: "ids",
+            match_field: "id",
+        }),
     },
 
     // commands/applications.rs
@@ -435,8 +770,18 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         effect: Effect::Reversible,
     },
     PolicyEntry { path: "commands::applications::applications_update", effect: Effect::Reversible },
-    // Deletes an Application and (unless keep_documents) cascades to its child generations.
-    PolicyEntry { path: "commands::applications::applications_delete", effect: Effect::Irreversible },
+    // Deletes an Application and (unless keep_documents) cascades to its
+    // child generations. Proof is the target application's own `title`,
+    // read via `applications_get` by the SAME `id`.
+    PolicyEntry {
+        path: "commands::applications::applications_delete",
+        effect: Effect::Irreversible(ProofSource::Lookup {
+            read_command: "applications_get",
+            key: "id",
+            input: LookupInput::FromCaller("id"),
+            path: &["application", "title"],
+        }),
+    },
     PolicyEntry { path: "commands::applications::applications_track", effect: Effect::Reversible },
     PolicyEntry {
         path: "commands::applications::applications_save_from_posting",
@@ -450,10 +795,25 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         path: "commands::notifications::notifications_mark_all_read",
         effect: Effect::Reversible,
     },
-    PolicyEntry { path: "commands::notifications::notifications_remove", effect: Effect::Irreversible },
+    // Proof is the target notification's own `title`, read via
+    // `notifications_list`, matched by id.
+    PolicyEntry {
+        path: "commands::notifications::notifications_remove",
+        effect: Effect::Irreversible(ProofSource::ListMatch {
+            read_command: "notifications_list",
+            id_field: "id",
+            match_field: "id",
+            value_field: "title",
+        }),
+    },
+    // Unconditional wipe of every notification — no selector. Proof is the
+    // exact count about to be lost, read via `notifications_list` itself —
+    // precisely scoped, the strongest shape a global wipe can have.
     PolicyEntry {
         path: "commands::notifications::notifications_clear_all",
-        effect: Effect::Irreversible,
+        effect: Effect::Irreversible(ProofSource::Count {
+            read_command: "notifications_list",
+        }),
     },
     PolicyEntry {
         path: "commands::notifications::notifications_clicked",
@@ -466,7 +826,17 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // commands/referrals.rs
     PolicyEntry { path: "commands::referrals::referrals_list", effect: Effect::Read },
     PolicyEntry { path: "commands::referrals::referrals_upsert", effect: Effect::Reversible },
-    PolicyEntry { path: "commands::referrals::referrals_remove", effect: Effect::Irreversible },
+    // Proof is the target referral's own `companyName`, read via
+    // `referrals_list`, matched by id.
+    PolicyEntry {
+        path: "commands::referrals::referrals_remove",
+        effect: Effect::Irreversible(ProofSource::ListMatch {
+            read_command: "referrals_list",
+            id_field: "id",
+            match_field: "id",
+            value_field: "companyName",
+        }),
+    },
 
     // commands/profile_import.rs
     PolicyEntry { path: "commands::profile_import::profile_import_from_url", effect: Effect::Read },
@@ -478,10 +848,17 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::extension_bridge::extension_bridge_status", effect: Effect::Read },
     // Rotates the pairing token, which REVOKES every currently-paired
     // browser session — the same "sign-out"-shaped irreversibility ADR-038
-    // names for `sign_out_all`.
+    // names for `sign_out_all`. No record exists besides the token itself,
+    // and the CLI already possesses today's token locally (it needed it to
+    // authenticate this very connection) — reading it back through
+    // `extension_bridge_status` proves nothing the caller didn't already
+    // have; the WEAKEST kind of proof in this table, flagged.
     PolicyEntry {
         path: "commands::extension_bridge::extension_bridge_regenerate_token",
-        effect: Effect::Irreversible,
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "extension_bridge_status",
+            path: &["token"],
+        }),
     },
     PolicyEntry {
         path: "commands::extension_bridge::extension_bridge_autofill_enabled",
@@ -510,11 +887,30 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
 
     // commands/email_watch.rs
     PolicyEntry { path: "commands::email_watch::email_watch_status", effect: Effect::Read },
-    // Writes an IMAP app-password secret into the OS keychain — `credentials:*`.
-    PolicyEntry { path: "commands::email_watch::email_watch_connect", effect: Effect::Irreversible },
+    // Writes an IMAP app-password secret into the OS keychain —
+    // `credentials:*`. A fresh connect has nothing to compare against; the
+    // strongest available signal is whether an account is ALREADY connected
+    // — WEAK (boolean, mostly `false` on the common first-connect path),
+    // flagged.
+    PolicyEntry {
+        path: "commands::email_watch::email_watch_connect",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "email_watch_status",
+            path: &["connected"],
+        }),
+    },
     // Removes the stored secret; also clears the auto-write opt-in + every
     // seen-mail dedupe row (verified — `EmailWatchStore::clear`'s own doc).
-    PolicyEntry { path: "commands::email_watch::email_watch_disconnect", effect: Effect::Irreversible },
+    // Proof is the CONNECTED ACCOUNT'S own address, read via
+    // `email_watch_status` — real, user-owned data; genuinely requires
+    // having read it first.
+    PolicyEntry {
+        path: "commands::email_watch::email_watch_disconnect",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "email_watch_status",
+            path: &["address"],
+        }),
+    },
     PolicyEntry { path: "commands::email_watch::email_watch_set_enabled", effect: Effect::Reversible },
     PolicyEntry {
         path: "commands::email_watch::email_watch_set_auto_write_enabled",
@@ -545,8 +941,20 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "updater::updater_download", effect: Effect::Reversible },
     // Installs the downloaded update and force-restarts the app
     // (`app.restart()`, never returns) — replaces the running binary with
-    // no undo path.
-    PolicyEntry { path: "updater::updater_install", effect: Effect::Irreversible },
+    // no undo path. No Read row exposes the PENDING (target) version —
+    // `UpdaterState.pending_version` lives only in memory behind
+    // `updater_check`/`updater_download`, both `Reversible` not `Read`, so
+    // neither is eligible as a proof source. `system_get_version` is the
+    // strongest available Read row, but it names the CURRENTLY RUNNING
+    // version, not the one about to be installed — one of the WEAKEST rows
+    // in this table, flagged prominently alongside `privacy_reset_app`.
+    PolicyEntry {
+        path: "updater::updater_install",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "system_get_version",
+            path: &[],
+        }),
+    },
     PolicyEntry { path: "updater::updater_changelog", effect: Effect::Read },
 ];
 
@@ -569,16 +977,41 @@ mod tests {
     /// trimmed of its trailing comma. Panics (test-only) if the markers
     /// this depends on ever move — that failure itself is the signal this
     /// extraction needs updating, not a silent empty result.
+    ///
+    /// The closing `]` is located on the first NON-comment line that
+    /// carries one (LOW fix — security review): the naive `rest.find(']')`
+    /// this used to run against the RAW text would truncate the extraction
+    /// early if a `//` comment between the marker and the real terminator
+    /// ever contained a literal `]` — silent, since a truncated-but-still-
+    /// well-formed list still passes both anti-drift tests below with a
+    /// SMALLER `POLICY` and a smaller `registered` set, never surfacing the
+    /// mismatch. Comment lines are skipped when searching for `]`, not when
+    /// slicing — every real command line up to the true terminator is kept.
     fn registered_command_paths() -> Vec<&'static str> {
         const START_MARKER: &str = "tauri::generate_handler![";
         let start = LIB_RS
             .find(START_MARKER)
             .expect("tauri::generate_handler![ marker present in lib.rs")
             + START_MARKER.len();
-        let rest = &LIB_RS[start..];
-        let end = rest
-            .find(']')
-            .expect("generate_handler! list has a closing ] in lib.rs");
+        let rest: &'static str = &LIB_RS[start..];
+
+        let mut end = None;
+        let mut offset = 0usize;
+        for line in rest.lines() {
+            let is_comment = line.trim_start().starts_with("//");
+            if !is_comment {
+                if let Some(pos) = line.find(']') {
+                    end = Some(offset + pos);
+                    break;
+                }
+            }
+            // `lines()` strips the `\n` each line ended with — add it back
+            // so `offset` stays a correct byte position into `rest`.
+            offset += line.len() + 1;
+        }
+        let end =
+            end.expect("generate_handler! list has a closing ] on a non-comment line in lib.rs");
+
         rest[..end]
             .lines()
             .map(str::trim)
@@ -674,5 +1107,63 @@ mod tests {
         );
         assert!(found.contains(&"commands::privacy::privacy_reset_app"));
         assert_eq!(found.len(), 164);
+    }
+
+    /// ADR-038 §4 (Phase 3): every `Irreversible` row's
+    /// `ProofSource::read_command` must itself be a REAL `Effect::Read` row
+    /// in this SAME table — the ceremony's whole safety property rests on
+    /// the proof coming from a surface this table has independently
+    /// classified as safe to dispatch freely. A `ProofSource` pointing at a
+    /// command that doesn't exist, or exists but isn't `Read`, would make
+    /// the ceremony either uncheckable or a second mutation smuggled in
+    /// under "reading the proof".
+    #[test]
+    fn every_proof_source_read_command_is_a_read_row() {
+        let mut checked = 0usize;
+        for entry in POLICY {
+            let Effect::Irreversible(source) = entry.effect else {
+                continue;
+            };
+            checked += 1;
+            let read_command = source.read_command();
+            let target = POLICY
+                .iter()
+                .find(|e| e.path.rsplit("::").next() == Some(read_command));
+            match target {
+                Some(t) if t.effect == Effect::Read => {}
+                Some(t) => panic!(
+                    "{}'s ProofSource points at `{read_command}`, which is classified \
+                     {t:?}, not Read",
+                    entry.path
+                ),
+                None => panic!(
+                    "{}'s ProofSource points at `{read_command}`, which has no POLICY row \
+                     at all",
+                    entry.path
+                ),
+            }
+        }
+        // Hand-written literal (not derived from POLICY itself — the same
+        // "pair a loop with a literal" discipline as
+        // `policy_table_has_exactly_164_rows`): 31 Irreversible rows.
+        assert_eq!(checked, 31, "expected exactly 31 Irreversible rows");
+    }
+
+    /// Mutation-style guard: an `Irreversible` row whose `ProofSource`
+    /// pointed at ITSELF (or at another `Irreversible` row) would make the
+    /// ceremony circular — satisfiable without ever reading anything real.
+    #[test]
+    fn no_proof_source_points_at_an_irreversible_command() {
+        for entry in POLICY {
+            if let Effect::Irreversible(source) = entry.effect {
+                let (_, own_command) = entry.path.rsplit_once("::").unwrap_or(("", entry.path));
+                assert_ne!(
+                    source.read_command(),
+                    own_command,
+                    "{} names itself as its own proof source",
+                    entry.path
+                );
+            }
+        }
     }
 }
