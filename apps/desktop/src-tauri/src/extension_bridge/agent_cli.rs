@@ -232,9 +232,22 @@ fn parse_auth_ok(v: &Value) -> Option<String> {
 /// ping/pong control frames. `None` on timeout, a transport error, a close,
 /// or non-JSON content — every one of those collapses to the same "this port
 /// gave us nothing usable" signal for the caller.
+///
+/// `dur` is a single deadline for the WHOLE call, computed once on entry —
+/// NOT re-armed on every loop iteration. A peer that emits a ping/pong (or
+/// any other non-Text/Binary/Close frame) faster than `dur` would otherwise
+/// keep resetting `timeout`'s clock forever and this call — and everything
+/// waiting on it, including [`send_agent_query`]'s own shrinking
+/// `remaining` budget, which never gets a chance to re-run while this loop
+/// is stuck — would never return.
 async fn next_json(ws: &mut WsStream, dur: Duration) -> Option<Value> {
+    let deadline = Instant::now() + dur;
     loop {
-        let msg = match timeout(dur, ws.next()).await {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return None;
+        }
+        let msg = match timeout(remaining, ws.next()).await {
             Ok(Some(Ok(m))) => m,
             _ => return None,
         };
@@ -746,6 +759,58 @@ mod tests {
             result.err()
         );
         server.await.unwrap();
+    }
+
+    // ── `next_json`'s deadline must cover the WHOLE call, not be re-armed
+    // per iteration — a peer that floods control frames (ping/pong) faster
+    // than the budget must not stall it past that budget. Drives the real
+    // production `next_json` over a real loopback socket against a minimal
+    // server, the same pattern as `attempt_port_authenticates_over_a_real_
+    // socket_against_the_real_server` above. ──
+
+    #[tokio::test]
+    async fn next_json_returns_at_its_deadline_even_when_flooded_with_pings() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0u16)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Server: upgrade, then flood Ping frames faster than the client's
+        // own per-call budget below — for as long as this task keeps
+        // running (it is dropped, not joined, at the end of this test), so
+        // a regression (a timeout re-armed on every iteration) would hang
+        // past the outer bound below instead of merely returning late.
+        let _server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            loop {
+                if ws.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+
+        let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let uri = format!("ws://127.0.0.1:{port}/").parse().unwrap();
+        let (mut ws, _resp) = tokio_tungstenite::client_async(ClientRequestBuilder::new(uri), tcp)
+            .await
+            .unwrap();
+
+        // The server's 10ms ping cadence is far faster than this budget, so
+        // a correctly-fixed `next_json` still returns `None` right at the
+        // deadline; a per-iteration-re-armed `timeout` (the bug) never
+        // would, since every ping resets its clock — bound the assertion in
+        // an outer timeout well past the budget so a regression fails this
+        // test instead of hanging the whole suite.
+        let budget = Duration::from_millis(150);
+        let outcome = tokio::time::timeout(budget * 4, next_json(&mut ws, budget)).await;
+        assert_eq!(
+            outcome.ok(),
+            Some(None),
+            "next_json must return None at its own deadline, not hang past it, when flooded \
+             with pings faster than that deadline"
+        );
     }
 
     // ── pointer + token file reads (pure fs, no env mutation needed here —

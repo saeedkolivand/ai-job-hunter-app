@@ -118,6 +118,15 @@ fn reserved_types_are_distinct() {
         msg::ASSIST_CHUNK,
         msg::ASSIST_DONE,
         msg::ASSIST_CANCEL,
+        // NOT in `message_type_constants_match_ts`'s list above (that
+        // exclusion is deliberate — see `msg::AGENT_QUERY`'s doc — the
+        // browser extension never sends these, so there is no TS side to
+        // pin them against) but THIS test has no TS dependency at all: it
+        // only checks that every Rust wire-type constant is distinct from
+        // every other one, an invariant these two constants must satisfy
+        // exactly like the rest.
+        msg::AGENT_QUERY,
+        msg::AGENT_RESULT,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");
@@ -485,6 +494,43 @@ fn match_live_throttle_shared_across_sequential_connections() {
     assert!(
         !s.try_acquire_match_live(),
         "the shared budget is exhausted — connection 2 does not get its own fresh burst"
+    );
+}
+
+// ── agent.query throttle (MEDIUM: reconnect-proof, lives on BridgeState) ────
+// Mirrors `match_live_throttle_survives_reconnect` above: every OTHER
+// `AgentQueryThrottle` test (`agent_read.rs`) constructs the struct directly
+// and drives `try_acquire_at`, which proves nothing about the wiring through
+// `BridgeState::try_acquire_agent` itself — this goes through that method,
+// against one shared `BridgeState`, the same way a real reconnecting CLI
+// invocation would.
+
+#[test]
+fn agent_query_throttle_survives_reconnect() {
+    // `best-matches`' bucket has a burst of exactly 1 (see
+    // `agent_read::AGENT_BEST_MATCHES_BURST`), so a single connection
+    // exhausts it in one call — a per-connection instance (the bug this
+    // guards against) would hand a fresh, full bucket to every reconnect,
+    // which on a loopback WS an automated CLI invocation can trivially
+    // repeat every process launch.
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+
+    assert!(
+        s.try_acquire_agent("best-matches"),
+        "burst allowance on the first connection"
+    );
+    assert!(
+        !s.try_acquire_agent("best-matches"),
+        "burst exhausted on the first connection"
+    );
+
+    // Simulate a reconnect: a fresh socket/task against the SAME
+    // BridgeState (the one Tauri manages for the app's whole lifetime) —
+    // must NOT see a refreshed bucket.
+    assert!(
+        !s.try_acquire_agent("best-matches"),
+        "a reconnect must not reset the agent.query token bucket"
     );
 }
 
