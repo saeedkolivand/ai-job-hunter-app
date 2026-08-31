@@ -105,6 +105,30 @@ fn write_manifest_if_app_dir_exists(label: &str, guard_dir: &Path, path: &Path, 
     write_manifest(label, path, bytes);
 }
 
+/// Write the agent-CLI pointer file (issue #1084 PR 1) — `{ exePath, dataDir }`
+/// — so a separately-invoked `ajh-tauri agent …` process can find both. That
+/// process has no `AppHandle` and never inherits `AJH_DATA_DIR` (`set_var`
+/// scopes to this process only — see `platform::config::
+/// resolve_and_export_data_dir`'s doc), and its own AppHandle-free
+/// `data_dir()` fallback (`<home>/.ajh`) is not necessarily where Tauri
+/// actually resolved the data dir, so the CLI cannot reconstruct either path
+/// on its own. OS- and browser-independent (unlike the manifests below), so
+/// this call is unconditional. Rides [`register_native_host`]'s own
+/// best-effort/idempotent every-launch lifecycle — see that function's doc —
+/// rather than a separate hook: overwritten on every call, so a moved install
+/// or a changed data dir is picked up on the very next launch.
+fn write_agent_pointer(exe: &Path, data_dir: &Path) {
+    let Some(path) = crate::platform::config::agent_pointer_path() else {
+        log::warn!("[native_host] home dir unavailable — skipping agent-CLI pointer");
+        return;
+    };
+    let pointer = json!({
+        "exePath": exe.to_string_lossy(),
+        "dataDir": data_dir.to_string_lossy(),
+    });
+    write_manifest("agent-cli pointer", &path, pointer.to_string().as_bytes());
+}
+
 /// Register the native-messaging host for Firefox + Chrome. Best-effort and
 /// idempotent — safe to call on every launch.
 pub fn register_native_host(data_dir: &Path) {
@@ -115,6 +139,7 @@ pub fn register_native_host(data_dir: &Path) {
             return;
         }
     };
+    write_agent_pointer(&exe, data_dir);
     let firefox_json = manifest_json(&exe, true);
     let chrome_json = manifest_json(&exe, false);
 
@@ -342,6 +367,63 @@ mod tests {
         assert!(v.get("allowed_origins").is_none());
         // The exe path round-trips (serde_json escaped any backslashes).
         assert_eq!(v["path"], exe.to_string_lossy().as_ref());
+    }
+
+    // ── agent-CLI pointer (issue #1084 PR 1) ──────────────────────────────────
+
+    /// `#[serial]`: mutates the process-global `USERPROFILE`/`HOME` that
+    /// `platform::config::home_dir` (and therefore `agent_pointer_path`)
+    /// reads — same discipline as `platform::config`'s own env tests.
+    #[test]
+    #[serial_test::serial]
+    fn write_agent_pointer_writes_exe_path_and_data_dir() {
+        let home = tempfile::TempDir::new().unwrap();
+        // Routes through `platform::config`'s test-only guard rather than
+        // touching `std::env` here directly — R4 ("env access only in
+        // platform/**") text-scans every non-test-named file, including a
+        // `#[cfg(test)]` module embedded in one like this.
+        let _guard = crate::platform::config::HomeDirGuard::set(home.path());
+
+        let data_dir = tempfile::TempDir::new().unwrap();
+        let exe = PathBuf::from(if cfg!(windows) {
+            r"C:\Program Files\AI Job Hunter\app.exe"
+        } else {
+            "/opt/aijobhunter/app"
+        });
+        write_agent_pointer(&exe, data_dir.path());
+
+        let pointer_path = home.path().join(".ajh-agent").join("agent.json");
+        let contents = std::fs::read_to_string(&pointer_path)
+            .expect("pointer file must exist under <home>/.ajh-agent/agent.json");
+        let v: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(v["exePath"], exe.to_string_lossy().as_ref());
+        assert_eq!(v["dataDir"], data_dir.path().to_string_lossy().as_ref());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn write_agent_pointer_is_idempotent_and_overwrites() {
+        let home = tempfile::TempDir::new().unwrap();
+        let _guard = crate::platform::config::HomeDirGuard::set(home.path());
+
+        let data_dir_a = tempfile::TempDir::new().unwrap();
+        let data_dir_b = tempfile::TempDir::new().unwrap();
+        let exe = PathBuf::from(if cfg!(windows) {
+            r"C:\old\app.exe"
+        } else {
+            "/opt/old/app"
+        });
+        write_agent_pointer(&exe, data_dir_a.path());
+        write_agent_pointer(&exe, data_dir_b.path());
+
+        let pointer_path = home.path().join(".ajh-agent").join("agent.json");
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&pointer_path).unwrap()).unwrap();
+        assert_eq!(
+            v["dataDir"],
+            data_dir_b.path().to_string_lossy().as_ref(),
+            "a second launch's pointer must overwrite the first, not append"
+        );
     }
 
     #[test]

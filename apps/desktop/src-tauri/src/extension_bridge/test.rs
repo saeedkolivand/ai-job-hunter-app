@@ -118,6 +118,15 @@ fn reserved_types_are_distinct() {
         msg::ASSIST_CHUNK,
         msg::ASSIST_DONE,
         msg::ASSIST_CANCEL,
+        // NOT in `message_type_constants_match_ts`'s list above (that
+        // exclusion is deliberate — see `msg::AGENT_QUERY`'s doc — the
+        // browser extension never sends these, so there is no TS side to
+        // pin them against) but THIS test has no TS dependency at all: it
+        // only checks that every Rust wire-type constant is distinct from
+        // every other one, an invariant these two constants must satisfy
+        // exactly like the rest.
+        msg::AGENT_QUERY,
+        msg::AGENT_RESULT,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");
@@ -488,6 +497,43 @@ fn match_live_throttle_shared_across_sequential_connections() {
     );
 }
 
+// ── agent.query throttle (MEDIUM: reconnect-proof, lives on BridgeState) ────
+// Mirrors `match_live_throttle_survives_reconnect` above: every OTHER
+// `AgentQueryThrottle` test (`agent_read.rs`) constructs the struct directly
+// and drives `try_acquire_at`, which proves nothing about the wiring through
+// `BridgeState::try_acquire_agent` itself — this goes through that method,
+// against one shared `BridgeState`, the same way a real reconnecting CLI
+// invocation would.
+
+#[test]
+fn agent_query_throttle_survives_reconnect() {
+    // `best-matches`' bucket has a burst of exactly 1 (see
+    // `agent_read::AGENT_BEST_MATCHES_BURST`), so a single connection
+    // exhausts it in one call — a per-connection instance (the bug this
+    // guards against) would hand a fresh, full bucket to every reconnect,
+    // which on a loopback WS an automated CLI invocation can trivially
+    // repeat every process launch.
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+
+    assert!(
+        s.try_acquire_agent("best-matches"),
+        "burst allowance on the first connection"
+    );
+    assert!(
+        !s.try_acquire_agent("best-matches"),
+        "burst exhausted on the first connection"
+    );
+
+    // Simulate a reconnect: a fresh socket/task against the SAME
+    // BridgeState (the one Tauri manages for the app's whole lifetime) —
+    // must NOT see a refreshed bucket.
+    assert!(
+        !s.try_acquire_agent("best-matches"),
+        "a reconnect must not reset the agent.query token bucket"
+    );
+}
+
 #[test]
 fn reset_disables_autofill_optin() {
     use crate::data_store::Resettable;
@@ -641,7 +687,8 @@ fn advance_authenticated_routes_autotrack_check() {
         "reqId": "req-9",
         "payload": Value::Null,
     });
-    let decision = advance_authenticated(msg::AUTOTRACK_CHECK, "req-9".to_string(), &envelope);
+    let decision =
+        advance_authenticated(msg::AUTOTRACK_CHECK, "req-9".to_string(), &envelope, false);
     match decision {
         FrameDecision::AutotrackCheck { req_id } => assert_eq!(req_id, "req-9"),
         other => panic!("expected FrameDecision::AutotrackCheck, got {other:?}"),
@@ -671,11 +718,50 @@ fn advance_authenticated_routes_autofill_check() {
         "reqId": "req-10",
         "payload": Value::Null,
     });
-    let decision = advance_authenticated(msg::AUTOFILL_CHECK, "req-10".to_string(), &envelope);
+    let decision =
+        advance_authenticated(msg::AUTOFILL_CHECK, "req-10".to_string(), &envelope, false);
     match decision {
         FrameDecision::AutofillCheck { req_id } => assert_eq!(req_id, "req-10"),
         other => panic!("expected FrameDecision::AutofillCheck, got {other:?}"),
     }
+}
+
+// ── agent.query is gated on `is_agent_cli` (finding #5, security review) ──
+
+#[test]
+fn advance_authenticated_routes_agent_query_only_for_the_cli_origin() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_QUERY,
+        "reqId": "req-11",
+        "payload": { "resource": "schema" },
+    });
+    let decision = advance_authenticated(msg::AGENT_QUERY, "req-11".to_string(), &envelope, true);
+    match decision {
+        FrameDecision::AgentQuery { req_id, .. } => assert_eq!(req_id, "req-11"),
+        other => panic!("expected FrameDecision::AgentQuery, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_authenticated_refuses_agent_query_from_a_non_cli_origin() {
+    // The exact case this fix closes: an authenticated connection whose
+    // handshake Origin was NOT the CLI's — e.g. the browser extension's own
+    // already-authenticated session — must never reach `FrameDecision::
+    // AgentQuery`, even though it is fully authenticated.
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_QUERY,
+        "reqId": "req-12",
+        "payload": { "resource": "schema" },
+    });
+    let decision = advance_authenticated(msg::AGENT_QUERY, "req-12".to_string(), &envelope, false);
+    let FrameDecision::Reply(text) = decision else {
+        panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
+    };
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["type"], msg::AGENT_RESULT);
+    assert_eq!(v["reqId"], "req-12");
+    assert_eq!(v["payload"]["ok"], false);
+    assert_eq!(v["payload"]["resource"], "schema");
 }
 
 // ── AUTO status.update gate (defense-in-depth, Task #22) ──────────────────────
@@ -731,7 +817,7 @@ fn advance_authenticated_routes_assist_cancel_by_req_id() {
         "reqId": "req-7",
         "payload": Value::Null,
     });
-    let decision = advance_authenticated(msg::ASSIST_CANCEL, "req-7".to_string(), &envelope);
+    let decision = advance_authenticated(msg::ASSIST_CANCEL, "req-7".to_string(), &envelope, false);
     match decision {
         FrameDecision::AssistCancel { req_id } => assert_eq!(req_id, "req-7"),
         other => panic!("expected FrameDecision::AssistCancel, got {other:?}"),
@@ -779,6 +865,56 @@ fn resolve_profile_projects_when_opt_in_on() {
     );
     assert_eq!(out.website, None, "whitespace-only fields are dropped");
     assert_eq!(out.github, None);
+}
+
+/// The `profile` resource ([`super::agent_read`]) reuses this exact
+/// `resolve_profile` outcome verbatim — so this pins BOTH `profile.get`'s and
+/// the agent `profile` resource's wire key set in one place. Hand-written,
+/// not derived from `AutofillProfile`'s own field list (a self-referential
+/// check proves nothing — see the repo's standing lesson on exactly this).
+/// `ContactProfile.photo` is populated here too, to prove it never crosses:
+/// `AutofillProfile::from_contact` has no field to receive it.
+#[test]
+fn resolve_profile_projection_has_exact_keys_and_no_forbidden_fields() {
+    use crate::contact_profile::{ContactLink, ContactProfile, LocalizedText};
+    let profile = ContactProfile {
+        full_name: Some("Saeed Kolivand".to_string()),
+        email: Some("saeed@example.com".to_string()),
+        phone: Some("+31 6 12".to_string()),
+        location: Some(LocalizedText {
+            default: "Amsterdam".to_string(),
+            ..Default::default()
+        }),
+        linkedin: Some("https://linkedin.com/in/saeed".to_string()),
+        github: Some("https://github.com/saeed".to_string()),
+        website: Some("https://saeed.dev".to_string()),
+        extra_links: vec![ContactLink {
+            label: "Portfolio".to_string(),
+            url: "https://saeed.dev/p".to_string(),
+        }],
+        photo: Some("data:image/png;base64,AAAA".to_string()),
+    };
+    let out = resolve_profile(true, Some(&profile)).expect("projects");
+    let value = serde_json::to_value(&out).unwrap();
+    let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec![
+            "email",
+            "extraLinks",
+            "fullName",
+            "github",
+            "linkedin",
+            "location",
+            "phone",
+            "website",
+        ]
+    );
+    assert!(
+        !value.to_string().contains("data:image"),
+        "the candidate photo must never cross this wire"
+    );
 }
 
 #[test]

@@ -80,6 +80,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Listener, Manager};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 
 use super::assist_registry::start_and_register;
 use super::msg;
@@ -314,6 +315,84 @@ pub(super) fn spawn_answer_assist(
         .await;
         let _ = out_tx.send(Message::text(reply));
     });
+}
+
+/// Drive an `agent.query` on its OWN task, decoupled from the connection's
+/// read loop (finding #4, security review — the same reason
+/// [`spawn_answer_assist`] exists above): `best-matches` can run
+/// multi-second (see `agent_read`'s throttle doc), and awaiting it INLINE in
+/// the read loop would stall `reader.next()` — including this connection's
+/// own `token.revoked` observation, so an in-flight read could complete on
+/// an already-revoked token. Unlike `answer.assist`, the reply here is a
+/// single non-streamed `agent.result` frame — no chunking, no per-connection
+/// registry — so this is a plain spawn-and-reply.
+///
+/// `cancel` is `handle_connection`'s own per-connection [`CancellationToken`]
+/// (MAJOR fix — security review round 2), cancelled once at every teardown
+/// path — a token revocation, but also a normal close, a read error, or a
+/// stalled writer — the same single call site that already runs
+/// `AssistStreamRegistry::cancel_all`. Without it, spawning this task off
+/// the read loop closed the "stalls the loop" hole above but reopened a
+/// narrower one: nothing ever told an in-flight query the connection it was
+/// spawned for was gone, so it could still `out_tx.send` an `agent.result`
+/// after this connection's own `token.revoked`/close frames were already
+/// enqueued — a stale reply on a wire the caller has already been told to
+/// stop trusting — and it kept `out_tx`'s clone (and so `run_writer`'s
+/// reason to keep running) alive for as long as the query took, independent
+/// of whether anyone was still listening.
+///
+/// **This is NOT [`spawn_answer_assist`]'s mechanism reused** — that
+/// function's cancellation (`AssistStreamRegistry` + `job_cancel`) stops a
+/// STREAMING network call promptly because `Completer::stream_complete`
+/// checks `is_cancelled` at every chunk boundary; `handle_agent_query`'s
+/// `best-matches` path is one `spawn_blocking` CPU pass with no such
+/// checkpoint, so cancelling here cannot preempt compute already running on
+/// its own thread — it only stops that compute's result from ever being
+/// sent, and frees this task (and `out_tx`) immediately instead of only once
+/// the compute finishes. Worth naming plainly: `spawn_answer_assist` itself
+/// still unconditionally `out_tx.send`s its terminal reply after
+/// cancellation too (only the underlying job stops early) — the SAME
+/// stale-reply-after-teardown gap this fix closes for `agent.query`, left
+/// open there. Not fixed here (out of this finding's scope); flagged for a
+/// follow-up rather than silently copied into a second call site.
+pub(super) fn spawn_agent_query(
+    app: AppHandle,
+    req_id: String,
+    payload: Value,
+    out_tx: UnboundedSender<Message>,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        let query = super::agent_read::handle_agent_query(&app, &req_id, &payload);
+        if let Some(reply) = agent_query_or_cancelled(query, &cancel).await {
+            let _ = out_tx.send(Message::text(reply));
+        }
+        // `None`: the connection tore down before the query finished — see
+        // this fn's own doc. Nothing left to do; `out_tx`'s clone this task
+        // held is dropped right here instead of after the (possibly still
+        // running) compute finishes.
+    });
+}
+
+/// Race `query` against `cancel` firing first. `None` when `cancel` wins —
+/// the caller must never act on a query that raced a torn-down connection;
+/// `Some(query`'s own output`)` when the query wins, the normal case.
+///
+/// Generic over `Q` (rather than `handle_agent_query`'s own concrete future)
+/// so this race's OUTCOME is directly unit-testable without a live
+/// `AppHandle` (this crate has no `tauri::test` mock-app harness) — mirrors
+/// [`next_step`]'s existing generic-over-futures pattern.
+pub(super) async fn agent_query_or_cancelled<Q>(
+    query: Q,
+    cancel: &CancellationToken,
+) -> Option<Q::Output>
+where
+    Q: std::future::Future,
+{
+    tokio::select! {
+        () = cancel.cancelled() => None,
+        reply = query => Some(reply),
+    }
 }
 
 /// The synchronous half of [`spawn_answer_assist`] — factored out so it is
@@ -933,6 +1012,64 @@ mod tests {
             panic!("expected NextStep::Frame — the writer must never win while a frame is ready");
         };
         assert_eq!(value, Some(7));
+    }
+
+    // ── `agent_query_or_cancelled` (MAJOR fix — security review round 2):
+    // an in-flight `agent.query` must never send its reply once this
+    // connection's cancellation token has fired — see `spawn_agent_query`'s
+    // doc for the token-revocation scenario this closes. ────────────────────
+
+    #[tokio::test]
+    async fn agent_query_or_cancelled_suppresses_the_reply_once_cancelled() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        // The query future here never resolves — proof this doesn't wait for
+        // it once `cancel` has already fired. Bounded well past any
+        // reasonable budget so a regression that ignores `cancel` hangs this
+        // test instead of the whole suite.
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            agent_query_or_cancelled(std::future::pending::<String>(), &cancel),
+        )
+        .await;
+        assert_eq!(
+            outcome.ok(),
+            Some(None),
+            "a cancelled connection must suppress the query's reply, never send it"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_query_or_cancelled_returns_the_reply_when_never_cancelled() {
+        // The normal case, unaffected by this fix: an un-cancelled
+        // connection must still deliver the query's own result unchanged.
+        let cancel = CancellationToken::new();
+        let outcome =
+            agent_query_or_cancelled(std::future::ready("agent.result".to_string()), &cancel).await;
+        assert_eq!(outcome, Some("agent.result".to_string()));
+    }
+
+    #[tokio::test]
+    async fn agent_query_or_cancelled_races_a_cancel_that_fires_mid_flight() {
+        // A cancel arriving WHILE the query is still in flight (not already
+        // cancelled before the race even starts) — the realistic timing for
+        // a token revoked mid-`best-matches`.
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            cancel_clone.cancel();
+        });
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            agent_query_or_cancelled(std::future::pending::<String>(), &cancel),
+        )
+        .await;
+        assert_eq!(
+            outcome.ok(),
+            Some(None),
+            "a cancel that fires mid-flight must still suppress the reply"
+        );
     }
 
     // ── streaming: forwardable_delta / assist frame builders ────────────────

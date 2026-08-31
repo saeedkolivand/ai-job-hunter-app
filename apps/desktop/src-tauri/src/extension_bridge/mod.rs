@@ -57,7 +57,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppError;
 use crate::events::{emit_event, EXTENSION_BRIDGE_CHANGED};
 use crate::observability::sanitize_reason;
 
@@ -66,6 +66,15 @@ use self::persist::{
     persist_ai_assist_optin, persist_autofill_optin, persist_token,
 };
 
+/// `ajh-tauri agent <verb>` — the CLIENT half of the agent/CLI surface (issue
+/// #1084 PR 1): argv parsing, the v2-handshake-carrying bridge client, and
+/// process exit codes. `pub` (not plain `mod`) because `lib::
+/// run_agent_cli_if_invoked` calls into it from OUTSIDE this module tree,
+/// exactly like [`native_host`] below. See its own module doc.
+pub mod agent_cli;
+/// The `agent.query` read-only agent/CLI surface (issue #1084 PR 1) — see its
+/// module doc.
+mod agent_read;
 mod answer_assist;
 mod answer_rewrite;
 mod answers_save;
@@ -74,6 +83,8 @@ mod applied_check;
 mod assist_registry;
 pub mod auth;
 mod autofill_check;
+/// `profile.get` → `profile.result` — see its own module doc.
+mod autofill_profile;
 mod autotrack;
 pub mod handshake;
 mod import_flow;
@@ -194,6 +205,11 @@ pub struct BridgeState {
     /// near-instant handshake) can never reset the burst allowance. See
     /// [`match_live::MatchLiveThrottle`]'s doc.
     match_live_limiter: Mutex<match_live::MatchLiveThrottle>,
+    /// `agent.query` token-bucket throttle(s) — shared across EVERY
+    /// connection for this pairing for the SAME reconnect-proof reason as
+    /// `match_live_limiter`; a fresh CLI process/socket per invocation must
+    /// not reset the bucket. See [`agent_read::AgentQueryThrottle`]'s doc.
+    agent_query_limiter: Mutex<agent_read::AgentQueryThrottle>,
     /// Fan-out signal telling every LIVE connection task that the pairing
     /// token is being rotated (see [`Self::regenerate_token`]). A broadcast —
     /// not a per-connection registry — because that is exactly the shape the
@@ -234,6 +250,7 @@ impl BridgeState {
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
             autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
+            agent_query_limiter: Mutex::new(agent_read::AgentQueryThrottle::new()),
             // Capacity 1: the signal is a bare "rotate happened" edge, so a
             // receiver that fell behind two back-to-back rotations gets
             // `RecvError::Lagged` — which the read loop treats exactly like the
@@ -370,6 +387,13 @@ impl BridgeState {
     /// the burst).
     pub fn try_acquire_match_live(&self) -> bool {
         self.match_live_limiter.lock().try_acquire()
+    }
+
+    /// Try to consume one `agent.query` token for `resource` — `best-matches`
+    /// draws from its OWN tighter bucket; every other resource shares the
+    /// cheap-read bucket. See [`agent_read::AgentQueryThrottle`]'s doc.
+    pub(super) fn try_acquire_agent(&self, resource: &str) -> bool {
+        self.agent_query_limiter.lock().try_acquire(resource)
     }
 
     fn set_port(&self, port: Option<u16>) {
@@ -566,6 +590,13 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     use tokio_tungstenite::tungstenite::http::StatusCode;
 
     let dev_origins = crate::platform::config::extension_dev_origins();
+    // Captured by the callback below (it only borrows `req`, which does not
+    // outlive the handshake) and read once the handshake resolves — this is
+    // how `advance_authenticated` learns whether THIS socket is the CLI
+    // (finding #5, security review), since nothing else threads the
+    // handshake `Origin` this far.
+    let is_agent_cli_origin = std::sync::Arc::new(Mutex::new(false));
+    let origin_out = is_agent_cli_origin.clone();
     // Origin allowlist enforced IN the handshake: a disallowed `Origin` is
     // refused with 403 before the socket upgrades, so a non-extension page never
     // reaches the frame loop. The closure's `Result<_, ErrorResponse>` is the
@@ -579,6 +610,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             .get("origin")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
+        *origin_out.lock() = origin.trim() == auth::AGENT_CLI_ORIGIN;
         if auth::is_allowed_origin(origin, &dev_origins) {
             Ok(res)
         } else {
@@ -607,6 +639,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 return;
             }
         };
+    let is_agent_cli_origin = *is_agent_cli_origin.lock();
 
     let state = match app.try_state::<BridgeState>() {
         Some(s) => s,
@@ -656,6 +689,13 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // `stream::AssistStreamRegistry`'s doc for why this is per-connection
     // rather than a field on the global `BridgeState`.
     let assist_streams = std::sync::Arc::new(stream::AssistStreamRegistry::default());
+    // Cancels every in-flight `agent.query` spawned for THIS connection
+    // (MAJOR fix — security review round 2) — cancelled once, below, at the
+    // SAME shared teardown site as `assist_streams.cancel_all`, so it covers
+    // every way this loop can end (a token revocation, but also a normal
+    // close, a read error, or a stalled writer), not just revocation. See
+    // `stream::spawn_agent_query`'s doc for what this closes.
+    let agent_query_cancel = tokio_util::sync::CancellationToken::new();
 
     loop {
         let frame =
@@ -744,7 +784,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         // frame closes; an outdated first frame gets `update_required` then close;
         // a failed proof closes without marking connected; only an authenticated
         // import/profile frame reaches `app` state.
-        let reply = match advance_frame(&state, &conn, &text) {
+        let reply = match advance_frame_from(&state, &conn, &text, is_agent_cli_origin) {
             FrameDecision::CloseOverCap => {
                 log::warn!("[extension_bridge] frame over size cap — closing");
                 break;
@@ -820,6 +860,28 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 Some(match_live::handle_match_live(&app, &req_id, &payload).await)
             }
             FrameDecision::MatchLive { req_id, .. } => Some(match_live::throttled_reply(&req_id)),
+            FrameDecision::AgentQuery { req_id, payload }
+                if state.try_acquire_agent(agent_read::resource_name(&payload)) =>
+            {
+                // Spawned (mirrors `AnswerAssist` below — the HIGH fix this
+                // finding reuses): `best-matches` can run multi-second, and
+                // awaiting it inline here would stall THIS loop's
+                // `reader.next()` — including its own `token.revoked`
+                // observation, so an in-flight read could complete on an
+                // already-revoked token. See `stream::spawn_agent_query`.
+                stream::spawn_agent_query(
+                    app.clone(),
+                    req_id,
+                    payload,
+                    out_tx.clone(),
+                    agent_query_cancel.clone(),
+                );
+                None
+            }
+            FrameDecision::AgentQuery { req_id, payload } => Some(agent_read::throttled_reply(
+                &req_id,
+                agent_read::resource_name(&payload),
+            )),
             FrameDecision::AnswerAssist { req_id, payload } => {
                 // Spawned onto its OWN task (see `stream::spawn_answer_assist`)
                 // so a multi-second stream never blocks THIS loop's
@@ -861,6 +923,12 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // socket's own registry — see `stream`'s module doc for why that's
     // never a global `BridgeState` field).
     assist_streams.cancel_all(&app);
+    // Same reasoning, for every in-flight `agent.query` this connection
+    // spawned (MAJOR fix — security review round 2): suppresses its reply
+    // and releases this task's hold on `out_tx` immediately, rather than
+    // only once a slow `best-matches` finishes — see
+    // `stream::spawn_agent_query`'s doc.
+    agent_query_cancel.cancel();
     // Only a socket that actually reached `Authenticated` (and so incremented
     // the count above) decrements it here — an unauthenticated socket's
     // teardown (a rejected origin, a failed proof, an over-cap/outdated first
@@ -979,6 +1047,10 @@ enum FrameDecision {
     /// by `req_id` on THIS connection's own
     /// [`stream::AssistStreamRegistry`]. No reply is ever sent for this frame.
     AssistCancel { req_id: String },
+    /// An authenticated `agent.query` (issue #1084 PR 1) to answer through
+    /// [`agent_read::handle_agent_query`]. Carries the payload verbatim so
+    /// the handler can read `resource` (+ `url`/`limit`).
+    AgentQuery { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -986,7 +1058,19 @@ enum FrameDecision {
 /// aside from reading the pairing token off [`BridgeState`] for the
 /// constant-time proof check; the loop performs the I/O and the app-stateful
 /// import/profile work. See [`ConnState`] for the state transitions.
-fn advance_frame(state: &BridgeState, conn: &ConnState, text: &str) -> FrameDecision {
+///
+/// `is_agent_cli` is THIS connection's own handshake `Origin`, resolved once
+/// by `handle_connection` (finding #5, security review) — never re-derived
+/// here, since only the WS handshake ever sees the raw header. Production
+/// (`handle_connection`) calls this directly; every EXISTING test in this
+/// crate exercises extension-origin traffic and goes through [`advance_frame`]
+/// below instead, so none of them had to learn a new parameter.
+fn advance_frame_from(
+    state: &BridgeState,
+    conn: &ConnState,
+    text: &str,
+    is_agent_cli: bool,
+) -> FrameDecision {
     if text.len() > MAX_FRAME_BYTES {
         return FrameDecision::CloseOverCap;
     }
@@ -1010,8 +1094,15 @@ fn advance_frame(state: &BridgeState, conn: &ConnState, text: &str) -> FrameDeci
             server_nonce,
             client_nonce,
         } => advance_auth(state, kind, &req_id, payload, server_nonce, client_nonce),
-        ConnState::Authenticated => advance_authenticated(kind, req_id, &envelope),
+        ConnState::Authenticated => advance_authenticated(kind, req_id, &envelope, is_agent_cli),
     }
+}
+
+/// [`advance_frame_from`] with `is_agent_cli: false` — extension-origin
+/// traffic, the shape every test in this crate already exercises.
+#[cfg(test)]
+fn advance_frame(state: &BridgeState, conn: &ConnState, text: &str) -> FrameDecision {
+    advance_frame_from(state, conn, text, false)
 }
 
 /// Handshake step 1: the FIRST frame must be a valid protocol-2 `hello`. A legacy
@@ -1077,8 +1168,14 @@ fn advance_auth(
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
 /// `status.update` / `answers.save` / `answers.suggest` / `match.live` /
 /// `answer.assist` / `assist.cancel`; an unknown type gets an `import.result`
-/// error reply (never a panic).
-fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
+/// error reply (never a panic). `is_agent_cli` gates `agent.query` — see
+/// `msg::AGENT_QUERY`'s doc (finding #5, security review).
+fn advance_authenticated(
+    kind: &str,
+    req_id: String,
+    envelope: &Value,
+    is_agent_cli: bool,
+) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
@@ -1125,6 +1222,21 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
         // Cancel an in-flight stream — no payload to read, `req_id` names the
         // target (see `msg::ASSIST_CANCEL`'s doc).
         msg::ASSIST_CANCEL => FrameDecision::AssistCancel { req_id },
+        // The read-only agent/CLI surface (issue #1084 PR 1) — CLI-agent
+        // only. `is_agent_cli` is a spoofable label, not a boundary (the
+        // HMAC handshake is); it stops a non-colluding case (a future
+        // extension bug, a compromised update) from reaching this surface
+        // through the extension's own already-authenticated session.
+        msg::AGENT_QUERY if !is_agent_cli => {
+            FrameDecision::Reply(agent_read::origin_refused_reply(
+                &req_id,
+                envelope.get("payload").unwrap_or(&Value::Null),
+            ))
+        }
+        msg::AGENT_QUERY => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::AgentQuery { req_id, payload }
+        }
         // Unknown message types — acknowledged as an error, never panic.
         other => FrameDecision::Reply(import_flow::result_reply(
             &req_id,
@@ -1168,145 +1280,15 @@ fn update_required_reply(req_id: &str) -> String {
     .to_string()
 }
 
-// ── Assisted autofill (profile.get → profile.result) ──────────────────────────
-
-/// The contact-profile fields sent to the extension for assisted autofill. A
-/// flat, string-only projection of [`crate::contact_profile::ContactProfile`]
-/// (location collapsed to its default free-text string) — the extension fills
-/// matching empty form fields from it and never persists it. Every field is
-/// optional (a sparse profile is normal); absent fields are omitted from the wire
-/// payload entirely.
-#[derive(Debug, Default, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AutofillProfile {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    full_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    email: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    phone: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    location: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    linkedin: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    github: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    website: Option<String>,
-    /// Additional labelled links (Portfolio, Dribbble, Stack Overflow, …) beyond
-    /// the named platform fields — see [`clean_extra_links`] for the projection
-    /// rules. Additive/optional on the wire: an old extension ignores the key,
-    /// and it is omitted entirely (not `[]`) when there is nothing to send, so
-    /// an old desktop's replies (which never carry it) parse identically.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    extra_links: Vec<crate::contact_profile::ContactLink>,
-}
-
-/// Cap on the number of extra links projected to the extension — a form has no
-/// use for an unbounded list, and this bounds the reply size.
-const MAX_EXTRA_LINKS: usize = 10;
-
-/// Filter + cap the stored extra links for the wire: drop an entry with an empty
-/// label, drop a url that (after trimming) is empty or not `http(s)`, then keep
-/// at most [`MAX_EXTRA_LINKS`] of what remains, in order. `photo` is never
-/// projected at all — unrelated to this list and always dropped.
-fn clean_extra_links(
-    links: &[crate::contact_profile::ContactLink],
-) -> Vec<crate::contact_profile::ContactLink> {
-    links
-        .iter()
-        .filter_map(|link| {
-            let label = link.label.trim();
-            let url = link.url.trim();
-            if label.is_empty() {
-                return None;
-            }
-            let lower = url.to_ascii_lowercase();
-            if !(lower.starts_with("http://") || lower.starts_with("https://")) {
-                return None;
-            }
-            Some(crate::contact_profile::ContactLink {
-                label: label.to_string(),
-                url: url.to_string(),
-            })
-        })
-        .take(MAX_EXTRA_LINKS)
-        .collect()
-}
-
-impl AutofillProfile {
-    /// Project a stored [`ContactProfile`] to the flat autofill shape. Empty /
-    /// whitespace-only values are dropped so the extension never fills a blank.
-    fn from_contact(p: &crate::contact_profile::ContactProfile) -> Self {
-        fn clean(v: &Option<String>) -> Option<String> {
-            v.as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-        }
-        Self {
-            full_name: clean(&p.full_name),
-            email: clean(&p.email),
-            phone: clean(&p.phone),
-            // Collapse the localized location to its default string; the extension
-            // fills a single free-text location field.
-            location: p
-                .location
-                .as_ref()
-                .map(|l| l.default.trim().to_string())
-                .filter(|s| !s.is_empty()),
-            linkedin: clean(&p.linkedin),
-            github: clean(&p.github),
-            website: clean(&p.website),
-            extra_links: clean_extra_links(&p.extra_links),
-        }
-    }
-}
-
-/// The opt-in-gated core of a `profile.get`: refuse with a clear, actionable
-/// error when autofill is off (never silently return nothing), else project the
-/// profile. Pure (no `AppHandle`) so the consent gate is unit-testable.
-fn resolve_profile(
-    enabled: bool,
-    profile: Option<&crate::contact_profile::ContactProfile>,
-) -> AppResult<AutofillProfile> {
-    if !enabled {
-        return Err(AppError::Validation(AUTOFILL_OFF_MESSAGE.to_string()));
-    }
-    let profile =
-        profile.ok_or_else(|| AppError::Config("contact profile unavailable".to_string()))?;
-    Ok(AutofillProfile::from_contact(profile))
-}
-
-/// Build a `profile.result` envelope (success carries the flat profile; refusal /
-/// failure carries `error`). Mirrors [`import_flow::result_reply`] for the
-/// import path.
-fn profile_result_reply(req_id: &str, outcome: AppResult<AutofillProfile>) -> String {
-    let payload = match outcome {
-        Ok(p) => serde_json::to_value(&p).unwrap_or_else(|_| json!({})),
-        Err(e) => json!({ "error": e.to_string() }),
-    };
-    json!({
-        "type": msg::PROFILE_RESULT,
-        "reqId": req_id,
-        "payload": payload,
-    })
-    .to_string()
-}
-
-/// Answer an authenticated `profile.get`: read the opt-in + the contact profile
-/// off app state and return a ready-to-send `profile.result` reply. Fetch-fresh —
-/// nothing is cached; the desktop is the sole owner of the PII.
-fn handle_profile(app: &AppHandle, req_id: &str) -> String {
-    let enabled = app
-        .try_state::<BridgeState>()
-        .map(|s| s.autofill_enabled())
-        .unwrap_or(false);
-    let profile = app
-        .try_state::<crate::contact_profile::ContactProfileStore>()
-        .map(|s| s.get());
-    profile_result_reply(req_id, resolve_profile(enabled, profile.as_ref()))
-}
+// ── Assisted autofill (profile.get → profile.result) — extracted to
+// `autofill_profile` (R8 relief); re-exported below so this module's own
+// existing reference (`handle_connection`'s `Profile` arm) keeps resolving
+// unchanged. The rest are re-exported ONLY under `#[cfg(test)]` — `test`'s
+// `use super::*;` is their sole OTHER caller; re-exporting them
+// unconditionally would warn `unused_imports` in a release build. ─────────
+use autofill_profile::{handle_profile, profile_outcome};
+#[cfg(test)]
+use autofill_profile::{profile_result_reply, resolve_profile, AutofillProfile, MAX_EXTRA_LINKS};
 
 /// Manage the bridge state and register its factory-reset hook. Returns the
 /// state handle so `start` can be wired right after. Mirrors the

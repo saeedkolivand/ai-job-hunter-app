@@ -3,6 +3,7 @@ pub mod chrome;
 pub mod config;
 pub mod linux_appimage;
 pub mod process;
+pub mod windows_console;
 
 pub use chrome::{
     detect_chromium_user_data_roots, detect_system_chrome, BrowserLaunch, ChromiumBrowser,

@@ -30,11 +30,13 @@ Domain pairs: a write-capable **author** implements, an independent **critic** a
 | AI providers, routing, embeddings, prompts, streaming       | `ai-provider-author`            | `ai-provider-expert`                             |
 | Scraping, browser automation, registries                    | `scraping-applier-author`       | `scraping-applier-expert`                        |
 | Browser extension + bridge + protocol                       | `extension-author`              | `extension-reviewer`                             |
+| Agent CLI surface (`ajh-tauri agent …`)                     | `agent-cli-author`              | `agent-cli-reviewer`                             |
 | Tests                                                       | `test-author`                   | `testing-reviewer`                               |
 | Code quality (on-demand)                                    | `code-quality-author`           | `code-quality-reviewer`                          |
+| Dead-code removal (on-demand, whole monorepo)               | `cleanup` (report-first)        | the owning domain critic                         |
 | Docs / knowledge / ADRs / lessons / release                 | `project-steward` (sole writer) | `project-steward`                                |
 
-Cross-cutting critics (no author; fixes route to the owning domain author): `tauri-security-reviewer` (Secondary on risk-bearing changes), `performance-profiler` (perf-sensitive only), `cleanup` (dead-code, pre-PR), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (per-finding judge for /review, ≤5 spawns). The dormant GL fleet + skills live in `.claude/dormant/` (no GL surface since ADR-0017). Every critic loads `.claude/skills/critic-contract/SKILL.md`; every author loads `author-contract`.
+Cross-cutting critics (no author; fixes route to the owning domain author): `tauri-security-reviewer` (Secondary on risk-bearing changes), `performance-profiler` (perf-sensitive only), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (per-finding judge for /review, ≤5 spawns). The dormant GL fleet + skills live in `.claude/dormant/` (no GL surface since ADR-0017). Every critic loads `.claude/skills/critic-contract/SKILL.md`; every author loads `author-contract` — an agent holding `Edit`/`Write` is an author for this rule regardless of where it sits in the table (`cleanup` was grouped with the critics and so loaded neither).
 
 **Per-change defaults (cost-tiered, ADR-025):**
 
@@ -52,6 +54,6 @@ Cross-cutting critics (no author; fixes route to the owning domain author): `tau
 - **Lessons** (`.claude/memory/lessons.jsonl`): only `project-steward` writes; others propose via `LESSON · category · Context/Decision/Outcome`.
 - **Cross-session recall**: agents may call `mcp__mcp-search` (claude-mem plugin; absent if not installed). Honor `docs/` path-privacy + `<private>` for PII.
 
-**Model & effort tiering** (per-agent frontmatter; aliases track the current family): Opus for last-line critics: `pr-reviewer` + `tauri-security-reviewer` pin `effort: xhigh`; the other Opus critics (`rust-backend-architect`, `ai-provider-expert`, `job-match-expert`) run `high`. Sonnet for authors + balanced critics (default `high`). Haiku for `project-steward` + `finding-verifier` (`low` fine for mechanical runs). Escalate a spawn to Opus for genuinely hard work; to Fable only for hard, ambiguous, cross-domain work; never as a frontmatter default, never for security review.
+**Model & effort tiering** (per-agent frontmatter; aliases track the current family): Opus for last-line critics: `pr-reviewer` + `tauri-security-reviewer` pin `effort: xhigh`; the other Opus critics (`rust-backend-architect`, `ai-provider-expert`, `job-match-expert`, `agent-cli-reviewer`) run `high`. Sonnet for authors + balanced critics (default `high`). Haiku for `project-steward` + `finding-verifier` (`low` fine for mechanical runs). Escalate a spawn to Opus for genuinely hard work; to Fable only for hard, ambiguous, cross-domain work; never as a frontmatter default, never for security review.
 
 **Context priority:** codegraph/graphify → source → `docs/knowledge/` → lessons. Read the minimum; stop at ~90% confidence.

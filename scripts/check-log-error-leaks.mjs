@@ -195,7 +195,7 @@ const ALLOWLIST = {
       "'could not read the linkedin response') before returning — no URL/host " +
       'reaches this call site.',
   },
-  'extension_bridge/register.rs:114': {
+  'extension_bridge/register.rs:138': {
     status: 'safe',
     reason:
       'std::env::current_exe() takes no input path to leak — a failure here is a ' +
@@ -207,7 +207,7 @@ const ALLOWLIST = {
       'tokio::runtime::Builder::build() failure is a generic OS-thread/resource error; ' +
       'building a runtime touches no filesystem path.',
   },
-  'extension_bridge/mod.rs:483': {
+  'extension_bridge/mod.rs:507': {
     status: 'safe',
     reason:
       'TcpListener::accept() failure is a local socket-resource error (e.g. EMFILE); it ' +

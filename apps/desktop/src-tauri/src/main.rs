@@ -23,5 +23,16 @@ fn main() {
     if ajh_tauri::run_native_host_if_invoked() {
         return;
     }
+
+    // `agent <verb>` short-circuit (issue #1084 PR 1): same reasoning as the
+    // native-host one above — Tauri + single-instance must never boot for
+    // this launch either, or the running GUI instance would swallow this
+    // argv and pop its window instead of the CLI ever printing to stdout.
+    // MUST stay below the native-host check and above `run()` — see
+    // `run_agent_cli_if_invoked`'s doc.
+    if let Some(code) = ajh_tauri::run_agent_cli_if_invoked() {
+        std::process::exit(code);
+    }
+
     ajh_tauri::run();
 }
