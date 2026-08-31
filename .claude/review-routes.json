@@ -3,26 +3,94 @@
   "_comment": "Primary-owner routing for the Stop review-gate. First matching primary glob wins (order matters). Secondaries are added only when their globs match AND there is room under `cap`. Repo-relative globs matched against `git diff --name-only`.",
   "cap": 3,
   "primary": [
-    { "glob": "**/*.test.*", "owner": "testing-reviewer" },
-    { "glob": "**/*.spec.*", "owner": "testing-reviewer" },
-    { "glob": "apps/desktop/src-tauri/tests/**", "owner": "testing-reviewer" },
-    { "glob": "**/e2e/**", "owner": "testing-reviewer" },
-    { "glob": "apps/desktop/src-tauri/src/commands/match_resume.rs", "owner": "job-match-expert" },
-    { "glob": "apps/desktop/src-tauri/src/cover_letter/**", "owner": "job-match-expert" },
-    { "glob": "apps/desktop/src-tauri/src/recommend/**", "owner": "job-match-expert" },
-    { "glob": "apps/desktop/src-tauri/src/validate/**", "owner": "job-match-expert" },
-    { "glob": "apps/desktop/src-tauri/src/commands/ai_provider/**", "owner": "ai-provider-expert" },
-    { "glob": "apps/desktop/src-tauri/src/commands/ai/**", "owner": "ai-provider-expert" },
-    { "glob": "apps/desktop/src-tauri/src/documents/**", "owner": "ai-provider-expert" },
-    { "glob": "packages/prompts/**", "owner": "ai-provider-expert" },
-    { "glob": "apps/desktop/src-tauri/src/export/**", "owner": "resume-export-expert" },
-    { "glob": "apps/desktop/src-tauri/src/model/**", "owner": "resume-export-expert" },
-    { "glob": "apps/desktop/src-tauri/src/theme/**", "owner": "resume-export-expert" },
-    { "glob": "apps/desktop/src-tauri/src/locale/**", "owner": "resume-export-expert" },
-    { "glob": "apps/desktop/src-tauri/src/contact_profile/**", "owner": "resume-export-expert" },
-    { "glob": "apps/desktop/src-tauri/src/scraping/**", "owner": "scraping-applier-expert" },
-    { "glob": "apps/extension/**", "owner": "extension-reviewer" },
-    { "glob": "apps/desktop/src-tauri/src/extension_bridge/**", "owner": "extension-reviewer" },
+    {
+      "glob": "apps/desktop/src-tauri/src/extension_bridge/agent_read.rs",
+      "owner": "agent-cli-reviewer"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs",
+      "owner": "agent-cli-reviewer"
+    },
+    {
+      "glob": "**/*.test.*",
+      "owner": "testing-reviewer"
+    },
+    {
+      "glob": "**/*.spec.*",
+      "owner": "testing-reviewer"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/tests/**",
+      "owner": "testing-reviewer"
+    },
+    {
+      "glob": "**/e2e/**",
+      "owner": "testing-reviewer"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/commands/match_resume.rs",
+      "owner": "job-match-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/cover_letter/**",
+      "owner": "job-match-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/recommend/**",
+      "owner": "job-match-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/validate/**",
+      "owner": "job-match-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/commands/ai_provider/**",
+      "owner": "ai-provider-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/commands/ai/**",
+      "owner": "ai-provider-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/documents/**",
+      "owner": "ai-provider-expert"
+    },
+    {
+      "glob": "packages/prompts/**",
+      "owner": "ai-provider-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/export/**",
+      "owner": "resume-export-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/model/**",
+      "owner": "resume-export-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/theme/**",
+      "owner": "resume-export-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/locale/**",
+      "owner": "resume-export-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/contact_profile/**",
+      "owner": "resume-export-expert"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/scraping/**",
+      "owner": "scraping-applier-expert"
+    },
+    {
+      "glob": "apps/extension/**",
+      "owner": "extension-reviewer"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/extension_bridge/**",
+      "owner": "extension-reviewer"
+    },
     {
       "glob": "apps/desktop/src-tauri/src/commands/extension_bridge.rs",
       "owner": "extension-reviewer"
@@ -31,19 +99,58 @@
       "glob": "packages/shared/src/ipc/extension-protocol-constants.ts",
       "owner": "extension-reviewer"
     },
-    { "glob": "apps/desktop/src/renderer/**", "owner": "frontend-reviewer" },
-    { "glob": "packages/ui/**", "owner": "frontend-reviewer" },
-    { "glob": "packages/translations/**", "owner": "frontend-reviewer" },
-    { "glob": "packages/test-ids/**", "owner": "frontend-reviewer" },
-    { "glob": "apps/desktop/src/**", "owner": "frontend-reviewer" },
-    { "glob": "apps/landing/**", "owner": "frontend-reviewer" },
-    { "glob": "apps/desktop/src-tauri/src/**", "owner": "rust-backend-architect" },
-    { "glob": "packages/shared/**", "owner": "rust-backend-architect" },
-    { "glob": ".claude/hooks/**", "owner": "code-quality-reviewer" },
-    { "glob": ".claude/**", "owner": "project-steward" },
-    { "glob": "docs/**", "owner": "project-steward" },
-    { "glob": "scripts/**", "owner": "project-steward" },
-    { "glob": ".github/**", "owner": "project-steward" }
+    {
+      "glob": "apps/desktop/src/renderer/**",
+      "owner": "frontend-reviewer"
+    },
+    {
+      "glob": "packages/ui/**",
+      "owner": "frontend-reviewer"
+    },
+    {
+      "glob": "packages/translations/**",
+      "owner": "frontend-reviewer"
+    },
+    {
+      "glob": "packages/test-ids/**",
+      "owner": "frontend-reviewer"
+    },
+    {
+      "glob": "apps/desktop/src/**",
+      "owner": "frontend-reviewer"
+    },
+    {
+      "glob": "apps/landing/**",
+      "owner": "frontend-reviewer"
+    },
+    {
+      "glob": "apps/desktop/src-tauri/src/**",
+      "owner": "rust-backend-architect"
+    },
+    {
+      "glob": "packages/shared/**",
+      "owner": "rust-backend-architect"
+    },
+    {
+      "glob": ".claude/hooks/**",
+      "owner": "code-quality-reviewer"
+    },
+    {
+      "glob": ".claude/**",
+      "owner": "project-steward"
+    },
+    {
+      "glob": "docs/**",
+      "owner": "project-steward"
+    },
+    {
+      "glob": "scripts/**",
+      "owner": "project-steward"
+    },
+    {
+      "glob": ".github/**",
+      "owner": "project-steward"
+    }
   ],
   "secondary": [
     {
@@ -132,6 +239,10 @@
     ],
     "frontend": ["apps/desktop/src/renderer/**", "packages/ui/**", "apps/landing/**"],
     "rust": ["apps/desktop/src-tauri/src/**", "packages/shared/**"],
-    "testing": ["**/*.test.*", "**/*.spec.*", "apps/desktop/src-tauri/tests/**"]
+    "testing": ["**/*.test.*", "**/*.spec.*", "apps/desktop/src-tauri/tests/**"],
+    "agent-cli": [
+      "apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs",
+      "apps/desktop/src-tauri/src/extension_bridge/agent_read.rs"
+    ]
   }
 }

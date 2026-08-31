@@ -59,6 +59,7 @@ const PAIRS = [
   ['code-quality-author', 'code-quality-reviewer'],
   ['pdf-docx-generator', 'resume-export-expert'],
   ['extension-author', 'extension-reviewer'],
+  ['agent-cli-author', 'agent-cli-reviewer'],
   // webgl-author/shader-engineer/webgl-reviewer are dormant (.claude/dormant/agents/,
   // ADR-0017) — not part of the active roster this check enforces.
 ];

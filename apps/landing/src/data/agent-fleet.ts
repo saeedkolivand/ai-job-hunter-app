@@ -79,6 +79,14 @@ export const AUTHORS: readonly AgentTuple[] = [
     'Use code-quality-author to deduplicate the repeated scoring helpers.',
   ],
   [
+    'agent-cli-author',
+    'author',
+    'Implements the agent-facing CLI (`ajh-tauri agent …`) — verbs, argv parsing, the agent.query bridge resources, allowlist projections, and the machine-readable output contract an AI agent scripts against.',
+    '↔ critic agent-cli-reviewer (+ tauri-security-reviewer on destructive or data-exposing verbs)',
+    'apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs · agent_read.rs',
+    'Use agent-cli-author to add a new CLI verb.',
+  ],
+  [
     'extension-author',
     'author',
     'Implements the browser extension (MV3, Chrome + Firefox) and the desktop↔extension bridge (native-host + loopback WS, per-frame token auth) plus the shared wire protocol.',
@@ -176,6 +184,14 @@ export const CRITICS: readonly AgentTuple[] = [
     'Secondary alongside the domain Primary',
     'export/** · scraping/** · ai_provider/** · layout/** · measure/**',
     '/review-performance on the export hot path.',
+  ],
+  [
+    'agent-cli-reviewer',
+    'critic',
+    'Reviews the agent-facing CLI — nested projection passthroughs, output-contract stability, help/schema drift, throttle scope across fresh processes, and destructive-command ergonomics. Runs on a different model family from its author by design.',
+    'audits agent-cli-author (+ tauri-security-reviewer on destructive or data-exposing verbs)',
+    'agent_cli.rs · agent_read.rs · CLI verb tables',
+    '/review-agent-cli on the new verb.',
   ],
   [
     'extension-reviewer',
