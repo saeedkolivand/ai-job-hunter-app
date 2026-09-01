@@ -133,12 +133,40 @@ fn lexical_title_hit_outranks_a_description_only_hit() {
 }
 
 #[test]
-fn lexical_search_never_panics_on_operator_like_input() {
-    let docs = vec![doc("p1", "Engineer", "Acme", "Go and Kubernetes.")];
+fn lexical_search_treats_special_characters_as_literal_text_not_fts5_operators() {
+    let docs = vec![
+        doc(
+            "p1",
+            "Engineer",
+            "Acme",
+            "Experience with golang and Kubernetes.",
+        ),
+        doc("p2", "Designer", "Beta", "No backend experience."),
+    ];
     let index = LexicalIndex::build(&docs).expect("build must succeed");
-    // These would be FTS5 syntax (NOT, unbalanced quote, bare column filter)
-    // if not sanitized into quoted phrases first.
-    for query in ["-golang", "\"unterminated", "NEAR", "title:x"] {
+
+    // If "-golang" were parsed as FTS5's NOT operator, this would EXCLUDE p1
+    // (the only doc mentioning "golang") — a `let _ =` smoke test can't tell
+    // "returned nothing because it's a NOT query" from "returned nothing
+    // because sanitizing broke". Sanitized as a literal phrase, it finds p1.
+    assert_eq!(
+        index.search("-golang", 10),
+        vec!["p1".to_string()],
+        "a leading `-` must be literal text, not FTS5's NOT operator"
+    );
+
+    // If "title:x" were parsed as an FTS5 column filter, it would be a
+    // syntactically valid (if matchless) query; sanitized as a literal
+    // phrase, no document contains the literal string "title:x" either way —
+    // this only proves it didn't ERROR, paired with the assertion above which
+    // proves operators are actually neutralized.
+    assert!(
+        index.search("title:x", 10).is_empty(),
+        "a `column:` prefix must not error and must not match anything here"
+    );
+
+    // Never panics on the remaining operator-shaped input either.
+    for query in ["\"unterminated", "NEAR"] {
         let _ = index.search(query, 10);
     }
 }

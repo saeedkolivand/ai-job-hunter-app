@@ -11,11 +11,14 @@
 //! rather than adding a parallel path.
 //!
 //! **Degrade, never silently claim more than ran.** `semantic_scoring`
-//! defaults to FALSE, so a default install runs lexical-only; an embedding
-//! failure degrades the SAME way. Either way the reply's `arms` says exactly
-//! which of lexical/dense/rerank ran, so the UI can say "keyword results;
-//! semantic ranking unavailable" instead of presenting a lexical list as
-//! hybrid.
+//! defaults to FALSE, so a default install runs lexical-only — BOTH the
+//! dense arm and the rerank step read the SAME `semantic_on` preference
+//! (`should_rerank` gates the latter), because rerank reaches a provider
+//! just as much as the dense arm does and a search box must never spend
+//! against a paid provider with no opt-in. An embedding or rerank failure
+//! degrades the SAME way. Either way the reply's `arms` says exactly which
+//! of lexical/dense/rerank ran, so the UI can say "keyword results; semantic
+//! ranking unavailable" instead of presenting a lexical list as hybrid.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,7 +30,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
-use crate::documents::{embed_charged, AppEmbedder, DocumentStore, EmbedBudget, EmbeddingConfig};
+use crate::documents::{embed_with_config, DocumentStore, EmbeddingConfig};
 use crate::error::{AppError, AppResult};
 use crate::ipc_contracts::scrape::PostingsHybridSearchRequest;
 use crate::jobs::cancel::CancelRegistry;
@@ -37,6 +40,23 @@ use crate::retrieval::lexical::{LexicalDoc, LexicalIndex};
 use crate::retrieval::rerank::{RerankCandidate, Reranker, RERANK_TOP_K};
 use crate::retrieval::{dense, fusion};
 
+/// Required prefix on a renderer-minted `queryId`.
+///
+/// Every OTHER id sharing the `jobs::cancel::CancelRegistry` id space is
+/// minted by RUST: `db::new_job_id` (`job-{uuid}`), `resume_pipeline_run`
+/// (`run-{uuid}`). This is the one id the CALLER mints (it must exist before
+/// the search's promise resolves, so it can be handed to a later
+/// `jobs.cancel` call) — `CancelRegistry::register`'s "last writer wins
+/// needs no generation/handle" safety argument (`jobs/cancel.rs`) rests on
+/// every id being freshly minted per invocation with no way for two live
+/// registrations to share a key. A caller-chosen `queryId` with no
+/// distinguishing prefix could instead NAME a live run's own id
+/// (`job-<uuid>`/`run-<uuid>`) — replacing that run's cancellation token,
+/// and later deleting ITS slot when this search's own cleanup runs. The
+/// prefix makes the two id spaces disjoint by construction.
+const QUERY_ID_PREFIX: &str = "search-";
+/// Matches `PostingsHybridSearchRequestSchema.queryId`'s cap.
+const QUERY_ID_MAX_CHARS: usize = 64;
 /// Re-validated here even though `PostingsHybridSearchRequestSchema` already
 /// caps it — a Tauri command is an IPC boundary a non-UI caller (the agent
 /// CLI, a crafted extension message) can reach directly, bypassing the Zod
@@ -54,17 +74,24 @@ const MAX_LIMIT: usize = 50;
 /// How many of the LEXICAL arm's top-ranked postings get embedded for the
 /// dense arm, per search.
 ///
-/// Bounds the worst-case embed cost of one search the same way
-/// `commands::autopilot::rerank::SEMANTIC_RERANK_MAX` bounds its re-rank
-/// phase: a live cache can hold results from many boards at once, but the
-/// dense arm only needs to cover what the lexical pass already judged
-/// relevant enough to be a candidate — re-scoring the top 40 of those catches
-/// everything a fused top-20 rerank could plausibly promote, while capping
-/// one search at 40 embeds (plus the query) no matter how large the cache
-/// grows. When the lexical arm found NOTHING (zero hits — the dense arm's
-/// whole reason to exist, since it can find matches lexical search cannot),
-/// this instead takes the first 40 eligible postings in cache order, so a
-/// query with no literal keyword overlap still gets a dense pass.
+/// A COST bound, not a recall claim: it caps one search's dense-arm spend at
+/// 40 embeds (plus the query) regardless of how large the live cache grows —
+/// the same shape `commands::autopilot::rerank::SEMANTIC_RERANK_MAX` uses to
+/// bound ITS own re-rank phase.
+///
+/// **Recall limitation, stated plainly rather than hidden.** When the
+/// lexical arm found ANYTHING, the dense arm only RE-SCORES those same
+/// top-40 lexical hits (see [`dense_candidate_pool`]'s `if` branch) — it
+/// never embeds a posting lexical search missed, so it cannot surface one.
+/// Dense search only RETRIEVES beyond lexical's own results in the one case
+/// lexical found NOTHING at all (the `else` branch), where it instead embeds
+/// the first 40 eligible postings in cache order. So "hybrid search finds
+/// what keyword search cannot" is only true when keyword search finds
+/// literally zero matches; whenever it finds anything, dense can only
+/// RE-ORDER that same set, never widen it. Retrieving a broader dense
+/// candidate set independently of the lexical hits (embedding more of the
+/// corpus even when lexical found something) is a real spend/latency
+/// trade-off, deliberately left out of scope here.
 const DENSE_CANDIDATE_MAX: usize = 40;
 
 /// Per-candidate character budget when fencing a posting into the rerank
@@ -95,10 +122,10 @@ pub async fn scrape_hybrid_search(
             "query too long (max {QUERY_MAX_CHARS} chars)"
         )));
     }
-    if req.query_id.trim().is_empty() {
-        return Err(AppError::Validation(
-            "queryId must not be empty".to_string(),
-        ));
+    if req.query_id.len() > QUERY_ID_MAX_CHARS || !req.query_id.starts_with(QUERY_ID_PREFIX) {
+        return Err(AppError::Validation(format!(
+            "queryId must be at most {QUERY_ID_MAX_CHARS} chars and start with \"{QUERY_ID_PREFIX}\""
+        )));
     }
     if let Some(ids) = &req.eligible_ids {
         if ids.len() > ELIGIBLE_IDS_MAX {
@@ -117,9 +144,41 @@ pub async fn scrape_hybrid_search(
     let cancels = app.state::<Arc<CancelRegistry>>().inner().clone();
     let token = CancellationToken::new();
     cancels.register(&req.query_id, token.clone()).await;
-    let result = run_search(&app, &req, &query, limit, &token).await;
-    cancels.unregister(&req.query_id).await;
-    result
+    // RAII, not a plain `.await` after the search: a panic inside `run_search`
+    // (unwind) or the containing future being DROPPED (the async runtime
+    // tearing down mid-search) would otherwise skip `unregister` entirely and
+    // leak the slot in `CancelRegistry` for the life of the process — Drop
+    // always runs on both of those paths, a bare statement after an `.await`
+    // does not.
+    let _cancel_guard = CancelGuard {
+        registry: cancels,
+        id: req.query_id.clone(),
+    };
+    run_search(&app, &req, &query, limit, &token).await
+}
+
+/// See `_cancel_guard`'s call-site comment. `CancelRegistry::unregister` is
+/// async (it takes a `tokio::sync::Mutex`), so the sync `Drop` below can't
+/// call it directly — it spawns a short detached task instead. That means
+/// the slot's actual removal lands slightly AFTER this guard drops rather
+/// than before the command's promise resolves (unlike the old synchronous
+/// `.await`); harmless, since the only consequence of the slot still being
+/// visible for that brief window is that a `jobs_cancel` racing the tail end
+/// of an already-finished search cancels a token nobody is listening to
+/// anymore.
+struct CancelGuard {
+    registry: Arc<CancelRegistry>,
+    id: String,
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        let registry = self.registry.clone();
+        let id = std::mem::take(&mut self.id);
+        tauri::async_runtime::spawn(async move {
+            registry.unregister(&id).await;
+        });
+    }
 }
 
 // ── Wire response ────────────────────────────────────────────────────────────
@@ -337,6 +396,7 @@ async fn run_search(
             &eligible_by_id,
             &lexical_ranks,
             token,
+            generation0,
         )
         .await
     } else {
@@ -365,9 +425,10 @@ async fn run_search(
         .map(|(id, _)| id)
         .collect();
 
-    // ── Rerank (top RERANK_TOP_K of the fused order) ────────────────────────
+    // ── Rerank (top RERANK_TOP_K of the fused order, gated on the SAME
+    // preference as the dense arm — see `should_rerank`) ────────────────────
     let (final_order, rerank_status) =
-        maybe_rerank(app, query, &fused, &eligible_by_id, token).await;
+        maybe_rerank(app, query, &fused, &eligible_by_id, token, semantic_on).await;
 
     let arms = SearchArms {
         lexical: lexical_status,
@@ -393,27 +454,44 @@ async fn run_search(
 
 // ── Dense arm ────────────────────────────────────────────────────────────────
 
-/// Charges the shared per-provider daily ceiling once per ACTUAL embed round
-/// trip — the same [`EmbedBudget`] shape `commands::autopilot::rerank::
-/// RerankBudget` uses, duplicated rather than reused: that type is
-/// `pub(super)` to `commands::autopilot`, and this is a handful of lines.
-struct HybridEmbedBudget {
-    limiter: Arc<crate::limits::Limiter>,
-    provider: String,
-}
-
-impl EmbedBudget for HybridEmbedBudget {
-    fn charge_one_embed(&self) -> AppResult<()> {
-        self.limiter
-            .charge_provider_daily(&self.provider, crate::limits::PROVIDER_DAILY_MAX)
+/// One embed round-trip, raced against cancellation and routed through
+/// `documents::embed_with_config` — never `embed_charged`/`AppEmbedder`
+/// (`documents::embed`), which independently RE-READS `embedding_config()`
+/// on every call. `cfg` is read ONCE by the caller (`run_dense_arm`) and
+/// threaded through every call this makes, so the config that gets CHARGED
+/// here is provably the config that gets DISPATCHED to, even if
+/// `ai_set_embedding_config` lands mid-search — the exact #1087 finding 2
+/// shape `ai_embed`'s own doc comment (`commands/ai/mod.rs`) describes fixing
+/// for the direct `ai_embed` IPC path.
+///
+/// Racing against `token.cancelled()` (rather than a bare `.await`) means a
+/// cancel mid-embed aborts promptly instead of waiting out the resolved
+/// provider's own internal per-attempt timeout
+/// (`timeouts::OLLAMA_EMBED`/`EMBED`, up to 30s each).
+async fn embed_or_cancel(
+    app: &AppHandle,
+    limiter: &Arc<crate::limits::Limiter>,
+    cfg: &EmbeddingConfig,
+    text: &str,
+    token: &CancellationToken,
+) -> Option<crate::commands::ai_provider::EmbeddingVector> {
+    let limiter = limiter.clone();
+    let provider = cfg.provider.clone();
+    let charge_fn =
+        move || limiter.charge_provider_daily(&provider, crate::limits::PROVIDER_DAILY_MAX);
+    let charge: &(dyn Fn() -> AppResult<()> + Send + Sync) = &charge_fn;
+    tokio::select! {
+        biased;
+        () = token.cancelled() => None,
+        result = embed_with_config(app, cfg, text, Some(charge)) => result.ok(),
     }
 }
 
 /// Which posting ids the dense arm embeds, in order — see
-/// [`DENSE_CANDIDATE_MAX`]'s doc for the bound and the empty-lexical
-/// fallback. Pure (no app/network) so the fallback path — cache order, NOT a
-/// `HashMap`'s unspecified iteration order — is a unit test rather than a
-/// claim.
+/// [`DENSE_CANDIDATE_MAX`]'s doc for the bound, the empty-lexical fallback,
+/// and the recall limitation this pool shape carries. Pure (no app/network)
+/// so the fallback path — cache order, NOT a `HashMap`'s unspecified
+/// iteration order — is a unit test rather than a claim.
 fn dense_candidate_pool<'a>(
     eligible: &'a [PostingRow],
     lexical_ranks: &'a [String],
@@ -433,6 +511,29 @@ fn dense_candidate_pool<'a>(
     }
 }
 
+/// Convert a candidate embedding into the `(id, Vec<f32>)` pair the dense arm
+/// scores — but ONLY when it shares the query vector's embedding space.
+///
+/// Pure, so "two vectors from different embedding spaces are never scored
+/// together" — `commands::ai_provider::compare`'s own rule ("incomparable
+/// vectors are never silently scored") — is a unit test at the one L3
+/// boundary where an `EmbeddingSpace` is still in scope: `retrieval::dense`
+/// never sees one (it works on bare `&[f32]`, by design — see its module
+/// doc) and could not enforce this itself.
+fn dense_pair(
+    id: &str,
+    query_space: &crate::commands::ai_provider::EmbeddingSpace,
+    candidate: &crate::commands::ai_provider::EmbeddingVector,
+) -> Option<(String, Vec<f32>)> {
+    if candidate.space != *query_space {
+        return None;
+    }
+    Some((
+        id.to_string(),
+        candidate.values.iter().map(|v| *v as f32).collect(),
+    ))
+}
+
 async fn run_dense_arm(
     app: &AppHandle,
     query: &str,
@@ -440,20 +541,21 @@ async fn run_dense_arm(
     eligible_by_id: &HashMap<&str, &PostingRow>,
     lexical_ranks: &[String],
     token: &CancellationToken,
+    generation0: u64,
 ) -> (Vec<String>, ArmStatus) {
-    let (Some(doc_store), Some(limiter)) = (
+    let (Some(doc_store), Some(limiter_state)) = (
         app.try_state::<DocumentStore>(),
         app.try_state::<Arc<crate::limits::Limiter>>(),
     ) else {
         return (Vec::new(), ArmStatus::Unavailable);
     };
+    // ONE read, shared by every charge closure and every `embed_with_config`
+    // dispatch below — see `embed_or_cancel`'s own doc for why re-reading it
+    // per call (the #1087 finding 2 shape) is exactly what this avoids.
     let active_cfg: EmbeddingConfig = doc_store.embedding_config();
-    let budget = HybridEmbedBudget {
-        limiter: limiter.inner().clone(),
-        provider: active_cfg.provider.clone(),
-    };
+    let limiter = limiter_state.inner().clone();
 
-    let Some(query_vector) = embed_charged(&AppEmbedder(app), Some(&budget), query).await else {
+    let Some(query_vector) = embed_or_cancel(app, &limiter, &active_cfg, query, token).await else {
         return (Vec::new(), ArmStatus::Unavailable);
     };
     let query_f32: Vec<f32> = query_vector.values.iter().map(|v| *v as f32).collect();
@@ -478,17 +580,28 @@ async fn run_dense_arm(
                 ) else {
                     continue;
                 };
-                let embedded = embed_charged(&AppEmbedder(app), Some(&budget), &blob).await;
+                let embedded = embed_or_cancel(app, &limiter, &active_cfg, &blob, token).await;
                 if let Some(v) = &embedded {
-                    app.state::<Mutex<PostingsCache>>()
-                        .lock()
-                        .set_embedding(id.to_string(), v.clone());
+                    // Re-check the corpus generation under the SAME lock as
+                    // the write: `clear_all()` (a replace-scrape's first
+                    // streamed item, or `privacy_reset_app`) may have wiped
+                    // this posting's text while the embed above was in
+                    // flight — writing a vector derived from text that no
+                    // longer exists would resurrect it into a cleared cache.
+                    let cache_state = app.state::<Mutex<PostingsCache>>();
+                    let mut guard = cache_state.lock();
+                    if guard.generation() == generation0 {
+                        guard.set_embedding(id.to_string(), v.clone());
+                    }
                 }
                 embedded
             }
         };
-        if let Some(v) = vector {
-            pairs.push((id.to_string(), v.values.iter().map(|x| *x as f32).collect()));
+        if let Some(pair) = vector
+            .as_ref()
+            .and_then(|v| dense_pair(id, &query_vector.space, v))
+        {
+            pairs.push(pair);
         }
     }
     if pairs.is_empty() {
@@ -502,16 +615,35 @@ async fn run_dense_arm(
 
 // ── Rerank arm ───────────────────────────────────────────────────────────────
 
+/// THE production gate for the optional rerank arm — the single place that
+/// decides whether a search's rerank step runs at all. Mirrors
+/// `commands::autopilot::rerank::should_semantic_rerank`'s reasoning:
+/// extracted as a named function with exactly one production call site so
+/// "semantic OFF makes zero rerank calls" is a test against the REAL
+/// decision, not a re-typed condition that could silently stop matching it —
+/// three separate docs (this module's own doc, ADR-039, the README) all
+/// promise this, and a promise repeated in prose three times is still only
+/// as true as the one `if` that enforces it.
+///
+/// Gated on the SAME `semantic_on` preference the dense arm reads: rerank
+/// sends the query and up to [`RERANK_TOP_K`] postings' text to whatever
+/// provider `Completer::from_active` resolves — which may be a PAID cloud
+/// provider — so it must never fire on a default install (`semantic_scoring`
+/// defaults to false) regardless of how many fused candidates there are.
+fn should_rerank(semantic_on: bool, candidate_count: usize) -> bool {
+    semantic_on && candidate_count >= 2
+}
+
 async fn maybe_rerank(
     app: &AppHandle,
     query: &str,
     fused_order: &[String],
     eligible_by_id: &HashMap<&str, &PostingRow>,
     token: &CancellationToken,
+    semantic_on: bool,
 ) -> (Vec<String>, ArmStatus) {
     let top: Vec<&String> = fused_order.iter().take(RERANK_TOP_K).collect();
-    // Nothing meaningful to re-order with 0 or 1 candidate.
-    if top.len() < 2 || token.is_cancelled() {
+    if !should_rerank(semantic_on, top.len()) || token.is_cancelled() {
         return (fused_order.to_vec(), ArmStatus::Skipped);
     }
     let Some(limiter_state) = app.try_state::<Arc<crate::limits::Limiter>>() else {
@@ -539,12 +671,32 @@ async fn maybe_rerank(
 
     let reranker = CompleterReranker { app: app.clone() };
     let known: std::collections::HashSet<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
-    match reranker.rerank(query, &candidates).await {
-        Ok(reranked) => (
+
+    // Race against cancellation AND an outer wall-clock bound. A search box
+    // is an interactive wait, not a background generation: `Completer::
+    // complete_json`'s own internal per-attempt deadline
+    // (`timeouts::ollama_completion_deadline(None)` ==
+    // `OLLAMA_COMPLETION_BASELINE`, 300s, and up to ~600s across the one
+    // allowed re-ask) is a generation-class bound, and a bare `.await` here
+    // means a `jobs_cancel(queryId)` does nothing once the call has started
+    // — it would just sit in the `CancelRegistry` cancelled while this task
+    // kept running regardless.
+    let rerank_outcome = tokio::select! {
+        biased;
+        () = token.cancelled() => None,
+        timed = tokio::time::timeout(
+            crate::commands::ai_provider::timeouts::HYBRID_SEARCH_RERANK,
+            reranker.rerank(query, &candidates),
+        ) => timed.ok().and_then(Result::ok),
+    };
+    match rerank_outcome {
+        Some(reranked) => (
             merge_rerank_output(reranked, fused_order, &known),
             ArmStatus::Ran,
         ),
-        Err(_) => (fused_order.to_vec(), ArmStatus::Unavailable),
+        // Covers cancellation, the outer timeout, AND a real provider error —
+        // never a failed search either way, always the pre-rerank fused order.
+        None => (fused_order.to_vec(), ArmStatus::Unavailable),
     }
 }
 

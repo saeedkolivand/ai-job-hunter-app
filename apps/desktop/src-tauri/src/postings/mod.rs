@@ -52,17 +52,28 @@ impl PostingsCache {
     /// items, so the O(n) scan is cheap and a HashMap/index map would be premature.
     /// Mirrors the existing linear-scan-by-`id` in [`Self::update_description`].
     ///
-    /// When a replace happens, any cached embedding for that id is also dropped:
-    /// a re-streamed posting may carry changed text, so reusing the old vector
-    /// would score against stale content. This mirrors the invalidation
-    /// [`Self::update_description`] performs on a text change.
+    /// When a replace happens, any cached embedding for that id is dropped
+    /// ONLY when the embedded TEXT actually changed (title + description —
+    /// the same fields [`text_fields`] reads, which are the ones
+    /// `documents::keywords::posting_text_blob` builds the dense-arm embed
+    /// text from). This mirrors [`Self::update_description`]'s own "only
+    /// invalidate on a text change" rule, and for the identical reason:
+    /// "Show more" re-streams the SAME search signature, so a re-fetched
+    /// posting is usually byte-identical apart from bookkeeping fields like
+    /// `capturedAt` (stamped fresh on every fetch) — invalidating on every
+    /// re-stream regardless would silently re-pay up to
+    /// `commands::hybrid_search::DENSE_CANDIDATE_MAX` embeds for text hybrid
+    /// search already had a good vector for.
     pub fn add(&mut self, item: Value) {
         if let Some(incoming_id) = item.get("id").and_then(Value::as_str).map(str::to_string) {
             if let Some(pos) = self.items.iter().position(|existing| {
                 existing.get("id").and_then(Value::as_str) == Some(incoming_id.as_str())
             }) {
+                let text_changed = text_fields(&self.items[pos]) != text_fields(&item);
                 self.items[pos] = item;
-                self.embeddings.remove(&incoming_id);
+                if text_changed {
+                    self.embeddings.remove(&incoming_id);
+                }
                 return;
             }
         }
@@ -174,6 +185,21 @@ impl PostingsCache {
             }
         }
     }
+}
+
+/// The fields whose change should invalidate a posting's cached embedding —
+/// see [`PostingsCache::add`]. `(title, description)`, the same two fields
+/// `documents::keywords::posting_text_blob` reads to build the dense-arm
+/// embed text; anything else changing (location, board metadata, `capturedAt`)
+/// is irrelevant to what got embedded.
+fn text_fields(item: &Value) -> (String, String) {
+    let field = |name: &str| {
+        item.get(name)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    (field("title"), field("description"))
 }
 
 /// Join the recorded interactions onto each cached posting so the jobs list can

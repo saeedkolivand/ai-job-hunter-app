@@ -328,6 +328,34 @@ pub const OLLAMA_SHOW: Duration = Duration::from_secs(15);
 /// download streamed with progress, hence the hour-long ceiling.
 pub const MODEL_PULL: Duration = Duration::from_secs(3600);
 
+// ── Interactive (search-box) completions ────────────────────────────────────────
+
+/// Outer wall-clock bound for `commands::hybrid_search`'s optional LLM
+/// rerank step (via `Completer::complete_json`) — an INTERACTIVE tier this
+/// module didn't previously need, since every other non-streaming call site
+/// above is a background generation, not a search box a user is staring at.
+///
+/// Deliberately NOT [`OLLAMA_COMPLETION_BASELINE`] (300s, and up to ~600s
+/// across `complete_json`'s one allowed re-ask): that baseline scales with
+/// `AiGenerateRequest.effort`, and a rerank call passes `effort: None` on
+/// purpose — a search box has no reasoning-effort control for a user to set,
+/// so there is no effort tier to scale from. 45s sits between one local-embed
+/// round-trip ([`OLLAMA_EMBED`], 30s) and a full cloud completion
+/// ([`COMPLETION`], 120s): enough for one real non-streaming JSON completion
+/// over the rerank prompt's ~12,000 chars
+/// (`commands::hybrid_search::RERANK_ITEM_CHAR_BUDGET` ×
+/// `retrieval::rerank::RERANK_TOP_K`) even on slow local hardware, short
+/// enough that a stalled provider doesn't hold a search box open for minutes.
+///
+/// Applied as an OUTER `tokio::time::timeout` wrapping the whole rerank call
+/// from `commands::hybrid_search::maybe_rerank` — independent of whatever
+/// internal per-attempt deadline the resolved provider adapter applies
+/// underneath it (same pattern as `commands::autopilot::rerank::
+/// RERANK_STEP_TIMEOUT` wrapping `semantic_rerank`), rather than a new
+/// `effort` value threaded through `Completer::complete_json`, which has
+/// nothing to scale for a caller with no effort concept.
+pub const HYBRID_SEARCH_RERANK: Duration = Duration::from_secs(45);
+
 #[cfg(test)]
 mod tests {
     use super::*;

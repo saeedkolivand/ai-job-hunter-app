@@ -387,6 +387,46 @@ fn update_description_unknown_id_returns_false_and_adds_no_row() {
     );
 }
 
+/// "Show more" re-streams the SAME search signature, so a re-fetched posting
+/// upsert is usually byte-identical apart from bookkeeping fields — that must
+/// NOT wipe an already-computed embedding (the defect this PR fixes: `add`
+/// used to invalidate unconditionally on every upsert).
+#[test]
+fn add_keeps_embedding_when_title_and_description_are_unchanged() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({
+        "id": "job-1", "title": "Engineer", "description": "full text", "capturedAt": 1,
+    }));
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+
+    // Re-stream the identical posting, but with a fresh `capturedAt` — the
+    // shape a re-scrape actually produces.
+    cache.add(serde_json::json!({
+        "id": "job-1", "title": "Engineer", "description": "full text", "capturedAt": 2,
+    }));
+
+    assert!(
+        cache.get_embedding("job-1").is_some(),
+        "an upsert that doesn't change title/description must keep the cached embedding"
+    );
+}
+
+/// The mirror case: a re-streamed posting whose title or description DID
+/// change must still invalidate — this is not a blanket "never invalidate".
+#[test]
+fn add_invalidates_embedding_when_description_changes() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "v1"}));
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+
+    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "v2"}));
+
+    assert!(
+        cache.get_embedding("job-1").is_none(),
+        "an upsert that changes the embedded text must invalidate the cached embedding"
+    );
+}
+
 /// When `update_description` writes new text, the previously cached embedding for
 /// that id must be invalidated so the next score re-embeds the full description
 /// instead of reusing the stale snippet vector.

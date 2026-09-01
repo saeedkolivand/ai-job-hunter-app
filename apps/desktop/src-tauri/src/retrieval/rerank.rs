@@ -11,11 +11,11 @@ use crate::error::AppResult;
 /// How many of the fused ranking's TOP candidates get sent to the optional
 /// LLM rerank step, per search.
 ///
-/// Mirrors `commands::autopilot::rerank::SEMANTIC_RERANK_MAX`'s reasoning for
-/// the identical shape (re-rank only the head of an already-ranked list): the
-/// fused order already reflects the lexical + dense signal, so re-ranking the
-/// top 20 covers what a user actually scans, while bounding one search to at
-/// most 20 fenced candidates in one prompt regardless of corpus size.
+/// A COST bound, not a quality/recall claim: it caps one search at 20 fenced
+/// candidates in one prompt regardless of corpus size, the same shape
+/// `commands::autopilot::rerank::SEMANTIC_RERANK_MAX` uses to bound ITS
+/// re-rank phase (see that constant's own doc: "the real ceiling is cost").
+/// Whether 20 is enough for a given corpus/query is unmeasured.
 pub const RERANK_TOP_K: usize = 20;
 
 /// One candidate handed to a [`Reranker`] — RAW, UNFENCED posting text.

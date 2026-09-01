@@ -39,9 +39,11 @@ pub struct LexicalDoc<'a> {
 /// that over one that mentions React once in an unrelated paragraph); a
 /// company hit answers a distinct, still-strong intent ("show me Acme
 /// postings"); location is usually filtered separately by the UI already, so
-/// it earns no boost; description carries most of the corpus's actual text
-/// and keeps the baseline weight of 1.0. Revisit with real usage data before
-/// treating these as tuned.
+/// it gets a REDUCED weight (0.5 — an active discount below the 1.0
+/// baseline, not merely "no extra boost") to keep an incidental location
+/// mention from outweighing a real title/company match; description carries
+/// most of the corpus's actual text and keeps the baseline weight of 1.0.
+/// Revisit with real usage data before treating these as tuned.
 pub const BM25_WEIGHTS: (f64, f64, f64, f64) = (3.0, 2.0, 0.5, 1.0);
 
 /// Turn a raw, untrusted search-box string into a `MATCH` expression FTS5
