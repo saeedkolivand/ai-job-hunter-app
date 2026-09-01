@@ -2483,6 +2483,27 @@
       "statusRow": "Status des letzten Scrapings",
       "filterLabel": "Jobs filtern"
     },
+    "hybridSearch": {
+      "searchButton": "Suchen",
+      "searching": "Wird gesucht…",
+      "noResultsTitle": "Keine Anzeigen entsprechen Ihrer Suche",
+      "noResultsDesc_one": "Keine Übereinstimmung unter der {{count}} infrage kommenden Anzeige. Versuchen Sie andere Begriffe, oder löschen Sie die Suche, um sie anzuzeigen.",
+      "noResultsDesc_other": "Keine Übereinstimmungen unter den {{count}} infrage kommenden Anzeigen. Versuchen Sie andere Begriffe, oder löschen Sie die Suche, um alle anzuzeigen.",
+      "clearSearch": "Suche löschen",
+      "staleTitle": "Jobliste hat sich während der Suche geändert",
+      "staleDesc": "Ihre gescrapten Jobs haben sich geändert, während diese Suche lief. Versuchen Sie es erneut, um die aktuelle Liste zu durchsuchen.",
+      "errorTitle": "Suche fehlgeschlagen",
+      "errorDesc": "Bei der Suche ist etwas schiefgelaufen. Bitte versuchen Sie es erneut.",
+      "rankedBy_one": "Sortiert nach {{arms}} · {{count}} Anzeige durchsucht",
+      "rankedBy_other": "Sortiert nach {{arms}} · {{count}} Anzeigen durchsucht",
+      "armLexical": "Schlüsselwort",
+      "armDense": "semantisch",
+      "armRerank": "KI-Neubewertung",
+      "semanticOff": "Semantische Rangfolge ist deaktiviert — die Ergebnisse werden nur nach Schlüsselwort-Übereinstimmung sortiert.",
+      "enableSemanticRanking": "Semantische Rangfolge aktivieren",
+      "semanticUnavailable": "Semantische Rangfolge ist für diese Suche fehlgeschlagen — es werden Schlüsselwort-Ergebnisse angezeigt.",
+      "rerankUnavailable": "Ergebnisse werden derzeit nicht per KI neu bewertet — es wird die kombinierte Schlüsselwort-/semantische Reihenfolge angezeigt."
+    },
     "cluster": {
       "alsoOn": "Auch auf",
       "openOn": "Auf {{source}} öffnen",

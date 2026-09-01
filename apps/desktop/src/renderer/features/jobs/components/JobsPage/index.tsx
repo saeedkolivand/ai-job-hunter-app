@@ -9,6 +9,7 @@ import { sanitizeReason } from '@/components/scrape/BoardSummaryChips';
 import { JobsCommandBar } from '@/features/jobs/components/JobsCommandBar';
 import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
+import { usePostingsSearch } from '@/features/jobs/hooks/usePostingsSearch';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import { matchesWorkTypeFilter } from '@/features/jobs/lib/work-type-filter';
@@ -64,6 +65,7 @@ export function JobsPage() {
   // <body> on the first-run path.
   const scrapeButtonRef = useRef<HTMLButtonElement>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const postingsSearch = usePostingsSearch();
 
   /**
    * Patch the scrape form through the store.
@@ -230,6 +232,19 @@ export function JobsPage() {
     return { allPostings, absorbedInto };
   }, [postings, livePostings]);
 
+  // Eligible-id allowlist for hybrid search: the SAME cluster-canonical /
+  // hideAgency / workTypes composition `filtered` applies below, MINUS the
+  // text-search step — a committed search REPLACES the substring filter
+  // rather than compounding with it (ranking a query against postings the
+  // substring box already excluded on the SAME text would defeat semantic
+  // retrieval's whole point: surfacing matches that don't literally contain
+  // the query). Keep these three predicates in lockstep with `filtered`'s.
+  const eligibleForSearch = useMemo(() => {
+    let result = allPostings.filter((p) => p.clusterCanonical !== false);
+    if (hideAgency) result = result.filter((p) => !p.isAgency);
+    return result.filter((p) => matchesWorkTypeFilter(p, workTypes));
+  }, [allPostings, hideAgency, workTypes]);
+
   const handleClearPostings = async () => {
     setConfirmClear(false);
     await clearPostings.mutateAsync();
@@ -344,6 +359,52 @@ export function JobsPage() {
   // per-board summaries to chip).
   const showDiagnostics = !scraping && filtered.length > 0;
 
+  const trimmedFilter = filter.trim();
+  const handleSubmitSearch = () =>
+    postingsSearch.search(
+      trimmedFilter,
+      eligibleForSearch.map((p) => p.id)
+    );
+  const handleRetrySearch = () => postingsSearch.retry(eligibleForSearch.map((p) => p.id));
+  const handleEnableSemanticRanking = () =>
+    postingsSearch.enableSemanticRanking(eligibleForSearch.map((p) => p.id));
+
+  // Gate the search state on the CURRENTLY-typed text, not just on the
+  // machine's own state: editing the filter box after a search settles must
+  // fall back to instant substring filtering rather than keep showing a
+  // ranked list that no longer matches what's typed. Purely derived — no
+  // effect needed to "undo" a stale search when the text changes.
+  const searchIsActive =
+    postingsSearch.state !== 'idle' &&
+    postingsSearch.committedQuery === trimmedFilter &&
+    trimmedFilter.length > 0;
+  const effectiveSearchState = searchIsActive ? postingsSearch.state : 'idle';
+
+  // While a search governs the view, `hits` (already the eligible subset,
+  // ranked) is re-intersected against the CURRENT eligible set rather than
+  // trusted outright — hideAgency/workTypes may have changed since the
+  // search settled, and a hit that is no longer eligible must not render.
+  const searchResult = searchIsActive ? postingsSearch.result : null;
+  const rankedFiltered = useMemo(() => {
+    if (!searchResult || searchResult.outcome !== 'ok') return [];
+    const eligibleIds = new Set(eligibleForSearch.map((p) => p.id));
+    const byId = new Map(allPostings.map((p) => [p.id, p] as const));
+    return searchResult.hits
+      .filter((id) => eligibleIds.has(id))
+      .map((id) => byId.get(id))
+      .filter((p): p is Posting => p != null);
+  }, [searchResult, eligibleForSearch, allPostings]);
+
+  // The list JobsCommandBar/JobsResults actually render: the ranked hits while
+  // a search has settled results, nothing while it's mid-flight or degraded
+  // (those states own their own screen), otherwise the plain substring-
+  // filtered `filtered` from above — unchanged behavior when idle.
+  const displayList = searchIsActive
+    ? effectiveSearchState === 'results'
+      ? rankedFiltered
+      : []
+    : filtered;
+
   return (
     <MatchScoresProvider resumeId={resumeId}>
       <PageTransition className="flex h-full flex-col overflow-hidden">
@@ -356,7 +417,7 @@ export function JobsPage() {
               wrapper is what produced the stray horizontal scrollbar), so the
               results area below owns the full remaining height. */}
           <JobsCommandBar
-            shownCount={filtered.length}
+            shownCount={displayList.length}
             totalCount={distinctCount}
             scraping={scraping}
             scrapeProgress={scrapeProgress}
@@ -368,10 +429,12 @@ export function JobsPage() {
             failureNote={showDiagnostics ? scrapeFailureNote : null}
             scrapeButtonRef={scrapeButtonRef}
             hasDeclaredWorkType={hasDeclaredWorkType}
+            searchState={effectiveSearchState}
+            onSubmitSearch={handleSubmitSearch}
           />
 
           <JobsResults
-            filtered={filtered}
+            filtered={displayList}
             formatRelativeTime={formatRelativeTime}
             scraping={scraping}
             scrapeProgress={scrapeProgress}
@@ -385,6 +448,14 @@ export function JobsPage() {
             absorbedInto={absorbedInto}
             onShowMore={handleShowMore}
             onScrape={() => setShowScrapeForm(true)}
+            hybridSearch={{
+              state: effectiveSearchState,
+              arms: searchResult?.arms ?? null,
+              corpusSize: searchResult?.corpusSize ?? eligibleForSearch.length,
+              onRetry: handleRetrySearch,
+              onClear: postingsSearch.clear,
+              onEnableSemanticRanking: handleEnableSemanticRanking,
+            }}
           />
         </div>
       </PageTransition>

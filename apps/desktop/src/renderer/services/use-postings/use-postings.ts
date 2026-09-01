@@ -115,15 +115,14 @@ export const useRemoveInteraction = () => {
 };
 
 /**
- * STUB — intentionally minimal; the frontend author wires the real UX on top
- * of this. A plain `useMutation` (not `useQuery`) because a search-as-you-
- * type box needs to SUPERSEDE, not just re-fetch: when a new search starts
- * before a prior one resolves, call `api.jobs.cancel(previousQueryId)` with
- * the SAME `queryId` that request carried (`req.queryId` — mint a fresh one
- * per call, e.g. `crypto.randomUUID()`) BEFORE firing the new search, so the
- * backend stops spending embeds/rerank calls on a result nobody will see.
- * `keys.postings.hybridSearch` exists if this becomes a `useQuery` instead —
- * neither shape is settled here.
+ * Low-level mutation for `scrape:hybridSearch` — a plain `useMutation` (not
+ * `useQuery`) because a search-as-you-type box needs to SUPERSEDE, not just
+ * re-fetch. This hook does not itself mint `queryId`s or cancel a superseded
+ * search; `features/jobs/hooks/usePostingsSearch` is the real UX wired on top
+ * (queryId minting, `jobs.cancel(previousQueryId)` before firing the next
+ * search, out-of-order/`cancelled`-response discarding, and the idle →
+ * searching → results/noResults/stale/error state machine) — use that from a
+ * component instead of this mutation directly.
  */
 export const useHybridSearch = () => {
   const api = useAppClient();

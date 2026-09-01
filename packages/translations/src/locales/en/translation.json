@@ -2479,6 +2479,27 @@
       "statusRow": "Last scrape status",
       "filterLabel": "Filter jobs"
     },
+    "hybridSearch": {
+      "searchButton": "Search",
+      "searching": "Searching…",
+      "noResultsTitle": "No postings match your search",
+      "noResultsDesc_one": "No match among the {{count}} eligible posting. Try different words, or clear the search to browse it.",
+      "noResultsDesc_other": "No matches among the {{count}} eligible postings. Try different words, or clear the search to browse them all.",
+      "clearSearch": "Clear search",
+      "staleTitle": "Job list changed while searching",
+      "staleDesc": "Your scraped jobs changed while this search was running. Try again to search the current list.",
+      "errorTitle": "Search failed",
+      "errorDesc": "Something went wrong while searching. Please try again.",
+      "rankedBy_one": "Ranked by {{arms}} · searched {{count}} posting",
+      "rankedBy_other": "Ranked by {{arms}} · searched {{count}} postings",
+      "armLexical": "keyword",
+      "armDense": "semantic",
+      "armRerank": "AI re-rank",
+      "semanticOff": "Semantic ranking is off — results are ranked by keyword match only.",
+      "enableSemanticRanking": "Enable semantic ranking",
+      "semanticUnavailable": "Semantic ranking failed for this search — showing keyword results.",
+      "rerankUnavailable": "Results aren't AI re-ranked right now — showing the fused keyword/semantic order."
+    },
     "cluster": {
       "alsoOn": "Also on",
       "openOn": "Open on {{source}}",

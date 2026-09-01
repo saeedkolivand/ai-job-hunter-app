@@ -3,17 +3,43 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import { type BoardScrapeSummary, PROVIDER_SLOTS } from '@ajh/shared';
+import { type BoardScrapeSummary, type HybridSearchArms, PROVIDER_SLOTS } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { Button, EmptyState, GlassCard, ProgressBar, RowSkeleton } from '@ajh/ui';
+import { Button, EmptyState, ErrorState, GlassCard, ProgressBar, RowSkeleton } from '@ajh/ui';
 
 import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
 import { ROUTES } from '@/constants/routes/routes';
 import { JobsSplitView } from '@/features/jobs/components/JobsSplitView';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
+import type { PostingsSearchState } from '@/features/jobs/hooks/usePostingsSearch';
 import type { Posting } from '@/features/jobs/types';
 import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useSessionStore } from '@/store/session-store';
+
+/** Hybrid-search UI state `JobsPage` hands down — see `usePostingsSearch` for
+ *  where each field comes from. Optional on {@link JobsResultsProps}: callers
+ *  that never wire a search (and every EXISTING test) get the `idle` default
+ *  below, so `filtered` is treated as the plain substring-filtered list. */
+interface HybridSearchUi {
+  /** Gated to the currently-typed filter text — see `JobsPage`. */
+  state: PostingsSearchState;
+  arms: HybridSearchArms | null;
+  /** How many postings the search actually ranked over (eligible subset). */
+  corpusSize: number;
+  onRetry: () => void;
+  onClear: () => void;
+  onEnableSemanticRanking: () => void;
+}
+
+const IDLE_HYBRID_SEARCH: HybridSearchUi = {
+  state: 'idle',
+  arms: null,
+  corpusSize: 0,
+  onRetry: () => {},
+  onClear: () => {},
+  onEnableSemanticRanking: () => {},
+};
 
 interface JobsResultsProps {
   filtered: Posting[];
@@ -44,6 +70,9 @@ interface JobsResultsProps {
   absorbedInto?: Map<string, string>;
   onShowMore: () => void;
   onScrape: () => void;
+  /** Optional — omitted callers (and every pre-existing test) get `idle`,
+   *  i.e. no hybrid search in effect. */
+  hybridSearch?: HybridSearchUi;
 }
 
 /**
@@ -67,6 +96,7 @@ export function JobsResults({
   absorbedInto,
   onShowMore,
   onScrape,
+  hybridSearch = IDLE_HYBRID_SEARCH,
 }: JobsResultsProps) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -177,6 +207,131 @@ export function JobsResults({
     );
   }
 
+  // Hybrid search takes precedence over the scrape-diagnostics empty state
+  // below: a zero-hit SEARCH and a genuinely-unscraped board are different
+  // situations and must not share copy — a "Search jobs to get started" CTA
+  // on a board that already has hundreds of postings, none matching this
+  // query, would misdescribe the situation.
+  if (hybridSearch.state === 'searching') {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
+        <GlassCard>
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center justify-center gap-2 py-10 text-sm text-foreground/70"
+          >
+            <Loader2 size={16} className="animate-spin text-brand-soft" />
+            {t('jobs.hybridSearch.searching')}
+          </div>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  // A `results` outcome can still narrow to zero once re-rendered: hideAgency
+  // / workTypes may have changed since the search settled, and the caller
+  // (`JobsPage`) re-filters the ranked hits against the CURRENT eligible set
+  // rather than trusting the ids outright — see its `filtered` composition.
+  const searchZeroResults =
+    hybridSearch.state === 'noResults' ||
+    (hybridSearch.state === 'results' && filtered.length === 0);
+
+  if (searchZeroResults) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
+        <GlassCard>
+          <EmptyState
+            icon={Search}
+            title={t('jobs.hybridSearch.noResultsTitle')}
+            description={t('jobs.hybridSearch.noResultsDesc', { count: hybridSearch.corpusSize })}
+            action={
+              <Button variant="ghost" onClick={hybridSearch.onClear}>
+                {t('jobs.hybridSearch.clearSearch')}
+              </Button>
+            }
+            className="py-10"
+          />
+        </GlassCard>
+      </div>
+    );
+  }
+
+  if (hybridSearch.state === 'stale' || hybridSearch.state === 'error') {
+    const stale = hybridSearch.state === 'stale';
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
+        <GlassCard>
+          <ErrorState
+            title={t(stale ? 'jobs.hybridSearch.staleTitle' : 'jobs.hybridSearch.errorTitle')}
+            description={t(stale ? 'jobs.hybridSearch.staleDesc' : 'jobs.hybridSearch.errorDesc')}
+            onRetry={hybridSearch.onRetry}
+            action={
+              <Button variant="ghost" onClick={hybridSearch.onClear}>
+                {t('jobs.hybridSearch.clearSearch')}
+              </Button>
+            }
+          />
+        </GlassCard>
+      </div>
+    );
+  }
+
+  // "Ranked by …" banner above a search's own results — surfaces which arms
+  // actually ran (never lets a keyword-only list present as hybrid) and, when
+  // semantic ranking is off, a one-click enable action instead of just a note.
+  const searchBanner =
+    hybridSearch.state === 'results' && filtered.length > 0 ? (
+      <div
+        data-testid={TEST_IDS.jobs.searchBanner}
+        role="status"
+        className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-[11px] text-foreground/60"
+      >
+        <span>
+          {t('jobs.hybridSearch.rankedBy', {
+            count: hybridSearch.corpusSize,
+            arms: [
+              hybridSearch.arms?.lexical === 'ran' ? t('jobs.hybridSearch.armLexical') : null,
+              hybridSearch.arms?.dense === 'ran' ? t('jobs.hybridSearch.armDense') : null,
+              hybridSearch.arms?.rerank === 'ran' ? t('jobs.hybridSearch.armRerank') : null,
+            ]
+              .filter((label): label is string => label !== null)
+              .join(', '),
+          })}
+        </span>
+        {hybridSearch.arms?.dense === 'skipped' && (
+          <>
+            <span aria-hidden="true" className="text-foreground/30">
+              ·
+            </span>
+            <span>{t('jobs.hybridSearch.semanticOff')}</span>
+            <Button variant="ghost" onClick={hybridSearch.onEnableSemanticRanking}>
+              {t('jobs.hybridSearch.enableSemanticRanking')}
+            </Button>
+          </>
+        )}
+        {hybridSearch.arms?.dense === 'unavailable' && (
+          <>
+            <span aria-hidden="true" className="text-foreground/30">
+              ·
+            </span>
+            <span>{t('jobs.hybridSearch.semanticUnavailable')}</span>
+          </>
+        )}
+        {hybridSearch.arms?.rerank === 'unavailable' && (
+          <>
+            <span aria-hidden="true" className="text-foreground/30">
+              ·
+            </span>
+            <span>{t('jobs.hybridSearch.rerankUnavailable')}</span>
+          </>
+        )}
+        <Button variant="ghost" className="ml-auto" onClick={hybridSearch.onClear}>
+          {t('jobs.hybridSearch.clearSearch')}
+        </Button>
+      </div>
+    ) : null;
+
   if (filtered.length === 0) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
@@ -241,12 +396,13 @@ export function JobsResults({
   // theme, dark tile in dark theme) so the split reads like a single LinkedIn-style card.
   if (viewMode === 'split') {
     return (
-      <div className="min-h-0 flex-1 overflow-hidden px-10 pb-10">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-10 pb-10">
+        {searchBanner}
         {/* `@container`: the split decides list-vs-two-pane from the CARD's own
             width, not the viewport (docs/PATTERNS.md §15). A viewport `md:`
             fired even when the sidebar left the card ~390px wide, which is far
             too narrow for two panes. */}
-        <div className="surface-card @container flex h-full min-h-0 overflow-hidden rounded-2xl">
+        <div className="surface-card @container flex min-h-0 flex-1 overflow-hidden rounded-2xl">
           <JobsSplitView
             display={filtered}
             formatRelativeTime={formatRelativeTime}
@@ -261,6 +417,7 @@ export function JobsResults({
   // List mode: existing single-column virtualised rows
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
+      {searchBanner}
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
         {virtualizer.getVirtualItems().map((vi) => {
           const posting = filtered[vi.index];

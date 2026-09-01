@@ -1,4 +1,12 @@
-import { LayoutList, LayoutPanelLeft, ListFilter, Loader2, Plus, Trash2 } from 'lucide-react';
+import {
+  LayoutList,
+  LayoutPanelLeft,
+  ListFilter,
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import type { Ref } from 'react';
 
 import { type BoardScrapeSummary, WORK_TYPE_OPTIONS } from '@ajh/shared';
@@ -7,6 +15,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, Input, SegmentedControl, Tag } from '@ajh/ui';
 
 import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
+import type { PostingsSearchState } from '@/features/jobs/hooks/usePostingsSearch';
 import { useSessionStore } from '@/store/session-store';
 
 interface JobsCommandBarProps {
@@ -47,6 +56,17 @@ interface JobsCommandBarProps {
    * the control visible regardless — see the render below.
    */
   hasDeclaredWorkType: boolean;
+  /**
+   * Hybrid-search state GATED to the currently-typed filter text (idle once
+   * the text diverges from the query a search was committed with — see
+   * `JobsPage`'s `usePostingsSearch` wiring). Drives the search button's
+   * spinner and disables sort while a ranked order governs the list (re-
+   * sorting would fight the ranking the user just asked for).
+   */
+  searchState: PostingsSearchState;
+  /** Commit the current filter text as a ranked search (Enter key or the
+   *  search button) — a no-op for an empty/whitespace-only filter. */
+  onSubmitSearch: () => void;
 }
 
 /**
@@ -79,6 +99,8 @@ export function JobsCommandBar({
   failureNote,
   scrapeButtonRef,
   hasDeclaredWorkType,
+  searchState,
+  onSubmitSearch,
 }: JobsCommandBarProps) {
   const { t } = useTranslation();
   // One selector per field (see JobsPage): an unselected `useSessionStore()`
@@ -153,6 +175,14 @@ export function JobsCommandBar({
           prefix={<ListFilter size={12} />}
           value={filter}
           onChange={(e) => setJobs({ filter: e.target.value })}
+          onKeyDown={(e) => {
+            // Enter commits the SAME text as a ranked hybrid search — typing
+            // alone stays the instant substring filter (no round trip).
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onSubmitSearch();
+            }
+          }}
           placeholder={t('jobs.searchPlaceholder')}
           // A short name, not the placeholder — the placeholder is an
           // instruction ("Filter by title, company, location…") and reads as
@@ -163,6 +193,18 @@ export function JobsCommandBar({
           wrapperClassName="min-w-[8rem] max-w-[18rem] grow basis-44"
           allowClear
         />
+
+        <Button
+          variant="ghost"
+          onClick={onSubmitSearch}
+          disabled={filter.trim().length === 0}
+          loading={searchState === 'searching'}
+          title={t('jobs.hybridSearch.searchButton')}
+          data-testid={TEST_IDS.jobs.searchButton}
+        >
+          {searchState !== 'searching' && <Search size={12} />}
+          {t('jobs.hybridSearch.searchButton')}
+        </Button>
 
         {/* Count sits with the input it describes — alone on the right it
             stranded a void of whitespace once the action group wrapped away. */}
@@ -190,6 +232,9 @@ export function JobsCommandBar({
           onChange={(value) => setJobs({ sortBy: value as 'newest' | 'oldest' | 'company' })}
           placeholder={t('jobs.sort')}
           aria-label={t('jobs.sort')}
+          // A ranked search result already IS the order the user asked for;
+          // re-sorting it by date/company would fight that ranking silently.
+          disabled={searchState === 'results' || searchState === 'noResults'}
         />
 
         <span data-testid={TEST_IDS.jobs.hideAgencyToggle} className="inline-flex">

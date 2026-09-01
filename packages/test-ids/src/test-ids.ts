@@ -37,6 +37,11 @@ export const TEST_IDS = {
     scrapeFilters: 'scrape-filters',
     /** The manual search form's remote/hybrid/on-site multi-select group. */
     workTypeFilter: 'work-type-filter',
+    /** Commits the filter-box text as a ranked hybrid search (Enter also fires it). */
+    searchButton: 'jobs-search-button',
+    /** "Ranked by …" banner above ranked results — surfaces which arms ran and,
+     *  when semantic ranking is off, the one-click enable action. */
+    searchBanner: 'jobs-search-banner',
     aggregatorKeyHint: 'aggregator-key-hint',
     scrapeStartButton: 'scrape-start-button',
     jobsResults: 'jobs-results',

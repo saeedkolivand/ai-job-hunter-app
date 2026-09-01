@@ -37,6 +37,18 @@ vi.mock('@/features/jobs/hooks/useScraping', () => ({
   }),
 }));
 
+vi.mock('@/features/jobs/hooks/usePostingsSearch', () => ({
+  usePostingsSearch: () => ({
+    state: 'idle',
+    result: null,
+    committedQuery: '',
+    search: vi.fn(),
+    retry: vi.fn(),
+    clear: vi.fn(),
+    enableSemanticRanking: vi.fn(),
+  }),
+}));
+
 vi.mock('@/services', () => ({
   usePostings: () => postingsContainer,
   useClearPostings: () => ({ mutateAsync: vi.fn(), isPending: false }),
