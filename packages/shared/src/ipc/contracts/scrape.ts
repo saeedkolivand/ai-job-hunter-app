@@ -6,7 +6,7 @@ import type {
 } from '../../schemas/index.js';
 import type { JobPosting } from '../../types/index.js';
 
-/** Whether one arm of a {@link PostingsHybridSearchResult} actually ran. */
+/** Whether one arm of a {@link HybridSearchResult} actually ran. */
 export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
 
 export interface HybridSearchArms {

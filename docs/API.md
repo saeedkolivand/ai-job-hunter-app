@@ -4112,7 +4112,7 @@ there is no separate cancel channel here).
 Declared in `packages/shared/src/ipc/contracts/scrape.ts`.
 
 ```ts
-/** Whether one arm of a {@link PostingsHybridSearchResult} actually ran. */
+/** Whether one arm of a {@link HybridSearchResult} actually ran. */
 export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
 
 export interface HybridSearchArms {
