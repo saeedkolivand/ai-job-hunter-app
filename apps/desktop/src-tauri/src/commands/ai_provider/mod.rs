@@ -37,7 +37,7 @@ pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure e
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;
-use embed::{embed_adaptive, ProviderEmbedAttempt};
+use embed::{embed_adaptive, MeteredAttempt, ProviderEmbedAttempt};
 use gemini::GeminiClient;
 use ollama::OllamaClient;
 use ollama_cloud::OllamaCloudClient;
@@ -1148,12 +1148,17 @@ pub struct EmbeddingVector {
 /// resolution, `ai_reembed_all`'s batch re-index) routes through here, so
 /// each records the provider's REAL reported token usage (zero when a
 /// provider genuinely reports none) with no changes needed at any call site.
+///
+/// `charge` metes the per-provider daily budget once per ACTUAL round-trip
+/// via [`MeteredAttempt`] — see its doc. `None` (every caller but `ai_embed`)
+/// is unaffected, unchanged from before this parameter existed.
 pub async fn embed_text(
     app: &AppHandle,
     provider: ProviderId,
     model: &str,
     base_url: Option<String>,
     text: &str,
+    charge: Option<&(dyn Fn() -> AppResult<()> + Send + Sync)>,
 ) -> AppResult<EmbeddingVector> {
     let client = resolve(provider, base_url.clone());
     let model = if model.trim().is_empty() {
@@ -1197,8 +1202,12 @@ pub async fn embed_text(
     // before failing on a later one) — record whatever was actually billed
     // BEFORE propagating the error, so a partial failure never silently
     // drops already-spent tokens from the ledger.
+    let metered = MeteredAttempt {
+        inner: &attempt,
+        charge,
+    };
     let mut usage = Usage::default();
-    let result = embed_adaptive(&attempt, text, initial_cap, &mut usage).await;
+    let result = embed_adaptive(&metered, text, initial_cap, &mut usage).await;
     record_usage(app, provider.as_str(), &model, usage, base_url.as_deref());
     let values = result?;
     if values.is_empty() {

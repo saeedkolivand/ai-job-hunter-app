@@ -518,6 +518,62 @@ async fn embed_adaptive_embeds_every_chunk_of_a_long_document_not_just_its_prefi
     assert_eq!(usage.input_tokens, 30);
 }
 
+// ── MeteredAttempt (per-real-round-trip daily charge, #1087) ────────────
+
+#[tokio::test]
+async fn metered_attempt_charges_once_per_real_provider_round_trip() {
+    // Same fixture as `embed_adaptive_retries_and_succeeds_on_shorter_input`
+    // above (2 context-length failures + 4 successes = 6 real attempts) —
+    // the charge must fire exactly once per attempt, retries included, not
+    // once per document. Mutation check: deleting `MeteredAttempt::attempt`'s
+    // `(self.charge)()?;` line leaves `charges` at 0 while `inner.calls` is
+    // 6, and the final assertion fails.
+    let inner = FakeEmbedAttempt::new(3000);
+    let charges = std::sync::atomic::AtomicUsize::new(0);
+    let charge = || {
+        charges.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    };
+    let metered = MeteredAttempt {
+        inner: &inner,
+        charge: Some(&charge),
+    };
+    let text = "a".repeat(8000);
+    let result = embed_adaptive(&metered, &text, 8000, &mut Usage::default()).await;
+    assert!(result.is_ok());
+    let calls = inner.calls.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        calls, 6,
+        "sanity: same call count as the un-metered fixture"
+    );
+    assert_eq!(
+        charges.load(std::sync::atomic::Ordering::SeqCst),
+        calls,
+        "the daily-budget charge must fire exactly once per real round-trip"
+    );
+}
+
+#[tokio::test]
+async fn metered_attempt_refuses_before_the_real_call_once_the_budget_is_exhausted() {
+    // A refused charge must stop the call BEFORE the (billed) provider
+    // round-trip runs at all — the inner attempt must never be reached.
+    let inner = FakeEmbedAttempt::new(usize::MAX); // would always succeed if reached
+    let charge = || Err(AppError::RateLimited("daily ceiling".to_string()));
+    let metered = MeteredAttempt {
+        inner: &inner,
+        charge: Some(&charge),
+    };
+    let err = embed_adaptive(&metered, "short text", 8000, &mut Usage::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, AppError::RateLimited(_)));
+    assert_eq!(
+        inner.calls.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "the real provider round-trip must never run once the charge is refused"
+    );
+}
+
 #[tokio::test]
 async fn embed_adaptive_single_chunk_document_is_returned_unpooled() {
     // Under the cap -> one chunk -> the provider's own vector passes

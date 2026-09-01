@@ -9,59 +9,21 @@ use crate::error::AppResult;
 use crate::limits::Limiter;
 
 // ── admit_embed_tests ───────────────────────────────────────────────────
-// `admit_embed` is `ai_embed`'s `AppHandle`-free admission core (same
-// constraint as `admit_research`/`research_answer_core` above — this crate
-// has no `tauri::test` mock-app harness). The rate/concurrency primitives
-// themselves are already covered generically by `limits::test`; what's
-// pinned here is `ai_embed`'s OWN addition — that a call is actually charged
-// against the resolved EMBEDDING provider's daily budget, not left
-// unguarded. Mutation check: deleting the `charge_provider_daily` call
-// inside `admit_embed` makes the second call below wrongly succeed and
-// fails this test.
-
-#[test]
-fn admit_embed_refuses_once_the_embedding_providers_daily_budget_is_exhausted() {
-    let limiter = Arc::new(Limiter::new());
-    // Room to spare on rate/concurrency (10/10) — only the daily cap (1) is
-    // tight, so a second call must be refused by the CHARGE, not the window.
-    assert!(
-        admit_embed(&limiter, "ollama", 10, 10, 1).is_ok(),
-        "the first call must be admitted"
-    );
-    // `ConcurrencyGuard` (the `Ok` payload) is deliberately not `Debug`, so
-    // `matches!` rather than `expect_err` avoids requiring that just to assert.
-    assert!(
-        matches!(
-            admit_embed(&limiter, "ollama", 10, 10, 1),
-            Err(AppError::RateLimited(_))
-        ),
-        "a second call past the exhausted daily cap must be refused"
-    );
-}
-
-#[test]
-fn admit_embed_does_not_charge_a_different_providers_budget() {
-    let limiter = Arc::new(Limiter::new());
-    // Exhaust "ollama"'s single daily slot...
-    assert!(admit_embed(&limiter, "ollama", 10, 10, 1).is_ok());
-    // ...a call against a DIFFERENT embedding provider must be unaffected —
-    // pins that the charge keys on the resolved embedding provider, not a
-    // shared/global counter.
-    assert!(
-        admit_embed(&limiter, "openai", 10, 10, 1).is_ok(),
-        "a different provider's budget must be untouched"
-    );
-}
+// `admit_embed` is now just `ai_embed`'s rate/concurrency admission — the
+// per-provider daily charge moved to `MeteredAttempt`
+// (`commands::ai_provider::embed`, see its own tests in
+// `embed_tests.rs`), which fires once per ACTUAL provider round-trip
+// instead of once per admitted call (#1087). The rate/concurrency
+// primitives themselves are already covered generically by `limits::test`,
+// so only a normal-admission smoke test remains here.
 
 #[test]
 fn admit_embed_admits_a_normal_call_under_the_production_caps() {
     let limiter = Arc::new(Limiter::new());
     assert!(admit_embed(
         &limiter,
-        "ollama",
         crate::limits::AI_EMBED_RATE_MAX,
         crate::limits::AI_EMBED_CONCURRENCY_MAX,
-        crate::limits::PROVIDER_DAILY_MAX,
     )
     .is_ok());
 }

@@ -1048,8 +1048,8 @@ mod embedding;
 // callers, `sha256_hex`/`EmbedBudget` several more) — see embedding.rs's doc.
 pub use embedding::embed;
 pub(crate) use embedding::{
-    embed_charged, is_synthetic_scoring_id, posting_vector_or_embed, sha256_hex, AppEmbedder,
-    EmbedBudget, Embedder,
+    embed_charged, embed_with_config, is_synthetic_scoring_id, posting_vector_or_embed, sha256_hex,
+    AppEmbedder, EmbedBudget, Embedder,
 };
 // `posting_vector_is_fresh` has no caller outside `embedding.rs` itself in a
 // non-test build — only `documents/test.rs`'s unit tests reach it through

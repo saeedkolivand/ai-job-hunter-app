@@ -108,6 +108,30 @@ impl EmbedAttempt for ProviderEmbedAttempt<'_> {
     }
 }
 
+/// Wraps any [`EmbedAttempt`] so `charge` (when `Some`) runs immediately
+/// before EVERY real attempt the inner implementation makes — including a
+/// context-length retry's sub-split, not just the top-level chunk. Charges
+/// the per-provider daily budget once per ACTUAL round-trip, not once per
+/// call (a document can fan out into several chunk sends, #1087 finding 1);
+/// `None` is a pass-through no-op, same shape as `documents::EmbedBudget`'s
+/// `Option<&dyn EmbedBudget>`. A refused charge short-circuits BEFORE the
+/// wrapped (billed) call runs. Generic over `A`, not `AppHandle`, so this is
+/// unit-testable with the `AppHandle`-free fakes this file's tests use.
+pub(super) struct MeteredAttempt<'a, A: EmbedAttempt> {
+    pub(super) inner: &'a A,
+    pub(super) charge: Option<&'a (dyn Fn() -> AppResult<()> + Send + Sync)>,
+}
+
+#[async_trait]
+impl<A: EmbedAttempt + Sync> EmbedAttempt for MeteredAttempt<'_, A> {
+    async fn attempt(&self, text: &str) -> AppResult<(Vec<f64>, Usage)> {
+        if let Some(charge) = self.charge {
+            charge()?;
+        }
+        self.inner.attempt(text).await
+    }
+}
+
 /// Split `text` into consecutive, char-boundary-safe, non-overlapping chunks
 /// of at most `cap` chars each, preserving the WHOLE text (a naive single
 /// truncation silently drops everything past `cap` — indistinguishable from a

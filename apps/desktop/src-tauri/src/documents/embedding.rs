@@ -18,6 +18,30 @@ use crate::observability::sanitize_reason;
 
 pub async fn embed(app: &AppHandle, text: &str) -> AppResult<EmbeddingVector> {
     let cfg = app.state::<DocumentStore>().embedding_config();
+    embed_with_config(app, &cfg, text, None).await
+}
+
+/// [`embed`], but the embedding config is resolved by the CALLER (`cfg`)
+/// instead of being re-read from the store here, and an optional `charge`
+/// is threaded through to [`crate::commands::ai_provider::embed_text`] —
+/// see its doc comment: it fires once per ACTUAL provider round-trip, not
+/// once per call.
+///
+/// `ai_embed` is the only caller that passes both: it reads
+/// `embedding_config()` exactly ONCE and hands that SAME snapshot to both
+/// the charge (which provider's daily budget) and this function (which
+/// provider actually receives the request) — reading the config a second
+/// time here, as [`embed`] does, would let `ai_set_embedding_config` land in
+/// between and charge one provider while dispatching to another (#1087
+/// finding 2). Every other caller of [`embed`] (`AppEmbedder` — bulk
+/// re-index + match-score resolution) is unaffected: it keeps re-reading
+/// the store fresh via [`embed`] and passes `charge: None`.
+pub(crate) async fn embed_with_config(
+    app: &AppHandle,
+    cfg: &EmbeddingConfig,
+    text: &str,
+    charge: Option<&(dyn Fn() -> AppResult<()> + Send + Sync)>,
+) -> AppResult<EmbeddingVector> {
     let provider = ProviderId::parse(&cfg.provider).map_err(|e| {
         tracing::warn!(
             "embed failed: unknown embedding provider '{}': {e}",
@@ -31,6 +55,7 @@ pub async fn embed(app: &AppHandle, text: &str) -> AppResult<EmbeddingVector> {
         &cfg.model,
         cfg.base_url.clone(),
         text,
+        charge,
     )
     .await;
     // The model, not just the provider — answering "which embedding model
