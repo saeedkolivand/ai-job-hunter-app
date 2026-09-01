@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788286886428,
+  "lastUpdate": 1788289447048,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "1adfc4286e42f90cfa810c50e226f12fcd95fcc3",
-          "message": "fix: harden the extension bridge answer-assist streaming transport (#648)\n\n* fix: harden the extension bridge answer-assist streaming transport\n\nThree concurrency/lifecycle fixes on the billable answer.assist stream:\n\n- run_writer now wraps each write in a 25s timeout so a stalled-but-open\n  peer (which parked the unbounded outbound channel forever) becomes a\n  dropped receiver, tripping the existing SinkGone -> job_cancel path;\n  bounds channel memory and wasted spend. Kept the unbounded channel (a\n  bounded one would re-couple the read loop or drop reply frames).\n- hoist registry.begin into the synchronous read-loop dispatch (before\n  tokio::spawn) so an assist.cancel racing the spawn always finds the\n  Pending marker instead of being silently dropped and billing a\n  cancelled request; unregister the Pending entry on any early-gate Err\n  so hoisting begin ahead of the gates does not leak registry entries.\n- reorder job_start before register in compose_draft_stream, cancelling\n  the just-started job if a cancel raced ahead, so a cancel in the gap\n  always targets a real, cancellable job (no orphaned Running generation).\n\nThe 0/0 spend-row recording on cancel/error for end-of-stream-only\nproviders is intentional convention (matches cli_agent and finish: \"a\ncall happened at $0\") and is left unchanged.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: extract the assist stream registry into its own module\n\nPure behavior-preserving move to keep stream.rs under the R8 hard LOC cap\nafter the hardening additions (stream.rs 1483 -> 896; new assist_registry.rs\n643). The reqId state machine (StreamEntry, AssistStreamRegistry, the\nJobCanceller/JobStarter traits, start_and_register) and its tests move out;\na re-export keeps every existing super::stream::AssistStreamRegistry path\nunchanged. Test count unchanged (259).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: propagate writer-timeout teardown and generation-scope registry cleanup\n\nAddress the two review findings on the hardening PR:\n\n- The detached run_writer task's write-stall/error exit went unnoticed by\n  handle_connection's read loop, so cancel_all/set_connected(false) ran only\n  after the next inbound frame — a stalled/idle peer lingered \"connected\".\n  The read loop now races reader.next() against the kept writer JoinHandle\n  (via a generic, unit-testable next_step seam); a WriterEnded result breaks\n  the loop straight into the existing teardown.\n- reqId-keyed unregister across multiple sites let a request's late cleanup\n  clobber a reused-reqId successor's fresh entry (stranding a billable job\n  as uncancellable). Consolidated cleanup to a single owner AND made removal\n  generation-scoped: AssistStreamRegistry mints a strictly-monotonic gen at\n  begin, carries it on every StreamEntry, and unregister_gen removes only a\n  matching-gen entry — so a stale request can never remove a successor's\n  entry, while cancel/cancel_all stay reqId-targeted (current holder).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-          "timestamp": "2026-07-15T16:19:37+02:00",
-          "tree_id": "092268f244e9b4512739ace7c2d65fb30ee7afbd",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1adfc4286e42f90cfa810c50e226f12fcd95fcc3"
-        },
-        "date": 1784125772948,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2244340,
-            "range": "± 53699",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2647340,
-            "range": "± 18705",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 287167,
-            "range": "± 11172",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 302241,
             "range": "± 7011",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f336aee29da2093700de054c75e2dbed99bef6c5",
+          "message": "fix: move the nsis installMode guard inside the hook macros (#1089)\n\nThe guard added in #1088 aborted every Windows bundle, so the Release\nworkflow failed on main. Tauri's generated installer.nsi does\n`!include \"<hooks file>\"` about ten lines BEFORE `!define INSTALLMODE`, so at\nfile-scope include time the symbol is undefined. NSIS leaves an undefined\n${SYMBOL} as literal text, which is never equal to \"currentUser\", so the\n!error fired unconditionally:\n\n  !error: windows/hooks.nsh hardcodes HKCU for the per-user PATH ...\n  Error in script installer.nsi -- aborting creation process\n  failed to bundle project: `Failed to bundle app with makensis`\n\nBoth the local verification and the security review missed it because their\nharnesses defined INSTALLMODE BEFORE including the hook file -- the reverse\nof the real ordering. The guard was the one part of that change never\nexercised against the real generated script, and it is the part that broke.\n\nThe check now lives inside both macros, which expand at their insertion\npoints inside the install and uninstall sections, far below the define,\nwhere the value is real. The reason is recorded at the top of the file so\nnobody moves it back.\n\nVerified with a harness that includes the hook BEFORE defining INSTALLMODE,\nmatching the real template. The control matters more than the fix: the\npre-fix file reproduces the exact CI error under that harness, the fixed\nfile compiles, and flipping the harness to perMachine still aborts, so the\nguard kept its purpose rather than being defanged.\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-09-01T20:52:01+02:00",
+          "tree_id": "349fe779e4aa93190174ec786fe51c504380e45e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f336aee29da2093700de054c75e2dbed99bef6c5"
+        },
+        "date": 1788289446029,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2195028,
+            "range": "± 10895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2594370,
+            "range": "± 22819",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 308844,
+            "range": "± 7980",
             "unit": "ns/iter"
           }
         ]
