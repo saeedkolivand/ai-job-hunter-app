@@ -25,15 +25,18 @@
 //!   dispatched by name would hand back a convincing lie instead. The same
 //!   rule caught a THIRD case once Phase 4 made `Reversible` dispatch: `Read`
 //!   also promises the returned data cost nothing to produce — `ai_embed`
-//!   mutates no state (a legitimate `Read` call on that axis alone) but
-//!   hits a paid embedding provider with no `charge_provider_daily`/
-//!   `limiter.acquire` gate anywhere in its call chain (verified against
-//!   `commands::ai::ai_embed` → `documents::embed` → `embed_text`), so
-//!   dispatching it by name would let a caller spend against a paid
-//!   provider with zero budget enforcement — `NotExposed` until that gate
-//!   exists (a separate change: the gap is pre-existing and UI-reachable
-//!   too, and the right cap is per-request or per-byte, not this table's
-//!   concern).
+//!   mutated no state (a legitimate `Read` call on that axis alone) but hit
+//!   a paid embedding provider with no `charge_provider_daily`/
+//!   `limiter.acquire` gate anywhere in its call chain, so dispatching it by
+//!   name would have let a caller spend against a paid provider with zero
+//!   budget enforcement — `NotExposed` until that gate landed
+//!   (`commands::ai::ai_embed`'s own `admit_embed`). Once it did, the SAME
+//!   spend-against-a-paid-provider's-per-day-ceiling rule that makes
+//!   `ai_generate` [`Effect::Irreversible`] (not `Read`) applies here too —
+//!   see `ai_embed`'s own row comment for why a `charge_provider_daily`
+//!   gate is what triggers Irreversible, not what exempts a row from it.
+//!   `match_resume`/`match_resume_text` carry the CURRENT live example of
+//!   this same no-gate case (their row comments).
 //! - Pessimistic default: anything not fully verified from the body is
 //!   [`Effect::Irreversible`].
 //! - [`Effect::NotExposed`] always carries a real, specific reason — never
@@ -45,9 +48,11 @@
 //!   stub whose payload would misrepresent itself as real (`ai_unload_model`,
 //!   `support_get_system_info` — both reclassified from `Read` once Phase 2
 //!   made that classification reachable, not merely descriptive); a real
-//!   read with no anti-abuse gate on its own paid egress (`ai_embed`,
-//!   reclassified once Phase 4 made the SAME thing true of its blast radius);
-//!   or an `Irreversible` command whose ONLY reachable [`ProofSource`] is
+//!   read/write with no anti-abuse gate on its own paid egress
+//!   (`match_resume`/`match_resume_text`, reclassified from `Reversible`
+//!   once Phase 4 made the SAME thing true of `ai_embed`'s blast radius
+//!   before ITS gate landed — see those two rows' own comments); or an
+//!   `Irreversible` command whose ONLY reachable [`ProofSource`] is
 //!   provably vacuous — not merely weak, but a value the caller is
 //!   structurally guaranteed to already hold or that reads as a constant for
 //!   the whole duration of the ceremony (`extension_bridge_regenerate_token`,
@@ -161,12 +166,13 @@ pub(crate) enum ProofSource {
         path: &'static [&'static str],
     },
     /// `read_command` takes no input and returns an ARRAY; the proof is
-    /// `value_field` off the element whose `match_field` equals the
-    /// irreversible command's own `id_field` input — the "delete by id,
-    /// prove you read its name" shape.
+    /// `value_field` off the element whose `match_field` equals the value at
+    /// `id_field` — a PATH walked into the irreversible command's own
+    /// `--input` body (same shape/reasoning as `LookupInput::FromCaller`
+    /// above) — the "delete by id, prove you read its name" shape.
     ListMatch {
         read_command: &'static str,
-        id_field: &'static str,
+        id_field: &'static [&'static str],
         match_field: &'static str,
         value_field: &'static str,
     },
@@ -175,12 +181,13 @@ pub(crate) enum ProofSource {
     /// (the module doc's "no record exists" case).
     Count { read_command: &'static str },
     /// `read_command` takes no input and returns an array; the proof is the
-    /// count of its elements whose `match_field` is a member of the
-    /// irreversible command's own `ids_field` (a JSON array input) —
-    /// `ai_generations_remove_bulk`'s own bulk-selector shape.
+    /// count of its elements whose `match_field` is a member of the value at
+    /// `ids_field` — a PATH walked into the irreversible command's own
+    /// `--input` body (a JSON array) — `ai_generations_remove_bulk`'s own
+    /// bulk-selector shape.
     MatchCount {
         read_command: &'static str,
-        ids_field: &'static str,
+        ids_field: &'static [&'static str],
         match_field: &'static str,
     },
 }
@@ -203,10 +210,21 @@ impl ProofSource {
 /// `read_command`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LookupInput {
-    /// Forward the irreversible command's own input field of this name,
-    /// verbatim, as `read_command`'s SAME-named input field — the caller
-    /// already supplied it to target this exact record.
-    FromCaller(&'static str),
+    /// Walk this PATH into the irreversible command's own `--input` body
+    /// (via the same `walk()` `agent_call::proof` already uses for a
+    /// response path), then forward the value as
+    /// `read_command`'s SAME-named input field — the caller already
+    /// supplied it to target this exact record. A single-element path
+    /// (`&["id"]`) is a flat top-level field; a longer one (`&["req",
+    /// "runId"]`) reaches into a command whose own `#[tauri::command]`
+    /// signature takes one wrapped `req: SomeRequest` argument (HIGH fix —
+    /// security review: a flat single-field selector silently read the
+    /// WRONG location — the ceremony's own top level — for exactly this
+    /// shape, making the row either permanently unsatisfiable or, worse,
+    /// satisfiable against a record the real command never acts on; see
+    /// `resume_pipeline_regenerate_section`'s row comment for the concrete
+    /// exploit).
+    FromCaller(&'static [&'static str]),
     /// A fixed literal — used only by a selector-less command that still
     /// needs ONE representative id to query (see `privacy_sign_out_all`'s
     /// row comment for why this is one of the weaker rows).
@@ -350,35 +368,31 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
              that was never actually unloaded",
         ),
     },
-    // ADR-038 §4 revision (Phase 4 revision — security review on this PR):
-    // reclassified from `Read`. `Read` promises no state change AND no
-    // un-metered cost; this body (`documents::embed` → `embed_text`) hits a
-    // PAID embedding provider (OpenAI/Gemini) with NO
-    // `charge_provider_daily`/`limiter.acquire` anywhere in its call
-    // chain — unlike `ai_generate`, which has both (verified by reading
-    // both bodies, not generalized from one to the other). Dispatching this
-    // by name would let a caller spend against the paid provider with zero
-    // budget enforcement. Fixing the gap itself is a separate change (it is
-    // pre-existing and also reachable from the UI's bulk-indexing path,
-    // which embeds per chunk — a per-request daily cap may be the wrong
-    // granularity there) — NotExposed until that gate exists.
-    //
-    // STATUS (recorded so this doesn't get re-litigated on every review
-    // pass — the reasoning previously lived only in a PR thread): the fix
-    // is a real charge being added directly in `commands/ai/mod.rs`, tracked
-    // separately from this table. Once that lands, this ONE row flips back
-    // to `Read` — do not flip it preemptively; the point of doing it as its
-    // own follow-up is that there must never be a commit where this command
-    // is BOTH dispatchable by name AND ungated.
+    // ADR-038 §4 revision, reclassified AGAIN (HIGH fix — security review
+    // round 2): the prior revision here reclassified this row `NotExposed`
+    // because `documents::embed` → `embed_text` hit a PAID embedding
+    // provider with NO `charge_provider_daily`/`limiter.acquire` gate at
+    // all. That gate landed (`admit_embed`, this file's own body — see
+    // `ai_embed`'s doc comment there), and its own STATUS note said this row
+    // would then flip to `Read`. It does NOT: `charge_provider_daily`
+    // spending against a paid provider's per-day ceiling is this table's own
+    // named Irreversible trigger (module doc, "ADR-038 itself names four
+    // canonical patterns" paragraph) — applied to every OTHER command that
+    // charges it (`ai_generate`, `ai_research_company`, `ai_reembed_all`,
+    // and `autopilot_run`'s own per-embed charge via `RerankBudget`, all
+    // Irreversible below). Flipping this ONE row to `Read` instead would
+    // make it the sole freely-dispatchable paid-provider-spend command in
+    // the table — the exact inconsistency Finding 5 (this same review round)
+    // flags for `match_resume`/`match_resume_text`. Same WEAK spend-total
+    // proof as every other ungapped AI-spend row: no id-scoped record exists
+    // to prove against (the request is a bare text blob), so the caller's
+    // own today-so-far spend is the strongest available signal.
     PolicyEntry {
         path: "commands::ai::ai_embed",
-        effect: Effect::NotExposed(
-            "no charge_provider_daily/limiter gate anywhere in this command's call chain \
-             (verified: ai_embed → documents::embed → embed_text hits the paid provider \
-             directly) — dispatching it by name would let a caller spend against a paid \
-             embedding provider with no daily-budget cap; the gap is pre-existing and also \
-             reachable from the UI, so it is fixed there, not here",
-        ),
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        }),
     },
     // Writes a secret into the OS keychain — ADR-038's `credentials:*` pattern.
     // No prior key to name (a fresh set has nothing to compare against); the
@@ -389,7 +403,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         effect: Effect::Irreversible(ProofSource::Lookup {
             read_command: "ai_has_provider_key",
             key: "provider",
-            input: LookupInput::FromCaller("provider"),
+            input: LookupInput::FromCaller(&["provider"]),
             path: &["has"],
         }),
     },
@@ -401,7 +415,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         effect: Effect::Irreversible(ProofSource::Lookup {
             read_command: "ai_has_provider_key",
             key: "provider",
-            input: LookupInput::FromCaller("provider"),
+            input: LookupInput::FromCaller(&["provider"]),
             path: &["has"],
         }),
     },
@@ -465,12 +479,23 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // Multi-stage AI-driven résumé/cover-letter generation; charges provider
     // spend. Scoped to a real résumé DOCUMENT (`resumeId`) — proof is that
     // document's own `name`, read via `documents_list`, matched by id.
+    // `id_field: &["req", "resumeId"]` (HIGH fix — security review round 2):
+    // `resume_pipeline_run`'s own `#[tauri::command]` signature takes ONE
+    // wrapped `req: ResumePipelineRunRequest` argument, so the wire body is
+    // `{"req": {"resumeId": ..., ...}}` — a flat `"resumeId"` selector read
+    // the ceremony's own TOP LEVEL, where the caller's real `resumeId` never
+    // lives, making this row permanently unsatisfiable (`proof_unavailable`
+    // on every attempt). `match_field: "_id"` (also HIGH fix): `documents_
+    // list` returns `DocumentRecord`, which serializes its id as `_id`
+    // (`#[serde(rename = "_id")]`), not `id` — the SAME field this repo has
+    // already been bitten by once (`reference_documentrecord_id_is_not_the_
+    // wire_shape`), walked into again here.
     PolicyEntry {
         path: "commands::resume_pipeline::resume_pipeline_run",
         effect: Effect::Irreversible(ProofSource::ListMatch {
             read_command: "documents_list",
-            id_field: "resumeId",
-            match_field: "id",
+            id_field: &["req", "resumeId"],
+            match_field: "_id",
             value_field: "name",
         }),
     },
@@ -478,13 +503,27 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::resume_pipeline::resume_pipeline_list_for_job", effect: Effect::Read },
     // Same charged AI-regenerate path as `resume_pipeline_run`, scoped to a
     // real run (`runId`) — proof is that run's own `jobUrl`, read via
-    // `resume_pipeline_get`.
+    // `resume_pipeline_get`. `LookupInput::FromCaller(&["req", "runId"])`
+    // (HIGH fix — security review round 2, worse than the row above):
+    // `resume_pipeline_regenerate_section` ALSO takes one wrapped `req`
+    // argument, so a flat `"runId"` selector didn't just fail to resolve —
+    // Tauri silently ignores unknown TOP-LEVEL body keys, so
+    // `--input '{"runId":"A","req":{"runId":"B",...}}'` resolved the proof
+    // against run A's `jobUrl` while the real command acted on run B: an
+    // UNBOUND ceremony, satisfiable by reading a record the command never
+    // touches. Reading from `req.runId` — the SAME location the command
+    // itself reads its target from — closes that; see
+    // `the_real_resume_pipeline_regenerate_section_policy_row_ignores_a_
+    // decoy_top_level_run_id` (proof tests, run against THIS row) and
+    // `build_input_ignores_a_decoy_top_level_field_and_reads_only_the_
+    // wrapped_path` (the hand-typed pure-logic pin) for the regression
+    // guards.
     PolicyEntry {
         path: "commands::resume_pipeline::resume_pipeline_regenerate_section",
         effect: Effect::Irreversible(ProofSource::Lookup {
             read_command: "resume_pipeline_get",
             key: "runId",
-            input: LookupInput::FromCaller("runId"),
+            input: LookupInput::FromCaller(&["req", "runId"]),
             path: &["jobUrl"],
         }),
     },
@@ -501,12 +540,18 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::documents::documents_recommend_template", effect: Effect::Read },
     // Deletes a stored document's extracted text permanently — no undo.
     // Proof is the target document's own `name`, read via `documents_list`.
+    // `match_field: "_id"` (HIGH fix — security review round 2):
+    // `documents_list` returns `DocumentRecord`, whose id serializes as
+    // `_id` (`#[serde(rename = "_id")]`), not `id` — see
+    // `resume_pipeline_run`'s row comment above for the shared root cause.
+    // `id_field: "id"` is unaffected: `documents_remove`'s own signature
+    // takes a flat top-level `id`, not a wrapped `req`.
     PolicyEntry {
         path: "commands::documents::documents_remove",
         effect: Effect::Irreversible(ProofSource::ListMatch {
             read_command: "documents_list",
-            id_field: "id",
-            match_field: "id",
+            id_field: &["id"],
+            match_field: "_id",
             value_field: "name",
         }),
     },
@@ -585,9 +630,46 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::discovery::discovery_watched", effect: Effect::Read },
 
     // commands/match_resume.rs
-    // Upserts a derived match-score cache row — recomputable, keyed by (resume, job).
-    PolicyEntry { path: "commands::match_resume::match_resume", effect: Effect::Reversible },
-    PolicyEntry { path: "commands::match_resume::match_resume_text", effect: Effect::Reversible },
+    // ADR-038 §4 revision (HIGH fix — security review round 2), reclassified
+    // from `Reversible`: mutating a recomputable match-score cache row is
+    // genuinely `Reversible` on ITS OWN axis, but when
+    // `semanticScoringEnabled: true` is passed and the (resume, job) pair
+    // isn't already cached, `score_one` reaches a PAID embedding provider
+    // (`embed_charged` → `documents::embed`) with `budget: None` — verified
+    // at both call sites (`match_resume`/`score_resume_against_text`'s own
+    // doc comment: "user-initiated: not charged against the unattended
+    // daily ceiling"). No `charge_provider_daily` gate exists on this path
+    // at all, so `agent call` dispatching it by name (looping with a fresh
+    // `jobText`/`jobId` each call to defeat the content-addressed cache) is
+    // the SAME uncapped-paid-provider-spend property that forced `ai_embed`
+    // NotExposed until IT was gated — see `ai_embed`'s row and the module
+    // doc's "How each row was classified" section. NotExposed until a real
+    // charge is threaded through (a change to the interactive scoring path
+    // shared with the renderer, out of scope for this table).
+    PolicyEntry {
+        path: "commands::match_resume::match_resume",
+        effect: Effect::NotExposed(
+            "reaches a paid embedding provider (score_one → embed_charged) whenever \
+             semanticScoringEnabled=true and the (resume,job) pair is not already cached, but \
+             passes budget=None — no charge_provider_daily gate exists on this path, so \
+             dispatching it by name would let a caller spend against a paid embedding provider \
+             with zero daily-budget cap by varying the job each call; the gap is pre-existing \
+             and shared with the interactive UI, so a real charge is a separate change, not \
+             this table's fix",
+        ),
+    },
+    PolicyEntry {
+        path: "commands::match_resume::match_resume_text",
+        effect: Effect::NotExposed(
+            "reaches a paid embedding provider (score_one → embed_charged) whenever \
+             semanticScoringEnabled=true and the (resume,job) pair is not already cached, but \
+             passes budget=None — no charge_provider_daily gate exists on this path, so \
+             dispatching it by name would let a caller spend against a paid embedding provider \
+             with zero daily-budget cap by varying the job text each call; the gap is \
+             pre-existing and shared with the interactive UI, so a real charge is a separate \
+             change, not this table's fix",
+        ),
+    },
     PolicyEntry { path: "commands::match_resume::resume_extract_text", effect: Effect::Read },
     PolicyEntry { path: "commands::match_resume::resume_trim_suggestions", effect: Effect::Read },
 
@@ -725,7 +807,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         effect: Effect::Irreversible(ProofSource::Lookup {
             read_command: "autopilot_get",
             key: "autopilotId",
-            input: LookupInput::FromCaller("autopilotId"),
+            input: LookupInput::FromCaller(&["autopilotId"]),
             path: &["name"],
         }),
     },
@@ -739,7 +821,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         effect: Effect::Irreversible(ProofSource::Lookup {
             read_command: "autopilot_get",
             key: "autopilotId",
-            input: LookupInput::FromCaller("autopilotId"),
+            input: LookupInput::FromCaller(&["autopilotId"]),
             path: &["name"],
         }),
     },
@@ -765,7 +847,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         path: "commands::ai_generations::ai_generations_remove",
         effect: Effect::Irreversible(ProofSource::ListMatch {
             read_command: "ai_generations_list",
-            id_field: "id",
+            id_field: &["id"],
             match_field: "id",
             value_field: "jobTitle",
         }),
@@ -779,7 +861,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         path: "commands::ai_generations::ai_generations_remove_bulk",
         effect: Effect::Irreversible(ProofSource::MatchCount {
             read_command: "ai_generations_list",
-            ids_field: "ids",
+            ids_field: &["ids"],
             match_field: "id",
         }),
     },
@@ -805,7 +887,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         effect: Effect::Irreversible(ProofSource::Lookup {
             read_command: "applications_get",
             key: "id",
-            input: LookupInput::FromCaller("id"),
+            input: LookupInput::FromCaller(&["id"]),
             path: &["application", "title"],
         }),
     },
@@ -828,7 +910,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         path: "commands::notifications::notifications_remove",
         effect: Effect::Irreversible(ProofSource::ListMatch {
             read_command: "notifications_list",
-            id_field: "id",
+            id_field: &["id"],
             match_field: "id",
             value_field: "title",
         }),
@@ -859,7 +941,7 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         path: "commands::referrals::referrals_remove",
         effect: Effect::Irreversible(ProofSource::ListMatch {
             read_command: "referrals_list",
-            id_field: "id",
+            id_field: &["id"],
             match_field: "id",
             value_field: "companyName",
         }),
@@ -1167,6 +1249,36 @@ mod tests {
         }
     }
 
+    /// HIGH fix (security review round 2): `match_resume`/`match_resume_text`
+    /// reach a paid embedding provider (`score_one` → `embed_charged`) with
+    /// `budget: None` when `semanticScoringEnabled: true` — the SAME
+    /// uncapped-spend shape that forced `ai_embed` `NotExposed` before ITS
+    /// gate landed. Hand-written (not looped, mirroring
+    /// `policy_table_has_exactly_164_rows`'s own discipline): a revert of
+    /// either row back to `Reversible` (freely dispatchable, no confirm, no
+    /// cap) would not be caught by any OTHER test in this file — the
+    /// Irreversible-row count is untouched by a `Reversible` change, and
+    /// `not_exposed_rows_carry_a_real_reason` only checks rows that ARE
+    /// `NotExposed`, never that a specific row remains one.
+    #[test]
+    fn match_resume_and_match_resume_text_stay_not_exposed_until_a_real_charge_lands() {
+        for path in [
+            "commands::match_resume::match_resume",
+            "commands::match_resume::match_resume_text",
+        ] {
+            let entry = POLICY
+                .iter()
+                .find(|e| e.path == path)
+                .unwrap_or_else(|| panic!("{path} is not a real POLICY row"));
+            assert!(
+                matches!(entry.effect, Effect::NotExposed(_)),
+                "{path} must stay NotExposed (uncharged paid-embedding path) until a real \
+                 charge_provider_daily gate lands on it — got {:?}",
+                entry.effect
+            );
+        }
+    }
+
     /// `registered_command_paths` itself must find every command `lib.rs`
     /// actually registers — sanity-checks the extraction against a handful
     /// of paths spanning the start, middle and end of the list, so a
@@ -1225,10 +1337,14 @@ mod tests {
         }
         // Hand-written literal (not derived from POLICY itself — the same
         // "pair a loop with a literal" discipline as
-        // `policy_table_has_exactly_164_rows`): 30 Irreversible rows
+        // `policy_table_has_exactly_164_rows`): 31 Irreversible rows
         // (`extension_bridge_regenerate_token` moved to `NotExposed` —
-        // security review on this PR, see that row's own comment).
-        assert_eq!(checked, 30, "expected exactly 30 Irreversible rows");
+        // security review round 1; `ai_embed` moved NotExposed → Irreversible
+        // once its `charge_provider_daily` gate landed, and
+        // `match_resume`/`match_resume_text` moved Reversible → NotExposed
+        // for the SAME reason `ai_embed` originally was — security review
+        // round 2, see each row's own comment).
+        assert_eq!(checked, 31, "expected exactly 31 Irreversible rows");
     }
 
     /// Mutation-style guard: an `Irreversible` row whose `ProofSource`

@@ -8,7 +8,13 @@
 //! [`Refusal::ConfirmationRequired`], naming WHICH other read surface the
 //! proof value comes from and NEVER the value itself; a wrong `confirm`
 //! refuses with [`Refusal::ConfirmationMismatch`], which likewise never
-//! discloses the expected value. [`Effect::NotExposed`] always refuses.
+//! discloses the expected value. [`Effect::NotExposed`] always refuses. A
+//! dispatched command that comes back as `InvokeResponse::Err` — the body
+//! ran and returned a typed `Err`, or Tauri rejected the call before the
+//! body ran at all (bad args, ACL denial, unknown command) — ALSO refuses,
+//! with [`Refusal::InvokeError`]: it is never folded into `dispatched: true`
+//! (see that variant's own doc for why the two causes are indistinguishable
+//! on the wire and both must refuse).
 //!
 //! ## Dispatch mechanism (verified against the vendored tauri 2.11.5
 //! source, not docs.rs — ADR-038's own "verified" note)
@@ -102,6 +108,17 @@ enum Refusal {
     /// caller's input, so the carried string is always one of
     /// [`invoke_command`]'s own fixed messages, never an echo of `input`.
     DispatchFailed(String),
+    /// `InvokeResponse::Err` (HIGH fix — security review): the target
+    /// command's OWN dispatch produced a Tauri-level error rather than a
+    /// success payload — distinct from [`Refusal::DispatchFailed`], which is
+    /// a framework failure that never reaches the target command at all
+    /// (no "main" webview, its url unreadable, no reply). This is the fix
+    /// for the defect where `InvokeResponse::Err` used to be folded straight
+    /// into `Ok`, reporting `dispatched: true` for a call whose command body
+    /// either failed validation or never ran (bad args, ACL denial, unknown
+    /// command) — see [`InvokeOutcome::CommandErr`]'s own doc for why the
+    /// two cannot be told apart here, and why both must refuse.
+    InvokeError(String),
     /// [`Effect::Irreversible`] with no `confirm` supplied — exit 4 (see
     /// `agent_cli::exit_code_for_reply`), distinct from every other refusal
     /// here (all exit 2). Names WHICH read surface + field the proof comes
@@ -124,6 +141,7 @@ const ERR_NOT_EXPOSED: &str = "not_exposed";
 const ERR_CLI_ONLY: &str = "cli_only";
 const ERR_RATE_LIMITED: &str = "rate_limited";
 const ERR_DISPATCH_FAILED: &str = "dispatch_failed";
+const ERR_INVOKE_ERROR: &str = "invoke_error";
 /// `pub(super)` — [`super::agent_cli::exit_code_for_reply`] matches on this
 /// EXACT sentinel to special-case exit 4, never a second hand-typed copy of
 /// the string.
@@ -143,6 +161,7 @@ impl Refusal {
             Refusal::OriginRefused => ERR_CLI_ONLY,
             Refusal::RateLimited => ERR_RATE_LIMITED,
             Refusal::DispatchFailed(_) => ERR_DISPATCH_FAILED,
+            Refusal::InvokeError(_) => ERR_INVOKE_ERROR,
             Refusal::ConfirmationRequired(_) => ERR_CONFIRMATION_REQUIRED,
             Refusal::ConfirmationMismatch => ERR_CONFIRMATION_MISMATCH,
             Refusal::ProofUnavailable => ERR_PROOF_UNAVAILABLE,
@@ -166,6 +185,11 @@ impl Refusal {
             Refusal::OriginRefused => CLI_ONLY_MESSAGE.to_string(),
             Refusal::RateLimited => super::agent_read::THROTTLED_MESSAGE.to_string(),
             Refusal::DispatchFailed(detail) => detail.clone(),
+            Refusal::InvokeError(detail) => format!(
+                "the command either ran and returned an error, or Tauri rejected the call \
+                 before the body ran (missing/invalid args, an ACL denial, or an unregistered \
+                 command) — these are wire-indistinguishable; underlying value: {detail}"
+            ),
             Refusal::ConfirmationRequired(hint) => hint.clone(),
             Refusal::ConfirmationMismatch => {
                 "the confirm value did not match — it is never disclosed by this refusal; \
@@ -263,54 +287,71 @@ pub(super) fn throttle_key(command: &str) -> &str {
 // ── Fencing scraped job-posting text (a different axis from the raw-data
 // decision above — ADR-038's own amendment paragraph) ──────────────────────
 
-/// Read-effect commands whose response can carry raw, third-party-authored
-/// SCRAPED JOB TEXT — audited by hand against each command's own body
-/// (mirrors `policy`'s own per-row audit discipline; NOT derived from
-/// `Effect::Read` itself, since most Read rows carry nothing scraped at
-/// all). Every entry is commented with the field this routes to
-/// [`crate::prompt_fence::fenced`] — the SAME primitive, tag, and cap
-/// `agent_read::fence_description` uses for the curated `job` resource, so a
-/// scraped posting reads as untrusted DATA on every surface it reaches.
-const FENCE_DESCRIPTION_COMMANDS: &[&str] = &[
-    // Returns one `scraping::types::JobPosting` (or null) — `description` is
-    // the full scraped posting body fetched on demand.
-    "scrape_resolve_url",
-    // Returns the ENTIRE live postings cache as a raw array — every element
-    // carries its own scraped `description`.
-    "scrape_list_postings",
+/// Response field NAMES that can carry raw, third-party-authored SCRAPED JOB
+/// TEXT — audited by hand against the struct each name actually serializes
+/// from (mirrors `policy`'s own per-row audit discipline). Keyed by FIELD
+/// NAME rather than by command (HIGH fix — security review round 2): a
+/// command allowlist (the prior shape of this const) missed every command
+/// whose response embeds one of these structs under this same key — real
+/// examples that leaked unfenced: `autopilot_list`/`autopilot_get`
+/// (`Autopilot.found_jobs[].description`), `applications_list`/
+/// `applications_get` (`Application.job_description` → `jobDescription`),
+/// `ai_generations_list` (`AiGenerationRecord.job_ad` → `jobAd`). Every entry
+/// routes through [`crate::prompt_fence::fenced`] — the SAME primitive, tag,
+/// and cap `agent_read::fence_description` uses for the curated `job`
+/// resource, so a scraped posting reads as untrusted DATA on every surface
+/// it reaches. See `every_known_posting_text_carrier_is_a_real_freely_
+/// dispatchable_policy_row` (tests) for the audited list of rows this is
+/// known to protect.
+const FENCE_FIELD_NAMES: &[&str] = &[
+    // `scraping::types::JobPosting.description` (scrape_resolve_url,
+    // scrape_list_postings) AND `autopilot::FoundJob.description`
+    // (autopilot_list, autopilot_get) — same key, two different structs.
+    "description",
+    // `ai_generations::AiGenerationRecord.job_ad` (ai_generations_list) —
+    // the full scraped posting text handed to the AI provider verbatim.
+    "jobAd",
+    // `applications::Application.job_description` (applications_list,
+    // applications_get) — the scraped posting text an Application was
+    // tracked/generated from.
+    "jobDescription",
 ];
 
-/// Fence every `description` string [`FENCE_DESCRIPTION_COMMANDS`] can carry,
-/// in place — recurses through the WHOLE response tree (MEDIUM fix —
-/// security review), not just a top-level object/array: the two commands on
-/// this list are audited against their shape TODAY, but a future response
-/// wrapped in e.g. `{"postings": [...]}` must not silently skip this guard
-/// just because it added one more layer of nesting.
-fn fence_scraped_fields(command: &str, data: &mut Value) {
-    if !FENCE_DESCRIPTION_COMMANDS.contains(&command) {
-        return;
-    }
-    fence_description_recursive(data);
+/// Fence every [`FENCE_FIELD_NAMES`] string anywhere in `data`'s tree —
+/// recurses through the WHOLE response (not just a top-level object/array,
+/// MEDIUM fix — security review round 1), and runs UNCONDITIONALLY for every
+/// dispatched command rather than gating on a command allowlist (HIGH fix —
+/// security review round 2): a new command whose response embeds one of
+/// these EXACT field names is fenced automatically, without needing an entry
+/// added here first. The residual risk this does NOT close is a *new* field
+/// name carrying posting text — `every_known_posting_text_carrier_is_a_real_
+/// freely_dispatchable_policy_row` (tests) pins the currently-known carrier
+/// set so a rename/removal of one of those rows is caught, not silently
+/// discovered by an agent reading unfenced text.
+fn fence_scraped_fields(data: &mut Value) {
+    fence_named_fields_recursive(data);
 }
 
-/// Walk every object/array in `value`, fencing a `description` STRING key
-/// wherever one appears — see [`fence_scraped_fields`]'s doc for why this is
-/// recursive rather than one level deep.
-fn fence_description_recursive(value: &mut Value) {
+/// Walk every object/array in `value`, fencing any [`FENCE_FIELD_NAMES`]
+/// STRING key wherever one appears — see [`fence_scraped_fields`]'s doc for
+/// why this is recursive and unconditional.
+fn fence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
-            if let Some(desc) = map.get("description").and_then(Value::as_str) {
-                let fenced =
-                    crate::prompt_fence::fenced("job_posting", desc, crate::prompt_fence::JOB_CAP);
-                map.insert("description".to_string(), json!(fenced));
+            for field in FENCE_FIELD_NAMES {
+                if let Some(s) = map.get(*field).and_then(Value::as_str) {
+                    let fenced =
+                        crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP);
+                    map.insert((*field).to_string(), json!(fenced));
+                }
             }
             for v in map.values_mut() {
-                fence_description_recursive(v);
+                fence_named_fields_recursive(v);
             }
         }
         Value::Array(items) => {
             for item in items.iter_mut() {
-                fence_description_recursive(item);
+                fence_named_fields_recursive(item);
             }
         }
         _ => {}
@@ -319,12 +360,50 @@ fn fence_description_recursive(value: &mut Value) {
 
 // ── Dispatch ─────────────────────────────────────────────────────────────
 
+/// What `Webview::on_message`'s callback handed back, translated into
+/// [`dispatch_direct`]'s own vocabulary — split out so the translation
+/// itself (`classify_response`) is a PURE fn, unit-testable without a live
+/// `AppHandle` (this crate has no `tauri::test` mock-app harness; see
+/// `documents::embedding`'s doc for the same constraint elsewhere).
+enum InvokeOutcome {
+    /// The command body ran and returned its success payload.
+    Success(Value),
+    /// `InvokeResponse::Err` (HIGH fix — security review): the command body
+    /// either legitimately ran and returned a typed `Err` (e.g.
+    /// `documents_export_document` failing validation), OR Tauri rejected
+    /// the call before the body ever ran at all — a missing/mistyped arg
+    /// (`applications_delete` called without `keepDocuments`), an ACL
+    /// denial, or an unregistered command name. Both cases serialize to the
+    /// SAME shape (a bare string — `AppError::serialize` and Tauri's own
+    /// ACL-rejection string are wire-indistinguishable), so this crate
+    /// cannot tell them apart from the response alone — but BOTH must never
+    /// be reported as `dispatched: true`; see [`Refusal::InvokeError`].
+    CommandErr(Value),
+}
+
+/// Pure: `InvokeResponse` → [`InvokeOutcome`]. No `AppHandle`, no I/O — every
+/// branch of [`invoke_command`]'s previous behaviour (folding
+/// `InvokeResponse::Err` into a successful `Ok(Value)`) is what let a
+/// Tauri-level rejection report `dispatched: true` for a command whose body
+/// never ran; this split is what makes that mapping directly testable.
+fn classify_response(response: InvokeResponse) -> InvokeOutcome {
+    match response {
+        InvokeResponse::Ok(InvokeResponseBody::Json(s)) => {
+            InvokeOutcome::Success(serde_json::from_str(&s).unwrap_or(Value::Null))
+        }
+        // No command on the Read-effect rows returns a raw byte body today,
+        // but degrade rather than drop it if one ever does.
+        InvokeResponse::Ok(InvokeResponseBody::Raw(bytes)) => InvokeOutcome::Success(json!(bytes)),
+        InvokeResponse::Err(InvokeError(v)) => InvokeOutcome::CommandErr(v),
+    }
+}
+
 /// Drive one `Webview::on_message` round trip for `command`. `input` becomes
 /// the invoke body verbatim — exactly what the renderer's own
 /// `invoke(cmd, args)` sends (Tauri deserializes each top-level key into the
 /// matching arg by name), so `--input '{"jobId":"..."}'` reaches the command
 /// the same way a UI click would.
-async fn invoke_command(app: &AppHandle, command: &str, input: Value) -> AppResult<Value> {
+async fn invoke_command(app: &AppHandle, command: &str, input: Value) -> AppResult<InvokeOutcome> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| AppError::Config("main window unavailable".to_string()))?;
@@ -351,24 +430,35 @@ async fn invoke_command(app: &AppHandle, command: &str, input: Value) -> AppResu
     let response = rx
         .await
         .map_err(|_| AppError::Message("command dispatch never replied".to_string()))?;
-    Ok(match response {
-        InvokeResponse::Ok(InvokeResponseBody::Json(s)) => {
-            serde_json::from_str(&s).unwrap_or(Value::Null)
-        }
-        // No command on the Read-effect rows returns a raw byte body today,
-        // but degrade rather than drop it if one ever does.
-        InvokeResponse::Ok(InvokeResponseBody::Raw(bytes)) => json!(bytes),
-        InvokeResponse::Err(InvokeError(v)) => v,
-    })
+    Ok(classify_response(response))
+}
+
+/// [`Refusal::InvokeError`]'s detail text — a bare JSON string (the common
+/// case — both `AppError` and Tauri's own ACL-rejection serialize as one)
+/// renders unquoted; anything else (rare — a future non-string command
+/// error type) falls back to its JSON form rather than panicking.
+fn invoke_error_detail(v: &Value) -> String {
+    v.as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| v.to_string())
 }
 
 /// Dispatch a `Read`/`Reversible` row: invoke it for real, then fence any
 /// scraped text in its response.
 async fn dispatch_direct(app: &AppHandle, command: &str, input: Value) -> Result<Value, Refusal> {
-    let mut data = invoke_command(app, command, input)
+    let outcome = invoke_command(app, command, input)
         .await
         .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;
-    fence_scraped_fields(command, &mut data);
+    let mut data = match outcome {
+        InvokeOutcome::Success(v) => v,
+        // The command body either legitimately ran and returned a typed
+        // `Err`, or Tauri rejected the call before the body ever ran (bad
+        // args, an ACL denial, an unregistered command) — see
+        // `Refusal::InvokeError`'s own doc for why these two are
+        // wire-indistinguishable and both refuse rather than dispatch.
+        InvokeOutcome::CommandErr(v) => return Err(Refusal::InvokeError(invoke_error_detail(&v))),
+    };
+    fence_scraped_fields(&mut data);
     Ok(data)
 }
 

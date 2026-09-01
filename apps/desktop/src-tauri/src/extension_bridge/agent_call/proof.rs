@@ -22,13 +22,18 @@ use super::super::agent_cli::policy::{LookupInput, ProofSource, POLICY};
 /// The input body `source.read_command()` is invoked with — pure, so a
 /// caller-controlled `caller_input` can never smuggle anything past this
 /// beyond the ONE key a [`ProofSource::Lookup`] row explicitly forwards.
+/// `LookupInput::FromCaller` is a PATH into `caller_input` (walked via
+/// [`walk`], the SAME fn a response path uses below) rather than a flat
+/// top-level field — see `LookupInput::FromCaller`'s own doc for why a flat
+/// field silently read the wrong location for a command whose
+/// `#[tauri::command]` signature wraps its args in one `req` struct.
 fn build_input(source: ProofSource, caller_input: &Value) -> Value {
     match source {
         ProofSource::Lookup { key, input, .. } => {
             let value = match input {
                 LookupInput::Literal(v) => Value::String(v.to_string()),
-                LookupInput::FromCaller(field) => {
-                    caller_input.get(field).cloned().unwrap_or(Value::Null)
+                LookupInput::FromCaller(path) => {
+                    walk(caller_input, path).cloned().unwrap_or(Value::Null)
                 }
             };
             serde_json::json!({ key: value })
@@ -42,6 +47,12 @@ fn build_input(source: ProofSource, caller_input: &Value) -> Value {
 
 /// Walk `path` (a sequence of object keys) into `value`; an empty `path`
 /// returns `value` itself (e.g. `system_get_version`'s bare string response).
+/// ONE walker for BOTH directions this module reads a path from (HIGH fix —
+/// security review round 2): a `ProofSource`'s own response `path`
+/// ([`ProofSource::Scalar`]/[`ProofSource::Lookup`]) AND a
+/// [`LookupInput::FromCaller`]/`ProofSource::ListMatch`'s `id_field`/
+/// `ProofSource::MatchCount`'s `ids_field` path into the CALLER's `--input`
+/// — never two copies of the same walk that could silently diverge.
 fn walk<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
     path.iter().try_fold(value, |v, key| v.get(key))
 }
@@ -80,7 +91,7 @@ pub(super) fn extract(
             value_field,
             ..
         } => {
-            let target = caller_input.get(id_field)?;
+            let target = walk(caller_input, id_field)?;
             let record = response
                 .as_array()?
                 .iter()
@@ -93,7 +104,7 @@ pub(super) fn extract(
             match_field,
             ..
         } => {
-            let ids = caller_input.get(ids_field)?.as_array()?;
+            let ids = walk(caller_input, ids_field)?.as_array()?;
             let count = response
                 .as_array()?
                 .iter()
@@ -115,9 +126,18 @@ pub(super) async fn resolve(
     caller_input: &Value,
 ) -> Option<String> {
     let read_input = build_input(source, caller_input);
-    let response = super::invoke_command(app, source.read_command(), read_input)
+    let outcome = super::invoke_command(app, source.read_command(), read_input)
         .await
         .ok()?;
+    let response = match outcome {
+        super::InvokeOutcome::Success(v) => v,
+        // The read this proof depends on itself hit a Tauri-level error
+        // (HIGH fix — security review: the old fold-into-Ok behaviour meant
+        // this used to treat that error VALUE as the resolved proof) — no
+        // proof value exists to extract; degrade to `None` like any other
+        // resolution failure, never a panic and never a value invented here.
+        super::InvokeOutcome::CommandErr(_) => return None,
+    };
     extract(source, caller_input, &response)
 }
 
@@ -158,6 +178,7 @@ pub(super) fn hint(source: ProofSource) -> String {
 mod tests {
     use serde_json::json;
 
+    use super::super::super::agent_cli::policy::Effect;
     use super::*;
 
     // ── build_input ─────────────────────────────────────────────────────
@@ -167,13 +188,54 @@ mod tests {
         let source = ProofSource::Lookup {
             read_command: "autopilot_get",
             key: "autopilotId",
-            input: LookupInput::FromCaller("autopilotId"),
+            input: LookupInput::FromCaller(&["autopilotId"]),
             path: &["name"],
         };
         let caller_input = json!({ "autopilotId": "ap-1" });
         assert_eq!(
             build_input(source, &caller_input),
             json!({ "autopilotId": "ap-1" })
+        );
+    }
+
+    /// HIGH fix (security review round 2): `resume_pipeline_regenerate_
+    /// section`'s own `#[tauri::command]` signature wraps its args in one
+    /// `req` struct, so its `runId` lives at `req.runId`, not the top level —
+    /// a multi-segment path is what makes `build_input` read the SAME
+    /// location the real command reads its target from.
+    #[test]
+    fn build_input_walks_a_multi_segment_path_for_a_wrapped_req_command() {
+        let source = ProofSource::Lookup {
+            read_command: "resume_pipeline_get",
+            key: "runId",
+            input: LookupInput::FromCaller(&["req", "runId"]),
+            path: &["jobUrl"],
+        };
+        let caller_input = json!({ "req": { "runId": "run-B", "sectionKey": "summary" } });
+        assert_eq!(
+            build_input(source, &caller_input),
+            json!({ "runId": "run-B" })
+        );
+    }
+
+    /// The unbound-ceremony shape from the review finding: a top-level
+    /// `runId` alongside a DIFFERENT `req.runId` must resolve against the
+    /// WRAPPED value (what the real command actually acts on), never the
+    /// decoy top-level one — this is the exact defect the path-based
+    /// selector fixes.
+    #[test]
+    fn build_input_ignores_a_decoy_top_level_field_and_reads_only_the_wrapped_path() {
+        let source = ProofSource::Lookup {
+            read_command: "resume_pipeline_get",
+            key: "runId",
+            input: LookupInput::FromCaller(&["req", "runId"]),
+            path: &["jobUrl"],
+        };
+        let caller_input = json!({ "runId": "run-A", "req": { "runId": "run-B" } });
+        assert_eq!(
+            build_input(source, &caller_input),
+            json!({ "runId": "run-B" }),
+            "must resolve against req.runId (what the command acts on), never the top-level decoy"
         );
     }
 
@@ -203,8 +265,8 @@ mod tests {
             },
             ProofSource::ListMatch {
                 read_command: "documents_list",
-                id_field: "id",
-                match_field: "id",
+                id_field: &["id"],
+                match_field: "_id",
                 value_field: "name",
             },
             ProofSource::Count {
@@ -212,7 +274,7 @@ mod tests {
             },
             ProofSource::MatchCount {
                 read_command: "ai_generations_list",
-                ids_field: "ids",
+                ids_field: &["ids"],
                 match_field: "id",
             },
         ] {
@@ -253,7 +315,7 @@ mod tests {
         let source = ProofSource::Lookup {
             read_command: "applications_get",
             key: "id",
-            input: LookupInput::FromCaller("id"),
+            input: LookupInput::FromCaller(&["id"]),
             path: &["application", "title"],
         };
         let response = json!({ "application": { "title": "Staff Engineer" }, "events": [] });
@@ -270,7 +332,7 @@ mod tests {
         let source = ProofSource::Lookup {
             read_command: "autopilot_get",
             key: "autopilotId",
-            input: LookupInput::FromCaller("autopilotId"),
+            input: LookupInput::FromCaller(&["autopilotId"]),
             path: &["name"],
         };
         assert_eq!(
@@ -283,7 +345,7 @@ mod tests {
     fn extract_list_match_finds_the_record_by_the_callers_own_id() {
         let source = ProofSource::ListMatch {
             read_command: "documents_list",
-            id_field: "id",
+            id_field: &["id"],
             match_field: "id",
             value_field: "name",
         };
@@ -301,7 +363,7 @@ mod tests {
     fn extract_list_match_returns_none_when_the_id_is_not_in_the_list() {
         let source = ProofSource::ListMatch {
             read_command: "documents_list",
-            id_field: "id",
+            id_field: &["id"],
             match_field: "id",
             value_field: "name",
         };
@@ -318,12 +380,162 @@ mod tests {
         // absent input resolves to no proof, not an accidental match.
         let source = ProofSource::ListMatch {
             read_command: "documents_list",
-            id_field: "id",
+            id_field: &["id"],
             match_field: "id",
             value_field: "name",
         };
         let response = json!([{ "id": "doc-1", "name": "Resume A" }]);
         assert_eq!(extract(source, &json!({}), &response), None);
+    }
+
+    /// A real `DocumentRecord` fixture (HIGH fix — security review round 2),
+    /// per the finding's own instruction: "build the test fixture from
+    /// `serde_json::to_value(DocumentRecord{..})` rather than a hand-typed
+    /// literal — a literal is what let this pass." `DocumentRecord` renames
+    /// its id to `_id` on the wire; the two `documents_list`-backed
+    /// `ListMatch` rows (`documents_remove`, `resume_pipeline_run`) were
+    /// matching on `"id"`, which a real response never has, so every attempt
+    /// resolved `proof_unavailable` forever.
+    fn a_document_record(id: &str, name: &str) -> Value {
+        serde_json::to_value(crate::documents::DocumentRecord {
+            id: id.to_string(),
+            title: "Resume".to_string(),
+            name: name.to_string(),
+            locale: None,
+            text: "…".to_string(),
+            pages: None,
+            created_at: 0,
+            indexed: false,
+            is_default: false,
+            keywords_json: None,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn extract_list_match_matches_a_real_document_record_by_its_wire_id_field() {
+        let response = json!([a_document_record("doc-1", "Resume A")]);
+        let source = ProofSource::ListMatch {
+            read_command: "documents_list",
+            id_field: &["id"],
+            match_field: "_id",
+            value_field: "name",
+        };
+        assert_eq!(
+            extract(source, &json!({ "id": "doc-1" }), &response),
+            Some("Resume A".to_string())
+        );
+    }
+
+    /// Mutation guard: the ORIGINAL bug (`match_field: "id"`) must fail
+    /// against a REAL wire response, proving the fixture above is not
+    /// accidentally satisfying both a correct and a buggy selector.
+    #[test]
+    fn extract_list_match_with_the_pre_fix_match_field_never_matches_a_real_document_record() {
+        let response = json!([a_document_record("doc-1", "Resume A")]);
+        let source = ProofSource::ListMatch {
+            read_command: "documents_list",
+            id_field: &["id"],
+            match_field: "id",
+            value_field: "name",
+        };
+        assert_eq!(
+            extract(source, &json!({ "id": "doc-1" }), &response),
+            None,
+            "match_field: \"id\" must never match a real DocumentRecord, which has no such key"
+        );
+    }
+
+    /// `resume_pipeline_run`'s exact shape: `id_field` is a PATH into a
+    /// `req`-wrapped `--input` body (its `#[tauri::command]` signature takes
+    /// one `req: ResumePipelineRunRequest` argument), and the response is
+    /// matched on the real `_id` wire field.
+    #[test]
+    fn extract_list_match_reads_a_wrapped_resume_id_and_matches_the_real_wire_field() {
+        let response = json!([a_document_record("doc-9", "Resume B")]);
+        let source = ProofSource::ListMatch {
+            read_command: "documents_list",
+            id_field: &["req", "resumeId"],
+            match_field: "_id",
+            value_field: "name",
+        };
+        let caller_input = json!({ "req": { "resumeId": "doc-9", "jobId": "job-1" } });
+        assert_eq!(
+            extract(source, &caller_input, &response),
+            Some("Resume B".to_string())
+        );
+    }
+
+    /// Closes the gap between "extract()'s ListMatch logic is correct in
+    /// general" (the hand-typed `ProofSource` tests above) and "the REAL
+    /// `documents_remove` POLICY row is configured correctly" — pulls the
+    /// row straight out of `POLICY` rather than typing its shape again, so
+    /// a future revert of that row's `match_field` back to `"id"` fails
+    /// HERE, not only against a hand-typed literal.
+    #[test]
+    fn the_real_documents_remove_policy_row_resolves_a_document_record_by_its_wire_id() {
+        let entry = POLICY
+            .iter()
+            .find(|e| e.path == "commands::documents::documents_remove")
+            .expect("documents_remove is a real POLICY row");
+        let Effect::Irreversible(source) = entry.effect else {
+            panic!("documents_remove must be Irreversible: {:?}", entry.effect);
+        };
+        let response = json!([a_document_record("doc-1", "Resume A")]);
+        assert_eq!(
+            extract(source, &json!({ "id": "doc-1" }), &response),
+            Some("Resume A".to_string())
+        );
+    }
+
+    /// Same closing-the-gap discipline for `resume_pipeline_run`'s real
+    /// row — pins BOTH the wrapped `id_field` path AND the `_id` wire field
+    /// against the actual committed table, not a re-typed copy of it.
+    #[test]
+    fn the_real_resume_pipeline_run_policy_row_resolves_a_wrapped_resume_id() {
+        let entry = POLICY
+            .iter()
+            .find(|e| e.path == "commands::resume_pipeline::resume_pipeline_run")
+            .expect("resume_pipeline_run is a real POLICY row");
+        let Effect::Irreversible(source) = entry.effect else {
+            panic!(
+                "resume_pipeline_run must be Irreversible: {:?}",
+                entry.effect
+            );
+        };
+        let response = json!([a_document_record("doc-9", "Resume B")]);
+        let caller_input = json!({ "req": { "resumeId": "doc-9", "jobId": "job-1" } });
+        assert_eq!(
+            extract(source, &caller_input, &response),
+            Some("Resume B".to_string())
+        );
+    }
+
+    /// The unbound-ceremony shape from the review finding, run against the
+    /// REAL `resume_pipeline_regenerate_section` row (not a re-typed copy):
+    /// `--input '{"runId":"run-A","req":{"runId":"run-B",...}}'` must
+    /// resolve the proof against `req.runId` (what the command actually
+    /// acts on), never the top-level decoy — a revert of this row's
+    /// `LookupInput::FromCaller` back to a flat `"runId"` fails HERE.
+    #[test]
+    fn the_real_resume_pipeline_regenerate_section_policy_row_ignores_a_decoy_top_level_run_id() {
+        let entry = POLICY
+            .iter()
+            .find(|e| e.path == "commands::resume_pipeline::resume_pipeline_regenerate_section")
+            .expect("resume_pipeline_regenerate_section is a real POLICY row");
+        let Effect::Irreversible(source) = entry.effect else {
+            panic!(
+                "resume_pipeline_regenerate_section must be Irreversible: {:?}",
+                entry.effect
+            );
+        };
+        let caller_input =
+            json!({ "runId": "run-A", "req": { "runId": "run-B", "sectionKey": "summary" } });
+        assert_eq!(
+            build_input(source, &caller_input),
+            json!({ "runId": "run-B" }),
+            "must read req.runId (what the command acts on), never the top-level decoy"
+        );
     }
 
     #[test]
@@ -353,7 +565,7 @@ mod tests {
     fn extract_match_count_counts_only_the_targeted_ids_that_exist() {
         let source = ProofSource::MatchCount {
             read_command: "ai_generations_list",
-            ids_field: "ids",
+            ids_field: &["ids"],
             match_field: "id",
         };
         let response = json!([
@@ -403,7 +615,7 @@ mod tests {
     fn hint_names_the_real_namespaced_read_command() {
         let source = ProofSource::ListMatch {
             read_command: "documents_list",
-            id_field: "id",
+            id_field: &["id"],
             match_field: "id",
             value_field: "name",
         };
