@@ -50,7 +50,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 
-use super::agent_cli::policy::{Effect, PolicyEntry, POLICY};
+use super::agent_cli::policy::{Effect, PolicyEntry, ProofSource, POLICY};
 
 mod proof;
 
@@ -90,8 +90,12 @@ fn find_policy(namespace: &str, command: &str) -> Option<&'static PolicyEntry> {
 /// `Webview::on_message`. One enum, one `sentinel`/`detail` pair per
 /// variant, one reply builder below — collapsing two of these into one
 /// sentinel is exactly the defect this repo's own `agent_cli` module doc
-/// says has already been fixed twice on this surface.
-enum Refusal {
+/// says has already been fixed twice on this surface. `pub(super)` — it is
+/// the `Err` side of [`gate`]'s return type, and `gate` is itself
+/// `pub(super)` for `extension_bridge::test`; Rust's private-interfaces lint
+/// requires every type in a `pub(super)` fn's signature to be at least as
+/// visible, regardless of whether a caller actually names a variant.
+pub(super) enum Refusal {
     /// No policy row matches this `(namespace, command)` pair at all.
     UnknownCommand,
     /// [`Effect::NotExposed`] — deliberately unreachable; carries that row's
@@ -173,6 +177,17 @@ impl Refusal {
     /// each variant's own doc; this is the one place both are rendered, so
     /// it is also the one place that guarantee could be broken, hence the
     /// dedicated tests in `agent_call::tests`.
+    ///
+    /// MEDIUM fix (security review round 4): [`Refusal::InvokeError`]'s
+    /// `detail` used to render unfenced — [`dispatch_direct`]'s SUCCESS
+    /// payload runs through [`fence_scraped_fields`], but a command's error
+    /// value never did, so a dispatchable command whose `AppError` embeds
+    /// third-party/remote text (a scrape/HTTP/provider failure that echoes
+    /// part of a caller-chosen host's own response) reached the caller
+    /// verbatim through this ONE surviving unfenced channel — the same class
+    /// of gap `ai_test_provider_key`'s CRITICAL finding closed on the
+    /// success side. Fenced the SAME way as every other untrusted string
+    /// this file emits, not a second primitive.
     fn detail(&self) -> String {
         match self {
             Refusal::UnknownCommand => {
@@ -185,11 +200,18 @@ impl Refusal {
             Refusal::OriginRefused => CLI_ONLY_MESSAGE.to_string(),
             Refusal::RateLimited => super::agent_read::THROTTLED_MESSAGE.to_string(),
             Refusal::DispatchFailed(detail) => detail.clone(),
-            Refusal::InvokeError(detail) => format!(
-                "the command either ran and returned an error, or Tauri rejected the call \
-                 before the body ran (missing/invalid args, an ACL denial, or an unregistered \
-                 command) — these are wire-indistinguishable; underlying value: {detail}"
-            ),
+            Refusal::InvokeError(detail) => {
+                let fenced = crate::prompt_fence::fenced(
+                    "job_posting",
+                    detail,
+                    crate::prompt_fence::JOB_CAP,
+                );
+                format!(
+                    "the command either ran and returned an error, or Tauri rejected the call \
+                     before the body ran (missing/invalid args, an ACL denial, or an unregistered \
+                     command) — these are wire-indistinguishable; underlying value: {fenced}"
+                )
+            }
             Refusal::ConfirmationRequired(hint) => hint.clone(),
             Refusal::ConfirmationMismatch => {
                 "the confirm value did not match — it is never disclosed by this refusal; \
@@ -312,6 +334,48 @@ pub(super) fn throttle_key(command: &str) -> &str {
 /// …" reached the caller unfenced). `requirements` is an
 /// `Option<Vec<String>>` — [`fence_named_fields_recursive`] now fences
 /// string ARRAY elements under a listed key too, not just a bare string.
+///
+/// HIGH fix (security review round 4): a FLAT field-name list silently
+/// misses a serde-RENAMED field carrying the exact same posting data under a
+/// different key — `AiGenerationRecord.job_title`/`.company_name`/
+/// `.top_requirements` (`ai_generations_list`/`ai_generations_get`) are the
+/// board-derived title/company/requirements COPIED FORWARD from the source
+/// posting into a new struct, not re-derived, so they are exactly as
+/// untrusted as `JobPosting.title`/`.company`/`.requirements` already
+/// listed above — a flat list keyed on THOSE structs' field names never
+/// covered the SAME data reappearing under `AiGenerationRecord`'s own
+/// names. `discovered::DiscoveredCompany.display_name` → `displayName`
+/// (`discovery_search_companies`) is board-harvested from a posting's own
+/// apply-redirect URL, same category. `documents::DocumentRecord.text`
+/// (`documents_list`/`documents_get_text`) and
+/// `notifications::AppNotification.body` (`notifications_list`) are the
+/// generic `text`/`body` carriers this round closes — a résumé's own text
+/// is user-uploaded content, not board-scraped, but this repo's own
+/// standing threat model (`agent-cli-standards` skill: ~1% of a 200k-résumé
+/// corpus carried a prompt injection, sevenfold over 16 months) treats it as
+/// exactly as untrusted as a job posting for this purpose; a notification
+/// body can echo a scraped title/company by construction (`autopilot.new_
+/// jobs`). See `every_known_posting_text_carrier_is_a_real_freely_
+/// dispatchable_policy_row` (tests) for the full audited row list, and
+/// [`ai_generation_record_struct_fixture_fences_the_posting_derived_fields`]/
+/// [`discovered_company_struct_fixture_fences_display_name`] for the
+/// fixture-driven exhaustive checks this round adds — the reviewer's own
+/// diagnosis for why round 3's flat list still missed fields: build the
+/// check from a REAL struct via `serde_json::to_value`, not by continuing to
+/// hand-guess names one round at a time.
+///
+/// Deliberately NOT added (out of scope for this list, on PURPOSE, not by
+/// omission): `AiGenerationRecord.resume_text`/`.cover_letter_text`/
+/// `.company_brief`/`.candidate_name`/`.email_subject`/`.email_body` and
+/// `InterviewQuestion`/`ApplicationAnswer`'s own fields — these are the
+/// user's own PII / this app's own AI output, not board-scraped/third-party
+/// text; ADR-038's own amendment already draws this exact line as a
+/// SEPARATE axis from fencing (ADR-038 §5's "no PII redaction… scoped to
+/// this generic tier by the owner's explicit decision" — this module's own
+/// doc comment above). Flagged for a human/security-critic sanity check
+/// rather than silently expanded, since `ApplicationAnswer.question` (a
+/// THIRD-PARTY ATS form's own question label) is a plausible future
+/// candidate on the SAME reasoning as `title`/`jobDescription` above.
 const FENCE_FIELD_NAMES: &[&str] = &[
     // `scraping::types::JobPosting.description` (scrape_resolve_url,
     // scrape_list_postings) AND `autopilot::FoundJob.description`
@@ -335,6 +399,24 @@ const FENCE_FIELD_NAMES: &[&str] = &[
     // board-extracted requirement snippets, not a bare string; see
     // `fence_named_fields_recursive`'s array handling.
     "requirements",
+    // `AiGenerationRecord.job_title` — the posting's title COPIED FORWARD
+    // into the generation record, not re-derived; same risk as `title`.
+    "jobTitle",
+    // `AiGenerationRecord.company_name` — same reasoning as `jobTitle` above.
+    "companyName",
+    // `AiGenerationRecord.top_requirements: Vec<String>` — an ARRAY, fenced
+    // element-by-element via the array handling below.
+    "topRequirements",
+    // `documents::DocumentRecord.text` (`documents_list`,
+    // `documents_get_text`) — the user's uploaded résumé/cover-letter text;
+    // see this const's own doc for why this repo treats it as untrusted.
+    "text",
+    // `notifications::AppNotification.body` (`notifications_list`) — can
+    // echo a scraped job title/company inside app-generated copy.
+    "body",
+    // `discovered::DiscoveredCompany.display_name` (`discovery_search_
+    // companies`) — board-harvested from a posting's own apply-redirect URL.
+    "displayName",
 ];
 
 /// `JobPosting`'s own always-present, distinctively-named field pair
@@ -575,9 +657,71 @@ fn invoke_error_detail(v: &Value) -> String {
         .unwrap_or_else(|| v.to_string())
 }
 
-/// Dispatch a `Read`/`Reversible` row: invoke it for real, then fence any
-/// scraped text in its response.
-async fn dispatch_direct(app: &AppHandle, command: &str, input: Value) -> Result<Value, Refusal> {
+/// Reverses [`fence_named_fields_recursive`]'s wrapper on every INCOMING
+/// `--input` value under a [`FENCE_FIELD_NAMES`] key, before ANY dispatched
+/// command's real body ever sees it (security review round 4 — the
+/// centralised fix: `commands::scrape::scrape_persist_job`'s own
+/// `unfence_job_field` was a hand-added per-call-site strip, and every OTHER
+/// freely-dispatchable WRITE command accepting one of these SAME field
+/// names had none — three rounds of "add it at the call site" is what
+/// produced that gap). A caller that reads a job through a fenced surface
+/// (`scrape_list_postings`, `autopilot_list`, `ai_generations_list`, …) and
+/// echoes a value straight back into a write would otherwise persist the
+/// literal `<job_posting>…</job_posting>` markup into the user's own data —
+/// this closes it for every CURRENT and FUTURE writer at the one chokepoint
+/// every real dispatch already funnels through ([`dispatch_direct`], called
+/// directly for `Read`/`Reversible` and at the tail of
+/// [`dispatch_irreversible_confirmed`] for a confirmed `Irreversible`), not
+/// one call site at a time. A no-op for the normal case — a clean value
+/// that was never fenced — by [`crate::prompt_fence::strip_fence_wrapper`]'s
+/// own contract (an exact prefix/suffix match, unchanged otherwise).
+/// `commands::scrape::scrape_persist_job`'s own call-site strip is left in
+/// place as defense-in-depth at the actual store-write boundary (that
+/// command is also reachable from the renderer's normal `invoke()`, not
+/// only through this dispatcher) rather than removed.
+fn unfence_named_fields_recursive(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for field in FENCE_FIELD_NAMES {
+                if let Some(s) = map.get(*field).and_then(Value::as_str) {
+                    let stripped = crate::prompt_fence::strip_fence_wrapper("job_posting", s);
+                    map.insert((*field).to_string(), json!(stripped));
+                    continue;
+                }
+                if let Some(Value::Array(items)) = map.get_mut(*field) {
+                    for item in items.iter_mut() {
+                        if let Value::String(s) = item {
+                            *s = crate::prompt_fence::strip_fence_wrapper("job_posting", s);
+                        }
+                    }
+                }
+            }
+            for v in map.values_mut() {
+                unfence_named_fields_recursive(v);
+            }
+        }
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                unfence_named_fields_recursive(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Invoke a command for real: strip any fence wrapper the caller echoed back
+/// into `input` ([`unfence_named_fields_recursive`]), dispatch, then fence
+/// any scraped text in the response ([`fence_scraped_fields`]). Called
+/// directly for a `Read`/`Reversible` row, and again at
+/// [`dispatch_irreversible_confirmed`]'s tail for a confirmed
+/// `Irreversible` one — the ONE real-invocation chokepoint every dispatched
+/// row funnels through, never a second copy of either fence/unfence step.
+async fn dispatch_direct(
+    app: &AppHandle,
+    command: &str,
+    mut input: Value,
+) -> Result<Value, Refusal> {
+    unfence_named_fields_recursive(&mut input);
     let outcome = invoke_command(app, command, input)
         .await
         .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;
@@ -595,14 +739,14 @@ async fn dispatch_direct(app: &AppHandle, command: &str, input: Value) -> Result
 }
 
 /// Dispatch an `Irreversible` row whose `confirm` is already known to be
-/// present (the caller — [`dispatch`] — has already run it through
-/// [`dispatchable`]): resolve the expected value FRESH via [`proof::resolve`]
-/// and only then run the real command.
+/// present (the caller — [`dispatch`] — only reaches here via
+/// [`Dispatch::Confirmed`], produced by [`gate`]): resolve the expected
+/// value FRESH via [`proof::resolve`] and only then run the real command.
 async fn dispatch_irreversible_confirmed(
     app: &AppHandle,
     command: &str,
     input: Value,
-    source: super::agent_cli::policy::ProofSource,
+    source: ProofSource,
     confirm: &str,
 ) -> Result<Value, Refusal> {
     let expected = proof::resolve(app, source, &input)
@@ -614,22 +758,53 @@ async fn dispatch_irreversible_confirmed(
     dispatch_direct(app, command, input).await
 }
 
+/// What [`gate`] clears `dispatch` to do for one `(effect, confirm)` pair —
+/// carries whatever the cleared branch needs, so nothing downstream
+/// re-derives a fact `gate` already established. `Confirmed`'s `confirm` is
+/// a plain `&str`, not an `Option` — reaching that variant at all is already
+/// proof one was supplied, so there is nothing left to unwrap.
+pub(super) enum Dispatch<'a> {
+    /// `Read`/`Reversible` — invoke directly, no ceremony.
+    Direct,
+    /// `Irreversible`, `confirm` already known to be present. Carries the
+    /// row's own [`ProofSource`] alongside it so `dispatch` never re-matches
+    /// `entry.effect` a second time to recover it.
+    Confirmed {
+        source: ProofSource,
+        confirm: &'a str,
+    },
+}
+
 /// Pure gate: does `effect` permit `dispatch` to ATTEMPT a real command
 /// invocation at all, given whether a `confirm` value was supplied — never
-/// mind whether that attempt then succeeds. `dispatch` below calls this as
-/// its own FIRST decision (never a parallel/shadow copy of the same logic),
-/// so `extension_bridge::test`'s exhaustive walk over every real `POLICY`
-/// row (`agent_call_gate_matches_every_policy_rows_declared_effect`) proves
+/// mind whether that attempt then succeeds. Replaces a former
+/// boolean-returning `dispatchable`: a `bool` only told the caller "yes",
+/// forcing `dispatch` to re-match `entry.effect` a second time to recover
+/// the `ProofSource` AND `.expect()` a `confirm` this fn had already proved
+/// `Some` — an `expect` on an externally reachable `agent.call` path, safe
+/// only because of a separate call to this same gate rather than because
+/// the type ruled out the `None` case. Returning [`Dispatch`] instead means
+/// the confirmed branch carries its `&str` and `ProofSource` BY
+/// CONSTRUCTION, so there is nothing left downstream to re-derive or
+/// unwrap — a future refactor that changed this gate's logic could no
+/// longer silently leave a stale, now-unsound `expect` behind it.
+///
+/// `dispatch` below calls this as its own FIRST decision (never a
+/// parallel/shadow copy of the same logic), so `extension_bridge::test`'s
+/// exhaustive walk over every real `POLICY` row
+/// (`agent_call_gate_matches_every_policy_rows_declared_effect`) proves
 /// something about THIS production routing, not a second implementation
 /// that could silently drift from it. `pub(super)` — reachable from
 /// `extension_bridge::test`, a sibling of this module, for exactly that
-/// test; `Effect` and `bool` are both cheap `Copy` so this needs no
-/// `AppHandle` and no I/O.
-pub(super) fn dispatchable(effect: Effect, has_confirm: bool) -> bool {
+/// test; [`Dispatch`] shares that visibility for the same reason.
+pub(super) fn gate(effect: Effect, confirm: Option<&str>) -> Result<Dispatch<'_>, Refusal> {
     match effect {
-        Effect::NotExposed(_) => false,
-        Effect::Read | Effect::Reversible => true,
-        Effect::Irreversible(_) => has_confirm,
+        Effect::NotExposed(reason) => Err(Refusal::NotExposed(reason)),
+        Effect::Read | Effect::Reversible => Ok(Dispatch::Direct),
+        Effect::Irreversible(source) => match confirm {
+            Some(confirm) => Ok(Dispatch::Confirmed { source, confirm }),
+            None => Err(Refusal::ConfirmationRequired(proof::hint(source))),
+        },
     }
 }
 
@@ -641,25 +816,11 @@ async fn dispatch(
     confirm: Option<&str>,
 ) -> Result<Value, Refusal> {
     let entry = find_policy(namespace, command).ok_or(Refusal::UnknownCommand)?;
-    if !dispatchable(entry.effect, confirm.is_some()) {
-        return Err(match entry.effect {
-            Effect::NotExposed(reason) => Refusal::NotExposed(reason),
-            // `dispatchable` only refuses an `Irreversible` row when
-            // `confirm` is `None` — the ONLY other way it refuses.
-            Effect::Irreversible(source) => Refusal::ConfirmationRequired(proof::hint(source)),
-            Effect::Read | Effect::Reversible => {
-                unreachable!("dispatchable() is true for Read/Reversible")
-            }
-        });
-    }
-    match entry.effect {
-        Effect::Read | Effect::Reversible => dispatch_direct(app, command, input).await,
-        Effect::Irreversible(source) => {
-            // `dispatchable` already proved `confirm.is_some()` to reach here.
-            let confirm = confirm.expect("dispatchable() guarantees Some for Irreversible here");
+    match gate(entry.effect, confirm)? {
+        Dispatch::Direct => dispatch_direct(app, command, input).await,
+        Dispatch::Confirmed { source, confirm } => {
             dispatch_irreversible_confirmed(app, command, input, source, confirm).await
         }
-        Effect::NotExposed(_) => unreachable!("dispatchable() is false for NotExposed"),
     }
 }
 

@@ -801,10 +801,10 @@ fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
 }
 
 /// ADR-038 §3/§4 — the exhaustive counterpart to `agent_call::tests`' 4
-/// hand-picked `dispatchable` cases: walks every ONE of the 164 real
-/// `POLICY` rows (not a representative sample) and asserts `dispatch`'s own
-/// gate (`agent_call::dispatchable` — called directly by `dispatch`, never a
-/// parallel copy) agrees with what that row's declared `Effect` promises:
+/// hand-picked `gate` cases: walks every ONE of the 164 real `POLICY` rows
+/// (not a representative sample) and asserts `dispatch`'s own gate
+/// (`agent_call::gate` — called directly by `dispatch`, never a parallel
+/// copy) agrees with what that row's declared `Effect` promises:
 /// `Read`/`Reversible` dispatchable unconditionally, `Irreversible`
 /// dispatchable ONLY with a confirm, `NotExposed` never dispatchable. This
 /// is what stops a future phase widening the gate for one class (e.g.
@@ -820,9 +820,10 @@ fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
 /// branch. That is a real limit of what a per-row walk can prove: it is not
 /// a check that any INDIVIDUAL classification is correct (the row's own
 /// comment + review is what defends that). What DOES fail this test —
-/// verified by hand, then reverted — is mutating `dispatchable`'s OWN match
-/// arms: changing `Effect::Irreversible(_) => has_confirm` to `=> true`
-/// (the exact "silently widened the gate for one class" shape this guards
+/// verified by hand, then reverted — is mutating `gate`'s OWN match arms:
+/// changing `Effect::Irreversible(source) => match confirm { .. }` to always
+/// return `Ok(Dispatch::Confirmed { .. })` regardless of `confirm` (the
+/// exact "silently widened the gate for one class" shape this guards
 /// against) fails on the FIRST Irreversible row this walks
 /// (`system_open_external`), because that row's `Effect` still correctly
 /// says `Irreversible` while the (mutated) gate now claims it is
@@ -831,7 +832,15 @@ fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
 /// dependent on which rows a smaller hand-picked sample happened to include.
 #[test]
 fn agent_call_gate_matches_every_policy_rows_declared_effect() {
+    use agent_call::Dispatch;
     use agent_cli::policy::{Effect, POLICY};
+
+    let dispatchable = |effect: Effect, confirm: Option<&str>| {
+        matches!(
+            agent_call::gate(effect, confirm),
+            Ok(Dispatch::Direct | Dispatch::Confirmed { .. })
+        )
+    };
 
     let mut checked = 0usize;
     for entry in POLICY {
@@ -839,36 +848,36 @@ fn agent_call_gate_matches_every_policy_rows_declared_effect() {
         match entry.effect {
             Effect::Read | Effect::Reversible => {
                 assert!(
-                    agent_call::dispatchable(entry.effect, false),
+                    dispatchable(entry.effect, None),
                     "{} is Read/Reversible — must be dispatchable with no confirm",
                     entry.path
                 );
                 assert!(
-                    agent_call::dispatchable(entry.effect, true),
+                    dispatchable(entry.effect, Some("x")),
                     "{} is Read/Reversible — must stay dispatchable even WITH a confirm",
                     entry.path
                 );
             }
             Effect::Irreversible(_) => {
                 assert!(
-                    !agent_call::dispatchable(entry.effect, false),
+                    !dispatchable(entry.effect, None),
                     "{} is Irreversible — must NOT be dispatchable without --confirm",
                     entry.path
                 );
                 assert!(
-                    agent_call::dispatchable(entry.effect, true),
+                    dispatchable(entry.effect, Some("x")),
                     "{} is Irreversible — must be dispatchable once --confirm is supplied",
                     entry.path
                 );
             }
             Effect::NotExposed(_) => {
                 assert!(
-                    !agent_call::dispatchable(entry.effect, false),
+                    !dispatchable(entry.effect, None),
                     "{} is NotExposed — must never be dispatchable",
                     entry.path
                 );
                 assert!(
-                    !agent_call::dispatchable(entry.effect, true),
+                    !dispatchable(entry.effect, Some("x")),
                     "{} is NotExposed — a confirm value must not change that",
                     entry.path
                 );

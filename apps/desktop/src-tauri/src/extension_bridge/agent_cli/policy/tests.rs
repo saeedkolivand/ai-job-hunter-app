@@ -218,7 +218,7 @@ fn every_proof_source_read_command_is_a_read_row() {
     }
     // Hand-written literal (not derived from POLICY itself — the same
     // "pair a loop with a literal" discipline as
-    // `policy_table_has_exactly_164_rows`): 31 Irreversible rows
+    // `policy_table_has_exactly_164_rows`): 32 Irreversible rows
     // (`extension_bridge_regenerate_token` moved to `NotExposed` —
     // security review round 1; `ai_embed` moved NotExposed → Irreversible
     // once its `charge_provider_daily` gate landed, and
@@ -228,12 +228,15 @@ fn every_proof_source_read_command_is_a_read_row() {
     // and `ai_set_provider_settings` moved Reversible → Irreversible
     // [+2], `support_export_diagnostics` moved Irreversible →
     // `NotExposed` for a vacuous proof [-1]; security review round 4 nets
-    // -1: `ai_set_provider_settings` moved Irreversible → `NotExposed` —
+    // 0: `ai_set_provider_settings` moved Irreversible → `NotExposed` —
     // its proof was bound to `activeProvider` while its own patch targets
     // a DIFFERENT, caller-chosen `provider` field entirely, so the
-    // ceremony never checked the thing it was rewriting — see each row's
-    // own comment).
-    assert_eq!(checked, 31, "expected exactly 31 Irreversible rows");
+    // ceremony never checked the thing it was rewriting [-1] —
+    // `ai_pull_model` moved Reversible → Irreversible: no in-app path
+    // undoes a pulled multi-GB Ollama model, which is `Irreversible`'s own
+    // definition regardless of nothing being destroyed [+1]; see each
+    // row's own comment).
+    assert_eq!(checked, 32, "expected exactly 32 Irreversible rows");
 }
 
 /// Hand-written pin (security review round 3), mirroring
@@ -332,18 +335,34 @@ fn round_4_persistent_redirect_and_unbound_proof_rows_stay_not_exposed() {
 }
 
 /// Mutation-style guard: an `Irreversible` row whose `ProofSource`
-/// pointed at ITSELF (or at another `Irreversible` row) would make the
-/// ceremony circular — satisfiable without ever reading anything real.
+/// pointed at ITSELF, or at ANY OTHER `Irreversible` row, would make the
+/// ceremony circular — satisfiable only by first satisfying another
+/// ceremony, never by reading anything real. The self-only shape (comparing
+/// `read_command()` against `entry`'s own bare command name) covers the
+/// first clause but not the second — a proof source naming a *different*
+/// Irreversible row's command would pass that narrower check. Resolving
+/// `read_command()` to its own POLICY row and asserting that row isn't
+/// itself `Irreversible` covers both in one comparison: a row that names
+/// itself resolves back to `entry`, which is Irreversible by the `if let`
+/// above, so self-reference still fails here too — there is no longer a
+/// separate self-only branch to keep in sync with this one.
 #[test]
 fn no_proof_source_points_at_an_irreversible_command() {
     for entry in POLICY {
         if let Effect::Irreversible(source) = entry.effect {
-            let (_, own_command) = entry.path.rsplit_once("::").unwrap_or(("", entry.path));
-            assert_ne!(
-                source.read_command(),
-                own_command,
-                "{} names itself as its own proof source",
-                entry.path
+            let read_command = source.read_command();
+            let Some(target) = POLICY
+                .iter()
+                .find(|e| e.path.rsplit("::").next() == Some(read_command))
+            else {
+                continue; // absent-row case is `every_proof_source_read_command_is_a_read_row`'s job
+            };
+            assert!(
+                !matches!(target.effect, Effect::Irreversible(_)),
+                "{}'s ProofSource points at `{read_command}` ({}), which is itself \
+                 Irreversible — the ceremony would need another ceremony to satisfy",
+                entry.path,
+                target.path
             );
         }
     }

@@ -66,8 +66,10 @@ use self::persist::{
     persist_ai_assist_optin, persist_autofill_optin, persist_token,
 };
 
-/// ADR-038 §2's generic `agent.call` dispatch tier (Phase 2: `Effect::Read`
-/// only) — see its module doc.
+/// ADR-038 §2's generic `agent.call` dispatch tier — `Effect::Read` (Phase 2)
+/// and `Effect::Reversible` (Phase 4) dispatch unconditionally,
+/// `Effect::Irreversible` (Phase 3) only after a `--confirm` ceremony; see
+/// its module doc for the full gate.
 mod agent_call;
 /// `ajh-tauri agent <verb>` — the CLIENT half of the agent/CLI surface (issue
 /// #1084 PR 1): argv parsing, the v2-handshake-carrying bridge client, and

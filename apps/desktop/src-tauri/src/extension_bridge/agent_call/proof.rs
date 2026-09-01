@@ -814,7 +814,12 @@ mod tests {
                 }
             }
         }
-        assert_eq!(checked, 31, "expected exactly 31 Irreversible rows");
+        // Tracks `policy::tests::every_proof_source_read_command_is_a_read_row`'s
+        // own hand-written literal (security review round 4: `ai_pull_model`
+        // moved `Reversible` → `Irreversible` — see that row's own comment
+        // in `policy.rs`) — kept in sync by hand, not derived from it, same
+        // "pair a loop with a literal" discipline both files use.
+        assert_eq!(checked, 32, "expected exactly 32 Irreversible rows");
     }
 
     #[test]

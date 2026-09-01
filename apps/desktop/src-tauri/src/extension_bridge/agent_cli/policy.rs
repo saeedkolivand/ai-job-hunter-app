@@ -379,10 +379,33 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
             path: &["today", "inputTokens"],
         }),
     },
-    // Downloads a model into the local Ollama store — additive, no data
-    // destroyed, not charged against the paid-provider ceiling (Ollama is
-    // local/free).
-    PolicyEntry { path: "commands::ai::ai_pull_model", effect: Effect::Reversible },
+    // Reclassified `Reversible` → `Irreversible` (MEDIUM fix — security
+    // review round 4): the prior comment's "additive, no data destroyed"
+    // answers the wrong question — `Effect::Reversible`'s own definition
+    // (module doc) is "mutates state, but the change CAN BE UNDONE THROUGH
+    // ANOTHER CALL ON THIS SAME SURFACE", and there is no `ai_delete_model`/
+    // `ai_remove_model` (or any Ollama `/api/delete` call) ANYWHERE in this
+    // crate — verified by grep, not merely absent from this file. A pulled
+    // model is a real, multi-GB-scale disk write (`timeouts.rs`'s own doc:
+    // "a large multi-GB… download") the app has no in-app path to reverse;
+    // that is `Effect::Irreversible`'s definition ("cannot be undone through
+    // the app"), not Reversible's, regardless of whether it destroys
+    // anything. Not charged against the paid-provider ceiling (Ollama is
+    // local/free), so this does NOT fit ADR-038's four canonical patterns —
+    // classified on the general definition alone, same as
+    // `system_open_external`'s "friction against an accidental/looping
+    // call" reasoning: nothing scopes this ceremony to the SPECIFIC model
+    // name (no id-scoped record exists to read back — the request is a bare
+    // model string), so the proof is WEAK, like `ai_generate`'s spend-total
+    // proof — the strongest available signal is the caller's own current
+    // local model count, read fresh via `ai_list_models`, forcing at least
+    // one read before every pull rather than none.
+    PolicyEntry {
+        path: "commands::ai::ai_pull_model",
+        effect: Effect::Irreversible(ProofSource::Count {
+            read_command: "ai_list_models",
+        }),
+    },
     // ADR-038 §2 revision (Phase 2 landed dispatch-by-name): the current
     // body is a no-op stub (`_model` unused, always returns
     // `{ success: true }`) — classifying this Read would let `agent call`
@@ -798,8 +821,20 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // Writes scraped postings into the shared cache — additive/recomputable.
     PolicyEntry { path: "commands::scrape::scrape_boards", effect: Effect::Reversible },
     PolicyEntry { path: "commands::scrape::scrape_url", effect: Effect::Reversible },
-    // Verified: synchronous fetch/return only, no persistence.
-    PolicyEntry { path: "commands::scrape::scrape_resolve_url", effect: Effect::Read },
+    // Reclassified `Read` → `Reversible` (HIGH fix — security review round
+    // 4): the prior "synchronous fetch/return only, no persistence" comment
+    // was checked against the SIGNATURE, never the body — on a resolved
+    // posting it upserts `(url, company)` into `DiscoveredCompanyStore` via
+    // `harvest_ats_refs` (ADR-031 §c, same slug-harvest seam `scrape_boards`/
+    // `scrape_url` above already feed), letting an `agent call` caller write
+    // an attacker-chosen company/slug pair into that store through what
+    // this table certified as a freely-dispatchable READ. `Reversible`,
+    // not `Irreversible`: same
+    // additive/recomputable-cache reasoning as `scrape_boards`/`scrape_url`
+    // just above — a harvested slug is re-derivable by resolving/scraping
+    // again, no user-authored content is lost, and `DiscoveredCompanyStore`
+    // is `Resettable` (`privacy_reset_app` wipes it, `commands::privacy`).
+    PolicyEntry { path: "commands::scrape::scrape_resolve_url", effect: Effect::Reversible },
     PolicyEntry { path: "commands::scrape::scrape_update_description", effect: Effect::Reversible },
     PolicyEntry { path: "commands::scrape::scrape_persist_job", effect: Effect::Reversible },
     // Verified: the code's OWN doc comment calls this "the real undo for
