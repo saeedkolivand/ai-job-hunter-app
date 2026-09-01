@@ -1,5 +1,47 @@
 [
   {
+    "number": 1087,
+    "title": "feat: generic command dispatch for the agent CLI, read effects first",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1087",
+    "draft": false,
+    "created_at": "2026-08-31T21:51:09Z",
+    "updated_at": "2026-09-01T03:22:09Z",
+    "merged_at": "2026-09-01T03:08:30Z",
+    "closed_at": "2026-09-01T03:08:30Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1085,
+    "title": "feat: agent-facing CLI so an AI agent can drive the app",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1085",
+    "draft": false,
+    "created_at": "2026-08-31T17:43:57Z",
+    "updated_at": "2026-09-01T03:17:29Z",
+    "merged_at": "2026-08-31T18:44:22Z",
+    "closed_at": "2026-08-31T18:44:22Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1086,
+    "title": "docs: record the agent surface decisions and sharpen its vocabulary",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1086",
+    "draft": false,
+    "created_at": "2026-08-31T18:59:00Z",
+    "updated_at": "2026-09-01T03:17:27Z",
+    "merged_at": "2026-08-31T19:44:09Z",
+    "closed_at": "2026-08-31T19:44:09Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1083,
     "title": "feat(autopilot): surface the strongest jobs across every autopilot in one place",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1083",
@@ -652,48 +694,6 @@
     "updated_at": "2026-08-19T12:00:53Z",
     "merged_at": "2026-08-18T15:12:15Z",
     "closed_at": "2026-08-18T15:12:15Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1036,
-    "title": "fix: make in-flight backend work survive navigation, and stop logs leaking paths",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1036",
-    "draft": false,
-    "created_at": "2026-08-18T18:33:07Z",
-    "updated_at": "2026-08-19T12:00:50Z",
-    "merged_at": "2026-08-18T21:42:29Z",
-    "closed_at": "2026-08-18T21:42:30Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1037,
-    "title": "docs: generate the ipc api reference from the contracts",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1037",
-    "draft": false,
-    "created_at": "2026-08-18T22:44:08Z",
-    "updated_at": "2026-08-19T12:00:49Z",
-    "merged_at": "2026-08-18T23:54:33Z",
-    "closed_at": "2026-08-18T23:54:33Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1038,
-    "title": "fix: stop a false language critical and read today as a date column",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1038",
-    "draft": false,
-    "created_at": "2026-08-19T04:18:39Z",
-    "updated_at": "2026-08-19T12:00:48Z",
-    "merged_at": "2026-08-19T11:40:32Z",
-    "closed_at": "2026-08-19T11:40:32Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

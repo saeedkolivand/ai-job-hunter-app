@@ -1,5 +1,113 @@
 [
   {
+    "sha": "a9835b15d8198fcafd39bcbb1e8a5ed62ffc4bf2",
+    "commit": {
+      "message": "chore: sync landing download version to v0.145.0",
+      "author": {
+        "date": "2026-09-01T03:56:58Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "a14195b82f42cd2b814042b198a8a8bed3466051",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.145.0 [skip ci]",
+      "author": {
+        "date": "2026-09-01T03:56:13Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "a165a584f7a0e8d984c9752e69062deef545bbce",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-01T03:20:44Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "2b35e62637be7d57fc92e986a9dd26b6d87e09bc",
+    "commit": {
+      "message": "chore(release): 0.145.0 [skip ci]",
+      "author": {
+        "date": "2026-09-01T03:17:13Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "38b990d0e9491845313946ad7de304e8a492d15c",
+    "commit": {
+      "message": "feat: generic command dispatch for the agent CLI, read effects first (#1087)",
+      "author": {
+        "date": "2026-09-01T03:08:29Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "81cc8dd7245c7f4afd381b10f215c9021b4f8937",
+    "commit": {
+      "message": "docs: record the agent surface decisions and sharpen its vocabulary (#1086)",
+      "author": {
+        "date": "2026-08-31T19:44:08Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "91e429d15b4181c220b6fff99d4ebc82ae672d17",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-31T18:54:44Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "93b09cd68ad2e746dfff944378e91096adc0bd67",
+    "commit": {
+      "message": "feat: agent-facing CLI so an AI agent can drive the app (#1085)",
+      "author": {
+        "date": "2026-08-31T18:44:22Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "22758a4790bf6f8e98f8f809072fa333486f1b78",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-31T09:42:36Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "056c3e3977cbd5a9b421c6d6766e690e39e07c8e",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1089,114 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "bb933babd670a6d17f80c719aa3efa63d3d54ffc",
-    "commit": {
-      "message": "fix(landing): stop the a11y page minting phantom numeric urls (#1055)",
-      "author": {
-        "date": "2026-08-20T04:19:58Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "0c768791c1d983adbeb29c59c37e91af509e7221",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-20T03:57:47Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "fb150ed6b60358f55de7e14a41589df5070b538f",
-    "commit": {
-      "message": "chore: sync landing download version to v0.138.1",
-      "author": {
-        "date": "2026-08-19T22:24:11Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "347ca36701570a9ad36c2883465c8ffb5f258a88",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.138.1 [skip ci]",
-      "author": {
-        "date": "2026-08-19T22:23:27Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "57ebbf65792b4e48d2e2971e2d8d4aa3efc306e0",
-    "commit": {
-      "message": "ci: stop the linux dependency step hanging for the whole job timeout (#1054)",
-      "author": {
-        "date": "2026-08-19T21:58:07Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2359dccccb2ed1b43d89238468b8b663a9323f8e",
-    "commit": {
-      "message": "chore(release): 0.138.1 [skip ci]",
-      "author": {
-        "date": "2026-08-19T19:46:40Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "78ea59b5e12cee9d261daf8c2a448e179eb3659b",
-    "commit": {
-      "message": "fix(ats): stop false date-context criticals, and route translation through the active provider (#1051)",
-      "author": {
-        "date": "2026-08-19T19:41:37Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a8cdbe35634f50ccabec409bd3fb9fd302d833dd",
-    "commit": {
-      "message": "chore: bump anthropics/claude-code-action in the ci-actions group (#1053)",
-      "author": {
-        "date": "2026-08-19T18:57:50Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "d403afb88e46fee38dd5ce55a986d26d344ed98c",
-    "commit": {
-      "message": "chore: bump apple-native-keyring-store (#1052)",
-      "author": {
-        "date": "2026-08-19T18:57:41Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
     }
   }
 ]
