@@ -107,7 +107,9 @@ fn lexical_search_finds_a_matching_posting() {
         doc("p2", "Frontend Designer", "Beta", "React and CSS all day."),
     ];
     let index = LexicalIndex::build(&docs).expect("build must succeed");
-    let hits = index.search("rust", 10);
+    let hits = index
+        .search("rust", 10)
+        .expect("a clean query must not error");
     assert_eq!(hits, vec!["p1".to_string()]);
 }
 
@@ -124,7 +126,9 @@ fn lexical_title_hit_outranks_a_description_only_hit() {
         doc("p1", "Rust Engineer", "Acme", "General backend work."),
     ];
     let index = LexicalIndex::build(&docs).expect("build must succeed");
-    let hits = index.search("rust", 10);
+    let hits = index
+        .search("rust", 10)
+        .expect("a clean query must not error");
     assert_eq!(
         hits.first().map(String::as_str),
         Some("p1"),
@@ -150,7 +154,7 @@ fn lexical_search_treats_special_characters_as_literal_text_not_fts5_operators()
     // "returned nothing because it's a NOT query" from "returned nothing
     // because sanitizing broke". Sanitized as a literal phrase, it finds p1.
     assert_eq!(
-        index.search("-golang", 10),
+        index.search("-golang", 10).expect("must not error"),
         vec!["p1".to_string()],
         "a leading `-` must be literal text, not FTS5's NOT operator"
     );
@@ -161,13 +165,21 @@ fn lexical_search_treats_special_characters_as_literal_text_not_fts5_operators()
     // this only proves it didn't ERROR, paired with the assertion above which
     // proves operators are actually neutralized.
     assert!(
-        index.search("title:x", 10).is_empty(),
+        index
+            .search("title:x", 10)
+            .expect("must not error")
+            .is_empty(),
         "a `column:` prefix must not error and must not match anything here"
     );
 
-    // Never panics on the remaining operator-shaped input either.
-    for query in ["\"unterminated", "NEAR"] {
-        let _ = index.search(query, 10);
+    // Must not ERROR on the remaining operator-shaped input either —
+    // empirically verified (see `LexicalIndex::search`'s own doc): every
+    // character FTS5's grammar assigns meaning to is neutralized by
+    // `sanitize_query`'s quoting.
+    for query in ["\"unterminated", "NEAR", "*", ":", "()", "AND", "NOT"] {
+        index
+            .search(query, 10)
+            .unwrap_or_else(|e| panic!("{query:?} must not error, got {e}"));
     }
 }
 
@@ -175,5 +187,22 @@ fn lexical_search_treats_special_characters_as_literal_text_not_fts5_operators()
 fn lexical_search_on_empty_query_returns_no_hits() {
     let docs = vec![doc("p1", "Engineer", "Acme", "Go.")];
     let index = LexicalIndex::build(&docs).expect("build must succeed");
-    assert!(index.search("   ", 10).is_empty());
+    assert!(index.search("   ", 10).expect("must not error").is_empty());
+}
+
+/// The genuine, empirically-verified trigger (a security-review claim that a
+/// bare punctuation query like `-`/`!!!` breaks this did NOT reproduce — see
+/// `LexicalIndex::search`'s own doc): an embedded NUL byte reaches FTS5's
+/// query-expression parser as a string it reads as truncated and fails with
+/// a real `rusqlite` error on the first row fetch, which must propagate as
+/// `Err`, never silently collapse to an empty `Ok(vec![])` — a real failure
+/// and a genuine zero-match result must stay distinguishable to the caller.
+#[test]
+fn lexical_search_propagates_a_real_fts5_error_instead_of_swallowing_it() {
+    let docs = vec![doc("p1", "Engineer", "Acme", "Some text here.")];
+    let index = LexicalIndex::build(&docs).expect("build must succeed");
+    assert!(
+        index.search("\0", 10).is_err(),
+        "an embedded NUL byte must surface as Err, not a silent empty Ok"
+    );
 }

@@ -112,25 +112,36 @@ impl LexicalIndex {
 
     /// Best-first matching ids for `query`, at most `limit`.
     ///
-    /// Empty on anything that isn't a clean hit: an empty/whitespace-only
-    /// query, or a `prepare`/`query_map` failure — FTS5 itself should never
-    /// reject [`sanitize_query`]'s output, but this degrades to "no lexical
-    /// hits" rather than failing the whole search if it somehow does, matching
-    /// this crate's degrade-never-fail-a-command posture for scoring paths.
-    pub fn search(&self, query: &str, limit: usize) -> Vec<String> {
+    /// `Ok(Vec::new())` on an empty/whitespace-only query (nothing to search
+    /// for) or a clean zero-match result — both are a genuine "no hits", not
+    /// a failure. `Err` on anything FTS5 itself rejects.
+    ///
+    /// **Empirically verified, not theorised** (a security-review claim that
+    /// a bare punctuation query like `-` or `!!!` breaks this did NOT
+    /// reproduce: `sanitize_query`'s quoting defeats FTS5's own operator
+    /// grammar for every character tested — `-`, `*`, `:`, `NEAR`, `AND`,
+    /// unbalanced `"`, empty phrases). What DOES reproduce: a query
+    /// containing an embedded NUL byte reaches FTS5's query-expression
+    /// parser as a string it reads as truncated, and fails with
+    /// `"unterminated string"` on the FIRST row fetch — a genuine `rusqlite`
+    /// error this method used to swallow into a silent "zero hits" via
+    /// `filter_map(Result::ok)`, matching what a caller could not tell apart
+    /// from an honest empty result. Returning `Result` (rather than
+    /// swallowing here) lets the CALLER decide how to report a real failure
+    /// — `commands::hybrid_search` maps `Err` to `ArmStatus::Unavailable` —
+    /// which is an L3 reporting decision, not this L1 module's to make.
+    pub fn search(&self, query: &str, limit: usize) -> AppResult<Vec<String>> {
         let sanitized = sanitize_query(query);
         if sanitized.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let (w_title, w_company, w_location, w_description) = BM25_WEIGHTS;
         // `ORDER BY bm25(...)` ascending (the default) is correct as written:
         // FTS5's bm25() returns SMALLER values for a BETTER match.
         let sql = "SELECT rowid FROM postings WHERE postings MATCH ?1 \
                    ORDER BY bm25(postings, ?2, ?3, ?4, ?5) LIMIT ?6";
-        let Ok(mut stmt) = self.conn.prepare(sql) else {
-            return Vec::new();
-        };
-        let Ok(rows) = stmt.query_map(
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map(
             params![
                 sanitized,
                 w_title,
@@ -140,11 +151,18 @@ impl LexicalIndex {
                 limit as i64
             ],
             |row| row.get::<_, i64>(0),
-        ) else {
-            return Vec::new();
-        };
-        rows.filter_map(Result::ok)
-            .filter_map(|rowid| self.row_ids.get((rowid - 1) as usize).cloned())
-            .collect()
+        )?;
+        let mut out = Vec::new();
+        for row in rows {
+            // Propagate on the FIRST error rather than skipping the row: an
+            // error here is the query EXPRESSION failing to evaluate (see
+            // the NUL-byte case above), not one row's data being bad, so the
+            // whole result set is untrustworthy once it happens.
+            let rowid = row?;
+            if let Some(id) = self.row_ids.get((rowid - 1) as usize) {
+                out.push(id.clone());
+            }
+        }
+        Ok(out)
     }
 }

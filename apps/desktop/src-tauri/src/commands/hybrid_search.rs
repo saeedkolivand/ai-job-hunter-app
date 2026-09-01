@@ -332,6 +332,25 @@ fn corpus_generation(app: &AppHandle) -> u64 {
     app.state::<Mutex<PostingsCache>>().lock().generation()
 }
 
+/// Run the lexical arm end-to-end (build the FTS5 index over `docs`, then
+/// query it) and collapse a build/search failure to `ArmStatus::Unavailable`
+/// — the ONE place that reporting decision is made. `retrieval::lexical`
+/// returns a `Result` precisely so an L3 caller can tell "zero hits" apart
+/// from "FTS5 itself failed" (see `LexicalIndex::search`'s own doc for the
+/// empirically-verified NUL-byte trigger); swallowing that distinction back
+/// into a bare `Vec` here would report a genuine failure as a successful
+/// keyword search that happened to find nothing, contradicting this
+/// module's whole "degrade, never silently claim more than ran" contract.
+///
+/// Pure (no app/network), so this exact mapping is a unit test, not a claim.
+fn run_lexical_arm(docs: &[LexicalDoc<'_>], query: &str, limit: usize) -> (Vec<String>, ArmStatus) {
+    let result = LexicalIndex::build(docs).and_then(|index| index.search(query, limit));
+    match result {
+        Ok(ranks) => (ranks, ArmStatus::Ran),
+        Err(_) => (Vec::new(), ArmStatus::Unavailable),
+    }
+}
+
 // ── Orchestration ────────────────────────────────────────────────────────────
 
 async fn run_search(
@@ -368,10 +387,7 @@ async fn run_search(
 
     // ── Lexical ──────────────────────────────────────────────────────────────
     let lexical_docs: Vec<LexicalDoc<'_>> = eligible.iter().map(to_lexical_doc).collect();
-    let (lexical_ranks, lexical_status) = match LexicalIndex::build(&lexical_docs) {
-        Ok(index) => (index.search(query, corpus_size), ArmStatus::Ran),
-        Err(_) => (Vec::new(), ArmStatus::Unavailable),
-    };
+    let (lexical_ranks, lexical_status) = run_lexical_arm(&lexical_docs, query, corpus_size);
 
     if token.is_cancelled() {
         return degraded(
@@ -538,6 +554,15 @@ fn dense_pair(
     ))
 }
 
+/// Bounds the WHOLE candidate loop by ELAPSED time (checked alongside the
+/// existing cancellation check, same shape), not a `tokio::time::timeout`
+/// wrapping the loop — a `timeout` DROPS the wrapped future on expiry, which
+/// would throw away every pair already collected; measuring elapsed time
+/// lets the loop `break` and rank whatever it has, the friendlier of the two
+/// treatments the rerank arm's own `tokio::time::timeout` doesn't need
+/// (rerank has nothing partial to salvage — one JSON completion either
+/// finishes or it doesn't). Started BEFORE the query embed so a slow query
+/// embed also eats into the same budget, not a separate one.
 async fn run_dense_arm(
     app: &AppHandle,
     query: &str,
@@ -547,6 +572,7 @@ async fn run_dense_arm(
     token: &CancellationToken,
     generation0: u64,
 ) -> (Vec<String>, ArmStatus) {
+    let started = std::time::Instant::now();
     let (Some(doc_store), Some(limiter_state)) = (
         app.try_state::<DocumentStore>(),
         app.try_state::<Arc<crate::limits::Limiter>>(),
@@ -567,7 +593,9 @@ async fn run_dense_arm(
     let pool = dense_candidate_pool(eligible, lexical_ranks);
     let mut pairs: Vec<(String, Vec<f32>)> = Vec::with_capacity(pool.len());
     for id in pool {
-        if token.is_cancelled() {
+        if token.is_cancelled()
+            || started.elapsed() >= crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT
+        {
             break;
         }
         let Some(row) = eligible_by_id.get(id) else {

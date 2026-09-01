@@ -405,6 +405,43 @@ pub fn hybrid_search_rerank_deadline(is_ollama: bool) -> Duration {
     }
 }
 
+/// Wall-clock bound on `commands::hybrid_search`'s dense arm as a WHOLE
+/// (the query embed plus up to `commands::hybrid_search::DENSE_CANDIDATE_MAX`
+/// (40) candidate embeds, run strictly sequentially) — **DERIVED, not
+/// measured.** Each individual embed already has its own per-attempt ceiling
+/// ([`OLLAMA_EMBED`]/[`EMBED`], both 30s), but nothing previously bounded the
+/// SUM: worst case was ~41 × 30s with no exit but user cancellation. This
+/// bounds the pathological case (a stalled/slow provider), not the typical
+/// one — a real embed round-trip is usually well under a second, so dozens
+/// of them finish long before this fires. 100s is three worst-case (30s)
+/// round-trips PLUS a 10s margin for connection/queueing overhead beyond the
+/// raw provider timeout: enough that a genuinely slow-but-working provider
+/// gets a real chance at the query embed plus a couple of candidates, short
+/// enough that a search box isn't held open for minutes.
+/// **The measurement that would replace this derived number:** real embed
+/// latency distributions from `ai_spend`'s own recorded token/duration data,
+/// once that surface exists for embeddings.
+///
+/// Applied by MEASURING ELAPSED TIME inside the candidate loop (checked
+/// alongside the existing cancellation check), not a `tokio::time::timeout`
+/// wrapping the loop — a `timeout` would DROP the wrapped future on expiry
+/// and discard every pair already collected; measuring elapsed time lets the
+/// loop `break` and rank whatever it has so far, which is still a useful
+/// partial dense signal (unlike the rerank arm, which has nothing partial to
+/// salvage from one JSON completion, hence its `tokio::time::timeout`).
+///
+/// **NOT split by local/cloud the way [`HYBRID_SEARCH_RERANK_LOCAL`]/
+/// `_CLOUD` are.** That split exists because CHAT completion latency differs
+/// by an order of magnitude between CPU-only local inference and a cloud
+/// API (autoregressive, token-by-token). Embedding latency does not have the
+/// same asymmetry — it is a single forward pass, not a generation loop — and
+/// the per-call ceiling this bound is built from is ALREADY identical for
+/// both ([`OLLAMA_EMBED`]'s own doc: "the same bound as cloud EMBED, not a
+/// tighter one — local is not reliably faster here"). Splitting this bound
+/// by provider class would add a second axis with no latency asymmetry to
+/// justify it.
+pub const DENSE_ARM_TIMEOUT: Duration = Duration::from_secs(100);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,6 +679,23 @@ mod tests {
             hybrid_search_rerank_deadline(false),
             HYBRID_SEARCH_RERANK_CLOUD
         );
+    }
+
+    #[test]
+    fn dense_arm_timeout_clears_three_worst_case_embed_round_trips() {
+        // The floor this bound's doc derives from: three sequential
+        // worst-case embeds ([`OLLAMA_EMBED`]/[`EMBED`], identical for both
+        // provider classes — see that constant's own doc). Someone loosening
+        // `OLLAMA_EMBED` without revisiting this bound must fail a test, not
+        // silently shrink the number of round-trips it actually covers.
+        assert!(
+            DENSE_ARM_TIMEOUT > OLLAMA_EMBED * 3,
+            "the dense-arm bound must clear three worst-case embed round-trips with real margin"
+        );
+        // Not a generation-class bound: strictly under the shortest
+        // completion baseline, or this "embed budget" would out-live an
+        // entire cloud completion.
+        assert!(DENSE_ARM_TIMEOUT < COMPLETION);
     }
 
     #[test]

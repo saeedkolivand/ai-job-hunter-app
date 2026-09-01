@@ -442,3 +442,42 @@ fn rerank_user_truncation_preserves_the_id_line() {
         "the id line must survive truncation of a long description: {prompt:?}"
     );
 }
+
+// ── run_lexical_arm ──────────────────────────────────────────────────────────
+
+fn lexical_doc<'a>(id: &'a str, title: &'a str, description: &'a str) -> LexicalDoc<'a> {
+    LexicalDoc {
+        id,
+        title,
+        company: "",
+        location: "",
+        description,
+    }
+}
+
+#[test]
+fn run_lexical_arm_reports_ran_on_a_clean_query() {
+    let docs = vec![lexical_doc("p1", "Engineer", "Builds things with Rust.")];
+    let (ranks, status) = run_lexical_arm(&docs, "rust", 10);
+    assert_eq!(status, ArmStatus::Ran);
+    assert_eq!(ranks, vec!["p1".to_string()]);
+}
+
+/// The regression this PR fixes: a genuine FTS5 failure must report
+/// `Unavailable`, never `Ran`-with-empty-hits — the two used to be
+/// indistinguishable to the renderer, contradicting the module's own
+/// "degrade, never silently claim more than ran" contract. The trigger is
+/// the EMPIRICALLY VERIFIED one (an embedded NUL byte — see
+/// `retrieval::lexical::LexicalIndex::search`'s doc), not the bare-
+/// punctuation claim from the original review, which did not reproduce.
+#[test]
+fn run_lexical_arm_reports_unavailable_on_a_real_fts5_failure_not_ran() {
+    let docs = vec![lexical_doc("p1", "Engineer", "Some text.")];
+    let (ranks, status) = run_lexical_arm(&docs, "\0", 10);
+    assert_eq!(
+        status,
+        ArmStatus::Unavailable,
+        "a genuine FTS5 failure must never report as Ran"
+    );
+    assert!(ranks.is_empty());
+}
