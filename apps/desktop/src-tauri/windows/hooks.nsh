@@ -22,9 +22,15 @@
 ; the installer itself is per-user; under perMachine/both an elevated
 ; installer would run as a different (admin) principal and this would
 ; silently edit *that* account's PATH instead of the real user's.
-!if "${INSTALLMODE}" != "currentUser"
-  !error "windows/hooks.nsh hardcodes HKCU for the per-user PATH and is only safe for bundle.windows.nsis.installMode == currentUser; wire a per-machine (HKLM) path or drop this hook before changing installMode."
-!endif
+; The guard that enforces this lives INSIDE both macros below, NOT here at
+; file scope, and that placement is load-bearing. Tauri's generated
+; installer.nsi does `!include "<this file>"` about ten lines BEFORE it does
+; `!define INSTALLMODE "<mode>"`, so at file-scope include time the symbol is
+; still undefined. NSIS leaves an undefined ${SYMBOL} as literal text, so a
+; file-scope `!if "${INSTALLMODE}" != "currentUser"` is ALWAYS true and aborts
+; every build. The macros expand at their insertion points inside the install
+; and uninstall sections, far below the define, where the value is real.
+; This cost one broken release build -- do not move it back to file scope.
 ;
 ; Tauri's bundled NSIS toolchain does not ship the third-party EnVar plugin,
 ; and the one bundled utility plugin (nsis_tauri_utils) has no PATH-related
@@ -154,6 +160,12 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; See the INSTALLMODE note at the top of this file: this check must live
+  ; inside the macro, because at file-scope include time the symbol is not
+  ; yet defined.
+  !if "${INSTALLMODE}" != "currentUser"
+    !error "windows/hooks.nsh hardcodes HKCU for the per-user PATH and is only safe for bundle.windows.nsis.installMode == currentUser; wire a per-machine (HKLM) path or drop this hook before changing installMode."
+  !endif
   Push $0
   Push $1
   Push $2
@@ -321,6 +333,12 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  ; See the INSTALLMODE note at the top of this file: this check must live
+  ; inside the macro, because at file-scope include time the symbol is not
+  ; yet defined.
+  !if "${INSTALLMODE}" != "currentUser"
+    !error "windows/hooks.nsh hardcodes HKCU for the per-user PATH and is only safe for bundle.windows.nsis.installMode == currentUser; wire a per-machine (HKLM) path or drop this hook before changing installMode."
+  !endif
   Push $0
   Push $1
   Push $2
