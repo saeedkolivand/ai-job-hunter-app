@@ -157,12 +157,54 @@ describe('usePostingsSearch', () => {
     expect(hybridSearch.mock.calls[1]?.[0]).toMatchObject({ query: 'engineer' });
   });
 
-  it('surfaces a failed semantic-scoring mirror write instead of swallowing it', async () => {
+  it('does NOT retry until the semantic-scoring sync resolves — the retry must not race the Rust-side write', async () => {
+    // CodeRabbit finding: `scrape_hybrid_search` reads `semantic_scoring`
+    // from the Rust store, which `syncSemanticScoring` is what writes. Firing
+    // the retry alongside (not after) that write can run it against the
+    // still-stale value, so the user who just clicked "enable" gets a
+    // keyword-only result again — the exact regression this pins.
+    let resolveSync: (v: unknown) => void = () => {};
+    const hybridSearch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResult(['a'], { arms: { lexical: 'ran', dense: 'skipped', rerank: 'ran' } })
+      )
+      .mockResolvedValueOnce(okResult(['a', 'b']));
+    const setSemanticScoring = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSync = resolve;
+        })
+    );
+    const { result } = setup({
+      'scrape.hybridSearch': hybridSearch,
+      'jobPreferences.setSemanticScoring': setSemanticScoring,
+    });
+
+    act(() => result.current.search('engineer', ['a', 'b']));
+    await waitFor(() => expect(result.current.state).toBe('results'));
+
+    act(() => result.current.enableSemanticRanking(['a', 'b']));
+    await waitFor(() => expect(setSemanticScoring).toHaveBeenCalledWith(true));
+
+    // The sync is still pending — the retried search must NOT have fired yet.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(hybridSearch).toHaveBeenCalledTimes(1);
+
+    resolveSync(undefined);
+    await waitFor(() => expect(hybridSearch).toHaveBeenCalledTimes(2));
+    expect(hybridSearch.mock.calls[1]?.[0]).toMatchObject({ query: 'engineer' });
+  });
+
+  it('surfaces a failed semantic-scoring mirror write instead of swallowing it, and does not retry', async () => {
     // Regression for the HIGH finding: a failed backend sync must notify —
     // otherwise the local preference flips to on, the search re-runs and
     // shows results, and the user has zero indication the persisted mirror
     // never updated. This test FAILS if the `onError` handler is removed
     // from `enableSemanticRanking`'s `syncSemanticScoring.mutate(true, ...)`.
+    // It also pins that a FAILED sync never retries — the toast already
+    // explains that nothing changed, so re-running against the still-stale
+    // backend value would only repeat the same disappointing result.
     const hybridSearch = vi.fn().mockResolvedValue(okResult(['a']));
     const setSemanticScoring = vi.fn().mockRejectedValue(new Error('offline'));
     const { result } = setup({
@@ -181,6 +223,9 @@ describe('usePostingsSearch', () => {
         message: 'settings.embeddings.semanticScoringSyncFailed',
       })
     );
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(hybridSearch).toHaveBeenCalledTimes(1);
   });
 
   it('mints every queryId with the `search-` prefix Rust validates', async () => {

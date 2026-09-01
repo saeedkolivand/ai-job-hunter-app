@@ -2495,10 +2495,10 @@
       "armLexical": "keyword",
       "armDense": "semantic",
       "armRerank": "AI re-rank",
-      "semanticOff": "Semantic ranking is off — results are ranked by keyword match only.",
+      "semanticOff": "Semantic ranking is off.",
       "enableSemanticRanking": "Enable semantic ranking",
-      "semanticUnavailable": "Semantic ranking failed for this search — showing keyword results.",
-      "rerankUnavailable": "Results aren't AI re-ranked right now — showing the fused keyword/semantic order."
+      "semanticUnavailable": "Semantic ranking failed for this search.",
+      "rerankUnavailable": "Results aren't AI re-ranked right now."
     },
     "cluster": {
       "alsoOn": "Also on",

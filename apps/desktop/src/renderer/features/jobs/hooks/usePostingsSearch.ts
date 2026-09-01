@@ -113,18 +113,24 @@ export function usePostingsSearch() {
    * Autopilot scheduler reads (the same write-through `EmbeddingsSettings`
    * uses, including its `onError` — a failed mirror write is not cosmetic:
    * in-app scoring would follow the Zustand value that just flipped while the
-   * scheduler keeps reading the old one until the next successful write), and
-   * re-runs the last search so the user sees the improved ranking immediately
-   * instead of pressing Search again.
+   * scheduler keeps reading the old one until the next successful write).
+   *
+   * The retry is sequenced INSIDE the sync mutation's `onSuccess`, never
+   * fired alongside it: `scrape_hybrid_search` reads `semantic_scoring` from
+   * the Rust-side store — the one THIS mutation writes — so retrying before
+   * it resolves would race a still-stale backend value and come back with
+   * the dense arm `skipped` again on the very click meant to fix that,
+   * undercutting the CTA. On failure we do NOT retry — `onError`'s toast
+   * already explains that nothing changed.
    */
   const enableSemanticRanking = useCallback(
     (eligibleIds: string[]) => {
       usePreferencesStore.getState().setSemanticScoring(true);
       syncSemanticScoring.mutate(true, {
+        onSuccess: () => retry(eligibleIds),
         onError: () =>
           notify.error({ message: t('settings.embeddings.semanticScoringSyncFailed') }),
       });
-      retry(eligibleIds);
     },
     [retry, syncSemanticScoring, notify, t]
   );

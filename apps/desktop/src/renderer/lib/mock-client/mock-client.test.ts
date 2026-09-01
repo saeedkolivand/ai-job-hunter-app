@@ -23,6 +23,21 @@ describe('createMockClient', () => {
     await expect(client.linkedin.getStatus()).resolves.toEqual({ connected: false });
   });
 
+  // Regression: `hybridSearch` used to be a bare `noop` (resolves `undefined`)
+  // while `usePostingsSearch`'s success handler reads `data.outcome`/
+  // `data.hits` unconditionally — every mock-backed search threw.
+  it('resolves a valid HybridSearchResult shape from hybridSearch, not undefined', async () => {
+    const client = createMockClient();
+    const result = await client.scrape.hybridSearch({
+      queryId: 'search-test',
+      query: 'engineer',
+    });
+    expect(result.outcome).toBe('ok');
+    expect(result.hits).toEqual([]);
+    expect(result.arms).toEqual({ lexical: 'skipped', dense: 'skipped', rerank: 'skipped' });
+    expect(result.corpusSize).toBe(0);
+  });
+
   it('returns sync unsubscribe handles for event subscriptions', () => {
     const client = createMockClient();
     expect(typeof client.ai.onStream(() => {})).toBe('function');

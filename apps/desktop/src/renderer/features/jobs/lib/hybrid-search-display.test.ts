@@ -26,18 +26,19 @@ describe('isCommittedSearchActive', () => {
 
   /**
    * Pins the accepted caching behavior (MEDIUM review finding, corpus
-   * staleness): this predicate takes NO signal about the postings corpus at
-   * all — by construction, retyping the exact committed query reactivates
-   * whatever result is already cached, regardless of a scrape that added
-   * (or removed) postings in between. If this predicate's signature ever
-   * grows a corpus/generation parameter, this test should be the one that
-   * forces a conscious update to `hybrid-search-display.ts`'s doc comment.
+   * staleness) at the SIGNATURE, not by calling it twice with identical
+   * arguments — two calls with the same inputs only prove the function is
+   * pure/deterministic, not that it has no corpus input (a function that
+   * secretly read `allPostings.length` from a closure would pass that
+   * version of the test too). Asserting arity is the direct claim: this
+   * predicate structurally CANNOT read a corpus/generation signal because
+   * nothing carrying one is ever passed to it. If this predicate's contract
+   * ever grows a corpus/generation parameter, THIS is the assertion that
+   * forces a conscious update here and to `hybrid-search-display.ts`'s doc
+   * comment (a corpus-aware version belongs in `JobsPage`, not this file —
+   * see that doc's "deliberate simplification" paragraph).
    */
-  it('reactivates the SAME cached answer for the same text no matter how many times it is asked (no corpus signal)', () => {
-    const askedOnceBeforeAScrape = isCommittedSearchActive('results', 'engineer', 'engineer');
-    const askedAgainAfterAScrape = isCommittedSearchActive('results', 'engineer', 'engineer');
-    expect(askedOnceBeforeAScrape).toBe(true);
-    expect(askedAgainAfterAScrape).toBe(true);
-    expect(askedOnceBeforeAScrape).toBe(askedAgainAfterAScrape);
+  it('takes exactly the three text/state parameters — no corpus/generation signal', () => {
+    expect(isCommittedSearchActive.length).toBe(3);
   });
 });

@@ -2499,10 +2499,10 @@
       "armLexical": "Schlüsselwort",
       "armDense": "semantisch",
       "armRerank": "KI-Neubewertung",
-      "semanticOff": "Semantische Rangfolge ist deaktiviert — die Ergebnisse werden nur nach Schlüsselwort-Übereinstimmung sortiert.",
+      "semanticOff": "Semantische Rangfolge ist deaktiviert.",
       "enableSemanticRanking": "Semantische Rangfolge aktivieren",
-      "semanticUnavailable": "Semantische Rangfolge ist für diese Suche fehlgeschlagen — es werden Schlüsselwort-Ergebnisse angezeigt.",
-      "rerankUnavailable": "Ergebnisse werden derzeit nicht per KI neu bewertet — es wird die kombinierte Schlüsselwort-/semantische Reihenfolge angezeigt."
+      "semanticUnavailable": "Semantische Rangfolge ist für diese Suche fehlgeschlagen.",
+      "rerankUnavailable": "Ergebnisse werden derzeit nicht per KI neu bewertet."
     },
     "cluster": {
       "alsoOn": "Auch auf",
