@@ -263,6 +263,16 @@ describe('violations', () => {
   // declared site breaks the guard BOTH ways at once (undeclared at the new
   // line, stale at the old one).
 
+  it('two DIFFERENT declared sites in one file, each with its own sig, do not collide', () => {
+    const inv = {
+      'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' },
+      'foo.rs:20': { status: 'safe', reason: 'a'.repeat(30), sig: 'crash: {e}' },
+    };
+    expect(
+      violations(inv, [leak('foo.rs:10', 'boom: {e}'), leak('foo.rs:20', 'crash: {e}')])
+    ).toEqual([]);
+  });
+
   it('an entry with a sig survives its site moving to a new line', () => {
     const inv = { 'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' } };
     // The site is now at line 33 (an unrelated insertion above it), same text.
@@ -276,6 +286,18 @@ describe('violations', () => {
     expect(problems.join('\n')).toContain('not declared in ALLOWLIST');
     expect(problems.join('\n')).toContain('foo.rs:10');
     expect(problems.join('\n')).toContain('Declared in ALLOWLIST but no `{e}` site found');
+  });
+
+  it('a sig-bearing entry catches a message changed in place — same key, different text', () => {
+    // A `sig`-bearing entry must NOT read as "still declared" just because a
+    // leak still sits on its exact line — its own message has to agree too,
+    // or a re-traced-nobody edit would silently keep certifying stale text.
+    const inv = { 'foo.rs:10': { status: 'safe', reason: 'a'.repeat(30), sig: 'boom: {e}' } };
+    const problems = violations(inv, [leak('foo.rs:10', 'kaboom: {e}')]);
+    const text = problems.join('\n');
+    expect(text).toContain('foo.rs:10');
+    expect(text).toContain('not declared in ALLOWLIST');
+    expect(text).toContain('Declared in ALLOWLIST but no `{e}` site found');
   });
 
   it('a sig match is scoped to the same file — a same-text site in another file is still undeclared', () => {
@@ -332,6 +354,28 @@ describe('violations', () => {
     for (const line of [10, 20, 40, 50]) expect(text).toContain(`foo.rs:${line}`);
     expect(text).toContain('Declared in ALLOWLIST but no `{e}` site found');
     expect(text).not.toContain('foo.rs:30');
+  });
+
+  // ── same-key collision: two leaks resolving to one key must not hide ────
+  // each other. The defect: `leakAtKey` used to keep only the LAST leak
+  // written for a given key, so whichever survived decided BOTH leaks' fate.
+  // Order matters for reproducing the dangerous case — put the source-first
+  // (undeclared) leak BEFORE the declared one, matching how `findLeaks` would
+  // actually order two calls on one physical line; that's exactly the
+  // ordering under which the old Map-collapse kept the DECLARED leak as the
+  // key's survivor, so the undeclared one silently read as "matched" too.
+
+  it('two leaks colliding on one key: an undeclared one is flagged even though a declared one shares its key', () => {
+    const inv = { 'foo.rs:1': { status: 'safe', reason: 'a'.repeat(30), sig: 'declared: {e}' } };
+    const problems = violations(inv, [
+      leak('foo.rs:1', 'undeclared: {e}'),
+      leak('foo.rs:1', 'declared: {e}'),
+    ]);
+    const text = problems.join('\n');
+    expect(text).toContain('foo.rs:1');
+    expect(text).toContain('not declared in ALLOWLIST');
+    // …and the declared leak sharing that key is not falsely marked stale.
+    expect(text).not.toContain('Declared in ALLOWLIST but no `{e}` site found');
   });
 
   it('a stale sig entry is still reported when its sig matches a leak another entry declares', () => {

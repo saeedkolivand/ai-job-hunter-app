@@ -617,12 +617,33 @@ export function violations(inventory = ALLOWLIST, leaks) {
   const problems = [];
 
   const declaredKeys = new Set(Object.keys(inventory));
-  // The leak actually sitting at a given key today (if any) — used below to
-  // tell "still the same site" apart from "a DIFFERENT site now happens to
-  // sit on this line number", which line-exact-by-key alone cannot: a `key`
-  // match only proves the LINE lines up, not that the log message is still
-  // the one the entry's `reason` was written against.
-  const leakAtKey = new Map(leaks.map((l) => [l.key, l]));
+
+  const fileOf = (key) => key.slice(0, key.lastIndexOf(':'));
+  /** Group `items` into a Map keyed by `keyOf(item)`. */
+  const bucketBy = (items, keyOf) => {
+    const buckets = new Map();
+    for (const item of items) {
+      const k = keyOf(item);
+      const bucket = buckets.get(k);
+      if (bucket) bucket.push(item);
+      else buckets.set(k, [item]);
+    }
+    return buckets;
+  };
+
+  // Every leak sitting at a given key today — ALL of them, never collapsed to
+  // "the last one wins". A `key -> single leak` map here was exactly the
+  // defect a 2026-08-31 review found: two `log::` calls sharing one line
+  // (today the only way two DIFFERENT sites can share a key) produce two leak
+  // records with that key, and keeping only the last meant whichever survived
+  // decided BOTH records' fate — a declared site's own `sig` could "match"
+  // for an undeclared leak one bucket over, purely because the map lookup by
+  // key can't tell the two apart. Matching below is therefore always done
+  // leak-by-leak (`leakLineExactOk`, using the LEAK's own `sig`) or, from the
+  // entry's side, by asking "does ANY leak in this key's bucket satisfy the
+  // entry" (`entryLineExactOk`) — never by re-deriving a single "the" leak
+  // for a key.
+  const leaksByKey = bucketBy(leaks, (l) => l.key);
 
   // Content-anchored matching (opt-in — an ALLOWLIST entry declares its own
   // `sig`, copied from the `sig` `findLeaks` reports for it): a line-keyed
@@ -645,24 +666,12 @@ export function violations(inventory = ALLOWLIST, leaks) {
   //     entry declares by key; that entry then has no site of its own and IS
   //     stale. A sig pairing therefore only counts for a leak no entry
   //     declares by key — when the leak sits on an entry's own declared key
-  //     (see `lineExactOk` below), that's the ordinary same-site case and
-  //     `sig` (if present) is checked there instead, not here.
+  //     (see `entryMatchesLeak` below), that's the ordinary same-site case
+  //     and `sig` (if present) is checked there instead, not here.
   //
   // Both holes could only ever suppress a STALE-entry error, never an
   // undeclared-leak one: a second site with the same message makes the LEAK
   // bucket length 2, which disables sig matching for that bucket outright.
-  const fileOf = (key) => key.slice(0, key.lastIndexOf(':'));
-  /** Group `items` into a Map keyed by `keyOf(item)`. */
-  const bucketBy = (items, keyOf) => {
-    const buckets = new Map();
-    for (const item of items) {
-      const k = keyOf(item);
-      const bucket = buckets.get(k);
-      if (bucket) bucket.push(item);
-      else buckets.set(k, [item]);
-    }
-    return buckets;
-  };
   // NUL separator: it occurs in neither a path nor a Rust string literal, so
   // two different (file, sig) pairs can never collide on one bucket key.
   const leaksBySig = bucketBy(leaks, (l) => `${l.file}\0${l.sig}`);
@@ -681,24 +690,32 @@ export function violations(inventory = ALLOWLIST, leaks) {
     sigSatisfiedEntryKeys.add(entries[0][0]);
   }
 
-  // Line-exact is only a real match when the entry ALSO has no opinion on
-  // content (no `sig`) or its content still agrees: a `sig`-bearing entry
-  // whose line still has a leak, but a DIFFERENT one (the message text
-  // changed in place, line number untouched), must not read as "still
-  // declared" just because the two keys happen to coincide — that would
-  // silently certify a message nobody re-traced. Entries without `sig` keep
-  // the original, purely positional behavior (see the file header on why
-  // `sig` is opt-in, not mandatory).
-  const lineExactOk = (key) => {
-    const leak = leakAtKey.get(key);
-    if (!leak) return false;
-    const entry = inventory[key];
-    if (!entry) return false;
-    if (entry.sig && entry.sig !== leak.sig) return false;
-    return true;
+  // An entry with no opinion on content (no `sig`) matches any leak sitting
+  // at its key; a `sig`-bearing entry only matches a leak whose OWN text
+  // agrees — so a message changed in place (line untouched) still fails to
+  // match, and (the fix here) a DIFFERENT leak sharing the same key never
+  // borrows this leak's verdict just because they resolve to the same key.
+  const entryMatchesLeak = (entry, leak) => !entry.sig || entry.sig === leak.sig;
+
+  // Checked per LEAK OBJECT — never by re-looking-up "the" leak for a key,
+  // which is what let a same-key collision silently borrow a neighbor's
+  // verdict (see `leaksByKey` above).
+  const leakLineExactOk = (leak) => {
+    const entry = inventory[leak.key];
+    return Boolean(entry) && entryMatchesLeak(entry, leak);
   };
 
-  const undeclared = leaks.filter((l) => !lineExactOk(l.key) && !sigSatisfiedLeakKeys.has(l.key));
+  // An entry is still live at its key when AT LEAST ONE leak sitting there
+  // satisfies it — not "the" leak, since (with a same-key collision) a key
+  // can hold more than one.
+  const entryLineExactOk = (key) => {
+    const entry = inventory[key];
+    const candidates = leaksByKey.get(key);
+    if (!entry || !candidates) return false;
+    return candidates.some((l) => entryMatchesLeak(entry, l));
+  };
+
+  const undeclared = leaks.filter((l) => !leakLineExactOk(l) && !sigSatisfiedLeakKeys.has(l.key));
   if (undeclared.length > 0) {
     problems.push(
       'These log call sites interpolate a caught error, captured or positional, which can ' +
@@ -715,7 +732,9 @@ export function violations(inventory = ALLOWLIST, leaks) {
     );
   }
 
-  const stale = [...declaredKeys].filter((k) => !lineExactOk(k) && !sigSatisfiedEntryKeys.has(k));
+  const stale = [...declaredKeys].filter(
+    (k) => !entryLineExactOk(k) && !sigSatisfiedEntryKeys.has(k)
+  );
   if (stale.length > 0) {
     problems.push(
       'Declared in ALLOWLIST but no `{e}` site found there anymore (fixed, moved, or ' +
