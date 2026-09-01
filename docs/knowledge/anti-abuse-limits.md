@@ -1,6 +1,6 @@
 # Anti-Abuse Rate & Concurrency Limits
 
-Last updated: 2026-08-22
+Last updated: 2026-09-01
 
 Canonical source: `apps/desktop/src-tauri/src/limits/mod.rs`
 
@@ -12,6 +12,8 @@ The `limits` module provides **in-memory rate limiting + concurrency control** o
 - `ai_research` bucket: Web research lookups (`ai_lookup_salary`, `ai_research_company`, `ai_research_answer`)
 - `agent_run`: Agentic loop command (fans out into multiple turns)
 - `scrape_board` / `scrape_url`: Web scraping (target rate-limits, IP bans)
+- `hybrid_search_rerank`: the LLM listwise rerank in postings search — its own bucket so a batch of
+  Tailor generations cannot starve a job search, or vice versa (see the constant docs in `limits/mod.rs`)
 
 The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: server-side cap enforced by `max_boards_per_batch()` in `apps/desktop/src-tauri/src/scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads. The engine-level bound scales automatically as new boards are added to the registry (see `max_boards_per_batch()` source; no `scraping/engine` code edit required). Note: `ScrapeBoardsRequestSchema` in `packages/shared/src/schemas/index.ts` carries matching `.max(...)` bounds, but it is a **typecheck-time guard only** — that schema is never `.parse()`d at runtime (its only consumers are `gen-ipc-rust.ts` and `z.infer`), and the generated Rust field is an unbounded `Vec<String>`. The Rust-side bound is therefore the ONLY runtime control, not one of two.
 

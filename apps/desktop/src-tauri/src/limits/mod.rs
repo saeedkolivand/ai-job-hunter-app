@@ -117,6 +117,23 @@ pub const AGENT_RUN_CONCURRENCY_MAX: usize = 2;
 /// rejected immediately with a retriable error rather than parked indefinitely.
 pub const AGENT_RUN_QUEUE_MAX: usize = 6;
 
+/// `scrape_hybrid_search`'s optional LLM rerank step (`commands::hybrid_search`):
+/// at most this many starts per [`RATE_WINDOW`].
+///
+/// One rerank call is a single structured-JSON completion over a fenced batch
+/// of ≤20 candidates — the same shape and cost as one `ai_generate` call, not
+/// a multi-stage pipeline — so it inherits [`AI_GENERATE_RATE_MAX`]'s and
+/// [`AI_GENERATE_CONCURRENCY_MAX`]'s numbers rather than a fresh, unreviewed
+/// pair. A distinct bucket (not the SAME bucket as `ai_generate`) because the
+/// two are unrelated user actions and must not compete for one another's
+/// budget: a batch of Tailor generations should not starve a job search's
+/// rerank, or vice versa.
+pub const HYBRID_SEARCH_RERANK_BUCKET: &str = "hybrid_search_rerank";
+/// [`HYBRID_SEARCH_RERANK_BUCKET`]: at most this many starts per [`RATE_WINDOW`].
+pub const HYBRID_SEARCH_RERANK_RATE_MAX: usize = AI_GENERATE_RATE_MAX;
+/// [`HYBRID_SEARCH_RERANK_BUCKET`]: at most this many in-flight at once.
+pub const HYBRID_SEARCH_RERANK_CONCURRENCY_MAX: usize = AI_GENERATE_CONCURRENCY_MAX;
+
 /// Rolling rate-limit window (all commands share the window length; only the
 /// per-command count differs).
 pub const RATE_WINDOW: Duration = Duration::from_secs(60);

@@ -1,8 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { EVENT_CHANNELS, type JobPosting, type ScrapeProgressEvent } from '@ajh/shared';
-import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '@ajh/shared/schemas';
+import {
+  EVENT_CHANNELS,
+  type HybridSearchResult,
+  type JobPosting,
+  type ScrapeProgressEvent,
+} from '@ajh/shared';
+import type {
+  PostingsHybridSearchRequest,
+  ScrapeBoardsRequest,
+  ScrapeUrlRequest,
+} from '@ajh/shared/schemas';
 
 import { asyncUnsub } from '../../utils.js';
 
@@ -35,4 +44,6 @@ export const scrape = {
         location: string;
       }>
     >('scrape_list_interactions', { filter }),
+  hybridSearch: (req: PostingsHybridSearchRequest) =>
+    invoke<HybridSearchResult>('scrape_hybrid_search', { req }),
 };

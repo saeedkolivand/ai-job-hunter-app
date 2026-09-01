@@ -79,6 +79,18 @@ vi.mock('@/services', () => ({
   fetchJob: (jobId: string) => fetchJobSpy(jobId),
 }));
 
+vi.mock('@/features/jobs/hooks/usePostingsSearch', () => ({
+  usePostingsSearch: () => ({
+    state: 'idle',
+    result: null,
+    committedQuery: '',
+    search: vi.fn(),
+    retry: vi.fn(),
+    clear: vi.fn(),
+    enableSemanticRanking: vi.fn(),
+  }),
+}));
+
 vi.mock('@/hooks/useDefaultResumeId', () => ({ useDefaultResumeId: () => null }));
 
 vi.mock('@/hooks/use-format-relative-time', () => ({

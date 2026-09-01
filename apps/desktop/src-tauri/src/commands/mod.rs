@@ -19,6 +19,7 @@ pub mod email_watch;
 pub mod extension_bridge;
 pub mod geocoding;
 pub mod github;
+pub mod hybrid_search;
 pub mod job_preferences;
 pub mod jobs;
 pub mod match_resume;

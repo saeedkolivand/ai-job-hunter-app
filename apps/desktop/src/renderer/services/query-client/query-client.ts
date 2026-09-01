@@ -89,6 +89,10 @@ export const keys = {
     all: ['postings'] as const,
     interactions: (type?: string) => ['postings', 'interactions', type] as const,
     resolve: (url: string) => ['postings', 'resolve', url] as const,
+    // Unused: `useHybridSearch`/`usePostingsSearch` (features/jobs/hooks) are
+    // `useMutation`s, not `useQuery`s — a search-as-you-type action has no
+    // cache to key. Kept in case a future cached "recent searches" read wants it.
+    hybridSearch: (query: string) => ['postings', 'hybridSearch', query] as const,
   },
   credentials: { all: ['credentials'] as const },
   privacy: { crashReporting: ['privacy', 'crashReporting'] as const },

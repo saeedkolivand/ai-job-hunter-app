@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '@ajh/shared';
+import type { PostingsHybridSearchRequest } from '@ajh/shared/schemas';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -110,5 +111,22 @@ export const useRemoveInteraction = () => {
   return useMutation({
     mutationFn: (req: { jobId: string; interactionType: string }) =>
       api.scrape.removeInteraction(req),
+  });
+};
+
+/**
+ * Low-level mutation for `scrape:hybridSearch` — a plain `useMutation` (not
+ * `useQuery`) because a search-as-you-type box needs to SUPERSEDE, not just
+ * re-fetch. This hook does not itself mint `queryId`s or cancel a superseded
+ * search; `features/jobs/hooks/usePostingsSearch` is the real UX wired on top
+ * (queryId minting, `jobs.cancel(previousQueryId)` before firing the next
+ * search, out-of-order/`cancelled`-response discarding, and the idle →
+ * searching → results/noResults/stale/error state machine) — use that from a
+ * component instead of this mutation directly.
+ */
+export const useHybridSearch = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (req: PostingsHybridSearchRequest) => api.scrape.hybridSearch(req),
   });
 };

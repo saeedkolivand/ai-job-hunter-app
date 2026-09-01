@@ -188,7 +188,7 @@ const ALLOWLIST = {
       'net/http.rs) — the URL is stripped upstream of this call site.',
     sig: '[profile_import] linkedin body read failed: has_session={has_session} error={e}',
   },
-  'postings/mod.rs:405': {
+  'postings/mod.rs:456': {
     status: 'safe',
     reason:
       "err: &serde_json::Error is back_up_corrupt_file's parameter — the from_str parse " +
@@ -196,7 +196,7 @@ const ALLOWLIST = {
       'in-memory-parse shape as inMemoryParseSafe() below, never a path/URL/host/credential.',
     sig: '[postings] interactions.json failed to parse ({err}); \\ backed_up={renamed} backup_name={}',
   },
-  'postings/mod.rs:447': {
+  'postings/mod.rs:498': {
     status: 'safe',
     reason:
       "serde_json::to_string_pretty is a SERIALIZE error on the app's own " +

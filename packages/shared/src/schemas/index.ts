@@ -303,6 +303,44 @@ export const ScrapeUrlRequestSchema = z.object({
   url: z.string().url(),
 });
 
+/**
+ * Request for `scrape:hybridSearch` — rank the live postings cache (or a
+ * renderer-supplied eligible subset of it) by lexical + optional dense
+ * relevance to `query`. See `commands::hybrid_search` (Rust) for the
+ * lexical/dense/fusion/rerank pipeline this drives.
+ */
+export const PostingsHybridSearchRequestSchema = z.object({
+  /**
+   * Client-minted id for this search — MUST start with `"search-"` (e.g.
+   * `` `search-${crypto.randomUUID()}` ``). Pass the SAME value to
+   * `jobs.cancel(queryId)` to abort a superseded search before it finishes
+   * embedding/reranking — hybrid search registers against the app-wide
+   * `CancelRegistry` every job kind already cancels through, so no separate
+   * cancel channel exists for this command. The prefix is the safety net
+   * `jobs::cancel::CancelRegistry`'s Rust doc names by name: every other id
+   * sharing that registry is Rust-minted (`job-{uuid}`/`run-{uuid}`), and an
+   * unprefixed caller-chosen id could otherwise NAME a live run's own id,
+   * replacing (then deleting) its cancellation token. Rejected server-side
+   * (`commands::hybrid_search::QUERY_ID_PREFIX`) if this is ever bypassed.
+   */
+  queryId: z.string().min(1).max(64).startsWith('search-'),
+  query: z.string().trim().min(1).max(200),
+  /**
+   * The renderer's own eligible-posting-id allowlist — e.g. `JobsPage`'s
+   * cluster-canonical / agency / work-type filter chain already applied —
+   * so ranking runs over exactly the set the user can see, not the whole
+   * cache before those filters. Absent/empty ranks the whole live cache
+   * (used by the agent CLI and by tests). Capped well above any realistic
+   * multi-board live cache (`commands::autopilot::rerank`'s own per-board
+   * scrape cap is ~100 postings) so a hostile/buggy caller can't force an
+   * unbounded rank pass; ids absent from the live cache are ignored rather
+   * than trusted, so this can never resurrect a cleared corpus.
+   */
+  eligibleIds: z.array(z.string().min(1)).max(2000).optional(),
+  /** How many ranked ids to return, best first. Defaults to 20 when omitted. */
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
 export const MatchResumeRequestSchema = z.object({
   resumeId: z.string().min(1),
   jobId: z.string().min(1),
@@ -930,6 +968,7 @@ export type ModelInspectResult = z.infer<typeof ModelInspectResultSchema>;
 export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
+export type PostingsHybridSearchRequest = z.infer<typeof PostingsHybridSearchRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
 export type MatchTextRequest = z.infer<typeof MatchTextRequestSchema>;
 export type ResumeTrimSuggestionsRequest = z.infer<typeof ResumeTrimSuggestionsRequestSchema>;

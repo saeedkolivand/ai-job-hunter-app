@@ -1,6 +1,33 @@
 import type { ScrapeProgressEvent } from '../../events/scrape.js';
-import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '../../schemas/index.js';
+import type {
+  PostingsHybridSearchRequest,
+  ScrapeBoardsRequest,
+  ScrapeUrlRequest,
+} from '../../schemas/index.js';
 import type { JobPosting } from '../../types/index.js';
+
+/** Whether one arm of a {@link HybridSearchResult} actually ran. */
+export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
+
+export interface HybridSearchArms {
+  lexical: HybridSearchArmStatus;
+  /** `skipped` when `semanticScoring` is off (the app-wide default); `unavailable` on an embedding failure. */
+  dense: HybridSearchArmStatus;
+  /** `skipped` when there were fewer than 2 fused candidates; `unavailable` on a rate limit or provider failure. */
+  rerank: HybridSearchArmStatus;
+}
+
+/** Why a search stopped short of returning ranked results. */
+export type HybridSearchOutcome = 'ok' | 'cancelled' | 'staleCorpus';
+
+export interface HybridSearchResult {
+  outcome: HybridSearchOutcome;
+  /** Ranked posting ids, best first, already limited to the request's `limit`. Empty unless `outcome === 'ok'`. */
+  hits: string[];
+  arms: HybridSearchArms;
+  /** How many postings this search actually ranked over. */
+  corpusSize: number;
+}
 
 export interface ScrapeContract {
   boards(req: ScrapeBoardsRequest): Promise<{ jobId: string }>;
@@ -55,6 +82,18 @@ export interface ScrapeContract {
    * tell "undone" apart from "there was nothing there".
    */
   removeInteraction(req: { jobId: string; interactionType: string }): Promise<boolean>;
+
+  /**
+   * Rank the live postings cache (or a caller-supplied eligible subset of
+   * it) by lexical + optional dense relevance to a query — see
+   * `commands::hybrid_search` (Rust) for the lexical/dense/fusion/rerank
+   * pipeline. NOT abortable via the invoke promise itself: to supersede an
+   * in-flight search, call `jobs.cancel(queryId)` with the SAME `queryId`
+   * this request was sent with (hybrid search registers against the
+   * app-wide `CancelRegistry` every job kind already cancels through —
+   * there is no separate cancel channel here).
+   */
+  hybridSearch(req: PostingsHybridSearchRequest): Promise<HybridSearchResult>;
 }
 
 export const SCRAPE_CHANNELS = {
@@ -67,4 +106,5 @@ export const SCRAPE_CHANNELS = {
   removeInteraction: 'scrape:removeInteraction',
   clearPostings: 'scrape:clearPostings',
   listInteractions: 'scrape:listInteractions',
+  hybridSearch: 'scrape:hybridSearch',
 } as const;

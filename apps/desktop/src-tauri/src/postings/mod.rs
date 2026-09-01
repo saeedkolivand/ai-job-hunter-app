@@ -25,6 +25,25 @@ pub struct PostingsCache {
     /// repeat searches over the same live postings don't re-embed. Each entry
     /// carries its embedding space so stale-space entries can be detected.
     embeddings: HashMap<String, EmbeddingVector>,
+    /// Bumped on every [`Self::clear_all`] — the ONLY mutation that can make an
+    /// in-flight hybrid search's already-computed results describe postings
+    /// that no longer exist (a replace-scrape's first streamed item calls
+    /// `clear_all` under this same lock, per `commands::scrape`'s first-item-
+    /// clear latch). A search snapshots this at start and compares again
+    /// before returning, refusing to answer against a corpus that was
+    /// cleared mid-flight. Deliberately NOT bumped by [`Self::add`],
+    /// [`Self::update_description`], or [`Self::clear_embeddings`]: `add`/
+    /// `update_description` only add or patch a row, so a posting a search
+    /// already found is still a valid, still-present result; `clear_embeddings`
+    /// (a settings-driven embedding-space change, or `ai_reembed_all`) leaves
+    /// `items` untouched, so an already-computed ranking is still correct over
+    /// what's still there — bumping on it would discard a fully-correct
+    /// result and falsely tell the user their corpus changed. A stale-space
+    /// vector an in-flight dense arm re-seeds right after `clear_embeddings`
+    /// runs is dead weight, never scored: every read is space-guarded
+    /// (`EmbeddingConfig::matches`) — so this counter deliberately covers
+    /// `clear_all` only, by design, not every mutation that touches the cache.
+    generation: u64,
 }
 
 impl PostingsCache {
@@ -42,17 +61,28 @@ impl PostingsCache {
     /// items, so the O(n) scan is cheap and a HashMap/index map would be premature.
     /// Mirrors the existing linear-scan-by-`id` in [`Self::update_description`].
     ///
-    /// When a replace happens, any cached embedding for that id is also dropped:
-    /// a re-streamed posting may carry changed text, so reusing the old vector
-    /// would score against stale content. This mirrors the invalidation
-    /// [`Self::update_description`] performs on a text change.
+    /// When a replace happens, any cached embedding for that id is dropped
+    /// ONLY when the embedded TEXT actually changed (title + description —
+    /// the same fields [`text_fields`] reads, which are the ones
+    /// `documents::keywords::posting_text_blob` builds the dense-arm embed
+    /// text from). This mirrors [`Self::update_description`]'s own "only
+    /// invalidate on a text change" rule, and for the identical reason:
+    /// "Show more" re-streams the SAME search signature, so a re-fetched
+    /// posting is usually byte-identical apart from bookkeeping fields like
+    /// `capturedAt` (stamped fresh on every fetch) — invalidating on every
+    /// re-stream regardless would silently re-pay up to
+    /// `commands::hybrid_search::DENSE_CANDIDATE_MAX` embeds for text hybrid
+    /// search already had a good vector for.
     pub fn add(&mut self, item: Value) {
         if let Some(incoming_id) = item.get("id").and_then(Value::as_str).map(str::to_string) {
             if let Some(pos) = self.items.iter().position(|existing| {
                 existing.get("id").and_then(Value::as_str) == Some(incoming_id.as_str())
             }) {
+                let text_changed = text_fields(&self.items[pos]) != text_fields(&item);
                 self.items[pos] = item;
-                self.embeddings.remove(&incoming_id);
+                if text_changed {
+                    self.embeddings.remove(&incoming_id);
+                }
                 return;
             }
         }
@@ -117,6 +147,12 @@ impl PostingsCache {
     pub fn clear_all(&mut self) {
         self.items.clear();
         self.embeddings.clear();
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// The current corpus generation — see the field doc on [`Self::generation`].
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     pub fn get_embedding(&self, id: &str) -> Option<EmbeddingVector> {
@@ -128,7 +164,10 @@ impl PostingsCache {
     }
 
     /// Drop cached embeddings (keeping items) — used when the embedding space
-    /// changes so stale-space vectors aren't reused.
+    /// changes so stale-space vectors aren't reused. Deliberately does NOT
+    /// bump [`Self::generation`] — see that field's doc for why: `items` is
+    /// untouched, so an in-flight search's already-computed ranking is still
+    /// correct, and bumping here would falsely report a changed corpus.
     pub fn clear_embeddings(&mut self) {
         self.embeddings.clear();
     }
@@ -158,6 +197,21 @@ impl PostingsCache {
             }
         }
     }
+}
+
+/// The fields whose change should invalidate a posting's cached embedding —
+/// see [`PostingsCache::add`]. `(title, description)`, the same two fields
+/// `documents::keywords::posting_text_blob` reads to build the dense-arm
+/// embed text; anything else changing (location, board metadata, `capturedAt`)
+/// is irrelevant to what got embedded.
+fn text_fields(item: &Value) -> (String, String) {
+    let field = |name: &str| {
+        item.get(name)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    (field("title"), field("description"))
 }
 
 /// Join the recorded interactions onto each cached posting so the jobs list can

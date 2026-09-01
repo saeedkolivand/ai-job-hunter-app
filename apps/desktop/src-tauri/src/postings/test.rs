@@ -301,6 +301,44 @@ fn test_postings_cache_clear() {
     assert!(cache.get_all().is_empty());
 }
 
+/// A hybrid search snapshots `generation()` at start and must be able to
+/// detect a `clear_all()` that lands mid-search — see the field doc. `add`
+/// and `update_description` must NOT bump it: a result already found is
+/// still a valid, still-present posting after either. Nor must
+/// `clear_embeddings()`: it leaves `items` untouched, so an already-computed
+/// ranking is still correct over what's still there — bumping on it would
+/// falsely report a changed corpus for a run whose postings never moved.
+#[test]
+fn generation_bumps_only_on_clear_all() {
+    let mut cache = PostingsCache::default();
+    let g0 = cache.generation();
+    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "short"}));
+    assert_eq!(
+        cache.generation(),
+        g0,
+        "add() must not invalidate an in-flight search"
+    );
+    cache.update_description("job-1", "a longer description");
+    assert_eq!(
+        cache.generation(),
+        g0,
+        "update_description() must not invalidate an in-flight search"
+    );
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+    cache.clear_embeddings();
+    assert_eq!(
+        cache.generation(),
+        g0,
+        "clear_embeddings() must not invalidate an in-flight search — items are untouched"
+    );
+    cache.clear_all();
+    assert_ne!(
+        cache.generation(),
+        g0,
+        "clear_all() must invalidate an in-flight search"
+    );
+}
+
 #[test]
 fn update_description_patches_existing_item_in_place() {
     let mut cache = PostingsCache::default();
@@ -356,6 +394,46 @@ fn update_description_unknown_id_returns_false_and_adds_no_row() {
             .and_then(serde_json::Value::as_str),
         Some("short"),
         "existing entry must be untouched on a miss"
+    );
+}
+
+/// "Show more" re-streams the SAME search signature, so a re-fetched posting
+/// upsert is usually byte-identical apart from bookkeeping fields — that must
+/// NOT wipe an already-computed embedding (the defect this PR fixes: `add`
+/// used to invalidate unconditionally on every upsert).
+#[test]
+fn add_keeps_embedding_when_title_and_description_are_unchanged() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({
+        "id": "job-1", "title": "Engineer", "description": "full text", "capturedAt": 1,
+    }));
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+
+    // Re-stream the identical posting, but with a fresh `capturedAt` — the
+    // shape a re-scrape actually produces.
+    cache.add(serde_json::json!({
+        "id": "job-1", "title": "Engineer", "description": "full text", "capturedAt": 2,
+    }));
+
+    assert!(
+        cache.get_embedding("job-1").is_some(),
+        "an upsert that doesn't change title/description must keep the cached embedding"
+    );
+}
+
+/// The mirror case: a re-streamed posting whose title or description DID
+/// change must still invalidate — this is not a blanket "never invalidate".
+#[test]
+fn add_invalidates_embedding_when_description_changes() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "v1"}));
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+
+    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "v2"}));
+
+    assert!(
+        cache.get_embedding("job-1").is_none(),
+        "an upsert that changes the embedded text must invalidate the cached embedding"
     );
 }
 

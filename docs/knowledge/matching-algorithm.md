@@ -8,6 +8,7 @@ The AI Job Hunter uses **two complementary scoring strategies**:
 
 1. **Keyword-coverage scoring** (Autopilot + fast ATS screening): **pure keyword-based scoring** — embedding-free by default (when semantic scoring is disabled); when enabled, the top candidates re-rank through the combined kernel with per-job keyword-only degrade (see ADR-020 addendum).
 2. **Combined scoring** (Jobs page analysis, and Autopilot's opt-in re-rank): a hybrid of semantic embedding similarity and the keyword ATS score — semantically heavier, but it requires an embedding lookup. The weights live in the code (see "Jobs Page Combined Score" below); this document deliberately does not restate them.
+3. **Postings search ranking** (Jobs page search box): a SEPARATE surface from the two above. It ranks scraped postings against a **user query**, not against the résumé, so it shares no scoring kernel with them — see ADR-039 and `apps/desktop/src-tauri/src/retrieval/`. Listed here only so the two résumé-scoring modes above are not mistaken for the whole ranking story.
 
 ## Keyword-Coverage Kernel
 

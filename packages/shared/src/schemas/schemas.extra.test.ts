@@ -10,6 +10,7 @@ import {
   EmbedRequestSchema,
   JobPreferencesSchema,
   MatchResumeRequestSchema,
+  PostingsHybridSearchRequestSchema,
   ResumeExtractTextSchema,
   type ResumePipelineRunRequest,
   ResumePipelineRunSchema,
@@ -51,6 +52,54 @@ describe('MatchResumeRequestSchema', () => {
   it('requires both ids', () => {
     expect(() => MatchResumeRequestSchema.parse({ resumeId: 'r1', jobId: 'j1' })).not.toThrow();
     expect(() => MatchResumeRequestSchema.parse({ resumeId: '', jobId: 'j1' })).toThrow();
+  });
+});
+
+describe('PostingsHybridSearchRequestSchema', () => {
+  const base = { queryId: 'search-q1', query: 'react developer' };
+
+  it('accepts the minimal shape (no eligibleIds, no limit)', () => {
+    expect(() => PostingsHybridSearchRequestSchema.parse(base)).not.toThrow();
+  });
+
+  it('requires a non-empty query and queryId', () => {
+    expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, query: '  ' })).toThrow();
+    expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, queryId: '' })).toThrow();
+  });
+
+  it('rejects a queryId that does not carry the required "search-" prefix', () => {
+    // The Rust-side collision the prefix closes (`jobs::cancel::CancelRegistry`):
+    // an unprefixed id could otherwise NAME a live `job-{uuid}`/`run-{uuid}` run.
+    expect(() =>
+      PostingsHybridSearchRequestSchema.parse({ ...base, queryId: '3f5d9b6a-uuid-with-no-prefix' })
+    ).toThrow();
+    expect(() =>
+      PostingsHybridSearchRequestSchema.parse({ ...base, queryId: 'job-not-a-search' })
+    ).toThrow();
+  });
+
+  it('rejects a query over the length cap', () => {
+    expect(() =>
+      PostingsHybridSearchRequestSchema.parse({ ...base, query: 'x'.repeat(201) })
+    ).toThrow();
+  });
+
+  it('accepts an eligibleIds allowlist up to the cap and rejects past it', () => {
+    expect(() =>
+      PostingsHybridSearchRequestSchema.parse({ ...base, eligibleIds: ['a', 'b'] })
+    ).not.toThrow();
+    expect(() =>
+      PostingsHybridSearchRequestSchema.parse({
+        ...base,
+        eligibleIds: Array.from({ length: 2001 }, (_, i) => `id-${i}`),
+      })
+    ).toThrow();
+  });
+
+  it('rejects a limit outside 1-50', () => {
+    expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, limit: 0 })).toThrow();
+    expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, limit: 51 })).toThrow();
+    expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, limit: 20 })).not.toThrow();
   });
 });
 

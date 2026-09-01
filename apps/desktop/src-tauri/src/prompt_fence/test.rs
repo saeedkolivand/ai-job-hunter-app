@@ -692,4 +692,5 @@ const EXPECTED_FENCE_TAGS: &[&str] = &[
     "top_requirements",
     "market_conventions",
     "letter_date",
+    "posting_candidate",
 ];

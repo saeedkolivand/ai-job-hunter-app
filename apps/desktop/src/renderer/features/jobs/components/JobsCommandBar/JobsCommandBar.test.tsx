@@ -58,6 +58,8 @@ const baseProps: BarProps = {
   // they were written to test. The gate itself is covered by its own
   // describe block further down, which overrides this per-case.
   hasDeclaredWorkType: true,
+  searchState: 'idle',
+  onSubmitSearch: vi.fn(),
 };
 
 function renderBar(overrides: Partial<BarProps> = {}) {
@@ -389,6 +391,51 @@ describe('JobsCommandBar — live scrape strip', () => {
   it('hides the destructive Clear action while a scrape runs (canClear=false)', () => {
     renderBar({ scraping: true, canClear: false });
     expect(screen.queryByRole('button', { name: /jobs\.clear$/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('JobsCommandBar — hybrid search trigger', () => {
+  it('disables the search button while the filter is empty', () => {
+    renderBar({ searchState: 'idle' });
+    expect(screen.getByTestId(TEST_IDS.jobs.searchButton)).toBeDisabled();
+  });
+
+  it('Enter in the filter box commits a search, not just the instant substring filter', async () => {
+    const user = userEvent.setup();
+    const onSubmitSearch = vi.fn();
+    setJobs({ filter: 'rust engineer' });
+    renderBar({ onSubmitSearch });
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'jobs.commandBar.filterLabel' }),
+      '{Enter}'
+    );
+    expect(onSubmitSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('the search button itself also commits a search', async () => {
+    const user = userEvent.setup();
+    const onSubmitSearch = vi.fn();
+    setJobs({ filter: 'rust engineer' });
+    renderBar({ onSubmitSearch });
+
+    await user.click(screen.getByTestId(TEST_IDS.jobs.searchButton));
+    expect(onSubmitSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a spinner on the search button while searching', () => {
+    setJobs({ filter: 'rust engineer' });
+    renderBar({ searchState: 'searching' });
+    const button = screen.getByTestId(TEST_IDS.jobs.searchButton);
+    expect(button.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('disables sort while a ranked search governs the list, re-enables once cleared', () => {
+    const { rerender } = renderBar({ searchState: 'results' });
+    expect(screen.getByRole('button', { name: 'jobs.sort' })).toBeDisabled();
+
+    rerender(<JobsCommandBar {...baseProps} searchState="idle" />);
+    expect(screen.getByRole('button', { name: 'jobs.sort' })).not.toBeDisabled();
   });
 });
 

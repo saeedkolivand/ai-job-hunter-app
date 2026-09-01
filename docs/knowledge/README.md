@@ -83,6 +83,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-036](decision-records/adr-036-cross-autopilot-best-matches.md)                          | Cross-autopilot best matches: fuzzy clustering, rank by ADR-020 two-block rule            |
 | [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md)                  | Agent CLI is a mode of the shipped binary and a thin client over the loopback bridge      |
 | [ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md)                        | Full CLI parity via a per-command policy table; curated and generic tiers kept apart      |
+| [ADR-039](decision-records/adr-039-hybrid-postings-search-lexical-dense-rerank.md)           | Hybrid postings search: lexical FTS5 + dense cosine + RRF fusion + optional LLM rerank    |
 
 ### The `NNNN-` series (closed)
 

@@ -328,6 +328,120 @@ pub const OLLAMA_SHOW: Duration = Duration::from_secs(15);
 /// download streamed with progress, hence the hour-long ceiling.
 pub const MODEL_PULL: Duration = Duration::from_secs(3600);
 
+// ── Interactive (search-box) completions ────────────────────────────────────────
+//
+// `commands::hybrid_search`'s optional LLM rerank step is an INTERACTIVE tier
+// this module didn't previously need: every other non-streaming call site
+// above is a background generation, not a search box a user is staring at.
+// Deliberately NOT `OLLAMA_COMPLETION_BASELINE` for either tier below: that
+// baseline scales with `AiGenerateRequest.effort`, and a rerank call passes
+// `effort: None` on purpose — a search box has no reasoning-effort control
+// for a user to set, so there is no effort tier to scale from.
+//
+// Split local from cloud for the SAME reason [`COMPLETION`]/
+// [`OLLAMA_COMPLETION_BASELINE`] already are: a local daemon on CPU-only
+// hardware is a materially slower regime than a cloud API, and one flat bound
+// sized for either extreme is wrong for the other. `commands::hybrid_search`
+// picks between them at the resolved ACTIVE provider (there is no static
+// per-adapter split to reuse here — `Completer::from_active` can resolve to
+// ANY provider, decided by whatever the user picked in Settings), the same
+// runtime provider-class check `commands::translation::
+// should_attempt_translation` uses.
+
+/// CLOUD tier (OpenAI/Anthropic/Gemini): 45s sits between one local-embed
+/// round-trip ([`OLLAMA_EMBED`], 30s) and a full cloud completion
+/// ([`COMPLETION`], 120s) — generous for a cloud provider's own
+/// materially-faster inference, short enough that a stalled provider doesn't
+/// hold a search box open for minutes.
+pub const HYBRID_SEARCH_RERANK_CLOUD: Duration = Duration::from_secs(45);
+
+/// LOCAL (Ollama) tier — **DERIVED, not measured; do not read this as a
+/// tuned number.** The rerank prompt is up to
+/// `retrieval::rerank::RERANK_TOP_K` (20) candidates ×
+/// `commands::hybrid_search::RERANK_ITEM_CHAR_BUDGET` (600 chars) ≈ 12,000
+/// chars ≈ 3,000 input tokens at a rough 4-chars-per-token estimate.
+/// CPU-only prompt evaluation commonly runs ~20 tok/s, so reaching the FIRST
+/// output token alone can cost ~3,000 / 20 ≈ 150s on that fully-supported,
+/// offline-first configuration. 180s sits above that derived floor, but the
+/// ~30s margin is THIN, not generous: it has to cover the output tokens
+/// themselves AND Ollama's own cold-model-load latency, which alone can run
+/// 10-30s for a large local model — a cold-started model plus a slow prompt
+/// eval can still exhaust this bound. Still stays comfortably under
+/// [`OLLAMA_COMPLETION_BASELINE`] (300s) — this is an interactive-search
+/// bound, not a full generation one.
+/// **The measurement that would replace this derived number:** one real
+/// rerank call, timed end-to-end, against a CPU-only 7B model.
+pub const HYBRID_SEARCH_RERANK_LOCAL: Duration = Duration::from_secs(180);
+
+/// Applied as an OUTER `tokio::time::timeout` wrapping the whole rerank call
+/// from `commands::hybrid_search::maybe_rerank` — independent of whatever
+/// internal per-attempt deadline the resolved provider adapter applies
+/// underneath it (same pattern as `commands::autopilot::rerank::
+/// RERANK_STEP_TIMEOUT` wrapping `semantic_rerank`), rather than a new
+/// `effort` value threaded through `Completer::complete_json`, which has
+/// nothing to scale for a caller with no effort concept.
+///
+/// **This split covers `ProviderId::Ollama` ONLY — stated plainly, not left
+/// to be inferred from the `bool` signature.** Two provider shapes land on
+/// the CLOUD (45s) tier despite not being a fast cloud API:
+/// `OpenAiCompatible` pointed at a LOCAL server (LM Studio, vLLM) is
+/// identical hardware to the Ollama case this split exists for, and the four
+/// `cli_agent` backends (`ClaudeCode`/`Codex`/`GeminiCli`/`Antigravity`) are
+/// local subprocesses with their OWN 300s timeout
+/// (`cli_agent::mod::TIMEOUT`) — a search-box rerank on either will very
+/// likely hit this 45s outer bound before that inner one. This fails SAFE,
+/// not silently: a timeout here reports `ArmStatus::Unavailable` and falls
+/// back to the pre-rerank fused order, never a failed search — and it is
+/// NOT a regression, only an UNCLOSED gap: every non-Ollama provider sat on
+/// the same flat 45s bound before this local/cloud split existed. Follow-up:
+/// classify by the resolved provider's loopback `base_url`
+/// (`net::ssrf`-style host check) rather than by `ProviderId` alone, so a
+/// local `OpenAiCompatible` endpoint gets the LOCAL tier too.
+pub fn hybrid_search_rerank_deadline(is_ollama: bool) -> Duration {
+    if is_ollama {
+        HYBRID_SEARCH_RERANK_LOCAL
+    } else {
+        HYBRID_SEARCH_RERANK_CLOUD
+    }
+}
+
+/// Wall-clock bound on `commands::hybrid_search`'s dense arm as a WHOLE
+/// (the query embed plus up to `commands::hybrid_search::DENSE_CANDIDATE_MAX`
+/// (40) candidate embeds, run strictly sequentially) — **DERIVED, not
+/// measured.** Each individual embed already has its own per-attempt ceiling
+/// ([`OLLAMA_EMBED`]/[`EMBED`], both 30s), but nothing previously bounded the
+/// SUM: worst case was ~41 × 30s with no exit but user cancellation. This
+/// bounds the pathological case (a stalled/slow provider), not the typical
+/// one — a real embed round-trip is usually well under a second, so dozens
+/// of them finish long before this fires. 100s is three worst-case (30s)
+/// round-trips PLUS a 10s margin for connection/queueing overhead beyond the
+/// raw provider timeout: enough that a genuinely slow-but-working provider
+/// gets a real chance at the query embed plus a couple of candidates, short
+/// enough that a search box isn't held open for minutes.
+/// **The measurement that would replace this derived number:** real embed
+/// latency distributions from `ai_spend`'s own recorded token/duration data,
+/// once that surface exists for embeddings.
+///
+/// Applied by MEASURING ELAPSED TIME inside the candidate loop (checked
+/// alongside the existing cancellation check), not a `tokio::time::timeout`
+/// wrapping the loop — a `timeout` would DROP the wrapped future on expiry
+/// and discard every pair already collected; measuring elapsed time lets the
+/// loop `break` and rank whatever it has so far, which is still a useful
+/// partial dense signal (unlike the rerank arm, which has nothing partial to
+/// salvage from one JSON completion, hence its `tokio::time::timeout`).
+///
+/// **NOT split by local/cloud the way [`HYBRID_SEARCH_RERANK_LOCAL`]/
+/// `_CLOUD` are.** That split exists because CHAT completion latency differs
+/// by an order of magnitude between CPU-only local inference and a cloud
+/// API (autoregressive, token-by-token). Embedding latency does not have the
+/// same asymmetry — it is a single forward pass, not a generation loop — and
+/// the per-call ceiling this bound is built from is ALREADY identical for
+/// both ([`OLLAMA_EMBED`]'s own doc: "the same bound as cloud EMBED, not a
+/// tighter one — local is not reliably faster here"). Splitting this bound
+/// by provider class would add a second axis with no latency asymmetry to
+/// justify it.
+pub const DENSE_ARM_TIMEOUT: Duration = Duration::from_secs(100);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,6 +625,77 @@ mod tests {
             "the outer research bound must clear the cloud web-search bound"
         );
         assert!(research_deadline(None) > OLLAMA_WEB_SEARCH);
+    }
+
+    #[test]
+    fn hybrid_search_rerank_cloud_sits_between_ollama_embed_and_completion() {
+        // If a future OLLAMA_EMBED bump ever closes this gap, the cloud
+        // rerank tier is no longer "generous for cloud, short enough not to
+        // hang a search box" — it has drifted into embed-timeout territory.
+        assert!(
+            HYBRID_SEARCH_RERANK_CLOUD > OLLAMA_EMBED,
+            "the cloud rerank bound must clear the local-embed bound"
+        );
+        assert!(
+            HYBRID_SEARCH_RERANK_CLOUD < COMPLETION,
+            "the cloud rerank bound must stay well under a full cloud completion's own bound"
+        );
+    }
+
+    #[test]
+    fn hybrid_search_rerank_local_clears_its_own_derived_token_math_and_the_completion_baseline() {
+        // The floor computed from the SAME constants (and the SAME ~4
+        // chars/token, ~20 tok/s CPU-only estimates) the doc's derivation
+        // states — never a re-typed literal: raising RERANK_TOP_K or
+        // RERANK_ITEM_CHAR_BUDGET must move this floor with them, or a
+        // widened prompt could silently make the documented derivation false
+        // while this test stayed green.
+        let prompt_chars = crate::retrieval::rerank::RERANK_TOP_K
+            * crate::commands::hybrid_search::RERANK_ITEM_CHAR_BUDGET;
+        let derived_floor = Duration::from_secs((prompt_chars / 4 / 20) as u64);
+        assert!(
+            HYBRID_SEARCH_RERANK_LOCAL > derived_floor,
+            "the local rerank bound must clear its own documented derivation (RERANK_TOP_K * RERANK_ITEM_CHAR_BUDGET / 4 chars-per-token / 20 tok/s = {derived_floor:?})"
+        );
+        // Still an INTERACTIVE bound, not a generation one: strictly under
+        // the flat baseline a full (uncapped-effort) local completion gets.
+        assert!(
+            HYBRID_SEARCH_RERANK_LOCAL < OLLAMA_COMPLETION_BASELINE,
+            "the local rerank bound must stay under the full-generation local baseline"
+        );
+        // Local hardware is the materially slower regime the split exists
+        // for — the local tier must be more generous than the cloud one, or
+        // the split bought nothing.
+        assert!(HYBRID_SEARCH_RERANK_LOCAL > HYBRID_SEARCH_RERANK_CLOUD);
+    }
+
+    #[test]
+    fn hybrid_search_rerank_deadline_selects_by_provider_class() {
+        assert_eq!(
+            hybrid_search_rerank_deadline(true),
+            HYBRID_SEARCH_RERANK_LOCAL
+        );
+        assert_eq!(
+            hybrid_search_rerank_deadline(false),
+            HYBRID_SEARCH_RERANK_CLOUD
+        );
+    }
+
+    #[test]
+    fn dense_arm_timeout_clears_three_worst_case_embed_round_trips() {
+        // The floor this bound's doc derives from: three sequential
+        // worst-case embeds ([`OLLAMA_EMBED`]/[`EMBED`], identical for both
+        // provider classes — see that constant's own doc). Someone loosening
+        // `OLLAMA_EMBED` without revisiting this bound must fail a test, not
+        // silently shrink the number of round-trips it actually covers.
+        assert!(
+            DENSE_ARM_TIMEOUT > OLLAMA_EMBED * 3,
+            "the dense-arm bound must clear three worst-case embed round-trips with real margin"
+        );
+        // Not a generation-class bound: strictly under the shortest
+        // completion baseline, or this "embed budget" would out-live an
+        // entire cloud completion.
+        assert!(DENSE_ARM_TIMEOUT < COMPLETION);
     }
 
     #[test]

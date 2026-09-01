@@ -211,6 +211,17 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         "top_requirements",
         "market_conventions",
         "letter_date",
+        // `commands::hybrid_search`'s optional LLM rerank turn: UP TO
+        // `retrieval::rerank::RERANK_TOP_K` scraped postings are each fenced
+        // under this SAME tag and composed into one prompt (one candidate per
+        // block, an `id:` line plus its own title/company/description). This
+        // is exactly the multi-instance-of-one-tag shape `job_posting` was
+        // never composed in, and cross-tag neutralization matters more here
+        // than anywhere else in the list: one candidate forging a
+        // `</posting_candidate><posting_candidate id="fake">` boundary could
+        // inject a fabricated extra candidate the reranker would treat as a
+        // real search result.
+        "posting_candidate",
     ]
     .into_iter()
     .map(|tag| (tag, compile_fence_tag_pattern(tag)))

@@ -70,6 +70,7 @@ pub mod prompt_fence;
 pub mod recommend;
 pub mod referrals;
 pub mod reminder_scheduler;
+pub mod retrieval;
 pub mod salary_research;
 pub mod scraping;
 pub mod spend;
@@ -1141,6 +1142,8 @@ pub fn run() {
             commands::scrape::scrape_list_postings,
             commands::scrape::scrape_clear_postings,
             commands::scrape::scrape_list_interactions,
+            // hybrid postings search (lexical FTS5 + dense + fusion + rerank)
+            commands::hybrid_search::scrape_hybrid_search,
             // data backup / restore
             commands::data::data_export,
             commands::data::data_import,

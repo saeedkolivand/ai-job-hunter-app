@@ -19,6 +19,7 @@
  */
 import type {
   EmailWatchConnectRequest,
+  HybridSearchResult,
   ReferralContact,
   ReferralUpsertRequest,
   ScrapeProgressEvent,
@@ -240,6 +241,17 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       listPostings: emptyList,
       clearPostings: noop,
       listInteractions: emptyList,
+      // NOT `noop` (resolves `undefined`): `usePostingsSearch`'s success
+      // handler reads `data.outcome`/`data.hits` unconditionally, so a
+      // mock-backed search must resolve a real (if empty) shape or it
+      // throws on every call — breaking Playwright and dev-mode alike, the
+      // one caller-visible surface every other mock stub here also honours.
+      hybridSearch: async (): Promise<HybridSearchResult> => ({
+        outcome: 'ok',
+        hits: [],
+        arms: { lexical: 'skipped', dense: 'skipped', rerank: 'skipped' },
+        corpusSize: 0,
+      }),
       onProgress: (handler) => {
         scrapeProgressHandlers.add(handler);
         return () => {

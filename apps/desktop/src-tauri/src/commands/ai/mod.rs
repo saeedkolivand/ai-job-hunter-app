@@ -1041,6 +1041,18 @@ pub async fn ai_set_embedding_config(
                 // clears the live `PostingsCache` embeddings).
                 store.clear_posting_vectors().ok();
                 store.clear_match_scores().ok();
+                // The comment above claimed this already happened; it never
+                // did. `commands::hybrid_search`'s dense arm is the first
+                // production consumer of `PostingsCache`'s embedding cache
+                // (`postings::PostingsCache::get_embedding`/`set_embedding`),
+                // and `EmbeddingConfig::matches` only guards a READ against a
+                // stale-space row — a config flip with no read in between
+                // would otherwise leave stale-space vectors sitting in the
+                // cache indefinitely (harmless until read, but exactly the
+                // dead-weight `ai_reembed_all`'s own clear exists to avoid).
+                app.state::<Mutex<PostingsCache>>()
+                    .lock()
+                    .clear_embeddings();
             }
             json!({
                 "success": true,

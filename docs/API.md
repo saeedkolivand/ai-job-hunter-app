@@ -63,7 +63,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`referrals`](#referrals)             | 3       |                                                                                                                                        |
 | [`resume`](#resume)                   | 2       |                                                                                                                                        |
 | [`resumePipeline`](#resumepipeline)   | 6       | The staged résumé pipeline — one fixed stage sequence; there is no depth choice.                                                       |
-| [`scrape`](#scrape)                   | 10      |                                                                                                                                        |
+| [`scrape`](#scrape)                   | 11      |                                                                                                                                        |
 | [`support`](#support)                 | 1       |                                                                                                                                        |
 | [`system`](#system)                   | 16      |                                                                                                                                        |
 | [`updater`](#updater)                 | 5       |                                                                                                                                        |
@@ -3980,6 +3980,7 @@ Contract: `ScrapeContract` in `packages/shared/src/ipc/contracts/scrape.ts`
 - [`scrape.listInteractions`](#scrapelistinteractions)
 - [`scrape.persistJob`](#scrapepersistjob)
 - [`scrape.removeInteraction`](#scraperemoveinteraction)
+- [`scrape.hybridSearch`](#scrapehybridsearch)
 
 #### `scrape.boards`
 
@@ -4072,6 +4073,21 @@ different `jobId` silently removes nothing. Returns `true` when a record
 was removed, `false` when there was nothing to remove, so a caller can
 tell "undone" apart from "there was nothing there".
 
+#### `scrape.hybridSearch`
+
+```ts
+hybridSearch(req: PostingsHybridSearchRequest): Promise<HybridSearchResult>;
+```
+
+Rank the live postings cache (or a caller-supplied eligible subset of
+it) by lexical + optional dense relevance to a query — see
+`commands::hybrid_search` (Rust) for the lexical/dense/fusion/rerank
+pipeline. NOT abortable via the invoke promise itself: to supersede an
+in-flight search, call `jobs.cancel(queryId)` with the SAME `queryId`
+this request was sent with (hybrid search registers against the
+app-wide `CancelRegistry` every job kind already cancels through —
+there is no separate cancel channel here).
+
 ### Channels — `scrape`
 
 `SCRAPE_CHANNELS` in `packages/shared/src/ipc/contracts/scrape.ts`:
@@ -4087,13 +4103,43 @@ tell "undone" apart from "there was nothing there".
 | `removeInteraction` | `scrape:removeInteraction` |
 | `clearPostings`     | `scrape:clearPostings`     |
 | `listInteractions`  | `scrape:listInteractions`  |
+| `hybridSearch`      | `scrape:hybridSearch`      |
 
-`SCRAPE_CHANNELS` registers 9 of this namespace's 10 methods; the rest have no entry in it.
+`SCRAPE_CHANNELS` registers 10 of this namespace's 11 methods; the rest have no entry in it.
+
+### Types — `scrape`
+
+Declared in `packages/shared/src/ipc/contracts/scrape.ts`.
+
+```ts
+/** Whether one arm of a {@link HybridSearchResult} actually ran. */
+export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
+
+export interface HybridSearchArms {
+  lexical: HybridSearchArmStatus;
+  /** `skipped` when `semanticScoring` is off (the app-wide default); `unavailable` on an embedding failure. */
+  dense: HybridSearchArmStatus;
+  /** `skipped` when there were fewer than 2 fused candidates; `unavailable` on a rate limit or provider failure. */
+  rerank: HybridSearchArmStatus;
+}
+
+/** Why a search stopped short of returning ranked results. */
+export type HybridSearchOutcome = 'ok' | 'cancelled' | 'staleCorpus';
+
+export interface HybridSearchResult {
+  outcome: HybridSearchOutcome;
+  /** Ranked posting ids, best first, already limited to the request's `limit`. Empty unless `outcome === 'ok'`. */
+  hits: string[];
+  arms: HybridSearchArms;
+  /** How many postings this search actually ranked over. */
+  corpusSize: number;
+}
+```
 
 ### Referenced types — `scrape`
 
 - `packages/shared/src/events/scrape.ts` — `ScrapeProgressEvent`
-- `packages/shared/src/schemas/index.ts` — `ScrapeBoardsRequest`, `ScrapeUrlRequest`
+- `packages/shared/src/schemas/index.ts` — `PostingsHybridSearchRequest`, `ScrapeBoardsRequest`, `ScrapeUrlRequest`
 - `packages/shared/src/types/index.ts` — `JobPosting`
 
 ---

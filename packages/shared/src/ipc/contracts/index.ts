@@ -282,7 +282,14 @@ export {
   RESUME_PIPELINE_CHANNELS,
   type ResumePipelineContract,
 } from './resumePipeline.js';
-export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
+export {
+  type HybridSearchArms,
+  type HybridSearchArmStatus,
+  type HybridSearchOutcome,
+  type HybridSearchResult,
+  SCRAPE_CHANNELS,
+  type ScrapeContract,
+} from './scrape.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export { SYSTEM_CHANNELS, type SystemContract } from './system.js';
 export {
