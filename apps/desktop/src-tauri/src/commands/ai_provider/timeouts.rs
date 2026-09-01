@@ -362,10 +362,13 @@ pub const HYBRID_SEARCH_RERANK_CLOUD: Duration = Duration::from_secs(45);
 /// chars ≈ 3,000 input tokens at a rough 4-chars-per-token estimate.
 /// CPU-only prompt evaluation commonly runs ~20 tok/s, so reaching the FIRST
 /// output token alone can cost ~3,000 / 20 ≈ 150s on that fully-supported,
-/// offline-first configuration — before any output tokens or Ollama's own
-/// cold-model-load latency. 180s sits above that derived floor with some
-/// headroom, and stays comfortably under [`OLLAMA_COMPLETION_BASELINE`]
-/// (300s) — this is an interactive-search bound, not a full generation one.
+/// offline-first configuration. 180s sits above that derived floor, but the
+/// ~30s margin is THIN, not generous: it has to cover the output tokens
+/// themselves AND Ollama's own cold-model-load latency, which alone can run
+/// 10-30s for a large local model — a cold-started model plus a slow prompt
+/// eval can still exhaust this bound. Still stays comfortably under
+/// [`OLLAMA_COMPLETION_BASELINE`] (300s) — this is an interactive-search
+/// bound, not a full generation one.
 /// **The measurement that would replace this derived number:** one real
 /// rerank call, timed end-to-end, against a CPU-only 7B model.
 pub const HYBRID_SEARCH_RERANK_LOCAL: Duration = Duration::from_secs(180);
@@ -377,6 +380,23 @@ pub const HYBRID_SEARCH_RERANK_LOCAL: Duration = Duration::from_secs(180);
 /// RERANK_STEP_TIMEOUT` wrapping `semantic_rerank`), rather than a new
 /// `effort` value threaded through `Completer::complete_json`, which has
 /// nothing to scale for a caller with no effort concept.
+///
+/// **This split covers `ProviderId::Ollama` ONLY — stated plainly, not left
+/// to be inferred from the `bool` signature.** Two provider shapes land on
+/// the CLOUD (45s) tier despite not being a fast cloud API:
+/// `OpenAiCompatible` pointed at a LOCAL server (LM Studio, vLLM) is
+/// identical hardware to the Ollama case this split exists for, and the four
+/// `cli_agent` backends (`ClaudeCode`/`Codex`/`GeminiCli`/`Antigravity`) are
+/// local subprocesses with their OWN 300s timeout
+/// (`cli_agent::mod::TIMEOUT`) — a search-box rerank on either will very
+/// likely hit this 45s outer bound before that inner one. This fails SAFE,
+/// not silently: a timeout here reports `ArmStatus::Unavailable` and falls
+/// back to the pre-rerank fused order, never a failed search — and it is
+/// NOT a regression, only an UNCLOSED gap: every non-Ollama provider sat on
+/// the same flat 45s bound before this local/cloud split existed. Follow-up:
+/// classify by the resolved provider's loopback `base_url`
+/// (`net::ssrf`-style host check) rather than by `ProviderId` alone, so a
+/// local `OpenAiCompatible` endpoint gets the LOCAL tier too.
 pub fn hybrid_search_rerank_deadline(is_ollama: bool) -> Duration {
     if is_ollama {
         HYBRID_SEARCH_RERANK_LOCAL
@@ -587,13 +607,18 @@ mod tests {
 
     #[test]
     fn hybrid_search_rerank_local_clears_its_own_derived_token_math_and_the_completion_baseline() {
-        // The derivation this constant's doc states: ~3,000 input tokens at
-        // ~20 tok/s on CPU-only hardware is ~150s to the first output token.
-        // The bound must sit ABOVE that floor with real headroom, or the
-        // documented derivation is a lie next to the literal.
+        // The floor computed from the SAME constants (and the SAME ~4
+        // chars/token, ~20 tok/s CPU-only estimates) the doc's derivation
+        // states — never a re-typed literal: raising RERANK_TOP_K or
+        // RERANK_ITEM_CHAR_BUDGET must move this floor with them, or a
+        // widened prompt could silently make the documented derivation false
+        // while this test stayed green.
+        let prompt_chars = crate::retrieval::rerank::RERANK_TOP_K
+            * crate::commands::hybrid_search::RERANK_ITEM_CHAR_BUDGET;
+        let derived_floor = Duration::from_secs((prompt_chars / 4 / 20) as u64);
         assert!(
-            HYBRID_SEARCH_RERANK_LOCAL > Duration::from_secs(150),
-            "the local rerank bound must clear its own documented derivation (3,000 tok / 20 tok/s)"
+            HYBRID_SEARCH_RERANK_LOCAL > derived_floor,
+            "the local rerank bound must clear its own documented derivation (RERANK_TOP_K * RERANK_ITEM_CHAR_BUDGET / 4 chars-per-token / 20 tok/s = {derived_floor:?})"
         );
         // Still an INTERACTIVE bound, not a generation one: strictly under
         // the flat baseline a full (uncapped-effort) local completion gets.

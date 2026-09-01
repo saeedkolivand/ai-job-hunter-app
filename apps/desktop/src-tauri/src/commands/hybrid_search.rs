@@ -108,7 +108,7 @@ const DENSE_CANDIDATE_MAX: usize = 40;
 /// company and a meaningful opening slice of the description (most job ads
 /// front-load the role summary) for every candidate, keeping the aggregate
 /// prompt at roughly `RERANK_TOP_K * 600` ≈ 12,000 chars.
-const RERANK_ITEM_CHAR_BUDGET: usize = 600;
+pub(crate) const RERANK_ITEM_CHAR_BUDGET: usize = 600;
 
 #[tauri::command]
 pub async fn scrape_hybrid_search(

@@ -304,9 +304,12 @@ fn test_postings_cache_clear() {
 /// A hybrid search snapshots `generation()` at start and must be able to
 /// detect a `clear_all()` that lands mid-search — see the field doc. `add`
 /// and `update_description` must NOT bump it: a result already found is
-/// still a valid, still-present posting after either.
+/// still a valid, still-present posting after either. Nor must
+/// `clear_embeddings()`: it leaves `items` untouched, so an already-computed
+/// ranking is still correct over what's still there — bumping on it would
+/// falsely report a changed corpus for a run whose postings never moved.
 #[test]
-fn generation_bumps_on_clear_all_but_not_add_or_update_description() {
+fn generation_bumps_only_on_clear_all() {
     let mut cache = PostingsCache::default();
     let g0 = cache.generation();
     cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "short"}));
@@ -321,41 +324,18 @@ fn generation_bumps_on_clear_all_but_not_add_or_update_description() {
         g0,
         "update_description() must not invalidate an in-flight search"
     );
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+    cache.clear_embeddings();
+    assert_eq!(
+        cache.generation(),
+        g0,
+        "clear_embeddings() must not invalidate an in-flight search — items are untouched"
+    );
     cache.clear_all();
     assert_ne!(
         cache.generation(),
         g0,
         "clear_all() must invalidate an in-flight search"
-    );
-}
-
-/// `clear_embeddings()` (a settings-driven embedding-space change, or
-/// `ai_reembed_all`) must ALSO bump `generation` — a dense arm holding an
-/// old active-config snapshot must not be able to re-seed a stale-space
-/// vector back into the cache after this runs. Distinct from
-/// `clear_all` above: the POSTINGS themselves are untouched.
-#[test]
-fn generation_bumps_on_clear_embeddings() {
-    let mut cache = PostingsCache::default();
-    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "short"}));
-    cache.set_embedding("job-1".to_string(), fake_embedding());
-    let g0 = cache.generation();
-
-    cache.clear_embeddings();
-
-    assert_ne!(
-        cache.generation(),
-        g0,
-        "clear_embeddings() must invalidate an in-flight search's stale config snapshot"
-    );
-    assert!(
-        cache.get_embedding("job-1").is_none(),
-        "clear_embeddings() must still actually clear the embedding"
-    );
-    assert_eq!(
-        cache.get_all().len(),
-        1,
-        "clear_embeddings() must NOT touch the postings themselves"
     );
 }
 
