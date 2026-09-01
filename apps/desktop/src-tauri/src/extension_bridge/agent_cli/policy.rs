@@ -1,4 +1,4 @@
-//! ADR-038 §1 — the command policy table: every one of the 164
+//! ADR-038 §1 — the command policy table: every one of the 165
 //! `#[tauri::command]` sites registered in `tauri::generate_handler!`
 //! (`lib.rs`), classified by [`Effect`]. Phase 1 (this table) shipped with
 //! nothing dispatching through it; Phase 2 (`super::super::agent_call`) reads
@@ -854,6 +854,11 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     },
     PolicyEntry { path: "commands::scrape::scrape_list_interactions", effect: Effect::Read },
 
+    // commands/hybrid_search.rs — embeds + rerank charge charge_provider_daily (`ai_embed`'s trigger).
+    PolicyEntry {
+        path: "commands::hybrid_search::scrape_hybrid_search",
+        effect: Effect::Irreversible(ProofSource::Scalar { read_command: "ai_spend_summary", path: &["today", "inputTokens"] }),
+    },
     // commands/data.rs
     PolicyEntry {
         path: "commands::data::data_export",

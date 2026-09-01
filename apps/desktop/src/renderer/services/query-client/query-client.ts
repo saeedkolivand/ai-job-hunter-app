@@ -89,6 +89,10 @@ export const keys = {
     all: ['postings'] as const,
     interactions: (type?: string) => ['postings', 'interactions', type] as const,
     resolve: (url: string) => ['postings', 'resolve', url] as const,
+    // Not consumed by a query hook yet (`hybridSearch` is a user-triggered
+    // action, not a cached read) — a starting point for whoever wires the
+    // renderer hook, adjust the key shape (e.g. add eligibleIds) to fit it.
+    hybridSearch: (query: string) => ['postings', 'hybridSearch', query] as const,
   },
   credentials: { all: ['credentials'] as const },
   privacy: { crashReporting: ['privacy', 'crashReporting'] as const },

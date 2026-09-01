@@ -301,6 +301,34 @@ fn test_postings_cache_clear() {
     assert!(cache.get_all().is_empty());
 }
 
+/// A hybrid search snapshots `generation()` at start and must be able to
+/// detect a `clear_all()` that lands mid-search — see the field doc. `add`
+/// and `update_description` must NOT bump it: a result already found is
+/// still a valid, still-present posting after either.
+#[test]
+fn generation_bumps_only_on_clear_all() {
+    let mut cache = PostingsCache::default();
+    let g0 = cache.generation();
+    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "short"}));
+    assert_eq!(
+        cache.generation(),
+        g0,
+        "add() must not invalidate an in-flight search"
+    );
+    cache.update_description("job-1", "a longer description");
+    assert_eq!(
+        cache.generation(),
+        g0,
+        "update_description() must not invalidate an in-flight search"
+    );
+    cache.clear_all();
+    assert_ne!(
+        cache.generation(),
+        g0,
+        "clear_all() must invalidate an in-flight search"
+    );
+}
+
 #[test]
 fn update_description_patches_existing_item_in_place() {
     let mut cache = PostingsCache::default();

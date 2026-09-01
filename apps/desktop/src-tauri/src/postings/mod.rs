@@ -25,6 +25,16 @@ pub struct PostingsCache {
     /// repeat searches over the same live postings don't re-embed. Each entry
     /// carries its embedding space so stale-space entries can be detected.
     embeddings: HashMap<String, EmbeddingVector>,
+    /// Bumped on every [`Self::clear_all`] — the ONLY mutation that can make an
+    /// in-flight hybrid search's already-computed results describe postings
+    /// that no longer exist (a replace-scrape's first streamed item calls
+    /// `clear_all` under this same lock, per `commands::scrape`'s first-item-
+    /// clear latch). A search snapshots this at start and compares again
+    /// before returning, refusing to answer against a corpus that was
+    /// cleared mid-flight. Deliberately NOT bumped by [`Self::add`] or
+    /// [`Self::update_description`]: those only add or patch a row, so a
+    /// posting a search already found is still a valid, still-present result.
+    generation: u64,
 }
 
 impl PostingsCache {
@@ -117,6 +127,12 @@ impl PostingsCache {
     pub fn clear_all(&mut self) {
         self.items.clear();
         self.embeddings.clear();
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// The current corpus generation — see the field doc on [`Self::generation`].
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     pub fn get_embedding(&self, id: &str) -> Option<EmbeddingVector> {

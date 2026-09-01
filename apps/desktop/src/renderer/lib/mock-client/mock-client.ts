@@ -240,6 +240,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       listPostings: emptyList,
       clearPostings: noop,
       listInteractions: emptyList,
+      hybridSearch: noop,
       onProgress: (handler) => {
         scrapeProgressHandlers.add(handler);
         return () => {

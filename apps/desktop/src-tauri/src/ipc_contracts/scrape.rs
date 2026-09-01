@@ -50,6 +50,18 @@ pub struct ScrapeUrlRequest {
     pub url: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct PostingsHybridSearchRequest {
+    pub query_id: String,
+    pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eligible_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
 fn default_scrape_boards_request_amount() -> u32 {
     25
 }

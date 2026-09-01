@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '@ajh/shared';
+import type { PostingsHybridSearchRequest } from '@ajh/shared/schemas';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -110,5 +111,23 @@ export const useRemoveInteraction = () => {
   return useMutation({
     mutationFn: (req: { jobId: string; interactionType: string }) =>
       api.scrape.removeInteraction(req),
+  });
+};
+
+/**
+ * STUB — intentionally minimal; the frontend author wires the real UX on top
+ * of this. A plain `useMutation` (not `useQuery`) because a search-as-you-
+ * type box needs to SUPERSEDE, not just re-fetch: when a new search starts
+ * before a prior one resolves, call `api.jobs.cancel(previousQueryId)` with
+ * the SAME `queryId` that request carried (`req.queryId` — mint a fresh one
+ * per call, e.g. `crypto.randomUUID()`) BEFORE firing the new search, so the
+ * backend stops spending embeds/rerank calls on a result nobody will see.
+ * `keys.postings.hybridSearch` exists if this becomes a `useQuery` instead —
+ * neither shape is settled here.
+ */
+export const useHybridSearch = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (req: PostingsHybridSearchRequest) => api.scrape.hybridSearch(req),
   });
 };

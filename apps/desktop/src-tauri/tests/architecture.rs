@@ -99,6 +99,12 @@ const L1: &[&str] = &[
     // credential-reading logic — that stays L3 (`commands::ai_provider`),
     // which re-exports this type so its existing consumers are unaffected.
     "ai_provider",
+    // Hybrid postings search (lexical FTS5 + dense cosine + RRF fusion + a
+    // rerank PORT). Pure ranking algorithms only — no Tauri, no persisted
+    // store, no `EmbeddingVector`/`Completer` — implemented against whatever
+    // corpus/vectors `commands::hybrid_search` (L3) hands it, exactly like
+    // `pipeline::Stage`/`StageHooks` is a port implemented one layer up.
+    "retrieval",
 ];
 const L2: &[&str] = &[
     "pipeline",
@@ -462,6 +468,13 @@ const R3_ALLOW: &[&str] = &[
     // confines OUR persistence; reading a foreign SQLite legitimately needs
     // rusqlite at the read site. See scraping::board_login::import.
     "scraping/board_login/import.rs",
+    // FTS5 full-text ranking over an EPHEMERAL `Connection::open_in_memory()`
+    // rebuilt fresh per hybrid search and dropped with it — not a domain
+    // store (nothing survives the call, nothing is opened from `data_dir()`),
+    // so it has no `db::open`/migrations/`DataStore` shape to fit. Same
+    // posture as `scraping/board_login/import.rs`'s exception just above: R3
+    // confines OUR PERSISTENCE, and this holds none.
+    "retrieval/lexical.rs",
 ];
 
 #[test]

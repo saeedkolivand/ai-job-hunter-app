@@ -60,6 +60,7 @@ import {
   MATCH_TIER_CUTS,
   MatchResumeRequestSchema,
   MatchTextRequestSchema,
+  PostingsHybridSearchRequestSchema,
   ReferralUpsertSchema,
   ResumeExtractTextSchema,
   ResumePipelineRegenerateSectionSchema,
@@ -93,6 +94,7 @@ const MODULES: ModuleSpec[] = [
     structs: [
       { rustName: 'ScrapeBoardsRequest', schema: ScrapeBoardsRequestSchema },
       { rustName: 'ScrapeUrlRequest', schema: ScrapeUrlRequestSchema },
+      { rustName: 'PostingsHybridSearchRequest', schema: PostingsHybridSearchRequestSchema },
     ],
   },
   {

@@ -819,7 +819,7 @@ mod tests {
         // moved `Reversible` → `Irreversible` — see that row's own comment
         // in `policy.rs`) — kept in sync by hand, not derived from it, same
         // "pair a loop with a literal" discipline both files use.
-        assert_eq!(checked, 32, "expected exactly 32 Irreversible rows");
+        assert_eq!(checked, 33, "expected exactly 33 Irreversible rows");
     }
 
     #[test]
