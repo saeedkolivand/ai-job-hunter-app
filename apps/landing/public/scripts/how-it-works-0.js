@@ -987,8 +987,7 @@
     loop, so it isn\'t part of the automated eval harness — it\'s read after the fact from real run metrics via
     <code>scripts/dump-run-metrics.mjs</code>. And retrieval quality for the hybrid postings search has no
     labelled relevance dataset for this corpus, so ranking order can\'t be scored against a ground truth — see
-    “what is measured and what is not” in <span class="path">docs/knowledge/decision-records/adr-039-hybrid-
-    postings-search-lexical-dense-rerank.md</span>. Both gaps are named in the source rather than papered over
+    “what is measured and what is not” in <span class="path">docs/knowledge/decision-records/adr-039-hybrid-postings-search-lexical-dense-rerank.md</span>. Both gaps are named in the source rather than papered over
     with a metric that doesn\'t exist.`,
         },
         {
