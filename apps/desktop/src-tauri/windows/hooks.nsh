@@ -40,13 +40,44 @@
 ; empty string — so that failure mode was never the risk. The real problem
 ; is narrower but unavoidable: our own working copy of the value (padded,
 ; searched, and rebuilt with the new entry) would itself be truncated the
-; moment it has to live in a $var, corrupting whatever didn't fit the moment
-; it gets written back. So neither the read nor the write ever puts the
-; PATH value in an NSIS variable: both go through `System::Call` against
+; moment it has to live in a $var, corrupting whatever did not fit the
+; moment it gets written back. So neither the read nor the write ever puts
+; the PATH value in an NSIS variable: both go through `System::Call` against
 ; raw, `GlobalAlloc`-backed memory (`Advapi32::RegQueryValueExW` /
 ; `RegSetValueExW`, with `Shlwapi::StrStrW` for the substring search), which
 ; has no such cap. Only short, fixed-size things ($INSTDIR, the literal
 ; separator) ever pass through a plain NSIS string.
+;
+; BUFFER SAFETY GATE — read this before touching either macro below.
+; Every length or pointer that reaches `RtlMoveMemory`/`lstrcpyW` is a
+; potential crash (0xC0000005) if it is wrong, because those Win32 calls
+; take no bounds and a bad value is either a huge unsigned copy count or a
+; null pointer dereference. Three independent things can produce a bad
+; value here, and both macros guard all three the same way, at the same
+; points, rather than patching each as a one-off:
+;   1. `$3` (the value's byte size from RegQueryValueExW) must be large
+;      enough that `$3 - 2` cannot go negative. A Win32 value can legally
+;      have `cbData == 0` (no data at all, not even a NUL) via a stock
+;      `RegSetValueExW` call, and NSIS's `IntOp` has no notion of this
+;      being invalid — it just produces a negative number that, handed to
+;      `RtlMoveMemory`'s length parameter, gets reinterpreted as ~4 billion
+;      bytes. Guarded once, immediately after the type check, before any
+;      arithmetic on `$3` begins.
+;   2. `GlobalAlloc` can return NULL (0) under real memory pressure, and a
+;      null pointer handed to `lstrcpyW`/`RtlMoveMemory` as the destination
+;      or source crashes immediately. Guarded after every `GlobalAlloc`
+;      call (four call sites, two per macro) — the second one in each macro
+;      also frees the first buffer before bailing, since it has already
+;      been allocated.
+;   3. `System::Call` writes the literal string `"error"` (not a number)
+;      into an output register when it cannot resolve the export it was
+;      asked for. Comparing such a register with `==`/`!=` (LogicLib's
+;      string comparison) can silently treat "error" as if it were a valid
+;      pointer or "not found" sentinel, depending on which side of the
+;      comparison it lands on. Every register that participates in pointer
+;      arithmetic below is compared with a numeric operator (`>`/`<=`),
+;      under which `IntCmp` parses a non-numeric string as 0 — landing it
+;      in whichever branch treats "nothing was found here" as safe.
 ; ---------------------------------------------------------------------------
 
 !ifndef AJH_PATH_HOOKS_INCLUDED
@@ -82,6 +113,13 @@
 ; plus a NUL, and relies on that final NUL already being zero rather than
 ; writing it explicitly.
 !define AJH_GPTR 0x0040
+
+; The smallest legal RegQueryValueExW size for a value we are willing to
+; edit: a lone NUL is 2 bytes (an empty existing PATH), so 4 bytes is
+; already one full character above that floor. See the BUFFER SAFETY GATE
+; note above — this exists specifically to keep `$3 - 2` non-negative
+; everywhere below.
+!define AJH_MIN_VALUE_BYTES 4
 
 ; ---------------------------------------------------------------------------
 ; Shared: query the current value's type and byte size (including its
@@ -159,6 +197,14 @@
     Goto ajh_addpath_done
   ${EndIf}
 
+  ; Buffer safety gate, step 1 (see the file-level note above): a value
+  ; this small cannot survive the "$3 - 2" arithmetic further down without
+  ; going negative.
+  ${If} $3 < ${AJH_MIN_VALUE_BYTES}
+    DetailPrint "ajh: per-user PATH value has an unexpected size; leaving it untouched"
+    Goto ajh_addpath_done
+  ${EndIf}
+
   ; From here: the value exists, type is SZ/EXPAND_SZ ($2), size is $3 bytes
   ; (including its NUL). Build padBuf ($4) = ';' + <value> + ';' + NUL in
   ; raw memory, so a single substring search proves *whole-segment*
@@ -168,6 +214,12 @@
   ; ';' added on each side, reusing the space the original NUL occupied).
   IntOp $0 $3 + 4
   System::Call 'Kernel32::GlobalAlloc(i ${AJH_GPTR}, i r0) i .r4'
+  ${If} $4 == 0
+    ; Buffer safety gate, step 2: out of memory or similar — bail rather
+    ; than hand a null pointer to lstrcpyW.
+    DetailPrint "ajh: could not allocate memory to edit the per-user PATH; leaving it untouched"
+    Goto ajh_addpath_done
+  ${EndIf}
   System::Call 'Kernel32::lstrcpyW(i r4, w ";") i .r1'
 
   IntOp $0 $4 + 2
@@ -180,33 +232,65 @@
     Goto ajh_addpath_done
   ${EndIf}
 
+  ; Does the existing value already end with ';'? Read just the last real
+  ; character: it is still followed by the value's OWN (not yet
+  ; overwritten) NUL at this point, so lstrcpyW stops after exactly one
+  ; character. $9 is unused everywhere else in this macro, so the flag
+  ; survives untouched all the way to the append below. This must happen
+  ; before the next step overwrites that NUL.
+  IntOp $0 $4 + $3
+  IntOp $0 $0 - 2
+  System::Call 'Kernel32::lstrcpyW(t .r6, i r0) i .r1'
+  StrCpy $9 0
+  ${If} $6 == ";"
+    StrCpy $9 1
+  ${EndIf}
+
   ; Overwrite the value's own NUL (now sitting at padBuf+$3) with the
   ; trailing pad ';', then a fresh NUL right after — both fit in the extra
   ; 4 bytes allocated above.
   IntOp $0 $4 + $3
   System::Call 'Kernel32::lstrcpyW(i r0, w ";") i .r5'
 
-  ; Whole-segment membership check (idempotency).
+  ; Whole-segment membership check (idempotency). `>` is numeric (IntCmp),
+  ; so a "error" resolution-failure sentinel parses as 0 here and takes the
+  ; same branch as "not found" — see the BUFFER SAFETY GATE note, point 3.
   System::Call 'Shlwapi::StrStrW(i r4, w ";$INSTDIR;") i .r5'
-  ${If} $5 != 0
+  ${If} $5 > 0
     DetailPrint "ajh: agent CLI directory is already on the per-user PATH"
     System::Call 'Kernel32::GlobalFree(i r4)'
     Goto ajh_addpath_done
   ${EndIf}
 
-  ; Not present: build newBuf ($7) = <original value> + ';' + $INSTDIR + NUL.
-  StrLen $6 ";$INSTDIR"
-  IntOp $6 $6 + 1
+  ; Not present: build newBuf ($7) = <original value> [+ ';'] + $INSTDIR +
+  ; NUL — the separator is skipped when the value already ends with ';'
+  ; ($9, computed above), so a value that already ends in ';' does not gain
+  ; a doubled one.
+  StrLen $6 "$INSTDIR"
+  ${If} $9 == 1
+    IntOp $6 $6 + 1                ; INSTDIR + NUL only
+  ${Else}
+    IntOp $6 $6 + 2                ; ';' + INSTDIR + NUL
+  ${EndIf}
   IntOp $6 $6 * 2
   IntOp $0 $3 - 2
   IntOp $6 $6 + $0                ; $6 = newBytes
 
   System::Call 'Kernel32::GlobalAlloc(i ${AJH_GPTR}, i r6) i .r7'
+  ${If} $7 == 0
+    DetailPrint "ajh: could not allocate memory to edit the per-user PATH; leaving it untouched"
+    System::Call 'Kernel32::GlobalFree(i r4)'
+    Goto ajh_addpath_done
+  ${EndIf}
   IntOp $0 $4 + 2                 ; original value starts right after the leading pad
   IntOp $8 $3 - 2                 ; its length in bytes, excluding its own NUL
   System::Call 'Kernel32::RtlMoveMemory(i r7, i r0, i r8)'
   IntOp $0 $7 + $8
-  System::Call 'Kernel32::lstrcpyW(i r0, w ";$INSTDIR") i .r5'
+  ${If} $9 == 1
+    System::Call 'Kernel32::lstrcpyW(i r0, w "$INSTDIR") i .r5'
+  ${Else}
+    System::Call 'Kernel32::lstrcpyW(i r0, w ";$INSTDIR") i .r5'
+  ${EndIf}
 
   ClearErrors
   System::Call 'Advapi32::RegOpenKeyExW(i ${HKEY_CURRENT_USER}, w "${AJH_PATH_REGKEY}", i 0, i ${AJH_KEY_SET_VALUE}, *i .r0) i .r1'
@@ -265,10 +349,23 @@
     Goto ajh_rmpath_done
   ${EndIf}
 
+  ; Buffer safety gate, step 1 — see NSIS_HOOK_POSTINSTALL and the
+  ; file-level BUFFER SAFETY GATE note for why this is needed before any
+  ; arithmetic on $3 begins.
+  ${If} $3 < ${AJH_MIN_VALUE_BYTES}
+    DetailPrint "ajh: per-user PATH value has an unexpected size; leaving it untouched"
+    Goto ajh_rmpath_done
+  ${EndIf}
+
   ; padBuf ($4), built the same way as install — see NSIS_HOOK_POSTINSTALL
   ; for the full rationale on why this goes through raw memory.
   IntOp $0 $3 + 4
   System::Call 'Kernel32::GlobalAlloc(i ${AJH_GPTR}, i r0) i .r4'
+  ${If} $4 == 0
+    ; Buffer safety gate, step 2 — see NSIS_HOOK_POSTINSTALL.
+    DetailPrint "ajh: could not allocate memory to edit the per-user PATH; leaving it untouched"
+    Goto ajh_rmpath_done
+  ${EndIf}
   System::Call 'Kernel32::lstrcpyW(i r4, w ";") i .r1'
   IntOp $0 $4 + 2
   System::Call 'Advapi32::RegOpenKeyExW(i ${HKEY_CURRENT_USER}, w "${AJH_PATH_REGKEY}", i 0, i ${AJH_KEY_QUERY_VALUE}, *i .r5) i .r1'
@@ -282,8 +379,13 @@
   IntOp $0 $4 + $3
   System::Call 'Kernel32::lstrcpyW(i r0, w ";") i .r5'
 
+  ; `<=` is numeric (IntCmp), so a "error" resolution-failure sentinel
+  ; parses as 0 and takes this same "nothing to do" branch as a genuine
+  ; not-found — see the BUFFER SAFETY GATE note, point 3. A string `== 0`
+  ; check here would let "error" fall through into the splice arithmetic
+  ; below with $5 read as a null pointer.
   System::Call 'Shlwapi::StrStrW(i r4, w ";$INSTDIR;") i .r5'
-  ${If} $5 == 0
+  ${If} $5 <= 0
     DetailPrint "ajh: agent CLI directory is not on the per-user PATH; nothing to remove"
     System::Call 'Kernel32::GlobalFree(i r4)'
     Goto ajh_rmpath_done
@@ -323,6 +425,11 @@
   IntOp $9 $9 + 2                   ; NUL terminator
 
   System::Call 'Kernel32::GlobalAlloc(i ${AJH_GPTR}, i r9) i .r8'
+  ${If} $8 == 0
+    DetailPrint "ajh: could not allocate memory to edit the per-user PATH; leaving it untouched"
+    System::Call 'Kernel32::GlobalFree(i r4)'
+    Goto ajh_rmpath_done
+  ${EndIf}
 
   IntOp $0 $4 + 2
   System::Call 'Kernel32::RtlMoveMemory(i r8, i r0, i r6)'
