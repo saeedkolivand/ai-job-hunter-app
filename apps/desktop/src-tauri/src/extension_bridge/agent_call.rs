@@ -411,23 +411,43 @@ fn fence_named_fields_recursive(value: &mut Value) {
                 .iter()
                 .all(|f| map.contains_key(*f))
             {
+                // ADVISORY fix (security review round 4): used to filter on
+                // `v.is_string()` alone, so a board-chosen `extra` key whose
+                // value is an ARRAY or OBJECT (not reachable today — every
+                // `extra.insert` call site writes a scalar, verified — but
+                // not reachable is not the same as impossible for the FIRST
+                // board that adds one) skipped this catch-all entirely: not
+                // a listed field name, not string-typed, so neither this
+                // block nor the array-only handling above touches it, and
+                // the generic recursive walk below only fences NAMED fields,
+                // never "every string inside an unclassified value". Every
+                // non-null, non-safe, non-listed key is now collected
+                // regardless of shape; a String is fenced directly as
+                // before, an Array/Object is fenced leaf-by-leaf via
+                // `fence_all_string_leaves` (untrusted board data all the
+                // way down, not just at the top level).
                 let extra_keys: Vec<String> = map
                     .iter()
                     .filter(|(k, v)| {
-                        v.is_string()
+                        !v.is_null()
                             && !FENCE_FIELD_NAMES.contains(&k.as_str())
                             && !JOB_POSTING_SAFE_FIELDS.contains(&k.as_str())
                     })
                     .map(|(k, _)| k.clone())
                     .collect();
                 for key in extra_keys {
-                    if let Some(Value::String(s)) = map.get(&key) {
-                        let fenced = crate::prompt_fence::fenced(
-                            "job_posting",
-                            s,
-                            crate::prompt_fence::JOB_CAP,
-                        );
-                        map.insert(key, json!(fenced));
+                    if let Some(v) = map.get_mut(&key) {
+                        match v {
+                            Value::String(s) => {
+                                *s = crate::prompt_fence::fenced(
+                                    "job_posting",
+                                    s,
+                                    crate::prompt_fence::JOB_CAP,
+                                );
+                            }
+                            Value::Array(_) | Value::Object(_) => fence_all_string_leaves(v),
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -438,6 +458,32 @@ fn fence_named_fields_recursive(value: &mut Value) {
         Value::Array(items) => {
             for item in items.iter_mut() {
                 fence_named_fields_recursive(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Fence every STRING found anywhere inside `value`, unconditionally — no
+/// field-name gate, unlike [`fence_named_fields_recursive`]. Used only for a
+/// value already known to be untrusted board data by virtue of its
+/// LOCATION (an unclassified key under a detected `JobPosting`'s flattened
+/// `extra`), so every string it contains, at any depth, is untrusted too —
+/// the board chose the keys, so a name-based allowlist can never enumerate
+/// them.
+fn fence_all_string_leaves(value: &mut Value) {
+    match value {
+        Value::String(s) => {
+            *s = crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP);
+        }
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                fence_all_string_leaves(item);
+            }
+        }
+        Value::Object(map) => {
+            for v in map.values_mut() {
+                fence_all_string_leaves(v);
             }
         }
         _ => {}

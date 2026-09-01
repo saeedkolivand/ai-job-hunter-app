@@ -218,7 +218,7 @@ fn every_proof_source_read_command_is_a_read_row() {
     }
     // Hand-written literal (not derived from POLICY itself — the same
     // "pair a loop with a literal" discipline as
-    // `policy_table_has_exactly_164_rows`): 32 Irreversible rows
+    // `policy_table_has_exactly_164_rows`): 31 Irreversible rows
     // (`extension_bridge_regenerate_token` moved to `NotExposed` —
     // security review round 1; `ai_embed` moved NotExposed → Irreversible
     // once its `charge_provider_daily` gate landed, and
@@ -227,9 +227,13 @@ fn every_proof_source_read_command_is_a_read_row() {
     // round 2; security review round 3 nets +1: `ai_set_active_provider`
     // and `ai_set_provider_settings` moved Reversible → Irreversible
     // [+2], `support_export_diagnostics` moved Irreversible →
-    // `NotExposed` for a vacuous proof [-1] — see each row's own
-    // comment).
-    assert_eq!(checked, 32, "expected exactly 32 Irreversible rows");
+    // `NotExposed` for a vacuous proof [-1]; security review round 4 nets
+    // -1: `ai_set_provider_settings` moved Irreversible → `NotExposed` —
+    // its proof was bound to `activeProvider` while its own patch targets
+    // a DIFFERENT, caller-chosen `provider` field entirely, so the
+    // ceremony never checked the thing it was rewriting — see each row's
+    // own comment).
+    assert_eq!(checked, 31, "expected exactly 31 Irreversible rows");
 }
 
 /// Hand-written pin (security review round 3), mirroring
@@ -263,38 +267,66 @@ fn round_3_destination_and_vacuous_proof_rows_stay_not_exposed() {
     }
 }
 
-/// Hand-written pin (security review round 3): a revert of either row
-/// back to `Reversible` would silently restore the free egress-redirect
-/// primitive HIGH fix 1 closed (their own row comment) — freely
-/// dispatchable again, no confirm, no proof.
+/// Hand-written pin (security review round 3, narrowed round 4 — see
+/// `round_4_persistent_redirect_and_unbound_proof_rows_stay_not_exposed`
+/// for the sibling row this test used to also cover): a revert back to
+/// `Reversible` would silently restore free routing-flip dispatch with no
+/// confirm and no proof.
 #[test]
-fn ai_set_active_provider_and_ai_set_provider_settings_stay_irreversible() {
+fn ai_set_active_provider_stays_irreversible() {
+    let path = "commands::ai::ai_set_active_provider";
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == path)
+        .unwrap_or_else(|| panic!("{path} is not a real POLICY row"));
+    let Effect::Irreversible(ProofSource::Scalar {
+        read_command,
+        path: field_path,
+    }) = entry.effect
+    else {
+        panic!(
+            "{path} must stay Irreversible with a Scalar proof — got {:?}",
+            entry.effect
+        );
+    };
+    assert_eq!(
+        read_command, "ai_active_config",
+        "{path}'s proof must keep reading ai_active_config"
+    );
+    assert_eq!(
+        field_path,
+        ["activeProvider"].as_slice(),
+        "{path}'s proof must keep reading the activeProvider field"
+    );
+}
+
+/// Hand-written pin (security review round 4): a revert of any of these
+/// rows would silently restore a live primitive round 4 closed — see each
+/// row's own comment. `ai_set_embedding_config` and `ai_seed_active_config`
+/// both persist a caller-supplied `base_url` that every subsequent embed/
+/// generate call (résumé/job text, the stored provider API key) then reads
+/// back and sends to — worse than a one-shot redirect, permanent until the
+/// config is changed again (`ai_seed_active_config` was found independently
+/// during this round's re-sweep, not named by the original review).
+/// `ai_set_provider_settings` takes a caller-CHOSEN `provider` field
+/// unrelated to the confirmed `activeProvider`, so its old Scalar proof
+/// never bound to the record it actually rewrites (the module doc's
+/// clause-2 NotExposed rule).
+#[test]
+fn round_4_persistent_redirect_and_unbound_proof_rows_stay_not_exposed() {
     for path in [
-        "commands::ai::ai_set_active_provider",
+        "commands::ai::ai_set_embedding_config",
+        "commands::ai::ai_seed_active_config",
         "commands::ai::ai_set_provider_settings",
     ] {
         let entry = POLICY
             .iter()
             .find(|e| e.path == path)
             .unwrap_or_else(|| panic!("{path} is not a real POLICY row"));
-        let Effect::Irreversible(ProofSource::Scalar {
-            read_command,
-            path: field_path,
-        }) = entry.effect
-        else {
-            panic!(
-                "{path} must stay Irreversible with a Scalar proof — got {:?}",
-                entry.effect
-            );
-        };
-        assert_eq!(
-            read_command, "ai_active_config",
-            "{path}'s proof must keep reading ai_active_config"
-        );
-        assert_eq!(
-            field_path,
-            ["activeProvider"].as_slice(),
-            "{path}'s proof must keep reading the activeProvider field"
+        assert!(
+            matches!(entry.effect, Effect::NotExposed(_)),
+            "{path} must stay NotExposed — got {:?}",
+            entry.effect
         );
     }
 }
