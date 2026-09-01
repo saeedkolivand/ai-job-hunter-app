@@ -27,12 +27,12 @@ The `error` field in exit-code-2 replies carries a fixed sentinel (not a path, U
 
 ## Binary locations (v0.145.0+)
 
-| Platform                     | Path                                                                                      | On `PATH` by default?            |
-| ---------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------- |
-| **Linux** (deb/rpm)          | `/usr/bin/ajh-tauri`                                                                      | Yes                              |
-| **macOS Homebrew**           | Symlinked via `brew install --cask ai-job-hunter`                                         | Yes                              |
-| **macOS dmg drag-install**   | `/Applications/AI Job Hunter.app/Contents/MacOS/ajh-tauri`                                | No; add to `$PATH` if needed     |
-| **Windows** (nsis, per-user) | User's local install directory (use `~/.ajh-agent/agent.json` to locate programmatically) | Not on PATH; invoke by full path |
+| Platform                     | Path                                                                                      | On `PATH` by default?                                                              |
+| ---------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Linux** (deb/rpm)          | `/usr/bin/ajh-tauri`                                                                      | Yes                                                                                |
+| **macOS Homebrew**           | Symlinked via `brew install --cask ai-job-hunter`                                         | Yes                                                                                |
+| **macOS dmg drag-install**   | `/Applications/AI Job Hunter.app/Contents/MacOS/ajh-tauri`                                | No; add to `$PATH` if needed                                                       |
+| **Windows** (nsis, per-user) | User's local install directory (use `~/.ajh-agent/agent.json` to locate programmatically) | Yes, from the release after v0.145.0 (NSIS hook); before that, invoke by full path |
 
 ## Discovery
 
