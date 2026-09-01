@@ -116,7 +116,7 @@ Your résumés, generations, applications, and tracked job data live in a local 
 <details>
 <summary><strong>🎯 Matching, ATS &amp; analysis</strong></summary>
 
-- **Job search & matching**: BM25 keyword search over your scraped postings, fused with vector similarity and LLM reranking when semantic ranking is enabled (off by default); separately, each posting is scored against your résumé.
+- **Job search & matching**: Keyword search over your scraped postings, with vector similarity and LLM reranking _re-ordering_ the results when semantic ranking is enabled (off by default); separately, each posting is scored against your résumé.
 - **Résumé analysis**: ATS scoring, skill-gap detection, language-mismatch warnings, and improvement recommendations.
 
 </details>
@@ -300,7 +300,7 @@ pnpm dev
 1. Jobs → Scrape → select boards (e.g. LinkedIn + Greenhouse + Aggregator)
 2. Query + location; for company-scoped ATS boards (Greenhouse, Lever, etc.), enter company slugs
 3. Click Start → results stream into the jobs table
-4. Ranked search over the scraped postings — keyword by default, hybrid when semantic ranking is enabled
+4. Ranked search over the scraped postings — keyword by default, with vector similarity and LLM reranking *re-ordering* the results when semantic ranking is enabled
 ```
 
 **Note:** Company-scoped ATS boards require company slugs instead of free-text keywords. The **Aggregator** (Adzuna + JSearch) replaces direct scraping of anti-bot boards (Indeed, Glassdoor, Xing); free Adzuna keys available at https://developer.adzuna.com. See `docs/knowledge/scraping-domain.md` for the full board list and configuration details.
