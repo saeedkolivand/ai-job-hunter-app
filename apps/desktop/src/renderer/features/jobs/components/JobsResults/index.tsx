@@ -414,42 +414,56 @@ export function JobsResults({
     );
   }
 
-  // List mode: existing single-column virtualised rows
+  // List mode: existing single-column virtualised rows.
+  //
+  // The banner is a SIBLING above the scroll container, not a child inside
+  // it: `useVirtualizer` computes row offsets relative to `scrollRef`'s own
+  // content box, with no `scrollMargin` configured. Rendering the banner as
+  // the scroller's first child (as JobsSplitView's own layout might suggest)
+  // would shift every real row down by the banner's height without the
+  // virtualizer knowing, leaving an empty gap of that height at the true end
+  // of the list once scrolled to the bottom. Measuring the banner into
+  // `scrollMargin` would work too, but re-measuring on every content change
+  // (the banner's height varies with which arms/degraded notices render) is
+  // more moving parts for the same result — keeping it out of the scroller
+  // entirely needs no measurement at all.
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
-      {searchBanner}
-      <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
-        {virtualizer.getVirtualItems().map((vi) => {
-          const posting = filtered[vi.index];
-          if (!posting) return null;
-          return (
-            <div
-              key={vi.key}
-              data-index={vi.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${vi.start}px)`,
-              }}
-            >
-              {/* pb-2 reproduces the old gap-2 between rows (included in the
-                  measured height so virtual offsets stay correct). */}
-              <div className="pb-2">
-                <PostingRow posting={posting} formatRelativeTime={formatRelativeTime} />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {searchBanner && <div className="px-10 pt-6">{searchBanner}</div>}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
+        <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+          {virtualizer.getVirtualItems().map((vi) => {
+            const posting = filtered[vi.index];
+            if (!posting) return null;
+            return (
+              <div
+                key={vi.key}
+                data-index={vi.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${vi.start}px)`,
+                }}
+              >
+                {/* pb-2 reproduces the old gap-2 between rows (included in the
+                    measured height so virtual offsets stay correct). */}
+                <div className="pb-2">
+                  <PostingRow posting={posting} formatRelativeTime={formatRelativeTime} />
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
 
-      <div className="flex justify-center pt-4">
-        <Button variant="primary" onClick={onShowMore} loading={scraping}>
-          {!scraping && <Plus size={12} />}
-          {t('jobs.showMore')}
-        </Button>
+        <div className="flex justify-center pt-4">
+          <Button variant="primary" onClick={onShowMore} loading={scraping}>
+            {!scraping && <Plus size={12} />}
+            {t('jobs.showMore')}
+          </Button>
+        </div>
       </div>
     </div>
   );

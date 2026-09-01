@@ -7,6 +7,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, waitFor } from '@testing-library/react';
 
+vi.mock('@ajh/translations', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
+
+const notifyMock = { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() };
+vi.mock('@ajh/ui', () => ({
+  useNotification: () => notifyMock,
+}));
+
 import { usePreferencesStore } from '@/store/preferences-store';
 import { createMockClient, renderHookWithClient } from '@/test-support';
 
@@ -28,6 +37,7 @@ function setup(overrides: Record<string, (...args: never[]) => unknown> = {}) {
 
 beforeEach(() => {
   usePreferencesStore.setState({ semanticScoring: false });
+  notifyMock.error.mockClear();
 });
 
 describe('usePostingsSearch', () => {
@@ -145,6 +155,44 @@ describe('usePostingsSearch', () => {
     await waitFor(() => expect(setSemanticScoring).toHaveBeenCalledWith(true));
     await waitFor(() => expect(hybridSearch).toHaveBeenCalledTimes(2));
     expect(hybridSearch.mock.calls[1]?.[0]).toMatchObject({ query: 'engineer' });
+  });
+
+  it('surfaces a failed semantic-scoring mirror write instead of swallowing it', async () => {
+    // Regression for the HIGH finding: a failed backend sync must notify —
+    // otherwise the local preference flips to on, the search re-runs and
+    // shows results, and the user has zero indication the persisted mirror
+    // never updated. This test FAILS if the `onError` handler is removed
+    // from `enableSemanticRanking`'s `syncSemanticScoring.mutate(true, ...)`.
+    const hybridSearch = vi.fn().mockResolvedValue(okResult(['a']));
+    const setSemanticScoring = vi.fn().mockRejectedValue(new Error('offline'));
+    const { result } = setup({
+      'scrape.hybridSearch': hybridSearch,
+      'jobPreferences.setSemanticScoring': setSemanticScoring,
+    });
+
+    act(() => result.current.search('engineer', ['a']));
+    await waitFor(() => expect(result.current.state).toBe('results'));
+
+    act(() => result.current.enableSemanticRanking(['a']));
+
+    await waitFor(() => expect(setSemanticScoring).toHaveBeenCalledWith(true));
+    await waitFor(() =>
+      expect(notifyMock.error).toHaveBeenCalledWith({
+        message: 'settings.embeddings.semanticScoringSyncFailed',
+      })
+    );
+  });
+
+  it('mints every queryId with the `search-` prefix Rust validates', async () => {
+    const hybridSearch = vi.fn().mockResolvedValue(okResult(['a']));
+    const { result } = setup({ 'scrape.hybridSearch': hybridSearch });
+
+    act(() => result.current.search('engineer', []));
+    await waitFor(() => expect(hybridSearch).toHaveBeenCalledTimes(1));
+
+    const queryId = (hybridSearch.mock.calls[0]?.[0] as { queryId: string }).queryId;
+    expect(queryId.startsWith('search-')).toBe(true);
+    expect(queryId.length).toBeLessThanOrEqual(64);
   });
 
   it('clear() resets to idle and cancels any in-flight search without touching the last query text', async () => {

@@ -276,4 +276,24 @@ describe('JobsResults — hybrid search: the "ranked by" banner', () => {
     const banner = screen.getByTestId(TEST_IDS.jobs.searchBanner);
     expect(banner).toHaveTextContent('jobs.hybridSearch.rerankUnavailable');
   });
+
+  it('sits OUTSIDE the virtualized scroll container, not as its first child', () => {
+    // Regression guard: the virtualizer computes row offsets against the
+    // scroller's own content box with no `scrollMargin` configured. A banner
+    // rendered INSIDE that scroller (as a normal-flow first child) shifts
+    // every row down by the banner's height without the virtualizer knowing,
+    // leaving a gap at the true end of the list once scrolled to the bottom.
+    renderResults([posting('a')], {
+      state: 'results',
+      arms: { lexical: 'ran', dense: 'ran', rerank: 'ran' },
+      corpusSize: 1,
+      onRetry: noop,
+      onClear: noop,
+      onEnableSemanticRanking: noop,
+    });
+    const banner = screen.getByTestId(TEST_IDS.jobs.searchBanner);
+    const scroller = document.querySelector('.overflow-y-auto');
+    expect(scroller).not.toBeNull();
+    expect(scroller?.contains(banner)).toBe(false);
+  });
 });

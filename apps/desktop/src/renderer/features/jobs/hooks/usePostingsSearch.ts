@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { HybridSearchResult } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
+import { useNotification } from '@ajh/ui';
 
 import { useMachine } from '@/hooks/use-machine';
 import { postingsSearchMachine } from '@/lib/machines/postings-search.machine';
@@ -8,6 +10,16 @@ import { useCancelJob, useHybridSearch, useSetSemanticScoring } from '@/services
 import { usePreferencesStore } from '@/store/preferences-store';
 
 export type { PostingsSearchState } from '@/lib/machines/postings-search.machine';
+
+/**
+ * Prefix every minted `queryId` carries. MUST match the Rust-side validation
+ * in `commands::hybrid_search` (`scrape_hybrid_search`), which requires this
+ * exact prefix on top of the `PostingsHybridSearchRequestSchema` length cap —
+ * mirrored, not shared, the same way `QUERY_MAX_CHARS`/`ELIGIBLE_IDS_MAX`
+ * there re-validate a Zod-schema cap rather than import it. A UUID v4 is 36
+ * chars, so the prefixed id stays well under the 64-char cap.
+ */
+const QUERY_ID_PREFIX = 'search-';
 
 /**
  * Wires the real UX onto the minimal `useHybridSearch` mutation (see its
@@ -26,6 +38,8 @@ export type { PostingsSearchState } from '@/lib/machines/postings-search.machine
  * filtering rather than keep showing a stale ranked list under new text.
  */
 export function usePostingsSearch() {
+  const { t } = useTranslation();
+  const notify = useNotification();
   const hybridSearch = useHybridSearch();
   const cancelJob = useCancelJob();
   const syncSemanticScoring = useSetSemanticScoring();
@@ -40,7 +54,7 @@ export function usePostingsSearch() {
       const trimmed = query.trim();
       if (!trimmed) return;
       const previousQueryId = latestQueryIdRef.current;
-      const queryId = crypto.randomUUID();
+      const queryId = `${QUERY_ID_PREFIX}${crypto.randomUUID()}`;
       latestQueryIdRef.current = queryId;
       lastQueryRef.current = trimmed;
       setCommittedQuery(trimmed);
@@ -97,16 +111,22 @@ export function usePostingsSearch() {
    * (`arms.dense === 'skipped'`, `semanticScoring` defaults OFF): flips the
    * preference, mirrors it to the backend-readable copy the headless
    * Autopilot scheduler reads (the same write-through `EmbeddingsSettings`
-   * uses), and re-runs the last search so the user sees the improved ranking
-   * immediately instead of pressing Search again.
+   * uses, including its `onError` — a failed mirror write is not cosmetic:
+   * in-app scoring would follow the Zustand value that just flipped while the
+   * scheduler keeps reading the old one until the next successful write), and
+   * re-runs the last search so the user sees the improved ranking immediately
+   * instead of pressing Search again.
    */
   const enableSemanticRanking = useCallback(
     (eligibleIds: string[]) => {
       usePreferencesStore.getState().setSemanticScoring(true);
-      syncSemanticScoring.mutate(true);
+      syncSemanticScoring.mutate(true, {
+        onError: () =>
+          notify.error({ message: t('settings.embeddings.semanticScoringSyncFailed') }),
+      });
       retry(eligibleIds);
     },
-    [retry, syncSemanticScoring]
+    [retry, syncSemanticScoring, notify, t]
   );
 
   return { state, result, committedQuery, search, retry, clear, enableSemanticRanking };

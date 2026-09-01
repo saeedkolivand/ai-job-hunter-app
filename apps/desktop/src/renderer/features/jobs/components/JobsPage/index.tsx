@@ -11,6 +11,7 @@ import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import { usePostingsSearch } from '@/features/jobs/hooks/usePostingsSearch';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
+import { isCommittedSearchActive } from '@/features/jobs/lib/hybrid-search-display';
 import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import { matchesWorkTypeFilter } from '@/features/jobs/lib/work-type-filter';
 import { MatchScoresProvider } from '@/features/jobs/providers';
@@ -370,14 +371,15 @@ export function JobsPage() {
     postingsSearch.enableSemanticRanking(eligibleForSearch.map((p) => p.id));
 
   // Gate the search state on the CURRENTLY-typed text, not just on the
-  // machine's own state: editing the filter box after a search settles must
-  // fall back to instant substring filtering rather than keep showing a
-  // ranked list that no longer matches what's typed. Purely derived — no
-  // effect needed to "undo" a stale search when the text changes.
-  const searchIsActive =
-    postingsSearch.state !== 'idle' &&
-    postingsSearch.committedQuery === trimmedFilter &&
-    trimmedFilter.length > 0;
+  // machine's own state — see `isCommittedSearchActive`'s doc for the full
+  // contract, including the deliberate choice to cache on text alone (a
+  // scrape that changes the corpus does NOT by itself invalidate a matching
+  // committed search).
+  const searchIsActive = isCommittedSearchActive(
+    postingsSearch.state,
+    postingsSearch.committedQuery,
+    filter
+  );
   const effectiveSearchState = searchIsActive ? postingsSearch.state : 'idle';
 
   // While a search governs the view, `hits` (already the eligible subset,
@@ -451,7 +453,14 @@ export function JobsPage() {
             hybridSearch={{
               state: effectiveSearchState,
               arms: searchResult?.arms ?? null,
-              corpusSize: searchResult?.corpusSize ?? eligibleForSearch.length,
+              // The CURRENT eligible count, not `searchResult.corpusSize` (a
+              // snapshot from when the search was issued): `rankedFiltered`
+              // above already re-intersects `hits` against `eligibleForSearch`
+              // on every render, so a hideAgency/workTypes toggle after the
+              // search settled must not leave the banner/zero-hit copy
+              // quoting a stale "N postings" that no longer matches what was
+              // actually re-filtered.
+              corpusSize: eligibleForSearch.length,
               onRetry: handleRetrySearch,
               onClear: postingsSearch.clear,
               onEnableSemanticRanking: handleEnableSemanticRanking,
