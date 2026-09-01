@@ -56,7 +56,7 @@ describe('MatchResumeRequestSchema', () => {
 });
 
 describe('PostingsHybridSearchRequestSchema', () => {
-  const base = { queryId: 'q1', query: 'react developer' };
+  const base = { queryId: 'search-q1', query: 'react developer' };
 
   it('accepts the minimal shape (no eligibleIds, no limit)', () => {
     expect(() => PostingsHybridSearchRequestSchema.parse(base)).not.toThrow();
@@ -65,6 +65,17 @@ describe('PostingsHybridSearchRequestSchema', () => {
   it('requires a non-empty query and queryId', () => {
     expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, query: '  ' })).toThrow();
     expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, queryId: '' })).toThrow();
+  });
+
+  it('rejects a queryId that does not carry the required "search-" prefix', () => {
+    // The Rust-side collision the prefix closes (`jobs::cancel::CancelRegistry`):
+    // an unprefixed id could otherwise NAME a live `job-{uuid}`/`run-{uuid}` run.
+    expect(() =>
+      PostingsHybridSearchRequestSchema.parse({ ...base, queryId: '3f5d9b6a-uuid-with-no-prefix' })
+    ).toThrow();
+    expect(() =>
+      PostingsHybridSearchRequestSchema.parse({ ...base, queryId: 'job-not-a-search' })
+    ).toThrow();
   });
 
   it('rejects a query over the length cap', () => {

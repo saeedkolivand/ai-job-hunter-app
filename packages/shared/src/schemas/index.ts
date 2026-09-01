@@ -311,13 +311,19 @@ export const ScrapeUrlRequestSchema = z.object({
  */
 export const PostingsHybridSearchRequestSchema = z.object({
   /**
-   * Client-minted id for this search. Pass the SAME value to
+   * Client-minted id for this search — MUST start with `"search-"` (e.g.
+   * `` `search-${crypto.randomUUID()}` ``). Pass the SAME value to
    * `jobs.cancel(queryId)` to abort a superseded search before it finishes
    * embedding/reranking — hybrid search registers against the app-wide
    * `CancelRegistry` every job kind already cancels through, so no separate
-   * cancel channel exists for this command.
+   * cancel channel exists for this command. The prefix is the safety net
+   * `jobs::cancel::CancelRegistry`'s Rust doc names by name: every other id
+   * sharing that registry is Rust-minted (`job-{uuid}`/`run-{uuid}`), and an
+   * unprefixed caller-chosen id could otherwise NAME a live run's own id,
+   * replacing (then deleting) its cancellation token. Rejected server-side
+   * (`commands::hybrid_search::QUERY_ID_PREFIX`) if this is ever bypassed.
    */
-  queryId: z.string().min(1).max(64),
+  queryId: z.string().min(1).max(64).startsWith('search-'),
   query: z.string().trim().min(1).max(200),
   /**
    * The renderer's own eligible-posting-id allowlist — e.g. `JobsPage`'s

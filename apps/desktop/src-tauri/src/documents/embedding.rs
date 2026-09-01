@@ -27,15 +27,16 @@ pub async fn embed(app: &AppHandle, text: &str) -> AppResult<EmbeddingVector> {
 /// see its doc comment: it fires once per ACTUAL provider round-trip, not
 /// once per call.
 ///
-/// `ai_embed` is the only caller that passes both: it reads
-/// `embedding_config()` exactly ONCE and hands that SAME snapshot to both
-/// the charge (which provider's daily budget) and this function (which
-/// provider actually receives the request) — reading the config a second
-/// time here, as [`embed`] does, would let `ai_set_embedding_config` land in
-/// between and charge one provider while dispatching to another (#1087
-/// finding 2). Every other caller of [`embed`] (`AppEmbedder` — bulk
-/// re-index + match-score resolution) is unaffected: it keeps re-reading
-/// the store fresh via [`embed`] and passes `charge: None`.
+/// `ai_embed` and `commands::hybrid_search`'s `embed_or_cancel` are the two
+/// callers that pass both: each reads `embedding_config()` exactly ONCE and
+/// hands that SAME snapshot to both the charge (which provider's daily
+/// budget) and this function (which provider actually receives the request)
+/// — reading the config a second time here, as [`embed`] does, would let
+/// `ai_set_embedding_config` land in between and charge one provider while
+/// dispatching to another (#1087 finding 2). Every other caller of [`embed`]
+/// (`AppEmbedder` — bulk re-index + match-score resolution) is unaffected:
+/// it keeps re-reading the store fresh via [`embed`] and passes
+/// `charge: None`.
 pub(crate) async fn embed_with_config(
     app: &AppHandle,
     cfg: &EmbeddingConfig,

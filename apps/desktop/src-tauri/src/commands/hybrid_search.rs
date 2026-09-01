@@ -43,17 +43,19 @@ use crate::retrieval::{dense, fusion};
 /// Required prefix on a renderer-minted `queryId`.
 ///
 /// Every OTHER id sharing the `jobs::cancel::CancelRegistry` id space is
-/// minted by RUST: `db::new_job_id` (`job-{uuid}`), `resume_pipeline_run`
-/// (`run-{uuid}`). This is the one id the CALLER mints (it must exist before
-/// the search's promise resolves, so it can be handed to a later
-/// `jobs.cancel` call) — `CancelRegistry::register`'s "last writer wins
-/// needs no generation/handle" safety argument (`jobs/cancel.rs`) rests on
-/// every id being freshly minted per invocation with no way for two live
-/// registrations to share a key. A caller-chosen `queryId` with no
-/// distinguishing prefix could instead NAME a live run's own id
-/// (`job-<uuid>`/`run-<uuid>`) — replacing that run's cancellation token,
-/// and later deleting ITS slot when this search's own cleanup runs. The
-/// prefix makes the two id spaces disjoint by construction.
+/// minted by RUST, all via `db::new_job_id` (`job-{uuid}`) — including
+/// `resume_pipeline_run`, which ALSO mints a separate `run-{uuid}` for the
+/// `pipeline_runs` row identity, but registers only its `job_id`, never that
+/// one (see `jobs::cancel::CancelRegistry::register`'s own doc). This is the
+/// one id the CALLER mints (it must exist before the search's promise
+/// resolves, so it can be handed to a later `jobs.cancel` call) —
+/// `CancelRegistry::register`'s "last writer wins needs no generation/handle"
+/// safety argument rests on every id being freshly minted per invocation
+/// with no way for two live registrations to share a key. A caller-chosen
+/// `queryId` with no distinguishing prefix could instead NAME a live run's
+/// own `job-<uuid>` id — replacing that run's cancellation token, and later
+/// deleting ITS slot when this search's own cleanup runs. The prefix makes
+/// the two id spaces disjoint by construction.
 const QUERY_ID_PREFIX: &str = "search-";
 /// Matches `PostingsHybridSearchRequestSchema.queryId`'s cap.
 const QUERY_ID_MAX_CHARS: usize = 64;
@@ -122,7 +124,9 @@ pub async fn scrape_hybrid_search(
             "query too long (max {QUERY_MAX_CHARS} chars)"
         )));
     }
-    if req.query_id.len() > QUERY_ID_MAX_CHARS || !req.query_id.starts_with(QUERY_ID_PREFIX) {
+    if req.query_id.chars().count() > QUERY_ID_MAX_CHARS
+        || !req.query_id.starts_with(QUERY_ID_PREFIX)
+    {
         return Err(AppError::Validation(format!(
             "queryId must be at most {QUERY_ID_MAX_CHARS} chars and start with \"{QUERY_ID_PREFIX}\""
         )));
@@ -615,6 +619,27 @@ async fn run_dense_arm(
 
 // ── Rerank arm ───────────────────────────────────────────────────────────────
 
+/// Whether the CURRENTLY active generation provider is local Ollama —
+/// decides which of `timeouts::HYBRID_SEARCH_RERANK_LOCAL`/`_CLOUD` the
+/// rerank call is bounded by. The same runtime provider-class check
+/// `commands::translation::should_attempt_translation` uses at a call site
+/// outside any provider adapter: there is no STATIC per-adapter split to
+/// reuse the way `ollama.rs` vs `openai.rs`/`anthropic.rs`/`gemini.rs`
+/// already pick `ollama_completion_deadline` vs `timeouts::COMPLETION` for
+/// themselves — `Completer::from_active` can resolve to ANY provider,
+/// decided by whatever the user picked in Settings, so the caller has to ask.
+///
+/// Missing state or an unparsable provider string both read as "not
+/// Ollama": the cloud tier is the SHORTER of the two, so failing this check
+/// fails toward cutting a stalled call off sooner, never toward silently
+/// granting a slow-hardware allowance nothing confirmed is warranted.
+fn active_provider_is_ollama(app: &AppHandle) -> bool {
+    app.try_state::<crate::ai_config::AiConfigStore>()
+        .and_then(|store| store.active_config().active_provider)
+        .and_then(|p| crate::commands::ai_provider::ProviderId::parse(&p).ok())
+        == Some(crate::commands::ai_provider::ProviderId::Ollama)
+}
+
 /// THE production gate for the optional rerank arm — the single place that
 /// decides whether a search's rerank step runs at all. Mirrors
 /// `commands::autopilot::rerank::should_semantic_rerank`'s reasoning:
@@ -680,14 +705,18 @@ async fn maybe_rerank(
     // allowed re-ask) is a generation-class bound, and a bare `.await` here
     // means a `jobs_cancel(queryId)` does nothing once the call has started
     // — it would just sit in the `CancelRegistry` cancelled while this task
-    // kept running regardless.
+    // kept running regardless. The bound itself is provider-class-split
+    // (`timeouts::HYBRID_SEARCH_RERANK_LOCAL` vs `_CLOUD` — see
+    // `active_provider_is_ollama`'s doc): a flat bound sized for a fast cloud
+    // API would fire on every search on CPU-only local hardware.
+    let deadline = crate::commands::ai_provider::timeouts::hybrid_search_rerank_deadline(
+        active_provider_is_ollama(app),
+    );
     let rerank_outcome = tokio::select! {
         biased;
         () = token.cancelled() => None,
-        timed = tokio::time::timeout(
-            crate::commands::ai_provider::timeouts::HYBRID_SEARCH_RERANK,
-            reranker.rerank(query, &candidates),
-        ) => timed.ok().and_then(Result::ok),
+        timed = tokio::time::timeout(deadline, reranker.rerank(query, &candidates))
+            => timed.ok().and_then(Result::ok),
     };
     match rerank_outcome {
         Some(reranked) => (

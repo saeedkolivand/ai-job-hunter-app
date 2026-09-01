@@ -25,13 +25,19 @@ pub struct PostingsCache {
     /// repeat searches over the same live postings don't re-embed. Each entry
     /// carries its embedding space so stale-space entries can be detected.
     embeddings: HashMap<String, EmbeddingVector>,
-    /// Bumped on every [`Self::clear_all`] — the ONLY mutation that can make an
-    /// in-flight hybrid search's already-computed results describe postings
-    /// that no longer exist (a replace-scrape's first streamed item calls
-    /// `clear_all` under this same lock, per `commands::scrape`'s first-item-
-    /// clear latch). A search snapshots this at start and compares again
-    /// before returning, refusing to answer against a corpus that was
-    /// cleared mid-flight. Deliberately NOT bumped by [`Self::add`] or
+    /// Bumped on [`Self::clear_all`] AND [`Self::clear_embeddings`] — either
+    /// can make an in-flight hybrid search's dense arm write a vector that no
+    /// longer belongs: `clear_all` wipes the postings themselves (a
+    /// replace-scrape's first streamed item, per `commands::scrape`'s
+    /// first-item-clear latch), `clear_embeddings` wipes only the vectors
+    /// (`ai_set_embedding_config`'s space change, `ai_reembed_all`) while a
+    /// search already holds the OLD active-config snapshot and could
+    /// otherwise re-seed a stale-space vector right back in — every read of
+    /// that vector is already space-guarded (`EmbeddingConfig::matches`), so
+    /// this is belt-and-braces today, not a live bug: airtight for one line.
+    /// A search snapshots this at start and compares again before writing/
+    /// returning, refusing to act against a corpus/index that moved
+    /// mid-flight. Deliberately NOT bumped by [`Self::add`] or
     /// [`Self::update_description`]: those only add or patch a row, so a
     /// posting a search already found is still a valid, still-present result.
     generation: u64,
@@ -155,9 +161,12 @@ impl PostingsCache {
     }
 
     /// Drop cached embeddings (keeping items) — used when the embedding space
-    /// changes so stale-space vectors aren't reused.
+    /// changes so stale-space vectors aren't reused. Bumps [`Self::generation`]
+    /// too: see that field's doc for why an in-flight search must notice this,
+    /// not just a full [`Self::clear_all`].
     pub fn clear_embeddings(&mut self) {
         self.embeddings.clear();
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Merge cross-board cluster annotations onto cached items IN PLACE, keyed by
