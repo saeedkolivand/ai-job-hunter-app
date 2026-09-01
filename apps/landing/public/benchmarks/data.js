@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788232844701,
+  "lastUpdate": 1788286886428,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "9985ff6136dd01afa52417b6b4a97fa376e19369",
-          "message": "feat: stream extension answer drafts over the bridge (#646)\n\n* feat: stream extension answer drafts over the bridge\n\nAdds an additive streaming frame family (assist.chunk/done/cancel) keyed\non the existing reqId and upgrades answer.assist draft mode from one-shot\nto live streaming, reusing the in-app provider stream fenced by a server\nminted job id and a per-connection sink so no stream can cross\nconnections. The per-connection read loop no longer blocks on an\nin-flight stream, so a cancel is actually reachable; drafts are capped\nlive, the client timeout resets on activity and cancels on stall, and\nthe cancel registry is per-connection. Rewrite mode is a follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: cancel orphaned answer streams and record partial spend\n\nCloses the ensemble findings on the streaming transport: a dead sink or\na dropped connection now cancels the in-flight generation immediately\n(cancel_all on disconnect, ForwardOutcome::SinkGone on a gone writer)\ninstead of billing to completion for no listener; provider errors fail\nthe job instead of leaving it stuck running; hitting the draft cap now\nrecords the partial provider usage in the spend store; and the compose\ninternals moved into stream.rs for R8 headroom. Cancel is now\ntrait-tested, and a check-before-remove bug in the registry was fixed.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: preserve early-cancel marker across disconnect and make cancel atomic\n\ncancel_all's drain-and-reinsert dropped an already-CancelledEarly entry\ninstead of reinserting it, so a cancel-then-disconnect during the\npre-compose window let a later register() start a full billable\ngeneration for a request the user had already cancelled. cancel() also\nsplit its Running/Pending decision across two separate lock\nacquisitions (a TOCTOU a concurrent register() could win); both are now\none exhaustive match under a single lock. Also fixes the module doc's\nstale \"Three ways\" count and adds ai_provider/stream.rs comments\ndocumenting the cancel-branch record_usage provider caveat and its\nmirror test.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: make the native messaging relay reads cancellation safe\n\nThe duplex select! loop raced a stdin read_exact branch against a ws\nread branch; read_exact is not cancellation-safe, so select! dropping\nthe losing branch mid-read discarded already-consumed stdin bytes and\ndesynced the length-prefixed frame stream. Split the relay into two\nindependent tasks (stdin->ws, ws->stdout), each owning its reader and\nwriter half exclusively, so no read_exact future is ever raced or\ndropped mid-frame; relay() only selects on the tasks' JoinHandles,\nwhich is safe (dropping one detaches rather than aborts it).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: join the losing relay pump before shutdown so last frames flush\n\n`relay()` selected on the two pump tasks' JoinHandles and dropped the\nloser, but `Runtime::drop` in `run()` cancels still-incomplete spawned\ntasks rather than letting them finish — so a `pump_ws_to_stdout` task\nmid-write of the last `assist.chunk`/`assist.done` frame could be axed\nbefore the write/flush landed. Now the loser is `.await`ed with a\nbounded 200ms timeout before `write_ready(false)`, which also fixes the\n`write_ready` stdout race by sequencing it after the join. Renamed the\nfragmented-delivery test to reflect what it actually covers and\ndocumented why a genuine select!-cancellation test against\n`read_stdin_frame` isn't included (read_exact is inherently not\ncancel-safe; the architecture never races it in production).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: harden assist stream registry, spend accounting, and interruption ux\n\n- unregister the pre-compose registry entry on a rejected daily-budget\n  charge, closing a Pending-entry leak between registry.begin and\n  compose_draft_stream\n- reject a reused in-flight reqId in AssistStreamRegistry::begin instead of\n  silently orphaning the original job\n- record accumulated provider usage on a transport read error too, mirroring\n  the existing cancellation-branch spend accounting\n- render the interrupted state (not just the partial draft) when a live-push\n  answerAssistProgress update reports a later stream failure\n- settle a superseded answerAssist request's promise and drop its stale\n  chunk listener when a newer request starts, so it can no longer mutate the\n  new request's shared draft buffer\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: guard answer-assist stream buffer against overlapping requests\n\nThe background service worker holds a single-slot assistBuffer for the\nstreaming answer.assist draft. MV3 popups are torn down on close, and the\nreattach path re-rendered an in-flight stream without re-disabling the\nbutton, so a second overlapping request could reset the shared buffer\nwhile the first was still streaming — the first run's late chunk and\nterminal writes then stomped the second's buffer, rendering a garbled or\nprematurely-\"done\" draft as if coherent.\n\nAdd a monotonic assistGeneration guard: each runAnswerAssist captures its\ngeneration and (a) early-bails after setup once a newer run has superseded\nit, before resetting the buffer or issuing the billable request, and\n(b) drops its onChunk and terminal writes when superseded mid-stream. The\npopup now reflects an in-flight reattached stream by disabling the button\nuntil terminal. Adds two overlapping-call regression tests (both proven to\nfail without the guard).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: reject a reused reqid until its cancelled-early marker is consumed\n\nAssistStreamRegistry::begin rejected only Pending/Running entries, so a\nreused reqId could overwrite a CancelledEarly marker with a fresh Pending.\nThat marker exists to be consumed by the original pre-compose run's later\nregister() call (which removes it and returns false, aborting before any\nbillable job starts); overwriting it made register() see Pending instead,\ninsert Running, and start a billable generation for a request the user had\nalready cancelled.\n\nbegin now rejects any occupied entry (contains_key), mirroring the existing\ncancel_all hardening that re-inserts rather than drops CancelledEarly. The\nmarker is always cleared within the original run's lifecycle (register\nconsumes it, charge failure unregisters, or cancel_all on disconnect), so a\nreqId is never permanently locked out; a well-behaved client uses a fresh\nuuid anyway.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-15T10:27:18+02:00",
-          "tree_id": "dda0a6590012fdea0c928551aa74c43270f24227",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9985ff6136dd01afa52417b6b4a97fa376e19369"
-        },
-        "date": 1784105253046,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2159718,
-            "range": "± 84895",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2606729,
-            "range": "± 63745",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 287897,
-            "range": "± 5212",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 229238,
             "range": "± 5084",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f65103265f63cbe18143710d4448bd0c41d95007",
+          "message": "fix: make the agent CLI reachable after an install or update (#1088)\n\n* fix: symlink the agent cli onto path for homebrew installs\n\nThe `ajh-tauri agent <verb>` CLI (ADR-037/038) ships inside every bundle but\nwas reachable only by callers that read the app's ~/.ajh-agent/agent.json\npointer file. A human typing `ajh-tauri agent` got \"command not found\" on a\nmachine where the app was installed.\n\nThe cask now symlinks the bundle's executable onto PATH. The binary name was\nverified against the shipped artifact rather than inferred: the macOS bundle\nlays out as `AI Job Hunter.app/Contents/MacOS/ajh-tauri`, i.e. named after the\nCargo [[bin]], not productName.\n\nLinux needs no equivalent change: the deb already installs `usr/bin/ajh-tauri`.\nWindows (nsis, installMode currentUser) is still unreachable and is handled\nseparately.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: document the agent cli for users\n\nThe `ajh-tauri agent <verb>` surface (ADR-037/ADR-038) was invisible: it\nappeared nowhere in the README, nowhere under docs/ except CONTEXT.md, and\nnowhere on the landing site. The only landing mention is the `.claude/`\ndevelopment fleet, which a reader will conflate with it.\n\nAdds a README usage section and a knowledge-base entry, registered in the\nindex. The knowledge page states shape and points at `--help` and the owning\nsymbols rather than copying the verb table, the sentinel list or `max 50`,\nper AGENTS.md rule 17.\n\nBinary locations are stated per platform from shipped v0.145.0 artifacts, not\ninferred. Windows is documented as NOT on PATH, which is true today; the NSIS\nhook that changes it is a separate commit.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: add the agent cli directory to the per-user path on windows\n\nCompanion to the Homebrew cask change: the `ajh-tauri agent <verb>` CLI\n(ADR-037/ADR-038) ships inside the Windows bundle but the per-user install\ndirectory is not on PATH, so a human could not invoke it. Linux already\ninstalls to /usr/bin, and macOS is covered by the cask's binary stanza.\n\nAdds an NSIS POSTINSTALL/POSTUNINSTALL hook pair. PATH is a value whose\ncorruption breaks the user's shell, so every branch is defensive:\n\n- Truncation guard. ReadRegStr SILENTLY truncates past NSIS_MAX_STRLEN\n  (1024 in the Unicode build Tauri bundles). A value read within one char\n  of the cap cannot be trusted to be complete, and writing it back would\n  permanently drop the remainder, so PATH is left untouched instead. A\n  second budget check refuses an append that would land near the cap.\n- Idempotent across updates. The installer re-runs on every update, so both\n  haystack and needle are ';'-padded before searching; a directory sharing\n  our prefix cannot match, and the entry is never appended twice.\n- Type preserving. REG_SZ vs REG_EXPAND_SZ is queried via Advapi32 and the\n  write-back matches; any other type is left untouched.\n- Uninstall splices out exactly our segment and the one delimiter it owns,\n  leaving no doubled, leading or trailing ';'.\n- Best effort throughout: every failure path DetailPrints and continues, so\n  a PATH problem can never abort an install or uninstall.\n\nVerified by compiling these macros with makensis and running them against a\nscratch registry key: absent/REG_SZ/REG_EXPAND_SZ values, sibling-prefix\ndirectories, re-runs, both truncation guards, removal from first/middle/last/\nonly position, and an unexpected REG_DWORD. A full release-bundle install was\nnot run.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: note the windows path hook lands in the next release\n\nThe previous commit added the NSIS hook, so \"Windows is not on PATH\" is only\ntrue for v0.145.0 and earlier. Stated as a release boundary rather than a\nbare \"yes\", since no shipped installer carries the hook yet.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: make the windows path hook compile and survive a failed probe\n\nSecurity review of 7b9e1755 blocked it on two defects and one that made the\nfeature a no-op on a realistic machine. All three are fixed here.\n\nThe uninstall hook did not compile. `${StrLoc}` expands to `Call StrLoc`, and\nNSIS forbids calling a non-`un.` function from an uninstall section. PR CI\nruns `cargo check` and never bundles, so this would first have appeared in\nthe release job. StrFunc is gone entirely, replaced by `Shlwapi::StrStrW`\nthrough `System::Call` — a plugin call, so the `un.` rule cannot apply.\n\nA failed probe took the destructive branch. `$1` was uninitialised, and a\n`System::Call` that fails to resolve writes the literal string \"error\" into\nits output register, which `${If} $1 != 0` treats as \"no PATH value exists\" —\nreplacing the whole per-user PATH with just $INSTDIR, then reporting success.\nOnly a literal ERROR_FILE_NOT_FOUND (2) now creates a value; every other\noutcome leaves PATH untouched.\n\nThe 1024-char ceiling made it a no-op on ordinary machines. NSIS string\nvariables cap at NSIS_MAX_STRLEN, and the old budget refused any PATH past\n~1016 chars — a developer machine with a 988-char PATH plus the install dir\nwas already over it, so the installer would silently do nothing while the\ndocs promised otherwise. The value's content now never enters an NSIS\nvariable: RegQueryValueExW/RegSetValueExW against GlobalAlloc'd memory, with\nStrStrW for the whole-segment search.\n\nCorrects the record from 7b9e1755: ReadRegStr does NOT silently truncate past\nthe cap. Measured, it sets the error flag and returns an empty string, so the\nreal protection was always the ${Errors} check. `${NSIS_MAX_STRLEN}` is also\na live compiler builtin, contrary to the previous comment.\n\nAdds a compile-time guard: the hook hardcodes HKCU, so it now refuses to\nbuild under any installMode other than currentUser rather than silently\nwriting an elevating admin's hive.\n\nVerified independently of the author: both macros compile clean in a real\nSection Install and a real Section Uninstall under makensis 3.11, and the\ninstallMode guard aborts the build when flipped to perMachine.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: gate every buffer input in the windows path hook\n\nSecurity re-review of a026a81a found no blocking defect but three crash\npaths, all one root cause: a length or pointer reached RtlMoveMemory or\nlstrcpyW without a precondition. Fixed as a single gate rather than three\npatches, since patching each symptom as it appears is what produced two\nearlier bugs in this file.\n\n- A registry value with cbData = 0 is legal Win32, and made `$3 - 2` yield\n  -2, which RtlMoveMemory reads as 0xFFFFFFFE. The install macro had no\n  clamp on the value size at all; uninstall survived the same input only\n  because StrStrW failed to match first. Both now refuse a value too small\n  to be a valid PATH before any arithmetic runs.\n- GlobalAlloc's return was dereferenced unchecked at four sites. Each now\n  bails, and the two second allocations free the first buffer on the way.\n- `System::Call` writes the literal string \"error\" into its output register\n  on a resolution failure, so uninstall's `${If} $5 == 0` fell through into\n  pointer arithmetic with $5 parsing as 0. Both sides now compare\n  numerically, so the sentinel lands in the safe branch by construction\n  rather than by luck of polarity.\n\nAlso restores a guard the previous rewrite dropped silently: a PATH already\nending in ';' no longer gains a doubled separator.\n\nPATH was left untouched in every injected failure before this change too —\nthese were liveness defects, not data-loss ones. Verified: the 15-case\nregression matrix still passes including the >1024-char case, cbData = 0 no\nlonger crashes, and both macros still compile in a real Section Install and\nSection Uninstall. Forcing GlobalAlloc to fail at the real ~20-100 byte\nallocation sizes was not achievable, so that branch is verified by pattern\nrather than end to end.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+          "timestamp": "2026-09-01T20:09:57+02:00",
+          "tree_id": "df46d46872a2513c96fb9bc53f3b3e72ac4e6050",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f65103265f63cbe18143710d4448bd0c41d95007"
+        },
+        "date": 1788286885327,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2190180,
+            "range": "± 15592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2581973,
+            "range": "± 16085",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 302241,
+            "range": "± 7011",
             "unit": "ns/iter"
           }
         ]
