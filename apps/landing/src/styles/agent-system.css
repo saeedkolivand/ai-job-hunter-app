@@ -156,6 +156,23 @@
   font-weight: 700;
   font-size: 16px;
 }
+/* scope-clarifying callout — same bordered-accent shape as /how-it-works's
+   .note (how-it-works.css), ported onto this page's own --accent/--accent-soft
+   aliases rather than a new visual language. */
+.agent-fleet .note {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 12px 16px;
+  border-radius: 0 10px 10px 0;
+  margin: 20px 0 0;
+  max-width: 66ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.agent-fleet .note b {
+  color: var(--text);
+}
 .agent-fleet h2.section {
   font-family: var(--head);
   font-weight: 700;
