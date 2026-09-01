@@ -867,6 +867,20 @@ Pinpoint, Rippling, Breezy HR, BambooHR, The Muse were added from `santifer/care
 
 Comeet was added from the career-ops (MIT) field spec; the live endpoint 400s without real credentials, so the response shape is unconfirmed (see the Comeet section above). Workable, added the same day, IS live-verified (real request against a live tenant) and is listed under "Confirmed solid" above instead.
 
+### Vendored company-slug seed data
+
+An offline ATS company-slug directory feeds the discovery typeahead's
+"community slug directory" feeder ([ADR-030](knowledge/decision-records/adr-030-passive-ats-slug-harvesting-and-watched-companies.md) §b).
+It is gzip-embedded and searched entirely offline — no runtime network.
+
+Which platforms are covered is not listed here: it is exactly the set
+`scraping/ats_ref.rs::extract_ats_ref` can parse, and duplicating that list would
+go stale the moment a parser is added. **Provenance, upstream commit, per-file
+digests and the license terms live with the data**, in
+`apps/desktop/src-tauri/ats-slugs/README.md`. Read that before changing or
+re-snapshotting it — the datasets carry different license terms from the
+upstream repo's own code, and that distinction is load-bearing.
+
 ---
 
 ## Notes

@@ -66,6 +66,11 @@ use self::persist::{
     persist_ai_assist_optin, persist_autofill_optin, persist_token,
 };
 
+/// ADR-038 §2's generic `agent.call` dispatch tier — `Effect::Read` (Phase 2)
+/// and `Effect::Reversible` (Phase 4) dispatch unconditionally,
+/// `Effect::Irreversible` (Phase 3) only after a `--confirm` ceremony; see
+/// its module doc for the full gate.
+mod agent_call;
 /// `ajh-tauri agent <verb>` — the CLIENT half of the agent/CLI surface (issue
 /// #1084 PR 1): argv parsing, the v2-handshake-carrying bridge client, and
 /// process exit codes. `pub` (not plain `mod`) because `lib::
@@ -689,7 +694,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // `stream::AssistStreamRegistry`'s doc for why this is per-connection
     // rather than a field on the global `BridgeState`.
     let assist_streams = std::sync::Arc::new(stream::AssistStreamRegistry::default());
-    // Cancels every in-flight `agent.query` spawned for THIS connection
+    // Cancels every in-flight `agent.query`/`agent.call` spawned for THIS connection
     // (MAJOR fix — security review round 2) — cancelled once, below, at the
     // SAME shared teardown site as `assist_streams.cancel_all`, so it covers
     // every way this loop can end (a token revocation, but also a normal
@@ -882,6 +887,26 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 &req_id,
                 agent_read::resource_name(&payload),
             )),
+            // ADR-038 §2 — same spawn-off-the-read-loop + shared-throttle
+            // reasoning as AgentQuery above; see `stream::spawn_agent_call`
+            // and `agent_call::throttle_key`'s own docs.
+            FrameDecision::AgentCall { req_id, payload }
+                if state.try_acquire_agent(agent_call::throttle_key(
+                    payload.get("command").and_then(Value::as_str).unwrap_or(""),
+                )) =>
+            {
+                stream::spawn_agent_call(
+                    app.clone(),
+                    req_id,
+                    payload,
+                    out_tx.clone(),
+                    agent_query_cancel.clone(),
+                );
+                None
+            }
+            FrameDecision::AgentCall { req_id, payload } => {
+                Some(agent_call::throttled_reply(&req_id, &payload))
+            }
             FrameDecision::AnswerAssist { req_id, payload } => {
                 // Spawned onto its OWN task (see `stream::spawn_answer_assist`)
                 // so a multi-second stream never blocks THIS loop's
@@ -1051,6 +1076,10 @@ enum FrameDecision {
     /// [`agent_read::handle_agent_query`]. Carries the payload verbatim so
     /// the handler can read `resource` (+ `url`/`limit`).
     AgentQuery { req_id: String, payload: Value },
+    /// An authenticated `agent.call` (ADR-038 §2, Phase 2) to answer through
+    /// [`agent_call::handle_agent_call`]. Carries the payload verbatim so the
+    /// handler can read `namespace`/`command`/`input`.
+    AgentCall { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -1236,6 +1265,15 @@ fn advance_authenticated(
         msg::AGENT_QUERY => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::AgentQuery { req_id, payload }
+        }
+        // ADR-038 §2's generic tier — same CLI-only origin gate as AGENT_QUERY above.
+        msg::AGENT_CALL if !is_agent_cli => FrameDecision::Reply(agent_call::origin_refused_reply(
+            &req_id,
+            envelope.get("payload").unwrap_or(&Value::Null),
+        )),
+        msg::AGENT_CALL => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::AgentCall { req_id, payload }
         }
         // Unknown message types — acknowledged as an error, never panic.
         other => FrameDecision::Reply(import_flow::result_reply(

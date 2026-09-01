@@ -107,6 +107,246 @@ fn unknown_best_matches_flag_error_never_echoes_the_typed_argv_token() {
     );
 }
 
+// ── `call` argv parsing (ADR-038 §2, Phase 2) ───────────────────────────
+
+#[test]
+fn parses_call_with_namespace_command_and_input() {
+    assert_eq!(
+        parse_verb(&s(&["call", "jobs:jobs_list", "--input", r#"{"a":1}"#])).unwrap(),
+        Verb::Call {
+            namespace: "jobs".to_string(),
+            command: "jobs_list".to_string(),
+            input: serde_json::json!({ "a": 1 }),
+            confirm: None,
+        }
+    );
+}
+
+#[test]
+fn parses_call_without_input_as_an_empty_object() {
+    assert_eq!(
+        parse_verb(&s(&["call", "jobs:jobs_list"])).unwrap(),
+        Verb::Call {
+            namespace: "jobs".to_string(),
+            command: "jobs_list".to_string(),
+            input: serde_json::json!({}),
+            confirm: None,
+        }
+    );
+}
+
+#[test]
+fn parses_call_with_confirm() {
+    assert_eq!(
+        parse_verb(&s(&[
+            "call",
+            "documents:documents_remove",
+            "--confirm",
+            "Resume A"
+        ]))
+        .unwrap(),
+        Verb::Call {
+            namespace: "documents".to_string(),
+            command: "documents_remove".to_string(),
+            input: serde_json::json!({}),
+            confirm: Some("Resume A".to_string()),
+        }
+    );
+}
+
+#[test]
+fn parses_call_with_both_input_and_confirm_in_either_order() {
+    let forward = parse_verb(&s(&[
+        "call",
+        "documents:documents_remove",
+        "--input",
+        r#"{"id":"doc-1"}"#,
+        "--confirm",
+        "Resume A",
+    ]))
+    .unwrap();
+    let backward = parse_verb(&s(&[
+        "call",
+        "documents:documents_remove",
+        "--confirm",
+        "Resume A",
+        "--input",
+        r#"{"id":"doc-1"}"#,
+    ]))
+    .unwrap();
+    assert_eq!(forward, backward);
+    assert_eq!(
+        forward,
+        Verb::Call {
+            namespace: "documents".to_string(),
+            command: "documents_remove".to_string(),
+            input: serde_json::json!({ "id": "doc-1" }),
+            confirm: Some("Resume A".to_string()),
+        }
+    );
+}
+
+#[test]
+fn rejects_confirm_missing_its_value() {
+    assert!(parse_verb(&s(&["call", "jobs:jobs_list", "--confirm"])).is_err());
+}
+
+#[test]
+fn confirm_error_never_echoes_the_typed_value() {
+    // Same path-privacy discipline as `--input` — `--confirm` is user data
+    // (ADR-038 §4) and must never appear in a usage error either.
+    let leaky = r"C:\Users\alice\Desktop\secret-notes";
+    let err = parse_verb(&s(&[
+        "call",
+        "jobs:jobs_list",
+        "--confirm",
+        leaky,
+        "--bogus",
+    ]))
+    .unwrap_err()
+    .to_string();
+    assert!(!err.contains(leaky), "must not echo --confirm: {err}");
+}
+
+#[test]
+fn rejects_call_missing_the_namespace_command_token() {
+    assert!(parse_verb(&s(&["call"])).is_err());
+}
+
+#[test]
+fn rejects_call_target_missing_a_colon() {
+    assert!(parse_verb(&s(&["call", "jobs_list"])).is_err());
+}
+
+#[test]
+fn rejects_call_target_with_an_empty_namespace_or_command() {
+    assert!(parse_verb(&s(&["call", ":jobs_list"])).is_err());
+    assert!(parse_verb(&s(&["call", "jobs:"])).is_err());
+}
+
+#[test]
+fn rejects_call_input_that_is_not_valid_json() {
+    let err = parse_verb(&s(&["call", "jobs:jobs_list", "--input", "{not json"]))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("valid JSON"));
+}
+
+#[test]
+fn rejects_call_input_that_is_not_a_json_object() {
+    assert!(parse_verb(&s(&["call", "jobs:jobs_list", "--input", "[1,2]"])).is_err());
+    assert!(parse_verb(&s(&["call", "jobs:jobs_list", "--input", "\"x\""])).is_err());
+}
+
+#[test]
+fn call_input_error_never_echoes_the_typed_value() {
+    // Path privacy — `--input` may carry a path or other sensitive content.
+    let leaky = r#"{"path":"C:\Users\alice\Desktop\secret"NOTJSON"#;
+    let err = parse_verb(&s(&["call", "jobs:jobs_list", "--input", leaky]))
+        .unwrap_err()
+        .to_string();
+    assert!(!err.contains("alice"), "must not echo --input: {err}");
+}
+
+#[test]
+fn call_verb_sends_the_agent_call_wire_type_and_expects_its_own_reply_type() {
+    let verb = Verb::Call {
+        namespace: "jobs".to_string(),
+        command: "jobs_list".to_string(),
+        input: serde_json::json!({}),
+        confirm: None,
+    };
+    assert_eq!(verb.wire_type(), msg::AGENT_CALL);
+    assert_eq!(verb.reply_type(), msg::AGENT_CALL_RESULT);
+    assert_eq!(verb.resource_name(), "call");
+    let payload = verb.payload();
+    assert_eq!(payload["namespace"], "jobs");
+    assert_eq!(payload["command"], "jobs_list");
+    assert_eq!(payload["input"], serde_json::json!({}));
+    assert!(
+        payload.get("confirm").is_none(),
+        "confirm must be absent from the payload when not supplied, not null"
+    );
+}
+
+#[test]
+fn call_verb_payload_carries_confirm_only_when_supplied() {
+    let verb = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: serde_json::json!({ "id": "doc-1" }),
+        confirm: Some("Resume A".to_string()),
+    };
+    assert_eq!(verb.payload()["confirm"], "Resume A");
+}
+
+#[test]
+fn curated_verbs_still_send_agent_query_and_expect_agent_result() {
+    assert_eq!(Verb::Schema.wire_type(), msg::AGENT_QUERY);
+    assert_eq!(Verb::Schema.reply_type(), msg::AGENT_RESULT);
+}
+
+#[test]
+fn exit_code_for_reply_reads_dispatched_for_call_and_ok_for_every_other_verb() {
+    let call = Verb::Call {
+        namespace: "jobs".to_string(),
+        command: "jobs_list".to_string(),
+        input: serde_json::json!({}),
+        confirm: None,
+    };
+    assert_eq!(
+        exit_code_for_reply(&call, &serde_json::json!({ "dispatched": true })),
+        0
+    );
+    assert_eq!(
+        exit_code_for_reply(&call, &serde_json::json!({ "dispatched": false })),
+        2,
+        "a call refusal is exit 2, never exit 1"
+    );
+    assert_eq!(
+        exit_code_for_reply(&Verb::Schema, &serde_json::json!({ "ok": true })),
+        0
+    );
+    assert_eq!(
+        exit_code_for_reply(&Verb::Schema, &serde_json::json!({ "ok": false })),
+        1
+    );
+}
+
+/// ADR-038 §4 (Phase 3): "needs confirmation" is its OWN exit code, never
+/// collapsed into the exit-2 "refusal" bucket every other `dispatched:false`
+/// cause shares.
+#[test]
+fn exit_code_for_reply_reports_4_for_confirmation_required_and_2_for_every_other_refusal() {
+    let call = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: serde_json::json!({}),
+        confirm: None,
+    };
+    assert_eq!(
+        exit_code_for_reply(
+            &call,
+            &serde_json::json!({ "dispatched": false, "error": "confirmation_required" }),
+        ),
+        4
+    );
+    for other_error in [
+        "confirmation_mismatch",
+        "proof_unavailable",
+        "unknown_command",
+    ] {
+        assert_eq!(
+            exit_code_for_reply(
+                &call,
+                &serde_json::json!({ "dispatched": false, "error": other_error }),
+            ),
+            2,
+            "{other_error} must stay exit 2, not be confused with confirmation_required"
+        );
+    }
+}
+
 // ── --help / VERB_TABLE anti-drift (owner request) ──────────────────────
 // Hand-written literal list, not derived from VERB_TABLE itself (mirrors
 // the repo's standing "pair a loop-over-own-fields test with a
@@ -118,7 +358,14 @@ fn verb_table_names_match_a_hand_written_literal_list() {
     names.sort_unstable();
     assert_eq!(
         names,
-        vec!["automations", "best-matches", "job", "profile", "schema"]
+        vec![
+            "automations",
+            "best-matches",
+            "call",
+            "job",
+            "profile",
+            "schema"
+        ]
     );
 }
 
@@ -129,6 +376,7 @@ fn every_verb_in_the_table_is_parseable_with_its_minimal_args() {
     for v in VERB_TABLE {
         let args: Vec<String> = match v.name {
             "job" => s(&["job", "https://example.com/1"]),
+            "call" => s(&["call", "jobs:jobs_list"]),
             other => s(&[other]),
         };
         assert!(

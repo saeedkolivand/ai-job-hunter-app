@@ -166,3 +166,25 @@ pub const AGENT_QUERY: &str = "agent.query";
 /// Desktop → extension/CLI: the `agent.query` outcome — `{ ok: true,
 /// resource, data } | { ok: false, resource, error }`. See [`AGENT_QUERY`]'s doc.
 pub const AGENT_RESULT: &str = "agent.result";
+/// CLI → desktop: ADR-038 §2's generic dispatch tier (`agent call
+/// <namespace>:<command> --input '<json>'`). `{ namespace, command, input }`
+/// — dispatches to a registered Tauri command via `Webview::on_message` (see
+/// `super::agent_call`'s module doc). Phase 2 only reached `Effect::Read`
+/// rows; Phase 4 widened it to also dispatch `Effect::Reversible` rows
+/// unconditionally (no confirm, no ceremony — undoable through the app is
+/// what that class means), and Phase 3 lets `Effect::Irreversible` rows
+/// dispatch too, but only after a `--confirm` ceremony (`agent_call::gate`,
+/// `ProofSource`) whose expected value is resolved fresh per call — never a
+/// value this dispatcher invents or hands out. Only `Effect::NotExposed`
+/// refuses unconditionally, in-band. So the real trust boundary here is the
+/// whole policy table plus the confirm ceremony, never "read-only" — **CLI-
+/// agent only**, gated the SAME way as [`AGENT_QUERY`] — and, like it,
+/// deliberately NOT mirrored in the shared TS `EXTENSION_MESSAGE_TYPES`: the
+/// browser extension never sends it.
+pub const AGENT_CALL: &str = "agent.call";
+/// Desktop → CLI: the `agent.call` outcome — `{ dispatched: true, namespace,
+/// command, data } | { dispatched: false, namespace, command, error, detail
+/// }`. `dispatched`, never `ok` — ADR-038 §5: ~47 commands signal failure
+/// INSIDE their own Ok payload, so the dispatcher cannot know whether the
+/// underlying operation succeeded, only whether it ran.
+pub const AGENT_CALL_RESULT: &str = "agent.call.result";

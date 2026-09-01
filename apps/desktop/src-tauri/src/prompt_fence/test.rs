@@ -492,6 +492,49 @@ fn neutralize_transcript_boundaries_is_idempotent() {
     assert!(once.contains("< candidate_resume>"));
 }
 
+// ── strip_fence_wrapper (security review round 4) ──────────────────────
+
+/// The round-trip case this exists for: a value a caller read through
+/// `fenced` must come back out unwrapped so it never lands in a persisted
+/// store carrying literal `<tag>…</tag>` markup.
+#[test]
+fn strip_fence_wrapper_reverses_a_real_fenced_value() {
+    let wrapped = fenced("job_posting", "Senior Engineer", 1_000);
+    assert_eq!(
+        strip_fence_wrapper("job_posting", &wrapped),
+        "Senior Engineer"
+    );
+}
+
+/// The common path: a caller typing/passing a clean value that was never
+/// fenced must pass through byte-for-byte unchanged — this is a no-op on
+/// every normal write, not just the round-trip one.
+#[test]
+fn strip_fence_wrapper_leaves_an_unwrapped_value_alone() {
+    assert_eq!(
+        strip_fence_wrapper("job_posting", "Senior Engineer"),
+        "Senior Engineer"
+    );
+}
+
+/// Mutation guard: a wrapper for a DIFFERENT tag must not be stripped — the
+/// match is on the exact tag name, not "any `<...>...\n</...>` shape".
+#[test]
+fn strip_fence_wrapper_ignores_a_wrapper_for_a_different_tag() {
+    let wrapped = fenced("candidate_resume", "some resume text", 1_000);
+    assert_eq!(strip_fence_wrapper("job_posting", &wrapped), wrapped);
+}
+
+/// Mutation guard: only a wrapper matching BOTH the exact opening and
+/// closing tag survives stripping — a value that merely starts with the
+/// open tag (no matching close) is left alone rather than corrupted by a
+/// partial strip.
+#[test]
+fn strip_fence_wrapper_requires_both_the_open_and_close_tag() {
+    let half = "<job_posting>\nSenior Engineer";
+    assert_eq!(strip_fence_wrapper("job_posting", half), half);
+}
+
 /// **Every `FENCE_TAG_PATTERNS` entry, load-bearing, in one loop.**
 ///
 /// Security review (PR-5): removing each of the 24 registry entries

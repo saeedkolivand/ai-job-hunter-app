@@ -557,7 +557,10 @@ fn agent_result_reply(req_id: &str, resource: &str, outcome: AppResult<Value>) -
     .to_string()
 }
 
-const THROTTLED_MESSAGE: &str = "Too many requests — try again shortly.";
+// `pub(super)` — reused verbatim by `agent_call`'s own throttle refusal
+// (Phase 2, ADR-038 §2) so the two tiers report identical wording for the
+// identical shared-bucket cause, never a second hand-typed copy.
+pub(super) const THROTTLED_MESSAGE: &str = "Too many requests — try again shortly.";
 
 pub(super) fn throttled_reply(req_id: &str, resource: &str) -> String {
     agent_result_reply(

@@ -646,12 +646,73 @@ pub fn ai_unload_model(_model: String) -> Value {
     json!({ "success": true })
 }
 
+/// Admit one `ai_embed` call against the rate + concurrency cap. The
+/// per-provider DAILY charge no longer lives here (see `ai_embed`'s doc
+/// comment for why): it now fires once per ACTUAL provider round-trip the
+/// call ends up making (`ai_provider::embed::MeteredAttempt`), not once per
+/// admitted call — a single call can fan out into several chunk sends.
+///
+/// Cap is a parameter rather than the constant directly, purely so this is
+/// testable with a tiny cap — the same reason `charge_daily_or_reject` above
+/// takes `max_per_day` instead of hardcoding [`crate::limits::PROVIDER_DAILY_MAX`].
+/// Production (`ai_embed`) always passes the real constants.
+fn admit_embed(
+    limiter: &std::sync::Arc<crate::limits::Limiter>,
+    max_requests: usize,
+    max_concurrent: usize,
+) -> AppResult<crate::limits::ConcurrencyGuard> {
+    limiter.acquire("ai_embed", max_requests, max_concurrent)
+}
+
 /// Embed text using the active embedding provider/model (persisted in the
 /// document store). Routes through the centralized provider layer, so the
 /// returned vector is tagged with its embedding space.
+///
+/// Anti-abuse, mirroring `ai_generate`: [`admit_embed`] rejects before any
+/// provider work runs; the per-provider daily charge then fires once per
+/// ACTUAL provider round-trip `documents::embed_with_config` makes (via
+/// `MeteredAttempt`), not once per admitted call — `req.text` is clamped to
+/// `MAX_JOB_DESCRIPTION_BYTES` but can still fan out into
+/// `embed_adaptive`'s ~32-chunk ceiling (or more, on a context-length
+/// retry), each a real billed round-trip. Charging a flat 1 unit here used
+/// to undercount the daily ceiling by up to that factor (#1087 finding 1).
+///
+/// `embedding_config()` is read exactly ONCE into `cfg` below, and that
+/// SAME snapshot feeds both the charge (which provider's daily budget) and
+/// the dispatch inside `embed_with_config` (which provider actually
+/// receives the request). Reading it a second time — as the old code did,
+/// once here and again inside `documents::embed` — let
+/// `ai_set_embedding_config` land in between and charge one provider while
+/// billing another (#1087 finding 2).
 #[tauri::command]
 pub async fn ai_embed(app: AppHandle, req: AiEmbedRequest) -> Value {
-    match crate::documents::embed(&app, &req.text).await {
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+
+    let _guard = match admit_embed(
+        &limiter,
+        crate::limits::AI_EMBED_RATE_MAX,
+        crate::limits::AI_EMBED_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+
+    // ONE read, shared by the charge closure below and the dispatch inside
+    // `embed_with_config` — see this function's doc comment.
+    let cfg = app.state::<DocumentStore>().embedding_config();
+    let charge_provider = cfg.provider.clone();
+    let charge_fn =
+        move || limiter.charge_provider_daily(&charge_provider, crate::limits::PROVIDER_DAILY_MAX);
+    let charge: &(dyn Fn() -> AppResult<()> + Send + Sync) = &charge_fn;
+
+    let text = crate::applications::clamp_to_bytes(
+        req.text,
+        crate::applications::MAX_JOB_DESCRIPTION_BYTES,
+    );
+    match crate::documents::embed_with_config(&app, &cfg, &text, Some(charge)).await {
         Ok(ev) => json!({
             "vector": ev.values,
             "dim": ev.space.dim,

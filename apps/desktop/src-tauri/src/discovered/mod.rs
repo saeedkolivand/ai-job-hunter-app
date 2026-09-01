@@ -25,6 +25,7 @@ use crate::observability::sanitize_reason;
 
 mod harvest;
 pub use harvest::harvest_ats_refs;
+pub mod vendored;
 
 /// Per-field byte cap on any stored string — the same ~200-byte convention as
 /// `job_preferences`/`dedup` clamp untrusted renderer/scrape input at the write

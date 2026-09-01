@@ -127,6 +127,8 @@ fn reserved_types_are_distinct() {
         // exactly like the rest.
         msg::AGENT_QUERY,
         msg::AGENT_RESULT,
+        msg::AGENT_CALL,
+        msg::AGENT_CALL_RESULT,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");
@@ -762,6 +764,130 @@ fn advance_authenticated_refuses_agent_query_from_a_non_cli_origin() {
     assert_eq!(v["reqId"], "req-12");
     assert_eq!(v["payload"]["ok"], false);
     assert_eq!(v["payload"]["resource"], "schema");
+}
+
+// ── agent.call is gated on `is_agent_cli` too (ADR-038 §2, Phase 2) ───────
+
+#[test]
+fn advance_authenticated_routes_agent_call_only_for_the_cli_origin() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_CALL,
+        "reqId": "req-13",
+        "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
+    });
+    let decision = advance_authenticated(msg::AGENT_CALL, "req-13".to_string(), &envelope, true);
+    match decision {
+        FrameDecision::AgentCall { req_id, .. } => assert_eq!(req_id, "req-13"),
+        other => panic!("expected FrameDecision::AgentCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_CALL,
+        "reqId": "req-14",
+        "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
+    });
+    let decision = advance_authenticated(msg::AGENT_CALL, "req-14".to_string(), &envelope, false);
+    let FrameDecision::Reply(text) = decision else {
+        panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
+    };
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["type"], msg::AGENT_CALL_RESULT);
+    assert_eq!(v["reqId"], "req-14");
+    assert_eq!(v["payload"]["dispatched"], false);
+    assert_eq!(v["payload"]["error"], "cli_only");
+}
+
+/// ADR-038 §3/§4 — the exhaustive counterpart to `agent_call::tests`' 4
+/// hand-picked `gate` cases: walks every ONE of the 164 real `POLICY` rows
+/// (not a representative sample) and asserts `dispatch`'s own gate
+/// (`agent_call::gate` — called directly by `dispatch`, never a parallel
+/// copy) agrees with what that row's declared `Effect` promises:
+/// `Read`/`Reversible` dispatchable unconditionally, `Irreversible`
+/// dispatchable ONLY with a confirm, `NotExposed` never dispatchable. This
+/// is what stops a future phase widening the gate for one class (e.g.
+/// loosening `Reversible`) from silently widening it for another — a test
+/// that only checked 2-3 representative rows could pass while missing a
+/// class the sample didn't happen to cover.
+///
+/// Mutation-checked by hand, and the negative result matters as much as the
+/// positive one: flipping a single row's OWN `Effect` in `policy.rs` (e.g.
+/// `documents_remove` from `Irreversible` to `Read`) does NOT fail this test
+/// — the assertions below are keyed off `entry.effect` itself, so a
+/// mis-classified row just moves to a different (still self-consistent)
+/// branch. That is a real limit of what a per-row walk can prove: it is not
+/// a check that any INDIVIDUAL classification is correct (the row's own
+/// comment + review is what defends that). What DOES fail this test —
+/// verified by hand, then reverted — is mutating `gate`'s OWN match arms:
+/// changing `Effect::Irreversible(source) => match confirm { .. }` to always
+/// return `Ok(Dispatch::Confirmed { .. })` regardless of `confirm` (the
+/// exact "silently widened the gate for one class" shape this guards
+/// against) fails on the FIRST Irreversible row this walks
+/// (`system_open_external`), because that row's `Effect` still correctly
+/// says `Irreversible` while the (mutated) gate now claims it is
+/// dispatchable with no confirm. Walking all 164 real rows — not 2-3
+/// representative ones — is what makes that failure immediate rather than
+/// dependent on which rows a smaller hand-picked sample happened to include.
+#[test]
+fn agent_call_gate_matches_every_policy_rows_declared_effect() {
+    use agent_call::Dispatch;
+    use agent_cli::policy::{Effect, POLICY};
+
+    let dispatchable = |effect: Effect, confirm: Option<&str>| {
+        matches!(
+            agent_call::gate(effect, confirm),
+            Ok(Dispatch::Direct | Dispatch::Confirmed { .. })
+        )
+    };
+
+    let mut checked = 0usize;
+    for entry in POLICY {
+        checked += 1;
+        match entry.effect {
+            Effect::Read | Effect::Reversible => {
+                assert!(
+                    dispatchable(entry.effect, None),
+                    "{} is Read/Reversible — must be dispatchable with no confirm",
+                    entry.path
+                );
+                assert!(
+                    dispatchable(entry.effect, Some("x")),
+                    "{} is Read/Reversible — must stay dispatchable even WITH a confirm",
+                    entry.path
+                );
+            }
+            Effect::Irreversible(_) => {
+                assert!(
+                    !dispatchable(entry.effect, None),
+                    "{} is Irreversible — must NOT be dispatchable without --confirm",
+                    entry.path
+                );
+                assert!(
+                    dispatchable(entry.effect, Some("x")),
+                    "{} is Irreversible — must be dispatchable once --confirm is supplied",
+                    entry.path
+                );
+            }
+            Effect::NotExposed(_) => {
+                assert!(
+                    !dispatchable(entry.effect, None),
+                    "{} is NotExposed — must never be dispatchable",
+                    entry.path
+                );
+                assert!(
+                    !dispatchable(entry.effect, Some("x")),
+                    "{} is NotExposed — a confirm value must not change that",
+                    entry.path
+                );
+            }
+        }
+    }
+    // Hand-written literal (not derived from `POLICY.len()` itself — same
+    // "pair a loop with a literal" discipline `policy.rs`'s own tests use):
+    // every one of the 164 rows must actually have been walked.
+    assert_eq!(checked, 164);
 }
 
 // ── AUTO status.update gate (defense-in-depth, Task #22) ──────────────────────

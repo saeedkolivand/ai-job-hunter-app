@@ -395,6 +395,34 @@ where
     }
 }
 
+/// Drive an `agent.call` (ADR-038 §2, Phase 2) on its OWN task — the SAME
+/// mechanism as [`spawn_agent_query`] just above, reused verbatim via
+/// [`agent_query_or_cancelled`] rather than duplicated: a dispatched
+/// `Effect::Read` command can do real network I/O
+/// (`discovery_search_companies`, `boards_health`, `profile_import_from_url`,
+/// `github_import_repos`) or `autopilot_best_matches`'s own uncapped
+/// clustering pass, and awaiting any of those inline here would stall THIS
+/// connection's `reader.next()` — including its own `token.revoked`
+/// observation, the exact reasoning `spawn_agent_query`'s doc lays out in
+/// full. `cancel` is the SAME per-connection [`CancellationToken`]
+/// `spawn_agent_query` is given (not a second one) — both are "agent-CLI
+/// background dispatch for this connection" and are cancelled at the
+/// identical teardown site in `handle_connection`.
+pub(super) fn spawn_agent_call(
+    app: AppHandle,
+    req_id: String,
+    payload: Value,
+    out_tx: UnboundedSender<Message>,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        let call = super::agent_call::handle_agent_call(&app, &req_id, &payload);
+        if let Some(reply) = agent_query_or_cancelled(call, &cancel).await {
+            let _ = out_tx.send(Message::text(reply));
+        }
+    });
+}
+
 /// The synchronous half of [`spawn_answer_assist`] — factored out so it is
 /// directly unit-testable WITHOUT a live `AppHandle` (this crate has no
 /// `tauri::test` mock-app harness). A plain (non-`async`) function, so a

@@ -416,6 +416,35 @@ pub(crate) fn fenced(tag: &str, body: &str, cap: usize) -> String {
     format!("<{tag}>\n{body}\n</{tag}>")
 }
 
+/// Reverse [`fenced`]'s wrapper for a value about to be **persisted**, not
+/// consumed by a prompt (security review round 4). `extension_bridge::
+/// agent_call::fence_scraped_fields` fences every `Read`/`Reversible`
+/// response unconditionally, but a handful of `Reversible` commands
+/// (`scrape_persist_job`) turn right around and write a caller-supplied
+/// value of the SAME field name straight into the user's real store
+/// (`InteractionRecord`) — a caller that echoes back a value it just read
+/// through a fenced surface would otherwise bake the literal
+/// `<job_posting>…</job_posting>` wrapper into that stored record
+/// permanently (the fence markers are not prompt-only — they'd sit in the
+/// user's own applications/interactions list forever). Only strips a
+/// wrapper that matches `fenced`'s own EXACT shape for `tag`
+/// (`<tag>\n{body}\n</tag>`); any other string — the common case, a caller
+/// typing/passing a clean value — passes through unchanged, so this is a
+/// no-op on the normal path and only fires on the round-trip case. Not a
+/// general undo of [`neutralize_transcript_boundaries`] (which only ever
+/// inserts a space and never removes bytes, so nothing here needs to
+/// reverse that): the goal is to stop the wrapper SYNTAX from being
+/// persisted, not to guarantee byte-identical recovery of a value that
+/// itself happened to contain a fence-like substring.
+pub(crate) fn strip_fence_wrapper(tag: &str, s: &str) -> String {
+    let open = format!("<{tag}>\n");
+    let close = format!("\n</{tag}>");
+    s.strip_prefix(open.as_str())
+        .and_then(|rest| rest.strip_suffix(close.as_str()))
+        .map(str::to_string)
+        .unwrap_or_else(|| s.to_string())
+}
+
 /// Whether `text` contains ANY registered fence tag ([`FENCE_TAG_PATTERNS`]) as
 /// a literal opening or closing tag — the OUTPUT-side mirror of [`fenced`],
 /// which guards untrusted text going INTO a prompt. This guards GENERATED text

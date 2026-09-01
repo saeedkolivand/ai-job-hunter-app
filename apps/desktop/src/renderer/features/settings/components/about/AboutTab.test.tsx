@@ -43,4 +43,12 @@ describe('AboutTab', () => {
 
     expect(screen.getByRole('button', { name: /send a tip via paypal/i })).toBeInTheDocument();
   });
+
+  it('renders the CC BY-NC 4.0 ATS company-slug directory attribution', () => {
+    renderAboutTab();
+
+    expect(screen.getByText(/riley dorrington/i)).toBeInTheDocument();
+    expect(screen.getByText(/job-board-aggregator/i)).toBeInTheDocument();
+    expect(screen.getByText(/cc by-nc 4\.0/i)).toBeInTheDocument();
+  });
 });

@@ -522,17 +522,28 @@ fn cluster_annotation_json(a: &ClusterAssignment) -> Value {
     })
 }
 
+/// Reverses `agent_call::fence_scraped_fields`'s wrapper for a field about
+/// to be written into `InteractionStore` (security review round 4): a
+/// caller that reads a job through a fenced surface (`scrape_list_postings`,
+/// `autopilot_list`, …) and echoes the value straight back here would
+/// otherwise persist the literal `<job_posting>…</job_posting>` markup into
+/// the user's real interaction history. A no-op for the normal case — a
+/// caller passing a clean value that was never fenced.
+fn unfence_job_field(v: Option<String>) -> String {
+    crate::prompt_fence::strip_fence_wrapper("job_posting", &v.unwrap_or_default())
+}
+
 #[tauri::command]
 pub fn scrape_persist_job(app: AppHandle, req: ScrapePersistJobRequest) -> Value {
     let record = InteractionRecord {
         job_id: req.job.id.unwrap_or_default(),
         interaction_type: req.interaction_type,
         timestamp: now_ms(),
-        title: req.job.title.unwrap_or_default(),
-        company: req.job.company.unwrap_or_default(),
+        title: unfence_job_field(req.job.title),
+        company: unfence_job_field(req.job.company),
         url: req.job.url.unwrap_or_default(),
         source: req.job.source.unwrap_or_default(),
-        location: req.job.location.unwrap_or_default(),
+        location: unfence_job_field(req.job.location),
     };
     app.state::<Mutex<InteractionStore>>().lock().upsert(record);
     json!({ "success": true })
@@ -672,6 +683,33 @@ pub fn scrape_list_interactions(app: AppHandle, filter: Option<ScrapeListFilter>
 #[cfg(test)]
 mod test {
     use super::*;
+
+    // ── unfence_job_field (security review round 4) ──────────────────────
+    // Pure — no AppHandle needed, unlike `scrape_persist_job` itself (this
+    // crate has no `tauri::test` mock-app harness).
+
+    #[test]
+    fn unfence_job_field_strips_a_wrapper_a_caller_echoed_back_from_a_fenced_read() {
+        let fenced = crate::prompt_fence::fenced("job_posting", "Senior Engineer", 1_000);
+        assert_eq!(
+            unfence_job_field(Some(fenced)),
+            "Senior Engineer",
+            "a value round-tripped from a fenced read must not persist the wrapper"
+        );
+    }
+
+    #[test]
+    fn unfence_job_field_leaves_a_clean_caller_supplied_value_alone() {
+        assert_eq!(
+            unfence_job_field(Some("Senior Engineer".to_string())),
+            "Senior Engineer"
+        );
+    }
+
+    #[test]
+    fn unfence_job_field_defaults_a_missing_value_to_empty_string() {
+        assert_eq!(unfence_job_field(None), "");
+    }
 
     // The request must deserialize from the camelCase wire shape the renderer
     // sends (`id`/`description`). Pins the serde contract without an AppHandle.
