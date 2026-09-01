@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.145.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.145.1...v0.145.2) (2026-09-01)
+
+### 🐛 Bug Fixes
+
+* move the nsis installMode guard inside the hook macros ([#1089](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1089)) ([f336aee](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f336aee29da2093700de054c75e2dbed99bef6c5)), closes [#1088](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1088)
+
 ## [0.145.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.145.0...v0.145.1) (2026-09-01)
 
 ### 🐛 Bug Fixes
