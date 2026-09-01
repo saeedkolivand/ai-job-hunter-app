@@ -307,6 +307,43 @@ pnpm dev
 
 </details>
 
+<details>
+<summary><strong>CLI agent — `ajh-tauri agent <verb>` (headless mode)</strong></summary>
+
+Run commands from your shell or an LLM agent, with the desktop app already running:
+
+```bash
+# Find the best matches across all autopilots
+ajh-tauri agent best-matches --limit 10
+
+# Get full details for one job by URL
+ajh-tauri agent job "https://example.com/job/123"
+
+# Export your profile for autofill (requires opt-in consent)
+ajh-tauri agent profile
+
+# List all autopilots and their status
+ajh-tauri agent automations
+
+# Generic command dispatch (advanced: read/reversible commands, irreversible with proof)
+ajh-tauri agent call "namespace:command" --input '{"key":"value"}'
+
+# Show help
+ajh-tauri agent --help
+```
+
+**Platform-specific paths:** The CLI is the same binary as the desktop app, no separate install needed. On **Linux** and **Homebrew/macOS** it is already on `PATH`. On **macOS with dmg drag-install**, add the path to your shell profile:
+
+```bash
+export PATH="/Applications/AI Job Hunter.app/Contents/MacOS:$PATH"
+```
+
+On **Windows**, the installer adds the per-user install directory to your `PATH` — **from the next release onward**. On v0.145.0 and earlier, invoke the binary by full path (use `~/.ajh-agent/agent.json` to locate it programmatically).
+
+**Requirements:** The app must be running (except `--help`). The CLI communicates over a local loopback bridge with mutual HMAC-SHA256 authentication (the pairing token is used only as an HMAC key and is never sent on the wire). Run `ajh-tauri agent --help` to see all verbs, exit codes, and error sentinels. For the design rationale and full policy table, see <a href="docs/knowledge/decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md" target="_blank" rel="noopener noreferrer">ADR-037</a> and <a href="docs/knowledge/decision-records/adr-038-agent-cli-full-parity-two-tier.md" target="_blank" rel="noopener noreferrer">ADR-038</a>.
+
+</details>
+
 ---
 
 ## Configuration

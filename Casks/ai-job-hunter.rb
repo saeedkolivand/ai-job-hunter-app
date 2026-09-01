@@ -29,6 +29,15 @@ cask "ai-job-hunter" do
 
   app "AI Job Hunter.app"
 
+  # The agent CLI is the SAME binary in argv mode (ADR-037): `ajh-tauri agent
+  # <verb>` is detected from argv and short-circuits before the GUI (and before
+  # the single-instance plugin) ever starts. Symlinking it onto PATH is what
+  # makes the CLI reachable by a human — the app's own ~/.ajh-agent/agent.json
+  # pointer solves discovery for *agents*, but nothing put the binary on PATH.
+  # Verified against the shipped bundle, not assumed: the executable inside the
+  # bundle is named after the Cargo [[bin]] (`ajh-tauri`), NOT productName.
+  binary "#{appdir}/AI Job Hunter.app/Contents/MacOS/ajh-tauri"
+
   # The app is not notarized; clear the quarantine flag after install so
   # Gatekeeper doesn't refuse to open it.
   postflight do

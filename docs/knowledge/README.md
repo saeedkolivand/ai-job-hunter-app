@@ -38,6 +38,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [event-system.md](event-system.md)                               | Centralized one-way Tauri push-event channels (`app.emit`), colon-namespaced wire names, and the `IPC_CHANNELS` complement |
 | [notification-center.md](notification-center.md)                 | Persisted notification store, `AppNotification` type, Titlebar bell inbox, and route-intent dispatch                       |
 | [ui-theming-accent.md](ui-theming-accent.md)                     | Runtime theme engine and customizable accent-color system (CSS vars, ThemeId, accent tokens)                               |
+| [agent-cli.md](agent-cli.md)                                     | CLI mode of the shipped binary (`ajh-tauri agent <verb>`): invocation, exit codes, error sentinels, binary locations       |
 | [decision-records/](decision-records/)                           | ADRs (maintained by `project-steward`) — see table below                                                                   |
 
 ## Decision records index
