@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.145.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.144.0...v0.145.0) (2026-09-01)
+
+### ✨ Features
+
+* agent-facing CLI so an AI agent can drive the app ([#1085](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1085)) ([93b09cd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/93b09cd68ad2e746dfff944378e91096adc0bd67)), closes [#1084](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1084) [#1084](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1084)
+* generic command dispatch for the agent CLI, read effects first ([#1087](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1087)) ([38b990d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/38b990d0e9491845313946ad7de304e8a492d15c))
+
+### 📚 Documentation
+
+* record the agent surface decisions and sharpen its vocabulary ([#1086](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1086)) ([81cc8dd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/81cc8dd7245c7f4afd381b10f215c9021b4f8937)), closes [#1085](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1085)
+
 ## [0.144.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.143.1...v0.144.0) (2026-08-27)
 
 ### ✨ Features
