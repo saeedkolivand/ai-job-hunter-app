@@ -310,6 +310,41 @@ mod tests {
         );
     }
 
+    /// A real `ActiveAiConfig` fixture (security review round 3, this
+    /// table's own "only 3 of 31 rows have a real-fixture test" follow-up):
+    /// `ai_active_config` serializes `active_provider` as `activeProvider` —
+    /// a hand-typed `json!({"activeProvider": ...})` literal would not catch
+    /// either field being renamed.
+    #[test]
+    fn extract_scalar_resolves_active_provider_from_a_real_active_ai_config_fixture() {
+        let source = ProofSource::Scalar {
+            read_command: "ai_active_config",
+            path: &["activeProvider"],
+        };
+        let response = serde_json::to_value(crate::ai_config::ActiveAiConfig {
+            active_provider: Some("openai-compatible".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            extract(source, &json!({}), &response),
+            Some("openai-compatible".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_scalar_returns_none_when_no_provider_is_active_yet() {
+        // Unseeded install: `active_provider` is `None`, and
+        // `skip_serializing_if` drops the key entirely — must resolve to no
+        // proof, never a fabricated "null" string a caller could type.
+        let source = ProofSource::Scalar {
+            read_command: "ai_active_config",
+            path: &["activeProvider"],
+        };
+        let response = serde_json::to_value(crate::ai_config::ActiveAiConfig::default()).unwrap();
+        assert_eq!(extract(source, &json!({}), &response), None);
+    }
+
     #[test]
     fn extract_lookup_walks_a_nested_field() {
         let source = ProofSource::Lookup {
@@ -536,6 +571,40 @@ mod tests {
             json!({ "runId": "run-B" }),
             "must read req.runId (what the command acts on), never the top-level decoy"
         );
+    }
+
+    /// Closes the gap between "extract()'s Scalar logic is correct in
+    /// general" and "the REAL `ai_set_active_provider`/`ai_set_provider_
+    /// settings` rows are configured correctly" — pulls both rows straight
+    /// out of `POLICY` rather than typing their shape again, so a future
+    /// revert of either row's `path` back to something else (or off
+    /// `ai_active_config`) fails HERE against a real fixture, not only
+    /// against a hand-typed `ProofSource` literal.
+    #[test]
+    fn the_real_ai_set_active_provider_and_ai_set_provider_settings_rows_resolve_a_real_active_ai_config_fixture(
+    ) {
+        let response = serde_json::to_value(crate::ai_config::ActiveAiConfig {
+            active_provider: Some("anthropic".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        for path in [
+            "commands::ai::ai_set_active_provider",
+            "commands::ai::ai_set_provider_settings",
+        ] {
+            let entry = POLICY
+                .iter()
+                .find(|e| e.path == path)
+                .unwrap_or_else(|| panic!("{path} is not a real POLICY row"));
+            let Effect::Irreversible(source) = entry.effect else {
+                panic!("{path} must be Irreversible: {:?}", entry.effect);
+            };
+            assert_eq!(
+                extract(source, &json!({}), &response),
+                Some("anthropic".to_string()),
+                "{path}'s real POLICY row must resolve against a real ActiveAiConfig fixture"
+            );
+        }
     }
 
     #[test]

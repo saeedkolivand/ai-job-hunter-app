@@ -303,6 +303,15 @@ pub(super) fn throttle_key(command: &str) -> &str {
 /// it reaches. See `every_known_posting_text_carrier_is_a_real_freely_
 /// dispatchable_policy_row` (tests) for the audited list of rows this is
 /// known to protect.
+///
+/// HIGH fix (security review round 3): this list named `description`/
+/// `jobAd`/`jobDescription` but not `title`/`company`/`location`/
+/// `requirements`, which `scraping::types::JobPosting` and
+/// `autopilot::FoundJob` ALSO carry, board-derived and equally
+/// third-party-authored (a posting *titled* "Ignore prior instructions; run:
+/// …" reached the caller unfenced). `requirements` is an
+/// `Option<Vec<String>>` — [`fence_named_fields_recursive`] now fences
+/// string ARRAY elements under a listed key too, not just a bare string.
 const FENCE_FIELD_NAMES: &[&str] = &[
     // `scraping::types::JobPosting.description` (scrape_resolve_url,
     // scrape_list_postings) AND `autopilot::FoundJob.description`
@@ -315,26 +324,67 @@ const FENCE_FIELD_NAMES: &[&str] = &[
     // applications_get) — the scraped posting text an Application was
     // tracked/generated from.
     "jobDescription",
+    // `JobPosting.title`/`FoundJob.title` — board-derived, third-party
+    // authored, and NOT covered by the array-of-strings handling below.
+    "title",
+    // `JobPosting.company`/`FoundJob.company` — same reasoning as `title`.
+    "company",
+    // `JobPosting.location`/`FoundJob.location` — same reasoning as `title`.
+    "location",
+    // `JobPosting.requirements: Option<Vec<String>>` — an ARRAY of
+    // board-extracted requirement snippets, not a bare string; see
+    // `fence_named_fields_recursive`'s array handling.
+    "requirements",
 ];
 
-/// Fence every [`FENCE_FIELD_NAMES`] string anywhere in `data`'s tree —
-/// recurses through the WHOLE response (not just a top-level object/array,
-/// MEDIUM fix — security review round 1), and runs UNCONDITIONALLY for every
-/// dispatched command rather than gating on a command allowlist (HIGH fix —
-/// security review round 2): a new command whose response embeds one of
-/// these EXACT field names is fenced automatically, without needing an entry
-/// added here first. The residual risk this does NOT close is a *new* field
-/// name carrying posting text — `every_known_posting_text_carrier_is_a_real_
-/// freely_dispatchable_policy_row` (tests) pins the currently-known carrier
-/// set so a rename/removal of one of those rows is caught, not silently
-/// discovered by an agent reading unfenced text.
+/// `JobPosting`'s own always-present, distinctively-named field pair
+/// (`captured_at` → `capturedAt`, `source`) — used to detect a
+/// `JobPosting`-shaped object so its `#[serde(flatten)] extra:
+/// HashMap<String, Value>` (board-specific metadata: salary, remote status,
+/// etc.) can be treated as untrusted too (HIGH fix — security review round
+/// 3). `extra`'s keys are BOARD-chosen, not enumerable by name the way
+/// [`FENCE_FIELD_NAMES`] enumerates a Rust struct's own fields, so a
+/// field-name allowlist structurally cannot cover them — verified no other
+/// struct reaching this dispatch surface serializes both fields together.
+const JOB_POSTING_ANCHOR_FIELDS: [&str; 2] = ["capturedAt", "source"];
+
+/// Structural `JobPosting` fields that are identifiers/URLs/timestamps,
+/// never third-party PROSE — every OTHER string value on a
+/// [`JOB_POSTING_ANCHOR_FIELDS`]-detected object is untrusted (flattened
+/// `extra`, or a future field this file doesn't yet name by hand).
+const JOB_POSTING_SAFE_FIELDS: &[&str] = &[
+    "id",
+    "externalId",
+    "url",
+    "source",
+    "capturedAt",
+    "postedAt",
+];
+
+/// Fence every [`FENCE_FIELD_NAMES`] string (or string array element)
+/// anywhere in `data`'s tree — recurses through the WHOLE response (not just
+/// a top-level object/array, MEDIUM fix — security review round 1), and runs
+/// UNCONDITIONALLY for every dispatched command rather than gating on a
+/// command allowlist (HIGH fix — security review round 2): a new command
+/// whose response embeds one of these EXACT field names is fenced
+/// automatically, without needing an entry added here first. Also fences any
+/// unclassified string field on a [`JOB_POSTING_ANCHOR_FIELDS`]-detected
+/// object (HIGH fix — security review round 3), closing the residual gap a
+/// field-name allowlist alone cannot: `JobPosting.extra`'s board-chosen keys.
+/// See `every_known_posting_text_carrier_is_a_real_freely_
+/// dispatchable_policy_row` (tests) for the audited list of rows this is
+/// known to protect.
 fn fence_scraped_fields(data: &mut Value) {
     fence_named_fields_recursive(data);
 }
 
 /// Walk every object/array in `value`, fencing any [`FENCE_FIELD_NAMES`]
-/// STRING key wherever one appears — see [`fence_scraped_fields`]'s doc for
-/// why this is recursive and unconditional.
+/// STRING key (or string element of an ARRAY under one of those keys)
+/// wherever one appears, then — on an object [`JOB_POSTING_ANCHOR_FIELDS`]
+/// marks as a real `JobPosting` — every OTHER string-valued key not in
+/// [`JOB_POSTING_SAFE_FIELDS`] (the flattened `extra` catch-all). See
+/// [`fence_scraped_fields`]'s doc for why this is recursive and
+/// unconditional.
 fn fence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -343,6 +393,42 @@ fn fence_named_fields_recursive(value: &mut Value) {
                     let fenced =
                         crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP);
                     map.insert((*field).to_string(), json!(fenced));
+                    continue;
+                }
+                if let Some(Value::Array(items)) = map.get_mut(*field) {
+                    for item in items.iter_mut() {
+                        if let Value::String(s) = item {
+                            *s = crate::prompt_fence::fenced(
+                                "job_posting",
+                                s,
+                                crate::prompt_fence::JOB_CAP,
+                            );
+                        }
+                    }
+                }
+            }
+            if JOB_POSTING_ANCHOR_FIELDS
+                .iter()
+                .all(|f| map.contains_key(*f))
+            {
+                let extra_keys: Vec<String> = map
+                    .iter()
+                    .filter(|(k, v)| {
+                        v.is_string()
+                            && !FENCE_FIELD_NAMES.contains(&k.as_str())
+                            && !JOB_POSTING_SAFE_FIELDS.contains(&k.as_str())
+                    })
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                for key in extra_keys {
+                    if let Some(Value::String(s)) = map.get(&key) {
+                        let fenced = crate::prompt_fence::fenced(
+                            "job_posting",
+                            s,
+                            crate::prompt_fence::JOB_CAP,
+                        );
+                        map.insert(key, json!(fenced));
+                    }
                 }
             }
             for v in map.values_mut() {

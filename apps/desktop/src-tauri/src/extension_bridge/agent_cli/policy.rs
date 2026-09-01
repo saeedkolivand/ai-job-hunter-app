@@ -102,7 +102,24 @@
 //! UI, per ADR-038's own Context section) — flagged per-row below: `boards::
 //! boards_list`, `privacy::privacy_clear_data`,
 //! `support::support_get_system_info`, `resume::extract_resume`. One of the
-//! four (`privacy_clear_data`) is destructive.
+//! four (`privacy_clear_data`) is destructive; a second (`resume::
+//! extract_resume`) is `NotExposed` — zero UI callers turned out to matter
+//! for more than dead-code hygiene once this table could dispatch it by name
+//! (security review round 3, that row's own comment).
+//!
+//! ## Round 3 addendum — a destination is an effect too
+//! Every row above was classified on ONE axis: does the command persist
+//! anything. A caller-supplied `url`/`host`/`path`/`base_url` argument is a
+//! SECOND axis this table under-weighted: `ai_test_provider_key`/
+//! `ai_list_provider_models` (an egress host for a keychain secret) and
+//! `resume::extract_resume` (a filesystem path) were all `Read` — nothing
+//! persisted, so nothing on the first axis flagged them — while the
+//! caller's own input chose where a secret or a file read landed. Fixed
+//! here (their own row comments carry the detail); `scrape_url`/
+//! `scrape_resolve_url`/`profile_import_from_url`/`github_import_repos` also
+//! take a caller-controlled destination but were individually verified
+//! (their own row comments) to carry no secret and no unbounded host choice,
+//! so they are unchanged.
 
 // `POLICY`/`Effect`/`PolicyEntry` are now consumed by ADR-038 §2's
 // `agent_call` dispatcher (`super::super::agent_call`) — kept for the odd
@@ -266,6 +283,14 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // record exists to prove a caller read (the url IS the caller's own
     // input, so echoing it back would prove nothing) — the current app
     // version is the strongest available unrelated signal; WEAK, flagged.
+    // Also a vacuous compile-time constant by the same reasoning
+    // `support_export_diagnostics` was reclassified for (security review
+    // round 3) — kept Irreversible/WEAK here DELIBERATELY, not an oversight:
+    // the url IS the caller's own argument, so there is no separate target
+    // for a stronger proof to bind to (unlike `dest` above, there is no
+    // "wrong url" the ceremony could fail to catch). Its job here is
+    // friction against an accidental/looping call, not authenticating a
+    // read of a specific record.
     PolicyEntry {
         path: "commands::system::system_open_external",
         effect: Effect::Irreversible(ProofSource::Scalar {
@@ -420,9 +445,45 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         }),
     },
     PolicyEntry { path: "commands::ai::ai_has_provider_key", effect: Effect::Read },
-    // Verified: only probes the provider (`test_key`); no store write.
-    PolicyEntry { path: "commands::ai::ai_test_provider_key", effect: Effect::Read },
-    PolicyEntry { path: "commands::ai::ai_list_provider_models", effect: Effect::Read },
+    // CRITICAL fix (security review round 3), reclassified from `Read`: the
+    // prior "only probes the provider; no store write" comment audited the
+    // PERSISTENCE axis only. Both commands take a caller-supplied
+    // `base_url: Option<String>` VERBATIM and pass it straight through
+    // `resolve_by_name` (`commands::ai_provider::mod.rs`), which honors it
+    // for real egress on `openai-compatible`. `validate_provider_base_url`
+    // (`net/ssrf.rs`) is a PROVENANCE guard against an XSS'd renderer
+    // (blocks only a non-http(s) scheme and the cloud-metadata literal),
+    // never a destination allowlist — its whole premise (ADR-0012) is that
+    // the renderer never lets a THIRD PARTY choose this value for this
+    // call. `agent call` breaks that premise outright: a caller names any
+    // `https://attacker.example`, and both commands read the stored
+    // provider API key out of the OS keychain and send it there —
+    // `ai_test_provider_key` via `OpenAiClient::test_key`,
+    // `ai_list_provider_models` via `OpenAiClient::list_models` — with no
+    // confirm, and the attacker's own response body reaches
+    // `friendly_api_error`'s `detail` and stdout UNFENCED on a non-2xx (an
+    // injection channel needing no job board at all). Dropping `base_url`
+    // server-side instead would also break the renderer's legitimate "test
+    // this unsaved endpoint before you save it" flow — the reason these two
+    // commands accept a caller-supplied `base_url` in the first place — a
+    // change this table has no reach to make safely without touching the
+    // real command; `NotExposed` is the fix that costs that flow nothing.
+    PolicyEntry {
+        path: "commands::ai::ai_test_provider_key",
+        effect: Effect::NotExposed(
+            "takes a caller-supplied base_url verbatim and, for openai-compatible, sends the \
+             stored provider API key to it (OpenAiClient::test_key) — validate_provider_base_url \
+             is a provenance guard against an XSS'd renderer, not a destination allowlist, and \
+             agent_call has no renderer-equivalent provenance to rely on",
+        ),
+    },
+    PolicyEntry {
+        path: "commands::ai::ai_list_provider_models",
+        effect: Effect::NotExposed(
+            "same caller-supplied base_url egress as ai_test_provider_key (OpenAiClient::list_models \
+             also sends the stored provider API key to it) — see that row's own comment",
+        ),
+    },
     PolicyEntry { path: "commands::ai::ai_embedding_status", effect: Effect::Read },
     // Also clears the posting-vector/match-score caches on a real space
     // change (verified) — both are recomputable derived data, not
@@ -449,8 +510,40 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     },
     PolicyEntry { path: "commands::ai::ai_spend_summary", effect: Effect::Read },
     PolicyEntry { path: "commands::ai::ai_active_config", effect: Effect::Read },
-    PolicyEntry { path: "commands::ai::ai_set_active_provider", effect: Effect::Reversible },
-    PolicyEntry { path: "commands::ai::ai_set_provider_settings", effect: Effect::Reversible },
+    // HIGH fix (security review round 3), both reclassified from
+    // `Reversible`: the CONFIG ROW is undoable (edit it back), but that is
+    // not the effect that matters — every generation the USER runs
+    // afterward through the renderer ships résumé text, contact PII and
+    // full job ads to WHATEVER host is stored, with no per-generation
+    // re-confirmation and nothing logged beyond the command name.
+    // `validate_settings` (`ai_config/mod.rs`) accepts any http(s) host for
+    // `openai-compatible`'s `base_url` — the SAME provenance-only guard
+    // `ai_test_provider_key`'s row above explains. Two free `agent call`s
+    // install a silent egress redirect: `ai_set_provider_settings` can
+    // point the ACTIVE provider's `base_url` at an attacker host directly,
+    // or edit an INACTIVE provider's settings first; `ai_set_active_
+    // provider` then flips routing onto it (it takes no `base_url` of its
+    // own, but completes the redirect either way, so both rows move
+    // together). No per-record proof exists — this is global config, not an
+    // id-scoped delete — so the strongest available signal is the
+    // CURRENTLY active provider, read fresh via `ai_active_config`; WEAK
+    // (doesn't name which provider/host is about to become active, only
+    // that ONE was read immediately beforehand), flagged like every other
+    // no-id row in this table.
+    PolicyEntry {
+        path: "commands::ai::ai_set_active_provider",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_active_config",
+            path: &["activeProvider"],
+        }),
+    },
+    PolicyEntry {
+        path: "commands::ai::ai_set_provider_settings",
+        effect: Effect::Irreversible(ProofSource::Scalar {
+            read_command: "ai_active_config",
+            path: &["activeProvider"],
+        }),
+    },
     // One-time seed, row-presence gated (no-ops once anything is set).
     PolicyEntry { path: "commands::ai::ai_seed_active_config", effect: Effect::Reversible },
     PolicyEntry { path: "commands::ai::ai_stage_overrides", effect: Effect::Read },
@@ -470,9 +563,30 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     },
 
     // commands/resume.rs
-    // Zero renderer references (ADR-038 Context) — still a plain file-text
-    // extraction with no persistence.
-    PolicyEntry { path: "commands::resume::extract_resume", effect: Effect::Read },
+    // CRITICAL fix (security review round 3), reclassified from `Read`: zero
+    // renderer references (ADR-038 Context) turned out to matter for more
+    // than dead-code hygiene — `extraction::extract_resume` runs
+    // `std::fs::read(&path)` on the caller-supplied path BEFORE `route()`'s
+    // extension check, with NO validation at all (unlike this CLI's own
+    // pointer-file read, which `is_safe_local_data_dir` guards for exactly
+    // this shape). A UNC path (`\\attacker.example\share\x.pdf`) forces an
+    // outbound SMB/WebDAV connection and can leak NTLM credentials on
+    // Windows regardless of extension; any other absolute path discloses
+    // whatever readable file happens to carry a supported extension into
+    // the LLM's context. `Read` truthfully described "no persisted state
+    // change" but not "safe to dispatch by name with an arbitrary caller
+    // path" — the same distinction the module doc's stub-command cases
+    // (`ai_unload_model`, `support_get_system_info`) draw on a different
+    // axis.
+    PolicyEntry {
+        path: "commands::resume::extract_resume",
+        effect: Effect::NotExposed(
+            "reads std::fs::read(&path) on a fully caller-controlled path with no validation, \
+             before the extension check even runs — an arbitrary local file read, and a UNC \
+             path forces an outbound SMB/WebDAV connection regardless of extension; zero \
+             renderer references means the CLI would be this shape's only caller",
+        ),
+    },
     PolicyEntry { path: "commands::resume::resume_validate_content", effect: Effect::Read },
 
     // commands/resume_pipeline/mod.rs
@@ -755,19 +869,34 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::privacy::privacy_set_crash_reporting", effect: Effect::Reversible },
 
     // commands/support.rs
-    // `dest` is a caller-supplied path passed straight to `std::fs::File::create`,
-    // which TRUNCATES an existing file at that path — an arbitrary pre-existing
-    // file there is unrecoverably overwritten with the diagnostics bundle. No
-    // record to prove reading (the caller already supplies `dest` themselves);
-    // the running app version is the strongest available unrelated signal —
-    // it IS embedded in the diagnostics bundle itself, but proves nothing
-    // about `dest`; WEAK, flagged.
+    // HIGH fix (security review round 3), reclassified from `Irreversible`:
+    // the module doc's own NotExposed rule (clause 2, "How each row was
+    // classified" above) is "an Irreversible command whose ONLY reachable
+    // ProofSource is provably vacuous — not merely weak, but a value the
+    // caller is structurally guaranteed to already hold or that reads as a
+    // constant for the whole duration of the ceremony." `system_get_version`
+    // IS exactly that: `env!("CARGO_PKG_VERSION")`, a compile-time constant
+    // for the whole process, published in the repo, the release feed and
+    // the About tab — a caller never needs to call `system_get_version` at
+    // all to know it. That was already true when this row was first
+    // classified `Irreversible`/WEAK; the same vacuousness argument that
+    // demoted `extension_bridge_regenerate_token` applies here and was
+    // missed. `dest` is still a caller-supplied path passed straight to
+    // `std::fs::File::create`, TRUNCATING an existing file there
+    // unrecoverably with ZERO relationship between the confirmed value and
+    // the actual target — the exact harm clause 2 exists to catch, not
+    // merely a weak signal. `system_open_external`/`updater_install` ALSO
+    // use `system_get_version` and are DELIBERATELY NOT reclassified here —
+    // see their own rows for why the same vacuous-constant fact does not
+    // carry the same harm for either of them.
     PolicyEntry {
         path: "commands::support::support_export_diagnostics",
-        effect: Effect::Irreversible(ProofSource::Scalar {
-            read_command: "system_get_version",
-            path: &[],
-        }),
+        effect: Effect::NotExposed(
+            "its only reachable ProofSource (system_get_version) is a compile-time constant, \
+             published in the repo/release feed/About tab — the same vacuous-proof reasoning \
+             that demoted extension_bridge_regenerate_token, and here it guards an unbounded \
+             arbitrary-file-truncation via a caller-supplied dest with zero binding to it",
+        ),
     },
     // Zero renderer references (ADR-038 Context). ADR-038 §2 revision (same
     // reasoning as `ai_unload_model` above): the current body is a literal
@@ -1109,7 +1238,12 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // neither is eligible as a proof source. `system_get_version` is the
     // strongest available Read row, but it names the CURRENTLY RUNNING
     // version, not the one about to be installed — one of the WEAKEST rows
-    // in this table, flagged prominently.
+    // in this table, flagged prominently. Also vacuous by the same
+    // compile-time-constant reasoning `support_export_diagnostics` was
+    // reclassified for (security review round 3) — kept Irreversible
+    // DELIBERATELY: the real safety boundary here is `updater_download`'s
+    // minisign signature check, not this ceremony, and the command has no
+    // separate caller-chosen target for a stronger proof to bind to.
     PolicyEntry {
         path: "updater::updater_install",
         effect: Effect::Irreversible(ProofSource::Scalar {
@@ -1121,247 +1255,4 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
 ];
 
 #[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use super::*;
-
-    /// The `lib.rs` source, embedded at compile time — the SAME text
-    /// `cargo build` feeds to `tauri::generate_handler!`, so extraction from
-    /// it can never drift from what is actually wired up (mirrors
-    /// `commands::cli_agents::tests`' `include_str!` of the capability
-    /// allowlist for the identical reason).
-    const LIB_RS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"));
-
-    /// Extract the fully-qualified command paths registered inside
-    /// `tauri::generate_handler![...]`, in source order. Comment-only and
-    /// blank lines inside the list are skipped; every other line is
-    /// trimmed of its trailing comma. Panics (test-only) if the markers
-    /// this depends on ever move — that failure itself is the signal this
-    /// extraction needs updating, not a silent empty result.
-    ///
-    /// The closing `]` is located on the first NON-comment line that
-    /// carries one (LOW fix — security review): the naive `rest.find(']')`
-    /// this used to run against the RAW text would truncate the extraction
-    /// early if a `//` comment between the marker and the real terminator
-    /// ever contained a literal `]` — silent, since a truncated-but-still-
-    /// well-formed list still passes both anti-drift tests below with a
-    /// SMALLER `POLICY` and a smaller `registered` set, never surfacing the
-    /// mismatch. Comment lines are skipped when searching for `]`, not when
-    /// slicing — every real command line up to the true terminator is kept.
-    fn registered_command_paths() -> Vec<&'static str> {
-        const START_MARKER: &str = "tauri::generate_handler![";
-        let start = LIB_RS
-            .find(START_MARKER)
-            .expect("tauri::generate_handler![ marker present in lib.rs")
-            + START_MARKER.len();
-        let rest: &'static str = &LIB_RS[start..];
-
-        let mut end = None;
-        let mut offset = 0usize;
-        for line in rest.lines() {
-            let is_comment = line.trim_start().starts_with("//");
-            if !is_comment {
-                if let Some(pos) = line.find(']') {
-                    end = Some(offset + pos);
-                    break;
-                }
-            }
-            // `lines()` strips the `\n` each line ended with — add it back
-            // so `offset` stays a correct byte position into `rest`.
-            offset += line.len() + 1;
-        }
-        let end =
-            end.expect("generate_handler! list has a closing ] on a non-comment line in lib.rs");
-
-        rest[..end]
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with("//"))
-            .map(|line| line.trim_end_matches(','))
-            .collect()
-    }
-
-    /// Hand-written literal — deliberately NOT derived from `POLICY.len()`
-    /// or from `registered_command_paths()`. A test that only loops over
-    /// the table it guards covers additions only (this repo's own standing
-    /// lesson: `feedback_a_guard_driven_off_its_own_data_cannot_catch_a_deletion`)
-    /// — this fails independently of either source's own content.
-    #[test]
-    fn policy_table_has_exactly_164_rows() {
-        assert_eq!(POLICY.len(), 164);
-    }
-
-    /// ADR-038 §1's core invariant: the policy table and `generate_handler!`
-    /// agree EXACTLY — no command reachable from the registry without a
-    /// classified row, and no stale/typo'd row claiming a command that
-    /// isn't actually registered. Both directions, with the offending
-    /// command named in the failure message.
-    #[test]
-    fn policy_table_matches_generate_handler_exactly() {
-        let registered: HashSet<&str> = registered_command_paths().into_iter().collect();
-        let policy: HashSet<&str> = POLICY.iter().map(|e| e.path).collect();
-
-        let missing: Vec<&&str> = registered.difference(&policy).collect();
-        assert!(
-            missing.is_empty(),
-            "commands registered in generate_handler! but missing a POLICY row \
-             (unclassified — must be added): {missing:?}"
-        );
-
-        let extra: Vec<&&str> = policy.difference(&registered).collect();
-        assert!(
-            extra.is_empty(),
-            "POLICY rows with no matching generate_handler! registration \
-             (stale, or the path is typo'd): {extra:?}"
-        );
-    }
-
-    /// Guards the set-equality test above against a duplicate masking a
-    /// missing row: two identical `path`s would satisfy both `difference`
-    /// checks while a third, genuinely-unclassified command silently has
-    /// no row at all.
-    #[test]
-    fn policy_table_has_no_duplicate_paths() {
-        let mut seen = HashSet::new();
-        for entry in POLICY {
-            assert!(
-                seen.insert(entry.path),
-                "duplicate POLICY row for {}",
-                entry.path
-            );
-        }
-    }
-
-    /// Every `NotExposed` row carries a real, specific reason — never a
-    /// bare placeholder like "unclear" or "todo" (rule 3 of the
-    /// classification pass this table was built under).
-    #[test]
-    fn not_exposed_rows_carry_a_real_reason() {
-        for entry in POLICY {
-            if let Effect::NotExposed(reason) = entry.effect {
-                assert!(
-                    reason.trim().len() > 15,
-                    "{} is NotExposed with a too-short/placeholder reason: {reason:?}",
-                    entry.path
-                );
-            }
-        }
-    }
-
-    /// HIGH fix (security review round 2): `match_resume`/`match_resume_text`
-    /// reach a paid embedding provider (`score_one` → `embed_charged`) with
-    /// `budget: None` when `semanticScoringEnabled: true` — the SAME
-    /// uncapped-spend shape that forced `ai_embed` `NotExposed` before ITS
-    /// gate landed. Hand-written (not looped, mirroring
-    /// `policy_table_has_exactly_164_rows`'s own discipline): a revert of
-    /// either row back to `Reversible` (freely dispatchable, no confirm, no
-    /// cap) would not be caught by any OTHER test in this file — the
-    /// Irreversible-row count is untouched by a `Reversible` change, and
-    /// `not_exposed_rows_carry_a_real_reason` only checks rows that ARE
-    /// `NotExposed`, never that a specific row remains one.
-    #[test]
-    fn match_resume_and_match_resume_text_stay_not_exposed_until_a_real_charge_lands() {
-        for path in [
-            "commands::match_resume::match_resume",
-            "commands::match_resume::match_resume_text",
-        ] {
-            let entry = POLICY
-                .iter()
-                .find(|e| e.path == path)
-                .unwrap_or_else(|| panic!("{path} is not a real POLICY row"));
-            assert!(
-                matches!(entry.effect, Effect::NotExposed(_)),
-                "{path} must stay NotExposed (uncharged paid-embedding path) until a real \
-                 charge_provider_daily gate lands on it — got {:?}",
-                entry.effect
-            );
-        }
-    }
-
-    /// `registered_command_paths` itself must find every command `lib.rs`
-    /// actually registers — sanity-checks the extraction against a handful
-    /// of paths spanning the start, middle and end of the list, so a
-    /// regression in the marker/parsing logic (not just a POLICY drift)
-    /// is caught here rather than surfacing as a confusing mismatch above.
-    #[test]
-    fn extraction_finds_known_paths_at_each_end_of_the_list() {
-        let found = registered_command_paths();
-        assert_eq!(
-            found.first().copied(),
-            Some("commands::cli_agents::cli_agents_status"),
-            "extraction must find the FIRST registered command"
-        );
-        assert_eq!(
-            found.last().copied(),
-            Some("updater::updater_changelog"),
-            "extraction must find the LAST registered command"
-        );
-        assert!(found.contains(&"commands::privacy::privacy_reset_app"));
-        assert_eq!(found.len(), 164);
-    }
-
-    /// ADR-038 §4 (Phase 3): every `Irreversible` row's
-    /// `ProofSource::read_command` must itself be a REAL `Effect::Read` row
-    /// in this SAME table — the ceremony's whole safety property rests on
-    /// the proof coming from a surface this table has independently
-    /// classified as safe to dispatch freely. A `ProofSource` pointing at a
-    /// command that doesn't exist, or exists but isn't `Read`, would make
-    /// the ceremony either uncheckable or a second mutation smuggled in
-    /// under "reading the proof".
-    #[test]
-    fn every_proof_source_read_command_is_a_read_row() {
-        let mut checked = 0usize;
-        for entry in POLICY {
-            let Effect::Irreversible(source) = entry.effect else {
-                continue;
-            };
-            checked += 1;
-            let read_command = source.read_command();
-            let target = POLICY
-                .iter()
-                .find(|e| e.path.rsplit("::").next() == Some(read_command));
-            match target {
-                Some(t) if t.effect == Effect::Read => {}
-                Some(t) => panic!(
-                    "{}'s ProofSource points at `{read_command}`, which is classified \
-                     {t:?}, not Read",
-                    entry.path
-                ),
-                None => panic!(
-                    "{}'s ProofSource points at `{read_command}`, which has no POLICY row \
-                     at all",
-                    entry.path
-                ),
-            }
-        }
-        // Hand-written literal (not derived from POLICY itself — the same
-        // "pair a loop with a literal" discipline as
-        // `policy_table_has_exactly_164_rows`): 31 Irreversible rows
-        // (`extension_bridge_regenerate_token` moved to `NotExposed` —
-        // security review round 1; `ai_embed` moved NotExposed → Irreversible
-        // once its `charge_provider_daily` gate landed, and
-        // `match_resume`/`match_resume_text` moved Reversible → NotExposed
-        // for the SAME reason `ai_embed` originally was — security review
-        // round 2, see each row's own comment).
-        assert_eq!(checked, 31, "expected exactly 31 Irreversible rows");
-    }
-
-    /// Mutation-style guard: an `Irreversible` row whose `ProofSource`
-    /// pointed at ITSELF (or at another `Irreversible` row) would make the
-    /// ceremony circular — satisfiable without ever reading anything real.
-    #[test]
-    fn no_proof_source_points_at_an_irreversible_command() {
-        for entry in POLICY {
-            if let Effect::Irreversible(source) = entry.effect {
-                let (_, own_command) = entry.path.rsplit_once("::").unwrap_or(("", entry.path));
-                assert_ne!(
-                    source.read_command(),
-                    own_command,
-                    "{} names itself as its own proof source",
-                    entry.path
-                );
-            }
-        }
-    }
-}
+mod tests;
