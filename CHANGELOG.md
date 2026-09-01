@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.145.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.145.0...v0.145.1) (2026-09-01)
+
+### 🐛 Bug Fixes
+
+* make the agent CLI reachable after an install or update ([#1088](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1088)) ([f651032](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f65103265f63cbe18143710d4448bd0c41d95007))
+
 ## [0.145.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.144.0...v0.145.0) (2026-09-01)
 
 ### ✨ Features
