@@ -898,7 +898,7 @@
       "exportDataDescription": "Speichern Sie Ihre beworbenen, angesehenen und gespeicherten Jobs in einer JSON-Datei.",
       "export": "Exportieren",
       "importData": "Daten importieren",
-      "importDataDescription": "Wiederherstellung aus einem vorherigen Export. Vorhandene Datensätze bleiben erhalten.",
+      "importDataDescription": "Wiederherstellung aus einem vorherigen Export. Ersetzt die vorhandenen Daten durch den Inhalt der Datei.",
       "import": "Importieren",
       "signOutAll": "Alle Konten abmelden",
       "signOutAllDescription": "Löscht alle Browser-Sitzungen. Verbinden Sie Boards über Kontoeinstellungen neu.",
