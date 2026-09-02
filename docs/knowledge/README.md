@@ -88,6 +88,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-040](decision-records/adr-040-mcp-server-as-agent-cli-mode.md)                          | MCP stdio server as a mode of the agent CLI: legacy 2025-11-25 wire on purpose, tools along the `Effect` boundary, confirm passed through verbatim, `call-irreversible` behind `--allow-irreversible` |
 | [ADR-041](decision-records/adr-041-searchable-help-page-over-compiled-in-entries.md)         | Searchable help page over compiled-in, localized entries; client-side matching, no model or IPC; partly supersedes ADR-0006 (FAQ-only)                                                                |
 | [ADR-042](decision-records/adr-042-dashboard-next-step-tile-derived-not-stored.md)           | Dashboard next-step tile derived from live state, not stored; collapses to one line when setup is complete, never dismissible; extension and autopilot deliberately not steps                         |
+| [ADR-043](decision-records/adr-043-help-chat-over-the-shipped-corpus.md)                     | Help chatbot over the shipped corpus: renderer-supplied entries, shipped retrieval module, dense arm behind semantic-scoring opt-in, text-hash vector cache                                           |
 
 ### The `NNNN-` series (closed)
 
