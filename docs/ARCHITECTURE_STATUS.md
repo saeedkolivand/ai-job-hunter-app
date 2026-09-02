@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-09-02 (PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
+Last updated: 2026-09-02 (searchable help page on the Support route, ADR-041; previously PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
 
 ---
 

@@ -24,7 +24,7 @@ Both proposals assumed complexity was necessary; the gap is discoverability, whi
 
 **1. The Support page becomes a searchable help page**: a search box over compiled-in help entries, filtered client-side in the renderer, covering both troubleshooting (the existing FAQ) and how-to topics grouped by feature area.
 
-**2. No model, no embeddings, no Rust command, no IPC, no new table, no new route**: the page reads its entries from the same place the FAQ already does — the `support-data` module in the support feature plus the `support` keys of the `en` and `de` translation resources. Entries are localized and the translations parity gate covers them.
+**2. No model, no embeddings, no Rust command, no IPC, no new table, no new route**: the page reads its entries from the same place the FAQ already does — the `support-data` module in the support feature plus the `support` keys of the `en` and `de` translation resources. Entries are localized; a renderer test asserts that every key the page uses resolves in both locales (the CI extractor step is advisory and cannot fail the build).
 
 **3. Matching is deliberate simple substring word-matching**: client-side, over the already-translated question and answer text. The corpus is a few dozen entries and a plain string scan is the correct tool.
 
@@ -52,13 +52,13 @@ Both proposals assumed complexity was necessary; the gap is discoverability, whi
 
 - **Existing troubleshooting answers corrected**: stale phrases like "AI requires Ollama" (the app offers many providers) and "clear localStorage via DevTools" (use the real Settings action) are corrected in the same change.
 
-- **No new infrastructure**: entries live in translation resources already gated by `i18n:extract`; no new command, no new table, no new route, no bridge call.
+- **No new infrastructure**: entries live in translation resources, with a test pinning en/de parity for every key the page uses; no new command, no new table, no new route, no bridge call.
 
-- **Localization built in**: every entry has `en` and `de` translations paired by key; the parity gate covers them.
+- **Localization built in**: every entry has `en` and `de` translations paired by key, and a test fails when either locale lacks one.
 
 ### Tradeoffs and costs
 
-- **Substring matching has no synonym or typo tolerance**: a user asking "where do I upload my CV" will not find a page titled "import documents" unless they phrase it that way. Mitigation: write questions the way users phrase them (in user research language, not feature naming). The chatbot layer is the upgrade path if that proves insufficient.
+- **Substring matching (case- and diacritic-folded, so `resume` finds `résumé`) has no synonym or typo tolerance**: a user asking "where do I upload my CV" will not find a page titled "import documents" unless they phrase it that way. Mitigation: write questions the way users phrase them (in user research language, not feature naming). The chatbot layer is the upgrade path if that proves insufficient.
 
 - **The corpus must be kept current when UI labels change**: the cost of accuracy lives in the translation files and the indexed source paths. Every label must be re-verified when a UI text changes.
 
