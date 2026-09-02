@@ -197,6 +197,31 @@ describe('useCanUseAI — cloud', () => {
     });
   });
 
+  it('key query REJECTS → "health unavailable", never a false "add an API key"', async () => {
+    // The failure twin of the in-flight case above. A rejected keyring read is
+    // not an answer either: `data` stays `undefined` forever (retries are off),
+    // so `?? false` read the FAILURE as a settled "there is no key" and told a
+    // user who has one to go add one. `healthUnavailable`'s copy ("Couldn't
+    // check AI status. Try again in a moment.") already says exactly this, so
+    // the fix needs no new reason — both consumers already map it.
+    const client = createMockClient({
+      ai: {
+        activeConfig: async () => ({
+          activeProvider: 'openai',
+          providers: { openai: { model: 'gpt-4o' } },
+        }),
+        // Rejects rather than hanging: a model IS configured, so without the
+        // `isError` guard this lands on `addApiKey`, not on a "checking" state.
+        hasProviderKey: () => Promise.reject(new Error('keyring read failed')),
+      },
+      system: { health: async () => readyHealth() },
+    });
+    const { result } = renderHookWithClient(() => useCanUseAI(), { client });
+    await waitFor(() =>
+      expect(result.current).toEqual({ canUse: false, reason: 'healthUnavailable' })
+    );
+  });
+
   it('key stored but no model chosen → blocked with "select a model"', async () => {
     const client = createMockClient({
       ai: {

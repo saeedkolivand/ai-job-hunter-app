@@ -321,6 +321,10 @@ export function useCanUseAI(): { canUse: boolean; reason?: string } {
     // `activeKeyLoading` (see the comment above it); consumers of this hook
     // could not, because a reason is indistinguishable from a real answer.
     if (providerKeyQuery.isPending) return { canUse: false };
+    // A REJECTED key query is a failed keyring read, not a settled "no key" — and
+    // `healthUnavailable` ("Couldn't check AI status…") already says exactly that, so
+    // no new reason or translation is needed. Mirrors `healthIsError` below.
+    if (providerKeyQuery.isError) return { canUse: false, reason: 'healthUnavailable' };
     if (!(providerKeyQuery.data?.has ?? false)) return { canUse: false, reason: 'addApiKey' };
     if (!activeProviderModel) return { canUse: false, reason: 'selectModel' };
     return { canUse: true };

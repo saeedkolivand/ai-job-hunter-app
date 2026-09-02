@@ -69,8 +69,30 @@ describe('ActionTile', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('stays out of the tab order and exposes no role when it has no onClick', () => {
-    render(<ActionTile icon={Zap} label="Static" />);
+  it('stays out of the tab order and exposes no role when it has no onClick', async () => {
+    // The missing-role assertion alone lets a silently-focusable tile through:
+    // `tabIndex={0}` with no role is a keyboard stop that announces nothing and
+    // does nothing. Pin the attribute itself, and prove a tab between two real
+    // controls lands past the tile rather than on it. (Links, not buttons, so
+    // the unqualified `queryByRole('button')` below stays as strict as it was.)
+    render(
+      <>
+        <a href="#before">before</a>
+        <ActionTile icon={Zap} label="Static" />
+        <a href="#after">after</a>
+      </>
+    );
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+
+    // The label div is a direct child of the tile's card root.
+    const tile = screen.getByText('Static').parentElement;
+    if (!tile) throw new Error('tile root not found');
+    expect(tile).not.toHaveAttribute('tabindex');
+
+    await userEvent.tab();
+    expect(screen.getByText('before')).toHaveFocus();
+    await userEvent.tab();
+    expect(tile).not.toHaveFocus();
+    expect(screen.getByText('after')).toHaveFocus();
   });
 });
