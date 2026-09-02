@@ -152,7 +152,10 @@ pub(super) enum Refusal {
 /// copy doesn't know, rather than a second hand-typed literal (same
 /// reasoning as [`ERR_CONFIRMATION_REQUIRED`]'s own doc).
 pub(super) const ERR_UNKNOWN_COMMAND: &str = "unknown_command";
-const ERR_NOT_EXPOSED: &str = "not_exposed";
+/// `pub(super)` — the MCP server refuses a `NotExposed` row LOCALLY with this
+/// SAME sentinel (so the token-row fix does not depend on the peer app's build;
+/// see `agent_cli::mcp::local_call_refusal`), never a second hand-typed copy.
+pub(super) const ERR_NOT_EXPOSED: &str = "not_exposed";
 const ERR_CLI_ONLY: &str = "cli_only";
 const ERR_RATE_LIMITED: &str = "rate_limited";
 const ERR_DISPATCH_FAILED: &str = "dispatch_failed";

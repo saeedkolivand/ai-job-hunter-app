@@ -419,7 +419,10 @@ fn extension_bridge_status_the_token_row_refuses_locally_on_every_call_tool() {
     };
     for tool in [TOOL_CALL_READ, TOOL_CALL_REVERSIBLE, TOOL_CALL_IRREVERSIBLE] {
         let refusal = local_call_refusal(tool, &verb).expect("must refuse locally on every tool");
-        assert_eq!(refusal["error"], ERR_NOT_EXPOSED);
+        assert_eq!(
+            refusal["error"],
+            crate::extension_bridge::agent_call::ERR_NOT_EXPOSED
+        );
         assert!(refusal["detail"]
             .as_str()
             .unwrap()

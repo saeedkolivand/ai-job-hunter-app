@@ -81,10 +81,6 @@ const TOOL_CALL_IRREVERSIBLE: &str = "call-irreversible";
 /// empty success).
 const EFFECT_FILTER_VALUES: &[&str] = &["read", "reversible", "irreversible", "not_exposed"];
 
-/// Mirrors `agent_call`'s own private `NotExposed` sentinel VALUE (that file is out of scope
-/// here, so this is a second literal, not a second import).
-const ERR_NOT_EXPOSED: &str = "not_exposed";
-
 // ── Version negotiation (Claude Code's own hard list; never the 2026-07-28 era) ────────────────
 
 const SUPPORTED_VERSIONS: &[&str] = &[
@@ -455,7 +451,7 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
             "dispatched": false,
             "namespace": namespace,
             "command": command,
-            "error": ERR_NOT_EXPOSED,
+            "error": agent_call::ERR_NOT_EXPOSED,
             "detail": format!("not exposed to any CLI tier: {reason}"),
         }));
     }
