@@ -1,6 +1,6 @@
 # Agent CLI (`ajh-tauri agent <verb>`)
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 A headless CLI mode of the shipped `ajh-tauri` binary, invoked alongside the running desktop app. Enables external programs (shell scripts, LLM agents, CI pipelines) to query job data, profile fields, and trigger commands without a GUI. The same binary, no separate install.
 
@@ -51,11 +51,27 @@ Written by the app on every launch (idempotent). This is the supported mechanism
 - **Authentication**: Uses the same loopback WebSocket bridge as the browser extension, with mutual HMAC challenge-response. The pairing token is used only as an HMAC key and is never sent on the wire; both clients reuse the same OS-stored credential.
 - **Policy table**: The `call` verb is a generic tier that respects per-command `Effect` classification (Read, Reversible, Irreversible). Irreversible commands require a `--confirm` proof value read from a separate command first (ADR-038 §4). The curated verbs are a separate, simpler tier that predates it.
 - **Timeout discipline**: Per-step budgets (handshake, query) + an outer invocation deadline prevent hung/squatting ports from stalling the entire call.
-- **Privacy**: The `error` field is always a fixed sentinel from a closed set; paths and pairing tokens never appear in any reply. A `detail` field may be present with human-readable context (e.g., validation errors). Safe for use in LLM agent transcripts.
+- **Privacy**: The `error` field of a generic-tier reply is a fixed sentinel from a closed set (the curated tier's throttle refusal is the one prose exception, and predates the MCP mode); neither paths nor pairing tokens appear in any reply. A `detail` field may carry human-readable context. That guarantee covers the _envelope_ only: the `data` of a successful reply is the command's real output and can carry personal data (see the MCP section).
+
+## MCP mode (`agent mcp`)
+
+The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing the same job queries and command dispatch as discoverable tools for LLM agents such as Claude Code and Codex. It is a mode of the binary, not a verb: `mcp` is intercepted before verb parsing, adds no verb-table row, no Tauri command and no policy row, and reuses the CLI's own bridge path (`query()` in `agent_cli.rs`) for every call — same handshake, same throttle, same sentinels.
+
+**Shape, and where the exact values live** (`apps/desktop/src-tauri/src/extension_bridge/agent_cli/mcp.rs`, tests beside it):
+
+- **Wire**: the legacy stdio JSON-RPC dialect the installed clients actually send; the accepted versions are `SUPPORTED_VERSIONS`, an unknown request method gets method-not-found, and a notification gets no frame. One compact JSON object per line. `initialize` is static, so startup never depends on the app.
+- **Tiers**: read-only by default. Two argv-only launch flags open the write tiers along the `Effect` boundary and resolve into `Tier` (`Tier::from_flags`; the destructive flag implies the reversible one). `parse_launch_args` and its tests pin the flag spellings; `tools()` is the authoritative tool list with descriptions and input schemas. A hidden tier is absent from `tools/list`, naming it is a protocol error, and the `commands` discovery tool marks that class unavailable. `build_instructions` names every enabled tier so an elevated session leaves a trace in the transcript.
+- **Refusals are results**: every app-side refusal, the CLI exit code and the confirm hint travel as `isError` text; the server's own sentinels are enumerated by a drift test in `mcp/tests.rs`. A result over the byte cap constant in `mcp.rs` is refused, never truncated. `structuredContent` is not emitted.
+- **Confirmation ceremony**: unchanged from ADR-038 §4 — read the proof with `call-read`, pass it back verbatim on `call-irreversible`; the server never resolves a proof itself.
+- **Throttle and deadline**: the CLI's per-invocation deadline and the global throttle beside `BridgeState` in `agent_read.rs` apply unchanged. The loop is single-flight: one in-flight call blocks later frames, including `ping`, for up to that deadline (ADR-040 §12).
+- **Personal data**: any `Read` row that returns user data reaches the client's AI provider and its persisted transcript — the `commands` tool and `POLICY` in `policy.rs` are the list. Third-party posting text is fenced per surface (`fence_description` and `fence_posting_display_fields` in `agent_read.rs`; `fence_scraped_fields` on the generic tier) and the server's `instructions` say the spans are untrusted.
+
+**See also**: [ADR-040](decision-records/adr-040-mcp-server-as-agent-cli-mode.md) for the decisions and their reasoning.
 
 ## See also
 
 - [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md) — Design rationale (binary mode, loopback bridge, authentication)
-- [ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md) — Full policy table and command-dispatch tiers (curated vs. generic)
+- [ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md) — Confirmation ceremony and policy table (curated vs. generic tiers)
+- [ADR-040](decision-records/adr-040-mcp-server-as-agent-cli-mode.md) — MCP stdio server mode
 - `apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs` — Client implementation (verb parsing, exit codes, error sentinels)
 - `apps/desktop/src-tauri/src/extension_bridge/agent_call.rs` — Server-side dispatch and policy lookup

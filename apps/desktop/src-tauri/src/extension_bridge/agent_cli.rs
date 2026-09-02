@@ -293,7 +293,8 @@ const VERB_TABLE: &[VerbHelp] = &[
         returns: "ADR-038 §2's generic dispatch tier — Read/Reversible commands dispatch \
                   directly; an Irreversible command needs --confirm '<value>' (a proof read \
                   from ANOTHER command, named but never disclosed by a --confirm-less call — \
-                  exit 4); NotExposed always refuses (see docs/knowledge/decision-records/adr-038-*)",
+                  exit 4); NotExposed always refuses (see `agent schema`, the MCP `commands` \
+                  tool, or policy.rs for the full table)",
     },
 ];
 
@@ -396,8 +397,8 @@ fn parse_call(rest: &[String]) -> AppResult<Verb> {
         .filter(|(n, c)| !n.is_empty() && !c.is_empty())
         .ok_or_else(|| {
             AppError::Validation(
-                "call's first argument must be <namespace>:<command> (see `agent schema` or \
-                 docs/knowledge/decision-records/adr-038-*)"
+                "call's first argument must be <namespace>:<command> (see `agent schema` or the \
+                 MCP `commands` tool)"
                     .to_string(),
             )
         })?;
@@ -846,24 +847,25 @@ fn emit_cli_error(resource: Option<&str>, sentinel: &str) -> i32 {
     2
 }
 
+/// The bridge round trip common to every verb, minus the CLI's own
+/// stdout/exit-code translation: pointer → token → [`connect_authenticated`]
+/// → [`send_agent_query`]. [`run_verb`] is now just this plus its own
+/// `println!`/[`exit_code_for_reply`] wrapping; [`mcp`] calls this directly
+/// instead of `run_verb`, since the MCP wire owns its own stdout discipline
+/// (a single `writeln!` site — see that module's doc) and must never emit
+/// this fn's sibling's bare `println!` envelope.
+async fn query(verb: &Verb) -> Result<Value, &'static str> {
+    let pointer = read_agent_pointer().ok_or(ERR_APP_NOT_LOCATED)?;
+    let token = read_pairing_token(&pointer.data_dir).ok_or(ERR_PAIRING_TOKEN_UNAVAILABLE)?;
+    let ws = connect_authenticated(&token)
+        .await
+        .map_err(pairing_failure_sentinel)?;
+    send_agent_query(ws, verb).await
+}
+
 async fn run_verb(verb: Verb) -> i32 {
     let resource = verb.resource_name();
-
-    let Some(pointer) = read_agent_pointer() else {
-        return emit_cli_error(Some(resource), ERR_APP_NOT_LOCATED);
-    };
-    let Some(token) = read_pairing_token(&pointer.data_dir) else {
-        return emit_cli_error(Some(resource), ERR_PAIRING_TOKEN_UNAVAILABLE);
-    };
-
-    let ws = match connect_authenticated(&token).await {
-        Ok(ws) => ws,
-        Err(failure) => {
-            return emit_cli_error(Some(resource), pairing_failure_sentinel(failure));
-        }
-    };
-
-    match send_agent_query(ws, &verb).await {
+    match query(&verb).await {
         Ok(payload) => {
             println!("{payload}");
             exit_code_for_reply(&verb, &payload)
@@ -920,6 +922,13 @@ fn is_help_request(args: &[String]) -> bool {
     )
 }
 
+/// Whether `args`' first token requests the MCP server mode
+/// (`agent mcp [--allow-irreversible]`) — a MODE like `--help`, never a
+/// `Verb`/`VERB_TABLE` row (see [`mcp`]'s own module doc for why).
+fn is_mcp_mode(args: &[String]) -> bool {
+    args.first().map(String::as_str) == Some("mcp")
+}
+
 /// Human-readable usage text — derived ENTIRELY from [`VERB_TABLE`] and
 /// [`ERROR_SENTINELS`], never a hand-typed second copy of either (see both
 /// constants' own docs). Pure, allocation-only: no `AppHandle`, no pointer
@@ -936,7 +945,12 @@ fn help_text() -> String {
         out.push_str(&format!("  {:<16}{:<16}{}\n", v.name, v.args, v.returns));
     }
     out.push_str(
-        "  --help, -h, help                Show this help and exit (works even if the app is not running).\n\n\
+        "  --help, -h, help                Show this help and exit (works even if the app is not running).\n\
+         \x20\x20mcp [--allow-reversible] [--allow-irreversible]\n\
+                                  Run as an MCP (Model Context Protocol) stdio server for Claude \
+           Code/Codex; read tier + `commands` only by default, --allow-reversible adds \
+           mutating-but-undoable tools, --allow-irreversible adds the rest (implies \
+           --allow-reversible). `agent mcp --help` shows its own usage.\n\n\
          EXIT CODES:\n\
          \x20 0   Success — the reply is printed as JSON on stdout.\n\
          \x20 1   The app replied with a refusal (rate-limited, validation, not found, autofill off, ...) \
@@ -998,6 +1012,13 @@ pub fn run(args: &[String]) -> i32 {
         println!("{}", help_text());
         return 0;
     }
+    if is_mcp_mode(args) {
+        // A MODE, not a `Verb` — intercepted before `parse_verb` exactly
+        // like `--help` above, so it forces no nonsense `wire_type`/
+        // `payload` match arms and touches neither `VERB_TABLE` nor its own
+        // drift tests (see `mcp`'s own module doc).
+        return mcp::run(&args[1..]);
+    }
     if args.is_empty() {
         // A bare `ajh-tauri agent` is far more likely a human looking for
         // guidance than a scripted caller depending on today's terse JSON
@@ -1037,10 +1058,13 @@ pub fn run(args: &[String]) -> i32 {
     ))
 }
 
-// ADR-038 §1 — the command policy table (164 rows) + its exactness test
+// ADR-038 §1 — the command policy table (165 rows) + its exactness test
 // against `generate_handler!`. Data only in this phase: nothing here
 // dispatches yet (§2's generic `agent call <ns>:<command>` tier is later).
 pub(crate) mod policy;
+
+// The MCP (Model Context Protocol) stdio server mode — `agent mcp`.
+mod mcp;
 
 #[cfg(test)]
 mod tests;

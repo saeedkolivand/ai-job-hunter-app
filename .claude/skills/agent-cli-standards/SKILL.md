@@ -143,3 +143,45 @@ literal, `cargo test --test egress` too: the EGRESS inventory is an arch test, n
 against the state machine is not evidence that the two halves talk. `cargo test --lib` flakes roughly
 1 run in 3 with a pre-existing `rate_limiter` subtract-with-overflow panic in scraping tests — re-run
 and say so rather than treating it as yours.
+
+## MCP mode (`agent mcp`) — amendment to the one-document rule
+
+`ajh-tauri agent mcp` keeps a JSON-RPC session open on stdin/stdout for as long as the client holds
+the process, so the "one JSON document on stdout per invocation" rule above does not apply to it —
+by design, recorded in ADR-040. Everything else in this skill still does. Additional rules for the
+mode, each of which a reviewer should verify from the source rather than the description:
+
+- **A mode, not a verb.** `mcp` is intercepted in `run()` before `parse_verb`, the way `--help` is.
+  It adds no `VERB_TABLE` row, no Tauri command, and no policy-table row, so ADR-038's exactness
+  test and the R8 line cap are untouched.
+- **Legacy wire, on purpose.** It speaks the 2025-11-25 stdio protocol (`initialize` →
+  `notifications/initialized`, `ping`, `tools/list`, `tools/call`) because that is what the real
+  clients send; `server/discover` and every other request method get `-32601` (a notification, known or not, gets no frame at all), which is the current spec's
+  own legacy-fallback signal. Never advertise 2026-07-28. `initialize` is static — no pointer file,
+  no token, no socket — so startup never depends on the app running.
+- **Tools along the `Effect` boundary.** Read-only curated tools and the three generic `call-*`
+  tools each carry MCP annotations (`readOnlyHint`/`destructiveHint`) that match the policy table;
+  a test pins every policy row to exactly one tool. The server is read-only by default:
+  `call-reversible` appears only with `--allow-reversible`, `call-irreversible` only with
+  `--allow-irreversible` (which implies the former); a hidden tool named anyway is `-32602`, and
+  `commands` marks the hidden class `unavailable`. The flags are argv-only — no environment
+  variable, no config path.
+- **The confirm ceremony passes through verbatim.** `confirm` exists only on `call-irreversible`
+  and is forwarded as-is; the server never reads the proof itself (ADR-038 §4 — collapsing the two
+  hops "stops nothing").
+- **Refusals are results, not protocol errors.** App-side refusals, sentinels, exit codes and the
+  `confirmation_required` hint travel in `content[].text` with `isError:true`; protocol errors are
+  reserved for malformed JSON-RPC.
+- **stdout is the protocol.** Exactly one `stdout()` acquisition, compact JSON, never `println!`,
+  `eprintln!` or `to_string_pretty` (release is `panic = "abort"` and this path runs above crash
+  reporting, so a write to a closed pipe is a silent abort). The only stdout write outside `emit`
+  is `--help`, which runs before any frame is read. A source guard test counts the acquisition
+  and bans the macros.
+- **Third-party text is fenced per surface, never by assumption.** The generic tier runs
+  `fence_scraped_fields` on every reply (`agent_call.rs`); the curated tier fences `description`
+  in `fence_description` and `title`/`company`/`location` in `fence_posting_display_fields`
+  (`agent_read.rs`) for BOTH `best-matches` and `job`, and each tool that returns scraped text
+  carries the untrusted-text notice in its description. A curated tool added without the fence
+  call and the notice is a finding, not a tradeoff — the pre-PR gate found `job` bare after
+  three reviews had read the sibling. The server's `instructions` say the spans are untrusted;
+  nothing in the payload itself does.

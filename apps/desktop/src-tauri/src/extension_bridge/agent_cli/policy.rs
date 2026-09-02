@@ -1245,51 +1245,48 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::github::github_import_repos", effect: Effect::Read },
 
     // commands/extension_bridge.rs
-    PolicyEntry { path: "commands::extension_bridge::extension_bridge_status", effect: Effect::Read },
+    //
+    // MCP HIGH fix (security critique on the MCP server pass): reclassified
+    // NotExposed from `Read` — the command returns `token: state.token()`
+    // verbatim (`commands/extension_bridge.rs`), the bridge's ONLY secret.
+    // `Effect::Read` on this table has always meant "safe for the generic
+    // tier to hand back raw" (ADR-038 §3's amendment of ADR-0005), which was
+    // sound for a caller who already read the same token off disk to even
+    // reach this dispatcher — but an MCP client is a DIFFERENT recipient: it
+    // sends every tool result to its own cloud model provider and persists
+    // it in an on-disk transcript, neither of which ever touched the token
+    // file. No `ProofSource` in this table reads this row (grep
+    // `read_command: "extension_bridge_status"`: zero hits), so no ceremony
+    // depends on it — the Settings UI's own status check is unaffected,
+    // only this CLI/MCP dispatch surface loses the ability to name it.
+    PolicyEntry {
+        path: "commands::extension_bridge::extension_bridge_status",
+        effect: Effect::NotExposed(
+            "returns the plaintext pairing token verbatim — the bridge's only secret; a \
+             generic-tier or MCP caller must never receive it",
+        ),
+    },
     // Rotates the pairing token, which REVOKES every currently-paired
-    // browser session. Reclassified NotExposed (was `Irreversible` with a
-    // `ProofSource::Scalar` over `extension_bridge_status`) — VERIFIED that
-    // NO proof reachable from this table can ever bind this ceremony to
-    // anything the caller didn't already have, for two INDEPENDENT reasons,
-    // not one:
-    //   1. `port` and `token` are values this exact CLI connection already
-    //      needed to exist at all — it scanned `PORT_RANGE` to find the port
-    //      and read the plaintext token off disk to compute the handshake's
-    //      `client_proof` (`agent_cli.rs::read_pairing_token`/
-    //      `connect_authenticated`), so echoing either back through
-    //      `extension_bridge_status` proves nothing.
-    //   2. `connected` is worse than merely a low-entropy boolean: it is
-    //      `BridgeState.connected > 0`, and this VERY call's own socket
-    //      already incremented that same counter on authenticating
-    //      (`inc_connected`, `extension_bridge/mod.rs`) — `agent.call` only
-    //      reaches here over an already-`Authenticated` connection, so
-    //      `connected` reads `true` for the ENTIRE duration of every possible
-    //      ceremony attempt, regardless of whether any browser is paired. A
-    //      hallucinated `true` does not merely have decent odds; it is
-    //      GUARANTEED to match.
-    // No other Read row in the `extension_bridge` namespace is bound to the
-    // pairing session this revokes either — `extension_bridge_autofill_
-    // enabled`/`ai_assist_enabled`/`auto_track_enabled` are unrelated
-    // feature toggles, no stronger than the rejected `connected` boolean.
-    // Falling back to a totally unrelated Read row (the `system_get_version`
-    // pattern `system_open_external`/`updater_install` use when no domain
-    // read exists at all) would be decorative here, not merely weak: unlike
-    // those two — which are ADR-038-adjacent but not one of its four NAMED
-    // canonical Irreversible patterns (`privacy:reset_app`, `sign_out_all`,
-    // `credentials:*`, `*_remove`) — this command's only real-world effect
-    // is breaking the user's OWN browser-extension pairing (a UI Settings
-    // "Regenerate" self-service action a human performs while looking at the
-    // resulting "re-pair your browser" state), with no job-hunting workflow
-    // that plausibly motivates an autonomous agent driving it. A ceremony
-    // that can never fail is worse than an honest refusal.
+    // browser session. NotExposed (not `Irreversible`) — no proof reachable
+    // from this table can ever bind the ceremony to anything the caller
+    // didn't already have: `port`/`token` are values this exact CLI
+    // connection already needed to possess to authenticate at all, and
+    // `extension_bridge_status`'s own `connected` field is now itself
+    // NotExposed (see the row immediately above) as well as being a
+    // guaranteed-true boolean for the whole call regardless (this VERY
+    // socket's own authentication is what increments that counter). No
+    // other Read row in this namespace binds to the pairing session this
+    // revokes either, and the command's only real-world effect — breaking
+    // the user's OWN browser pairing, a UI Settings self-service action —
+    // has no job-hunting workflow motivating an autonomous agent to drive
+    // it. A ceremony that can never fail is worse than an honest refusal.
     PolicyEntry {
         path: "commands::extension_bridge::extension_bridge_regenerate_token",
         effect: Effect::NotExposed(
-            "rotating the pairing token has no reachable non-vacuous proof: every field of \
-             extension_bridge_status (port, token) is a value this exact connection already \
-             had to possess to authenticate, and `connected` reads true for the whole call \
-             because this CLI socket's own authentication is what increments it — see the \
-             row's own comment for the full two-part argument",
+            "rotating the pairing token has no reachable non-vacuous proof: port/token are \
+             values this exact connection already had to possess to authenticate, and \
+             connected reads true only because THIS socket's own authentication is what \
+             increments it — see the row's own comment for the full argument",
         ),
     },
     PolicyEntry {

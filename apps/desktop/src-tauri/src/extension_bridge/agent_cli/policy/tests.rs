@@ -130,6 +130,32 @@ fn not_exposed_rows_carry_a_real_reason() {
     }
 }
 
+/// LOW fix (pre-PR gate, round 3): a prior edit shortened this row's inline reason to one
+/// over-broad claim — "every value extension_bridge_status could offer is one this exact
+/// connection already had to possess" — which is true of `port`/`token` but NOT of `connected`,
+/// a boolean that reads `true` only because THIS socket's own successful authentication is what
+/// increments the counter it reports. The longer row comment above always had both clauses; the
+/// short inline reason (what a caller/refusal actually sees) must too.
+#[test]
+fn extension_bridge_regenerate_token_reason_explains_why_connected_is_vacuous_too() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path.ends_with("extension_bridge_regenerate_token"))
+        .expect("the row must still exist");
+    let Effect::NotExposed(reason) = entry.effect else {
+        panic!("must stay NotExposed");
+    };
+    assert!(
+        reason.contains("connected"),
+        "must name `connected` specifically, not just `port`/`token`: {reason}"
+    );
+    assert!(
+        reason.contains("THIS socket") || reason.contains("this socket"),
+        "must explain WHY connected is vacuous (self-authentication increments it), not just \
+         assert it: {reason}"
+    );
+}
+
 /// HIGH fix (security review round 2): `match_resume`/`match_resume_text`
 /// reach a paid embedding provider (`score_one` → `embed_charged`) with
 /// `budget: None` when `semanticScoringEnabled: true` — the SAME
@@ -334,6 +360,27 @@ fn round_4_persistent_redirect_and_unbound_proof_rows_stay_not_exposed() {
             entry.effect
         );
     }
+}
+
+/// Hand-written pin (MCP security critique): a revert of this row back to
+/// `Read` would silently let the generic tier — and every MCP `call-read`
+/// client — hand back the bridge's plaintext pairing token verbatim. No
+/// OTHER test in this file would catch that: the row-count tests don't
+/// change (an `Effect` swap, not an add/remove), and
+/// `not_exposed_rows_carry_a_real_reason` only checks rows that ARE already
+/// `NotExposed`.
+#[test]
+fn extension_bridge_status_stays_not_exposed_so_the_pairing_token_never_reaches_a_caller() {
+    let path = "commands::extension_bridge::extension_bridge_status";
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == path)
+        .unwrap_or_else(|| panic!("{path} is not a real POLICY row"));
+    assert!(
+        matches!(entry.effect, Effect::NotExposed(_)),
+        "{path} must stay NotExposed — got {:?}",
+        entry.effect
+    );
 }
 
 /// Mutation-style guard: an `Irreversible` row whose `ProofSource`

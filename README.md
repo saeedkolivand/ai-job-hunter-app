@@ -356,7 +356,52 @@ export PATH="/Applications/AI Job Hunter.app/Contents/MacOS:$PATH"
 
 On **Windows**, the installer adds the per-user install directory to your `PATH` — **from the next release onward**. On v0.145.0 and earlier, invoke the binary by full path (use `~/.ajh-agent/agent.json` to locate it programmatically).
 
-**Requirements:** The app must be running (except `--help`). The CLI communicates over a local loopback bridge with mutual HMAC-SHA256 authentication (the pairing token is used only as an HMAC key and is never sent on the wire). Run `ajh-tauri agent --help` to see all verbs, exit codes, and error sentinels. For the design rationale and full policy table, see <a href="docs/knowledge/decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md" target="_blank" rel="noopener noreferrer">ADR-037</a> and <a href="docs/knowledge/decision-records/adr-038-agent-cli-full-parity-two-tier.md" target="_blank" rel="noopener noreferrer">ADR-038</a>.
+**Requirements:** Bridge-backed calls need the app running; `--help`, MCP startup (`initialize`) and the local `commands` tool do not. The CLI communicates over a local loopback bridge with mutual HMAC-SHA256 authentication (the pairing token is used only as an HMAC key and is never sent on the wire). Run `ajh-tauri agent --help` to see all verbs, exit codes, and error sentinels. For the design rationale see <a href="docs/knowledge/decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md" target="_blank" rel="noopener noreferrer">ADR-037</a> and <a href="docs/knowledge/decision-records/adr-038-agent-cli-full-parity-two-tier.md" target="_blank" rel="noopener noreferrer">ADR-038</a>; for the full policy table, use the MCP `commands` tool or read `apps/desktop/src-tauri/src/extension_bridge/agent_cli/policy.rs` (`agent schema` lists only the five curated resources).
+
+**LLM agents (MCP mode):** The CLI can run as an MCP stdio server for Claude Code and Codex:
+
+<details>
+<summary>Claude Code (recommended)</summary>
+
+Use `claude mcp add --scope user` to register the server (user scope = per-machine, runs only when you authorize):
+
+```bash
+claude mcp add --scope user ai-job-hunter -- /path/to/ajh-tauri agent mcp
+```
+
+On Linux/macOS with Homebrew, `ajh-tauri` is already on `PATH`. On Windows and macOS dmg, use the full path from `~/.ajh-agent/agent.json`.
+
+By default the server is **read-only**: the model can search postings, read your profile and automations, and enumerate the command table. Two launch flags open the write tiers, each a superset of the last:
+
+```bash
+# undoable state changes — track an application, edit your profile, import a document
+claude mcp add --scope user ai-job-hunter-write -- /path/to/ajh-tauri agent mcp --allow-reversible
+# additionally: destructive actions and AI spend — delete documents, remove provider keys, run generation against your API budget
+claude mcp add --scope user ai-job-hunter-unrestricted -- /path/to/ajh-tauri agent mcp --allow-irreversible
+```
+
+The flags only decide which tools the model can _see_; every write still goes through the app's own policy table and, for destructive commands, the confirm ceremony (ADR-038).
+
+</details>
+
+<details>
+<summary>Codex</summary>
+
+Add to your `~/.codex/config.toml` (or create it). On Windows use the full `exePath` from `~/.ajh-agent/agent.json` until the PATH hook ships in a release:
+
+```toml
+[mcp_servers.ai-job-hunter]
+command = "ajh-tauri"
+args = ["agent", "mcp"]
+```
+
+If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json`. The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
+
+</details>
+
+**Tool results are sent to the model and stored in the client's transcript.** Queries like `profile` and `documents_get_text` return PII; the model can access job postings, your résumé, and application records. Use these tools only when you ask the agent to retrieve that data.
+
+**Important:** The first argument to the MCP server must be `agent` (e.g., `agent mcp`), or the desktop app launches instead.
 
 </details>
 
