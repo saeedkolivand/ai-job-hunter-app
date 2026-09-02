@@ -55,6 +55,18 @@
 //! BEFORE any JSON-RPC frame is read — nothing negotiated yet to break. Every stderr write here is
 //! a pre-protocol usage/runtime failure in [`run`].
 //!
+//! ## Single-flight — one frame in flight at a time (CodeRabbit, PR #1092)
+//! [`serve`]'s loop reads one line, dispatches it SYNCHRONOUSLY — [`run`]'s own `dispatch` closure
+//! calls `rt.block_on` from the sync loop itself, never spawned onto the runtime — then writes the
+//! reply before reading the next line. There is no reader task and no serialized writer, so
+//! exactly one JSON-RPC request is ever in flight: a `tools/call` that takes up to
+//! [`super::INVOCATION_TIMEOUT`] blocks every LATER frame behind it, including a bare `ping`. To a
+//! ping-based liveness check, a slow bridge call and a hung server are indistinguishable for that
+//! whole window. If a real client's keepalive ever proves this a problem in practice, the fix is a
+//! reader task feeding a channel plus one serialized writer task, running concurrently with
+//! dispatch — not attempted here, since no observed client currently pings during an in-flight
+//! call.
+//!
 //! ## What this is NOT
 //! Never wrapped in [`super::run_verb_within`]'s whole-invocation [`super::INVOCATION_TIMEOUT`] —
 //! each `tools/call` gets its own budget via the same constant. Never a second validator:

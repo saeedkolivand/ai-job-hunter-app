@@ -53,6 +53,54 @@ fn serve_emits_exactly_one_line_per_request_and_none_for_notifications() {
 }
 
 #[test]
+fn serve_dispatches_and_replies_single_flight_never_reordering_a_ping_between_two_calls() {
+    // CodeRabbit, PR #1092 (item c) — pins the module doc's own "Single-flight" section: `serve`
+    // reads one line, dispatches it SYNCHRONOUSLY, and writes its reply before reading the next
+    // line, so a `ping` sandwiched between two `tools/call` frames can never jump the queue, and
+    // the two calls themselves must dispatch in input order (never concurrently/reordered).
+    let dispatch_order = std::cell::RefCell::new(Vec::new());
+    let input = format!(
+        "{}{}{}",
+        line(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "job", "arguments": { "url": "https://example.com/first" } },
+        })),
+        line(json!({ "jsonrpc": "2.0", "id": 2, "method": "ping" })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "job", "arguments": { "url": "https://example.com/second" } },
+        })),
+    );
+    let text = run_serve(&input, |verb: &Verb| {
+        if let Verb::Job { url } = verb {
+            dispatch_order.borrow_mut().push(url.clone());
+        }
+        Ok(json!({ "ok": true, "resource": "job", "data": {} }))
+    });
+
+    let reply_ids: Vec<i64> = text
+        .lines()
+        .map(|l| {
+            serde_json::from_str::<Value>(l).expect("each line is one JSON-RPC reply")["id"]
+                .as_i64()
+                .expect("every reply here carries a numeric id")
+        })
+        .collect();
+    assert_eq!(
+        reply_ids,
+        vec![1, 2, 3],
+        "replies must come back strictly in input order — the sandwiched ping's reply (id 2) \
+         only after the first call's (id 1) and before the second's (id 3): {reply_ids:?}"
+    );
+    assert_eq!(
+        *dispatch_order.borrow(),
+        vec!["https://example.com/first", "https://example.com/second"],
+        "the two tools/call frames must dispatch in input order with nothing interleaved — the \
+         sandwiched ping never dispatches at all"
+    );
+}
+
+#[test]
 fn an_explicit_id_null_produces_no_output_and_no_dispatch() {
     let input = line(json!({
         "jsonrpc": "2.0", "id": null, "method": "tools/call",
@@ -190,20 +238,54 @@ fn instructions_name_every_mcp_only_sentinel() {
     }
 }
 
+/// Find the next `"error"` key in `source` at or after `from` whose value is a string literal,
+/// tolerating ANY amount of whitespace (including a newline, i.e. rustfmt splitting key and value
+/// across lines) between `"error"`, `:`, and the opening quote — CodeRabbit, PR #1092: the prior
+/// scanner matched only the exact spelling `"error": "` (one space), so `"error":"x"` or a
+/// line-split write would silently produce NO match while the "found is non-empty" sanity check
+/// stayed green on whatever it DID happen to catch elsewhere in the file. Returns the literal's
+/// value and the index just past its closing quote, so the caller can resume scanning from there;
+/// a `"error"` occurrence whose value isn't a string (e.g. `"error": some_const`) is skipped, not
+/// treated as a scan failure.
+fn next_error_literal(source: &str, from: usize) -> Option<(&str, usize)> {
+    let bytes = source.as_bytes();
+    let mut search_from = from;
+    loop {
+        let key_pos = source[search_from..].find("\"error\"")?;
+        let after_key = search_from + key_pos + "\"error\"".len();
+        let mut i = after_key;
+        while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+            i += 1;
+        }
+        if bytes.get(i) != Some(&b':') {
+            search_from = after_key;
+            continue;
+        }
+        i += 1;
+        while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+            i += 1;
+        }
+        if bytes.get(i) != Some(&b'"') {
+            search_from = after_key;
+            continue;
+        }
+        let value_start = i + 1;
+        let value_end = value_start + source[value_start..].find('"')?;
+        return Some((&source[value_start..value_end], value_end + 1));
+    }
+}
+
 #[test]
 fn every_error_literal_in_mcp_source_is_named_in_mcp_sentinels() {
     // item 24 — a drift guard: every `"error": "..."` string literal this file's own source
     // writes must be a member of MCP_SENTINELS (never `agent_call`'s shared sentinels, which are
     // referenced by path, not respelled here).
     const SOURCE: &str = include_str!("../mcp.rs");
-    let marker = "\"error\": \"";
     let mut idx = 0;
     let mut found = Vec::new();
-    while let Some(pos) = SOURCE[idx..].find(marker) {
-        let start = idx + pos + marker.len();
-        let end = start + SOURCE[start..].find('"').expect("unterminated literal");
-        found.push(&SOURCE[start..end]);
-        idx = end;
+    while let Some((value, next)) = next_error_literal(SOURCE, idx) {
+        found.push(value);
+        idx = next;
     }
     assert!(
         !found.is_empty(),
