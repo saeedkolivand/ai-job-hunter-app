@@ -426,6 +426,33 @@ fn is_help_request_recognizes_help_h_and_bare_help_verb() {
     assert!(!is_help_request(&s(&[])));
 }
 
+// ── mcp mode dispatch (owner request — `mcp` is a MODE, never a VERB_TABLE
+// row, so the drift-loop tests above cannot see it) ─────────────────────
+
+#[test]
+fn help_text_mentions_the_mcp_mode() {
+    assert!(help_text().contains("mcp"));
+}
+
+#[test]
+fn is_mcp_mode_matches_only_the_exact_first_token() {
+    assert!(is_mcp_mode(&s(&["mcp"])));
+    assert!(is_mcp_mode(&s(&["mcp", "--allow-irreversible"])));
+    assert!(!is_mcp_mode(&s(&["mcpx"])));
+    assert!(!is_mcp_mode(&s(&["MCP"])));
+    assert!(!is_mcp_mode(&s(&["--help", "mcp"])));
+    assert!(!is_mcp_mode(&s(&[])));
+}
+
+#[test]
+fn help_wins_over_mcp_when_help_is_the_first_token() {
+    // `agent --help mcp` must be a help request, never mcp mode — `run()`
+    // checks `is_help_request` FIRST, so the first-token-only check on
+    // `is_mcp_mode` is what makes that ordering actually matter here.
+    assert!(is_help_request(&s(&["--help", "mcp"])));
+    assert!(!is_mcp_mode(&s(&["--help", "mcp"])));
+}
+
 // ── exit-2 shape uniformity (MINOR fix — security review round 2) ──────
 
 #[test]

@@ -946,8 +946,11 @@ fn help_text() -> String {
     }
     out.push_str(
         "  --help, -h, help                Show this help and exit (works even if the app is not running).\n\
-         mcp [--allow-irreversible]      Run as an MCP (Model Context Protocol) stdio server \
-           for Claude Code/Codex; omits mutating tools unless --allow-irreversible.\n\n\
+         mcp [--allow-reversible] [--allow-irreversible]\n\
+                                  Run as an MCP (Model Context Protocol) stdio server for Claude \
+           Code/Codex; read tier + `commands` only by default, --allow-reversible adds \
+           mutating-but-undoable tools, --allow-irreversible adds the rest (implies \
+           --allow-reversible). `agent mcp --help` shows its own usage.\n\n\
          EXIT CODES:\n\
          \x20 0   Success — the reply is printed as JSON on stdout.\n\
          \x20 1   The app replied with a refusal (rate-limited, validation, not found, autofill off, ...) \
