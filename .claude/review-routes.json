@@ -9,6 +9,9 @@
     },
     {
       "glob": "apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs",
+      "owner": "agent-cli-reviewer"
+    },
+    {
       "glob": "apps/desktop/src-tauri/src/extension_bridge/agent_cli/**",
       "owner": "agent-cli-reviewer"
     },
