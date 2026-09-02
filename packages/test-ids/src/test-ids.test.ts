@@ -54,5 +54,6 @@ describe('TEST_IDS', () => {
     expect(keys).toContain('generation');
     expect(keys).toContain('onboarding');
     expect(keys).toContain('support');
+    expect(keys).toContain('dashboard');
   });
 });

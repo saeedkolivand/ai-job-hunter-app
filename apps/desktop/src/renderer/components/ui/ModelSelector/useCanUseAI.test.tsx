@@ -167,6 +167,36 @@ describe('useCanUseAI — cloud', () => {
     await waitFor(() => expect(result.current).toEqual({ canUse: false, reason: 'addApiKey' }));
   });
 
+  it('key query still in flight → "checking" (no reason), never a premature "add an API key"', async () => {
+    // The cloud mirror of the local-server "health probe in flight" case
+    // above, and the same class of bug: `providerKeyQuery.data?.has ?? false`
+    // read a not-yet-loaded `undefined` as a settled "there is no key", so
+    // every consumer was handed `addApiKey` — a concrete instruction — for a
+    // question nobody had answered yet. `ModelSelector` had to work around it
+    // locally (`activeKeyLoading`); consumers of the hook could not.
+    const client = createMockClient({
+      ai: {
+        activeConfig: async () => ({
+          activeProvider: 'openai',
+          providers: { openai: { model: 'gpt-4o' } },
+        }),
+        // Never resolves, isolating the window where `useActiveConfig` has
+        // settled and the key status has not.
+        hasProviderKey: () => new Promise<{ has: boolean }>(() => {}),
+      },
+      system: { health: async () => readyHealth() },
+    });
+    const { result, queryClient } = renderHookWithClient(() => useCanUseAI(), { client });
+    // `{ canUse: false }` with no reason is ALSO the first synchronous
+    // render's value (`useActiveConfig`'s own cold-boot branch), so require
+    // that query to have SETTLED in the same assertion — this can only pass
+    // from inside the cloud branch, past the branch that returns it for free.
+    await waitFor(() => {
+      expect(queryClient.getQueryState(['ai', 'activeConfig'])?.status).toBe('success');
+      expect(result.current).toEqual({ canUse: false });
+    });
+  });
+
   it('key stored but no model chosen → blocked with "select a model"', async () => {
     const client = createMockClient({
       ai: {
