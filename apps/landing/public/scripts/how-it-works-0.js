@@ -946,8 +946,8 @@
     fabrication this exists to prevent. Coverage status for each requirement is then overwritten from the same
     keyword kernel behind the Jobs‑page match score, not trusted from the model\'s own claim. And every
     <code>Critical</code> the deterministic content validator (<span class="path">validate/content/mod.rs</span>)
-    raises is a comparison against your own résumé text — never a model\'s judgment call; only Warnings are
-    advisory.`,
+    raises is a deterministic check — a comparison against your own résumé text, or a structural rule the
+    code can run with no model in the loop — never a model's judgment call; only Warnings are advisory.`,
         },
         {
           q: 'How do you know the checks work?',
