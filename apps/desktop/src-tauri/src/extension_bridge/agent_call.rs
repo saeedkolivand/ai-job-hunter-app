@@ -191,9 +191,8 @@ impl Refusal {
     fn detail(&self) -> String {
         match self {
             Refusal::UnknownCommand => {
-                "no policy row matches this <namespace>:<command> — run `agent schema` for the \
-                 curated tier, or see docs/knowledge/decision-records/adr-038-* for the full \
-                 command table"
+                "no policy row matches this <namespace>:<command> — run `agent schema` or the \
+                 MCP `commands` tool to enumerate targets, or see policy.rs for the full table"
                     .to_string()
             }
             Refusal::NotExposed(reason) => format!("not exposed to any CLI tier: {reason}"),

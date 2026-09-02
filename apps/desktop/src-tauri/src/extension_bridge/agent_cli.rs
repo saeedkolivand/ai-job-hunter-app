@@ -396,8 +396,8 @@ fn parse_call(rest: &[String]) -> AppResult<Verb> {
         .filter(|(n, c)| !n.is_empty() && !c.is_empty())
         .ok_or_else(|| {
             AppError::Validation(
-                "call's first argument must be <namespace>:<command> (see `agent schema` or \
-                 docs/knowledge/decision-records/adr-038-*)"
+                "call's first argument must be <namespace>:<command> (see `agent schema` or the \
+                 MCP `commands` tool)"
                     .to_string(),
             )
         })?;
