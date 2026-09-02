@@ -14,7 +14,7 @@ A third category of caller — an LLM agent running under Claude Code or Codex w
 
 Three architectural points framed the decision:
 
-1. **Wire version**: The installed Claude Code (2.1.258) and Codex (0.144.6) both launch MCP stdio servers using the legacy 2025-11-25 handshake (`initialize` → `server/discover` → `initialized`). The modern 2026-07-28 revision (stateless, per-request `_meta`, named result types) is not yet deployed in production clients. Supporting both would require version negotiation; supporting the modern spec alone would render the server incompatible with deployed clients.
+1. **Wire version**: The installed Claude Code (2.1.258) and Codex (0.144.6) both launch MCP stdio servers using the legacy 2025-11-25 handshake (`initialize` → `notifications/initialized`; `server/discover` is the _modern_ probe, which a legacy server answers with `-32601`). The modern 2026-07-28 revision (stateless, per-request `_meta`, named result types) is not yet deployed in production clients. Supporting both would require version negotiation; supporting the modern spec alone would render the server incompatible with deployed clients.
 
 2. **Tool scope**: The agent CLI already offers five curated verbs (`best-matches`, `job`, `profile`, `automations`, and `schema`) plus a generic `call` tier that respects per-command `Effect` classification (Read, Reversible, Irreversible). Exposing these as MCP tools preserves this tier structure and lets a client decide per-tool whether to auto-approve, prompt, or block.
 
@@ -24,7 +24,7 @@ Three architectural points framed the decision:
 
 **1. Protocol and wire version**: Use the legacy 2025-11-25 JSON-RPC stdio wire, the only spec deployed in Claude Code 2.1.258 and Codex 0.144.6. Answer `server/discover` with plain `-32601` (method not found), the signal the 2025-11-25 spec itself defines as the fallback that triggers initialization. Never advertise the modern 2026-07-28 revision. The modern era is a named follow-up.
 
-**2. Mode, not binary**: Implement MCP as a mode of the existing `ajh-tauri agent` binary, not a new process or Tauri command. The CLI already detects `agent` as the first argument and exits before the GUI (ADR-037 §3); add an `mcp` verb that intercepts `parse_verb` before dispatch, identical to how `--help` does, requiring zero changes to `generate_handler!` or the R8 line-cap test (tests/architecture.rs:690).
+**2. Mode, not binary**: Implement MCP as a mode of the existing `ajh-tauri agent` binary, not a new process or Tauri command. The CLI already detects `agent` as the first argument and exits before the GUI (ADR-037 §3); add an `mcp` mode, intercepted before verb parsing exactly like `--help` that intercepts `parse_verb` before dispatch, identical to how `--help` does, requiring zero changes to `generate_handler!` or the R8 line-cap test (tests/architecture.rs:690).
 
 **3. Implementation shape**: Hand-rolled JSON-RPC on `serde_json` + `tokio`, not an SDK crate. Both `rmcp` (Rust MCP SDK) and the Node.js SDK require code generation or version-specific schemas; the binary's transitive dependencies (`serde_json`, `tokio`) are already present. The server carries one compact JSON object per line on stdout, reads the input from stdin via `std::io::stdin().lock().lines()` blocking on the main thread, and on `Err` (EPIPE after the client closes the pipe) returns exit code 0, because release is `panic="abort"` and this path runs above `crash_reporting::init`.
 
@@ -32,7 +32,7 @@ Three architectural points framed the decision:
 
 **5. Confirm ceremony passes through verbatim**: The `call-irreversible` tool carries a `confirm` argument. The server passes it to the app's confirmation logic (agent_call.rs:728-751) unchanged; it never fetches-then-confirms. If the proof does not match, the result carries `{"dispatched":false,"error":"confirmation_mismatch","detail":"…"}` with the expected value never disclosed (proof.rs:150). Results, not protocol errors, for every app-side refusal: `confirmation_required`, `confirmation_mismatch`, `not_exposed`, `unknown_command`, `rate_limited`.
 
-**6. Irreversible tools are opt-in**: By default, `agent mcp` omits `call-irreversible` from the `tools/list` response and rejects any attempt to call it with `-32602` (invalid params). Launching with `--allow-irreversible` includes it. This server-side gate applies to every client; the per-tool permission prompt that Claude Code provides is a second gate on top.
+**6. Write tiers are opt-in; the read tier is the default**: `agent mcp` offers only the curated read tools, `call-read` and `commands`. `call-reversible` appears only with `--allow-reversible`; `call-irreversible` only with `--allow-irreversible`, which implies the former. Naming a hidden tool is answered with `-32602`, and `commands` marks the hidden class `unavailable` rather than directing the model at a tool the session cannot see. Rationale: the client's permission prompt is the only intent gate, and a client that reads neither the Anthropic-only `_meta` hint nor treats `destructiveHint` as binding (Codex with `approval_policy = "never"`) turns a hint into nothing — that argument is identical for both write tiers, so both get the same mechanism. The default therefore matches the tier the original plan scoped: a read-only server. The flags are argv-only (no environment or config path), and the `instructions` string names every enabled tier so an elevated session leaves a trace where the user looks.
 
 **7. Tool descriptions carry untrusted-text notices**: The Rust fence at the point of dispatch (prompt_fence.rs:418-428) carries no instruction text, only bare tags like `<job_posting>…</job_posting>`. The MCP tool description for `best-matches` and the `instructions` field must tell the model those spans are third-party data not to be trusted as facts. The same notice applies to any `structuredContent` if the server adds it.
 
@@ -40,7 +40,7 @@ Three architectural points framed the decision:
 
 **9. Stdout hygiene**: Exactly one compact JSON-RPC frame per line via `writeln!(stdout().lock(), serde_json::to_string(...))`. Never `println!`, never `to_string_pretty`, never logger output on stdout. Logs go to stderr only. The `ensure_console_output` call (windows_console.rs) is preserved as the first action, a no-op on inherited pipes.
 
-**10. Token freshness on reconnect**: The MCP server holds a single WebSocket connection across multiple tool calls. When reconnecting (e.g., after Settings → Regenerate Token), it re-reads the token file from disk and attempts HMAC auth with the fresh key; a `pairing_rejected` refusal triggers immediate exit (no retry loop). This preserves the freshness guarantee the CLI nominally offers (token read every invocation).
+**10. A fresh bridge connection per tool call**: The server holds no long-lived socket. Every `tools/call` that reaches the app runs the CLI's own `query()` path end to end — pointer file, token file, HMAC handshake, one request, close — so a token regenerated in Settings is picked up by the next call with no reconnect logic, and a `pairing_rejected` refusal is an ordinary `isError` result; the loop continues. The throttle lives on the app side, so reconnecting per call cannot widen it. Results above `MCP_RESULT_MAX_BYTES` are refused as `result_too_large`, never truncated, and `structuredContent` is not emitted: no observed client surfaces it and it would duplicate every payload, PII included, in the persisted transcript.
 
 **11. No app launch dependency**: `initialize` sends only the protocol version and basic info; it does not check app status, read the app's state, or establish a connection. Startup works with the app closed. The first tool call (e.g., `best-matches`) is where the connection handshake happens, in the same path the CLI already uses.
 
@@ -66,18 +66,14 @@ Three architectural points framed the decision:
 
 - **Confirmation ceremony not enforced server-side for all clients**: Claude Code implements `_meta["anthropic/requiresUserInteraction"]` and can force a prompt; Codex does not read this field. On Codex with an `approval_policy` of `never`, an LLM can reach Irreversible rows (and their own approval) by completing the ceremony alone, with no human gate between the model and the action. The `--allow-irreversible` flag and this ADR's documentation make that explicit.
 
-- **Best-matches title/company/location are unfenced in the MCP surface**: The `best-matches` tool returns up to 50 job postings; the fields title, company, and location are raw strings (not wrapped in the same `<job_posting>…</job_posting>` fence the app uses in other contexts). The tool description names them as third-party data.
+- **Residual scraped text in `best-matches`**: `title`, `company` and `location` are fenced at the point of projection (`fence_best_match_fields` in `agent_read.rs`) with the same wrapper `job.description` carries; `url` and `board` are validated rather than free text and stay bare. The fence is a marker, not an instruction — the `instructions` string is what tells the model the spans are untrusted.
 
 - **Tool results carry PII to the client**: Results leave the machine and land in the MCP client's cloud provider and persisted transcript. The `profile` tool returns contact info; `documents_get_text` returns the full résumé; `applications_list` and similar return application records. The server carries no redaction (per ADR-038 §3, the generic tier is raw). This is an explicit consequence of MCP design, not a new risk.
 
-### Verified behaviors
+### What was verified, and how
 
-The 2025-11-25 JSON-RPC dialect is supported by:
-
-- Claude Code 2.1.258 (uses the TypeScript SDK, which implements the 2025-11-25 handshake and falls back to `-32601` on `server/discover` for legacy servers)
-- Codex 0.144.6 (implements the spec directly in Go, same handshake, same fallback)
-
-Both clients pass `initialize` params containing `protocolVersion: "2025-11-25"` and expect a static response that names no async connection or app state. Both re-use the same `USERPROFILE`/`HOME` environment variables the CLI depends on to locate the pointer file.
+- **Against the real binary over stdio** (scripted sessions, app stopped and app running): a supported `protocolVersion` is echoed and an unsupported one gets `2025-11-25`; `server/discover` → `-32601`; `ping`; notifications produce no frame; a hidden tool → `-32602`; every refusal class arrives as an `isError` result carrying the CLI exit code; throttle refusals across consecutive calls with no retry; byte identity between `agent profile` stdout and the `profile` tool's text block; zero bytes on stderr.
+- **From the clients' source, not exercised end to end**: Claude Code 2.1.258 (TypeScript SDK) and Codex 0.144.6 (`rmcp` 1.8.0, Rust) both open stdio servers with the legacy `initialize` handshake and treat `-32601` on `server/discover` as the legacy signal. Which `protocolVersion` each sends is UNKNOWN until a live connection is made; the server echoes any supported value. Neither client was connected to this server before merge.
 
 ## Related decisions
 

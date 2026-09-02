@@ -371,11 +371,16 @@ claude mcp add --scope user ai-job-hunter -- /path/to/ajh-tauri agent mcp
 
 On Linux/macOS with Homebrew, `ajh-tauri` is already on `PATH`. On Windows and macOS dmg, use the full path from `~/.ajh-agent/agent.json`.
 
-To enable mutations (job-board login, apply tracking, etc.), launch with:
+By default the server is **read-only**: the model can search postings, read your profile and automations, and enumerate the command table. Two launch flags open the write tiers, each a superset of the last:
 
 ```bash
+# undoable state changes — track an application, edit your profile, import a document
+claude mcp add --scope user ai-job-hunter-write -- /path/to/ajh-tauri agent mcp --allow-reversible
+# additionally: destructive actions and AI spend — delete documents, remove provider keys, run generation against your API budget
 claude mcp add --scope user ai-job-hunter-unrestricted -- /path/to/ajh-tauri agent mcp --allow-irreversible
 ```
+
+The flags only decide which tools the model can _see_; every write still goes through the app's own policy table and, for destructive commands, the confirm ceremony (ADR-038).
 
 </details>
 
@@ -390,7 +395,7 @@ command = "ajh-tauri"
 args = ["agent", "mcp"]
 ```
 
-Replace `/path/to/ajh-tauri` with the path from `~/.ajh-agent/agent.json`. For mutation support, append `--allow-irreversible` to the args.
+If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json`. The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
 
 </details>
 

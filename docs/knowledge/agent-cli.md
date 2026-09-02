@@ -51,22 +51,19 @@ Written by the app on every launch (idempotent). This is the supported mechanism
 - **Authentication**: Uses the same loopback WebSocket bridge as the browser extension, with mutual HMAC challenge-response. The pairing token is used only as an HMAC key and is never sent on the wire; both clients reuse the same OS-stored credential.
 - **Policy table**: The `call` verb is a generic tier that respects per-command `Effect` classification (Read, Reversible, Irreversible). Irreversible commands require a `--confirm` proof value read from a separate command first (ADR-038 §4). The curated verbs are a separate, simpler tier that predates it.
 - **Timeout discipline**: Per-step budgets (handshake, query) + an outer invocation deadline prevent hung/squatting ports from stalling the entire call.
-- **Privacy**: The `error` field is always a fixed sentinel from a closed set; paths and pairing tokens never appear in any reply. A `detail` field may be present with human-readable context (e.g., validation errors). Safe for use in LLM agent transcripts.
+- **Privacy**: The `error` field is always a fixed sentinel from a closed set, and neither paths nor pairing tokens appear in any reply. A `detail` field may carry human-readable context. That guarantee covers the _envelope_ only: the `data` of a successful reply is the command's real output and can carry personal data (see the MCP section).
 
 ## MCP mode (`agent mcp`)
 
-The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing job queries and command dispatch as discoverable tools for LLM agents like Claude Code and Codex. Launch with `ajh-tauri agent mcp` (or `ajh-tauri agent mcp --allow-irreversible` to expose mutation commands).
+The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing job queries and command dispatch as discoverable tools for LLM agents such as Claude Code and Codex. `ajh-tauri agent mcp` starts a **read-only** server. Two argv-only flags open the write tiers along the `Effect` boundary: `--allow-reversible` adds undoable state changes, `--allow-irreversible` additionally adds destructive commands and AI spend (and implies the former). The flags are the only way to enable a tier — no environment variable or config path — and the server's `instructions` string names every enabled tier so an elevated session leaves a trace in the client transcript.
 
 **Protocol**: Uses the legacy 2025-11-25 JSON-RPC stdio wire. Each request and response is one compact JSON object per line (never pretty-printed).
 
-**Tools** (eight total):
-
-- Five curated, read-only: `best-matches` (search postings), `job` (fetch one by URL), `profile` (contact info), `automations` (autopilot status), `commands` (enumerate policy targets by effect class)
-- Three generic dispatch tiers: `call-read` (queries), `call-reversible` (state changes), `call-irreversible` (destructive operations, requires `--allow-irreversible` at launch)
+**Tools**: curated read-only tools plus one generic dispatch tool per `Effect` class; the authoritative list, descriptions and input schemas are `tools()` in `apps/desktop/src-tauri/src/extension_bridge/agent_cli/mcp.rs`. A tier hidden by the launch flags is absent from `tools/list`, naming it is a protocol error rather than a refusal, and the `commands` discovery tool marks that class `unavailable` instead of pointing at a tool the session cannot see.
 
 **Confirmation ceremony**: Commands marked `Irreversible` require a two-hop ceremony (ADR-038 §4). The `call-read` tool reads the target value; the `call-irreversible` tool passes it back via the `confirm` argument. The proof is passed **verbatim**, including any `<job_posting>…</job_posting>` wrapper and embedded newlines; fenced values JSON-escape cleanly on the stdio line.
 
-**Timeout and rate limits**: Each tool call has an individual timeout. The global rate limit shared by CLI and agent-query is enforced: cheap operations burst 10 then 1 per second; `best-matches` is capped at 1 per 30 seconds. Do not retry `rate_limited` responses in a loop.
+**Timeout and rate limits**: Each tool call runs under the CLI's own per-invocation deadline. The global throttle shared by the CLI and the agent-query tier applies unchanged (limits live beside `BridgeState` in `agent_read.rs`); refusals arrive as `rate_limited` tool results and the server never retries. A result larger than `MCP_RESULT_MAX_BYTES` (in `mcp.rs`) is refused as `result_too_large` rather than truncated, because a truncated JSON payload would be worse for the model than none.
 
 **Tool results carry personal data**: The `profile`, `documents_get_text`, `applications_list`, and `email_watch_status` tools return PII; `best-matches` returns job postings. Results are sent to the MCP client's AI provider and persisted in its transcript. Use these tools only when the user explicitly asked for that data.
 
