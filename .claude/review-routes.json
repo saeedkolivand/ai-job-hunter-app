@@ -9,6 +9,7 @@
     },
     {
       "glob": "apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs",
+      "glob": "apps/desktop/src-tauri/src/extension_bridge/agent_cli/**",
       "owner": "agent-cli-reviewer"
     },
     {
@@ -242,6 +243,7 @@
     "testing": ["**/*.test.*", "**/*.spec.*", "apps/desktop/src-tauri/tests/**"],
     "agent-cli": [
       "apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs",
+      "apps/desktop/src-tauri/src/extension_bridge/agent_cli/**",
       "apps/desktop/src-tauri/src/extension_bridge/agent_read.rs"
     ]
   }
