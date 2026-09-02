@@ -241,4 +241,26 @@ describe('Tabs — composite tab order', () => {
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveFocus();
     expect(screen.getByRole('tablist', { name: 'Application sections' })).not.toHaveFocus();
   });
+
+  it('is still focusable PROGRAMMATICALLY — `.focus()` on the tablist lands there', async () => {
+    render(<Harness initial="details" />);
+    const tablist = screen.getByRole('tablist', { name: 'Application sections' });
+
+    // ORDER MATTERS: Tab from a clean start, THEN focus programmatically. The
+    // reverse (focus the tablist first, then Tab) passes under `tabIndex={0}`
+    // too, because tabbing out of the tablist also lands on the tab — a test
+    // that proves nothing about the attribute it names.
+    await userEvent.tab();
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveFocus();
+    expect(tablist).not.toHaveFocus();
+
+    // The half a tab-order assertion cannot see: deleting `tabIndex={-1}`
+    // leaves every Tab test green — a plain div is simply skipped — while
+    // making the tablist unfocusable for the calls that need it (scrolling the
+    // active tab into view, focusing a panel's owner). This pins the attribute
+    // from BOTH sides: remove it and this fails, raise it to `0` and the Tab
+    // assertion above does.
+    tablist.focus();
+    expect(tablist).toHaveFocus();
+  });
 });

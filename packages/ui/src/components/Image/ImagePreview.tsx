@@ -13,6 +13,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useFocusTrap } from '../../hooks/use-focus-trap';
 import { Button } from '../Button';
 
 /** The live view transform applied to the previewed image. */
@@ -90,7 +91,11 @@ export function ImagePreview({
   toolbarRender,
 }: ImagePreviewProps) {
   const [transform, setTransform] = useState<ImageTransform>(IDENTITY);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  // The house focus trap — the SAME one `ModalShell`, `Drawer` and `ActionMenu`
+  // use. It owns three things this dialog previously did by hand or not at all:
+  // moving focus in on open, containing Tab and Shift+Tab, and handing focus
+  // back to the opener on close.
+  const dialogRef = useFocusTrap(open);
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(
     null
   );
@@ -109,27 +114,24 @@ export function ImagePreview({
     if (open) setTransform(IDENTITY);
   }, [open, index]);
 
-  // Move focus INTO the dialog when it opens, and hand it BACK on close. The
-  // arrow keys are bound on `window`, so leaving focus on whatever opened the
-  // preview means an arrow press both pans the image and reaches the control
-  // behind it (a text field would move its caret, a list would change
-  // selection). Focusing the dialog also gives a keyboard user somewhere to tab
-  // FROM, per the APG dialog pattern; `tabIndex={-1}` makes it programmatically
-  // focusable only.
+  // Focus handling is entirely the trap's now. Why each half matters here:
   //
-  // Taking focus without returning it is only half of that pattern: the dialog
-  // unmounts on Escape/close, focus falls to `<body>`, and the next Tab
-  // restarts at the top of the page instead of at the thumbnail the user opened
-  // (WCAG 2.4.3). `isConnected` guards the case where the opener itself is gone
-  // by then — a preview closed by a re-render that also removed its trigger.
-  useEffect(() => {
-    if (!open) return;
-    const opener = document.activeElement as HTMLElement | null;
-    dialogRef.current?.focus();
-    return () => {
-      if (opener?.isConnected) opener.focus();
-    };
-  }, [open]);
+  // - IN, on open: the arrow keys are bound on `window`, so focus left on
+  //   whatever opened the preview means an arrow press both pans the image and
+  //   reaches the control behind it (a text field would move its caret, a list
+  //   would change selection). The trap moves focus to the first control in the
+  //   dialog — the Close button — per the APG dialog pattern.
+  // - CONTAINED, while open: `aria-modal` tells assistive tech that everything
+  //   behind is inert, but it does not move a single tab stop. Without the trap
+  //   Tab walked straight out of the lightbox into a page the user cannot see,
+  //   and Shift+Tab from the first control did the same in reverse.
+  // - BACK, on close: the dialog unmounts on Escape/close and focus falls to
+  //   `<body>`, so the next Tab restarts at the top of the page instead of at
+  //   the thumbnail the preview was opened from (WCAG 2.4.3).
+  //
+  // `tabIndex={-1}` on the shell stays: it keeps the container programmatically
+  // focusable, which is what the APG asks for when a dialog has no focusable
+  // child at all.
 
   // Lock body scroll while open.
   useEffect(() => {
@@ -257,7 +259,7 @@ export function ImagePreview({
 
   return createPortal(
     <div
-      ref={dialogRef}
+      ref={dialogRef as React.RefObject<HTMLDivElement>}
       role="dialog"
       aria-modal="true"
       tabIndex={-1}

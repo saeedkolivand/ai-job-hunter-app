@@ -258,6 +258,8 @@ export function useHelpChat({ model, canUse }: Params) {
       };
 
       // Read the user's own lists only now — a question was actually asked.
+      // Any of the four may come back `null`: that source could not be read, and
+      // the glance leaves its line out rather than claiming a zero.
       const [embeddingStatus, interactions, applications, autopilots] = await fetchDataSources();
       if (controller.signal.aborted) return false;
 
@@ -275,11 +277,12 @@ export function useHelpChat({ model, canUse }: Params) {
         question: query,
         entries: used.map(({ title, body }) => ({ title, body })),
         dataGlance: buildHelpDataGlance({
-          documentCount: embeddingStatus?.documents?.total ?? 0,
-          interactionCounts: countTrackedInteractions(interactions),
-          applicationsByStatus: countByStatus(applications),
-          recentApplications: aboutApplications ? recentApplications(applications) : [],
-          autopilotCount: autopilots.length,
+          documentCount: embeddingStatus ? (embeddingStatus.documents?.total ?? 0) : null,
+          interactionCounts: interactions ? countTrackedInteractions(interactions) : null,
+          applicationsByStatus: applications ? countByStatus(applications) : null,
+          recentApplications:
+            aboutApplications && applications ? recentApplications(applications) : [],
+          autopilotCount: autopilots ? autopilots.length : null,
           target: profile,
         }),
         history,

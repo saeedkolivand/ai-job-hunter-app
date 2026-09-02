@@ -202,6 +202,33 @@ describe('useHelpChat', () => {
     expect(second?.history?.map((turn) => turn.content)).not.toContain('second question');
   });
 
+  it('still answers when ONE glance source fails, and omits only that source', async () => {
+    // The glance is a garnish on an answer grounded in the help corpus, so a
+    // single unreadable source must cost its own line and nothing else. Under
+    // `Promise.all` this rejection failed the whole question.
+    const { result } = render('llama3:70b', {
+      'applications.list': vi.fn().mockRejectedValue(new Error('database is locked')),
+    });
+
+    await act(async () => {
+      await result.current.send('how do i export a pdf');
+    });
+
+    // The answer landed: an assistant turn, no error.
+    expect(result.current.error).toBeNull();
+    expect(result.current.turns[1]?.role).toBe('assistant');
+    expect(result.current.turns[1]?.content).toBe('Open the document and click Export.');
+
+    const glance = generateArg().dataGlance ?? '';
+    // The failed source is ABSENT — not reported as "Applications tracked: 0",
+    // which the model would state as fact about a user who has applications.
+    expect(glance).not.toContain('Applications tracked');
+    // The three that answered are all still there.
+    expect(glance).toContain('Documents imported: 3');
+    expect(glance).toContain('viewed 2');
+    expect(glance).toContain('Autopilots configured: 2');
+  });
+
   it('flags a keyword-only answer on the turn, WITH the reason the dense arm did not run', async () => {
     const { result } = render('llama3:70b', {
       'help.search': vi.fn().mockResolvedValue({

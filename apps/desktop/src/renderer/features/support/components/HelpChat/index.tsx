@@ -58,19 +58,32 @@ export function HelpChat({ onSearchFor }: Props) {
   // The box is cleared only once an answer has actually landed. Clearing it on
   // submit meant a failed question had to be retyped from memory — the one
   // moment the text is hardest to reproduce and most needed.
+  //
+  // Which makes WHAT is cleared a question of its own: the box stays editable
+  // while the answer streams (drafting the follow-up during a slow local model
+  // is the point), so by the time this resolves the box may hold a question
+  // that was never sent. Clear the submitted text, not "whatever is in the box
+  // now" — if the user has typed since, their draft is the newer truth and an
+  // unconditional `setQuestion('')` silently eats it.
+  const clearIfUntouched = (submitted: string) => (current: string) =>
+    current === submitted ? '' : current;
+
   const submit = () => {
-    if (!question.trim() || streaming) return;
-    void send(question).then((answered) => {
-      if (answered) setQuestion('');
+    const submitted = question;
+    if (!submitted.trim() || streaming) return;
+    void send(submitted).then((answered) => {
+      if (answered) setQuestion(clearIfUntouched(submitted));
     });
   };
 
   // The error row is only on screen when nothing is in flight (starting a run
   // clears `error`), so this needs no streaming guard of its own — `retry`
-  // refuses one anyway.
+  // refuses one anyway. Same snapshot rule: a retry re-answers the turn already
+  // in the transcript, and the box is free the whole time it runs.
   const retryLast = () => {
+    const submitted = question;
     void retry().then((answered) => {
-      if (answered) setQuestion('');
+      if (answered) setQuestion(clearIfUntouched(submitted));
     });
   };
 

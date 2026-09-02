@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
@@ -158,6 +158,28 @@ describe('HelpChat', () => {
     send.mockResolvedValue(true);
     fireEvent.click(screen.getByTestId(TEST_IDS.support.chatAsk));
     await waitFor(() => expect(box).toHaveValue(''));
+  });
+
+  it('does not eat a draft typed while the previous answer was still streaming', async () => {
+    // The box is editable during a stream, so the user can start the follow-up
+    // before the answer lands. Clearing unconditionally on success wiped it.
+    let resolveSend: (answered: boolean) => void = () => {};
+    send.mockImplementation(() => new Promise<boolean>((res) => (resolveSend = res)));
+    render(<HelpChat onSearchFor={vi.fn()} />);
+
+    const box = screen.getByTestId(TEST_IDS.support.chatInput);
+    fireEvent.change(box, { target: { value: 'how do i export a pdf' } });
+    fireEvent.click(screen.getByTestId(TEST_IDS.support.chatAsk));
+    await waitFor(() => expect(send).toHaveBeenCalledWith('how do i export a pdf'));
+
+    // ...user starts typing the next question while the first one streams.
+    fireEvent.change(box, { target: { value: 'and how do i export a docx' } });
+    await act(async () => {
+      resolveSend(true);
+    });
+
+    // The answer landed, but what is in the box was never sent — it survives.
+    expect(box).toHaveValue('and how do i export a docx');
   });
 
   it('offers a retry on the error row that re-sends the last question', async () => {

@@ -70,9 +70,9 @@ describe('MarkdownMessage', () => {
     // link to a screen reader AND what lets it wrap inline with the prose.
     const link = screen.getByRole('link', { name: '0.49.0' });
     expect(link).toHaveAttribute('href', 'https://example.com/compare/v0.48.0...v0.49.0');
-    // Same `rel` as `ExternalLink`: `onClick` cancels a primary click, but a
-    // middle-click navigates via `auxclick`, and the destination came from an
-    // AI answer or a changelog — it must not be handed this app's location.
+    // Same `rel` as `ExternalLink`: both click paths are cancelled, but the
+    // destination came from an AI answer or a changelog, so no route that does
+    // reach it may be handed this app's location.
     expect(link).toHaveAttribute('rel', 'noreferrer');
     fireEvent.click(link);
     expect(onLinkClick).toHaveBeenCalledWith('https://example.com/compare/v0.48.0...v0.49.0');
@@ -95,6 +95,23 @@ describe('MarkdownMessage', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('never navigates the webview on a MIDDLE-click either — `auxclick` is cancelled', () => {
+    render(
+      <MarkdownMessage
+        content={'see [#225](https://example.com/issues/225) for details'}
+        onLinkClick={vi.fn()}
+      />
+    );
+    const link = screen.getByRole('link', { name: '#225' });
+    // A middle-click fires `auxclick` and NO `click`, so the `onClick` handler
+    // never runs and the anchor opened the AI-supplied URL in a new webview
+    // tab. `onAuxClick` is the only thing between that URL and the webview.
+    // (`fireEvent` has no `auxClick` helper — dispatch the real event.)
+    const event = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 });
+    fireEvent(link, event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('refuses a non-http(s) scheme: it renders as label text, never as an href', () => {
     const onLinkClick = vi.fn();
     const { container } = render(
@@ -103,8 +120,9 @@ describe('MarkdownMessage', () => {
         onLinkClick={onLinkClick}
       />
     );
-    // `preventDefault` only intercepts a PRIMARY click; a middle-click fires
-    // `auxclick` and would navigate. So an unvetted scheme never reaches href.
+    // Both click paths are cancelled on a vetted link, but an `href` is still
+    // reachable without a click (copy-link, drag), so an unvetted scheme is
+    // kept out of the DOM entirely rather than merely made hard to activate.
     expect(container.querySelector('a')).toBeNull();
     expect(screen.getByText('here')).toBeInTheDocument();
   });

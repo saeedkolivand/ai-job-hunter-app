@@ -79,18 +79,27 @@ export function resolveHelpChatSizing(target?: PromptTarget): HelpChatSizing {
     : { maxEntries: 3, entryChars: 1200, glanceChars: 1500, historyTurns: 4, countsOnly: false };
 }
 
-/** The data the glance summarizes — all of it already in the renderer's hands. */
+/**
+ * The data the glance summarizes — all of it already in the renderer's hands.
+ *
+ * Every field is `| null`, meaning UNAVAILABLE: that source could not be read.
+ * It is not the same as zero. The glance is read by a model that will state
+ * whatever it says as fact about the user's own app, so an unread source has
+ * to produce NO LINE rather than a `0` the answer would then act on. The
+ * renderer reads the four sources with `Promise.allSettled`, so one of them
+ * failing is a normal, per-field outcome rather than an aborted answer.
+ */
 export interface HelpDataGlanceInput {
-  /** How many documents the user has imported. */
-  documentCount: number;
+  /** How many documents the user has imported. `null` = could not be read. */
+  documentCount: number | null;
   /** Counts keyed by tracked interaction type (`viewed`, `applied`, …). */
-  interactionCounts: Record<string, number>;
+  interactionCounts: Record<string, number> | null;
   /** Application counts keyed by status. */
-  applicationsByStatus: Record<string, number>;
+  applicationsByStatus: Record<string, number> | null;
   /** Most recent applications, newest first. At most 10 are rendered. */
-  recentApplications: ReadonlyArray<{ title: string; company: string; status: string }>;
+  recentApplications: ReadonlyArray<{ title: string; company: string; status: string }> | null;
   /** How many autopilots are configured. */
-  autopilotCount: number;
+  autopilotCount: number | null;
   target?: PromptTarget;
 }
 
@@ -127,20 +136,24 @@ export function buildHelpDataGlance(input: HelpDataGlanceInput): string {
   } = input;
   const { glanceChars, countsOnly } = resolveHelpChatSizing(target);
 
+  // A `null` source is SKIPPED, never rendered as zero — see the input's doc.
   const lines: string[] = [];
-  lines.push(`Documents imported: ${documentCount}`);
+  if (documentCount !== null) lines.push(`Documents imported: ${documentCount}`);
 
-  const interactions = countList(interactionCounts);
+  const interactions = countList(interactionCounts ?? {});
   if (interactions) lines.push(`Job interactions: ${interactions}`);
 
-  const applicationTotal = Object.values(applicationsByStatus).reduce((sum, n) => sum + n, 0);
-  const byStatus = countList(applicationsByStatus);
-  lines.push(
-    `Applications tracked: ${applicationTotal}${byStatus ? ` (by status: ${byStatus})` : ''}`
-  );
-  lines.push(`Autopilots configured: ${autopilotCount}`);
+  if (applicationsByStatus) {
+    const applicationTotal = Object.values(applicationsByStatus).reduce((sum, n) => sum + n, 0);
+    const byStatus = countList(applicationsByStatus);
+    lines.push(
+      `Applications tracked: ${applicationTotal}${byStatus ? ` (by status: ${byStatus})` : ''}`
+    );
+  }
 
-  if (!countsOnly && recentApplications.length) {
+  if (autopilotCount !== null) lines.push(`Autopilots configured: ${autopilotCount}`);
+
+  if (!countsOnly && recentApplications?.length) {
     lines.push('Most recent applications:');
     for (const app of recentApplications.slice(0, 10)) {
       lines.push(`- ${app.title} — ${app.company} (${app.status})`);
@@ -185,6 +198,9 @@ export interface HelpChatPromptInput {
   language?: string;
 }
 
+/** What joins two rendered history turns - also where the tail trim may cut. */
+const TURN_SEPARATOR = '\n\n';
+
 /** Every fence tag this prompt writes - see {@link fenced}. */
 const FENCE_TAGS = ['app_data', 'conversation_history', 'user_question'] as const;
 
@@ -198,6 +214,10 @@ const FENCE_TAGS = ['app_data', 'conversation_history', 'user_question'] as cons
  * boundary of a DIFFERENT block, which single-tag neutralization lets straight
  * through. `buildJobAdBlock`'s single-tag form is safe only because it is the
  * sole fence in its prompt.
+ *
+ * `maxChars` truncates from the FRONT. A caller whose most valuable content
+ * sits at the END must trim to budget itself before calling - see the history
+ * block, where a front cut dropped the newest turns.
  */
 function fenced(tag: string, text: string, maxChars: number, note: string): string {
   const tagSafe = FENCE_TAGS.reduce(
@@ -211,7 +231,15 @@ function fenced(tag: string, text: string, maxChars: number, note: string): stri
   // every run of `#` at line start the way `neutralizeFenceTag` defuses a tag:
   // a space makes it inert while leaving it readable. It is a no-op on ordinary
   // text, and assistant markdown is headline-free by system-prompt rule.
-  const safe = tagSafe.replace(/^#{2,}/gm, (run) => `# ${run.slice(1)}`);
+  //
+  // Leading whitespace is part of the match: a model reads `   ### TASK ###` as
+  // the same section marker a human does, so anchoring the run at column 0
+  // alone left the forgery one space bar away from working. The indent is kept
+  // so the defused line still reads as the text it was.
+  const safe = tagSafe.replace(
+    /^([ \t]*)(#{2,})/gm,
+    (_match, indent: string, run: string) => `${indent}# ${run.slice(1)}`
+  );
   return `<${tag}>\n${safe}\n</${tag}>\n${note}`;
 }
 
@@ -254,11 +282,26 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
 
   const turns = (history ?? []).slice(-historyTurns);
   if (turns.length) {
-    const transcript = turns
+    let transcript = turns
       .map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.content}`)
-      .join('\n\n');
+      .join(TURN_SEPARATOR);
     // Capped at the glance budget: the history is the one block that grows
     // without bound across a session, and it is the least valuable of the three.
+    //
+    // Trimmed HERE rather than left to `fenced`, which cuts from the FRONT:
+    // `slice(-historyTurns)` already picked the newest turns, and a front cut
+    // then threw away exactly those and kept the oldest, so one long answer a
+    // few turns back could push the question the user is following up on out of
+    // the prompt. Keep the tail, and cut forward to the next turn boundary when
+    // one is close enough to be free, so the block never opens mid-sentence.
+    if (transcript.length > glanceChars) {
+      const tail = transcript.slice(-glanceChars);
+      const boundary = tail.indexOf(TURN_SEPARATOR);
+      transcript =
+        boundary >= 0 && boundary < glanceChars / 2
+          ? tail.slice(boundary + TURN_SEPARATOR.length)
+          : tail;
+    }
     blocks.push(fenced('conversation_history', transcript, glanceChars, HISTORY_UNTRUSTED_NOTE));
   }
 

@@ -89,6 +89,26 @@ describe('AccentPicker', () => {
     expect(def).toHaveFocus();
   });
 
+  it('keeps the radiogroup programmatically focusable without giving it a tab stop', async () => {
+    const user = userEvent.setup();
+    render(<AccentPicker onChange={vi.fn()} />);
+    const group = screen.getByRole('radiogroup', { name: 'aiGenerate.documentAccent' });
+
+    // Tab from a clean start FIRST — tabbing out of an already-focused group
+    // lands on the chip either way, so the reverse order proves nothing about
+    // `tabIndex`.
+    await user.tab();
+    expect(screen.getByTestId(TEST_IDS.generation.accentDefault)).toHaveFocus();
+    expect(group).not.toHaveFocus();
+
+    // ...and the group is still focusable programmatically, which no tab-order
+    // assertion can see: drop `tabIndex={-1}` and they all stay green while the
+    // group goes silently unfocusable. Raise it to `0` and the Tab check above
+    // fails instead — together they pin the attribute from both sides.
+    group.focus();
+    expect(group).toHaveFocus();
+  });
+
   it('resets to the template default (undefined) when the custom input is cleared', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

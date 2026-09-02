@@ -38,24 +38,49 @@ export const useHelpSearch = () => {
  * so a cached list from elsewhere in the app is reused and the result is
  * cached for them in turn — this is one more reader of those queries, not a
  * private fetch path.
+ *
+ * Each source resolves INDEPENDENTLY: the glance is an optional garnish on an
+ * answer that is really grounded in the help corpus, so one unreadable source
+ * must cost its own line and nothing else. Under `Promise.all` a single
+ * rejection — a locked database, an embedding backend that is down — threw the
+ * whole question away and the user got an error instead of an answer that was
+ * always going to come from the corpus anyway.
  */
 export const useFetchHelpDataSources = () => {
   const api = useAppClient();
   const qc = useQueryClient();
-  return useCallback(
-    async () =>
-      Promise.all([
-        qc.fetchQuery({
-          queryKey: keys.ai.embeddingStatus,
-          queryFn: () => api.ai.embeddingStatus(),
-        }),
-        qc.fetchQuery({
-          queryKey: keys.postings.interactions(undefined),
-          queryFn: () => api.scrape.listInteractions({}),
-        }),
-        qc.fetchQuery({ queryKey: keys.applications.all, queryFn: () => api.applications.list() }),
-        qc.fetchQuery({ queryKey: keys.autopilot.all, queryFn: () => api.autopilot.list() }),
-      ]),
-    [api, qc]
-  );
+  return useCallback(async () => {
+    const [embeddingStatus, interactions, applications, autopilots] = await Promise.allSettled([
+      qc.fetchQuery({
+        queryKey: keys.ai.embeddingStatus,
+        queryFn: () => api.ai.embeddingStatus(),
+      }),
+      qc.fetchQuery({
+        queryKey: keys.postings.interactions(undefined),
+        queryFn: () => api.scrape.listInteractions({}),
+      }),
+      qc.fetchQuery({ queryKey: keys.applications.all, queryFn: () => api.applications.list() }),
+      qc.fetchQuery({ queryKey: keys.autopilot.all, queryFn: () => api.autopilot.list() }),
+    ]);
+    return [
+      unavailableAsNull(embeddingStatus),
+      unavailableAsNull(interactions),
+      unavailableAsNull(applications),
+      unavailableAsNull(autopilots),
+    ] as const;
+  }, [api, qc]);
 };
+
+/**
+ * One source's outcome, with a failure reported as `null` — UNKNOWN, not zero.
+ *
+ * The distinction is the whole point. `buildHelpDataGlance` states its numbers
+ * as fact, so degrading a failed read to `0`/`[]` would put "Documents
+ * imported: 0" in front of the model for a user with fifty documents, and the
+ * answer would confidently act on it. `null` means the glance omits the line,
+ * which is the same reason the glance is not fetched on mount: about the
+ * user's own data, saying nothing beats saying something false.
+ */
+function unavailableAsNull<T>(result: PromiseSettledResult<T>): T | null {
+  return result.status === 'fulfilled' ? result.value : null;
+}

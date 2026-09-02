@@ -16,10 +16,12 @@ type LinkClick = ((url: string) => void) | undefined;
 
 /**
  * Schemes allowed into a rendered `href`. Markdown here is AI output or a
- * changelog body, so the URL is not ours; `javascript:`/`data:` are excluded
- * because `preventDefault` only intercepts a primary click - a middle-click
- * navigates on `auxclick`, which never reaches the React handler. A refused
- * link degrades to plain label text, the same as having no handler at all.
+ * changelog body, so the URL is not ours; `javascript:`/`data:` are excluded so
+ * an unvetted scheme never reaches the DOM at all. The anchor below cancels
+ * BOTH click paths (`onClick` for a primary click, `onAuxClick` for the
+ * middle-click that fires `auxclick` instead), but an `href` is still reachable
+ * without any click - copy-link, drag-and-drop. A refused link degrades to
+ * plain label text, the same as having no handler at all.
  */
 // The scheme check is written as `startsWith` on the very string that reaches
 // `href`, not as a regex on a trimmed copy: that is the shape static taint
@@ -219,16 +221,21 @@ function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {
           <a
             key={i}
             href={url}
-            // Matches `ExternalLink`, the app's other intercepted anchor. The
-            // `onClick` below cancels a primary click, but a middle-click fires
-            // `auxclick` and navigates for real — and the URL came out of an AI
-            // answer or a changelog, so it must not carry this app's location
-            // to it as a `Referer`.
+            // Matches `ExternalLink`, the app's other intercepted anchor.
+            // Belt-and-braces now that both click paths are cancelled: the URL
+            // came out of an AI answer or a changelog, so any route that does
+            // reach it must not carry this app's location as a `Referer`.
             rel="noreferrer"
             onClick={(e) => {
               e.preventDefault();
               onLinkClick(url);
             }}
+            // A middle-click fires `auxclick` and NEVER the React `onClick`, so
+            // `onClick` alone left the webview free to open an AI-supplied URL
+            // in a new tab. Cancel it too - the host opener is the only way a
+            // URL leaves this renderer. No `onLinkClick` here: a middle-click
+            // asks for a new tab, which is not a thing this surface offers.
+            onAuxClick={(e) => e.preventDefault()}
             className="cursor-pointer text-brand-soft underline underline-offset-2 hover:text-brand"
           >
             {label}
@@ -236,8 +243,9 @@ function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {
         );
       }
       // No handler, or a scheme we refuse to put in an `href` → show the label
-      // only. Never a live href we have not vetted: `preventDefault` covers a
-      // primary click, but a middle-click fires `auxclick` and would navigate.
+      // only. Never a live href we have not vetted, even though the anchor
+      // cancels both click paths: an `href` is still reachable by copy-link or
+      // drag, and a `javascript:`/`data:` URL must not sit in the DOM at all.
       return <span key={i}>{label}</span>;
     }
     if (part.startsWith('**') || part.startsWith('__'))

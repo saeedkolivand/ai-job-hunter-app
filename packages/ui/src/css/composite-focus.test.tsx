@@ -103,7 +103,7 @@ describe('composite containers are exempt from the global focus ring', () => {
     expect(matchesRule(screen.getByRole('tab', { name: 'One' }))).toBe(false);
   });
 
-  it('covers the ImagePreview dialog', () => {
+  it('does NOT cover a dialog shell — it has no roving child to carry the ring', () => {
     render(
       <ImagePreview
         items={['https://example.com/a.png']}
@@ -113,8 +113,27 @@ describe('composite containers are exempt from the global focus ring', () => {
         onOpenChange={vi.fn()}
       />
     );
-    // A full-viewport backdrop: the ring would trace the entire window.
-    expect(matchesRule(screen.getByRole('dialog'))).toBe(true);
+    // The radiogroup/tablist exemption is paid for by a roving tabindex: a
+    // child is always the tab stop and paints its own ring. A dialog shell has
+    // no such child — it is focused on its own, and with no enabled focusable
+    // inside it the container's outline is the only indicator that exists. So
+    // the suppression must not reach it (WCAG 2.4.7).
+    expect(matchesRule(screen.getByRole('dialog'))).toBe(false);
+  });
+
+  it('leaves an indicator on a focused dialog shell with no focusable child', () => {
+    // The case the exemption silently broke: a `tabIndex={-1}` dialog that
+    // takes focus itself and contains nothing focusable. Written as bare markup
+    // rather than a component so it cannot be fixed by changing where some
+    // component happens to put focus.
+    const { container } = render(
+      <div role="dialog" aria-modal="true" tabIndex={-1} aria-label="Empty dialog" />
+    );
+    const dialog = container.firstElementChild as HTMLElement;
+    dialog.focus();
+
+    expect(dialog).toHaveFocus();
+    expect(matchesRule(dialog)).toBe(false);
   });
 
   it('never reaches a composite that IS keyboard-reachable', () => {

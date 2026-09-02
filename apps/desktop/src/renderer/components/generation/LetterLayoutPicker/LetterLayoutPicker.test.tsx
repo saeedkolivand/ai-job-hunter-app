@@ -44,6 +44,24 @@ describe('LetterLayoutPicker', () => {
     expect(screen.getByTestId(opt('refined'))).toHaveAttribute('tabindex', '-1');
   });
 
+  it('keeps the radiogroup programmatically focusable without giving it a tab stop', async () => {
+    const user = userEvent.setup();
+    render(<LetterLayoutPicker value="banded" onChange={vi.fn()} />);
+    const group = screen.getByRole('radiogroup', { name: 'aiGenerate.letterLayout' });
+
+    // Same pair as the roving-tabindex test above, from the other direction:
+    // that one reads the attribute, this one reads its two CONSEQUENCES, so
+    // neither deleting `tabIndex={-1}` nor raising it to `0` can pass both.
+    // Tab BEFORE focusing: tabbing out of an already-focused group lands on the
+    // option either way, which would make the `tabIndex={0}` half vacuous.
+    await user.tab();
+    expect(screen.getByTestId(opt('banded'))).toHaveFocus();
+    expect(group).not.toHaveFocus();
+
+    group.focus();
+    expect(group).toHaveFocus();
+  });
+
   it('advances selection with ArrowDown from the in-set current option', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
