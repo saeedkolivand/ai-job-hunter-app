@@ -161,17 +161,21 @@ mode, each of which a reviewer should verify from the source rather than the des
   no token, no socket — so startup never depends on the app running.
 - **Tools along the `Effect` boundary.** Read-only curated tools and the three generic `call-*`
   tools each carry MCP annotations (`readOnlyHint`/`destructiveHint`) that match the policy table;
-  a test pins every policy row to exactly one tool. `call-irreversible` is absent from `tools/list`
-  unless the server was started with `--allow-irreversible`.
+  a test pins every policy row to exactly one tool. The server is read-only by default:
+  `call-reversible` appears only with `--allow-reversible`, `call-irreversible` only with
+  `--allow-irreversible` (which implies the former); a hidden tool named anyway is `-32602`, and
+  `commands` marks the hidden class `unavailable`. The flags are argv-only — no environment
+  variable, no config path.
 - **The confirm ceremony passes through verbatim.** `confirm` exists only on `call-irreversible`
   and is forwarded as-is; the server never reads the proof itself (ADR-038 §4 — collapsing the two
   hops "stops nothing").
 - **Refusals are results, not protocol errors.** App-side refusals, sentinels, exit codes and the
   `confirmation_required` hint travel in `content[].text` with `isError:true`; protocol errors are
   reserved for malformed JSON-RPC.
-- **stdout is the protocol.** Exactly one `writeln!` site, compact JSON, never `println!` or
-  `to_string_pretty` (release is `panic = "abort"` and this path runs above crash reporting, so a
-  write to a closed pipe is a silent abort). No `eprintln!` in the loop. A source guard test
-  enforces this.
+- **stdout is the protocol.** Exactly one `stdout()` acquisition, compact JSON, never `println!`,
+  `eprintln!` or `to_string_pretty` (release is `panic = "abort"` and this path runs above crash
+  reporting, so a write to a closed pipe is a silent abort). The only stdout write outside `emit`
+  is `--help`, which runs before any frame is read. A source guard test counts the acquisition
+  and bans the macros.
 - **Third-party text is fenced before it reaches the client** (unchanged from the CLI), and the
   server's `instructions` say so — nothing in the payload itself marks the spans as untrusted.

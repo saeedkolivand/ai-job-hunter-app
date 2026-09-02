@@ -51,7 +51,7 @@ Written by the app on every launch (idempotent). This is the supported mechanism
 - **Authentication**: Uses the same loopback WebSocket bridge as the browser extension, with mutual HMAC challenge-response. The pairing token is used only as an HMAC key and is never sent on the wire; both clients reuse the same OS-stored credential.
 - **Policy table**: The `call` verb is a generic tier that respects per-command `Effect` classification (Read, Reversible, Irreversible). Irreversible commands require a `--confirm` proof value read from a separate command first (ADR-038 §4). The curated verbs are a separate, simpler tier that predates it.
 - **Timeout discipline**: Per-step budgets (handshake, query) + an outer invocation deadline prevent hung/squatting ports from stalling the entire call.
-- **Privacy**: The `error` field is always a fixed sentinel from a closed set, and neither paths nor pairing tokens appear in any reply. A `detail` field may carry human-readable context. That guarantee covers the _envelope_ only: the `data` of a successful reply is the command's real output and can carry personal data (see the MCP section).
+- **Privacy**: The `error` field of a generic-tier reply is a fixed sentinel from a closed set (the curated tier's throttle refusal is the one prose exception, and predates the MCP mode); neither paths nor pairing tokens appear in any reply. A `detail` field may carry human-readable context. That guarantee covers the _envelope_ only: the `data` of a successful reply is the command's real output and can carry personal data (see the MCP section).
 
 ## MCP mode (`agent mcp`)
 
@@ -65,7 +65,7 @@ The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing 
 
 **Timeout and rate limits**: Each tool call runs under the CLI's own per-invocation deadline. The global throttle shared by the CLI and the agent-query tier applies unchanged (limits live beside `BridgeState` in `agent_read.rs`); refusals arrive as `rate_limited` tool results and the server never retries. A result larger than `MCP_RESULT_MAX_BYTES` (in `mcp.rs`) is refused as `result_too_large` rather than truncated, because a truncated JSON payload would be worse for the model than none.
 
-**Tool results carry personal data**: The `profile`, `documents_get_text`, `applications_list`, and `email_watch_status` tools return PII; `best-matches` returns job postings. Results are sent to the MCP client's AI provider and persisted in its transcript. Use these tools only when the user explicitly asked for that data.
+**Tool results carry personal data**: The `profile` tool and `call-read` targets such as `documents_get_text`, `applications_list` and `email_watch_status` return PII; `best-matches` returns job postings. Results are sent to the MCP client's AI provider and persisted in its transcript. Use these tools only when the user explicitly asked for that data.
 
 **See also**: [ADR-040](decision-records/adr-040-mcp-server-as-agent-cli-mode.md) for the complete design and wire contract.
 
