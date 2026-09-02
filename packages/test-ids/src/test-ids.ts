@@ -196,4 +196,12 @@ export const TEST_IDS = {
     stepAppearance: 'step-appearance',
     tour: 'tour',
   },
+
+  /** Help & Support — the searchable help page (ADR-041) */
+  support: {
+    /** Search box above the sections; filters entries with a word-AND substring match. */
+    searchInput: 'support-search-input',
+    /** Wrapper around the EmptyState shown when no entry in any section matches. */
+    emptyState: 'support-empty-state',
+  },
 } as const;

@@ -2685,7 +2685,7 @@
   "support": {
     "faq": {
       "title": "Hilfe & Support",
-      "subtitle": "Häufige Probleme und deren Lösungen.",
+      "subtitle": "Anleitungen und Lösungen für häufige Probleme.",
       "badge": "Support",
       "jobScraping": "Job-Scraping",
       "aiFeatures": "KI-Funktionen",
@@ -2698,8 +2698,8 @@
           "a": "Ihre LinkedIn-Sitzung ist wahrscheinlich abgelaufen. Beheben Sie es in dieser Reihenfolge: 1. Gehen Sie zu Einstellungen → Konten und klicken Sie auf Trennen neben LinkedIn. 2. Klicken Sie auf Verbinden — ein Browserfenster öffnet sich. Melden Sie sich manuell bei Ihrem LinkedIn-Konto an. 3. Schließen Sie das Browserfenster nach der Anmeldung und versuchen Sie das Scraping erneut. Wenn es immer noch fehlschlägt, könnte LinkedIn Ihre IP begrenzen. Warten Sie 15–30 Minuten vor dem nächsten Versuch."
         },
         "scrapingZeroJobs": {
-          "q": "Scraping startet, zeigt aber 0 Jobs nach Abschluss",
-          "a": "Dies bedeutet normalerweise, dass die Suche keine passenden Ergebnisse zurückgegeben hat oder LinkedIn die Anfrage blockiert hat. Versuchen Sie eine breitere Suchanfrage (z.B. \"Ingenieur\" statt \"Senior Frontend Engineer React\"). Entfernen oder lockern Sie den Datumsfilter — \"Letzte 24 Stunden\" bei einer Nischenanfrage gibt oft 0 Ergebnisse. Verbinden Sie Ihr LinkedIn-Konto neu — unauthentifiziertes Scraping gibt weniger Ergebnisse zurück. Versuchen Sie, die Seiten auf 1 zu reduzieren, um zu testen, ob Ergebnisse zurückgegeben werden."
+          "q": "Scraping wird abgeschlossen, zeigt aber 0 Jobs",
+          "a": "Öffnen Sie in der Scraping-Zusammenfassung die Liste \"Ergebnisse pro Board\" — jedes Board, das nichts zurückgegeben hat, zeigt einen Chip mit dem Grund. \"Firma nötig\" bedeutet, dass ein ATS-Board keinen Firmen-Slug erhalten hat: Fügen Sie einen unter \"Unternehmen\" im Bereich \"Jobs scrapen\" hinzu. \"API-Schlüssel nötig\" bedeutet, dass für das Board \"Aggregator\" kein Schlüssel gespeichert ist: Hinterlegen Sie einen unter Einstellungen → Jobs → \"Jobsuche-Anbieter\"; ein einziger der dort aufgeführten Anbieter genügt. Wenn Boards gelaufen sind und trotzdem nichts zurückkam, erweitern Sie Ihre Suchbegriffe, öffnen Sie dann \"Erweitert\" im Bereich \"Jobs scrapen\", setzen Sie \"Veröffentlicht\" auf \"Jederzeit\" und erhöhen Sie \"Anzahl der Jobs\"."
         },
         "jobsDisappeared": {
           "q": "Gescrapte Jobs verschwanden nach Neustart der App",
@@ -2707,21 +2707,21 @@
         },
         "clearButtonRemoved": {
           "q": "Die Schaltfläche \"Löschen\" hat meine gescrapten Jobs entfernt",
-          "a": "Die Schaltfläche Löschen leert die aktuelle In-Memory-Liste. Führen Sie ein weiteres Scraping mit denselben Kriterien durch, um sie zurückzubekommen. Ihr angesehener/beworbener Interaktionsverlauf wird separat gespeichert und ist von Löschen nicht betroffen."
+          "a": "\"Löschen\" leert nur die aktuelle, im Arbeitsspeicher gehaltene Liste der gescrapten Jobs. Der Bestätigungsschritt lautet \"Gescrapte Jobs löschen?\", und es stimmt, dass erfasste Bewerbungen und gespeicherte Dokumente nicht betroffen sind. Um Anzeigen zurückzubekommen, führen Sie ein weiteres Scraping durch — sie werden aber frisch von den Boards geladen, die Liste kann also anders zurückkommen, und der Start eines Scrapings leert den Cache erneut, sodass Ihnen ein zur Hälfte fehlgeschlagener Lauf weniger übrig lässt. Sichern Sie vorher alles, was Ihnen wichtig ist: \"Speichern\" bei einer Anzeige macht daraus eine erfasste Bewerbung, die Löschen und einen Neustart übersteht."
         }
       },
       "aiFeaturesQuestions": {
         "aiDoesNothing": {
           "q": "KI-Generierung tut nichts / Spinner läuft ewig",
-          "a": "Die KI erfordert, dass Ollama lokal mit mindestens einem installierten Modell läuft. 1. Stellen Sie sicher, dass Ollama installiert und läuft: ollama serve 2. Laden Sie ein Modell herunter, falls noch nicht: ollama pull llama3.2 3. Gehen Sie zu Einstellungen → KI und wählen Sie das heruntergeladene Modell. 4. Versuchen Sie erneut zu generieren."
+          "a": "Öffnen Sie Einstellungen → KI und prüfen Sie \"Aktiver Anbieter\" — die App läuft mit dem Anbieter, den Sie dort auswählen: \"Ollama (Local)\", \"Ollama Cloud\", \"OpenAI\", \"Anthropic (Claude)\", \"Google Gemini\", \"OpenAI-Compatible\" oder einem CLI-Agenten. Ein Cloud-Anbieter funktioniert erst, wenn sein \"API-Schlüssel\" in dieser Zeile gespeichert ist; \"Ollama (Local)\" benötigt einen laufenden Ollama-Server mit einem heruntergeladenen Modell. Um die Einrichtung erneut durchzugehen, nutzen Sie Einstellungen → Allgemein → \"Einführungsassistent\" → \"Assistent erneut abspielen\" und schließen Sie den Tab \"Lokal (Ollama)\", \"Cloud-KI\" oder \"CLI-Agenten\" ab."
         },
         "outputToneWrong": {
           "q": "Lebenslauf- oder Anschreiben-Ausgabe klingt falsch / unpassend",
-          "a": "Der KI-Ausgabestil wird durch Ihre Einstellung gesteuert. 1. Gehen Sie zu Einstellungen → KI → KI-Ausgabestil. 2. Wählen Sie den Stil, der Ihrem Stil entspricht (Professionell, Locker, Formell, Kreativ). 3. Erneut generieren — der neue Stil tritt sofort in Kraft."
+          "a": "Zwei Stellschrauben prägen den Ton. Einstellungen → KI → \"KI-Ausgabestil\" ist die app-weite Voreinstellung und bietet Professionell, Locker, Formell und Kreativ. Für einen einzelnen Durchlauf öffnen Sie \"KI-Generierung\" und gehen im Assistenten weiter bis \"Ergebnis feinabstimmen\" — dort passen Sie Ton, Länge und Zielmarkt vor dem Generieren an; der Schritt enthält \"Stil\", \"Schwerpunkt\", \"Prompt-Qualität\" und \"Zielmarkt\". Stellen Sie diese ein und klicken Sie dann auf \"Generieren\"; bei einem fertigen Durchlauf nutzen Sie \"Neu generieren\", um ihn neu schreiben zu lassen."
         },
         "noRecommendations": {
           "q": "Lebenslaufanalyse gibt keine Empfehlungen",
-          "a": "Empfehlungen erscheinen nur, wenn die ATS-Analyse Kompetenzlücken findet. Prüfen Sie: Sowohl ein Lebenslauf als auch eine Stellenanzeige sind eingefügt/hochgeladen. Die Stellenanzeige enthält tatsächliche Anforderungen (nicht nur einen Titel). Ein KI-Modell ist in den Einstellungen ausgewählt — ohne Modell läuft die Lückenanalyse, aber Empfehlungen können nicht generiert werden."
+          "a": "Die Schaltfläche \"Analysieren\" bleibt deaktiviert, bis beide Felder mehr als einen kurzen Textausschnitt enthalten und ein KI-Anbieter nutzbar ist — ein paar Wörter je Feld reichen nicht. Die Schaltfläche benennt selbst, was fehlt. \"Lebenslauf & Stellenanzeige einfügen\", \"Lebenslauf hinzufügen\" und \"Stellenanzeige hinzufügen\" beheben Sie auf der Seite: Fügen Sie Text in \"Dein Lebenslauf\" und \"Stellenanzeige\" ein oder klicken Sie auf \"Datei hochladen\". \"API-Schlüssel in Einstellungen hinzufügen\", \"Bitte zuerst ein Modell auswählen\" und \"CLI-Agent installieren\" beheben Sie unter Einstellungen → KI. Nach einem Durchlauf werden \"Empfehlungen\" und \"Fehlende Begriffe\" nur angezeigt, wenn die Analyse welche gefunden hat — ein sauberer Lebenslauf zeigt daher keinen der beiden Abschnitte."
         }
       },
       "accountsSessionsQuestions": {
@@ -2737,31 +2737,214 @@
       "generalQuestions": {
         "interactionHistoryGone": {
           "q": "Mein Interaktionsverlauf (beworbene/angesehene Jobs) ist weg",
-          "a": "Dies kann passieren, wenn die Datenbank geleert oder das App-Datenverzeichnis gelöscht wurde. Um Datenverlust zu vermeiden: Exportieren Sie Ihre Daten regelmäßig: Einstellungen → Datenschutz → Daten exportieren. Zur Wiederherstellung aus einem Backup: Einstellungen → Datenschutz → Daten importieren und wählen Sie Ihre Exportdatei."
+          "a": "Beworbene, angesehene und gespeicherte Jobs werden als Interaktionsprotokoll geführt, getrennt von Ihren verfolgten Bewerbungen, und verschwinden daher, wenn der App-Datenordner gelöscht wird. Innerhalb der App löscht genau diese Datensätze nur eine einzige Aktion: Einstellungen → Datenschutz → \"Ihre Daten\" → \"Interaktionsverlauf löschen\" → \"Löschen\". Für ein Backup verwenden Sie Einstellungen → Datenschutz → \"Ihre Daten\" → \"Daten exportieren\" → \"Exportieren\" und speichern Sie die JSON-Datei an einem sicheren Ort; zur späteren Wiederherstellung verwenden Sie auf derselben Karte \"Daten importieren\" → \"Importieren\" und wählen Sie diese Datei aus. Der Import ersetzt die vorhandenen Datensätze durch den Inhalt dieser Datei."
         },
         "appSlow": {
           "q": "Die App ist langsam oder reagiert nicht",
-          "a": "Die meiste Langsamkeit kommt von Ollama, das zu viel Arbeitsspeicher verwendet. Schließen Sie andere schwere Apps während der KI-Generierung. Verwenden Sie ein kleineres Modell in Einstellungen → KI (z.B. llama3.2:1b statt 8b). Wenn Sie KI nicht verwenden, können Sie Ollama komplett stoppen — die Scraping- und Job-Tracking-Funktionen benötigen es nicht."
-        },
-        "languageNotChanged": {
-          "q": "Sprache wurde geändert, aber einige Texte sind noch in der alten Sprache",
-          "a": "Einige UI-Texte werden zwischengespeichert. Nachdem Sie die Sprache in Einstellungen → Allgemein geändert haben, starten Sie die App vollständig neu, um sie überall anzuwenden."
+          "a": "Öffnen Sie Einstellungen → Leistung und stellen Sie \"Leistungsmodus\" auf \"Geringer Speicher\": Das senkt die Parallelität, entlädt lokale Modelle früher und reduziert die Unschärfe. Wählen Sie stattdessen \"Benutzerdefiniert\", erscheinen die Backend-Auswahlfelder \"Parallelität\", \"Modell-Bereithaltung\" und \"Cache\", sodass Sie jedes einzeln abstimmen können; die anderen Modi blenden sie aus. Ist ein lokales Modell zu schwer, öffnen Sie Einstellungen → KI, klappen Sie die verbundene Zeile \"Ollama (Local)\" auf und verringern Sie \"Kontextfenster\" und \"Max. Ausgabe-Tokens\" unter \"Generierungslimits\". Wenn Sie in Einstellungen → KI einen Cloud-Anbieter als \"Aktiver Anbieter\" festlegen, entfällt die Modelllast auf Ihrem Rechner vollständig."
         },
         "resetEverything": {
           "q": "Ich möchte alles zurücksetzen und neu beginnen",
-          "a": "Sie können selektiv Daten löschen, ohne neu zu installieren: Interaktionen löschen: Einstellungen → Datenschutz → Interaktionsverlauf löschen. Von allen Boards abmelden: Einstellungen → Datenschutz → Alle Konten abmelden. Einstellungen entfernen: Leeren Sie Ihren Browser-localStorage (DevTools öffnen → Anwendung → Lokaler Speicher)."
+          "a": "Um nur einen Teil zu löschen, öffnen Sie Einstellungen → Datenschutz → \"Ihre Daten\": \"Interaktionsverlauf löschen\" → \"Löschen\" entfernt jeden beworbenen, angesehenen und gespeicherten Eintrag, und \"Alle Konten abmelden\" → \"Abmelden\" löscht alle Browser-Sitzungen der Boards. Für ein vollständiges Zurücksetzen auf Werkseinstellungen verwenden Sie Einstellungen → Datenschutz → \"Gefahrenzone\" → \"App zurücksetzen\" → \"Zurücksetzen\" und bestätigen Sie mit \"Alles zurücksetzen\": Damit werden Sie von allen Konten abgemeldet, zwischengespeicherte Daten und der Job-Verlauf werden gelöscht, alle Einstellungen zurückgesetzt, ein gekoppelter Browser getrennt, und Sie werden zum Willkommensbildschirm weitergeleitet."
         }
       },
       "connectivityQuestions": {
         "networkError": {
           "q": "Scraping schlägt mit einem Netzwerkfehler fehl",
-          "a": "Die App macht direkte HTTP-Anfragen an Jobbörsen. Netzwerkprobleme können diese blockieren. Prüfen Sie Ihre Internetverbindung. Einige Unternehmens- oder Universitätsnetzwerke blockieren Scraping-Traffic — versuchen Sie ein anderes Netzwerk oder nutzen Sie ein VPN. LinkedIn und Indeed blockieren IPs gelegentlich vorübergehend nach vielen Anfragen. Warten Sie 15–30 Minuten und versuchen Sie es erneut. Versuchen Sie, weniger Seiten zu scrapen (Seiten auf 1 setzen), um das Anfragevolumen zu reduzieren."
+          "a": "Die App stellt direkte HTTP-Anfragen an Jobbörsen, deshalb blockieren Netzwerkprobleme sie. Prüfen Sie zuerst Ihre Internetverbindung. Einige Unternehmens- oder Universitätsnetzwerke blockieren Scraping-Traffic — versuchen Sie ein anderes Netzwerk oder ein VPN. LinkedIn sperrt eine IP nach vielen Anfragen ebenfalls für eine Weile: Warten Sie 15–30 Minuten und versuchen Sie es erneut. Öffnen Sie im Bereich \"Jobs scrapen\" den Abschnitt \"Erweitert\" und verringern Sie \"Anzahl der Jobs\", um das Anfragevolumen zu senken. Indeed ist hier keine Jobbörse — Jobs von dort kommen nur über \"Aggregator\", das statt Scraping eine Such-API aufruft."
         },
         "captchaAppears": {
           "q": "CAPTCHA erscheint beim Scraping",
-          "a": "CAPTCHAs von LinkedIn/Indeed bedeuten, dass Ihre IP oder Sitzung markiert wurde. Die beste Lösung: Verbinden Sie Ihr LinkedIn-Konto neu (authentifizierte Anfragen lösen viel seltener CAPTCHAs aus als Gastanfragen). Wenn Sie bereits authentifiziert sind, warten Sie 30 Minuten und versuchen Sie, 1 Seite auf einmal zu scrapen."
+          "a": "Ein CAPTCHA bedeutet, dass LinkedIn Ihre IP oder Sitzung markiert hat. Die beste Lösung ist Einstellungen → Konten → \"Jobbörsen-Konten\" und dann \"Verbinden\" bei LinkedIn: Eine angemeldete Sitzung löst deutlich seltener CAPTCHAs aus als Scraping als Gast, und das Anmeldefenster samt seinen Cookies bleibt auf Ihrem Gerät. Wenn Sie bereits verbunden sind, warten Sie etwa 30 Minuten, scrapen Sie dann eine Jobbörse nach der anderen und verringern Sie \"Anzahl der Jobs\" unter \"Erweitert\" im Bereich \"Jobs scrapen\". Indeed wird nicht direkt gescrapt — es ist nur über die Jobbörse \"Aggregator\" erreichbar."
+        }
+      },
+      "gettingStarted": "Erste Schritte",
+      "gettingStartedQuestions": {
+        "firstSteps": {
+          "q": "Was sollte ich zuerst tun?",
+          "a": "Beginnen Sie mit einem Lebenslauf: Der Schritt \"Lebenslauf hochladen\" im Einrichtungsassistenten nimmt einen entgegen, oder Sie fügen ihn später unter Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" hinzu. Wählen Sie dann unter Einstellungen → KI → \"Aktiver Anbieter\" ein Modell — Generierung, Analyse und KI-Notizen bleiben blockiert, bis eines funktioniert. Öffnen Sie als Nächstes Jobs und klicken Sie auf \"Jobs scrapen\". Bei einer Stellenanzeige verfolgt \"Speichern\" diese als Bewerbung; \"Anpassen\" speichert sie ebenso und öffnet anschließend den Tab \"Dokumente\" dieser Bewerbung. Um einen angepassten Lebenslauf oder ein Anschreiben zu schreiben, öffnen Sie \"KI-Generator\" in der Seitenleiste; das Ergebnis verfolgen Sie auf der Seite Bewerbungen."
+        },
+        "noResumeYet": {
+          "q": "Ich habe noch keinen Lebenslauf — was kann ich verwenden?",
+          "a": "Öffnen Sie \"Lebenslauf-Builder\" in der Seitenleiste. Es ist ein siebenstufiger Fragebogen — \"Deine Angaben\", \"Profil-Zusammenfassung\", \"Berufserfahrung\", \"Ausbildung\", \"Kenntnisse\", \"Weitere Abschnitte\", \"Prüfen & erstellen\" — und im letzten Schritt wählen Sie eine Ausgabesprache und eine Vorlage und klicken dann auf \"Lebenslauf erstellen\". Der fertige Lebenslauf wird unter Dokumente gespeichert. \"An Stelle anpassen\" überträgt ihn danach als Ausgangslebenslauf auf die Seite \"KI-Generierung\"; es läuft noch nichts — Sie fügen weiterhin die Stellenanzeige hinzu und klicken auf \"Generieren\". Wenn Sie bereits eine Datei haben, laden Sie sie unter Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" hoch, wo PDF, DOC, DOCX und TXT akzeptiert werden, und klicken Sie dann auf \"Als Standard setzen\"."
+        },
+        "replayWizard": {
+          "q": "Wie sehe ich den Einführungsassistenten und die Tour erneut?",
+          "a": "Gehen Sie zu Einstellungen → Allgemein → \"Einführungsassistent\" und klicken Sie auf \"Assistent erneut abspielen\". Der Assistent des ersten Starts öffnet sich wieder im Vollbild bei \"Willkommen bei AI Job Hunter\" und durchläuft alle Schritte erneut — Lebenslauf-Upload, KI-Einrichtung, Browser-Prüfung, Schlüssel für die aggregierte Suche, Browser-Erweiterung, Indexierung, Absturzberichte und Erscheinungsbild — und endet bei \"Machen Sie es zu Ihrem\". Bereits erledigte Schritte bestätigen Sie einfach erneut. Nach dem letzten Schritt läuft die Spotlight-Tour noch einmal über die Einträge der Seitenleiste; \"Tour überspringen\" beendet sie vorzeitig und \"Job-Jagd starten\" schließt sie."
+        }
+      },
+      "findingJobs": "Jobs finden",
+      "findingJobsQuestions": {
+        "whichBoards": {
+          "q": "Welche Jobbörsen werden unterstützt, und braucht eine davon eine Anmeldung?",
+          "a": "Öffnen Sie Jobs und klicken Sie auf \"Jobs scrapen\", um Boards auszuwählen: LinkedIn, Greenhouse, Lever, Ashby, Personio, Workable, Remotive, RemoteOK und Arbeitsagentur sind darunter. Keine Jobbörse verlangt eine Anmeldung — nur LinkedIn bietet eine an, und wenn Sie es unter Einstellungen → Konten → \"Jobbörsen-Konten\" verbinden, werden die Ergebnisse lediglich angereichert. ATS-Boards wie Greenhouse, Lever, Ashby und Workable benötigen einen Unternehmens-Slug unter \"Unternehmen\" — im Feld steht \"Unternehmens-Slug eingeben…\", und ein Slug stammt aus der URL einer Karriereseite, nicht aus dem Anzeigenamen — andernfalls zeigen sie den Chip \"Firma nötig\". \"Aggregator\" benötigt Ihre Adzuna-\"App-ID\" und Ihren \"App-Key\" aus Einstellungen → Jobs → \"Jobsuche-Anbieter\"."
+        },
+        "searchBox": {
+          "q": "Wie funktioniert das Suchfeld auf der Seite Jobs?",
+          "a": "Das Feld mit der Beschriftung \"Nach Titel, Unternehmen, Ort filtern…\" schränkt die Liste sofort beim Tippen ein. Drücken Sie die Eingabetaste oder klicken Sie auf \"Suchen\", um stattdessen eine Rangsuche über die gescrapten Anzeigen auszuführen. Ein Banner über den Ergebnissen nennt dann, wie viele Anzeigen durchsucht wurden und welche Verfahren sie sortiert haben — \"Schlüsselwort\", \"semantisch\" und \"KI-Neubewertung\". Wenn dort \"Semantische Rangfolge ist deaktiviert.\" steht, aktivieren Sie Einstellungen → KI → \"Embeddings\" → \"Semantische Bewertung\". \"Sortieren\" bleibt deaktiviert, solange eine Rangfolge die Liste bestimmt; klicken Sie auf \"Suche löschen\", um es zurückzuholen."
+        },
+        "narrowList": {
+          "q": "Wie schränke ich die Jobliste ein?",
+          "a": "Verwenden Sie die Tags über der Liste. \"Remote\", \"Hybrid\" und \"Vor Ort\" blenden alles andere aus, was bereits auf dem Bildschirm ist — ohne erneutes Scraping — und Anzeigen, die nie eine Arbeitsform angegeben haben, bleiben immer erhalten. \"Vermittleranzeigen ausblenden\" entfernt Anzeigen von Personalvermittlungen; ergänzen Sie eigene Firmennamen unter Einstellungen → Jobs → \"Personalvermittler\", um die eingebaute Erkennung zu erweitern. \"Sortieren\" ordnet nach \"Neueste\", \"Älteste\" oder \"Unternehmen\" um, und das Filterfeld schränkt beim Tippen nach Titel, Unternehmen oder Ort ein."
+        },
+        "saveAJob": {
+          "q": "Wie behalte ich einen Job, der mir gefällt?",
+          "a": "Klicken Sie in der Anzeigenzeile oder im Detailbereich auf \"Speichern\". Das legt eine verfolgte Bewerbung im Status \"Gespeichert\" an, die Sie über Bewerbungen öffnen, und sie übersteht einen Neustart. Die gescrapten Anzeigen selbst nicht: Sie leben nur im Arbeitsspeicher und sind weg, sobald Sie die App beenden, auf \"Löschen\" klicken oder das nächste Scraping starten. Speichern Sie also alles, was Sie behalten möchten, bevor Sie erneut scrapen. \"Löschen\" entfernt nur Anzeigen — verfolgte Bewerbungen und gespeicherte Dokumente sind nicht betroffen."
+        },
+        "duplicates": {
+          "q": "Warum steht bei einem Job \"Auch auf\" einer anderen Jobbörse, und was, wenn das falsch ist?",
+          "a": "Derselbe Job wird oft auf mehreren Boards ausgeschrieben, daher werden Anzeigen schon beim Eintreffen gruppiert — nach Unternehmen und Titel und dann danach, wie ähnlich ihre Inhalte sind. Die verbleibende Zeile zeigt \"Auch auf\" mit den anderen Boards, und \"Alle Quellen\" listet sie auf, sodass Sie den Job über jede davon öffnen können. Wenn zwei tatsächlich verschiedene Jobs zusammengeführt wurden, klicken Sie auf \"Kein Duplikat\" — Sie erhalten \"Anzeigen getrennt\", und diese Entscheidung wird gespeichert, sodass sie bei späteren Scraping-Läufen getrennt bleiben."
+        }
+      },
+      "matchScore": "Match-Score",
+      "matchScoreQuestions": {
+        "whatIsScore": {
+          "q": "Was bedeutet der Match-Score?",
+          "a": "Klicken Sie auf der Jobs-Seite bei einer Stellenanzeige auf \"Bewerten\", und die App vergleicht sie mit Ihrem Standard-Lebenslauf. Anschließend zeigt sie eine Stufe — \"Hoch\", \"Mittel\" oder \"Niedrig\" — mit \"ca.\" daneben statt eines Prozentwerts. Wenn Sie die Info-Schaltfläche daneben mit der Maus überfahren oder per Tastatur fokussieren, beschriftet mit \"Über diese Bewertung\", benennt die App die Grenze deutlich: \"Dieser Score ist eine Schätzung — keine Entscheidung des Arbeitgebers oder eines ATS-Systems.\" Weder ein Recruiter noch ein echtes Bewerbermanagementsystem hat ihn erzeugt. Betrachten Sie \"Hoch\" als eine Anzeige, auf die Sie sich so bewerben können, \"Mittel\" als eine, für die Sie Ihre Unterlagen vorher anpassen sollten, und \"Niedrig\" als wenig aussichtsreich."
+        },
+        "coverageVsMatch": {
+          "q": "Warum zeigt ein Job \"Stichwortabdeckung %\" und ein anderer \"Match %\"?",
+          "a": "\"Stichwortabdeckung %\" bedeutet, dass der Wert allein aus Stichwörtern stammt. \"Match %\" bedeutet, dass zusätzlich Embeddings eingeflossen sind, sodass die Bedeutung Ihres Lebenslaufs zählt und nicht nur die Wörter. Die semantische Bewertung ist bei einer frischen Installation ausgeschaltet, deshalb sehen Sie \"Stichwortabdeckung %\", bis Sie \"Semantische Bewertung\" unter Einstellungen → KI → \"Embeddings\" aktivieren. Sie arbeitet mit einem indizierten Lebenslauf; dasselbe Panel zeigt, wie viele Dokumente indiziert sind, und das Matching indiziert einen Lebenslauf beim ersten Bedarf automatisch."
+        },
+        "saveResumeToScore": {
+          "q": "Warum steht auf der Bewerten-Schaltfläche \"Speichere einen Lebenslauf zum Bewerten\"?",
+          "a": "Die Bewertung läuft immer gegen Ihren Standard-Lebenslauf. Ist keiner hinterlegt, gibt es nichts, womit sich eine Stellenanzeige vergleichen ließe, und die Schaltfläche zeigt stattdessen \"Speichere einen Lebenslauf zum Bewerten\". Öffnen Sie Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" und ziehen Sie eine Datei auf den Upload-Bereich, der \"PDF, DOC, DOCX\" annimmt. Der erste Lebenslauf, den Sie speichern, wird von selbst zum Standard, seine Karte erhält daher das Abzeichen \"Standard\" und die Schaltfläche auf der Jobs-Seite zeigt wieder \"Bewerten\". Wenn Sie bereits mehrere hinterlegt haben, wird der mit diesem Abzeichen bewertet."
+        },
+        "bestMatches": {
+          "q": "Was ist die Seite \"Beste Treffer\"?",
+          "a": "\"Beste Treffer\" finden Sie in der Seitenleiste unter \"Automatisierung\". Die Seite bündelt die gefundenen Jobs aus allen Autopiloten in einer Liste, fasst doppelte Anzeigen derselben Stelle zusammen und behält nur die Zeilen, die die Stufe \"Hoch\" erreichen — schwache Funde landen also nie dort. Sortieren Sie nach \"Score\", \"Neueste\" oder \"Gehalt\". Jede Zeile bietet \"Anzeigen\", \"Speichern\" und \"Bewerben\"; \"Verwerfen\" entfernt eine Zeile, die Sie nicht interessiert, und \"Rückgängig\" holt sie zurück."
+        }
+      },
+      "documents": "Dokumente",
+      "documentsQuestions": {
+        "importFormats": {
+          "q": "Welche Dateiformate kann ich importieren, und was ist mit gescannten PDFs?",
+          "a": "Ziehen Sie eine Datei auf Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" oder klicken Sie, um eine auszuwählen: Der Hinweis unter dem Ablagebereich lautet \"PDF, DOC, DOCX\", und TXT-Dateien werden ebenfalls akzeptiert. Die Lebenslauf-Karte auf der Seite \"Lebenslauf-Analyse\" akzeptiert PDF, DOCX und TXT. Stellt sich ein PDF als Scan ohne Textebene heraus, führt die App von selbst eine OCR durch — Sie sehen \"Wird mit OCR gescannt…\" in den Einstellungen bzw. \"Scanne…\" auf der Analyse-Karte — und der erkannte Text wird unter demselben Titel importiert. Sie müssen also vorher nichts konvertieren."
+        },
+        "indexed": {
+          "q": "Was bedeutet \"Indiziert\", und sollte ich \"Automatisch indexieren\" verwenden?",
+          "a": "\"Indiziert\" bedeutet, dass das Dokument bereits Embedding-Vektoren in dem Embedding-Raum besitzt, der aktuell unter Einstellungen → KI → \"Embeddings\" eingestellt ist; ändern Sie dort das Embedding-Modell, werden die Vektoren neu aufgebaut. Dasselbe Panel zählt außerdem, wie viele Dokumente indiziert sind, und bietet \"Jetzt neu indexieren\" an. Schalten Sie \"Automatisch indexieren\" ein, um jedes Dokument sofort beim Import zu indexieren — es lohnt sich, die Option ausgeschaltet zu lassen, wenn Ihr Embedding-Anbieter ein Cloud-Anbieter ist, da Cloud-Anbieter pro indiziertem Token abrechnen. So oder so indiziert das Matching ein Dokument, sobald es zum ersten Mal gebraucht wird."
+        },
+        "multipleResumes": {
+          "q": "Kann ich mehrere Lebensläufe behalten, und welcher wird verwendet?",
+          "a": "Ja. Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" behält jede Datei, die Sie hochladen, und jede Karte trägt \"Als Standard setzen\" sowie die Badges \"Standard\" und \"Indiziert\". Der Standard ist derjenige, gegen den die Seite Jobs eine Stellenanzeige bewertet, und derjenige, den \"Check fit\" in der Browser-Erweiterung verwendet — wechseln Sie ihn also, wenn Sie die Richtung ändern. Von der App erzeugte Dokumente werden separat auf der Seite Dokumente aufbewahrt: in den Tabs \"Lebensläufe\" und \"Anschreiben\", während \"Aktivität\" das Protokoll der Jobs ist, die Sie angesehen, gespeichert oder verworfen haben oder auf die Sie sich beworben haben."
+        }
+      },
+      "aiGenerate": "KI-Generierung",
+      "aiGenerateQuestions": {
+        "tailorRun": {
+          "q": "Wie passe ich meinen Lebenslauf an eine Stelle an, und warum dauert das Minuten?",
+          "a": "Klicken Sie bei einer beliebigen Anzeige auf der Jobs-Seite auf \"Anpassen\": Der Job wird als Bewerbung gespeichert und öffnet sich auf dem Tab \"Dokumente\" mit dem Anpassungs-Assistenten. Sie können auch über \"KI-Generierung\" starten; dessen Assistent führt durch \"Was erstellen\", \"Vorlage wählen\" und \"Ergebnis feinabstimmen\", bevor Sie auf \"Generieren\" klicken. Ein Anpassungslauf ist nicht ein einzelner Prompt — er führt mehrere gestaffelte Modellaufrufe aus, angezeigt als \"Stellenanzeige wird gelesen\", \"Belege werden zugeordnet\", \"Lebenslauf wird geschrieben\" und \"Ergebnis wird geprüft\". Deshalb dauert er in der Regel Minuten, nicht Sekunden."
+        },
+        "needsReview": {
+          "q": "Was bedeutet \"Prüfung nötig\" bei einem generierten Lebenslauf?",
+          "a": "\"Prüfung nötig\" ist der Endstatus des Laufs, kein fehlgeschlagener Lauf: Das Dokument wurde gespeichert, aber die Prüfungen konnten einige Zeilen nicht auf Ihren Ausgangslebenslauf zurückführen. Öffnen Sie das Qualitäts-Badge über dem Dokument, um den \"Qualitätsbericht Lebenslauf\" zu lesen — kritische Probleme und Warnungen, \"Bewertung je Abschnitt\" und eine Liste \"Aussagen zum Prüfen\". Entscheiden Sie jede markierte Zeile selbst: \"Entfernen\" nimmt sie als gewöhnliche Bearbeitung aus dem Dokument heraus und wird wie jede andere Änderung gespeichert, \"Behalten\" lässt sie stehen. Nichts wird entfernt, bevor Sie sich entscheiden; während eine neue Generierung läuft, ist der Editor gesperrt, und die Prüfung weist darauf hin."
+        },
+        "coverOnly": {
+          "q": "Kann ich nur ein Anschreiben generieren, ohne Lebenslauf?",
+          "a": "Ja. Setzen Sie im Schritt \"Ausgabe\" des Anpassungs-Assistenten den \"Dokumenttyp\" auf \"Anschreiben\", dann schreibt der Lauf nur den Brief; wählen Sie \"Beides\", wenn Sie auch den angepassten Lebenslauf möchten. In \"KI-Generierung\" ist dieselbe Wahl der erste Schritt des Assistenten, \"Was erstellen\", wo \"Anschreiben\" neben \"Lebenslauf\" und \"Beides\" steht. Nach Abschluss des Laufs öffnet sich der Brief im Ausgabebereich mit \"Kopieren\" und \"Exportieren\" sowie einer Auswahl \"Anschreiben-Layout\" mit \"Klassisch\", \"Reduziert\" und \"Akzentband\". Er wird außerdem unter Dokumente → \"Anschreiben\" abgelegt."
+        },
+        "applicationAnswers": {
+          "q": "Wie bekomme ich Antworten auf die Fragen im Bewerbungsformular?",
+          "a": "Öffnen Sie die Bewerbung und gehen Sie auf deren Tab \"Dokumente\"; sobald ein Anpassungslauf abgeschlossen ist, erscheint \"Bewerbungsfragen\" in der Symbolleiste. Haken Sie beliebige der aufgeführten häufigen Fragen an oder tippen Sie unter \"Eigene Frage\" Ihre eigene ein und klicken Sie auf \"Hinzufügen\" — eine getippte Frage zählt erst, wenn sie hinzugefügt wurde, und \"Antworten generieren\" bleibt deaktiviert, solange keine Frage auf der Liste steht. Jeder Entwurf stützt sich auf Ihren Lebenslauf und die Stellenanzeige; mit \"Antwort kopieren\" fügen Sie ihn ins Formular ein, mit \"Mit KI umschreiben\" erhalten Sie eine andere Sichtweise. Schalten Sie zuerst \"Web für bessere Antworten durchsuchen\" ein, wenn eine Frage aktuelle Fakten braucht."
+        },
+        "exportDoc": {
+          "q": "Wie exportiere ich als PDF oder DOCX, und wo wähle ich eine Vorlage?",
+          "a": "Klicken Sie über einem fertigen Dokument auf \"Exportieren\" und wählen Sie PDF, DOCX oder TXT — druckfertig, in Word bearbeitbar oder reiner Text ohne Formatierung. Das Aussehen kommt von der Vorlage: Der Assistent der \"KI-Generierung\" wählt sie in \"Vorlage wählen\", einer Galerie, die in \"ATS-sicher\" und \"Design\" unterteilt ist, mit Namen wie \"ATS Classic\", \"Swiss Minimal\" und \"Lebenslauf (DACH)\"; bei einem Anpassungslauf steht dieselbe Auswahl als Dropdown über dem Dokument. \"ATS-sicherer Modus\" wird angeboten, wenn die gewählte Vorlage oder das Anschreiben-Layout etwas zu entfernen hat: Er legt einen zweispaltigen Lebenslauf auf eine Spalte zusammen, entfernt das Foto oder dekorative Akzente und lässt beim Anschreiben Seitenleiste, Band oder Monogramm-Kachel weg."
+        },
+        "whereStored": {
+          "q": "Wo landen meine generierten Lebensläufe und Anschreiben?",
+          "a": "Jeder abgeschlossene Lauf wird für Sie gespeichert. Öffnen Sie \"Dokumente\" in der Seitenleiste: Der Tab \"Lebensläufe\" enthält die angepassten Lebensläufe und \"Anschreiben\" die Briefe, wobei jede Karte das Unternehmen und die Position zeigt, für die sie geschrieben wurde. Dasselbe Dokument erscheint auch bei der Bewerbung zu diesem Job, auf deren Tab \"Dokumente\". Von einer Karte aus können Sie es mit \"Exportieren\" als PDF, DOCX oder TXT ausgeben, mit \"Lebenslauf kopieren\" den Text in die Zwischenablage legen, mit \"Anzeige öffnen\" die Stellenanzeige erneut lesen oder es \"Löschen\" — was den Lebenslauf und sein Anschreiben zusammen entfernt."
+        },
+        "humanize": {
+          "q": "Was macht \"KI-Spuren entfernen\" mit meinem Lebenslauf?",
+          "a": "Es ist eine späte Stufe eines Anpassungslaufs, in der Fortschrittsliste als \"KI-Spuren werden entfernt\" und als Schritt \"KI-Spuren entfernen\" angezeigt; die App beschreibt sie so, dass nur die Zeilen umgeschrieben werden, die nach KI klingen. Eine automatische Prüfung markiert diese Zeilen, und das Modell wird gebeten, nur sie zu korrigieren; die Überarbeitung wird anschließend bewertet, und fällt sie schlechter aus — neue kritische Probleme oder mehr Markierungen für KI-Stimme als zuvor —, wird sie verworfen und Ihr ursprünglicher Entwurf behalten. Sie können dieser Stufe unter Einstellungen → KI → \"Modelle pro Schritt\" ein eigenes Modell zuweisen, wo \"KI-Spuren entfernen\" die Optionen \"Ändern\" und \"Standard verwenden\" bietet."
+        }
+      },
+      "applications": "Bewerbungen",
+      "applicationsQuestions": {
+        "trackJob": {
+          "q": "Wie tracke ich einen Job, auf den ich mich beworben habe?",
+          "a": "Klicken Sie auf der Seite Bewerbungen auf \"Job tracken\" und tragen Sie ein, was Sie wissen — \"Job-URL (optional)\", \"Unternehmen\", \"Stellenbezeichnung\" und \"Kandidatenname\", nichts davon ist Pflicht — und klicken Sie dann auf \"Tracken\". Auf der Seite Jobs trackt \"Speichern\" bei einer Anzeige diese auf dieselbe Weise unter \"Gespeichert\". Jede Bewerbung steht in genau einer Phase: \"Gespeichert\", \"Beworben\", \"Vorauswahl\", \"Interview\", \"Angebot\", \"Angenommen\", \"Abgelehnt\", \"Keine Rückmeldung\" oder \"Zurückgezogen\", und die Liste gibt jeder Phase einen eigenen aufklappbaren Abschnitt. Jede Zeile hat ein Phasen-Dropdown mit allen Phasen, sodass Sie eine Bewerbung verschieben können, ohne sie zu öffnen."
+        },
+        "remindersAndNotes": {
+          "q": "Wo hinterlege ich Notizen, Kontakte und Erinnerungen zum Nachfassen?",
+          "a": "Öffnen Sie die Bewerbung und wählen Sie den Tab \"Übersicht\". Dort finden Sie \"Notizen\", \"Ansprechpartner\", \"Kontakt-E-Mail\", \"Vergütung\" und \"Erinnerung für nächste Aktion\". Wählen Sie in \"Erinnerung für nächste Aktion\" ein Datum, und die Zeile in der Bewerbungsliste erhält das Abzeichen \"Nachfassen\", das zu \"Überfällig\" wird, sobald dieses Datum verstrichen ist; die Pipeline-Leiste zählt, wie viele Nachfassaktionen überfällig sind. Ändern Sie eine Phase auf der Detailseite, fragt ein \"Notiz hinzufügen\"-Dialog, was passiert ist; ändern Sie sie über eine Zeile in der Liste, erscheint stattdessen kurz ein Chip \"Notiz hinzufügen?\" — ein Klick darauf öffnet denselben Dialog."
+        },
+        "interviewPrep": {
+          "q": "Wie übe ich für ein Vorstellungsgespräch?",
+          "a": "Öffnen Sie die Bewerbung, wählen Sie den Tab \"Interview-Vorbereitung\" und nutzen Sie dann den Modus-Umschalter. \"Fragen, die du stellst\" entwirft Fragen für Ihr Gegenüber: Wählen Sie unter \"Fragen generieren für\", wen Sie treffen werden, listen Sie optional \"Themen zum Fokussieren (optional)\" auf und klicken Sie auf \"Fragen vorschlagen\". \"Antworten üben\" geht den umgekehrten Weg — klicken Sie auf \"Übungsfragen generieren\", tippen Sie Ihre Antwort in das Feld und klicken Sie auf \"Feedback erhalten\", um \"Stärken\", \"Lücken zur Stellenanzeige\", \"STAR-Vollständigkeit\" und eine \"Verdichtete Überarbeitung\" zu erhalten."
+        },
+        "emailTracking": {
+          "q": "Kann die App mein Postfach auf Antworten überwachen?",
+          "a": "Ja, wenn Sie es unter Einstellungen → Konten → \"E-Mail-Verfolgung\" einschalten. Geben Sie Ihre \"E-Mail-Adresse\" und ein \"App-Passwort\" ein — es wird nur im Schlüsselbund Ihres Betriebssystems gespeichert — und klicken Sie auf \"Verbinden\". Beide Schalter sind zunächst aus: \"Auf Bestätigungs-E-Mails achten\" prüft das Postfach regelmäßig und benachrichtigt Sie, während \"Status automatisch aktualisieren\" eine zugeordnete E-Mail die Phase direkt ändern lässt. Solche Änderungen erscheinen im Tab \"Verlauf\" mit der Markierung \"Unbestätigt\" sowie \"Bestätigen\" und \"Ablehnen\". Die Prüfungen laufen auf Ihrem Gerät und erreichen nie einen KI-Anbieter. \"Jetzt prüfen\" erzwingt eine Prüfung, ist aber auf etwa eine pro Minute begrenzt."
+        },
+        "referral": {
+          "q": "Wie bitte ich jemanden um eine Empfehlung?",
+          "a": "Öffnen Sie die Bewerbung, gehen Sie zum Tab \"Dokumente\" und klicken Sie auf \"Um eine Empfehlung bitten\". Füllen Sie \"Name der Person\" aus, dazu optional \"Ihre Rolle (optional)\", \"LinkedIn-URL (optional)\" und \"Notizen (optional)\", und wählen Sie unter \"Wie nehmen Sie Kontakt auf?\", wie Sie sich melden: \"E-Mail\", \"LinkedIn-Nachricht\" oder \"Kontaktanfrage-Notiz\". \"Nachricht entwerfen\" schreibt sie für Sie, und \"Mit KI verbessern\" überarbeitet sie mit \"Wärmer\", \"Kürzer\", \"Spezifischer\" oder \"Grammatik korrigieren\". \"Speichern\" behält den Kontakt, mit dem Status \"Entwurf\", \"Gesendet\" oder \"Beantwortet\"."
+        }
+      },
+      "autopilot": "Autopilot",
+      "autopilotQuestions": {
+        "whatIsAutopilot": {
+          "q": "Was ist Autopilot und bewirbt er sich für mich?",
+          "a": "Autopilot ist eine gespeicherte Suche, die nach einem Zeitplan läuft: Er durchsucht die von Ihnen gewählten Job-Boards, bewertet jeden Fund anhand Ihres Lebenslaufs, entfernt Duplikate und informiert Sie über neue Treffer. Er sendet nie etwas für Sie ab — der Einrichtungsassistent stellt klar: \"Autopilot bewirbt sich nie für Sie.\" Jeder Autopilot führt seine eigene Liste \"Gefundene Jobs\" auf der Seite \"Autopilot\", und die stärksten Ergebnisse aus allen Autopiloten sammeln sich auf der Seite \"Beste Treffer\". Ein Lauf, der etwas Neues findet, löst eine Benachrichtigung mit der Anzahl aus; deren Aktion \"Ansehen\" öffnet die Seite \"Autopilot\" mit Fokus auf diesem Autopilot. Prüfen und bewerben müssen Sie sich weiterhin selbst."
+        },
+        "setUpAutopilot": {
+          "q": "Wie richte ich einen Autopilot ein?",
+          "a": "Öffnen Sie \"Autopilot\" in der Seitenleiste und klicken Sie auf \"Neuer Autopilot\". Tragen Sie unter \"Autopilot-Name\" einen Namen ein, wählen Sie unter \"Job-Board\" ein oder mehrere Boards — es ist eine Mehrfachauswahl und behält mindestens eines ausgewählt — und geben Sie einen \"Jobtitel\" ein; diese drei sind Pflichtfelder. Für die Bewertung wird ein Lebenslauf benötigt: Die Karte darunter zeigt den aktiven Lebenslauf mit einer Schaltfläche \"Ändern\", über die Sie den Upload, \"Oder Text einfügen / bearbeiten\", Ihre gespeicherten Lebensläufe und \"Von LinkedIn importieren\" erreichen. \"KI-Notizen\" erfordert einen in Einstellungen → KI eingerichteten Anbieter. Wählen Sie im letzten Schritt \"Nur manuell\", \"Stündlich\", \"Zweimal täglich\" oder \"Einmal täglich\" und dann \"Autopilot erstellen\". Die App muss geöffnet sein, damit geplante Läufe starten."
+        }
+      },
+      "extension": "Browser-Erweiterung",
+      "extensionQuestions": {
+        "pairExtension": {
+          "q": "Wie installiere und koppele ich die Browser-Erweiterung?",
+          "a": "Installieren Sie sie im Einrichtungsassistenten im Schritt \"Browser-Erweiterung installieren\" über \"Zu Chrome hinzufügen\" oder \"Zu Firefox hinzufügen\", oder aus dem Chrome- bzw. Firefox-Store. Öffnen Sie dann Einstellungen → Konten → \"Browser-Erweiterung\" und klicken Sie neben \"Kopplungs-Token\" auf \"Kopieren\". Öffnen Sie das Popup der Erweiterung, fügen Sie das Token in dessen Kopplungsbildschirm ein und speichern Sie es. Zurück unter Einstellungen → Konten → \"Browser-Erweiterung\" zeigt die Zeile \"Verbindung\" dann \"Verbunden\". Sie können mehr als einen Browser mit demselben Token koppeln; \"Token neu generieren\" trennt alle davon, sodass Sie anschließend jeden Browser erneut koppeln müssen."
+        },
+        "extensionActions": {
+          "q": "Was kann die Browser-Erweiterung auf einer Stellenseite tun?",
+          "a": "Öffnen Sie die Erweiterung auf einer Stellenanzeige und klicken Sie auf \"Import this job\", um sie in die App zu senden, auf \"Check fit\", um sie mit Ihrem Standard-Lebenslauf zu bewerten, oder auf \"Mark as applied\". In einem Bewerbungsformular füllt \"Fill this form\" Ihre gespeicherten Angaben ein, und \"Save my answers from this page\" speichert Antworten zur Wiederverwendung; \"Answer tools\" ergänzt \"Suggest answers for this form\" und \"Help me answer…\". \"Assistiertes Formular-Ausfüllen\", \"KI-Antwortentwurf\" und \"Gesendete Bewerbungen automatisch nachverfolgen\" sind separate Schalter unter Einstellungen → Konten → \"Browser-Erweiterung\". Wenn die Desktop-App nicht läuft, zeigt das Popup \"App not running\"; wenn dieser Browser nicht gekoppelt ist, zeigt es den Kopplungsbildschirm."
+        }
+      },
+      "aiSetup": "KI-Einrichtung & Ausgaben",
+      "aiSetupQuestions": {
+        "chooseProvider": {
+          "q": "Welchen KI-Anbieter soll ich wählen, und wo trage ich meinen API-Schlüssel ein?",
+          "a": "Öffnen Sie Einstellungen → KI. Die Liste \"KI-Anbieter\" zeigt alle Optionen, und unter \"Aktiver Anbieter\" wählen Sie den, den die App verwendet. Cloud-Zeilen wie \"OpenAI\" oder \"Anthropic (Claude)\" benötigen einen \"API-Schlüssel\" — fügen Sie ihn ein und klicken Sie auf \"Speichern\"; er wird im Schlüsselbund Ihres Betriebssystems gespeichert und nicht in der App-Datenbank. \"OpenAI-Compatible\" fragt zusätzlich nach einer \"Basis-URL\". \"Ollama (Local)\" benötigt keinen Schlüssel, aber der Ollama-Server muss laufen und ein Modell muss heruntergeladen sein. CLI-Zeilen wie \"Claude Code\" verwenden die eigene Anmeldung dieses Werkzeugs. Eine Auswahl für den \"Denkaufwand\" erscheint bei einer verbundenen Zeile nur, wenn das gewählte Modell sie unterstützt."
+        },
+        "perStageModels": {
+          "q": "Kann ich für jeden Schritt eines angepassten Lebenslaufs ein anderes KI-Modell verwenden?",
+          "a": "Ja. Gehen Sie zu Einstellungen → KI → \"Modelle pro Schritt\". Die Anpassung läuft in Schritten — \"Stellenanalyse\", \"Belegabgleich\", \"Strategie\", \"Entwurf\", \"Anschreiben\", \"Korrektur\" und \"KI-Spuren entfernen\" — und jeder davon kann auf einem eigenen Modell laufen, sodass ein kleines Modell das Lesen übernimmt und Ihr bestes Modell schreibt. Klicken Sie bei einem Schritt auf \"Ändern\", wählen Sie \"Anbieter\" und \"Modell\", legen Sie optional ein \"Kontextfenster (Tokens)\" fest und klicken Sie dann auf \"Speichern\". \"Standard verwenden\" setzt den Schritt wieder auf den aktiven Anbieter zurück. Schritte, die Sie nie anfassen, verwenden weiterhin das aktive Modell."
+        },
+        "spend": {
+          "q": "Wo sehe ich, was mich die KI kostet?",
+          "a": "Öffnen Sie Einstellungen → KI und scrollen Sie zu \"KI-Ausgaben (heute)\". Dort werden die ein- und ausgehenden Tokens angezeigt, ein geschätzter Dollarbetrag dafür sowie eine Aufschlüsselung \"Nach Anbieter\", damit Sie sehen, welcher Anbieter was ausgeführt hat. Die Token-Zahlen sind exakt; der Dollarbetrag ist eine Schätzung anhand der Listenpreise und keine tatsächliche Abrechnung — nehmen Sie ihn daher als groben Anhaltspunkt. Alles, was über \"Ollama (Local)\" lief, wird als kostenlos aufgeführt. Aufrufe für die Unternehmens- und Antwortrecherche sind in dem Betrag nicht enthalten."
+        }
+      },
+      "agentCli": "Agent-CLI & MCP",
+      "agentCliQuestions": {
+        "headlessMode": {
+          "q": "Kann ich die App aus einem Terminal oder aus Claude Code oder Codex heraus nutzen?",
+          "a": "Ja. Die Desktop-Binärdatei dient zugleich als Kommandozeilen-Client: Führen Sie sie mit agent als allererstem Argument aus, zum Beispiel agent --help, und sie gibt die verfügbaren Befehle aus, statt das App-Fenster zu öffnen. Jedes andere erste Argument startet einfach das normale Desktop-Fenster. Claude Code und Codex können sich an dieselbe Binärdatei als MCP-Server anbinden; sie ist standardmäßig schreibgeschützt und gibt Schreibstufen nur frei, wenn Sie sie mit einem der Schreib-Flags registrieren. Der Abschnitt CLI agent in der README des Projekts enthält die genauen Registrierungsbefehle. Die meisten Aufrufe erreichen die laufende App — halten Sie AI Job Hunter also geöffnet. Dafür gibt es keine Zeile in den Einstellungen."
+        }
+      },
+      "privacy": "Datenschutz & Daten",
+      "privacyQuestions": {
+        "whatLeaves": {
+          "q": "Welche Daten verlassen meinen Computer?",
+          "a": "Ihre Dokumente, Bewerbungen und Ihr Verlauf bleiben in lokalen Dateien auf Ihrem Rechner, und die App spricht direkt mit den Jobbörsen. Der KI-Anbieter, den Sie unter Einstellungen → KI auswählen, erhält die Stellenanzeige und Ihren Lebenslauf — mit \"Ollama (Local)\" bleibt auch das lokal. Optionale Web-Recherche geht ebenfalls nach außen: \"Unternehmen recherchieren\" und \"Web für bessere Antworten durchsuchen\" suchen über Ihren Anbieter oder über Exa, wenn Sie unter Einstellungen → KI → \"Unternehmensrecherche\" einen Schlüssel gespeichert haben. Unter Einstellungen → Datenschutz sendet \"Unternehmenslogos abrufen\" (standardmäßig aus) Firmennamen an Clearbit, und \"Absturzberichte senden\" schickt Fehler an Sentry. Schlüssel und das E-Mail-App-Passwort liegen im OS-Schlüsselbund."
+        },
+        "exportImport": {
+          "q": "Wie sichere oder übertrage ich meine Daten?",
+          "a": "Öffnen Sie Einstellungen → Datenschutz und scrollen Sie zu \"Ihre Daten\". \"Daten exportieren\" → \"Exportieren\" schreibt ein vollständiges JSON-Backup — Dokumente, generierte Lebensläufe und Anschreiben, Bewerbungen, Autopiloten sowie Ihr Protokoll beworbener, angesehener und gespeicherter Jobs — nicht nur Ihren Job-Verlauf; API-Schlüssel bleiben im Schlüsselbund und sind nicht enthalten. \"Daten importieren\" → \"Importieren\" ersetzt den Inhalt der App durch diese Datei, sodass alles seit dem Backup Gespeicherte verloren geht — exportieren Sie vorher erneut, wenn die aktuellen Daten wichtig sind. \"Interaktionsverlauf löschen\" löscht nur das Protokoll beworbener, angesehener und gespeicherter Jobs. \"Gefahrenzone\" → \"App zurücksetzen\" → \"Alles zurücksetzen\" löscht alle Daten und Einstellungen."
         }
       }
+    },
+    "search": {
+      "placeholder": "Hilfe nach Stichwort durchsuchen…",
+      "ariaLabel": "Hilfesuche",
+      "noResultsTitle": "Keine passenden Hilfethemen",
+      "noResultsBody": "Versuchen Sie es mit weniger oder anderen Wörtern."
     }
   },
   "onboarding": {

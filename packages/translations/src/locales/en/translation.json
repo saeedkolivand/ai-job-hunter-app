@@ -2681,7 +2681,7 @@
   "support": {
     "faq": {
       "title": "Help & Support",
-      "subtitle": "Common problems and how to fix them.",
+      "subtitle": "How-to guides and fixes for common problems.",
       "badge": "Support",
       "jobScraping": "Job Scraping",
       "aiFeatures": "AI Features",
@@ -2694,8 +2694,8 @@
           "a": "Your LinkedIn session has likely expired. Fix it in order: 1. Go to Settings → Accounts and click Disconnect next to LinkedIn. 2. Click Connect — a browser window will open. Log in to your LinkedIn account manually. 3. Close the browser window once logged in, then retry scraping. If it still fails, LinkedIn may be rate-limiting your IP. Wait 15–30 minutes before trying again."
         },
         "scrapingZeroJobs": {
-          "q": "Scraping starts but shows 0 jobs after completing",
-          "a": "This usually means the search returned no matching results, or LinkedIn blocked the request. Try a broader search query (e.g. \"engineer\" instead of \"senior frontend engineer React\"). Remove or relax the date filter — \"Past 24 hours\" on a niche query often returns 0 results. Reconnect your LinkedIn account — unauthenticated scraping returns fewer results. Try reducing Pages to 1 to test if any results come back at all."
+          "q": "Scraping finishes but shows 0 jobs",
+          "a": "Open the \"Per-board results\" list in the scrape summary — every board that returned nothing shows a chip saying why. \"needs company\" means an ATS board got no company slug: add one under \"Companies\" in the \"Scrape jobs\" drawer. \"needs keys\" means no key is saved for the \"Aggregator\" board: add one at Settings → Jobs → \"Job search providers\", where any single provider listed there is enough. If boards ran and still returned nothing, widen your keywords, then open \"Advanced\" in the drawer, set \"Posted\" to \"Any time\" and raise \"Number of jobs\"."
         },
         "jobsDisappeared": {
           "q": "Scraped jobs disappeared after I restarted the app",
@@ -2703,21 +2703,21 @@
         },
         "clearButtonRemoved": {
           "q": "\"Clear\" button removed my scraped jobs",
-          "a": "The Clear button wipes the current in-memory list. Run another scrape with the same criteria to get them back. Your viewed/applied interaction history is stored separately and not affected by Clear."
+          "a": "\"Clear\" wipes only the live scraped list held in memory. The confirm step is \"Clear scraped jobs?\", and it is accurate that tracked applications and saved documents are not affected. To get postings back, run another scrape — but they are fetched fresh from the boards, so the list can come back different, and starting a scrape clears the cache again, so a run that fails part-way leaves you with less. Save anything you care about first: \"Save\" on a posting turns it into a tracked application that survives Clear and a restart."
         }
       },
       "aiFeaturesQuestions": {
         "aiDoesNothing": {
           "q": "AI generation does nothing / spinner runs forever",
-          "a": "The AI requires Ollama to be running locally with at least one model installed. 1. Make sure Ollama is installed and running: ollama serve 2. Pull a model if you haven't: ollama pull llama3.2 3. Go to Settings → AI and select the model you pulled. 4. Try generating again."
+          "a": "Open Settings → AI and check \"Active Provider\" — the app runs on whichever one you pick there: \"Ollama (Local)\", \"Ollama Cloud\", \"OpenAI\", \"Anthropic (Claude)\", \"Google Gemini\", \"OpenAI-Compatible\" or a CLI agent. A cloud provider only works once its \"API Key\" is saved on that row; \"Ollama (Local)\" needs the Ollama server running with a model pulled. To walk through setup again, use Settings → General → \"Intro Wizard\" → \"Replay wizard\" and finish the \"Local (Ollama)\", \"Cloud AI\" or \"CLI agents\" tab."
         },
         "outputToneWrong": {
           "q": "Resume or cover letter output sounds wrong / off-tone",
-          "a": "The AI output tone is controlled by your preference. 1. Go to Settings → AI → AI Output Tone. 2. Select the tone that matches your style (Professional, Casual, Formal, Creative). 3. Regenerate — the new tone takes effect immediately."
+          "a": "Two controls shape the voice. Settings → AI → \"AI Output Tone\" is the app-wide default and offers Professional, Casual, Formal and Creative. For a single run, open \"AI Generate\" and step through the wizard to \"Fine-tune the result\", which adjusts the tone, length and target market before generating; it carries \"Style\", \"Emphasis\", \"Prompt quality\" and \"Target market\". Set those, then press \"Generate\"; on a finished run use \"Regenerate\" to redraft it."
         },
         "noRecommendations": {
           "q": "Resume analysis gives no recommendations",
-          "a": "Recommendations only appear when the ATS analysis finds skill gaps. Check: Both a resume and a job ad are pasted/uploaded. The job ad contains actual requirements (not just a title). An AI model is selected in Settings — without a model, the gap analysis runs but recommendations can't be generated."
+          "a": "The \"Analyze\" button stays disabled until both boxes hold more than a short snippet of text and an AI provider is usable — a few words in each is not enough. The button itself names what is missing. \"Paste resume & job ad\", \"Add your résumé\" and \"Add the job ad\" are fixed on the page: paste into \"Your resume\" and \"Job ad\", or press \"Upload file\". \"Add API key in Settings\", \"Select a model first\" and \"Install the CLI agent\" are fixed in Settings → AI. After a run, \"Recommendations\" and \"Missing keywords\" are drawn only when the analysis found some, so a clean résumé shows neither section."
         }
       },
       "accountsSessionsQuestions": {
@@ -2733,31 +2733,214 @@
       "generalQuestions": {
         "interactionHistoryGone": {
           "q": "My interaction history (applied/viewed jobs) is gone",
-          "a": "This can happen if the database was cleared or the app data directory was wiped. To avoid data loss: Regularly export your data: Settings → Privacy → Export Data. To restore from a backup: Settings → Privacy → Import Data and select your export file."
+          "a": "Applied, viewed and bookmarked jobs are kept as an interaction log, separate from your tracked applications, so they vanish if the app data folder is wiped. Inside the app, the one action that deletes exactly these records is Settings → Privacy → \"Your data\" → \"Clear Interaction History\" → \"Clear\". To keep a backup, use Settings → Privacy → \"Your data\" → \"Export Data\" → \"Export\" and save the JSON file somewhere safe; to restore it later, use \"Import Data\" → \"Import\" on the same card and pick that file. Import replaces the current records with the contents of that file."
         },
         "appSlow": {
           "q": "The app is slow or unresponsive",
-          "a": "Most slowness comes from Ollama using too much memory. Close other heavy apps while using AI generation. Use a smaller model in Settings → AI (e.g. llama3.2:1b instead of 8b). If you're not using AI, you can stop Ollama entirely — the scraping and job tracking features don't need it."
-        },
-        "languageNotChanged": {
-          "q": "Language changed but some text is still in the old language",
-          "a": "Some UI strings are cached. After changing the language in Settings → General, fully restart the app to apply it everywhere."
+          "a": "Open Settings → Performance and set \"Performance Mode\" to \"Low Memory\": it lowers concurrency, unloads local models sooner and reduces blur. Picking \"Custom\" instead reveals the backend dropdowns \"Concurrency\", \"Model keep-alive\" and \"Cache\" so you can tune each one; the other modes hide them. If a local model is too heavy, open Settings → AI, expand the connected \"Ollama (Local)\" row and lower \"Context window\" and \"Max output tokens\" under \"Generation limits\". Setting a cloud provider as the \"Active Provider\" in Settings → AI takes the model load off your machine entirely."
         },
         "resetEverything": {
           "q": "I want to reset everything and start fresh",
-          "a": "You can selectively clear data without reinstalling: Clear interactions: Settings → Privacy → Clear Interaction History. Sign out all boards: Settings → Privacy → Sign Out All Accounts. Remove preferences: Clear your browser localStorage (open DevTools → Application → Local Storage)."
+          "a": "To clear only part of it, open Settings → Privacy → \"Your data\": \"Clear Interaction History\" → \"Clear\" deletes every applied, viewed and bookmarked record, and \"Sign Out All Accounts\" → \"Sign Out\" wipes all board browser sessions. For a full factory reset use Settings → Privacy → \"Danger Zone\" → \"Reset App\" → \"Reset\", then confirm with \"Reset Everything\": it signs you out of all accounts, deletes cached data and job history, resets preferences, disconnects any paired browser and returns you to the welcome screen."
         }
       },
       "connectivityQuestions": {
         "networkError": {
           "q": "Scraping fails with a network error",
-          "a": "The app makes direct HTTP requests to job boards. Network issues can block these. Check your internet connection. Some corporate or university networks block scraping traffic — try on a different network or use a VPN. LinkedIn and Indeed occasionally block IPs temporarily after many requests. Wait 15–30 minutes and try again. Try scraping fewer pages (set Pages to 1) to reduce request volume."
+          "a": "The app makes direct HTTP requests to job boards, so network problems block them. Check your internet connection first. Some corporate or university networks block scraping traffic — try another network or a VPN. LinkedIn also blocks an IP for a while after many requests: wait 15–30 minutes and try again. In the \"Scrape jobs\" drawer, open \"Advanced\" and lower \"Number of jobs\" to cut request volume. Indeed is not a board here — it arrives only through \"Aggregator\", which calls a search API instead of scraping."
         },
         "captchaAppears": {
           "q": "CAPTCHA appears during scraping",
-          "a": "CAPTCHAs from LinkedIn/Indeed mean your IP or session has been flagged. The best fix: reconnect your LinkedIn account (authenticated requests are much less likely to trigger CAPTCHAs than guest requests). If you're already authenticated, wait 30 minutes and try scraping 1 page at a time."
+          "a": "A CAPTCHA means LinkedIn has flagged your IP or session. The best fix is Settings → Accounts → \"Job board accounts\", then \"Connect\" on LinkedIn: a signed-in session triggers CAPTCHAs far less often than guest scraping, and the login window and its cookies stay on your device. If you are already connected, wait about 30 minutes, then scrape one board at a time and lower \"Number of jobs\" under \"Advanced\" in the \"Scrape jobs\" drawer. Indeed is not scraped directly — it is reached only through the \"Aggregator\" board."
+        }
+      },
+      "gettingStarted": "Getting Started",
+      "gettingStartedQuestions": {
+        "firstSteps": {
+          "q": "What should I do first?",
+          "a": "Start with a résumé: the setup wizard's \"Upload your resume\" step takes one, or add it later at Settings → Resume → \"Resume Management\". Then pick a model at Settings → AI → \"Active Provider\" — generation, analysis and AI notes stay blocked until one works. Next open Jobs and press \"Scrape jobs\". On a posting, \"Save\" tracks it as an application; \"Tailor\" does the same save and then opens that application's \"Documents\" tab. To write a tailored résumé or cover letter, open \"AI Generate\" in the sidebar; follow the outcome on the Applications page."
+        },
+        "noResumeYet": {
+          "q": "I do not have a résumé yet — what can I use?",
+          "a": "Open \"Resume Builder\" in the sidebar. It is a seven-step questionnaire — \"Your details\", \"Professional summary\", \"Work experience\", \"Education\", \"Skills\", \"More sections\", \"Review & build\" — and on the last step you choose an output language and a template, then press \"Build résumé\". The finished résumé is saved to Documents. \"Tailor to a job\" then carries it into the \"AI Generate\" page as your starting résumé; nothing runs yet — you still add the job ad and press \"Generate\". If you already have a file, upload it at Settings → Resume → \"Resume Management\", which takes PDF, DOC, DOCX and TXT, then press \"Set as default\"."
+        },
+        "replayWizard": {
+          "q": "How do I see the intro wizard and the tour again?",
+          "a": "Go to Settings → General → \"Intro Wizard\" and press \"Replay wizard\". The first-run wizard reopens full-screen at \"Welcome to AI Job Hunter\" and walks through every step again — résumé upload, AI setup, the browser check, aggregated search keys, the browser extension, indexing, crash reports and appearance — ending at \"Make it your own\". Steps you have already completed can simply be confirmed again. After the last step the spotlight tour runs once more over the sidebar items; \"Skip tour\" ends it early and \"Start job hunting\" closes it."
+        }
+      },
+      "findingJobs": "Finding Jobs",
+      "findingJobsQuestions": {
+        "whichBoards": {
+          "q": "Which job boards are supported, and do any need a login?",
+          "a": "Open Jobs and press \"Scrape jobs\" to pick boards: LinkedIn, Greenhouse, Lever, Ashby, Personio, Workable, Remotive, RemoteOK and Arbeitsagentur are among them. No board requires a login — LinkedIn alone offers one, and connecting it under Settings → Accounts → \"Job board accounts\" only enriches results. ATS boards such as Greenhouse, Lever, Ashby and Workable need a company slug in \"Companies\" — the box reads \"Type a company slug…\", and a slug comes from a career-page URL, not the display name — or they show a \"needs company\" chip. \"Aggregator\" needs your Adzuna \"App ID\" and \"App Key\" from Settings → Jobs → \"Job search providers\"."
+        },
+        "searchBox": {
+          "q": "How does the search box on the Jobs page work?",
+          "a": "The box marked \"Filter by title, company, location…\" narrows the list instantly as you type. Press Enter or \"Search\" to run a ranked search across the scraped postings instead. A banner above the results then says how many postings were searched and which arms ranked them — \"keyword\", \"semantic\" and \"AI re-rank\". If it reads \"Semantic ranking is off.\", switch on Settings → AI → \"Embeddings\" → \"Semantic scoring\". \"Sort\" stays disabled while a ranked order governs the list; press \"Clear search\" to get it back."
+        },
+        "narrowList": {
+          "q": "How do I narrow down the job list?",
+          "a": "Use the tags above the list. \"Remote\", \"Hybrid\" and \"On-site\" hide everything else already on screen — no re-scrape — and postings that never declared a work type are always kept. \"Hide agency posts\" drops recruiting-agency listings; add your own company names under Settings → Jobs → \"Recruiting agencies\" to extend the built-in detection. \"Sort\" reorders by \"Newest\", \"Oldest\" or \"Company\", and the filter box narrows by title, company or location as you type."
+        },
+        "saveAJob": {
+          "q": "How do I keep a job I like?",
+          "a": "Press \"Save\" on the posting row or in the detail pane. That creates a tracked application in the \"Saved\" status, which you open from Applications, and it survives a restart. The scraped postings themselves do not: they live only in memory and are gone when you quit the app, press \"Clear\", or start the next scrape. So save anything you want to keep before scraping again. \"Clear\" removes postings only — tracked applications and saved documents are not affected."
+        },
+        "duplicates": {
+          "q": "Why does a job say \"Also on\" another board, and what if that is wrong?",
+          "a": "The same job is often posted to several boards, so postings are clustered as they arrive, by company and title and then by how similar their content is. The surviving row shows \"Also on\" with the other boards, and \"All sources\" lists them so you can open the job on any one. If two genuinely different jobs were merged, press \"Not a duplicate\" — you get \"Postings separated\" and that verdict is remembered, so they stay apart on later scrapes."
+        }
+      },
+      "matchScore": "Match Score",
+      "matchScoreQuestions": {
+        "whatIsScore": {
+          "q": "What does the match score mean?",
+          "a": "Press \"Score\" on a posting on the Jobs page and the app compares it with your default résumé, then shows a band — \"High\", \"Medium\" or \"Low\" — with \"est.\" beside it rather than a percentage. Hover or focus the info button next to it, labelled \"About this score\", and the app spells out the limit: \"This score is a guidance estimate — not the employer's decision or any ATS system's score.\" No recruiter and no real applicant-tracking system produced it. Treat \"High\" as worth applying to as it stands, \"Medium\" as worth tailoring first, and \"Low\" as a long shot."
+        },
+        "coverageVsMatch": {
+          "q": "Why does one job show \"Keyword Coverage %\" and another \"Match %\"?",
+          "a": "\"Keyword Coverage %\" means the number came from keywords alone. \"Match %\" means embeddings were blended in too, so the meaning of your résumé counts, not just the words. Semantic scoring is off on a fresh install, so you see \"Keyword Coverage %\" until you switch on \"Semantic scoring\" at Settings → AI → \"Embeddings\". It works off an indexed résumé; the same panel shows how many documents are indexed, and matching indexes one the first time it is needed."
+        },
+        "saveResumeToScore": {
+          "q": "Why does the Score button say \"Save a résumé to score\"?",
+          "a": "Scoring always runs against your default résumé, so with none stored there is nothing to compare a posting against and the button reads \"Save a résumé to score\" instead. Open Settings → Resume → \"Resume Management\" and drop a file on the upload area, which takes \"PDF, DOC, DOCX\". The first résumé you store becomes the default on its own, so its card picks up a \"Default\" badge and the button on the Jobs page turns back into \"Score\". If you already keep several, the one carrying that badge is the one scored."
+        },
+        "bestMatches": {
+          "q": "What is the Best Matches page?",
+          "a": "\"Best Matches\" sits in the sidebar under \"Automation\". It pools the found jobs from every autopilot into one list, folds duplicate postings of the same role together, and keeps only the rows that clear the \"High\" band, so weak finds never reach it. Sort by \"Score\", \"Newest\" or \"Salary\". Each row offers \"View\", \"Save\" and \"Apply\"; \"Dismiss\" drops a row you are not interested in, and \"Undo\" brings it back."
+        }
+      },
+      "documents": "Documents",
+      "documentsQuestions": {
+        "importFormats": {
+          "q": "Which file formats can I import, and what about scanned PDFs?",
+          "a": "Drop a file onto Settings → Resume → \"Resume Management\", or click to browse: the hint under the drop zone reads \"PDF, DOC, DOCX\", and TXT files are accepted too. The résumé card on the \"Resume Analyzer\" page accepts PDF, DOCX and TXT. If a PDF turns out to be a scan with no text layer, the app runs OCR on it by itself — you see \"Scanning with OCR…\" in Settings, or \"Scanning…\" on the analyzer card — and the recognised text is imported under the same title, so there is nothing to convert beforehand."
+        },
+        "indexed": {
+          "q": "What does \"Indexed\" mean, and should I use \"Index automatically\"?",
+          "a": "\"Indexed\" means the document already has embedding vectors in the embedding space currently set under Settings → AI → \"Embeddings\"; change the embedding model there and the vectors are rebuilt. That panel also counts how many documents are indexed and offers \"Re-index now\". Turn on \"Index automatically\" to index each document the moment it is imported — worth leaving off when your embedding provider is a cloud one, since cloud providers charge per token indexed. Either way, matching indexes a document the first time it is needed."
+        },
+        "multipleResumes": {
+          "q": "Can I keep more than one résumé, and which one gets used?",
+          "a": "Yes. Settings → Resume → \"Resume Management\" keeps every file you upload, and each card carries \"Set as default\" plus \"Default\" and \"Indexed\" badges. The default is the one the Jobs page scores a posting against and the one the browser extension's \"Check fit\" uses, so switch it whenever you change track. Documents the app generates are kept separately, on the Documents page: the \"Résumés\" and \"Cover Letters\" tabs, while \"Activity\" is the log of jobs you viewed, bookmarked, applied to or dismissed."
+        }
+      },
+      "aiGenerate": "AI Generate",
+      "aiGenerateQuestions": {
+        "tailorRun": {
+          "q": "How do I tailor my résumé to a job, and why does it take minutes?",
+          "a": "Press \"Tailor\" on any posting on the Jobs page: the job is saved as an application and opens on its \"Documents\" tab with the tailoring wizard. You can also start from \"AI Generate\", whose wizard walks \"What to create\", \"Choose a template\" and \"Fine-tune the result\" before you press \"Generate\". A tailor run is not one prompt — it makes several staged model calls, shown as \"Reading the job ad\", \"Matching your evidence\", \"Writing the résumé\" and \"Checking the result\", so it typically takes minutes, not seconds."
+        },
+        "needsReview": {
+          "q": "What does \"Needs review\" mean on a generated résumé?",
+          "a": "\"Needs review\" is the run's final status, not a failed run: the document was saved, but the checks could not trace some lines back to your source résumé. Open the quality badge above the document to read the \"Résumé quality report\" — Critical and Warning issues, \"Section verdicts\", and a \"Claims to review\" list. Decide each flagged line yourself: \"Remove\" takes it out of the document as an ordinary edit, saved like any other change, and \"Keep\" leaves it in. Nothing is removed until you choose; while a new generation is streaming the editor is locked and the review says so."
+        },
+        "coverOnly": {
+          "q": "Can I generate only a cover letter, without a résumé?",
+          "a": "Yes. In the tailoring wizard's \"Output\" step set \"Document type\" to \"Cover letter\" and the run writes only the letter; pick \"Both\" if you want the tailored résumé too. From \"AI Generate\" the same choice is the first wizard step, \"What to create\", where \"Cover Letter\" sits beside \"Resume\" and \"Both\". When the run finishes the letter opens in the output panel with \"Copy\" and \"Export\", plus a \"Letter layout\" picker offering \"Classic\", \"Refined\" and \"Banded\". It is also filed under Documents → \"Cover Letters\"."
+        },
+        "applicationAnswers": {
+          "q": "How do I get answers to the application form questions?",
+          "a": "Open the application and go to its \"Documents\" tab; once a tailored run has finished, \"Application questions\" appears in the toolbar. Tick any of the common questions listed, or type your own under \"Your own question\" and press \"Add\" — a typed question only counts once it is added, and \"Generate answers\" stays disabled until at least one question is on the list. Each draft is grounded in your résumé and the job ad, with \"Copy answer\" to paste it into the form and \"Rewrite with AI\" for another angle. Turn on \"Search the web for better answers\" first when a question needs current facts."
+        },
+        "exportDoc": {
+          "q": "How do I export as PDF or DOCX, and where do I pick a template?",
+          "a": "Press \"Export\" above a finished document and choose PDF, DOCX or TXT — print-ready, editable in Word, or plain text with no formatting. The look comes from the template: the \"AI Generate\" wizard picks it in \"Choose a template\", a gallery split into \"ATS-Safe\" and \"Design\" with names such as \"ATS Classic\", \"Swiss Minimal\" and \"Lebenslauf (DACH)\"; a tailor run has the same picker as a dropdown above the document. \"ATS-safe mode\" is offered when the selected template or letter layout has something to strip: it collapses a two-column résumé to one column, removes the photo or decorative accents, and drops a letter's side rail, band or monogram tile."
+        },
+        "whereStored": {
+          "q": "Where do my generated résumés and cover letters go?",
+          "a": "Every finished run is saved for you. Open \"Documents\" in the sidebar: the \"Résumés\" tab holds tailored résumés and \"Cover Letters\" holds the letters, each card showing the company and role it was written for. The same document also appears on that job's application, on its \"Documents\" tab. From a card you can \"Export\" it as PDF, DOCX or TXT, \"Copy resume\" to put the text on the clipboard, \"Open posting\" to reread the ad, or \"Delete\" it — which removes the résumé and its cover letter together."
+        },
+        "humanize": {
+          "q": "What does \"Remove AI signs\" do to my résumé?",
+          "a": "It is a late stage of a tailor run, shown in the progress list as \"Removing AI writing tells\" and as the step \"Remove AI signs\", which the app describes as rewriting only the lines that read as AI-written. An automatic check marks those lines and the model is asked to fix just them; the rewrite is then graded, and if it comes back worse — new Critical issues, or more AI-voice flags than before — it is discarded and your original draft is kept. You can give this stage its own model at Settings → AI → \"Per-stage models\", where \"Remove AI signs\" offers \"Change\" and \"Use default\"."
+        }
+      },
+      "applications": "Applications",
+      "applicationsQuestions": {
+        "trackJob": {
+          "q": "How do I track a job I have applied to?",
+          "a": "On the Applications page click \"Track a job\", fill in what you know — \"Job URL (optional)\", \"Company\", \"Job title\" and \"Candidate name\", none of them required — and press \"Track\". On the Jobs page, \"Save\" on a posting tracks it the same way at \"Saved\". Every application sits in one stage: \"Saved\", \"Applied\", \"Screening\", \"Interviewing\", \"Offer\", \"Accepted\", \"Rejected\", \"Ghosted\" or \"Withdrawn\", and the list gives each stage its own collapsible section. Every row carries a stage dropdown offering every stage, so you can move an application without opening it."
+        },
+        "remindersAndNotes": {
+          "q": "Where do I keep notes, contacts and follow-up reminders?",
+          "a": "Open the application and choose the \"Overview\" tab. It holds \"Notes\", \"Contact name\", \"Contact email\", \"Compensation\" and \"Next action reminder\". Pick a date in \"Next action reminder\" and the row on the Applications list gets a \"Follow up\" badge, which turns into \"Overdue\" once that date passes; the pipeline strip counts how many follow-ups are overdue. Change a stage on the detail page and an \"Add a note\" prompt asks what happened; change it from a row on the list and a short-lived \"Add a note?\" chip appears instead — click it to get the same prompt."
+        },
+        "interviewPrep": {
+          "q": "How do I practise for an interview?",
+          "a": "Open the application and choose the \"Interview prep\" tab, then use the mode toggle. \"Questions to ask\" drafts questions for your interviewer: pick who you will meet under \"Generate questions for\", optionally list \"Topics to focus on (optional)\", and press \"Suggest questions\". \"Practice answers\" goes the other way — press \"Generate practice questions\", type your answer into the box and press \"Get feedback\" to get \"Strengths\", \"Gaps vs. the job ad\", \"STAR completeness\" and a \"Tightened rewrite\"."
+        },
+        "emailTracking": {
+          "q": "Can the app watch my inbox for replies?",
+          "a": "Yes, if you switch it on at Settings → Accounts → \"Email tracking\". Enter your \"Email address\" and an \"App password\" — kept only in your OS keychain — and press \"Connect\". Both switches start off: \"Watch for confirmation emails\" checks the mailbox periodically and notifies you, while \"Update status automatically\" lets a matched email move the stage straight away. Such changes appear on the \"Timeline\" tab marked \"Unconfirmed\" with \"Confirm\" and \"Reject\". Checks run on your device and never reach an AI provider. \"Check now\" forces one, but it is throttled to about one a minute."
+        },
+        "referral": {
+          "q": "How do I ask someone for a referral?",
+          "a": "Open the application, go to the \"Documents\" tab and press \"Ask for a referral\". Fill in \"Person's name\" plus the optional \"Their role (optional)\", \"LinkedIn URL (optional)\" and \"Notes (optional)\", and pick how you will reach out under \"How will you reach out?\": \"Email\", \"LinkedIn message\" or \"Connection note\". \"Draft message\" writes it for you and \"Improve with AI\" reworks it with \"Warmer\", \"Shorter\", \"More specific\" or \"Fix grammar\". \"Save\" keeps the contact, with a status of \"Draft\", \"Sent\" or \"Replied\"."
+        }
+      },
+      "autopilot": "Autopilot",
+      "autopilotQuestions": {
+        "whatIsAutopilot": {
+          "q": "What is Autopilot and does it apply for me?",
+          "a": "Autopilot is a saved search that runs on a schedule: it scrapes the job boards you picked, scores every find against your résumé, drops duplicates and tells you about new matches. It never submits anything for you — the wizard states \"Autopilot never applies for you.\" Each autopilot keeps its own \"Found jobs\" list on the Autopilot page, and the strongest results across all of them collect on the \"Best Matches\" page. A run that turns up something new raises one notification summarising the count; its \"View\" action opens the Autopilot page focused on that autopilot. You still review and apply yourself."
+        },
+        "setUpAutopilot": {
+          "q": "How do I set up an Autopilot?",
+          "a": "Open \"Autopilot\" in the sidebar and click \"New Autopilot\". Give it an \"Autopilot name\", pick one or more boards under \"Job board\" — it is a multi-select and keeps at least one selected — and enter a \"Job title\"; those three are required. Scoring needs a résumé: the card below shows the active one with a \"Change\" button that opens upload, \"Or paste / edit text\", your saved résumés and \"Import from LinkedIn\". \"AI notes\" needs a provider set up in Settings → AI. On the last step pick \"Manual only\", \"Every hour\", \"Twice a day\" or \"Once a day\", then \"Create Autopilot\". The app must be open for scheduled runs to fire."
+        }
+      },
+      "extension": "Browser Extension",
+      "extensionQuestions": {
+        "pairExtension": {
+          "q": "How do I install and pair the browser extension?",
+          "a": "Install it from the setup wizard's \"Install the browser extension\" step with \"Add to Chrome\" or \"Add to Firefox\", or from the Chrome or Firefox store. Then open Settings → Accounts → \"Browser extension\" and click \"Copy\" beside \"Pairing token\". Open the extension popup, paste the token into its pairing screen and save it. Back in Settings → Accounts → \"Browser extension\", the \"Connection\" row then reads \"Connected\". You can pair more than one browser with the same token; \"Regenerate token\" disconnects all of them, so you then have to pair each browser again."
+        },
+        "extensionActions": {
+          "q": "What can the browser extension do on a job page?",
+          "a": "Open the extension on a posting and click \"Import this job\" to send it into the app, \"Check fit\" to score it against your default résumé, or \"Mark as applied\". On an application form, \"Fill this form\" fills your saved details and \"Save my answers from this page\" stores answers for reuse; \"Answer tools\" adds \"Suggest answers for this form\" and \"Help me answer…\". \"Assisted form autofill\", \"AI answer drafting\" and \"Auto-track sent applications\" are separate toggles in Settings → Accounts → \"Browser extension\". If the desktop app is not running the popup shows \"App not running\"; if this browser is not paired it shows the pairing screen."
+        }
+      },
+      "aiSetup": "AI Setup & Spend",
+      "aiSetupQuestions": {
+        "chooseProvider": {
+          "q": "Which AI provider should I pick, and where do I put my API key?",
+          "a": "Open Settings → AI. The \"AI Provider\" list shows every option, and \"Active Provider\" is where you choose the one the app uses. Cloud rows such as \"OpenAI\" or \"Anthropic (Claude)\" need an \"API Key\" — paste it and press \"Save\", and it is stored in your OS keychain rather than the app database. \"OpenAI-Compatible\" also asks for a \"Base URL\". \"Ollama (Local)\" takes no key, but the Ollama server must be running with a model pulled. CLI rows like \"Claude Code\" use that tool's own login. A \"Reasoning Effort\" picker appears on a connected row only when the model you picked supports it."
+        },
+        "perStageModels": {
+          "q": "Can I use a different AI model for each step of a tailored résumé?",
+          "a": "Yes. Go to Settings → AI → \"Per-stage models\". Tailoring runs in stages — \"Job analysis\", \"Evidence match\", \"Strategy\", \"Draft\", \"Cover letter\", \"Repair\" and \"Remove AI signs\" — and each one can run on its own model, so a small model can do the reading while your best one writes. Press \"Change\" on a stage, pick a \"Provider\" and \"Model\", and optionally set a \"Context window (tokens)\", then \"Save\". \"Use default\" puts that stage back on the active provider. Stages you never touch keep using the active model."
+        },
+        "spend": {
+          "q": "Where do I see what the AI is costing me?",
+          "a": "Open Settings → AI and scroll to \"AI spend (today)\". It shows the tokens used in and out, an estimated dollar figure for them, and a \"Per provider\" breakdown so you can see which provider ran what. The token counts are exact; the dollar amount is an estimate from list prices, not a real charge, so treat it as a rough guide. Anything that ran on \"Ollama (Local)\" is listed as free. Company and answer research calls are not included in the figure."
+        }
+      },
+      "agentCli": "Agent CLI & MCP",
+      "agentCliQuestions": {
+        "headlessMode": {
+          "q": "Can I use the app from a terminal or from Claude Code or Codex?",
+          "a": "Yes. The desktop binary doubles as a command-line client: run it with agent as the very first argument, for example agent --help, and it prints the available verbs instead of opening the app window. Any other first argument just launches the normal desktop window. Claude Code and Codex can attach to that same binary as an MCP server; it is read-only by default and only opens write tiers if you register it with one of the write flags. The project README's CLI agent section has the exact registration commands. Most calls reach the running app, so keep AI Job Hunter open. There is no Settings row for this."
+        }
+      },
+      "privacy": "Privacy & Data",
+      "privacyQuestions": {
+        "whatLeaves": {
+          "q": "What data leaves my computer?",
+          "a": "Your documents, applications and history stay in local files on your machine, and the app talks to job boards directly. The AI provider you pick in Settings → AI gets the job ad and your résumé — with \"Ollama (Local)\" even that stays local. Opt-in web research goes out too: \"Research the company\" and \"Search the web for better answers\" search through your provider, or through Exa if you saved a key under Settings → AI → \"Company Research\". Under Settings → Privacy, \"Fetch company logos\" (off by default) sends company names to Clearbit and \"Send crash reports\" sends errors to Sentry. Keys and the email app password live in your OS keychain."
+        },
+        "exportImport": {
+          "q": "How do I back up or move my data?",
+          "a": "Open Settings → Privacy and scroll to \"Your data\". \"Export Data\" → \"Export\" writes a full JSON backup — documents, generated résumés and cover letters, applications, autopilots and your applied, viewed and bookmarked log — not just your job history; API keys stay in the keychain and are not included. \"Import Data\" → \"Import\" replaces what is in the app with that file, so anything saved since the backup is lost — export again first if the current data matters. \"Clear Interaction History\" wipes only the applied, viewed and bookmarked log. \"Danger Zone\" → \"Reset App\" → \"Reset Everything\" erases all data and preferences."
         }
       }
+    },
+    "search": {
+      "placeholder": "Search help by keyword…",
+      "ariaLabel": "Help search",
+      "noResultsTitle": "No matching help topics",
+      "noResultsBody": "Try fewer words, or different ones."
     }
   },
   "onboarding": {
