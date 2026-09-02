@@ -691,8 +691,10 @@ fn r7_allowlist_has_no_dead_entries() {
 }
 
 // ── R8: oversized-module watch (hard cap prevents new mega-files) ────────────────────
-const HARD_CAP_LOC: usize = 1400; // current ceiling: extension_bridge/agent_cli/policy.rs (1399, ONE line of
-                                  // headroom — the next `PolicyEntry` row must split that file first)
+const HARD_CAP_LOC: usize = 1400; // current ceiling: export/typst_engine/letter.rs (1400 — exactly at the cap,
+                                  // split it before growing it). agent_cli/policy.rs was split at 1399 (its
+                                  // types + classification rules moved to agent_cli/policy/types.rs) so the
+                                  // POLICY table has room for new rows again.
 const SOFT_LOC: usize = 600;
 
 #[test]
