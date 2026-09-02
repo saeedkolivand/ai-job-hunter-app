@@ -1,5 +1,197 @@
 [
   {
+    "sha": "e98b9421792337c4f0d5382af97e9b5a4bb7c4f1",
+    "commit": {
+      "message": "docs: record the live client handshakes in adr-040 (#1093)",
+      "author": {
+        "date": "2026-09-02T05:24:15Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "f5d5378183a68ce28d815242e080e20d6cc00ee1",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-02T05:17:05Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "44fd17dde4ad2dbe8e5719db52b84fda02f51475",
+    "commit": {
+      "message": "feat: mcp stdio server mode for the agent cli (#1092)",
+      "author": {
+        "date": "2026-09-02T05:05:15Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "0377ca78dc3a98a0c45e0d2d12c7976bc7f3a1b1",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-02T00:39:05Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "c01e7eaf7a81cbc801498ee40ce1480f6e56924d",
+    "commit": {
+      "message": "docs: make the ai rigour visible where a reviewer actually reads (#1091)",
+      "author": {
+        "date": "2026-09-02T00:27:24Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "87f4de34b06bbf962e357c464c1bcd46b333bcfe",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-01T23:37:31Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "a27d89da76e2edf8921b3eac28448cda636ba173",
+    "commit": {
+      "message": "feat: hybrid search over the live postings cache (#1090)",
+      "author": {
+        "date": "2026-09-01T23:25:45Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "0fafe4881633e7e03850bd6c6d573d63d03463a7",
+    "commit": {
+      "message": "chore: sync landing download version to v0.145.2",
+      "author": {
+        "date": "2026-09-01T19:41:24Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "f1640757e623696adcb32eeb103d4c681f391e18",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.145.2 [skip ci]",
+      "author": {
+        "date": "2026-09-01T19:40:44Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "11a94450c7669401f2f13e8b6daa5c944026e8e4",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-01T19:04:07Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "22a5efb3d9b82768307780ad849d9b4a1ca7f407",
+    "commit": {
+      "message": "chore(release): 0.145.2 [skip ci]",
+      "author": {
+        "date": "2026-09-01T18:53:19Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f336aee29da2093700de054c75e2dbed99bef6c5",
+    "commit": {
+      "message": "fix: move the nsis installMode guard inside the hook macros (#1089)",
+      "author": {
+        "date": "2026-09-01T18:52:01Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "51096a2a83559ac7cc61c1b14dcb575b9f755e4b",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-01T18:21:26Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "3e8b26b5dd6e45a4662c12c68d143f02378126fb",
+    "commit": {
+      "message": "chore(release): 0.145.1 [skip ci]",
+      "author": {
+        "date": "2026-09-01T18:11:29Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f65103265f63cbe18143710d4448bd0c41d95007",
+    "commit": {
+      "message": "fix: make the agent CLI reachable after an install or update (#1088)",
+      "author": {
+        "date": "2026-09-01T18:09:57Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "0487aed4f7ec68c546ef6980fd9996ee042a546d",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-01T08:37:24Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a9835b15d8198fcafd39bcbb1e8a5ed62ffc4bf2",
     "commit": {
       "message": "chore: sync landing download version to v0.145.0",
@@ -1005,198 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "4d340b621f1a2dc1f55a964f5e5193406e29bc8e",
-    "commit": {
-      "message": "fix(match): score non-english postings honestly, and let the score tab run semantic (#1060)",
-      "author": {
-        "date": "2026-08-20T20:00:08Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8bf98b13561d409a7abb23ddef7154e2ea01f0bf",
-    "commit": {
-      "message": "chore: sync landing download version to v0.139.2",
-      "author": {
-        "date": "2026-08-20T16:51:51Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d2547e62b77647ca0424331591a015a216470816",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.139.2 [skip ci]",
-      "author": {
-        "date": "2026-08-20T16:51:29Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "b91ee222fbe0ca3ac04d4a3cdfcf4aa0de09256b",
-    "commit": {
-      "message": "chore(release): 0.139.2 [skip ci]",
-      "author": {
-        "date": "2026-08-20T16:22:02Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "7de41e16cdc1d3dc93432f13b01cd6ad350468a7",
-    "commit": {
-      "message": "chore: sync landing download version to v0.139.1",
-      "author": {
-        "date": "2026-08-20T16:16:20Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "fe9e9c5088317702e2d567b9862d036aa5efe586",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.139.1 [skip ci]",
-      "author": {
-        "date": "2026-08-20T16:15:56Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a7535194effc1df1656b5e85ba7a86df49a0ec94",
-    "commit": {
-      "message": "fix(documents): score the saved résumé the score tab promises (#1059)",
-      "author": {
-        "date": "2026-08-20T16:12:59Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ebb979f00e2be38eb8646d00a22d62073c49fdb5",
-    "commit": {
-      "message": "build(desktop): stop the route generator treating route tests as routes (#1058)",
-      "author": {
-        "date": "2026-08-20T16:07:38Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1465cb8b0e5c58600b2e6053ed620d4940937e37",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-20T16:03:43Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "95d35c419214094060e359b7091de26ac5981e31",
-    "commit": {
-      "message": "chore(release): 0.139.1 [skip ci]",
-      "author": {
-        "date": "2026-08-20T15:38:53Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f617d5ee109236136400c16ed80888fd696bc836",
-    "commit": {
-      "message": "fix: make the v0.139.0 score tab actually score, and stop embeds timing out under load (#1057)",
-      "author": {
-        "date": "2026-08-20T15:37:43Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "e0e98fdfd2379249807fed7144122425dce7a15a",
-    "commit": {
-      "message": "chore: sync landing download version to v0.139.0",
-      "author": {
-        "date": "2026-08-20T12:54:22Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "01c34f26a63756aa6662b936cfb46f19ba200244",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.139.0 [skip ci]",
-      "author": {
-        "date": "2026-08-20T12:53:45Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "5a77e83e64868f907c3dbefe75069062cad4d5f0",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-20T12:37:47Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "b57eec307d76badbc9e45df4503cbb3a6ccbd424",
-    "commit": {
-      "message": "chore(release): 0.139.0 [skip ci]",
-      "author": {
-        "date": "2026-08-20T12:15:25Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "c18ba75468014426824a0a521bdbcf4abef9ef59",
-    "commit": {
-      "message": "feat: job-ad score surfaces, and email tracking v2 with opt-in auto-write (#1056)",
-      "author": {
-        "date": "2026-08-20T12:13:44Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]

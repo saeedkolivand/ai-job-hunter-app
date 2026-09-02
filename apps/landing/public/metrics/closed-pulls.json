@@ -1,5 +1,89 @@
 [
   {
+    "number": 1093,
+    "title": "docs: record the live client handshakes in adr-040",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1093",
+    "draft": false,
+    "created_at": "2026-09-02T05:23:47Z",
+    "updated_at": "2026-09-02T05:24:18Z",
+    "merged_at": "2026-09-02T05:24:16Z",
+    "closed_at": "2026-09-02T05:24:16Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1092,
+    "title": "feat: mcp stdio server mode for the agent cli",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1092",
+    "draft": false,
+    "created_at": "2026-09-02T04:32:09Z",
+    "updated_at": "2026-09-02T05:22:55Z",
+    "merged_at": "2026-09-02T05:05:16Z",
+    "closed_at": "2026-09-02T05:05:16Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1091,
+    "title": "docs: make the ai rigour visible where a reviewer actually reads",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1091",
+    "draft": false,
+    "created_at": "2026-09-01T23:52:06Z",
+    "updated_at": "2026-09-02T00:39:08Z",
+    "merged_at": "2026-09-02T00:27:24Z",
+    "closed_at": "2026-09-02T00:27:24Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1090,
+    "title": "feat: hybrid search over the live postings cache",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1090",
+    "draft": false,
+    "created_at": "2026-09-01T22:37:28Z",
+    "updated_at": "2026-09-01T23:41:10Z",
+    "merged_at": "2026-09-01T23:25:46Z",
+    "closed_at": "2026-09-01T23:25:46Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1089,
+    "title": "fix: move the nsis installMode guard inside the hook macros",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1089",
+    "draft": false,
+    "created_at": "2026-09-01T18:49:33Z",
+    "updated_at": "2026-09-01T19:11:43Z",
+    "merged_at": "2026-09-01T18:52:02Z",
+    "closed_at": "2026-09-01T18:52:02Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1088,
+    "title": "fix: make the agent CLI reachable after an install or update",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1088",
+    "draft": false,
+    "created_at": "2026-09-01T17:59:48Z",
+    "updated_at": "2026-09-01T18:22:29Z",
+    "merged_at": "2026-09-01T18:09:58Z",
+    "closed_at": "2026-09-01T18:09:58Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1087,
     "title": "feat: generic command dispatch for the agent CLI, read effects first",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1087",
@@ -613,90 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1050,
-    "title": "ci: group dependabot updates by area, and unblock local pushes",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1050",
-    "draft": false,
-    "created_at": "2026-08-19T17:01:09Z",
-    "updated_at": "2026-08-19T19:47:08Z",
-    "merged_at": "2026-08-19T17:03:47Z",
-    "closed_at": "2026-08-19T17:03:47Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1052,
-    "title": "chore: bump apple-native-keyring-store from 1.0.1 to 1.0.2 in /apps/desktop/src-tauri in the desktop-rust group",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1052",
-    "draft": false,
-    "created_at": "2026-08-19T17:26:13Z",
-    "updated_at": "2026-08-19T19:47:07Z",
-    "merged_at": "2026-08-19T18:57:42Z",
-    "closed_at": "2026-08-19T18:57:42Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1053,
-    "title": "chore: bump anthropics/claude-code-action from 1.0.189 to 1.0.193 in the ci-actions group",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1053",
-    "draft": false,
-    "created_at": "2026-08-19T17:36:17Z",
-    "updated_at": "2026-08-19T19:47:06Z",
-    "merged_at": "2026-08-19T18:57:50Z",
-    "closed_at": "2026-08-19T18:57:50Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1051,
-    "title": "fix(ats): stop false date-context criticals, and route translation through the active provider",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1051",
-    "draft": false,
-    "created_at": "2026-08-19T17:10:59Z",
-    "updated_at": "2026-08-19T19:47:05Z",
-    "merged_at": "2026-08-19T19:41:37Z",
-    "closed_at": "2026-08-19T19:41:37Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1034,
-    "title": "docs: repoint the audit-report sha after the history rewrite",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1034",
-    "draft": false,
-    "created_at": "2026-08-18T14:57:02Z",
-    "updated_at": "2026-08-19T12:00:56Z",
-    "merged_at": "2026-08-18T14:57:57Z",
-    "closed_at": "2026-08-18T14:57:57Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1035,
-    "title": "fix(scraping): wire the freehire params their spec never documented",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1035",
-    "draft": false,
-    "created_at": "2026-08-18T15:11:27Z",
-    "updated_at": "2026-08-19T12:00:53Z",
-    "merged_at": "2026-08-18T15:12:15Z",
-    "closed_at": "2026-08-18T15:12:15Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
     }
   }
 ]
