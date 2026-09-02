@@ -510,6 +510,32 @@ impl DocumentStore {
             name: "repair_pre_pdf_text_string_mojibake",
             up: mojibake_repair::up,
         },
+        Migration {
+            // The help-corpus vector cache (`documents::help_vectors`). Keyed
+            // by `sha256_hex(entry body)` — NOT by entry id or locale — so an
+            // edited answer misses by itself and an unchanged one costs at
+            // most one embed per embedding space.
+            //
+            // Forward-safe and safe to drop: `CREATE TABLE IF NOT EXISTS` on
+            // a table no earlier migration reads, holding nothing but derived
+            // data (losing it costs a re-embed, never user content). APPENDED
+            // at the END — `run_migrations` is position-indexed, so a new
+            // migration must never be inserted earlier in this list.
+            name: "create_help_vectors",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS help_vectors (
+                        text_hash  TEXT PRIMARY KEY,
+                        provider   TEXT NOT NULL,
+                        model      TEXT NOT NULL,
+                        dim        INTEGER NOT NULL,
+                        version    INTEGER NOT NULL,
+                        vector     TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    );",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -540,6 +566,7 @@ impl DocumentStore {
         // migration, so it will not be recreated.
         conn.execute_batch(
             "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores; \
+             DELETE FROM help_vectors; \
              DROP TABLE IF EXISTS documents_pre_mojibake_repair;",
         )
         .ok();
@@ -1043,6 +1070,10 @@ impl DocumentStore {
 }
 
 mod embedding;
+// Inherent `impl DocumentStore` only (the `help_vectors` cache), so there is
+// nothing to re-export — see help_vectors.rs's own doc for why it is a
+// separate file rather than more of mod.rs.
+mod help_vectors;
 // Re-exported flat at `documents::` so this split is invisible to every
 // existing `crate::documents::X` call site (`embed` alone has ~5 external
 // callers, `sha256_hex`/`EmbedBudget` several more) — see embedding.rs's doc.

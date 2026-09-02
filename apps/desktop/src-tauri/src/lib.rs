@@ -1175,6 +1175,8 @@ pub fn run() {
             commands::privacy::privacy_reset_app,
             commands::privacy::privacy_get_crash_reporting,
             commands::privacy::privacy_set_crash_reporting,
+            // in-app help retrieval (lexical FTS5 + an opt-in dense arm)
+            commands::help::help_search,
             // support
             commands::support::support_export_diagnostics,
             commands::support::support_get_system_info,

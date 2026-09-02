@@ -1041,6 +1041,10 @@ pub async fn ai_set_embedding_config(
                 // clears the live `PostingsCache` embeddings).
                 store.clear_posting_vectors().ok();
                 store.clear_match_scores().ok();
+                // Same reason, same branch: `help_vectors` keys on the
+                // embedding space too, so every row in it is unreachable
+                // after this flip (`documents::help_vectors`).
+                store.clear_help_vectors().ok();
                 // The comment above claimed this already happened; it never
                 // did. `commands::hybrid_search`'s dense arm is the first
                 // production consumer of `PostingsCache`'s embedding cache
