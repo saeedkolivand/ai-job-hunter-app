@@ -13,18 +13,18 @@
     "gen:fonts": "node scripts/selfhost-fonts.mjs"
   },
   "dependencies": {
-    "next": "16.3.2",
+    "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "//typescript": "Pinned to 6.x (newest working): Next 16's build-time verifyTypeScriptSetup does not recognize TS 7's native-compiler package layout — it tries to auto-install typescript and crashes the build worker. Revisit when Next supports the TS 7 compiler.",
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "26.2.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "26.4.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
-    "@vitejs/plugin-react": "^6.1.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "jsdom": "^30.0.1",
     "playwright": "^1.62.1",
     "typescript": "6.0.3",
