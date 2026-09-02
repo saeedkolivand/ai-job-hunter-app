@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788326224931,
+  "lastUpdate": 1788374713648,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "9eb2e75ade9434797b405e5f75a4f4ad07d5d070",
-          "message": "fix: resolve the agent_run provider from the backend store, not the renderer request (#685)\n\n* fix: resolve the agent_run provider from the backend store, not the renderer request\n\nThe agent \"prep this application\" loop still trusted req.provider/model/base_url\nand threaded base_url into ToolContext, so an XSS'd renderer could point an\nopenai-compatible base_url at an attacker and exfiltrate the key + resume/JD per\nturn — the same class task #16 closed for ai_generate. It was also split-brain:\nresearch_company already resolved from the store while complete_trusted used\nctx.base_url, so one run could hit two endpoints.\n\nagent_run now resolves via Completer::from_active; ToolContext carries only\njob_id; complete_trusted resolves from the store too (unifying every agent tool +\nthe agent's own turns on one store-configured endpoint). provider/model/base_url\nare removed from AgentRunRequest (Rust struct + Zod schema) so the renderer can no\nlonger supply them — the compile-time lock. Renderer sends only { resumeId, jobId }.\n\nCloses the last renderer-settable base_url path (NEXT_ISSUES #5).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: remove the dead request-driven provider-resolve constructor\n\nAfter #16 + #25 flipped every generation path onto `Completer::from_active`, the\nrequest-driven `Completer::resolve(provider, model, base_url)` had zero callers —\nand it's the exact \"accept a renderer-supplied base_url\" footgun the whole exfil\nclass removed. Delete it (keeping resolve_parts/from_config/from_active) so\nstore-resolution is the ONLY way to bind egress routing; a future command can no\nlonger re-introduce the class by wiring renderer input into it. Reword the doc\nlinks that pointed at it. No behavior change.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: close adr-0012 scope now that agent_run is store-routed\n\nTask #25 flipped agent_run onto Completer::from_active and deleted the\nold request-driven Completer::resolve constructor, so it is no longer\na tracked exception. Update adr-0012's scope/consequences/references to\nsay the base_url provenance closure covers every generation path, mark\nNEXT_ISSUES #5 closed, and correct the automation-domain knowledge note\nthat still described agent_run as unflipped.\n\nReviewed by tauri-security-reviewer + rust-backend-architect, no\nHIGH/CRITICAL findings.\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-          "timestamp": "2026-07-16T04:17:45+02:00",
-          "tree_id": "dd0ca7f647c09e908cc33f40cf47f94fe2175779",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9eb2e75ade9434797b405e5f75a4f4ad07d5d070"
-        },
-        "date": 1784168817380,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2137353,
-            "range": "± 30437",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2517817,
-            "range": "± 66381",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 284142,
-            "range": "± 15020",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 310918,
             "range": "± 7932",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "84cbcc6d5edb79ae245ddc494e8fc7ad678d986f",
+          "message": "chore: bump the desktop-rust group (#1097)\n\nBumps the desktop-rust group in /apps/desktop/src-tauri with 15 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [tauri-plugin-opener](https://github.com/tauri-apps/plugins-workspace) | `2.5.4` | `2.5.5` |\n| [tauri-plugin-dialog](https://github.com/tauri-apps/plugins-workspace) | `2.7.2` | `2.7.3` |\n| [tauri-plugin-updater](https://github.com/tauri-apps/plugins-workspace) | `2.10.1` | `2.11.0` |\n| [tauri-plugin-clipboard-manager](https://github.com/tauri-apps/plugins-workspace) | `2.3.2` | `2.3.3` |\n| [tauri-plugin-shell](https://github.com/tauri-apps/plugins-workspace) | `2.3.5` | `2.3.6` |\n| [tauri-plugin-log](https://github.com/tauri-apps/plugins-workspace) | `2.9.0` | `2.9.1` |\n| [sentry](https://github.com/getsentry/sentry-rust) | `0.49.1` | `0.49.2` |\n| [tauri-plugin-single-instance](https://github.com/tauri-apps/plugins-workspace) | `2.4.3` | `2.4.4` |\n| [tauri-plugin-notification](https://github.com/tauri-apps/plugins-workspace) | `2.3.3` | `2.4.0` |\n| [tauri-plugin-deep-link](https://github.com/tauri-apps/plugins-workspace) | `2.4.9` | `2.4.10` |\n| [tauri-plugin-positioner](https://github.com/tauri-apps/plugins-workspace) | `2.3.3` | `2.3.4` |\n| [tauri-plugin-websocket](https://github.com/tauri-apps/plugins-workspace) | `2.4.2` | `2.4.3` |\n| [uuid](https://github.com/uuid-rs/uuid) | `1.25.0` | `1.26.0` |\n| [flate2](https://github.com/rust-lang/flate2-rs) | `1.1.9` | `1.1.10` |\n| [aes](https://github.com/RustCrypto/block-ciphers) | `0.9.2` | `0.9.3` |\n\n\nUpdates `tauri-plugin-opener` from 2.5.4 to 2.5.5\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/http-v2.5.4...http-v2.5.5)\n\nUpdates `tauri-plugin-dialog` from 2.7.2 to 2.7.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/dialog-v2.7.2...dialog-v2.7.3)\n\nUpdates `tauri-plugin-updater` from 2.10.1 to 2.11.0\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/updater-v2.10.1...updater-v2.11.0)\n\nUpdates `tauri-plugin-clipboard-manager` from 2.3.2 to 2.3.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/os-v2.3.2...nfc-v2.3.3)\n\nUpdates `tauri-plugin-shell` from 2.3.5 to 2.3.6\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/nfc-v2.3.5...nfc-v2.3.6)\n\nUpdates `tauri-plugin-log` from 2.9.0 to 2.9.1\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/log-v2.9.0...log-v2.9.1)\n\nUpdates `sentry` from 0.49.1 to 0.49.2\n- [Release notes](https://github.com/getsentry/sentry-rust/releases)\n- [Changelog](https://github.com/getsentry/sentry-rust/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/getsentry/sentry-rust/compare/0.49.1...0.49.2)\n\nUpdates `tauri-plugin-single-instance` from 2.4.3 to 2.4.4\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.3...fs-v2.4.4)\n\nUpdates `tauri-plugin-notification` from 2.3.3 to 2.4.0\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/nfc-v2.3.3...fs-v2.4.0)\n\nUpdates `tauri-plugin-deep-link` from 2.4.9 to 2.4.10\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/deep-link-v2.4.9...deep-link-v2.4.10)\n\nUpdates `tauri-plugin-positioner` from 2.3.3 to 2.3.4\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/nfc-v2.3.3...nfc-v2.3.4)\n\nUpdates `tauri-plugin-websocket` from 2.4.2 to 2.4.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.2...fs-v2.4.3)\n\nUpdates `uuid` from 1.25.0 to 1.26.0\n- [Release notes](https://github.com/uuid-rs/uuid/releases)\n- [Commits](https://github.com/uuid-rs/uuid/compare/1.25.0...v1.26.0)\n\nUpdates `flate2` from 1.1.9 to 1.1.10\n- [Release notes](https://github.com/rust-lang/flate2-rs/releases)\n- [Commits](https://github.com/rust-lang/flate2-rs/compare/1.1.9...1.1.10)\n\nUpdates `aes` from 0.9.2 to 0.9.3\n- [Commits](https://github.com/RustCrypto/block-ciphers/compare/aes-v0.9.2...aes-v0.9.3)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-opener\n  dependency-version: 2.5.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-dialog\n  dependency-version: 2.7.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-updater\n  dependency-version: 2.11.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-clipboard-manager\n  dependency-version: 2.3.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-shell\n  dependency-version: 2.3.6\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-log\n  dependency-version: 2.9.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: sentry\n  dependency-version: 0.49.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-single-instance\n  dependency-version: 2.4.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-notification\n  dependency-version: 2.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-deep-link\n  dependency-version: 2.4.10\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-positioner\n  dependency-version: 2.3.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-websocket\n  dependency-version: 2.4.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: uuid\n  dependency-version: 1.26.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: desktop-rust\n- dependency-name: flate2\n  dependency-version: 1.1.10\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: aes\n  dependency-version: 0.9.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-09-02T20:21:05+02:00",
+          "tree_id": "0316ff2ac2fc008a3a0f79911ba17a6b5159b9db",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/84cbcc6d5edb79ae245ddc494e8fc7ad678d986f"
+        },
+        "date": 1788374712831,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2299437,
+            "range": "± 25327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2737169,
+            "range": "± 35080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 310167,
+            "range": "± 9877",
             "unit": "ns/iter"
           }
         ]

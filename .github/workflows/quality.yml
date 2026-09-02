@@ -45,7 +45,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
@@ -71,7 +71,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -81,7 +81,7 @@ jobs:
       - name: 🧰 Install typos
         id: install-typos
         continue-on-error: true
-        uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: typos
       # Advisory: run typos ourselves so the findings land in the job Summary
@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -140,7 +140,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -176,7 +176,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -206,7 +206,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -257,7 +257,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -277,7 +277,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -311,7 +311,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -321,7 +321,7 @@ jobs:
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🧰 Install cargo-hack
-        uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-hack
       - name: 🦀 Check each feature (advisory)
@@ -336,7 +336,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - name: 📥 Checkout Repository
@@ -346,7 +346,7 @@ jobs:
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🧰 Install cargo-mutants
-        uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-mutants
       - name: 🦀 Mutation testing on the diff (advisory)
@@ -391,7 +391,7 @@ jobs:
       pull-requests: write # comment on a PR when a result regresses
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
