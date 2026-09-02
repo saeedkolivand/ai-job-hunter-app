@@ -191,6 +191,68 @@ fn confirmation_required_sentinel_matches_the_one_agent_cli_special_cases_for_ex
     assert_eq!(ERR_CONFIRMATION_REQUIRED, "confirmation_required");
 }
 
+// ── confirm_and_run — the ceremony's own decision, without an AppHandle ──
+// `dispatch_irreversible_confirmed` takes a concrete `&AppHandle` and the
+// crate has no Tauri mock, so none of these three outcomes had a test.
+// `confirm_and_run` is the same decision with the handle factored out.
+
+/// A distinctive proof value + a distinctive wrong guess: both must stay out
+/// of the mismatch refusal's own `detail` (the ADR-038 §4 rule already
+/// pinned for the fixed string, re-checked here against the values that
+/// actually flowed through the comparison).
+const PROOF_VALUE: &str = "proof-value-9f2c";
+const WRONG_GUESS: &str = "wrong-guess-1a3d";
+
+#[test]
+fn confirm_and_run_refuses_proof_unavailable_without_running_the_command() {
+    let mut ran = false;
+    let outcome = confirm_and_run(None, PROOF_VALUE, || ran = true);
+    assert!(
+        matches!(outcome, Err(Refusal::ProofUnavailable)),
+        "an unresolvable proof must refuse, distinctly from a wrong value"
+    );
+    assert!(
+        !ran,
+        "an irreversible command must never run when the proof could not be resolved at all"
+    );
+}
+
+#[test]
+fn confirm_and_run_refuses_a_mismatch_without_running_the_command_and_leaks_neither_value() {
+    let mut ran = false;
+    let outcome = confirm_and_run(Some(PROOF_VALUE.to_string()), WRONG_GUESS, || ran = true);
+    let Err(refusal) = outcome else {
+        panic!("a wrong confirm must refuse");
+    };
+    assert!(matches!(refusal, Refusal::ConfirmationMismatch));
+    assert!(
+        !ran,
+        "MUTATION GUARD: running before the comparison would dispatch an irreversible \
+         command on a wrong confirm — this assertion is the one that fails if the core is \
+         reordered to call `run` first"
+    );
+    let detail = refusal.detail();
+    assert!(
+        !detail.contains(PROOF_VALUE) && !detail.contains(WRONG_GUESS),
+        "a mismatch must disclose neither the expected value nor the guess: {detail}"
+    );
+}
+
+#[test]
+fn confirm_and_run_runs_the_command_exactly_once_on_an_exact_match() {
+    let mut runs = 0;
+    let outcome = confirm_and_run(Some(PROOF_VALUE.to_string()), PROOF_VALUE, || {
+        runs += 1;
+        json!({ "dispatched": true })
+    });
+    assert_eq!(
+        outcome.ok(),
+        Some(json!({ "dispatched": true })),
+        "a matching confirm must return the run step's own reply, unchanged"
+    );
+    assert_eq!(runs, 1, "the command must run exactly once, never twice");
+}
+
 // ── classify_response / invoke_error_detail (pure) ───────────────────────
 // HIGH fix (security review round 2): `InvokeResponse::Err` used to be
 // folded straight into `invoke_command`'s `Ok(Value)`, so a Tauri-level

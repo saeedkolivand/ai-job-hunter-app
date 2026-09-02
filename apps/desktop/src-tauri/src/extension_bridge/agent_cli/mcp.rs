@@ -55,17 +55,35 @@
 //! BEFORE any JSON-RPC frame is read — nothing negotiated yet to break. Every stderr write here is
 //! a pre-protocol usage/runtime failure in [`run`].
 //!
-//! ## Single-flight — one frame in flight at a time (CodeRabbit, PR #1092)
-//! [`serve`]'s loop reads one line, dispatches it SYNCHRONOUSLY — [`run`]'s own `dispatch` closure
-//! calls `rt.block_on` from the sync loop itself, never spawned onto the runtime — then writes the
-//! reply before reading the next line. There is no reader task and no serialized writer, so
-//! exactly one JSON-RPC request is ever in flight: a `tools/call` that takes up to
-//! [`super::INVOCATION_TIMEOUT`] blocks every LATER frame behind it, including a bare `ping`. To a
-//! ping-based liveness check, a slow bridge call and a hung server are indistinguishable for that
-//! whole window. If a real client's keepalive ever proves this a problem in practice, the fix is a
-//! reader task feeding a channel plus one serialized writer task, running concurrently with
-//! dispatch — not attempted here, since no observed client currently pings during an in-flight
-//! call.
+//! ## Concurrency — one reader, one dispatcher, one writer (ADR-040 §12's named follow-up)
+//! Three threads and one [`Event`] channel: a READER thread turns the input into `Event::Line`s
+//! and one final `Event::Eof`; ONE WORKER thread owns the tokio runtime and runs the bridge-backed
+//! tool calls (each under its own [`super::INVOCATION_TIMEOUT`]), sending an `Event::Reply` per
+//! call; the MAIN thread consumes those events, classifies and answers everything else itself,
+//! and is the only thread that ever writes. What a caller may rely on:
+//!
+//! - **Only bridge-backed tool calls queue; local tools and protocol methods are answered
+//!   immediately.** [`classify_tool_call`] runs on the writer thread, so `commands`, an unknown
+//!   tool or bad params, a [`parse_verb`] usage error and every [`local_call_refusal`] are
+//!   answered on the spot — none of them touches the wire, so none of them waits on something
+//!   that does. `initialize`, `ping` and `tools/list` are answered the same way, even mid-call:
+//!   a liveness ping can no longer be mistaken for a hung server.
+//! - **Bridge-backed calls are still dispatched single-flight, in input order.** Exactly ONE
+//!   dispatch runs at any instant and queued calls run strictly FIFO, so the throttle bound
+//!   ADR-040 §12 rests on (one bridge connection per process) is unchanged by this split.
+//! - **Replies are ordered per kind, never globally.** The cost of the first two, stated plainly:
+//!   an immediately-answered frame MAY be written before the reply of a bridge call that arrived
+//!   EARLIER. Every reply still carries the `id` it answers, which is how a JSON-RPC client pairs
+//!   them; nothing here reorders two bridge replies against each other.
+//! - **Exactly one writer, one line per frame.** Only the main thread touches the output handle
+//!   (which is why it takes the [`std::io::Stdout`] VALUE, not a `StdoutLock` — the latter is not
+//!   `Send`, and locking per write is what keeps a partially-written frame impossible), so two
+//!   frames can never interleave.
+//! - **EOF drains.** Once the input ends, the loop keeps writing until every already-queued call
+//!   has replied, then exits 0 — a call in flight when stdin closes is never dropped. An [`emit`]
+//!   error (EPIPE: the client closed its pipe) still ends the server immediately, exit 0.
+//! - **A `tools/call` with a null/absent `id` is dropped before classification**, so it neither
+//!   dispatches nor answers: nothing is listening for the result, exactly as before.
 //!
 //! ## What this is NOT
 //! Never wrapped in [`super::run_verb_within`]'s whole-invocation [`super::INVOCATION_TIMEOUT`] —
@@ -73,7 +91,9 @@
 //! `tools/call` arguments become this CLI's own argv and run through [`super::parse_verb`],
 //! inheriting its never-echo-the-value discipline for free.
 
-use std::io::{stdin, stdout, BufRead, Write};
+use std::io::{stdin, stdout, BufRead, BufReader, Write};
+use std::sync::mpsc::{channel, Sender};
+use std::thread;
 
 use super::agent_call;
 use super::policy::{Effect, LookupInput, ProofSource, POLICY};
@@ -594,27 +614,39 @@ fn tool_result(payload: Value, exit_code: i32) -> Value {
     })
 }
 
-fn tool_call_result(
-    params: &Value,
-    server: &Server,
-    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
-) -> Result<Value, (i64, &'static str)> {
+/// What a `tools/call` frame turns out to be, once classified. The split exists because only
+/// [`ToolCall::Bridge`] costs a bridge round trip: everything else is decided from this binary's
+/// own bundled tables and is answered on the spot, never queued behind an in-flight dispatch (see
+/// the module doc's concurrency guarantees).
+enum ToolCall {
+    /// Answered with no wire traffic at all — `commands`, an unknown tool or bad params, a
+    /// `parse_verb` usage error, or any [`local_call_refusal`].
+    Local(Result<Value, (i64, &'static str)>),
+    /// The one outcome that needs the app: dispatch this verb and wrap the reply.
+    Bridge(Verb),
+}
+
+/// Everything about a `tools/call` that can be decided WITHOUT the bridge. Pure — no dispatch
+/// closure in its signature at all, which is what makes "local tools never queue" a property of
+/// the type rather than of a comment: [`serve`] can run this on its writer thread precisely
+/// because there is nothing here to block on.
+fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
     let Some(name) = params.get("name").and_then(Value::as_str) else {
-        return Err((-32602, "Invalid params"));
+        return ToolCall::Local(Err((-32602, "Invalid params")));
     };
     let arguments = params
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
     if !arguments.is_object() {
-        return Err((-32602, "Invalid params"));
+        return ToolCall::Local(Err((-32602, "Invalid params")));
     }
     if !server
         .tools
         .iter()
         .any(|t| t.get("name").and_then(Value::as_str) == Some(name))
     {
-        return Err((-32602, "Unknown tool"));
+        return ToolCall::Local(Err((-32602, "Unknown tool")));
     }
 
     if name == TOOL_COMMANDS {
@@ -628,30 +660,40 @@ fn tool_call_result(
                 .as_str()
                 .is_some_and(|s| EFFECT_FILTER_VALUES.contains(&s));
             if !valid {
-                return Ok(tool_result(
+                return ToolCall::Local(Ok(tool_result(
                     usage_error_value(
                         "effect must be one of read, reversible, irreversible, not_exposed",
                     ),
                     2,
-                ));
+                )));
             }
         }
-        return Ok(tool_result(commands_value(&arguments, server.tier), 0));
+        return ToolCall::Local(Ok(tool_result(commands_value(&arguments, server.tier), 0)));
     }
 
     let argv = tool_argv(name, &arguments);
     let verb = match parse_verb(&argv) {
         Ok(v) => v,
-        Err(e) => return Ok(tool_result(usage_error_value(&e.to_string()), 2)),
+        Err(e) => return ToolCall::Local(Ok(tool_result(usage_error_value(&e.to_string()), 2))),
     };
 
     if let Some(refusal) = local_call_refusal(name, &verb) {
-        return Ok(tool_result(refusal, 2));
+        return ToolCall::Local(Ok(tool_result(refusal, 2)));
     }
 
-    Ok(match dispatch(&verb) {
+    ToolCall::Bridge(verb)
+}
+
+/// The bridge-backed TAIL of a `tools/call` — the only part that touches the wire, and so the
+/// only part [`serve`] hands to its worker thread. Split out of [`tool_call_result`] so the
+/// dispatch closure appears in exactly one signature.
+fn dispatched_tool_result(
+    verb: &Verb,
+    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
+) -> Value {
+    match dispatch(verb) {
         Ok(payload) => {
-            let code = exit_code_for_reply(&verb, &payload);
+            let code = exit_code_for_reply(verb, &payload);
             tool_result(payload, code)
         }
         Err(sentinel) => {
@@ -659,7 +701,7 @@ fn tool_call_result(
                 json!({ "ok": false, "resource": verb.resource_name(), "error": sentinel });
             tool_result(payload, 2)
         }
-    })
+    }
 }
 
 // ── The JSON-RPC loop ───────────────────────────────────────────────────
@@ -692,78 +734,206 @@ fn rpc_error(id: Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
-/// Dispatch one already-parsed JSON-RPC line. `None` means "no reply, ever" — a notification (no
-/// `id` member), an explicit `id: null`, or any `notifications/*` method regardless of `id`. A
-/// `tools/call` never dispatches when there is nothing to reply to: nothing is listening for the
-/// result.
-fn handle_line(
-    line: &str,
-    server: &Server,
-    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
-) -> Option<Value> {
+/// One JSON-RPC reply frame around an already-computed outcome.
+fn reply_frame(id: Value, outcome: Result<Value, (i64, &'static str)>) -> Value {
+    match outcome {
+        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+        Err((code, message)) => rpc_error(id, code, message),
+    }
+}
+
+/// What the main thread does with one input line. [`Routed::Drop`] means "no reply, ever" — a
+/// notification (no `id` member), an explicit `id: null`, or any `notifications/*` method
+/// regardless of `id`; a `tools/call` in that state never becomes a [`Routed::Call`] and so never
+/// reaches the worker at all: nothing is listening for the result.
+enum Routed {
+    Drop,
+    /// Answerable without touching the bridge — written immediately, even mid-call. Every
+    /// protocol method AND every [`ToolCall::Local`] outcome lands here.
+    Reply(Value),
+    /// A bridge-backed tool call, already classified and parsed: the ONLY thing that queues
+    /// behind an earlier one (see the module doc).
+    Call {
+        id: Value,
+        verb: Verb,
+    },
+}
+
+/// Route one already-read JSON-RPC line. Pure: parses, classifies, and answers everything the
+/// main thread can answer on its own; never dispatches.
+fn route_line(line: &str, server: &Server) -> Routed {
     let parsed: Value = match serde_json::from_str(line) {
         Ok(v) => v,
-        Err(_) => return Some(rpc_error(Value::Null, -32700, "Parse error")),
+        Err(_) => return Routed::Reply(rpc_error(Value::Null, -32700, "Parse error")),
     };
     let Some(obj) = parsed.as_object() else {
-        return Some(rpc_error(Value::Null, -32600, "Invalid Request"));
+        return Routed::Reply(rpc_error(Value::Null, -32600, "Invalid Request"));
     };
     let id = obj.get("id").cloned().unwrap_or(Value::Null);
     if id.is_null() {
-        return None;
+        return Routed::Drop;
     }
     let method = obj.get("method").and_then(Value::as_str);
     let params = obj.get("params").cloned().unwrap_or_else(|| json!({}));
 
     let outcome: Result<Value, (i64, &'static str)> = match method {
         None => Err((-32600, "Invalid Request")),
-        Some(m) if m.starts_with("notifications/") => return None,
+        Some(m) if m.starts_with("notifications/") => return Routed::Drop,
         Some("initialize") => Ok(initialize_result(&params, &server.instructions)),
         Some("ping") => Ok(json!({})),
         Some("tools/list") => Ok(json!({ "tools": server.tools })),
-        Some("tools/call") => tool_call_result(&params, server, dispatch),
+        // Classified HERE, on the writer thread: only a target that really needs the app is
+        // handed to the worker; a local tool, a usage error and every local refusal are
+        // answered like any other immediate method (module doc).
+        Some("tools/call") => match classify_tool_call(&params, server) {
+            ToolCall::Local(outcome) => outcome,
+            ToolCall::Bridge(verb) => return Routed::Call { id, verb },
+        },
         // Everything else — `server/discover` included — is a plain "Method not found", the
         // legacy-fallback signal the 2025-11-25 spec itself defines (see the module doc).
         Some(_) => Err((-32601, "Method not found")),
     };
 
-    Some(match outcome {
-        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
-        Err((code, message)) => rpc_error(id, code, message),
-    })
+    Routed::Reply(reply_frame(id, outcome))
+}
+
+/// What the main thread selects over: input from the reader thread, replies from the worker
+/// thread. One channel, two producers — so a reply and a line can never be missed for each other.
+enum Event {
+    Line(String),
+    /// The input ended (EOF, or a read error, which ends it the same way).
+    Eof,
+    Reply(Value),
 }
 
 /// The sole stdout writer once the JSON-RPC loop is running (see the module doc's "Stdout/stderr
 /// discipline" section) — a compact `Value`'s own `Display` (never a pretty-printed one), one
 /// `writeln!` call. `Err` here (EPIPE once the client closes its end of the pipe) is the caller's
 /// cue to stop, never retried and never a panic.
+///
+/// The flush is explicit rather than left to [`std::io::Stdout`]'s own line buffering: this
+/// server is a request/response peer whose client blocks on a reply before sending its next
+/// frame, so a frame still sitting in a buffer is a deadlock, not a latency detail — and the
+/// handle we write through is chosen for `Send`-ness (module doc), not for its buffering
+/// strategy, so this must not depend on which one it happens to be.
 fn emit(output: &mut impl Write, frame: &Value) -> std::io::Result<()> {
-    writeln!(output, "{frame}")
+    writeln!(output, "{frame}")?;
+    output.flush()
 }
 
-/// The whole read loop — generic over `dispatch` so it is directly testable over a
+/// The whole loop — generic over `dispatch` so it is directly testable over a
 /// [`std::io::Cursor`] with a stub closure (no runtime, no socket, no live tool table beyond what
-/// the test supplies). EOF or a read error ends the loop, exit 0 (spec: exit promptly once stdin
-/// closes).
+/// the test supplies). See the module doc for the guarantees this shape buys and what it costs.
+/// EOF (or a read error) drains the queue and ends the loop, exit 0 (spec: exit promptly once
+/// stdin closes); so does a failed write.
 fn serve(
-    input: impl BufRead,
+    input: impl BufRead + Send + 'static,
     mut output: impl Write,
     server: &Server,
-    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
+    mut dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
 ) -> i32 {
-    for line in input.lines() {
-        let Ok(line) = line else { break };
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+    let (events, incoming) = channel::<Event>();
+    let (calls, queued) = channel::<(Value, Verb)>();
+
+    let worker_events: Sender<Event> = events.clone();
+    let worker = thread::Builder::new()
+        .name("mcp-dispatch".to_string())
+        .spawn(move || {
+            // FIFO by construction: one receiver, one thread, each call run to completion before
+            // the next is taken — this is the "single-flight, in input order" guarantee. The
+            // queue carries an ALREADY-CLASSIFIED [`Verb`], so this thread needs no [`Server`]
+            // and can do nothing but dispatch.
+            while let Ok((id, verb)) = queued.recv() {
+                let reply = reply_frame(id, Ok(dispatched_tool_result(&verb, &mut dispatch)));
+                if worker_events.send(Event::Reply(reply)).is_err() {
+                    return;
+                }
+            }
+        });
+    let Ok(worker) = worker else {
+        // Pre-protocol in practice (nothing has been read yet), so stderr only — same shape as
+        // `run`'s own runtime-build failure.
+        let _ = writeln!(std::io::stderr(), "could not start the MCP dispatch thread");
+        return 2;
+    };
+
+    let reader = thread::Builder::new()
+        .name("mcp-reader".to_string())
+        .spawn(move || {
+            for line in input.lines() {
+                // A read error ends the input exactly like EOF does.
+                let Ok(line) = line else { break };
+                if events.send(Event::Line(line)).is_err() {
+                    return;
+                }
+            }
+            let _ = events.send(Event::Eof);
+        });
+    if reader.is_err() {
+        drop(calls);
+        let _ = worker.join();
+        let _ = writeln!(std::io::stderr(), "could not start the MCP reader thread");
+        return 2;
+    }
+    // Its handle is deliberately DROPPED (detached), never joined: the reader is parked inside a
+    // blocking `stdin` read that only a closed pipe ends, so joining it would be the very hang
+    // this split exists to remove. It is already finished by the time `Eof` reaches the loop.
+    drop(reader);
+
+    let mut input_ended = false;
+    // Calls handed to the worker that have not replied yet — EOF may not end the loop until this
+    // is back to zero, or a reply the client is waiting for would be dropped on the floor.
+    let mut in_flight = 0usize;
+    while let Ok(event) = incoming.recv() {
+        match event {
+            Event::Line(line) => {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                match route_line(line, server) {
+                    Routed::Drop => {}
+                    Routed::Reply(frame) => {
+                        if emit(&mut output, &frame).is_err() {
+                            return 0;
+                        }
+                    }
+                    Routed::Call { id, verb } => {
+                        if calls.send((id.clone(), verb)).is_ok() {
+                            in_flight += 1;
+                        } else {
+                            // The worker is gone (only reachable if its thread died, which under
+                            // `panic = "abort"` it cannot). Answer anyway rather than leave the
+                            // client waiting on a reply that can never come.
+                            let _ = writeln!(std::io::stderr(), "the MCP dispatch thread is gone");
+                            if emit(&mut output, &rpc_error(id, -32603, "Internal error")).is_err()
+                            {
+                                return 0;
+                            }
+                        }
+                    }
+                }
+            }
+            Event::Reply(frame) => {
+                // Saturating, never `- 1`: a reply is only ever produced for a call this loop
+                // queued, but an underflow panic here would be a silent abort in release.
+                in_flight = in_flight.saturating_sub(1);
+                if emit(&mut output, &frame).is_err() {
+                    return 0;
+                }
+            }
+            Event::Eof => input_ended = true,
         }
-        let Some(reply) = handle_line(line, server, dispatch) else {
-            continue;
-        };
-        if emit(&mut output, &reply).is_err() {
-            return 0;
+        if input_ended && in_flight == 0 {
+            break;
         }
     }
+
+    // Both threads are finished or about to be: the reader sent `Eof` before returning, and the
+    // worker's queue closes with `calls`. Joining keeps a test from leaking a thread per case;
+    // a join error (a panicked thread) is nothing this path can act on.
+    drop(calls);
+    let _ = worker.join();
     0
 }
 
@@ -859,7 +1029,9 @@ pub(super) fn run(args: &[String]) -> i32 {
         }
     };
     let server = Server::new(launch.allow_reversible, launch.allow_irreversible);
-    let mut dispatch = |verb: &Verb| -> Result<Value, &'static str> {
+    // Moves onto the dispatch thread WITH the runtime it owns, so `block_on` still runs from a
+    // plain sync context (never inside the reactor) — just not on the thread that writes.
+    let dispatch = move |verb: &Verb| -> Result<Value, &'static str> {
         rt.block_on(async {
             match timeout(INVOCATION_TIMEOUT, query(verb)).await {
                 Ok(result) => result,
@@ -867,7 +1039,11 @@ pub(super) fn run(args: &[String]) -> i32 {
             }
         })
     };
-    serve(stdin().lock(), out.lock(), &server, &mut dispatch)
+    // Never `stdin().lock()`/`out.lock()`: a `StdinLock`/`StdoutLock` is not `Send`, and reading
+    // and writing now happen on different threads. `Stdin` itself is `Read` but not `BufRead`,
+    // hence the `BufReader`; both handles lock internally per call, so the one-frame-per-line
+    // discipline is unchanged (module doc).
+    serve(BufReader::new(stdin()), out, &server, dispatch)
 }
 
 #[cfg(test)]
