@@ -4,6 +4,8 @@ status: accepted
 
 # Support is FAQ-only; the diagnostics/health/recovery dashboard is removed
 
+> **Partly superseded by [ADR-041](adr-041-searchable-help-page-over-compiled-in-entries.md) (2026-09-02):** the Support page is no longer FAQ-only; the removal of the diagnostics dashboard stands.
+
 ## Context
 
 The `support` feature directory contains 23 components. Only `SupportPage` is reachable — it
