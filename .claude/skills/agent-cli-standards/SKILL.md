@@ -143,3 +143,35 @@ literal, `cargo test --test egress` too: the EGRESS inventory is an arch test, n
 against the state machine is not evidence that the two halves talk. `cargo test --lib` flakes roughly
 1 run in 3 with a pre-existing `rate_limiter` subtract-with-overflow panic in scraping tests — re-run
 and say so rather than treating it as yours.
+
+## MCP mode (`agent mcp`) — amendment to the one-document rule
+
+`ajh-tauri agent mcp` keeps a JSON-RPC session open on stdin/stdout for as long as the client holds
+the process, so the "one JSON document on stdout per invocation" rule above does not apply to it —
+by design, recorded in ADR-040. Everything else in this skill still does. Additional rules for the
+mode, each of which a reviewer should verify from the source rather than the description:
+
+- **A mode, not a verb.** `mcp` is intercepted in `run()` before `parse_verb`, the way `--help` is.
+  It adds no `VERB_TABLE` row, no Tauri command, and no policy-table row, so ADR-038's exactness
+  test and the R8 line cap are untouched.
+- **Legacy wire, on purpose.** It speaks the 2025-11-25 stdio protocol (`initialize` →
+  `notifications/initialized`, `ping`, `tools/list`, `tools/call`) because that is what the real
+  clients send; `server/discover` and every other method get `-32601`, which is the current spec's
+  own legacy-fallback signal. Never advertise 2026-07-28. `initialize` is static — no pointer file,
+  no token, no socket — so startup never depends on the app running.
+- **Tools along the `Effect` boundary.** Read-only curated tools and the three generic `call-*`
+  tools each carry MCP annotations (`readOnlyHint`/`destructiveHint`) that match the policy table;
+  a test pins every policy row to exactly one tool. `call-irreversible` is absent from `tools/list`
+  unless the server was started with `--allow-irreversible`.
+- **The confirm ceremony passes through verbatim.** `confirm` exists only on `call-irreversible`
+  and is forwarded as-is; the server never reads the proof itself (ADR-038 §4 — collapsing the two
+  hops "stops nothing").
+- **Refusals are results, not protocol errors.** App-side refusals, sentinels, exit codes and the
+  `confirmation_required` hint travel in `content[].text` with `isError:true`; protocol errors are
+  reserved for malformed JSON-RPC.
+- **stdout is the protocol.** Exactly one `writeln!` site, compact JSON, never `println!` or
+  `to_string_pretty` (release is `panic = "abort"` and this path runs above crash reporting, so a
+  write to a closed pipe is a silent abort). No `eprintln!` in the loop. A source guard test
+  enforces this.
+- **Third-party text is fenced before it reaches the client** (unchanged from the CLI), and the
+  server's `instructions` say so — nothing in the payload itself marks the spans as untrusted.
