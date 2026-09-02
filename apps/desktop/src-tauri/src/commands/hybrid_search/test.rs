@@ -481,3 +481,138 @@ fn run_lexical_arm_reports_unavailable_on_a_real_fts5_failure_not_ran() {
     );
     assert!(ranks.is_empty());
 }
+
+// ── dense_candidate_pool: synonym-gap alias exclusion (PR #1091 review) ─────
+//
+// Moved here from `tests/lexical_synonym_gaps.rs`, which originally asserted
+// this against a HAND-MIRRORED copy of `dense_candidate_pool`'s logic — that
+// function is private to this module, so an external integration test could
+// not call it directly. Flagged Major (a mirror has no seam to check it
+// against the real function, so it can drift silently). This version calls
+// the REAL `dense_candidate_pool`, with real `PostingRow`s, via the
+// `use super::*;` this test module already has. `tests/lexical_synonym_gaps.rs`
+// keeps the BM25 miss-count measurement (row 1) and points here for this half.
+
+/// A COPY of `documents::keywords::SYNONYMS`, kept in lockstep with the
+/// canonical frozen copy in `tests/lexical_synonym_gaps.rs`'s own
+/// `SYNONYM_PAIRS` (that file owns the BM25 miss-count measurement; this one
+/// owns the dense-candidate-pool exclusion measurement, and needs the exact
+/// same 24 pairs so both suites measure the same claim).
+///
+/// Deliberately NOT read off `crate::documents::keywords::SYNONYMS` despite
+/// living in the same crate: that table is scoring data pinned to
+/// `MATCH_FORMULA_VERSION` (see its own doc comment), and this suite must
+/// never be able to move it by editing its own fixture list.
+/// [`pool_synonym_pairs_match_the_live_table`] guards this copy against
+/// drift from the live table, independently of the integration test's own
+/// guard over its copy.
+const POOL_SYNONYM_PAIRS: &[(&str, &str)] = &[
+    ("js", "javascript"),
+    ("ts", "typescript"),
+    ("py", "python"),
+    ("golang", "go"),
+    ("k8s", "kubernetes"),
+    ("kube", "kubernetes"),
+    ("node", "nodejs"),
+    ("react.js", "react"),
+    ("vue.js", "vue"),
+    ("next.js", "nextjs"),
+    ("nuxt.js", "nuxtjs"),
+    ("psql", "postgresql"),
+    ("postgres", "postgresql"),
+    ("mongo", "mongodb"),
+    ("tf", "tensorflow"),
+    ("sklearn", "scikit-learn"),
+    ("scikit", "scikit-learn"),
+    ("ci/cd", "cicd"),
+    ("c/c++", "cpp"),
+    ("c++", "cpp"),
+    ("objective-c", "objectivec"),
+    ("llms", "llm"),
+    ("genai", "generativeai"),
+    ("gen-ai", "generativeai"),
+];
+
+#[test]
+fn pool_synonym_pairs_match_the_live_table() {
+    assert_eq!(
+        POOL_SYNONYM_PAIRS,
+        crate::documents::keywords::SYNONYMS,
+        "documents::keywords::SYNONYMS changed — resync POOL_SYNONYM_PAIRS above (and the \
+         independent copy in tests/lexical_synonym_gaps.rs) by hand"
+    );
+}
+
+/// Alias-only posting exclusion from the dense candidate pool once a
+/// distractor containing the canonical term exists, over the REAL
+/// `dense_candidate_pool` and REAL `PostingRow`s. Uses [`run_lexical_arm`]
+/// — the same pure lexical-arm entry point `run_search` calls — to get real
+/// lexical ranks over a 2-posting corpus, then feeds those ranks straight
+/// into `dense_candidate_pool` alongside the full eligible set. No
+/// embeddings, no `AppHandle`: the pool selection is pure.
+#[test]
+fn dense_candidate_pool_excludes_alias_only_posting_when_a_distractor_hits() {
+    let mut skipped_because_lexical_found_the_alias: Vec<&str> = Vec::new();
+
+    for &(alias, canonical) in POOL_SYNONYM_PAIRS {
+        let alias_row = PostingRow {
+            id: "alias".to_string(),
+            title: String::new(),
+            company: String::new(),
+            location: String::new(),
+            description: alias.to_string(),
+        };
+        let distractor_row = PostingRow {
+            id: "distractor".to_string(),
+            // The canonical term lives in the title (BM25's highest-weighted
+            // column) so the distractor is unambiguously the strongest
+            // lexical hit — the point under test is exclusion from the
+            // POOL, not a close ranking call.
+            title: canonical.to_string(),
+            company: String::new(),
+            location: String::new(),
+            description: "Distractor posting mentioning the canonical term.".to_string(),
+        };
+        let eligible = vec![alias_row, distractor_row];
+        let docs: Vec<LexicalDoc<'_>> = eligible.iter().map(to_lexical_doc).collect();
+        let (lexical_ranks, status) = run_lexical_arm(&docs, canonical, 10);
+        assert_eq!(status, ArmStatus::Ran, "{alias}: lexical arm did not run");
+
+        if lexical_ranks.iter().any(|id| id == "alias") {
+            // The two pairs `tests/lexical_synonym_gaps.rs` measures as
+            // lexical HITS (react.js/vue.js — unicode61 splits on '.') would
+            // trivially "pass" an exclusion assertion for the wrong reason:
+            // lexical already found the alias, so there is nothing for the
+            // pool policy to exclude. Skip them explicitly instead of
+            // asserting something meaningless, and check the skip set below
+            // is EXACTLY those two.
+            skipped_because_lexical_found_the_alias.push(alias);
+            continue;
+        }
+        assert!(
+            lexical_ranks.iter().any(|id| id == "distractor"),
+            "{alias}: distractor was not found lexically for {canonical:?} — fixture is broken, \
+             this pair cannot test pool exclusion"
+        );
+
+        let pool = dense_candidate_pool(&eligible, &lexical_ranks);
+        assert!(
+            !pool.contains(&"alias"),
+            "{alias}: alias-only posting appeared in the dense candidate pool even though it is \
+             part of the eligible corpus and lexical only found the distractor — the \
+             pool-exclusion property (ADR-039) did not hold for this pair"
+        );
+        assert!(
+            pool.contains(&"distractor"),
+            "{alias}: distractor unexpectedly absent from its own candidate pool"
+        );
+    }
+
+    assert_eq!(
+        skipped_because_lexical_found_the_alias,
+        vec!["react.js", "vue.js"],
+        "expected exactly react.js/vue.js to be skipped as lexical hits (see \
+         tests/lexical_synonym_gaps.rs's own measurement); a different skip set means the two \
+         suites' measurements disagree"
+    );
+}

@@ -935,6 +935,70 @@
     (<code>idle → configuring → extracting → generating → done</code> + <code>error</code>) makes illegal UI states
     impossible and keeps the busy/error flags in one place, instead of a tangle of booleans.`,
         },
+        {
+          q: 'How do you stop the model inventing experience?',
+          a: `One rule runs through the whole pipeline: the model decides <b>how</b> to present
+    verified evidence, never <b>what</b> the candidate did. Two Rust‑only passes enforce it after the model
+    responds. <code>ground()</code> (<span class="path">pipeline/resume/stages/evidence.rs</span>) rebuilds the
+    evidence map on a Rust‑owned requirement list and drops any <code>sourceQuote</code> that isn\'t a verbatim
+    span of the source résumé — checked in <span class="path">stages/verbatim.rs</span>, whose outcome on a
+    near‑miss is drop, never repair, because a paraphrase presented as the candidate\'s own words is exactly the
+    fabrication this exists to prevent. Coverage status for each requirement is then overwritten from the same
+    keyword kernel behind the Jobs‑page match score, not trusted from the model\'s own claim. And every
+    <code>Critical</code> the deterministic content validator (<span class="path">validate/content/mod.rs</span>)
+    raises is a deterministic check — a comparison against your own résumé text, or a structural rule the
+    code can run with no model in the loop — never a model's judgment call; only Warnings are advisory.`,
+        },
+        {
+          q: 'How do you know the checks work?',
+          a: `They\'re measured, not just written and trusted. <span class="path">tests/eval.rs</span> is an
+    offline harness that runs the same validator entry point the product calls against labelled fixtures in
+    <span class="path">validate/content/fixtures</span> — each one differs from a clean, truthful sibling by
+    roughly one deliberately planted defect. It asserts, per fixture: the planted defect is reported, at the
+    severity its label claims; a truthful fixture never raises a <code>Critical</code>; and Warning‑tier false
+    positives on truthful documents stay inside a named budget that has to be moved on purpose, with a reason,
+    rather than drift open. It runs as part of the test suite, so a validator regression fails the build before
+    it ships.`,
+        },
+        {
+          q: 'What happens when it\'s not sure?',
+          a: `It never quietly cleans up a finding for you. A <code>Critical</code> the reviewer hasn\'t
+    explicitly decided (Keep/Remove on the flagged line) keeps the run at <code>needsReview</code> —
+    <code>still_needs_review()</code> in <span class="path">commands/resume_pipeline/report.rs</span> — and some
+    findings, like a dropped employment section, aren\'t even offered a Keep/Remove because there\'s nothing
+    reviewable to decide, so they block the run from ever reading “completed” on their own. A few conditions are
+    worse than unreviewed and get refused outright, before anything is written: <span class="path">
+    commands/resume_pipeline/save.rs</span>\'s <code>SaveVerdict::Refused</code> fires if the generated document
+    lost a real work history the source résumé had, or if a prompt‑fence tag leaked into the visible text.
+    Refuse‑to‑save, not save‑with‑an‑asterisk.`,
+        },
+        {
+          q: 'How do you handle prompt injection from scraped job ads?',
+          a: `One boundary, reused everywhere untrusted text meets a prompt. <span class="path">prompt_fence.rs
+    </span> (ADR‑010) wraps every untrusted blob — a scraped job posting, the candidate\'s own résumé text, a
+    prior pipeline stage\'s own model output, even each individual reranked posting candidate — in a tagged fence
+    before it enters a prompt, and neutralizes any known fence tag or transcript marker already inside that blob
+    so it can never forge its own boundary or a sibling\'s. It\'s dependency‑free by design (just
+    <code>std</code> + <code>regex</code>) specifically so nothing outside it can quietly stop calling it.`,
+        },
+        {
+          q: 'What is NOT measured?',
+          a: `Two gaps, said plainly rather than implied away. Generation quality needs a live model in the
+    loop, so it isn\'t part of the automated eval harness — it\'s read after the fact from real run metrics via
+    <code>scripts/dump-run-metrics.mjs</code>. And retrieval quality for the hybrid postings search has no
+    labelled relevance dataset for this corpus, so ranking order can\'t be scored against a ground truth — see
+    “what is measured and what is not” in <span class="path">docs/knowledge/decision-records/adr-039-hybrid-postings-search-lexical-dense-rerank.md</span>. Both gaps are named in the source rather than papered over
+    with a metric that doesn\'t exist.`,
+        },
+        {
+          q: 'Is the job search actually semantic?',
+          a: `Keyword by default. Postings search runs lexical FTS5 first, and a “semantic scoring”
+    preference that ships off keeps it that way for a default install. Turn it on and the dense (embedding) arm
+    and the LLM rerank <b>re‑order</b> keyword hits — they don\'t replace the keyword pass. They only
+    <b>retrieve</b> on their own when keyword search finds zero hits across the whole corpus (ADR‑039). So
+    “semantic search” here means keyword‑first with an optional reranking pass, not a vector index standing in
+    for keyword matching.`,
+        },
       ];
       document.getElementById('qa').innerHTML = QA.map(
         (x) =>

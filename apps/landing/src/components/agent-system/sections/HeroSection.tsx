@@ -18,6 +18,14 @@ export function HeroSection() {
         <b>agents</b> · paired author + critic per domain · nobody approves their own work.
       </p>
 
+      <p className="note reveal">
+        <b>This page is about how this repo gets built</b>, not what the app does. The fleet below
+        is a development-time tool — Claude Code agents that write and review the code you&rsquo;re
+        reading. The product&rsquo;s own AI pipeline (evidence-grounded generation, deterministic
+        validators, prompt-injection fencing, an offline eval harness) is a separate system — see{' '}
+        <a href="/how-it-works">how it works</a>.
+      </p>
+
       <div className="hero-scene reveal draw" aria-hidden="true">
         <svg viewBox={HERO_SCENE.viewBox}>
           <g className="glow">

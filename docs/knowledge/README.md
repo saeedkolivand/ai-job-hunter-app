@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -25,6 +25,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [domain-model.md](domain-model.md)                               | Core types/traits + registries (DocumentModel, JobPosting, ExportRequest/Result, Scraper/SCRAPERS)                         |
 | [resume-domain.md](resume-domain.md)                             | Resume + ATS + export: sections, templates, country standards, ATS scoring model, PDF/DOCX contract                        |
 | [automation-domain.md](automation-domain.md)                     | Scraping + AI-provider: registries, resilience, provider abstraction, embeddings, streaming, prompts                       |
+| [generation-domain.md](generation-domain.md)                     | Generation pipeline: stages, grounding, validation (Critical/Warning), fabrication gate, eval harness, search ranking      |
 | [scraping-domain.md](scraping-domain.md)                         | Board/aggregator scraping: registries, aggregator-first routing (Adzuna/JSearch/Jooble), curated ATS seeds                 |
 | [../SCRAPING_ENDPOINTS.md](../SCRAPING_ENDPOINTS.md)             | Per-board scraping endpoint reconnaissance (external snapshot — see the doc)                                               |
 | [extension-domain.md](extension-domain.md)                       | Browser extension (MV3) + desktop bridge: auth model, transport, protocol lockstep, store policy                           |

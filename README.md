@@ -171,6 +171,22 @@ Your résumés, generations, applications, and tracked job data live in a local 
 
 ---
 
+## How the AI is kept honest
+
+Resumé generation uses a staged pipeline where the model decides _how_ to present verified candidate evidence, never _what_ the candidate has done. Three structural enforcements make this real:
+
+1. **Grounding rule, enforced in Rust.** Every claim in the output is traced back to the source resumé or job ad; non-verbatim quotes are dropped, never repaired. The model ranks evidence; Rust validates it against the source. See [`apps/desktop/src-tauri/src/pipeline/resume/`](apps/desktop/src-tauri/src/pipeline/resume/) (eight-stage pipeline orchestration) and [`evidence::ground`](apps/desktop/src-tauri/src/pipeline/resume/stages/evidence.rs) (quote-and-span validation).
+
+2. **Every Critical is deterministic, never a model opinion.** The validators in [`apps/desktop/src-tauri/src/validate/content/`](apps/desktop/src-tauri/src/validate/content/) check factual, structural, and language alignment deterministically — dropped roles, unsourced metrics, unsupported dates, language misalignment. A model cannot emit a Critical; a Critical means something is provably wrong in the source material. Warnings (unsourced terms, keyword density) are advisory; only Criticals park a run. See [`CONTENT_ISSUE_CODES`](apps/desktop/src-tauri/src/validate/content/mod.rs) for the registry and [`ADR-032`](docs/knowledge/decision-records/adr-032-generation-pipeline-ownership-and-rule-enforcement.md) for the design.
+
+3. **Fabrication-review gate: refuse to save rather than save with a flag.** When validation finds Criticals, the run parks at `needsReview`. The UI shows each flagged claim; you decide Remove (delete the line) or Keep. Nothing is silently dropped, and nothing is saved with an unresolved flag — every claim awaiting your verdict blocks export until you act. See [`FabricationReview`](apps/desktop/src/renderer/components/generation/QualityReportPanel/FabricationReview.tsx) (the review UI) and [`SaveVerdict::Refused`](apps/desktop/src-tauri/src/commands/resume_pipeline/save.rs) (the gate).
+
+4. **Untrusted-text fencing: anything you did not type gets wrapped.** The principle is: every blob entering a prompt without your fingerprint is fenced as untrusted — job ads (`<job_posting>`), prior-stage model outputs (strategy artifact, evidence map), web-sourced company research, and rerank candidates. Each fence instructs the model to ignore instructions within it and treat the text as reference only. The fencing mechanism and patterns are in [`prompt_fence.rs`](apps/desktop/src-tauri/src/prompt_fence.rs) (the OWASP LLM01 chokepoint); implementations include [`buildJobAdBlock`](packages/prompts/src/generate/emphasis/emphasis.ts) for job ads and pipeline prompts for artifacts. See [`ADR-010`](docs/knowledge/decision-records/adr-010-untrusted-input-fencing.md) for the design.
+
+**What is measured and what is not.** The offline eval harness ([`tests/eval.rs`](apps/desktop/src-tauri/tests/eval.rs)) measures the deterministic validators against planted-defect fixtures: every planted issue must be recalled at its claimed severity, and truthful documents must raise zero Criticals. This is in CI. What is _not_ measured: generation quality needs a live model (a live corpus of A/B runs); retrieval quality has no labelled dataset; search's dense arm re-orders keyword hits and only retrieves when keyword search finds nothing (see [`ADR-039`](docs/knowledge/decision-records/adr-039-hybrid-postings-search-lexical-dense-rerank.md) for search's exact scope). This repo's posture is: state which is which, measure the deterministic layer, and keep improving where the data allows.
+
+---
+
 ## AI Provider Flexibility
 
 Switch providers at any time in **Settings → AI**:
