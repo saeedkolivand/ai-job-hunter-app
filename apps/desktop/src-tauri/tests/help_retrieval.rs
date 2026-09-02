@@ -16,12 +16,20 @@
 //! mirror shape PR #1091's review rejected in `lexical_synonym_gaps.rs`).
 //!
 //! **The queries are hand-written user phrasings, not copied questions.**
-//! Copying an entry's own title back at it measures nothing: `sanitize_query`
-//! quotes every whitespace-separated token and joins them with FTS5's
-//! implicit AND (see `retrieval::lexical`), so a copied sentence trivially
-//! matches the one document it came from. Each case below is 2-4 words
-//! someone would actually type into a help box, and the entry it should reach
-//! has to win on BM25 against the other 50.
+//! Copying an entry's own title back at it measures nothing — it trivially
+//! matches the one document it came from. Each case below is either a short
+//! search-box phrasing or a full question someone would really type, and the
+//! entry it should reach has to win on BM25 against the other 50.
+//!
+//! **Two shapes, because the surface has two.** The help page's search box
+//! gets 2-4 words; the help CHAT gets a sentence ("How do I export my resume
+//! as a PDF?"). The arm ranks both through `run_lexical_arm`, which calls
+//! `LexicalIndex::search_any` — OR over the same quoted tokens
+//! (`retrieval::lexical::QueryMode`), so `bm25()` ranks by how many of the
+//! query's terms an entry matched. Under the implicit AND the postings search
+//! box uses, every sentence case below returns ZERO hits, because no help
+//! entry contains all of "how", "do", "my", "as" and "PDF" — and on a default
+//! install (`semantic_scoring` off) this is the only arm there is.
 //!
 //! Run `cargo test --test help_retrieval -- --nocapture` for the table.
 
@@ -98,19 +106,22 @@ struct Case {
     why: &'static str,
 }
 
-/// Ten phrasings a user would type, each written before it was run.
+/// Phrasings a user would type, each written before it was run.
 ///
-/// Every token has to appear in the target entry (FTS5's implicit AND over
-/// `sanitize_query`'s quoted tokens), and there is no stemmer — so these are
-/// deliberately short, and they use the corpus's own vocabulary the way a
-/// user would stumble onto it, not its sentences.
+/// There is no stemmer, so these use the corpus's own vocabulary the way a
+/// user would stumble onto it. The first ten are SEARCH-BOX shaped (2-4
+/// words); the eight after them are CHAT shaped — whole questions, function
+/// words and punctuation included, which is what the help chat sends.
 ///
 /// Every case is CONTESTED: the `contenders` column in the printed table is
 /// how many of the 51 entries matched at all, and
 /// [`every_case_is_a_ranking_decision_not_a_lookup`] fails if any case had
 /// only one. A phrasing that matches exactly one entry proves nothing about
 /// ranking — it is a `grep`, and a table full of them would read as a passing
-/// retrieval eval while measuring no retrieval at all.
+/// retrieval eval while measuring no retrieval at all. The sentence cases are
+/// contested by construction (an OR over ~8 tokens matches most of the
+/// corpus), which is exactly why their RANK, not their match, is the
+/// measurement.
 const CASES: &[Case] = &[
     Case {
         query: "default resume",
@@ -162,6 +173,47 @@ const CASES: &[Case] = &[
         query: "browser window",
         expected: "accountsSessionsQuestions.browserWindowNotOpen",
         why: "the popup-does-not-open entry, not the LinkedIn entry that also opens one",
+    },
+    // ── Chat-shaped: whole questions, exactly what `use-help-chat` sends ──
+    Case {
+        query: "How do I export my resume as a PDF?",
+        expected: "aiGenerateQuestions.exportDoc",
+        why: "the load-bearing case for OR: under the implicit AND no entry contains all of               how/do/my/as/PDF, so this returned nothing at all",
+    },
+    Case {
+        query: "How do I connect Ollama so the AI features work?",
+        expected: "aiFeaturesQuestions.aiDoesNothing",
+        why: "EXPECTATION CORRECTED AFTER MEASURING, and recorded as such: this was first               written against `aiSetupQuestions.chooseProvider`, which ranks 6th. Re-reading both               answers, the entry that actually answers THIS question — connect Ollama so the AI               works — is the troubleshooting one (\"Ollama (Local)\" needs the Ollama server running               with a model pulled, plus the wizard's Local (Ollama) tab); chooseProvider answers               which provider to pick and where the API key goes. Two defensible siblings, so if a               later ranking change swaps them, re-judge rather than assuming a regression",
+    },
+    Case {
+        query: "What data leaves my computer when I use this app?",
+        expected: "privacyQuestions.whatLeaves",
+        why: "the privacy entry, against a corpus where \"app\" and \"data\" are everywhere",
+    },
+    Case {
+        query: "Why does LinkedIn return no results?",
+        expected: "jobScrapingQuestions.linkedinNoResults",
+        why: "must beat scrapingZeroJobs and linkedinGuestMode, which share most of these words",
+    },
+    Case {
+        query: "Where are my generated documents stored?",
+        expected: "aiGenerateQuestions.whereStored",
+        why: "\"generated\" and \"documents\" both appear in half the corpus; only this entry               answers where they GO",
+    },
+    Case {
+        query: "How do I pair the browser extension?",
+        expected: "extensionQuestions.pairExtension",
+        why: "must beat extensionActions and browserWindowNotOpen, both about the browser",
+    },
+    Case {
+        query: "Can I keep more than one résumé?",
+        expected: "documentsQuestions.multipleResumes",
+        why: "also pins diacritic folding: the query is accented and half the corpus writes               \"resume\" both ways",
+    },
+    Case {
+        query: "What does needs review mean?",
+        expected: "aiGenerateQuestions.needsReview",
+        why: "four other entries define a term with \"means\"; the quoted feature name has to win",
     },
 ];
 
@@ -237,12 +289,12 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
         EXPECTED_ENTRY_COUNT
     );
     println!(
-        "{:<22} {:<5} {:<11} {:<46} top {TOP_K}",
+        "{:<50} {:<5} {:<11} {:<46} top {TOP_K}",
         "query", "rank", "contenders", "expected entry"
     );
     for row in &rows {
         println!(
-            "{:<22} {:<5} {:<11} {:<46} {}",
+            "{:<50} {:<5} {:<11} {:<46} {}",
             row.case.query,
             match row.rank {
                 Some(r) => r.to_string(),
@@ -284,7 +336,7 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
     );
     // Literal, not derived-vs-derived: compared with a hand-written number,
     // so a case quietly deleted from CASES fails here instead of passing.
-    assert_eq!(hits, 10, "expected all 10 hand-written phrasings to hit");
+    assert_eq!(hits, 18, "expected all 18 hand-written phrasings to hit");
 }
 
 /// The honesty guard on the table above: a query that matches exactly ONE of

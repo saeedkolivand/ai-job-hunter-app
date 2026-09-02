@@ -29,7 +29,11 @@
 //! shape behind it, so there is no `queryId` and no `CancelRegistry`
 //! registration. The cost is that a first question on a cloud embedder,
 //! against a cold cache, runs to completion (≤ 51 entry embeds, once per
-//! embedding space) even if the user navigates away.
+//! embedding space) even if the user navigates away. With no token to stop
+//! it, the dense arm is bounded by two things instead: the SAME wall-clock
+//! budget postings search uses (`timeouts::DENSE_ARM_TIMEOUT`) and
+//! [`HELP_EMBED_MISSES_MAX`] embeds per request. Hitting either means the
+//! arm reports `unavailable` rather than a partly-ranked `hybrid`.
 
 use std::sync::Arc;
 
@@ -49,11 +53,24 @@ use crate::retrieval::{dense, fusion};
 /// Re-validated here even though `HelpSearchRequestSchema` already caps it —
 /// see the module doc for why a Zod cap is not a boundary check.
 const QUERY_MAX_CHARS: usize = 500;
-/// Mirrors `HelpSearchRequestSchema.entries`'s cap. The dense arm embeds at
-/// most one entry per cache miss, so this is what bounds ONE request's
-/// worst-case spend at 200 embeds (plus the query) — comfortably above the
-/// ~51 entries the app actually ships.
+/// Mirrors `HelpSearchRequestSchema.entries`'s cap — how many entries one
+/// request may CARRY. It is not what bounds the request's spend or the
+/// vector cache's growth: [`HELP_EMBED_MISSES_MAX`] is.
 const ENTRIES_MAX: usize = 200;
+/// How many cache-MISS embeds one request may make. Past it the remaining
+/// entries stay lexical-only and the dense arm reports
+/// [`ArmStatus::Unavailable`] (see [`run_dense_arm`]).
+///
+/// The request, not the shipped corpus, decides how many entries arrive
+/// (a `help_search` is reachable from the agent CLI and the extension bridge
+/// with a hand-written body), so without this an entry-cap-sized call could
+/// charge 200 embeds AND write 200 permanent `help_vectors` rows — per call,
+/// repeatable. 64 is comfortably above the ~51 entries the app ships, so no
+/// real question is ever degraded by it, and comfortably below the entry cap.
+const HELP_EMBED_MISSES_MAX: usize = 64;
+// A cap at or above [`ENTRIES_MAX`] is not a cap at all — the loop could never
+// reach it — so the ordering that makes it real is compile-time, not a comment.
+const _: () = assert!(HELP_EMBED_MISSES_MAX < ENTRIES_MAX);
 const ENTRY_ID_MAX_CHARS: usize = 64;
 const ENTRY_TITLE_MAX_CHARS: usize = 200;
 const ENTRY_BODY_MAX_CHARS: usize = 2000;
@@ -233,6 +250,16 @@ pub fn to_lexical_doc(entry: &HelpSearchRequestEntry) -> LexicalDoc<'_> {
 /// for real (see `LexicalIndex::search`'s NUL-byte note) and "zero hits"
 /// must not be reported for it.
 ///
+/// **`search_any`, never `search`** — the one place this arm deliberately
+/// differs from the postings one. `search`'s implicit AND requires EVERY
+/// token of the query to appear in a document, which is right for a search
+/// box (each word is a filter the user added) and wrong for a question: "How
+/// do I export my resume as a PDF?" is a conjunction no help entry satisfies,
+/// so the arm answered zero hits — and on a default install, where
+/// `semantic_scoring` is off, this is the ONLY arm that runs. `search_any`
+/// ORs the same quoted tokens instead, so `bm25()` ranks by how many of the
+/// question's terms an entry matched (`retrieval::lexical::QueryMode`).
+///
 /// Pure (no app, no network), and `pub` for the same reason as
 /// [`to_lexical_doc`].
 pub fn run_lexical_arm(
@@ -241,7 +268,7 @@ pub fn run_lexical_arm(
     limit: usize,
 ) -> (Vec<String>, ArmStatus) {
     let docs: Vec<LexicalDoc<'_>> = entries.iter().map(to_lexical_doc).collect();
-    match LexicalIndex::build(&docs).and_then(|index| index.search(query, limit)) {
+    match LexicalIndex::build(&docs).and_then(|index| index.search_any(query, limit)) {
         Ok(ranks) => (ranks, ArmStatus::Ran),
         Err(_) => (Vec::new(), ArmStatus::Unavailable),
     }
@@ -321,7 +348,15 @@ async fn run_dense(
         limiter: limiter.inner().clone(),
         cfg: &cfg,
     };
-    run_dense_arm(&store, &cfg, &embedder, query, entries).await
+    run_dense_arm(
+        &store,
+        &cfg,
+        &embedder,
+        query,
+        entries,
+        crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+    )
+    .await
 }
 
 /// Embed the query, resolve every entry's vector (cache first), and rank by
@@ -332,32 +367,71 @@ async fn run_dense(
 /// `sha256_hex(body)` in `help_vectors`, so an unchanged answer costs at most
 /// one embed per embedding space, ever.
 ///
-/// Returns [`ArmStatus::Unavailable`] when the query embed fails or when not
-/// one entry could be paired — in both cases the caller still returns the
-/// lexical results, so an unreachable embedding provider degrades the search
-/// rather than failing it.
+/// **All-or-nothing, by design.** The arm reports [`ArmStatus::Ran`] only
+/// when EVERY requested entry was paired with a comparable vector; anything
+/// less — the wall-clock bound below firing, the miss budget running out, an
+/// entry whose embed failed, a vector that came back in another embedding
+/// space — returns [`ArmStatus::Unavailable`] with NO ranks. Reporting `Ran`
+/// on a partial pool would put `mode: "hybrid"` on the wire for a reply the
+/// dense arm only half-ranked, and keeping the partial ranks while reporting
+/// `Unavailable` would be the same lie from the other side: the fused order
+/// would still be part-semantic under a `keyword` label. The embeds are not
+/// wasted — every one of them is cached, so the next question is warm.
+///
+/// Returns [`ArmStatus::Unavailable`] when the query embed fails too. In
+/// every one of these cases the caller still returns the lexical results, so
+/// an unreachable embedding provider degrades the search rather than failing
+/// it.
 ///
 /// Takes a store + an [`Embedder`] rather than an `AppHandle` so the cache
 /// decisions (hit by hash, miss on changed text, miss on a changed embedding
-/// space) and the embed COUNT are unit tests over a real `DocumentStore`.
+/// space), the embed COUNT and both bounds are unit tests over a real
+/// `DocumentStore`.
+///
+/// `budget` is production's `timeouts::DENSE_ARM_TIMEOUT`, passed in by
+/// [`run_dense`] rather than read here so the bound itself is testable: a test
+/// that had to wait out the real one would be a 100-second test nobody runs.
 async fn run_dense_arm<E: Embedder + ?Sized>(
     store: &DocumentStore,
     active: &EmbeddingConfig,
     embedder: &E,
     query: &str,
     entries: &[HelpSearchRequestEntry],
+    budget: std::time::Duration,
 ) -> (Vec<String>, ArmStatus) {
+    // Started BEFORE the query embed, exactly like `hybrid_search`'s own dense
+    // arm: a slow query embed eats into the SAME budget rather than getting a
+    // separate one.
+    let started = std::time::Instant::now();
     let Some(query_vector) = embedder.embed_one(query).await else {
         return (Vec::new(), ArmStatus::Unavailable);
     };
     let query_f32: Vec<f32> = query_vector.values.iter().map(|v| *v as f32).collect();
 
     let mut pairs: Vec<(String, Vec<f32>)> = Vec::with_capacity(entries.len());
+    let mut misses = 0usize;
     for entry in entries {
+        // The whole loop is bounded by ELAPSED time, the same constant and
+        // the same shape `hybrid_search::run_dense_arm` uses (a
+        // `tokio::time::timeout` around the loop would DROP the future and
+        // throw away the vectors already cached inside it). There is no
+        // cancellation token here — v1 has none (module doc) — so this is the
+        // ONLY thing that stops a cold cache on a slow provider from running
+        // `entries.len()` × the per-embed timeout.
+        if started.elapsed() >= budget {
+            break;
+        }
         let hash = sha256_hex(&entry.body);
         let vector = match store.get_help_vector(&hash, active) {
             Some(cached) => Some(cached),
             None => {
+                if misses >= HELP_EMBED_MISSES_MAX {
+                    // Budget spent. Nothing further can restore `Ran` (this
+                    // entry can no longer be paired), so there is nothing to
+                    // gain by walking the rest of the list.
+                    break;
+                }
+                misses += 1;
                 let embedded = embedder.embed_one(&entry.body).await;
                 if let Some(v) = &embedded {
                     // Best-effort cache write: the embed already succeeded,
@@ -390,7 +464,10 @@ async fn run_dense_arm<E: Embedder + ?Sized>(
             pairs.push(pair);
         }
     }
-    if pairs.is_empty() {
+    // The all-or-nothing rule (see this fn's doc). Also the ONE check that
+    // covers every early `break` above: a loop that stopped short leaves
+    // `pairs` short too, so neither bound needs its own reporting path.
+    if pairs.len() < entries.len() {
         return (Vec::new(), ArmStatus::Unavailable);
     }
     (

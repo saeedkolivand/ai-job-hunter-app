@@ -46,21 +46,70 @@ pub struct LexicalDoc<'a> {
 /// Revisit with real usage data before treating these as tuned.
 pub const BM25_WEIGHTS: (f64, f64, f64, f64) = (3.0, 2.0, 0.5, 1.0);
 
+/// How one query's quoted tokens are joined into the `MATCH` expression.
+///
+/// The tokens themselves are quoted IDENTICALLY either way (see
+/// [`sanitize_query`]) — this picks the connective only, never the escaping,
+/// so neither mode can be the one that lets an operator through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryMode {
+    /// FTS5's implicit `AND`: EVERY token must appear in a document for it to
+    /// match at all. Right for a search BOX, where each word the user typed
+    /// is a filter they added deliberately.
+    All,
+    /// Explicit `OR`: a document matches on ANY token, and `bm25()` ranks by
+    /// how many of them it matched and how rare they are. Right for a
+    /// QUESTION — "How do I export my resume as a PDF?" is a sentence, not a
+    /// filter list, and under [`QueryMode::All`] its function words ("how",
+    /// "my", "as") turn it into a conjunction no help entry satisfies, so the
+    /// arm returns zero hits for a perfectly answerable question.
+    Any,
+}
+
+/// Tokens shorter than this are dropped in [`QueryMode::Any`] — "I"/"a"/"my"
+/// carry no topical signal but each add an OR branch that matches most of the
+/// corpus. Not applied to [`QueryMode::All`], where every token NARROWS the
+/// result and dropping one would silently widen a user's filter.
+///
+/// A query made ENTIRELY of such tokens keeps them rather than sanitizing to
+/// the empty string, which `search` reads as "nothing to search for" and
+/// answers with zero hits — a one-letter question is a bad query, not a query
+/// that should silently return nothing.
+const ANY_MIN_TOKEN_CHARS: usize = 2;
+
 /// Turn a raw, untrusted search-box string into a `MATCH` expression FTS5
 /// cannot fail to parse: every whitespace-separated token becomes a quoted
-/// phrase (embedded `"` doubled, FTS5's own escape), joined with FTS5's
-/// implicit `AND`. Without this, an FTS5 query-syntax character typed by a
-/// user (`-`, `*`, `:`, an unbalanced `"`, the bare word `NEAR`) either
-/// throws a parse error or silently changes the query's meaning (`-golang`
-/// is a NOT clause, not the substring "-golang") — quoting every token as a
-/// literal phrase removes FTS5's operator grammar entirely, at the cost of
-/// no longer supporting exact query-syntax power use nobody asked for here.
-fn sanitize_query(query: &str) -> String {
-    query
-        .split_whitespace()
-        .map(|tok| format!("\"{}\"", tok.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(" ")
+/// phrase (embedded `"` doubled, FTS5's own escape), joined per `mode`.
+/// Without this, an FTS5 query-syntax character typed by a user (`-`, `*`,
+/// `:`, an unbalanced `"`, the bare word `NEAR`) either throws a parse error
+/// or silently changes the query's meaning (`-golang` is a NOT clause, not
+/// the substring "-golang") — quoting every token as a literal phrase removes
+/// FTS5's operator grammar entirely, at the cost of no longer supporting
+/// exact query-syntax power use nobody asked for here.
+///
+/// ONE quoting implementation for both modes on purpose: an `OR` variant with
+/// its own escaping would be a second place for that hardening to drift out
+/// of, including the NUL-byte case `LexicalIndex::search` documents.
+fn sanitize_query(query: &str, mode: QueryMode) -> String {
+    let quote = |tok: &str| format!("\"{}\"", tok.replace('"', "\"\""));
+    match mode {
+        QueryMode::All => query
+            .split_whitespace()
+            .map(quote)
+            .collect::<Vec<_>>()
+            .join(" "),
+        QueryMode::Any => {
+            let mut tokens: Vec<String> = query
+                .split_whitespace()
+                .filter(|tok| tok.chars().count() >= ANY_MIN_TOKEN_CHARS)
+                .map(&quote)
+                .collect();
+            if tokens.is_empty() {
+                tokens = query.split_whitespace().map(quote).collect();
+            }
+            tokens.join(" OR ")
+        }
+    }
 }
 
 /// An in-memory FTS5 index, built fresh per search (see module doc).
@@ -131,7 +180,24 @@ impl LexicalIndex {
     /// — `commands::hybrid_search` maps `Err` to `ArmStatus::Unavailable` —
     /// which is an L3 reporting decision, not this L1 module's to make.
     pub fn search(&self, query: &str, limit: usize) -> AppResult<Vec<String>> {
-        let sanitized = sanitize_query(query);
+        self.search_in(query, QueryMode::All, limit)
+    }
+
+    /// [`Self::search`]'s sibling for a QUESTION rather than a search box:
+    /// same index, same quoting, [`QueryMode::Any`] instead of the implicit
+    /// AND, so `bm25()` ranks by how many of the question's terms a document
+    /// matched instead of requiring all of them.
+    ///
+    /// Separate method rather than a mode parameter on [`Self::search`]: the
+    /// postings search box must stay on AND (every word the user typed is a
+    /// filter), so the two callers state which contract they want at the call
+    /// site instead of passing a flag that could be flipped for both at once.
+    pub fn search_any(&self, query: &str, limit: usize) -> AppResult<Vec<String>> {
+        self.search_in(query, QueryMode::Any, limit)
+    }
+
+    fn search_in(&self, query: &str, mode: QueryMode, limit: usize) -> AppResult<Vec<String>> {
+        let sanitized = sanitize_query(query, mode);
         if sanitized.is_empty() {
             return Ok(Vec::new());
         }

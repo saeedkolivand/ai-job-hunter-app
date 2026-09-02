@@ -218,9 +218,12 @@ function pascalCase(s: string): string {
 
 function singularize(s: string): string {
   // `-ies` before the bare `-s` rule: `entries` must yield `Entry`, not `Entrie`.
-  // Only reached for an ARRAY-OF-OBJECT field, whose item struct is named after
-  // it (see `rustType`), so this only ever renames generated item structs.
-  if (s.endsWith('ies')) return `${s.slice(0, -3)}y`;
+  // Only after a CONSONANT, which is the actual English rule: `movies`/`series`
+  // are `-y + s`, not `-y → -ies`, so the blanket form turned them into `Movy`
+  // and `Sery`. Only reached for an ARRAY-OF-OBJECT field, whose item struct is
+  // named after it (see `rustType`), so this only ever renames generated item
+  // structs.
+  if (/[^aeiou]ies$/.test(s)) return `${s.slice(0, -3)}y`;
   return s.endsWith('s') ? s.slice(0, -1) : s;
 }
 

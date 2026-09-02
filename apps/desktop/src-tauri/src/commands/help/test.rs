@@ -129,6 +129,46 @@ fn block_on<F: std::future::Future>(f: F) -> F::Output {
         .block_on(f)
 }
 
+/// [`run_dense_arm`] on PRODUCTION's own wall-clock budget — the two tests
+/// that measure the budget call `run_dense_arm` directly with a short one
+/// instead (see [`run_dense_arm`]'s own doc for why it is a parameter).
+fn arm<E: Embedder + ?Sized>(
+    store: &DocumentStore,
+    active: &EmbeddingConfig,
+    embedder: &E,
+    query: &str,
+    entries: &[HelpSearchRequestEntry],
+) -> (Vec<String>, ArmStatus) {
+    block_on(run_dense_arm(
+        store,
+        active,
+        embedder,
+        query,
+        entries,
+        crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+    ))
+}
+
+/// An [`Embedder`] whose every round-trip takes `delay` — a slow provider,
+/// without a slow test: the wall-clock budget is injected, not waited out.
+struct SlowEmbedder {
+    calls: AtomicUsize,
+    cfg: EmbeddingConfig,
+    delay: std::time::Duration,
+}
+
+#[async_trait]
+impl Embedder for SlowEmbedder {
+    async fn embed_one(&self, _text: &str) -> Option<EmbeddingVector> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        // `std::thread::sleep`, not `tokio::time::sleep`: the test runtime is
+        // built without a timer, and blocking IS what a slow embed does to
+        // this arm anyway.
+        std::thread::sleep(self.delay);
+        Some(vector(&self.cfg, vec![1.0, 0.0]))
+    }
+}
+
 // ── Boundary validation ──────────────────────────────────────────────────────
 
 #[test]
@@ -414,13 +454,7 @@ fn a_failed_query_embed_is_unavailable_and_embeds_no_entries() {
     let active = cfg("ollama", "nomic-embed-text");
     let embedder = ScriptedEmbedder::failing(&active);
 
-    let (ranks, status) = block_on(run_dense_arm(
-        &store,
-        &active,
-        &embedder,
-        "how do i export",
-        &corpus(),
-    ));
+    let (ranks, status) = arm(&store, &active, &embedder, "how do i export", &corpus());
 
     assert!(ranks.is_empty());
     assert_eq!(status, ArmStatus::Unavailable);
@@ -438,7 +472,7 @@ fn a_cold_cache_embeds_the_query_and_every_entry_once_then_persists_them() {
     let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
     let entries = corpus();
 
-    let (ranks, status) = block_on(run_dense_arm(&store, &active, &embedder, "q", &entries));
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &entries);
 
     assert_eq!(status, ArmStatus::Ran);
     assert_eq!(ranks.len(), entries.len());
@@ -471,7 +505,7 @@ fn a_warm_cache_embeds_only_the_query() {
     }
     let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
 
-    let (ranks, status) = block_on(run_dense_arm(&store, &active, &embedder, "q", &entries));
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &entries);
 
     assert_eq!(status, ArmStatus::Ran);
     assert_eq!(ranks.len(), entries.len());
@@ -497,7 +531,7 @@ fn an_edited_answer_is_a_cache_miss_and_re_embeds_only_that_entry() {
     entries[1].body = "Press Export and choose PDF, DOCX, TXT or Markdown.".to_string();
     let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
 
-    let (_, status) = block_on(run_dense_arm(&store, &active, &embedder, "q", &entries));
+    let (_, status) = arm(&store, &active, &embedder, "q", &entries);
 
     assert_eq!(status, ArmStatus::Ran);
     assert_eq!(
@@ -520,7 +554,7 @@ fn a_row_from_another_embedding_space_is_a_miss_and_is_re_embedded() {
     }
     let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
 
-    let (ranks, status) = block_on(run_dense_arm(&store, &active, &embedder, "q", &entries));
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &entries);
 
     assert_eq!(status, ArmStatus::Ran);
     assert_eq!(
@@ -558,10 +592,163 @@ fn entry_embeds_that_all_fail_leave_the_arm_unavailable_not_falsely_ran() {
     let active = cfg("ollama", "nomic-embed-text");
     let embedder = QueryOnly(AtomicUsize::new(0), active.clone());
 
-    let (ranks, status) = block_on(run_dense_arm(&store, &active, &embedder, "q", &corpus()));
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &corpus());
 
     assert!(ranks.is_empty());
     assert_eq!(status, ArmStatus::Unavailable);
+}
+
+/// A PARTIAL pairing is `unavailable`, never a `hybrid` reply ranked by half
+/// a corpus: one entry's embed fails, the other two succeed, and the arm must
+/// still refuse rather than hand back a two-entry dense ranking the reply
+/// would then label `mode: hybrid`.
+#[test]
+fn one_failed_entry_embed_is_unavailable_not_a_partly_ranked_hybrid() {
+    /// Query + entry 1 succeed, entry 2 fails, entry 3 succeeds.
+    struct OneFails(AtomicUsize, EmbeddingConfig);
+    #[async_trait]
+    impl Embedder for OneFails {
+        async fn embed_one(&self, _text: &str) -> Option<EmbeddingVector> {
+            let i = self.0.fetch_add(1, Ordering::SeqCst);
+            if i == 2 {
+                return None;
+            }
+            Some(vector(&self.1, vec![1.0, 0.0]))
+        }
+    }
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let embedder = OneFails(AtomicUsize::new(0), active.clone());
+    let entries = corpus();
+
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &entries);
+
+    assert_eq!(
+        status,
+        ArmStatus::Unavailable,
+        "2 of 3 entries paired — the arm must not report `ran`"
+    );
+    assert!(
+        ranks.is_empty(),
+        "and it must not hand back the partial ranking either, or the fused order would be \
+         part-semantic under a `keyword` label: {ranks:?}"
+    );
+    // The two successful embeds are still cached, so the next question is warm
+    // rather than the work being thrown away.
+    assert!(store
+        .get_help_vector(&sha256_hex(&entries[0].body), &active)
+        .is_some());
+}
+
+/// The wall-clock bound: with a budget shorter than two embeds, the loop must
+/// stop early rather than run `entries.len()` × the per-embed timeout — the
+/// only thing that stops it at all, since v1 has no cancellation token.
+/// Mutation-visible: drop the `break` and the embedder is called once per
+/// entry and the arm reports `ran`.
+#[test]
+fn the_wall_clock_budget_stops_the_entry_loop_and_the_arm_reports_unavailable() {
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let embedder = SlowEmbedder {
+        calls: AtomicUsize::new(0),
+        cfg: active.clone(),
+        delay: std::time::Duration::from_millis(40),
+    };
+    let entries = corpus();
+
+    let (ranks, status) = block_on(run_dense_arm(
+        &store,
+        &active,
+        &embedder,
+        "q",
+        &entries,
+        // Spent by the query embed plus the first entry's.
+        std::time::Duration::from_millis(50),
+    ));
+
+    assert_eq!(status, ArmStatus::Unavailable);
+    assert!(ranks.is_empty());
+    assert!(
+        embedder.calls.load(Ordering::SeqCst) < 1 + entries.len(),
+        "the loop must have stopped before embedding every entry; it made {} calls for {} \
+         entries",
+        embedder.calls.load(Ordering::SeqCst),
+        entries.len()
+    );
+}
+
+/// The per-request miss budget: a caller may send up to `ENTRIES_MAX` entries,
+/// so without this one call could charge `ENTRIES_MAX` embeds and write that
+/// many permanent cache rows — repeatably. Past the cap the remaining entries
+/// are lexical-only and the arm says so.
+#[test]
+fn the_cache_miss_budget_caps_the_embeds_one_request_can_make() {
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let over: Vec<HelpSearchRequestEntry> = (0..HELP_EMBED_MISSES_MAX + 5)
+        .map(|i| entry(&format!("s.e{i}"), "title", &format!("body number {i}")))
+        .collect();
+    let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
+
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &over);
+
+    assert_eq!(
+        embedder.calls(),
+        1 + HELP_EMBED_MISSES_MAX,
+        "the query plus exactly the budget — never one embed per requested entry"
+    );
+    assert_eq!(
+        status,
+        ArmStatus::Unavailable,
+        "entries left unembedded means the arm did not rank the corpus it was given"
+    );
+    assert!(ranks.is_empty());
+}
+
+/// The other side of the same bound: a request AT the budget is a normal,
+/// fully-ranked run, so the cap can never be the reason a real question
+/// (~51 shipped entries) degrades.
+#[test]
+fn a_request_at_the_miss_budget_still_runs_the_arm() {
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let exact: Vec<HelpSearchRequestEntry> = (0..HELP_EMBED_MISSES_MAX)
+        .map(|i| entry(&format!("s.e{i}"), "title", &format!("body number {i}")))
+        .collect();
+    let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
+
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &exact);
+
+    assert_eq!(status, ArmStatus::Ran);
+    assert_eq!(ranks.len(), exact.len());
+    assert_eq!(embedder.calls(), 1 + HELP_EMBED_MISSES_MAX);
+}
+
+/// The budget counts MISSES, not entries: a request larger than the cap whose
+/// entries are already cached costs nothing and still ranks in full.
+#[test]
+fn cached_entries_do_not_consume_the_miss_budget() {
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let many: Vec<HelpSearchRequestEntry> = (0..HELP_EMBED_MISSES_MAX + 5)
+        .map(|i| entry(&format!("s.e{i}"), "title", &format!("body number {i}")))
+        .collect();
+    for e in &many {
+        store
+            .upsert_help_vector(&sha256_hex(&e.body), &vector(&active, vec![0.0, 1.0]))
+            .unwrap();
+    }
+    let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
+
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &many);
+
+    assert_eq!(status, ArmStatus::Ran);
+    assert_eq!(ranks.len(), many.len());
+    assert_eq!(
+        embedder.calls(),
+        1,
+        "only the query is embedded per request"
+    );
 }
 
 #[test]
@@ -574,7 +761,7 @@ fn a_vector_from_another_space_is_never_scored_against_the_query() {
     // The embedder answers in a DIFFERENT space than `active`.
     let embedder = ScriptedEmbedder::new(&cfg("openai", "text-embedding-3-small"), vec![vec![1.0]]);
 
-    let (ranks, status) = block_on(run_dense_arm(&store, &active, &embedder, "q", &corpus()));
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &corpus());
 
     // The query and the entries all come back in the same (wrong) space here,
     // so they DO pair with each other — the real cross-space case is the

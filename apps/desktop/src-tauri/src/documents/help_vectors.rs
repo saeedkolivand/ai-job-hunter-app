@@ -15,12 +15,24 @@
 //! hash, so it is a natural miss and re-embeds itself, while an unchanged
 //! answer costs at most ONE embed per embedding space, ever.
 //!
-//! **No TTL and no prune, deliberately** — unlike `posting_vectors`, whose
-//! producer (the live postings cache) is unbounded and churns every scrape.
-//! This table is bounded by the SHIPPED corpus: ~51 entries per locale, so a
-//! few hundred rows at the extreme. `clear_help_vectors` (the embedding-space
-//! change) and `clear_all` (factory reset) are the only two things that
-//! remove rows, and both are whole-table.
+//! **What actually bounds this table** (corrected — an earlier version of
+//! this doc claimed the SHIPPED corpus did, which is wrong: `commands::help`
+//! embeds the entries of the REQUEST, and a `help_search` is reachable from
+//! the agent CLI and the extension bridge with a hand-written body, so the
+//! corpus the app ships bounds nothing here):
+//!
+//! 1. **Per request** — `commands::help::HELP_EMBED_MISSES_MAX` cache-miss
+//!    embeds, so one call can add at most that many rows.
+//! 2. **Over time** — [`DocumentStore::prune_caches`]' TTL + row-cap sweep,
+//!    the same one `posting_vectors` and `match_scores` are on. Rows may
+//!    exceed the cap between sweeps; that is the bound every cache table here
+//!    carries.
+//! 3. **Whole-table** — `clear_help_vectors` (the embedding-space change) and
+//!    `clear_all` (factory reset).
+//!
+//! Under normal use it stays small (~51 entries per locale, a few hundred
+//! rows at the extreme), and a pruned row costs one re-embed, never user
+//! content.
 
 use rusqlite::params;
 

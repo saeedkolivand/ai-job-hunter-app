@@ -636,12 +636,21 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "commands::scrape::scrape_list_interactions", effect: Effect::Read },
 
     // commands/hybrid_search.rs — embeds + rerank charge charge_provider_daily (`ai_embed`'s trigger).
+    // Same no-id / WEAK spend-total fallback as `ai_generate`, and flagged one step further here:
+    // `today.inputTokens` reads back as the string for zero on a day nothing has been spent yet,
+    // and a caller can produce "0" without reading anything — so on such a day this ceremony is
+    // vacuous in `system_open_external`'s own sense, not merely weak, and binds to nothing. Kept
+    // Irreversible DELIBERATELY on that understanding: its job is friction against an accidental
+    // or looping call, not authenticating which search is about to run.
     PolicyEntry {
         path: "commands::hybrid_search::scrape_hybrid_search",
         effect: Effect::Irreversible(ProofSource::Scalar { read_command: "ai_spend_summary", path: &["today", "inputTokens"] }),
     },
     // commands/help.rs — the dense arm embeds the question + every uncached help entry, each round-trip charging
     // charge_provider_daily (`ai_embed`'s trigger). Not `Read`: `Read` also promises the data cost nothing to produce.
+    // Same WEAK spend-total fallback as `scrape_hybrid_search` above, vacuous on an unspent day for exactly the
+    // same reason (the counter reads as the string for zero, which a caller can supply unread) — flagged, not
+    // dressed up as strict.
     PolicyEntry { path: "commands::help::help_search", effect: Effect::Irreversible(ProofSource::Scalar { read_command: "ai_spend_summary", path: &["today", "inputTokens"] }) },
     // commands/data.rs
     PolicyEntry {

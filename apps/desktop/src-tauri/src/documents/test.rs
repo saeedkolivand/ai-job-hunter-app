@@ -2247,6 +2247,70 @@ fn prune_caches_row_cap_keeps_newest_posting_vectors() {
     reset_perf_to_balanced();
 }
 
+// ── Row-cap eviction: help_vectors ────────────────────────────────────────────
+
+/// `help_vectors` is on the SAME sweep as its two siblings. Its producer takes
+/// its entries from the REQUEST (`commands::help`), not from the shipped
+/// corpus, so "the corpus bounds the table" was never true — the per-request
+/// embed cap bounds one call and this sweep bounds the table. Mutation-visible:
+/// drop the `help_vectors` line from `prune_caches` and the count stays 4.
+#[test]
+#[serial]
+fn prune_caches_row_cap_keeps_newest_help_vectors() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    set_perf(None, None);
+    let base_ts = now_ms();
+    for i in 0_u64..4 {
+        // Written through raw SQL rather than `upsert_help_vector` only
+        // because `created_at` must be controlled; every other column is
+        // exactly what that method writes.
+        let v = ev(vec![0.1 * (i + 1) as f64]);
+        let json = serde_json::to_string(&v.values).unwrap();
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO help_vectors
+             (text_hash, provider, model, dim, version, vector, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                format!("hv-row-{i}"),
+                v.space.provider,
+                v.space.model,
+                v.space.dim as i64,
+                v.space.version,
+                json,
+                ts_to_db(base_ts + i * 1000),
+            ],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "help_vectors"), 4);
+
+    // Same arithmetic as the posting_vectors case above: cap=1 keeps 2 rows.
+    store.prune_caches(None, Some(1));
+
+    assert_eq!(
+        count_table(&store, "help_vectors"),
+        2,
+        "help_vectors must be swept alongside posting_vectors and match_scores"
+    );
+    for gone in ["hv-row-0", "hv-row-1"] {
+        let conn = store.conn.lock();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM help_vectors WHERE text_hash = ?1",
+                params![gone],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(cnt, 0, "{gone} must have been evicted");
+    }
+
+    reset_perf_to_balanced();
+}
+
 // ── TTL eviction: prune_caches removes rows older than the cutoff ─────────────
 
 #[test]

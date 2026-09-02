@@ -866,8 +866,8 @@ impl DocumentStore {
         Ok(())
     }
 
-    /// Bound BOTH result caches: expire rows older than `ttl_secs` and cap each
-    /// table to the newest `max_rows`. `None` for a knob disables that bound
+    /// Bound EVERY derived cache table: expire rows older than `ttl_secs` and
+    /// cap each to the newest `max_rows`. `None` for a knob disables that bound
     /// (today's unbounded behavior). Best-effort — a failed prune never blocks
     /// the caller. Pure of its inputs (does not read the live global), so the
     /// command can pass the exact tier it just applied. Unlike the amortized
@@ -876,6 +876,11 @@ impl DocumentStore {
         let conn = self.conn.lock();
         prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
         prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
+        // `help_vectors` is swept on the same tier, for the same reason: its
+        // producer (`commands::help`) takes its entries from the REQUEST, so
+        // the shipped corpus does not bound the table — see its own module
+        // doc. Losing a row costs one re-embed, never user content.
+        prune_table_locked(&conn, "help_vectors", ttl_secs, max_rows);
     }
 
     // ── Match-result cache (self-invalidating) ────────────────────────────────
