@@ -99,15 +99,15 @@
 //!   A worker blocked in `send(Event::Reply)` therefore stalls only the worker: the writer is
 //!   already on its way back to `recv`, and once the client drains stdout both producers are
 //!   released in order. The one place the writer waits on the worker is the final
-//!   `worker.join()`, and the loop reaches it only after breaking with `in_flight == 0` — every
-//!   reply already received, so the worker is idle at `queued.recv()` and cannot be holding a
-//!   `send`. The drain-deadline and broken-pipe exits do not join at all.
+//!   `worker.join()`, and the loop reaches it only after breaking with nothing left in flight
+//!   — every reply already received, so the worker is idle at `queued.recv()` and cannot be
+//!   holding a `send`. The drain-deadline and broken-pipe exits do not join at all.
 //! - **The EOF drain is bounded too**, by ONE absolute deadline (`drain_budget`, one
 //!   [`super::INVOCATION_TIMEOUT`] in production) started when `Eof` arrives — not one budget per
 //!   queued call, which is the N × timeout worst case a full queue could otherwise hold the exit
-//!   open for. On expiry the loop stops writing, the worker is told to stop dispatching whatever
-//!   is still queued, and the process exits 0 with the in-flight dispatch abandoned rather than
-//!   joined (joining is the wait the deadline exists to cap).
+//!   open for. On expiry the worker is told to stop dispatching whatever is still queued, every
+//!   call still owed a reply is ANSWERED (below), and the process exits 0 with the in-flight
+//!   dispatch abandoned rather than joined (joining is the wait the deadline exists to cap).
 //! - **Replies are ordered per kind, never globally.** The cost of the first two, stated plainly:
 //!   an immediately-answered frame MAY be written before the reply of a bridge call that arrived
 //!   EARLIER. Every reply still carries the `id` it answers, which is how a JSON-RPC client pairs
@@ -116,10 +116,20 @@
 //!   (which is why it takes the [`std::io::Stdout`] VALUE, not a `StdoutLock` — the latter is not
 //!   `Send`, and locking per write is what keeps a partially-written frame impossible), so two
 //!   frames can never interleave.
-//! - **EOF drains.** Once the input ends, the loop keeps writing until every already-queued call
-//!   has replied (or the drain deadline above expires), then exits 0 — a call in flight when
-//!   stdin closes is never dropped. An [`emit`] error (EPIPE: the client closed its pipe) still
-//!   ends the server immediately, exit 0.
+//! - **EOF drains, and nothing handed to the worker is left unanswered.** Once the input ends,
+//!   the loop keeps writing until every already-queued call has replied, then exits 0. Stated
+//!   precisely, because the earlier wording ("a call in flight when stdin closes is never
+//!   dropped") was true only of the dispatch already RUNNING at `Eof`: a call the worker starts
+//!   during the drain can outlive the deadline, and one still queued when it expires never runs
+//!   at all — both used to exit silently, leaving a client waiting on a reply that could never
+//!   come. So an expired deadline now ANSWERS them. The `abandoned` flag stops the queue first,
+//!   any reply that landed in the same instant is written, and every id still owed one gets a
+//!   [`shutting_down_result`]: `dispatched:false` for a call that provably never reached the app,
+//!   and — for the FIRST unanswered id, the only one single-flight FIFO order allows to be
+//!   running — `dispatched:true`, whose result was never received and may already have taken
+//!   effect. An [`emit`] error (EPIPE: the client closed its pipe) still ends the server
+//!   immediately, exit 0, and is the one case that answers nothing further: there is nowhere
+//!   left to write it.
 //! - **A `tools/call` with a null/absent `id` is dropped before classification**, so it neither
 //!   dispatches nor answers: nothing is listening for the result, exactly as before.
 //!
@@ -215,7 +225,11 @@ const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hunter deskto
     never the one just called; result_too_large means this server's own output cap was hit — \
     narrow the request rather than repeating it verbatim. A server_busy refusal is the one \
     result worth repeating: this server runs ONE call at a time and its queue was full, so wait \
-    for an outstanding call's reply and then send that one call again. Do not retry a \
+    for an outstanding call's reply and then send that one call again. A shutting_down result \
+    means this server's input closed and its shutdown deadline expired before the call was \
+    answered: \"dispatched\": false means it never reached the app and is safe to send again to a \
+    new server, while \"dispatched\": true means it was already in flight and may have taken \
+    effect, so re-read the affected resource before repeating it. Do not retry a \
     rate_limited, connection_lost, or \"Too many requests\" result in a loop either. A refusal's \
     own \"detail\" text is written for the plain CLI, not for these tools: a detail that says \
     `agent call ns:cmd` means call-read (or call-reversible, if enabled) with `namespace`/`command` set to \
@@ -666,6 +680,31 @@ fn busy_result() -> Value {
     })
 }
 
+/// The refusal written for a call the EOF drain deadline expired on — see the module doc's EOF
+/// bullet. Two shapes behind one sentinel, because the honest answer differs by exactly one fact
+/// the loop knows: `in_flight` is `dispatch` reaching `false` for a call the worker never
+/// started (`abandoned` is set before this is written, so it never will) and `true` for the one
+/// call single-flight FIFO order allows to be running, whose reply was never received.
+///
+/// `dispatched` therefore means what it means everywhere else here — did this call reach the app
+/// — and the uncertainty that belongs to the `true` case (did it take effect?) is stated in
+/// `detail` rather than smuggled into that boolean. Answering both as `dispatched:false` would be
+/// the dangerous direction: a client re-sending a write it was told never landed.
+fn shutting_down_result(in_flight: bool) -> Value {
+    json!({
+        "dispatched": in_flight,
+        "error": "shutting_down",
+        "detail": if in_flight {
+            "this server's input closed and its shutdown deadline expired while this call was \
+             still in flight; its result was never received and it may already have taken \
+             effect — re-read the affected resource before sending it again."
+        } else {
+            "this server's input closed and its shutdown deadline expired before this call was \
+             dispatched; it never reached the app. Send it again to a new server."
+        },
+    })
+}
+
 /// One `CallToolResult`: `content[0].text` is the payload byte-for-byte, `content[1]` names the
 /// exit code, and a `confirmation_required` refusal gets one more block mapping `--confirm` to
 /// this tool's `confirm` argument. No `structuredContent` field (SHOULD fix — no observed client
@@ -902,6 +941,30 @@ fn emit(output: &mut impl Write, frame: &Value) -> std::io::Result<()> {
     output.flush()
 }
 
+/// Drop the id `frame` answers from the still-owed list, if it is there — the bookkeeping half of
+/// the EOF guarantee (module doc). Removes ONE entry, so a client that reused an id across two
+/// calls still has both tracked; a frame whose id matches nothing leaves the list untouched
+/// rather than shortening it under a later, real reply.
+fn forget_in_flight(in_flight: &mut Vec<Value>, frame: &Value) {
+    let Some(id) = frame.get("id") else { return };
+    if let Some(pos) = in_flight.iter().position(|owed| owed == id) {
+        in_flight.remove(pos);
+    }
+}
+
+/// The ONE way [`serve`] leaves early, and the reason it is a function: every exit that stops
+/// WRITING must first stop DISPATCHING, in that order. The drain-deadline exit did; the
+/// write-failure ones returned a bare `0`, leaving the worker free to spend a bridge round trip
+/// — and, at a write tier, a real mutation — on a call whose reply can no longer be delivered,
+/// which is precisely what `abandoned` exists to prevent. Returns the exit code so a call site
+/// reads `return stop_serving(&abandoned);` and cannot set the flag without also stopping, or
+/// stop without setting it. A dead pipe is still a CLEAN exit (spec: end promptly once the
+/// client is gone), hence 0.
+fn stop_serving(abandoned: &AtomicBool) -> i32 {
+    abandoned.store(true, Ordering::SeqCst);
+    0
+}
+
 /// The whole loop — generic over `dispatch` so it is directly testable over a
 /// [`std::io::Cursor`] with a stub closure (no runtime, no socket, no live tool table beyond what
 /// the test supplies). See the module doc for the guarantees this shape buys and what it costs.
@@ -956,10 +1019,10 @@ fn serve(
                 // writer's drain, because the writer never waits on THIS thread while the loop
                 // runs: it hands work over with `try_send` (a full dispatch queue is refused, not
                 // waited on) and reaches its one `worker.join()` only after the loop has broken
-                // with `in_flight == 0`, i.e. after every reply this thread produced was already
-                // received. So the writer's only waits are on its own consumer end and on stdout,
-                // and both free slots here rather than needing one. `is_err` = the receiver is
-                // gone (`serve` returned), the same stop signal as before.
+                // with nothing left in flight, i.e. after every reply this thread produced was
+                // already received. So the writer's only waits are on its own consumer end and
+                // on stdout, and both free slots here rather than needing one. `is_err` = the
+                // receiver is gone (`serve` returned), the same stop signal as before.
                 if worker_events.send(Event::Reply(reply)).is_err() {
                     return;
                 }
@@ -1002,9 +1065,12 @@ fn serve(
     drop(reader);
 
     let mut input_ended = false;
-    // Calls handed to the worker that have not replied yet — EOF may not end the loop until this
-    // is back to zero, or a reply the client is waiting for would be dropped on the floor.
-    let mut in_flight = 0usize;
+    // Calls handed to the worker that have not replied yet, in the order they were queued — EOF
+    // may not end the loop until this is empty, or a reply the client is waiting for would be
+    // dropped on the floor. The IDS, not a count: an expired drain deadline has to answer
+    // whatever is left, and single-flight FIFO order is what makes the head of this list the
+    // only entry that can be running (see [`shutting_down_result`]).
+    let mut in_flight: Vec<Value> = Vec::new();
     // When the drain started. ONE deadline for the whole drain (module doc), not one per queued
     // call: `drain_budget` is measured from this instant no matter how many replies are still
     // owed. `None` until `Eof`, which is when the loop first has a reason to stop waiting.
@@ -1044,18 +1110,18 @@ fn serve(
                     Routed::Drop => {}
                     Routed::Reply(frame) => {
                         if emit(&mut output, &frame).is_err() {
-                            return 0;
+                            return stop_serving(&abandoned);
                         }
                     }
                     Routed::Call { id, verb } => match calls.try_send((id.clone(), verb)) {
-                        Ok(()) => in_flight += 1,
+                        Ok(()) => in_flight.push(id),
                         Err(TrySendError::Full(_)) => {
                             // `try_send`, never `send`: blocking here would stall the ONE thread
                             // that answers pings and writes replies — the stall this split
                             // exists to remove — so the excess call is refused instead.
                             let refusal = reply_frame(id, Ok(tool_result(busy_result(), 2)));
                             if emit(&mut output, &refusal).is_err() {
-                                return 0;
+                                return stop_serving(&abandoned);
                             }
                         }
                         Err(TrySendError::Disconnected(_)) => {
@@ -1065,18 +1131,19 @@ fn serve(
                             let _ = writeln!(std::io::stderr(), "the MCP dispatch thread is gone");
                             if emit(&mut output, &rpc_error(id, -32603, "Internal error")).is_err()
                             {
-                                return 0;
+                                return stop_serving(&abandoned);
                             }
                         }
                     },
                 }
             }
             Event::Reply(frame) => {
-                // Saturating, never `- 1`: a reply is only ever produced for a call this loop
-                // queued, but an underflow panic here would be a silent abort in release.
-                in_flight = in_flight.saturating_sub(1);
+                // Retain-by-id, never a bare `- 1`: a reply is only ever produced for a call this
+                // loop queued, but an id that somehow matched nothing must leave the list alone
+                // rather than shorten it under a later, real reply.
+                forget_in_flight(&mut in_flight, &frame);
                 if emit(&mut output, &frame).is_err() {
-                    return 0;
+                    return stop_serving(&abandoned);
                 }
             }
             Event::Eof => {
@@ -1084,7 +1151,7 @@ fn serve(
                 drain_started = Some(std::time::Instant::now());
             }
         }
-        if input_ended && in_flight == 0 {
+        if input_ended && in_flight.is_empty() {
             break;
         }
     }
@@ -1092,9 +1159,31 @@ fn serve(
     if drain_expired {
         // Tell the worker to stop before closing the queue: a `Receiver` still yields what was
         // buffered before its sender was dropped, so the flag — not `drop(calls)` — is what
-        // actually stops the queued calls from dispatching.
+        // actually stops the queued calls from dispatching. Setting it FIRST is also what makes
+        // the answers below true: past this point nothing new can be dispatched, so an id still
+        // unanswered after the sweep is one that never will be.
         abandoned.store(true, Ordering::SeqCst);
         drop(calls);
+        // A reply the worker sent in the instant the deadline fired is still a real reply — take
+        // whatever is already in the channel before deciding who is owed one. Non-blocking, so
+        // this cannot re-open the wait the deadline just closed.
+        while let Ok(event) = incoming.try_recv() {
+            // Only a reply can still be in there: `Eof` is the last thing the reader ever sends
+            // and this loop has already taken it, so no `Line` can be queued behind it.
+            let Event::Reply(frame) = event else { continue };
+            forget_in_flight(&mut in_flight, &frame);
+            if emit(&mut output, &frame).is_err() {
+                return stop_serving(&abandoned);
+            }
+        }
+        // Every call the client is still waiting on gets an answer rather than silence (module
+        // doc's EOF bullet). Head of the list first: it is the only one that can be in flight.
+        for (i, id) in in_flight.iter().enumerate() {
+            let refusal = reply_frame(id.clone(), Ok(tool_result(shutting_down_result(i == 0), 2)));
+            if emit(&mut output, &refusal).is_err() {
+                break;
+            }
+        }
         // Deliberately NOT joined: the worker may be inside a dispatch bounded only by
         // `INVOCATION_TIMEOUT`, and waiting that out is exactly what the deadline exists to
         // prevent. The thread is detached like the reader's, and the process exits.

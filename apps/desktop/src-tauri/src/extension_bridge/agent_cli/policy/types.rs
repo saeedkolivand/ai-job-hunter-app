@@ -104,7 +104,7 @@
 //! ## Round 3 addendum — a destination is an effect too
 //! Every row in [`super::POLICY`] was classified on ONE axis: does the command
 //! persist anything. A caller-supplied `url`/`host`/`path`/`base_url` argument
-//! SECOND axis this table under-weighted: `ai_test_provider_key`/
+//! is a SECOND axis this table under-weighted: `ai_test_provider_key`/
 //! `ai_list_provider_models` (an egress host for a keychain secret) and
 //! `resume::extract_resume` (a filesystem path) were all `Read` — nothing
 //! persisted, so nothing on the first axis flagged them — while the
@@ -148,7 +148,7 @@ pub(crate) enum Effect {
 /// every other row already uses (`agent_call::invoke_command`), never a
 /// second implementation of that command's logic and never a value the
 /// dispatcher invents (no hash, no nonce). Every field is `&'static`, so the
-/// whole table stays `'static` data like every other row in [`POLICY`].
+/// whole table stays `'static` data like every other row in [`super::POLICY`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProofSource {
     /// `read_command` takes no input; the proof is the response at `path`

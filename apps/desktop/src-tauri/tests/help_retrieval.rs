@@ -281,6 +281,33 @@ fn the_help_corpus_maps_to_one_entry_per_faq_leaf() {
     }
 }
 
+/// The corpus↔budget check nothing inside the crate can make. `help_search`
+/// embeds at most `HELP_EMBED_MISSES_MAX` cache MISSES per request and reports
+/// `dense: "unavailable"` for the whole arm once that budget runs out
+/// (all-or-nothing, `commands::help::run_dense_arm`) — so a shipped corpus
+/// larger than the cap degrades every cold-cache question to keyword-only,
+/// permanently and silently. The constant's own unit tests are written against
+/// a synthetic corpus and cannot see that; this file already reads the REAL
+/// bundle, so the check belongs here.
+///
+/// Deliberately `<=`, not `<`: the arm spends one miss per entry, so a corpus
+/// exactly at the cap still embeds every entry (`commands::help::test`'s
+/// `a_request_at_the_miss_budget_still_runs_the_arm` pins that boundary from
+/// the other side).
+#[test]
+fn the_shipped_corpus_fits_under_the_dense_arms_cache_miss_budget() {
+    let entries = corpus();
+    assert!(
+        entries.len() <= ajh_tauri::commands::help::HELP_EMBED_MISSES_MAX,
+        "the shipped en help corpus has {} entries but HELP_EMBED_MISSES_MAX is {}: on a cold \
+         cache the dense arm would run out of embed budget and report `unavailable` for every \
+         question. Raise HELP_EMBED_MISSES_MAX (read its doc first — it also bounds one \
+         request's spend and the permanent rows it writes) rather than editing this test",
+        entries.len(),
+        ajh_tauri::commands::help::HELP_EMBED_MISSES_MAX,
+    );
+}
+
 /// One measured case, kept so the whole table can be PRINTED before any
 /// assertion fires — a single miss must never hide the other nine rows
 /// (`lexical_synonym_gaps`'s own discipline).

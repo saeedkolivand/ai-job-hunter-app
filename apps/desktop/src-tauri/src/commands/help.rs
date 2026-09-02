@@ -67,7 +67,14 @@ const ENTRIES_MAX: usize = 200;
 /// charge 200 embeds AND write 200 permanent `help_vectors` rows — per call,
 /// repeatable. 64 is comfortably above the ~51 entries the app ships, so no
 /// real question is ever degraded by it, and comfortably below the entry cap.
-const HELP_EMBED_MISSES_MAX: usize = 64;
+///
+/// "Comfortably above the entries the app ships" is the half of that claim
+/// nothing in this crate could check — the corpus lives in the translation
+/// bundles (module doc), and a corpus grown past this cap would degrade the
+/// dense arm to `unavailable` on every cold-cache question with no test going
+/// red. `pub` so `tests/help_retrieval.rs`, which already reads the REAL en
+/// bundle, asserts the shipped corpus still fits under it.
+pub const HELP_EMBED_MISSES_MAX: usize = 64;
 // A cap at or above [`ENTRIES_MAX`] is not a cap at all — the loop could never
 // reach it — so the ordering that makes it real is compile-time, not a comment.
 const _: () = assert!(HELP_EMBED_MISSES_MAX < ENTRIES_MAX);
@@ -379,10 +386,12 @@ async fn run_dense(
 /// [`ChargedEmbedder`]).
 ///
 /// **All-or-nothing, by design.** The arm reports [`ArmStatus::Ran`] only
-/// when EVERY requested entry was paired with a comparable vector; anything
-/// less — the wall-clock bound below firing, the miss budget running out, an
-/// entry whose embed failed, a vector that came back in another embedding
-/// space — returns [`ArmStatus::Unavailable`] with NO ranks. Reporting `Ran`
+/// when EVERY requested entry came back RANKED; anything less — the
+/// wall-clock bound below firing, the miss budget running out, an entry whose
+/// embed failed, a vector that came back in another embedding space, a
+/// degenerate zero vector `dense::cosine` cannot score — returns
+/// [`ArmStatus::Unavailable`] with NO ranks. Ranked, not merely paired: the
+/// two counts differ for the last of those cases. Reporting `Ran`
 /// on a partial pool would put `mode: "hybrid"` on the wire for a reply the
 /// dense arm only half-ranked, and keeping the partial ranks while reporting
 /// `Unavailable` would be the same lie from the other side: the fused order
@@ -475,16 +484,20 @@ async fn run_dense_arm<E: Embedder + ?Sized>(
             pairs.push(pair);
         }
     }
-    // The all-or-nothing rule (see this fn's doc). Also the ONE check that
-    // covers every early `break` above: a loop that stopped short leaves
-    // `pairs` short too, so neither bound needs its own reporting path.
-    if pairs.len() < entries.len() {
+    // The all-or-nothing rule (see this fn's doc), checked on the RANKED list
+    // rather than on `pairs`: `rank_by_similarity` drops a candidate `cosine`
+    // cannot score, so a paired-but-unscorable vector (a zero-magnitude one —
+    // `dense_pair` compares embedding SPACES, and a degenerate all-zero vector
+    // is in the right space) used to pass a `pairs.len()` check and then be
+    // dropped one line later, which is exactly the partial ranking reported as
+    // `hybrid` this rule exists to prevent. Also still the ONE check that
+    // covers every early `break` above: a loop that stopped short leaves the
+    // ranking short too, so neither bound needs its own reporting path.
+    let ranked = dense::rank_by_similarity(&query_f32, &pairs);
+    if ranked.len() < entries.len() {
         return (Vec::new(), ArmStatus::Unavailable);
     }
-    (
-        dense::rank_by_similarity(&query_f32, &pairs),
-        ArmStatus::Ran,
-    )
+    (ranked, ArmStatus::Ran)
 }
 
 // ── Fusion + reply assembly ──────────────────────────────────────────────────

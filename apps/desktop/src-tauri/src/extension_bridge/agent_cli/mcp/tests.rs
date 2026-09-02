@@ -341,12 +341,14 @@ fn a_local_tools_call_is_answered_while_a_bridge_call_is_still_in_flight() {
     assert_eq!(
         reply_ids(&text),
         vec![2, 1],
-        "the local `commands` call (id 2) must be answered while the bridge call (id 1) is          still in flight: {text:?}"
+        "the local `commands` call (id 2) must be answered while the bridge call (id 1) is \
+         still in flight: {text:?}"
     );
     assert_eq!(
         dispatches.load(Ordering::SeqCst),
         1,
-        "only the bridge-backed `job` call may reach the dispatcher — `commands` is answered          without ever touching the wire"
+        "only the bridge-backed `job` call may reach the dispatcher — `commands` is answered \
+         without ever touching the wire"
     );
 }
 
@@ -542,10 +544,19 @@ fn a_full_dispatch_queue_is_refused_with_server_busy_while_a_call_is_in_flight()
         total - busy.len(),
         "a refused call must never also reach the bridge"
     );
-    assert_eq!(
-        running_at_refusal, 1,
-        "the refusal must have been written while exactly ONE call was running, so the other \
-         {MCP_CALL_QUEUE_MAX} were WAITING in a full queue rather than being dispatched"
+    // `<= 1`, not `== 1`: at most one call may be RUNNING when the refusal is written, so the
+    // rest were WAITING in a full queue rather than being dispatched. Zero is legitimate and was
+    // a real flake — 2 of 6 local runs, on this assertion, before this branch changed anything:
+    // the writer can fill a {MCP_CALL_QUEUE_MAX}-deep queue and refuse the next frame in
+    // microseconds, and the dispatch thread is not guaranteed to have been SCHEDULED by then. A
+    // full queue is precisely the state that does not require it to have run. The upper bound is
+    // what carries the meaning and is the mutation-visible half: dispatch per call instead of
+    // onto one worker and this reads well above 1 (if `busy_written` above even fires at all).
+    assert!(
+        running_at_refusal <= 1,
+        "at most ONE call may have been running when the refusal was written, so the other \
+         {MCP_CALL_QUEUE_MAX} were waiting in a full queue rather than being dispatched; \
+         {running_at_refusal} were running"
     );
 }
 
@@ -637,13 +648,27 @@ fn a_parked_writer_stops_the_reader_at_the_event_queue_bound() {
 
 // ── The bounded EOF drain (item 7) ───────────────────────────────────────
 
+/// The drain budget, and the sleep a blocking dispatch holds the worker for. An ORDER OF
+/// MAGNITUDE apart in each direction from the wall each measures (CodeRabbit, PR #1092 — at
+/// 50 ms/300 ms the "returned on its own deadline" assertion below had only 250 ms of scheduling
+/// slack, so a loaded CI runner could fail a correct build): `serve` must return on the 50 ms
+/// deadline, the assertion allows it 20× that, and the dispatch it must NOT wait out runs 40×
+/// it. Only `DRAIN_EXIT_MAX` sits between the two, and it is nowhere near either.
+const DRAIN_BUDGET: Duration = Duration::from_millis(50);
+const DISPATCH_HOLD: Duration = Duration::from_secs(2);
+const DRAIN_EXIT_MAX: Duration = Duration::from_secs(1);
+
 /// After `Eof` the drain has ONE absolute deadline, not one `INVOCATION_TIMEOUT` per queued call:
 /// with a blocking dispatcher and a short injected budget, `serve` must return 0 long before the
 /// in-flight call finishes, and the calls still queued behind it must never dispatch at all.
 /// Mutation-visible: remove the deadline and this waits out the sleep below; keep the deadline
 /// but drop the worker's abandoned-flag check and the queued second call still dispatches.
+///
+/// And every call the client is still waiting on is ANSWERED before the exit — the half of the
+/// guarantee that used to be silence. Mutation-visible on its own: delete the `shutting_down`
+/// sweep and this writes nothing at all, which is what it asserted before the fix.
 #[test]
-fn an_expired_drain_deadline_exits_zero_without_dispatching_what_is_still_queued() {
+fn an_expired_drain_deadline_answers_what_it_abandons_and_dispatches_nothing_further() {
     let input: String = (1..=2)
         .map(|id| {
             line(json!({
@@ -667,25 +692,53 @@ fn an_expired_drain_deadline_exits_zero_without_dispatching_what_is_still_queued
         move |_: &Verb| {
             let first = counted.fetch_add(1, Ordering::SeqCst) == 0;
             let _ = report.send(if first { "enter-1" } else { "enter-2" });
-            std::thread::sleep(Duration::from_millis(300));
+            std::thread::sleep(DISPATCH_HOLD);
             let _ = report.send(if first { "exit-1" } else { "exit-2" });
             Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
         },
-        Duration::from_millis(50),
+        DRAIN_BUDGET,
     );
 
     assert_eq!(code, 0, "an expired drain is still a clean exit");
     assert!(
-        started.elapsed() < Duration::from_millis(300),
+        started.elapsed() < DRAIN_EXIT_MAX,
         "serve must return on its own deadline, not wait out the in-flight dispatch \
          (took {:?})",
         started.elapsed()
     );
-    assert!(
-        output.is_empty(),
-        "nothing is written once the drain is abandoned: {:?}",
-        String::from_utf8_lossy(&output)
+    // Both calls are answered — the abandoned one and the never-started one — and the two
+    // answers differ in the one fact the client needs to decide whether repeating is safe.
+    let text = String::from_utf8(output).expect("valid utf8");
+    let replies: Vec<Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is one reply"))
+        .collect();
+    assert_eq!(
+        reply_ids(&text),
+        vec![1, 2],
+        "every call the client was still waiting on must be answered, in queue order: {text:?}"
     );
+    let payload = |r: &Value| -> Value {
+        serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap())
+            .expect("content[0] is the refusal payload")
+    };
+    for reply in &replies {
+        assert_eq!(reply["result"]["isError"], true);
+        assert_eq!(reply["result"]["content"][1]["text"], "exitCode: 2");
+        assert_eq!(payload(reply)["error"], "shutting_down");
+    }
+    assert_eq!(
+        payload(&replies[0])["dispatched"],
+        true,
+        "the in-flight call reached the app and may have taken effect — saying otherwise would \
+         invite a client to repeat a write that already landed"
+    );
+    assert_eq!(
+        payload(&replies[1])["dispatched"],
+        false,
+        "the queued call provably never reached the app: {text:?}"
+    );
+
     assert_eq!(
         progress.recv_timeout(SIGNAL_BUDGET).ok(),
         Some("enter-1"),
@@ -696,10 +749,12 @@ fn an_expired_drain_deadline_exits_zero_without_dispatching_what_is_still_queued
         Some("exit-1"),
         "the abandoned in-flight call still runs to completion on its own thread"
     );
-    // The queued second call must never start. A violating build reaches it the instant the
-    // first returns, so a short grace is enough to catch it.
+    // The queued second call must never start. A violating build reaches it the INSTANT the
+    // first returns — i.e. immediately after the `exit-1` just received — so this grace only has
+    // to outlast a thread wake-up, and stays far below `DISPATCH_HOLD` so a correct build never
+    // waits it out for nothing.
     assert!(
-        progress.recv_timeout(Duration::from_millis(250)).is_err(),
+        progress.recv_timeout(DRAIN_EXIT_MAX).is_err(),
         "a call still queued when the drain deadline expired must never dispatch"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -851,7 +906,12 @@ fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sent
 /// `pub(super)` sentinels (`ERR_UNKNOWN_COMMAND`/`ERR_NOT_EXPOSED`/`ERR_CONFIRMATION_REQUIRED`),
 /// referenced by path there and never respelled here. A test-only fixture (item 24): nothing in
 /// production reads it, only the two tests below.
-const MCP_SENTINELS: &[&str] = &["wrong_tool", "result_too_large", "server_busy"];
+const MCP_SENTINELS: &[&str] = &[
+    "wrong_tool",
+    "result_too_large",
+    "server_busy",
+    "shutting_down",
+];
 
 #[test]
 fn instructions_name_every_mcp_only_sentinel() {

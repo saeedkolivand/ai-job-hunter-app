@@ -63,14 +63,31 @@
 //! ## Structured logs and metrics: off at the feature gate, not at a switch
 //!
 //! sentry 0.49 added two egress pipelines next to crash events — structured
-//! logs and metrics — and 0.49.2 then deprecated both `ClientOptions` switches
-//! that appeared to control them. Neither ever did: `enable_metrics` is a
-//! documented **no-op** (metrics are always enabled; only calling
-//! `sentry::metrics::*` emits one), and `enable_logs(false)` muted only the
-//! *automatic* `log`/`tracing` capture integrations — the SDK's own words are
-//! "logs captured manually are always sent".
+//! logs and metrics — and **0.49.2**, the version this build resolves to
+//! (`Cargo.toml` asks for `"0.49"`; `Cargo.lock` pins 0.49.2), then deprecated
+//! both `ClientOptions` switches that appeared to control them, which is why
+//! [`client_options`] sets neither. The deprecation attributes are the whole
+//! argument, so they are quoted verbatim from
+//! `sentry-core-0.49.2/src/clientoptions.rs` — on the next bump, diff these
+//! two sentences rather than re-deriving the reasoning:
 //!
-//! What actually holds the line is the dependency declaration. `sentry` is
+//! * `enable_logs`: *"logs captured manually are always sent; only automatic
+//!   capture by integrations respects this option"*.
+//! * `enable_metrics`: *"this option is a deprecated no-op"* (the field's own
+//!   doc adds "Metrics are always enabled, regardless of this option's value";
+//!   only a *call* to `sentry::metrics::*` emits one).
+//!
+//! Read literally, the first sentence says a manual `capture_log` would be
+//! sent no matter what that switch said — so dropping it is safe **here** on
+//! two facts about this build, not on the switch having been useless in
+//! general: no `log`/`tracing` capture integration is installed (there is no
+//! automatic capture left for it to have muted), and the `logs` feature is off
+//! (the manual API the sentence promises to always send does not compile). If
+//! either fact changes — a bump that reworded the attributes, or a dependency
+//! that unifies `sentry/logs` back into the build — this section is what went
+//! stale, and the three tests named below are what say so.
+//!
+//! Both facts live in the dependency declaration. `sentry` is
 //! taken with `default-features = false` and an explicit list that omits
 //! `logs`, `metrics`, `log` and `tracing`, and the consequence is stronger than
 //! a runtime flag:

@@ -361,3 +361,32 @@ fn lexical_search_any_drops_one_character_tokens_but_never_every_token() {
         "an all-short query must still search, not silently return zero hits"
     );
 }
+
+/// The other half of that rule: one character is only noise when it is ASCII.
+/// A CJK content word is routinely a single character, so dropping by char
+/// count alone deleted the only real term in a Chinese or Japanese question —
+/// and, since the token that remains here is a normal English one, the
+/// all-short fallback never fires to hide it.
+///
+/// Mutation-visible: drop the `tok.is_ascii() &&` guard in `sanitize_query`
+/// and `p1` disappears from the hits below.
+#[test]
+fn lexical_search_any_keeps_a_one_character_cjk_token() {
+    let docs = vec![
+        doc("p1", "書", "", "書 alone is a word, not a stray letter."),
+        doc("p2", "Engineer", "", "Kubernetes and Go."),
+    ];
+    let index = LexicalIndex::build(&docs).expect("build must succeed");
+
+    let hits = index
+        .search_any("書 Kubernetes", 10)
+        .expect("must not error");
+    assert!(
+        hits.contains(&"p1".to_string()),
+        "a one-character CJK token must still contribute an OR branch; got {hits:?}"
+    );
+    assert!(
+        hits.contains(&"p2".to_string()),
+        "sanity: the ASCII term must still match its own document; got {hits:?}"
+    );
+}

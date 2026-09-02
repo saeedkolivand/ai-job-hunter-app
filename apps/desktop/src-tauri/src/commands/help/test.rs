@@ -640,6 +640,58 @@ fn one_failed_entry_embed_is_unavailable_not_a_partly_ranked_hybrid() {
         .is_some());
 }
 
+/// The same rule one step further in: a vector that arrives but cannot be
+/// SCORED. `dense_pair` compares embedding SPACES, so an all-zero vector of the
+/// right dimension pairs perfectly well and is then dropped by `dense::cosine`
+/// (zero magnitude — no direction to compare against). Counting PAIRS rather
+/// than RANKS let that entry satisfy the all-or-nothing check and then vanish
+/// from the ranking, which is precisely the partial ranking labelled `hybrid`
+/// the rule exists to prevent.
+///
+/// Mutation-visible: restore `if pairs.len() < entries.len()` and this comes
+/// back `Ran` with two of the three entries ranked.
+#[test]
+fn a_zero_vector_for_one_entry_is_unavailable_not_a_partly_ranked_hybrid() {
+    /// Query + entries 1 and 3 embed normally; entry 2 comes back all zeros.
+    struct ZeroForOne(AtomicUsize, EmbeddingConfig);
+    #[async_trait]
+    impl Embedder for ZeroForOne {
+        async fn embed_one(&self, _text: &str) -> Option<EmbeddingVector> {
+            let i = self.0.fetch_add(1, Ordering::SeqCst);
+            // Call 0 is the query, so call 2 is the SECOND entry.
+            let values = if i == 2 {
+                vec![0.0, 0.0]
+            } else {
+                vec![1.0, 0.0]
+            };
+            Some(vector(&self.1, values))
+        }
+    }
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let embedder = ZeroForOne(AtomicUsize::new(0), active.clone());
+    let entries = corpus();
+
+    let (ranks, status) = arm(&store, &active, &embedder, "q", &entries);
+
+    assert_eq!(
+        status,
+        ArmStatus::Unavailable,
+        "an entry whose vector cannot be scored leaves the corpus part-ranked — the arm must \
+         not report `ran`"
+    );
+    assert!(ranks.is_empty(), "and hand back no ranks either: {ranks:?}");
+    // The distinction under test: this embed SUCCEEDED (it is cached, unlike a
+    // failed one), so nothing before the ranking step could have caught it.
+    assert!(
+        store
+            .get_help_vector(&sha256_hex(&entries[1].body), &active)
+            .is_some(),
+        "the zero vector must have been a successful, cached embed — otherwise this measures \
+         the failed-embed path instead"
+    );
+}
+
 /// The wall-clock bound: with a budget shorter than two embeds, the loop must
 /// stop early rather than run `entries.len()` × the per-embed timeout — the
 /// only thing that stops it at all, since v1 has no cancellation token.
@@ -776,6 +828,42 @@ fn a_vector_from_another_space_is_never_scored_against_the_query() {
     assert!(
         dense_pair("id", &vector(&active, vec![1.0, 0.0]).space, &mismatched).is_none(),
         "two vectors from different embedding spaces must never be scored together"
+    );
+}
+
+// ── The production gate for the dense arm ────────────────────────────────────
+
+/// The same deletion-guard shape as the eviction test below, for the same
+/// reason: `help_search` needs a running Tauri app, so the ONE `if
+/// semantic_on(&app)` that decides whether a question ever reaches a paid
+/// embedding provider cannot be exercised from a unit test. What CAN be checked
+/// is that the dense arm's only call site still sits inside that gate.
+///
+/// Without this, un-gating `run_dense` — the whole "semantic OFF makes zero
+/// embed calls" property, and the default-install posture behind it — would
+/// leave nothing red anywhere: every dense-arm test calls `run_dense_arm`
+/// directly, below the gate.
+#[test]
+fn the_dense_arm_call_still_sits_inside_the_semantic_gate() {
+    const HELP_SRC: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands/help.rs"));
+    let start = HELP_SRC
+        .find("let dense = if semantic_on(&app) {")
+        .expect("`let dense = if semantic_on(&app) {` still guards the dense arm in help_search");
+    let rest = &HELP_SRC[start..];
+    let end = rest
+        .find("} else {")
+        .expect("the gate has an else branch (the `skipped` arm)");
+    let gated = &rest[..end];
+    assert!(
+        gated.contains("run_dense(&app,"),
+        "the dense arm must be called INSIDE the semantic_on gate; branch body was:\n{gated}"
+    );
+    assert_eq!(
+        HELP_SRC.matches("run_dense(&app").count(),
+        1,
+        "and that must remain its ONLY call site — a second, ungated one would spend against \
+         the provider with the preference off"
     );
 }
 

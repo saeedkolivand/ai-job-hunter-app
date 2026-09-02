@@ -66,10 +66,17 @@ pub enum QueryMode {
     Any,
 }
 
-/// Tokens shorter than this are dropped in [`QueryMode::Any`] — "I"/"a"/"my"
-/// carry no topical signal but each add an OR branch that matches most of the
-/// corpus. Not applied to [`QueryMode::All`], where every token NARROWS the
-/// result and dropping one would silently widen a user's filter.
+/// ASCII tokens shorter than this are dropped in [`QueryMode::Any`] —
+/// "I"/"a"/"my" carry no topical signal but each add an OR branch that matches
+/// most of the corpus. Not applied to [`QueryMode::All`], where every token
+/// NARROWS the result and dropping one would silently widen a user's filter.
+///
+/// **ASCII only, because character count is not word length outside it.** A
+/// CJK content word is routinely ONE character (中文 "書", 日本語 "本"), so a
+/// bare char-count filter deleted the only real term in a Chinese or Japanese
+/// question and left the query to the all-short fallback below — the same
+/// English-only assumption `STOPWORDS` carries in the matching path, and the
+/// same failure: a non-Latin question silently retrieves on noise.
 ///
 /// A query made ENTIRELY of such tokens keeps them rather than sanitizing to
 /// the empty string, which `search` reads as "nothing to search for" and
@@ -101,7 +108,8 @@ fn sanitize_query(query: &str, mode: QueryMode) -> String {
         QueryMode::Any => {
             let mut tokens: Vec<String> = query
                 .split_whitespace()
-                .filter(|tok| tok.chars().count() >= ANY_MIN_TOKEN_CHARS)
+                // ASCII-gated on purpose — see [`ANY_MIN_TOKEN_CHARS`].
+                .filter(|tok| !(tok.is_ascii() && tok.chars().count() < ANY_MIN_TOKEN_CHARS))
                 .map(&quote)
                 .collect();
             if tokens.is_empty() {
