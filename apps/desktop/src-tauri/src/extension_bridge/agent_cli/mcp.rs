@@ -501,11 +501,10 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
             "detail": format!("not exposed to any CLI tier: {reason}"),
         }));
     }
-    // `.expect` rather than a `None => None` match arm (LOW fix, review round 3 — `NotExposed`
-    // already returned above, so every remaining `Effect` has a right tool; the old arm was
-    // unreachable code with no way to prove it at the type level).
-    let right_tool = tool_for(&entry.effect)
-        .expect("NotExposed already returned above — every other Effect has a right tool");
+    // `NotExposed` already returned above, so every remaining `Effect` has a right tool. If that
+    // invariant ever breaks, forward to the app (which refuses on its own) rather than panic:
+    // this path runs under `panic = "abort"`, where a panic is a silent server death.
+    let right_tool = tool_for(&entry.effect)?;
     if right_tool == tool_name {
         None
     } else {
