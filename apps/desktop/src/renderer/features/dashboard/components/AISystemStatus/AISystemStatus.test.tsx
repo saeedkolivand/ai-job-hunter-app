@@ -80,9 +80,17 @@ describe('AISystemStatus — AI-model row reads useCanUseAI, not the Ollama-only
     expect(aiDetailText()).toBe(expectedKey);
   });
 
-  it('shows "checking" (not an error) while useActiveConfig is still cold-booting', () => {
+  it('shows "checking" (not an error) while useCanUseAI is still resolving', () => {
     // useCanUseAI's own convention: canUse=false with NO reason means
     // "still resolving" — not "blocked". See its source doc comment.
+    //
+    // Reached by more than the cold-boot config read: a cloud provider whose
+    // KEY query is still in flight also answers reason-less now, so this row
+    // must not print "add an API key" for it. That upstream half is pinned in
+    // `components/ui/ModelSelector/useCanUseAI.test.tsx` (the real hook,
+    // mock-client-backed) — it cannot be pinned here, because this file mocks
+    // `@/components/ui/ModelSelector` wholesale and so no case in it can fail
+    // from a change inside the hook.
     mockCanUseAI = { canUse: false, reason: undefined };
     mockSelectedModel = '';
     render(<AISystemStatus />);

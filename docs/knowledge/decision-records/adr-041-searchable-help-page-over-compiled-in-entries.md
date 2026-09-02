@@ -42,7 +42,7 @@ Both proposals assumed complexity was necessary; the gap is discoverability, whi
 
 3. **An external docs site** (rejected): the app is local-first and offline-capable; the answer must be available inside the app at the moment of the question, not on a website.
 
-4. **A new onboarding flow** (rejected here): an onboarding wizard and spotlight tour already exist and are first-run-only; the "what should I do next" half is a separate, later decision about persistence on the Dashboard, not part of this record.
+4. **A new onboarding flow** (rejected here): an onboarding wizard and spotlight tour already exist and are first-run-only; the "what should I do next" half is a separate, later decision about persistence on the Dashboard, not part of this record (now [ADR-042](adr-042-dashboard-next-step-tile-derived-not-stored.md)).
 
 ## Consequences
 

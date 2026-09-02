@@ -3,16 +3,8 @@ import { Bookmark, Briefcase, CheckCircle, Eye, TrendingUp } from 'lucide-react'
 import { useTranslation } from '@ajh/translations';
 import { GlassCard } from '@ajh/ui';
 
+import { TRACKED_INTERACTION_TYPES } from '@/features/dashboard/constants';
 import { useInteractions } from '@/services';
-
-/**
- * Interaction types that count toward "tracked" in the pipeline overview.
- * An explicit allowlist — not "every type except `dismissed`" — so a future
- * SIXTH interaction type must be deliberately added here before it can
- * silently inflate this headline number. `dismissed` is excluded on purpose:
- * a job the user explicitly rejected was never "tracked".
- */
-const TRACKED_INTERACTION_TYPES = new Set(['viewed', 'opened', 'applied', 'bookmarked']);
 
 export function JobPipelineOverview() {
   const { t } = useTranslation();

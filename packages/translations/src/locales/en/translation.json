@@ -898,7 +898,7 @@
       "exportDataDescription": "Save your applied, viewed, and bookmarked jobs to a JSON file.",
       "export": "Export",
       "importData": "Import Data",
-      "importDataDescription": "Restore from a previous export. Existing records are preserved.",
+      "importDataDescription": "Restore from a previous export. Replaces the current data with the contents of the file.",
       "import": "Import",
       "signOutAll": "Sign Out All Accounts",
       "signOutAllDescription": "Wipes all browser sessions. Reconnect boards via Accounts settings.",
@@ -2275,6 +2275,24 @@
       "indexed": "Indexed",
       "memory": "Memory usage",
       "refresh": "Refresh"
+    },
+    "nextStep": {
+      "resume": {
+        "title": "Add your résumé",
+        "description": "Upload a CV so the app can tailor it to a job."
+      },
+      "ai": {
+        "title": "Connect an AI model",
+        "description": "Pick a provider or a local model to generate with."
+      },
+      "job": {
+        "title": "Find your first job",
+        "description": "Search a board and open a posting to start your pipeline."
+      },
+      "progress": "{{done}} of {{total}} done",
+      "doneTitle": "Setup complete — you're ready to apply.",
+      "unavailableTitle": "Setup status is unavailable right now.",
+      "help": "Browse help"
     }
   },
   "jobs": {

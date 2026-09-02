@@ -898,7 +898,7 @@
       "exportDataDescription": "Speichern Sie Ihre beworbenen, angesehenen und gespeicherten Jobs in einer JSON-Datei.",
       "export": "Exportieren",
       "importData": "Daten importieren",
-      "importDataDescription": "Wiederherstellung aus einem vorherigen Export. Vorhandene Datensätze bleiben erhalten.",
+      "importDataDescription": "Wiederherstellung aus einem vorherigen Export. Ersetzt die vorhandenen Daten durch den Inhalt der Datei.",
       "import": "Importieren",
       "signOutAll": "Alle Konten abmelden",
       "signOutAllDescription": "Löscht alle Browser-Sitzungen. Verbinden Sie Boards über Kontoeinstellungen neu.",
@@ -2279,6 +2279,24 @@
       "indexed": "Indiziert",
       "memory": "Speichernutzung",
       "refresh": "Aktualisieren"
+    },
+    "nextStep": {
+      "resume": {
+        "title": "Lebenslauf hinzufügen",
+        "description": "Laden Sie einen Lebenslauf hoch, damit die App ihn auf einen Job zuschneiden kann."
+      },
+      "ai": {
+        "title": "KI-Modell verbinden",
+        "description": "Wählen Sie einen Anbieter oder ein lokales Modell zum Generieren."
+      },
+      "job": {
+        "title": "Ersten Job finden",
+        "description": "Durchsuchen Sie ein Jobboard und öffnen Sie eine Anzeige, um Ihre Pipeline zu starten."
+      },
+      "progress": "{{done}} von {{total}} erledigt",
+      "doneTitle": "Einrichtung abgeschlossen — Sie können sich jetzt bewerben.",
+      "unavailableTitle": "Der Einrichtungsstatus ist gerade nicht verfügbar.",
+      "help": "Hilfe ansehen"
     }
   },
   "jobs": {

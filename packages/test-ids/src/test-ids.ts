@@ -197,6 +197,18 @@ export const TEST_IDS = {
     tour: 'tour',
   },
 
+  /** Dashboard — the persistent next-step row above the quick actions */
+  dashboard: {
+    /** Wrapper around the ActionTile nudging the first unmet setup step. */
+    nextStepTile: 'dashboard-next-step-tile',
+    /** The slim "setup complete" row that replaces the tile once every step is met. */
+    nextStepDone: 'dashboard-next-step-done',
+    /** The same slim row, neutral copy, when a signal query failed and the tile
+     *  cannot say which step is next — distinct from `nextStepDone` so a test
+     *  can prove the "setup complete" claim is NOT what a failed read renders. */
+    nextStepUnavailable: 'dashboard-next-step-unavailable',
+  },
+
   /** Help & Support — the searchable help page (ADR-041) */
   support: {
     /** Search box above the sections; filters entries with a word-AND substring match. */

@@ -313,6 +313,18 @@ export function useCanUseAI(): { canUse: boolean; reason?: string } {
   if (isPending) return { canUse: false };
 
   if (kind === 'cloud') {
+    // Same "still checking" convention as the cold-boot branch above, for the
+    // same reason: while the key query is in flight its `data` is `undefined`,
+    // and `?? false` below reads that as a settled "there is no key" — naming
+    // `addApiKey` as the blocker for a question nobody has answered yet.
+    // `ModelSelector` itself already has to work around this with a separate
+    // `activeKeyLoading` (see the comment above it); consumers of this hook
+    // could not, because a reason is indistinguishable from a real answer.
+    if (providerKeyQuery.isPending) return { canUse: false };
+    // A REJECTED key query is a failed keyring read, not a settled "no key" — and
+    // `healthUnavailable` ("Couldn't check AI status…") already says exactly that, so
+    // no new reason or translation is needed. Mirrors `healthIsError` below.
+    if (providerKeyQuery.isError) return { canUse: false, reason: 'healthUnavailable' };
     if (!(providerKeyQuery.data?.has ?? false)) return { canUse: false, reason: 'addApiKey' };
     if (!activeProviderModel) return { canUse: false, reason: 'selectModel' };
     return { canUse: true };

@@ -6,6 +6,7 @@ import { ActionTile } from '@ajh/ui';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AISystemStatus } from '@/features/dashboard/components/AISystemStatus';
 import { JobPipelineOverview } from '@/features/dashboard/components/JobPipelineOverview';
+import { NextStepTile } from '@/features/dashboard/components/NextStepTile';
 import { QUICK_ACTIONS } from '@/features/dashboard/constants';
 import { useUserName } from '@/store/preferences-store';
 
@@ -24,6 +25,10 @@ function Dashboard() {
           title={userName ? `${t('dashboard.welcome')}, ${userName}` : t('dashboard.welcome')}
           subtitle={t('dashboard.subtitle')}
         />
+
+        {/* The one thing to do next — full width, not a fifth quick action:
+            the grid below is 4-up and its stagger classes only go to 4. */}
+        <NextStepTile />
 
         {/* Quick Actions */}
         <div className="mb-8 grid grid-cols-2 gap-4 @2xl:grid-cols-4">

@@ -17,7 +17,12 @@ vi.mock('@ajh/ui', () => ({
   GlassCard: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('lucide-react', () => ({
+// Spread the real module rather than listing icons: the allowlist this
+// component filters with now lives in the shared `features/dashboard/constants`
+// module, which also holds the quick-action icons — an exhaustive stub breaks
+// on an icon this component never renders.
+vi.mock('lucide-react', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   Bookmark: () => null,
   Briefcase: () => null,
   CheckCircle: () => null,
