@@ -8,7 +8,7 @@
  * `onLinkClick` (e.g. wired to the Tauri opener) to make links clickable; the
  * anchor's default navigation is always prevented, so the webview never
  * follows a link itself. Without a handler — or with a scheme outside
- * {@link SAFE_SCHEME} — a link renders as plain label text.
+ * {@link isSafeUrl} — a link renders as plain label text.
  */
 import { cn } from '../../lib/cn';
 
@@ -21,10 +21,13 @@ type LinkClick = ((url: string) => void) | undefined;
  * navigates on `auxclick`, which never reaches the React handler. A refused
  * link degrades to plain label text, the same as having no handler at all.
  */
-const SAFE_SCHEME = /^(https?|mailto):/i;
-
+// The scheme check is written as `startsWith` on the very string that reaches
+// `href`, not as a regex on a trimmed copy: that is the shape static taint
+// analysis (CodeQL) recognises as a barrier, and the one it flagged when it was
+// a regex. Exact-case, untrimmed: a `HTTPS://` or leading-space link degrades
+// to label text, which is the safe direction.
 function isSafeUrl(url: string): boolean {
-  return SAFE_SCHEME.test(url.trim());
+  return url.startsWith('https://') || url.startsWith('http://') || url.startsWith('mailto:');
 }
 
 interface Props {
