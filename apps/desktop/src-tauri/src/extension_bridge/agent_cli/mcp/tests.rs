@@ -53,8 +53,26 @@ fn serve_with(
     output: impl Write,
     dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
 ) -> i32 {
+    serve_with_drain_budget(input, output, dispatch, INVOCATION_TIMEOUT)
+}
+
+/// [`serve_with`] with the EOF drain deadline injected — production's own
+/// [`INVOCATION_TIMEOUT`] everywhere except the two tests that measure the deadline itself, which
+/// would otherwise have to wait it out.
+fn serve_with_drain_budget(
+    input: &str,
+    output: impl Write,
+    dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
+    drain_budget: Duration,
+) -> i32 {
     let server = Server::new(true, true);
-    serve(Cursor::new(input.to_string()), output, &server, dispatch)
+    serve(
+        Cursor::new(input.to_string()),
+        output,
+        &server,
+        dispatch,
+        drain_budget,
+    )
 }
 
 /// [`serve_with`] into a plain buffer — returns the raw stdout bytes as a `String` so a test can
@@ -358,9 +376,176 @@ fn a_write_failure_ends_serve_with_exit_zero_and_dispatches_nothing_further() {
     assert_eq!(code, 0, "a dead pipe is a clean exit, never a non-zero one");
     assert!(
         !dispatched.load(Ordering::SeqCst),
-        "once a write fails there is nowhere to deliver a reply — the frames behind it must \
-         not reach the bridge"
+        "the early return on a failed write must stop the loop from ROUTING the frames behind \
+         it: the tools/call after the failed ping is never classified, so it never reaches the \
+         dispatcher"
     );
+}
+
+// ── The bounded dispatch queue (item 6) ──────────────────────────────────
+
+/// The queue between the writer thread and the single-flight dispatcher is BOUNDED, and a full
+/// queue is answered rather than waited on: the excess `tools/call` comes back as a `server_busy`
+/// tool result WHILE the first dispatch is still blocked. Mutation-visible twice over — an
+/// unbounded `channel()` produces zero refusals, and a blocking `send` on a full one writes
+/// nothing at all until the dispatch below is released, so the signal never pulses and this test
+/// fails on the timeout instead of the assertion.
+#[test]
+fn a_full_dispatch_queue_is_refused_with_server_busy_while_a_call_is_in_flight() {
+    let total = MCP_CALL_QUEUE_MAX + 4;
+    let input: String = (1..=total)
+        .map(|id| {
+            line(json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": "profile", "arguments": {} },
+            }))
+        })
+        .collect();
+
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let (seen_busy, busy_written) = std::sync::mpsc::channel::<()>();
+    let writer = SignallingWriter {
+        buffer: Arc::clone(&buffer),
+        needle: "server_busy",
+        signal: Some(seen_busy),
+    };
+    // Every dispatch parks here until the test drops the sender, so the worker is provably still
+    // holding the first call when the refusals are written.
+    let (release, blocked) = std::sync::mpsc::channel::<()>();
+    let dispatched = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&dispatched);
+
+    let server = std::thread::spawn(move || {
+        serve_with(&input, writer, move |_: &Verb| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let _ = blocked.recv_timeout(SIGNAL_BUDGET);
+            Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
+        })
+    });
+
+    busy_written
+        .recv_timeout(SIGNAL_BUDGET)
+        .expect("a server_busy refusal must be written while the dispatcher is blocked");
+    // Read BEFORE releasing: once the blocker is gone the worker drains the queue and frees
+    // slots, so how the remaining frames split between accepted and refused stops being a
+    // property of the bound and starts being a race.
+    let running_at_refusal = dispatched.load(Ordering::SeqCst);
+    drop(release);
+    let code = server.join().expect("serve must not panic");
+    assert_eq!(code, 0);
+
+    let text = String::from_utf8(lock(&buffer).clone()).expect("valid utf8");
+    let replies: Vec<Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is one reply"))
+        .collect();
+    assert_eq!(
+        replies.len(),
+        total,
+        "every frame must be answered exactly once, refused or dispatched: {text:?}"
+    );
+    let busy: Vec<&Value> = replies
+        .iter()
+        .filter(|r| {
+            r["result"]["content"][0]["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("server_busy"))
+        })
+        .collect();
+    assert!(
+        !busy.is_empty(),
+        "the queue is bounded at {MCP_CALL_QUEUE_MAX}, so {total} pipelined calls must produce \
+         at least one refusal: {text:?}"
+    );
+    for refusal in &busy {
+        assert_eq!(refusal["result"]["isError"], true);
+        assert_eq!(refusal["result"]["content"][1]["text"], "exitCode: 2");
+        let payload: Value =
+            serde_json::from_str(refusal["result"]["content"][0]["text"].as_str().unwrap())
+                .expect("content[0] is the refusal payload");
+        assert_eq!(payload["error"], "server_busy");
+        assert_eq!(payload["dispatched"], false);
+    }
+    assert_eq!(
+        dispatched.load(Ordering::SeqCst),
+        total - busy.len(),
+        "a refused call must never also reach the bridge"
+    );
+    assert_eq!(
+        running_at_refusal, 1,
+        "the refusal must have been written while exactly ONE call was running, so the other \
+         {MCP_CALL_QUEUE_MAX} were WAITING in a full queue rather than being dispatched"
+    );
+}
+
+// ── The bounded EOF drain (item 7) ───────────────────────────────────────
+
+/// After `Eof` the drain has ONE absolute deadline, not one `INVOCATION_TIMEOUT` per queued call:
+/// with a blocking dispatcher and a short injected budget, `serve` must return 0 long before the
+/// in-flight call finishes, and the calls still queued behind it must never dispatch at all.
+/// Mutation-visible: remove the deadline and this waits out the sleep below; keep the deadline
+/// but drop the worker's abandoned-flag check and the queued second call still dispatches.
+#[test]
+fn an_expired_drain_deadline_exits_zero_without_dispatching_what_is_still_queued() {
+    let input: String = (1..=2)
+        .map(|id| {
+            line(json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": "profile", "arguments": {} },
+            }))
+        })
+        .collect();
+
+    // The stub reports each entry and each exit, so "the second call never dispatched" is a
+    // message that never arrives rather than a fixed sleep.
+    let (report, progress) = std::sync::mpsc::channel::<&'static str>();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let mut output = Vec::new();
+
+    let started = std::time::Instant::now();
+    let code = serve_with_drain_budget(
+        &input,
+        &mut output,
+        move |_: &Verb| {
+            let first = counted.fetch_add(1, Ordering::SeqCst) == 0;
+            let _ = report.send(if first { "enter-1" } else { "enter-2" });
+            std::thread::sleep(Duration::from_millis(300));
+            let _ = report.send(if first { "exit-1" } else { "exit-2" });
+            Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
+        },
+        Duration::from_millis(50),
+    );
+
+    assert_eq!(code, 0, "an expired drain is still a clean exit");
+    assert!(
+        started.elapsed() < Duration::from_millis(300),
+        "serve must return on its own deadline, not wait out the in-flight dispatch \
+         (took {:?})",
+        started.elapsed()
+    );
+    assert!(
+        output.is_empty(),
+        "nothing is written once the drain is abandoned: {:?}",
+        String::from_utf8_lossy(&output)
+    );
+    assert_eq!(
+        progress.recv_timeout(SIGNAL_BUDGET).ok(),
+        Some("enter-1"),
+        "the first call must have started before the deadline expired"
+    );
+    assert_eq!(
+        progress.recv_timeout(SIGNAL_BUDGET).ok(),
+        Some("exit-1"),
+        "the abandoned in-flight call still runs to completion on its own thread"
+    );
+    // The queued second call must never start. A violating build reaches it the instant the
+    // first returns, so a short grace is enough to catch it.
+    assert!(
+        progress.recv_timeout(Duration::from_millis(250)).is_err(),
+        "a call still queued when the drain deadline expired must never dispatch"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -509,7 +694,7 @@ fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sent
 /// `pub(super)` sentinels (`ERR_UNKNOWN_COMMAND`/`ERR_NOT_EXPOSED`/`ERR_CONFIRMATION_REQUIRED`),
 /// referenced by path there and never respelled here. A test-only fixture (item 24): nothing in
 /// production reads it, only the two tests below.
-const MCP_SENTINELS: &[&str] = &["wrong_tool", "result_too_large"];
+const MCP_SENTINELS: &[&str] = &["wrong_tool", "result_too_large", "server_busy"];
 
 #[test]
 fn instructions_name_every_mcp_only_sentinel() {

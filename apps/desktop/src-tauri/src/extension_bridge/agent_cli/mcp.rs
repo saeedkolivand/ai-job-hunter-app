@@ -53,7 +53,9 @@
 //! so a bare `println!` after the client closes its pipe would be a silent abort; `emit`'s `Err`
 //! (EPIPE) ends [`serve`] cleanly instead. [`run`] writes stdout exactly once more, for `--help`,
 //! BEFORE any JSON-RPC frame is read — nothing negotiated yet to break. Every stderr write here is
-//! a pre-protocol usage/runtime failure in [`run`].
+//! content-free and never touches stdout; most are pre-protocol usage/runtime failures in [`run`],
+//! and [`serve`] may write one MID-protocol — when the dispatch thread is gone, next to the
+//! `-32603` it answers the caller with.
 //!
 //! ## Concurrency — one reader, one dispatcher, one writer (ADR-040 §12's named follow-up)
 //! Three threads and one [`Event`] channel: a READER thread turns the input into `Event::Line`s
@@ -71,6 +73,21 @@
 //! - **Bridge-backed calls are still dispatched single-flight, in input order.** Exactly ONE
 //!   dispatch runs at any instant and queued calls run strictly FIFO, so the throttle bound
 //!   ADR-040 §12 rests on (one bridge connection per process) is unchanged by this split.
+//! - **The queue between them is BOUNDED at [`MCP_CALL_QUEUE_MAX`], and a full queue is answered,
+//!   never waited on.** The pipe this split replaced had the OS's own socket backpressure; an
+//!   unbounded channel would have traded it for unbounded memory, since a pipelining client can
+//!   write `tools/call` frames far faster than one bridge round trip completes. Of the two ways
+//!   to keep it bounded, blocking the writer thread on a full queue is exactly the stall this
+//!   split exists to remove (a `ping` behind it would go unanswered), so the excess call is
+//!   REFUSED instead: a `server_busy` tool result, `isError`, exit code 2, telling the client to
+//!   wait for an outstanding reply and retry that one call. Nothing is dropped silently and the
+//!   loop stays responsive.
+//! - **The EOF drain is bounded too**, by ONE absolute deadline (`drain_budget`, one
+//!   [`super::INVOCATION_TIMEOUT`] in production) started when `Eof` arrives — not one budget per
+//!   queued call, which is the N × timeout worst case a full queue could otherwise hold the exit
+//!   open for. On expiry the loop stops writing, the worker is told to stop dispatching whatever
+//!   is still queued, and the process exits 0 with the in-flight dispatch abandoned rather than
+//!   joined (joining is the wait the deadline exists to cap).
 //! - **Replies are ordered per kind, never globally.** The cost of the first two, stated plainly:
 //!   an immediately-answered frame MAY be written before the reply of a bridge call that arrived
 //!   EARLIER. Every reply still carries the `id` it answers, which is how a JSON-RPC client pairs
@@ -80,8 +97,9 @@
 //!   `Send`, and locking per write is what keeps a partially-written frame impossible), so two
 //!   frames can never interleave.
 //! - **EOF drains.** Once the input ends, the loop keeps writing until every already-queued call
-//!   has replied, then exits 0 — a call in flight when stdin closes is never dropped. An [`emit`]
-//!   error (EPIPE: the client closed its pipe) still ends the server immediately, exit 0.
+//!   has replied (or the drain deadline above expires), then exits 0 — a call in flight when
+//!   stdin closes is never dropped. An [`emit`] error (EPIPE: the client closed its pipe) still
+//!   ends the server immediately, exit 0.
 //! - **A `tools/call` with a null/absent `id` is dropped before classification**, so it neither
 //!   dispatches nor answers: nothing is listening for the result, exactly as before.
 //!
@@ -92,7 +110,9 @@
 //! inheriting its never-echo-the-value discipline for free.
 
 use std::io::{stdin, stdout, BufRead, BufReader, Write};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError, Sender, TrySendError};
+use std::sync::Arc;
 use std::thread;
 
 use super::agent_call;
@@ -173,10 +193,12 @@ const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hunter deskto
     newlines; a wrong value is confirmation_mismatch and the expected value is never disclosed. \
     A call-* refusal named wrong_tool means retry on the OTHER tool its own \"detail\" names, \
     never the one just called; result_too_large means this server's own output cap was hit — \
-    narrow the request rather than repeating it verbatim. Do not retry a rate_limited, \
-    connection_lost, or \"Too many requests\" result in a loop either. A refusal's own \"detail\" \
-    text is written for the plain CLI, not for these tools: a detail that says `agent call \
-    ns:cmd` means call-read (or call-reversible, if enabled) with `namespace`/`command` set to \
+    narrow the request rather than repeating it verbatim. A server_busy refusal is the one \
+    result worth repeating: this server runs ONE call at a time and its queue was full, so wait \
+    for an outstanding call's reply and then send that one call again. Do not retry a \
+    rate_limited, connection_lost, or \"Too many requests\" result in a loop either. A refusal's \
+    own \"detail\" text is written for the plain CLI, not for these tools: a detail that says \
+    `agent call ns:cmd` means call-read (or call-reversible, if enabled) with `namespace`/`command` set to \
     `ns`/`cmd`; `--confirm '<value>'` means this tool's own `confirm` argument, read on \
     call-irreversible only.";
 
@@ -585,6 +607,30 @@ fn oversized_result(bytes: usize) -> Value {
     })
 }
 
+/// How many classified `tools/call`s may WAIT on the single-flight dispatch thread, on top of the
+/// one it is running. Small on purpose: dispatch is strictly serial and each call is bounded by
+/// [`super::INVOCATION_TIMEOUT`], so a deep queue only means a client waiting minutes for a reply
+/// it could have re-sent — and every queued frame is memory this process holds for it. 8 is above
+/// anything a request/response client ever produces (they send one and wait) and low enough that
+/// a pipelining one is told to slow down almost immediately.
+const MCP_CALL_QUEUE_MAX: usize = 8;
+
+/// The refusal answered when that queue is full — see the module doc's concurrency section for
+/// why the excess call is refused rather than blocking the writer thread until there is room.
+/// `dispatched:false`, like every other refusal that never reached the wire; the `detail` is a
+/// plain instruction to wait, because unlike `result_too_large` this one IS worth repeating.
+fn busy_result() -> Value {
+    json!({
+        "dispatched": false,
+        "error": "server_busy",
+        "detail": format!(
+            "this server dispatches one call at a time and its queue is full \
+             ({MCP_CALL_QUEUE_MAX} waiting); wait for an outstanding call's reply, then send \
+             this one again."
+        ),
+    })
+}
+
 /// One `CallToolResult`: `content[0].text` is the payload byte-for-byte, `content[1]` names the
 /// exit code, and a `confirmation_required` refusal gets one more block mapping `--confirm` to
 /// this tool's `confirm` argument. No `structuredContent` field (SHOULD fix — no observed client
@@ -826,15 +872,28 @@ fn emit(output: &mut impl Write, frame: &Value) -> std::io::Result<()> {
 /// the test supplies). See the module doc for the guarantees this shape buys and what it costs.
 /// EOF (or a read error) drains the queue and ends the loop, exit 0 (spec: exit promptly once
 /// stdin closes); so does a failed write.
+///
+/// `drain_budget` is the WHOLE drain's budget once `Eof` arrives — one
+/// [`super::INVOCATION_TIMEOUT`] in production, a few milliseconds in the tests that measure the
+/// deadline itself. A parameter rather than a constant read here because a test that had to wait
+/// out the real one would be a 90-second test nobody runs.
 fn serve(
     input: impl BufRead + Send + 'static,
     mut output: impl Write,
     server: &Server,
     mut dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
+    drain_budget: Duration,
 ) -> i32 {
     let (events, incoming) = channel::<Event>();
-    let (calls, queued) = channel::<(Value, Verb)>();
+    // BOUNDED (module doc): the writer never blocks on it — a full queue is refused with
+    // `server_busy` instead — so this bound is a memory bound, not a latency one.
+    let (calls, queued) = sync_channel::<(Value, Verb)>(MCP_CALL_QUEUE_MAX);
 
+    // Set when the drain deadline expires: whatever is still queued must not be dispatched, since
+    // this loop has stopped reading replies and would spend a bridge round trip per call for a
+    // frame nobody will ever write.
+    let abandoned = Arc::new(AtomicBool::new(false));
+    let worker_abandoned = Arc::clone(&abandoned);
     let worker_events: Sender<Event> = events.clone();
     let worker = thread::Builder::new()
         .name("mcp-dispatch".to_string())
@@ -844,6 +903,17 @@ fn serve(
             // queue carries an ALREADY-CLASSIFIED [`Verb`], so this thread needs no [`Server`]
             // and can do nothing but dispatch.
             while let Ok((id, verb)) = queued.recv() {
+                // Checked per call, not once: dropping `calls` is not enough on its own, because
+                // a `Receiver` keeps yielding what was ALREADY buffered after its sender is gone.
+                //
+                // Honest about what this costs and covers: in practice the `send` below is what
+                // stops this thread, since the `Event` receiver dies with `serve` and the failed
+                // send returns. This flag closes the window between the loop breaking and that
+                // receiver actually being dropped — which is why removing it fails no test, and
+                // why it is 3 lines rather than a mechanism.
+                if worker_abandoned.load(Ordering::SeqCst) {
+                    return;
+                }
                 let reply = reply_frame(id, Ok(dispatched_tool_result(&verb, &mut dispatch)));
                 if worker_events.send(Event::Reply(reply)).is_err() {
                     return;
@@ -884,7 +954,35 @@ fn serve(
     // Calls handed to the worker that have not replied yet — EOF may not end the loop until this
     // is back to zero, or a reply the client is waiting for would be dropped on the floor.
     let mut in_flight = 0usize;
-    while let Ok(event) = incoming.recv() {
+    // When the drain started. ONE deadline for the whole drain (module doc), not one per queued
+    // call: `drain_budget` is measured from this instant no matter how many replies are still
+    // owed. `None` until `Eof`, which is when the loop first has a reason to stop waiting.
+    let mut drain_started: Option<std::time::Instant> = None;
+    let mut drain_expired = false;
+    loop {
+        let event = match drain_started {
+            None => match incoming.recv() {
+                Ok(event) => event,
+                Err(_) => break,
+            },
+            Some(started) => {
+                // `checked_sub` is `None` once the budget is spent — never a panicking
+                // subtraction, and never a negative timeout.
+                let remaining = drain_budget.checked_sub(started.elapsed());
+                let Some(remaining) = remaining.filter(|r| !r.is_zero()) else {
+                    drain_expired = true;
+                    break;
+                };
+                match incoming.recv_timeout(remaining) {
+                    Ok(event) => event,
+                    Err(RecvTimeoutError::Timeout) => {
+                        drain_expired = true;
+                        break;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        };
         match event {
             Event::Line(line) => {
                 let line = line.trim();
@@ -898,10 +996,18 @@ fn serve(
                             return 0;
                         }
                     }
-                    Routed::Call { id, verb } => {
-                        if calls.send((id.clone(), verb)).is_ok() {
-                            in_flight += 1;
-                        } else {
+                    Routed::Call { id, verb } => match calls.try_send((id.clone(), verb)) {
+                        Ok(()) => in_flight += 1,
+                        Err(TrySendError::Full(_)) => {
+                            // `try_send`, never `send`: blocking here would stall the ONE thread
+                            // that answers pings and writes replies — the stall this split
+                            // exists to remove — so the excess call is refused instead.
+                            let refusal = reply_frame(id, Ok(tool_result(busy_result(), 2)));
+                            if emit(&mut output, &refusal).is_err() {
+                                return 0;
+                            }
+                        }
+                        Err(TrySendError::Disconnected(_)) => {
                             // The worker is gone (only reachable if its thread died, which under
                             // `panic = "abort"` it cannot). Answer anyway rather than leave the
                             // client waiting on a reply that can never come.
@@ -911,7 +1017,7 @@ fn serve(
                                 return 0;
                             }
                         }
-                    }
+                    },
                 }
             }
             Event::Reply(frame) => {
@@ -922,13 +1028,27 @@ fn serve(
                     return 0;
                 }
             }
-            Event::Eof => input_ended = true,
+            Event::Eof => {
+                input_ended = true;
+                drain_started = Some(std::time::Instant::now());
+            }
         }
         if input_ended && in_flight == 0 {
             break;
         }
     }
 
+    if drain_expired {
+        // Tell the worker to stop before closing the queue: a `Receiver` still yields what was
+        // buffered before its sender was dropped, so the flag — not `drop(calls)` — is what
+        // actually stops the queued calls from dispatching.
+        abandoned.store(true, Ordering::SeqCst);
+        drop(calls);
+        // Deliberately NOT joined: the worker may be inside a dispatch bounded only by
+        // `INVOCATION_TIMEOUT`, and waiting that out is exactly what the deadline exists to
+        // prevent. The thread is detached like the reader's, and the process exits.
+        return 0;
+    }
     // Both threads are finished or about to be: the reader sent `Eof` before returning, and the
     // worker's queue closes with `calls`. Joining keeps a test from leaking a thread per case;
     // a join error (a panicked thread) is nothing this path can act on.
@@ -1043,7 +1163,13 @@ pub(super) fn run(args: &[String]) -> i32 {
     // and writing now happen on different threads. `Stdin` itself is `Read` but not `BufRead`,
     // hence the `BufReader`; both handles lock internally per call, so the one-frame-per-line
     // discipline is unchanged (module doc).
-    serve(BufReader::new(stdin()), out, &server, dispatch)
+    serve(
+        BufReader::new(stdin()),
+        out,
+        &server,
+        dispatch,
+        INVOCATION_TIMEOUT,
+    )
 }
 
 #[cfg(test)]
