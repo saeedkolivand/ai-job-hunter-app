@@ -1283,9 +1283,10 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry {
         path: "commands::extension_bridge::extension_bridge_regenerate_token",
         effect: Effect::NotExposed(
-            "rotating the pairing token has no reachable non-vacuous proof: every value \
-             extension_bridge_status could offer is one this exact connection already had to \
-             possess to authenticate — see the row's own comment for the full argument",
+            "rotating the pairing token has no reachable non-vacuous proof: port/token are \
+             values this exact connection already had to possess to authenticate, and \
+             connected reads true only because THIS socket's own authentication is what \
+             increments it — see the row's own comment for the full argument",
         ),
     },
     PolicyEntry {

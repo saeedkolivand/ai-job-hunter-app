@@ -946,7 +946,7 @@ fn help_text() -> String {
     }
     out.push_str(
         "  --help, -h, help                Show this help and exit (works even if the app is not running).\n\
-         mcp [--allow-reversible] [--allow-irreversible]\n\
+         \x20\x20mcp [--allow-reversible] [--allow-irreversible]\n\
                                   Run as an MCP (Model Context Protocol) stdio server for Claude \
            Code/Codex; read tier + `commands` only by default, --allow-reversible adds \
            mutating-but-undoable tools, --allow-irreversible adds the rest (implies \

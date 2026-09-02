@@ -435,6 +435,22 @@ fn help_text_mentions_the_mcp_mode() {
 }
 
 #[test]
+fn help_text_indents_the_mcp_row_like_every_verb_row() {
+    // LOW fix, review round 3 — the `\` line-continuation used to build this row strips ALL
+    // leading whitespace off the continued line, so "mcp [...]" rendered flush-left instead of
+    // indented two spaces like every VERB_TABLE row.
+    let text = help_text();
+    let mcp_line = text
+        .lines()
+        .find(|l| l.trim_start().starts_with("mcp "))
+        .expect("must have an mcp row");
+    assert!(
+        mcp_line.starts_with("  mcp "),
+        "the mcp row must be indented like every verb row: {mcp_line:?}"
+    );
+}
+
+#[test]
 fn is_mcp_mode_matches_only_the_exact_first_token() {
     assert!(is_mcp_mode(&s(&["mcp"])));
     assert!(is_mcp_mode(&s(&["mcp", "--allow-irreversible"])));

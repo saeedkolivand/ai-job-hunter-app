@@ -130,6 +130,32 @@ fn not_exposed_rows_carry_a_real_reason() {
     }
 }
 
+/// LOW fix (pre-PR gate, round 3): a prior edit shortened this row's inline reason to one
+/// over-broad claim — "every value extension_bridge_status could offer is one this exact
+/// connection already had to possess" — which is true of `port`/`token` but NOT of `connected`,
+/// a boolean that reads `true` only because THIS socket's own successful authentication is what
+/// increments the counter it reports. The longer row comment above always had both clauses; the
+/// short inline reason (what a caller/refusal actually sees) must too.
+#[test]
+fn extension_bridge_regenerate_token_reason_explains_why_connected_is_vacuous_too() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path.ends_with("extension_bridge_regenerate_token"))
+        .expect("the row must still exist");
+    let Effect::NotExposed(reason) = entry.effect else {
+        panic!("must stay NotExposed");
+    };
+    assert!(
+        reason.contains("connected"),
+        "must name `connected` specifically, not just `port`/`token`: {reason}"
+    );
+    assert!(
+        reason.contains("THIS socket") || reason.contains("this socket"),
+        "must explain WHY connected is vacuous (self-authentication increments it), not just \
+         assert it: {reason}"
+    );
+}
+
 /// HIGH fix (security review round 2): `match_resume`/`match_resume_text`
 /// reach a paid embedding provider (`score_one` → `embed_charged`) with
 /// `budget: None` when `semanticScoringEnabled: true` — the SAME

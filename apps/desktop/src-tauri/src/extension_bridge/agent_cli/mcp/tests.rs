@@ -28,6 +28,12 @@ fn run_serve(
     String::from_utf8(output).expect("valid utf8")
 }
 
+fn names(list: &[Value]) -> Vec<&str> {
+    let mut n: Vec<&str> = list.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    n.sort_unstable();
+    n
+}
+
 // ── serve — the pure loop over a Cursor (GRAFT: mutation-visible) ─────────
 
 #[test]
@@ -146,7 +152,7 @@ fn initialize_never_names_2026_07_28() {
     }
 }
 
-// ── INSTRUCTIONS / build_instructions (items 7 + 14) ────────────────────
+// ── INSTRUCTIONS / build_instructions (items 7, 14, 18, 24, 27) ─────────
 
 #[test]
 fn instructions_name_both_missing_pointer_and_app_closed_and_map_cli_phrasing_onto_tools() {
@@ -160,19 +166,71 @@ fn instructions_name_both_missing_pointer_and_app_closed_and_map_cli_phrasing_on
 }
 
 #[test]
-fn build_instructions_appends_one_sentence_per_enabled_flag_and_never_duplicates_the_base() {
-    let none = build_instructions(false, false);
-    let reversible = build_instructions(true, false);
-    let irreversible = build_instructions(true, true);
+fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sentence() {
+    // item 18 — a payload too large for the bridge frame surfaces as connection_lost, which
+    // reads as transient; naming only rate_limited invited a retry loop.
+    assert!(INSTRUCTIONS.contains("connection_lost"));
+    assert!(INSTRUCTIONS.contains("rate_limited"));
+}
+
+/// Every `"error":` STRING LITERAL mcp.rs's own source writes directly — never `agent_call`'s
+/// `pub(super)` sentinels (`ERR_UNKNOWN_COMMAND`/`ERR_NOT_EXPOSED`/`ERR_CONFIRMATION_REQUIRED`),
+/// referenced by path there and never respelled here. A test-only fixture (item 24): nothing in
+/// production reads it, only the two tests below.
+const MCP_SENTINELS: &[&str] = &["wrong_tool", "result_too_large"];
+
+#[test]
+fn instructions_name_every_mcp_only_sentinel() {
+    // item 24 — wrong_tool/result_too_large are MCP-only outcomes named nowhere else.
+    for sentinel in MCP_SENTINELS {
+        assert!(
+            INSTRUCTIONS.contains(sentinel),
+            "INSTRUCTIONS must name MCP-only sentinel `{sentinel}`"
+        );
+    }
+}
+
+#[test]
+fn every_error_literal_in_mcp_source_is_named_in_mcp_sentinels() {
+    // item 24 — a drift guard: every `"error": "..."` string literal this file's own source
+    // writes must be a member of MCP_SENTINELS (never `agent_call`'s shared sentinels, which are
+    // referenced by path, not respelled here).
+    const SOURCE: &str = include_str!("../mcp.rs");
+    let marker = "\"error\": \"";
+    let mut idx = 0;
+    let mut found = Vec::new();
+    while let Some(pos) = SOURCE[idx..].find(marker) {
+        let start = idx + pos + marker.len();
+        let end = start + SOURCE[start..].find('"').expect("unterminated literal");
+        found.push(&SOURCE[start..end]);
+        idx = end;
+    }
+    assert!(
+        !found.is_empty(),
+        "sanity: the scanner must find at least one literal"
+    );
+    for f in &found {
+        assert!(
+            MCP_SENTINELS.contains(f),
+            "mcp.rs writes \"error\": \"{f}\" but MCP_SENTINELS doesn't name it"
+        );
+    }
+}
+
+#[test]
+fn build_instructions_appends_one_sentence_per_enabled_tier_and_never_duplicates_the_base() {
+    let none = build_instructions(Tier::Read);
+    let reversible = build_instructions(Tier::Reversible);
+    let irreversible = build_instructions(Tier::Irreversible);
     assert_eq!(none, INSTRUCTIONS, "no flags must not append anything");
     assert!(reversible.starts_with(INSTRUCTIONS));
-    assert!(reversible.contains("launched with --allow-reversible"));
+    assert!(reversible.contains("reversible write tier is enabled"));
     assert!(
-        !reversible.contains("launched with --allow-irreversible"),
-        "the irreversible notice must not appear when that flag is off: {reversible}"
+        !reversible.contains("irreversible tier is enabled"),
+        "the irreversible notice must not appear at the reversible tier: {reversible}"
     );
-    assert!(irreversible.contains("launched with --allow-reversible"));
-    assert!(irreversible.contains("launched with --allow-irreversible"));
+    assert!(irreversible.contains("reversible write tier is enabled"));
+    assert!(irreversible.contains("irreversible tier is enabled"));
     assert_eq!(
         irreversible.matches("loopback bridge").count(),
         1,
@@ -180,11 +238,24 @@ fn build_instructions_appends_one_sentence_per_enabled_flag_and_never_duplicates
     );
 }
 
+#[test]
+fn instructions_notices_are_worded_by_tier_not_by_the_literal_flag_typed() {
+    // item 27 — launched with ONLY --allow-irreversible; Tier::Irreversible implies the
+    // reversible tier too, so BOTH notices append, but neither may claim a flag never typed.
+    let text = build_instructions(Tier::from_flags(false, true));
+    assert!(
+        !text.contains("--allow-reversible") && !text.contains("--allow-irreversible"),
+        "notices must be worded by TIER, not by the literal flag: {text}"
+    );
+    assert!(text.contains("reversible write tier is enabled"));
+    assert!(text.contains("irreversible tier is enabled"));
+}
+
 // ── curated_tool description join (item 8) ──────────────────────────────
 
 #[test]
 fn curated_tool_joins_base_and_extra_as_two_sentences_not_a_run_on() {
-    let tool = tools(false, false)
+    let tool = tools(Tier::Read)
         .into_iter()
         .find(|t| t["name"] == TOOL_BEST_MATCHES)
         .unwrap();
@@ -199,19 +270,78 @@ fn curated_tool_joins_base_and_extra_as_two_sentences_not_a_run_on() {
     );
 }
 
+#[test]
+fn job_carries_the_same_untrusted_fields_notice_as_best_matches() {
+    // pre-PR gate — `job` returns the identical title/company/location fields best-matches
+    // does (both now fenced), so both tools' descriptions must carry the identical notice.
+    let list = tools(Tier::Read);
+    let notice = list
+        .iter()
+        .find(|t| t["name"] == TOOL_BEST_MATCHES)
+        .unwrap()["description"]
+        .as_str()
+        .unwrap()
+        .rsplit_once(". ")
+        .unwrap()
+        .1
+        .to_string();
+    let job_description = list.iter().find(|t| t["name"] == TOOL_JOB).unwrap()["description"]
+        .as_str()
+        .unwrap();
+    assert!(
+        job_description.contains(&notice),
+        "job's description must carry the same untrusted-fields notice as best-matches: \
+         {job_description}"
+    );
+}
+
+// ── Tier (item 21) ───────────────────────────────────────────────────────
+
+#[test]
+fn tier_irreversible_always_implies_reversible() {
+    assert!(Tier::Irreversible.allows_reversible());
+    assert!(Tier::Reversible.allows_reversible());
+    assert!(!Tier::Read.allows_reversible());
+    assert!(Tier::Irreversible.allows_irreversible());
+    assert!(!Tier::Reversible.allows_irreversible());
+    assert!(!Tier::Read.allows_irreversible());
+}
+
+#[test]
+fn from_flags_resolves_every_combination_including_irreversible_alone() {
+    assert_eq!(Tier::from_flags(false, false), Tier::Read);
+    assert_eq!(Tier::from_flags(true, false), Tier::Reversible);
+    assert_eq!(Tier::from_flags(false, true), Tier::Irreversible);
+    assert_eq!(Tier::from_flags(true, true), Tier::Irreversible);
+}
+
+#[test]
+fn server_new_false_true_still_resolves_the_full_irreversible_tier() {
+    // The exact gap the review named: nothing previously constructed Server::new(false, true).
+    let server = Server::new(false, true);
+    assert_eq!(server.tier, Tier::Irreversible);
+    assert_eq!(
+        names(&server.tools),
+        vec![
+            "automations",
+            "best-matches",
+            "call-irreversible",
+            "call-read",
+            "call-reversible",
+            "commands",
+            "job",
+            "profile",
+        ]
+    );
+}
+
 // ── tools/list — the hand-written literal list, all three launch modes
 // (item 11 — mutation-checked by deleting the reversible gate) ─────────
-
-fn names(list: &[Value]) -> Vec<&str> {
-    let mut n: Vec<&str> = list.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    n.sort_unstable();
-    n
-}
 
 #[test]
 fn tool_names_by_launch_mode_match_hand_written_literal_lists() {
     assert_eq!(
-        names(&tools(false, false)),
+        names(&tools(Tier::Read)),
         vec![
             "automations",
             "best-matches",
@@ -223,7 +353,7 @@ fn tool_names_by_launch_mode_match_hand_written_literal_lists() {
         "default server (no flags) must be read tier + commands only"
     );
     assert_eq!(
-        names(&tools(true, false)),
+        names(&tools(Tier::Reversible)),
         vec![
             "automations",
             "best-matches",
@@ -236,7 +366,7 @@ fn tool_names_by_launch_mode_match_hand_written_literal_lists() {
         "--allow-reversible must add exactly call-reversible"
     );
     assert_eq!(
-        names(&tools(true, true)),
+        names(&tools(Tier::Irreversible)),
         vec![
             "automations",
             "best-matches",
@@ -283,7 +413,7 @@ fn calling_the_irreversible_tool_without_the_flag_is_invalid_params() {
 
 #[test]
 fn every_curated_tool_and_call_tool_declares_a_bare_object_schema_with_no_ref() {
-    for tool in tools(true, true) {
+    for tool in tools(Tier::Irreversible) {
         let schema = &tool["inputSchema"];
         assert_eq!(
             schema["type"], "object",
@@ -301,7 +431,7 @@ fn every_curated_tool_and_call_tool_declares_a_bare_object_schema_with_no_ref() 
 
 #[test]
 fn call_irreversible_carries_the_requires_user_interaction_meta() {
-    let tool_list = tools(true, true);
+    let tool_list = tools(Tier::Irreversible);
     let tool = tool_list
         .iter()
         .find(|t| t["name"] == TOOL_CALL_IRREVERSIBLE)
@@ -310,7 +440,7 @@ fn call_irreversible_carries_the_requires_user_interaction_meta() {
     assert_eq!(tool["annotations"]["destructiveHint"], true);
 }
 
-// ── mcp --help / launch-arg parsing (items 10 + 11) ─────────────────────
+// ── mcp --help / launch-arg parsing (items 10, 11, 23, 28) ──────────────
 
 #[test]
 fn parse_launch_args_accepts_any_subset_of_the_two_flags_in_any_order() {
@@ -368,6 +498,17 @@ fn mcp_help_text_lists_both_flags_and_derives_its_default_list_from_tools() {
     assert!(
         !default_line.contains("call-reversible") && !default_line.contains("call-irreversible"),
         "the default-tool-list line must not name a gated tool: {default_line}"
+    );
+}
+
+#[test]
+fn print_help_never_adds_a_trailing_blank_line() {
+    let mut buf = Vec::new();
+    print_help(&mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    assert!(
+        text.ends_with('\n') && !text.ends_with("\n\n"),
+        "must end in exactly one newline, no extra blank line: {text:?}"
     );
 }
 
@@ -543,7 +684,21 @@ fn tool_result_never_carries_structured_content() {
     );
 }
 
-// ── result-size cap (item 13) — a fake oversized payload ────────────────
+// ── result-size cap, checked in tool_result itself (items 13, 16, 17, 22, 25) ──
+
+#[test]
+fn oversized_result_detail_never_names_the_cli_invocation() {
+    let refusal = oversized_result(MCP_RESULT_MAX_BYTES + 1);
+    let detail = refusal["detail"].as_str().unwrap();
+    assert!(
+        !detail.contains("agent call") && !detail.contains("agent mcp"),
+        "must not hand the model a bypass recipe: {detail}"
+    );
+    assert_eq!(
+        refusal["dispatched"], false,
+        "must mirror every other Verb::Call refusal's own shape"
+    );
+}
 
 #[test]
 fn a_dispatched_payload_over_the_byte_cap_refuses_and_never_truncates() {
@@ -554,9 +709,6 @@ fn a_dispatched_payload_over_the_byte_cap_refuses_and_never_truncates() {
     let outcome = tool_call_result(
         &json!({
             "name": "call-read",
-            // `export::commands::documents_export_document`'s split (verified against
-            // `agent_call::tests::split_path_...`) is namespace `commands`, command
-            // `documents_export_document` — not the module's own file path.
             "arguments": { "namespace": "commands", "command": "documents_export_document" },
         }),
         &server,
@@ -567,20 +719,52 @@ fn a_dispatched_payload_over_the_byte_cap_refuses_and_never_truncates() {
     let text = outcome["content"][0]["text"].as_str().unwrap();
     let parsed: Value = serde_json::from_str(text).expect("must stay valid JSON — never truncated");
     assert_eq!(parsed["error"], "result_too_large");
+    assert_eq!(
+        parsed["dispatched"], false,
+        "must mirror every other Verb::Call refusal's own shape"
+    );
     assert!(parsed["bytes"].as_u64().unwrap() > MCP_RESULT_MAX_BYTES as u64);
-    assert!(parsed["detail"]
-        .as_str()
-        .unwrap()
-        .contains("agent call commands:documents_export_document"));
+    let detail = parsed["detail"].as_str().unwrap();
+    assert!(
+        !detail.contains("agent call"),
+        "must never hand the model a bypass recipe: {detail}"
+    );
     assert_eq!(outcome["content"][1]["text"], "exitCode: 2");
+}
+
+#[test]
+fn a_locally_refused_oversized_namespace_never_gets_echoed_back_in_full() {
+    // item 17 — a local refusal (unknown_command here) used to return BEFORE any cap check, so an
+    // oversized caller-chosen `namespace` reproduced the exact frame size the cap exists to bound.
+    let server = Server::new(true, true);
+    let huge_namespace = "n".repeat(MCP_RESULT_MAX_BYTES + 10);
+    let mut dispatch = stub_ok;
+    let outcome = tool_call_result(
+        &json!({
+            "name": "call-read",
+            "arguments": { "namespace": huge_namespace, "command": "whatever" },
+        }),
+        &server,
+        &mut dispatch,
+    )
+    .unwrap();
+    assert_eq!(outcome["isError"], true);
+    let text = outcome["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.len() < MCP_RESULT_MAX_BYTES,
+        "must refuse instead of echoing the oversized namespace back verbatim: {} bytes",
+        text.len()
+    );
+    let parsed: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(parsed["error"], "result_too_large");
 }
 
 // ── commands (local, no bridge) ──────────────────────────────────────────
 
 #[test]
 fn commands_filters_by_effect_and_never_touches_the_bridge() {
-    let all = commands_value(&json!({}), true, true);
-    let read_only = commands_value(&json!({ "effect": "read" }), true, true);
+    let all = commands_value(&json!({}), Tier::Irreversible);
+    let read_only = commands_value(&json!({ "effect": "read" }), Tier::Irreversible);
     let all_rows = all["commands"].as_array().unwrap().len();
     let read_rows = read_only["commands"].as_array().unwrap().len();
     assert!(read_rows > 0 && read_rows < all_rows);
@@ -595,7 +779,7 @@ fn commands_names_the_right_tool_for_every_effect_class_with_all_flags_enabled()
     // Pins the SECOND copy of the Effect→tool mapping (`tool_for`, used by both `commands_value`
     // and `local_call_refusal`) — the first copy was already covered by the `read`-only assertion
     // above, but nothing previously pinned `reversible`/`irreversible`/`not_exposed`.
-    let all = commands_value(&json!({}), true, true);
+    let all = commands_value(&json!({}), Tier::Irreversible);
     for row in all["commands"].as_array().unwrap() {
         match row["effect"].as_str().unwrap() {
             "read" => assert_eq!(row["tool"], TOOL_CALL_READ),
@@ -609,7 +793,7 @@ fn commands_names_the_right_tool_for_every_effect_class_with_all_flags_enabled()
 
 #[test]
 fn commands_marks_irreversible_rows_unavailable_without_the_irreversible_flag() {
-    let out = commands_value(&json!({ "effect": "irreversible" }), true, false);
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Reversible);
     let rows = out["commands"].as_array().unwrap();
     assert!(!rows.is_empty());
     for row in rows {
@@ -626,7 +810,7 @@ fn commands_marks_irreversible_rows_unavailable_without_the_irreversible_flag() 
 
 #[test]
 fn commands_marks_reversible_rows_unavailable_without_the_reversible_flag() {
-    let out = commands_value(&json!({ "effect": "reversible" }), false, false);
+    let out = commands_value(&json!({ "effect": "reversible" }), Tier::Read);
     let rows = out["commands"].as_array().unwrap();
     assert!(!rows.is_empty());
     for row in rows {
@@ -662,8 +846,31 @@ fn commands_with_an_unknown_effect_value_is_a_usage_error_not_a_silent_empty_suc
 }
 
 #[test]
+fn commands_with_a_non_string_effect_value_is_a_usage_error_for_every_json_type() {
+    // item 20 — {"effect":5} (and bool/null/object) used to skip the old
+    // `.and_then(Value::as_str)` gate entirely and answer with every row, isError:false.
+    let server = Server::new(true, true);
+    for bad in [json!(5), json!(true), Value::Null, json!({"nested": 1})] {
+        let mut dispatch = stub_ok;
+        let outcome = tool_call_result(
+            &json!({ "name": "commands", "arguments": { "effect": bad.clone() } }),
+            &server,
+            &mut dispatch,
+        )
+        .unwrap();
+        assert_eq!(
+            outcome["isError"], true,
+            "effect={bad:?} must not read as success"
+        );
+        let text = outcome["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(parsed["error"], "usage", "effect={bad:?}");
+    }
+}
+
+#[test]
 fn commands_names_the_proof_source_for_an_irreversible_row() {
-    let out = commands_value(&json!({ "effect": "irreversible" }), true, true);
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
     let row = out["commands"]
         .as_array()
         .unwrap()
@@ -680,7 +887,7 @@ fn commands_names_the_proof_source_for_an_irreversible_row() {
 
 #[test]
 fn commands_names_the_literal_proof_input_value_for_privacy_sign_out_all() {
-    let out = commands_value(&json!({ "effect": "irreversible" }), true, true);
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
     let row = out["commands"]
         .as_array()
         .unwrap()
