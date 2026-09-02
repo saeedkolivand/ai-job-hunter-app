@@ -35,9 +35,11 @@ export interface Section {
 /**
  * The help corpus (ADR-041): how-to sections first, troubleshooting after.
  *
- * Every `t()` call is written out with a literal key so `i18next-cli` can see
- * it — a computed key would be invisible to the extractor and to the en/de
- * parity gate that rides on it.
+ * Every `t()` call is written out with a literal key, which is what lets both
+ * key readers see it: `i18next-cli` (whose CI step is advisory —
+ * `continue-on-error`) and `support-data.test.ts`, which drives this function
+ * with a recording `t` and checks each emitted key against the en and de
+ * bundles. A computed key would be invisible to both.
  */
 export function getSupportSections(t: (key: string) => string): Section[] {
   return [

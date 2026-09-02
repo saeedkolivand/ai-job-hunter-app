@@ -2939,6 +2939,8 @@
     "search": {
       "placeholder": "Search help by keyword…",
       "ariaLabel": "Help search",
+      "resultCount_one": "{{count}} help topic matches",
+      "resultCount_other": "{{count}} help topics match",
       "noResultsTitle": "No matching help topics",
       "noResultsBody": "Try fewer words, or different ones."
     }

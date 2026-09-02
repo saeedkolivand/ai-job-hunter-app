@@ -10,6 +10,10 @@ import { PageTransition } from '@/components/layout/PageTransition';
 import { matchesHelpQuery } from '@/features/support/help-search';
 import { getSupportSections } from '@/features/support/support-data';
 
+// Auto-expand the hits only while they are few enough to read as prose; a
+// bigger result set is a list to scan, and expanding it buries the headings.
+const AUTO_OPEN_MAX = 8;
+
 export function SupportPage() {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -21,9 +25,17 @@ export function SupportPage() {
   const sections = getSupportSections(t)
     .map((section) => ({
       ...section,
-      problems: section.problems.filter((p) => matchesHelpQuery(query, `${p.q} ${p.a}`)),
+      // The section heading is on screen and reads like a topic ("Connectivity",
+      // "Autopilot"), so it is part of the haystack: typing one finds its
+      // entries even when the word appears in none of them.
+      problems: section.problems.filter((p) =>
+        matchesHelpQuery(query, `${section.label} ${p.q} ${p.a}`)
+      ),
     }))
     .filter((section) => section.problems.length > 0);
+
+  const matchCount = sections.reduce((total, section) => total + section.problems.length, 0);
+  const autoOpen = searching && matchCount <= AUTO_OPEN_MAX;
 
   return (
     <PageTransition className="h-full overflow-y-auto px-10 py-10">
@@ -46,6 +58,16 @@ export function SupportPage() {
           variant="default"
           data-testid={TEST_IDS.support.searchInput}
         />
+
+        {/*
+          Filtering is silent for a screen reader: the list simply shrinks. The
+          region is always mounted and only its text is conditional — a live
+          region inserted together with its first message is unreliably
+          announced. Mirrors the settings search live region.
+        */}
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          {searching ? t('support.search.resultCount', { count: matchCount }) : ''}
+        </span>
 
         {sections.length === 0 ? (
           <div data-testid={TEST_IDS.support.emptyState}>
@@ -76,13 +98,14 @@ export function SupportPage() {
                   <div className="space-y-2">
                     {section.problems.map((p) => (
                       // `defaultOpen` is read once on mount, so the key carries
-                      // the searching flag: entering or clearing a query
-                      // remounts the accordions with the right open state.
+                      // the auto-open flag: crossing the AUTO_OPEN_MAX boundary
+                      // (or clearing the query) remounts the accordions with the
+                      // right open state.
                       <Accordion
-                        key={`${p.id}-${searching}`}
+                        key={`${p.id}-${autoOpen}`}
                         title={p.q}
                         content={p.a}
-                        defaultOpen={searching}
+                        defaultOpen={autoOpen}
                       />
                     ))}
                   </div>

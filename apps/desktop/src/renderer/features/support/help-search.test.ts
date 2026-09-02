@@ -6,10 +6,12 @@
  *  2. a token absent from the text fails the whole query.
  *  3. case-insensitive on both the query and the text.
  *  4. an empty query matches everything (untouched search box).
- *  5. a whitespace-only query matches everything (no empty token survives).
+ *  5. a whitespace-only query matches everything.
  *  6. repeated whitespace between tokens is ignored.
  *  7. matching is substring-based, not word-boundary-based.
- *  8. non-ASCII text (the de locale) lowercases and matches too.
+ *  8. diacritic folding, in BOTH directions and on BOTH sides: an
+ *     ASCII-keyboard query finds accented copy (`prufen` → `prüfen`,
+ *     `resume` → `résumé`) and the accented spelling still finds itself.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -53,8 +55,33 @@ describe('matchesHelpQuery', () => {
     expect(matchesHelpQuery('port', TEXT)).toBe(true);
   });
 
-  it('matches localized text', () => {
-    expect(matchesHelpQuery('LEBENSLAUF', 'Wie exportiere ich meinen Lebenslauf?')).toBe(true);
-    expect(matchesHelpQuery('anschreiben', 'Wie exportiere ich meinen Lebenslauf?')).toBe(false);
+  it('folds diacritics so an umlaut-free query matches German copy', () => {
+    const DE = 'Wie prüfen Sie meinen Lebenslauf?';
+    // The whole point: a keyboard with no umlaut key still reaches the entry.
+    expect(matchesHelpQuery('prufen', DE)).toBe(true);
+    // …and typing the accented spelling keeps working.
+    expect(matchesHelpQuery('prüfen', DE)).toBe(true);
+    // Folding must not turn every query into a match.
+    expect(matchesHelpQuery('anschreiben', DE)).toBe(false);
+  });
+
+  it('folds diacritics in the text too, so `resume` finds `résumé`', () => {
+    const ACCENTED = 'Wie exportiere ich mein Résumé?';
+    expect(matchesHelpQuery('resume', ACCENTED)).toBe(true);
+    expect(matchesHelpQuery('résumé', ACCENTED)).toBe(true);
+    // Symmetric: the accented query also finds unaccented text.
+    expect(matchesHelpQuery('résumé', 'Export your resume as a PDF')).toBe(true);
+  });
+
+  it('folds a decomposed spelling identically to a precomposed one', () => {
+    // The same word in two Unicode encodings, derived at runtime rather than
+    // typed: written as literals the two lines look identical, and an editor
+    // (or any tool) normalizing the file would collapse them into the same
+    // bytes and quietly void the assertion.
+    const precomposed = 'prüfen'.normalize('NFC');
+    const decomposed = 'prüfen'.normalize('NFD');
+    expect(precomposed).not.toBe(decomposed);
+    expect(matchesHelpQuery(precomposed, decomposed)).toBe(true);
+    expect(matchesHelpQuery(decomposed, precomposed)).toBe(true);
   });
 });

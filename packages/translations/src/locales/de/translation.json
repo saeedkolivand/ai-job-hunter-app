@@ -2943,6 +2943,8 @@
     "search": {
       "placeholder": "Hilfe nach Stichwort durchsuchen…",
       "ariaLabel": "Hilfesuche",
+      "resultCount_one": "{{count}} Hilfethema passt",
+      "resultCount_other": "{{count}} Hilfethemen passen",
       "noResultsTitle": "Keine passenden Hilfethemen",
       "noResultsBody": "Versuchen Sie es mit weniger oder anderen Wörtern."
     }
