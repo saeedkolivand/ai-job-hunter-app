@@ -1,40 +1,41 @@
-//! Deterministic measurement of TWO narrow properties of hybrid search's
-//! lexical arm and candidate-pool policy — this is **not** a retrieval-
-//! quality or embedding benchmark. Read this doc before touching anything
-//! below; the name of this file is chosen so nobody mistakes it for one.
+//! Deterministic measurement of ONE narrow property of hybrid search's
+//! lexical arm — this is **not** a retrieval-quality or embedding
+//! benchmark. Read this doc before touching anything below; the name of
+//! this file is chosen so nobody mistakes it for one.
 //!
-//! 1. **BM25 has no synonym handling on this corpus.** `retrieval::lexical`
-//!    is SQLite FTS5 with the default `unicode61` tokenizer and no synonym
-//!    layer — `sanitize_query` only quotes whitespace-split tokens (see
-//!    that file's doc comment). The keyword-*scoring* kernel
-//!    (`documents::keywords::SYNONYMS`, 24 alias→canonical pairs) is never
-//!    consulted by the search arm. This file freezes a COPY of those 24
-//!    pairs (never imports the live `SYNONYMS` directly — see the note on
-//!    [`SYNONYM_PAIRS`]) and measures, per pair, whether a posting
-//!    containing ONLY the alias form is found by a lexical query for the
-//!    canonical form.
+//! **What this measures:** BM25 has no synonym handling on this corpus.
+//! `retrieval::lexical` is SQLite FTS5 with the default `unicode61`
+//! tokenizer and no synonym layer — `sanitize_query` only quotes
+//! whitespace-split tokens (see that file's doc comment). The keyword-
+//! *scoring* kernel (`documents::keywords::SYNONYMS`, 24 alias→canonical
+//! pairs) is never consulted by the search arm. This file freezes a COPY of
+//! those 24 pairs (never imports the live `SYNONYMS` directly — see the
+//! note on [`SYNONYM_PAIRS`]) and measures, per pair, whether a posting
+//! containing ONLY the alias form is found by a lexical query for the
+//! canonical form.
 //!
-//! 2. **The dense candidate-pool policy does not bridge that gap.**
-//!    `commands::hybrid_search::dense_candidate_pool` builds its embedding
-//!    candidate list FROM the lexical arm's hits whenever lexical found
-//!    anything at all — never from the full eligible corpus in that case
-//!    (see ADR-039). So once a distractor posting containing the canonical
-//!    term exists anywhere in the corpus, an alias-only posting is excluded
-//!    from the dense candidate pool even though it is part of the eligible
-//!    corpus. That function (and its `PostingRow`/`DENSE_CANDIDATE_MAX`) are
-//!    `private` to `commands::hybrid_search` — not `pub`/`pub(crate)` — and
-//!    this task is scoped to `tests/` only (no `src/` edits), so they
-//!    cannot be imported from here. [`mirrored_dense_candidate_pool`]
-//!    reproduces its non-empty-`lexical_ranks` branch VERBATIM instead of
-//!    calling it — see that function's doc for the drift caveat this
-//!    creates and why it is tolerable for this corpus size.
+//! **What moved out (PR #1091 review):** the companion measurement — that
+//! the dense candidate-pool policy does not bridge this gap once a
+//! distractor posting contains the canonical term — used to live here as a
+//! hand-mirrored copy of `commands::hybrid_search::dense_candidate_pool`'s
+//! logic, because that function is private to its module and this file (an
+//! external integration test in a separate crate) could not call it
+//! directly. That mirror was flagged Major: it had no seam to check it
+//! against the real function, so it could drift silently. It now lives in
+//! `src/commands/hybrid_search/test.rs` — an in-crate test module that
+//! already has access to the real private `dense_candidate_pool`,
+//! `PostingRow`, and `to_lexical_doc` via `use super::*;` — and calls the
+//! REAL function instead of a copy. See
+//! `dense_candidate_pool_excludes_alias_only_posting_when_a_distractor_hits`
+//! there for that half of the measurement.
 //!
 //! **What this file does NOT measure:** retrieval quality, ranking
-//! precision/recall, or the embedding model — there is no live embedding
-//! and no dense arm anywhere in this file. A previous proposal to measure
-//! "hybrid finds what keyword misses" was rejected as unsound (it conflates
-//! the synonym-gap question with a retrieval-quality question); do not
-//! resurrect that shape here.
+//! precision/recall, the embedding model, or the candidate-pool policy (see
+//! above, now in-crate) — there is no live embedding and no dense arm
+//! anywhere in this file. A previous proposal to measure "hybrid finds what
+//! keyword misses" was rejected as unsound (it conflates the synonym-gap
+//! question with a retrieval-quality question); do not resurrect that shape
+//! here.
 //!
 //! Entirely deterministic — a fresh in-memory FTS5 index per case, dropped
 //! immediately after. Run with
@@ -57,6 +58,11 @@ use ajh_tauri::retrieval::lexical::{LexicalDoc, LexicalIndex};
 /// move the table itself. [`frozen_synonym_pairs_match_the_live_table`]
 /// below guards the other direction (this copy going stale against the real
 /// table) — a failure there means resync this list by hand, deliberately.
+///
+/// A second, independent copy (`POOL_SYNONYM_PAIRS`) lives in
+/// `src/commands/hybrid_search/test.rs` for the candidate-pool half of this
+/// measurement, for the same non-import reason — the two are kept in
+/// lockstep by hand, each guarded against the live table separately.
 const SYNONYM_PAIRS: &[(&str, &str)] = &[
     ("js", "javascript"),
     ("ts", "typescript"),
@@ -109,8 +115,8 @@ const NORMALIZED_TOKEN_CANONICALS: &[&str] = &[
 fn frozen_synonym_pairs_match_the_live_table() {
     assert_eq!(
         SYNONYM_PAIRS, LIVE_SYNONYMS,
-        "documents::keywords::SYNONYMS changed — resync SYNONYM_PAIRS above by hand \
-         (deliberately not imported directly; see its doc comment)"
+        "documents::keywords::SYNONYMS changed — resync SYNONYM_PAIRS above (and \
+         POOL_SYNONYM_PAIRS in src/commands/hybrid_search/test.rs) by hand"
     );
 }
 
@@ -123,13 +129,21 @@ const FILLER_TITLE: &str = "Engineer";
 const FILLER_COMPANY: &str = "Acme Corp";
 const FILLER_LOCATION: &str = "Remote";
 
-/// `true` iff a fresh, single-document FTS5 index — whose only relevant text
-/// is `alias` (in the description field; everything else neutral filler) —
-/// is found by a lexical search for `canonical`. A fresh [`LexicalIndex`]
-/// per call, exactly as `commands::hybrid_search` builds one per search (see
-/// that module's doc): no shared state or corpus contamination between
-/// pairs.
-fn lexical_finds_canonical_in_alias_only_posting(alias: &str, canonical: &str) -> bool {
+/// `Ok(true)`/`Ok(false)` for hit/miss of a lexical search for `canonical`
+/// against a fresh, single-document FTS5 index whose only relevant text is
+/// `alias` (in the description field; everything else neutral filler).
+/// `Err` on a genuine build/search failure — returned rather than panicking
+/// (`.expect`) so a single bad pair cannot abort the `.map().collect()`
+/// below before the diagnostic table has a chance to print for every OTHER
+/// pair (the earlier version of this function did exactly that).
+///
+/// A fresh [`LexicalIndex`] per call, exactly as `commands::hybrid_search`
+/// builds one per search (see that module's doc): no shared state or
+/// corpus contamination between pairs.
+fn lexical_finds_canonical_in_alias_only_posting(
+    alias: &str,
+    canonical: &str,
+) -> Result<bool, String> {
     let doc = LexicalDoc {
         id: "posting",
         title: FILLER_TITLE,
@@ -137,59 +151,18 @@ fn lexical_finds_canonical_in_alias_only_posting(alias: &str, canonical: &str) -
         location: FILLER_LOCATION,
         description: alias,
     };
-    let index = LexicalIndex::build(&[doc]).expect("build in-memory FTS5 index");
-    index
+    let index = LexicalIndex::build(&[doc]).map_err(|e| format!("build index: {e}"))?;
+    let hits = index
         .search(canonical, 10)
-        .expect("lexical search")
-        .iter()
-        .any(|id| id == "posting")
-}
-
-// ── Row 2: does the candidate pool bridge the gap when a distractor exists? ─
-
-/// Mirrors `commands::hybrid_search::dense_candidate_pool`'s non-empty-
-/// `lexical_ranks` branch VERBATIM. Reproduced here rather than imported
-/// because that function (and its `PostingRow`/`DENSE_CANDIDATE_MAX`) are
-/// private to that module and this task is scoped to `tests/` only.
-///
-/// **This is a mirror, not a call to production code — read this before
-/// trusting it.** Verified against `src/commands/hybrid_search.rs:515-532`
-/// as of this writing:
-/// `if lexical_ranks.is_empty() { take from eligible } else { take from
-/// lexical_ranks }`, both bounded by `DENSE_CANDIDATE_MAX = 40` (also
-/// private; hardcoded below). If the real function's branch logic or that
-/// constant changes, this copy goes stale SILENTLY — there is no public
-/// seam to re-check it against, unlike [`frozen_synonym_pairs_match_the_live_table`]
-/// above. Two things keep that tolerable rather than misleading here:
-/// (a) every corpus below has exactly 2 eligible postings, far under 40, so
-/// the constant's exact value cannot change the outcome asserted below —
-/// only the branch CHOICE matters; (b) the branch choice itself is
-/// independently pinned in-crate by
-/// `dense_candidate_pool_uses_lexical_order_when_lexical_found_something`
-/// (`src/commands/hybrid_search/test.rs`), so a change to the branch would
-/// already fail a test in the crate before this mirror could go stale
-/// unnoticed.
-fn mirrored_dense_candidate_pool<'a>(
-    eligible: &'a [&'a str],
-    lexical_ranks: &'a [String],
-) -> Vec<&'a str> {
-    const DENSE_CANDIDATE_MAX: usize = 40;
-    if lexical_ranks.is_empty() {
-        eligible.iter().copied().take(DENSE_CANDIDATE_MAX).collect()
-    } else {
-        lexical_ranks
-            .iter()
-            .take(DENSE_CANDIDATE_MAX)
-            .map(String::as_str)
-            .collect()
-    }
+        .map_err(|e| format!("search: {e}"))?;
+    Ok(hits.iter().any(|id| id == "posting"))
 }
 
 struct GapRow {
     alias: &'static str,
     canonical: &'static str,
     normalized_token: bool,
-    lexical_hit: bool,
+    lexical_hit: Result<bool, String>,
 }
 
 /// How many of the 24 pairs are lexical gaps, measured HERE under rusqlite's
@@ -204,7 +177,11 @@ struct GapRow {
 const EXPECTED_LEXICAL_MISS_COUNT: usize = 22;
 
 #[test]
-fn bm25_has_no_synonym_handling_and_the_pool_does_not_bridge_it() {
+fn bm25_has_no_synonym_handling_on_this_corpus() {
+    // `.map().collect()` over `Result`-returning per-row work, NOT
+    // `.expect()` inside the closure: a single pair erroring must not abort
+    // construction before the table below has a chance to print every OTHER
+    // row's result.
     let rows: Vec<GapRow> = SYNONYM_PAIRS
         .iter()
         .map(|&(alias, canonical)| GapRow {
@@ -215,27 +192,50 @@ fn bm25_has_no_synonym_handling_and_the_pool_does_not_bridge_it() {
         })
         .collect();
 
-    println!("\n=== lexical_synonym_gaps: BM25 synonym-gap + candidate-pool measurement ===");
+    println!("\n=== lexical_synonym_gaps: BM25 synonym-gap measurement ===");
     println!(
         "{:<14} {:<16} {:<7} {:<7}  note",
         "alias", "canonical", "lexical", "normtok"
     );
     for row in &rows {
+        let (status, error_note) = match &row.lexical_hit {
+            Ok(true) => ("HIT", String::new()),
+            Ok(false) => ("MISS", String::new()),
+            Err(e) => ("ERROR", format!("({e})")),
+        };
+        let note = if row.normalized_token {
+            format!("canonical is a normalised token, not natural query text {error_note}")
+        } else {
+            error_note
+        };
         println!(
             "{:<14} {:<16} {:<7} {:<7}  {}",
             row.alias,
             row.canonical,
-            if row.lexical_hit { "HIT" } else { "MISS" },
+            status,
             if row.normalized_token { "yes" } else { "" },
-            if row.normalized_token {
-                "canonical is a normalised token, not natural query text"
-            } else {
-                ""
-            }
+            note
         );
     }
 
-    let miss_count = rows.iter().filter(|r| !r.lexical_hit).count();
+    // The table above is now printed for every row regardless of outcome —
+    // ONLY NOW do we assert, so a build/search failure on one pair never
+    // hides the other 23 results.
+    let errored: Vec<&str> = rows
+        .iter()
+        .filter(|r| r.lexical_hit.is_err())
+        .map(|r| r.alias)
+        .collect();
+    assert!(
+        errored.is_empty(),
+        "these pairs errored building/searching the in-memory FTS5 index (see the table above \
+         for the message): {errored:?}"
+    );
+
+    let miss_count = rows
+        .iter()
+        .filter(|r| matches!(r.lexical_hit, Ok(false)))
+        .count();
     println!(
         "\n{miss_count} of {} pairs are lexical gaps (BM25 finds none of them for the canonical \
          query)\n",
@@ -252,12 +252,12 @@ fn bm25_has_no_synonym_handling_and_the_pool_does_not_bridge_it() {
         rows.len()
     );
 
-    // The two pairs measured as non-gaps must be EXACTLY the ones the module
+    // The pairs measured as non-gaps must be EXACTLY the ones the module
     // doc names — not some other pair that happens to also hit for an
     // unrelated reason.
     let hits: Vec<&str> = rows
         .iter()
-        .filter(|r| r.lexical_hit)
+        .filter(|r| matches!(r.lexical_hit, Ok(true)))
         .map(|r| r.alias)
         .collect();
     assert_eq!(
@@ -267,66 +267,4 @@ fn bm25_has_no_synonym_handling_and_the_pool_does_not_bridge_it() {
          and vue.js (unicode61 splits on '.'); update the module doc if this is a deliberate, \
          understood change"
     );
-
-    // ── Row 2: candidate-pool exclusion, for every CONFIRMED lexical gap ────
-    for row in rows.iter().filter(|r| !r.lexical_hit) {
-        let alias_id = "alias";
-        let distractor_id = "distractor";
-        let alias_doc = LexicalDoc {
-            id: alias_id,
-            title: FILLER_TITLE,
-            company: FILLER_COMPANY,
-            location: FILLER_LOCATION,
-            description: row.alias,
-        };
-        let distractor_doc = LexicalDoc {
-            id: distractor_id,
-            // The canonical term lives in the title (BM25's highest-weighted
-            // column) so the distractor is unambiguously the strongest
-            // lexical hit — the point being tested is exclusion from the
-            // POOL, not a close ranking call.
-            title: row.canonical,
-            company: FILLER_COMPANY,
-            location: FILLER_LOCATION,
-            description: "Distractor posting mentioning the canonical term.",
-        };
-        let index = LexicalIndex::build(&[alias_doc, distractor_doc])
-            .expect("build mixed-corpus in-memory FTS5 index");
-        let lexical_ranks = index
-            .search(row.canonical, 10)
-            .expect("lexical search over mixed corpus");
-
-        // The distractor must actually be found lexically, or this row
-        // proves nothing about the pool policy — it would just be a second
-        // copy of the row-1 miss.
-        assert!(
-            lexical_ranks.iter().any(|id| id == distractor_id),
-            "{}: distractor posting (title={:?}) was not found by lexical search for {:?} — \
-             fixture is broken, this pair cannot test pool exclusion",
-            row.alias,
-            row.canonical,
-            row.canonical
-        );
-
-        let eligible = [alias_id, distractor_id];
-        assert!(
-            eligible.contains(&alias_id),
-            "sanity: the alias posting must be part of the eligible corpus for this assertion to \
-             mean anything"
-        );
-
-        let pool = mirrored_dense_candidate_pool(&eligible, &lexical_ranks);
-        assert!(
-            !pool.contains(&alias_id),
-            "{}: alias-only posting appeared in the dense candidate pool even though it is part \
-             of the eligible corpus and lexical only found the distractor — the pool-exclusion \
-             property (ADR-039) did not hold for this pair",
-            row.alias
-        );
-        assert!(
-            pool.contains(&distractor_id),
-            "{}: distractor unexpectedly absent from its own candidate pool",
-            row.alias
-        );
-    }
 }
