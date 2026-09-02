@@ -33,6 +33,7 @@ import { EMAIL_WATCH_CHANNELS, type EmailWatchContract } from './emailWatch.js';
 import { EXTENSION_BRIDGE_CHANNELS, type ExtensionBridgeContract } from './extensionBridge.js';
 import { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
 import { GITHUB_CHANNELS, type GitHubContract } from './github.js';
+import { HELP_CHANNELS, type HelpContract } from './help.js';
 import { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 import { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 import { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
@@ -74,6 +75,7 @@ export interface IpcContract {
   resume: ResumeContract;
   resumePipeline: ResumePipelineContract;
   support: SupportContract;
+  help: HelpContract;
   autopilot: AutopilotContract;
   menu: MenuContract;
   notifications: NotificationsContract;
@@ -110,6 +112,7 @@ export const IPC_CHANNELS = {
   resume: RESUME_CHANNELS,
   resumePipeline: RESUME_PIPELINE_CHANNELS,
   support: SUPPORT_CHANNELS,
+  help: HELP_CHANNELS,
   autopilot: AUTOPILOT_CHANNELS,
   notifications: NOTIFICATIONS_CHANNELS,
   updater: UPDATER_CHANNELS,
@@ -243,6 +246,7 @@ export {
 } from './extensionBridge.js';
 export { GEOCODE_CHANNELS, type GeocodeContract, type GeocodeSuggestion } from './geocode.js';
 export { GITHUB_CHANNELS, type GitHubContract, type GitHubRepo } from './github.js';
+export { HELP_CHANNELS, type HelpContract } from './help.js';
 export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 export { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 export { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';

@@ -7,6 +7,7 @@ import { Accordion, EmptyState, Input } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
+import { HelpChat } from '@/features/support/components/HelpChat';
 import { matchesHelpQuery } from '@/features/support/help-search';
 import { getSupportSections } from '@/features/support/support-data';
 
@@ -45,6 +46,10 @@ export function SupportPage() {
           subtitle={t('support.faq.subtitle')}
           badge={t('support.faq.badge')}
         />
+
+        {/* Above the search box on purpose: the chat is the fastest way in, and
+            every answer points back down into these same entries. */}
+        <HelpChat onSearchFor={setQuery} />
 
         <Input
           value={query}

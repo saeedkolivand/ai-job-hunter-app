@@ -9,6 +9,7 @@ export * from './application-questions/index.js';
 export * from './cover-letter/index.js';
 export * from './emphasis/index.js';
 export * from './github-projects/index.js';
+export * from './help-chat/index.js';
 export * from './interview-practice/index.js';
 export * from './interview-questions/index.js';
 export * from './job-ad-summary/index.js';

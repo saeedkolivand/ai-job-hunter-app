@@ -31,6 +31,7 @@ import { emailWatch } from './namespaces/emailWatch/index.js';
 import { extensionBridge } from './namespaces/extensionBridge/index.js';
 import { geocode } from './namespaces/geocode/index.js';
 import { github } from './namespaces/github/index.js';
+import { help } from './namespaces/help/index.js';
 import { jobPreferences } from './namespaces/jobPreferences/index.js';
 import { jobs } from './namespaces/jobs/index.js';
 import { linkedin } from './namespaces/linkedin/index.js';
@@ -74,6 +75,7 @@ export function createTauriInvokeClient(): AppClient {
     resume: resume as AppClient['resume'],
     resumePipeline: resumePipeline as AppClient['resumePipeline'],
     support: support as AppClient['support'],
+    help: help as AppClient['help'],
     autopilot: autopilot as AppClient['autopilot'],
     menu: menu as AppClient['menu'],
     notifications: notifications as AppClient['notifications'],

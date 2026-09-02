@@ -24,7 +24,8 @@ import en from '../../../../../../packages/translations/src/locales/en/translati
 
 const BUNDLES: Record<string, unknown> = { en, de };
 
-/** Keys `SupportPage` passes to `t()` itself — invisible to the corpus walk. */
+/** Keys `SupportPage` and `HelpChat` pass to `t()` themselves — invisible to
+ *  the corpus walk. */
 const PAGE_KEYS = [
   'support.faq.title',
   'support.faq.subtitle',
@@ -36,6 +37,22 @@ const PAGE_KEYS = [
   // i18next resolves `t('…resultCount', { count })` to one of these two.
   'support.search.resultCount_one',
   'support.search.resultCount_other',
+  // The help chat card (ADR-043).
+  'support.chat.title',
+  'support.chat.subtitle',
+  'support.chat.placeholder',
+  'support.chat.ariaLabel',
+  'support.chat.ask',
+  'support.chat.stop',
+  'support.chat.thinking',
+  'support.chat.you',
+  'support.chat.assistant',
+  'support.chat.basedOn',
+  'support.chat.sourceHint',
+  'support.chat.caption',
+  'support.chat.keywordNotice',
+  'support.chat.keywordAction',
+  'support.chat.error',
 ];
 
 /** Walks a dotted key through a bundle; `undefined` when a segment is missing. */
@@ -88,6 +105,17 @@ describe('support corpus / translations parity', () => {
 
   it('resolves every key SupportPage uses itself in en AND de', () => {
     expect(unresolved(PAGE_KEYS)).toEqual([]);
+  });
+
+  it('gives every entry a GLOBALLY unique id', () => {
+    // The per-section check below is about React list keys. This one is about
+    // the wire: `help:search` keys its reply by entry id ALONE, and
+    // `use-help-chat` maps those ids back to entry text through one flat Map.
+    // Two sections sharing a leaf id would silently attribute an answer to the
+    // wrong entry — and the "Based on" chip would search for the wrong topic.
+    const ids = sections.flatMap((section) => section.problems.map((p) => p.id));
+    const duplicated = ids.filter((id, i) => ids.indexOf(id) !== i);
+    expect(duplicated).toEqual([]);
   });
 
   it('gives every entry a unique id within its section', () => {

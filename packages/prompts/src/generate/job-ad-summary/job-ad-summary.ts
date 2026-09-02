@@ -20,8 +20,15 @@ import type { GenerationMeta } from '../modes/index.js';
  * attempt smuggled through the `language` field) is dropped, and the digest falls
  * back to the ad's own language. Defence in depth: callers already source the
  * value from the locale allowlist.
+ *
+ * Exported so a sibling builder that interpolates a language name into its own
+ * instructions (`help-chat`) reuses this exact predicate instead of copying the
+ * regex — a second copy is a place a hardening can land on one and not the
+ * other. It lives here rather than in a shared module because this is where it
+ * was first needed and the pair is still small; move it if a third caller
+ * appears.
  */
-function safeLanguage(language?: string): string | undefined {
+export function safeLanguage(language?: string): string | undefined {
   return language && /^[\p{L}][\p{L} -]{0,29}$/u.test(language) ? language : undefined;
 }
 

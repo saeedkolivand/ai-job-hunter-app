@@ -215,5 +215,25 @@ export const TEST_IDS = {
     searchInput: 'support-search-input',
     /** Wrapper around the EmptyState shown when no entry in any section matches. */
     emptyState: 'support-empty-state',
+
+    // ── Help chat (ADR-043) — the grounded assistant above the search box ──
+    /** The whole chat card. Absent entirely when the chat is not rendered. */
+    chatCard: 'support-chat-card',
+    /** The question box. */
+    chatInput: 'support-chat-input',
+    /** Ask — submits the typed question. */
+    chatAsk: 'support-chat-ask',
+    /** Stop — aborts the in-flight stream, keeping the partial answer. */
+    chatStop: 'support-chat-stop',
+    /** The live/streamed answer region for the current question. */
+    chatAnswer: 'support-chat-answer',
+    /** One rendered turn of the transcript (user or assistant). */
+    chatTurn: 'support-chat-turn',
+    /** A "Based on" chip; clicking it searches the page for that entry's title. */
+    chatSource: 'support-chat-source',
+    /** Notice shown when retrieval fell back to keyword-only ranking. */
+    chatKeywordNotice: 'support-chat-keyword-notice',
+    /** Error row shown when retrieval or generation failed. */
+    chatError: 'support-chat-error',
   },
 } as const;
