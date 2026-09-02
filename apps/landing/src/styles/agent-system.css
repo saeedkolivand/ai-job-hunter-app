@@ -170,6 +170,14 @@
   line-height: 1.6;
   color: var(--muted);
 }
+
+/* In-copy links inherit the note text colour: the accent red measures under 4.5:1 on the note
+   background (landing a11y gate), and the reveal fade makes the measured blend vary per run. */
+.agent-fleet .note a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
 .agent-fleet .note b {
   color: var(--text);
 }
