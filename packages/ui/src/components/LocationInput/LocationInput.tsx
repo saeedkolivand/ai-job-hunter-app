@@ -176,10 +176,11 @@ export function LocationInput({
           onClick={clear}
           // Overlays the placeholder above. The glyph used to sit 30–40px from
           // the field's right edge (12px padding + 12px chevron + 4px gap +
-          // 2px inset); `p-1.5` + `right-6` keeps it exactly there while
-          // growing the hit box from 14px to ~22px (WCAG 2.5.8), the same
-          // trick as the Tag close button.
-          className="absolute right-6 top-1/2 flex -translate-y-1/2 items-center rounded p-1.5 text-foreground/30 hover:text-foreground/70"
+          // 2px inset); `p-2` + `right-[22px]` keeps its centre exactly there
+          // (35px in) while taking the hit box to 10px + 2×8px = 26px, past the
+          // 24px minimum (WCAG 2.5.8) that `p-1.5` missed at ~22px. Same trick
+          // as the Tag close button.
+          className="absolute right-[22px] top-1/2 flex -translate-y-1/2 items-center rounded p-2 text-foreground/30 hover:text-foreground/70"
         >
           <X size={10} />
         </Button>

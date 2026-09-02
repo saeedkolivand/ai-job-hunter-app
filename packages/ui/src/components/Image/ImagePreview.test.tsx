@@ -576,3 +576,48 @@ describe('ImagePreview — keyboard pan', () => {
     expect(imgTransform()).toContain('translate3d(40px, 0px, 0)');
   });
 });
+
+describe('ImagePreview — arrow keys are announced and never leak behind the dialog', () => {
+  it('advertises the pan keys on the dialog itself', () => {
+    render(<Harness />);
+    // Panning has no toolbar button, so the arrows are the only route to the
+    // rest of a zoomed image — an undocumented shortcut is not a route.
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'aria-keyshortcuts',
+      'ArrowUp ArrowDown ArrowLeft ArrowRight'
+    );
+  });
+
+  it('takes focus off the field behind it when it opens', async () => {
+    function WithField() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <input aria-label="Notes" />
+          <button type="button" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <ImagePreview
+            items={[SRC_A]}
+            index={0}
+            open={open}
+            onIndexChange={() => {}}
+            onOpenChange={setOpen}
+          />
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<WithField />);
+
+    const field = screen.getByRole('textbox', { name: 'Notes' });
+    field.focus();
+    expect(field).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: 'open' }));
+    // The arrow handler is bound on `window`, so focus left on the field would
+    // move its caret on every pan press.
+    expect(screen.getByRole('dialog')).toHaveFocus();
+    expect(field).not.toHaveFocus();
+  });
+});

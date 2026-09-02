@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { MarkdownMessage } from './MarkdownMessage';
@@ -66,14 +66,57 @@ describe('MarkdownMessage', () => {
         onLinkClick={onLinkClick}
       />
     );
-    // A real <button>, not an anchor: the handler hands the URL to the host, so
-    // there is no href to follow and the control must be keyboard-operable.
-    const link = screen.getByRole('button', { name: '0.49.0' });
-    expect(link).not.toHaveAttribute('href'); // never navigates the webview itself
+    // A real anchor with its destination in `href` — that is what makes it a
+    // link to a screen reader AND what lets it wrap inline with the prose.
+    const link = screen.getByRole('link', { name: '0.49.0' });
+    expect(link).toHaveAttribute('href', 'https://example.com/compare/v0.48.0...v0.49.0');
     fireEvent.click(link);
     expect(onLinkClick).toHaveBeenCalledWith('https://example.com/compare/v0.48.0...v0.49.0');
     // Surrounding heading text is preserved alongside the link.
     expect(screen.getByText(/2026-06-02/)).toBeInTheDocument();
+  });
+
+  it('never navigates the webview itself — the click default is prevented', () => {
+    render(
+      <MarkdownMessage
+        content={'see [#225](https://example.com/issues/225) for details'}
+        onLinkClick={vi.fn()}
+      />
+    );
+    const link = screen.getByRole('link', { name: '#225' });
+    // The host opens the URL; the anchor must not also follow it, or the whole
+    // app would be replaced by the page inside the Tauri webview.
+    const event = createEvent.click(link, { bubbles: true, cancelable: true });
+    fireEvent(link, event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('refuses a non-http(s) scheme: it renders as label text, never as an href', () => {
+    const onLinkClick = vi.fn();
+    const { container } = render(
+      <MarkdownMessage
+        content={'click [here](javascript:alert(1)) now'}
+        onLinkClick={onLinkClick}
+      />
+    );
+    // `preventDefault` only intercepts a PRIMARY click; a middle-click fires
+    // `auxclick` and would navigate. So an unvetted scheme never reaches href.
+    expect(container.querySelector('a')).toBeNull();
+    expect(screen.getByText('here')).toBeInTheDocument();
+  });
+
+  it('renders an inline link inside the same <p> as the surrounding prose', () => {
+    const { container } = render(
+      <MarkdownMessage
+        content={'see [#225](https://example.com/issues/225) for details'}
+        onLinkClick={vi.fn()}
+      />
+    );
+    // A `Button` computes to inline-block and broke the line box around it; an
+    // anchor is inline, so it wraps with the sentence it sits in.
+    const paragraph = container.querySelector('p');
+    expect(paragraph?.querySelector('a')).not.toBeNull();
+    expect(paragraph?.textContent).toBe('see #225 for details');
   });
 });
 
@@ -86,11 +129,11 @@ describe('MarkdownMessage — link keyboard operability', () => {
         onLinkClick={onLinkClick}
       />
     );
-    // The old <a> had no href, so it was only in the tab order because it
-    // hand-rolled tabIndex + an Enter/Space handler. This asserts the native
-    // behaviour of the replacement, not the attributes it happens to carry.
+    // A real `href` is what puts the anchor in the tab order natively — no
+    // hand-rolled tabIndex + Enter/Space handler, which is what an anchor
+    // WITHOUT an href would have needed.
     await userEvent.tab();
-    const link = screen.getByRole('button', { name: '#225' });
+    const link = screen.getByRole('link', { name: '#225' });
     expect(link).toHaveFocus();
     await userEvent.keyboard('{Enter}');
     expect(onLinkClick).toHaveBeenCalledWith('https://example.com/issues/225');

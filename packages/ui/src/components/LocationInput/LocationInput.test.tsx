@@ -203,6 +203,17 @@ describe('LocationInput — clear affordance', () => {
     expect(screen.getByRole('button', { name: 'Ort löschen' })).toBeInTheDocument();
   });
 
+  it('gives the clear glyph a >=24px hit box without moving it', () => {
+    render(<LocationInput value="Berlin" onChange={() => {}} onFetchSuggestions={noSuggestions} />);
+    const clear = screen.getByRole('button', { name: 'Clear' });
+    // 10px glyph + 2x8px padding = 26px, past the WCAG 2.5.8 minimum that the
+    // previous `p-1.5` missed at ~22px. `right-[22px]` compensates so the
+    // glyph's centre stays where it always was (35px from the field's edge).
+    expect(clear.className).toContain('p-2');
+    expect(clear.className).not.toContain('p-1.5');
+    expect(clear.className).toContain('right-[22px]');
+  });
+
   it('renders no clear button when the field is empty or disabled', () => {
     const { rerender } = render(
       <LocationInput value="" onChange={() => {}} onFetchSuggestions={noSuggestions} />

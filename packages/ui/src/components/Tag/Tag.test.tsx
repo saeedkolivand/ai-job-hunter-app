@@ -122,6 +122,30 @@ describe('Tag — clickable label', () => {
     expect(close.contains(label)).toBe(false);
   });
 
+  it('carries the chip padding on the CONTROL, so the whole chip is the target', () => {
+    render(<Tag onClick={() => {}}>recruiter</Tag>);
+    const label = screen.getByRole('button', { name: 'recruiter' });
+    // The outer span's px-2/py-0.5 is re-applied here and cancelled by matching
+    // negative margins: same pixels on screen, but the padding is inside the
+    // activation target instead of being dead cursor-pointer space around it.
+    for (const cls of ['pl-2', '-ml-2', 'py-0.5', '-my-0.5', 'pr-2', '-mr-2']) {
+      expect(label.className).toContain(cls);
+    }
+  });
+
+  it('stops the label short of the close x rather than overlapping its target', () => {
+    render(
+      <Tag onClick={() => {}} closable>
+        rust
+      </Tag>
+    );
+    const label = screen.getByRole('button', { name: 'rust' });
+    // The close button already claims the chip's right padding (`-mr-2`); two
+    // overlapping activation targets would be worse than a narrow one.
+    expect(label.className).not.toContain('-mr-2');
+    expect(label.className).toContain('-ml-2');
+  });
+
   it('emits no control at all when onClick is absent (a plain chip stays a span)', () => {
     render(<Tag>plain</Tag>);
     expect(screen.queryByRole('button')).toBeNull();

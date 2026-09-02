@@ -217,7 +217,11 @@ export const TEST_IDS = {
     emptyState: 'support-empty-state',
 
     // ── Help chat (ADR-043) — the grounded assistant above the search box ──
-    /** The whole chat card. Absent entirely when the chat is not rendered. */
+    /**
+     * The whole chat card. Always rendered on the Help page — when AI is not
+     * usable the card stays and shows `AiSetupHint` inside it, so its absence
+     * means the page itself failed to render.
+     */
     chatCard: 'support-chat-card',
     /** The question box. */
     chatInput: 'support-chat-input',
@@ -231,9 +235,17 @@ export const TEST_IDS = {
     chatTurn: 'support-chat-turn',
     /** A "Based on" chip; clicking it searches the page for that entry's title. */
     chatSource: 'support-chat-source',
-    /** Notice shown when retrieval fell back to keyword-only ranking. */
+    /** Notice shown when the user's semantic-scoring opt-in is OFF (`dense: 'skipped'`). */
     chatKeywordNotice: 'support-chat-keyword-notice',
+    /**
+     * Notice shown when semantic scoring is ON but the embedding failed
+     * (`dense: 'unavailable'`) — nothing for the user to switch, so it carries
+     * no Settings link.
+     */
+    chatDenseNotice: 'support-chat-dense-notice',
     /** Error row shown when retrieval or generation failed. */
     chatError: 'support-chat-error',
+    /** Re-sends the failed question from the error row. */
+    chatRetry: 'support-chat-retry',
   },
 } as const;

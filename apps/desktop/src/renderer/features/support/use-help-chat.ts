@@ -12,18 +12,22 @@ import { TRACKED_INTERACTION_TYPES } from '@/constants/interactions';
 import { getSupportSections } from '@/features/support/support-data';
 import { generateHelpAnswer } from '@/lib/generate';
 import { buildProviderProfile } from '@/lib/generate/provider-context';
-import {
-  useApplications,
-  useAutopilots,
-  useEmbeddingStatus,
-  useHelpSearch,
-  useInteractions,
-} from '@/services';
+import { useFetchHelpDataSources, useHelpSearch } from '@/services';
 
 /** One entry of the shipped corpus, with the id `help:search` ranks by. */
 interface CorpusEntry extends HelpChatEntry {
   id: string;
+  /** The `Section.id` this entry came from — local only, never on the wire. */
+  section: string;
 }
+
+/**
+ * The section whose entries are about the user's tracked applications
+ * (`support.faq.applicationsQuestions.*`). Only a question that retrieved one
+ * of those is answered any better by knowing WHICH jobs the user applied to —
+ * see the glance below.
+ */
+const APPLICATIONS_SECTION = 'applications';
 
 /** A single chat turn. Session-only — nothing here is ever persisted. */
 export interface HelpChatMessage {
@@ -38,6 +42,14 @@ export interface HelpChatMessage {
    * lexical list as semantic.
    */
   mode?: HelpSearchResult['mode'];
+  /**
+   * Assistant turns only: WHY the dense arm did not run. `'skipped'` is the
+   * user's own opt-out, fixable in Settings; `'unavailable'` is an embedding
+   * failure with the preference already ON, where there is nothing for the user
+   * to switch. `mode` alone collapses the two into one message that is wrong
+   * half the time, so the UI reads this instead.
+   */
+  dense?: HelpSearchResult['arms']['dense'];
 }
 
 interface Params {
@@ -63,6 +75,7 @@ function buildCorpus(t: (key: string) => string): CorpusEntry[] {
       // reply comes back keyed by. The reply carries ids only, so this is the
       // only thing that maps a result back to its text.
       id: problem.id,
+      section: section.id,
       title: problem.q.slice(0, TITLE_MAX),
       body: problem.a.slice(0, BODY_MAX),
     }))
@@ -84,16 +97,22 @@ function buildCorpus(t: (key: string) => string): CorpusEntry[] {
  * top entries. A retrieval failure surfaces as an error rather than silently
  * asking the model to answer from nothing.
  *
+ * The data glance is fetched PER QUESTION and never on mount, so opening Help
+ * to read one entry does not read the user's applications — see
+ * `useFetchHelpDataSources`.
+ *
  * `model`/`canUse` are parameters rather than hooks read here so this file stays
  * out of the component layer, matching `useInterviewPractice`'s signature.
+ *
+ * It lives INSIDE `features/support/` rather than in `hooks/` because it reads
+ * `features/support/support-data`: a shared-layer module importing a feature
+ * inverts the dependency rule the feature dirs exist to enforce. Nothing
+ * outside this feature references it.
  */
 export function useHelpChat({ model, canUse }: Params) {
   const { t, i18n } = useTranslation();
   const search = useHelpSearch();
-  const { data: embeddingStatus } = useEmbeddingStatus();
-  const { data: interactions = [] } = useInteractions();
-  const { data: applications = [] } = useApplications();
-  const { data: autopilots = [] } = useAutopilots();
+  const fetchDataSources = useFetchHelpDataSources();
 
   const [turns, setTurns] = useState<HelpChatMessage[]>([]);
   const [answer, setAnswer] = useState('');
@@ -106,7 +125,7 @@ export function useHelpChat({ model, canUse }: Params) {
   const answerRef = useRef('');
   // What the in-flight answer is grounded in — known as soon as retrieval
   // settles, so a Stop mid-stream can still attribute the partial answer.
-  const pendingRef = useRef<Pick<HelpChatMessage, 'sources' | 'mode'>>({});
+  const pendingRef = useRef<Pick<HelpChatMessage, 'sources' | 'mode' | 'dense'>>({});
   // Monotonic per-question nonce: turn ids must never collide across a session,
   // and a positional index would repeat after a Stop discards nothing.
   const nonceRef = useRef(0);
@@ -145,19 +164,22 @@ export function useHelpChat({ model, canUse }: Params) {
     }
   };
 
-  const send = async (question: string) => {
+  /**
+   * Answer one question end to end.
+   *
+   * `appendUserTurn` is false for a retry: the failed question is already in the
+   * transcript, and repeating it there would make one retry look like two
+   * questions. Resolves `true` only when an assistant turn actually landed —
+   * that is what tells the caller it may clear the question box, so a question
+   * that failed is never silently thrown away.
+   *
+   * NEVER rejects: everything after the controller is created runs inside the
+   * try, so a caller can treat the boolean as the whole outcome and every
+   * failure reaches the user through `error` instead of an unhandled rejection.
+   */
+  const run = async (question: string, appendUserTurn: boolean): Promise<boolean> => {
     const query = question.trim();
-    if (!canUse || !query || streaming) return;
-
-    const profile = buildProviderProfile(model);
-    const sizing = resolveHelpChatSizing(profile);
-    const corpus = buildCorpus(t);
-    // The transcript BEFORE this question — the model gets continuity without
-    // being handed the question twice.
-    const history = turns.slice(-sizing.historyTurns).map((turn) => ({
-      role: turn.role,
-      content: turn.content,
-    }));
+    if (!canUse || !query || streaming) return false;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -166,20 +188,38 @@ export function useHelpChat({ model, canUse }: Params) {
     nonceRef.current += 1;
     const nonce = nonceRef.current;
 
-    setTurns((prev) => [...prev, { id: `q-${nonce}`, role: 'user', content: query }]);
     setAnswer('');
     setError(null);
     setStreaming(true);
 
     try {
+      const profile = buildProviderProfile(model);
+      const sizing = resolveHelpChatSizing(profile);
+      const corpus = buildCorpus(t);
+      // The transcript BEFORE this question — the model gets continuity without
+      // being handed the question twice. On a retry the failed user turn is
+      // already the tail, so it is dropped here for exactly the same reason.
+      const prior = appendUserTurn ? turns : turns.slice(0, -1);
+      const history = prior.slice(-sizing.historyTurns).map((turn) => ({
+        role: turn.role,
+        content: turn.content,
+      }));
+
+      if (appendUserTurn) {
+        setTurns((prev) => [...prev, { id: `q-${nonce}`, role: 'user', content: query }]);
+      }
+
       const result = await search.mutateAsync({
         query,
-        entries: corpus,
+        // Only the three fields the contract names: `section` is a local
+        // routing hint, and sending a field the schema does not describe is
+        // how a wire shape drifts away from it.
+        entries: corpus.map(({ id, title, body }) => ({ id, title, body })),
         // The SAME budget the prompt builder will apply: asking for more
         // entries than the prompt can carry pays to embed text it then drops.
         limit: sizing.maxEntries,
       });
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
 
       const byId = new Map(corpus.map((entry) => [entry.id, entry]));
       const used = result.results
@@ -188,7 +228,19 @@ export function useHelpChat({ model, canUse }: Params) {
       pendingRef.current = {
         sources: used.map((entry) => ({ id: entry.id, title: entry.title })),
         mode: result.mode,
+        dense: result.arms.dense,
       };
+
+      // Read the user's own lists only now — a question was actually asked.
+      const [embeddingStatus, interactions, applications, autopilots] = await fetchDataSources();
+      if (controller.signal.aborted) return false;
+
+      // The recent-application list is the only part of the glance carrying the
+      // user's job titles and company names, and the only part that leaves the
+      // machine as prose. Counts answer "have I tracked anything at all"; the
+      // NAMES only help a question that retrieved an applications entry, so
+      // that is the only question that pays to send them to the provider.
+      const aboutApplications = used.some((entry) => entry.section === APPLICATIONS_SECTION);
 
       const raw = await generateHelpAnswer({
         question: query,
@@ -197,7 +249,7 @@ export function useHelpChat({ model, canUse }: Params) {
           documentCount: embeddingStatus?.documents?.total ?? 0,
           interactionCounts: countTrackedInteractions(interactions),
           applicationsByStatus: countByStatus(applications),
-          recentApplications: recentApplications(applications),
+          recentApplications: aboutApplications ? recentApplications(applications) : [],
           autopilotCount: autopilots.length,
           target: profile,
         }),
@@ -214,7 +266,7 @@ export function useHelpChat({ model, canUse }: Params) {
           setAnswer(answerRef.current);
         },
       });
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
 
       answerRef.current = '';
       setAnswer('');
@@ -222,11 +274,13 @@ export function useHelpChat({ model, canUse }: Params) {
         ...prev,
         { id: `a-${nonce}`, role: 'assistant', content: raw, ...pendingRef.current },
       ]);
+      return true;
     } catch (err) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
       answerRef.current = '';
       setAnswer('');
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
@@ -235,7 +289,19 @@ export function useHelpChat({ model, canUse }: Params) {
     }
   };
 
-  return { turns, answer, streaming, error, send, stop };
+  /** Ask a new question: appends the user turn, then answers it. */
+  const send = (question: string) => run(question, true);
+
+  /**
+   * Re-run the last question after a failure. The user turn is already on
+   * screen, so this re-answers it in place instead of asking it twice.
+   */
+  const retry = () => {
+    const last = [...turns].reverse().find((turn) => turn.role === 'user');
+    return last ? run(last.content, false) : Promise.resolve(false);
+  };
+
+  return { turns, answer, streaming, error, send, retry, stop };
 }
 
 /** Counts keyed by tracked interaction type; untracked types are excluded. */

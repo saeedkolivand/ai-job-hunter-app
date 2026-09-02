@@ -5,14 +5,27 @@
  * horizontal rules, and `[text](url)` links. No external dependency.
  *
  * Links: the renderer is IPC-free, so it can't open a URL itself. Pass
- * `onLinkClick` (e.g. wired to the Tauri opener) to make links clickable;
- * without it, a link renders as plain label text — never a raw `<a href>` that
- * would navigate the webview.
+ * `onLinkClick` (e.g. wired to the Tauri opener) to make links clickable; the
+ * anchor's default navigation is always prevented, so the webview never
+ * follows a link itself. Without a handler — or with a scheme outside
+ * {@link SAFE_SCHEME} — a link renders as plain label text.
  */
 import { cn } from '../../lib/cn';
-import { Button } from '../Button';
 
 type LinkClick = ((url: string) => void) | undefined;
+
+/**
+ * Schemes allowed into a rendered `href`. Markdown here is AI output or a
+ * changelog body, so the URL is not ours; `javascript:`/`data:` are excluded
+ * because `preventDefault` only intercepts a primary click - a middle-click
+ * navigates on `auxclick`, which never reaches the React handler. A refused
+ * link degrades to plain label text, the same as having no handler at all.
+ */
+const SAFE_SCHEME = /^(https?|mailto):/i;
+
+function isSafeUrl(url: string): boolean {
+  return SAFE_SCHEME.test(url.trim());
+}
 
 interface Props {
   content: string;
@@ -191,24 +204,31 @@ function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {
     if (link) {
       const label = link[1] ?? '';
       const url = link[2] ?? '';
-      if (onLinkClick) {
+      if (onLinkClick && isSafeUrl(url)) {
         return (
-          // A BUTTON, not an anchor: there is no href to follow (the handler
-          // hands the URL to the host, e.g. the system browser), and an anchor
-          // without one is neither keyboard-operable nor honestly named. Styled
-          // as inline link text so it still reads as a link and wraps in prose.
-          <Button
+          // A REAL anchor: it is keyboard-operable for free, satisfies
+          // `anchor-is-valid`, announces as a link with its destination, and —
+          // the reason a `Button` did not work — participates in inline text
+          // flow. A button computes to `inline-block`, so a link inside a
+          // sentence broke the line box around it instead of wrapping with the
+          // prose. `preventDefault` keeps the webview from ever navigating: the
+          // handler hands the URL to the host (e.g. the system browser).
+          <a
             key={i}
-            type="button"
-            variant="unstyled"
-            onClick={() => onLinkClick(url)}
-            className="inline cursor-pointer text-brand-soft underline underline-offset-2 hover:text-brand"
+            href={url}
+            onClick={(e) => {
+              e.preventDefault();
+              onLinkClick(url);
+            }}
+            className="cursor-pointer text-brand-soft underline underline-offset-2 hover:text-brand"
           >
             {label}
-          </Button>
+          </a>
         );
       }
-      // No handler → show the label only (never a raw href that navigates the webview).
+      // No handler, or a scheme we refuse to put in an `href` → show the label
+      // only. Never a live href we have not vetted: `preventDefault` covers a
+      // primary click, but a middle-click fires `auxclick` and would navigate.
       return <span key={i}>{label}</span>;
     }
     if (part.startsWith('**') || part.startsWith('__'))

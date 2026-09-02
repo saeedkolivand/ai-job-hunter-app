@@ -51,8 +51,13 @@ const PAGE_KEYS = [
   'support.chat.sourceHint',
   'support.chat.caption',
   'support.chat.keywordNotice',
+  'support.chat.denseUnavailable',
   'support.chat.keywordAction',
   'support.chat.error',
+  'support.chat.retry',
+  // i18next resolves `t('…charsLeft', { count })` to one of these two.
+  'support.chat.charsLeft_one',
+  'support.chat.charsLeft_other',
 ];
 
 /** Walks a dotted key through a bundle; `undefined` when a segment is missing. */
@@ -116,6 +121,20 @@ describe('support corpus / translations parity', () => {
     const ids = sections.flatMap((section) => section.problems.map((p) => p.id));
     const duplicated = ids.filter((id, i) => ids.indexOf(id) !== i);
     expect(duplicated).toEqual([]);
+  });
+
+  it('ties every section id to the translation namespace its entries live under', () => {
+    // `Section.id` is not decoration: `use-help-chat` decides whether the data
+    // glance may name the user's applications by comparing it to
+    // `'applications'`. If an id drifted from its `support.faq.<id>Questions.*`
+    // namespace, that comparison would silently stop matching and the check
+    // would look like it still worked.
+    const keys = sections.flatMap((section) =>
+      section.problems.map((p) => `support.faq.${section.id}Questions.${p.id}.q`)
+    );
+    expect(unresolved(keys)).toEqual([]);
+    // And the section the privacy gate names must actually exist.
+    expect(sections.map((section) => section.id)).toContain('applications');
   });
 
   it('gives every entry a unique id within its section', () => {

@@ -68,8 +68,13 @@ export interface HelpChatSizing {
  * that lacks material.
  */
 export function resolveHelpChatSizing(target?: PromptTarget): HelpChatSizing {
-  const { tier } = resolveProfile(target);
-  return tier === 'small'
+  const { kind, tier } = resolveProfile(target);
+  // `tier` alone is not the question: `detectModelSize` reads a parameter count
+  // out of a MODEL NAME, so a frontier cloud model reached through an
+  // OpenAI-compatible endpoint lands on `small` and would be handed the thin
+  // local budget. Same guard `resolveTruncation` applies - only a local ollama
+  // model is thinned.
+  return kind === 'ollama' && tier === 'small'
     ? { maxEntries: 2, entryChars: 900, glanceChars: 600, historyTurns: 2, countsOnly: true }
     : { maxEntries: 3, entryChars: 1200, glanceChars: 1500, historyTurns: 4, countsOnly: false };
 }
@@ -186,7 +191,8 @@ const FENCE_TAGS = ['app_data', 'conversation_history', 'user_question'] as cons
 /**
  * Fence untrusted text in `tag`, neutralizing forged boundaries first.
  *
- * Neutralizes EVERY tag in {@link FENCE_TAGS}, not just this block's own. Three
+ * Neutralizes EVERY tag in {@link FENCE_TAGS} AND the `###` section markers the
+ * prompt uses as its other trust boundary - not just this block's own. Three
  * untrusted blocks share one prompt here, so a forged `<user_question>` smuggled
  * in through the data glance (scraped company names land there) would forge the
  * boundary of a DIFFERENT block, which single-tag neutralization lets straight
@@ -194,10 +200,18 @@ const FENCE_TAGS = ['app_data', 'conversation_history', 'user_question'] as cons
  * sole fence in its prompt.
  */
 function fenced(tag: string, text: string, maxChars: number, note: string): string {
-  const safe = FENCE_TAGS.reduce(
+  const tagSafe = FENCE_TAGS.reduce(
     (acc, name) => neutralizeFenceTag(acc, name),
     text.slice(0, maxChars)
   );
+  // The XML tags are not this prompt's only trust boundary: it also separates
+  // its sections with `### HELP ENTRIES ###` / `### TASK ###` markers, and an
+  // untrusted block that forges one of those relocates the model's source of
+  // truth just as effectively as a forged `</user_question>` would. Defuse
+  // every run of `#` at line start the way `neutralizeFenceTag` defuses a tag:
+  // a space makes it inert while leaving it readable. It is a no-op on ordinary
+  // text, and assistant markdown is headline-free by system-prompt rule.
+  const safe = tagSafe.replace(/^#{2,}/gm, (run) => `# ${run.slice(1)}`);
   return `<${tag}>\n${safe}\n</${tag}>\n${note}`;
 }
 

@@ -2953,9 +2953,13 @@
       "basedOn": "Based on",
       "sourceHint": "Search this page for this topic",
       "caption": "Answers are generated and can be wrong. The help topics below are the source — open one to read it in full.",
-      "keywordNotice": "Semantic ranking is off, so topics were matched by keyword only.",
+      "keywordNotice": "Semantic scoring is off, so topics were matched by keyword only.",
+      "denseUnavailable": "Semantic scoring could not run this time, so topics were matched by keyword only.",
       "keywordAction": "Open AI settings",
-      "error": "That question could not be answered just now. Try again in a moment."
+      "error": "That question could not be answered just now. Try again in a moment.",
+      "retry": "Try again",
+      "charsLeft_one": "{{count}} character left",
+      "charsLeft_other": "{{count}} characters left"
     },
     "search": {
       "placeholder": "Search help by keyword…",

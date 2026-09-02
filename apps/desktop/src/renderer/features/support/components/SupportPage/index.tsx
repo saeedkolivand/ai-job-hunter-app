@@ -87,7 +87,9 @@ export function SupportPage() {
             {sections.map((section) => {
               const Icon = section.icon;
               return (
-                <div key={section.label}>
+                // Keyed by the stable section id, not the localized label:
+                // switching language would otherwise remount every section.
+                <div key={section.id}>
                   <div className="mb-3 flex items-center gap-2.5">
                     <div
                       className="flex h-7 w-7 items-center justify-center rounded-lg"

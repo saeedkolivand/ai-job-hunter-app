@@ -90,6 +90,7 @@ export function ImagePreview({
   toolbarRender,
 }: ImagePreviewProps) {
   const [transform, setTransform] = useState<ImageTransform>(IDENTITY);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(
     null
   );
@@ -107,6 +108,16 @@ export function ImagePreview({
   useEffect(() => {
     if (open) setTransform(IDENTITY);
   }, [open, index]);
+
+  // Move focus INTO the dialog when it opens. The arrow keys are bound on
+  // `window`, so leaving focus on whatever opened the preview means an arrow
+  // press both pans the image and reaches the control behind it (a text field
+  // would move its caret, a list would change selection). Focusing the dialog
+  // also gives a keyboard user somewhere to tab FROM, per the APG dialog
+  // pattern; `tabIndex={-1}` makes it programmatically focusable only.
+  useEffect(() => {
+    if (open) dialogRef.current?.focus();
+  }, [open]);
 
   // Lock body scroll while open.
   useEffect(() => {
@@ -234,10 +245,16 @@ export function ImagePreview({
 
   return createPortal(
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      tabIndex={-1}
+      // Panning has no toolbar button, so the arrow keys are the ONLY way to
+      // reach the rest of a zoomed image — that makes them part of the dialog's
+      // name/role/value story, not an undocumented extra.
+      aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
       onClick={() => onOpenChange(false)}
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 outline-none"
     >
       <Button
         variant="unstyled"
