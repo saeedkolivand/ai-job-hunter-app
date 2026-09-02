@@ -2703,7 +2703,7 @@
         },
         "jobsDisappeared": {
           "q": "Gescrapte Jobs verschwanden nach Neustart der App",
-          "a": "Standardmäßig sind gescrapte Jobs flüchtig — sie leben nur im Arbeitsspeicher und werden beim Neustart gelöscht. Dies hält die Daten frisch, da sich Stellenangebote täglich ändern. Führen Sie einfach ein neues Scraping durch, wenn Sie die App öffnen. Wenn Sie speichern möchten, welche Jobs Sie beworben oder angesehen haben, werden diese Interaktionen dauerhaft in Einstellungen → Datenschutz → Daten exportieren gespeichert."
+          "a": "Standardmäßig sind gescrapte Jobs flüchtig — sie leben nur im Arbeitsspeicher und werden beim Neustart gelöscht. Dies hält die Daten frisch, da sich Stellenangebote täglich ändern. Führen Sie einfach ein neues Scraping durch, wenn Sie die App öffnen. Welche Jobs Sie beworben oder angesehen haben, wird getrennt davon im Interaktionsprotokoll geführt, das Neustarts übersteht; sichern Sie es mit Einstellungen → Datenschutz → \"Daten exportieren\", bevor Sie App-Daten entfernen."
         },
         "clearButtonRemoved": {
           "q": "Die Schaltfläche \"Löschen\" hat meine gescrapten Jobs entfernt",

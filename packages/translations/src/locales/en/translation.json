@@ -2699,7 +2699,7 @@
         },
         "jobsDisappeared": {
           "q": "Scraped jobs disappeared after I restarted the app",
-          "a": "By design, scraped jobs are ephemeral — they live in memory only and are cleared on restart. This keeps the data fresh since job listings change daily. Simply run a new scrape when you open the app. If you want to preserve which jobs you've applied to or viewed, those interactions are saved permanently in Settings → Privacy → Export Data."
+          "a": "By design, scraped jobs are ephemeral — they live in memory only and are cleared on restart. This keeps the data fresh since job listings change daily. Simply run a new scrape when you open the app. Which jobs you applied to or viewed is kept separately in the interaction log, which survives restarts; back it up with Settings → Privacy → \"Export Data\" before removing app data."
         },
         "clearButtonRemoved": {
           "q": "\"Clear\" button removed my scraped jobs",
