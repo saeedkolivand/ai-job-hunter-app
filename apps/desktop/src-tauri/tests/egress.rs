@@ -1181,3 +1181,63 @@ fn egress_declares_the_sentry_crash_reporting_class() {
          normal EGRESS row"
     );
 }
+
+/// ADR-0005 class 8 (crash reporting), second leg: **nothing in `src/` captures
+/// a Sentry structured log or metric.**
+///
+/// sentry 0.49 added those two pipelines alongside crash events, and 0.49.2 then
+/// deprecated both `ClientOptions` switches that looked like they controlled
+/// them — `enable_metrics` is a documented no-op, and `enable_logs(false)` only
+/// muted *automatic* capture ("logs captured manually are always sent"). So a
+/// runtime switch cannot carry this claim; two static facts do.
+///
+/// The first is the Cargo feature list, pinned by
+/// `crash_reporting::tests::sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`.
+/// This is the second, and it is the one that survives **feature unification**:
+/// if some third-party crate ever enables `sentry/logs`, `Hub::capture_log` and
+/// the `logger_*` macros start compiling in this build and the feature test
+/// stays green — but a log still only leaves if something calls one. This test
+/// is what goes red then.
+///
+/// Comment lines are excluded, so the prose in `crash_reporting/mod.rs` that
+/// names these APIs while explaining why they are absent does not trip it.
+#[test]
+fn egress_no_source_captures_a_sentry_log_or_metric() {
+    // Every entry point into the two pipelines: the SDK's log-capture method on
+    // `Client`/`Hub`, the `logger_*` macros sentry-core re-exports under `logs`,
+    // and the counter/gauge/distribution builders under `metrics`.
+    const CAPTURE_APIS: &[&str] = &[
+        "capture_log",
+        "logger_log!",
+        "logger_trace!",
+        "logger_debug!",
+        "logger_info!",
+        "logger_warn!",
+        "logger_error!",
+        "logger_fatal!",
+        "sentry::metrics",
+    ];
+
+    let mut found: Vec<String> = Vec::new();
+    for source in rust_sources() {
+        for (idx, line) in source.content.lines().enumerate() {
+            if is_comment_line(line) {
+                continue;
+            }
+            for api in CAPTURE_APIS {
+                if line.contains(api) {
+                    found.push(format!("{}:{} — {api}", source.rel, idx + 1));
+                }
+            }
+        }
+    }
+
+    assert!(
+        found.is_empty(),
+        "Sentry structured-log / metric capture found in source. ADR-0020 consented to CRASH \
+         REPORTS only, and neither pipeline passes `before_send` redaction, so this is \
+         unredacted egress of whatever the call interpolates. If it is genuinely wanted, it \
+         needs its own consent decision and its own ADR-0005 row — not a silent call site:\n  {}",
+        found.join("\n  ")
+    );
+}

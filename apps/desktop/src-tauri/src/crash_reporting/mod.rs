@@ -59,6 +59,43 @@
 //!   `tauri-plugin-sentry` 0.6 does exactly that for renderer envelopes it
 //!   cannot parse. The transport re-checks consent and drops anything opaque,
 //!   for every path, on every envelope. See that module for the full chain.
+//!
+//! ## Structured logs and metrics: off at the feature gate, not at a switch
+//!
+//! sentry 0.49 added two egress pipelines next to crash events — structured
+//! logs and metrics — and 0.49.2 then deprecated both `ClientOptions` switches
+//! that appeared to control them. Neither ever did: `enable_metrics` is a
+//! documented **no-op** (metrics are always enabled; only calling
+//! `sentry::metrics::*` emits one), and `enable_logs(false)` muted only the
+//! *automatic* `log`/`tracing` capture integrations — the SDK's own words are
+//! "logs captured manually are always sent".
+//!
+//! What actually holds the line is the dependency declaration. `sentry` is
+//! taken with `default-features = false` and an explicit list that omits
+//! `logs`, `metrics`, `log` and `tracing`, and the consequence is stronger than
+//! a runtime flag:
+//!
+//! * the whole log API (`Hub::capture_log`, the `logger_*` macros) is
+//!   `#[cfg(feature = "logs")]`, so this crate *cannot* capture a log — it
+//!   would not compile — and in fact never tries;
+//! * no log-capturing integration is registered. `sentry::apply_defaults` adds
+//!   only the backtrace, debug-images, contexts and panic integrations; the
+//!   `log`/`tracing` ones are never automatic, and [`client_options`] adds no
+//!   integration of its own.
+//!
+//! Three tests, one per leg, none of them redundant:
+//! `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate` (the feature
+//! list), the `integrations.is_empty()` assertion in
+//! `client_options_pin_every_privacy_switch` (nothing registered), and
+//! `egress_no_source_captures_a_sentry_log_or_metric` in `tests/egress.rs` (no
+//! call site anywhere in `src/`). The last is the one that still bites if a
+//! *third-party* crate ever unifies `sentry/logs` into the build: the feature
+//! returning does not by itself send anything, but a call site would, and that
+//! is what goes red.
+//!
+//! Note the `log::warn!`/`log::debug!` calls in this module and in
+//! [`transport`] are the `log` **facade**, routed to `tauri-plugin-log` on
+//! disk. They reach Sentry only via `sentry-log`, which is not in the build.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -283,15 +320,24 @@ fn client_options() -> sentry::ClientOptions {
         // The SDK defaults this to the machine hostname, which on a personal
         // device is frequently the user's real name.
         .server_name("redacted")
-        // Structured logs and metrics: two egress pipelines 0.49 turned ON
-        // by default (0.42 defaulted both off). The `logs`/`metrics` cargo
-        // features are off, so today the consumers are cfg'd out — but any
-        // future crate that enables `sentry/logs` would unify the feature
-        // into our build and silently open the pipe. These setters compile
-        // with the features off, so pinning the answer here costs nothing
-        // and stops that from ever being a silent change.
-        .enable_logs(false)
-        .enable_metrics(false)
+        // No `.enable_logs(false)` / `.enable_metrics(false)` here any more:
+        // sentry 0.49.2 deprecated both, and reading why is what moved the
+        // guarantee. `enable_metrics` is a documented no-op — metrics are
+        // always enabled and only a *call* to `sentry::metrics::*` emits one.
+        // `enable_logs(false)` only ever muted the automatic `log`/`tracing`
+        // capture integrations; "logs captured manually are always sent". So
+        // neither switch was ever the gate it looked like.
+        //
+        // The gate is the feature list in `Cargo.toml`. Without `sentry/logs`
+        // the entire log API — `Hub::capture_log`, the `logger_*` macros — is
+        // `#[cfg(feature = "logs")]`-compiled out, so a manual capture is a
+        // compile error rather than a silent send; and `sentry::apply_defaults`
+        // registers only the backtrace/debug-images/contexts/panic
+        // integrations, never a log-capturing one (those must be installed by
+        // hand, and nothing here does). See the module doc, and the two tests
+        // that pin it: `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`
+        // below plus `egress_no_source_captures_a_sentry_log_or_metric` in
+        // `tests/egress.rs`.
         .before_send(redact_event)
         .before_breadcrumb(|mut breadcrumb| {
             breadcrumb.message = breadcrumb.message.map(|m| redact_lines(&m));
@@ -330,6 +376,35 @@ pub fn disable_current() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cargo features on `sentry` that would open a log or metric pipeline: the
+    /// two telemetry features themselves, plus the two integrations whose whole
+    /// job is capturing `log`/`tracing` records automatically.
+    const FORBIDDEN_SENTRY_FEATURES: &[&str] = &["logs", "metrics", "log", "tracing"];
+
+    /// Read the `sentry = { … }` inline table out of a Cargo manifest.
+    ///
+    /// Returns `(inherits_defaults, quoted_values)` — the second being every
+    /// quoted string in the table, i.e. the version followed by the explicitly
+    /// enabled features. Whole strings, never substrings, so `release-health`
+    /// cannot be misread as `log`.
+    ///
+    /// Text, because `#[cfg(feature = …)]` sees *our* crate's features and never
+    /// a dependency's; same shape `tests/egress.rs` uses for its declaration
+    /// files. Takes the manifest as an argument purely so the test below can
+    /// feed it mutated inputs.
+    fn sentry_declaration(manifest: &str) -> (bool, Vec<&str>) {
+        let decl = manifest
+            .split_once("\nsentry = {")
+            .expect("`sentry` must still be declared as an inline table in Cargo.toml")
+            .1
+            .split_once("] }")
+            .expect("the `sentry` declaration must still end with `features = [ … ] }`")
+            .0;
+        let inherits_defaults = !decl.replace(' ', "").contains("default-features=false");
+        let values = decl.split('"').skip(1).step_by(2).collect();
+        (inherits_defaults, values)
+    }
 
     #[test]
     fn default_does_not_transmit_until_consent_is_shown() {
@@ -468,11 +543,16 @@ mod tests {
     /// The privacy-relevant half of the client configuration, pinned.
     ///
     /// These are switches whose wrong value leaks something and whose *absence*
-    /// is invisible at runtime: `enable_logs`/`enable_metrics` default to TRUE
-    /// in sentry 0.49, `server_name` defaults to the machine hostname, and
-    /// deleting the `.transport(...)` call would remove the entire wire gate
+    /// is invisible at runtime: `server_name` defaults to the machine hostname,
+    /// and deleting the `.transport(...)` call would remove the entire wire gate
     /// while everything still compiled and shipped. Each of those was checked by
     /// deleting the builder call and watching this test go red.
+    ///
+    /// The logs/metrics half of this test moved out rather than being dropped:
+    /// sentry 0.49.2 deprecated `enable_logs`/`enable_metrics`, and those
+    /// switches were never the gate they read as (see the module doc). The
+    /// integration assertion below is what remains of them here — the rest is
+    /// `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`.
     ///
     /// One exception, stated rather than glossed: `send_default_pii` is `false`
     /// in `ClientOptions::default()` too, so that assertion catches someone
@@ -496,12 +576,9 @@ mod tests {
             "breadcrumb messages must still be redacted"
         );
         assert!(
-            !options.enable_logs,
-            "0.49 defaults structured logs ON; that is egress we never consented to"
-        );
-        assert!(
-            !options.enable_metrics,
-            "0.49 defaults metrics ON; that is egress we never consented to"
+            options.integrations.is_empty(),
+            "we register no custom integration — the log- and tracing-capture ones are the only \
+             way an event source other than a panic gets attached, and they are never automatic"
         );
         assert!(
             !options.send_default_pii,
@@ -512,6 +589,88 @@ mod tests {
             Some("redacted"),
             "server_name defaults to the hostname, which is often the user's real name"
         );
+    }
+
+    /// Structured logs and metrics are two egress pipelines ADR-0020 never
+    /// consented to, and after sentry 0.49.2 there is no `ClientOptions` switch
+    /// left that turns either off — `enable_metrics` is a no-op and
+    /// `enable_logs` only muted automatic capture. The claim therefore rests on
+    /// the **dependency declaration**, so that is what this pins: sentry taken
+    /// with `default-features = false` (its default set contains both `logs`
+    /// and `metrics`) and an explicit feature list that names neither those nor
+    /// the two capture integrations, `log` and `tracing`.
+    ///
+    /// Limit, stated rather than glossed: this pins the declaration we own. A
+    /// third-party crate that enabled `sentry/logs` would unify the feature in
+    /// and leave this test green. That alone still sends nothing — a log needs
+    /// a call site or an installed integration — which is why
+    /// `egress_no_source_captures_a_sentry_log_or_metric` (`tests/egress.rs`)
+    /// and the `integrations.is_empty()` assertion above are the other two
+    /// legs, and none of the three is redundant.
+    #[test]
+    fn sentry_log_and_metric_pipelines_are_off_at_the_feature_gate() {
+        let (inherits_defaults, enabled) = sentry_declaration(include_str!("../../Cargo.toml"));
+
+        assert!(
+            !inherits_defaults,
+            "sentry must keep `default-features = false` — its default feature set includes \
+             `logs` and `metrics`, the two egress pipelines ADR-0020 never consented to"
+        );
+        assert!(
+            enabled.contains(&"backtrace"),
+            "extractor broke: the sentry feature list should contain `backtrace`, got {enabled:?}"
+        );
+        for forbidden in FORBIDDEN_SENTRY_FEATURES {
+            assert!(
+                !enabled.contains(forbidden),
+                "sentry feature `{forbidden}` would open a structured-log or metric pipeline the \
+                 crash-reporting consent (ADR-0020) does not cover; it also makes the SDK's \
+                 log-capture and metric-builder APIs compile, so the module doc's \"this crate \
+                 cannot capture a log\" claim would stop being true. Enabled: {enabled:?}"
+            );
+        }
+    }
+
+    /// [`sentry_declaration`] is only a guard if it can go red, and the real
+    /// manifest cannot be mutated from a test — so mutate the *input* instead.
+    /// Both ways a pipeline reopens are exercised, plus a clean control so the
+    /// reader is not simply always-alarming.
+    #[test]
+    fn sentry_declaration_reader_catches_both_ways_a_pipeline_reopens() {
+        // 1. Defaults inherited: sentry's default set carries `logs` and
+        //    `metrics` even though the explicit list names neither, so the
+        //    forbidden-name scan alone would miss this entirely.
+        let inherited = "\nsentry = { version = \"0.49\", features = [\n  \"backtrace\",\n] }\n";
+        let (inherits_defaults, enabled) = sentry_declaration(inherited);
+        assert!(
+            inherits_defaults,
+            "a missing `default-features = false` must be flagged"
+        );
+        assert!(!enabled
+            .iter()
+            .any(|f| FORBIDDEN_SENTRY_FEATURES.contains(f)));
+
+        // 2. A pipeline feature named outright while defaults are correctly
+        //    disabled — the case the other assertion must catch on its own.
+        let named = "\nsentry = { version = \"0.49\", default-features = false, features = [\n  \"backtrace\",\n  \"logs\",\n] }\n";
+        let (inherits_defaults, enabled) = sentry_declaration(named);
+        assert!(!inherits_defaults);
+        assert!(
+            enabled.contains(&"logs"),
+            "an explicitly enabled `logs` must be flagged"
+        );
+
+        // 3. Control: the shape the real manifest has must come back clean, or
+        //    the two cases above could pass for the wrong reason. `release-health`
+        //    also proves whole-string matching — a substring scan would read
+        //    `log` out of it.
+        let clean = "\nsentry = { version = \"0.49\", default-features = false, features = [\n  \"backtrace\",\n  \"release-health\",\n] }\n";
+        let (inherits_defaults, enabled) = sentry_declaration(clean);
+        assert!(!inherits_defaults);
+        assert!(!enabled
+            .iter()
+            .any(|f| FORBIDDEN_SENTRY_FEATURES.contains(f)));
+        assert!(enabled.contains(&"release-health"));
     }
 
     /// The gate that protects the privacy claim: nothing identifying may survive
