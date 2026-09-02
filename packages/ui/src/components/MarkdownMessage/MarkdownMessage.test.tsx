@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { MarkdownMessage } from './MarkdownMessage';
 
@@ -65,11 +66,33 @@ describe('MarkdownMessage', () => {
         onLinkClick={onLinkClick}
       />
     );
-    const link = screen.getByRole('link', { name: '0.49.0' });
+    // A real <button>, not an anchor: the handler hands the URL to the host, so
+    // there is no href to follow and the control must be keyboard-operable.
+    const link = screen.getByRole('button', { name: '0.49.0' });
     expect(link).not.toHaveAttribute('href'); // never navigates the webview itself
     fireEvent.click(link);
     expect(onLinkClick).toHaveBeenCalledWith('https://example.com/compare/v0.48.0...v0.49.0');
     // Surrounding heading text is preserved alongside the link.
     expect(screen.getByText(/2026-06-02/)).toBeInTheDocument();
+  });
+});
+
+describe('MarkdownMessage — link keyboard operability', () => {
+  it('tab reaches the link and Enter activates it (a real control, not a fake anchor)', async () => {
+    const onLinkClick = vi.fn();
+    render(
+      <MarkdownMessage
+        content={'see [#225](https://example.com/issues/225) for details'}
+        onLinkClick={onLinkClick}
+      />
+    );
+    // The old <a> had no href, so it was only in the tab order because it
+    // hand-rolled tabIndex + an Enter/Space handler. This asserts the native
+    // behaviour of the replacement, not the attributes it happens to carry.
+    await userEvent.tab();
+    const link = screen.getByRole('button', { name: '#225' });
+    expect(link).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    expect(onLinkClick).toHaveBeenCalledWith('https://example.com/issues/225');
   });
 });

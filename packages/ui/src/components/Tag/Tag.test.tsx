@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { Tag } from './Tag';
 
@@ -93,5 +94,37 @@ describe('Tag.CheckableTag', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'team' }));
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('Tag — clickable label', () => {
+  it('exposes the label as a real button: tabbable, Enter and Space both activate', async () => {
+    const onClick = vi.fn();
+    render(<Tag onClick={onClick}>recruiter</Tag>);
+    await userEvent.tab();
+    const label = screen.getByRole('button', { name: 'recruiter' });
+    expect(label).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard(' ');
+    expect(onClick).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the close button a SIBLING of the clickable label (buttons cannot nest)', () => {
+    render(
+      <Tag onClick={() => {}} closable>
+        rust
+      </Tag>
+    );
+    const label = screen.getByRole('button', { name: 'rust' });
+    const close = screen.getByRole('button', { name: 'Close' });
+    // Nested buttons are invalid markup and the inner one is unreachable.
+    expect(label.contains(close)).toBe(false);
+    expect(close.contains(label)).toBe(false);
+  });
+
+  it('emits no control at all when onClick is absent (a plain chip stays a span)', () => {
+    render(<Tag>plain</Tag>);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByText('plain').tagName).toBe('SPAN');
   });
 });

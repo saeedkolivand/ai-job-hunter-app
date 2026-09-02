@@ -29,6 +29,11 @@ export interface LocationInputProps {
    */
   onFetchSuggestions: (query: string) => Promise<Suggestion[]>;
   /**
+   * Accessible name for the clear (×) button. Defaults to `'Clear'` — pass a
+   * localized string from the consuming app.
+   */
+  clearLabel?: string;
+  /**
    * Fires when a value is committed (suggestion picked, custom text, or cleared)
    * with the full structured suggestion — lets callers capture country/coords
    * for precise downstream filtering (#49/#40). A cleared/typed value carries
@@ -44,6 +49,7 @@ export function LocationInput({
   disabled,
   className,
   id,
+  clearLabel = 'Clear',
   onFetchSuggestions,
   onSelectSuggestion,
 }: LocationInputProps) {
@@ -120,8 +126,10 @@ export function LocationInput({
     }
   };
 
+  const showClear = Boolean(value) && !disabled;
+
   return (
-    <div ref={triggerRef} className={className}>
+    <div ref={triggerRef} className={cn('relative', className)}>
       <Button
         id={id}
         type="button"
@@ -143,14 +151,12 @@ export function LocationInput({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {value && !disabled && (
-            <span
-              role="button"
-              onClick={clear}
-              className="rounded p-0.5 text-foreground/30 hover:text-foreground/70"
-            >
-              <X size={10} />
-            </span>
+          {showClear && (
+            // Placeholder for the clear button, which is a SIBLING of this
+            // trigger: a <button> nested in a <button> is invalid markup and
+            // unreachable by keyboard. Reserving its 14px footprint here keeps
+            // the truncated value from running underneath the hoisted control.
+            <span aria-hidden="true" className="w-[14px]" />
           )}
           <ChevronDown
             size={12}
@@ -161,6 +167,23 @@ export function LocationInput({
           />
         </div>
       </Button>
+
+      {showClear && (
+        <Button
+          type="button"
+          variant="unstyled"
+          aria-label={clearLabel}
+          onClick={clear}
+          // Overlays the placeholder above. The glyph used to sit 30–40px from
+          // the field's right edge (12px padding + 12px chevron + 4px gap +
+          // 2px inset); `p-1.5` + `right-6` keeps it exactly there while
+          // growing the hit box from 14px to ~22px (WCAG 2.5.8), the same
+          // trick as the Tag close button.
+          className="absolute right-6 top-1/2 flex -translate-y-1/2 items-center rounded p-1.5 text-foreground/30 hover:text-foreground/70"
+        >
+          <X size={10} />
+        </Button>
+      )}
 
       <LocationDropdown
         open={open}

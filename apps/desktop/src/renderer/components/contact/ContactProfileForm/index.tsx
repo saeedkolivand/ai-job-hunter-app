@@ -362,6 +362,7 @@ export function ContactProfileForm() {
                   persistLocation(v);
                 }}
                 placeholder={t('settings.contactProfile.locationPlaceholder')}
+                clearLabel={t('common.clearLocation')}
                 onFetchSuggestions={(q) => api.geocode.suggest(q)}
               />
             )}

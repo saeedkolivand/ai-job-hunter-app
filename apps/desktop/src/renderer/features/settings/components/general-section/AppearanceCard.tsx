@@ -68,6 +68,9 @@ export function AppearanceCard() {
           </div>
           <div
             role="radiogroup"
+            // ARIA composite: focusable programmatically only — the roving
+            // tabindex keeps the selected option as the sole tab stop.
+            tabIndex={-1}
             aria-label={t('settings.appearance.scheme')}
             className="grid grid-cols-1 gap-2 @xs:grid-cols-3"
             onKeyDown={makeRovingTabindex(
@@ -110,6 +113,8 @@ export function AppearanceCard() {
           </div>
           <div
             role="radiogroup"
+            // ARIA composite, as above: programmatically focusable only.
+            tabIndex={-1}
             aria-label={t('settings.appearance.accent')}
             className="flex flex-wrap items-center gap-2"
             onKeyDown={makeRovingTabindex(
@@ -228,6 +233,8 @@ export function AppearanceCard() {
           </div>
           <div
             role="radiogroup"
+            // ARIA composite, as above: programmatically focusable only.
+            tabIndex={-1}
             aria-label={t('settings.appearance.textSize')}
             className="grid grid-cols-1 gap-2 @xs:grid-cols-3"
             onKeyDown={makeRovingTabindex(

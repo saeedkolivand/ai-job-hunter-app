@@ -27,6 +27,20 @@ export interface ImageTransform {
 
 const IDENTITY: ImageTransform = { scale: 1, rotate: 0, flipX: false, flipY: false, x: 0, y: 0 };
 
+/** Pixels moved per arrow-key press — the keyboard equivalent of one drag step. */
+const PAN_STEP = 40;
+
+/**
+ * Arrow-key pan deltas. Signs mirror dragging: ArrowRight moves the image to
+ * the right exactly as a rightward drag does, so the two gestures agree.
+ */
+const PAN_KEYS: Record<string, { x: number; y: number } | undefined> = {
+  ArrowLeft: { x: -PAN_STEP, y: 0 },
+  ArrowRight: { x: PAN_STEP, y: 0 },
+  ArrowUp: { x: 0, y: -PAN_STEP },
+  ArrowDown: { x: 0, y: PAN_STEP },
+};
+
 export interface ImagePreviewProps {
   /** The previewable srcs; length > 1 enables prev/next navigation. */
   items: string[];
@@ -39,7 +53,7 @@ export interface ImagePreviewProps {
   /** Minimum / maximum zoom. Defaults 1 / 50. */
   minScale?: number;
   maxScale?: number;
-  /** Allow drag-to-pan. Default true. */
+  /** Allow panning — pointer drag, or arrow keys while zoomed. Default true. */
   movable?: boolean;
   onIndexChange: (index: number) => void;
   onOpenChange: (open: boolean) => void;
@@ -57,9 +71,9 @@ export interface ImagePreviewProps {
 
 /**
  * Full-screen image lightbox: zoom (buttons + wheel + double-click), rotate, flip,
- * reset, drag-to-pan, and prev/next across multiple items. Rendered in a portal on
- * the document body; closes on Escape or a backdrop click. Used by {@link Image}
- * (single item) and the preview group (many).
+ * reset, pan (drag or arrow keys while zoomed), and prev/next across multiple
+ * items. Rendered in a portal on the document body; closes on Escape or a
+ * backdrop click. Used by {@link Image} (single item) and the preview group (many).
  */
 export function ImagePreview({
   items,
@@ -94,22 +108,41 @@ export function ImagePreview({
     if (open) setTransform(IDENTITY);
   }, [open, index]);
 
-  // Lock body scroll + wire Escape / arrow keys while open.
+  // Lock body scroll while open.
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
-      else if (hasNav && e.key === 'ArrowLeft') onIndexChange((index - 1 + total) % total);
-      else if (hasNav && e.key === 'ArrowRight') onIndexChange((index + 1) % total);
-    };
-    window.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = prevOverflow;
-      window.removeEventListener('keydown', onKey);
     };
-  }, [open, hasNav, index, total, onOpenChange, onIndexChange]);
+  }, [open]);
+
+  // Every other transform (zoom/rotate/flip/reset) has a toolbar button; panning
+  // was pointer-only, so a keyboard user could zoom in and never reach the rest
+  // of the image (WCAG 2.1.1 / 2.5.7). While zoomed the arrows pan; at 1x — where
+  // there is nothing to pan — they keep stepping through the items.
+  const zoomed = movable && transform.scale > 1;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onOpenChange(false);
+        return;
+      }
+      const pan = PAN_KEYS[e.key];
+      if (pan && zoomed) {
+        e.preventDefault();
+        setTransform((p) => ({ ...p, x: p.x + pan.x, y: p.y + pan.y }));
+        return;
+      }
+      if (!hasNav) return;
+      if (e.key === 'ArrowLeft') onIndexChange((index - 1 + total) % total);
+      else if (e.key === 'ArrowRight') onIndexChange((index + 1) % total);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, hasNav, index, total, zoomed, onOpenChange, onIndexChange]);
 
   if (!open || !src || typeof document === 'undefined') return null;
 

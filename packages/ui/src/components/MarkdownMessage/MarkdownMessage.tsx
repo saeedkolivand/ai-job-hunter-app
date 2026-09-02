@@ -10,6 +10,7 @@
  * would navigate the webview.
  */
 import { cn } from '../../lib/cn';
+import { Button } from '../Button';
 
 type LinkClick = ((url: string) => void) | undefined;
 
@@ -192,21 +193,19 @@ function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {
       const url = link[2] ?? '';
       if (onLinkClick) {
         return (
-          <a
+          // A BUTTON, not an anchor: there is no href to follow (the handler
+          // hands the URL to the host, e.g. the system browser), and an anchor
+          // without one is neither keyboard-operable nor honestly named. Styled
+          // as inline link text so it still reads as a link and wraps in prose.
+          <Button
             key={i}
-            role="link"
-            tabIndex={0}
+            type="button"
+            variant="unstyled"
             onClick={() => onLinkClick(url)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onLinkClick(url);
-              }
-            }}
-            className="cursor-pointer text-brand-soft underline underline-offset-2 hover:text-brand"
+            className="inline cursor-pointer text-brand-soft underline underline-offset-2 hover:text-brand"
           >
             {label}
-          </a>
+          </Button>
         );
       }
       // No handler → show the label only (never a raw href that navigates the webview).

@@ -93,6 +93,10 @@ export function Tabs<T extends string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
+      // Composite widget: focusable programmatically only. The selected tab
+      // carries `tabIndex={0}` (roving tabindex), so the tablist must not add a
+      // second tab stop of its own.
+      tabIndex={-1}
       onKeyDown={onKeyDown}
       className={cn(
         'flex items-center gap-1 overflow-x-auto border-b border-[var(--border-mid)]',

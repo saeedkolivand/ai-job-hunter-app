@@ -231,3 +231,14 @@ describe('Tabs', () => {
     expect(screen.getByRole('tab', { name: 'Beta' })).toBeInTheDocument();
   });
 });
+
+describe('Tabs — composite tab order', () => {
+  it('the tablist is focusable but never a second tab stop: Tab lands on the selected tab', async () => {
+    render(<Harness initial="details" />);
+    // See SegmentedControl: `tabIndex={-1}` keeps the composite reachable
+    // programmatically while the roving `tabIndex={0}` tab stays the only stop.
+    await userEvent.tab();
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveFocus();
+    expect(screen.getByRole('tablist', { name: 'Application sections' })).not.toHaveFocus();
+  });
+});

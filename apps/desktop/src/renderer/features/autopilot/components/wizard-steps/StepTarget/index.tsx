@@ -330,6 +330,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                     setValue('countryCode', s.countryCode ?? undefined, { shouldDirty: true });
                   }}
                   placeholder={t('autopilot.wizard.target.locationPlaceholder')}
+                  clearLabel={t('common.clearLocation')}
                   onFetchSuggestions={(q) => api.geocode.suggest(q)}
                 />
                 {countryCode && (

@@ -524,3 +524,55 @@ describe('ImagePreview — body scroll lock', () => {
     expect(document.body.style.overflow).toBe('auto');
   });
 });
+
+describe('ImagePreview — keyboard pan', () => {
+  it('arrow keys pan a zoomed image by a fixed step, in the same direction as a drag', async () => {
+    const user = userEvent.setup();
+    render(<Harness scaleStep={0.5} />);
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    // 40px per press; ArrowRight/ArrowDown move the image right/down exactly as
+    // a rightward/downward drag does.
+    expect(imgTransform()).toContain('translate3d(40px, 40px, 0)');
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+  });
+
+  it('does not pan at 1x — there is nothing outside the frame to reach', () => {
+    render(<Harness />);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+  });
+
+  it('does not pan when movable=false, even zoomed (parity with drag-to-pan)', async () => {
+    const user = userEvent.setup();
+    render(<Harness movable={false} scaleStep={0.5} />);
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+  });
+
+  it('a zoomed multi-item preview pans instead of changing item', async () => {
+    const user = userEvent.setup();
+    const onIndexChange = vi.fn();
+    render(
+      <ImagePreview
+        items={[SRC_A, SRC_B, SRC_C]}
+        index={1}
+        open
+        scaleStep={0.5}
+        onIndexChange={onIndexChange}
+        onOpenChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(onIndexChange).not.toHaveBeenCalled();
+    expect(imgTransform()).toContain('translate3d(40px, 0px, 0)');
+  });
+});

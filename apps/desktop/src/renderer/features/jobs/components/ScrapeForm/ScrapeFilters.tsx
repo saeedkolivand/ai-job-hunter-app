@@ -63,6 +63,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
             })
           }
           placeholder={t('jobs.locationPlaceholder')}
+          clearLabel={t('common.clearLocation')}
           disabled={scraping}
           onFetchSuggestions={onGeocode}
         />

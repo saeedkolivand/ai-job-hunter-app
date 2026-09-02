@@ -175,3 +175,16 @@ describe('SegmentedControl — a disabled option', () => {
     expect(onChange).toHaveBeenCalledWith('compact');
   });
 });
+
+describe('SegmentedControl — composite tab order', () => {
+  it('the group is focusable but never a second tab stop: Tab lands on the selected radio', async () => {
+    render(<Harness initial="auto" />);
+    // `tabIndex={-1}` on the radiogroup satisfies "a composite must be
+    // focusable" without stealing a tab stop from the roving radios. Asserted
+    // through focus, not the attribute: `tabIndex={0}` would pass an attribute
+    // check of its own while breaking exactly this.
+    await userEvent.tab();
+    expect(screen.getByRole('radio', { name: 'Auto' })).toHaveFocus();
+    expect(screen.getByRole('radiogroup', { name: 'Prompt quality' })).not.toHaveFocus();
+  });
+});

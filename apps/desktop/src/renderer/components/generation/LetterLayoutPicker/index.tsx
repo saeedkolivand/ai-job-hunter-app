@@ -98,6 +98,9 @@ export function LetterLayoutPicker({ value, onChange, className }: LetterLayoutP
 
       <div
         role="radiogroup"
+        // ARIA composite: focusable programmatically only — the roving
+        // tabindex keeps the selected option as the sole tab stop.
+        tabIndex={-1}
         aria-label={t('aiGenerate.letterLayout')}
         className="flex flex-col gap-1.5"
         onKeyDown={makeRovingTabindex(LETTER_LAYOUT_IDS, selected, onChange, optionRefs)}

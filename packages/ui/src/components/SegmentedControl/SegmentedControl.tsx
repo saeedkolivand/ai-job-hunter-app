@@ -116,6 +116,10 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
+      // A composite widget must be focusable, but the roving tabindex below puts
+      // the SELECTED radio in the tab order — so the group itself is reachable
+      // programmatically only (`-1`), never as a second tab stop.
+      tabIndex={-1}
       onKeyDown={onKeyDown}
       className={cn(
         isGrid
