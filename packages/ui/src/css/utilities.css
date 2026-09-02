@@ -645,6 +645,26 @@ button[aria-disabled='true'] {
   outline-offset: 2px;
 }
 
+/* …except a COMPOSITE container that is focusable programmatically only.
+   A radiogroup / tablist / dialog shell carrying `tabindex="-1"` is never a tab
+   stop — a roving tabindex puts one of its CHILDREN in the tab order, and that
+   child paints its own ring. But the container is still focusable: a mousedown
+   in the gap between options focuses it, and per the `:focus-visible` heuristic
+   the next keypress then makes it match — painting the ring above around the
+   ENTIRE group. Suppressing it costs no WCAG 2.4.7 coverage (nothing keyboard-
+   reachable loses an indicator); the `[tabindex='-1']` half of each selector is
+   what keeps that true, so do not relax it to the bare role.
+
+   Unlayered and more specific than the rule above, deliberately: a Tailwind
+   `outline-none` on the component cannot do this job, because Tailwind v4 emits
+   utilities inside `@layer utilities` and an unlayered rule beats any layered
+   one at any specificity (see `DropdownSearch`, which hit the same wall). */
+[role='radiogroup'][tabindex='-1']:focus-visible,
+[role='tablist'][tabindex='-1']:focus-visible,
+[role='dialog'][tabindex='-1']:focus-visible {
+  outline: none;
+}
+
 /* ── Theme-switch crossfade (View Transition API) ────────────────────────────
    applyThemeAnimated() wraps the scheme flip in a view transition; tune the root
    cross-dissolve so dark↔light eases (~320ms) instead of snapping (no flashbang).

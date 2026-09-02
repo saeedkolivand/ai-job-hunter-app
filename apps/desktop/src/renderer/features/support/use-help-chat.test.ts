@@ -340,6 +340,105 @@ describe('useHelpChat', () => {
     expect(result.current.turns).toHaveLength(2);
   });
 
+  it('a Stop during RETRIEVAL keeps the busy state until help_search settles', async () => {
+    let settle: ((value: unknown) => void) | undefined;
+    const search = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+    );
+    const { result } = render('llama3:70b', { 'help.search': search });
+
+    await act(async () => {
+      void result.current.send('how do i export a pdf');
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+    });
+
+    act(() => {
+      result.current.stop();
+    });
+
+    // `help_search` is a Tauri command — the abort cannot cancel it, only make
+    // the reply be ignored. Handing the Ask button back HERE is what lets a
+    // second cold search run alongside the first one.
+    expect(result.current.streaming).toBe(true);
+    expect(search).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      settle?.({ results: [HIT], mode: 'hybrid', arms: { lexical: 'ran', dense: 'ran' } });
+      await waitFor(() => expect(result.current.streaming).toBe(false));
+    });
+
+    // …and the abort still did its half of the job: the reply was dropped, so
+    // no model call and no assistant turn came out of the stopped question.
+    expect(generateHelpAnswer).not.toHaveBeenCalled();
+    expect(result.current.turns.map((turn) => turn.role)).toEqual(['user']);
+  });
+
+  it('a second question aborts the run it replaces — one assistant turn, not two', async () => {
+    const streams: AbortSignal[] = [];
+    let releaseFirst: ((value: string) => void) | undefined;
+    vi.mocked(generateHelpAnswer)
+      .mockImplementationOnce(
+        ({ signal }) =>
+          new Promise((resolve) => {
+            if (signal) streams.push(signal);
+            releaseFirst = resolve;
+          })
+      )
+      .mockImplementation(() => Promise.resolve('second answer'));
+
+    const { result } = render();
+    // The handle as a component captured it BEFORE the first run re-rendered:
+    // its `streaming` guard is a closed-over `false`, so both calls get in.
+    // That is the only way two runs overlap, and it is why `run` must abort the
+    // controller it replaces instead of just overwriting the ref.
+    const staleSend = result.current.send;
+
+    await act(async () => {
+      void staleSend('first question');
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+    });
+
+    await act(async () => {
+      await staleSend('second question');
+    });
+
+    expect(streams[0]?.aborted).toBe(true);
+    const assistant = () => result.current.turns.filter((turn) => turn.role === 'assistant');
+    expect(assistant().map((turn) => turn.content)).toEqual(['second answer']);
+
+    // The abandoned stream resolving late must not append a turn of its own.
+    await act(async () => {
+      releaseFirst?.('first answer');
+      await Promise.resolve();
+    });
+    expect(assistant()).toHaveLength(1);
+  });
+
+  it('refuses a new question while one is in flight (single-flight)', async () => {
+    vi.mocked(generateHelpAnswer).mockImplementationOnce(() => new Promise(() => {}));
+    const { result, mock } = render();
+
+    await act(async () => {
+      void result.current.send('first question');
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+    });
+
+    // A FRESH handle, from a render where `streaming` is true: the guard inside
+    // `run` is the only thing between the user and a second overlapping
+    // question here — the Ask button is not even on screen.
+    let answered: boolean | undefined;
+    await act(async () => {
+      answered = await result.current.send('second question');
+    });
+
+    expect(answered).toBe(false);
+    expect(mock.help.search).toHaveBeenCalledTimes(1);
+    expect(result.current.turns.map((turn) => turn.content)).toEqual(['first question']);
+  });
+
   it('aborts an in-flight stream on unmount', async () => {
     let abortSignal: AbortSignal | undefined;
     vi.mocked(generateHelpAnswer).mockImplementationOnce(

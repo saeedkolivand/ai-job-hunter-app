@@ -109,14 +109,26 @@ export function ImagePreview({
     if (open) setTransform(IDENTITY);
   }, [open, index]);
 
-  // Move focus INTO the dialog when it opens. The arrow keys are bound on
-  // `window`, so leaving focus on whatever opened the preview means an arrow
-  // press both pans the image and reaches the control behind it (a text field
-  // would move its caret, a list would change selection). Focusing the dialog
-  // also gives a keyboard user somewhere to tab FROM, per the APG dialog
-  // pattern; `tabIndex={-1}` makes it programmatically focusable only.
+  // Move focus INTO the dialog when it opens, and hand it BACK on close. The
+  // arrow keys are bound on `window`, so leaving focus on whatever opened the
+  // preview means an arrow press both pans the image and reaches the control
+  // behind it (a text field would move its caret, a list would change
+  // selection). Focusing the dialog also gives a keyboard user somewhere to tab
+  // FROM, per the APG dialog pattern; `tabIndex={-1}` makes it programmatically
+  // focusable only.
+  //
+  // Taking focus without returning it is only half of that pattern: the dialog
+  // unmounts on Escape/close, focus falls to `<body>`, and the next Tab
+  // restarts at the top of the page instead of at the thumbnail the user opened
+  // (WCAG 2.4.3). `isConnected` guards the case where the opener itself is gone
+  // by then — a preview closed by a re-render that also removed its trigger.
   useEffect(() => {
-    if (open) dialogRef.current?.focus();
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
   }, [open]);
 
   // Lock body scroll while open.
@@ -254,7 +266,11 @@ export function ImagePreview({
       // name/role/value story, not an undocumented extra.
       aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
       onClick={() => onOpenChange(false)}
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 outline-none"
+      // No `outline-none` here: it would be inert. The global focus ring in
+      // `utilities.css` is UNLAYERED, so a Tailwind utility (layer `utilities`)
+      // cannot override it — the composite-container rule next to that ring is
+      // what keeps a 2px outline off the full-viewport backdrop.
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80"
     >
       <Button
         variant="unstyled"

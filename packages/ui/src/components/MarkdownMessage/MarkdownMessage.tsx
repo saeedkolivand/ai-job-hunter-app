@@ -216,6 +216,12 @@ function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {
           <a
             key={i}
             href={url}
+            // Matches `ExternalLink`, the app's other intercepted anchor. The
+            // `onClick` below cancels a primary click, but a middle-click fires
+            // `auxclick` and navigates for real — and the URL came out of an AI
+            // answer or a changelog, so it must not carry this app's location
+            // to it as a `Referer`.
+            rel="noreferrer"
             onClick={(e) => {
               e.preventDefault();
               onLinkClick(url);

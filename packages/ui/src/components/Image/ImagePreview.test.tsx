@@ -620,4 +620,38 @@ describe('ImagePreview — arrow keys are announced and never leak behind the di
     expect(screen.getByRole('dialog')).toHaveFocus();
     expect(field).not.toHaveFocus();
   });
+
+  it('hands focus back to whatever opened it when it closes', async () => {
+    function WithTrigger() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <ImagePreview
+            items={[SRC_A]}
+            index={0}
+            open={open}
+            onIndexChange={() => {}}
+            onOpenChange={setOpen}
+          />
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<WithTrigger />);
+    const trigger = screen.getByRole('button', { name: 'open' });
+
+    await user.click(trigger);
+    expect(screen.getByRole('dialog')).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    // Taking focus and never giving it back drops the user on `<body>`: the
+    // next Tab restarts at the top of the page instead of at the thumbnail
+    // they opened the preview from.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
 });

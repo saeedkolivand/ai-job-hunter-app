@@ -129,6 +129,11 @@ export function useHelpChat({ model, canUse }: Params) {
   // Monotonic per-question nonce: turn ids must never collide across a session,
   // and a positional index would repeat after a Stop discards nothing.
   const nonceRef = useRef(0);
+  // Whether the in-flight question has reached its STREAM. `help_search` and the
+  // data-glance reads are Tauri commands: the controller's signal cannot cancel
+  // them, it can only make the renderer ignore the reply. So until this flips,
+  // `stop()` has nothing it can actually stop — see there.
+  const streamPhaseRef = useRef(false);
 
   // Abort an in-flight stream on unmount — the Help page is a route, so
   // navigating away is the common case, not the exception.
@@ -139,16 +144,29 @@ export function useHelpChat({ model, canUse }: Params) {
     []
   );
 
-  /** Stop the current stream, keeping whatever text already arrived. */
+  /**
+   * Stop the current stream, keeping whatever text already arrived.
+   *
+   * Busy-state release is deliberately conditional. During RETRIEVAL there is
+   * no stream yet and the in-flight `help_search` is a Tauri command that
+   * cannot be cancelled — clearing `streaming` there would put the Ask button
+   * back while a cold embedding call is still running, so the next question
+   * would start a SECOND one alongside it. In that phase the abort is recorded
+   * (the reply is dropped) and `run`'s `finally` releases the button the moment
+   * the uncancellable leg settles. Once the stream has started, aborting really
+   * does end the work, so Ask comes back immediately as before.
+   */
   const stop = () => {
     const controller = abortRef.current;
-    if (!controller) return;
+    if (!controller || controller.signal.aborted) return;
     controller.abort();
-    abortRef.current = null;
     const partial = answerRef.current;
     answerRef.current = '';
     setAnswer('');
-    setStreaming(false);
+    if (streamPhaseRef.current) {
+      abortRef.current = null;
+      setStreaming(false);
+    }
     // A user who presses Stop wants the half-written answer, not an empty card.
     if (partial.trim()) {
       nonceRef.current += 1;
@@ -181,8 +199,16 @@ export function useHelpChat({ model, canUse }: Params) {
     const query = question.trim();
     if (!canUse || !query || streaming) return false;
 
+    // Abort whatever this run replaces BEFORE overwriting the ref, exactly as
+    // `useInterviewPractice` does. The `streaming` guard above closes the
+    // rendered path, but two `send`s in the same tick both read the stale
+    // `false`; without this the first controller is dropped un-aborted and its
+    // stream keeps writing turns into a transcript that moved on.
+    abortRef.current?.abort();
+
     const controller = new AbortController();
     abortRef.current = controller;
+    streamPhaseRef.current = false;
     answerRef.current = '';
     pendingRef.current = {};
     nonceRef.current += 1;
@@ -242,6 +268,9 @@ export function useHelpChat({ model, canUse }: Params) {
       // that is the only question that pays to send them to the provider.
       const aboutApplications = used.some((entry) => entry.section === APPLICATIONS_SECTION);
 
+      // Everything uncancellable is behind us; from here a Stop really stops
+      // the work, so it may release the Ask button immediately.
+      streamPhaseRef.current = true;
       const raw = await generateHelpAnswer({
         question: query,
         entries: used.map(({ title, body }) => ({ title, body })),
@@ -282,8 +311,12 @@ export function useHelpChat({ model, canUse }: Params) {
       setError(err instanceof Error ? err.message : String(err));
       return false;
     } finally {
+      // Still the current run — including one aborted DURING retrieval, whose
+      // `stop()` deliberately left the ref in place so the busy state outlived
+      // the abort. This is where that run finally gives the button back.
       if (abortRef.current === controller) {
         abortRef.current = null;
+        streamPhaseRef.current = false;
         setStreaming(false);
       }
     }

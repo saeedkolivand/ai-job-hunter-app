@@ -70,6 +70,10 @@ describe('MarkdownMessage', () => {
     // link to a screen reader AND what lets it wrap inline with the prose.
     const link = screen.getByRole('link', { name: '0.49.0' });
     expect(link).toHaveAttribute('href', 'https://example.com/compare/v0.48.0...v0.49.0');
+    // Same `rel` as `ExternalLink`: `onClick` cancels a primary click, but a
+    // middle-click navigates via `auxclick`, and the destination came from an
+    // AI answer or a changelog — it must not be handed this app's location.
+    expect(link).toHaveAttribute('rel', 'noreferrer');
     fireEvent.click(link);
     expect(onLinkClick).toHaveBeenCalledWith('https://example.com/compare/v0.48.0...v0.49.0');
     // Surrounding heading text is preserved alongside the link.
