@@ -177,5 +177,11 @@ mode, each of which a reviewer should verify from the source rather than the des
   reporting, so a write to a closed pipe is a silent abort). The only stdout write outside `emit`
   is `--help`, which runs before any frame is read. A source guard test counts the acquisition
   and bans the macros.
-- **Third-party text is fenced before it reaches the client** (unchanged from the CLI), and the
-  server's `instructions` say so — nothing in the payload itself marks the spans as untrusted.
+- **Third-party text is fenced per surface, never by assumption.** The generic tier runs
+  `fence_scraped_fields` on every reply (`agent_call.rs`); the curated tier fences `description`
+  in `fence_description` and `title`/`company`/`location` in `fence_posting_display_fields`
+  (`agent_read.rs`) for BOTH `best-matches` and `job`, and each tool that returns scraped text
+  carries the untrusted-text notice in its description. A curated tool added without the fence
+  call and the notice is a finding, not a tradeoff — the pre-PR gate found `job` bare after
+  three reviews had read the sibling. The server's `instructions` say the spans are untrusted;
+  nothing in the payload itself does.
