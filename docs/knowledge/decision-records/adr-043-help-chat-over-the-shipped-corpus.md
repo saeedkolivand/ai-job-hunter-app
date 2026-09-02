@@ -81,7 +81,7 @@ The design chosen — the parked August plan — rested on premises that had sin
 - Wire contract: `HelpSearchRequestSchema` / `HelpSearchResultSchema` in `packages/shared/src/schemas/index.ts`
 - Vector cache: `apps/desktop/src-tauri/src/documents/help_vectors.rs`
 - Renderer generation: `apps/desktop/src/renderer/lib/generate/generation/generation.ts`
-- Renderer hook: `apps/desktop/src/renderer/hooks/use-help-chat.ts`
+- Renderer hook: `apps/desktop/src/renderer/features/support/use-help-chat.ts`
 - Component: `apps/desktop/src/renderer/features/support/components/HelpChat/index.tsx`
 - Prompts: `packages/prompts/src/generate/help-chat/`
 - Prior decisions: [ADR-039](adr-039-hybrid-postings-search-lexical-dense-rerank.md) (retrieval module), [ADR-041](adr-041-searchable-help-page-over-compiled-in-entries.md) (searchable page), [ADR-010](adr-010-untrusted-input-fencing.md) (fencing), [ADR-033](adr-033-no-model-written-agent-memory.md) (no persistence)
