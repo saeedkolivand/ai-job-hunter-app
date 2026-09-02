@@ -336,6 +336,27 @@ fn round_4_persistent_redirect_and_unbound_proof_rows_stay_not_exposed() {
     }
 }
 
+/// Hand-written pin (MCP security critique): a revert of this row back to
+/// `Read` would silently let the generic tier — and every MCP `call-read`
+/// client — hand back the bridge's plaintext pairing token verbatim. No
+/// OTHER test in this file would catch that: the row-count tests don't
+/// change (an `Effect` swap, not an add/remove), and
+/// `not_exposed_rows_carry_a_real_reason` only checks rows that ARE already
+/// `NotExposed`.
+#[test]
+fn extension_bridge_status_stays_not_exposed_so_the_pairing_token_never_reaches_a_caller() {
+    let path = "commands::extension_bridge::extension_bridge_status";
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == path)
+        .unwrap_or_else(|| panic!("{path} is not a real POLICY row"));
+    assert!(
+        matches!(entry.effect, Effect::NotExposed(_)),
+        "{path} must stay NotExposed — got {:?}",
+        entry.effect
+    );
+}
+
 /// Mutation-style guard: an `Irreversible` row whose `ProofSource`
 /// pointed at ITSELF, or at ANY OTHER `Irreversible` row, would make the
 /// ceremony circular — satisfiable only by first satisfying another

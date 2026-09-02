@@ -65,7 +65,14 @@ mod proof;
 /// `export::commands::documents_export_document`, `updater::updater_check`)
 /// with no per-module special-casing — the SAME derivation both parses a
 /// CLI token's expected shape and looks a row up, never two copies.
-fn split_path(path: &str) -> (&str, &str) {
+///
+/// `pub(super)` — the `agent_cli::mcp` MCP server (a sibling module reached
+/// via `extension_bridge`, not a descendant of THIS module) needs the exact
+/// same `(namespace, command)` split to route a `call-*` tool locally
+/// against its own bundled `POLICY` copy, and to build `commands`' rows —
+/// never a second hand-typed `rsplit("::")`. Same anti-copy reasoning that
+/// widened [`ERR_CONFIRMATION_REQUIRED`] below.
+pub(super) fn split_path(path: &str) -> (&str, &str) {
     let mut segments = path.rsplit("::");
     let command = segments.next().unwrap_or(path);
     let namespace = segments.next().unwrap_or("");
@@ -140,7 +147,11 @@ pub(super) enum Refusal {
     ProofUnavailable,
 }
 
-const ERR_UNKNOWN_COMMAND: &str = "unknown_command";
+/// `pub(super)` — the MCP server's `call-*` tools refuse locally with this
+/// SAME sentinel for a `<namespace>:<command>` their own bundled `POLICY`
+/// copy doesn't know, rather than a second hand-typed literal (same
+/// reasoning as [`ERR_CONFIRMATION_REQUIRED`]'s own doc).
+pub(super) const ERR_UNKNOWN_COMMAND: &str = "unknown_command";
 const ERR_NOT_EXPOSED: &str = "not_exposed";
 const ERR_CLI_ONLY: &str = "cli_only";
 const ERR_RATE_LIMITED: &str = "rate_limited";

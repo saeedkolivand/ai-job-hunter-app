@@ -43,6 +43,30 @@ fn find_policy_refuses_a_command_that_does_not_exist_at_all() {
     assert!(find_policy("jobs", "delete_everything").is_none());
 }
 
+/// Pulls the REAL `extension_bridge_status` row and drives it through the
+/// real production [`gate`] — not a hand-typed `Effect::NotExposed`
+/// literal — so a future revert of that row back to `Read` fails HERE,
+/// against the actual dispatch decision `handle_agent_call` makes, not only
+/// against `policy::tests`' own shape check. MCP security critique: this is
+/// the bridge's plaintext pairing token; the generic tier (and every MCP
+/// `call-read` client one hop further out) must never dispatch it.
+#[test]
+fn the_real_extension_bridge_status_row_refuses_through_the_real_gate() {
+    let entry = find_policy("extension_bridge", "extension_bridge_status")
+        .expect("extension_bridge_status is a real POLICY row");
+    assert!(
+        matches!(super::gate(entry.effect, None), Err(Refusal::NotExposed(_))),
+        "extension_bridge_status must refuse through gate() with no confirm"
+    );
+    assert!(
+        matches!(
+            super::gate(entry.effect, Some("anything")),
+            Err(Refusal::NotExposed(_))
+        ),
+        "extension_bridge_status must refuse through gate() even WITH a confirm"
+    );
+}
+
 // ── Refusal sentinels/details (pure) ────────────────────────────────────
 
 #[test]
