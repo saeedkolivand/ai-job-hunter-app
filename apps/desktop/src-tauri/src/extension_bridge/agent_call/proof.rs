@@ -816,10 +816,11 @@ mod tests {
         }
         // Tracks `policy::tests::every_proof_source_read_command_is_a_read_row`'s
         // own hand-written literal (security review round 4: `ai_pull_model`
-        // moved `Reversible` → `Irreversible` — see that row's own comment
-        // in `policy.rs`) — kept in sync by hand, not derived from it, same
-        // "pair a loop with a literal" discipline both files use.
-        assert_eq!(checked, 33, "expected exactly 33 Irreversible rows");
+        // moved `Reversible` → `Irreversible`; `help_search` then added one
+        // more for its dense arm's `charge_provider_daily` — see each row's
+        // own comment in `policy.rs`) — kept in sync by hand, not derived
+        // from it, same "pair a loop with a literal" discipline both files use.
+        assert_eq!(checked, 34, "expected exactly 34 Irreversible rows");
     }
 
     #[test]

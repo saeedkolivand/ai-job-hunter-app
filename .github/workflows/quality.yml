@@ -221,7 +221,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          pnpm exec eslint --config eslint.a11y.config.mjs 'apps/desktop/src/renderer/**/*.tsx' -f stylish > "$RUNNER_TEMP/a11y.txt" 2>&1
+          pnpm exec eslint --config eslint.a11y.config.mjs 'apps/desktop/src/renderer/**/*.tsx' 'packages/ui/src/**/*.tsx' -f stylish > "$RUNNER_TEMP/a11y.txt" 2>&1
           code=$?
           {
             echo "## ♿ a11y Lint (jsx-a11y)"

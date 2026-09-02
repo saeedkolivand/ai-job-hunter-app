@@ -3,7 +3,7 @@ import { Bookmark, Briefcase, CheckCircle, Eye, TrendingUp } from 'lucide-react'
 import { useTranslation } from '@ajh/translations';
 import { GlassCard } from '@ajh/ui';
 
-import { TRACKED_INTERACTION_TYPES } from '@/features/dashboard/constants';
+import { TRACKED_INTERACTION_TYPES } from '@/constants/interactions';
 import { useInteractions } from '@/services';
 
 export function JobPipelineOverview() {

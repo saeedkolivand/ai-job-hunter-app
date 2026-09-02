@@ -34,7 +34,7 @@ describe('LocationInput', () => {
   it('clears the value via the clear affordance', () => {
     const onChange = vi.fn();
     render(<LocationInput value="Berlin" onChange={onChange} onFetchSuggestions={noSuggestions} />);
-    const clear = screen.getByRole('button', { name: '' });
+    const clear = screen.getByRole('button', { name: 'Clear' });
     fireEvent.click(clear);
     expect(onChange).toHaveBeenCalledWith('');
   });
@@ -166,8 +166,67 @@ describe('LocationInput', () => {
         onSelectSuggestion={onSelectSuggestion}
       />
     );
-    const clear = screen.getByRole('button', { name: '' });
+    const clear = screen.getByRole('button', { name: 'Clear' });
     fireEvent.click(clear);
     expect(onSelectSuggestion).toHaveBeenCalledWith({ display: '' });
+  });
+});
+
+describe('LocationInput — clear affordance', () => {
+  it('the clear button is a keyboard-reachable SIBLING of the field, not nested inside it', async () => {
+    const onChange = vi.fn();
+    render(<LocationInput value="Berlin" onChange={onChange} onFetchSuggestions={noSuggestions} />);
+
+    const field = screen.getByRole('button', { name: 'Berlin' });
+    const clear = screen.getByRole('button', { name: 'Clear' });
+    // It used to be a role="button" <span> INSIDE the field <button>: invalid
+    // markup, so the browser never put it in the tab order.
+    expect(field.contains(clear)).toBe(false);
+
+    await userEvent.tab(); // field trigger
+    await userEvent.tab(); // clear
+    expect(clear).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('names the clear button, and lets the consumer localize that name', () => {
+    render(
+      <LocationInput
+        value="Berlin"
+        onChange={() => {}}
+        onFetchSuggestions={noSuggestions}
+        clearLabel="Ort löschen"
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Ort löschen' })).toBeInTheDocument();
+  });
+
+  it('gives the clear glyph a >=24px hit box without moving it', () => {
+    render(<LocationInput value="Berlin" onChange={() => {}} onFetchSuggestions={noSuggestions} />);
+    const clear = screen.getByRole('button', { name: 'Clear' });
+    // 10px glyph + 2x8px padding = 26px, past the WCAG 2.5.8 minimum that the
+    // previous `p-1.5` missed at ~22px. `right-[22px]` compensates so the
+    // glyph's centre stays where it always was (35px from the field's edge).
+    expect(clear.className).toContain('p-2');
+    expect(clear.className).not.toContain('p-1.5');
+    expect(clear.className).toContain('right-[22px]');
+  });
+
+  it('renders no clear button when the field is empty or disabled', () => {
+    const { rerender } = render(
+      <LocationInput value="" onChange={() => {}} onFetchSuggestions={noSuggestions} />
+    );
+    expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+    rerender(
+      <LocationInput
+        value="Berlin"
+        disabled
+        onChange={() => {}}
+        onFetchSuggestions={noSuggestions}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
   });
 });

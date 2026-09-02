@@ -7,6 +7,7 @@ import {
 } from 'react';
 
 import { cn } from '../../lib/cn';
+import { Button } from '../Button';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,13 @@ export interface TagProps {
   onClose?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   /** Draw the 1px border. Default `true`. */
   bordered?: boolean;
-  onClick?: (e: ReactMouseEvent<HTMLSpanElement>) => void;
+  /**
+   * Makes the tag's label region activatable. It renders as a real `button`
+   * (tabbable, Enter/Space) INSIDE the chip rather than a click handler on the
+   * outer `span`, so a keyboard or screen-reader user can reach it; the close
+   * × stays a sibling because buttons cannot nest.
+   */
+  onClick?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   children?: ReactNode;
   className?: string;
   style?: CSSProperties;
@@ -128,6 +135,13 @@ function TagBase({
     if (!e.defaultPrevented) setVisible(false);
   };
 
+  const label = (
+    <>
+      {icon != null && <span className="-ml-0.5 inline-flex items-center">{icon}</span>}
+      {children}
+    </>
+  );
+
   return (
     <span
       className={cn(
@@ -138,10 +152,32 @@ function TagBase({
         className
       )}
       style={{ ...customStyle, ...style }}
-      onClick={onClick}
     >
-      {icon != null && <span className="-ml-0.5 inline-flex items-center">{icon}</span>}
-      {children}
+      {onClick ? (
+        // Keeps the chip's shape (this span still carries BASE + colour) while
+        // the activatable region becomes a real control. `inline-flex gap-1`
+        // reproduces the icon/label spacing the span used to provide.
+        //
+        // The chip's own padding is re-applied HERE and cancelled with matching
+        // negative margins: the outer span looks identical, but the pointer/tap
+        // target now covers the whole chip instead of stopping at the text, so
+        // the `cursor-pointer` edge is no longer dead (WCAG 2.5.8). The right
+        // edge is only claimed when there is no close x - that button already
+        // owns it, and two overlapping targets is worse than a narrow one.
+        <Button
+          type="button"
+          variant="unstyled"
+          onClick={onClick}
+          className={cn(
+            '-my-0.5 -ml-2 inline-flex items-center gap-1 rounded py-0.5 pl-2',
+            !closable && '-mr-2 pr-2'
+          )}
+        >
+          {label}
+        </Button>
+      ) : (
+        label
+      )}
       {closable && (
         <button
           type="button"

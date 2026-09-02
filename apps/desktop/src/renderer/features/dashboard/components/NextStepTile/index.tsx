@@ -6,8 +6,8 @@ import { useTranslation } from '@ajh/translations';
 import { ActionTile, Button } from '@ajh/ui';
 
 import { useCanUseAI } from '@/components/ui/ModelSelector';
+import { TRACKED_INTERACTION_TYPES } from '@/constants/interactions';
 import { ROUTES } from '@/constants/routes/routes';
-import { TRACKED_INTERACTION_TYPES } from '@/features/dashboard/constants';
 import {
   deriveNextStep,
   type NextStepId,

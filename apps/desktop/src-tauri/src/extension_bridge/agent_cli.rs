@@ -1058,7 +1058,7 @@ pub fn run(args: &[String]) -> i32 {
     ))
 }
 
-// ADR-038 §1 — the command policy table (165 rows) + its exactness test
+// ADR-038 §1 — the command policy table (166 rows) + its exactness test
 // against `generate_handler!`. Data only in this phase: nothing here
 // dispatches yet (§2's generic `agent call <ns>:<command>` tier is later).
 pub(crate) mod policy;

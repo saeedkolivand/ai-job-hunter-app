@@ -7,6 +7,7 @@ import { Accordion, EmptyState, Input } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
+import { HelpChat } from '@/features/support/components/HelpChat';
 import { matchesHelpQuery } from '@/features/support/help-search';
 import { getSupportSections } from '@/features/support/support-data';
 
@@ -46,6 +47,10 @@ export function SupportPage() {
           badge={t('support.faq.badge')}
         />
 
+        {/* Above the search box on purpose: the chat is the fastest way in, and
+            every answer points back down into these same entries. */}
+        <HelpChat onSearchFor={setQuery} />
+
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -82,7 +87,9 @@ export function SupportPage() {
             {sections.map((section) => {
               const Icon = section.icon;
               return (
-                <div key={section.label}>
+                // Keyed by the stable section id, not the localized label:
+                // switching language would otherwise remount every section.
+                <div key={section.id}>
                   <div className="mb-3 flex items-center gap-2.5">
                     <div
                       className="flex h-7 w-7 items-center justify-center rounded-lg"

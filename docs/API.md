@@ -53,6 +53,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`extensionBridge`](#extensionbridge) | 9       |                                                                                                                                        |
 | [`geocode`](#geocode)                 | 1       |                                                                                                                                        |
 | [`github`](#github)                   | 1       |                                                                                                                                        |
+| [`help`](#help)                       | 1       |                                                                                                                                        |
 | [`jobPreferences`](#jobpreferences)   | 5       |                                                                                                                                        |
 | [`jobs`](#jobs)                       | 5       |                                                                                                                                        |
 | [`linkedin`](#linkedin)               | 5       |                                                                                                                                        |
@@ -2842,6 +2843,48 @@ export interface GitHubRepo {
   pushedAt?: string;
 }
 ```
+
+---
+
+## `help`
+
+Contract: `HelpContract` in `packages/shared/src/ipc/contracts/help.ts`
+
+### Methods — `help`
+
+- [`help.search`](#helpsearch)
+
+#### `help.search`
+
+```ts
+search(req: HelpSearchRequest): Promise<HelpSearchResult>;
+```
+
+Rank renderer-supplied help entries against a user question — the
+retrieval half of the in-app help chat (ADR-043).
+
+The corpus is NOT duplicated into Rust. The caller sends the ACTIVE
+locale's entries with every question and the reply names entry ids and
+scores only, never a copy of the text the caller already holds.
+
+Request shape, its per-field caps and their defaults live in
+`HelpSearchRequestSchema`; the reply shape — including `mode` and the
+per-arm `arms` outcomes a UI must read before calling a ranking semantic —
+in `HelpSearchResultSchema`. The ranking itself, the preference that gates
+the dense arm, and the server-side re-validation every non-UI caller
+depends on are owned by `commands/help.rs`.
+
+### Channels — `help`
+
+`HELP_CHANNELS` in `packages/shared/src/ipc/contracts/help.ts`:
+
+| Key      | Channel       |
+| -------- | ------------- |
+| `search` | `help:search` |
+
+### Referenced types — `help`
+
+- `packages/shared/src/schemas/index.ts` — `HelpSearchRequest`, `HelpSearchResult`
 
 ---
 

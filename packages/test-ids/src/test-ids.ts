@@ -215,5 +215,37 @@ export const TEST_IDS = {
     searchInput: 'support-search-input',
     /** Wrapper around the EmptyState shown when no entry in any section matches. */
     emptyState: 'support-empty-state',
+
+    // ── Help chat (ADR-043) — the grounded assistant above the search box ──
+    /**
+     * The whole chat card. Always rendered on the Help page — when AI is not
+     * usable the card stays and shows `AiSetupHint` inside it, so its absence
+     * means the page itself failed to render.
+     */
+    chatCard: 'support-chat-card',
+    /** The question box. */
+    chatInput: 'support-chat-input',
+    /** Ask — submits the typed question. */
+    chatAsk: 'support-chat-ask',
+    /** Stop — aborts the in-flight stream, keeping the partial answer. */
+    chatStop: 'support-chat-stop',
+    /** The live/streamed answer region for the current question. */
+    chatAnswer: 'support-chat-answer',
+    /** One rendered turn of the transcript (user or assistant). */
+    chatTurn: 'support-chat-turn',
+    /** A "Based on" chip; clicking it searches the page for that entry's title. */
+    chatSource: 'support-chat-source',
+    /** Notice shown when the user's semantic-scoring opt-in is OFF (`dense: 'skipped'`). */
+    chatKeywordNotice: 'support-chat-keyword-notice',
+    /**
+     * Notice shown when semantic scoring is ON but the embedding failed
+     * (`dense: 'unavailable'`) — nothing for the user to switch, so it carries
+     * no Settings link.
+     */
+    chatDenseNotice: 'support-chat-dense-notice',
+    /** Error row shown when retrieval or generation failed. */
+    chatError: 'support-chat-error',
+    /** Re-sends the failed question from the error row. */
+    chatRetry: 'support-chat-retry',
   },
 } as const;

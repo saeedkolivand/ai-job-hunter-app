@@ -524,3 +524,186 @@ describe('ImagePreview — body scroll lock', () => {
     expect(document.body.style.overflow).toBe('auto');
   });
 });
+
+describe('ImagePreview — keyboard pan', () => {
+  it('arrow keys pan a zoomed image by a fixed step, in the same direction as a drag', async () => {
+    const user = userEvent.setup();
+    render(<Harness scaleStep={0.5} />);
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    // 40px per press; ArrowRight/ArrowDown move the image right/down exactly as
+    // a rightward/downward drag does.
+    expect(imgTransform()).toContain('translate3d(40px, 40px, 0)');
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+  });
+
+  it('does not pan at 1x — there is nothing outside the frame to reach', () => {
+    render(<Harness />);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+  });
+
+  it('does not pan when movable=false, even zoomed (parity with drag-to-pan)', async () => {
+    const user = userEvent.setup();
+    render(<Harness movable={false} scaleStep={0.5} />);
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+  });
+
+  it('a zoomed multi-item preview pans instead of changing item', async () => {
+    const user = userEvent.setup();
+    const onIndexChange = vi.fn();
+    render(
+      <ImagePreview
+        items={[SRC_A, SRC_B, SRC_C]}
+        index={1}
+        open
+        scaleStep={0.5}
+        onIndexChange={onIndexChange}
+        onOpenChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(onIndexChange).not.toHaveBeenCalled();
+    expect(imgTransform()).toContain('translate3d(40px, 0px, 0)');
+  });
+});
+
+describe('ImagePreview — arrow keys are announced and never leak behind the dialog', () => {
+  it('advertises the pan keys on the dialog itself', () => {
+    render(<Harness />);
+    // Panning has no toolbar button, so the arrows are the only route to the
+    // rest of a zoomed image — an undocumented shortcut is not a route.
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'aria-keyshortcuts',
+      'ArrowUp ArrowDown ArrowLeft ArrowRight'
+    );
+  });
+
+  it('takes focus off the field behind it when it opens', async () => {
+    function WithField() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <input aria-label="Notes" />
+          <button type="button" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <ImagePreview
+            items={[SRC_A]}
+            index={0}
+            open={open}
+            onIndexChange={() => {}}
+            onOpenChange={setOpen}
+          />
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<WithField />);
+
+    const field = screen.getByRole('textbox', { name: 'Notes' });
+    field.focus();
+    expect(field).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: 'open' }));
+    // The arrow handler is bound on `window`, so focus left on the field would
+    // move its caret on every pan press. The house focus trap moves focus to
+    // the first control INSIDE the dialog (the Close button) — the APG dialog
+    // pattern, and what makes the shell's own ring unnecessary.
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
+    expect(field).not.toHaveFocus();
+  });
+
+  it('contains Tab inside the dialog: forward from the last control wraps to the first', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">behind the dialog</button>
+        <ImagePreview
+          items={[SRC_A]}
+          index={0}
+          open
+          onIndexChange={() => {}}
+          onOpenChange={() => {}}
+        />
+      </>
+    );
+
+    // `aria-modal` tells a screen reader the page behind is inert; it moves no
+    // tab stop, so without a trap Tab walks out into a page the user cannot see.
+    const reset = screen.getByRole('button', { name: 'Reset' });
+    reset.focus();
+    await user.tab();
+
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'behind the dialog' })).not.toHaveFocus();
+  });
+
+  it('contains Shift+Tab too: backward from the first control wraps to the last', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">behind the dialog</button>
+        <ImagePreview
+          items={[SRC_A]}
+          index={0}
+          open
+          onIndexChange={() => {}}
+          onOpenChange={() => {}}
+        />
+      </>
+    );
+
+    // The direction the forward-only guard misses: Shift+Tab from the FIRST
+    // control is one keypress from the page behind the lightbox.
+    screen.getByRole('button', { name: 'Close' }).focus();
+    await user.tab({ shift: true });
+
+    expect(screen.getByRole('button', { name: 'Reset' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'behind the dialog' })).not.toHaveFocus();
+  });
+
+  it('hands focus back to whatever opened it when it closes', async () => {
+    function WithTrigger() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <ImagePreview
+            items={[SRC_A]}
+            index={0}
+            open={open}
+            onIndexChange={() => {}}
+            onOpenChange={setOpen}
+          />
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<WithTrigger />);
+    const trigger = screen.getByRole('button', { name: 'open' });
+
+    await user.click(trigger);
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    // Taking focus and never giving it back drops the user on `<body>`: the
+    // next Tab restarts at the top of the page instead of at the thumbnail
+    // they opened the preview from.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+});

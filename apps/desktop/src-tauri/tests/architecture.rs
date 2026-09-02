@@ -433,6 +433,11 @@ const R3_ALLOW: &[&str] = &[
     // split out so `documents/mod.rs` stays under R8's LOC cap. Every query it
     // holds was moved verbatim from that file.
     "documents/sql.rs",
+    // Same store, same reason: the help-corpus vector cache
+    // (`commands::help`'s dense arm). Runs on the SAME `DocumentStore`
+    // connection, created by the same `DocumentStore::MIGRATIONS` list — a
+    // slice of that store's persistence, not a second store.
+    "documents/help_vectors.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
     "ai_config/mod.rs",
@@ -686,7 +691,10 @@ fn r7_allowlist_has_no_dead_entries() {
 }
 
 // ── R8: oversized-module watch (hard cap prevents new mega-files) ────────────────────
-const HARD_CAP_LOC: usize = 1400; // current ceiling: extension_bridge/mod.rs (~1398) — split it before growing it
+const HARD_CAP_LOC: usize = 1400; // current ceiling: export/typst_engine/letter.rs (1400 — exactly at the cap,
+                                  // split it before growing it). agent_cli/policy.rs was split at 1399 (its
+                                  // types + classification rules moved to agent_cli/policy/types.rs) so the
+                                  // POLICY table has room for new rows again.
 const SOFT_LOC: usize = 600;
 
 #[test]

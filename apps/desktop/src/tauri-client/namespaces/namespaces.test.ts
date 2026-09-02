@@ -32,6 +32,7 @@ import { autopilot } from './autopilot';
 import { boards } from './boards';
 import { documents } from './documents';
 import { extensionBridge } from './extensionBridge';
+import { help } from './help';
 import { jobs } from './jobs';
 import { scrape } from './scrape';
 import { system } from './system';
@@ -81,6 +82,15 @@ describe('tauri-client namespaces', () => {
 
     autopilot.bestMatches();
     expect(invoke).toHaveBeenCalledWith('autopilot_best_matches');
+
+    // The whole request travels under a single `req` key (the shape
+    // `#[tauri::command] help_search(req: HelpSearchRequest)` deserializes),
+    // exactly like `scrape_hybrid_search` above — a flattened payload would
+    // silently arrive as a missing argument on the Rust side.
+    help.search({ query: 'how do i export a pdf', entries: [], limit: 3 });
+    expect(invoke).toHaveBeenCalledWith('help_search', {
+      req: { query: 'how do i export a pdf', entries: [], limit: 3 },
+    });
   });
 
   it('wires event subscriptions through listen and forwards payloads', () => {

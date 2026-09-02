@@ -1,6 +1,14 @@
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use super::*;
+
+/// How long a test waits for a signal that a correct [`serve`] always sends — long enough that a
+/// loaded CI machine never trips it, short enough that a real deadlock fails the run rather than
+/// hanging it.
+const SIGNAL_BUDGET: Duration = Duration::from_secs(10);
 
 fn line(v: Value) -> String {
     format!("{v}\n")
@@ -10,22 +18,198 @@ fn args(v: &[&str]) -> Vec<String> {
     v.iter().map(|x| x.to_string()).collect()
 }
 
+/// The two halves of one `tools/call`, composed. Production never needs this — [`serve`] runs
+/// [`classify_tool_call`] on its writer thread and [`dispatched_tool_result`] on the worker,
+/// which is the whole point of the split — so the composition lives here rather than as a
+/// never-called fn in `mcp.rs`. The real loop's own composition is covered by the `serve` tests
+/// below, not by this helper.
+fn tool_call_result(
+    params: &Value,
+    server: &Server,
+    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
+) -> Result<Value, (i64, &'static str)> {
+    match classify_tool_call(params, server) {
+        ToolCall::Local(outcome) => outcome,
+        ToolCall::Bridge(verb) => Ok(dispatched_tool_result(&verb, dispatch)),
+    }
+}
+
 fn stub_ok(_verb: &Verb) -> Result<Value, &'static str> {
     Ok(json!({ "ok": true, "resource": "stub", "data": {} }))
 }
 
+/// A poisoned `Mutex` in a test is a panic in ANOTHER test thread; surface it as a failure here
+/// rather than propagating an `unwrap` chain through every assertion.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Drive [`serve`] over an in-memory [`Cursor`] with a stub dispatcher — no runtime, no socket, no
-/// live app. Always the most permissive launch mode (both flags) unless a test needs otherwise —
-/// returns the raw stdout bytes as a `String` so a test can assert exact line counts / content.
+/// live app. Always the most permissive launch mode (both flags) unless a test needs otherwise.
+/// The dispatch stub now runs on `serve`'s own worker thread, so it must be `Send + 'static`:
+/// state a test wants to observe travels through an `Arc` (or a channel), never a borrow.
+fn serve_with(
+    input: &str,
+    output: impl Write,
+    dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
+) -> i32 {
+    serve_with_drain_budget(input, output, dispatch, INVOCATION_TIMEOUT)
+}
+
+/// [`serve_with`] with the EOF drain deadline injected — production's own
+/// [`INVOCATION_TIMEOUT`] everywhere except the two tests that measure the deadline itself, which
+/// would otherwise have to wait it out.
+fn serve_with_drain_budget(
+    input: &str,
+    output: impl Write,
+    dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
+    drain_budget: Duration,
+) -> i32 {
+    let server = Server::new(true, true);
+    serve(
+        Cursor::new(input.to_string()),
+        output,
+        &server,
+        dispatch,
+        drain_budget,
+    )
+}
+
+/// [`serve_with`] into a plain buffer — returns the raw stdout bytes as a `String` so a test can
+/// assert exact line counts / content.
 fn run_serve(
     input: &str,
-    mut dispatch: impl FnMut(&Verb) -> Result<Value, &'static str>,
+    dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
 ) -> String {
-    let server = Server::new(true, true);
     let mut output = Vec::new();
-    let code = serve(Cursor::new(input), &mut output, &server, &mut dispatch);
+    let code = serve_with(input, &mut output, dispatch);
     assert_eq!(code, 0);
     String::from_utf8(output).expect("valid utf8")
+}
+
+/// Every `id` [`serve`] wrote, in write order.
+fn reply_ids(text: &str) -> Vec<i64> {
+    text.lines()
+        .map(|l| {
+            serde_json::from_str::<Value>(l).expect("each line is one JSON-RPC reply")["id"]
+                .as_i64()
+                .expect("every reply here carries a numeric id")
+        })
+        .collect()
+}
+
+/// [`serve`]'s single writer, instrumented: mirrors every byte into a shared buffer and, the
+/// first time that buffer contains `needle`, pulses `signal` exactly once. Lets a dispatch stub
+/// running on the WORKER thread block until a frame the MAIN thread emitted has really been
+/// written — the only way to observe "answered mid-call" from outside.
+struct SignallingWriter {
+    buffer: Arc<Mutex<Vec<u8>>>,
+    needle: &'static str,
+    signal: Option<std::sync::mpsc::Sender<()>>,
+}
+
+impl Write for SignallingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let seen = {
+            let mut sink = lock(&self.buffer);
+            sink.extend_from_slice(buf);
+            String::from_utf8_lossy(&sink).contains(self.needle)
+        };
+        if seen {
+            if let Some(tx) = self.signal.take() {
+                let _ = tx.send(());
+            }
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// A writer whose every write fails — the EPIPE a client that closed its pipe produces.
+struct BrokenWriter;
+
+impl Write for BrokenWriter {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("client closed the pipe"))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Err(std::io::Error::other("client closed the pipe"))
+    }
+}
+
+/// A writer that PARKS inside its FIRST `write` — pulsing `parked` first — until the test drops
+/// its release sender, then accepts everything. The client that stopped draining stdout, held
+/// still on purpose: while it is parked the whole loop is stuck inside [`emit`], which is the
+/// only state in which the reader thread can be observed running ahead of the writer.
+struct ParkingWriter {
+    buffer: Arc<Mutex<Vec<u8>>>,
+    parked: Option<std::sync::mpsc::Sender<()>>,
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+impl Write for ParkingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if let Some(tx) = self.parked.take() {
+            let _ = tx.send(());
+            // Returns as soon as the test drops the sender (Disconnected); the budget is only
+            // there so a broken test fails instead of hanging the run.
+            let _ = self.release.recv_timeout(SIGNAL_BUDGET);
+        }
+        lock(&self.buffer).extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// A [`BufRead`] that hands out ONE line per `fill_buf` and counts every line it has handed over.
+/// A [`Cursor`] cannot answer the question the bound is about — "how far did the reader get before
+/// it stopped?" — because it is consumed in whatever chunks the reader asks for; this counts the
+/// lines the reader thread actually pulled, so a reader parked on a full queue and a reader that
+/// swallowed the entire input are two different numbers.
+struct PacedInput {
+    lines: std::vec::IntoIter<String>,
+    current: Vec<u8>,
+    pos: usize,
+    produced: Arc<AtomicUsize>,
+}
+
+impl std::io::Read for PacedInput {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let taken = {
+            let available = self.fill_buf()?;
+            let n = available.len().min(buf.len());
+            buf[..n].copy_from_slice(&available[..n]);
+            n
+        };
+        self.consume(taken);
+        Ok(taken)
+    }
+}
+
+impl std::io::BufRead for PacedInput {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if self.pos == self.current.len() {
+            self.current = self.lines.next().unwrap_or_default().into_bytes();
+            self.pos = 0;
+            if !self.current.is_empty() {
+                // Counted on HAND-OVER, so the count is "lines the reader has begun reading",
+                // never "lines the test wrote".
+                self.produced.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        Ok(&self.current[self.pos..])
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.pos = (self.pos + amt).min(self.current.len());
+    }
 }
 
 fn names(list: &[Value]) -> Vec<&str> {
@@ -52,14 +236,9 @@ fn serve_emits_exactly_one_line_per_request_and_none_for_notifications() {
     );
 }
 
-#[test]
-fn serve_dispatches_and_replies_single_flight_never_reordering_a_ping_between_two_calls() {
-    // CodeRabbit, PR #1092 (item c) — pins the module doc's own "Single-flight" section: `serve`
-    // reads one line, dispatches it SYNCHRONOUSLY, and writes its reply before reading the next
-    // line, so a `ping` sandwiched between two `tools/call` frames can never jump the queue, and
-    // the two calls themselves must dispatch in input order (never concurrently/reordered).
-    let dispatch_order = std::cell::RefCell::new(Vec::new());
-    let input = format!(
+/// The `[call, ping, call]` input both concurrency tests below drive.
+fn sandwiched_ping_input() -> String {
+    format!(
         "{}{}{}",
         line(json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -70,33 +249,534 @@ fn serve_dispatches_and_replies_single_flight_never_reordering_a_ping_between_tw
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "job", "arguments": { "url": "https://example.com/second" } },
         })),
-    );
-    let text = run_serve(&input, |verb: &Verb| {
+    )
+}
+
+#[test]
+fn a_ping_is_answered_while_the_first_tools_call_is_still_in_flight() {
+    // ADR-040 §12's follow-up, pinned: the first call's dispatch BLOCKS on the worker thread
+    // until the main thread has written the sandwiched ping's reply, so the emitted ids must be
+    // [2, 1, 3] — id 2 answered mid-call, ahead of the earlier request it overtook. Under the old
+    // read→handle→write loop this deadlocks (the ping can't be written until the call it queues
+    // behind returns), which is exactly the property under test.
+    let (ping_seen, wait_for_ping) = std::sync::mpsc::channel::<()>();
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let output = SignallingWriter {
+        buffer: Arc::clone(&buffer),
+        // The ping's own reply frame; no other frame in this input carries it.
+        needle: "\"id\":2",
+        signal: Some(ping_seen),
+    };
+
+    let dispatch_order = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&dispatch_order);
+    let code = serve_with(&sandwiched_ping_input(), output, move |verb: &Verb| {
         if let Verb::Job { url } = verb {
-            dispatch_order.borrow_mut().push(url.clone());
+            let first = {
+                let mut seen = lock(&recorded);
+                seen.push(url.clone());
+                seen.len() == 1
+            };
+            if first {
+                // Hold the worker inside the FIRST dispatch until the ping has been written.
+                let _ = wait_for_ping.recv_timeout(SIGNAL_BUDGET);
+            }
         }
         Ok(json!({ "ok": true, "resource": "job", "data": {} }))
     });
+    assert_eq!(code, 0);
 
-    let reply_ids: Vec<i64> = text
-        .lines()
-        .map(|l| {
-            serde_json::from_str::<Value>(l).expect("each line is one JSON-RPC reply")["id"]
-                .as_i64()
-                .expect("every reply here carries a numeric id")
-        })
-        .collect();
+    let text = String::from_utf8(lock(&buffer).clone()).expect("valid utf8");
     assert_eq!(
-        reply_ids,
-        vec![1, 2, 3],
-        "replies must come back strictly in input order — the sandwiched ping's reply (id 2) \
-         only after the first call's (id 1) and before the second's (id 3): {reply_ids:?}"
+        reply_ids(&text),
+        vec![2, 1, 3],
+        "the ping (id 2) must be answered while the first call (id 1) is still in flight, and \
+         the second call (id 3) only after it: {text:?}"
     );
     assert_eq!(
-        *dispatch_order.borrow(),
+        *lock(&dispatch_order),
         vec!["https://example.com/first", "https://example.com/second"],
-        "the two tools/call frames must dispatch in input order with nothing interleaved — the \
-         sandwiched ping never dispatches at all"
+        "the two tools/call frames must still dispatch in INPUT order — the sandwiched ping \
+         never dispatches at all"
+    );
+}
+
+#[test]
+fn a_local_tools_call_is_answered_while_a_bridge_call_is_still_in_flight() {
+    // The follow-up to the ping guarantee: `commands` is LOCAL (it reads this binary's own POLICY
+    // copy and never opens a bridge connection), so it must not wait behind a bridge-backed call
+    // either. The stub blocks the `job` dispatch until the `commands` reply has been written, so
+    // the ids must come back [2, 1] — and the stub must be entered exactly ONCE, since a local
+    // tool never reaches the worker at all.
+    let (local_seen, wait_for_local) = std::sync::mpsc::channel::<()>();
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let output = SignallingWriter {
+        buffer: Arc::clone(&buffer),
+        // The `commands` reply's own frame; the blocked `job` call carries id 1.
+        needle: "\"id\":2",
+        signal: Some(local_seen),
+    };
+    let input = format!(
+        "{}{}",
+        line(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "job", "arguments": { "url": "https://example.com/slow" } },
+        })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "commands", "arguments": { "effect": "read" } },
+        })),
+    );
+
+    let dispatches = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&dispatches);
+    let code = serve_with(&input, output, move |_: &Verb| {
+        counted.fetch_add(1, Ordering::SeqCst);
+        let _ = wait_for_local.recv_timeout(SIGNAL_BUDGET);
+        Ok(json!({ "ok": true, "resource": "job", "data": {} }))
+    });
+    assert_eq!(code, 0);
+
+    let text = String::from_utf8(lock(&buffer).clone()).expect("valid utf8");
+    assert_eq!(
+        reply_ids(&text),
+        vec![2, 1],
+        "the local `commands` call (id 2) must be answered while the bridge call (id 1) is \
+         still in flight: {text:?}"
+    );
+    assert_eq!(
+        dispatches.load(Ordering::SeqCst),
+        1,
+        "only the bridge-backed `job` call may reach the dispatcher — `commands` is answered \
+         without ever touching the wire"
+    );
+}
+
+#[test]
+fn a_locally_refused_tools_call_is_answered_without_reaching_the_dispatcher() {
+    // The other local class: `local_call_refusal` (here a wrong_tool refusal for a real
+    // Reversible row named on call-read). It is decided from the bundled POLICY copy, so it must
+    // never be queued behind a dispatch either — and must never BE one.
+    let input = line(json!({
+        "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+        "params": {
+            "name": "call-read",
+            "arguments": { "namespace": "cli_agents", "command": "cli_agents_redetect" },
+        },
+    }));
+    let dispatched = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&dispatched);
+    let text = run_serve(&input, move |_: &Verb| {
+        flag.store(true, Ordering::SeqCst);
+        Ok(json!({ "ok": true }))
+    });
+
+    let reply: Value = serde_json::from_str(text.trim()).expect("one reply frame");
+    let payload: Value =
+        serde_json::from_str(reply["result"]["content"][0]["text"].as_str().unwrap())
+            .expect("content[0] is the refusal payload");
+    assert_eq!(payload["error"], "wrong_tool");
+    assert!(
+        !dispatched.load(Ordering::SeqCst),
+        "a local refusal must be answered without a bridge dispatch"
+    );
+}
+
+#[test]
+fn two_tools_calls_never_dispatch_concurrently() {
+    // The other half of the guarantee: answering a ping mid-call must not have made DISPATCH
+    // concurrent. The stub records entry/exit and the loop's peak occupancy must stay 1, so a
+    // second bridge connection can never be open while the first is (the ADR-040 §12 throttle
+    // bound). Mutation-visible: spawning per call instead of queueing onto one worker pushes the
+    // peak to 2.
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let dispatched = Arc::new(AtomicUsize::new(0));
+    let (entered, peaked, counted) = (
+        Arc::clone(&in_flight),
+        Arc::clone(&peak),
+        Arc::clone(&dispatched),
+    );
+
+    let text = run_serve(&sandwiched_ping_input(), move |_: &Verb| {
+        let now = entered.fetch_add(1, Ordering::SeqCst) + 1;
+        peaked.fetch_max(now, Ordering::SeqCst);
+        counted.fetch_add(1, Ordering::SeqCst);
+        // A real dispatch is not instantaneous; give an overlapping one room to be observed.
+        std::thread::sleep(Duration::from_millis(20));
+        entered.fetch_sub(1, Ordering::SeqCst);
+        Ok(json!({ "ok": true, "resource": "job", "data": {} }))
+    });
+
+    assert_eq!(
+        dispatched.load(Ordering::SeqCst),
+        2,
+        "both tools/call frames must dispatch: {text:?}"
+    );
+    assert_eq!(
+        peak.load(Ordering::SeqCst),
+        1,
+        "at most ONE dispatch may ever be in flight — see the module doc's single-flight guarantee"
+    );
+    assert_eq!(
+        in_flight.load(Ordering::SeqCst),
+        0,
+        "every dispatch must have completed before serve returned"
+    );
+}
+
+#[test]
+fn a_write_failure_ends_serve_with_exit_zero_and_dispatches_nothing_further() {
+    // EPIPE once the client closes its end of the pipe: `emit`'s `Err` is the cue to STOP, never
+    // a retry and never a panic (release is `panic = "abort"`, where a panic is a silent death).
+    // The second assertion is what makes this mutation-visible: dropping the early return leaves
+    // the exit code 0 either way, but the `tools/call` behind the failed ping would then still
+    // reach the bridge, on a connection whose reply can no longer be delivered.
+    let input = format!(
+        "{}{}",
+        line(json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "profile", "arguments": {} },
+        })),
+    );
+    let dispatched = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&dispatched);
+    let code = serve_with(&input, BrokenWriter, move |_: &Verb| {
+        flag.store(true, Ordering::SeqCst);
+        Ok(json!({ "ok": true }))
+    });
+    assert_eq!(code, 0, "a dead pipe is a clean exit, never a non-zero one");
+    assert!(
+        !dispatched.load(Ordering::SeqCst),
+        "the early return on a failed write must stop the loop from ROUTING the frames behind \
+         it: the tools/call after the failed ping is never classified, so it never reaches the \
+         dispatcher"
+    );
+}
+
+// ── The bounded dispatch queue (item 6) ──────────────────────────────────
+
+/// The queue between the writer thread and the single-flight dispatcher is BOUNDED, and a full
+/// queue is answered rather than waited on: the excess `tools/call` comes back as a `server_busy`
+/// tool result WHILE the first dispatch is still blocked. Mutation-visible twice over — an
+/// unbounded `channel()` produces zero refusals, and a blocking `send` on a full one writes
+/// nothing at all until the dispatch below is released, so the signal never pulses and this test
+/// fails on the timeout instead of the assertion.
+#[test]
+fn a_full_dispatch_queue_is_refused_with_server_busy_while_a_call_is_in_flight() {
+    let total = MCP_CALL_QUEUE_MAX + 4;
+    let input: String = (1..=total)
+        .map(|id| {
+            line(json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": "profile", "arguments": {} },
+            }))
+        })
+        .collect();
+
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let (seen_busy, busy_written) = std::sync::mpsc::channel::<()>();
+    let writer = SignallingWriter {
+        buffer: Arc::clone(&buffer),
+        needle: "server_busy",
+        signal: Some(seen_busy),
+    };
+    // Every dispatch parks here until the test drops the sender, so the worker is provably still
+    // holding the first call when the refusals are written.
+    let (release, blocked) = std::sync::mpsc::channel::<()>();
+    let dispatched = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&dispatched);
+
+    let server = std::thread::spawn(move || {
+        serve_with(&input, writer, move |_: &Verb| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let _ = blocked.recv_timeout(SIGNAL_BUDGET);
+            Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
+        })
+    });
+
+    busy_written
+        .recv_timeout(SIGNAL_BUDGET)
+        .expect("a server_busy refusal must be written while the dispatcher is blocked");
+    // Read BEFORE releasing: once the blocker is gone the worker drains the queue and frees
+    // slots, so how the remaining frames split between accepted and refused stops being a
+    // property of the bound and starts being a race.
+    let running_at_refusal = dispatched.load(Ordering::SeqCst);
+    drop(release);
+    let code = server.join().expect("serve must not panic");
+    assert_eq!(code, 0);
+
+    let text = String::from_utf8(lock(&buffer).clone()).expect("valid utf8");
+    let replies: Vec<Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is one reply"))
+        .collect();
+    assert_eq!(
+        replies.len(),
+        total,
+        "every frame must be answered exactly once, refused or dispatched: {text:?}"
+    );
+    let busy: Vec<&Value> = replies
+        .iter()
+        .filter(|r| {
+            r["result"]["content"][0]["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("server_busy"))
+        })
+        .collect();
+    assert!(
+        !busy.is_empty(),
+        "the queue is bounded at {MCP_CALL_QUEUE_MAX}, so {total} pipelined calls must produce \
+         at least one refusal: {text:?}"
+    );
+    for refusal in &busy {
+        assert_eq!(refusal["result"]["isError"], true);
+        assert_eq!(refusal["result"]["content"][1]["text"], "exitCode: 2");
+        let payload: Value =
+            serde_json::from_str(refusal["result"]["content"][0]["text"].as_str().unwrap())
+                .expect("content[0] is the refusal payload");
+        assert_eq!(payload["error"], "server_busy");
+        assert_eq!(payload["dispatched"], false);
+    }
+    assert_eq!(
+        dispatched.load(Ordering::SeqCst),
+        total - busy.len(),
+        "a refused call must never also reach the bridge"
+    );
+    // `<= 1`, not `== 1`: at most one call may be RUNNING when the refusal is written, so the
+    // rest were WAITING in a full queue rather than being dispatched. Zero is legitimate and was
+    // a real flake — 2 of 6 local runs, on this assertion, before this branch changed anything:
+    // the writer can fill a {MCP_CALL_QUEUE_MAX}-deep queue and refuse the next frame in
+    // microseconds, and the dispatch thread is not guaranteed to have been SCHEDULED by then. A
+    // full queue is precisely the state that does not require it to have run. The upper bound is
+    // what carries the meaning and is the mutation-visible half: dispatch per call instead of
+    // onto one worker and this reads well above 1 (if `busy_written` above even fires at all).
+    assert!(
+        running_at_refusal <= 1,
+        "at most ONE call may have been running when the refusal was written, so the other \
+         {MCP_CALL_QUEUE_MAX} were waiting in a full queue rather than being dispatched; \
+         {running_at_refusal} were running"
+    );
+}
+
+// ── The bounded reader → writer event queue ──────────────────────────────
+
+/// The OTHER half of the backpressure the reader split lost. Bounding the DISPATCH queue only
+/// stopped `tools/call` frames piling up; a client that stops draining stdout parks the loop
+/// inside `emit`, and with an unbounded `Event` channel the reader would go on turning a
+/// never-blocking stdin (a file, or a pipelining client) into `Event::Line`s without limit.
+///
+/// Measured as the reader's own progress, which is the only place the difference shows: with the
+/// writer held still, the reader may hand over exactly [`MCP_EVENT_QUEUE_MAX`] queued lines, plus
+/// the one the loop already took out of the queue, plus the one it is parked in `send` holding —
+/// and then it must STOP. Mutation-visible and not by a hair: swap the `sync_channel` back for a
+/// `channel()` and the reader swallows the whole input in the same microseconds, so the exact
+/// count below is out by a factor of four rather than by one frame.
+#[test]
+fn a_parked_writer_stops_the_reader_at_the_event_queue_bound() {
+    // Four times the bound, so "stopped at the bound" and "read the whole input" are nowhere
+    // near each other.
+    let total = MCP_EVENT_QUEUE_MAX * 4 + 16;
+    let lines: Vec<String> = (1..=total)
+        .map(|id| line(json!({ "jsonrpc": "2.0", "id": id, "method": "ping" })))
+        .collect();
+    let produced = Arc::new(AtomicUsize::new(0));
+    let input = PacedInput {
+        lines: lines.into_iter(),
+        current: Vec::new(),
+        pos: 0,
+        produced: Arc::clone(&produced),
+    };
+
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let (parked_tx, writer_parked) = std::sync::mpsc::channel::<()>();
+    let (release, blocked) = std::sync::mpsc::channel::<()>();
+    let writer = ParkingWriter {
+        buffer: Arc::clone(&buffer),
+        parked: Some(parked_tx),
+        release: blocked,
+    };
+
+    let server = std::thread::spawn(move || {
+        let server = Server::new(true, true);
+        serve(input, writer, &server, stub_ok, INVOCATION_TIMEOUT)
+    });
+
+    writer_parked
+        .recv_timeout(SIGNAL_BUDGET)
+        .expect("the writer must reach its first frame");
+
+    // `+ 2`: the line the loop pulled out of the queue before parking in `emit`, and the line the
+    // reader is parked in `send` holding. Everything else must still be unread.
+    let ceiling = MCP_EVENT_QUEUE_MAX + 2;
+    let deadline = std::time::Instant::now() + SIGNAL_BUDGET;
+    while produced.load(Ordering::SeqCst) < ceiling && std::time::Instant::now() < deadline {
+        std::thread::yield_now();
+    }
+    // The reader is now against the wall (or the assertion below says it never got there). The
+    // settle exists for the MUTATION direction only — it gives an unbounded reader, which needs
+    // microseconds for the remaining lines, all the room it could want to run away in. A correct
+    // reader cannot move at all while the writer is parked, so this changes nothing here.
+    std::thread::sleep(Duration::from_millis(50));
+    let while_parked = produced.load(Ordering::SeqCst);
+    assert_eq!(
+        while_parked, ceiling,
+        "with the writer parked, the reader must stop at the {MCP_EVENT_QUEUE_MAX}-deep event \
+         queue (+2 in flight) rather than buffering all {total} lines of a stdin that never \
+         blocks on its own"
+    );
+
+    drop(release);
+    let code = server.join().expect("serve must not panic");
+    assert_eq!(code, 0);
+
+    // Backpressure, not loss: once the writer drains, the reader resumes and every frame is still
+    // answered exactly once — the bound would be worthless if it dropped lines to hold.
+    let text = String::from_utf8(lock(&buffer).clone()).expect("valid utf8");
+    assert_eq!(
+        reply_ids(&text),
+        (1..=total as i64).collect::<Vec<i64>>(),
+        "every line must still be answered once, in order, after the writer unblocks"
+    );
+    assert_eq!(
+        produced.load(Ordering::SeqCst),
+        total,
+        "the reader must have gone on to read the rest of the input, not abandoned it"
+    );
+}
+
+// ── The bounded EOF drain (item 7) ───────────────────────────────────────
+
+/// The drain budget, and the sleep a blocking dispatch holds the worker for. An ORDER OF
+/// MAGNITUDE apart in each direction from the wall each measures (CodeRabbit, PR #1092 — at
+/// 50 ms/300 ms the "returned on its own deadline" assertion below had only 250 ms of scheduling
+/// slack, so a loaded CI runner could fail a correct build): `serve` must return on the 50 ms
+/// deadline, the assertion allows it 20× that, and the dispatch it must NOT wait out runs 40×
+/// it. Only `DRAIN_EXIT_MAX` sits between the two, and it is nowhere near either.
+const DRAIN_BUDGET: Duration = Duration::from_millis(50);
+const DISPATCH_HOLD: Duration = Duration::from_secs(2);
+const DRAIN_EXIT_MAX: Duration = Duration::from_secs(1);
+
+/// After `Eof` the drain has ONE absolute deadline, not one `INVOCATION_TIMEOUT` per queued call:
+/// with a blocking dispatcher and a short injected budget, `serve` must return 0 long before the
+/// in-flight call finishes, and the calls still queued behind it must never dispatch at all.
+/// Mutation-visible: remove the deadline and this waits out the sleep below; keep the deadline
+/// but drop the worker's abandoned-flag check and the queued second call still dispatches.
+///
+/// And every call the client is still waiting on is ANSWERED before the exit — the half of the
+/// guarantee that used to be silence. Mutation-visible on its own: delete the `shutting_down`
+/// sweep and this writes nothing at all, which is what it asserted before the fix.
+#[test]
+fn an_expired_drain_deadline_answers_what_it_abandons_and_dispatches_nothing_further() {
+    let input: String = (1..=2)
+        .map(|id| {
+            line(json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": "profile", "arguments": {} },
+            }))
+        })
+        .collect();
+
+    // The stub reports each entry and each exit, so "the second call never dispatched" is a
+    // message that never arrives rather than a fixed sleep.
+    let (report, progress) = std::sync::mpsc::channel::<&'static str>();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let mut output = Vec::new();
+
+    let started = std::time::Instant::now();
+    let code = serve_with_drain_budget(
+        &input,
+        &mut output,
+        move |_: &Verb| {
+            let first = counted.fetch_add(1, Ordering::SeqCst) == 0;
+            let _ = report.send(if first { "enter-1" } else { "enter-2" });
+            std::thread::sleep(DISPATCH_HOLD);
+            let _ = report.send(if first { "exit-1" } else { "exit-2" });
+            Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
+        },
+        DRAIN_BUDGET,
+    );
+
+    assert_eq!(code, 0, "an expired drain is still a clean exit");
+    assert!(
+        started.elapsed() < DRAIN_EXIT_MAX,
+        "serve must return on its own deadline, not wait out the in-flight dispatch \
+         (took {:?})",
+        started.elapsed()
+    );
+    // Both calls are answered — the abandoned one and the never-started one — and the two
+    // answers differ in the one fact the client needs to decide whether repeating is safe.
+    let text = String::from_utf8(output).expect("valid utf8");
+    let replies: Vec<Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is one reply"))
+        .collect();
+    assert_eq!(
+        reply_ids(&text),
+        vec![1, 2],
+        "every call the client was still waiting on must be answered, in queue order: {text:?}"
+    );
+    let payload = |r: &Value| -> Value {
+        serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap())
+            .expect("content[0] is the refusal payload")
+    };
+    for reply in &replies {
+        assert_eq!(reply["result"]["isError"], true);
+        assert_eq!(reply["result"]["content"][1]["text"], "exitCode: 2");
+        assert_eq!(payload(reply)["error"], "shutting_down");
+    }
+    assert_eq!(
+        payload(&replies[0])["dispatched"],
+        true,
+        "the in-flight call reached the app and may have taken effect — saying otherwise would \
+         invite a client to repeat a write that already landed"
+    );
+    assert_eq!(
+        payload(&replies[1])["dispatched"],
+        false,
+        "the queued call provably never reached the app: {text:?}"
+    );
+
+    assert_eq!(
+        progress.recv_timeout(SIGNAL_BUDGET).ok(),
+        Some("enter-1"),
+        "the first call must have started before the deadline expired"
+    );
+    assert_eq!(
+        progress.recv_timeout(SIGNAL_BUDGET).ok(),
+        Some("exit-1"),
+        "the abandoned in-flight call still runs to completion on its own thread"
+    );
+    // The queued second call must never start. A violating build reaches it the INSTANT the
+    // first returns — i.e. immediately after the `exit-1` just received — so this grace only has
+    // to outlast a thread wake-up, and stays far below `DISPATCH_HOLD` so a correct build never
+    // waits it out for nothing.
+    assert!(
+        progress.recv_timeout(DRAIN_EXIT_MAX).is_err(),
+        "a call still queued when the drain deadline expired must never dispatch"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn eof_still_writes_the_reply_of_a_call_that_was_already_in_flight() {
+    // The drain guarantee: stdin closes immediately after a single `tools/call` line, so the
+    // `Eof` event reaches the loop while the worker is still inside the dispatch. The reply must
+    // still be written before `serve` returns, never dropped on the floor.
+    let input = line(json!({
+        "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+        "params": { "name": "profile", "arguments": {} },
+    }));
+    let text = run_serve(&input, |_: &Verb| {
+        std::thread::sleep(Duration::from_millis(100));
+        Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
+    });
+    assert_eq!(
+        reply_ids(&text),
+        vec![7],
+        "the in-flight call's reply must survive EOF: {text:?}"
     );
 }
 
@@ -106,9 +786,10 @@ fn an_explicit_id_null_produces_no_output_and_no_dispatch() {
         "jsonrpc": "2.0", "id": null, "method": "tools/call",
         "params": { "name": "profile", "arguments": {} },
     }));
-    let mut dispatched = false;
-    let text = run_serve(&input, |_: &Verb| {
-        dispatched = true;
+    let dispatched = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&dispatched);
+    let text = run_serve(&input, move |_: &Verb| {
+        flag.store(true, Ordering::SeqCst);
         Ok(json!({ "ok": true }))
     });
     assert!(
@@ -116,8 +797,8 @@ fn an_explicit_id_null_produces_no_output_and_no_dispatch() {
         "id:null must produce zero output: {text:?}"
     );
     assert!(
-        !dispatched,
-        "id:null must never reach the bridge — nothing is listening"
+        !dispatched.load(Ordering::SeqCst),
+        "id:null must never reach the worker — nothing is listening for the result"
     );
 }
 
@@ -225,7 +906,12 @@ fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sent
 /// `pub(super)` sentinels (`ERR_UNKNOWN_COMMAND`/`ERR_NOT_EXPOSED`/`ERR_CONFIRMATION_REQUIRED`),
 /// referenced by path there and never respelled here. A test-only fixture (item 24): nothing in
 /// production reads it, only the two tests below.
-const MCP_SENTINELS: &[&str] = &["wrong_tool", "result_too_large"];
+const MCP_SENTINELS: &[&str] = &[
+    "wrong_tool",
+    "result_too_large",
+    "server_busy",
+    "shutting_down",
+];
 
 #[test]
 fn instructions_name_every_mcp_only_sentinel() {

@@ -1,5 +1,6 @@
 {
   "common": {
+    "clearLocation": "Ort löschen",
     "collapse": "Einklappen",
     "expand": "Ausklappen",
     "close": "Schließen",
@@ -2245,25 +2246,10 @@
   "dashboard": {
     "welcome": "Willkommen zurück",
     "subtitle": "Ihr lokaler AI-Co-Pilot für Jobs, Lebensläufe und Dokumente.",
-    "quick": "Schnellaktionen",
-    "recentActivity": "Aktuelle Aktivität",
     "jobPipeline": "Job-Pipeline",
-    "continueWorking": "Weiterarbeiten",
     "savedJobs": "Gespeicherte Jobs",
     "applied": "Beworben",
-    "interviews": "Vorstellungsgespräche",
-    "aiMatches": "KI-Treffer",
-    "thisWeek": "+{{count}} diese Woche",
     "aiSystemStatus": "KI / Systemstatus",
-    "aiInsights": "KI-Erkenntnisse",
-    "insights": {
-      "addTsSuggestion": "\"TypeScript\" zu Fähigkeiten hinzufügen",
-      "addTsDesc": "Viele aktuelle Jobs erfordern TypeScript-Kenntnisse",
-      "highMatchTitle": "3 neue hochwertige Treffer",
-      "highMatchDesc": "Basierend auf Ihren Präferenzen und Ihrem Profil",
-      "resumeAlertTitle": "Lebenslauf benötigt Aktualisierung",
-      "resumeAlertDesc": "Letzter ATS-Score war 65%, erwägen Sie mehr Kennzahlen hinzuzufügen"
-    },
     "viewed": "Angesehen",
     "totalTracked": "Gesamt verfolgt",
     "noJobsTracked": "Öffne einen Job um deine Pipeline zu verfolgen.",
@@ -2957,6 +2943,27 @@
           "a": "Öffnen Sie Einstellungen → Datenschutz und scrollen Sie zu \"Ihre Daten\". \"Daten exportieren\" → \"Exportieren\" schreibt ein vollständiges JSON-Backup — Dokumente, generierte Lebensläufe und Anschreiben, Bewerbungen, Autopiloten sowie Ihr Protokoll beworbener, angesehener und gespeicherter Jobs — nicht nur Ihren Job-Verlauf; API-Schlüssel bleiben im Schlüsselbund und sind nicht enthalten. \"Daten importieren\" → \"Importieren\" ersetzt den Inhalt der App durch diese Datei, sodass alles seit dem Backup Gespeicherte verloren geht — exportieren Sie vorher erneut, wenn die aktuellen Daten wichtig sind. \"Interaktionsverlauf löschen\" löscht nur das Protokoll beworbener, angesehener und gespeicherter Jobs. \"Gefahrenzone\" → \"App zurücksetzen\" → \"Alles zurücksetzen\" löscht alle Daten und Einstellungen."
         }
       }
+    },
+    "chat": {
+      "title": "Den Hilfe-Assistenten fragen",
+      "subtitle": "Er antwortet aus den Hilfethemen auf dieser Seite und einem Blick auf Ihre eigenen Daten.",
+      "placeholder": "Stellen Sie eine Frage zur App…",
+      "ariaLabel": "Dem Hilfe-Assistenten eine Frage stellen",
+      "ask": "Frage senden",
+      "stop": "Stopp",
+      "thinking": "Die Hilfethemen werden durchsucht…",
+      "you": "Sie",
+      "assistant": "Assistent",
+      "basedOn": "Basiert auf",
+      "sourceHint": "Diese Seite nach diesem Thema durchsuchen",
+      "caption": "Antworten werden erzeugt und können falsch sein. Die Hilfethemen unten sind die Quelle — öffnen Sie eines, um es vollständig zu lesen.",
+      "keywordNotice": "Die semantische Bewertung ist aus, daher wurden die Themen nur per Stichwort gefunden.",
+      "denseUnavailable": "Die semantische Bewertung konnte diesmal nicht ausgeführt werden, daher wurden die Themen nur per Stichwort gefunden.",
+      "keywordAction": "KI-Einstellungen öffnen",
+      "error": "Diese Frage konnte gerade nicht beantwortet werden. Versuchen Sie es gleich noch einmal.",
+      "retry": "Erneut versuchen",
+      "charsLeft_one": "Noch {{count}} Zeichen",
+      "charsLeft_other": "Noch {{count}} Zeichen"
     },
     "search": {
       "placeholder": "Hilfe nach Stichwort durchsuchen…",

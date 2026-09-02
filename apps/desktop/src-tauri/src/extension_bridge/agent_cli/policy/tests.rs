@@ -69,8 +69,8 @@ fn registered_command_paths() -> Vec<&'static str> {
 /// lesson: `feedback_a_guard_driven_off_its_own_data_cannot_catch_a_deletion`)
 /// — this fails independently of either source's own content.
 #[test]
-fn policy_table_has_exactly_165_rows() {
-    assert_eq!(POLICY.len(), 165);
+fn policy_table_has_exactly_166_rows() {
+    assert_eq!(POLICY.len(), 166);
 }
 
 /// ADR-038 §1's core invariant: the policy table and `generate_handler!`
@@ -161,7 +161,7 @@ fn extension_bridge_regenerate_token_reason_explains_why_connected_is_vacuous_to
 /// `budget: None` when `semanticScoringEnabled: true` — the SAME
 /// uncapped-spend shape that forced `ai_embed` `NotExposed` before ITS
 /// gate landed. Hand-written (not looped, mirroring
-/// `policy_table_has_exactly_165_rows`'s own discipline): a revert of
+/// `policy_table_has_exactly_166_rows`'s own discipline): a revert of
 /// either row back to `Reversible` (freely dispatchable, no confirm, no
 /// cap) would not be caught by any OTHER test in this file — the
 /// Irreversible-row count is untouched by a `Reversible` change, and
@@ -205,7 +205,7 @@ fn extraction_finds_known_paths_at_each_end_of_the_list() {
         "extraction must find the LAST registered command"
     );
     assert!(found.contains(&"commands::privacy::privacy_reset_app"));
-    assert_eq!(found.len(), 165);
+    assert_eq!(found.len(), 166);
 }
 
 /// ADR-038 §4 (Phase 3): every `Irreversible` row's
@@ -244,7 +244,7 @@ fn every_proof_source_read_command_is_a_read_row() {
     }
     // Hand-written literal (not derived from POLICY itself — the same
     // "pair a loop with a literal" discipline as
-    // `policy_table_has_exactly_165_rows`): 33 Irreversible rows
+    // `policy_table_has_exactly_166_rows`): 34 Irreversible rows
     // (`extension_bridge_regenerate_token` moved to `NotExposed` —
     // security review round 1; `ai_embed` moved NotExposed → Irreversible
     // once its `charge_provider_daily` gate landed, and
@@ -261,10 +261,12 @@ fn every_proof_source_read_command_is_a_read_row() {
     // `ai_pull_model` moved Reversible → Irreversible: no in-app path
     // undoes a pulled multi-GB Ollama model, which is `Irreversible`'s own
     // definition regardless of nothing being destroyed [+1]; `scrape_
-    // hybrid_search` (this PR) adds ONE new Irreversible row for the same
-    // charge_provider_daily reason as `ai_embed`/`autopilot_run` [+1]; see
-    // each row's own comment).
-    assert_eq!(checked, 33, "expected exactly 33 Irreversible rows");
+    // hybrid_search` adds ONE new Irreversible row for the same
+    // charge_provider_daily reason as `ai_embed`/`autopilot_run` [+1];
+    // `help_search` (this PR) adds ONE more for that same reason — its
+    // dense arm embeds the question plus every uncached help entry [+1];
+    // see each row's own comment).
+    assert_eq!(checked, 34, "expected exactly 34 Irreversible rows");
 }
 
 /// Hand-written pin (security review round 3), mirroring

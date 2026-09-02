@@ -22,6 +22,8 @@ import {
   buildCoverLetterSystemPrompt,
   buildGitHubProjectsPrompt,
   buildGitHubProjectsSystemPrompt,
+  buildHelpChatPrompt,
+  buildHelpChatSystemPrompt,
   buildInterviewQuestionsPrompt,
   buildInterviewQuestionsSystemPrompt,
   buildJobAdSummaryPrompt,
@@ -41,6 +43,8 @@ import {
   type GenerationMode,
   getBodyLinkMap,
   getLinkMap,
+  type HelpChatEntry,
+  type HelpChatTurn,
   injectLinksIntoGeneratedText,
   isAllCapsSectionHeading,
   isFirstLineContactShaped,
@@ -1130,6 +1134,68 @@ export async function generateJobAdSummary(params: {
     onToken ?? (() => {}),
     sampling.temperature,
     lang?.code ?? meta?.targetLanguage ?? 'en',
+    signal,
+    undefined,
+    sampling.intent
+  );
+  return extractPlainText(raw);
+}
+
+/**
+ * Answer one in-app help question from the retrieved help entries plus a
+ * read-only glance at the user's own data (ADR-043) — the generation half of
+ * the help chat, whose retrieval half is `useHelpSearch`.
+ *
+ * Mirrors {@link generateJobAdSummary}: same streaming pipeline, same
+ * allowlisted-language handling, zero per-provider code. `prose_grounded`
+ * rather than `deterministic`: the output is prose the user will act on, and
+ * every claim in it must be traceable to the entries supplied — the same
+ * no-fabrication contract the cover letter and application answers declare.
+ * `analysis` is the temperature step because this reads and summarizes
+ * supplied material rather than writing on the candidate's behalf.
+ *
+ * The entries are the app's own shipped help copy (trusted); the glance,
+ * history and question are fenced as untrusted by the prompt builder.
+ */
+export async function generateHelpAnswer(params: {
+  question: string;
+  entries: HelpChatEntry[];
+  dataGlance?: string;
+  history?: HelpChatTurn[];
+  model: string;
+  /** Locale CODE ('de', 'es', …) — resolved through the OUTPUT_LANGUAGES allowlist. */
+  language?: string;
+  signal?: AbortSignal;
+  onToken?: (tok: string) => void;
+}): Promise<string> {
+  const { question, entries, dataGlance, history, model, language, signal, onToken } = params;
+  // Nothing to answer → skip the wasted API call on an empty/whitespace question.
+  if (!question.trim()) return '';
+  const profile = buildProviderProfile(model);
+
+  // Same resolution as `generateJobAdSummary`: `language` arrives as a locale
+  // CODE from the app's own locale, the prompt wants a human language NAME, and
+  // `streamGenerate` wants a code. Resolving both from OUTPUT_LANGUAGES is what
+  // keeps an arbitrary string out of the interpolated instruction.
+  const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
+
+  const system = buildHelpChatSystemPrompt(lang?.englishName);
+  const user = buildHelpChatPrompt({
+    question,
+    entries,
+    dataGlance,
+    history,
+    target: profile,
+    language: lang?.englishName,
+  });
+  const sampling = resolveSampling('analysis', 'prose_grounded');
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    sampling.temperature,
+    lang?.code ?? 'en',
     signal,
     undefined,
     sampling.intent

@@ -30,7 +30,7 @@ Both proposals assumed complexity was necessary; the gap is discoverability, whi
 
 **4. This partly supersedes ADR-0006**: the "Support is FAQ-only" statement no longer holds; the rest of ADR-0006 (the diagnostics/recovery dashboard is removed and stays removed; the export-diagnostics action lives in Settings) is unchanged. This is a new feature, not a revival of the deleted dashboard.
 
-**5. The parked help-chatbot remains a possible later layer** over the same entries if usage shows that search alone leaves questions unanswered; it is not part of this decision.
+**5. The parked help-chatbot remains a possible later layer** over the same entries if usage shows that search alone leaves questions unanswered; it is not part of this decision. The owner re-opened this decision on 2026-09-02; [ADR-043](adr-043-help-chat-over-the-shipped-corpus.md) records the design.
 
 **6. Content accuracy is the requirement, not the mechanism**: every entry is written against the current UI (labels, menu paths) and stale answers in the existing FAQ are corrected in the same change; an entry that cannot be verified against the code is left out rather than guessed.
 

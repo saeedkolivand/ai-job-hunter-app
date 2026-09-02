@@ -12,7 +12,7 @@
 
 The onboarding wizard and spotlight tour are first-run-only and gated on a single persisted boolean; both the tour's skip and finish actions write the same value. This design means nothing can tell a user who read the tour from one who dismissed it. The owner's demonstration of the app to another person failed precisely because the wizard had been dismissed on that machine, and a one-time tour cannot answer a question that arises three screens later.
 
-The Dashboard today renders a page header, four data-free quick-action tiles, and two cards with no getting-started surface. Eight orphaned `dashboard.*` translation keys show a richer dashboard was designed and never built.
+The Dashboard today renders a page header, four data-free quick-action tiles, and two cards with no getting-started surface.
 
 ## Decision
 
@@ -43,8 +43,6 @@ The Dashboard today renders a page header, four data-free quick-action tiles, an
 3. **A "continue working" mode** (deferred): suggests the next action from application data (requires per-application generation status the Dashboard does not load, and a rule set of its own).
 
 4. **A fifth quick-action tile** (impossible): would require changing the grid definition and its stagger class index typing.
-
-5. **Reviving the orphaned `dashboard.continueWorking` / `dashboard.insights.*` keys** (rejected): they carry fabricated numbers; ADR-041 § 6 forbids copy not verified against the UI.
 
 ## Consequences
 

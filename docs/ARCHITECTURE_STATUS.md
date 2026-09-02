@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-09-02 (searchable help page on the Support route, ADR-041; previously PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
+Last updated: 2026-09-02 (help chat over the shipped corpus, ADR-043; previously searchable help page, ADR-041; previously PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
 
 ---
 
@@ -199,7 +199,7 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 | Autopilot route           | ✅     | Workflow builder + runner                                                                                                                                                                       |
 | Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); canonical route is `/documents` (`createFileRoute('/documents')`); no `/resumes` route exists               |
 | Settings route            | ✅     | All settings tabs; keyboard-reachable sidebar (`@ajh/ui Button` + `aria-current`); `SettingsSection` throughout                                                                                 |
-| Support route             | ✅     | Searchable help: how-to + troubleshooting entries (ADR-041)                                                                                                                                     |
+| Support route             | ✅     | Searchable help + grounded assistant (ADR-041/ADR-043); query the same entries with hybrid retrieval (semantic ranking opt-in)                                                                  |
 | Onboarding wizard         | ✅     | First-run experience                                                                                                                                                                            |
 | Light/dark/system theme   | ✅     |                                                                                                                                                                                                 |
 | i18n (11 languages)       | ✅     | UI translations                                                                                                                                                                                 |

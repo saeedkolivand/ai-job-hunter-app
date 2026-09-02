@@ -90,6 +90,9 @@ export function AccentPicker({ value, onChange, className }: AccentPickerProps) 
 
       <div
         role="radiogroup"
+        // ARIA composite: focusable programmatically only — the roving
+        // tabindex keeps the selected option as the sole tab stop.
+        tabIndex={-1}
         aria-label={t('aiGenerate.documentAccent')}
         className="flex flex-wrap items-center gap-2"
         onKeyDown={makeRovingTabindex(

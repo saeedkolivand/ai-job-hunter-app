@@ -19,6 +19,7 @@
  */
 import type {
   EmailWatchConnectRequest,
+  HelpSearchResult,
   HybridSearchResult,
   ReferralContact,
   ReferralUpsertRequest,
@@ -386,6 +387,19 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     support: {
       exportDiagnostics: noop,
+    },
+
+    help: {
+      // Same reason `scrape.hybridSearch` above resolves a real shape rather
+      // than `noop`: the help chat reads `results`/`mode` off the reply on
+      // every question, so an `undefined` would throw before the UI could
+      // degrade. Empty results with `keyword` mode is the honest "nothing
+      // ranked, and nothing semantic ran" answer.
+      search: async (): Promise<HelpSearchResult> => ({
+        results: [],
+        mode: 'keyword',
+        arms: { lexical: 'ran', dense: 'skipped' },
+      }),
     },
 
     autopilot: {

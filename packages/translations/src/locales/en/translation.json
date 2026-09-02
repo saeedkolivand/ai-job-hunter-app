@@ -1,5 +1,6 @@
 {
   "common": {
+    "clearLocation": "Clear location",
     "collapse": "Collapse",
     "expand": "Expand",
     "close": "Close",
@@ -2241,25 +2242,10 @@
   "dashboard": {
     "welcome": "Welcome back",
     "subtitle": "Your local AI co-pilot for jobs, resumes, and documents.",
-    "quick": "Quick actions",
-    "recentActivity": "Recent Activity",
     "jobPipeline": "Job Pipeline",
-    "continueWorking": "Continue Working",
     "savedJobs": "Saved Jobs",
     "applied": "Applied",
-    "interviews": "Interviews",
-    "aiMatches": "AI Matches",
-    "thisWeek": "+{{count}} this week",
     "aiSystemStatus": "AI / System Status",
-    "aiInsights": "AI Insights",
-    "insights": {
-      "addTsSuggestion": "Add \"TypeScript\" to skills",
-      "addTsDesc": "Many recent jobs require TypeScript expertise",
-      "highMatchTitle": "3 new high-match jobs",
-      "highMatchDesc": "Based on your preferences and profile",
-      "resumeAlertTitle": "Resume needs update",
-      "resumeAlertDesc": "Last ATS score was 65%, consider adding more metrics"
-    },
     "viewed": "Viewed",
     "totalTracked": "Total Tracked",
     "noJobsTracked": "Open a job to start tracking your pipeline.",
@@ -2953,6 +2939,27 @@
           "a": "Open Settings → Privacy and scroll to \"Your data\". \"Export Data\" → \"Export\" writes a full JSON backup — documents, generated résumés and cover letters, applications, autopilots and your applied, viewed and bookmarked log — not just your job history; API keys stay in the keychain and are not included. \"Import Data\" → \"Import\" replaces what is in the app with that file, so anything saved since the backup is lost — export again first if the current data matters. \"Clear Interaction History\" wipes only the applied, viewed and bookmarked log. \"Danger Zone\" → \"Reset App\" → \"Reset Everything\" erases all data and preferences."
         }
       }
+    },
+    "chat": {
+      "title": "Ask the help assistant",
+      "subtitle": "It answers from the help topics on this page and a glance at your own data.",
+      "placeholder": "Ask a question about the app…",
+      "ariaLabel": "Ask the help assistant a question",
+      "ask": "Ask",
+      "stop": "Stop",
+      "thinking": "Looking through the help topics…",
+      "you": "You",
+      "assistant": "Assistant",
+      "basedOn": "Based on",
+      "sourceHint": "Search this page for this topic",
+      "caption": "Answers are generated and can be wrong. The help topics below are the source — open one to read it in full.",
+      "keywordNotice": "Semantic scoring is off, so topics were matched by keyword only.",
+      "denseUnavailable": "Semantic scoring could not run this time, so topics were matched by keyword only.",
+      "keywordAction": "Open AI settings",
+      "error": "That question could not be answered just now. Try again in a moment.",
+      "retry": "Try again",
+      "charsLeft_one": "{{count}} character left",
+      "charsLeft_other": "{{count}} characters left"
     },
     "search": {
       "placeholder": "Search help by keyword…",

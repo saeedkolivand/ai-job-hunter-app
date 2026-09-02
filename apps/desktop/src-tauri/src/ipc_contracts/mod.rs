@@ -22,6 +22,7 @@ pub mod events;
 #[cfg(test)]
 mod events_test;
 pub mod generation_depths;
+pub mod help;
 pub mod match_tiers;
 pub mod matching;
 pub mod provider_slots;

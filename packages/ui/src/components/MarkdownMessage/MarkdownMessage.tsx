@@ -5,13 +5,32 @@
  * horizontal rules, and `[text](url)` links. No external dependency.
  *
  * Links: the renderer is IPC-free, so it can't open a URL itself. Pass
- * `onLinkClick` (e.g. wired to the Tauri opener) to make links clickable;
- * without it, a link renders as plain label text — never a raw `<a href>` that
- * would navigate the webview.
+ * `onLinkClick` (e.g. wired to the Tauri opener) to make links clickable; the
+ * anchor's default navigation is always prevented, so the webview never
+ * follows a link itself. Without a handler — or with a scheme outside
+ * {@link isSafeUrl} — a link renders as plain label text.
  */
 import { cn } from '../../lib/cn';
 
 type LinkClick = ((url: string) => void) | undefined;
+
+/**
+ * Schemes allowed into a rendered `href`. Markdown here is AI output or a
+ * changelog body, so the URL is not ours; `javascript:`/`data:` are excluded so
+ * an unvetted scheme never reaches the DOM at all. The anchor below cancels
+ * BOTH click paths (`onClick` for a primary click, `onAuxClick` for the
+ * middle-click that fires `auxclick` instead), but an `href` is still reachable
+ * without any click - copy-link, drag-and-drop. A refused link degrades to
+ * plain label text, the same as having no handler at all.
+ */
+// The scheme check is written as `startsWith` on the very string that reaches
+// `href`, not as a regex on a trimmed copy: that is the shape static taint
+// analysis (CodeQL) recognises as a barrier, and the one it flagged when it was
+// a regex. Exact-case, untrimmed: a `HTTPS://` or leading-space link degrades
+// to label text, which is the safe direction.
+function isSafeUrl(url: string): boolean {
+  return url.startsWith('https://') || url.startsWith('http://') || url.startsWith('mailto:');
+}
 
 interface Props {
   content: string;
@@ -190,26 +209,43 @@ function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {
     if (link) {
       const label = link[1] ?? '';
       const url = link[2] ?? '';
-      if (onLinkClick) {
+      if (onLinkClick && isSafeUrl(url)) {
         return (
+          // A REAL anchor: it is keyboard-operable for free, satisfies
+          // `anchor-is-valid`, announces as a link with its destination, and —
+          // the reason a `Button` did not work — participates in inline text
+          // flow. A button computes to `inline-block`, so a link inside a
+          // sentence broke the line box around it instead of wrapping with the
+          // prose. `preventDefault` keeps the webview from ever navigating: the
+          // handler hands the URL to the host (e.g. the system browser).
           <a
             key={i}
-            role="link"
-            tabIndex={0}
-            onClick={() => onLinkClick(url)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onLinkClick(url);
-              }
+            href={url}
+            // Matches `ExternalLink`, the app's other intercepted anchor.
+            // Belt-and-braces now that both click paths are cancelled: the URL
+            // came out of an AI answer or a changelog, so any route that does
+            // reach it must not carry this app's location as a `Referer`.
+            rel="noreferrer"
+            onClick={(e) => {
+              e.preventDefault();
+              onLinkClick(url);
             }}
+            // A middle-click fires `auxclick` and NEVER the React `onClick`, so
+            // `onClick` alone left the webview free to open an AI-supplied URL
+            // in a new tab. Cancel it too - the host opener is the only way a
+            // URL leaves this renderer. No `onLinkClick` here: a middle-click
+            // asks for a new tab, which is not a thing this surface offers.
+            onAuxClick={(e) => e.preventDefault()}
             className="cursor-pointer text-brand-soft underline underline-offset-2 hover:text-brand"
           >
             {label}
           </a>
         );
       }
-      // No handler → show the label only (never a raw href that navigates the webview).
+      // No handler, or a scheme we refuse to put in an `href` → show the label
+      // only. Never a live href we have not vetted, even though the anchor
+      // cancels both click paths: an `href` is still reachable by copy-link or
+      // drag, and a `javascript:`/`data:` URL must not sit in the DOM at all.
       return <span key={i}>{label}</span>;
     }
     if (part.startsWith('**') || part.startsWith('__'))

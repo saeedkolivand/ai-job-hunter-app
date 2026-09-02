@@ -751,10 +751,36 @@ async fn dispatch_direct(
     Ok(data)
 }
 
+/// The whole decision [`dispatch_irreversible_confirmed`] makes, with the
+/// `AppHandle` factored out — the impure wrapper below only resolves the
+/// proof and hands the result here, so the ceremony's two refusal paths are
+/// directly testable (the crate has no Tauri mock, so nothing taking a
+/// concrete `&AppHandle` can be).
+///
+/// `run` is called at most ONCE and ONLY on an exact match — never before
+/// the comparison, which is the property the tests mutation-check: a
+/// version that ran first and compared after would dispatch an
+/// irreversible command on a wrong `confirm`. It returns whatever the
+/// caller's own run step produces (the async wrapper returns the UNAWAITED
+/// future, so this core stays sync and pure).
+fn confirm_and_run<T>(
+    resolved: Option<String>,
+    confirm: &str,
+    run: impl FnOnce() -> T,
+) -> Result<T, Refusal> {
+    let expected = resolved.ok_or(Refusal::ProofUnavailable)?;
+    if confirm != expected {
+        return Err(Refusal::ConfirmationMismatch);
+    }
+    Ok(run())
+}
+
 /// Dispatch an `Irreversible` row whose `confirm` is already known to be
 /// present (the caller — [`dispatch`] — only reaches here via
 /// [`Dispatch::Confirmed`], produced by [`gate`]): resolve the expected
 /// value FRESH via [`proof::resolve`] and only then run the real command.
+/// A thin wrapper over [`confirm_and_run`] — the only thing that needs the
+/// `AppHandle` is the resolve and the dispatch themselves.
 async fn dispatch_irreversible_confirmed(
     app: &AppHandle,
     command: &str,
@@ -762,13 +788,8 @@ async fn dispatch_irreversible_confirmed(
     source: ProofSource,
     confirm: &str,
 ) -> Result<Value, Refusal> {
-    let expected = proof::resolve(app, source, &input)
-        .await
-        .ok_or(Refusal::ProofUnavailable)?;
-    if confirm != expected {
-        return Err(Refusal::ConfirmationMismatch);
-    }
-    dispatch_direct(app, command, input).await
+    let resolved = proof::resolve(app, source, &input).await;
+    confirm_and_run(resolved, confirm, || dispatch_direct(app, command, input))?.await
 }
 
 /// What [`gate`] clears `dispatch` to do for one `(effect, confirm)` pair —

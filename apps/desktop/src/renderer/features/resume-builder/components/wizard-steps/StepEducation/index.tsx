@@ -87,6 +87,7 @@ export function StepEducation() {
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       placeholder={t('build.education.locationPlaceholder')}
+                      clearLabel={t('common.clearLocation')}
                       onFetchSuggestions={(q) => api.geocode.suggest(q)}
                     />
                   )}

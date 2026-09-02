@@ -510,6 +510,44 @@ impl DocumentStore {
             name: "repair_pre_pdf_text_string_mojibake",
             up: mojibake_repair::up,
         },
+        Migration {
+            // The help-corpus vector cache (`documents::help_vectors`). Keyed
+            // by `sha256_hex(entry body)` — NOT by entry id or locale — so an
+            // edited answer misses by itself and an unchanged one costs at
+            // most one embed per embedding space once the cache is warm (the
+            // concurrency caveat on that claim lives in `help_vectors`' own
+            // module doc).
+            //
+            // The `created_at` index ships in the SAME migration as the table,
+            // not a later one: `prune_caches` sweeps `help_vectors` on the
+            // same tier as its two siblings, and `sql::prune_table_locked`'s
+            // row-cap delete is WRITTEN for that index (`ORDER BY created_at
+            // DESC LIMIT 1 OFFSET ?`) — without it the cap degrades to a
+            // full-table sort on every pruning write. Same
+            // `idx_<table>_created_at` name shape as
+            // `index_cache_created_at`'s two.
+            //
+            // Forward-safe and safe to drop: `CREATE TABLE IF NOT EXISTS` on
+            // a table no earlier migration reads, holding nothing but derived
+            // data (losing it costs a re-embed, never user content). APPENDED
+            // at the END — `run_migrations` is position-indexed, so a new
+            // migration must never be inserted earlier in this list.
+            name: "create_help_vectors",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS help_vectors (
+                        text_hash  TEXT PRIMARY KEY,
+                        provider   TEXT NOT NULL,
+                        model      TEXT NOT NULL,
+                        dim        INTEGER NOT NULL,
+                        version    INTEGER NOT NULL,
+                        vector     TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    );
+                     CREATE INDEX IF NOT EXISTS idx_help_vectors_created_at ON help_vectors(created_at);",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -540,6 +578,7 @@ impl DocumentStore {
         // migration, so it will not be recreated.
         conn.execute_batch(
             "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores; \
+             DELETE FROM help_vectors; \
              DROP TABLE IF EXISTS documents_pre_mojibake_repair;",
         )
         .ok();
@@ -839,8 +878,8 @@ impl DocumentStore {
         Ok(())
     }
 
-    /// Bound BOTH result caches: expire rows older than `ttl_secs` and cap each
-    /// table to the newest `max_rows`. `None` for a knob disables that bound
+    /// Bound EVERY derived cache table: expire rows older than `ttl_secs` and
+    /// cap each to the newest `max_rows`. `None` for a knob disables that bound
     /// (today's unbounded behavior). Best-effort — a failed prune never blocks
     /// the caller. Pure of its inputs (does not read the live global), so the
     /// command can pass the exact tier it just applied. Unlike the amortized
@@ -849,6 +888,11 @@ impl DocumentStore {
         let conn = self.conn.lock();
         prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
         prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
+        // `help_vectors` is swept on the same tier, for the same reason: its
+        // producer (`commands::help`) takes its entries from the REQUEST, so
+        // the shipped corpus does not bound the table — see its own module
+        // doc. Losing a row costs one re-embed, never user content.
+        prune_table_locked(&conn, "help_vectors", ttl_secs, max_rows);
     }
 
     // ── Match-result cache (self-invalidating) ────────────────────────────────
@@ -1043,6 +1087,10 @@ impl DocumentStore {
 }
 
 mod embedding;
+// Inherent `impl DocumentStore` only (the `help_vectors` cache), so there is
+// nothing to re-export — see help_vectors.rs's own doc for why it is a
+// separate file rather than more of mod.rs.
+mod help_vectors;
 // Re-exported flat at `documents::` so this split is invisible to every
 // existing `crate::documents::X` call site (`embed` alone has ~5 external
 // callers, `sha256_hex`/`EmbedBudget` several more) — see embedding.rs's doc.

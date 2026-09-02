@@ -540,7 +540,11 @@ fn dense_candidate_pool<'a>(
 /// boundary where an `EmbeddingSpace` is still in scope: `retrieval::dense`
 /// never sees one (it works on bare `&[f32]`, by design — see its module
 /// doc) and could not enforce this itself.
-fn dense_pair(
+///
+/// `pub(crate)` because `commands::help`'s dense arm has the identical
+/// boundary and must make the identical decision — one implementation of
+/// "incomparable vectors are never silently scored", not two.
+pub(crate) fn dense_pair(
     id: &str,
     query_space: &crate::commands::ai_provider::EmbeddingSpace,
     candidate: &crate::commands::ai_provider::EmbeddingVector,

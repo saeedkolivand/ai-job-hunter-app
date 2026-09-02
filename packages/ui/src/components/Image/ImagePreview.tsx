@@ -13,6 +13,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useFocusTrap } from '../../hooks/use-focus-trap';
 import { Button } from '../Button';
 
 /** The live view transform applied to the previewed image. */
@@ -27,6 +28,20 @@ export interface ImageTransform {
 
 const IDENTITY: ImageTransform = { scale: 1, rotate: 0, flipX: false, flipY: false, x: 0, y: 0 };
 
+/** Pixels moved per arrow-key press — the keyboard equivalent of one drag step. */
+const PAN_STEP = 40;
+
+/**
+ * Arrow-key pan deltas. Signs mirror dragging: ArrowRight moves the image to
+ * the right exactly as a rightward drag does, so the two gestures agree.
+ */
+const PAN_KEYS: Record<string, { x: number; y: number } | undefined> = {
+  ArrowLeft: { x: -PAN_STEP, y: 0 },
+  ArrowRight: { x: PAN_STEP, y: 0 },
+  ArrowUp: { x: 0, y: -PAN_STEP },
+  ArrowDown: { x: 0, y: PAN_STEP },
+};
+
 export interface ImagePreviewProps {
   /** The previewable srcs; length > 1 enables prev/next navigation. */
   items: string[];
@@ -39,7 +54,7 @@ export interface ImagePreviewProps {
   /** Minimum / maximum zoom. Defaults 1 / 50. */
   minScale?: number;
   maxScale?: number;
-  /** Allow drag-to-pan. Default true. */
+  /** Allow panning — pointer drag, or arrow keys while zoomed. Default true. */
   movable?: boolean;
   onIndexChange: (index: number) => void;
   onOpenChange: (open: boolean) => void;
@@ -57,9 +72,9 @@ export interface ImagePreviewProps {
 
 /**
  * Full-screen image lightbox: zoom (buttons + wheel + double-click), rotate, flip,
- * reset, drag-to-pan, and prev/next across multiple items. Rendered in a portal on
- * the document body; closes on Escape or a backdrop click. Used by {@link Image}
- * (single item) and the preview group (many).
+ * reset, pan (drag or arrow keys while zoomed), and prev/next across multiple
+ * items. Rendered in a portal on the document body; closes on Escape or a
+ * backdrop click. Used by {@link Image} (single item) and the preview group (many).
  */
 export function ImagePreview({
   items,
@@ -76,6 +91,11 @@ export function ImagePreview({
   toolbarRender,
 }: ImagePreviewProps) {
   const [transform, setTransform] = useState<ImageTransform>(IDENTITY);
+  // The house focus trap — the SAME one `ModalShell`, `Drawer` and `ActionMenu`
+  // use. It owns three things this dialog previously did by hand or not at all:
+  // moving focus in on open, containing Tab and Shift+Tab, and handing focus
+  // back to the opener on close.
+  const dialogRef = useFocusTrap(open);
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(
     null
   );
@@ -94,22 +114,60 @@ export function ImagePreview({
     if (open) setTransform(IDENTITY);
   }, [open, index]);
 
-  // Lock body scroll + wire Escape / arrow keys while open.
+  // Focus handling is entirely the trap's now. Why each half matters here:
+  //
+  // - IN, on open: the arrow keys are bound on `window`, so focus left on
+  //   whatever opened the preview means an arrow press both pans the image and
+  //   reaches the control behind it (a text field would move its caret, a list
+  //   would change selection). The trap moves focus to the first control in the
+  //   dialog — the Close button — per the APG dialog pattern.
+  // - CONTAINED, while open: `aria-modal` tells assistive tech that everything
+  //   behind is inert, but it does not move a single tab stop. Without the trap
+  //   Tab walked straight out of the lightbox into a page the user cannot see,
+  //   and Shift+Tab from the first control did the same in reverse.
+  // - BACK, on close: the dialog unmounts on Escape/close and focus falls to
+  //   `<body>`, so the next Tab restarts at the top of the page instead of at
+  //   the thumbnail the preview was opened from (WCAG 2.4.3).
+  //
+  // `tabIndex={-1}` on the shell stays: it keeps the container programmatically
+  // focusable, which is what the APG asks for when a dialog has no focusable
+  // child at all.
+
+  // Lock body scroll while open.
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
-      else if (hasNav && e.key === 'ArrowLeft') onIndexChange((index - 1 + total) % total);
-      else if (hasNav && e.key === 'ArrowRight') onIndexChange((index + 1) % total);
-    };
-    window.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = prevOverflow;
-      window.removeEventListener('keydown', onKey);
     };
-  }, [open, hasNav, index, total, onOpenChange, onIndexChange]);
+  }, [open]);
+
+  // Every other transform (zoom/rotate/flip/reset) has a toolbar button; panning
+  // was pointer-only, so a keyboard user could zoom in and never reach the rest
+  // of the image (WCAG 2.1.1 / 2.5.7). While zoomed the arrows pan; at 1x — where
+  // there is nothing to pan — they keep stepping through the items.
+  const zoomed = movable && transform.scale > 1;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onOpenChange(false);
+        return;
+      }
+      const pan = PAN_KEYS[e.key];
+      if (pan && zoomed) {
+        e.preventDefault();
+        setTransform((p) => ({ ...p, x: p.x + pan.x, y: p.y + pan.y }));
+        return;
+      }
+      if (!hasNav) return;
+      if (e.key === 'ArrowLeft') onIndexChange((index - 1 + total) % total);
+      else if (e.key === 'ArrowRight') onIndexChange((index + 1) % total);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, hasNav, index, total, zoomed, onOpenChange, onIndexChange]);
 
   if (!open || !src || typeof document === 'undefined') return null;
 
@@ -201,9 +259,19 @@ export function ImagePreview({
 
   return createPortal(
     <div
+      ref={dialogRef as React.RefObject<HTMLDivElement>}
       role="dialog"
       aria-modal="true"
+      tabIndex={-1}
+      // Panning has no toolbar button, so the arrow keys are the ONLY way to
+      // reach the rest of a zoomed image — that makes them part of the dialog's
+      // name/role/value story, not an undocumented extra.
+      aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
       onClick={() => onOpenChange(false)}
+      // No `outline-none` here: it would be inert. The global focus ring in
+      // `utilities.css` is UNLAYERED, so a Tailwind utility (layer `utilities`)
+      // cannot override it — the composite-container rule next to that ring is
+      // what keeps a 2px outline off the full-viewport backdrop.
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80"
     >
       <Button

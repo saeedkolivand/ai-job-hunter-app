@@ -157,10 +157,11 @@ export const nodes: readonly MapNode[] = [
     w: 232,
     h: 46,
     color: 'client',
-    role: 'Dashboard: pipeline overview, AI insights, recent activity.',
-    plain: 'The home screen — a quick snapshot of where your job hunt stands.',
+    role: 'Dashboard: header, next-step row, four quick-action tiles, the job-pipeline overview and the AI/system status card.',
+    plain:
+      'The home screen — what to do next, shortcuts to the main screens, and a snapshot of where your job hunt stands.',
     path: 'apps/desktop/src/renderer/routes/index.tsx',
-    notes: ['Aggregates jobs + AI status'],
+    notes: ['Next-step row: the one thing to do next', 'Aggregates jobs + AI status'],
     tag: ['overview', 'dashboard', 'all'],
   },
   {

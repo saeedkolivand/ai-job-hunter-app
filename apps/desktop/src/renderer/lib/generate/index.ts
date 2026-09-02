@@ -15,6 +15,7 @@ export {
   generateCoverLetter,
   type GeneratedGitHubProject,
   generateGitHubProjects,
+  generateHelpAnswer,
   generateInterviewQuestions,
   generateJobAdSummary,
   generateLikelyInterviewQuestions,

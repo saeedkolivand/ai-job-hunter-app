@@ -31,6 +31,7 @@ export * from './use-email-watch';
 export * from './use-extension-bridge';
 export * from './use-geocode';
 export * from './use-github-import';
+export * from './use-help';
 export * from './use-job-preferences';
 export * from './use-jobs';
 export * from './use-match';

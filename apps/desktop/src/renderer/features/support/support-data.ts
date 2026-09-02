@@ -25,6 +25,13 @@ interface Problem {
 }
 
 export interface Section {
+  /**
+   * Stable section id — the `support.faq.<id>` label key, and the prefix of its
+   * entries' `support.faq.<id>Questions.*` keys. Not localized, so it is the
+   * only thing that can identify a section in code: `label` is user-visible
+   * copy that changes with the language.
+   */
+  id: string;
   icon: React.ElementType;
   label: string;
   color: string;
@@ -45,6 +52,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
   return [
     {
       icon: Rocket,
+      id: 'gettingStarted',
       label: t('support.faq.gettingStarted'),
       color: 'text-sky-400',
       glow: 'rgba(56,189,248,0.15)',
@@ -68,6 +76,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Search,
+      id: 'findingJobs',
       label: t('support.faq.findingJobs'),
       color: 'text-violet-400',
       glow: 'rgba(139,92,246,0.15)',
@@ -101,6 +110,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Target,
+      id: 'matchScore',
       label: t('support.faq.matchScore'),
       color: 'text-teal-400',
       glow: 'rgba(45,212,191,0.15)',
@@ -129,6 +139,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: FileText,
+      id: 'documents',
       label: t('support.faq.documents'),
       color: 'text-indigo-400',
       glow: 'rgba(129,140,248,0.15)',
@@ -152,6 +163,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Sparkles,
+      id: 'aiGenerate',
       label: t('support.faq.aiGenerate'),
       color: 'text-blue-400',
       glow: 'rgba(59,130,246,0.15)',
@@ -195,6 +207,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: ClipboardList,
+      id: 'applications',
       label: t('support.faq.applications'),
       color: 'text-emerald-400',
       glow: 'rgba(16,185,129,0.15)',
@@ -228,6 +241,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Radar,
+      id: 'autopilot',
       label: t('support.faq.autopilot'),
       color: 'text-cyan-400',
       glow: 'rgba(34,211,238,0.15)',
@@ -246,6 +260,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Puzzle,
+      id: 'extension',
       label: t('support.faq.extension'),
       color: 'text-orange-400',
       glow: 'rgba(249,115,22,0.15)',
@@ -264,6 +279,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Cpu,
+      id: 'aiSetup',
       label: t('support.faq.aiSetup'),
       color: 'text-fuchsia-400',
       glow: 'rgba(217,70,239,0.15)',
@@ -287,6 +303,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Terminal,
+      id: 'agentCli',
       label: t('support.faq.agentCli'),
       color: 'text-slate-400',
       glow: 'rgba(148,163,184,0.15)',
@@ -300,6 +317,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: ShieldCheck,
+      id: 'privacy',
       label: t('support.faq.privacy'),
       color: 'text-rose-400',
       glow: 'rgba(244,63,94,0.15)',
@@ -318,6 +336,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Briefcase,
+      id: 'jobScraping',
       label: t('support.faq.jobScraping'),
       color: 'text-purple-400',
       glow: 'rgba(168,85,247,0.15)',
@@ -346,6 +365,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Bot,
+      id: 'aiFeatures',
       label: t('support.faq.aiFeatures'),
       color: 'text-blue-400',
       glow: 'rgba(59,130,246,0.15)',
@@ -369,6 +389,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: LinkIcon,
+      id: 'accountsSessions',
       label: t('support.faq.accountsSessions'),
       color: 'text-emerald-400',
       glow: 'rgba(16,185,129,0.15)',
@@ -387,6 +408,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Settings,
+      id: 'general',
       label: t('support.faq.general'),
       color: 'text-amber-400',
       glow: 'rgba(245,158,11,0.15)',
@@ -410,6 +432,7 @@ export function getSupportSections(t: (key: string) => string): Section[] {
     },
     {
       icon: Wifi,
+      id: 'connectivity',
       label: t('support.faq.connectivity'),
       color: 'text-red-400',
       glow: 'rgba(239,68,68,0.15)',

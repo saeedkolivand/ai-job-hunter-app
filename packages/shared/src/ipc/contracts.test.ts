@@ -28,6 +28,7 @@ describe('IPC_CHANNELS', () => {
         'extensionBridge',
         'geocode',
         'github',
+        'help',
         'jobPreferences',
         'contactProfile',
         'jobs',

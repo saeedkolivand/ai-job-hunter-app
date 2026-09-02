@@ -107,7 +107,13 @@ tauri-plugin-log = "2"
 #     binary this project optimizes hard for size (fat LTO, opt-level "s").)
 #   * `logs` / `metrics` are structured-log and metric pipelines — new egress
 #     surfaces. ADR-0020 consented to crash reports, and nothing here emits
-#     either, so they stay off.
+#     either, so they stay off. THIS LIST IS THE GATE, not a preference: 0.49.2
+#     deprecated `ClientOptions::enable_logs`/`enable_metrics` (a no-op and a
+#     mute-automatic-capture-only switch respectively), so nothing at runtime
+#     turns either pipeline off any more. Adding `logs`, `metrics`, `log` or
+#     `tracing` here fails
+#     `crash_reporting::tests::sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`,
+#     which reads this declaration as text. See `crash_reporting`'s module doc.
 # `native-tls` IS on, and is reused rather than adding a second TLS stack —
 # reqwest 0.13 already brings that crate in. In 0.49 the feature resolves to
 # `ureq?/native-tls` for our transport (`reqwest?/native-tls-no-alpn` stays
