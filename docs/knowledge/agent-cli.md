@@ -55,19 +55,18 @@ Written by the app on every launch (idempotent). This is the supported mechanism
 
 ## MCP mode (`agent mcp`)
 
-The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing job queries and command dispatch as discoverable tools for LLM agents such as Claude Code and Codex. `ajh-tauri agent mcp` starts a **read-only** server. Two argv-only flags open the write tiers along the `Effect` boundary: `--allow-reversible` adds undoable state changes, `--allow-irreversible` additionally adds destructive commands and AI spend (and implies the former). The flags are the only way to enable a tier — no environment variable or config path — and the server's `instructions` string names every enabled tier so an elevated session leaves a trace in the client transcript.
+The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing the same job queries and command dispatch as discoverable tools for LLM agents such as Claude Code and Codex. It is a mode of the binary, not a verb: `mcp` is intercepted before verb parsing, adds no verb-table row, no Tauri command and no policy row, and reuses the CLI's own bridge path (`query()` in `agent_cli.rs`) for every call — same handshake, same throttle, same sentinels.
 
-**Protocol**: Uses the legacy 2025-11-25 JSON-RPC stdio wire. Each request and response is one compact JSON object per line (never pretty-printed).
+**Shape, and where the exact values live** (`apps/desktop/src-tauri/src/extension_bridge/agent_cli/mcp.rs`, tests beside it):
 
-**Tools**: curated read-only tools plus one generic dispatch tool per `Effect` class; the authoritative list, descriptions and input schemas are `tools()` in `apps/desktop/src-tauri/src/extension_bridge/agent_cli/mcp.rs`. A tier hidden by the launch flags is absent from `tools/list`, naming it is a protocol error rather than a refusal, and the `commands` discovery tool marks that class `unavailable` instead of pointing at a tool the session cannot see.
+- **Wire**: the legacy stdio JSON-RPC dialect the installed clients actually send; the accepted versions are `SUPPORTED_VERSIONS`, an unknown request method gets method-not-found, and a notification gets no frame. One compact JSON object per line. `initialize` is static, so startup never depends on the app.
+- **Tiers**: read-only by default. Two argv-only launch flags open the write tiers along the `Effect` boundary and resolve into `Tier` (`Tier::from_flags`; the destructive flag implies the reversible one). `parse_launch_args` and its tests pin the flag spellings; `tools()` is the authoritative tool list with descriptions and input schemas. A hidden tier is absent from `tools/list`, naming it is a protocol error, and the `commands` discovery tool marks that class unavailable. `build_instructions` names every enabled tier so an elevated session leaves a trace in the transcript.
+- **Refusals are results**: every app-side refusal, the CLI exit code and the confirm hint travel as `isError` text; the server's own sentinels are enumerated by a drift test in `mcp/tests.rs`. A result over the byte cap constant in `mcp.rs` is refused, never truncated. `structuredContent` is not emitted.
+- **Confirmation ceremony**: unchanged from ADR-038 §4 — read the proof with `call-read`, pass it back verbatim on `call-irreversible`; the server never resolves a proof itself.
+- **Throttle and deadline**: the CLI's per-invocation deadline and the global throttle beside `BridgeState` in `agent_read.rs` apply unchanged. The loop is single-flight: one in-flight call blocks later frames, including `ping`, for up to that deadline (ADR-040 §12).
+- **Personal data**: any `Read` row that returns user data reaches the client's AI provider and its persisted transcript — the `commands` tool and `POLICY` in `policy.rs` are the list. Third-party posting text is fenced per surface (`fence_description` and `fence_posting_display_fields` in `agent_read.rs`; `fence_scraped_fields` on the generic tier) and the server's `instructions` say the spans are untrusted.
 
-**Confirmation ceremony**: Commands marked `Irreversible` require a two-hop ceremony (ADR-038 §4). The `call-read` tool reads the target value; the `call-irreversible` tool passes it back via the `confirm` argument. The proof is passed **verbatim**, including any `<job_posting>…</job_posting>` wrapper and embedded newlines; fenced values JSON-escape cleanly on the stdio line.
-
-**Timeout and rate limits**: Each tool call runs under the CLI's own per-invocation deadline. The global throttle shared by the CLI and the agent-query tier applies unchanged (limits live beside `BridgeState` in `agent_read.rs`); refusals arrive as `rate_limited` tool results and the server never retries. A result larger than `MCP_RESULT_MAX_BYTES` (in `mcp.rs`) is refused as `result_too_large` rather than truncated, because a truncated JSON payload would be worse for the model than none.
-
-**Tool results carry personal data**: The `profile` tool and `call-read` targets such as `documents_get_text`, `applications_list` and `email_watch_status` return PII; `best-matches` returns job postings. Results are sent to the MCP client's AI provider and persisted in its transcript. Use these tools only when the user explicitly asked for that data.
-
-**See also**: [ADR-040](decision-records/adr-040-mcp-server-as-agent-cli-mode.md) for the complete design and wire contract.
+**See also**: [ADR-040](decision-records/adr-040-mcp-server-as-agent-cli-mode.md) for the decisions and their reasoning.
 
 ## See also
 

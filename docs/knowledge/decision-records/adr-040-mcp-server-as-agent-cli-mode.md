@@ -44,6 +44,8 @@ Three architectural points framed the decision:
 
 **11. No app launch dependency**: `initialize` sends only the protocol version and basic info; it does not check app status, read the app's state, or establish a connection. Startup works with the app closed. The first tool call (e.g., `best-matches`) is where the connection handshake happens, in the same path the CLI already uses.
 
+**12. Single-flight dispatch, on purpose**: `serve` reads one frame, dispatches it synchronously (`block_on` from the sync loop, never inside the runtime) and writes the reply before reading the next. One in-flight `tools/call` therefore blocks every later frame, including `ping`, for at most `INVOCATION_TIMEOUT`. Chosen because it keeps exactly one writer with no interleaving on stdout, matches how the deployed clients issue tool calls (one at a time, awaited), and bounds the throttle to one bridge connection per process; a test pins the in-order contract. The alternative — a reader task plus a serialized writer — is the follow-up if a real client's liveness check ever kills the server mid-dispatch, which is why client keepalive behaviour is recorded as unverified below.
+
 ## Consequences
 
 ### Positive
@@ -63,6 +65,8 @@ Three architectural points framed the decision:
 ### Tradeoffs
 
 - **Legacy wire only**: Supporting only the 2025-11-25 protocol means clients using the modern 2026-07-28 spec (not yet deployed) cannot connect. A follow-up ADR will add that version when it reaches production.
+
+- **A slow bridge call looks like a hung server** to a ping-based liveness check, for up to the invocation deadline (§12). No deployed client has been observed to ping mid-call; if one does, the reader/writer split named in §12 is the fix.
 
 - **Confirmation ceremony not enforced server-side for all clients**: Claude Code implements `_meta["anthropic/requiresUserInteraction"]` and can force a prompt; Codex does not read this field. On Codex with an `approval_policy` of `never`, an LLM can reach Irreversible rows (and their own approval) by completing the ceremony alone, with no human gate between the model and the action. The `--allow-irreversible` flag and this ADR's documentation make that explicit.
 

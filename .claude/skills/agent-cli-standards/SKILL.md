@@ -156,7 +156,7 @@ mode, each of which a reviewer should verify from the source rather than the des
   test and the R8 line cap are untouched.
 - **Legacy wire, on purpose.** It speaks the 2025-11-25 stdio protocol (`initialize` →
   `notifications/initialized`, `ping`, `tools/list`, `tools/call`) because that is what the real
-  clients send; `server/discover` and every other method get `-32601`, which is the current spec's
+  clients send; `server/discover` and every other request method get `-32601` (a notification, known or not, gets no frame at all), which is the current spec's
   own legacy-fallback signal. Never advertise 2026-07-28. `initialize` is static — no pointer file,
   no token, no socket — so startup never depends on the app running.
 - **Tools along the `Effect` boundary.** Read-only curated tools and the three generic `call-*`
