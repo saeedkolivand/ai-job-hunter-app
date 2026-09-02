@@ -82,6 +82,26 @@
 //!   REFUSED instead: a `server_busy` tool result, `isError`, exit code 2, telling the client to
 //!   wait for an outstanding reply and retry that one call. Nothing is dropped silently and the
 //!   loop stays responsive.
+//! - **The [`Event`] queue is BOUNDED too, at [`MCP_EVENT_QUEUE_MAX`] — and here the producers
+//!   DO block.** Bounding the dispatch queue only restored half the backpressure the reader
+//!   split lost: the other half is the reader itself. A client that stops draining stdout parks
+//!   this loop inside [`emit`], and a stdin that never blocks on its own (a file-fed input, or a
+//!   client pipelining faster than stdout drains) would let an unbounded reader queue buffer the
+//!   whole input in memory. Bounded, the reader instead parks in its own `send`, stops reading,
+//!   and the OS pipe pushes back on the client — which is precisely what the single-threaded
+//!   loop did before the split, and the reader is the one thread whose blocking costs nothing
+//!   (it answers nothing and writes nothing).
+//! - **Why a bounded reader queue still cannot deadlock.** Both producers may block on it; the
+//!   sole CONSUMER — the writer/main thread — never blocks on any channel send, which is what
+//!   rules out a cycle. It hands work to the worker with `try_send` (a full dispatch queue is
+//!   refused, above), so it never waits on the worker to make room; its only waits are
+//!   `incoming.recv`, which by definition frees a slot, and [`emit`], which waits on the CLIENT.
+//!   A worker blocked in `send(Event::Reply)` therefore stalls only the worker: the writer is
+//!   already on its way back to `recv`, and once the client drains stdout both producers are
+//!   released in order. The one place the writer waits on the worker is the final
+//!   `worker.join()`, and the loop reaches it only after breaking with `in_flight == 0` — every
+//!   reply already received, so the worker is idle at `queued.recv()` and cannot be holding a
+//!   `send`. The drain-deadline and broken-pipe exits do not join at all.
 //! - **The EOF drain is bounded too**, by ONE absolute deadline (`drain_budget`, one
 //!   [`super::INVOCATION_TIMEOUT`] in production) started when `Eof` arrives — not one budget per
 //!   queued call, which is the N × timeout worst case a full queue could otherwise hold the exit
@@ -111,7 +131,7 @@
 
 use std::io::{stdin, stdout, BufRead, BufReader, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError, Sender, TrySendError};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::thread;
 
@@ -615,6 +635,21 @@ fn oversized_result(bytes: usize) -> Value {
 /// a pipelining one is told to slow down almost immediately.
 const MCP_CALL_QUEUE_MAX: usize = 8;
 
+/// How many [`Event`]s (input lines from the reader thread + replies from the dispatch thread) may
+/// WAIT on the single writer thread. The reader→writer half of the backpressure the reader split
+/// lost: a client that stops draining stdout parks this loop inside [`emit`], and a stdin that
+/// never blocks (a file, or a pipelining client) would otherwise let the reader buffer the whole
+/// input in memory. Bounding it hands the pressure back to the OS pipe — the reader parks in its
+/// `send`, stops reading, and the writer on the other end of the pipe blocks — which is the one
+/// thread whose blocking costs nothing here (see the module doc's concurrency section).
+///
+/// 64 rather than [`MCP_CALL_QUEUE_MAX`]'s 8: this queue is a lookahead buffer, not a work queue,
+/// and it also carries the replies. A request/response client never puts more than one or two
+/// events in it, and the deepest legitimate burst — a pipelining client filling the dispatch
+/// queue — is answered (dispatched or `server_busy`) as fast as this loop can read, so 64 is
+/// slack the loop never has to grow into rather than a depth anyone waits out.
+const MCP_EVENT_QUEUE_MAX: usize = 64;
+
 /// The refusal answered when that queue is full — see the module doc's concurrency section for
 /// why the excess call is refused rather than blocking the writer thread until there is room.
 /// `dispatched:false`, like every other refusal that never reached the wire; the `detail` is a
@@ -884,7 +919,9 @@ fn serve(
     mut dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
     drain_budget: Duration,
 ) -> i32 {
-    let (events, incoming) = channel::<Event>();
+    // BOUNDED (module doc): its two PRODUCERS may block on it, the sole consumer — this loop —
+    // never does, which is what makes a full queue backpressure rather than a deadlock.
+    let (events, incoming) = sync_channel::<Event>(MCP_EVENT_QUEUE_MAX);
     // BOUNDED (module doc): the writer never blocks on it — a full queue is refused with
     // `server_busy` instead — so this bound is a memory bound, not a latency one.
     let (calls, queued) = sync_channel::<(Value, Verb)>(MCP_CALL_QUEUE_MAX);
@@ -894,7 +931,7 @@ fn serve(
     // frame nobody will ever write.
     let abandoned = Arc::new(AtomicBool::new(false));
     let worker_abandoned = Arc::clone(&abandoned);
-    let worker_events: Sender<Event> = events.clone();
+    let worker_events: SyncSender<Event> = events.clone();
     let worker = thread::Builder::new()
         .name("mcp-dispatch".to_string())
         .spawn(move || {
@@ -915,6 +952,14 @@ fn serve(
                     return;
                 }
                 let reply = reply_frame(id, Ok(dispatched_tool_result(&verb, &mut dispatch)));
+                // MAY BLOCK, and that is safe — a blocking `send` here can never stall the
+                // writer's drain, because the writer never waits on THIS thread while the loop
+                // runs: it hands work over with `try_send` (a full dispatch queue is refused, not
+                // waited on) and reaches its one `worker.join()` only after the loop has broken
+                // with `in_flight == 0`, i.e. after every reply this thread produced was already
+                // received. So the writer's only waits are on its own consumer end and on stdout,
+                // and both free slots here rather than needing one. `is_err` = the receiver is
+                // gone (`serve` returned), the same stop signal as before.
                 if worker_events.send(Event::Reply(reply)).is_err() {
                     return;
                 }
@@ -933,6 +978,12 @@ fn serve(
             for line in input.lines() {
                 // A read error ends the input exactly like EOF does.
                 let Ok(line) = line else { break };
+                // MAY BLOCK once [`MCP_EVENT_QUEUE_MAX`] events are waiting — deliberately. This
+                // is the thread whose blocking costs nothing: parking here stops the reads, and
+                // the OS pipe pushes back on the client exactly as it did before this loop had a
+                // reader thread at all. The alternative (an unbounded queue) buffers a
+                // never-blocking stdin — a file, or a client that pipelines faster than stdout
+                // drains — without limit.
                 if events.send(Event::Line(line)).is_err() {
                     return;
                 }

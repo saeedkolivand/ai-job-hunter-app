@@ -31,6 +31,20 @@
 //! entry contains all of "how", "do", "my", "as" and "PDF" — and on a default
 //! install (`semantic_scoring` off) this is the only arm there is.
 //!
+//! **The bar is top-3, and production's narrowest `limit` is 2.** The two
+//! numbers are not the same measurement and this file keeps them apart. Three
+//! is `HelpSearchRequestSchema`'s default `limit` and the help chat's default
+//! entry budget — the set a default install actually grounds an answer in —
+//! so it is the gate. But `resolveHelpChatSizing` halves that budget to
+//! [`TOP_N_NARROW`] entries on a small local model, and the same number is
+//! passed straight through as the search `limit`, so on that profile a rank-3
+//! entry is retrieved and then dropped before the prompt. Retuning a PROMPT
+//! budget must not silently redefine what counts as a retrieval regression,
+//! so the narrow profile gets a second, INFORMATIONAL column and its own
+//! measured floor ([`TOP_2_FLOOR`]) instead of replacing the bar — see that
+//! constant for why tightening the gate to 2 would fail honestly-ranked
+//! cases.
+//!
 //! Run `cargo test --test help_retrieval -- --nocapture` for the table.
 
 use std::collections::BTreeSet;
@@ -57,6 +71,35 @@ const EXPECTED_ENTRY_COUNT: usize = 51;
 /// number of entries the help chat actually grounds an answer in — so this
 /// measures the set the feature uses, not a looser one chosen to pass.
 const TOP_K: usize = 3;
+
+/// The narrowest `limit` production ever sends. `resolveHelpChatSizing`
+/// (`packages/prompts/.../help-chat.ts`) drops the chat's entry budget to 2
+/// for small local models, and `use-help-chat` passes that same number
+/// through as `help:search`'s `limit` — so on that profile an entry at rank 3
+/// is retrieved and then never reaches the prompt.
+const TOP_N_NARROW: usize = 2;
+
+/// The bar stays [`TOP_K`], not [`TOP_N_NARROW`], and that is a deliberate
+/// choice rather than the looser number: the blocking assertion below is what
+/// the DEFAULT profile grounds its answers in, and every case here was
+/// hand-written against a 3-deep set. Tightening the gate to 2 would fail one
+/// honestly-ranked case — "How do I connect Ollama so the AI features work?",
+/// whose expectation was itself CORRECTED after measuring (see its `why`)
+/// and which lands at rank 3 behind two defensible siblings — and it would
+/// put the small-model profile's prompt budget in charge of what counts as a
+/// retrieval regression, which is backwards: shrinking that budget is a
+/// PROMPT decision, and it must not silently redefine this eval.
+///
+/// So top-2 is measured and reported alongside, with its own floor. 17 of 18
+/// is MEASURED on this corpus (run the test — the table prints both counts),
+/// then written down here by hand: it says "this many cases survive the
+/// narrow profile today", so a ranking change that quietly pushes a case from
+/// rank 2 to rank 3 fails here even while the top-3 gate stays green. A
+/// floor, never a target: raise it when the measurement rises, and never
+/// lower it to make a change pass — a case that drops out is a finding to
+/// judge (which entry took its place, and does that entry answer the
+/// question?), the same judgement `CASES`' own `why` column exists for.
+const TOP_2_FLOOR: usize = 17;
 
 /// Build the help entries exactly as the renderer does: one entry per
 /// `support.faq.<section>Questions.<leaf>` node, `id` the dotted leaf path,
@@ -253,6 +296,14 @@ struct Row {
     arm_ran: bool,
 }
 
+impl Row {
+    /// Did the expected entry survive the NARROWEST `limit` production sends
+    /// ([`TOP_N_NARROW`])? Informational — the blocking bar is [`TOP_K`].
+    fn within_narrow_limit(&self) -> bool {
+        self.rank.is_some_and(|r| r <= TOP_N_NARROW)
+    }
+}
+
 fn measure() -> Vec<Row> {
     let entries = corpus();
     let known: BTreeSet<&str> = entries.iter().map(|e| e.id.as_str()).collect();
@@ -289,16 +340,21 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
         EXPECTED_ENTRY_COUNT
     );
     println!(
-        "{:<50} {:<5} {:<11} {:<46} top {TOP_K}",
-        "query", "rank", "contenders", "expected entry"
+        "{:<50} {:<5} {:<6} {:<11} {:<46} top {TOP_K}",
+        "query", "rank", "top-2", "contenders", "expected entry"
     );
     for row in &rows {
         println!(
-            "{:<50} {:<5} {:<11} {:<46} {}",
+            "{:<50} {:<5} {:<6} {:<11} {:<46} {}",
             row.case.query,
             match row.rank {
                 Some(r) => r.to_string(),
                 None => "MISS".to_string(),
+            },
+            if row.within_narrow_limit() {
+                "yes"
+            } else {
+                "-"
             },
             row.contenders,
             row.case.expected,
@@ -306,10 +362,13 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
         );
     }
     let hits = rows.iter().filter(|r| r.rank.is_some()).count();
+    let narrow_hits = rows.iter().filter(|r| r.within_narrow_limit()).count();
     println!(
         "
-{hits} of {} phrasings reach their entry in the lexical top {TOP_K}
+{hits} of {} phrasings reach their entry in the lexical top {TOP_K} (the bar)
+{narrow_hits} of {} also survive the narrow `limit` of {TOP_N_NARROW} (informational, floor {TOP_2_FLOOR})
 ",
+        rows.len(),
         rows.len()
     );
 
@@ -337,6 +396,18 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
     // Literal, not derived-vs-derived: compared with a hand-written number,
     // so a case quietly deleted from CASES fails here instead of passing.
     assert_eq!(hits, 18, "expected all 18 hand-written phrasings to hit");
+    // The narrow-profile floor (see [`TOP_2_FLOOR`]): a SECOND, weaker gate
+    // beside the bar, not a loosening of it. `>=`, not `==`, so a ranking
+    // change that promotes a case is not a failure — but a demotion out of
+    // the small-model prompt budget is.
+    assert!(
+        narrow_hits >= TOP_2_FLOOR,
+        "only {narrow_hits} of {} phrasings survive the narrow `limit` of {TOP_N_NARROW}, below \
+         the measured floor of {TOP_2_FLOOR} — a case fell out of the entry set the small-model \
+         help-chat profile actually sends to the prompt (the top-{TOP_K} bar above is still met, \
+         which is why this is its own assertion)",
+        rows.len()
+    );
 }
 
 /// The honesty guard on the table above: a query that matches exactly ONE of

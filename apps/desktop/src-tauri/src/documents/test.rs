@@ -3022,6 +3022,28 @@ fn a_help_vector_round_trips_through_a_freshly_migrated_store() {
     assert!(store
         .get_help_vector("hash-nobody-wrote", &active)
         .is_none());
+
+    // The same migration must also create the `created_at` index the row-cap
+    // sweep is written for: `prune_caches` prunes `help_vectors` through
+    // `sql::prune_table_locked`, whose cap delete is an `ORDER BY created_at
+    // DESC LIMIT 1 OFFSET ?` subquery. Asserted against `sqlite_master` (not
+    // an EXPLAIN plan) so it fails on the index being ABSENT — the thing the
+    // migration owns — rather than on a planner decision.
+    let index_exists: i64 = store
+        .conn
+        .lock()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'index' AND name = 'idx_help_vectors_created_at' AND tbl_name = 'help_vectors'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        index_exists, 1,
+        "create_help_vectors must create idx_help_vectors_created_at in the SAME migration as \
+         the table — prune_table_locked's row-cap subquery degrades to a full-table sort without it"
+    );
 }
 
 /// The cache is keyed by the TEXT hash, so an edited answer is a natural miss

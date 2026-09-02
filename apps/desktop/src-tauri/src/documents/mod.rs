@@ -514,7 +514,18 @@ impl DocumentStore {
             // The help-corpus vector cache (`documents::help_vectors`). Keyed
             // by `sha256_hex(entry body)` — NOT by entry id or locale — so an
             // edited answer misses by itself and an unchanged one costs at
-            // most one embed per embedding space.
+            // most one embed per embedding space once the cache is warm (the
+            // concurrency caveat on that claim lives in `help_vectors`' own
+            // module doc).
+            //
+            // The `created_at` index ships in the SAME migration as the table,
+            // not a later one: `prune_caches` sweeps `help_vectors` on the
+            // same tier as its two siblings, and `sql::prune_table_locked`'s
+            // row-cap delete is WRITTEN for that index (`ORDER BY created_at
+            // DESC LIMIT 1 OFFSET ?`) — without it the cap degrades to a
+            // full-table sort on every pruning write. Same
+            // `idx_<table>_created_at` name shape as
+            // `index_cache_created_at`'s two.
             //
             // Forward-safe and safe to drop: `CREATE TABLE IF NOT EXISTS` on
             // a table no earlier migration reads, holding nothing but derived
@@ -532,7 +543,8 @@ impl DocumentStore {
                         version    INTEGER NOT NULL,
                         vector     TEXT NOT NULL,
                         created_at INTEGER NOT NULL
-                    );",
+                    );
+                     CREATE INDEX IF NOT EXISTS idx_help_vectors_created_at ON help_vectors(created_at);",
                 )
             },
         },

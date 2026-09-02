@@ -364,8 +364,19 @@ async fn run_dense(
 ///
 /// The query is embedded on EVERY request — it is different text each time,
 /// so there is nothing to cache. Entry bodies are cached by
-/// `sha256_hex(body)` in `help_vectors`, so an unchanged answer costs at most
-/// one embed per embedding space, ever.
+/// `sha256_hex(body)` in `help_vectors`, so once the cache is warm an
+/// unchanged answer costs at most one embed per embedding space.
+///
+/// **Not exactly-once across concurrent calls.** The cache is read and
+/// written under separate acquisitions of the store's connection lock (never
+/// held across the embed, which is a network round trip) and there is no
+/// in-flight registry, so two `help_search` calls that race on a COLD entry
+/// each miss and each embed it. The upsert is idempotent, so the cache
+/// converges once the first of them lands; what bounds the duplicates is not
+/// a lock but the two budgets every embed here already passes through —
+/// [`HELP_EMBED_MISSES_MAX`] misses per REQUEST, and
+/// `limits::PROVIDER_DAILY_MAX` charged per embed before dispatch (see
+/// [`ChargedEmbedder`]).
 ///
 /// **All-or-nothing, by design.** The arm reports [`ArmStatus::Ran`] only
 /// when EVERY requested entry was paired with a comparable vector; anything

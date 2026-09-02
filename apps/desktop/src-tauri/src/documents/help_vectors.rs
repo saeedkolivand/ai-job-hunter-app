@@ -13,7 +13,24 @@
 //! whichever locale the user has active. Hashing the BODY makes the cache
 //! locale-agnostic *and* self-invalidating: an edited answer is a different
 //! hash, so it is a natural miss and re-embeds itself, while an unchanged
-//! answer costs at most ONE embed per embedding space, ever.
+//! answer costs at most ONE embed per embedding space **once the cache is
+//! warm**.
+//!
+//! **The concurrency caveat, stated rather than engineered away.** That is a
+//! steady-state claim, not an exactly-once guarantee. There is no in-flight
+//! registry, and the connection lock is taken separately by
+//! [`DocumentStore::get_help_vector`] and
+//! [`DocumentStore::upsert_help_vector`] (never held across the embed, which
+//! is a network round trip), so two `help_search` calls racing on a COLD
+//! entry each see a miss and each embed it; the upserts are idempotent
+//! (`ON CONFLICT(text_hash) DO UPDATE`), so the last writer simply wins and
+//! the cache CONVERGES after the first one lands. A registry would trade
+//! those few duplicate embeds for a cross-request lock on a degradable arm,
+//! which is the worse deal: the duplicates are bounded on both axes that
+//! matter — each racing call is capped at `commands::help`'s
+//! `HELP_EMBED_MISSES_MAX` misses, and every embed is charged against the
+//! provider's daily ceiling (`limits::PROVIDER_DAILY_MAX`) before it is
+//! dispatched, concurrent or not.
 //!
 //! **What actually bounds this table** (corrected — an earlier version of
 //! this doc claimed the SHIPPED corpus did, which is wrong: `commands::help`
