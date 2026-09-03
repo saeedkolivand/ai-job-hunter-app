@@ -66,7 +66,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`resumePipeline`](#resumepipeline)   | 6       | The staged résumé pipeline — one fixed stage sequence; there is no depth choice.                                                       |
 | [`scrape`](#scrape)                   | 11      |                                                                                                                                        |
 | [`support`](#support)                 | 1       |                                                                                                                                        |
-| [`system`](#system)                   | 16      |                                                                                                                                        |
+| [`system`](#system)                   | 17      |                                                                                                                                        |
 | [`updater`](#updater)                 | 5       |                                                                                                                                        |
 
 ## `ai`
@@ -4236,6 +4236,7 @@ Contract: `SystemContract` in `packages/shared/src/ipc/contracts/system.ts`
 - [`system.checkBrowser`](#systemcheckbrowser)
 - [`system.openDevtools`](#systemopendevtools)
 - [`system.getProtocolVersion`](#systemgetprotocolversion)
+- [`system.agentCliInfo`](#systemagentcliinfo)
 - [`system.onAccentChanged`](#systemonaccentchanged)
 
 #### `system.health`
@@ -4342,6 +4343,22 @@ getProtocolVersion(): Promise<string>;
 
 Returns the IPC protocol version string from the Tauri shell.
 
+#### `system.agentCliInfo`
+
+```ts
+agentCliInfo(): Promise<{ exePath: string | null }>;
+```
+
+Where this app's own binary lives, as the user should TYPE it when
+registering the bundled agent CLI / MCP server with a coding agent.
+
+`exePath` is `null` when the shell could not resolve it at all; a caller
+must handle that rather than rendering an empty command. The resolution
+rule (including the platform special case where the running process path
+is not the path to type) is owned by the Rust side — see the
+`system_agent_cli_info` command — and is the SAME helper that writes the
+`exePath` field of the agent pointer file, so the two can never disagree.
+
 #### `system.onAccentChanged`
 
 ```ts
@@ -4376,8 +4393,9 @@ unsubscribe handle.
 | `checkBrowser`       | `system:checkBrowser`       |
 | `openDevtools`       | `system:openDevtools`       |
 | `getProtocolVersion` | `system:getProtocolVersion` |
+| `agentCliInfo`       | `system:agentCliInfo`       |
 
-`SYSTEM_CHANNELS` registers 15 of this namespace's 16 methods; the rest have no entry in it.
+`SYSTEM_CHANNELS` registers 16 of this namespace's 17 methods; the rest have no entry in it.
 
 ### Referenced types — `system`
 

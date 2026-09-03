@@ -1,4 +1,4 @@
-//! ADR-038 §1 — the command policy table: every one of the 166
+//! ADR-038 §1 — the command policy table: every one of the 167
 //! `#[tauri::command]` sites registered in `tauri::generate_handler!`
 //! (`lib.rs`), classified by [`Effect`]. Phase 1 (this table) shipped with
 //! nothing dispatching through it; Phase 2 (`super::super::agent_call`) reads
@@ -99,6 +99,10 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         ),
     },
     PolicyEntry { path: "commands::system::system_get_protocol_version", effect: Effect::Read },
+    // No caller input, nothing persisted, nothing spent; the value is a
+    // machine-local path the launch-time pointer file already publishes to
+    // every local process (`~/.ajh-agent/agent.json`).
+    PolicyEntry { path: "commands::system::system_agent_cli_info", effect: Effect::Read },
 
     // commands/menu.rs
     PolicyEntry {

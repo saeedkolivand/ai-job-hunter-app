@@ -69,6 +69,36 @@ pub fn agent_pointer_path() -> Option<PathBuf> {
     home_dir().map(|h| h.join(AGENT_POINTER_DIR_NAME).join(AGENT_POINTER_FILE_NAME))
 }
 
+/// Env var the AppImage runtime exports with the path of the `.AppImage` FILE
+/// the user launched — see [`agent_cli_exe_path`].
+const APPIMAGE_ENV: &str = "APPIMAGE";
+
+/// The path of this binary **as a user should type it** to reach the agent
+/// CLI / MCP server.
+///
+/// The ONE resolver for that value, shared by the two surfaces that publish
+/// it — the pointer file (`extension_bridge::register`, every launch) and the
+/// Settings card behind `commands::system::system_agent_cli_info` — so the
+/// file on disk and the path shown in the UI can never disagree.
+///
+/// Not simply `current_exe()`: inside an AppImage the process image lives on
+/// a FUSE mount that only exists while the app runs, so `current_exe()`
+/// returns a path that is gone by the time the user pastes it. The runtime
+/// exports the launched `.AppImage` itself in [`APPIMAGE_ENV`], which is the
+/// durable one. Read unconditionally rather than behind
+/// `#[cfg(target_os = "linux")]`: only the AppImage runtime ever sets that
+/// variable, and a target-gated branch would be a branch no non-Linux host
+/// could compile or test (`rust-standards`' platform-gated-code rule).
+///
+/// `None` only when both sources fail — the caller decides how to report it
+/// (the pointer file is skipped; the command returns `null`).
+pub fn agent_cli_exe_path() -> Option<PathBuf> {
+    if let Some(appimage) = std::env::var_os(APPIMAGE_ENV).filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(appimage));
+    }
+    std::env::current_exe().ok()
+}
+
 /// Setup-side resolver (has an `AppHandle`). Resolves the authoritative app data
 /// dir via Tauri and exports it as `AJH_DATA_DIR` so AppHandle-less workers
 /// resolve the same path. Returns the resolved directory.
@@ -291,5 +321,59 @@ mod tests {
         // Never the bare FALLBACK_DIR_NAME (`.ajh`) — that name is the data-dir
         // fallback, and a pointer file living there would be mistakable for it.
         assert!(!path.starts_with(home.join(FALLBACK_DIR_NAME)));
+    }
+
+    /// RAII scope for `APPIMAGE`, same reason as [`HomeDirGuard`]: a failing
+    /// assert must not leak a fake AppImage path into every later test in
+    /// this process.
+    struct AppImageGuard(Option<std::ffi::OsString>);
+
+    impl AppImageGuard {
+        fn set(value: Option<&str>) -> Self {
+            let previous = std::env::var_os(APPIMAGE_ENV);
+            // SAFETY: test-only, and the caller holds `#[serial]`.
+            unsafe {
+                match value {
+                    Some(v) => std::env::set_var(APPIMAGE_ENV, v),
+                    None => std::env::remove_var(APPIMAGE_ENV),
+                }
+            }
+            Self(previous)
+        }
+    }
+
+    impl Drop for AppImageGuard {
+        fn drop(&mut self) {
+            // SAFETY: as above — restoring exactly what was read in `set`.
+            match self.0.take() {
+                Some(previous) => unsafe { std::env::set_var(APPIMAGE_ENV, previous) },
+                None => unsafe { std::env::remove_var(APPIMAGE_ENV) },
+            }
+        }
+    }
+
+    // Both branches of the resolver, on EVERY host: the env read is not
+    // `#[cfg]`-gated (see `agent_cli_exe_path`'s doc), so a Windows/macOS run
+    // covers the AppImage branch too instead of leaving it to a Linux-only
+    // CI leg.
+    #[test]
+    #[serial_test::serial]
+    fn agent_cli_exe_path_prefers_appimage_over_the_transient_current_exe() {
+        let running = std::env::current_exe().unwrap();
+
+        let _guard = AppImageGuard::set(Some("/home/tester/Apps/AI Job Hunter.AppImage"));
+        assert_eq!(
+            agent_cli_exe_path().unwrap(),
+            PathBuf::from("/home/tester/Apps/AI Job Hunter.AppImage")
+        );
+
+        // An EMPTY value is not a path — the AppImage runtime never writes one,
+        // but an inherited empty env var would otherwise publish "" as the
+        // command to type.
+        let _empty = AppImageGuard::set(Some(""));
+        assert_eq!(agent_cli_exe_path().unwrap(), running);
+
+        let _unset = AppImageGuard::set(None);
+        assert_eq!(agent_cli_exe_path().unwrap(), running);
     }
 }

@@ -139,7 +139,16 @@ pub fn register_native_host(data_dir: &Path) {
             return;
         }
     };
-    write_agent_pointer(&exe, data_dir);
+    // The pointer publishes the path a HUMAN types to reach the agent CLI,
+    // which inside an AppImage is NOT `exe` — one resolver
+    // (`platform::config::agent_cli_exe_path`), shared with the Settings card
+    // behind `commands::system::system_agent_cli_info`, so the file and the UI
+    // can never disagree. The browser manifests below deliberately keep `exe`:
+    // a native-messaging host is launched by the browser, not typed.
+    write_agent_pointer(
+        &crate::platform::config::agent_cli_exe_path().unwrap_or_else(|| exe.clone()),
+        data_dir,
+    );
     let firefox_json = manifest_json(&exe, true);
     let chrome_json = manifest_json(&exe, false);
 

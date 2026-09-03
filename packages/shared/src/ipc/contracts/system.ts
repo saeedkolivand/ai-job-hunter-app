@@ -50,6 +50,19 @@ export interface SystemContract {
   getProtocolVersion(): Promise<string>;
 
   /**
+   * Where this app's own binary lives, as the user should TYPE it when
+   * registering the bundled agent CLI / MCP server with a coding agent.
+   *
+   * `exePath` is `null` when the shell could not resolve it at all; a caller
+   * must handle that rather than rendering an empty command. The resolution
+   * rule (including the platform special case where the running process path
+   * is not the path to type) is owned by the Rust side — see the
+   * `system_agent_cli_info` command — and is the SAME helper that writes the
+   * `exePath` field of the agent pointer file, so the two can never disagree.
+   */
+  agentCliInfo(): Promise<{ exePath: string | null }>;
+
+  /**
    * Subscribe to OS accent-color changes (Windows personalization). The shell
    * emits `system:accentChanged` from a WinRT `UISettings::ColorValuesChanged`
    * watcher; the renderer re-pulls {@link accentColor} and re-applies the theme
@@ -75,4 +88,5 @@ export const SYSTEM_CHANNELS = {
   checkBrowser: 'system:checkBrowser',
   openDevtools: 'system:openDevtools',
   getProtocolVersion: 'system:getProtocolVersion',
+  agentCliInfo: 'system:agentCliInfo',
 } as const;

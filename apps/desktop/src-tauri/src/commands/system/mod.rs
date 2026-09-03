@@ -515,5 +515,28 @@ pub fn system_get_protocol_version() -> String {
     PROTOCOL_VERSION.to_string()
 }
 
+/// Where this app's own agent CLI / MCP server lives, for the Settings card
+/// that renders ready-to-paste registration commands.
+///
+/// `exePath` is `platform::config::agent_cli_exe_path()` — the SAME resolver
+/// the launch-time pointer file uses, so the card and
+/// `~/.ajh-agent/agent.json` can never show different paths. `null` when the
+/// path cannot be resolved at all; the renderer then points at the pointer
+/// file, which is the documented discovery contract
+/// (`docs/knowledge/agent-cli.md`).
+///
+/// Deliberately NOT reporting PATH membership: the running process's `PATH` is
+/// a snapshot taken before the Windows installer broadcasts its change, and on
+/// macOS/Linux it is not the user's login-shell `PATH` either (that is why
+/// `platform::process::cli_path` exists), so a badge derived from it would be
+/// wrong in both directions. The full-path snippets work regardless.
+#[tauri::command]
+pub fn system_agent_cli_info() -> Value {
+    json!({
+        "exePath": crate::platform::config::agent_cli_exe_path()
+            .map(|p| p.to_string_lossy().into_owned()),
+    })
+}
+
 #[cfg(test)]
 mod test;

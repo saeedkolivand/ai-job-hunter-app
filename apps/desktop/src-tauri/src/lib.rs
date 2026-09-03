@@ -1069,6 +1069,7 @@ pub fn run() {
             commands::system::system_check_browser,
             commands::system::system_open_devtools,
             commands::system::system_get_protocol_version,
+            commands::system::system_agent_cli_info,
             // native menu (pull buffered intent after close-to-tray restore)
             commands::menu::menu_take_pending,
             // jobs
