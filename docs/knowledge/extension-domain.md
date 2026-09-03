@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-08-17 (PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-03 (`answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -141,6 +141,16 @@ To guard against cancellation-race bugs and billable-job leaks, every in-flight 
 **CancelledEarly invariant (critical):** A `CancelledEarly` marker must never be dropped during `cancel_all()` or `begin()` — if the marker is lost, the entry vanishes from the map, so a later `register()` call (from a retry, or from a race-condition path) finds no marker, thinks the reqId is fresh, and starts a full billable generation for a request the user already cancelled. The fix: `cancel_all()` exhaustively re-inserts **both** `Pending` and already-`CancelledEarly` entries as `CancelledEarly` when draining, so the marker persists until the client fully disconnects or gives up.
 
 **Streaming chunks are ordered per-reqId:** All `assist.chunk`, `assist.done`, and `answer.assist.result` frames for one reqId are sent in order over the same socket/channel, maintaining the invariant that a popup UI can safely concatenate chunks and render a coherent draft (no out-of-order or duplicate chunks).
+
+### Compose budget on a reasoning model
+
+A reasoning model spends its thinking out of the **same output budget** as the answer, so a per-surface budget sized for a full-length answer alone can be eaten entirely by reasoning and end as `finish_reason: length` with no text at all. `answer.assist` therefore (all in [`extension_bridge/answer_assist.rs`](../../apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs), whose constant docs carry the derivation — never restate the numbers here):
+
+- sizes its compose budget (`ANSWER_ASSIST_MAX_TOKENS`) to leave room for thinking on top of the visible answer's own `DRAFT_CAP`;
+- asks for the **cheapest reasoning tier the resolved model actually lists**, and sends no effort at all when it lists none ([`Completer::low_effort`](../../apps/desktop/src-tauri/src/pipeline/mod.rs) → `low_effort_level`);
+- retries **exactly once**, at `ANSWER_ASSIST_RETRY_MAX_TOKENS`, on the single predicate [`is_empty_answer_length_cut`](../../apps/desktop/src-tauri/src/commands/ai_provider/stream.rs) — no other failure retries, and a request cancelled between the attempts is not paid for.
+
+Both attempts share one request-wide `DRAFT_CAP` accountant and emit **one** `assist.done`; the retry contributes only its own tail to the draft.
 
 ## Store policy
 
