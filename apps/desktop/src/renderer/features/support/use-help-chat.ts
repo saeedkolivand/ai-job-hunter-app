@@ -266,6 +266,21 @@ export function useHelpChat({ model, canUse }: Params) {
     const nonce = nonceRef.current;
     const queryId = `${QUERY_ID_PREFIX}${crypto.randomUUID()}`;
     queryIdRef.current = queryId;
+    // The UI language as it was when this question was ASKED, snapshotted like
+    // the nonce and the queryId above. This run reads the language in two
+    // places either side of the retrieval await — the request's `locale`, which
+    // picks the function-word list, and the answer's output `language` — and
+    // they have to be the same one: a switch inside that window would otherwise
+    // filter a question in English and answer it in German, with nothing in the
+    // UI saying which half is which. The corpus below is fixed the same way, by
+    // being built before the first await.
+    //
+    // react-i18next v17 happens to hide that today (`useTranslation()` returns a
+    // per-render COPY of the instance, so a closure's `i18n.language` is already
+    // frozen), but that is a dependency's implementation detail — v16 handed
+    // back the live instance, and so does the app's own `@ajh/translations`
+    // export. One `const` makes the invariant this file's own.
+    const locale = i18n.language;
 
     setAnswer('');
     setError(null);
@@ -296,7 +311,7 @@ export function useHelpChat({ model, canUse }: Params) {
         // function-word list the lexical arm drops from the question. Sending
         // the UI language rather than a constant is what keeps a German
         // question from being filtered with an English list, or not at all.
-        locale: i18n.language,
+        locale,
         query,
         // Only the fields the contract names: `section` is a local routing
         // hint, and sending a field the schema does not describe is how a wire
@@ -355,7 +370,8 @@ export function useHelpChat({ model, canUse }: Params) {
         }),
         history,
         model,
-        language: i18n.language,
+        // The SAME snapshot the retrieval used — see `locale` above.
+        language: locale,
         signal: controller.signal,
         onToken: (token) => {
           // A Stop (or a newer question) may already have cancelled this

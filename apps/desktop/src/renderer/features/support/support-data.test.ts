@@ -142,11 +142,16 @@ describe('support corpus / translations parity', () => {
     // is grounded in that answer — so a rename in Settings would not just make
     // the entry stale, it would have the assistant repeat a name that is not
     // on screen anywhere. The title has one home; this pins the copy to it.
+    const TITLE_KEY = 'settings.developer.agentCli.title';
+    const ANSWER_KEY = 'support.faq.agentCliQuestions.headlessMode.a';
+    // Floor FIRST, in both locales: `toContain('')` holds for every string, so
+    // a title that resolved to nothing — missing, or blank in one bundle —
+    // would satisfy the loop below while proving nothing about the copy.
+    expect(unresolved([TITLE_KEY, ANSWER_KEY])).toEqual([]);
     for (const [locale, bundle] of Object.entries(BUNDLES)) {
-      const title = lookup(bundle, 'settings.developer.agentCli.title');
-      const answer = lookup(bundle, 'support.faq.agentCliQuestions.headlessMode.a');
-      expect(typeof title).toBe('string');
-      expect(`${locale}: ${String(answer)}`).toContain(String(title));
+      const title = String(lookup(bundle, TITLE_KEY));
+      const answer = String(lookup(bundle, ANSWER_KEY));
+      expect(`${locale}: ${answer}`).toContain(title);
     }
   });
 

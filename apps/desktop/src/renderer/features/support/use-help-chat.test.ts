@@ -7,6 +7,43 @@ vi.mock('@/lib/generate', () => ({
   generateHelpAnswer: vi.fn().mockResolvedValue('Open the document and click Export.'),
 }));
 
+/**
+ * Opt-in for ONE test: hand the hook the real, mutable i18n instance.
+ *
+ * react-i18next v17 does not return the instance from `useTranslation()` — it
+ * returns a per-render COPY of it, so `i18n.language` inside a closure is
+ * frozen at the render that made the closure and a mid-flight switch is
+ * invisible. That freeze is a dependency's implementation detail (v16 returned
+ * the live instance, and the app's own instance is live), which is exactly what
+ * a test of OUR invariant must not lean on. Off for every other test here.
+ */
+const live = vi.hoisted(() => ({ i18n: false }));
+
+/** Just the two members this file re-wraps — the mock factory's return is not
+ *  checked against the real module, and callers keep the real module's types. */
+interface TranslationsModule {
+  default: unknown;
+  useTranslation: (...args: unknown[]) => { t: unknown; i18n: unknown; ready: boolean };
+}
+
+vi.mock('@ajh/translations', async (importOriginal) => {
+  const actual = await importOriginal<TranslationsModule>();
+  return {
+    ...actual,
+    useTranslation: (...args: unknown[]) => {
+      const result = actual.useTranslation(...args);
+      if (!live.i18n) return result;
+      // The same array-plus-properties shape react-i18next returns, with the
+      // frozen copy swapped for the instance the test can actually mutate.
+      return Object.assign([result.t, actual.default, result.ready], {
+        t: result.t,
+        i18n: actual.default,
+        ready: result.ready,
+      });
+    },
+  };
+});
+
 import i18n from '@ajh/translations';
 
 import { generateHelpAnswer } from '@/lib/generate';
@@ -464,6 +501,60 @@ describe('useHelpChat', () => {
     } finally {
       await act(async () => {
         await i18n.changeLanguage('en-US');
+      });
+    }
+  });
+
+  it('pins ONE locale per question, even if the UI language changes mid-retrieval', async () => {
+    // The run reads the language TWICE — once for the request that picks the
+    // function-word list, once for the answer's output language — either side
+    // of an await that lasts as long as the dense arm does. Read live, a switch
+    // inside that window filters the question in English and then answers it in
+    // German: two halves of one answer in different locales, with nothing in
+    // the UI saying so.
+    //
+    // Run against the LIVE i18n instance — see the `live` mock above, without
+    // which the switch below is invisible to the hook and this test passes on
+    // the broken code.
+    live.i18n = true;
+    const asked = i18n.language;
+    expect(asked).toMatch(/^en(-|$)/);
+
+    let settle: ((value: unknown) => void) | undefined;
+    const search = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+    );
+
+    try {
+      const { result } = render('llama3:70b', { 'help.search': search });
+
+      await act(async () => {
+        void result.current.send('how do i export a pdf');
+        await waitFor(() => expect(result.current.streaming).toBe(true));
+      });
+
+      // The switch lands while retrieval is still pending — the whole point.
+      await act(async () => {
+        await i18n.changeLanguage('de');
+      });
+      expect(i18n.language).toBe('de');
+
+      await act(async () => {
+        settle?.({ results: [HIT], mode: 'hybrid', arms: { lexical: 'ran', dense: 'ran' } });
+        await waitFor(() => expect(result.current.streaming).toBe(false));
+      });
+
+      // Both legs carry the locale the question was ASKED in, not the one the
+      // UI drifted to while the dense arm was still embedding.
+      expect(searchArgAt(search, 0).locale).toBe(asked);
+      expect(generateArg().language).toBe(asked);
+    } finally {
+      live.i18n = false;
+      await act(async () => {
+        await i18n.changeLanguage(asked);
       });
     }
   });
