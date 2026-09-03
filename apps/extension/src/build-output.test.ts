@@ -29,9 +29,12 @@
  * and the first assertion of the capture case — the completion value is not an
  * array — goes red, instead of the store build.
  *
- * Only the four entries that COMMUNICATE by completion value are covered here.
- * `fill` / `answer-fill` / `answer-replace` / `submit-watch` install a global
- * instead and are already covered by their own module tests.
+ * Only the entries that COMMUNICATE by completion value are covered here
+ * ({@link COMPLETION_VALUE_ENTRIES}); the rest install a global instead
+ * ({@link GLOBAL_INSTALLING_ENTRIES}) and are covered by their own module
+ * tests. The last test asserts those two lists partition the shipped
+ * {@link INJECTED_ENTRIES} exactly, so a new injected script cannot be added
+ * without being classified.
  */
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -46,6 +49,15 @@ import { INJECTED_ENTRIES, injectedEntryConfig } from '../vite.config.mts';
 
 /** The injected entries whose completion value the background parses. */
 const COMPLETION_VALUE_ENTRIES = ['capture', 'capture-questions', 'content', 'probe-fields'];
+
+/**
+ * The injected entries that answer by installing a global on the page instead,
+ * so their completion value is nobody's contract and a minifier may rewrite it
+ * freely. Listed only so the two lists can be asserted to PARTITION
+ * {@link INJECTED_ENTRIES}: a new injected script then has to be classified into
+ * one list or the other before this file goes green.
+ */
+const GLOBAL_INSTALLING_ENTRIES = ['fill', 'answer-fill', 'answer-replace', 'submit-watch'];
 
 /**
  * An application form as the collectors see one: two labelled textareas the
@@ -154,10 +166,16 @@ describe('built injected scripts — completion values', () => {
 
   // This file builds its own copies, so it cannot notice an entry silently
   // dropped from the plugin's loop — the artifact would stop being emitted
-  // while every assertion above still passed. Pin the membership instead.
-  it('each covered entry is one the extension build actually emits', () => {
-    for (const entry of COMPLETION_VALUE_ENTRIES) {
-      expect(INJECTED_ENTRIES).toContain(entry);
-    }
+  // while every assertion above still passed. Pin the membership instead, in
+  // BOTH directions: covered-here ⊆ shipped would miss a NEW injected script
+  // that communicates by completion value and is simply never asserted, so
+  // require the two behaviour lists to partition `INJECTED_ENTRIES` exactly.
+  it('the covered and global-installing entries partition INJECTED_ENTRIES', () => {
+    const classified = [...COMPLETION_VALUE_ENTRIES, ...GLOBAL_INSTALLING_ENTRIES].sort();
+
+    expect(classified).toEqual([...INJECTED_ENTRIES].sort());
+    // No entry may sit in both lists (a duplicate that also went missing from
+    // `INJECTED_ENTRIES` would keep the lengths matching above).
+    expect(new Set(classified).size).toBe(classified.length);
   });
 });

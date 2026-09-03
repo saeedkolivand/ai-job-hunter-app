@@ -135,7 +135,6 @@ export function injectedEntryConfig(name: string, entryOutDir: string): InlineCo
         output: { entryFileNames: '[name].js', format: 'es' },
       },
     },
-    esbuild: { legalComments: 'none' },
   };
 }
 
