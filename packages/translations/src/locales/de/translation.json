@@ -1498,6 +1498,12 @@
       "streaming": "Wird umgeschrieben…",
       "empty": "Die Umschreibung war leer. Versuche eine andere Anweisung.",
       "failed": "Umschreiben fehlgeschlagen. Bitte erneut versuchen.",
+      "unchanged": "Das Ergebnis ist identisch mit deiner Auswahl. Versuche eine andere Anweisung oder generiere neu.",
+      "stillWorking": "Läuft noch — bei einer langen Auswahl kann das eine Minute dauern.",
+      "overLimit": {
+        "chars": "{{n}} Zeichen, Limit {{limit}}",
+        "words": "{{n}} Wörter, Limit {{limit}}"
+      },
       "presets": {
         "shorten": "Kürzen",
         "expand": "Erweitern",
@@ -1506,7 +1512,7 @@
         "grammar": "Grammatik korrigieren"
       },
       "presetInstructions": {
-        "shorten": "Formuliere das prägnanter, ohne konkrete Fakten zu verlieren.",
+        "shorten": "Kürze das auf etwa zwei Drittel der Länge und behalte dabei jeden konkreten Fakt.",
         "expand": "Erweitere das um relevante Details, ohne neue Fakten zu erfinden.",
         "rephrase": "Formuliere das mit anderen Worten um, behalte aber die Bedeutung bei.",
         "impact": "Schreibe das wirkungsvoller und selbstbewusster um, halte dabei alle Fakten korrekt.",

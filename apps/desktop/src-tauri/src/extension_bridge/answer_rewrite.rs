@@ -78,7 +78,9 @@ const EN_TRANSLATION_JSON: &str =
 /// for the preset CONTRACT/ids — see the module doc).
 pub(super) fn preset_instruction(preset: &str) -> Option<&'static str> {
     match preset {
-        "shorten" => Some("Make this more concise without losing any concrete facts."),
+        "shorten" => {
+            Some("Cut this to about two thirds of its length, keeping every concrete fact.")
+        }
         "expand" => Some("Expand this with more relevant detail, without inventing new facts."),
         "rephrase" => Some("Rephrase this in different words while keeping the same meaning."),
         "impact" => {

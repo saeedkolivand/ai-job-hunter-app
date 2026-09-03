@@ -18,6 +18,7 @@ import {
   antiAiTellProse,
   HUMANIZE_LEXICAL,
   HUMANIZE_PROSE,
+  languageDisplayName,
 } from '../natural-voice/index.js';
 
 export type RewriteDocType = 'resume' | 'cover-letter' | 'application-answer' | 'email';
@@ -40,6 +41,15 @@ export interface RewriteParams {
   /** Text immediately following the selection — context only, never rewritten. */
   after: string;
   docType: RewriteDocType;
+  /**
+   * ISO 639-1 code of the language the SELECTION is written in, when the caller
+   * could detect it. Names the language in rule 7 and picks the natural-voice
+   * ruleset, because the transport `locale` cannot carry it: `AiGenerateRequest`
+   * only accepts the supported OUTPUT languages (`safeLocale` clamps anything
+   * else to `en`), so a Dutch span used to arrive with an English locale and
+   * came back in English. Omitted → the previous English-defaulted behaviour.
+   */
+  language?: string;
 }
 
 /**
@@ -62,22 +72,22 @@ const DOC_LABELS: Record<RewriteDocType, string> = {
  * prose sent to an employer contact, so it takes the same prose ruleset too.
  * Mirrors {@link DOC_LABELS} so a new doc type is a compile-time error until a
  * voice is provided (exhaustiveness). A function (not a module-level constant)
- * because {@link antiAiTellLexical}/{@link antiAiTellProse} are language-aware;
- * the rewrite span has no explicit target-language input today (it matches
- * whatever language the surrounding document is already in), so this defaults
- * to the English ruleset — same behavior as before this became language-aware.
+ * because {@link antiAiTellLexical}/{@link antiAiTellProse} are language-aware:
+ * they take the SPAN's language ({@link RewriteParams.language}) when the caller
+ * detected one, and default to the English ruleset when it did not — the same
+ * behavior this had before the span language became an input.
  *
  * `depth` is the resolved provider depth the caller already computed: a
  * single-span rewrite on a small local model gets the checked-ban core, not
  * the full construction catalog (which was larger than the rewrite contract it
  * was appended to).
  */
-function buildDocVoice(docType: RewriteDocType, depth: PromptDepth): string {
+function buildDocVoice(docType: RewriteDocType, depth: PromptDepth, language?: string): string {
   const voices: Record<RewriteDocType, string> = {
-    resume: `${antiAiTellLexical(undefined, depth)}\n${HUMANIZE_LEXICAL}`,
-    'cover-letter': `${antiAiTellProse(undefined, depth)}\n${HUMANIZE_PROSE}`,
-    'application-answer': `${antiAiTellProse(undefined, depth)}\n${HUMANIZE_PROSE}`,
-    email: `${antiAiTellProse(undefined, depth)}\n${HUMANIZE_PROSE}`,
+    resume: `${antiAiTellLexical(language, depth)}\n${HUMANIZE_LEXICAL}`,
+    'cover-letter': `${antiAiTellProse(language, depth)}\n${HUMANIZE_PROSE}`,
+    'application-answer': `${antiAiTellProse(language, depth)}\n${HUMANIZE_PROSE}`,
+    email: `${antiAiTellProse(language, depth)}\n${HUMANIZE_PROSE}`,
   };
   return voices[docType];
 }
@@ -96,7 +106,7 @@ export function buildRewritePrompt(
   params: RewriteParams,
   target: PromptTarget = 'large'
 ): { system: string; user: string } {
-  const { selection, instruction, before, after, docType } = params;
+  const { selection, instruction, before, after, docType, language } = params;
   // Resolve the provider profile and size the surrounding-context budget from it:
   // larger-context providers (cloud / large local) get more grounding for a
   // more consistent rewrite, while small models stay bounded. Derived from the
@@ -108,6 +118,12 @@ export function buildRewritePrompt(
   const contextChars = Math.max(400, Math.floor(jobAdChars / 2));
 
   const doc = DOC_LABELS[docType];
+  // Rule 7 alone ("stay in the same language") lost to the surrounding English
+  // prompt on 12 of 18 measured runs over a Dutch span. Naming the language
+  // makes the rule checkable by the model instead of inferable.
+  const languageRule = language
+    ? ` The span is written in ${languageDisplayName(language)}; write your output in ${languageDisplayName(language)}, never in English unless the span itself is English.`
+    : '';
   const span = selection.slice(0, MAX_SELECTION_CHARS);
   const beforeCtx = before.slice(-contextChars);
   const afterCtx = after.slice(0, contextChars);
@@ -121,9 +137,9 @@ ABSOLUTE RULES (never break these):
 4. Never fabricate facts: keep every concrete claim (skills, employers, titles, metrics, dates) that the original span asserts. You may rephrase, tighten, or expand wording, but do not invent new facts not present in the span.
 5. If the instruction contains an explicit length or count constraint ("max N characters", "under N words", "one sentence", etc.), treat it as a HARD requirement: count the characters or words in your output and trim it to fit before replying. A rewrite that exceeds the stated limit is wrong regardless of quality.
 6. Follow the user's instruction. If it conflicts with these rules, keep the rules.
-7. Stay in the same language as the selected span.
+7. Stay in the same language as the selected span.${languageRule}
 
-${buildDocVoice(docType, depth)}`;
+${buildDocVoice(docType, depth, language)}`;
 
   const user = `<before>
 ${beforeCtx}

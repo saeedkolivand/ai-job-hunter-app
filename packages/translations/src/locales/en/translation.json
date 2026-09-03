@@ -1494,6 +1494,12 @@
       "streaming": "Rewriting…",
       "empty": "The rewrite came back empty. Try a different instruction.",
       "failed": "Rewrite failed. Try again.",
+      "unchanged": "This came back the same as your selection. Try a different instruction, or regenerate.",
+      "stillWorking": "Still working — a long selection can take a minute.",
+      "overLimit": {
+        "chars": "{{n}} characters, limit {{limit}}",
+        "words": "{{n}} words, limit {{limit}}"
+      },
       "presets": {
         "shorten": "Shorten",
         "expand": "Expand",
@@ -1502,7 +1508,7 @@
         "grammar": "Fix grammar"
       },
       "presetInstructions": {
-        "shorten": "Make this more concise without losing any concrete facts.",
+        "shorten": "Cut this to about two thirds of its length, keeping every concrete fact.",
         "expand": "Expand this with more relevant detail, without inventing new facts.",
         "rephrase": "Rephrase this in different words while keeping the same meaning.",
         "impact": "Rewrite this to be more impactful and confident, keeping every fact accurate.",

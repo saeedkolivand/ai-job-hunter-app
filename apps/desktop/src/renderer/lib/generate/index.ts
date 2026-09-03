@@ -33,6 +33,7 @@ export {
   parseStarFeedback,
   researchAnswer,
   researchCompany,
+  resolveRewriteTimeoutMs,
   rewriteSelection,
   type StarCompleteness,
   type StarFeedback,
