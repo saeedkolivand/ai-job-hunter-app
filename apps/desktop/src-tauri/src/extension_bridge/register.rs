@@ -117,9 +117,23 @@ fn write_manifest_if_app_dir_exists(label: &str, guard_dir: &Path, path: &Path, 
 /// best-effort/idempotent every-launch lifecycle — see that function's doc —
 /// rather than a separate hook: overwritten on every call, so a moved install
 /// or a changed data dir is picked up on the very next launch.
-fn write_agent_pointer(exe: &Path, data_dir: &Path) {
+///
+/// **Resolves `exePath` itself rather than taking it.** The value is the path
+/// a HUMAN types, which inside an AppImage is not `current_exe()` — and when
+/// the caller passed that choice IN, the choice was the one thing no test
+/// covered: reverting the call site to the raw `current_exe()` left every
+/// test green. With the resolver inside, the branch that publishes an
+/// AppImage path is a property of THIS function and is tested through it. The
+/// browser manifests below still take `exe` explicitly, because a
+/// native-messaging host is launched by the browser rather than typed, and
+/// that difference is the whole point.
+fn write_agent_pointer(data_dir: &Path) {
     let Some(path) = crate::platform::config::agent_pointer_path() else {
         log::warn!("[native_host] home dir unavailable — skipping agent-CLI pointer");
+        return;
+    };
+    let Some(exe) = crate::platform::config::agent_cli_exe_path() else {
+        log::warn!("[native_host] exe path unavailable — skipping agent-CLI pointer");
         return;
     };
     let pointer = json!({
@@ -140,15 +154,13 @@ pub fn register_native_host(data_dir: &Path) {
         }
     };
     // The pointer publishes the path a HUMAN types to reach the agent CLI,
-    // which inside an AppImage is NOT `exe` — one resolver
-    // (`platform::config::agent_cli_exe_path`), shared with the Settings card
-    // behind `commands::system::system_agent_cli_info`, so the file and the UI
-    // can never disagree. The browser manifests below deliberately keep `exe`:
-    // a native-messaging host is launched by the browser, not typed.
-    write_agent_pointer(
-        &crate::platform::config::agent_cli_exe_path().unwrap_or_else(|| exe.clone()),
-        data_dir,
-    );
+    // which inside an AppImage is NOT `exe`. It resolves that itself (one
+    // resolver, `platform::config::agent_cli_exe_path`, shared with the
+    // Settings card behind `commands::system::system_agent_cli_info`, so the
+    // file and the UI can never disagree) — see its doc for why the choice is
+    // not made here. The browser manifests below deliberately keep `exe`: a
+    // native-messaging host is launched by the browser, not typed.
+    write_agent_pointer(data_dir);
     let firefox_json = manifest_json(&exe, true);
     let chrome_json = manifest_json(&exe, false);
 
@@ -387,26 +399,80 @@ mod tests {
     #[serial_test::serial]
     fn write_agent_pointer_writes_exe_path_and_data_dir() {
         let home = tempfile::TempDir::new().unwrap();
-        // Routes through `platform::config`'s test-only guard rather than
+        // Routes through `platform::config`'s test-only guards rather than
         // touching `std::env` here directly — R4 ("env access only in
         // platform/**") text-scans every non-test-named file, including a
         // `#[cfg(test)]` module embedded in one like this.
         let _guard = crate::platform::config::HomeDirGuard::set(home.path());
+        // The ordinary install: no AppImage environment, so the pointer must
+        // carry the running binary itself. Pinned rather than inherited — a
+        // developer running this suite from inside some AppImage's terminal
+        // would otherwise see a different `exePath` than CI does.
+        let _appimage = crate::platform::config::AppImageGuard::set(None, None);
 
         let data_dir = tempfile::TempDir::new().unwrap();
-        let exe = PathBuf::from(if cfg!(windows) {
-            r"C:\Program Files\AI Job Hunter\app.exe"
-        } else {
-            "/opt/aijobhunter/app"
-        });
-        write_agent_pointer(&exe, data_dir.path());
+        write_agent_pointer(data_dir.path());
 
         let pointer_path = home.path().join(".ajh-agent").join("agent.json");
         let contents = std::fs::read_to_string(&pointer_path)
             .expect("pointer file must exist under <home>/.ajh-agent/agent.json");
         let v: serde_json::Value = serde_json::from_str(&contents).unwrap();
-        assert_eq!(v["exePath"], exe.to_string_lossy().as_ref());
+        assert_eq!(
+            v["exePath"],
+            std::env::current_exe().unwrap().to_string_lossy().as_ref()
+        );
         assert_eq!(v["dataDir"], data_dir.path().to_string_lossy().as_ref());
+    }
+
+    /// The branch the CALLER used to decide, untested, one revert away from
+    /// publishing a path that stops existing the moment the app closes: inside
+    /// an AppImage the pointer must carry the `.AppImage` file, not the
+    /// transient mount `current_exe()` returns.
+    ///
+    /// Drives `write_agent_pointer` rather than `register_native_host`
+    /// deliberately. That function is the pointer write PLUS the
+    /// browser-manifest registration, and on Windows the latter writes real
+    /// `HKCU\Software\{Mozilla,Google}\NativeMessagingHosts` values pointing
+    /// at the manifest — under a temp data dir, that would repoint the
+    /// developer's own native-messaging host at a directory this test then
+    /// deletes. So the resolution moved INTO `write_agent_pointer` (see its
+    /// doc) and the caller no longer has a choice to get wrong.
+    ///
+    /// Mutation-visible: swap `agent_cli_exe_path()` for
+    /// `std::env::current_exe()` inside `write_agent_pointer` and this fails
+    /// with the test binary's own path.
+    #[test]
+    #[serial_test::serial]
+    fn the_pointer_publishes_the_appimage_path_not_the_transient_mount() {
+        let home = tempfile::TempDir::new().unwrap();
+        let _guard = crate::platform::config::HomeDirGuard::set(home.path());
+
+        // The AppImage predicate, satisfied for real: an existing FILE in
+        // `$APPIMAGE`, and an `$APPDIR` this process's own binary lives under
+        // (see `platform::config::launched_appimage` for why both).
+        let running = std::env::current_exe().unwrap();
+        let image = tempfile::NamedTempFile::new().unwrap();
+        let _appimage = crate::platform::config::AppImageGuard::set(
+            Some(image.path()),
+            Some(running.parent().unwrap()),
+        );
+
+        let data_dir = tempfile::TempDir::new().unwrap();
+        write_agent_pointer(data_dir.path());
+
+        let pointer_path = home.path().join(".ajh-agent").join("agent.json");
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&pointer_path).unwrap()).unwrap();
+        assert_eq!(
+            v["exePath"],
+            image.path().to_string_lossy().as_ref(),
+            "the pointer must publish the durable .AppImage path a user can type"
+        );
+        assert_ne!(
+            v["exePath"],
+            running.to_string_lossy().as_ref(),
+            "…and never the mount path, which is gone once the app exits"
+        );
     }
 
     #[test]
@@ -417,13 +483,8 @@ mod tests {
 
         let data_dir_a = tempfile::TempDir::new().unwrap();
         let data_dir_b = tempfile::TempDir::new().unwrap();
-        let exe = PathBuf::from(if cfg!(windows) {
-            r"C:\old\app.exe"
-        } else {
-            "/opt/old/app"
-        });
-        write_agent_pointer(&exe, data_dir_a.path());
-        write_agent_pointer(&exe, data_dir_b.path());
+        write_agent_pointer(data_dir_a.path());
+        write_agent_pointer(data_dir_b.path());
 
         let pointer_path = home.path().join(".ajh-agent").join("agent.json");
         let v: serde_json::Value =

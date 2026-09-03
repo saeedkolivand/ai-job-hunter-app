@@ -10,7 +10,7 @@
 //! * **Workers** (`data_dir`) — scrapers/appliers run in spawned tasks with no
 //!   `AppHandle`, so they read the exported env var (falling back to `~/.ajh`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Env var carrying the resolved data dir to AppHandle-less workers.
 const DATA_DIR_ENV: &str = "AJH_DATA_DIR";
@@ -72,6 +72,11 @@ pub fn agent_pointer_path() -> Option<PathBuf> {
 /// Env var the AppImage runtime exports with the path of the `.AppImage` FILE
 /// the user launched — see [`agent_cli_exe_path`].
 const APPIMAGE_ENV: &str = "APPIMAGE";
+/// Env var the AppImage runtime exports with the mount point it unpacked the
+/// image at. Paired with [`APPIMAGE_ENV`] to tell "we ARE that AppImage"
+/// apart from "we merely inherited its environment" — see
+/// [`agent_cli_exe_path`].
+const APPDIR_ENV: &str = "APPDIR";
 
 /// The path of this binary **as a user should type it** to reach the agent
 /// CLI / MCP server.
@@ -90,13 +95,45 @@ const APPIMAGE_ENV: &str = "APPIMAGE";
 /// variable, and a target-gated branch would be a branch no non-Linux host
 /// could compile or test (`rust-standards`' platform-gated-code rule).
 ///
+/// **`$APPIMAGE` alone is not evidence that WE are that AppImage.** The
+/// runtime exports it to every DESCENDANT process, so a terminal (or a
+/// launcher, or a shell) started from some other AppImage app hands it down
+/// to whatever it spawns — and a .deb/RPM install of this app started that
+/// way would have published a stranger's `.AppImage` as the command to type,
+/// in both the pointer file and the Settings snippet. [`launched_appimage`]
+/// is the predicate that actually identifies the case.
+///
 /// `None` only when both sources fail — the caller decides how to report it
 /// (the pointer file is skipped; the command returns `null`).
 pub fn agent_cli_exe_path() -> Option<PathBuf> {
-    if let Some(appimage) = std::env::var_os(APPIMAGE_ENV).filter(|v| !v.is_empty()) {
-        return Some(PathBuf::from(appimage));
-    }
-    std::env::current_exe().ok()
+    let running = std::env::current_exe().ok();
+    launched_appimage(running.as_deref()).or(running)
+}
+
+/// The `.AppImage` file THIS process was launched from, or `None` when it was
+/// not launched from one (including when a foreign one's environment was
+/// inherited).
+///
+/// All three conditions, because each rules out a different way the two vars
+/// lie:
+/// * `$APPIMAGE` names an existing FILE — an inherited-but-stale value, or an
+///   empty one, names nothing on disk;
+/// * `$APPDIR` is set and non-empty — the runtime always exports it beside
+///   `$APPIMAGE`, and `Path::starts_with("")` is trivially true, so an empty
+///   value would make the last check pass for everything;
+/// * `current_exe()` lives UNDER `$APPDIR` — the runtime mounts the image
+///   there and runs the binary from inside it, so this is the half that a
+///   descendant process cannot fake: a .deb binary lives in `/usr/bin`,
+///   never under another app's mount point.
+///
+/// `#[cfg]`-free (see [`agent_cli_exe_path`]), so every branch is unit-tested
+/// on every host rather than on a Linux-only CI leg.
+fn launched_appimage(running: Option<&Path>) -> Option<PathBuf> {
+    let appimage = PathBuf::from(std::env::var_os(APPIMAGE_ENV)?);
+    let appdir = PathBuf::from(std::env::var_os(APPDIR_ENV)?);
+    let running = running?;
+    let plausible = appimage.is_file() && !appdir.as_os_str().is_empty();
+    (plausible && running.starts_with(&appdir)).then_some(appimage)
 }
 
 /// Setup-side resolver (has an `AppHandle`). Resolves the authoritative app data
@@ -242,6 +279,64 @@ impl Drop for HomeDirGuard {
     }
 }
 
+/// Test-only RAII scope for the AppImage runtime's env PAIR — same reason
+/// and shape as [`HomeDirGuard`]. Both vars in one guard because
+/// [`launched_appimage`] reads both: a guard over one of them would leave the
+/// other holding whatever the previous test set, which is precisely the
+/// half-set environment the predicate exists to reject.
+///
+/// `pub(crate)` for the same reason `HomeDirGuard` is: `extension_bridge`'s
+/// pointer tests need this environment too, and R4 ("env access only in
+/// `platform/**`") text-scans an inline `#[cfg(test)]` module like theirs.
+#[cfg(test)]
+pub(crate) struct AppImageGuard {
+    prev_appimage: Option<std::ffi::OsString>,
+    prev_appdir: Option<std::ffi::OsString>,
+}
+
+#[cfg(test)]
+impl AppImageGuard {
+    /// Point [`agent_cli_exe_path`] at `appimage`/`appdir` (either `None` to
+    /// UNSET that var) until the guard drops.
+    pub(crate) fn set(appimage: Option<&Path>, appdir: Option<&Path>) -> Self {
+        // Captured BEFORE the mutation below, so `Drop` restores the state
+        // this guard actually found.
+        let guard = Self {
+            prev_appimage: std::env::var_os(APPIMAGE_ENV),
+            prev_appdir: std::env::var_os(APPDIR_ENV),
+        };
+        // SAFETY: test-only, and callers hold `#[serial]`.
+        unsafe {
+            match appimage {
+                Some(v) => std::env::set_var(APPIMAGE_ENV, v),
+                None => std::env::remove_var(APPIMAGE_ENV),
+            }
+            match appdir {
+                Some(v) => std::env::set_var(APPDIR_ENV, v),
+                None => std::env::remove_var(APPDIR_ENV),
+            }
+        }
+        guard
+    }
+}
+
+#[cfg(test)]
+impl Drop for AppImageGuard {
+    fn drop(&mut self) {
+        // SAFETY: as above — restoring exactly what was read in `set`.
+        unsafe {
+            match self.prev_appimage.take() {
+                Some(previous) => std::env::set_var(APPIMAGE_ENV, previous),
+                None => std::env::remove_var(APPIMAGE_ENV),
+            }
+            match self.prev_appdir.take() {
+                Some(previous) => std::env::set_var(APPDIR_ENV, previous),
+                None => std::env::remove_var(APPDIR_ENV),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,57 +418,94 @@ mod tests {
         assert!(!path.starts_with(home.join(FALLBACK_DIR_NAME)));
     }
 
-    /// RAII scope for `APPIMAGE`, same reason as [`HomeDirGuard`]: a failing
-    /// assert must not leak a fake AppImage path into every later test in
-    /// this process.
-    struct AppImageGuard(Option<std::ffi::OsString>);
-
-    impl AppImageGuard {
-        fn set(value: Option<&str>) -> Self {
-            let previous = std::env::var_os(APPIMAGE_ENV);
-            // SAFETY: test-only, and the caller holds `#[serial]`.
-            unsafe {
-                match value {
-                    Some(v) => std::env::set_var(APPIMAGE_ENV, v),
-                    None => std::env::remove_var(APPIMAGE_ENV),
-                }
-            }
-            Self(previous)
-        }
-    }
-
-    impl Drop for AppImageGuard {
-        fn drop(&mut self) {
-            // SAFETY: as above — restoring exactly what was read in `set`.
-            match self.0.take() {
-                Some(previous) => unsafe { std::env::set_var(APPIMAGE_ENV, previous) },
-                None => unsafe { std::env::remove_var(APPIMAGE_ENV) },
-            }
-        }
-    }
-
-    // Both branches of the resolver, on EVERY host: the env read is not
-    // `#[cfg]`-gated (see `agent_cli_exe_path`'s doc), so a Windows/macOS run
-    // covers the AppImage branch too instead of leaving it to a Linux-only
-    // CI leg.
+    /// Every branch of the resolver, on EVERY host: the env reads are not
+    /// `#[cfg]`-gated (see `agent_cli_exe_path`'s doc), so a Windows/macOS
+    /// run covers the AppImage branch too instead of leaving it to a
+    /// Linux-only CI leg.
+    ///
+    /// The AppImage case is built out of REAL filesystem objects — a temp
+    /// FILE for `$APPIMAGE` and this test binary's own parent dir for
+    /// `$APPDIR` — because two of the three conditions are facts about the
+    /// disk and the running process, and a string-only fixture could not
+    /// exercise either.
+    ///
+    /// Mutation-visible, and each mutation is caught by a DIFFERENT case:
+    /// drop `is_file()` → case 3 publishes `gone.AppImage`; drop the
+    /// `starts_with($APPDIR)` check → case 2 publishes another app's
+    /// AppImage; drop the `$APPDIR` requirement (its `?` and the empty check,
+    /// leaving `starts_with("")`, which is true for every path) → case 4
+    /// publishes it with no `$APPDIR` set at all. All three verified by
+    /// applying them.
     #[test]
     #[serial_test::serial]
-    fn agent_cli_exe_path_prefers_appimage_over_the_transient_current_exe() {
+    fn agent_cli_exe_path_publishes_the_appimage_only_when_this_process_is_that_appimage() {
         let running = std::env::current_exe().unwrap();
+        let appdir = running.parent().unwrap().to_path_buf();
+        let image = tempfile::NamedTempFile::new().unwrap();
+        let image_path = image.path().to_path_buf();
+        let elsewhere = tempfile::TempDir::new().unwrap();
 
-        let _guard = AppImageGuard::set(Some("/home/tester/Apps/AI Job Hunter.AppImage"));
-        assert_eq!(
-            agent_cli_exe_path().unwrap(),
-            PathBuf::from("/home/tester/Apps/AI Job Hunter.AppImage")
-        );
+        // 1. The real thing: `$APPIMAGE` names a file that exists, `$APPDIR`
+        //    is set, and this process's image lives under it.
+        {
+            let _guard = AppImageGuard::set(Some(&image_path), Some(&appdir));
+            assert_eq!(
+                agent_cli_exe_path().unwrap(),
+                image_path,
+                "inside its own AppImage the durable path is the .AppImage file, not the \
+                 transient mount `current_exe()` returns"
+            );
+        }
 
-        // An EMPTY value is not a path — the AppImage runtime never writes one,
-        // but an inherited empty env var would otherwise publish "" as the
-        // command to type.
-        let _empty = AppImageGuard::set(Some(""));
-        assert_eq!(agent_cli_exe_path().unwrap(), running);
+        // 2. THE BUG THIS PREDICATE EXISTS FOR: another AppImage app's
+        //    environment, inherited through a terminal it spawned. The file
+        //    exists — it is a real AppImage — but it is not ours, and this
+        //    binary does not live under its mount point.
+        {
+            let _guard = AppImageGuard::set(Some(&image_path), Some(elsewhere.path()));
+            assert_eq!(
+                agent_cli_exe_path().unwrap(),
+                running,
+                "a .deb build must never publish the AppImage of whatever app spawned its \
+                 terminal"
+            );
+        }
 
-        let _unset = AppImageGuard::set(None);
-        assert_eq!(agent_cli_exe_path().unwrap(), running);
+        // 3. `$APPIMAGE` names nothing on disk (a stale inherited value, or a
+        //    deleted image).
+        {
+            let missing = elsewhere.path().join("gone.AppImage");
+            let _guard = AppImageGuard::set(Some(&missing), Some(&appdir));
+            assert_eq!(agent_cli_exe_path().unwrap(), running);
+        }
+
+        // 4. `$APPDIR` unset, and 5. empty — the runtime always exports it, so
+        //    either state means the pair did not come from a live AppImage.
+        //    (On Windows `set_var(k, "")` removes the variable, which lands in
+        //    the same branch — both are "no usable `$APPDIR`".)
+        {
+            let _guard = AppImageGuard::set(Some(&image_path), None);
+            assert_eq!(agent_cli_exe_path().unwrap(), running);
+        }
+        {
+            let _guard = AppImageGuard::set(Some(&image_path), Some(Path::new("")));
+            assert_eq!(
+                agent_cli_exe_path().unwrap(),
+                running,
+                "`Path::starts_with(\"\")` is true for every path — an empty $APPDIR must not \
+                 satisfy the check"
+            );
+        }
+
+        // 6. Neither var set: the ordinary non-AppImage install.
+        {
+            let _guard = AppImageGuard::set(None, None);
+            assert_eq!(agent_cli_exe_path().unwrap(), running);
+        }
+        // 7. …and an empty `$APPIMAGE`, which names no file.
+        {
+            let _guard = AppImageGuard::set(Some(Path::new("")), Some(&appdir));
+            assert_eq!(agent_cli_exe_path().unwrap(), running);
+        }
     }
 }
