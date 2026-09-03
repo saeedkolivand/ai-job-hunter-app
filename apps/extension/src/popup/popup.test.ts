@@ -8,16 +8,11 @@
  * are strictly required for the assertions here.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import type { ConnectionStatus } from '../lib/messages';
-import {
-  getAnswerToolsExpanded,
-  hasAnswerToolsPreference,
-  looksLikeToken,
-  setAnswerToolsExpanded,
-} from '../lib/storage';
+import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
 
 // vi.mock must come before the import that triggers the module side-effects.
 // popup.ts imports @wxt-dev/browser; stub it out so the module-level
@@ -30,7 +25,13 @@ vi.mock('@wxt-dev/browser', () => ({
       sendMessage: vi.fn(),
       onMessage: { addListener: vi.fn() },
     },
-    tabs: { create: vi.fn() },
+    // `query` resolves the tab id the shared answer state is keyed by (ADR-044)
+    // — available without the `tabs` permission, which stays on the denylist.
+    tabs: { create: vi.fn(), query: vi.fn(() => Promise.resolve([{ id: 7 }])) },
+    storage: {
+      session: { get: vi.fn(() => Promise.resolve({})), set: vi.fn(), remove: vi.fn() },
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
   },
 }));
 
@@ -40,9 +41,6 @@ vi.mock('../lib/storage', () => ({
   // yet) — individual tests override via mockResolvedValueOnce as needed.
   getAnswerToolsExpanded: vi.fn(() => Promise.resolve(false)),
   setAnswerToolsExpanded: vi.fn(() => Promise.resolve(undefined)),
-  // Default: a preference already exists (no fresh-install auto-expand) —
-  // the auto-suggest tests below override via mockResolvedValueOnce as needed.
-  hasAnswerToolsPreference: vi.fn(() => Promise.resolve(true)),
 }));
 
 // Build the minimal DOM that popup.ts queries at module load (byId calls).
@@ -63,33 +61,8 @@ function buildPopupDom(): void {
     </section>
     <details id="answer-tools">
       <summary id="answer-tools-summary">Answer tools<span id="answer-tools-count" aria-live="polite"></span></summary>
-      <button id="btn-suggest-answers"></button>
-      <div id="suggestions-list" hidden></div>
-      <select id="assist-picker"><option value=""></option></select>
-      <textarea id="assist-question"></textarea>
-      <input id="chk-search-web" type="checkbox" />
-      <button id="btn-assist"></button>
-      <div id="assist-result" hidden>
-        <p id="assist-draft"></p>
-        <button id="btn-copy-assist"></button>
-      </div>
-      <select id="rewrite-picker"><option value=""></option></select>
-      <select id="rewrite-preset">
-        <option value=""></option>
-        <option value="shorten"></option>
-        <option value="expand"></option>
-        <option value="rephrase"></option>
-        <option value="impact"></option>
-        <option value="grammar"></option>
-      </select>
-      <input id="rewrite-instruction" type="text" />
-      <button id="btn-rewrite"></button>
-      <div id="rewrite-result" hidden>
-        <p id="rewrite-draft"></p>
-        <button id="btn-copy-rewrite"></button>
-        <button id="btn-accept-rewrite"></button>
-        <button id="btn-restore-rewrite"></button>
-      </div>
+      <div id="answer-tools-host"></div>
+      <button id="btn-open-panel"></button>
     </details>
     <button id="btn-check-fit"></button>
     <div id="match-result" hidden></div>
@@ -126,12 +99,7 @@ const {
   resolveShowMarkAppliedButton,
   resolveMarkAppliedResponse,
   resolveAnswersSaveResponse,
-  correlateSuggestions,
-  resolveAnswersSuggestResponse,
   resolveMatchLiveResponse,
-  resolveAnswerAssistResponse,
-  resolveAssistProgressView,
-  buildAssistPickerOptions,
   resolveFieldsProbeResponse,
   bootstrapAnswerTools,
 } = await import('./popup');
@@ -140,7 +108,6 @@ const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
 const looksLikeTokenMock = vi.mocked(looksLikeToken);
 const getAnswerToolsExpandedMock = vi.mocked(getAnswerToolsExpanded);
 const setAnswerToolsExpandedMock = vi.mocked(setAnswerToolsExpanded);
-const hasAnswerToolsPreferenceMock = vi.mocked(hasAnswerToolsPreference);
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // ── resolveStatusResponse ─────────────────────────────────────────────────────
@@ -1150,9 +1117,10 @@ describe('appliedCheck auto-check', () => {
     });
     push('connected');
     await flush();
-    // Entering `connected` fires BOTH fire-and-forget auto-checks — appliedCheck
+    // Entering `connected` fires the three fire-and-forget auto-checks —ppliedCheck
     // and fieldsProbe (see the sibling `fieldsProbe auto-check` describe block).
-    expect(sendMessageMock).toHaveBeenCalledTimes(2);
+    expect(sendMessageMock).toHaveBeenCalledTimes(3);
+    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'answerScan' });
     expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'fieldsProbe' });
 
     sendMessageMock.mockClear();
@@ -1387,244 +1355,6 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
 // then (only when hasAnswerFields:true) autofill.check, then (only when
 // enabled:true) answers.suggest — 4 sendMessage calls in that fixed order.
 
-describe('auto-suggest on popup open (Task #30)', () => {
-  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
-    ((message: unknown) => void) | undefined;
-  if (!statusListener) throw new Error('onMessage status listener not registered');
-  const push = (phase: ConnectionStatus['phase']) =>
-    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
-
-  const flush = () => new Promise((r) => setTimeout(r, 0));
-
-  const NEUTRAL_APPLIED_CHECK = {
-    ok: true as const,
-    kind: 'appliedCheck' as const,
-    result: { found: false },
-  };
-  const HAS_ANSWER_FIELDS = {
-    ok: true as const,
-    kind: 'fieldsProbe' as const,
-    hasFormFields: true,
-    hasAnswerFields: true,
-  };
-  const NO_ANSWER_FIELDS = {
-    ok: true as const,
-    kind: 'fieldsProbe' as const,
-    hasFormFields: false,
-    hasAnswerFields: false,
-  };
-  const AUTOFILL_ON = { ok: true as const, kind: 'autofillCheck' as const, enabled: true };
-  const AUTOFILL_OFF = { ok: true as const, kind: 'autofillCheck' as const, enabled: false };
-  const ONE_SUGGESTION = {
-    ok: true as const,
-    kind: 'answersSuggest' as const,
-    result: {
-      ok: true as const,
-      suggestions: [
-        {
-          question: 'Why this role?',
-          answer: 'Because I love it.',
-          sourceQuestion: 'Why this role?',
-          score: 0.8,
-          salary: false,
-        },
-      ],
-    },
-    scanned: [{ question: 'Why this role?', index: 0 }],
-  };
-  const NO_SUGGESTIONS = {
-    ok: true as const,
-    kind: 'answersSuggest' as const,
-    result: { ok: true as const, suggestions: [] },
-    scanned: [],
-  };
-
-  beforeEach(() => {
-    sendMessageMock.mockReset();
-    hasAnswerToolsPreferenceMock.mockReset();
-    hasAnswerToolsPreferenceMock.mockResolvedValue(true);
-    // Reset the shared <details> open state — a prior test in this describe
-    // (or the module-level `answerTools` toggle listener) may have left it
-    // open; each test here starts from a known collapsed baseline.
-    byId<HTMLDetailsElement>('answer-tools').open = false;
-    // Force a genuine transition for the next push('connected') below.
-    push('searching');
-  });
-
-  it('auto-fires Suggest + renders results when the probe finds answer fields AND autofill is on', async () => {
-    const msgBefore = byId<HTMLParagraphElement>('import-msg').textContent;
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
-      .mockResolvedValueOnce(AUTOFILL_ON)
-      .mockResolvedValueOnce(ONE_SUGGESTION);
-
-    push('connected');
-    await flush();
-
-    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(false);
-    expect(byId<HTMLElement>('answer-tools-count').textContent).toBe(' (1)');
-    // Silent auto-run: the shared status line is never touched by this path
-    // (compared to its own pre-test value — this file shares one DOM across
-    // describe blocks, so asserting a literal '' would be order-dependent).
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(msgBefore);
-  });
-
-  it('does not auto-run at all when the probe finds no answer-capturable fields', async () => {
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(NO_ANSWER_FIELDS);
-
-    push('connected');
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenCalledTimes(2);
-    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
-  });
-
-  it('reads autofill.check but never fires answers.suggest when autofill is off', async () => {
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
-      .mockResolvedValueOnce(AUTOFILL_OFF);
-
-    push('connected');
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenCalledTimes(3);
-    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'autofillCheck' });
-    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
-  });
-
-  it('stays silent on zero results — no suggestions rendered, no message, no count', async () => {
-    const msgBefore = byId<HTMLParagraphElement>('import-msg').textContent;
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
-      .mockResolvedValueOnce(AUTOFILL_ON)
-      .mockResolvedValueOnce(NO_SUGGESTIONS);
-
-    push('connected');
-    await flush();
-
-    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
-    expect(byId<HTMLElement>('answer-tools-count').textContent).toBe('');
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(msgBefore);
-  });
-
-  it('auto-expands the Answer-tools disclosure when the user has no persisted preference', async () => {
-    hasAnswerToolsPreferenceMock.mockResolvedValueOnce(false);
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
-      .mockResolvedValueOnce(AUTOFILL_ON)
-      .mockResolvedValueOnce(ONE_SUGGESTION);
-
-    push('connected');
-    await flush();
-
-    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(true);
-  });
-
-  it('does NOT auto-expand when the user already has a persisted preference (respects an explicit collapse)', async () => {
-    hasAnswerToolsPreferenceMock.mockResolvedValueOnce(true);
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
-      .mockResolvedValueOnce(AUTOFILL_ON)
-      .mockResolvedValueOnce(ONE_SUGGESTION);
-
-    push('connected');
-    await flush();
-
-    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(false);
-  });
-
-  it('invalidates a stale in-flight auto-suggest chain that resolves AFTER leaving connected', async () => {
-    let resolveSuggest: ((res: unknown) => void) | undefined;
-    const pendingSuggest = new Promise((resolve) => {
-      resolveSuggest = resolve;
-    });
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
-      .mockResolvedValueOnce(AUTOFILL_ON)
-      .mockReturnValueOnce(pendingSuggest);
-
-    push('connected');
-    await flush();
-    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true); // still in flight
-
-    // Leave `connected` BEFORE the suggest call resolves.
-    push('app_not_running');
-
-    resolveSuggest?.(ONE_SUGGESTION);
-    await flush();
-
-    expect(
-      byId<HTMLDivElement>('suggestions-list').hidden,
-      'a stale auto-suggest result must never render onto a page the popup already left'
-    ).toBe(true);
-  });
-
-  it('a manual click while the auto chain is mid-flight always wins — the auto render is discarded', async () => {
-    let resolveAutoAnswers: ((res: unknown) => void) | undefined;
-    const pendingAutoAnswers = new Promise((resolve) => {
-      resolveAutoAnswers = resolve;
-    });
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
-      .mockResolvedValueOnce(AUTOFILL_ON)
-      .mockReturnValueOnce(pendingAutoAnswers); // the auto chain's own answers.suggest — stuck in flight
-
-    push('connected');
-    await flush();
-    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true); // auto still awaiting
-
-    // The user clicks "Suggest answers for this form" (manual) WHILE the auto
-    // chain above is still mid-flight — its own answers.suggest resolves first.
-    const MANUAL_RESULT = {
-      ok: true as const,
-      kind: 'answersSuggest' as const,
-      result: {
-        ok: true as const,
-        suggestions: [
-          {
-            question: 'Manual question?',
-            answer: 'Manual answer.',
-            sourceQuestion: 'Manual question?',
-            score: 0.9,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [{ question: 'Manual question?', index: 0 }],
-    };
-    sendMessageMock.mockResolvedValueOnce(MANUAL_RESULT);
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    expect(byId<HTMLDivElement>('suggestions-list').textContent).toContain('Manual answer.');
-    expect(byId<HTMLButtonElement>('btn-suggest-answers').disabled).toBe(false);
-
-    // The auto chain's own (now-stale) answers.suggest finally resolves with a
-    // DIFFERENT result — it must be discarded, never overwriting the manual render.
-    resolveAutoAnswers?.(ONE_SUGGESTION);
-    await flush();
-
-    expect(
-      byId<HTMLDivElement>('suggestions-list').textContent,
-      'the stale auto render must never overwrite a deliberate manual click'
-    ).toContain('Manual answer.');
-    expect(byId<HTMLDivElement>('suggestions-list').textContent).not.toContain(
-      'Because I love it.'
-    );
-  });
-});
-
-// ── resolveAnswersSaveResponse ─────────────────────────────────────────────────
-
 describe('resolveAnswersSaveResponse', () => {
   it('surfaces a transport-level error (unlike the passive appliedCheck fold)', () => {
     const res = { ok: false as const, error: 'Desktop app not reachable.' };
@@ -1731,185 +1461,6 @@ describe('resolveAnswersSaveResponse', () => {
 
 // ── correlateSuggestions ────────────────────────────────────────────────────
 
-describe('correlateSuggestions', () => {
-  const suggestion = (question: string) => ({
-    question,
-    answer: 'An answer.',
-    sourceQuestion: question,
-    score: 0.8,
-    salary: false,
-  });
-
-  it('assigns fieldIndex 0 when the scan contains exactly one matching question', () => {
-    const out = correlateSuggestions(
-      [suggestion('Why this role?')],
-      [{ question: 'Why this role?', index: 0 }]
-    );
-    expect(out).toEqual([
-      {
-        suggestion: suggestion('Why this role?'),
-        fieldIndex: 0,
-        multipleMatches: false,
-        scanCount: 1,
-      },
-    ]);
-  });
-
-  it('assigns scanCount 0 when no scanned field matches', () => {
-    const out = correlateSuggestions(
-      [suggestion('Why this role?')],
-      [{ question: 'A different question?', index: 0 }]
-    );
-    expect(out[0]?.scanCount).toBe(0);
-  });
-
-  it('assigns scanCount 2 when 2+ live fields share the exact label', () => {
-    const out = correlateSuggestions(
-      [suggestion('Why this role?')],
-      [
-        { question: 'Why this role?', index: 0 },
-        { question: 'Why this role?', index: 1 },
-      ]
-    );
-    expect(out[0]?.scanCount).toBe(2);
-  });
-
-  it('assigns fieldIndex null when no scanned field matches — never a guess', () => {
-    const out = correlateSuggestions(
-      [suggestion('Why this role?')],
-      [{ question: 'A different question?', index: 0 }]
-    );
-    expect(out[0]?.fieldIndex).toBeNull();
-    expect(out[0]?.multipleMatches).toBe(false);
-  });
-
-  it('assigns fieldIndex null against an empty scan list', () => {
-    const out = correlateSuggestions([suggestion('Why this role?')], []);
-    expect(out[0]?.fieldIndex).toBeNull();
-    expect(out[0]?.multipleMatches).toBe(false);
-  });
-
-  it('correlates each suggestion independently', () => {
-    const out = correlateSuggestions(
-      [suggestion('Why this role?'), suggestion('Notice period?')],
-      [{ question: 'Why this role?', index: 0 }]
-    );
-    expect(out[0]?.fieldIndex).toBe(0);
-    expect(out[1]?.fieldIndex).toBeNull();
-  });
-
-  it('assigns fieldIndex null AND multipleMatches true when 2+ live fields share the exact label — ambiguous, never a guess', () => {
-    const out = correlateSuggestions(
-      [suggestion('Why this role?')],
-      [
-        { question: 'Why this role?', index: 0 },
-        { question: 'Why this role?', index: 1 },
-      ]
-    );
-    expect(out[0]?.fieldIndex).toBeNull();
-    expect(out[0]?.multipleMatches).toBe(true);
-  });
-});
-
-// ── resolveAnswersSuggestResponse ───────────────────────────────────────────
-
-describe('resolveAnswersSuggestResponse', () => {
-  it('surfaces a transport-level error', () => {
-    const res = { ok: false as const, error: 'Desktop app not reachable.' };
-    const { text, tone, suggestions, scanned } = resolveAnswersSuggestResponse(res);
-    expect(tone).toBe('err');
-    expect(text).toBe('Desktop app not reachable.');
-    expect(suggestions).toEqual([]);
-    expect(scanned).toEqual([]);
-  });
-
-  it('returns the unexpected-response error when kind is not answersSuggest', () => {
-    const res = { ok: true as const, kind: 'token' as const };
-    const { text, tone } = resolveAnswersSuggestResponse(res);
-    expect(tone).toBe('err');
-    expect(text).toBe('Unexpected response — please retry.');
-  });
-
-  it('surfaces the desktop refusal text when result.ok is false', () => {
-    const res = {
-      ok: true as const,
-      kind: 'answersSuggest' as const,
-      result: { ok: false as const, error: 'Autofill is off.' },
-      scanned: [],
-    };
-    const { text, tone } = resolveAnswersSuggestResponse(res);
-    expect(tone).toBe('err');
-    expect(text).toBe('Autofill is off.');
-  });
-
-  it('reports no matches when the suggestions array is empty', () => {
-    const res = {
-      ok: true as const,
-      kind: 'answersSuggest' as const,
-      result: { ok: true as const, suggestions: [] },
-      scanned: [{ question: 'Why this role?', index: 0 }],
-    };
-    const { text, tone, suggestions } = resolveAnswersSuggestResponse(res);
-    expect(tone).toBe('ok');
-    expect(text).toBe('No matching past answers found for this form.');
-    expect(suggestions).toEqual([]);
-  });
-
-  it('singularizes the count for exactly one suggestion', () => {
-    const res = {
-      ok: true as const,
-      kind: 'answersSuggest' as const,
-      result: {
-        ok: true as const,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because.',
-            sourceQuestion: 'Why this role?',
-            score: 0.7,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [],
-    };
-    const { text, suggestions } = resolveAnswersSuggestResponse(res);
-    expect(text).toBe('Found 1 suggestion for this form.');
-    expect(suggestions).toHaveLength(1);
-  });
-
-  it('pluralizes the count for multiple suggestions', () => {
-    const res = {
-      ok: true as const,
-      kind: 'answersSuggest' as const,
-      result: {
-        ok: true as const,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because.',
-            sourceQuestion: 'Why this role?',
-            score: 0.7,
-            salary: false,
-          },
-          {
-            question: 'Notice period?',
-            answer: 'Two weeks.',
-            sourceQuestion: 'Notice period?',
-            score: 0.9,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [],
-    };
-    const { text } = resolveAnswersSuggestResponse(res);
-    expect(text).toBe('Found 2 suggestions for this form.');
-  });
-});
-
-// ── resolveMatchLiveResponse ─────────────────────────────────────────────────
-
 describe('resolveMatchLiveResponse', () => {
   it('surfaces a transport-level error with null score fields', () => {
     const res = { ok: false as const, error: 'Desktop app not reachable.' };
@@ -1967,649 +1518,6 @@ describe('resolveMatchLiveResponse', () => {
 });
 
 // ── resolveAnswerAssistResponse ────────────────────────────────────────────────
-
-describe('resolveAnswerAssistResponse', () => {
-  it('surfaces a transport-level error with a null draft', () => {
-    const res = { ok: false as const, error: 'Desktop app not reachable.' };
-    const view = resolveAnswerAssistResponse(res);
-    expect(view.tone).toBe('err');
-    expect(view.text).toBe('Desktop app not reachable.');
-    expect(view.draft).toBeNull();
-  });
-
-  it('returns the unexpected-response error when kind is not answerAssist', () => {
-    const res = { ok: true as const, kind: 'token' as const };
-    const view = resolveAnswerAssistResponse(res);
-    expect(view.tone).toBe('err');
-    expect(view.text).toBe('Unexpected response — please retry.');
-    expect(view.draft).toBeNull();
-  });
-
-  it('surfaces the desktop refusal text when result.ok is false', () => {
-    const res = {
-      ok: true as const,
-      kind: 'answerAssist' as const,
-      result: { ok: false as const, error: 'AI answer drafting is off.' },
-    };
-    const view = resolveAnswerAssistResponse(res);
-    expect(view.tone).toBe('err');
-    expect(view.text).toBe('AI answer drafting is off.');
-    expect(view.draft).toBeNull();
-  });
-
-  it('returns the draft on success', () => {
-    const res = {
-      ok: true as const,
-      kind: 'answerAssist' as const,
-      result: {
-        ok: true as const,
-        question: 'Why this role?',
-        draft: 'Because…',
-        sourced: {},
-      },
-    };
-    const view = resolveAnswerAssistResponse(res);
-    expect(view.tone).toBe('ok');
-    expect(view.draft).toBe('Because…');
-  });
-});
-
-// ── resolveAssistProgressView ──────────────────────────────────────────────────
-
-describe('resolveAssistProgressView', () => {
-  it('returns a null draft when no stream has ever run this session', () => {
-    const view = resolveAssistProgressView({ text: '', done: true, interrupted: false });
-    expect(view.draft).toBeNull();
-  });
-
-  it('shows the accumulating text while a stream is still in flight', () => {
-    const view = resolveAssistProgressView({
-      text: 'Because I ',
-      done: false,
-      interrupted: false,
-    });
-    expect(view.draft).toBe('Because I ');
-    expect(view.text).toBe('Drafting an answer…');
-    expect(view.tone).toBe('ok');
-  });
-
-  it('shows the interrupted message + partial text distinctly from a clean finish', () => {
-    const view = resolveAssistProgressView({
-      text: 'Because I ',
-      done: true,
-      interrupted: true,
-    });
-    expect(view.draft).toBe('Because I ');
-    expect(view.tone).toBe('err');
-    expect(view.text).toMatch(/interrupted/i);
-  });
-
-  it('shows the ready message once the stream finished cleanly', () => {
-    const view = resolveAssistProgressView({
-      text: 'Because I am drawn to it.',
-      done: true,
-      interrupted: false,
-    });
-    expect(view.draft).toBe('Because I am drawn to it.');
-    expect(view.tone).toBe('ok');
-    expect(view.text).toMatch(/ready/i);
-  });
-});
-
-// ── buildAssistPickerOptions ───────────────────────────────────────────────────
-
-describe('buildAssistPickerOptions', () => {
-  it('dedups by exact question text, preserving scan order', () => {
-    const scanned = [
-      { question: 'Why this role?' },
-      { question: 'Notice period?' },
-      { question: 'Why this role?' },
-    ];
-    expect(buildAssistPickerOptions(scanned)).toEqual(['Why this role?', 'Notice period?']);
-  });
-
-  it('drops blank/whitespace-only questions', () => {
-    expect(buildAssistPickerOptions([{ question: '   ' }, { question: 'Notice period?' }])).toEqual(
-      ['Notice period?']
-    );
-  });
-
-  it('returns an empty list when nothing was scanned', () => {
-    expect(buildAssistPickerOptions([])).toEqual([]);
-  });
-});
-
-// ── doAssist (#btn-assist) ──────────────────────────────────────────────────────
-
-describe('doAssist (#btn-assist)', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0));
-
-  beforeEach(() => {
-    sendMessageMock.mockReset();
-    byId<HTMLButtonElement>('btn-assist').disabled = false;
-    byId<HTMLParagraphElement>('import-msg').textContent = '';
-    byId<HTMLTextAreaElement>('assist-question').value = '';
-    byId<HTMLInputElement>('chk-search-web').checked = false;
-    byId<HTMLDivElement>('assist-result').hidden = true;
-    byId<HTMLParagraphElement>('assist-draft').textContent = '';
-  });
-
-  it('surfaces a validation error and never sends when the question is blank', async () => {
-    byId<HTMLButtonElement>('btn-assist').click();
-    await flush();
-
-    expect(sendMessageMock).not.toHaveBeenCalled();
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Type or pick a question first.'
-    );
-  });
-
-  it('sends the trimmed question + searchWeb toggle and renders the draft as textContent on success', async () => {
-    byId<HTMLTextAreaElement>('assist-question').value = '  Why this role?  ';
-    byId<HTMLInputElement>('chk-search-web').checked = true;
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssist',
-      result: { ok: true, question: 'Why this role?', draft: 'Because I love it.', sourced: {} },
-    });
-
-    byId<HTMLButtonElement>('btn-assist').click();
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenCalledWith({
-      kind: 'answerAssist',
-      question: 'Why this role?',
-      searchWeb: true,
-    });
-    const result = byId<HTMLDivElement>('assist-result');
-    expect(result.hidden).toBe(false);
-    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I love it.');
-  });
-
-  it('surfaces the desktop refusal and keeps the draft card hidden', async () => {
-    byId<HTMLTextAreaElement>('assist-question').value = 'Why this role?';
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssist',
-      result: { ok: false, error: 'AI answer drafting is off.' },
-    });
-
-    byId<HTMLButtonElement>('btn-assist').click();
-    await flush();
-
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('AI answer drafting is off.');
-    expect(byId<HTMLDivElement>('assist-result').hidden).toBe(true);
-  });
-
-  it('re-enables the button and surfaces a retry message on a transport rejection', async () => {
-    byId<HTMLTextAreaElement>('assist-question').value = 'Why this role?';
-    sendMessageMock.mockRejectedValueOnce(new Error('boom'));
-
-    byId<HTMLButtonElement>('btn-assist').click();
-    await flush();
-
-    expect(byId<HTMLButtonElement>('btn-assist').disabled).toBe(false);
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Could not draft an answer. Please retry.'
-    );
-  });
-});
-
-// ── live-push answerAssistProgress (wire()'s single onMessage listener) ─────
-// A popup reopened mid-stream has no `doAssist` await of its own — it relies
-// entirely on this listener for updates, including a later failure. Verifies
-// the fix: the interrupted case must render the indicator, not just leave
-// the partial draft looking complete.
-
-describe('live-push answerAssistProgress (background push while popup stays open)', () => {
-  const listener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
-    ((message: unknown) => void) | undefined;
-  if (!listener) throw new Error('onMessage listener not registered');
-
-  beforeEach(() => {
-    byId<HTMLParagraphElement>('import-msg').textContent = '';
-    byId<HTMLDivElement>('assist-result').hidden = true;
-    byId<HTMLParagraphElement>('assist-draft').textContent = '';
-  });
-
-  it('renders only the accumulating draft while the stream is still in flight, never importMsg', () => {
-    listener({
-      ok: true,
-      kind: 'answerAssistProgress',
-      text: 'Because I ',
-      done: false,
-      interrupted: false,
-    });
-
-    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
-    expect(byId<HTMLDivElement>('assist-result').hidden).toBe(false);
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('');
-  });
-
-  it('shows the interruption indicator (not just the partial draft) when the stream later fails', () => {
-    listener({
-      ok: true,
-      kind: 'answerAssistProgress',
-      text: 'Because I ',
-      done: true,
-      interrupted: true,
-    });
-
-    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toMatch(/interrupted/i);
-  });
-
-  it('does not touch importMsg on a clean finish', () => {
-    listener({
-      ok: true,
-      kind: 'answerAssistProgress',
-      text: 'Because I am drawn to it.',
-      done: true,
-      interrupted: false,
-    });
-
-    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe(
-      'Because I am drawn to it.'
-    );
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('');
-  });
-});
-
-// ── doCopyAssistDraft (#btn-copy-assist) ────────────────────────────────────
-// Mirrors the doSuggestAnswers "Copy button writes the full answer to the
-// clipboard" test below — same clipboard-mock pattern, applied to the AI
-// draft's own Copy button.
-
-describe('doCopyAssistDraft (#btn-copy-assist)', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0));
-  const writeTextMock = vi.fn().mockResolvedValue(undefined);
-
-  beforeEach(() => {
-    writeTextMock.mockReset().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: writeTextMock },
-      configurable: true,
-    });
-    byId<HTMLParagraphElement>('assist-draft').textContent = '';
-  });
-
-  it('writes the drafted answer to the clipboard and briefly confirms on the button', async () => {
-    byId<HTMLParagraphElement>('assist-draft').textContent = 'Because I love it.';
-
-    byId<HTMLButtonElement>('btn-copy-assist').click();
-    await flush();
-
-    expect(writeTextMock).toHaveBeenCalledWith('Because I love it.');
-    expect(byId<HTMLButtonElement>('btn-copy-assist').textContent).toBe('✓ Copied');
-  });
-});
-
-// ── Rewrite mode (extension PR 11) ──────────────────────────────────────────
-// The picker is populated from the SAME `answersSave` response `doSaveAnswers`
-// already handles (see `renderRewritePicker`'s doc) — so these tests drive it
-// through that click, exactly like `doSuggestAnswers` feeds `renderAssistPicker`.
-
-describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0));
-
-  /** Populate the rewrite picker via the SAME `answersSave` scan the popup uses. */
-  async function pickFilledField(question = 'Why this role?'): Promise<void> {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSave',
-      result: { ok: true, applicationId: 'app-1', saved: 1, skipped: 0 },
-      filled: [{ question, index: 0, answer: 'Because I like it.' }],
-    });
-    byId<HTMLButtonElement>('btn-save-answers').click();
-    await flush();
-    sendMessageMock.mockReset();
-
-    const picker = byId<HTMLSelectElement>('rewrite-picker');
-    picker.value = '0';
-    picker.dispatchEvent(new Event('change'));
-  }
-
-  /** Pick a preset from the #rewrite-preset <select> (replaces the old
-   *  per-preset button row) — mirrors picking any other option. */
-  function selectRewritePreset(preset: string): void {
-    const select = byId<HTMLSelectElement>('rewrite-preset');
-    select.value = preset;
-    select.dispatchEvent(new Event('change'));
-  }
-
-  beforeEach(() => {
-    sendMessageMock.mockReset();
-    byId<HTMLButtonElement>('btn-save-answers').disabled = false;
-    byId<HTMLParagraphElement>('import-msg').textContent = '';
-    byId<HTMLInputElement>('rewrite-instruction').value = '';
-    byId<HTMLDivElement>('rewrite-result').hidden = true;
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = '';
-    byId<HTMLButtonElement>('btn-rewrite').disabled = false;
-  });
-
-  it('refuses to rewrite when no field has been picked yet', async () => {
-    byId<HTMLButtonElement>('btn-rewrite').click();
-    await flush();
-
-    expect(sendMessageMock).not.toHaveBeenCalled();
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Pick a filled answer first.'
-    );
-  });
-
-  it('resetting the picker back to its placeholder clears the target — never silently re-picks index 0 (Number("") === 0, not NaN)', async () => {
-    await pickFilledField();
-
-    // Change the picker back to its placeholder (value '').
-    const picker = byId<HTMLSelectElement>('rewrite-picker');
-    picker.value = '';
-    picker.dispatchEvent(new Event('change'));
-
-    byId<HTMLButtonElement>('btn-rewrite').click();
-    await flush();
-
-    // Must refuse exactly like "nothing ever picked" — not silently reuse
-    // whatever field happens to be first in the last scan.
-    expect(sendMessageMock).not.toHaveBeenCalled();
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Pick a filled answer first.'
-    );
-  });
-
-  it('refuses to rewrite with neither a preset nor a typed instruction', async () => {
-    await pickFilledField();
-
-    byId<HTMLButtonElement>('btn-rewrite').click();
-    await flush();
-
-    expect(sendMessageMock).not.toHaveBeenCalled();
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Pick a preset or type an instruction.'
-    );
-  });
-
-  it('picking a preset from the select sends mode:rewrite + existingAnswer + the SAME preset id and renders the streamed draft', async () => {
-    await pickFilledField();
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssist',
-      result: { ok: true, question: 'Why this role?', draft: 'Shorter answer.', sourced: {} },
-    });
-
-    selectRewritePreset('shorten');
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenCalledWith({
-      kind: 'answerAssist',
-      question: 'Why this role?',
-      searchWeb: false,
-      mode: 'rewrite',
-      existingAnswer: 'Because I like it.',
-      preset: 'shorten',
-    });
-    expect(byId<HTMLDivElement>('rewrite-result').hidden).toBe(false);
-    expect(byId<HTMLParagraphElement>('rewrite-draft').textContent).toBe('Shorter answer.');
-  });
-
-  it('resets the preset select back to its placeholder after firing (so re-selecting the same preset fires again)', async () => {
-    await pickFilledField();
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssist',
-      result: { ok: true, question: 'Why this role?', draft: 'Shorter answer.', sourced: {} },
-    });
-
-    selectRewritePreset('shorten');
-    await flush();
-
-    expect(byId<HTMLSelectElement>('rewrite-preset').value).toBe('');
-  });
-
-  it('ignores a change back to the placeholder option (never re-fires a rewrite)', async () => {
-    await pickFilledField();
-
-    selectRewritePreset('');
-    await flush();
-
-    expect(sendMessageMock).not.toHaveBeenCalled();
-  });
-
-  it('the free-text submit button sends the typed instruction instead of a preset', async () => {
-    await pickFilledField();
-    byId<HTMLInputElement>('rewrite-instruction').value = 'Make this sound more confident.';
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssist',
-      result: { ok: true, question: 'Why this role?', draft: 'A confident answer.', sourced: {} },
-    });
-
-    byId<HTMLButtonElement>('btn-rewrite').click();
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenCalledWith({
-      kind: 'answerAssist',
-      question: 'Why this role?',
-      searchWeb: false,
-      mode: 'rewrite',
-      existingAnswer: 'Because I like it.',
-      instruction: 'Make this sound more confident.',
-    });
-  });
-
-  it('surfaces the desktop refusal and keeps the draft card hidden', async () => {
-    await pickFilledField();
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssist',
-      result: { ok: false, error: 'AI answer drafting is off.' },
-    });
-
-    selectRewritePreset('shorten');
-    await flush();
-
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('AI answer drafting is off.');
-    expect(byId<HTMLDivElement>('rewrite-result').hidden).toBe(true);
-  });
-
-  it('Accept sends answerReplace with the rewritten draft, the picked field correlation, and the expected current value', async () => {
-    await pickFilledField();
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerReplace',
-      result: { filled: true },
-    });
-
-    byId<HTMLButtonElement>('btn-accept-rewrite').click();
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenCalledWith({
-      kind: 'answerReplace',
-      question: 'Why this role?',
-      index: 0,
-      count: 1,
-      text: 'Shorter answer.',
-      expectedValue: 'Because I like it.',
-    });
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Replaced the field on the page.'
-    );
-  });
-
-  it('Restore original sends answerReplace with the FROZEN original text, not the current draft box', async () => {
-    await pickFilledField();
-    // The draft box shows a rewrite, but Restore must send the ORIGINAL text
-    // frozen at pick time ("Because I like it."), never this rewritten one.
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerReplace',
-      result: { filled: true },
-    });
-
-    byId<HTMLButtonElement>('btn-restore-rewrite').click();
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenCalledWith({
-      kind: 'answerReplace',
-      question: 'Why this role?',
-      index: 0,
-      count: 1,
-      text: 'Because I like it.',
-      expectedValue: 'Because I like it.',
-    });
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Restored the original answer.'
-    );
-  });
-
-  it('after a successful Accept, a following Restore compares against the JUST-WRITTEN text, not the stale original', async () => {
-    await pickFilledField();
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerReplace',
-      result: { filled: true },
-    });
-
-    byId<HTMLButtonElement>('btn-accept-rewrite').click();
-    await flush();
-
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerReplace',
-      result: { filled: true },
-    });
-    byId<HTMLButtonElement>('btn-restore-rewrite').click();
-    await flush();
-
-    // The SECOND call (Restore) must expect "Shorter answer." — what Accept
-    // just wrote — never the pick-time original as the expected CURRENT value.
-    expect(sendMessageMock).toHaveBeenLastCalledWith({
-      kind: 'answerReplace',
-      question: 'Why this role?',
-      index: 0,
-      count: 1,
-      text: 'Because I like it.',
-      expectedValue: 'Shorter answer.',
-    });
-  });
-
-  it('a mid-flight re-pick to a different field does not corrupt the new field’s expectedValue baseline', async () => {
-    // Scan with TWO distinct filled fields so there is a different field to
-    // re-pick mid-flight.
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSave',
-      result: { ok: true, applicationId: 'app-1', saved: 2, skipped: 0 },
-      filled: [
-        { question: 'Why this role?', index: 0, answer: 'Because I like it.' },
-        { question: 'Salary expectation?', index: 0, answer: '80000' },
-      ],
-    });
-    byId<HTMLButtonElement>('btn-save-answers').click();
-    await flush();
-    sendMessageMock.mockReset();
-
-    const picker = byId<HTMLSelectElement>('rewrite-picker');
-    picker.value = '0';
-    picker.dispatchEvent(new Event('change'));
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
-
-    // Accept for field 0 starts but does not resolve yet (simulates it still
-    // being in flight when the user re-picks).
-    let resolveAccept: ((res: unknown) => void) | undefined;
-    sendMessageMock.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveAccept = resolve;
-      })
-    );
-    byId<HTMLButtonElement>('btn-accept-rewrite').click();
-
-    // RACE: while that Accept is still in flight, the user re-picks a
-    // DIFFERENT field.
-    picker.value = '1';
-    picker.dispatchEvent(new Event('change'));
-
-    // The in-flight Accept now resolves successfully.
-    resolveAccept?.({ ok: true, kind: 'answerReplace', result: { filled: true } });
-    await flush();
-
-    // Restore on the NEWLY picked field must still expect ITS OWN original
-    // value ("80000") — never "Shorter answer." bled in from the stale
-    // Accept that belonged to the field picked before it.
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerReplace',
-      result: { filled: true },
-    });
-    byId<HTMLButtonElement>('btn-restore-rewrite').click();
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenLastCalledWith({
-      kind: 'answerReplace',
-      question: 'Salary expectation?',
-      index: 0,
-      count: 1,
-      text: '80000',
-      expectedValue: '80000',
-    });
-  });
-
-  it('surfaces the fail-safe not-found error on Accept without folding it away', async () => {
-    await pickFilledField();
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerReplace',
-      result: { filled: false, error: 'Could not find this field — the page may have changed.' },
-    });
-
-    byId<HTMLButtonElement>('btn-accept-rewrite').click();
-    await flush();
-
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Could not find this field — the page may have changed.'
-    );
-  });
-
-  it('surfaces the changed-since-pick refusal on Accept without folding it away or clobbering', async () => {
-    await pickFilledField();
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerReplace',
-      result: {
-        filled: false,
-        error: 'This field changed since you picked it — re-pick it to rewrite.',
-      },
-    });
-
-    byId<HTMLButtonElement>('btn-accept-rewrite').click();
-    await flush();
-
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'This field changed since you picked it — re-pick it to rewrite.'
-    );
-  });
-
-  it('copies the rewrite draft to the clipboard and briefly confirms on the button', async () => {
-    const writeTextMock = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: writeTextMock },
-      configurable: true,
-    });
-    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
-
-    byId<HTMLButtonElement>('btn-copy-rewrite').click();
-    await flush();
-
-    expect(writeTextMock).toHaveBeenCalledWith('Shorter answer.');
-    expect(byId<HTMLButtonElement>('btn-copy-rewrite').textContent).toBe('✓ Copied');
-  });
-});
-
-// ── doSaveAnswers (#btn-save-answers) ─────────────────────────────────────────
 
 describe('doSaveAnswers (#btn-save-answers)', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -2683,326 +1591,6 @@ describe('doSaveAnswers (#btn-save-answers)', () => {
 
 // ── doSuggestAnswers (#btn-suggest-answers) — rendering, salary Copy-only rule,
 // per-row Fill correlation incl. fail-safe ─────────────────────────────────
-
-describe('doSuggestAnswers (#btn-suggest-answers)', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0));
-  const writeTextMock = vi.fn().mockResolvedValue(undefined);
-
-  beforeEach(() => {
-    sendMessageMock.mockReset();
-    writeTextMock.mockReset().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: writeTextMock },
-      configurable: true,
-    });
-    byId<HTMLButtonElement>('btn-suggest-answers').disabled = false;
-    byId<HTMLParagraphElement>('import-msg').textContent = '';
-    byId<HTMLDivElement>('suggestions-list').textContent = '';
-    byId<HTMLDivElement>('suggestions-list').hidden = true;
-  });
-
-  it('renders a row per suggestion with Copy always present', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because I love it.',
-            sourceCompany: 'Acme',
-            sourceTitle: 'Backend Engineer',
-            sourceQuestion: 'Why this role?',
-            score: 0.8,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [{ question: 'Why this role?', index: 0 }],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    const list = byId<HTMLDivElement>('suggestions-list');
-    expect(list.hidden).toBe(false);
-    expect(list.textContent).toContain('Why this role?');
-    expect(list.textContent).toContain('Because I love it.');
-    expect(list.textContent).toContain(
-      'answered as: "Why this role?" — from your Backend Engineer @ Acme application'
-    );
-    expect(list.querySelector('button')?.textContent).toBe('Copy');
-  });
-
-  it('renders the sourceQuestion as a secondary line even when it differs from the scanned question — makes a cross-question match self-evident', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'What is your current location?',
-            answer: '$120,000',
-            sourceQuestion: 'What is your current salary?',
-            score: 0.67,
-            salary: true,
-          },
-        ],
-      },
-      scanned: [{ question: 'What is your current location?', index: 0 }],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    const list = byId<HTMLDivElement>('suggestions-list');
-    expect(list.textContent).toContain('answered as: "What is your current salary?"');
-  });
-
-  it('renders no Fill button for a salary-flagged suggestion (Copy-only rule)', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'What is your expected salary?',
-            answer: '$120,000',
-            sourceQuestion: 'What is your expected salary?',
-            score: 0.9,
-            salary: true,
-          },
-        ],
-      },
-      scanned: [{ question: 'What is your expected salary?', index: 0 }],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    const buttons = Array.from(byId<HTMLDivElement>('suggestions-list').querySelectorAll('button'));
-    expect(buttons.map((b) => b.textContent)).toEqual(['Copy']);
-  });
-
-  it('renders no Fill button when the scan found no matching live field', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because.',
-            sourceQuestion: 'Why this role?',
-            score: 0.7,
-            salary: false,
-          },
-        ],
-      },
-      // No scanned entry for this question — no live target.
-      scanned: [],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    const buttons = Array.from(byId<HTMLDivElement>('suggestions-list').querySelectorAll('button'));
-    expect(buttons.map((b) => b.textContent)).toEqual(['Copy']);
-  });
-
-  it('renders no Fill button and shows a "fill manually" hint when the scan found MORE THAN ONE matching live field (ambiguous)', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because.',
-            sourceQuestion: 'Why this role?',
-            score: 0.7,
-            salary: false,
-          },
-        ],
-      },
-      // Two form fields share the exact same label — which one to fill is
-      // ambiguous, so Fill must never be offered.
-      scanned: [
-        { question: 'Why this role?', index: 0 },
-        { question: 'Why this role?', index: 1 },
-      ],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    const list = byId<HTMLDivElement>('suggestions-list');
-    const buttons = Array.from(list.querySelectorAll('button'));
-    expect(buttons.map((b) => b.textContent)).toEqual(['Copy']);
-    expect(list.textContent).toContain('Multiple matching fields — fill manually.');
-  });
-
-  it('renders a Fill button when the scan found exactly ONE matching live field', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because.',
-            sourceQuestion: 'Why this role?',
-            score: 0.7,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [{ question: 'Why this role?', index: 0 }],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    const buttons = Array.from(byId<HTMLDivElement>('suggestions-list').querySelectorAll('button'));
-    expect(buttons.map((b) => b.textContent)).toEqual(['Copy', 'Fill this field']);
-  });
-
-  it('Copy button writes the full answer to the clipboard', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because I love it.',
-            sourceQuestion: 'Why this role?',
-            score: 0.8,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    const copyBtn = byId<HTMLDivElement>('suggestions-list').querySelector('button')!;
-    copyBtn.click();
-    await flush();
-
-    expect(writeTextMock).toHaveBeenCalledWith('Because I love it.');
-    expect(copyBtn.textContent).toBe('✓ Copied');
-  });
-
-  it('Fill button sends the scan-time correlation and shows the filled confirmation', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because I love it.',
-            sourceQuestion: 'Why this role?',
-            score: 0.8,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [{ question: 'Why this role?', index: 0 }],
-    });
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerFill',
-      result: { filled: true },
-    });
-    const fillBtn = Array.from(
-      byId<HTMLDivElement>('suggestions-list').querySelectorAll('button')
-    ).find((b) => b.textContent === 'Fill this field')!;
-    fillBtn.click();
-    await flush();
-
-    expect(sendMessageMock).toHaveBeenLastCalledWith({
-      kind: 'answerFill',
-      question: 'Why this role?',
-      index: 0,
-      count: 1,
-      answer: 'Because I love it.',
-    });
-    expect(fillBtn.textContent).toBe('✓ Filled');
-  });
-
-  it('shows the fail-safe error and re-enables the button when the field cannot be located', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: {
-        ok: true,
-        suggestions: [
-          {
-            question: 'Why this role?',
-            answer: 'Because I love it.',
-            sourceQuestion: 'Why this role?',
-            score: 0.8,
-            salary: false,
-          },
-        ],
-      },
-      scanned: [{ question: 'Why this role?', index: 0 }],
-    });
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerFill',
-      result: { filled: false, error: 'Could not find this field — the page may have changed.' },
-    });
-    const fillBtn = Array.from(
-      byId<HTMLDivElement>('suggestions-list').querySelectorAll('button')
-    ).find((b) => b.textContent === 'Fill this field')!;
-    fillBtn.click();
-    await flush();
-
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'Could not find this field — the page may have changed.'
-    );
-    expect(fillBtn.disabled).toBe(false);
-    expect(fillBtn.textContent).toBe('Fill this field');
-  });
-
-  it('shows "No matching past answers" and hides the list when there are no suggestions', async () => {
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answersSuggest',
-      result: { ok: true, suggestions: [] },
-      scanned: [],
-    });
-
-    byId<HTMLButtonElement>('btn-suggest-answers').click();
-    await flush();
-
-    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
-      'No matching past answers found for this form.'
-    );
-    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
-  });
-});
-
-// ── doCheckFit (#btn-check-fit) ───────────────────────────────────────────────
 
 describe('doCheckFit (#btn-check-fit)', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -3196,60 +1784,100 @@ describe('answer-tools persistence (toggle → storage)', () => {
   });
 });
 
-describe('bootstrapAnswerTools (applies the persisted preference, reattach can override it)', () => {
+describe('bootstrapAnswerTools (applies the persisted preference, then subscribes)', () => {
   beforeEach(() => {
     sendMessageMock.mockReset();
     getAnswerToolsExpandedMock.mockReset();
     byId<HTMLDetailsElement>('answer-tools').open = false;
-    byId<HTMLButtonElement>('btn-assist').disabled = false;
   });
 
   it('defaults to collapsed when no preference has been stored', async () => {
     getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
-    // No buffered stream — reattach's send() resolves with nothing to reattach.
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssistProgress',
-      text: '',
-      done: true,
-      interrupted: false,
-    });
-    byId<HTMLDetailsElement>('answer-tools').open = true; // start non-default to prove it actually applies
+    byId<HTMLDetailsElement>('answer-tools').open = true; // start non-default to prove it applies
 
     await bootstrapAnswerTools();
 
     expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(false);
   });
 
-  it('applies a persisted "expanded" preference when no stream is buffered', async () => {
+  it('applies a persisted "expanded" preference', async () => {
     getAnswerToolsExpandedMock.mockResolvedValueOnce(true);
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssistProgress',
-      text: '',
-      done: true,
-      interrupted: false,
-    });
 
     await bootstrapAnswerTools();
 
     expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(true);
   });
 
-  it('auto-expands even over a persisted "collapsed" preference when a stream is buffered/still running', async () => {
+  it('subscribes the Answer-tools section to the shared state instead of querying for it', async () => {
+    // The old popup-open reattach asked the background "what is buffered?".
+    // The stream now lives in the shared per-tab state, so the popup must
+    // SUBSCRIBE rather than ask — a query would go stale the moment the panel
+    // (or the next chunk) changed it, which is the drift ADR-044 decision 1
+    // exists to prevent.
     getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'answerAssistProgress',
-      text: 'Because I ',
-      done: false,
-      interrupted: false,
-    });
+    const addListener = vi.mocked(browser.storage.onChanged.addListener);
+    addListener.mockClear();
 
     await bootstrapAnswerTools();
 
-    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(true);
-    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
+    expect(addListener).toHaveBeenCalled();
+    expect(sendMessageMock).not.toHaveBeenCalledWith({ kind: 'answerAssistProgress' });
+  });
+
+  it('renders the empty state rather than throwing when no tab id can be read', async () => {
+    getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
+    vi.mocked(browser.tabs.query).mockResolvedValueOnce([]);
+
+    await expect(bootstrapAnswerTools()).resolves.toBeUndefined();
+    expect(byId<HTMLElement>('answer-tools-host').textContent).toContain('Nothing scanned yet');
+  });
+});
+
+// ── openAnswerPanel (#btn-open-panel, ADR-044 decision 10a) ─────────────────
+// Neither `sidePanel` nor `sidebarAction` is on the shared browser mock (most
+// tests need neither), so each test here adds only the ONE the browser under
+// test would expose, and removes it afterwards — proving the click handler
+// picks the right API rather than assuming Chrome.
+
+describe('openAnswerPanel (#btn-open-panel)', () => {
+  type MutableBrowser = typeof browser & {
+    sidePanel?: { open: (o: { tabId: number }) => Promise<void> };
+    sidebarAction?: { open: () => Promise<void> };
+  };
+  const mutableBrowser = browser as MutableBrowser;
+
+  afterEach(() => {
+    delete mutableBrowser.sidePanel;
+    delete mutableBrowser.sidebarAction;
+  });
+
+  it('calls chrome.sidePanel.open with the active tab id, synchronously from the click', async () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    mutableBrowser.sidePanel = { open };
+    await bootstrapAnswerTools(); // (re)resolves activeTabId from the tabs.query mock (id 7)
+
+    byId<HTMLButtonElement>('btn-open-panel').click();
+
+    expect(open).toHaveBeenCalledWith({ tabId: 7 });
+  });
+
+  it('falls back to browser.sidebarAction.open() when there is no sidePanel API (Firefox)', async () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    mutableBrowser.sidebarAction = { open };
+    await bootstrapAnswerTools();
+
+    byId<HTMLButtonElement>('btn-open-panel').click();
+
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a message rather than throwing when neither API is available', async () => {
+    await bootstrapAnswerTools();
+    byId<HTMLElement>('import-msg').textContent = '';
+
+    byId<HTMLButtonElement>('btn-open-panel').click();
+
+    expect(byId<HTMLElement>('import-msg').textContent).toContain('no side panel');
   });
 });
 

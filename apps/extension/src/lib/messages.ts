@@ -16,6 +16,7 @@ import type {
 } from '@ajh/shared';
 
 import type { FillAnswerResult } from './answer-fill';
+import type { AnswerState } from './answer-state';
 import type { FilledField, ScannedQuestion } from './answers-capture';
 import type { AutofillSummary } from './autofill';
 
@@ -141,6 +142,22 @@ export type PopupRequest =
       existingAnswer?: string;
       preset?: ExtensionRewritePreset;
       instruction?: string;
+      /**
+       * Which answer ROW this stream belongs to (ADR-044 decision 1). The
+       * background tags its single-flight buffer with it, so both surfaces
+       * can render the stream against the right question instead of against
+       * "the last thing anyone asked for". Absent = a caller with no row
+       * model; the buffer is then tagged with the empty string and the views
+       * render it nowhere.
+       */
+      rowId?: string;
+      /**
+       * The picked field's own `maxlength`, forwarded as the wire's optional
+       * character limit (ADR-044 decision 6). DRAFT MODE ONLY — the desktop
+       * ignores it in rewrite mode, and the background does not send it
+       * there. Page-derived, so it is clamped here AND again desktop-side.
+       */
+      maxChars?: number;
     }
   /**
    * Popup-open reattach: "what's the current/last streamed `answer.assist`
@@ -167,6 +184,35 @@ export type PopupRequest =
    * the pick. Locates + replaces via the same fail-safe re-scan `answerFill`
    * uses; never submits.
    */
+  /**
+   * Rescan the active tab into the shared answer state (ADR-044 decision 1).
+   * A GESTURE request: it injects `capture-rows.js`, so it is only ever sent
+   * from a real click (the popup opening its connected view, the panel's
+   * Rescan, the context-menu entry). It also captures the tab's ORIGIN at
+   * that moment — the half of the state key that must never come from a
+   * `tabs` lookup.
+   */
+  | { kind: 'answerScan' }
+  /**
+   * Add a free-text row for a question the scan missed (the manual entry) or
+   * for a context-menu selection. Content-keyed, so sending the same question
+   * twice reuses the row instead of stacking duplicates.
+   */
+  | { kind: 'answerAddRow'; question: string }
+  /** Show version `version` of a row (`-1` = the page's own text). Pure state,
+   *  no page access — this is Restore in ADR-044 decision 5's sense. */
+  | { kind: 'answerSelectVersion'; rowId: string; version: number }
+  /**
+   * Write the version currently on screen into the row's field — the quiet
+   * action beside Copy. Routed to `answerFill` or `answerReplace` by the
+   * row's own field kind, so it keeps their fail-safe correlation exactly:
+   * never a different field than the one scanned, never over a manual edit
+   * made since. A row with no field on the page has no Accept at all.
+   */
+  | { kind: 'answerAccept'; rowId: string }
+  /** Put the field's frozen scan-time text back (filled rows only). Same
+   *  fail-safe write path as {@link PopupRequest} `answerAccept`. */
+  | { kind: 'answerRestoreOriginal'; rowId: string }
   | {
       kind: 'answerReplace';
       question: string;
@@ -271,7 +317,29 @@ export type PopupResponse =
    * `''`/`done: true`/`interrupted: false` when no stream has ever run this
    * session.
    */
-  | { ok: true; kind: 'answerAssistProgress'; text: string; done: boolean; interrupted: boolean }
+  | {
+      ok: true;
+      kind: 'answerAssistProgress';
+      text: string;
+      done: boolean;
+      interrupted: boolean;
+      /** The row this buffer belongs to, or `''` when the stream was started
+       *  by a caller with no row model. */
+      rowId: string;
+    }
+  /**
+   * The shared answer state after a scan / row edit, echoed back so the
+   * caller can settle its own button without waiting for the
+   * `storage.onChanged` round trip. `null` means there is nothing to render
+   * (no active tab, or the session storage area is unavailable) — both views
+   * fall back to their empty state, which is also what they show before the
+   * first scan.
+   */
+  | { ok: true; kind: 'answerState'; state: AnswerState | null }
+  /** The Accept / Restore-original outcome — the SAME fail-safe result shape
+   *  `answerFill`/`answerReplace` return, because it is literally their
+   *  result. */
+  | { ok: true; kind: 'answerAccept'; result: FillAnswerResult }
   /** The rewrite Accept/Restore outcome (fail-safe on any page mutation) —
    *  mirrors `answerFill`'s response shape exactly. */
   | { ok: true; kind: 'answerReplace'; result: FillAnswerResult }

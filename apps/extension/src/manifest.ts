@@ -40,6 +40,36 @@ const FIREFOX_EXTENSION_ID = 'job-importer@aijobhunter.app';
  */
 const LOOPBACK_HOSTS = ['ws://127.0.0.1/*', 'http://127.0.0.1/*'];
 
+/**
+ * Permissions BOTH targets request. Kept as a named constant because the
+ * per-target delta below is now non-empty (`sidePanel`, Chrome only) and the
+ * pin in `manifest.test.ts` compares the two targets modulo exactly that
+ * declared delta — a shared literal is what makes "one surface plus one
+ * argued exception" readable rather than inferred from two spelled-out lists.
+ */
+const SHARED_PERMISSIONS = [
+  'activeTab',
+  'storage',
+  'scripting',
+  'nativeMessaging',
+  'contextMenus',
+] as const;
+
+/**
+ * Chrome's side-panel permission — the ONE declared per-target delta (ADR-044
+ * decision 7). Firefox has no equivalent permission: it declares the
+ * `sidebar_action` manifest key instead (see {@link firefoxManifest}), which
+ * is why the both-targets pin asserts that key is present whenever this
+ * permission is.
+ */
+const CHROME_ONLY_PERMISSIONS = ['sidePanel'] as const;
+
+/** The Answer-tools panel document, shared by both targets' panel surfaces. */
+const PANEL_PAGE = 'sidepanel.html';
+
+/** Title shown on the panel/sidebar in both browsers' own chrome. */
+const PANEL_TITLE = 'AI Job Hunter — Answer tools';
+
 type ManifestRecord = Record<string, unknown>;
 
 /** Fields shared by both targets. */
@@ -59,8 +89,11 @@ function baseManifest(): ManifestRecord {
     // limited to the active tab by activeTab. nativeMessaging → `runtime.connectNative`
     // to the desktop host (`app.aijobhunter.bridge`), the HTTPS-Only-safe transport
     // that survives Firefox upgrading `ws://` to `wss://`; the loopback
-    // `host_permissions` below stay for the `ws` fallback.
-    permissions: ['activeTab', 'storage', 'scripting', 'nativeMessaging'],
+    // `host_permissions` below stay for the `ws` fallback. contextMenus → the
+    // ONE "Answer this with AI Job Hunter" entry on selected text (ADR-044
+    // decision 2), which is itself the user gesture that grants `activeTab`
+    // and opens the answer panel — no standing page access comes with it.
+    permissions: [...SHARED_PERMISSIONS],
     host_permissions: LOOPBACK_HOSTS,
     action: {
       default_popup: 'popup.html',
@@ -87,10 +120,16 @@ function baseManifest(): ManifestRecord {
 function chromeManifest(): ManifestRecord {
   return {
     ...baseManifest(),
+    permissions: [...SHARED_PERMISSIONS, ...CHROME_ONLY_PERMISSIONS],
     background: {
       service_worker: 'background.js',
       type: 'module',
     },
+    // The panel is opened from the popup's own click handler via
+    // `chrome.sidePanel.open({ tabId })` and from the context-menu entry —
+    // never via `openPanelOnActionClick`, which a declared `default_popup`
+    // takes priority over anyway (ADR-044 decision 2).
+    side_panel: { default_path: PANEL_PAGE },
   };
 }
 
@@ -107,6 +146,19 @@ function firefoxManifest(): ManifestRecord {
     background: {
       scripts: ['background.js'],
       type: 'module',
+    },
+    // Firefox's sidebar is a MANIFEST KEY, not a permission — the counterpart
+    // of Chrome's `sidePanel` permission + `side_panel` key above. It is
+    // opened from a user gesture with `browser.sidebarAction.open()`.
+    sidebar_action: {
+      default_panel: PANEL_PAGE,
+      default_title: PANEL_TITLE,
+      default_icon: {
+        '16': 'icons/icon-16.png',
+        '32': 'icons/icon-32.png',
+        '48': 'icons/icon-48.png',
+        '128': 'icons/icon-128.png',
+      },
     },
     browser_specific_settings: {
       gecko: {

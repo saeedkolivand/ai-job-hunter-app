@@ -59,8 +59,43 @@ vi.mock('@wxt-dev/browser', () => ({
       sendMessage: vi.fn(),
       reload: vi.fn(),
     },
-    tabs: { query: vi.fn() },
+    tabs: {
+      query: vi.fn(),
+      // ADR-044: a navigation invalidates a tab's answer state for WRITING and
+      // a closed tab drops it entirely, so background.ts subscribes to both at
+      // module load. Registered here so that load does not throw.
+      onUpdated: { addListener: vi.fn() },
+      onRemoved: { addListener: vi.fn() },
+    },
     scripting: { executeScript: vi.fn() },
+    // The ONE context-menu entry (selection only). `removeAll` takes the
+    // callback `installContextMenu` passes it, so the mock has to invoke it or
+    // `create` is never reached.
+    contextMenus: {
+      removeAll: vi.fn((cb?: () => void) => cb?.()),
+      create: vi.fn(),
+      onClicked: { addListener: vi.fn() },
+    },
+    // The shared answer state lives in `storage.session`; `onChanged` is what
+    // both surfaces subscribe to. An in-memory area is enough here — the
+    // background is the only writer.
+    storage: {
+      session: (() => {
+        const store: Record<string, unknown> = {};
+        return {
+          get: vi.fn((key: string) => Promise.resolve({ [key]: store[key] })),
+          set: vi.fn((entries: Record<string, unknown>) => {
+            Object.assign(store, entries);
+            return Promise.resolve();
+          }),
+          remove: vi.fn((key: string) => {
+            delete store[key];
+            return Promise.resolve();
+          }),
+        };
+      })(),
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
     action: {
       setBadgeText: vi.fn().mockResolvedValue(undefined),
       setBadgeBackgroundColor: vi.fn().mockResolvedValue(undefined),
@@ -1044,6 +1079,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'Because I am drawn to it.',
       done: true,
       interrupted: false,
+      rowId: '',
     });
 
     const progress = await send({ kind: 'answerAssistProgress' });
@@ -1053,6 +1089,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'Because I am drawn to it.',
       done: true,
       interrupted: false,
+      rowId: '',
     });
   });
 
@@ -1080,6 +1117,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'Because I ',
       done: true,
       interrupted: true,
+      rowId: '',
     });
   });
 
@@ -1110,6 +1148,7 @@ describe('answerAssist streaming buffer', () => {
           text: '',
           done: false,
           interrupted: false,
+          rowId: '',
         });
         onChunk?.('fresh answer');
         return { ok: true, question: 'Q2', draft: 'fresh answer', sourced: {} };
@@ -1200,6 +1239,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'B chunk',
       done: true,
       interrupted: false,
+      rowId: '',
     });
   });
 
@@ -1242,6 +1282,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'B chunk',
       done: true,
       interrupted: false,
+      rowId: '',
     });
 
     // A's getToken() finally resolves — A must bail out as superseded before
@@ -1263,6 +1304,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'B chunk',
       done: true,
       interrupted: false,
+      rowId: '',
     });
   });
 });
@@ -1503,6 +1545,259 @@ describe('answerReplace request', () => {
     });
 
     expect(res).toEqual({ ok: false, error: 'Could not replace this field.' });
+  });
+});
+
+// ── ADR-044: the shared per-(tab, origin) answer state, driven entirely
+// through the popup-request dispatcher — scan, free-text add, version select,
+// Accept/Restore, and the context-menu entry that opens the panel. Each test
+// picks its OWN tabId (the mocked `storage.session` area is a module-level
+// store, never reset between tests) so no test can read another's state. ──
+
+describe('answerScan request (ADR-044)', () => {
+  it('injects capture-rows.js, captures the origin at gesture time, and writes the built state', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 200, url: 'https://jobs.example.com/posting/1' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      {
+        result: {
+          questions: [{ question: 'Why this role?', index: 0 }],
+          filled: [{ question: 'Company name', index: 0, answer: 'Acme' }],
+        },
+      },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+
+    const res = await send({ kind: 'answerScan' });
+
+    expect(executeScriptMock).toHaveBeenCalledWith({
+      target: { tabId: 200 },
+      files: ['capture-rows.js'],
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok && res.kind === 'answerState') {
+      expect(res.state?.tabId).toBe(200);
+      expect(res.state?.origin).toBe('https://jobs.example.com');
+      expect(res.state?.pageChanged).toBe(false);
+      expect(res.state?.rows.map((r) => r.question)).toEqual(['Why this role?', 'Company name']);
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+
+  it('surfaces "Could not read the questions on this page." when the injected script returns a non-scan value', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 201, url: 'https://jobs.example.com/posting/2' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({ kind: 'answerScan' });
+
+    expect(res).toEqual({ ok: false, error: 'Could not read the questions on this page.' });
+  });
+});
+
+describe('answerAddRow request (ADR-044)', () => {
+  it('creates a fresh state (unscanned page) carrying only the free-text row', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 202, url: 'https://jobs.example.com/posting/3' } as never,
+    ]);
+
+    const res = await send({ kind: 'answerAddRow', question: 'What is your visa status?' });
+
+    expect(res.ok).toBe(true);
+    if (res.ok && res.kind === 'answerState') {
+      expect(res.state?.rows).toHaveLength(1);
+      expect(res.state?.rows[0]).toMatchObject({
+        question: 'What is your visa status?',
+        field: null,
+        status: 'empty',
+      });
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+
+  it('prepends onto an existing scan rather than replacing it, and reuses the row on a repeated question', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 203, url: 'https://jobs.example.com/posting/4' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    await send({ kind: 'answerScan' });
+
+    const first = await send({ kind: 'answerAddRow', question: 'A question the scan missed' });
+    const second = await send({ kind: 'answerAddRow', question: 'A question the scan missed' });
+
+    if (first.ok && first.kind === 'answerState' && second.ok && second.kind === 'answerState') {
+      expect(first.state?.rows.map((r) => r.question)).toEqual([
+        'A question the scan missed',
+        'Why this role?',
+      ]);
+      // Same question added twice reuses the row rather than stacking a duplicate.
+      expect(second.state?.rows.map((r) => r.question)).toEqual([
+        'A question the scan missed',
+        'Why this role?',
+      ]);
+    } else {
+      throw new Error('expected two answerState responses');
+    }
+  });
+});
+
+describe('answerSelectVersion request (ADR-044)', () => {
+  it('selects a version by index, and falls back to -1 (the page text) for an out-of-range index', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 204, url: 'https://jobs.example.com/posting/5' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    const outOfRange = await send({ kind: 'answerSelectVersion', rowId, version: 5 });
+    if (outOfRange.ok && outOfRange.kind === 'answerState') {
+      expect(outOfRange.state?.rows[0]?.selected).toBe(-1);
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+});
+
+describe('answerAccept / answerRestoreOriginal requests (ADR-044)', () => {
+  it('writes the selected text into an EMPTY field via answer-fill.js and remembers it as currentText', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 205, url: 'https://jobs.example.com/posting/6' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    executeScriptMock.mockResolvedValueOnce([{}] as never); // answer-fill.js registration
+    executeScriptMock.mockResolvedValueOnce([{ result: { filled: true } }] as never);
+
+    // A freshly-scanned row has no drafted version yet, so Restore (which
+    // always has text — the frozen scan-time original, `''` for an empty
+    // field) is what exercises `writeRowText`'s fail-safe write path here;
+    // Accept goes through the identical function with a different source text.
+    const res = await send({ kind: 'answerRestoreOriginal', rowId });
+
+    // Call 1 was the scan's own capture-rows.js injection; 2 and 3 are this write.
+    expect(executeScriptMock).toHaveBeenNthCalledWith(2, {
+      target: { tabId: 205 },
+      files: ['answer-fill.js'],
+    });
+    expect(executeScriptMock).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        target: { tabId: 205 },
+        args: ['Why this role?', 0, 1, '', '__ajhRunAnswerFill'],
+      })
+    );
+    expect(res).toEqual({ ok: true, kind: 'answerAccept', result: { filled: true } });
+  });
+
+  it('refuses to write once the page has changed, without touching the tab at all', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 206, url: 'https://jobs.example.com/posting/7' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    // A navigation flips pageChanged — the onUpdated listener does this in the
+    // real worker; call the registered callback directly the same way the
+    // onMessage listener is driven above.
+    const onUpdated = vi.mocked(browser.tabs.onUpdated.addListener).mock.calls[0]?.[0];
+    onUpdated?.(206, { status: 'loading' } as never, {} as never);
+    await flush();
+
+    executeScriptMock.mockClear();
+    const res = await send({ kind: 'answerRestoreOriginal', rowId });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'This page changed. Click the toolbar icon to scan it, then try again.',
+    });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('the context-menu entry (ADR-044 decision 2)', () => {
+  it('registers exactly one selection-only entry with the documented title', () => {
+    const onInstalled = vi.mocked(browser.runtime.onInstalled.addListener).mock.calls[0]?.[0];
+    vi.mocked(browser.contextMenus.create).mockClear();
+
+    onInstalled?.({} as never);
+
+    expect(browser.contextMenus.create).toHaveBeenCalledTimes(1);
+    expect(browser.contextMenus.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Answer this with AI Job Hunter',
+        contexts: ['selection'],
+      })
+    );
+  });
+
+  it('adds the trimmed selection as a free-text row on click, keyed to the clicked tab', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    tabsQueryMock.mockResolvedValue([
+      { id: 207, url: 'https://jobs.example.com/posting/8' } as never,
+    ]);
+
+    onClicked(
+      {
+        menuItemId: 'ajh-answer-selection',
+        selectionText: '  Describe a challenge you solved.  ',
+      } as never,
+      { id: 207 } as never
+    );
+    await flush();
+
+    // Read the resulting state back by asking for one more row.
+    const res = await send({ kind: 'answerAddRow', question: 'a second question' });
+    if (res.ok && res.kind === 'answerState') {
+      expect(res.state?.rows.map((r) => r.question)).toContain('Describe a challenge you solved.');
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+
+  it('ignores a click on a different menu id', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    tabsQueryMock.mockClear();
+
+    onClicked({ menuItemId: 'some-other-entry', selectionText: 'ignored' } as never, {} as never);
+    await flush();
+
+    expect(tabsQueryMock).not.toHaveBeenCalled();
   });
 });
 

@@ -49,7 +49,8 @@ function webExtensionAssets(): Plugin {
 /**
  * `content.ts` (Scan-mode DOM capture), `fill.ts` (assisted autofill),
  * `capture.ts` (answers capture), `capture-questions.ts` (questions-mode
- * collector), `answer-fill.ts` (single-field answer fill), `answer-replace.ts`
+ * collector), `capture-rows.ts` (the ADR-044 answer-rows scan),
+ * `answer-fill.ts` (single-field answer fill), `answer-replace.ts`
  * (single-field answer REPLACE, extension PR 11's rewrite Accept/Restore),
  * and `probe-fields.ts` (the popup's fillable-fields probe) are ALL injected
  * via `chrome.scripting.executeScript({ files: [...] })`, which runs as a
@@ -85,6 +86,7 @@ function injectedEntries(): Plugin {
         'fill',
         'capture',
         'capture-questions',
+        'capture-rows',
         'answer-fill',
         'answer-replace',
         'submit-watch',
@@ -126,6 +128,7 @@ export default defineConfig({
       input: {
         background: resolve(srcDir, 'background.ts'),
         popup: resolve(srcDir, 'popup.html'),
+        sidepanel: resolve(srcDir, 'sidepanel.html'),
       },
       output: {
         // Stable, manifest-referenced filenames at the dist root.
