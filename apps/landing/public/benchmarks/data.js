@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788374713648,
+  "lastUpdate": 1788393131630,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "798c82fefe5ecaddabb54f5d222eb7052e078f16",
-          "message": "feat: auto-track sent applications on a detected form submit (opt-in) (#687)\n\n* feat: auto-track sent applications on a detected form submit (opt-in)\n\nAfter the user invokes the extension on an application page (an existing\ninjection gesture) and enables the new default-OFF \"Auto-track sent applications\"\nopt-in, a pure-DOM submit-watch arms a capture-phase submit + apply-button\nlistener. On a detected submit it re-checks the opt-in, runs applied.check, and\nauto status.update {to:'applied', auto:true} for a tracked saved job (silent\nno-op if already applied; an action-badge nudge to import when untracked). It\nnever blocks/alters the submit and never auto-creates.\n\nThe auto write is desktop-enforced: status.update refuses auto:true when the\nopt-in is off (the manual popup mark-as-applied is unflagged and ungated as\nbefore). No new permissions/manifest changes; Firefox data_collection stays none.\n\nLayer A of the auto-track feature; full-page-nav submits are best-effort (Layer C\nemail parsing is the complement).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: cover the auto-track background wiring, distinguish auto vs manual, harden sender check\n\nCloses the review findings (all advisory):\n- add background.ts integration tests for the submitDetected route, arm-after-\n  gesture, and badge-clear (the wiring the pure-fn tests didn't exercise)\n- pin the duplicated SUBMIT_DETECTED_MSG literal with a parity test so the\n  background/lib copies can't silently diverge\n- record \"auto-tracked via extension\" vs \"via extension\" in the status history\n  so an auto write is distinguishable later, not only in the notification body\n- assert sender.id === runtime.id before acting on submitDetected (belt-and-\n  braces; already mitigated by the absent externally_connectable)\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: amend adr-0009 and extension-domain for auto-track layer a\n\nRecords the auto-track opt-in (task #22) as a distinct sanctioned\nauto-action consent class in adr-0009: the server-side enforcement\nboundary in handle_status_update, the honest residual risk, and the\nnew autotrack.check/autotrack.result verbs plus status.update's auto\nflag. extension-domain.md gets the verb-table entries and a new\ngesture-armed submit-watch section documenting detection, routing,\ndecision branches, and honest limits.\n\n* refactor: extract auto-track opt-in machinery into an autotrack submodule for r8\n\nThe auto-track additions pushed extension_bridge/mod.rs to 1425 LOC, over the\n1400 hard cap. Move the opt-in file load/persist, the enabled accessors, and the\nautotrack result reply into a sibling autotrack.rs (mirrors status_update.rs).\nmod.rs is now 1372. No behavior change.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-          "timestamp": "2026-07-16T06:40:45+02:00",
-          "tree_id": "11fca9a9677900043faa687330466c9f2f84bbef",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/798c82fefe5ecaddabb54f5d222eb7052e078f16"
-        },
-        "date": 1784177379383,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2131496,
-            "range": "± 56582",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2529331,
-            "range": "± 30433",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 284161,
-            "range": "± 3635",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 310167,
             "range": "± 9877",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0c14e8f15a38f4ced0a5f3bf5a9f5c96cfcb3702",
+          "message": "feat: help chat, a11y lint over the design system, orphan copy cleanup and the mcp residuals (#1101)\n\n* feat: hybrid help search command with a text-hash vector cache\n\nhelp_search retrieves the best help entries for a question with the shipped\nretrieval stack (ephemeral FTS5 lexical arm, dense cosine arm, reciprocal-rank\nfusion). The renderer sends the active locale's entries per request, so no\ntranslation bundle is baked into the binary. The dense arm runs only under the\nsemantic-scoring opt-in and degrades honestly; one embedding-config snapshot\nfeeds both the daily-ceiling charge and the embed call; entry vectors are\ncached by text hash in a new help_vectors table that factory reset and an\nembedding-space change both clear. The policy row is Irreversible for the same\nreason the postings search's is. A lexical eval over the real corpus asserts\nten contested phrasings reach their entry in the top three.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: answer mcp pings and local tools while a bridge call is in flight\n\nThe serve loop becomes one reader, one dispatcher and one writer over a\nchannel: bridge-backed tool calls still run single-flight in input order\nthrough one worker, while ping, initialize, tools/list and every local tool are\nanswered immediately from the writer thread. EOF drains queued calls; a write\nerror still ends the server with exit 0. The irreversible confirm path gains a\npure core so match, mismatch and unavailable proof are tested, including that\na mismatch never dispatches.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: help chat on the support page over the shipped corpus\n\nAsk a question and get a grounded, streamed answer: the page's own entries are\nsent for retrieval, the top hits are rendered as trusted app copy, and the\nquestion, chat history and a capped glance of the user's data are fenced as\nuntrusted text with every fence tag neutralised. The keyword-only mode is\nsurfaced when semantic scoring is off. Also removes the thirteen orphaned\ndashboard translation leaves and adds the clear-location label the hoisted\nLocationInput control needs.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: keyboard-reachable ui primitives and the a11y lint over packages/ui\n\nThe advisory jsx-a11y job linted only the renderer. It now covers packages/ui\nwith two scoped, reasoned overrides, and the real defects it surfaced are\nfixed: a clear control nested inside another button, a clickable tag with no\nrole or key handling, an hrefless anchor, composite containers in the tab\norder, and mouse-only image panning.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: describe the dashboard the landing architecture map actually ships\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: record adr-043 and resync adr-040/041/042 for the help chat and mcp changes\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* refactor: move the agent-cli policy types out of the table module\n\npolicy.rs sat one line under the R8 cap after the help_search row. The\ntypes and the classification rules move to policy/types.rs, re-exported so\nevery import path is unchanged; the POLICY table itself is byte-identical.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: pin sentry log and metric pipelines off without the deprecated options\n\nMain's sentry patch bump deprecated enable_logs and enable_metrics; the\nfirst only governs integrations this build never installs and the second is\na no-op. Both calls go, and the privacy property moves to three static legs:\nthe feature gate in the manifest, an empty integrations list, and an egress\nscan for any capture call site.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: rank help questions by term overlap and bound the dense arm and its cache\n\nThe help arm inherited the postings search's implicit AND, so a full-sentence\nquestion matched nothing on a default install; it now ORs its terms so BM25\nranks by overlap, and the eval carries chat-shaped sentences that fail under\nAND. The dense arm stops on the dense-arm deadline and reports unavailable\nwhen it could not pair every entry; cache-miss embeds are capped per request\nand help_vectors joins the prune sweep, so an agent-tier caller cannot grow\nthe table without bound. Both spend-charging policy rows now carry the\nweak-proof flag the table's doctrine asks for.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: bound the mcp call queue and the drain after eof\n\nThe reader/dispatcher split had replaced the pipe's backpressure with\nunbounded channels. The bridge-call queue is now bounded and a call that\narrives while it is full is refused with a server_busy sentinel; after EOF the\nloop drains under one absolute deadline and exits even if calls remain.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help chat states, prompt markers and primitive targets from review\n\nThe chat card's source chips ellipsize on a block label, the streamed answer\nno longer scroll-hijacks the page, one always-mounted live region announces\nthinking, errors and answers without re-reading the previous reply, muted text\nmeets the small-text contrast floor, a failed question keeps its text and\noffers retry, and the component now has a render test per state. The prompt\ndefuses forged section markers and sizes cloud models correctly; the recent\napplication list leaves the machine only for application questions and the\nglance is fetched inside send. Tag, MarkdownMessage, LocationInput and\nImagePreview take the reviewers' target-size, inline-flow and focus fixes.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: resync adr-040 and adr-043 for the review-round changes\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: bound the mcp reader queue and index the help vector sweep\n\nThe reader-to-writer event channel was still unbounded, so a client that\nstopped draining stdout could grow the process; it is now a bounded channel\nthe reader blocks on. The help_vectors migration gains the created_at index\nthe row-cap sweep is written for, the cache docs carry the concurrency\ncaveat, and the retrieval eval records its top-two rate against the smallest\nproduction limit.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help chat single-flight, lightbox focus restore and primitive nits\n\nStop no longer re-enables Ask while retrieval is still running, a new run\naborts the controller it replaces, and both are pinned by tests along with\nthe shared-query-key claim of the glance fetch. The image lightbox restores\nfocus to its opener on close, the markdown anchor carries noreferrer, and the\ncomposite containers that gained a programmatic tab stop do not paint a ring\non a mousedown in their gaps.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: name the three help-vector bounds and the concurrency caveat in adr-043\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: guard markdown link schemes in the shape static analysis recognises\n\nCodeQL flagged the anchor href as DOM text reinterpreted as HTML: the user's\nown editor text flows into a markdown link and a regex on a trimmed copy is\nnot a barrier its taint model tracks. The same allowlist is now a startsWith\ncheck on the exact string that reaches the attribute.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help dense-arm completeness after ranking and bounded mcp shutdown replies\n\nThe completeness check now compares the ranked count, so a degenerate vector\ncan no longer yield a partial ranking reported as hybrid; the per-request\nembed cap is asserted against the real corpus; the semantic-scoring gate has\na source guard; single-character CJK tokens survive the OR query. In the MCP\nloop a call the worker would start after EOF without budget to finish is\nanswered with a shutting_down sentinel instead of being abandoned, every\nearly exit sets the abandoned flag, and the drain-deadline test gains an\norder of magnitude of scheduling slack.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: markdown links safe on any click, help glance tolerant of one failed read\n\nThe scheme allowlist is a startsWith check on the string that reaches href,\nthe form static analysis recognises, and a middle-click is cancelled too.\nChat history keeps its newest turns when trimmed and indented forged markers\nare defused. Text typed while an answer streams survives; the glance reads\nsettle independently and an unavailable source is omitted rather than read\nas zero; the lightbox traps focus with the house hook and dialog shells keep\ntheir focus indicator; the API page's TSDoc is pointers only.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: record the rewritten mcp loop's real-binary smoke in adr-040\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
+          "timestamp": "2026-09-03T01:27:51+02:00",
+          "tree_id": "2ade35a4059dc96a7cd540b300d115b37ba9218c",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0c14e8f15a38f4ced0a5f3bf5a9f5c96cfcb3702"
+        },
+        "date": 1788393130588,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2377360,
+            "range": "± 19475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2888603,
+            "range": "± 25843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 259993,
+            "range": "± 4617",
             "unit": "ns/iter"
           }
         ]
