@@ -150,7 +150,7 @@ A reasoning model spends its thinking out of the **same output budget** as the a
 - asks for the **cheapest reasoning tier the resolved model actually lists**, and sends no effort at all when it lists none ([`Completer::low_effort`](../../apps/desktop/src-tauri/src/pipeline/mod.rs) → `low_effort_level`);
 - retries **exactly once**, at `ANSWER_ASSIST_RETRY_MAX_TOKENS`, on the single predicate [`is_empty_answer_length_cut`](../../apps/desktop/src-tauri/src/commands/ai_provider/stream.rs) — no other failure retries, and a request cancelled between the attempts is not paid for.
 
-Both attempts share one request-wide `DRAFT_CAP` accountant and emit **one** `assist.done`; the retry contributes only its own tail to the draft.
+Each attempt gets its own `DRAFT_CAP` window over one append-only buffer (so the wire is bounded by two attempts, never more), the request emits **one** `assist.done`, and the retry contributes only its own tail to the draft.
 
 ## Store policy
 
