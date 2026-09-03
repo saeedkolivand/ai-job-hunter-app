@@ -166,6 +166,42 @@ fn assist_prompt_for_mode_selects_rewrite_system_for_rewrite() {
     assert_ne!(system, ANSWER_ASSIST_SYSTEM);
 }
 
+// ── the compose budgets vs Anthropic's classic-thinking gate ──────────────
+
+/// The one cross-module relationship these budgets were SIZED by: on a
+/// classic-thinking Claude model, `build_chat_stream_body` switches extended
+/// thinking on once `max_tokens` reaches its threshold and then adds a
+/// thinking budget on top. The first attempt must stay under it — this path
+/// exists to buy LESS reasoning, and crossing the gate also forces
+/// `temperature` to 1.0 — while the ONE retry deliberately crosses it,
+/// because that attempt only happens after a model proved it needs room to
+/// think AND answer, which is exactly what classic mode then budgets
+/// separately.
+///
+/// Asserted against the provider's own predicate rather than a re-typed 2048,
+/// so the two can never drift apart silently (the threshold is Anthropic's,
+/// not ours).
+///
+/// Mutation check (executed): set `ANSWER_ASSIST_MAX_TOKENS` to 2048 — the
+/// first assertion fails.
+#[test]
+fn the_compose_budget_stays_under_anthropics_classic_thinking_gate() {
+    use crate::commands::ai_provider::classic_thinking_engages;
+
+    assert!(
+        !classic_thinking_engages(ANSWER_ASSIST_MAX_TOKENS),
+        "the first attempt must not switch Anthropic classic extended \
+         thinking on — this path is here to buy LESS reasoning"
+    );
+    assert!(
+        classic_thinking_engages(ANSWER_ASSIST_RETRY_MAX_TOKENS),
+        "the retry crossing the gate is the one DELIBERATE exception (see \
+         ANSWER_ASSIST_RETRY_MAX_TOKENS' doc): it runs only after the model \
+         spent the whole first budget thinking, so on Anthropic it wants the \
+         separately-budgeted thinking the gate turns on"
+    );
+}
+
 // ── validate_rewrite_fields (limiter-ordering fix — a PURE function, no
 // Limiter/AppHandle reachable from it at all, so calling it BEFORE
 // `resolve_answer_assist` acquires the `ai_research` limiter structurally
@@ -960,7 +996,11 @@ impl DraftComposer for FakeComposer<'_> {
         self.wanted
     }
 
-    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<String> {
+    fn drafted(&self) -> &str {
+        &self.forwarded
+    }
+
+    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<()> {
         self.attempts.push((max_tokens, effort.map(str::to_string)));
         let index = self.attempts.len() - 1;
         let slot = self
@@ -988,8 +1028,7 @@ impl DraftComposer for FakeComposer<'_> {
             )
             .await;
         }
-        outcome?;
-        Ok(self.forwarded.clone())
+        outcome
     }
 
     async fn finish(&mut self) {
@@ -1119,6 +1158,12 @@ async fn compose_with_length_retry_sends_exactly_one_assist_done_after_every_chu
 /// `DRAFT_CAP` bounds the REQUEST, not one attempt. Attempt 1 here both
 /// forwards text AND ends as an empty length cut — see [`FakeAttempt`].
 ///
+/// The returned draft is the retry's OWN tail (see
+/// [`compose_with_length_retry_returns_only_the_successful_attempts_text`]),
+/// so what pins the shared cap here is the wire total: attempt 1 spent all
+/// but 10 chars of the request's budget, so the retry's 100-char answer can
+/// only reach the client clamped to those 10.
+///
 /// Mutation check (executed): give `compose` a fresh `String::new()` buffer
 /// per attempt (the pre-fix per-call `accumulated`) and both assertions fail
 /// — the request forwards `DRAFT_CAP + 100` chars.
@@ -1143,9 +1188,9 @@ async fn compose_with_length_retry_bounds_the_forwarded_answer_across_both_attem
     .expect("the retry succeeds");
 
     assert_eq!(
-        text.chars().count(),
-        DRAFT_CAP,
-        "the two attempts share ONE cap — never one each"
+        text,
+        "y".repeat(10),
+        "the retry's own text, and only what the SHARED cap still had room for"
     );
     let forwarded: usize = sink
         .sent
@@ -1156,6 +1201,61 @@ async fn compose_with_length_retry_bounds_the_forwarded_answer_across_both_attem
     assert_eq!(
         forwarded, DRAFT_CAP,
         "and the CLIENT is sent no more than the cap either"
+    );
+}
+
+/// The buffer the two attempts share is the request's cap ACCOUNTANT, never
+/// its result: the draft returned is the text of the attempt that SUCCEEDED,
+/// alone. Attempt 1 here forwards visible prose and STILL ends as the empty
+/// length cut — the local-model shape where reasoning arrives as ordinary
+/// inline `<think>` text, so `forward_chunk` forwards it (it only filters
+/// `thinking == Some(true)`) while the provider's answer accumulator strips
+/// it back to empty. Returning the whole buffer would hand the popup that
+/// discarded reasoning glued in front of the retry's answer, and "Accept"
+/// pastes the result into a real form field.
+///
+/// Mutation check (executed): return the whole shared buffer from
+/// `compose_attempts` (`Ok(round.drafted().to_string())`, the pre-fix shape)
+/// and this test fails — the draft comes back with the reasoning prefix.
+#[tokio::test]
+async fn compose_with_length_retry_returns_only_the_successful_attempts_text() {
+    // Multi-byte on purpose: the tail is cut at a BYTE offset of a buffer that is
+    // only ever clamped by CHARS, so an ASCII fixture would not exercise the seam.
+    const THOUGHT: &str = "<think>Réfléchissons — l'utilisateur veut une réponse courte 🤔";
+    const ANSWER: &str = "Bonjour, ça va très bien 🙂";
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![streams_then_fails(THOUGHT, length_cut()), streams(ANSWER)],
+        &mut sink,
+    );
+
+    let text = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(
+        text, ANSWER,
+        "the draft is the retry's answer alone — a failed attempt's forwarded \
+         text must never ride back with it"
+    );
+    // …while the failed attempt's chars are still SPENT: they went out on the
+    // wire as `assist.chunk` frames, so the shared cap must keep counting
+    // them (that is why the buffer spans attempts at all). Both halves of the
+    // fix in one assertion pair: share the counter, not the content.
+    assert!(
+        round.drafted().starts_with(THOUGHT) && round.drafted().ends_with(ANSWER),
+        "the cap accountant keeps BOTH attempts, got {:?}",
+        round.drafted()
+    );
+    assert_eq!(
+        round.drafted().chars().count(),
+        THOUGHT.chars().count() + ANSWER.chars().count(),
+        "and it is the sum of the two attempts, still bounded by DRAFT_CAP"
     );
 }
 

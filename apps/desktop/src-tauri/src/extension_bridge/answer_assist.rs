@@ -215,7 +215,13 @@ pub(super) const DRAFT_CAP: usize = 4_000;
 ///   then adds a thinking budget on top. Crossing that line would make this
 ///   path buy MORE reasoning on Anthropic — the exact opposite of what it is
 ///   here to do (and it forces `temperature` to 1.0 besides). This value sits
-///   below that threshold; see that function for the number itself.
+///   below that threshold; see
+///   [`crate::commands::ai_provider::anthropic::classic_thinking_engages`]
+///   for the number itself. That is a GUARD, not just a pointer — this is
+///   asserted against that predicate by
+///   `tests::the_compose_budget_stays_under_anthropics_classic_thinking_gate`,
+///   so raising it past the gate fails a test rather than silently changing
+///   what Anthropic bills for.
 ///
 /// Reasoning-effort helps from the other side — this path also asks for a
 /// cheap tier when the provider has one
@@ -237,6 +243,14 @@ pub(super) const ANSWER_ASSIST_MAX_TOKENS: u32 = 2_000;
 /// [`ANSWER_ASSIST_MAX_TOKENS`] stays under — this attempt exists precisely
 /// because the model needs more room to think AND answer, and Anthropic's
 /// classic mode budgets the two separately.
+///
+/// That crossing is asserted, not assumed: the same test that pins the first
+/// attempt BELOW
+/// [`crate::commands::ai_provider::anthropic::classic_thinking_engages`]
+/// pins this one ABOVE it, so the one deliberate exception can never be
+/// mistaken for a drifted budget (and shrinking this back under the gate —
+/// which would make the retry buy the same reasoning shape that just failed
+/// — fails there too).
 pub(super) const ANSWER_ASSIST_RETRY_MAX_TOKENS: u32 = DRAFT_CAP as u32;
 
 /// Compile-time guard on the two budgets above — both are relationships
@@ -856,10 +870,20 @@ trait DraftComposer {
     /// [`super::stream::ComposeStream::still_registered`].
     fn still_wanted(&self) -> bool;
 
-    /// Stream one compose attempt and return the answer text accumulated for
-    /// the REQUEST so far (attempts share one `DRAFT_CAP` budget). The error
-    /// is the provider's OWN (unmapped), so the caller can classify it.
-    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<String>;
+    /// The answer text forwarded to the client for this REQUEST so far,
+    /// across every attempt — the shared `DRAFT_CAP` accountant
+    /// ([`super::stream::ComposeStream::forwarded`]). Append-only: every
+    /// attempt pushes onto the end of it and nothing ever rewinds it, which
+    /// is what lets [`compose_attempts`] take a length snapshot before an
+    /// attempt and read back exactly that attempt's own text afterwards.
+    fn drafted(&self) -> &str;
+
+    /// Stream one compose attempt, appending its visible text to
+    /// [`Self::drafted`]. Returns no text of its own: which slice of the
+    /// shared buffer becomes the request's draft is [`compose_attempts`]'
+    /// decision, because only it knows which attempt SUCCEEDED. The error is
+    /// the provider's OWN (unmapped), so the caller can classify it.
+    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<()>;
 
     /// Emit the ONE terminal `assist.done` frame this request owes its
     /// client. Called exactly once, at [`compose_with_length_retry`]'s single
@@ -890,7 +914,10 @@ trait DraftComposer {
 ///   [`super::assist_registry::start_and_register`]).
 /// * **The `DRAFT_CAP` char budget** — carried in
 ///   [`super::stream::ComposeStream::forwarded`], so a retried request can
-///   never forward twice the cap.
+///   never forward twice the cap. That buffer is the request's cap
+///   ACCOUNTANT, not its result: the draft returned is only the tail written
+///   by the attempt that SUCCEEDED (see [`attempt_text`] for why a failed
+///   attempt's forwarded text must never ride along).
 ///
 /// Spend discipline: the first charge is taken OUTSIDE the attempt block, so
 /// a request the daily ceiling refuses outright never emits a terminal frame
@@ -924,8 +951,9 @@ async fn compose_attempts<C: DraftComposer>(
     retry_max_tokens: u32,
     effort: Option<&str>,
 ) -> AppResult<String> {
+    let before_first = round.drafted().len();
     let first = match round.compose(max_tokens, effort).await {
-        Ok(text) => return Ok(text),
+        Ok(()) => return Ok(attempt_text(round.drafted(), before_first)),
         Err(e) => e,
     };
     if !crate::commands::ai_provider::stream::is_empty_answer_length_cut(&first) {
@@ -948,10 +976,36 @@ async fn compose_attempts<C: DraftComposer>(
     // classification above means), so there is nothing dynamic left to say.
     tracing::warn!("answer_assist: retrying after an empty length cut");
     round.charge()?;
+    let before_retry = round.drafted().len();
     round
         .compose(retry_max_tokens, effort)
         .await
-        .map_err(|e| to_draft_failed("compose failed on the retry after an empty length cut", e))
+        .map_err(|e| to_draft_failed("compose failed on the retry after an empty length cut", e))?;
+    Ok(attempt_text(round.drafted(), before_retry))
+}
+
+/// The text ONE attempt appended to the request-wide draft buffer: everything
+/// in `drafted` past the length it had before that attempt ran.
+///
+/// This is the whole reason the retry shares a buffer but not a RESULT. A
+/// first attempt can forward visible text and STILL end as the empty length
+/// cut that triggers the retry — a local model that spells its reasoning as
+/// ordinary inline `<think>` prose emits it as non-thinking deltas, so
+/// `stream::forward_chunk` forwards it (it only filters
+/// `chunk.thinking == Some(true)`) while the provider's own answer
+/// accumulator strips it back to empty. Returning the whole buffer would then
+/// hand the popup that discarded reasoning CONCATENATED with the retry's
+/// answer, and "Accept" pastes it into a real form field. So the attempts
+/// share the CAP ACCOUNTANT, never the content: `drafted` still bounds the
+/// request at `DRAFT_CAP` across both attempts, and only the successful
+/// attempt's own tail is returned.
+///
+/// `start` came from `drafted().len()` on the same append-only buffer, so it
+/// is always a char boundary. The `unwrap_or_default` is the safe direction
+/// if that ever stops being true: an empty draft the popup has nothing to
+/// paste, never someone else's text.
+fn attempt_text(drafted: &str, start: usize) -> String {
+    drafted.get(start..).unwrap_or_default().to_string()
 }
 
 /// The production [`DraftComposer`]: the real daily-ceiling charge and the
@@ -973,9 +1027,12 @@ impl DraftComposer for BridgeComposeRound<'_> {
         self.stream.still_registered()
     }
 
-    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<String> {
-        super::stream::compose_draft_stream(&mut self.stream, max_tokens, effort).await?;
-        Ok(self.stream.forwarded.clone())
+    fn drafted(&self) -> &str {
+        &self.stream.forwarded
+    }
+
+    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<()> {
+        super::stream::compose_draft_stream(&mut self.stream, max_tokens, effort).await
     }
 
     async fn finish(&mut self) {
@@ -1161,8 +1218,9 @@ pub(super) async fn handle_answer_assist(
 /// [`compose_with_length_retry`] retried: the second attempt REBINDS that
 /// same entry to its fresh job rather than minting a new generation (see
 /// [`super::assist_registry::AssistStreamRegistry::register`]), so exactly
-/// one entry, carrying this `gen`, is still what this call frees. An `assist.cancel` landing anywhere in that window
-/// is unaffected: `cancel`/`register` already consume the entry themselves
+/// one entry, carrying this `gen`, is still what this call frees. An
+/// `assist.cancel` landing anywhere in that window is unaffected:
+/// `cancel`/`register` already consume the entry themselves
 /// (`Running` → cancelled + removed, `Pending` → `CancelledEarly` → consumed
 /// by the next `register` call) — `cancel`/`cancel_all` may free the entry
 /// EARLIER than this call, by design, targeting whatever currently holds

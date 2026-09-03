@@ -144,6 +144,25 @@ fn anthropic_supports_thinking(model: &str) -> bool {
         || contains_version_needle(&m, "claude-haiku-4")
 }
 
+/// Whether `max_tokens` is large enough that [`build_chat_stream_body`] turns
+/// **classic** extended thinking ON (on a model
+/// [`anthropic_supports_thinking`] accepts): Anthropic's own "big enough task
+/// to warrant it" heuristic, not a support check. Below it, no `thinking` key
+/// is sent and no budget is added on top of `max_tokens`.
+///
+/// Named (rather than left inline at the one site that branches on it)
+/// because callers OUTSIDE this module size their `max_tokens` against this
+/// threshold and have no other way to say so:
+/// `extension_bridge::answer_assist::ANSWER_ASSIST_MAX_TOKENS` is deliberately
+/// under it (that path wants LESS reasoning, and crossing it would also force
+/// `temperature` to 1.0), while `ANSWER_ASSIST_RETRY_MAX_TOKENS` deliberately
+/// crosses it. Both relationships are asserted against this function by
+/// `extension_bridge::answer_assist::tests`, so raising either budget past
+/// the gate fails a test instead of silently buying more thinking.
+pub(crate) fn classic_thinking_engages(max_tokens: u32) -> bool {
+    max_tokens >= 2048
+}
+
 /// Whether a model should be sent Anthropic's **adaptive** thinking block
 /// (`thinking: {"type":"adaptive","display":"summarized"}`): `claude-opus-4-7`,
 /// `claude-opus-4-8` (adaptive-only per the extended-thinking per-model table),
@@ -615,10 +634,11 @@ fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) ->
     // `max_tokens` alongside the visible response, so `max_tokens` must be
     // inflated to leave room for both.
     //
-    // Classic thinking is gated on `max_tokens >= 2048` (a "big enough task to
-    // warrant it" heuristic, not a support check) — below that, no `thinking`
-    // key is sent and no inflation happens (always safe; a wrongful `thinking`
-    // block 400s the whole generation on classic-only models).
+    // Classic thinking is gated on a minimum `max_tokens`
+    // (`classic_thinking_engages` — a "big enough task to warrant it"
+    // heuristic, not a support check) — below that, no `thinking` key is sent
+    // and no inflation happens (always safe; a wrongful `thinking` block 400s
+    // the whole generation on classic-only models).
     //
     // Adaptive thinking has NO such gate: it's on by default (several models
     // can't even disable it) and always counts toward `max_tokens` regardless
@@ -631,7 +651,7 @@ fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) ->
     // streaming and non-streaming builders share one formula.
     let is_classic = anthropic_supports_thinking(&req.model);
     let is_adaptive = anthropic_uses_adaptive_thinking(&req.model);
-    let classic_thinking_budget = if is_classic && max_tokens >= 2048 {
+    let classic_thinking_budget = if is_classic && classic_thinking_engages(max_tokens) {
         max_tokens / 2
     } else {
         0

@@ -510,6 +510,12 @@ pub(super) struct ComposeStream<'a> {
     /// provider's own answer accumulator strips it
     /// (`commands::ai_provider::stream::strip_think_blocks`), so attempt 1 can
     /// fill this buffer AND still end as an empty length cut.
+    ///
+    /// It is the request's cap ACCOUNTANT, not its result: the draft sent
+    /// back is only the tail written by the attempt that succeeded — see
+    /// [`super::answer_assist::attempt_text`], which is exactly what keeps a
+    /// failed attempt's forwarded prose out of the text "Accept" pastes.
+    /// Append-only for that reason (nothing here ever rewinds it).
     pub(super) forwarded: String,
 }
 
@@ -544,8 +550,9 @@ impl ComposeStream<'_> {
 /// key. See its doc), drives [`Completer::stream_complete`], and forwards
 /// every visible-text delta through `ctx.sink` as a cap-clamped
 /// `assist.chunk` frame (see [`forward_chunk`]), accumulating into
-/// `ctx.forwarded` — which the caller reads for the (unchanged)
-/// `answer.assist.result` terminal reply.
+/// `ctx.forwarded` — from which the caller reads back THIS attempt's own
+/// tail for the `answer.assist.result` terminal reply (see
+/// [`super::answer_assist::attempt_text`]).
 ///
 /// It does NOT send the terminal `assist.done` frame: that is
 /// [`ComposeStream::send_done`], called once per REQUEST at the retry's

@@ -19,6 +19,16 @@ use crate::events::{emit_event, AiStreamChunk, AiStreamChunkError, AI_STREAM};
 pub use crate::ipc_contracts::ai::{AiGenerateRequest, AiGenerateRequestMessage};
 
 mod anthropic;
+/// Re-exported for `extension_bridge::answer_assist`'s budget assertions —
+/// that path sizes its `max_tokens` deliberately below (and its one retry
+/// deliberately above) Anthropic's classic extended-thinking gate, and this
+/// is the only way to say so where a test can check it. Same shape as
+/// `EMBED_BUDGET_ATTEMPTS` below: ONE named item out of a private module,
+/// never the module itself — and `#[cfg(test)]` on top of that, because the
+/// only cross-module reader is that assertion, so the production build's
+/// surface is unchanged.
+#[cfg(test)]
+pub(crate) use anthropic::classic_thinking_engages;
 pub mod cli_agent; // pub: its registry/detection back the CLI-agent health probe
 mod embed; // adaptive chunk-and-mean-pool embedding machinery (R8 split — self-contained subsystem, own tests)
 mod gemini;

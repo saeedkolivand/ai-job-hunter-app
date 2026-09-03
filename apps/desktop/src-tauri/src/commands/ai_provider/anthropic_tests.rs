@@ -551,6 +551,24 @@ fn chat_stream_body_keeps_the_classic_2048_gate_for_classic_models() {
     );
 }
 
+/// The gate's own threshold, pinned at the boundary now that it has a name.
+/// The body-level tests around this one only ever observe 1000 (off) and 4096
+/// (on), so the literal itself was unguarded — mutation-checked: moving it to
+/// `>= 1024` leaves every other test in this file green, and only this one
+/// goes red. Callers outside this module size their budgets against this
+/// number (see [`classic_thinking_engages`]' own doc).
+#[test]
+fn classic_thinking_engages_exactly_at_the_2048_boundary() {
+    assert!(
+        !classic_thinking_engages(2047),
+        "one token below the gate must leave classic thinking off"
+    );
+    assert!(
+        classic_thinking_engages(2048),
+        "the gate engages AT 2048, not above it"
+    );
+}
+
 #[test]
 fn chat_stream_body_sends_adaptive_thinking_for_opus_4_7_and_4_8() {
     for m in ["claude-opus-4-7", "claude-opus-4-8"] {
