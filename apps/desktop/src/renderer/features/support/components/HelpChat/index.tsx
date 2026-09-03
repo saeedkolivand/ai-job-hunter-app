@@ -266,9 +266,23 @@ export function HelpChat({ onSearchFor }: Props) {
           aria-label={t('support.chat.ariaLabel')}
           disabled={!canUse}
           data-testid={TEST_IDS.support.chatInput}
+          // `min-w-0` so the box is the thing that gives way: a flex item's
+          // automatic minimum size is content-based, and a textarea's is its
+          // default column count — without this the row can only balance by
+          // squeezing the button beside it.
+          className="min-w-0"
         />
+        {/* `shrink-0 whitespace-nowrap` on both: the label is one word in
+            English and two in German ("Frage senden"), and a shrinkable button
+            broke it across two lines inside the gradient. The button keeps its
+            natural width and the box above yields the difference. */}
         {streaming ? (
-          <Button variant="default" onClick={stop} data-testid={TEST_IDS.support.chatStop}>
+          <Button
+            variant="default"
+            onClick={stop}
+            data-testid={TEST_IDS.support.chatStop}
+            className="shrink-0 whitespace-nowrap"
+          >
             <Square size={13} />
             {t('support.chat.stop')}
           </Button>
@@ -278,6 +292,7 @@ export function HelpChat({ onSearchFor }: Props) {
             onClick={submit}
             disabled={!canUse || !question.trim()}
             data-testid={TEST_IDS.support.chatAsk}
+            className="shrink-0 whitespace-nowrap"
           >
             <Send size={13} />
             {t('support.chat.ask')}

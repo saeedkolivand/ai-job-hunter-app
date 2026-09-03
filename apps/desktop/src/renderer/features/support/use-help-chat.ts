@@ -308,7 +308,11 @@ export function useHelpChat({ model, canUse }: Params) {
       });
       // The retrieval leg is done, cancellable or not — drop the id so a later
       // Stop/unmount cannot fire a cancel for work that already finished.
-      queryIdRef.current = null;
+      // Guarded exactly like the `finally` below: a SUPERSEDED run resolves
+      // here AFTER the run that replaced it minted its own id, and a bare
+      // clear would wipe that live id and leave the second question
+      // uncancellable. Only the run that owns the ref may clear it.
+      if (queryIdRef.current === queryId) queryIdRef.current = null;
       if (controller.signal.aborted) return false;
 
       const byId = new Map(corpus.map((entry) => [entry.id, entry]));

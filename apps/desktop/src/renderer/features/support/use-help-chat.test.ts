@@ -568,6 +568,51 @@ describe('useHelpChat', () => {
     expect(searchArgAt(search, 1).queryId).not.toBe(first.queryId);
   });
 
+  it('a superseded run settling late leaves the SECOND question cancellable', async () => {
+    // The test above leaves the first leg pending forever, so it cannot see
+    // this: the superseded run only reaches its post-`await` bookkeeping when
+    // it RESOLVES, and that is where an unguarded `queryIdRef.current = null`
+    // wipes the id the replacing run had already minted — silently making the
+    // question the user is actually waiting on uncancellable.
+    let settleFirst: ((value: unknown) => void) | undefined;
+    const search = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            settleFirst = resolve;
+          })
+      )
+      // The second leg stays in retrieval so there is something for `stop()`
+      // to cancel at the moment the first one settles.
+      .mockImplementation(() => new Promise(() => {}));
+    const { result, mock } = render('llama3:70b', { 'help.search': search });
+    const staleSend = result.current.send;
+
+    await act(async () => {
+      void staleSend('first question');
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+    });
+
+    await act(async () => {
+      void staleSend('second question');
+      await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    });
+    const second = searchArgAt(search, 1);
+
+    // The replaced run finishes now — after the supersede, not before.
+    await act(async () => {
+      settleFirst?.({ results: [HIT], mode: 'hybrid', arms: { lexical: 'ran', dense: 'ran' } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    act(() => {
+      result.current.stop();
+    });
+
+    await waitFor(() => expect(mock.jobs.cancel).toHaveBeenCalledWith(second.queryId));
+  });
+
   it('a second question aborts the run it replaces — one assistant turn, not two', async () => {
     const streams: AbortSignal[] = [];
     let releaseFirst: ((value: string) => void) | undefined;

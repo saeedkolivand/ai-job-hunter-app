@@ -264,4 +264,25 @@ describe('HelpChat', () => {
     fireEvent.click(screen.getByTestId(TEST_IDS.support.chatStop));
     expect(stop).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps the Ask/Stop label on ONE line, letting the box give up the width', () => {
+    // The German label is two words ("Frage senden") and broke across two
+    // lines inside the gradient button at the app's default width. jsdom
+    // measures nothing, so what is pinned are the three properties that decide
+    // it: the button neither shrinks nor wraps, and the box CAN shrink (a flex
+    // item's automatic minimum is content-based, which for a textarea is its
+    // default column count).
+    render(<HelpChat onSearchFor={vi.fn()} />);
+    const ask = screen.getByTestId(TEST_IDS.support.chatAsk);
+    expect(ask.className).toContain('whitespace-nowrap');
+    expect(ask.className).toContain('shrink-0');
+    expect(screen.getByTestId(TEST_IDS.support.chatInput).className).toContain('min-w-0');
+
+    // Stop replaces Ask in the same slot, so it needs the same treatment.
+    state({ streaming: true, answer: 'Open the ' });
+    render(<HelpChat onSearchFor={vi.fn()} />);
+    const stopButton = screen.getAllByTestId(TEST_IDS.support.chatStop)[0];
+    expect(stopButton?.className).toContain('whitespace-nowrap');
+    expect(stopButton?.className).toContain('shrink-0');
+  });
 });

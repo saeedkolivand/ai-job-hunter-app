@@ -137,6 +137,19 @@ describe('support corpus / translations parity', () => {
     expect(sections.map((section) => section.id)).toContain('applications');
   });
 
+  it('names the agent-CLI card exactly as Settings labels it, in both locales', () => {
+    // This FAQ answer sends the user to a card BY ITS TITLE, and the help chat
+    // is grounded in that answer — so a rename in Settings would not just make
+    // the entry stale, it would have the assistant repeat a name that is not
+    // on screen anywhere. The title has one home; this pins the copy to it.
+    for (const [locale, bundle] of Object.entries(BUNDLES)) {
+      const title = lookup(bundle, 'settings.developer.agentCli.title');
+      const answer = lookup(bundle, 'support.faq.agentCliQuestions.headlessMode.a');
+      expect(typeof title).toBe('string');
+      expect(`${locale}: ${String(answer)}`).toContain(String(title));
+    }
+  });
+
   it('gives every entry a unique id within its section', () => {
     // The id is the React list key for the accordions, so a duplicate silently
     // drops an entry from the rendered list.
