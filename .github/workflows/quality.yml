@@ -317,6 +317,12 @@ jobs:
   # A debug binary is console-subsystem, so this does NOT prove the release
   # Windows GUI-subsystem stdout path (`platform/windows_console.rs`) — the
   # stdio discipline it proves is the console-subsystem one.
+  #
+  # ADVISORY, like every other extra-signal step in this workflow: a real
+  # regression here fails the gating ubuntu `tests` job too (same test file),
+  # so blocking a PR on the two EXTRA platforms would buy nothing but flake —
+  # this job spawns a child process and drives it over pipes, on the runners
+  # with the least predictable process timing.
   mcp-smoke:
     name: 🔌 MCP stdio smoke (${{ matrix.os }})
     if: github.event_name != 'push'
@@ -337,7 +343,8 @@ jobs:
           fetch-depth: 1
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
-      - name: 🔌 Scripted MCP stdio sessions
+      - name: 🔌 Scripted MCP stdio sessions (advisory)
+        continue-on-error: true
         working-directory: apps/desktop/src-tauri
         run: cargo test --test mcp_smoke --locked
 

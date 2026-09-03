@@ -17,11 +17,16 @@
 //! `platform::windows_console` exists to handle — so the discipline proven
 //! here is the console-subsystem one.
 //!
-//! **Offline, and app-state independent.** Nothing here needs the network. The
-//! bridge-backed tools try a loopback connect to the running app; with the app
-//! CLOSED that fails and the tool result says so, and with the app OPEN the
-//! same call returns real data. Session 2 asserts only what holds either way
-//! — see [`the_app_not_running_session_still_answers_on_the_wire`].
+//! **Offline, and app-state independent — pinned, not hoped for.** Nothing
+//! here needs the network, and nothing here depends on whether the developer
+//! running it happens to have the app open. A bridge-backed tool first reads
+//! the agent-CLI pointer file under the user's home
+//! (`platform::config::agent_pointer_path`) and only then tries a loopback
+//! connect, so its answer is a function of the child's HOME. [`run_session`]
+//! therefore gives every child a fresh EMPTY home dir, which makes the
+//! outcome the same on a CI runner and on a dev box with the app running:
+//! no pointer file, so the refusal is `app_not_located` — see
+//! [`the_unlocatable_app_session_still_answers_on_the_wire`].
 //!
 //! Locally: `cargo test --test mcp_smoke -- --nocapture`.
 
@@ -35,12 +40,13 @@ use serde_json::{json, Value};
 /// How long one whole session may take before the child is killed and the
 /// test fails with whatever it captured.
 ///
-/// Generous on purpose. A bridge-backed tool call with the app closed scans
-/// the app's six loopback ports, and on Windows each refused connect costs
-/// seconds rather than returning instantly — a measured ~12 s for one call
-/// against a sub-second figure elsewhere. This is a watchdog against a WEDGED
-/// child, not a performance assertion; a regression that makes a session
-/// slower is not what it is here to catch.
+/// Generous on purpose, and deliberately NOT retuned now that the pinned
+/// empty home makes these sessions fast (a missing pointer file refuses
+/// before the loopback scan the earlier version paid ~12 s for on Windows).
+/// This is a watchdog against a WEDGED child, not a performance assertion —
+/// a session that gets slower is not what it is here to catch, and a
+/// deadline sized to today's timings would turn a loaded CI runner into a
+/// red build.
 const SESSION_DEADLINE: Duration = Duration::from_secs(90);
 
 /// Poll interval while waiting for the child to exit after its stdout closes.
@@ -74,10 +80,26 @@ struct Session {
 /// [`emit`]-parks-on-a-full-pipe note says so explicitly. The deadline is
 /// enforced on the stdout drain and again on the reap, so neither a wedged
 /// writer nor a child that never exits can hang the suite.
+///
+/// **The child's home dir is PINNED to a fresh empty one** (`HOME` and
+/// `USERPROFILE`, because `platform::config::home_dir` reads `USERPROFILE`
+/// first — setting one of the two would silently lose to the real other on
+/// Windows). Without it this test measures the machine it runs on: with no
+/// pointer file the bridge tools refuse with `app_not_located`, with the app
+/// running they return the developer's real data, and the assertions would
+/// have to accept both. Set on the CHILD's environment only — this process's
+/// own env is untouched, so nothing here races another test.
+///
+/// A `TempDir` rather than a hand-rolled `temp_dir().join(…)`: it is created
+/// empty, is unique per session, and its `Drop` removes it even when an
+/// assertion below panics. Kept alive until the child has exited.
 fn run_session(lines: &[Value]) -> Session {
     let started = Instant::now();
+    let home = tempfile::TempDir::new().expect("a private empty home dir for the child");
     let mut child = Command::new(env!("CARGO_BIN_EXE_ajh-tauri"))
         .args(["agent", "mcp"])
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -139,7 +161,15 @@ fn run_session(lines: &[Value]) -> Session {
             None if started.elapsed() >= SESSION_DEADLINE => {
                 let _ = child.kill();
                 let _ = child.wait();
-                panic!("`agent mcp` closed stdout but never exited; frames were {raw:#?}");
+                // Ids and a count, never bodies: a frame body is whatever the
+                // tool answered with, and this panic text is what lands in a
+                // CI log. The wedged-reap diagnosis needs to know how far the
+                // session got, which the ids say.
+                panic!(
+                    "`agent mcp` closed stdout but never exited; it had written {} frame(s), ids {:?}",
+                    raw.len(),
+                    raw_ids(&raw)
+                );
             }
             None => std::thread::sleep(REAP_POLL),
         }
@@ -159,6 +189,19 @@ fn run_session(lines: &[Value]) -> Session {
         stderr: err_rx.recv_timeout(SESSION_DEADLINE).unwrap_or_default(),
         code,
     }
+}
+
+/// The `id` of each RAW stdout line, best-effort (`None` for a line that is
+/// not a JSON object with a numeric id). The shape a diagnostic may print:
+/// see the reap watchdog above for why a frame BODY may not be.
+fn raw_ids(raw: &[String]) -> Vec<Option<u64>> {
+    raw.iter()
+        .map(|line| {
+            serde_json::from_str::<Value>(line)
+                .ok()
+                .and_then(|frame| frame.get("id").and_then(Value::as_u64))
+        })
+        .collect()
 }
 
 fn request(id: u32, method: &str, params: Value) -> Value {
@@ -269,13 +312,16 @@ fn the_recorded_handshake_session_answers_one_frame_per_request_in_order() {
 /// after it. The interesting property is that the reply is still written
 /// during the EOF drain rather than being lost to the shutdown.
 ///
-/// The reply's CONTENT depends on whether this machine happens to have the
-/// app running: closed, the bridge scan fails and the tool result is an error
-/// naming `app_not_running`; open, the same call returns a real profile. Both
-/// are correct, so the assertions cover what holds either way, and the
-/// error's text is only checked when the call actually errored.
+/// The refusal is `app_not_located`, not `app_not_running`, and that is a
+/// PINNED outcome rather than an observation about the host: [`run_session`]
+/// gives the child an empty home dir, so `read_agent_pointer` finds no
+/// pointer file and `extension_bridge::agent_cli` reports the two cases
+/// apart exactly as its own doc requires — "the app has never launched"
+/// is not "the app is not running". Every CI runner is in that state
+/// naturally; a dev box with the app open is put in it by the pinned home,
+/// which is why this asserts ONE outcome instead of accepting either.
 #[test]
-fn the_app_not_running_session_still_answers_on_the_wire() {
+fn the_unlocatable_app_session_still_answers_on_the_wire() {
     let session = run_session(&[initialize(1), tool_call(2, "profile")]);
 
     assert_eq!(
@@ -287,17 +333,19 @@ fn the_app_not_running_session_still_answers_on_the_wire() {
 
     let call = &session.frames[1];
     let text = result_text(call);
-    if call.pointer("/result/isError").and_then(Value::as_bool) == Some(true) {
-        assert!(
-            text.contains("app_not_running"),
-            "with the app closed, the refusal must name the reason: {text}"
-        );
-    } else {
-        assert!(
-            !text.is_empty(),
-            "with the app running, the tool result must carry real content: {call}"
-        );
-    }
+    // The frame BODY is deliberately not in this message: if the home pin ever
+    // stops working, the value this assertion sees is the developer's real
+    // profile — and this text goes to a CI log (same reason as the reap
+    // watchdog above). The boolean it compares is the whole finding.
+    assert_eq!(
+        call.pointer("/result/isError").and_then(Value::as_bool),
+        Some(true),
+        "with no pointer file under the child's home, a bridge-backed tool must REFUSE"
+    );
+    assert!(
+        text.contains("app_not_located"),
+        "…and the refusal must name the pointer file, not the connection: {text}"
+    );
 
     assert_eq!(session.stderr, "", "stderr must stay empty");
     assert_eq!(session.code, Some(0), "a clean EOF is exit 0");
