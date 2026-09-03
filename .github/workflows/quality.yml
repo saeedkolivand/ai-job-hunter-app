@@ -303,6 +303,44 @@ jobs:
         working-directory: apps/desktop/src-tauri
         run: cargo test --lib postings::test::save_replaces_the_file_atomically_and_leaves_no_temp_file --locked
 
+  # ── MCP stdio smoke (PR + manual; never on push-to-main) ─────────────────────
+  # ADR-040 named macOS/Linux smoke of `ajh-tauri agent mcp` as its open gap.
+  # LINUX IS NOT IN THIS MATRIX ON PURPOSE: `tests/mcp_smoke.rs` is an ordinary
+  # integration test, so the gating ubuntu `tests` job in ci-pipeline.yml
+  # already runs it. This job adds the two platforms nothing else executes on.
+  #
+  # Unlike the two compile-check jobs above, this one LINKS the binary
+  # (`CARGO_BIN_EXE_ajh-tauri`), which is why it gets its own timeout rather
+  # than sharing theirs. It needs no frontend dist: a debug build is dev-mode,
+  # and tauri-codegen embeds empty assets when a devUrl is configured.
+  #
+  # A debug binary is console-subsystem, so this does NOT prove the release
+  # Windows GUI-subsystem stdout path (`platform/windows_console.rs`) — the
+  # stdio discipline it proves is the console-subsystem one.
+  mcp-smoke:
+    name: 🔌 MCP stdio smoke (${{ matrix.os }})
+    if: github.event_name != 'push'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
+      - name: 🔌 Scripted MCP stdio sessions
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --test mcp_smoke --locked
+
   # ── Rust test-quality (PR + manual; never on push-to-main) ───────────────────
   cargo-hack:
     name: 🦀 Feature combinations
