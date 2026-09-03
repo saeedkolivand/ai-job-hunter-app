@@ -7,13 +7,14 @@
  *  2. Clicking the button, saving a destination, and a successful export
  *     surfaces the success notification (re-namespaced i18n key).
  */
+import { Bug } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { NotificationProvider } from '@ajh/ui';
+import { NotificationProvider, SettingsSection } from '@ajh/ui';
 
 import { AppClientProvider } from '@/providers/AppClientProvider';
 import { createMockClient, makeQueryClient } from '@/test-support';
@@ -124,5 +125,23 @@ describe('DeveloperPreferences — export diagnostics', () => {
       expect(screen.getByText('Diagnostics export failed.')).toBeInTheDocument();
     });
     expect(mockRevealItemInDir).not.toHaveBeenCalled();
+  });
+
+  it('renders its header through the shared SettingsSection chrome', () => {
+    // This card and the agent-CLI card stack in the same column, so their
+    // headers have to be the SAME object, not two that currently look alike.
+    // Comparing against a freshly-rendered `SettingsSection` pins that without
+    // naming a single class: hand-rolling the header again fails here whatever
+    // classes the copy happens to use.
+    const { unmount } = renderDeveloperPreferences();
+    const actual = screen.getByText('Developer Tools').parentElement?.outerHTML;
+    unmount();
+
+    render(
+      <SettingsSection icon={Bug} label="Developer Tools">
+        {null}
+      </SettingsSection>
+    );
+    expect(actual).toBe(screen.getByText('Developer Tools').parentElement?.outerHTML);
   });
 });

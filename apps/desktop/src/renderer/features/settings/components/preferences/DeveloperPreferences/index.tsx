@@ -3,7 +3,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, GlassCard, SectionLabel, Switch, useNotification } from '@ajh/ui';
+import { Button, SettingsSection, Switch, useNotification } from '@ajh/ui';
 
 import { useExportDiagnostics, useOpenDevtools } from '@/services';
 import { useDebugMode, usePreferencesStore } from '@/store/preferences-store';
@@ -42,12 +42,11 @@ export function DeveloperPreferences() {
   };
 
   return (
-    <GlassCard>
-      <div className="mb-4 flex items-center gap-2">
-        <Bug size={15} className="text-foreground/50" />
-        <SectionLabel>{t('settings.developer.title')}</SectionLabel>
-      </div>
-
+    // `SettingsSection` rather than a hand-rolled `GlassCard` + header: this
+    // card and the agent-CLI card below it stack in the same column, and two
+    // different header treatments (bare icon vs `IconBadge`) read as two
+    // different kinds of thing.
+    <SettingsSection icon={Bug} label={t('settings.developer.title')}>
       <div className="space-y-3">
         {/* Debug mode toggle */}
         <Switch
@@ -83,6 +82,6 @@ export function DeveloperPreferences() {
           </Button>
         </div>
       </div>
-    </GlassCard>
+    </SettingsSection>
   );
 }

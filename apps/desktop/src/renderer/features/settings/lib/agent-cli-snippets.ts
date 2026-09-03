@@ -56,6 +56,32 @@ function mcpArgs(tier: AgentCliTier): string[] {
 }
 
 /**
+ * `value` as it goes INSIDE a double-quoted bash/zsh word.
+ *
+ * Exactly three characters keep a special meaning between double quotes there
+ * — `` ` `` (command substitution), `$` (expansion) and `"` (the closing
+ * quote) — and a backslash escapes each of them. A path under `$HOME/bin` or a
+ * directory literally named `My $Money` would otherwise be EXPANDED by the
+ * shell, registering a server at a path that does not exist.
+ *
+ * Backslashes are deliberately left alone. Inside double quotes bash keeps a
+ * backslash literal unless it precedes one of those three characters (or a
+ * newline), so a Windows path survives verbatim — while doubling every
+ * backslash would corrupt the common Windows case to fix nothing on the shells
+ * that need escaping.
+ *
+ * **PowerShell limit:** it also treats `$` and `` ` `` as special inside double
+ * quotes, but its escape character is a BACKTICK, not a backslash. One string
+ * cannot be correct for both, so this one is correct for bash/zsh. A path
+ * containing `$` or a backtick therefore needs hand-editing before it is
+ * pasted into PowerShell — rare in an install path, and the alternative is a
+ * snippet that is wrong on macOS and Linux in order to be right on Windows.
+ */
+function shellDoubleQuoted(value: string): string {
+  return value.replace(/[`$"]/g, '\\$&');
+}
+
+/**
  * The `claude mcp add …` command for one tier, or `null` when the path is
  * unknown (rendering the command with an empty path would produce a line that
  * looks copyable and silently registers nothing).
@@ -63,6 +89,7 @@ function mcpArgs(tier: AgentCliTier): string[] {
  * The path is wrapped in DOUBLE quotes: the default install directory contains
  * a space on Windows and macOS, and a double-quoted Windows path survives
  * bash, PowerShell and cmd alike — a single-quoted one does not survive cmd.
+ * What the quotes do NOT neutralise is escaped by {@link shellDoubleQuoted}.
  */
 export function buildClaudeCodeSnippet(exePath: string | null, tier: AgentCliTier): string | null {
   if (!exePath) return null;
@@ -70,7 +97,7 @@ export function buildClaudeCodeSnippet(exePath: string | null, tier: AgentCliTie
     'claude mcp add --scope user',
     CLAUDE_SERVER_NAME[tier],
     '--',
-    `"${exePath}"`,
+    `"${shellDoubleQuoted(exePath)}"`,
     ...mcpArgs(tier),
   ].join(' ');
 }

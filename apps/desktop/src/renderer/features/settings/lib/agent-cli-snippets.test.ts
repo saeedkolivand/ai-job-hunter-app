@@ -34,6 +34,34 @@ describe('buildClaudeCodeSnippet', () => {
     );
   });
 
+  it('escapes a $ so the shell cannot expand part of the path away', () => {
+    // `/opt/$USER/…` unescaped becomes `/opt/saeed/…` (or `/opt//…` when the
+    // variable is unset) by the time `claude` sees it — a server registered at
+    // a path that does not exist, with no error at paste time.
+    expect(buildClaudeCodeSnippet('/opt/$USER/ajh-tauri', 'read')).toBe(
+      'claude mcp add --scope user ai-job-hunter -- "/opt/\\$USER/ajh-tauri" agent mcp'
+    );
+  });
+
+  it('escapes a backtick so the shell cannot run part of the path as a command', () => {
+    expect(buildClaudeCodeSnippet('/opt/a`b`c/ajh-tauri', 'read')).toBe(
+      'claude mcp add --scope user ai-job-hunter -- "/opt/a\\`b\\`c/ajh-tauri" agent mcp'
+    );
+  });
+
+  it('escapes a double quote so the path cannot close its own quoting', () => {
+    expect(buildClaudeCodeSnippet('/opt/a"b/ajh-tauri', 'read')).toBe(
+      'claude mcp add --scope user ai-job-hunter -- "/opt/a\\"b/ajh-tauri" agent mcp'
+    );
+  });
+
+  it('leaves backslashes ALONE — doubling them would corrupt every Windows path', () => {
+    // Inside double quotes bash keeps a backslash literal unless it precedes
+    // one of the three characters above, so the Windows case needs no help;
+    // "escape everything" is what would break it.
+    expect(buildClaudeCodeSnippet(WINDOWS_PATH, 'read')).not.toContain('\\\\');
+  });
+
   it('is null when the path is unknown — never a command with an empty path', () => {
     expect(buildClaudeCodeSnippet(null, 'read')).toBeNull();
   });

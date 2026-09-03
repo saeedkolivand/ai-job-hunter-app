@@ -594,9 +594,12 @@
         "pathLabel": "Path to the binary",
         "copyPath": "Copy",
         "pathUnavailable": "The path to this binary could not be resolved. The file ~/.ajh-agent/agent.json, written on every launch, holds it.",
+        "pathErrorTitle": "Could not read the binary path",
+        "pathErrorDesc": "Try again, or read it from ~/.ajh-agent/agent.json, which is rewritten on every launch.",
         "copied": "Copied to the clipboard.",
         "copyFailed": "Could not copy to the clipboard.",
         "tierLabel": "Access tier",
+        "tierHint": "Choosing a tier only rewrites the commands below. Access is granted when you run one.",
         "tiers": {
           "read": {
             "label": "Read-only",
@@ -608,7 +611,7 @@
           },
           "irreversible": {
             "label": "Irreversible",
-            "description": "May also spend AI budget and delete data, and asks you to confirm before every such call."
+            "description": "May also spend AI budget and delete data. Each such call is gated by a proof-of-read step the agent must perform first; the app does not prompt you."
           }
         },
         "claudeLabel": "Claude Code",
@@ -2954,7 +2957,7 @@
       "agentCliQuestions": {
         "headlessMode": {
           "q": "Can I use the app from a terminal or from Claude Code or Codex?",
-          "a": "Yes. The desktop binary doubles as a command-line client: run it with agent as the very first argument, for example agent --help, and it prints the available verbs instead of opening the app window. Any other first argument just launches the normal desktop window. Claude Code and Codex can attach to that same binary as an MCP server; it is read-only by default and only opens write tiers if you register it with one of the write flags. The project README's CLI agent section has the exact registration commands, and Settings → Developer shows the path to this binary plus ready-to-copy registration commands for Claude Code and Codex. Most calls reach the running app, so keep AI Job Hunter open."
+          "a": "Yes. The desktop binary doubles as a command-line client: run it with agent as the very first argument, for example agent --help, and it prints the available verbs instead of opening the app window. Any other first argument just launches the normal desktop window. Claude Code and Codex can attach to that same binary as an MCP server; it is read-only by default and only opens write tiers if you register it with one of the write flags. Settings → Developer → “Agent & MCP access” shows the path to this binary with Copy buttons for the Claude Code registration command and for the Codex config snippet, and the tier picker there rewrites both — read-only unless you pick a write tier before copying. You run the Claude Code command in a terminal, not inside Claude Code; the project README's CLI agent section covers the same ground. Most calls reach the running app, so keep AI Job Hunter open."
         }
       },
       "privacy": "Privacy & Data",
