@@ -569,6 +569,43 @@ fn classic_thinking_engages_exactly_at_the_2048_boundary() {
     );
 }
 
+/// The one cross-module relationship the extension bridge's compose budgets
+/// were SIZED by, asserted HERE — next to the predicate they are sized
+/// against — rather than in that module, so no test-only re-export of this
+/// gate has to exist for it: on a classic-thinking Claude model,
+/// `build_chat_stream_body` switches extended thinking on once `max_tokens`
+/// reaches the gate and then adds a thinking budget on top. The bridge's
+/// first attempt must stay under it — that path exists to buy LESS reasoning,
+/// and crossing the gate also forces `temperature` to 1.0 — while its ONE
+/// retry deliberately crosses it, because that attempt only happens after a
+/// model proved it needs room to think AND answer, which is exactly what
+/// classic mode then budgets separately.
+///
+/// Asserted against the predicate rather than a re-typed 2048, so the two can
+/// never drift apart silently (the threshold is Anthropic's, not ours).
+///
+/// Mutation check (executed): set `ANSWER_ASSIST_MAX_TOKENS` to 2048 — the
+/// first assertion fails.
+#[test]
+fn the_extension_bridge_compose_budget_stays_under_the_classic_thinking_gate() {
+    use crate::extension_bridge::answer_assist::{
+        ANSWER_ASSIST_MAX_TOKENS, ANSWER_ASSIST_RETRY_MAX_TOKENS,
+    };
+
+    assert!(
+        !classic_thinking_engages(ANSWER_ASSIST_MAX_TOKENS),
+        "the first attempt must not switch Anthropic classic extended \
+         thinking on — that path is here to buy LESS reasoning"
+    );
+    assert!(
+        classic_thinking_engages(ANSWER_ASSIST_RETRY_MAX_TOKENS),
+        "the retry crossing the gate is the one DELIBERATE exception (see \
+         ANSWER_ASSIST_RETRY_MAX_TOKENS' doc): it runs only after the model \
+         spent the whole first budget thinking, so on Anthropic it wants the \
+         separately-budgeted thinking the gate turns on"
+    );
+}
+
 #[test]
 fn chat_stream_body_sends_adaptive_thinking_for_opus_4_7_and_4_8() {
     for m in ["claude-opus-4-7", "claude-opus-4-8"] {

@@ -166,42 +166,6 @@ fn assist_prompt_for_mode_selects_rewrite_system_for_rewrite() {
     assert_ne!(system, ANSWER_ASSIST_SYSTEM);
 }
 
-// ── the compose budgets vs Anthropic's classic-thinking gate ──────────────
-
-/// The one cross-module relationship these budgets were SIZED by: on a
-/// classic-thinking Claude model, `build_chat_stream_body` switches extended
-/// thinking on once `max_tokens` reaches its threshold and then adds a
-/// thinking budget on top. The first attempt must stay under it — this path
-/// exists to buy LESS reasoning, and crossing the gate also forces
-/// `temperature` to 1.0 — while the ONE retry deliberately crosses it,
-/// because that attempt only happens after a model proved it needs room to
-/// think AND answer, which is exactly what classic mode then budgets
-/// separately.
-///
-/// Asserted against the provider's own predicate rather than a re-typed 2048,
-/// so the two can never drift apart silently (the threshold is Anthropic's,
-/// not ours).
-///
-/// Mutation check (executed): set `ANSWER_ASSIST_MAX_TOKENS` to 2048 — the
-/// first assertion fails.
-#[test]
-fn the_compose_budget_stays_under_anthropics_classic_thinking_gate() {
-    use crate::commands::ai_provider::classic_thinking_engages;
-
-    assert!(
-        !classic_thinking_engages(ANSWER_ASSIST_MAX_TOKENS),
-        "the first attempt must not switch Anthropic classic extended \
-         thinking on — this path is here to buy LESS reasoning"
-    );
-    assert!(
-        classic_thinking_engages(ANSWER_ASSIST_RETRY_MAX_TOKENS),
-        "the retry crossing the gate is the one DELIBERATE exception (see \
-         ANSWER_ASSIST_RETRY_MAX_TOKENS' doc): it runs only after the model \
-         spent the whole first budget thinking, so on Anthropic it wants the \
-         separately-budgeted thinking the gate turns on"
-    );
-}
-
 // ── validate_rewrite_fields (limiter-ordering fix — a PURE function, no
 // Limiter/AppHandle reachable from it at all, so calling it BEFORE
 // `resolve_answer_assist` acquires the `ai_research` limiter structurally
@@ -916,7 +880,7 @@ fn length_cut() -> AppError {
 /// as an empty length cut (a local model that spells its reasoning as
 /// ordinary `<think>` prose gets it forwarded as visible deltas while the
 /// provider's own answer accumulator strips it), which is the case the
-/// request-wide char budget exists for.
+/// per-attempt char budget and the tail slice both exist for.
 struct FakeAttempt {
     delta: String,
     outcome: AppResult<()>,
@@ -948,10 +912,12 @@ fn fails(e: AppError) -> FakeAttempt {
 /// A fake compose round: replays a scripted attempt in order, records the
 /// `(max_tokens, effort)` each one was driven with, counts the daily-ceiling
 /// charges, and forwards each attempt's text through the REAL
-/// `stream::forward_chunk`/`FrameSink` path into ONE shared buffer — so both
-/// "the retry's text reaches the sink" and "`DRAFT_CAP` bounds the REQUEST"
-/// are assertions about the production forwarding code rather than about the
-/// fake. `finish` likewise emits the REAL `assist.done` frame.
+/// `stream::forward_chunk`/`FrameSink` path into ONE shared buffer, under the
+/// `cap_base` the production driver hands it — so "the retry's text reaches
+/// the sink", "each attempt gets its own `DRAFT_CAP`" and "the draft is the
+/// successful attempt's tail" are all assertions about the production
+/// forwarding code and the production driver, not about the fake. `finish`
+/// likewise emits the REAL `assist.done` frame.
 struct FakeComposer<'a> {
     /// One entry per attempt, consumed in order.
     script: Vec<FakeAttempt>,
@@ -1000,7 +966,12 @@ impl DraftComposer for FakeComposer<'_> {
         &self.forwarded
     }
 
-    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<()> {
+    async fn compose(
+        &mut self,
+        max_tokens: u32,
+        effort: Option<&str>,
+        cap_base: usize,
+    ) -> AppResult<()> {
         self.attempts.push((max_tokens, effort.map(str::to_string)));
         let index = self.attempts.len() - 1;
         let slot = self
@@ -1025,6 +996,7 @@ impl DraftComposer for FakeComposer<'_> {
                 "req-1",
                 self.sink,
                 &mut self.forwarded,
+                cap_base,
             )
             .await;
         }
@@ -1155,20 +1127,33 @@ async fn compose_with_length_retry_sends_exactly_one_assist_done_after_every_chu
     );
 }
 
-/// `DRAFT_CAP` bounds the REQUEST, not one attempt. Attempt 1 here both
-/// forwards text AND ends as an empty length cut — see [`FakeAttempt`].
+/// Chars the CLIENT was actually sent, summed off the `assist.chunk` frames —
+/// the wire total, not the fake's own bookkeeping.
+fn forwarded_chars(sent: &[String]) -> usize {
+    sent.iter()
+        .filter_map(|f| serde_json::from_str::<Value>(f).ok())
+        .filter_map(|v| v["payload"]["delta"].as_str().map(|d| d.chars().count()))
+        .sum()
+}
+
+/// `DRAFT_CAP` bounds each ATTEMPT, not the request: the retry gets a full
+/// window of its own, rebased at its own start. Attempt 1 here both forwards
+/// text AND ends as an empty length cut (see [`FakeAttempt`]) — the
+/// local-model shape where reasoning arrives as ordinary inline `<think>`
+/// prose — and it spends all but 10 chars of a cap doing it. Against one
+/// shared window the retry's 100-char answer would come back as a 10-char
+/// stub with `ok: true`: a silently truncated draft, straight into the field
+/// "Accept" pastes.
 ///
-/// The returned draft is the retry's OWN tail (see
-/// [`compose_with_length_retry_returns_only_the_successful_attempts_text`]),
-/// so what pins the shared cap here is the wire total: attempt 1 spent all
-/// but 10 chars of the request's budget, so the retry's 100-char answer can
-/// only reach the client clamped to those 10.
+/// The wire is still bounded, just by two attempts rather than one — see
+/// [`compose_with_length_retry_still_clamps_the_retry_at_one_draft_cap`] for
+/// the other half of that bound.
 ///
-/// Mutation check (executed): give `compose` a fresh `String::new()` buffer
-/// per attempt (the pre-fix per-call `accumulated`) and both assertions fail
-/// — the request forwards `DRAFT_CAP + 100` chars.
+/// Mutation check (executed): pass `0` as the retry's `cap_base` (the pre-fix
+/// shared window) and both assertions fail — the draft is 10 chars and the
+/// wire total is exactly `DRAFT_CAP`.
 #[tokio::test]
-async fn compose_with_length_retry_bounds_the_forwarded_answer_across_both_attempts() {
+async fn compose_with_length_retry_gives_the_retry_a_cap_the_failed_attempt_did_not_spend() {
     let mut sink = RecordingSink::default();
     let mut round = FakeComposer::new(
         vec![
@@ -1189,23 +1174,59 @@ async fn compose_with_length_retry_bounds_the_forwarded_answer_across_both_attem
 
     assert_eq!(
         text,
-        "y".repeat(10),
-        "the retry's own text, and only what the SHARED cap still had room for"
+        "y".repeat(100),
+        "the retry's answer must arrive whole — a failed attempt's spend may \
+         not truncate it"
     );
-    let forwarded: usize = sink
-        .sent
-        .iter()
-        .filter_map(|f| serde_json::from_str::<Value>(f).ok())
-        .filter_map(|v| v["payload"]["delta"].as_str().map(|d| d.chars().count()))
-        .sum();
     assert_eq!(
-        forwarded, DRAFT_CAP,
-        "and the CLIENT is sent no more than the cap either"
+        forwarded_chars(&sink.sent),
+        DRAFT_CAP - 10 + 100,
+        "the wire carries attempt 1's prose plus the retry's whole answer"
     );
 }
 
-/// The buffer the two attempts share is the request's cap ACCOUNTANT, never
-/// its result: the draft returned is the text of the attempt that SUCCEEDED,
+/// The other half of the bound: one attempt still never forwards more than
+/// `DRAFT_CAP` chars, so a retried request is bounded at 2 × `DRAFT_CAP` and
+/// the draft returned is bounded at `DRAFT_CAP` — a rebased window is a FRESH
+/// budget, never an unbounded one.
+///
+/// Mutation check (executed): let a rebased window pass its delta through
+/// unclamped (guard `forward_chunk`'s clamp on `cap_base == 0`) and both
+/// assertions fail — the retry forwards, and returns, `DRAFT_CAP + 50` chars.
+#[tokio::test]
+async fn compose_with_length_retry_still_clamps_the_retry_at_one_draft_cap() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![
+            streams_then_fails("x".repeat(DRAFT_CAP - 10), length_cut()),
+            streams("y".repeat(DRAFT_CAP + 50)),
+        ],
+        &mut sink,
+    );
+
+    let text = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(
+        text.chars().count(),
+        DRAFT_CAP,
+        "the retry's own window is one cap, not two"
+    );
+    assert_eq!(
+        forwarded_chars(&sink.sent),
+        DRAFT_CAP - 10 + DRAFT_CAP,
+        "so the whole request stays under 2 x DRAFT_CAP on the wire"
+    );
+}
+
+/// The buffer the two attempts share is a wire LOG, never the request's
+/// result: the draft returned is the text of the attempt that SUCCEEDED,
 /// alone. Attempt 1 here forwards visible prose and STILL ends as the empty
 /// length cut — the local-model shape where reasoning arrives as ordinary
 /// inline `<think>` text, so `forward_chunk` forwards it (it only filters
@@ -1243,19 +1264,19 @@ async fn compose_with_length_retry_returns_only_the_successful_attempts_text() {
         "the draft is the retry's answer alone — a failed attempt's forwarded \
          text must never ride back with it"
     );
-    // …while the failed attempt's chars are still SPENT: they went out on the
-    // wire as `assist.chunk` frames, so the shared cap must keep counting
-    // them (that is why the buffer spans attempts at all). Both halves of the
-    // fix in one assertion pair: share the counter, not the content.
+    // …while the failed attempt's chars are still THERE: they went out on the
+    // wire as `assist.chunk` frames and the buffer is append-only, which is
+    // what makes the tail slice possible at all. The buffer spans both
+    // attempts; what the client gets back does not.
     assert!(
         round.drafted().starts_with(THOUGHT) && round.drafted().ends_with(ANSWER),
-        "the cap accountant keeps BOTH attempts, got {:?}",
+        "the append-only buffer keeps BOTH attempts, got {:?}",
         round.drafted()
     );
     assert_eq!(
         round.drafted().chars().count(),
         THOUGHT.chars().count() + ANSWER.chars().count(),
-        "and it is the sum of the two attempts, still bounded by DRAFT_CAP"
+        "and it is the sum of the two attempts, each bounded by its own DRAFT_CAP window"
     );
 }
 

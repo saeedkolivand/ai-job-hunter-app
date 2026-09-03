@@ -83,8 +83,9 @@
 //! is per REQUEST, not per attempt: [`compose_with_length_retry`] emits it
 //! exactly once, at its single exit, because the popup drops its chunk
 //! listener the moment it sees one. [`DRAFT_CAP`] (this file) is enforced
-//! LIVE mid-stream by [`super::stream::forward_chunk`] across BOTH attempts,
-//! not just clamped on the terminal string. Every other seam here (the
+//! LIVE mid-stream by [`super::stream::forward_chunk`], per attempt (see
+//! [`ANSWER_ASSIST_RETRY_MAX_TOKENS`] for the resulting two-attempt wire
+//! bound), not just clamped on the terminal string. Every other seam here (the
 //! gate, context resolution, reply shaping) is untouched by rewrite mode
 //! below.
 //!
@@ -228,9 +229,11 @@ pub(super) const DRAFT_CAP: usize = 4_000;
 /// ([`crate::pipeline::Completer::low_effort`]) so less of the budget goes to
 /// thinking in the first place — and [`compose_with_length_retry`] retries
 /// once at [`ANSWER_ASSIST_RETRY_MAX_TOKENS`] when a model still thinks past
-/// it. `pub(super)` — `stream::compose_draft_stream` (after the R8 split) is
-/// now this constant's only reader.
-pub(super) const ANSWER_ASSIST_MAX_TOKENS: u32 = 2_000;
+/// it. `pub(crate)` — [`resolve_answer_assist`] in this file is its only
+/// production reader, passing it down to the stream as a parameter; the gate
+/// assertion lives in `commands::ai_provider::anthropic`'s tests, where the
+/// predicate it is sized against is visible.
+pub(crate) const ANSWER_ASSIST_MAX_TOKENS: u32 = 2_000;
 
 /// The budget the ONE retry in [`compose_with_length_retry`] runs at, after a
 /// model spent all of [`ANSWER_ASSIST_MAX_TOKENS`] thinking and produced no
@@ -244,6 +247,13 @@ pub(super) const ANSWER_ASSIST_MAX_TOKENS: u32 = 2_000;
 /// because the model needs more room to think AND answer, and Anthropic's
 /// classic mode budgets the two separately.
 ///
+/// What one retry costs the wire: each attempt gets its own live `DRAFT_CAP`
+/// char window (based at its own start, so the retry is never clamped by prose
+/// the failed attempt forwarded), and exactly one retry ever runs — so a
+/// request forwards at most 2 × `DRAFT_CAP` chars, while the
+/// `answer.assist.result` it ends with is ONE attempt's text, itself clamped
+/// to `DRAFT_CAP`.
+///
 /// That crossing is asserted, not assumed: the same test that pins the first
 /// attempt BELOW
 /// [`crate::commands::ai_provider::anthropic::classic_thinking_engages`]
@@ -251,7 +261,7 @@ pub(super) const ANSWER_ASSIST_MAX_TOKENS: u32 = 2_000;
 /// mistaken for a drifted budget (and shrinking this back under the gate —
 /// which would make the retry buy the same reasoning shape that just failed
 /// — fails there too).
-pub(super) const ANSWER_ASSIST_RETRY_MAX_TOKENS: u32 = DRAFT_CAP as u32;
+pub(crate) const ANSWER_ASSIST_RETRY_MAX_TOKENS: u32 = DRAFT_CAP as u32;
 
 /// Compile-time guard on the two budgets above — both are relationships
 /// BETWEEN constants, so they are checked where they can never drift rather
@@ -863,27 +873,41 @@ trait DraftComposer {
     /// made. Called once per attempt, BEFORE it — never once per request.
     fn charge(&self) -> AppResult<()>;
 
-    /// Whether this request still owns its registry entry — checked between
-    /// the two attempts, BEFORE the second charge. `false` means the client
-    /// gave up in the window between them (an `assist.cancel`, or the whole
-    /// connection dropping), and the retry must not be paid for. See
+    /// Whether this request's registry entry is still held by this request —
+    /// checked between the two attempts, BEFORE the second charge. `false`
+    /// means something already took the entry away (an `assist.cancel`, or
+    /// the connection's `cancel_all` after the read loop saw the socket go),
+    /// so the retry must not be paid for. A registry read only — nothing here
+    /// watches the transport itself. See
     /// [`super::stream::ComposeStream::still_registered`].
     fn still_wanted(&self) -> bool;
 
     /// The answer text forwarded to the client for this REQUEST so far,
-    /// across every attempt — the shared `DRAFT_CAP` accountant
-    /// ([`super::stream::ComposeStream::forwarded`]). Append-only: every
-    /// attempt pushes onto the end of it and nothing ever rewinds it, which
-    /// is what lets [`compose_attempts`] take a length snapshot before an
-    /// attempt and read back exactly that attempt's own text afterwards.
+    /// across every attempt ([`super::stream::ComposeStream::forwarded`]).
+    /// Append-only: every attempt pushes onto the end of it and nothing ever
+    /// rewinds it, which is what lets [`compose_attempts`] take a length
+    /// snapshot before an attempt and read back exactly that attempt's own
+    /// text afterwards.
     fn drafted(&self) -> &str;
 
     /// Stream one compose attempt, appending its visible text to
-    /// [`Self::drafted`]. Returns no text of its own: which slice of the
-    /// shared buffer becomes the request's draft is [`compose_attempts`]'
-    /// decision, because only it knows which attempt SUCCEEDED. The error is
-    /// the provider's OWN (unmapped), so the caller can classify it.
-    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<()>;
+    /// [`Self::drafted`] and forwarding it live under a `DRAFT_CAP` window
+    /// based at `cap_base` — [`compose_attempts`]' snapshot of
+    /// [`Self::drafted`]`.len()` taken immediately before this call, so each
+    /// attempt is capped on ITS OWN text (a retry is never clamped by what a
+    /// failed attempt spent) and the exact same offset is what
+    /// [`attempt_text`] slices the result back out with.
+    ///
+    /// Returns no text of its own: which slice of the shared buffer becomes
+    /// the request's draft is [`compose_attempts`]' decision, because only it
+    /// knows which attempt SUCCEEDED. The error is the provider's OWN
+    /// (unmapped), so the caller can classify it.
+    async fn compose(
+        &mut self,
+        max_tokens: u32,
+        effort: Option<&str>,
+        cap_base: usize,
+    ) -> AppResult<()>;
 
     /// Emit the ONE terminal `assist.done` frame this request owes its
     /// client. Called exactly once, at [`compose_with_length_retry`]'s single
@@ -912,12 +936,14 @@ trait DraftComposer {
 ///   entry `begin` created, keeping its generation, so `handle_answer_assist`'s
 ///   single `unregister_gen` still frees it (see
 ///   [`super::assist_registry::start_and_register`]).
-/// * **The `DRAFT_CAP` char budget** — carried in
-///   [`super::stream::ComposeStream::forwarded`], so a retried request can
-///   never forward twice the cap. That buffer is the request's cap
-///   ACCOUNTANT, not its result: the draft returned is only the tail written
-///   by the attempt that SUCCEEDED (see [`attempt_text`] for why a failed
-///   attempt's forwarded text must never ride along).
+/// * **The draft buffer** — [`super::stream::ComposeStream::forwarded`],
+///   appended to by both attempts so [`attempt_text`] can slice back the tail
+///   the attempt that SUCCEEDED wrote (a failed attempt's forwarded text must
+///   never ride along into it). The `DRAFT_CAP` char budget itself is NOT
+///   shared: each attempt is capped from its own start offset
+///   ([`DraftComposer::compose`]'s `cap_base`), so a retry is never clamped by
+///   what a failed attempt already spent. The wire stays bounded at attempts ×
+///   `DRAFT_CAP` — at most 2×, one retry.
 ///
 /// Spend discipline: the first charge is taken OUTSIDE the attempt block, so
 /// a request the daily ceiling refuses outright never emits a terminal frame
@@ -952,7 +978,7 @@ async fn compose_attempts<C: DraftComposer>(
     effort: Option<&str>,
 ) -> AppResult<String> {
     let before_first = round.drafted().len();
-    let first = match round.compose(max_tokens, effort).await {
+    let first = match round.compose(max_tokens, effort, before_first).await {
         Ok(()) => return Ok(attempt_text(round.drafted(), before_first)),
         Err(e) => e,
     };
@@ -976,9 +1002,12 @@ async fn compose_attempts<C: DraftComposer>(
     // classification above means), so there is nothing dynamic left to say.
     tracing::warn!("answer_assist: retrying after an empty length cut");
     round.charge()?;
+    // This snapshot is the retry's cap window AND its result slice: attempt
+    // 1's forwarded prose is already spent on the wire, but it was NOT this
+    // answer, so it may neither shrink it nor ride back with it.
     let before_retry = round.drafted().len();
     round
-        .compose(retry_max_tokens, effort)
+        .compose(retry_max_tokens, effort, before_retry)
         .await
         .map_err(|e| to_draft_failed("compose failed on the retry after an empty length cut", e))?;
     Ok(attempt_text(round.drafted(), before_retry))
@@ -995,10 +1024,11 @@ async fn compose_attempts<C: DraftComposer>(
 /// `chunk.thinking == Some(true)`) while the provider's own answer
 /// accumulator strips it back to empty. Returning the whole buffer would then
 /// hand the popup that discarded reasoning CONCATENATED with the retry's
-/// answer, and "Accept" pastes it into a real form field. So the attempts
-/// share the CAP ACCOUNTANT, never the content: `drafted` still bounds the
-/// request at `DRAFT_CAP` across both attempts, and only the successful
-/// attempt's own tail is returned.
+/// answer, and "Accept" pastes it into a real form field. So only the
+/// successful attempt's own tail is returned — and for the same reason `start`
+/// is ALSO the attempt's live cap window ([`DraftComposer::compose`]'s
+/// `cap_base`): text that is not part of the answer must neither ride along
+/// with it nor eat its budget.
 ///
 /// `start` came from `drafted().len()` on the same append-only buffer, so it
 /// is always a char boundary. The `unwrap_or_default` is the safe direction
@@ -1031,8 +1061,13 @@ impl DraftComposer for BridgeComposeRound<'_> {
         &self.stream.forwarded
     }
 
-    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<()> {
-        super::stream::compose_draft_stream(&mut self.stream, max_tokens, effort).await
+    async fn compose(
+        &mut self,
+        max_tokens: u32,
+        effort: Option<&str>,
+        cap_base: usize,
+    ) -> AppResult<()> {
+        super::stream::compose_draft_stream(&mut self.stream, max_tokens, effort, cap_base).await
     }
 
     async fn finish(&mut self) {
