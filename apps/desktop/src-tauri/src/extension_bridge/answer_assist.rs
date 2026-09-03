@@ -113,7 +113,18 @@ pub(crate) const AI_ASSIST_OFF_MESSAGE: &str =
 
 /// Fixed sentinel — the opt-in is on but no usable provider was ever
 /// snapshotted (never configured, or resolution otherwise fails).
-const NO_PROVIDER_MESSAGE: &str = "No AI provider is set up for answer drafting. Open AI Job \
+///
+/// `pub(super)` only so [`super::test`]'s parity test can read it: together
+/// with [`AI_ASSIST_OFF_MESSAGE`] this is one of the TWO refusal sentinels a
+/// client is allowed to RECOGNIZE rather than merely display (ADR-044
+/// decision 8 — the sentinel is the code; there is no `code` field), so both
+/// are mirrored as `EXTENSION_NO_PROVIDER_MESSAGE` /
+/// `EXTENSION_AI_ASSIST_OFF_MESSAGE` in
+/// `packages/shared/src/ipc/extension-protocol-constants.ts` and pinned to
+/// these exact strings by `message_type_constants_match_ts`. Every other
+/// `ok:false` error stays opaque and is rendered verbatim.
+pub(super) const NO_PROVIDER_MESSAGE: &str =
+    "No AI provider is set up for answer drafting. Open AI Job \
      Hunter → Settings → AI, choose a provider, then turn AI answer drafting back on in Settings \
      → Accounts → Browser extension.";
 
@@ -261,6 +272,56 @@ fn parse_mode(payload: &Value) -> AssistMode {
         Some("rewrite") => AssistMode::Rewrite,
         _ => AssistMode::Draft,
     }
+}
+
+/// The picked field's own character limit (`maxChars`, draft mode only —
+/// ADR-044 decision 6), read from the DOM by the extension's scan and
+/// therefore UNTRUSTED like every other field on this frame.
+///
+/// Two different bounds meet on this value and they are NOT the same thing.
+/// The WIRE bound (`ExtensionAnswerAssistRequestSchema` in
+/// `packages/shared/src/ipc/extension-protocol.ts`) pins the SHAPE only, so a
+/// well-behaved client cannot send a float or a negative — but a schema is a
+/// courtesy, never a guarantee, because this frame arrives over a socket the
+/// desktop does not author. The DESKTOP CLAMP is here: anything that is not a
+/// positive JSON integer (a float, a string, a negative, zero, a missing key,
+/// an older extension that never sends it) reads as "no limit" and leaves the
+/// draft path exactly as it was, and an over-large value is reduced to
+/// [`DRAFT_CAP`] — the char cap every returned draft is clamped to anyway, so
+/// a bigger number could never buy a longer answer. Never an error: a bad
+/// limit must degrade to today's behaviour, never refuse a legitimate draft,
+/// which is also why the shared TS constant
+/// (`EXTENSION_ANSWER_ASSIST_MAX_CHARS`, pinned to [`DRAFT_CAP`] by
+/// [`super::test`]) is advertised as a clamp rather than enforced on the wire.
+///
+/// `mode` is a parameter rather than a call-site `if` so the "rewrite mode
+/// IGNORES the field" rule is part of this pure, directly-testable function:
+/// a rewrite already carries its own instruction (which may itself ask for a
+/// length), and its returned text is never verified against a limit.
+///
+/// NOT YET WIRED INTO THE DRAFT PATH — hence the `dead_code` allow, which is
+/// narrowed to non-test builds so a genuinely orphaned helper still shows up
+/// once the caller lands. Stating the limit in the draft prompt and verifying
+/// the returned text against it in code (a single re-ask on overshoot) is
+/// spec item B1, deliberately deferred: it lands inside the very compose /
+/// registry / stream functions PR #1103 rewrites, so it is added on top of
+/// that branch's round machinery instead of forking a second copy. Until then
+/// the parser and the wire field ship on their own and the feature degrades
+/// gracefully — the extension counts the returned text itself.
+#[cfg_attr(not(test), allow(dead_code))]
+fn parse_max_chars(payload: &Value, mode: AssistMode) -> Option<usize> {
+    if mode != AssistMode::Draft {
+        return None;
+    }
+    let requested = payload.get("maxChars")?.as_u64()?;
+    if requested == 0 {
+        return None;
+    }
+    Some(
+        usize::try_from(requested)
+            .unwrap_or(DRAFT_CAP)
+            .min(DRAFT_CAP),
+    )
 }
 
 /// The field's CURRENT text to rewrite (rewrite mode only) — page/user-
@@ -951,3 +1012,135 @@ fn unregister_after_request(
 #[cfg(test)]
 #[path = "answer_assist_tests.rs"]
 mod tests;
+
+/// [`parse_max_chars`] only — kept inline (rather than in the `#[path]`-ed
+/// `answer_assist_tests.rs` above) because it is a pure parser with no
+/// fixtures, and because the sibling file is being rewritten on another
+/// branch; one branch per test, plus the rewrite-mode and absent-key
+/// degradations that keep a bad limit from ever refusing a draft.
+#[cfg(test)]
+mod parse_max_chars_tests {
+    use super::*;
+
+    /// A draft-mode payload carrying whatever `maxChars` value is under test.
+    fn draft_with(max_chars: Value) -> Value {
+        json!({ "question": "Why this role?", "maxChars": max_chars })
+    }
+
+    #[test]
+    fn reads_a_plain_positive_limit() {
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(300)), AssistMode::Draft),
+            Some(300)
+        );
+    }
+
+    #[test]
+    fn accepts_the_draft_cap_itself_unchanged() {
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(DRAFT_CAP)), AssistMode::Draft),
+            Some(DRAFT_CAP)
+        );
+    }
+
+    #[test]
+    fn accepts_a_limit_of_one() {
+        // The smallest legal value: `0` is the "no limit" boundary, not `1`.
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(1)), AssistMode::Draft),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn clamps_an_over_large_limit_to_the_draft_cap() {
+        // The wire deliberately ACCEPTS this value (see the shared schema's
+        // doc) — the reduction happens here, and only here.
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(DRAFT_CAP + 1)), AssistMode::Draft),
+            Some(DRAFT_CAP)
+        );
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(1_000_000)), AssistMode::Draft),
+            Some(DRAFT_CAP)
+        );
+    }
+
+    #[test]
+    fn clamps_the_largest_representable_integer_rather_than_overflowing() {
+        // `u64::MAX` exceeds `usize` on a 32-bit target; the conversion must
+        // fall back to the cap instead of panicking or wrapping.
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(u64::MAX)), AssistMode::Draft),
+            Some(DRAFT_CAP)
+        );
+    }
+
+    #[test]
+    fn reads_zero_as_no_limit() {
+        // Zero is not "an answer of length zero" — it is a client bug or a
+        // field with an empty maxlength attribute. Degrade, never refuse.
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(0)), AssistMode::Draft),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_a_negative_limit() {
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(-1)), AssistMode::Draft),
+            None
+        );
+        assert_eq!(
+            parse_max_chars(&draft_with(json!(-300)), AssistMode::Draft),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_a_non_integer_limit() {
+        for value in [json!(12.5), json!(300.0), json!(-0.5)] {
+            assert_eq!(
+                parse_max_chars(&draft_with(value.clone()), AssistMode::Draft),
+                None,
+                "a non-integer maxChars ({value}) must read as no limit"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_limit_that_is_not_a_number_at_all() {
+        for value in [
+            json!("300"),
+            json!(true),
+            json!(null),
+            json!([300]),
+            json!({}),
+        ] {
+            assert_eq!(
+                parse_max_chars(&draft_with(value.clone()), AssistMode::Draft),
+                None,
+                "a non-numeric maxChars ({value}) must read as no limit"
+            );
+        }
+    }
+
+    #[test]
+    fn reads_an_absent_key_as_no_limit() {
+        // An extension older than the field, or a field with no maxlength.
+        assert_eq!(
+            parse_max_chars(&json!({ "question": "Why this role?" }), AssistMode::Draft),
+            None
+        );
+    }
+
+    #[test]
+    fn ignores_the_field_entirely_in_rewrite_mode() {
+        // Same payload, same valid value, opposite answer: rewrite carries its
+        // own instruction and its output is never measured against a limit.
+        let payload = draft_with(json!(300));
+        assert_eq!(parse_max_chars(&payload, AssistMode::Draft), Some(300));
+        assert_eq!(parse_max_chars(&payload, AssistMode::Rewrite), None);
+    }
+}

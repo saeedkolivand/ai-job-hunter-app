@@ -19,7 +19,10 @@ import {
   ExtensionStatusUpdateResultSchema,
 } from './extension-protocol.js';
 import {
+  EXTENSION_AI_ASSIST_OFF_MESSAGE,
+  EXTENSION_ANSWER_ASSIST_MAX_CHARS,
   EXTENSION_MESSAGE_TYPES,
+  EXTENSION_NO_PROVIDER_MESSAGE,
   HANDSHAKE_TEST_VECTOR,
   handshakeMessage,
 } from './extension-protocol-constants.js';
@@ -721,6 +724,56 @@ describe('ExtensionAnswerAssistRequestSchema', () => {
     expect(() =>
       ExtensionAnswerAssistRequestSchema.parse({ question: 'Why this role?', mode: 'edit' })
     ).toThrow();
+  });
+
+  it('accepts a draft request carrying the field character limit', () => {
+    expect(
+      ExtensionAnswerAssistRequestSchema.parse({ question: 'Why this role?', maxChars: 300 })
+    ).toEqual({ question: 'Why this role?', maxChars: 300 });
+  });
+
+  it('accepts a draft request with no character limit at all', () => {
+    // `maxChars` is optional in BOTH directions: an extension that never
+    // reads a maxlength, and a field that has none, both send nothing.
+    expect(ExtensionAnswerAssistRequestSchema.parse({ question: 'Why this role?' })).toEqual({
+      question: 'Why this role?',
+    });
+  });
+
+  it('accepts a maxChars far above the desktop clamp — the ceiling is not a wire bound', () => {
+    // Two different bounds, and this test is the one that keeps them apart:
+    //   WIRE bound      = the shape only (a positive integer). Enforced here.
+    //   DESKTOP CLAMP   = EXTENSION_ANSWER_ASSIST_MAX_CHARS, applied by the
+    //                     bridge's `parse_max_chars` (Rust-side test:
+    //                     `clamps_an_over_large_limit_to_the_draft_cap`).
+    // A schema `.max()` here would turn "quietly clamped" into "request
+    // refused", so an over-large limit MUST parse. The value survives the
+    // parse un-reduced precisely because the clamp does not live on the wire.
+    const oversized = EXTENSION_ANSWER_ASSIST_MAX_CHARS * 10;
+    expect(
+      ExtensionAnswerAssistRequestSchema.parse({ question: 'Why this role?', maxChars: oversized })
+    ).toEqual({ question: 'Why this role?', maxChars: oversized });
+  });
+
+  it.each([0, -1, -300, 12.5, '300', null, Number.NaN])(
+    'rejects a maxChars that is not a positive integer (%s)',
+    (value) => {
+      expect(() =>
+        ExtensionAnswerAssistRequestSchema.parse({ question: 'Why this role?', maxChars: value })
+      ).toThrow();
+    }
+  );
+});
+
+describe('answer.assist refusal sentinels', () => {
+  it('names where to turn each gate back on', () => {
+    // The gated-off row matches these constants instead of copying the text;
+    // the Rust parity test (`message_type_constants_match_ts`) pins them to
+    // the handler's own consts, so this side only checks they stay two
+    // distinct, actionable strings.
+    expect(EXTENSION_AI_ASSIST_OFF_MESSAGE).toContain('Browser extension');
+    expect(EXTENSION_NO_PROVIDER_MESSAGE).toContain('Settings → AI');
+    expect(EXTENSION_AI_ASSIST_OFF_MESSAGE).not.toBe(EXTENSION_NO_PROVIDER_MESSAGE);
   });
 });
 

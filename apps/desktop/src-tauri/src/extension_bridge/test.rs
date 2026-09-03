@@ -5,7 +5,10 @@
 //! (`packages/shared/src/ipc/extension-protocol-constants.ts`) as text and
 //! asserts every Rust message-type constant in [`super::msg`] appears as the
 //! exact string literal on the TS side. If either side renames a wire `type`
-//! without the other, this fails — the two can't drift.
+//! without the other, this fails — the two can't drift. The same test now
+//! covers the two `answer.assist` refusal sentinels, which a client is
+//! allowed to MATCH rather than merely display, so a one-sided reword of
+//! either string is caught the same way a renamed wire type is.
 
 use super::revoke::{revoke_frames, token_revoked_reply, REVOKE_REQ_ID};
 use super::*;
@@ -64,6 +67,50 @@ fn message_type_constants_match_ts() {
              the Rust msg:: constants drifted from the shared TS EXTENSION_MESSAGE_TYPES"
         );
     }
+
+    // Same shape, second hand-enumerated list: the two `answer.assist` REFUSAL
+    // SENTINELS (ADR-044 decision 8). These are not wire `type`s — they are
+    // fixed `error` TEXT, and the sentinel IS the code (no `code` field was
+    // added), so a client that wants to say WHERE to turn the feature back on
+    // has to match the string. Moving them to the shared TS module pins
+    // nothing by itself; enumerating them HERE is what makes a one-sided
+    // reword fail, exactly like a renamed wire type does above.
+    for literal in [
+        super::answer_assist::AI_ASSIST_OFF_MESSAGE,
+        super::answer_assist::NO_PROVIDER_MESSAGE,
+    ] {
+        let needle = format!("'{literal}'");
+        assert!(
+            ts.contains(&needle),
+            "refusal sentinel {literal:?} (Rust) not found as {needle} in \
+             extension-protocol-constants.ts — the Rust answer_assist sentinels drifted from the \
+             shared TS EXTENSION_AI_ASSIST_OFF_MESSAGE/EXTENSION_NO_PROVIDER_MESSAGE, so a client \
+             matching the shared constant would stop recognizing the refusal"
+        );
+    }
+}
+
+/// Numeric companion to [`message_type_constants_match_ts`] for the ONE
+/// number the two sides now share: the shared TS
+/// `EXTENSION_ANSWER_ASSIST_MAX_CHARS` advertises the ceiling an over-large
+/// `maxChars` is clamped to, and that ceiling is
+/// [`super::answer_assist::DRAFT_CAP`]. Nothing enforces the constant on the
+/// wire (deliberately — see the schema's doc: a `.max()` there would refuse a
+/// legitimate draft over a number), so if `DRAFT_CAP` moved and the TS
+/// constant did not, the shared constant would quietly become a lie a client
+/// has no way to detect. The trailing `;` is in the needle so `= 4000` can
+/// never prefix-match a future `= 40000`, same discipline as
+/// [`protocol_version_matches_ts`].
+#[test]
+fn answer_assist_max_chars_matches_ts() {
+    let ts = ts_protocol_source();
+    let cap = super::answer_assist::DRAFT_CAP;
+    let needle = format!("EXTENSION_ANSWER_ASSIST_MAX_CHARS = {cap};");
+    assert!(
+        ts.contains(&needle),
+        "Rust DRAFT_CAP ({cap}) not found as `{needle}` in extension-protocol-constants.ts — the \
+         desktop clamp for answer.assist's maxChars drifted from the shared TS constant"
+    );
 }
 
 /// Numeric parity companion to [`message_type_constants_match_ts`]: the

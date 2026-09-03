@@ -18,7 +18,10 @@
 import { z } from 'zod';
 
 import {
+  EXTENSION_AI_ASSIST_OFF_MESSAGE,
+  EXTENSION_ANSWER_ASSIST_MAX_CHARS,
   EXTENSION_MESSAGE_TYPES,
+  EXTENSION_NO_PROVIDER_MESSAGE,
   EXTENSION_PROTOCOL_VERSION,
   type ExtensionAnswerAssistRequest,
   type ExtensionAnswerAssistResult,
@@ -54,7 +57,10 @@ import {
 } from './extension-protocol-constants.js';
 
 export {
+  EXTENSION_AI_ASSIST_OFF_MESSAGE,
+  EXTENSION_ANSWER_ASSIST_MAX_CHARS,
   EXTENSION_MESSAGE_TYPES,
+  EXTENSION_NO_PROVIDER_MESSAGE,
   EXTENSION_PROTOCOL_VERSION,
   type ExtensionAnswerAssistRequest,
   type ExtensionAnswerAssistResult,
@@ -333,7 +339,14 @@ export const ExtensionAnswersSuggestResultSchema = z.discriminatedUnion('ok', [
  * 'rewrite'` — `existingAnswer`/`preset`/`instruction`). Mirrors
  * {@link ExtensionAnswerAssistRequest}. Shape-only (no byte caps): the
  * desktop clamps every field at the resolve boundary, matching the sibling
- * request schemas above.
+ * request schemas above — `maxChars` included: the wire pins its SHAPE
+ * (a positive integer) and nothing else, deliberately NOT
+ * {@link EXTENSION_ANSWER_ASSIST_MAX_CHARS}. That constant is the desktop's
+ * clamp, not a wire bound; enforcing it here would turn an over-large limit
+ * from a value the desktop quietly reduces into a rejected request, which
+ * is how a client on a different version gets a legitimate draft refused
+ * over a number. The desktop re-validates and clamps it either way
+ * (`parse_max_chars`), treating it as untrusted like every other field.
  */
 export const ExtensionAnswerAssistRequestSchema = z.object({
   question: z.string().min(1),
@@ -343,6 +356,7 @@ export const ExtensionAnswerAssistRequestSchema = z.object({
   existingAnswer: z.string().optional(),
   preset: z.enum(['shorten', 'expand', 'rephrase', 'impact', 'grammar']).optional(),
   instruction: z.string().optional(),
+  maxChars: z.number().int().positive().optional(),
 }) satisfies z.ZodType<ExtensionAnswerAssistRequest>;
 
 /**

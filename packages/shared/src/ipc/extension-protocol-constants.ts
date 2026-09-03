@@ -633,6 +633,22 @@ export type ExtensionRewritePreset = 'shorten' | 'expand' | 'rephrase' | 'impact
  * additionally PII-adjacent (the user's own past answer): sent transiently,
  * never persisted. `question` is still required/echoed for reply
  * correlation but is NOT fed into the rewrite prompt itself.
+ *
+ * **`maxChars`** (draft mode only, ADR-044 decision 6) carries the picked
+ * field's own length limit, read from the DOM by the extension's scan and
+ * therefore UNTRUSTED like every other field on this frame — the desktop
+ * re-validates it (`parse_max_chars` in
+ * `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs`) rather
+ * than believing it. Two DIFFERENT bounds meet on this field, and they are
+ * not the same thing: the WIRE bound is shape only (a positive integer —
+ * an over-large number is a perfectly legal frame, never a parse failure),
+ * while the DESKTOP CLAMP silently reduces it to
+ * {@link EXTENSION_ANSWER_ASSIST_MAX_CHARS}, so asking for more can never
+ * buy more. IGNORED in rewrite mode (a rewrite carries its own
+ * instruction). OPTIONAL in both directions: a desktop that predates the
+ * field drops the unknown key and drafts exactly as it did before, so a
+ * client must never assume the limit was applied — it counts the returned
+ * text itself and falls back to a fit-the-limit rewrite chip.
  */
 export interface ExtensionAnswerAssistRequest {
   question: string;
@@ -642,7 +658,44 @@ export interface ExtensionAnswerAssistRequest {
   existingAnswer?: string;
   preset?: ExtensionRewritePreset;
   instruction?: string;
+  maxChars?: number;
 }
+
+/**
+ * The DESKTOP CLAMP on {@link ExtensionAnswerAssistRequest.maxChars}, not a
+ * wire bound — mirrors the bridge's own `DRAFT_CAP`, the char cap every
+ * returned draft is clamped to anyway, so a larger limit could never produce
+ * a longer answer. A request carrying more than this is still VALID on the
+ * wire (`ExtensionAnswerAssistRequestSchema` checks the shape only, like
+ * every sibling request schema) and is reduced to this ceiling
+ * desktop-side; a number can never get a legitimate draft refused. Exported
+ * so a client can state a limit it knows will be honoured. Pinned to the
+ * Rust `DRAFT_CAP` by `answer_assist_max_chars_matches_ts` in
+ * `apps/desktop/src-tauri/src/extension_bridge/test.rs`.
+ */
+export const EXTENSION_ANSWER_ASSIST_MAX_CHARS = 4000;
+
+/**
+ * The two `answer.assist` REFUSAL SENTINELS (ADR-044 decision 8) — fixed
+ * error text the desktop returns in `ok:false`'s `error` when the verb is
+ * refused for a reason the user can act on: the separate AI-assist opt-in is
+ * off, or no usable AI provider is configured. Wire-error discipline here is
+ * fixed sentinel TEXT rather than a machine-readable `code` (the sentinel IS
+ * the code — see `docs/knowledge/extension-domain.md`), so a surface that
+ * wants to say WHERE to turn the feature on matches these shared constants
+ * instead of copying the string. Declared beside the handler in
+ * `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs`
+ * (`AI_ASSIST_OFF_MESSAGE` / `NO_PROVIDER_MESSAGE`) and pinned to these
+ * values by the parity test in
+ * `apps/desktop/src-tauri/src/extension_bridge/test.rs`. Every OTHER
+ * `ok:false` error stays opaque to the client and is rendered verbatim.
+ */
+export const EXTENSION_AI_ASSIST_OFF_MESSAGE =
+  'AI answer drafting is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.';
+
+/** @see {@link EXTENSION_AI_ASSIST_OFF_MESSAGE} */
+export const EXTENSION_NO_PROVIDER_MESSAGE =
+  'No AI provider is set up for answer drafting. Open AI Job Hunter → Settings → AI, choose a provider, then turn AI answer drafting back on in Settings → Accounts → Browser extension.';
 
 /**
  * `answer.assist` payload — a discriminated union so a reply can never mix
