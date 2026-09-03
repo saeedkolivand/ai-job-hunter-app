@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type InlineConfig, type Plugin } from 'vite';
 
 import { type BrowserTarget, buildManifest } from './src/manifest.ts';
 
@@ -73,39 +73,80 @@ function webExtensionAssets(): Plugin {
  * nothing to hoist against, so the shared helpers are INLINED into each file
  * instead. `emptyOutDir: false` so neither pass wipes what the other (or the
  * main build) already wrote.
+ *
+ * MINIFICATION IS OFF for this pass, and that is load-bearing. Four of these
+ * scripts (`content`, `capture`, `capture-questions`, `probe-fields`) answer
+ * the background by COMPLETION VALUE — `executeScript({ files })` hands back
+ * whatever the file's LAST STATEMENT evaluates to — and a minifier is entitled
+ * to rewrite away a trailing pure expression whose value it believes nobody
+ * reads. Vite 8's default minifier (oxc — `build.minify: true` resolves to
+ * `'oxc'`) did exactly that to `capture.ts`, folding
+ * `(() => ({ answers: a(document), filled: b(document) }))()` into
+ * `a(document),b(document);`: the completion value became the last CALL's
+ * array, `background.ts`'s `isCaptureResult` rejected it, and "Save my answers
+ * from this page" failed with "Could not read the answers on this page." on
+ * every page — in the store build, the release zip, and a fresh local build.
+ * `content.js` and `capture-questions.js` survived only incidentally (a
+ * try/catch body, a bare array return), so keeping the minifier off the whole
+ * pass — rather than hand-picking trailing expressions this minifier version
+ * happens not to fold — is what removes the CLASS instead of the instance. A
+ * completion value is a contract no minifier can see, so it does not get to
+ * optimise it; these files are tens of KB each, and readable injected source is
+ * what AMO source-code review wants anyway. `src/build-output.test.ts`
+ * evaluates the BUILT files and asserts their completion values, so re-enabling
+ * minification here fails a test instead of a release.
  */
+
+/** Every classic script injected via `executeScript({ files })`, each built in
+ *  its own isolated single-entry pass. */
+export const INJECTED_ENTRIES = [
+  'content',
+  'fill',
+  'capture',
+  'capture-questions',
+  'answer-fill',
+  'answer-replace',
+  'submit-watch',
+  'probe-fields',
+] as const;
+
+/**
+ * The EXACT options one injected entry is built with. Exported alongside
+ * {@link INJECTED_ENTRIES} so `src/build-output.test.ts` can produce the real
+ * shipped artifact into a temp dir — a completion-value guard that rebuilt with
+ * its own hand-written options, or read a stale `dist/`, would not be testing
+ * what the store gets.
+ */
+export function injectedEntryConfig(name: string, entryOutDir: string): InlineConfig {
+  return {
+    configFile: false,
+    root: srcDir,
+    logLevel: 'warn',
+    build: {
+      outDir: entryOutDir,
+      emptyOutDir: false,
+      target: 'es2022',
+      modulePreload: false,
+      // See the comment block above: these scripts communicate by completion
+      // value, which a minifier may legally rewrite away.
+      minify: false,
+      rollupOptions: {
+        input: { [name]: resolve(srcDir, `${name}.ts`) },
+        output: { entryFileNames: '[name].js', format: 'es' },
+      },
+    },
+    esbuild: { legalComments: 'none' },
+  };
+}
+
 function injectedEntries(): Plugin {
   return {
     name: 'ajh-injected-classic-scripts',
     apply: 'build',
     async closeBundle() {
       const { build } = await import('vite');
-      for (const name of [
-        'content',
-        'fill',
-        'capture',
-        'capture-questions',
-        'answer-fill',
-        'answer-replace',
-        'submit-watch',
-        'probe-fields',
-      ]) {
-        await build({
-          configFile: false,
-          root: srcDir,
-          logLevel: 'warn',
-          build: {
-            outDir,
-            emptyOutDir: false,
-            target: 'es2022',
-            modulePreload: false,
-            rollupOptions: {
-              input: { [name]: resolve(srcDir, `${name}.ts`) },
-              output: { entryFileNames: '[name].js', format: 'es' },
-            },
-          },
-          esbuild: { legalComments: 'none' },
-        });
+      for (const name of INJECTED_ENTRIES) {
+        await build(injectedEntryConfig(name, outDir));
       }
     },
   };
