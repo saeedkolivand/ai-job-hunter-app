@@ -509,7 +509,7 @@
       },
       "developer": {
         "label": "Developer",
-        "description": "Debug tools & diagnostics"
+        "description": "Debug tools, diagnostics & agent access"
       },
       "about": {
         "label": "Fund the hunt",
@@ -586,7 +586,36 @@
       "exportDiagnostics": "Export diagnostics",
       "exportDiagnosticsDesc": "Save a redacted diagnostics bundle (system info, crash log, app logs) to attach to a bug report.",
       "exportDiagnosticsSaved": "Diagnostics bundle saved.",
-      "exportDiagnosticsError": "Diagnostics export failed."
+      "exportDiagnosticsError": "Diagnostics export failed.",
+      "agentCli": {
+        "title": "Agent & MCP access",
+        "description": "This app's binary doubles as a command-line client and as an MCP server for coding agents. It is read-only unless you register it with a write tier.",
+        "helpLink": "Read more in Help & Support",
+        "pathLabel": "Path to the binary",
+        "copyPath": "Copy",
+        "pathUnavailable": "The path to this binary could not be resolved. The file ~/.ajh-agent/agent.json, written on every launch, holds it.",
+        "copied": "Copied to the clipboard.",
+        "copyFailed": "Could not copy to the clipboard.",
+        "tierLabel": "Access tier",
+        "tiers": {
+          "read": {
+            "label": "Read-only",
+            "description": "Reads your data and nothing else. This is what the server does with no flag."
+          },
+          "reversible": {
+            "label": "Reversible",
+            "description": "May also change settings and data in ways you can undo."
+          },
+          "irreversible": {
+            "label": "Irreversible",
+            "description": "May also spend AI budget and delete data, and asks you to confirm before every such call."
+          }
+        },
+        "claudeLabel": "Claude Code",
+        "copyClaude": "Copy command",
+        "codexLabel": "Codex (~/.codex/config.toml)",
+        "copyCodex": "Copy config"
+      }
     },
     "about": {
       "title": "Fund the hunt",
@@ -2925,7 +2954,7 @@
       "agentCliQuestions": {
         "headlessMode": {
           "q": "Can I use the app from a terminal or from Claude Code or Codex?",
-          "a": "Yes. The desktop binary doubles as a command-line client: run it with agent as the very first argument, for example agent --help, and it prints the available verbs instead of opening the app window. Any other first argument just launches the normal desktop window. Claude Code and Codex can attach to that same binary as an MCP server; it is read-only by default and only opens write tiers if you register it with one of the write flags. The project README's CLI agent section has the exact registration commands. Most calls reach the running app, so keep AI Job Hunter open. There is no Settings row for this."
+          "a": "Yes. The desktop binary doubles as a command-line client: run it with agent as the very first argument, for example agent --help, and it prints the available verbs instead of opening the app window. Any other first argument just launches the normal desktop window. Claude Code and Codex can attach to that same binary as an MCP server; it is read-only by default and only opens write tiers if you register it with one of the write flags. The project README's CLI agent section has the exact registration commands, and Settings → Developer shows the path to this binary plus ready-to-copy registration commands for Claude Code and Codex. Most calls reach the running app, so keep AI Job Hunter open."
         }
       },
       "privacy": "Privacy & Data",

@@ -83,6 +83,13 @@ export const TEST_IDS = {
     privacyTab: 'privacy-tab',
     perfPrefs: 'perf-prefs',
     devPrefs: 'dev-prefs',
+    /** Developer → agent CLI / MCP registration card. */
+    agentCliSection: 'agent-cli-section',
+    agentCliPath: 'agent-cli-path',
+    agentCliCopyPath: 'agent-cli-copy-path',
+    agentCliTier: 'agent-cli-tier',
+    agentCliClaudeSnippet: 'agent-cli-claude-snippet',
+    agentCliCodexSnippet: 'agent-cli-codex-snippet',
     aboutTab: 'about-tab',
   },
 

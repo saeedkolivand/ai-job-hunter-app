@@ -509,7 +509,7 @@
       },
       "developer": {
         "label": "Entwickler",
-        "description": "Debug-Werkzeuge & Diagnose"
+        "description": "Debug-Werkzeuge, Diagnose & Agentenzugriff"
       },
       "about": {
         "label": "Die Suche unterstützen",
@@ -586,7 +586,36 @@
       "exportDiagnostics": "Diagnose exportieren",
       "exportDiagnosticsDesc": "Ein geschwärztes Diagnosepaket (Systeminfo, Absturzprotokoll, App-Protokolle) speichern, um es einem Fehlerbericht anzuhängen.",
       "exportDiagnosticsSaved": "Diagnosepaket gespeichert.",
-      "exportDiagnosticsError": "Diagnose-Export fehlgeschlagen."
+      "exportDiagnosticsError": "Diagnose-Export fehlgeschlagen.",
+      "agentCli": {
+        "title": "Agenten- & MCP-Zugriff",
+        "description": "Die Binärdatei dieser App dient zugleich als Kommandozeilen-Client und als MCP-Server für Coding-Agenten. Sie ist schreibgeschützt, solange Sie sie nicht mit einer Schreibstufe registrieren.",
+        "helpLink": "Mehr dazu in Hilfe & Support",
+        "pathLabel": "Pfad zur Binärdatei",
+        "copyPath": "Kopieren",
+        "pathUnavailable": "Der Pfad zu dieser Binärdatei konnte nicht ermittelt werden. Die bei jedem Start geschriebene Datei ~/.ajh-agent/agent.json enthält ihn.",
+        "copied": "In die Zwischenablage kopiert.",
+        "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen.",
+        "tierLabel": "Zugriffsstufe",
+        "tiers": {
+          "read": {
+            "label": "Nur Lesen",
+            "description": "Liest Ihre Daten und sonst nichts. Genau das tut der Server ohne Flag."
+          },
+          "reversible": {
+            "label": "Umkehrbar",
+            "description": "Darf zusätzlich Einstellungen und Daten so ändern, dass Sie es rückgängig machen können."
+          },
+          "irreversible": {
+            "label": "Nicht umkehrbar",
+            "description": "Darf zusätzlich KI-Budget ausgeben und Daten löschen und fragt vor jedem solchen Aufruf nach Ihrer Bestätigung."
+          }
+        },
+        "claudeLabel": "Claude Code",
+        "copyClaude": "Befehl kopieren",
+        "codexLabel": "Codex (~/.codex/config.toml)",
+        "copyCodex": "Konfiguration kopieren"
+      }
     },
     "about": {
       "title": "Die Suche unterstützen",
@@ -2929,7 +2958,7 @@
       "agentCliQuestions": {
         "headlessMode": {
           "q": "Kann ich die App aus einem Terminal oder aus Claude Code oder Codex heraus nutzen?",
-          "a": "Ja. Die Desktop-Binärdatei dient zugleich als Kommandozeilen-Client: Führen Sie sie mit agent als allererstem Argument aus, zum Beispiel agent --help, und sie gibt die verfügbaren Befehle aus, statt das App-Fenster zu öffnen. Jedes andere erste Argument startet einfach das normale Desktop-Fenster. Claude Code und Codex können sich an dieselbe Binärdatei als MCP-Server anbinden; sie ist standardmäßig schreibgeschützt und gibt Schreibstufen nur frei, wenn Sie sie mit einem der Schreib-Flags registrieren. Der Abschnitt CLI agent in der README des Projekts enthält die genauen Registrierungsbefehle. Die meisten Aufrufe erreichen die laufende App — halten Sie AI Job Hunter also geöffnet. Dafür gibt es keine Zeile in den Einstellungen."
+          "a": "Ja. Die Desktop-Binärdatei dient zugleich als Kommandozeilen-Client: Führen Sie sie mit agent als allererstem Argument aus, zum Beispiel agent --help, und sie gibt die verfügbaren Befehle aus, statt das App-Fenster zu öffnen. Jedes andere erste Argument startet einfach das normale Desktop-Fenster. Claude Code und Codex können sich an dieselbe Binärdatei als MCP-Server anbinden; sie ist standardmäßig schreibgeschützt und gibt Schreibstufen nur frei, wenn Sie sie mit einem der Schreib-Flags registrieren. Der Abschnitt CLI agent in der README des Projekts enthält die genauen Registrierungsbefehle, und Einstellungen → Entwickler zeigt den Pfad zu dieser Binärdatei sowie fertige Registrierungsbefehle für Claude Code und Codex. Die meisten Aufrufe erreichen die laufende App — halten Sie AI Job Hunter also geöffnet."
         }
       },
       "privacy": "Datenschutz & Daten",

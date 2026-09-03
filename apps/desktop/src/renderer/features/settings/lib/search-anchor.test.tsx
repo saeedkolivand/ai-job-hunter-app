@@ -46,6 +46,13 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
+// AgentCliSection links to Help & Support. `useRouter` throws outside a
+// RouterProvider, and this file renders sections without one.
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useRouter: () => ({ navigate: vi.fn() }),
+}));
+
 // Stub services consumed by the section components we render.
 vi.mock('@/services', () => ({
   // GeneralSection / UpdateSection
@@ -107,6 +114,8 @@ vi.mock('@/services', () => ({
   // DeveloperPreferences
   useOpenDevtools: () => ({ mutate: vi.fn(), isPending: false }),
   useExportDiagnostics: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // AgentCliSection
+  useAgentCliInfo: () => ({ data: { exePath: '/tmp/ajh-tauri' }, isPending: false }),
   // ResumePreferences — covered via SettingsContent wrappers
   useDocuments: () => ({ data: [], isLoading: false }),
   useRemoveDocument: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -343,8 +352,8 @@ function assertAnchor(container: HTMLElement, anchor: string) {
 // ── manifest integrity ────────────────────────────────────────────────────────
 
 describe('SEARCH_INDEX — manifest integrity', () => {
-  it('has exactly 33 entries', () => {
-    expect(SEARCH_INDEX).toHaveLength(33);
+  it('has exactly 34 entries', () => {
+    expect(SEARCH_INDEX).toHaveLength(34);
   });
 
   // A bare count survives the wrong deletion (or a duplicate masking a real
