@@ -211,6 +211,30 @@ _Avoid_: auto-apply / auto-submit (autofill never submits — the human does), s
 (that's the inbound import path), "fills every field" (empty + unambiguous fields only;
 no file upload; complex ATS partial)
 
+**Application question**:
+A free-text prompt on an application form that the extension can name from the page (a
+labelled text field or textarea, after the ambiguous-label denylist), or that the user
+pastes in by hand when the page names it badly. The unit the Answer tools work on; two
+identically labelled fields are two questions, told apart by position.
+_Avoid_: form field (the field is where the answer lands; the question is what is asked),
+prompt (reserved for what is sent to a model)
+
+**Saved answer**:
+Text the user actually submitted for an **Application question** on an earlier application,
+stored per **Application** so one company's wording never silently becomes another's. A
+saved answer can be **suggested** for a similar question elsewhere, always with its origin
+shown. Free, local, gated by the **Autofill** opt-in.
+_Avoid_: answer history, template
+
+**Draft**:
+Model-written text for one **Application question**, grounded in the user's own résumé and
+the matched job, that exists only in the session until the user copies it or accepts it
+into a field they chose. Billable, gated by its own opt-in, never written to a page on its
+own. A **rewrite** is a draft derived from existing text plus an instruction rather than
+from the question alone.
+_Avoid_: suggestion (that word is reserved for a **Saved answer** offered by similarity),
+answer (a draft is not the user's answer until they make it one)
+
 **Agency posting**:
 A job posting whose company name matches one in the built-in or user-extended recruitment-agency list
 (personnel staffing, HR consulting, temp placement agencies). Filterable via a renderer session flag
