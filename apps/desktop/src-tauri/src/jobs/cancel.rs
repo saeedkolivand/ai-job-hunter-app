@@ -53,19 +53,22 @@ impl CancelRegistry {
     /// then reuses — is one run, resolved by `get_or_register`'s `we_minted`
     /// flag rather than by identity.
     ///
-    /// **The one exception: `commands::hybrid_search` registers a
-    /// RENDERER-minted id.** Every id above is minted by RUST, all from the
-    /// SAME `job-{uuid}` shape (`resume_pipeline_run` also mints its own
-    /// separate `run-{uuid}` for the `pipeline_runs` row identity, but never
-    /// registers THAT one here — only its `job_id`). A hybrid search's
-    /// `queryId` has to exist before the search's own promise resolves (so
-    /// the renderer can hand it to a LATER `jobs.cancel` call superseding
-    /// it), so the renderer mints it. Nothing here stops a caller-chosen id
-    /// from colliding with a live `job-{uuid}` id and replacing (then, on
-    /// cleanup, deleting) that run's OWN token — the safety net is
-    /// `commands::hybrid_search`'s own `QUERY_ID_PREFIX` (`"search-"`)
-    /// requirement, enforced at that command's IPC boundary, not here: this
-    /// registry trusts every id it is handed.
+    /// **The exceptions: `commands::hybrid_search` and `commands::help`
+    /// register CALLER-minted ids.** Every id above is minted by RUST, all
+    /// from the SAME `job-{uuid}` shape (`resume_pipeline_run` also mints its
+    /// own separate `run-{uuid}` for the `pipeline_runs` row identity, but
+    /// never registers THAT one here — only its `job_id`). Those two
+    /// searches' `queryId`s have to exist before their own promise resolves
+    /// (so the caller can hand the id to a LATER `jobs.cancel` call
+    /// superseding it), so the caller mints them. Nothing here stops a
+    /// caller-chosen id from colliding with a live `job-{uuid}` id and
+    /// replacing (then, on cleanup, deleting) that run's OWN token — the
+    /// safety net is each command's own `QUERY_ID_PREFIX`, enforced at that
+    /// command's IPC boundary, not here: this registry trusts every id it is
+    /// handed. The two prefixes differ from each other as well as from
+    /// `job-`/`run-` (`commands::hybrid_search::QUERY_ID_PREFIX` and
+    /// `commands::help::QUERY_ID_PREFIX`), so the two features cannot
+    /// supersede each other's in-flight searches either.
     pub async fn register(&self, id: &str, token: CancellationToken) {
         self.tokens.lock().await.insert(id.to_string(), token);
     }

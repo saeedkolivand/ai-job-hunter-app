@@ -374,6 +374,27 @@ export const HelpSearchEntrySchema = z.object({
  * directly, bypassing Zod entirely.
  */
 export const HelpSearchRequestSchema = z.object({
+  /**
+   * Optional client-minted id for this question — MUST start with `"help-"`
+   * (e.g. `` `help-${crypto.randomUUID()}` ``). Pass the SAME value to
+   * `jobs.cancel(queryId)` to stop the dense arm early (a Stop click, or
+   * navigating away): `commands::help` registers it against the app-wide
+   * `jobs::cancel::CancelRegistry` exactly as `scrape:hybridSearch` does, so
+   * no separate cancel channel exists. The prefix keeps this caller-minted id
+   * space disjoint from both the Rust-minted `job-`/`run-` ids and the postings
+   * search's `search-` ids that share the registry; the command re-checks it
+   * (`commands::help::QUERY_ID_PREFIX`). Omitted = not cancellable, which is
+   * what an agent-CLI caller gets.
+   */
+  queryId: z.string().min(1).max(64).startsWith('help-').optional(),
+  /**
+   * BCP-47 tag of the locale the `entries` are written in (the renderer's
+   * active UI locale). Selects the function-word list the lexical arm drops
+   * from the question before the OR-join (`commands::help::stopwords`); a
+   * locale with no list drops nothing. Defaults to English for callers that
+   * omit it.
+   */
+  locale: z.string().min(2).max(16).default('en'),
   /** The user's question, verbatim. Trimmed and re-capped by `commands::help`. */
   query: z.string().min(1).max(500),
   /**

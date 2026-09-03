@@ -146,7 +146,32 @@ fn arm<E: Embedder + ?Sized>(
         query,
         entries,
         crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+        // An unregistered token nobody can fire — what a caller that sends no
+        // `queryId` gets. The cancellation tests below pass their own.
+        &CancellationToken::new(),
     ))
+}
+
+/// An [`Embedder`] that CANCELS its own token after `cancel_after` calls —
+/// the only way to observe "a cancel arriving mid-arm" deterministically,
+/// since a real one arrives from another task at an unpredictable moment.
+/// Counts calls like [`ScriptedEmbedder`] does.
+struct CancellingEmbedder {
+    calls: AtomicUsize,
+    cfg: EmbeddingConfig,
+    token: CancellationToken,
+    cancel_after: usize,
+}
+
+#[async_trait]
+impl Embedder for CancellingEmbedder {
+    async fn embed_one(&self, _text: &str) -> Option<EmbeddingVector> {
+        let n = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if n >= self.cancel_after {
+            self.token.cancel();
+        }
+        Some(vector(&self.cfg, vec![1.0, 0.0]))
+    }
 }
 
 /// An [`Embedder`] whose every round-trip takes `delay` — a slow provider,
@@ -279,7 +304,7 @@ fn a_query_matching_only_an_answers_wording_still_ranks_that_entry_first() {
     // "scanned" appears in exactly one entry, and only in its ANSWER — so
     // this can only pass if the body is indexed as a searchable column. It is
     // the direct check on the mapping `to_lexical_doc` chooses.
-    let (ranks, status) = run_lexical_arm(&corpus(), "scanned", 3);
+    let (ranks, status) = run_lexical_arm(&corpus(), "scanned", 3, "en");
     assert_eq!(status, ArmStatus::Ran);
     assert_eq!(
         ranks.first().map(String::as_str),
@@ -308,7 +333,7 @@ fn a_question_word_outranks_the_same_word_buried_in_another_answer() {
             "Press the button above a finished document and choose PDF, DOCX or TXT.",
         ),
     ];
-    let (ranks, _) = run_lexical_arm(&entries, "export", 3);
+    let (ranks, _) = run_lexical_arm(&entries, "export", 3, "en");
     assert_eq!(
         ranks.len(),
         2,
@@ -323,12 +348,111 @@ fn a_question_word_outranks_the_same_word_buried_in_another_answer() {
 
 #[test]
 fn a_query_matching_nothing_is_an_empty_ran_arm_not_a_failure() {
-    let (ranks, status) = run_lexical_arm(&corpus(), "kubernetes", 3);
+    let (ranks, status) = run_lexical_arm(&corpus(), "kubernetes", 3, "en");
     assert!(ranks.is_empty());
     assert_eq!(
         status,
         ArmStatus::Ran,
         "zero hits is a real result, never Unavailable"
+    );
+}
+
+// ── Locale → drop list ───────────────────────────────────────────────────────
+
+#[test]
+fn stopwords_route_by_primary_subtag_and_never_fall_back_to_english() {
+    use super::stopwords::{stopwords_for_locale, HELP_STOPWORDS_DE, HELP_STOPWORDS_EN};
+
+    assert_eq!(stopwords_for_locale("en"), HELP_STOPWORDS_EN);
+    assert_eq!(stopwords_for_locale("de"), HELP_STOPWORDS_DE);
+    // The renderer sends `i18n.language`, which carries a region on some
+    // installs, and a hand-built agent-CLI body can send any casing.
+    assert_eq!(stopwords_for_locale("de-AT"), HELP_STOPWORDS_DE);
+    assert_eq!(stopwords_for_locale("EN"), HELP_STOPWORDS_EN);
+    assert_eq!(stopwords_for_locale("en-GB"), HELP_STOPWORDS_EN);
+    // A locale with no hand-curated list drops NOTHING. Empty, never
+    // English: `in`/`an`/`es` are content words in other languages, so an
+    // English fallback would silently delete real terms from a French or
+    // Spanish question.
+    assert!(
+        stopwords_for_locale("fr").is_empty(),
+        "an unknown locale must drop nothing — never the English list"
+    );
+    assert!(stopwords_for_locale("ja").is_empty());
+}
+
+#[test]
+fn a_malformed_locale_is_an_unknown_one_not_an_error() {
+    use super::stopwords::stopwords_for_locale;
+
+    // Caller input (the agent CLI never sees the Zod cap), and none of these
+    // may panic, allocate a copy of themselves, or resolve to a real list.
+    for locale in [
+        "",
+        "-",
+        "e n",
+        "en_US",                 // `_` is not a BCP-47 separator
+        "de; DROP TABLE",        //
+        "englishenglishenglish", // over the cap
+        "德文",
+    ] {
+        assert!(
+            stopwords_for_locale(locale).is_empty(),
+            "`{locale}` must resolve to no drop list rather than a refusal or a wrong one"
+        );
+    }
+    // …and a huge one is rejected on length before anything is allocated
+    // from it.
+    assert!(stopwords_for_locale(&"e".repeat(100_000)).is_empty());
+}
+
+/// The all-dropped fallback, through the REAL arm rather than through
+/// `retrieval::lexical` directly: a question made only of function words must
+/// still return hits. Without the fallback it sanitizes to the empty string,
+/// `search_any` answers zero hits, and the arm reports `Ran` — a silent empty
+/// result on the ONE arm a default install runs.
+#[test]
+fn a_question_made_only_of_function_words_still_returns_hits() {
+    let (ranks, status) = run_lexical_arm(&corpus(), "What is it?", 3, "en");
+    assert_eq!(status, ArmStatus::Ran);
+    assert!(
+        !ranks.is_empty(),
+        "an all-stopword question must fall back to its unfiltered tokens, not answer nothing"
+    );
+}
+
+/// The drop list is only worth having if it changes what the arm returns.
+/// Anchored on an ABSOLUTE, not on a comparison of two derived numbers: the
+/// unrelated entry must be present without the list and absent with it.
+#[test]
+fn the_english_drop_list_keeps_a_questions_function_words_from_pulling_in_an_entry() {
+    let entries = vec![
+        entry(
+            "unrelated",
+            "What is Autopilot?",
+            "It watches a saved search and scores new postings for you.",
+        ),
+        entry(
+            "asked",
+            "How do I export a finished document?",
+            "Press Export above a finished document and choose PDF, DOCX or TXT.",
+        ),
+    ];
+    let query = "What do I do to export it?";
+
+    // "xx" is a well-formed tag with no list — the no-filtering baseline.
+    let (unfiltered, _) = run_lexical_arm(&entries, query, 3, "xx");
+    assert!(
+        unfiltered.contains(&"unrelated".to_string()),
+        "premise: unfiltered, `What`/`do`/`is` alone match the unrelated entry; got {unfiltered:?}"
+    );
+
+    let (filtered, status) = run_lexical_arm(&entries, query, 3, "en");
+    assert_eq!(status, ArmStatus::Ran);
+    assert_eq!(
+        filtered,
+        vec!["asked".to_string()],
+        "only `export` survives the drop list, so only the entry about exporting matches"
     );
 }
 
@@ -716,6 +840,7 @@ fn the_wall_clock_budget_stops_the_entry_loop_and_the_arm_reports_unavailable() 
         &entries,
         // Spent by the query embed plus the first entry's.
         std::time::Duration::from_millis(50),
+        &CancellationToken::new(),
     ));
 
     assert_eq!(status, ArmStatus::Unavailable);
@@ -903,4 +1028,182 @@ fn the_embedding_space_change_branch_still_clears_the_help_vector_cache() {
             "`{needle}` must be evicted in the space-changed branch; branch body was:\n{branch}"
         );
     }
+}
+
+// ── Cancellation ─────────────────────────────────────────────────────────────
+
+#[test]
+fn a_help_prefixed_query_id_is_accepted_and_every_other_shape_is_refused() {
+    // Optional: an agent-CLI caller that sends no id gets no cancellation,
+    // not a refusal.
+    assert!(validate_query_id(None).is_ok());
+    assert!(validate_query_id(Some("help-0d3f")).is_ok());
+    assert!(
+        validate_query_id(Some(&format!("{QUERY_ID_PREFIX}{}", "x".repeat(59)))).is_ok(),
+        "exactly at the cap must pass — the cap is inclusive"
+    );
+
+    for bad in [
+        // The postings search's own prefix: a shared id space where either
+        // feature could name the other's live search is exactly what the
+        // prefixes exist to prevent.
+        "search-0d3f",
+        // A Rust-minted job id — the collision that would replace a live
+        // scrape's token and then delete its slot.
+        "job-0d3f",
+        "run-0d3f",
+        "",
+        "0d3f",
+        "HELP-0d3f",
+    ] {
+        assert!(
+            matches!(validate_query_id(Some(bad)), Err(AppError::Validation(_))),
+            "`{bad}` must be refused at the boundary"
+        );
+    }
+    // 65 chars: one past the cap.
+    let too_long = format!("{QUERY_ID_PREFIX}{}", "x".repeat(60));
+    assert_eq!(too_long.chars().count(), QUERY_ID_MAX_CHARS + 1);
+    assert!(validate_query_id(Some(&too_long)).is_err());
+}
+
+/// A cancel that landed before the arm started must cost ZERO provider calls
+/// — not "one, then stop". Mutation-visible: delete the `is_cancelled()`
+/// guard at the top of `run_dense_arm` and the query embed still fires… which
+/// the `biased` race then swallows, so this asserts the CALL COUNT rather
+/// than the status alone.
+#[test]
+fn a_pre_cancelled_token_embeds_nothing_and_reports_unavailable() {
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let embedder = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
+    let token = CancellationToken::new();
+    token.cancel();
+
+    let (ranks, status) = block_on(run_dense_arm(
+        &store,
+        &active,
+        &embedder,
+        "q",
+        &corpus(),
+        crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+        &token,
+    ));
+
+    assert_eq!(status, ArmStatus::Unavailable);
+    assert!(ranks.is_empty());
+    assert_eq!(
+        embedder.calls(),
+        0,
+        "a cancel that arrived before the arm started must not reach the provider at all"
+    );
+}
+
+/// A cancel arriving MID-arm stops the entry loop instead of running it out.
+/// The fake cancels its own token on its 2nd call (the query embed is the
+/// 1st), so the loop must stop after the entry that was already in flight —
+/// never the full `1 + entries.len()`.
+///
+/// Mutation-visible: drop `|| token.is_cancelled()` from the loop guard and
+/// the count runs to the end of the corpus.
+#[test]
+fn a_cancel_after_the_second_embed_stops_the_entry_loop() {
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let token = CancellationToken::new();
+    let entries = corpus();
+    let embedder = CancellingEmbedder {
+        calls: AtomicUsize::new(0),
+        cfg: active.clone(),
+        token: token.clone(),
+        cancel_after: 2,
+    };
+
+    let (ranks, status) = block_on(run_dense_arm(
+        &store,
+        &active,
+        &embedder,
+        "q",
+        &entries,
+        crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+        &token,
+    ));
+
+    assert_eq!(
+        status,
+        ArmStatus::Unavailable,
+        "a cancelled arm is Unavailable — the caller still gets the keyword results"
+    );
+    assert!(ranks.is_empty(), "all-or-nothing: {ranks:?}");
+    assert!(
+        embedder.calls.load(Ordering::SeqCst) <= 3,
+        "the loop must stop at the cancel, not run the corpus out: {} calls for {} entries",
+        embedder.calls.load(Ordering::SeqCst),
+        entries.len()
+    );
+    // …and the premise: without the cancel this corpus takes 1 + len calls.
+    // A FRESH store — the run above already cached the entry it embedded, and
+    // reusing that store would make the premise cheaper than it really is.
+    let (_dir2, cold_store) = self::store();
+    let uncancelled = ScriptedEmbedder::new(&active, vec![vec![1.0, 0.0]]);
+    let (_, ok_status) = arm(&cold_store, &active, &uncancelled, "q", &entries);
+    assert_eq!(
+        ok_status,
+        ArmStatus::Ran,
+        "premise: the same corpus ranks fine when nothing cancels it"
+    );
+    assert_eq!(uncancelled.calls(), 1 + entries.len());
+}
+
+/// The case the between-entries token check exists for, and the ONE case the
+/// per-embed race cannot cover: a cache HIT needs no embed, so it never
+/// touches the token. Every entry but the first is pre-cached here and the
+/// cancel lands during that one cold embed — which SUCCEEDS (the race polls
+/// the token first, and it was still live at that moment). Without the loop's
+/// `token.is_cancelled()` break the remaining hits pair from cache, the arm
+/// ranks all three and reports `Ran`, putting `mode: "hybrid"` on the wire
+/// for a search the user cancelled.
+///
+/// Mutation-visible: drop `|| token.is_cancelled()` from the loop guard and
+/// this flips to `Ran` with three ranks.
+#[test]
+fn a_cancel_mid_arm_is_unavailable_even_when_every_remaining_entry_is_cached() {
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let entries = corpus();
+    for e in &entries[1..] {
+        store
+            .upsert_help_vector(&sha256_hex(&e.body), &vector(&active, vec![1.0, 0.0]))
+            .unwrap();
+    }
+    let token = CancellationToken::new();
+    // Call 1 is the query, call 2 is the only COLD entry — cancel there.
+    let embedder = CancellingEmbedder {
+        calls: AtomicUsize::new(0),
+        cfg: active.clone(),
+        token: token.clone(),
+        cancel_after: 2,
+    };
+
+    let (ranks, status) = block_on(run_dense_arm(
+        &store,
+        &active,
+        &embedder,
+        "q",
+        &entries,
+        crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+        &token,
+    ));
+
+    assert_eq!(
+        embedder.calls.load(Ordering::SeqCst),
+        2,
+        "premise: only the query and the single cold entry are embedded — the rest are hits"
+    );
+    assert_eq!(
+        status,
+        ArmStatus::Unavailable,
+        "a cancelled arm must never report Ran, even when the cache could complete it"
+    );
+    assert!(ranks.is_empty(), "all-or-nothing: {ranks:?}");
 }

@@ -170,9 +170,18 @@ pub async fn scrape_hybrid_search(
 /// visible for that brief window is that a `jobs_cancel` racing the tail end
 /// of an already-finished search cancels a token nobody is listening to
 /// anymore.
-struct CancelGuard {
-    registry: Arc<CancelRegistry>,
-    id: String,
+///
+/// Shared with `commands::help`, which registers the same way, rather than
+/// copied there — two RAII guards over one registry is a drift waiting to
+/// happen, and the reasoning above would then live in only one of them. NOT
+/// hoisted into `jobs::cancel` (its natural home by name) because that module
+/// is deliberately L1 and Tauri-free and this `Drop` needs
+/// `tauri::async_runtime::spawn`; `commands::help` already reuses this
+/// module's [`ArmStatus`] and `dense_pair` for the same "one definition"
+/// reason.
+pub(crate) struct CancelGuard {
+    pub(crate) registry: Arc<CancelRegistry>,
+    pub(crate) id: String,
 }
 
 impl Drop for CancelGuard {

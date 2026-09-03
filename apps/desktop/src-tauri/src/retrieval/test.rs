@@ -253,7 +253,7 @@ fn lexical_search_any_answers_a_full_sentence_that_the_implicit_and_returns_noth
         "the AND mode is what this test is contrasted against: if it starts matching, the \
          premise of search_any has changed"
     );
-    let any = index.search_any(question, 10).expect("must not error");
+    let any = index.search_any(question, 10, &[]).expect("must not error");
     assert_eq!(
         any.first().map(String::as_str),
         Some("export"),
@@ -272,7 +272,7 @@ fn lexical_search_any_ranks_by_how_many_of_the_questions_terms_matched() {
     // "finished" is in BOTH the export and the stored doc, so this is a
     // ranking rather than a lookup; "documents" and "saved" are only in one.
     let hits = index
-        .search_any("Where are my finished documents saved?", 10)
+        .search_any("Where are my finished documents saved?", 10, &[])
         .expect("must not error");
     assert!(
         hits.len() >= 2,
@@ -304,7 +304,9 @@ fn lexical_search_any_quotes_operators_exactly_like_the_and_mode() {
     let index = LexicalIndex::build(&docs).expect("build must succeed");
 
     assert_eq!(
-        index.search_any("-golang", 10).expect("must not error"),
+        index
+            .search_any("-golang", 10, &[])
+            .expect("must not error"),
         vec!["p1".to_string()],
         "a leading `-` must be literal text in this mode too, not FTS5's NOT operator"
     );
@@ -321,15 +323,15 @@ fn lexical_search_any_quotes_operators_exactly_like_the_and_mode() {
         "!!!",
     ] {
         index
-            .search_any(query, 10)
+            .search_any(query, 10, &[])
             .unwrap_or_else(|e| panic!("{query:?} must not error, got {e}"));
     }
     assert!(
-        index.search_any("\0", 10).is_err(),
+        index.search_any("\0", 10, &[]).is_err(),
         "an embedded NUL byte must surface as Err in this mode too"
     );
     assert!(index
-        .search_any("   ", 10)
+        .search_any("   ", 10, &[])
         .expect("must not error")
         .is_empty());
 }
@@ -349,14 +351,14 @@ fn lexical_search_any_drops_one_character_tokens_but_never_every_token() {
     // "a" is dropped, so only the real term decides the result.
     assert_eq!(
         index
-            .search_any("a Kubernetes", 10)
+            .search_any("a Kubernetes", 10, &[])
             .expect("must not error"),
         vec!["p2".to_string()],
         "a one-character token must not drag in the document that merely contains it"
     );
     // …but a query with nothing else left keeps its short tokens.
     assert_eq!(
-        index.search_any("a", 10).expect("must not error"),
+        index.search_any("a", 10, &[]).expect("must not error"),
         vec!["p1".to_string()],
         "an all-short query must still search, not silently return zero hits"
     );
@@ -379,7 +381,7 @@ fn lexical_search_any_keeps_a_one_character_cjk_token() {
     let index = LexicalIndex::build(&docs).expect("build must succeed");
 
     let hits = index
-        .search_any("書 Kubernetes", 10)
+        .search_any("書 Kubernetes", 10, &[])
         .expect("must not error");
     assert!(
         hits.contains(&"p1".to_string()),
@@ -388,5 +390,71 @@ fn lexical_search_any_keeps_a_one_character_cjk_token() {
     assert!(
         hits.contains(&"p2".to_string()),
         "sanity: the ASCII term must still match its own document; got {hits:?}"
+    );
+}
+
+/// The trap the drop list is written around: tokens reach `sanitize_query`
+/// exactly as typed, so the words a caller passes it ("how", "work") arrive
+/// as `"How"` and `"work?"`. Both halves are load-bearing here — the query's
+/// first token is capitalised and its last carries punctuation — so the
+/// obvious `stopwords.contains(&tok)` fails this test rather than shipping a
+/// filter that silently drops nothing.
+///
+/// Mutation-visible: delete the `.filter(|tok| !is_stopword(…))` line and
+/// `p1` reappears; drop the folding inside `is_stopword` and it reappears too.
+#[test]
+fn lexical_search_any_drops_stopwords_case_and_punctuation_insensitively() {
+    let docs = vec![
+        doc(
+            "p1",
+            "How does the search box work?",
+            "",
+            "It filters the list.",
+        ),
+        doc(
+            "p2",
+            "Connect Ollama",
+            "",
+            "Point the app at a local model.",
+        ),
+    ];
+    let index = LexicalIndex::build(&docs).expect("build must succeed");
+    let question = "How do I connect Ollama so it works?";
+
+    assert!(
+        index
+            .search_any(question, 10, &[])
+            .expect("must not error")
+            .contains(&"p1".to_string()),
+        "premise: with no drop list the function words alone pull in the unrelated entry"
+    );
+    assert_eq!(
+        index
+            .search_any(question, 10, &["how", "do", "so", "it"])
+            .expect("must not error"),
+        vec!["p2".to_string()],
+        "`How` and `works?` must fold to `how`/`works` before the membership check"
+    );
+}
+
+/// A question made ENTIRELY of function words still searches. Without the
+/// fallback the query sanitizes to the empty string, `search_in`
+/// short-circuits to `Ok(vec![])`, and `commands::help` reports the arm as
+/// `Ran` with zero hits — indistinguishable from an honest miss, and on a
+/// default install (`semantic_scoring` off) that is the only arm there is.
+///
+/// Mutation-visible: remove the `if tokens.is_empty()` fallback and this
+/// returns nothing.
+#[test]
+fn lexical_search_any_falls_back_when_every_token_is_a_stopword() {
+    let docs = vec![doc("p1", "What is it?", "", "A question about a thing.")];
+    let index = LexicalIndex::build(&docs).expect("build must succeed");
+
+    assert_eq!(
+        index
+            .search_any("What is it?", 10, &["what", "is", "it"])
+            .expect("must not error"),
+        vec!["p1".to_string()],
+        "an all-stopword question must still search, not silently return zero hits"
     );
 }

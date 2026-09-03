@@ -8,6 +8,7 @@ import {
   CredentialSetSchema,
   DocumentImportRequestSchema,
   EmbedRequestSchema,
+  HelpSearchRequestSchema,
   JobPreferencesSchema,
   MatchResumeRequestSchema,
   PostingsHybridSearchRequestSchema,
@@ -100,6 +101,54 @@ describe('PostingsHybridSearchRequestSchema', () => {
     expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, limit: 0 })).toThrow();
     expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, limit: 51 })).toThrow();
     expect(() => PostingsHybridSearchRequestSchema.parse({ ...base, limit: 20 })).not.toThrow();
+  });
+});
+
+describe('HelpSearchRequestSchema', () => {
+  const base = {
+    query: 'how do I export a resume?',
+    entries: [{ id: 'aiGenerateQuestions.exportDoc', title: 'Export', body: 'Press Export.' }],
+  };
+
+  it('accepts the minimal shape and defaults locale, with no queryId at all', () => {
+    // An agent-CLI caller sends neither field. `queryId` absent means "not
+    // cancellable"; `locale` defaults so the drop list is still resolvable.
+    const parsed = HelpSearchRequestSchema.parse(base);
+    expect(parsed.queryId).toBeUndefined();
+    expect(parsed.locale).toBe('en');
+  });
+
+  it('accepts a queryId carrying the required "help-" prefix', () => {
+    expect(() =>
+      HelpSearchRequestSchema.parse({
+        ...base,
+        queryId: 'help-3f5d9b6a-1c2d-4e5f-8a9b-0c1d2e3f4a5b',
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects a queryId that does not carry the required "help-" prefix', () => {
+    // The Rust-side collision the prefix closes (`jobs::cancel::CancelRegistry`
+    // is last-writer-wins): an unprefixed id could NAME a live
+    // `job-{uuid}`/`run-{uuid}` run, and the postings search's own `search-`
+    // space must stay disjoint from this one too.
+    expect(() =>
+      HelpSearchRequestSchema.parse({ ...base, queryId: '3f5d9b6a-uuid-with-no-prefix' })
+    ).toThrow();
+    expect(() => HelpSearchRequestSchema.parse({ ...base, queryId: 'job-not-a-help' })).toThrow();
+    expect(() =>
+      HelpSearchRequestSchema.parse({ ...base, queryId: 'search-a-postings-query' })
+    ).toThrow();
+    expect(() => HelpSearchRequestSchema.parse({ ...base, queryId: '' })).toThrow();
+  });
+
+  it('rejects a queryId past the 64-char cap', () => {
+    expect(() =>
+      HelpSearchRequestSchema.parse({ ...base, queryId: `help-${'x'.repeat(59)}` })
+    ).not.toThrow();
+    expect(() =>
+      HelpSearchRequestSchema.parse({ ...base, queryId: `help-${'x'.repeat(60)}` })
+    ).toThrow();
   });
 });
 

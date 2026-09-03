@@ -23,17 +23,46 @@
 //! `dense: "unavailable"`, never an error to the user. `mode` is `"hybrid"`
 //! only when the dense arm actually RAN.
 //!
-//! **Tradeoff recorded, not hidden: no cancellation in v1.** This mirrors
-//! `hybrid_search::embed_or_cancel` MINUS its `CancellationToken` — a help
-//! question is a single deliberate action with no supersede-on-keystroke
-//! shape behind it, so there is no `queryId` and no `CancelRegistry`
-//! registration. The cost is that a first question on a cloud embedder,
-//! against a cold cache, runs to completion (≤ 51 entry embeds, once per
-//! embedding space) even if the user navigates away. With no token to stop
-//! it, the dense arm is bounded by two things instead: the SAME wall-clock
-//! budget postings search uses (`timeouts::DENSE_ARM_TIMEOUT`) and
-//! [`HELP_EMBED_MISSES_MAX`] embeds per request. Hitting either means the
-//! arm reports `unavailable` rather than a partly-ranked `hybrid`.
+//! **The question's own function words are dropped, per LANGUAGE.** The
+//! lexical arm ORs the question's tokens (`QueryMode::Any`), so every "how",
+//! "the", "ich", "und" is an extra branch matching most of the corpus. The
+//! request carries the locale its ENTRIES are written in and [`stopwords`]
+//! turns it into a drop list — a per-language table, not a `detect()` on the
+//! question (the repo already records whatlang reading a short line as the
+//! wrong language with no signal that anything went wrong). An unknown
+//! locale drops nothing rather than falling back to English. Measured, both
+//! languages, in `tests/help_retrieval.rs`.
+//!
+//! **Cancellable, through the same registry every job kind cancels through.**
+//! A question is a single deliberate action with no supersede-on-keystroke
+//! shape behind it, so v1 shipped without this — but the leg it left
+//! uncancellable is the expensive one: a first question on a cloud embedder
+//! against a cold cache runs to completion (up to [`HELP_EMBED_MISSES_MAX`]
+//! entry embeds) even after the user presses Stop or navigates away. So the
+//! request now carries an OPTIONAL caller-minted `queryId`
+//! ([`QUERY_ID_PREFIX`]) that `help_search` registers against the app-wide
+//! `jobs::cancel::CancelRegistry` BEFORE any async work, exactly as
+//! `commands::hybrid_search` does; `jobs.cancel(queryId)` is the supersede
+//! channel and there is no cancel command of its own. Omitting the id is one
+//! code path, not two: the command then uses an unregistered token nobody can
+//! fire (what an agent-CLI caller gets).
+//!
+//! A cancel makes the dense arm stop SOONER, not instantly: the token is
+//! raced against each individual embed (so a cancel does not wait out the
+//! provider's per-attempt timeout) and checked between entries, and the arm
+//! then reports [`ArmStatus::Unavailable`] with the keyword results still
+//! returned. It is deliberately NOT a distinct wire outcome the way
+//! `hybrid_search`'s `SearchOutcome::Cancelled` is: the only cancelling
+//! caller discards the reply by id, and `HelpSearchResult` has no `outcome`
+//! field at all, so adding one would be a wire-shape change bought for
+//! nobody. If a non-renderer caller ever needs to tell "cancelled" apart from
+//! "the embedding provider was unreachable", that field is the upgrade path.
+//!
+//! The two bounds that stopped a runaway arm before cancellation existed are
+//! unchanged and still the only ones an ID-less caller gets: the SAME
+//! wall-clock budget postings search uses (`timeouts::DENSE_ARM_TIMEOUT`) and
+//! [`HELP_EMBED_MISSES_MAX`] embeds per request. Hitting either means the arm
+//! reports `unavailable` rather than a partly-ranked `hybrid`.
 
 use std::sync::Arc;
 
@@ -41,11 +70,14 @@ use async_trait::async_trait;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
+use tokio_util::sync::CancellationToken;
+
 use crate::commands::ai_provider::EmbeddingVector;
-use crate::commands::hybrid_search::{dense_pair, ArmStatus};
+use crate::commands::hybrid_search::{dense_pair, ArmStatus, CancelGuard};
 use crate::documents::{embed_with_config, sha256_hex, DocumentStore, Embedder, EmbeddingConfig};
 use crate::error::{AppError, AppResult};
 use crate::ipc_contracts::help::{HelpSearchRequest, HelpSearchRequestEntry};
+use crate::jobs::cancel::CancelRegistry;
 use crate::observability::sanitize_reason;
 use crate::retrieval::lexical::{LexicalDoc, LexicalIndex};
 use crate::retrieval::{dense, fusion};
@@ -79,6 +111,16 @@ pub const HELP_EMBED_MISSES_MAX: usize = 64;
 // reach it — so the ordering that makes it real is compile-time, not a comment.
 const _: () = assert!(HELP_EMBED_MISSES_MAX < ENTRIES_MAX);
 const ENTRY_ID_MAX_CHARS: usize = 64;
+/// Required prefix on a caller-minted `queryId`.
+///
+/// Distinct from `commands::hybrid_search::QUERY_ID_PREFIX` (`"search-"`) for
+/// the same reason that one is distinct from the Rust-minted `job-{uuid}`
+/// ids: `CancelRegistry::register` is last-writer-wins and trusts every id it
+/// is handed, so two features minting into one id space must not be able to
+/// name each other's live searches. See that registry's `register` doc.
+const QUERY_ID_PREFIX: &str = "help-";
+/// Matches `HelpSearchRequestSchema.queryId`'s cap.
+const QUERY_ID_MAX_CHARS: usize = 64;
 const ENTRY_TITLE_MAX_CHARS: usize = 200;
 const ENTRY_BODY_MAX_CHARS: usize = 2000;
 /// Hard ceiling on `limit`, regardless of what the caller asks for. Clamped
@@ -154,11 +196,33 @@ fn log_result(result: &HelpSearchResult, entries_received: usize) {
 pub async fn help_search(app: AppHandle, req: HelpSearchRequest) -> AppResult<HelpSearchResult> {
     let query = req.query.trim().to_string();
     validate(&query, &req.entries)?;
+    validate_query_id(req.query_id.as_deref())?;
     let limit = (req.limit as usize).clamp(1, MAX_LIMIT);
 
-    let lexical = run_lexical_arm(&req.entries, &query, req.entries.len());
+    // Registered BEFORE any async work, so a `jobs_cancel(queryId)` arriving
+    // between here and the dense arm starting is never a no-op — the same
+    // ordering (and the same shared registry) `scrape_hybrid_search` uses.
+    // ONE code path for both callers: without a `queryId` this is simply a
+    // token nobody holds a handle to.
+    let token = CancellationToken::new();
+    // The guard's `Drop` is what removes the slot on EVERY exit path — a
+    // panic or a dropped future would skip a trailing `unregister().await`
+    // and leak the slot for the life of the process (see `CancelGuard`).
+    let _cancel_guard = match req.query_id.as_deref() {
+        Some(id) => {
+            let registry = app.state::<Arc<CancelRegistry>>().inner().clone();
+            registry.register(id, token.clone()).await;
+            Some(CancelGuard {
+                registry,
+                id: id.to_string(),
+            })
+        }
+        None => None,
+    };
+
+    let lexical = run_lexical_arm(&req.entries, &query, req.entries.len(), &req.locale);
     let dense = if semantic_on(&app) {
-        run_dense(&app, &query, &req.entries).await
+        run_dense(&app, &query, &req.entries, &token).await
     } else {
         // Not "no embedding provider" — deliberately not attempted. The
         // reply says `skipped`, and the UI says so too.
@@ -170,9 +234,39 @@ pub async fn help_search(app: AppHandle, req: HelpSearchRequest) -> AppResult<He
     Ok(result)
 }
 
+/// The `queryId` boundary check, kept as its own pure function because it is
+/// the one field whose validity is a SAFETY property rather than a size cap:
+/// the id becomes a key in the app-wide `jobs::cancel::CancelRegistry`, which
+/// is last-writer-wins and trusts whatever it is handed, so an id outside
+/// [`QUERY_ID_PREFIX`] could name a live scrape's `job-{uuid}` slot (or a
+/// postings search's `search-` one) and replace — then, on cleanup, delete —
+/// that run's own token.
+///
+/// Re-checked here even though `HelpSearchRequestSchema` already constrains
+/// it: the agent CLI and a crafted extension message reach this command
+/// directly and never see the Zod schema. `None` is valid — the id is
+/// optional, and omitting it means "not cancellable".
+fn validate_query_id(query_id: Option<&str>) -> AppResult<()> {
+    let Some(id) = query_id else {
+        return Ok(());
+    };
+    if id.chars().count() > QUERY_ID_MAX_CHARS || !id.starts_with(QUERY_ID_PREFIX) {
+        return Err(AppError::Validation(format!(
+            "queryId must be at most {QUERY_ID_MAX_CHARS} chars and start with \"{QUERY_ID_PREFIX}\""
+        )));
+    }
+    Ok(())
+}
+
 /// Boundary re-validation of the whole request, in one pure function so every
 /// cap is a unit test rather than a claim. Mirrors `scrape_hybrid_search`'s
 /// own refusals (`AppError::Validation`, message naming the cap).
+///
+/// `locale` is deliberately absent: a locale can never be a refusal (an
+/// unknown one means "drop no function words", not an error), so its cap and
+/// normalisation live with the table it selects —
+/// [`stopwords::stopwords_for_locale`], which bounds the caller's string
+/// before it allocates anything from it.
 fn validate(trimmed_query: &str, entries: &[HelpSearchRequestEntry]) -> AppResult<()> {
     if trimmed_query.is_empty() {
         return Err(AppError::Validation("query must not be empty".to_string()));
@@ -267,15 +361,24 @@ pub fn to_lexical_doc(entry: &HelpSearchRequestEntry) -> LexicalDoc<'_> {
 /// ORs the same quoted tokens instead, so `bm25()` ranks by how many of the
 /// question's terms an entry matched (`retrieval::lexical::QueryMode`).
 ///
+/// `locale` is the request's own (the locale the ENTRIES are written in, not
+/// a guess from the question — see [`stopwords`] for why a per-query
+/// `detect()` is unsound at this length), and selects the function words to
+/// drop from the question before the OR-join. An unknown locale drops
+/// nothing.
+///
 /// Pure (no app, no network), and `pub` for the same reason as
-/// [`to_lexical_doc`].
+/// [`to_lexical_doc`]: `tests/help_retrieval.rs` measures THIS function,
+/// locale routing included, over the real shipped bundles.
 pub fn run_lexical_arm(
     entries: &[HelpSearchRequestEntry],
     query: &str,
     limit: usize,
+    locale: &str,
 ) -> (Vec<String>, ArmStatus) {
     let docs: Vec<LexicalDoc<'_>> = entries.iter().map(to_lexical_doc).collect();
-    match LexicalIndex::build(&docs).and_then(|index| index.search_any(query, limit)) {
+    let stopwords = stopwords::stopwords_for_locale(locale);
+    match LexicalIndex::build(&docs).and_then(|index| index.search_any(query, limit, stopwords)) {
         Ok(ranks) => (ranks, ArmStatus::Ran),
         Err(_) => (Vec::new(), ArmStatus::Unavailable),
     }
@@ -341,6 +444,7 @@ async fn run_dense(
     app: &AppHandle,
     query: &str,
     entries: &[HelpSearchRequestEntry],
+    token: &CancellationToken,
 ) -> (Vec<String>, ArmStatus) {
     let (Some(store), Some(limiter)) = (
         app.try_state::<DocumentStore>(),
@@ -362,8 +466,40 @@ async fn run_dense(
         query,
         entries,
         crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+        token,
     )
     .await
+}
+
+/// One embed round-trip, raced against the cancellation token.
+///
+/// Wrapping [`Embedder::embed_one`] at the CALL SITE rather than putting the
+/// token inside the trait: `Embedder` is implemented elsewhere in the crate
+/// (`documents::embedding`) and a token parameter there would touch every
+/// implementor for one caller's benefit. `biased`, so an already-cancelled
+/// token wins before the embed is even polled.
+///
+/// The race is the point: with a bare `.await` a `jobs_cancel(queryId)` does
+/// nothing once a call has started — it would sit in the registry cancelled
+/// while this task waited out the provider's per-attempt timeout, which is
+/// tens of seconds. Same shape, same reason as
+/// `hybrid_search::embed_or_cancel`.
+///
+/// ONE function for both call sites (the query embed and each entry's), so
+/// the query-embed test that mutation-checks the race covers the entry
+/// embeds' too. Shortening an ALREADY-IN-FLIGHT entry embed is the half no
+/// test here asserts: observing it needs a fake that never returns, and a
+/// test whose failure mode is "hangs forever" is worse than the gap.
+async fn embed_or_cancel<E: Embedder + ?Sized>(
+    embedder: &E,
+    text: &str,
+    token: &CancellationToken,
+) -> Option<EmbeddingVector> {
+    tokio::select! {
+        biased;
+        () = token.cancelled() => None,
+        embedded = embedder.embed_one(text) => embedded,
+    }
 }
 
 /// Embed the query, resolve every entry's vector (cache first), and rank by
@@ -387,9 +523,9 @@ async fn run_dense(
 ///
 /// **All-or-nothing, by design.** The arm reports [`ArmStatus::Ran`] only
 /// when EVERY requested entry came back RANKED; anything less — the
-/// wall-clock bound below firing, the miss budget running out, an entry whose
-/// embed failed, a vector that came back in another embedding space, a
-/// degenerate zero vector `dense::cosine` cannot score — returns
+/// wall-clock bound below firing, the miss budget running out, a CANCEL, an
+/// entry whose embed failed, a vector that came back in another embedding
+/// space, a degenerate zero vector `dense::cosine` cannot score — returns
 /// [`ArmStatus::Unavailable`] with NO ranks. Ranked, not merely paired: the
 /// two counts differ for the last of those cases. Reporting `Ran`
 /// on a partial pool would put `mode: "hybrid"` on the wire for a reply the
@@ -411,6 +547,13 @@ async fn run_dense(
 /// `budget` is production's `timeouts::DENSE_ARM_TIMEOUT`, passed in by
 /// [`run_dense`] rather than read here so the bound itself is testable: a test
 /// that had to wait out the real one would be a 100-second test nobody runs.
+///
+/// `token` is the request's cancellation token (module doc). Passing it here
+/// rather than only at the command boundary is what makes cancellation a
+/// TEST: this function takes no `AppHandle`, so "a pre-cancelled token embeds
+/// nothing" and "a cancel after the Nth embed stops there" are unit tests
+/// over a counting fake `Embedder` — the exact assertions
+/// `hybrid_search::run_dense_arm` cannot make about itself.
 async fn run_dense_arm<E: Embedder + ?Sized>(
     store: &DocumentStore,
     active: &EmbeddingConfig,
@@ -418,12 +561,21 @@ async fn run_dense_arm<E: Embedder + ?Sized>(
     query: &str,
     entries: &[HelpSearchRequestEntry],
     budget: std::time::Duration,
+    token: &CancellationToken,
 ) -> (Vec<String>, ArmStatus) {
+    // No separate "already cancelled?" check before the query embed: the
+    // `biased` race inside [`embed_or_cancel`] IS that check — an
+    // already-cancelled token wins before `embed_one` is polled at all, so a
+    // cancel that landed before this arm started costs ZERO provider calls
+    // (`a_pre_cancelled_token_embeds_nothing_and_reports_unavailable` asserts
+    // the COUNT, not just the status). A second guard here would be one no
+    // test could tell apart from its absence.
+    //
     // Started BEFORE the query embed, exactly like `hybrid_search`'s own dense
     // arm: a slow query embed eats into the SAME budget rather than getting a
     // separate one.
     let started = std::time::Instant::now();
-    let Some(query_vector) = embedder.embed_one(query).await else {
+    let Some(query_vector) = embed_or_cancel(embedder, query, token).await else {
         return (Vec::new(), ArmStatus::Unavailable);
     };
     let query_f32: Vec<f32> = query_vector.values.iter().map(|v| *v as f32).collect();
@@ -434,11 +586,24 @@ async fn run_dense_arm<E: Embedder + ?Sized>(
         // The whole loop is bounded by ELAPSED time, the same constant and
         // the same shape `hybrid_search::run_dense_arm` uses (a
         // `tokio::time::timeout` around the loop would DROP the future and
-        // throw away the vectors already cached inside it). There is no
-        // cancellation token here — v1 has none (module doc) — so this is the
-        // ONLY thing that stops a cold cache on a slow provider from running
-        // `entries.len()` × the per-embed timeout.
-        if started.elapsed() >= budget {
+        // throw away the vectors already cached inside it), and it is the
+        // only bound an ID-less (uncancellable) caller gets.
+        //
+        // The token is checked BETWEEN entries, alongside it, for the same
+        // reason: a `break` leaves the vectors already written to the cache
+        // in place. Each individual embed is raced separately
+        // ([`embed_or_cancel`]), so a cancel arriving mid-embed does not have
+        // to wait out the provider — but one that arrives just after an embed
+        // RESOLVES still paid for it. Bounded and deliberate, the same
+        // tradeoff `hybrid_search`'s candidate loop makes.
+        //
+        // This check is NOT redundant with the race. Every remaining entry
+        // could be a cache HIT, which needs no embed and therefore never
+        // touches the token: without this `break`, a search cancelled during
+        // its one cold embed would pair every entry anyway and report `Ran`
+        // — a `mode: "hybrid"` reply for a search the user cancelled
+        // (`a_cancel_mid_arm_is_unavailable_even_when_every_remaining_entry_is_cached`).
+        if started.elapsed() >= budget || token.is_cancelled() {
             break;
         }
         let hash = sha256_hex(&entry.body);
@@ -452,7 +617,7 @@ async fn run_dense_arm<E: Embedder + ?Sized>(
                     break;
                 }
                 misses += 1;
-                let embedded = embedder.embed_one(&entry.body).await;
+                let embedded = embed_or_cancel(embedder, &entry.body, token).await;
                 if let Some(v) = &embedded {
                     // Best-effort cache write: the embed already succeeded,
                     // so a failed upsert must not fail the search — it only
@@ -542,6 +707,8 @@ fn assemble(
         },
     }
 }
+
+mod stopwords;
 
 #[cfg(test)]
 mod test;
