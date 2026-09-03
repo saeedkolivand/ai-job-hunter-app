@@ -31,7 +31,7 @@ mod retry; // bounded exponential backoff for the non-streaming complete/embed p
 /// re-rank breaker's arithmetic depends on how many attempts one embed spends.
 pub(crate) use retry::EMBED_BUDGET_ATTEMPTS;
 pub mod search; // web-search backends (the retrieval half of research) — NOT AI providers
-pub(crate) mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters. `pub(crate)` for its ONE crate-visible item (`is_empty_answer_length_cut`); every other item stays `pub(super)`/private
+pub(crate) mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters. `pub(crate)` for its ONE crate-visible item (`is_empty_answer_length_cut`, plus the `#[cfg(test)]` fixture builder that constructs its input); every other item is `pub(super)`/private
 mod structured; // `complete_structured`'s prompt-discipline default + the per-provider JSON wire shapes
 pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 

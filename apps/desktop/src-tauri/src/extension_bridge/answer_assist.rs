@@ -75,12 +75,15 @@
 //! than four per call, and typically one.
 //!
 //! ## Streaming (PR 10) — compose internals now live in `stream`
-//! The one compose call streams via [`super::stream::compose_draft_stream`]
+//! Each compose attempt streams via [`super::stream::compose_draft_stream`]
 //! (moved out of this file in the R8 line-budget split; see its own doc for
-//! the full mechanism — the `ai:stream` listener bridging, `assist.chunk`/
-//! `assist.done` framing, and the per-connection cancellation registration
-//! against [`super::stream::AssistStreamRegistry`]). [`DRAFT_CAP`] (this
-//! file) is enforced LIVE mid-stream by [`super::stream::forward_chunk`],
+//! the full mechanism — the `ai:stream` listener bridging, `assist.chunk`
+//! framing, and the per-connection cancellation registration against
+//! [`super::stream::AssistStreamRegistry`]). The terminal `assist.done` frame
+//! is per REQUEST, not per attempt: [`compose_with_length_retry`] emits it
+//! exactly once, at its single exit, because the popup drops its chunk
+//! listener the moment it sees one. [`DRAFT_CAP`] (this file) is enforced
+//! LIVE mid-stream by [`super::stream::forward_chunk`] across BOTH attempts,
 //! not just clamped on the terminal string. Every other seam here (the
 //! gate, context resolution, reply shaping) is untouched by rewrite mode
 //! below.
@@ -187,29 +190,68 @@ pub(super) const DRAFT_CAP: usize = 4_000;
 /// string by `clamp_chars`. This number only has to be large enough that the
 /// model can reach that char cap — it is not itself the answer's bound.
 ///
-/// **Why it is no longer `DRAFT_CAP / 4`.** It was, on this codebase's
-/// chars≈tokens×4 heuristic, so that `max_tokens` doubled as a token-space
-/// mirror of the char cap. That silently assumed the whole budget is spent on
-/// ANSWER tokens. On a reasoning model it is not: the thinking tokens are
-/// billed against this same `max_tokens`, and when they exhaust it the
-/// provider ends the stream with `finish_reason: length` and NO answer text
-/// at all. Measured on Ollama Cloud `gpt-oss:20b`, drafts thought 880–3747
-/// chars and rewrites carrying a length instruction ("make it 200
-/// characters") thought 2218–3369 — the latter exhausted a 1000-token budget
-/// on 4 of 4 attempts, producing the popup's generic failure every time,
-/// while short-thinking preset rewrites (~600 chars) always passed. So the
-/// old value made success a function of how long the model happened to think.
+/// **Why it is no longer `DRAFT_CAP / 4`** (which was 1000). It was that, on
+/// this codebase's chars≈tokens×4 heuristic, so `max_tokens` doubled as a
+/// token-space mirror of the char cap. That silently assumed the whole budget
+/// is spent on ANSWER tokens. On a reasoning model it is not: the thinking
+/// tokens are billed against this same `max_tokens`, and when they exhaust it
+/// the provider ends the stream with `finish_reason: length` and NO answer
+/// text at all. Measured on Ollama Cloud `gpt-oss:20b`, drafts thought
+/// 880–3747 chars and rewrites carrying a length instruction ("make it 200
+/// characters") thought 2218–3369 — the latter exhausted the old budget on 4
+/// of 4 attempts, producing the popup's generic failure every time, while
+/// short-thinking preset rewrites (~600 chars) always passed. So the old
+/// value made success a function of how long the model happened to think.
 ///
-/// `DRAFT_CAP` (as tokens) instead: on the same heuristic that is ~4x the
-/// answer's own char cap, i.e. room for the answer PLUS a long reasoning pass,
-/// while still bounding a runaway response. Reasoning-effort helps from the
-/// other side — this path also asks for the provider's lowest tier
-/// ([`crate::pipeline::Completer::lowest_effort`]) so less of the budget goes
-/// to thinking in the first place — and [`compose_with_length_retry`] retries
-/// once at double this when a model still thinks past it.
-/// `pub(super)` — `stream::compose_draft_stream` (after the R8 split) is now
-/// this constant's only reader.
-pub(super) const ANSWER_ASSIST_MAX_TOKENS: u32 = DRAFT_CAP as u32;
+/// **Why exactly this number, and not simply `DRAFT_CAP` as tokens.** Two
+/// bounds meet here:
+///
+/// * From below — it must comfortably cover one answer plus a normal
+///   reasoning pass. Doubling the old budget does: across the live replay
+///   this was measured on, the worst SUCCESSFUL call spent 928 output tokens.
+/// * From above — `commands::ai_provider::anthropic::build_chat_stream_body`
+///   turns classic extended thinking ON for a classic Anthropic model once
+///   `max_tokens` crosses its "big enough task to warrant it" threshold, and
+///   then adds a thinking budget on top. Crossing that line would make this
+///   path buy MORE reasoning on Anthropic — the exact opposite of what it is
+///   here to do (and it forces `temperature` to 1.0 besides). This value sits
+///   below that threshold; see that function for the number itself.
+///
+/// Reasoning-effort helps from the other side — this path also asks for a
+/// cheap tier when the provider has one
+/// ([`crate::pipeline::Completer::low_effort`]) so less of the budget goes to
+/// thinking in the first place — and [`compose_with_length_retry`] retries
+/// once at [`ANSWER_ASSIST_RETRY_MAX_TOKENS`] when a model still thinks past
+/// it. `pub(super)` — `stream::compose_draft_stream` (after the R8 split) is
+/// now this constant's only reader.
+pub(super) const ANSWER_ASSIST_MAX_TOKENS: u32 = 2_000;
+
+/// The budget the ONE retry in [`compose_with_length_retry`] runs at, after a
+/// model spent all of [`ANSWER_ASSIST_MAX_TOKENS`] thinking and produced no
+/// answer text.
+///
+/// `DRAFT_CAP` as tokens: on the chars≈tokens×4 heuristic that is ~4x the
+/// visible answer's own char cap, i.e. room for a full-length answer PLUS a
+/// long reasoning pass, while still bounding a runaway response. It is
+/// deliberately allowed to cross the Anthropic classic-thinking threshold
+/// [`ANSWER_ASSIST_MAX_TOKENS`] stays under — this attempt exists precisely
+/// because the model needs more room to think AND answer, and Anthropic's
+/// classic mode budgets the two separately.
+pub(super) const ANSWER_ASSIST_RETRY_MAX_TOKENS: u32 = DRAFT_CAP as u32;
+
+/// Compile-time guard on the two budgets above — both are relationships
+/// BETWEEN constants, so they are checked where they can never drift rather
+/// than in a test that has to be remembered:
+///
+/// * the first attempt must exceed a cap-length answer's OWN token cost
+///   (`DRAFT_CAP / 4`, on the chars≈tokens×4 heuristic), or reasoning has
+///   nothing left to spend and the empty length cut is back;
+/// * the retry must be strictly larger than the attempt it is retrying, or it
+///   is not a retry at all.
+const _: () = {
+    assert!(ANSWER_ASSIST_MAX_TOKENS > (DRAFT_CAP / 4) as u32);
+    assert!(ANSWER_ASSIST_RETRY_MAX_TOKENS > ANSWER_ASSIST_MAX_TOKENS);
+};
 
 /// Clamp `s` to at most `max` BYTES, cutting on a UTF-8 char boundary — same
 /// discipline as `answers_save::clamp_bytes`/`answers_suggest::clamp_bytes`
@@ -579,6 +621,7 @@ pub(super) fn answer_assist_reply(req_id: &str, outcome: AppResult<AnswerAssistO
 pub(super) async fn resolve_answer_assist(
     app: &AppHandle,
     req_id: &str,
+    r#gen: u64,
     ai_assist_enabled: bool,
     app_store: &ApplicationStore,
     doc_store: &DocumentStore,
@@ -735,23 +778,33 @@ pub(super) async fn resolve_answer_assist(
     // exactly once, there too, regardless of which fallible step produced the
     // `Err`.
     //
-    // The lowest effort tier this provider/model offers is resolved ONCE and
-    // used for every attempt — see `ANSWER_ASSIST_MAX_TOKENS`'s doc for why
-    // this path wants the cheapest reasoning it can get.
-    let effort = completer.lowest_effort();
+    // A cheap effort tier (when this provider/model has one) is resolved ONCE
+    // and used for every attempt — see `ANSWER_ASSIST_MAX_TOKENS`'s doc for
+    // why this path wants the least reasoning it can ask for.
+    let effort = completer.low_effort();
     let mut round = BridgeComposeRound {
-        app,
-        completer: &completer,
-        req_id,
-        registry,
-        system,
-        user: &user,
-        sink,
+        stream: super::stream::ComposeStream {
+            app,
+            completer: &completer,
+            req_id,
+            r#gen,
+            registry,
+            system,
+            user: &user,
+            sink,
+            forwarded: String::new(),
+        },
         limiter: &limiter,
         provider_id,
     };
     let draft = clamp_chars(
-        compose_with_length_retry(&mut round, max_tokens, effort).await?,
+        compose_with_length_retry(
+            &mut round,
+            max_tokens,
+            ANSWER_ASSIST_RETRY_MAX_TOKENS,
+            effort,
+        )
+        .await?,
         DRAFT_CAP,
     );
 
@@ -796,28 +849,54 @@ trait DraftComposer {
     /// made. Called once per attempt, BEFORE it — never once per request.
     fn charge(&self) -> AppResult<()>;
 
-    /// Stream one compose and return the accumulated answer text. The error
+    /// Whether this request still owns its registry entry — checked between
+    /// the two attempts, BEFORE the second charge. `false` means the client
+    /// gave up in the window between them (an `assist.cancel`, or the whole
+    /// connection dropping), and the retry must not be paid for. See
+    /// [`super::stream::ComposeStream::still_registered`].
+    fn still_wanted(&self) -> bool;
+
+    /// Stream one compose attempt and return the answer text accumulated for
+    /// the REQUEST so far (attempts share one `DRAFT_CAP` budget). The error
     /// is the provider's OWN (unmapped), so the caller can classify it.
     async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<String>;
+
+    /// Emit the ONE terminal `assist.done` frame this request owes its
+    /// client. Called exactly once, at [`compose_with_length_retry`]'s single
+    /// exit — see [`super::stream::ComposeStream::send_done`] for why it can
+    /// never be per attempt.
+    async fn finish(&mut self);
 }
 
 /// Compose once; on EXACTLY the empty-answer length cut
-/// ([`crate::commands::ai_provider::stream::is_empty_answer_length_cut`] — the model
-/// spent its whole output budget reasoning and never emitted answer text),
-/// compose a SECOND time at double the budget, then give up.
+/// ([`crate::commands::ai_provider::stream::is_empty_answer_length_cut`] — the
+/// model spent its whole output budget reasoning and the provider ended the
+/// stream with `finish_reason: length` and no answer text), compose a SECOND
+/// time at `retry_max_tokens`, at the same already-cheapest effort tier.
+/// Every other failure surfaces immediately: a retry is real, billable spend,
+/// and nothing about a network error or a generic empty answer says a larger
+/// budget would help.
 ///
-/// `effort` is the tier both attempts run at (the provider's lowest, resolved
-/// once by the caller). It is deliberately NOT lowered further on the retry:
-/// there is nothing below the lowest tier, and a model with no effort lever
-/// (`None`) has nothing to force. The budget is what changes.
+/// Three things are per REQUEST rather than per attempt, and all three are
+/// this function's single-exit shape:
 ///
-/// **Only this failure retries.** Any other error — a transport failure, a
-/// rejected key, a cancellation, the GENERIC empty-answer message — returns
-/// immediately: a second round-trip is real, billable spend, and it is only
-/// justified where the first attempt proves the model was still working and
-/// simply ran out of room. The retry pays the daily ceiling through
-/// `charge`, the same call the first attempt makes, so two attempts cost two
-/// charges and the ceiling can refuse the second one.
+/// * **The terminal `assist.done`** — emitted once, here, on BOTH outcomes.
+///   The popup deletes its `assist.chunk` listener for the `reqId` on that
+///   frame, so one per attempt would silently discard every chunk of the
+///   retry.
+/// * **The registry entry** — each attempt binds its own fresh job to the ONE
+///   entry `begin` created, keeping its generation, so `handle_answer_assist`'s
+///   single `unregister_gen` still frees it (see
+///   [`super::assist_registry::start_and_register`]).
+/// * **The `DRAFT_CAP` char budget** — carried in
+///   [`super::stream::ComposeStream::forwarded`], so a retried request can
+///   never forward twice the cap.
+///
+/// Spend discipline: the first charge is taken OUTSIDE the attempt block, so
+/// a request the daily ceiling refuses outright never emits a terminal frame
+/// for a stream that never ran. The retry pays through the SAME charge, and
+/// only after [`DraftComposer::still_wanted`] confirms the client is still
+/// there.
 ///
 /// Both attempts are logged at WARN naming the retry, so the desktop log
 /// tells a retried failure apart from a first-try one (the wire only ever
@@ -825,9 +904,26 @@ trait DraftComposer {
 async fn compose_with_length_retry<C: DraftComposer>(
     round: &mut C,
     max_tokens: u32,
+    retry_max_tokens: u32,
     effort: Option<&str>,
 ) -> AppResult<String> {
     round.charge()?;
+    let outcome = compose_attempts(round, max_tokens, retry_max_tokens, effort).await;
+    round.finish().await;
+    outcome
+}
+
+/// [`compose_with_length_retry`]'s attempt sequence, split out so that
+/// function has ONE exit to emit the terminal frame at — every `?` and early
+/// return in here still runs it. The first charge is the caller's (see its
+/// doc); the retry's is taken here, because only a retry that actually
+/// happens may cost anything.
+async fn compose_attempts<C: DraftComposer>(
+    round: &mut C,
+    max_tokens: u32,
+    retry_max_tokens: u32,
+    effort: Option<&str>,
+) -> AppResult<String> {
     let first = match round.compose(max_tokens, effort).await {
         Ok(text) => return Ok(text),
         Err(e) => e,
@@ -835,25 +931,35 @@ async fn compose_with_length_retry<C: DraftComposer>(
     if !crate::commands::ai_provider::stream::is_empty_answer_length_cut(&first) {
         return Err(to_draft_failed("compose failed", first));
     }
+    // The client can give up in the window between the two attempts — an
+    // `assist.cancel`, or the whole connection dropping (`cancel_all`). Both
+    // take this request's registry entry away, and starting a second billable
+    // generation for an answer nobody will read is exactly the spend this
+    // check exists to refuse.
+    if !round.still_wanted() {
+        return Err(to_draft_failed(
+            "compose failed and the request was cancelled before the retry",
+            first,
+        ));
+    }
 
-    tracing::warn!("answer_assist: retrying after an empty length cut: {first}");
+    // No interpolation: `first` is necessarily one of the two fixed
+    // empty-length-cut sentinels at this point (that is what the
+    // classification above means), so there is nothing dynamic left to say.
+    tracing::warn!("answer_assist: retrying after an empty length cut");
     round.charge()?;
     round
-        .compose(max_tokens.saturating_mul(2), effort)
+        .compose(retry_max_tokens, effort)
         .await
         .map_err(|e| to_draft_failed("compose failed on the retry after an empty length cut", e))
 }
 
 /// The production [`DraftComposer`]: the real daily-ceiling charge and the
-/// real streaming compose, over one already-resolved request's inputs.
+/// real streaming compose, over one already-resolved request's inputs
+/// ([`super::stream::ComposeStream`], which owns everything the two attempts
+/// share — see its doc).
 struct BridgeComposeRound<'a> {
-    app: &'a AppHandle,
-    completer: &'a Completer,
-    req_id: &'a str,
-    registry: &'a super::stream::AssistStreamRegistry,
-    system: &'a str,
-    user: &'a str,
-    sink: &'a mut dyn super::FrameSink,
+    stream: super::stream::ComposeStream<'a>,
     limiter: &'a crate::limits::Limiter,
     provider_id: &'a str,
 }
@@ -863,19 +969,17 @@ impl DraftComposer for BridgeComposeRound<'_> {
         charge_compose_budget(self.limiter, self.provider_id)
     }
 
+    fn still_wanted(&self) -> bool {
+        self.stream.still_registered()
+    }
+
     async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<String> {
-        super::stream::compose_draft_stream(
-            self.app,
-            self.completer,
-            self.req_id,
-            self.registry,
-            self.system,
-            max_tokens,
-            effort,
-            self.user,
-            self.sink,
-        )
-        .await
+        super::stream::compose_draft_stream(&mut self.stream, max_tokens, effort).await?;
+        Ok(self.stream.forwarded.clone())
+    }
+
+    async fn finish(&mut self) {
+        self.stream.send_done().await;
     }
 }
 
@@ -996,6 +1100,7 @@ pub(super) async fn handle_answer_assist(
             resolve_answer_assist(
                 app,
                 req_id,
+                r#gen,
                 ai_assist_enabled,
                 app_store.inner(),
                 doc_store.inner(),
@@ -1052,7 +1157,11 @@ pub(super) async fn handle_answer_assist(
 /// rejected daily-budget charge), the store-unavailable branch above returned
 /// early, OR `compose_draft_stream` ran to completion (success or a genuine
 /// provider error) and `register`ed a `Running` job (preserving the SAME
-/// `gen`) along the way. An `assist.cancel` landing anywhere in that window
+/// `gen`) along the way — including the case where it ran TWICE, because
+/// [`compose_with_length_retry`] retried: the second attempt REBINDS that
+/// same entry to its fresh job rather than minting a new generation (see
+/// [`super::assist_registry::AssistStreamRegistry::register`]), so exactly
+/// one entry, carrying this `gen`, is still what this call frees. An `assist.cancel` landing anywhere in that window
 /// is unaffected: `cancel`/`register` already consume the entry themselves
 /// (`Running` → cancelled + removed, `Pending` → `CancelledEarly` → consumed
 /// by the next `register` call) — `cancel`/`cancel_all` may free the entry

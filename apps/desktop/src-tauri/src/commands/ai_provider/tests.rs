@@ -678,14 +678,15 @@ fn resolve_intent_covers_every_wire_literal_in_the_shared_schema() {
     assert_eq!(resolve_intent(&req_with_intent(None)), Intent::Default);
 }
 
-// ── Lowest reasoning effort (pipeline::lowest_effort_level over the REAL
+// ── Cheap reasoning effort (pipeline::low_effort_level over the REAL
 // adapters' level lists) ──────────────────────────────────────────────────
 //
-// `Completer::lowest_effort` takes the FIRST entry of a provider's
-// `effort_levels(model)`. That is only correct while every adapter lists its
-// LOWEST tier first, which these tests pin against the live tables — the
-// `Completer` itself needs an `AppHandle` this crate has no harness for, so
-// the free function is what gets driven here.
+// `Completer::low_effort` takes the FIRST entry of a provider's
+// `effort_levels(model)` and keeps it only when it is `minimal`/`low`. The
+// first half is only correct while every adapter lists its LOWEST tier
+// first, which these tests pin against the live tables — the `Completer`
+// itself needs an `AppHandle` this crate has no harness for, so the free
+// function is what gets driven here.
 
 /// The closed effort vocabulary, LOWEST first — the same tier order
 /// `timeouts::effort_multiplier`'s table documents (`minimal < low < medium
@@ -774,7 +775,7 @@ fn every_providers_effort_levels() -> Vec<(&'static str, Vec<&'static str>)> {
     ]
 }
 
-/// The invariant `lowest_effort_level`'s `.first()` rests on. Deliberately
+/// The invariant `low_effort_level`'s `.first()` rests on. Deliberately
 /// NOT "the whole list is sorted": Anthropic's is not (it ends `…, "max",
 /// "xhigh"`, following its own docs' enumeration rather than tier order).
 /// What must hold — and all `.first()` needs — is that entry ZERO is the
@@ -802,44 +803,60 @@ fn every_providers_effort_levels_list_its_lowest_tier_first() {
             rank(levels[0]),
             min,
             "{what}: {levels:?} must list its LOWEST tier first — \
-             `Completer::lowest_effort` takes entry 0"
+             `Completer::low_effort` takes entry 0"
         );
     }
 }
 
 /// The concrete answers the extension bridge's `answer.assist` depends on,
-/// on the provider the defect was measured against and on a model with no
-/// lever at all.
+/// on the provider the defect was measured against, on a model with no lever
+/// at all, and on a model whose lowest tier is already an expensive one.
+///
+/// Mutation check (executed): drop the `minimal`/`low` filter from
+/// `low_effort_level` and the `gemini-3.1-flash-lite` case fails (it resolves
+/// `Some("high")`); replace the `.first()` with a `"low"` name match and the
+/// `minimal`-first Gemini case fails.
 #[test]
-fn lowest_effort_level_resolves_low_for_gpt_oss_and_nothing_without_a_lever() {
-    let lowest = |levels: Vec<&'static str>| crate::pipeline::lowest_effort_level(&levels);
+fn low_effort_level_resolves_low_for_gpt_oss_and_nothing_for_a_model_with_no_cheap_tier() {
+    let cheap = |levels: Vec<&'static str>| crate::pipeline::low_effort_level(&levels);
 
     // Ollama Cloud gpt-oss — the config the empty-length-cut failure was
     // measured on. Local Ollama's own gpt-oss resolves the same way.
     assert_eq!(
-        lowest(OllamaCloudClient::new().effort_levels("gpt-oss:20b")),
+        cheap(OllamaCloudClient::new().effort_levels("gpt-oss:20b")),
         Some("low")
     );
     assert_eq!(
-        lowest(OllamaClient.effort_levels("gpt-oss:20b")),
+        cheap(OllamaClient.effort_levels("gpt-oss:20b")),
         Some("low")
     );
 
     // No lever → nothing is sent, and nothing is invented.
-    assert_eq!(lowest(OllamaClient.effort_levels("llama3.1:8b")), None);
-    assert_eq!(lowest(GeminiClient.effort_levels("gemini-2.5-pro")), None);
+    assert_eq!(cheap(OllamaClient.effort_levels("llama3.1:8b")), None);
+    assert_eq!(cheap(GeminiClient.effort_levels("gemini-2.5-pro")), None);
     assert_eq!(
-        lowest(OpenAiClient::new(ProviderId::OpenAiCompatible, None).effort_levels("local-model")),
+        cheap(OpenAiClient::new(ProviderId::OpenAiCompatible, None).effort_levels("local-model")),
         None
     );
 
-    // …and the lowest tier is NOT always spelled "low": a model whose only
-    // accepted level is "high" must get "high", not nothing. This is why the
-    // resolution is positional rather than a name match.
+    // The lowest tier is not always spelled "low" — this one is `minimal`,
+    // which is why the resolution is positional rather than a name match.
+    let flash = GeminiClient.effort_levels("gemini-3.6-flash");
+    assert_eq!(flash.first().copied(), Some("minimal"));
+    assert_eq!(cheap(flash), Some("minimal"));
+
+    // …and a model whose ONLY accepted level is an expensive one gets
+    // NOTHING, not that level: `answer.assist` asks for a cheap tier to keep
+    // reasoning out of its output budget, and `"high"` would both raise the
+    // thinking and stretch `stream_deadline` past the baseline (asserted
+    // below), holding an `ai_research` slot longer.
+    let lite = GeminiClient.effort_levels("gemini-3.1-flash-lite");
     assert_eq!(
-        lowest(GeminiClient.effort_levels("gemini-3.1-flash-lite")),
-        Some("high")
+        lite.first().copied(),
+        Some("high"),
+        "the premise: this model's lowest — and only — tier is an expensive one"
     );
+    assert_eq!(cheap(lite), None);
 }
 
 /// Asking for the lowest tier must never SHORTEN the stream's deadline: the
@@ -847,7 +864,7 @@ fn lowest_effort_level_resolves_low_for_gpt_oss_and_nothing_without_a_lever() {
 /// eating the output budget, and a shorter deadline would trade one failure
 /// mode for another. `minimal`/`low`/absent all sit at the 1.0 multiplier.
 #[test]
-fn the_lowest_effort_tiers_keep_the_baseline_stream_deadline() {
+fn the_cheap_effort_tiers_keep_the_baseline_stream_deadline() {
     for level in [None, Some("minimal"), Some("low")] {
         assert_eq!(
             timeouts::stream_deadline(level),

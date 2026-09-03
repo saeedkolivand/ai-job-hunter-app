@@ -25,7 +25,7 @@ use super::{ProviderId, RequestTrace, StopReason, Usage};
 
 /// One emittable piece pulled from a provider's stream by its `parse` closure.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StreamPiece {
+pub(super) struct StreamPiece {
     /// Text to forward to the renderer. Empty pieces are skipped (so a parser can
     /// signal `done` without text).
     pub delta: String,
@@ -703,7 +703,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// directly (never through `finish`, which would also wrongly emit a
 /// terminal `job_complete`).
 #[allow(clippy::too_many_arguments)]
-pub async fn stream_response<F>(
+pub(super) async fn stream_response<F>(
     app: &AppHandle,
     job_id: &str,
     trace: &RequestTrace,

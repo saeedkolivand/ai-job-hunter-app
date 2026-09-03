@@ -476,20 +476,84 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Stream the ONE compose call for `answer.assist` — see the module doc's
-/// "Three ways a stream ends early" section for the full picture. Registers
-/// a fresh job under `req_id` on `registry` (THIS connection's own
-/// [`AssistStreamRegistry`] — so a client `assist.cancel` can stop it
-/// early; does NOT `unregister` it on any path out of this function —
-/// `handle_answer_assist` (in `answer_assist`) is the SOLE unregister owner,
-/// once per request, at its single return point, so `req_id` can never be
-/// clobbered by two cleanup sites racing over the same key. See its doc),
-/// drives [`Completer::stream_complete`], forwards every
-/// visible-text delta through `sink` as a cap-clamped `assist.chunk` frame
-/// (see [`forward_chunk`]), sends a terminal `assist.done` frame once the
-/// stream ends, and returns the full accumulated text (or the provider's
-/// error) for the caller to shape into the (unchanged) `answer.assist.result`
-/// terminal reply.
+/// Everything ONE `answer.assist` request's streaming compose works on: the
+/// already-resolved inputs that never change between attempts, plus the three
+/// pieces of state that must SPAN them (the registry entry's generation, the
+/// sink, and the answer budget already forwarded).
+///
+/// A retry is not a second request. `compose_with_length_retry` (in
+/// [`super::answer_assist`]) can drive [`compose_draft_stream`] twice for ONE
+/// `answer.assist` frame, and everything in here belongs to that frame rather
+/// than to an attempt — which is why the retry rebinds the SAME registry
+/// entry (see [`start_and_register`]), shares one `DRAFT_CAP` budget, and
+/// emits ONE terminal `assist.done` ([`Self::send_done`]). Bundling also
+/// takes `compose_draft_stream` from nine positional parameters to three, so
+/// it no longer needs a `clippy::too_many_arguments` exemption.
+pub(super) struct ComposeStream<'a> {
+    pub(super) app: &'a AppHandle,
+    pub(super) completer: &'a Completer,
+    pub(super) req_id: &'a str,
+    /// The generation [`AssistStreamRegistry::begin`] minted for THIS request,
+    /// threaded down from `handle_answer_assist` — every attempt binds its
+    /// fresh job to that one entry, and the request's single
+    /// `unregister_gen` then still owns it.
+    pub(super) r#gen: u64,
+    pub(super) registry: &'a AssistStreamRegistry,
+    pub(super) system: &'a str,
+    pub(super) user: &'a str,
+    pub(super) sink: &'a mut dyn FrameSink,
+    /// Answer chars forwarded to the client SO FAR, across every attempt —
+    /// [`super::answer_assist::DRAFT_CAP`] bounds the REQUEST, not one
+    /// attempt. Per-attempt buffers would let a retried request forward up to
+    /// twice the cap: a local model that emits its reasoning as ordinary
+    /// `<think>` prose gets it forwarded here as visible deltas while the
+    /// provider's own answer accumulator strips it
+    /// (`commands::ai_provider::stream::strip_think_blocks`), so attempt 1 can
+    /// fill this buffer AND still end as an empty length cut.
+    pub(super) forwarded: String,
+}
+
+impl ComposeStream<'_> {
+    /// Whether this request still owns its registry entry — the spend guard
+    /// `compose_with_length_retry` checks before paying for a retry. See
+    /// [`AssistStreamRegistry::holds_running_gen`].
+    pub(super) fn still_registered(&self) -> bool {
+        self.registry.holds_running_gen(self.req_id, self.r#gen)
+    }
+
+    /// Send the ONE terminal `assist.done` frame this request owes its client
+    /// — at `compose_with_length_retry`'s single exit, never per attempt. The
+    /// popup's frame handler DELETES its `assist.chunk` listener for this
+    /// `reqId` the moment it sees this frame, so a `done` emitted after a
+    /// failed first attempt would drop every chunk of the retry (and leave
+    /// the client's stall timer unable to re-arm) while the desktop streamed
+    /// on into a sink nobody was reading.
+    pub(super) async fn send_done(&mut self) {
+        self.sink.send_frame(assist_done_frame(self.req_id)).await;
+    }
+}
+
+/// Stream ONE compose attempt for `answer.assist` — see the module doc's
+/// "Four ways a stream ends early" section for the full picture. Starts a
+/// fresh job and binds it to `ctx`'s ALREADY-BEGUN registry entry (THIS
+/// connection's own [`AssistStreamRegistry`] — so a client `assist.cancel`
+/// can stop it early; does NOT `unregister` it on any path out of this
+/// function — `handle_answer_assist` (in `answer_assist`) is the SOLE
+/// unregister owner, once per request, at its single return point, so
+/// `req_id` can never be clobbered by two cleanup sites racing over the same
+/// key. See its doc), drives [`Completer::stream_complete`], and forwards
+/// every visible-text delta through `ctx.sink` as a cap-clamped
+/// `assist.chunk` frame (see [`forward_chunk`]), accumulating into
+/// `ctx.forwarded` — which the caller reads for the (unchanged)
+/// `answer.assist.result` terminal reply.
+///
+/// It does NOT send the terminal `assist.done` frame: that is
+/// [`ComposeStream::send_done`], called once per REQUEST at the retry's
+/// single exit (see its doc for the client-side listener this ordering
+/// protects). Binding is generation-scoped
+/// ([`AssistStreamRegistry::register`]), so a second attempt rebinds the
+/// first attempt's entry and an attempt whose entry a cancel already removed
+/// refuses to start at all.
 ///
 /// `system`/`max_tokens` are CALLER-supplied (PR 11) rather than hardcoded to
 /// [`super::answer_assist::ANSWER_ASSIST_SYSTEM`]/`ANSWER_ASSIST_MAX_TOKENS`
@@ -502,17 +566,17 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// caller runs this function TWICE on one specific failure (see
 /// `answer_assist::compose_with_length_retry`), and both attempts must be
 /// driven by the SAME resolved tier. It is normally
-/// [`Completer::lowest_effort`] — on a reasoning model the thinking tokens
-/// are billed against `max_tokens`, so this path buys the cheapest reasoning
-/// the provider offers; `None` (no lever for this model) leaves the request
+/// [`Completer::low_effort`] — on a reasoning model the thinking tokens are
+/// billed against `max_tokens`, so this path buys the cheapest reasoning the
+/// provider offers; `None` (no cheap tier for this model) leaves the request
 /// exactly as it was before this parameter existed.
 ///
 /// Mechanism: `chat_stream` emits `ai:stream` Tauri events as it drives the
 /// HTTP stream — the SAME channel the renderer's own provider hook listens
 /// to. This registers a SECOND, Rust-side listener for this exact `job_id`
-/// (`tauri::Listener`) and forwards each piece through `sink` instead of into
-/// a webview. A synchronous listener callback can't itself `.await` a socket
-/// write, so it pushes each event onto an unbounded channel that this
+/// (`tauri::Listener`) and forwards each piece through `ctx.sink` instead of
+/// into a webview. A synchronous listener callback can't itself `.await` a
+/// socket write, so it pushes each event onto an unbounded channel that this
 /// function drains CONCURRENTLY with the `stream_complete` future
 /// (`tokio::select!`). Several deltas — including the terminal one — can be
 /// emitted synchronously in one burst right before `stream_complete`
@@ -529,29 +593,25 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// confirming (via [`is_job_cancelled`]) that the job isn't ALREADY
 /// `Cancelled` for one of those reasons (or an external cancel) — otherwise
 /// `job_fail` would wrongly overwrite it.
-// Nine parameters, one over `clippy.toml`'s ceiling of 8. Every one is a
-// distinct, already-resolved input to the same single provider round-trip;
-// bundling a subset into a struct would only move the same values behind a
-// name that means "the arguments", so the ceiling is raised for this one
-// function instead.
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn compose_draft_stream(
-    app: &AppHandle,
-    completer: &Completer,
-    req_id: &str,
-    registry: &AssistStreamRegistry,
-    system: &str,
+    ctx: &mut ComposeStream<'_>,
     max_tokens: u32,
     effort: Option<&str>,
-    user: &str,
-    sink: &mut dyn FrameSink,
-) -> AppResult<String> {
+) -> AppResult<()> {
+    let app = ctx.app;
+    let completer = ctx.completer;
+    let req_id = ctx.req_id;
+    let system = ctx.system;
+    let user = ctx.user;
+
     // `start_and_register` starts the job BEFORE registering it — see its own
-    // doc for the TOCTOU this order closes. `None` means an `assist.cancel`
-    // raced ahead of this call during the pre-compose window and the job
+    // doc for the TOCTOU this order closes. `None` means this request no
+    // longer owns its registry entry: an `assist.cancel` raced ahead during
+    // the pre-compose window, or (between two attempts) cancelled this
+    // request / dropped the whole connection. Either way the job
     // `start_and_register` itself just started has already been cancelled —
-    // the client already gave up, so never proceed into the stream loop.
-    let Some(job_id) = start_and_register(app, registry, req_id) else {
+    // the client gave up, so never proceed into the stream loop.
+    let Some(job_id) = start_and_register(app, ctx.registry, req_id, ctx.r#gen) else {
         return Err(AppError::Message("Job cancelled".to_string()));
     };
 
@@ -565,7 +625,6 @@ pub(super) async fn compose_draft_stream(
         }
     });
 
-    let mut accumulated = String::new();
     let mut cap_reached = false;
     let mut sink_gone = false;
     let result: AppResult<()>;
@@ -582,7 +641,7 @@ pub(super) async fn compose_draft_stream(
             tokio::select! {
                 maybe = rx.recv() => {
                     if let Some(chunk) = maybe {
-                        match forward_chunk(&chunk, req_id, sink, &mut accumulated).await {
+                        match forward_chunk(&chunk, req_id, ctx.sink, &mut ctx.forwarded).await {
                             ForwardOutcome::Continue => {}
                             ForwardOutcome::CapReached if !cap_reached => {
                                 cap_reached = true;
@@ -616,7 +675,7 @@ pub(super) async fn compose_draft_stream(
     // closed the frame stream (nothing left to usefully forward).
     while !cap_reached && !sink_gone {
         match rx.try_recv() {
-            Ok(chunk) => match forward_chunk(&chunk, req_id, sink, &mut accumulated).await {
+            Ok(chunk) => match forward_chunk(&chunk, req_id, ctx.sink, &mut ctx.forwarded).await {
                 ForwardOutcome::Continue => {}
                 ForwardOutcome::CapReached => cap_reached = true,
                 ForwardOutcome::SinkGone => sink_gone = true,
@@ -628,11 +687,12 @@ pub(super) async fn compose_draft_stream(
     app.unlisten(listener_id);
     // No `registry.unregister(req_id)` here — see this function's doc:
     // `handle_answer_assist` is the SOLE unregister owner (one call, at its
-    // single return point, covering every outcome of this function too).
-    sink.send_frame(assist_done_frame(req_id)).await;
+    // single return point, covering every outcome of this function too). No
+    // `assist.done` here either: that frame is per REQUEST, not per attempt
+    // (see `ComposeStream::send_done`).
 
     if cap_reached {
-        return Ok(accumulated);
+        return Ok(());
     }
     if let Err(e) = result {
         // A cancellation THIS function itself triggered (the cap above, or
@@ -650,7 +710,7 @@ pub(super) async fn compose_draft_stream(
         }
         return Err(e);
     }
-    Ok(accumulated)
+    Ok(())
 }
 
 /// Whether `chunk` (an `ai:stream` event for the job [`compose_draft_stream`]
@@ -737,7 +797,10 @@ fn assist_chunk_frame(req_id: &str, delta: &str) -> String {
 }
 
 /// Build the terminal, no-payload `assist.done` frame for `req_id`.
-fn assist_done_frame(req_id: &str) -> String {
+/// `pub(super)` so `answer_assist`'s fake compose round can emit the REAL
+/// frame — the "exactly one `assist.done` per request" assertion is then
+/// about the production frame, not about a re-typed copy of it.
+pub(super) fn assist_done_frame(req_id: &str) -> String {
     json!({
         "type": msg::ASSIST_DONE,
         "reqId": req_id,
@@ -793,7 +856,8 @@ mod tests {
         let registry = AssistStreamRegistry::default();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
 
-        assert!(begin_or_reject_duplicate(&registry, "req-1", &out_tx).is_some());
+        let r#gen = begin_or_reject_duplicate(&registry, "req-1", &out_tx)
+            .expect("a fresh reqId is accepted");
         assert!(
             registry.contains("req-1"),
             "begin must have run synchronously — before any spawn, before any await"
@@ -810,7 +874,7 @@ mod tests {
             "no job exists yet — Pending just becomes CancelledEarly, nothing to job_cancel"
         );
         assert!(
-            !registry.register("req-1", "job-1"),
+            !registry.register("req-1", r#gen, "job-1"),
             "the cancel that raced ahead of the spawned task's own register call must still win"
         );
     }
@@ -1216,6 +1280,10 @@ mod tests {
         );
     }
 
+    /// The pre-filled buffer here is also exactly what a RETRY inherits:
+    /// `ComposeStream::forwarded` is carried across attempts, so this pins
+    /// that a second attempt spends what the first one left rather than a
+    /// fresh cap of its own.
     #[tokio::test]
     async fn forward_chunk_clamps_a_delta_that_would_cross_the_cap_mid_chunk() {
         let mut sink = RecordingSink::default();

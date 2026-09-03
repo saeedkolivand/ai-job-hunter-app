@@ -622,11 +622,13 @@ fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) ->
     //
     // Adaptive thinking has NO such gate: it's on by default (several models
     // can't even disable it) and always counts toward `max_tokens` regardless
-    // of how small the caller's budget is — a caller like the extension
-    // bridge's answer-assist flow (`max_tokens: 1000`) would otherwise get
-    // summarized-thinking tokens billed out of an un-inflated 1000-token cap
-    // and come back with a short/empty draft. Reuses [`adaptive_max_tokens`]
-    // so the streaming and non-streaming builders share one formula.
+    // of how small the caller's budget is — a caller with a modest cap, like
+    // the extension bridge's answer-assist flow
+    // (`extension_bridge::answer_assist::ANSWER_ASSIST_MAX_TOKENS`, sized to
+    // stay UNDER the classic gate above), would otherwise get
+    // summarized-thinking tokens billed out of an un-inflated cap and come
+    // back with a short/empty draft. Reuses [`adaptive_max_tokens`] so the
+    // streaming and non-streaming builders share one formula.
     let is_classic = anthropic_supports_thinking(&req.model);
     let is_adaptive = anthropic_uses_adaptive_thinking(&req.model);
     let classic_thinking_budget = if is_classic && max_tokens >= 2048 {
@@ -699,13 +701,13 @@ fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) ->
 /// non-streaming builders have no thinking-view display concern; default
 /// `"omitted"` is correct there and gives faster time-to-first-text per
 /// Anthropic's docs). Deliberately **not** gated on a size threshold: a small
-/// caller-supplied cap (e.g. the extension bridge's `max_tokens: 1000`
-/// answer-assist calls) or a fixed small cap (1024 for web search) still gets
-/// thinking billed against it by default, so the inflation must apply
-/// unconditionally.
+/// caller-supplied cap (e.g. the extension bridge's answer-assist calls, see
+/// `extension_bridge::answer_assist::ANSWER_ASSIST_MAX_TOKENS`) or a fixed
+/// small cap (1024 for web search) still gets thinking billed against it by
+/// default, so the inflation must apply unconditionally.
 ///
 /// The headroom is `max(base / 2, 1024)`, not a bare `base / 2`: a small cap
-/// (e.g. 1000) would otherwise add less than the ~1024-token floor a model
+/// would otherwise add less than the ~1024-token floor a model
 /// typically needs to produce a useful summarized-thinking pass, leaving too
 /// little room for both thinking and the visible response and risking a
 /// short/empty draft even after "inflating". `saturating_add` guards `base`

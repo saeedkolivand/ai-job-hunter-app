@@ -67,8 +67,18 @@ impl JobStarter for AppHandle {
 /// that race (the caller should treat it as `"Job cancelled"`); `Some(job_id)`
 /// otherwise. Safe to cancel unconditionally on the race path — `job_id` is a
 /// fresh UUID ([`crate::db::new_job_id`]), so it can never collide with a
-/// later, unrelated `start_job` call. Does NOT need the reqId's generation —
-/// `register` reads and preserves whatever generation `begin` already minted.
+/// later, unrelated `start_job` call.
+///
+/// `gen` is the caller's OWN generation (the one its `begin` minted, threaded
+/// down from `handle_answer_assist`): [`AssistStreamRegistry::register`] binds
+/// the job only while `req_id` is still held by THAT request's own entry. It
+/// matters because a request can reach here TWICE — `compose_with_length_retry`
+/// makes a second attempt on one specific failure, and that attempt must bind
+/// its new job to the SAME entry the first one did, never mint a second
+/// generation (which would strand the first one's entry past the request's
+/// single `unregister_gen`) and never resurrect an entry a cancel already
+/// removed (which would start a fresh billable job for a request the client
+/// gave up on).
 ///
 /// Generic over a combined [`JobStarter`] + [`JobCanceller`] recorder (not
 /// the concrete `AppHandle`) so this ordering is directly unit-testable
@@ -79,10 +89,11 @@ pub(super) fn start_and_register<T: JobStarter + JobCanceller>(
     starter: &T,
     registry: &AssistStreamRegistry,
     req_id: &str,
+    r#gen: u64,
 ) -> Option<String> {
     let job_id = crate::db::new_job_id();
     starter.start_job(&job_id);
-    if !registry.register(req_id, &job_id) {
+    if !registry.register(req_id, r#gen, &job_id) {
         starter.cancel_job(&job_id);
         return None;
     }
@@ -199,40 +210,62 @@ impl AssistStreamRegistry {
         Some(r#gen)
     }
 
-    /// Register an in-flight stream's `reqId -> jobId`, UNLESS `req_id` was
-    /// already marked [`StreamEntry::CancelledEarly`] (an `assist.cancel`
-    /// raced the pre-compose window) — in which case this is a no-op and
-    /// returns `false`, so the caller aborts BEFORE ever starting the
-    /// billable job, rather than registering (and thus only becoming
-    /// cancellable from this point forward) a stream the client already
-    /// gave up on. Returns `true` otherwise: the normal `Pending` →
-    /// `Running` move (preserving the SAME generation `begin` minted — no gen
-    /// parameter needed here, it's read off the existing entry), or a caller
-    /// that never `begin`s at all (mints a fresh generation on the spot, same
-    /// as `begin` would — this only ever happens in tests; every production
-    /// caller always `begin`s first).
-    pub(super) fn register(&self, req_id: &str, job_id: &str) -> bool {
+    /// Bind `req_id`'s entry to `job_id`, generation-scoped: it succeeds ONLY
+    /// while `req_id` is still held by the CALLER'S OWN entry — `Pending(gen)`
+    /// (the first attempt's normal `Pending` → `Running` move) or
+    /// `Running(gen, _)` (a second attempt rebinding onto its fresh job; see
+    /// [`start_and_register`]'s doc for why one request can register twice).
+    /// Either way the generation is PRESERVED, never re-minted, so the
+    /// request's single [`Self::unregister_gen`] at the end still owns — and
+    /// so still frees — the entry.
+    ///
+    /// Returns `false`, touching nothing, in every other case, and the caller
+    /// must then abort BEFORE running its billable stream:
+    ///
+    /// * `CancelledEarly(gen)` — an `assist.cancel` raced the pre-compose
+    ///   window. The marker is CONSUMED (removed) here, and only when it
+    ///   carries the caller's own generation.
+    /// * no entry at all — a `cancel`/`cancel_all` already removed this
+    ///   request's `Running` entry (both remove by `reqId`, regardless of
+    ///   generation, by design). Re-registering here would resurrect a
+    ///   billable stream for a request the client has already given up on,
+    ///   which is exactly what the old "no entry → mint a fresh generation"
+    ///   arm did.
+    /// * an entry carrying a DIFFERENT generation — a reused `reqId`'s
+    ///   successor owns the key now; this caller must never clobber it.
+    pub(super) fn register(&self, req_id: &str, r#gen: u64, job_id: &str) -> bool {
         let mut guard = self.0.lock();
-        if matches!(
-            guard.entries.get(req_id),
-            Some(StreamEntry::CancelledEarly(_))
-        ) {
-            guard.entries.remove(req_id);
-            return false;
-        }
-        let r#gen = match guard.entries.get(req_id) {
-            Some(StreamEntry::Pending(r#gen)) => *r#gen,
-            _ => {
-                let r#gen = guard.next_gen;
-                guard.next_gen += 1;
-                r#gen
+        match guard.entries.get(req_id) {
+            Some(StreamEntry::Pending(g) | StreamEntry::Running(g, _)) if *g == r#gen => {
+                guard.entries.insert(
+                    req_id.to_string(),
+                    StreamEntry::Running(r#gen, job_id.to_string()),
+                );
+                true
             }
-        };
-        guard.entries.insert(
-            req_id.to_string(),
-            StreamEntry::Running(r#gen, job_id.to_string()),
-        );
-        true
+            Some(StreamEntry::CancelledEarly(g)) if *g == r#gen => {
+                guard.entries.remove(req_id);
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `req_id` is STILL held by this caller's own running entry
+    /// (`Running(gen, _)`) — the guard `compose_with_length_retry` checks
+    /// before paying for a second round-trip. `false` means the client gave
+    /// up between the two attempts: [`Self::cancel`] (an `assist.cancel`)
+    /// removes the entry, and [`Self::cancel_all`] (the connection dropping)
+    /// drains it, so both cases read as "not mine any more" here without
+    /// needing an `AppHandle` to ask the job tracker. [`Self::register`]
+    /// re-checks the same ownership atomically under its own lock, so this is
+    /// a spend guard (skip the charge, skip the wasted `job_start`), not the
+    /// correctness boundary.
+    pub(super) fn holds_running_gen(&self, req_id: &str, r#gen: u64) -> bool {
+        matches!(
+            self.0.lock().entries.get(req_id),
+            Some(StreamEntry::Running(g, _)) if *g == r#gen
+        )
     }
 
     /// Remove `req_id`'s entry ONLY IF its stored generation equals `gen` —
@@ -390,7 +423,8 @@ mod tests {
     #[test]
     fn register_then_take_returns_and_forgets_it() {
         let r = AssistStreamRegistry::default();
-        assert!(r.register("req-1", "job-1"));
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1"));
         assert_eq!(r.take("req-1"), Some("job-1".to_string()));
         assert_eq!(r.take("req-1"), None, "take also forgets the mapping");
     }
@@ -405,8 +439,9 @@ mod tests {
     #[test]
     fn register_overwrites_a_prior_mapping_for_the_same_req_id() {
         let r = AssistStreamRegistry::default();
-        assert!(r.register("req-1", "job-1"));
-        assert!(r.register("req-1", "job-2"));
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1"));
+        assert!(r.register("req-1", r#gen, "job-2"));
         assert_eq!(
             r.take("req-1"),
             Some("job-2".to_string()),
@@ -414,13 +449,139 @@ mod tests {
         );
     }
 
+    /// The retry's registry contract: a request's SECOND attempt rebinds the
+    /// SAME entry onto its fresh job, keeping the generation `begin` minted,
+    /// so the request's ONE `unregister_gen` still owns — and so still frees
+    /// — the entry.
+    ///
+    /// The pre-fix `register` fell to a `_` arm for an existing `Running`
+    /// entry and minted a FRESH generation, which made the request's own
+    /// cleanup a silent no-op: the entry then leaked until the socket
+    /// dropped, and the connection's `cancel_all` flipped an
+    /// already-completed job to `Cancelled`.
+    ///
+    /// Mutation check (executed): drop `StreamEntry::Running(g, _)` from
+    /// `register`'s first match arm (restoring the fresh-generation `_` arm)
+    /// and both of the last two assertions fail.
+    #[test]
+    fn a_second_register_rebinds_the_same_entry_and_keeps_its_generation() {
+        let r = AssistStreamRegistry::default();
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1"));
+        assert!(r.register("req-1", r#gen, "job-2"));
+
+        assert!(
+            r.holds_running_gen("req-1", r#gen),
+            "the rebind must keep the generation the request was handed"
+        );
+        r.unregister_gen("req-1", r#gen);
+        assert!(
+            !r.contains("req-1"),
+            "…so the request's own single cleanup still frees the entry"
+        );
+    }
+
+    /// The other half of the same fix: a cancel between two attempts REMOVES
+    /// the entry, and the second attempt's bind must refuse rather than
+    /// resurrect it. The pre-fix `register` minted a fresh generation for a
+    /// missing entry and returned `true` — starting a full billable
+    /// generation for a request the client had already given up on.
+    ///
+    /// Mutation check (executed): restore the old `_ => { mint a fresh gen }`
+    /// arm and the first assertion fails.
+    #[test]
+    fn register_refuses_a_req_id_whose_entry_a_cancel_already_removed() {
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1"));
+        r.cancel(&canceller, "req-1"); // Running -> job cancelled AND removed
+
+        assert!(
+            !r.register("req-1", r#gen, "job-2"),
+            "a second attempt must never resurrect an entry a cancel removed"
+        );
+        assert!(
+            !r.contains("req-1"),
+            "and the refusal must not leave anything behind either"
+        );
+    }
+
+    /// Generation scoping on the bind, not just on the cleanup: a stale
+    /// attempt must never clobber a reused `reqId`'s successor entry.
+    #[test]
+    fn register_refuses_a_generation_that_is_not_its_own() {
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        let gen_a = r.begin("req-1").expect("A's begin succeeds");
+        assert!(r.register("req-1", gen_a, "job-a"));
+        r.cancel(&canceller, "req-1");
+
+        let gen_b = r.begin("req-1").expect("B may reuse req-1");
+        assert!(r.register("req-1", gen_b, "job-b"));
+
+        assert!(
+            !r.register("req-1", gen_a, "job-a2"),
+            "A's late bind must never take B's entry over"
+        );
+        assert!(r.holds_running_gen("req-1", gen_b));
+    }
+
+    /// `holds_running_gen` is the spend guard `compose_with_length_retry`
+    /// checks before paying for a retry, so every way the client can go away
+    /// must read as `false` here.
+    #[test]
+    fn holds_running_gen_is_true_only_for_this_requests_own_running_entry() {
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(
+            !r.holds_running_gen("req-1", r#gen),
+            "a Pending entry has no job yet — nothing is running"
+        );
+
+        assert!(r.register("req-1", r#gen, "job-1"));
+        assert!(r.holds_running_gen("req-1", r#gen));
+        assert!(
+            !r.holds_running_gen("req-1", r#gen + 1),
+            "another generation's entry is not this request's"
+        );
+        assert!(!r.holds_running_gen("req-2", r#gen), "nor another reqId's");
+
+        r.cancel(&canceller, "req-1");
+        assert!(
+            !r.holds_running_gen("req-1", r#gen),
+            "an assist.cancel takes the entry away"
+        );
+    }
+
+    #[test]
+    fn holds_running_gen_is_false_once_the_connection_dropped() {
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1"));
+
+        r.cancel_all(&canceller); // the read loop exited — the socket is gone
+
+        assert!(
+            !r.holds_running_gen("req-1", r#gen),
+            "a dropped connection must not buy a retry"
+        );
+    }
+
     #[test]
     fn unregister_gen_then_register_again_reflects_the_new_mapping() {
         let r = AssistStreamRegistry::default();
-        let r#gen = r.begin("req-1").expect("a fresh reqId");
-        assert!(r.register("req-1", "job-1"));
-        r.unregister_gen("req-1", r#gen);
-        assert!(r.register("req-1", "job-2"));
+        let first = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", first, "job-1"));
+        r.unregister_gen("req-1", first);
+
+        // The entry is gone, so a reuse must `begin` again for its own
+        // generation — a bind is only ever accepted against an entry that
+        // already exists.
+        let second = r.begin("req-1").expect("req-1 is free again");
+        assert!(r.register("req-1", second, "job-2"));
         assert_eq!(r.take("req-1"), Some("job-2".to_string()));
     }
 
@@ -434,7 +595,8 @@ mod tests {
         let connection_a = AssistStreamRegistry::default();
         let connection_b = AssistStreamRegistry::default();
 
-        connection_a.register("req-1", "job-1");
+        let gen_a = connection_a.begin("req-1").expect("a fresh reqId");
+        connection_a.register("req-1", gen_a, "job-1");
 
         // Connection B never registered "req-1" — it must be a no-op, NEVER
         // able to observe (let alone cancel) connection A's stream.
@@ -476,7 +638,8 @@ mod tests {
     fn cancel_on_a_running_req_id_cancels_its_job_and_forgets_the_mapping() {
         let r = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
-        r.register("req-1", "job-1");
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        r.register("req-1", r#gen, "job-1");
         r.cancel(&canceller, "req-1");
         assert_eq!(canceller.cancelled.into_inner(), vec!["job-1".to_string()]);
         assert_eq!(r.take("req-1"), None, "cancel also forgets the mapping");
@@ -486,9 +649,11 @@ mod tests {
     fn cancel_all_cancels_every_running_stream_and_leaves_pending_alone_besides_marking_it() {
         let r = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
-        r.register("req-1", "job-1");
-        r.register("req-2", "job-2");
-        r.begin("req-3"); // still pending — no job to cancel
+        let gen_1 = r.begin("req-1").expect("a fresh reqId");
+        r.register("req-1", gen_1, "job-1");
+        let gen_2 = r.begin("req-2").expect("a fresh reqId");
+        r.register("req-2", gen_2, "job-2");
+        let gen_3 = r.begin("req-3").expect("a fresh reqId"); // still pending — no job to cancel
         r.cancel_all(&canceller);
 
         let mut got = canceller.cancelled.into_inner();
@@ -500,7 +665,7 @@ mod tests {
         );
         // The pending entry is now cancelled-early — a still in-flight
         // pre-compose caller must never be allowed to register a job for it.
-        assert!(!r.register("req-3", "job-3"));
+        assert!(!r.register("req-3", gen_3, "job-3"));
     }
 
     #[test]
@@ -521,7 +686,7 @@ mod tests {
         // billable generation for a request the user already cancelled.
         let r = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
-        r.begin("req-1");
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
         r.cancel(&canceller, "req-1"); // -> CancelledEarly, no job existed yet
         r.cancel_all(&canceller);
 
@@ -530,7 +695,7 @@ mod tests {
             "no Running job existed at any point — nothing to job_cancel"
         );
         assert!(
-            !r.register("req-1", "job-1"),
+            !r.register("req-1", r#gen, "job-1"),
             "the CancelledEarly guard must survive cancel_all's drain-and-reinsert"
         );
     }
@@ -541,7 +706,7 @@ mod tests {
     fn cancel_during_the_pending_window_prevents_the_later_register_call() {
         let r = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
-        r.begin("req-1"); // pre-compose work has started — no job yet
+        let r#gen = r.begin("req-1").expect("a fresh reqId"); // no job yet
         r.cancel(&canceller, "req-1"); // assist.cancel races the awaits
 
         assert!(
@@ -549,7 +714,7 @@ mod tests {
             "no job exists yet — there is nothing to job_cancel"
         );
         assert!(
-            !r.register("req-1", "job-1"),
+            !r.register("req-1", r#gen, "job-1"),
             "the compose call must never start a billable job for an early-cancelled reqId"
         );
         assert_eq!(
@@ -562,8 +727,8 @@ mod tests {
     #[test]
     fn register_without_a_prior_cancel_succeeds_normally_after_begin() {
         let r = AssistStreamRegistry::default();
-        r.begin("req-1");
-        assert!(r.register("req-1", "job-1"));
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1"));
         assert_eq!(r.take("req-1"), Some("job-1".to_string()));
     }
 
@@ -591,7 +756,8 @@ mod tests {
     fn begin_on_an_already_running_req_id_is_rejected_and_the_original_stays_cancellable() {
         let r = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
-        assert!(r.register("req-1", "job-1")); // the original request is now Running
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1")); // the original is now Running
 
         // A client reusing the SAME reqId while the original is still
         // running must be rejected — never silently overwrite the Running
@@ -631,7 +797,7 @@ mod tests {
         // closes.
         let r = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
-        r.begin("req-1"); // run A's pre-compose window opens
+        let gen_a = r.begin("req-1").expect("a fresh reqId"); // run A opens
         r.cancel(&canceller, "req-1"); // -> CancelledEarly, run A has no job yet
 
         assert!(
@@ -639,7 +805,7 @@ mod tests {
             "a second run reusing req-1 must be rejected while the marker is un-consumed"
         );
         assert!(
-            !r.register("req-1", "job-a"),
+            !r.register("req-1", gen_a, "job-a"),
             "register consumes the CancelledEarly marker and reports false — \
              run A never starts a billable job"
         );
@@ -667,7 +833,7 @@ mod tests {
         let gen_a = r
             .begin("req-x")
             .expect("A's begin succeeds on a fresh reqId");
-        assert!(r.register("req-x", "job-a"));
+        assert!(r.register("req-x", gen_a, "job-a"));
         r.cancel(&canceller, "req-x"); // removes A's Running entry, cancels job-a
 
         let gen_b = r
@@ -677,7 +843,7 @@ mod tests {
             gen_b > gen_a,
             "B's generation must be strictly higher than A's"
         );
-        assert!(r.register("req-x", "job-b"));
+        assert!(r.register("req-x", gen_b, "job-b"));
 
         // A's tail cleanup arrives LATE — after B has already begun and
         // registered — the exact race the generation token exists to close.
@@ -705,7 +871,7 @@ mod tests {
         // request" path every non-race request takes.
         let r = AssistStreamRegistry::default();
         let r#gen = r.begin("req-1").expect("a fresh reqId");
-        assert!(r.register("req-1", "job-1"));
+        assert!(r.register("req-1", r#gen, "job-1"));
 
         r.unregister_gen("req-1", r#gen);
 
@@ -741,8 +907,9 @@ mod tests {
     fn start_and_register_starts_the_job_then_registers_it_on_the_happy_path() {
         let registry = AssistStreamRegistry::default();
         let recorder = RecordingStarterCanceller::default();
+        let r#gen = registry.begin("req-1").expect("a fresh reqId");
 
-        let job_id = start_and_register(&recorder, &registry, "req-1")
+        let job_id = start_and_register(&recorder, &registry, "req-1", r#gen)
             .expect("a fresh reqId with no prior cancel must register successfully");
 
         assert_eq!(
@@ -773,11 +940,11 @@ mod tests {
         // the very job it just started rather than leaving it orphaned.
         let registry = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
-        registry.begin("req-1");
+        let r#gen = registry.begin("req-1").expect("a fresh reqId");
         registry.cancel(&canceller, "req-1"); // -> CancelledEarly, no job existed yet
 
         let recorder = RecordingStarterCanceller::default();
-        let result = start_and_register(&recorder, &registry, "req-1");
+        let result = start_and_register(&recorder, &registry, "req-1", r#gen);
 
         assert!(
             result.is_none(),
