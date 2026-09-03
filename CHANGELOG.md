@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.146.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.145.2...v0.146.0) (2026-09-03)
+
+### ✨ Features
+
+* help chat, a11y lint over the design system, orphan copy cleanup and the mcp residuals ([#1101](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1101)) ([0c14e8f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0c14e8f15a38f4ced0a5f3bf5a9f5c96cfcb3702))
+* hybrid search over the live postings cache ([#1090](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1090)) ([a27d89d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a27d89da76e2edf8921b3eac28448cda636ba173)), closes [#1087](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1087)
+* mcp stdio server mode for the agent cli ([#1092](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1092)) ([44fd17d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/44fd17dde4ad2dbe8e5719db52b84fda02f51475)), closes [#1091](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1091)
+* per-language help retrieval with cancellation, agent cli settings card, cross-os mcp smoke ([#1102](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1102)) ([f5fa164](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f5fa164d0bd9d5386a1b6c40ae1819dbfaa1be0e))
+* persistent next-step tile on the dashboard ([#1095](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1095)) ([9867c06](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9867c060fc97e67c1df9662efa27b0295fe2d734))
+* searchable help page over a corrected, feature-grouped corpus ([#1094](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1094)) ([ad6fa2f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ad6fa2f24f083daad9b18aa95af516933ad31b51))
+
+### 📚 Documentation
+
+* make the ai rigour visible where a reviewer actually reads ([#1091](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1091)) ([c01e7ea](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c01e7eaf7a81cbc801498ee40ce1480f6e56924d))
+* record the live client handshakes in adr-040 ([#1093](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1093)) ([e98b942](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e98b9421792337c4f0d5382af97e9b5a4bb7c4f1))
+
 ## [0.145.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.145.1...v0.145.2) (2026-09-01)
 
 ### 🐛 Bug Fixes
