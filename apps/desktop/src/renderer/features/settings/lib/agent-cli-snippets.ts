@@ -58,17 +58,27 @@ function mcpArgs(tier: AgentCliTier): string[] {
 /**
  * `value` as it goes INSIDE a double-quoted bash/zsh word.
  *
- * Exactly three characters keep a special meaning between double quotes there
- * — `` ` `` (command substitution), `$` (expansion) and `"` (the closing
- * quote) — and a backslash escapes each of them. A path under `$HOME/bin` or a
- * directory literally named `My $Money` would otherwise be EXPANDED by the
- * shell, registering a server at a path that does not exist.
+ * Between double quotes bash consumes a backslash only when it precedes one of
+ * `$`, `` ` ``, `"`, `\` or a newline; everywhere else the backslash stays
+ * literal. That asymmetry is the whole function, and it needs TWO passes in
+ * this order:
  *
- * Backslashes are deliberately left alone. Inside double quotes bash keeps a
- * backslash literal unless it precedes one of those three characters (or a
- * newline), so a Windows path survives verbatim — while doubling every
- * backslash would corrupt the common Windows case to fix nothing on the shells
- * that need escaping.
+ * 1. **Double every backslash that already precedes one of those five.** Skip
+ *    this and the shell eats that backslash together with the escape added
+ *    below, handing the metacharacter back live: `C:\` + `` ` `` + `x` naively
+ *    escapes to ``C:\\`x``, which bash reads as a literal `\` followed by an
+ *    OPEN command substitution. A value's TRAILING backslash counts too — the
+ *    character after it is the closing quote the caller writes.
+ * 2. **Then escape `` ` ``, `$` and `"` themselves.** Those three are the only
+ *    characters that keep a special meaning between double quotes — command
+ *    substitution, expansion, and the closing quote. A path under `$HOME/bin`
+ *    or a directory literally named `My $Money` would otherwise be EXPANDED,
+ *    registering a server at a path that does not exist.
+ *
+ * Every OTHER backslash is deliberately left alone. Doubling all of them would
+ * corrupt the ordinary Windows path — the common case, which has to survive
+ * verbatim because PowerShell and cmd do not read backslash as an escape at
+ * all.
  *
  * **PowerShell limit:** it also treats `$` and `` ` `` as special inside double
  * quotes, but its escape character is a BACKTICK, not a backslash. One string
@@ -78,7 +88,7 @@ function mcpArgs(tier: AgentCliTier): string[] {
  * snippet that is wrong on macOS and Linux in order to be right on Windows.
  */
 function shellDoubleQuoted(value: string): string {
-  return value.replace(/[`$"]/g, '\\$&');
+  return value.replace(/\\(?=[`$"\\\n]|$)/g, '\\\\').replace(/[`$"]/g, '\\$&');
 }
 
 /**
