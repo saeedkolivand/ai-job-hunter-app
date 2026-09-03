@@ -118,10 +118,12 @@ const TOP_N_NARROW: usize = 2;
 /// It was 17 before the help arm began dropping the question's own function
 /// words (`commands::help::stopwords`); the case it cost was "How do I
 /// connect Ollama so the AI features work?", which ranked 3rd behind an
-/// entry that shares only the word "work". This obligation runs in one
-/// direction: the measurement rose, so the floor rose with it, and the Ollama
-/// case can no longer slip back.
-const TOP_2_FLOOR: usize = 18;
+/// entry that shares only the word "work". It rose to 18 with that list and
+/// to 19 with the result-set fallback's own case ("Where is my stuff?", rank
+/// 2 — a MISS before the fallback existed). This obligation runs in one
+/// direction: the measurement rose, so the floor rose with it, and neither
+/// case can slip back.
+const TOP_2_FLOOR: usize = 19;
 
 /// Build the help entries exactly as the renderer does: one entry per
 /// `support.faq.<section>Questions.<leaf>` node, `id` the dotted leaf path,
@@ -184,9 +186,11 @@ struct Case {
 /// Phrasings a user would type, each written before it was run.
 ///
 /// There is no stemmer, so these use the corpus's own vocabulary the way a
-/// user would stumble onto it. The first ten are SEARCH-BOX shaped (2-4
-/// words); the eight after them are CHAT shaped — whole questions, function
-/// words and punctuation included, which is what the help chat sends.
+/// user would stumble onto it. The rows above the marker comment are
+/// SEARCH-BOX shaped (2-4 words); the ones below it are CHAT shaped — whole
+/// questions, function words and punctuation included, which is what the
+/// help chat sends. The last of those is written against a MECHANISM rather
+/// than a phrasing — see its own `why`.
 ///
 /// Every case is CONTESTED: the `contenders` column in the printed table is
 /// how many of the 51 entries matched at all, and
@@ -290,6 +294,11 @@ const CASES: &[Case] = &[
         expected: "aiGenerateQuestions.needsReview",
         why: "four other entries define a term with \"means\"; the quoted feature name has to win",
     },
+    Case {
+        query: "Where is my stuff?",
+        expected: "aiGenerateQuestions.whereStored",
+        why: "THE result-set fallback case (`retrieval::lexical::LexicalIndex::search_in`), not another ranking one. Every word but `stuff` is on `HELP_STOPWORDS_EN`, and `stuff` is in no entry — so the FILTERED expression is non-empty and matches zero rows, which the token-list fallback cannot see. Without the rerun this row is a MISS on a default install (keyword-only) while the arm still reports `Ran`; with it, the question's own function words rank the entry that answers it. Vague on purpose: a phrasing that names nothing in the corpus is exactly the shape that breaks",
+    },
 ];
 
 /// German phrasings, hand-written against the DE bundle's own vocabulary —
@@ -335,9 +344,9 @@ const DE_CASES: &[Case] = &[
         why: "must beat `extensionActions`, which is about the SAME extension on a job page",
     },
     Case {
-        query: "Autopilot einrichten",
+        query: "Autopilot erstellen",
         expected: "autopilotQuestions.setUpAutopilot",
-        why: "must beat `whatIsAutopilot`, which shares the distinctive word",
+        why: "REPHRASED AFTER MEASURING: `Autopilot einrichten` sat at exactly 2 contenders — the eval's own floor — because `einrichten` is in no entry at all (the corpus writes \"richte … ein\" and the compound \"Einrichtungsassistent\", and FTS5 does no decompounding), so that row was the single token `Autopilot` and only the two autopilot entries could match it. `erstellen` is in three NON-autopilot entries as well, so this row is now contested from outside its own section: it must beat `whatIsAutopilot`, which shares the distinctive word, AND the résumé/letter entries that share the verb",
     },
     Case {
         query: "keine Ergebnisse LinkedIn",
@@ -472,7 +481,7 @@ fn measure(entries: &[HelpSearchRequestEntry], cases: &'static [Case], locale: &
             );
             // The REAL arm, called the way `help_search` calls it (over the
             // whole corpus; `limit` is applied only after fusion).
-            let (ranks, status) = run_lexical_arm(entries, case.query, entries.len(), locale);
+            let (ranks, status) = run_lexical_arm(entries, case.query, entries.len(), Some(locale));
             let top: Vec<String> = ranks.iter().take(TOP_K).cloned().collect();
             Row {
                 case,
@@ -585,7 +594,7 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
     let (hits, narrow_hits) = report("en", &rows, TOP_2_FLOOR);
     // Literal, not derived-vs-derived: compared with a hand-written number,
     // so a case quietly deleted from CASES fails here instead of passing.
-    assert_table(&rows, hits, narrow_hits, 18, TOP_2_FLOOR);
+    assert_table(&rows, hits, narrow_hits, 19, TOP_2_FLOOR);
 }
 
 #[test]
@@ -641,10 +650,10 @@ fn the_german_drop_list_narrows_a_german_question_without_costing_the_answer() {
     let query = "Wie sichere ich meine Daten?";
     let expected = "privacyQuestions.exportImport";
 
-    let (with_list, _) = run_lexical_arm(&entries, query, entries.len(), "de");
+    let (with_list, _) = run_lexical_arm(&entries, query, entries.len(), Some("de"));
     // "xx" is a well-formed tag this module has no list for — the same code
     // path a French install takes, and the honest "no filtering" baseline.
-    let (no_list, _) = run_lexical_arm(&entries, query, entries.len(), "xx");
+    let (no_list, _) = run_lexical_arm(&entries, query, entries.len(), Some("xx"));
 
     assert!(
         no_list.len() >= 25,

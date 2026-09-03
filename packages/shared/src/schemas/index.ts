@@ -391,10 +391,14 @@ export const HelpSearchRequestSchema = z.object({
    * BCP-47 tag of the locale the `entries` are written in (the renderer's
    * active UI locale). Selects the function-word list the lexical arm drops
    * from the question before the OR-join (`commands::help::stopwords`); a
-   * locale with no list drops nothing. Defaults to English for callers that
-   * omit it.
+   * locale with no list drops nothing.
+   *
+   * Omitted = NO drop list, never English. A caller that does not say what
+   * language its entries are in has not said "English", and filtering a
+   * foreign corpus through English function words can only cost recall —
+   * `in`, `an` and `es` are content words in other languages.
    */
-  locale: z.string().min(2).max(16).default('en'),
+  locale: z.string().min(2).max(16).optional(),
   /** The user's question, verbatim. Trimmed and re-capped by `commands::help`. */
   query: z.string().min(1).max(500),
   /**

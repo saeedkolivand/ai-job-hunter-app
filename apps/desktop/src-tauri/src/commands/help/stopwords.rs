@@ -104,6 +104,12 @@ pub(crate) const HELP_STOPWORDS_DE: &[&str] = &[
 /// foreign corpus by an English assumption is exactly the failure the
 /// module doc's German counter-example describes.
 ///
+/// **An OMITTED locale lands here too, as the empty string.**
+/// `HelpSearchRequestSchema.locale` is optional and `help_search` passes
+/// `""` for `None` rather than `"en"`: a caller that never said which
+/// language its entries are in has not said English, and the safe answer to
+/// "unknown" is the same one every other unknown tag gets — drop nothing.
+///
 /// Normalised to the primary subtag, lowercased (`de-AT` → `de`, `EN` →
 /// `en`), because the renderer sends `i18n.language`, which carries a region
 /// on some installs.

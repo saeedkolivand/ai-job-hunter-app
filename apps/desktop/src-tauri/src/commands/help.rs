@@ -45,7 +45,13 @@
 //! `commands::hybrid_search` does; `jobs.cancel(queryId)` is the supersede
 //! channel and there is no cancel command of its own. Omitting the id is one
 //! code path, not two: the command then uses an unregistered token nobody can
-//! fire (what an agent-CLI caller gets).
+//! fire.
+//!
+//! Which of the two a caller gets is a property of its REQUEST, not of who
+//! it is. The renderer mints an id for every question; an agent-CLI or
+//! extension-bridge caller gets exactly what its own body asked for — send a
+//! `help-` id and `jobs_cancel` reaches this search like any other, omit it
+//! and nothing can. There is no renderer-only path here.
 //!
 //! A cancel makes the dense arm stop SOONER, not instantly: the token is
 //! raced against each individual embed (so a cancel does not wait out the
@@ -220,7 +226,12 @@ pub async fn help_search(app: AppHandle, req: HelpSearchRequest) -> AppResult<He
         None => None,
     };
 
-    let lexical = run_lexical_arm(&req.entries, &query, req.entries.len(), &req.locale);
+    let lexical = run_lexical_arm(
+        &req.entries,
+        &query,
+        req.entries.len(),
+        req.locale.as_deref(),
+    );
     let dense = if semantic_on(&app) {
         run_dense(&app, &query, &req.entries, &token).await
     } else {
@@ -367,6 +378,13 @@ pub fn to_lexical_doc(entry: &HelpSearchRequestEntry) -> LexicalDoc<'_> {
 /// drop from the question before the OR-join. An unknown locale drops
 /// nothing.
 ///
+/// `Option`, mirroring the wire: `HelpSearchRequestSchema.locale` is
+/// optional, and `None` means the caller did not say — which is NOT English.
+/// Taking the `Option` here rather than an already-defaulted `&str` puts that
+/// decision in the one function that owns the drop list, so no call site can
+/// quietly default it to `"en"` (the `unwrap_or("en")` this signature exists
+/// to make impossible would have degraded a French corpus silently).
+///
 /// Pure (no app, no network), and `pub` for the same reason as
 /// [`to_lexical_doc`]: `tests/help_retrieval.rs` measures THIS function,
 /// locale routing included, over the real shipped bundles.
@@ -374,10 +392,13 @@ pub fn run_lexical_arm(
     entries: &[HelpSearchRequestEntry],
     query: &str,
     limit: usize,
-    locale: &str,
+    locale: Option<&str>,
 ) -> (Vec<String>, ArmStatus) {
     let docs: Vec<LexicalDoc<'_>> = entries.iter().map(to_lexical_doc).collect();
-    let stopwords = stopwords::stopwords_for_locale(locale);
+    // `unwrap_or_default()` — the empty string is a tag `stopwords_for_locale`
+    // has no list for, i.e. exactly the "drop nothing" branch an unknown
+    // locale takes. One branch, not two.
+    let stopwords = stopwords::stopwords_for_locale(locale.unwrap_or_default());
     match LexicalIndex::build(&docs).and_then(|index| index.search_any(query, limit, stopwords)) {
         Ok(ranks) => (ranks, ArmStatus::Ran),
         Err(_) => (Vec::new(), ArmStatus::Unavailable),
@@ -486,10 +507,25 @@ async fn run_dense(
 /// `hybrid_search::embed_or_cancel`.
 ///
 /// ONE function for both call sites (the query embed and each entry's), so
-/// the query-embed test that mutation-checks the race covers the entry
-/// embeds' too. Shortening an ALREADY-IN-FLIGHT entry embed is the half no
-/// test here asserts: observing it needs a fake that never returns, and a
-/// test whose failure mode is "hangs forever" is worse than the gap.
+/// the query-embed tests that mutation-check the race cover the entry embeds'
+/// too — including
+/// `a_cancel_of_an_in_flight_embed_returns_without_waiting_the_provider_out`,
+/// which observes the in-flight half with a fake that never returns and turns
+/// the mutation's "hangs forever" into a failed `tokio::time::timeout`.
+///
+/// **A cancelled round-trip is CHARGED but never RECORDED.** The daily
+/// per-vendor ceiling is charged before dispatch (inside `embed_with_config`,
+/// see [`ChargedEmbedder`]) while `record_usage` runs only after the provider
+/// answers, so dropping this future in the middle spends one unit of the
+/// user's daily budget that never reaches the usage ledger. Never twice —
+/// the charge happens once per attempt — and never a REFUND either, which is
+/// the safe direction for a spend cap. This is a pre-existing shape inherited
+/// from `hybrid_search::embed_or_cancel` (same select, same ordering) and is
+/// deliberately NOT fixed here: the seam that could fix it is
+/// `commands::ai_provider::embed_text`, where the charge and the ledger write
+/// live, and making them atomic under cancellation is a provider-layer change
+/// affecting every embedding caller — not something to smuggle into a help
+/// search.
 async fn embed_or_cancel<E: Embedder + ?Sized>(
     embedder: &E,
     text: &str,

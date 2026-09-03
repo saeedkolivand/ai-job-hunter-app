@@ -122,8 +122,14 @@ impl Embedder for ScriptedEmbedder {
     }
 }
 
+/// `enable_time` because the in-flight-cancel test below needs a timer for
+/// both halves of what it asserts: the `tokio::time::timeout` that turns
+/// "hangs forever" into a failed assertion, and the sleep that lands the
+/// cancel AFTER the embed is already in flight. Harmless for every other test
+/// here — none of them arm a timer.
 fn block_on<F: std::future::Future>(f: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
+        .enable_time()
         .build()
         .unwrap()
         .block_on(f)
@@ -186,9 +192,9 @@ struct SlowEmbedder {
 impl Embedder for SlowEmbedder {
     async fn embed_one(&self, _text: &str) -> Option<EmbeddingVector> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        // `std::thread::sleep`, not `tokio::time::sleep`: the test runtime is
-        // built without a timer, and blocking IS what a slow embed does to
-        // this arm anyway.
+        // `std::thread::sleep`, not `tokio::time::sleep`: the bound this fake
+        // exercises is `std::time::Instant::elapsed`, which only real time
+        // advances, and blocking IS what a slow embed does to this arm anyway.
         std::thread::sleep(self.delay);
         Some(vector(&self.cfg, vec![1.0, 0.0]))
     }
@@ -304,7 +310,7 @@ fn a_query_matching_only_an_answers_wording_still_ranks_that_entry_first() {
     // "scanned" appears in exactly one entry, and only in its ANSWER — so
     // this can only pass if the body is indexed as a searchable column. It is
     // the direct check on the mapping `to_lexical_doc` chooses.
-    let (ranks, status) = run_lexical_arm(&corpus(), "scanned", 3, "en");
+    let (ranks, status) = run_lexical_arm(&corpus(), "scanned", 3, Some("en"));
     assert_eq!(status, ArmStatus::Ran);
     assert_eq!(
         ranks.first().map(String::as_str),
@@ -333,7 +339,7 @@ fn a_question_word_outranks_the_same_word_buried_in_another_answer() {
             "Press the button above a finished document and choose PDF, DOCX or TXT.",
         ),
     ];
-    let (ranks, _) = run_lexical_arm(&entries, "export", 3, "en");
+    let (ranks, _) = run_lexical_arm(&entries, "export", 3, Some("en"));
     assert_eq!(
         ranks.len(),
         2,
@@ -348,7 +354,7 @@ fn a_question_word_outranks_the_same_word_buried_in_another_answer() {
 
 #[test]
 fn a_query_matching_nothing_is_an_empty_ran_arm_not_a_failure() {
-    let (ranks, status) = run_lexical_arm(&corpus(), "kubernetes", 3, "en");
+    let (ranks, status) = run_lexical_arm(&corpus(), "kubernetes", 3, Some("en"));
     assert!(ranks.is_empty());
     assert_eq!(
         status,
@@ -413,7 +419,7 @@ fn a_malformed_locale_is_an_unknown_one_not_an_error() {
 /// result on the ONE arm a default install runs.
 #[test]
 fn a_question_made_only_of_function_words_still_returns_hits() {
-    let (ranks, status) = run_lexical_arm(&corpus(), "What is it?", 3, "en");
+    let (ranks, status) = run_lexical_arm(&corpus(), "What is it?", 3, Some("en"));
     assert_eq!(status, ArmStatus::Ran);
     assert!(
         !ranks.is_empty(),
@@ -441,18 +447,75 @@ fn the_english_drop_list_keeps_a_questions_function_words_from_pulling_in_an_ent
     let query = "What do I do to export it?";
 
     // "xx" is a well-formed tag with no list — the no-filtering baseline.
-    let (unfiltered, _) = run_lexical_arm(&entries, query, 3, "xx");
+    let (unfiltered, _) = run_lexical_arm(&entries, query, 3, Some("xx"));
     assert!(
         unfiltered.contains(&"unrelated".to_string()),
         "premise: unfiltered, `What`/`do`/`is` alone match the unrelated entry; got {unfiltered:?}"
     );
 
-    let (filtered, status) = run_lexical_arm(&entries, query, 3, "en");
+    let (filtered, status) = run_lexical_arm(&entries, query, 3, Some("en"));
     assert_eq!(status, ArmStatus::Ran);
     assert_eq!(
         filtered,
         vec!["asked".to_string()],
         "only `export` survives the drop list, so only the entry about exporting matches"
+    );
+}
+
+/// An OMITTED `locale` must drop NOTHING, never fall back to English.
+///
+/// Both places that could quietly supply an English default are on this path
+/// and both are exercised: serde (the generated contract carried a
+/// `#[serde(default)] = "en"` until `HelpSearchRequestSchema.locale` became
+/// optional — so the request is built by DESERIALIZING a body with no
+/// `locale` key, not by naming the field) and `run_lexical_arm`'s own
+/// unwrapping of the `Option`.
+///
+/// Anchored on an ABSOLUTE, the same way the test above is: the unrelated
+/// entry must be PRESENT for an omitted locale (nothing dropped) and ABSENT
+/// for `en`. Comparing the two result lists to each other would pass for any
+/// pair of defaults that happened to agree.
+///
+/// Mutation-visible: `locale.unwrap_or_default()` → `unwrap_or("en")` in
+/// `run_lexical_arm` and the first assertion fails.
+#[test]
+fn an_omitted_locale_drops_nothing_rather_than_defaulting_to_english() {
+    let req: HelpSearchRequest = serde_json::from_value(serde_json::json!({
+        "query": "What do I do to export it?",
+        "entries": [{ "id": "unrelated", "title": "t", "body": "b" }],
+    }))
+    .expect("`locale` is optional on the wire");
+    assert!(
+        req.locale.is_none(),
+        "premise: an absent `locale` key must deserialize to None — no serde default may \
+         invent one"
+    );
+
+    let entries = vec![
+        entry(
+            "unrelated",
+            "What is Autopilot?",
+            "It watches a saved search and scores new postings for you.",
+        ),
+        entry(
+            "asked",
+            "How do I export a finished document?",
+            "Press Export above a finished document and choose PDF, DOCX or TXT.",
+        ),
+    ];
+    let query = "What do I do to export it?";
+
+    let (omitted, status) = run_lexical_arm(&entries, query, 3, req.locale.as_deref());
+    assert_eq!(status, ArmStatus::Ran);
+    assert!(
+        omitted.contains(&"unrelated".to_string()),
+        "a caller that never said which language its entries are in has not said English: \
+         its function words must still match, got {omitted:?}"
+    );
+    let (english, _) = run_lexical_arm(&entries, query, 3, Some("en"));
+    assert!(
+        !english.contains(&"unrelated".to_string()),
+        "premise: declaring `en` IS what drops them; got {english:?}"
     );
 }
 
@@ -1068,10 +1131,14 @@ fn a_help_prefixed_query_id_is_accepted_and_every_other_shape_is_refused() {
 }
 
 /// A cancel that landed before the arm started must cost ZERO provider calls
-/// — not "one, then stop". Mutation-visible: delete the `is_cancelled()`
-/// guard at the top of `run_dense_arm` and the query embed still fires… which
-/// the `biased` race then swallows, so this asserts the CALL COUNT rather
-/// than the status alone.
+/// — not "one, then stop".
+///
+/// Mutation-visible: replace the query's `embed_or_cancel` with a bare
+/// `embedder.embed_one(query).await` and the count goes to 1 while the STATUS
+/// stays `Unavailable` (the loop's own `is_cancelled()` break still fires),
+/// which is why this asserts the CALL COUNT and not the status alone. There
+/// is deliberately no separate `is_cancelled()` guard above the query embed
+/// to delete — the `biased` race IS that guard (see `run_dense_arm`).
 #[test]
 fn a_pre_cancelled_token_embeds_nothing_and_reports_unavailable() {
     let (_dir, store) = store();
@@ -1206,4 +1273,89 @@ fn a_cancel_mid_arm_is_unavailable_even_when_every_remaining_entry_is_cached() {
         "a cancelled arm must never report Ran, even when the cache could complete it"
     );
     assert!(ranks.is_empty(), "all-or-nothing: {ranks:?}");
+}
+
+/// The half no other test here reaches: a cancel that arrives while an embed
+/// is ALREADY in flight. Every other cancellation test lands the cancel
+/// between calls, where a plain `.await` would look identical.
+///
+/// The fake never returns from `embed_one` (`std::future::pending` — a
+/// oneshot nobody sends, without the channel), so with a bare
+/// `embedder.embed_one(text).await` in `embed_or_cancel` this arm can only
+/// end by running out the wall clock: `DENSE_ARM_TIMEOUT` is checked BETWEEN
+/// entries and never interrupts a call, so nothing would ever cancel the
+/// query embed at all. That is exactly the "sits waiting out the provider's
+/// per-attempt timeout" behaviour the race exists to prevent, and the reason
+/// the assertion is wrapped in `tokio::time::timeout`: the failure mode
+/// under mutation is a HANG, and a hanging test is worse than no test.
+///
+/// The budget is 2 s against a cancel fired at 50 ms — two orders of
+/// magnitude, so this measures the mechanism, not the scheduler.
+///
+/// Mutation-visible: replace the query's `embed_or_cancel` with
+/// `embedder.embed_one(query).await` and this fails on the `expect` below
+/// (the elapsed budget), rather than hanging the suite.
+#[test]
+fn a_cancel_of_an_in_flight_embed_returns_without_waiting_the_provider_out() {
+    struct HangingEmbedder {
+        calls: AtomicUsize,
+    }
+    #[async_trait]
+    impl Embedder for HangingEmbedder {
+        async fn embed_one(&self, _text: &str) -> Option<EmbeddingVector> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            // Never resolves — a provider call that has begun and will not
+            // come back inside this test's lifetime.
+            std::future::pending::<()>().await;
+            None
+        }
+    }
+
+    let (_dir, store) = store();
+    let active = cfg("ollama", "nomic-embed-text");
+    let embedder = HangingEmbedder {
+        calls: AtomicUsize::new(0),
+    };
+
+    let outcome = block_on(async {
+        let token = CancellationToken::new();
+        let canceller = token.clone();
+        // Fired from a separate task so the cancel lands while the arm is
+        // parked inside the embed, not before it starts (which is what
+        // `a_pre_cancelled_token_embeds_nothing_and_reports_unavailable`
+        // already covers).
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            canceller.cancel();
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            run_dense_arm(
+                &store,
+                &active,
+                &embedder,
+                "q",
+                &corpus(),
+                crate::commands::ai_provider::timeouts::DENSE_ARM_TIMEOUT,
+                &token,
+            ),
+        )
+        .await
+    });
+
+    let (ranks, status) = outcome.expect(
+        "a cancel must abandon an IN-FLIGHT embed, not wait it out: the arm was still \
+         running 2s after a cancel fired at 50ms",
+    );
+    assert_eq!(
+        status,
+        ArmStatus::Unavailable,
+        "a cancelled query embed degrades the arm, it does not fail the search"
+    );
+    assert!(ranks.is_empty(), "all-or-nothing: {ranks:?}");
+    assert_eq!(
+        embedder.calls.load(Ordering::SeqCst),
+        1,
+        "only the query embed was ever started — the entry loop is never reached"
+    );
 }

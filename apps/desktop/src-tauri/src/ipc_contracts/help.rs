@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct HelpSearchRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_id: Option<String>,
-    #[serde(default = "default_help_search_request_locale")]
-    pub locale: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
     pub query: String,
     pub entries: Vec<HelpSearchRequestEntry>,
     #[serde(default = "default_help_search_request_limit")]
@@ -24,10 +24,6 @@ pub struct HelpSearchRequestEntry {
     pub id: String,
     pub title: String,
     pub body: String,
-}
-
-fn default_help_search_request_locale() -> String {
-    "en".to_string()
 }
 
 fn default_help_search_request_limit() -> u32 {

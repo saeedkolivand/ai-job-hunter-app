@@ -110,12 +110,23 @@ describe('HelpSearchRequestSchema', () => {
     entries: [{ id: 'aiGenerateQuestions.exportDoc', title: 'Export', body: 'Press Export.' }],
   };
 
-  it('accepts the minimal shape and defaults locale, with no queryId at all', () => {
+  it('accepts the minimal shape with neither queryId nor locale', () => {
     // An agent-CLI caller sends neither field. `queryId` absent means "not
-    // cancellable"; `locale` defaults so the drop list is still resolvable.
+    // cancellable"; `locale` absent means "drop no function words" — NOT
+    // English. Defaulting it here would have filtered a French or Japanese
+    // corpus through an English drop list without anyone asking for it
+    // (`commands::help::stopwords::stopwords_for_locale`).
     const parsed = HelpSearchRequestSchema.parse(base);
     expect(parsed.queryId).toBeUndefined();
-    expect(parsed.locale).toBe('en');
+    expect(parsed.locale).toBeUndefined();
+  });
+
+  it('still accepts an explicit locale', () => {
+    expect(HelpSearchRequestSchema.parse({ ...base, locale: 'de-AT' }).locale).toBe('de-AT');
+    // The caps stay: a 1-char tag is not a BCP-47 primary subtag, and an
+    // unbounded string must never reach the Rust normaliser.
+    expect(() => HelpSearchRequestSchema.parse({ ...base, locale: 'd' })).toThrow();
+    expect(() => HelpSearchRequestSchema.parse({ ...base, locale: 'e'.repeat(17) })).toThrow();
   });
 
   it('accepts a queryId carrying the required "help-" prefix', () => {

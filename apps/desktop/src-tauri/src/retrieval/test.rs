@@ -458,3 +458,94 @@ fn lexical_search_any_falls_back_when_every_token_is_a_stopword() {
         "an all-stopword question must still search, not silently return zero hits"
     );
 }
+
+/// The half the token-list fallback above cannot see: the drop list leaves a
+/// NON-empty expression that matches no row. "Where is my stuff?" keeps only
+/// `stuff`, which is in no document, so the filtered query returns zero hits
+/// and the help arm reports `Ran` with nothing to show — for a question the
+/// unfiltered expression answers.
+///
+/// Mutation-visible: delete the result-set rerun in `search_in` and the last
+/// assertion returns an empty list.
+#[test]
+fn lexical_search_any_reruns_unfiltered_when_the_filtered_query_matched_nothing() {
+    let docs = vec![
+        doc(
+            "p1",
+            "Where are my generated documents stored?",
+            "",
+            "Under the app data directory.",
+        ),
+        doc(
+            "p2",
+            "Connect Ollama",
+            "",
+            "Point the app at a local model.",
+        ),
+    ];
+    let index = LexicalIndex::build(&docs).expect("build must succeed");
+    let question = "Where is my stuff?";
+    let stopwords = &["where", "is", "my"];
+
+    assert!(
+        index
+            .search_any(question, 10, &[])
+            .expect("must not error")
+            .contains(&"p1".to_string()),
+        "premise: unfiltered, the question's own function words already reach the entry"
+    );
+    assert!(
+        index
+            .search_any("stuff", 10, &[])
+            .expect("must not error")
+            .is_empty(),
+        "premise: `stuff` is in no document, so the FILTERED expression matches no row \
+         (a non-empty MATCH the token-list fallback cannot detect)"
+    );
+    assert_eq!(
+        index
+            .search_any(question, 10, stopwords)
+            .expect("must not error"),
+        vec!["p1".to_string()],
+        "a drop list may cost ranking, never the whole answer: a filtered query that \
+         matched NOTHING must be re-run unfiltered"
+    );
+}
+
+/// …and the rerun must not fire when the filtered query DID match: re-running
+/// unfiltered there would put the function-word branches back and undo the
+/// drop list entirely.
+///
+/// Mutation-visible: change the `!hits.is_empty()` early return in
+/// `search_in` to always rerun and `p2` reappears.
+#[test]
+fn lexical_search_any_does_not_rerun_when_the_filtered_query_matched_something() {
+    let docs = vec![
+        doc(
+            "p1",
+            "How does the search box work?",
+            "",
+            "It filters the list.",
+        ),
+        doc(
+            "p2",
+            "Connect Ollama",
+            "",
+            "Point the app at a local model.",
+        ),
+    ];
+    let index = LexicalIndex::build(&docs).expect("build must succeed");
+
+    assert_eq!(
+        index
+            .search_any(
+                "How do I connect Ollama so it works?",
+                10,
+                &["how", "do", "so", "it"]
+            )
+            .expect("must not error"),
+        vec!["p2".to_string()],
+        "the filtered query has a hit, so the unfiltered expression (which pulls in p1 on \
+         `how`/`do`) must never run"
+    );
+}

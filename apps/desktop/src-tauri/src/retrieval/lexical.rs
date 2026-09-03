@@ -125,6 +125,14 @@ fn sanitize_query(query: &str, mode: QueryMode, stopwords: &[&str]) -> String {
             // `Ran`, and on a default install that is the only arm there is.
             // Falling back to the unfiltered tokens ranks it badly rather
             // than silently answering nothing.
+            //
+            // This is only the TOKEN-list half of that fallback. A question
+            // whose surviving tokens are all absent from the corpus ("Where
+            // is my stuff?" — `stuff` is in no entry) sanitizes to a
+            // NON-empty expression that still matches zero rows, which this
+            // check cannot see; `search_in` catches that one on the RESULT
+            // set. Two halves of one rule, deliberately in the two places
+            // that can each observe their own half.
             if tokens.is_empty() {
                 tokens = query.split_whitespace().map(quote).collect();
             }
@@ -240,6 +248,14 @@ impl LexicalIndex {
     /// rather than looked up here: which words carry no signal depends on the
     /// corpus's language, and this module indexes text without knowing (or
     /// wanting to know) what language it is in. Pass `&[]` to drop nothing.
+    ///
+    /// **Dropping a token can never turn hits into a miss.** A drop list only
+    /// costs recall, so both ways it can zero out a result are undone rather
+    /// than reported as an honest "no answer": if it empties the TOKEN list
+    /// the unfiltered tokens are used instead ([`sanitize_query`]), and if
+    /// the surviving tokens match no ROW the unfiltered expression is run
+    /// once more ([`Self::search_in`]). A non-empty result is never re-ranked
+    /// — that would undo the filtering itself.
     pub fn search_any(
         &self,
         query: &str,
@@ -260,6 +276,37 @@ impl LexicalIndex {
         if sanitized.is_empty() {
             return Ok(Vec::new());
         }
+        let hits = self.match_ids(&sanitized, limit)?;
+        // The RESULT-set half of the drop list's fallback (see
+        // `sanitize_query`'s own note). A dropped token can only ever cost
+        // recall, so a filtered query that matched NOTHING has nothing to
+        // lose by being asked again unfiltered: "Where is my stuff?" keeps
+        // only `stuff`, which is in no help entry, and the arm reported
+        // `Ran` with zero hits for a question the unfiltered expression
+        // answers at rank 2 — on a default install (`semantic_scoring` off)
+        // that is the only arm there is.
+        //
+        // Narrow on purpose: ONLY when a drop list was actually applied
+        // (`Any` + non-empty `stopwords`), only when the two expressions
+        // really differ (nothing was dropped ⇒ nothing to retry), and only
+        // on a genuinely EMPTY result — never a re-rank of a non-empty one,
+        // which would undo the filtering the list exists for. At most one
+        // extra query per search, against an in-memory index.
+        if !hits.is_empty() || mode != QueryMode::Any || stopwords.is_empty() {
+            return Ok(hits);
+        }
+        let unfiltered = sanitize_query(query, mode, &[]);
+        if unfiltered.is_empty() || unfiltered == sanitized {
+            return Ok(hits);
+        }
+        self.match_ids(&unfiltered, limit)
+    }
+
+    /// Run one already-sanitized `MATCH` expression and map its rows back to
+    /// caller ids. Split out of [`Self::search_in`] so the fallback above
+    /// re-runs the query without a second copy of the SQL, the weights or
+    /// the row-id mapping.
+    fn match_ids(&self, expression: &str, limit: usize) -> AppResult<Vec<String>> {
         let (w_title, w_company, w_location, w_description) = BM25_WEIGHTS;
         // `ORDER BY bm25(...)` ascending (the default) is correct as written:
         // FTS5's bm25() returns SMALLER values for a BETTER match.
@@ -268,7 +315,7 @@ impl LexicalIndex {
         let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt.query_map(
             params![
-                sanitized,
+                expression,
                 w_title,
                 w_company,
                 w_location,
