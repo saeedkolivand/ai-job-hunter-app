@@ -498,6 +498,15 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// compose path instead of a parallel one — the draft caller passes the
 /// draft system/cap unchanged, the rewrite caller passes its own.
 ///
+/// `effort` is caller-supplied for the same reason, and for a second one: the
+/// caller runs this function TWICE on one specific failure (see
+/// `answer_assist::compose_with_length_retry`), and both attempts must be
+/// driven by the SAME resolved tier. It is normally
+/// [`Completer::lowest_effort`] — on a reasoning model the thinking tokens
+/// are billed against `max_tokens`, so this path buys the cheapest reasoning
+/// the provider offers; `None` (no lever for this model) leaves the request
+/// exactly as it was before this parameter existed.
+///
 /// Mechanism: `chat_stream` emits `ai:stream` Tauri events as it drives the
 /// HTTP stream — the SAME channel the renderer's own provider hook listens
 /// to. This registers a SECOND, Rust-side listener for this exact `job_id`
@@ -520,6 +529,12 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// confirming (via [`is_job_cancelled`]) that the job isn't ALREADY
 /// `Cancelled` for one of those reasons (or an external cancel) — otherwise
 /// `job_fail` would wrongly overwrite it.
+// Nine parameters, one over `clippy.toml`'s ceiling of 8. Every one is a
+// distinct, already-resolved input to the same single provider round-trip;
+// bundling a subset into a struct would only move the same values behind a
+// name that means "the arguments", so the ceiling is raised for this one
+// function instead.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn compose_draft_stream(
     app: &AppHandle,
     completer: &Completer,
@@ -527,6 +542,7 @@ pub(super) async fn compose_draft_stream(
     registry: &AssistStreamRegistry,
     system: &str,
     max_tokens: u32,
+    effort: Option<&str>,
     user: &str,
     sink: &mut dyn FrameSink,
 ) -> AppResult<String> {
@@ -554,8 +570,14 @@ pub(super) async fn compose_draft_stream(
     let mut sink_gone = false;
     let result: AppResult<()>;
     {
-        let mut stream_fut =
-            Box::pin(completer.stream_complete(&job_id, system, user, Some(0.5), Some(max_tokens)));
+        let mut stream_fut = Box::pin(completer.stream_complete(
+            &job_id,
+            system,
+            user,
+            Some(0.5),
+            Some(max_tokens),
+            effort,
+        ));
         loop {
             tokio::select! {
                 maybe = rx.recv() => {

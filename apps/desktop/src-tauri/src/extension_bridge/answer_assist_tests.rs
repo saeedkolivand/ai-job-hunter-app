@@ -838,3 +838,275 @@ fn unregister_after_request_never_clobbers_a_reused_req_ids_successor_entry() {
         "A's stale, lower-generation cleanup must never remove B's fresh entry"
     );
 }
+
+// ── compose_with_length_retry (the reasoning-ate-the-budget retry) ──────
+
+/// A [`crate::extension_bridge::FrameSink`] recorder — a local copy of
+/// `stream`'s own test-only sink (duplicated rather than shared, so this file
+/// stays independent of that module's private test internals).
+#[derive(Default)]
+struct RecordingSink {
+    sent: Vec<String>,
+}
+
+#[async_trait::async_trait]
+impl crate::extension_bridge::FrameSink for RecordingSink {
+    async fn send_frame(&mut self, text: String) -> bool {
+        self.sent.push(text);
+        true
+    }
+}
+
+/// The empty-answer error EXACTLY as the shared streaming loop produces it,
+/// built through `commands::ai_provider`'s own message picker rather than
+/// re-typed here — so a reworded constant can never make these fixtures stop
+/// matching the classification under test.
+fn empty_answer(stop_reason: Option<crate::commands::ai_provider::StopReason>) -> AppError {
+    crate::commands::ai_provider::stream::empty_answer_error_for_test(
+        stop_reason,
+        crate::commands::ai_provider::ProviderId::OllamaCloud,
+    )
+}
+
+/// The specific failure this path retries: the model spent its whole output
+/// budget reasoning and the provider ended the stream with
+/// `finish_reason: length` and no answer text.
+fn length_cut() -> AppError {
+    empty_answer(Some(crate::commands::ai_provider::StopReason::Length))
+}
+
+/// A fake compose round: replays a scripted outcome per attempt, records the
+/// `(max_tokens, effort)` each one was driven with, counts the daily-ceiling
+/// charges, and — on a scripted success — forwards its text through the REAL
+/// `stream::forward_chunk`/`FrameSink` path, so "the retry's text reaches the
+/// sink" is an assertion about the production forwarding code rather than
+/// about the fake.
+struct FakeComposer<'a> {
+    /// One entry per attempt, consumed in order.
+    script: Vec<AppResult<&'static str>>,
+    /// `(max_tokens, effort)` recorded per attempt, in order.
+    attempts: Vec<(u32, Option<String>)>,
+    /// Successful `charge` calls — `Cell` because `charge` takes `&self`,
+    /// exactly as the production trait does.
+    charges: std::cell::Cell<usize>,
+    /// Attempt number (1-based) whose charge the daily ceiling refuses.
+    refuse_charge_at: Option<usize>,
+    limiter: crate::limits::Limiter,
+    sink: &'a mut RecordingSink,
+}
+
+impl DraftComposer for FakeComposer<'_> {
+    fn charge(&self) -> AppResult<()> {
+        let n = self.charges.get() + 1;
+        if self.refuse_charge_at == Some(n) {
+            return Err(to_draft_failed(
+                "daily budget exceeded before compose",
+                AppError::RateLimited("daily ceiling reached".to_string()),
+            ));
+        }
+        // The REAL charge, against a real limiter, so this fake can never
+        // diverge from what one production round-trip actually costs.
+        charge_compose_budget(&self.limiter, "ollama-cloud")?;
+        self.charges.set(n);
+        Ok(())
+    }
+
+    async fn compose(&mut self, max_tokens: u32, effort: Option<&str>) -> AppResult<String> {
+        self.attempts.push((max_tokens, effort.map(str::to_string)));
+        let slot = self
+            .script
+            .get_mut(self.attempts.len() - 1)
+            .expect("the composer must never be driven more times than the script allows");
+        // Moved out (not cloned) so the error keeps its EXACT `AppError`
+        // variant — the classification under test is structural.
+        match std::mem::replace(slot, Ok("<consumed>")) {
+            Err(e) => Err(e),
+            Ok(text) => {
+                let chunk = crate::events::AiStreamChunk {
+                    job_id: "job-1".to_string(),
+                    delta: text.to_string(),
+                    done: false,
+                    error: None,
+                    thinking: None,
+                };
+                let mut accumulated = String::new();
+                crate::extension_bridge::stream::forward_chunk(
+                    &chunk,
+                    "req-1",
+                    self.sink,
+                    &mut accumulated,
+                )
+                .await;
+                Ok(accumulated)
+            }
+        }
+    }
+}
+
+impl<'a> FakeComposer<'a> {
+    fn new(script: Vec<AppResult<&'static str>>, sink: &'a mut RecordingSink) -> Self {
+        Self {
+            script,
+            attempts: Vec::new(),
+            charges: std::cell::Cell::new(0),
+            refuse_charge_at: None,
+            limiter: crate::limits::Limiter::new(),
+            sink,
+        }
+    }
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_retries_once_at_double_the_budget_after_an_empty_length_cut() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(vec![Err(length_cut()), Ok("A grounded answer.")], &mut sink);
+
+    let text = compose_with_length_retry(&mut round, ANSWER_ASSIST_MAX_TOKENS, Some("low"))
+        .await
+        .expect("the retry succeeds");
+
+    assert_eq!(text, "A grounded answer.");
+    assert_eq!(
+        round.attempts,
+        vec![
+            (ANSWER_ASSIST_MAX_TOKENS, Some("low".to_string())),
+            (ANSWER_ASSIST_MAX_TOKENS * 2, Some("low".to_string())),
+        ],
+        "the retry must run at DOUBLE the budget, at the same lowest effort"
+    );
+    assert_eq!(
+        round.charges.get(),
+        2,
+        "two round-trips must pay the daily ceiling twice — never once per request"
+    );
+    assert_eq!(sink.sent.len(), 1, "only the retry produced any text");
+    assert!(
+        sink.sent[0].contains("A grounded answer."),
+        "the retry's text must reach the sink, got {:?}",
+        sink.sent
+    );
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_charges_and_composes_once_when_the_first_attempt_succeeds() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(vec![Ok("First time lucky.")], &mut sink);
+
+    let text = compose_with_length_retry(&mut round, ANSWER_ASSIST_MAX_TOKENS, Some("low"))
+        .await
+        .expect("the first attempt succeeds");
+
+    assert_eq!(text, "First time lucky.");
+    assert_eq!(
+        round.attempts,
+        vec![(ANSWER_ASSIST_MAX_TOKENS, Some("low".to_string()))]
+    );
+    assert_eq!(
+        round.charges.get(),
+        1,
+        "one round-trip, one daily-ceiling charge"
+    );
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_never_retries_any_other_failure() {
+    // Each of these is a DIFFERENT way the compose can fail: a transport
+    // error; the GENERIC empty answer (same empty outcome, but no
+    // `finish_reason: length`, so nothing says a larger budget would help);
+    // and the length-cut TEXT carried by a variant `finish` never builds it
+    // as — classification is structural, not a substring search. None of
+    // them may buy a second billable round-trip.
+    let others = [
+        AppError::Network("connection reset".to_string()),
+        empty_answer(None),
+        AppError::Validation(length_cut().to_string()),
+    ];
+
+    for original in others {
+        let label = original.to_string();
+        let mut sink = RecordingSink::default();
+        let mut round = FakeComposer::new(vec![Err(original), Ok("never reached")], &mut sink);
+
+        let err = compose_with_length_retry(&mut round, ANSWER_ASSIST_MAX_TOKENS, Some("low"))
+            .await
+            .expect_err("a non-length-cut failure must surface, not retry");
+
+        assert_eq!(
+            err.to_string(),
+            DRAFT_FAILED_MESSAGE,
+            "every failure still collapses to the fixed wire sentinel"
+        );
+        assert_eq!(round.attempts.len(), 1, "{label} must NOT be retried");
+        assert_eq!(
+            round.charges.get(),
+            1,
+            "{label} must cost exactly one charge"
+        );
+        assert!(sink.sent.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_lets_the_daily_ceiling_refuse_the_retry() {
+    // The retry is real spend: it goes through the SAME charge the first
+    // attempt does, so a ceiling that refuses it stops the second
+    // round-trip from ever being made.
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(vec![Err(length_cut()), Ok("never reached")], &mut sink);
+    round.refuse_charge_at = Some(2);
+
+    let err = compose_with_length_retry(&mut round, ANSWER_ASSIST_MAX_TOKENS, Some("low"))
+        .await
+        .expect_err("a refused charge fails the request");
+
+    assert_eq!(err.to_string(), DRAFT_FAILED_MESSAGE);
+    assert_eq!(
+        round.attempts.len(),
+        1,
+        "the retry must never bypass the daily ceiling"
+    );
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_sends_no_effort_for_a_model_with_no_effort_lever() {
+    // `Completer::lowest_effort` resolves `None` for every model whose
+    // provider offers no effort levels at all (see
+    // `pipeline::lowest_effort_level`). That `None` must reach the request
+    // unchanged on BOTH attempts — never a substituted "low" the provider
+    // would reject.
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(vec![Err(length_cut()), Ok("answer")], &mut sink);
+
+    compose_with_length_retry(&mut round, ANSWER_ASSIST_MAX_TOKENS, None)
+        .await
+        .expect("the retry succeeds");
+
+    assert_eq!(
+        round.attempts,
+        vec![
+            (ANSWER_ASSIST_MAX_TOKENS, None),
+            (ANSWER_ASSIST_MAX_TOKENS * 2, None),
+        ]
+    );
+}
+
+#[test]
+fn the_token_budget_leaves_room_for_reasoning_above_the_visible_answer_cap() {
+    // The regression the constant's rewrite closes: it used to be
+    // `DRAFT_CAP / 4`, i.e. the char cap re-expressed in tokens on the
+    // chars≈tokens×4 heuristic, so a model that reasoned at all could
+    // exhaust it before writing a word. The live cap on the ANSWER is
+    // `DRAFT_CAP` CHARS (enforced by `stream::forward_chunk`), so the token
+    // budget must be strictly larger than a cap-length answer's own token
+    // cost for any reasoning to fit alongside it.
+    assert!(
+        ANSWER_ASSIST_MAX_TOKENS > (DRAFT_CAP / 4) as u32,
+        "the token budget must exceed a full-length answer's own token cost, \
+         or reasoning has nothing to spend"
+    );
+    // Both modes share it deliberately — see `assist_prompt_for_mode`.
+    assert_eq!(
+        assist_prompt_for_mode(AssistMode::Draft).1,
+        assist_prompt_for_mode(AssistMode::Rewrite).1
+    );
+}

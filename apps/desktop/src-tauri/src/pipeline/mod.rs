@@ -450,6 +450,22 @@ impl Completer {
         self.context_window
     }
 
+    /// The LOWEST reasoning-effort level the resolved provider offers for the
+    /// resolved model, or `None` when it offers no effort LEVER at all (see
+    /// [`AiProvider::effort_levels`](crate::commands::ai_provider::AiProvider::effort_levels)
+    /// — empty is narrower than "this model doesn't reason").
+    ///
+    /// For a caller whose whole job is a short, bounded answer and that has no
+    /// user-chosen effort to honor: the extension bridge's `answer.assist`
+    /// compose, where a reasoning model's thinking tokens are billed against
+    /// the SAME `max_tokens` budget as the answer, so the cheapest tier that
+    /// still produces one is the right default. Resolution is
+    /// [`lowest_effort_level`]'s (registry-driven — a new provider/model needs
+    /// no change here).
+    pub fn lowest_effort(&self) -> Option<&'static str> {
+        lowest_effort_level(&self.provider.effort_levels(&self.model))
+    }
+
     /// Non-streaming completion through the active provider — the single-shot text
     /// analogue used by agentic text-generating tools (cover letter, interview
     /// questions) that need the whole response before returning. Reuses the same
@@ -497,11 +513,23 @@ impl Completer {
     /// wrapper never records again, mirroring how [`complete`](Self::complete)
     /// is the only place non-streaming usage is recorded.
     ///
-    /// `max_tokens` is caller-supplied (not a fixed default here) — mirrors
-    /// `temperature`'s own per-caller flexibility; a caller with a short,
-    /// bounded-length target (e.g. the extension bridge's `answer.assist`,
-    /// ~60-120 words) passes an explicit cap instead of relying on each
-    /// provider's own generous default.
+    /// `max_tokens` and `effort` are both caller-supplied (not fixed defaults
+    /// here) — mirroring `temperature`'s own per-caller flexibility. A caller
+    /// with a short, bounded-length target (e.g. the extension bridge's
+    /// `answer.assist`, ~60-120 words) passes an explicit cap instead of
+    /// relying on each provider's own generous default, and — because on a
+    /// reasoning model the THINKING tokens are billed against that same cap —
+    /// passes the lowest effort tier the provider offers
+    /// ([`lowest_effort`](Self::lowest_effort)) so the budget is spent on the
+    /// answer rather than on reasoning. `None` leaves the model's own default
+    /// effort untouched, which is what a caller with no bounded-length target
+    /// (and every provider with no effort lever at all) gets.
+    ///
+    /// `effort` reaches the wire only where the resolved model actually
+    /// supports it — each adapter gates it itself (`openai_body`'s
+    /// `reasoning_effort(req.effort, caps)` behind `supports_reasoning_effort`,
+    /// and each provider's own per-model level list) — so a non-reasoning
+    /// model's request is byte-for-byte unchanged by passing one.
     pub async fn stream_complete(
         &self,
         job_id: &str,
@@ -509,12 +537,11 @@ impl Completer {
         user: &str,
         temperature: Option<f64>,
         max_tokens: Option<u32>,
+        effort: Option<&str>,
     ) -> AppResult<()> {
         // No declared intent — this caller (agentic tool loop / extension
         // bridge answer.assist) already passes its own explicit `temperature`,
-        // which wins over any adapter default regardless. No effort either:
-        // neither caller has a run-level reasoning-effort setting to scale a
-        // deadline by.
+        // which wins over any adapter default regardless.
         let req = text_request(
             &self.model,
             system,
@@ -522,7 +549,7 @@ impl Completer {
             temperature,
             max_tokens,
             self.context_window,
-            None,
+            effort,
         );
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
@@ -875,6 +902,28 @@ pub(crate) fn text_request(
         effort: effort.map(str::to_string),
         intent: None,
     }
+}
+
+/// The lowest tier in a provider's own
+/// [`effort_levels`](crate::commands::ai_provider::AiProvider::effort_levels)
+/// list for a model — `None` for the empty list (the provider exposes no
+/// effort lever for it, so there is nothing to send and nothing to invent).
+///
+/// It is the FIRST entry, not a name match: every adapter returns its list in
+/// ascending tier order (`minimal < low < medium < high < xhigh < max`, the
+/// same order `timeouts::effort_multiplier`'s table documents), and the LOWEST
+/// tier is not always spelled `"low"` — Gemini's per-tier lists start at
+/// `"minimal"` on some models and at `"high"` on the ones that accept only
+/// that. Matching on the literal `"low"` would therefore send nothing at all
+/// for those models, which is the opposite of what the one caller wants. That
+/// ascending-order invariant is pinned by
+/// `test::every_providers_effort_levels_are_in_ascending_tier_order`.
+///
+/// Free function (not just [`Completer::lowest_effort`]) so the choice is
+/// unit-testable against the REAL provider adapters' level lists without a
+/// live `AppHandle` to build a `Completer` from.
+pub(crate) fn lowest_effort_level(levels: &[&'static str]) -> Option<&'static str> {
+    levels.first().copied()
 }
 
 /// The `AppHandle`-free core of [`Completer::complete_json`]: parse, one re-ask,
