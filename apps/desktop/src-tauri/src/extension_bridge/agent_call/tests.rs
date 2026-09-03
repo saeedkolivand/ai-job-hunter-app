@@ -67,6 +67,36 @@ fn the_real_extension_bridge_status_row_refuses_through_the_real_gate() {
     );
 }
 
+/// Same shape as the test above, for the same reason on a value that is not a
+/// secret: `system_agent_cli_info` returns this binary's absolute path, which
+/// on Windows and macOS lives under the user's home directory. Flipping that
+/// row back to `Effect::Read` in `policy.rs` — the exact mutation this pins,
+/// verified by hand — makes BOTH assertions below fail, because `gate` then
+/// answers `Ok(Dispatch::Direct)` and `call-read` would ship a user path into
+/// an MCP client's persisted transcript. No other test catches that flip: it
+/// changes no row COUNT (`policy_table_has_exactly_167_rows`, the 34
+/// Irreversible tally, `extension_bridge::test`'s 167-row walk are all blind
+/// to an `Effect` swap), `not_exposed_rows_carry_a_real_reason` only inspects
+/// rows that ARE already `NotExposed`, and the per-row walk in
+/// `extension_bridge::test` keys its assertions off `entry.effect` itself, so
+/// a reverted row just moves to a different self-consistent branch.
+#[test]
+fn the_real_system_agent_cli_info_row_refuses_through_the_real_gate() {
+    let entry = find_policy("system", "system_agent_cli_info")
+        .expect("system_agent_cli_info is a real POLICY row");
+    assert!(
+        matches!(super::gate(entry.effect, None), Err(Refusal::NotExposed(_))),
+        "system_agent_cli_info must refuse through gate() with no confirm"
+    );
+    assert!(
+        matches!(
+            super::gate(entry.effect, Some("anything")),
+            Err(Refusal::NotExposed(_))
+        ),
+        "system_agent_cli_info must refuse through gate() even WITH a confirm"
+    );
+}
+
 // ── Refusal sentinels/details (pure) ────────────────────────────────────
 
 #[test]
