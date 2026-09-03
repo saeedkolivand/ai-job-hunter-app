@@ -344,7 +344,7 @@ fn the_unlocatable_app_session_still_answers_on_the_wire() {
     );
     assert!(
         text.contains("app_not_located"),
-        "…and the refusal must name the pointer file, not the connection: {text}"
+        "…and the refusal must name the pointer file, not the connection"
     );
 
     assert_eq!(session.stderr, "", "stderr must stay empty");

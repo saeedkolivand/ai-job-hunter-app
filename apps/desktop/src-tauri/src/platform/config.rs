@@ -103,8 +103,9 @@ const APPDIR_ENV: &str = "APPDIR";
 /// in both the pointer file and the Settings snippet. [`launched_appimage`]
 /// is the predicate that actually identifies the case.
 ///
-/// `None` only when both sources fail — the caller decides how to report it
-/// (the pointer file is skipped; the command returns `null`).
+/// `None` when `current_exe()` fails (the AppImage branch needs it too) —
+/// the caller decides how to report it (the pointer file is skipped; the
+/// command returns `null`).
 pub fn agent_cli_exe_path() -> Option<PathBuf> {
     let running = std::env::current_exe().ok();
     launched_appimage(running.as_deref()).or(running)

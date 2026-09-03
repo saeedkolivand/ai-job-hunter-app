@@ -35,7 +35,7 @@ describe('buildClaudeCodeSnippet', () => {
   });
 
   it('escapes a $ so the shell cannot expand part of the path away', () => {
-    // `/opt/$USER/…` unescaped becomes `/opt/saeed/…` (or `/opt//…` when the
+    // `/opt/$USER/…` unescaped becomes `/opt/alice/…` (or `/opt//…` when the
     // variable is unset) by the time `claude` sees it — a server registered at
     // a path that does not exist, with no error at paste time.
     expect(buildClaudeCodeSnippet('/opt/$USER/ajh-tauri', 'read')).toBe(
